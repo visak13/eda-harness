@@ -401,9 +401,18 @@ def _resolve_action_injected(d: dict, plan) -> dict:
     and NO `injected_context_ids` — it passes straight through unchanged. The
     resolved `injected_context_ids` pointer is removed from the read view (it is
     an internal storage detail; the worker never needs the raw ids)."""
+    from .tools._bounds import budget_report
     ids = d.pop("injected_context_ids", None)
     if not ids:
-        # No pointer → legacy full-text injected_context (if any) passes through.
+        # No pointer → legacy full-text injected_context (if any) passes
+        # through — but self-labels when oversize (context-diet Phase 1a: a
+        # pre-budget action can still carry a ~47k-token full-text stamp, and
+        # the reader must at least be told it is holding one).
+        legacy = d.get("injected_context")
+        if legacy:
+            report = budget_report(legacy)
+            if report["oversize"]:
+                d["injected_context_report"] = report
         return d
     pmap = getattr(plan, "injected_context", None) or {}
     resolved: dict = {}
@@ -413,6 +422,9 @@ def _resolve_action_injected(d: dict, plan) -> dict:
             resolved[bucket] = texts
     if resolved:
         d["injected_context"] = resolved
+        report = budget_report(resolved)
+        if report["oversize"]:
+            d["injected_context_report"] = report
     return d
 
 
@@ -546,11 +558,34 @@ async def read_object(ctx, obj_type: str, detail: str = "full", **ids) -> Any:
     digest = detail == "digest"
 
     if obj_type == "recipe":
+        confirm_oversize = bool(ids.pop("confirm_oversize", False))
         _need(ids, "recipe_id")
         if not ctx.recipes.exists(ids["recipe_id"]):
             return None
         d = ctx.recipes.load(ids["recipe_id"]).model_dump(mode="json")
-        return _digest_recipe(d) if digest else d
+        if digest:
+            return _digest_recipe(d)
+        # Context-diet Phase 1d — HYDRATION INTERLOCK. Tiering shrinks disk
+        # only: a full recipe hydrates every decision body, and the biggest
+        # live recipe measures ~194k tokens of decision text alone — one
+        # detail='full' read blows a whole context window, and the default
+        # detail IS 'full'. Past 3x BUDGET (recipes legitimately exceed the
+        # 9k digest budget) the full read degrades to the digest plus a loud
+        # oversize note; confirm_oversize=true in `ids` is the explicit
+        # override for a caller that truly needs the whole object.
+        from .tools._bounds import BUDGET, budget_report
+        report = budget_report(d, budget=BUDGET * 3)
+        if report["oversize"] and not confirm_oversize:
+            out = _digest_recipe(d)
+            out["oversize"] = True
+            out["approx_tokens_full"] = report["approx_tokens"]
+            out["full_available_via"] = (
+                "read_object(type='recipe', ids={'recipe_id': …, "
+                "'confirm_oversize': true}, detail='full') — but prefer "
+                "get_recipe_digest / search_context / windowed reads; the "
+                f"full object is ~{report['approx_tokens']} tokens.")
+            return out
+        return d
 
     if obj_type == "north_star":
         _need(ids, "recipe_id")

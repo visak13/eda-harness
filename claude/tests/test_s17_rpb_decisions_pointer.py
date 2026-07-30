@@ -59,7 +59,10 @@ def test_rpb_steady_state_ships_index_not_bodies():
     ad = ctx["active_decisions"]
     assert ad["count"] == 3
     assert [e["id"] for e in ad["index"]] == ["d1", "d2", "d3"]
-    assert "read_object('recipe'" in ad["load"]
+    # Phase 1d: the load hint steers to the CHEAP re-ground path (digest +
+    # targeted search), never to a full-recipe hydration.
+    assert "search_context" in ad["load"]
+    assert "get_recipe_digest" in ad["load"]
 
     # the FULL bodies are NOT anywhere in the push (the pollution is gone)
     import json

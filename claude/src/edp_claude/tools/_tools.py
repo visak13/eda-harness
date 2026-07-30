@@ -30,6 +30,7 @@ from ._bounds import (  # noqa: F401
     INBOX_MAX_BYTES,
     WINDOW,
     approx_tokens as _approx_tokens,
+    budget_fill,
     budget_report,
     windowed,
 )
@@ -1591,6 +1592,14 @@ class NextAction(_ClaudeTool):
             # against data the neuron was just handed (the d68/d110 class).
             # neuron.md: never state child progress not present in this.
             instr.context["progress_rollup"] = _progress_rollup(self.ctx, r)
+            # Context-diet Phase 1c — the fold advisory grows TEETH on the
+            # neuron's own instruction plane. reconcile's fold_advisory string
+            # was restated 19x in one live transcript and never executed; past
+            # the threshold the obligation now rides next_action itself, and
+            # past 2x the planner-spawn verb refuses (see PoolSpawnPlanner).
+            _fold_ob = _fold_obligation(r)
+            if _fold_ob:
+                instr.context["fold_obligation"] = _fold_ob
             if mode in ("stale", "reground"):
                 instr.context["reground"] = await _reground_payload(
                     self.ctx, r, epoch, mode, m.handle)
@@ -2931,6 +2940,19 @@ class RecordPlan(_ClaudeTool):
             return _precondition(instruction_error(e, Plan))
         except Exception as e:
             return _precondition(f"plan invalid: {e}")
+        # Context-diet Phase 2 — the flow-down gate at plan SUBMISSION (the
+        # earliest feedback moment; pool_spawn_worker holds the dispatch-time
+        # backstop for the incremental create_plan/add_action path).
+        if getattr(plan, "recipe_id", None) and \
+                self.ctx.recipes.exists(plan.recipe_id):
+            gaps = _step_flowdown_gaps(
+                self.ctx.recipes.load(plan.recipe_id), plan)
+            if gaps:
+                return _precondition(
+                    "record_plan: the owning step declared cross-cutting "
+                    "obligations this plan does not cover:\n- "
+                    + "\n- ".join(gaps)
+                    + "\nFix the plan (not the step) and resend.")
         v = self.ctx.plans.save(plan)
         return Tool.ok(_Ver(version=v))
 
@@ -3510,6 +3532,13 @@ class _AddStepIn(BaseModel):
     # Empty is fine while the map is still being DECLARED (phase c); it is
     # refused once execution has begun. See _AFTER_DECLARATION_JUSTIFY below.
     justification: str = ""
+    # Context-diet Phase 2 — declare cross-cutting concerns AND the
+    # acceptance sketch AT THE STEP, where the neuron knows them. The
+    # flow-down gate (record_plan / dispatch backstop) then refuses a plan
+    # whose actions do not cover them — a concern can no longer die between
+    # recipe -> step -> plan on a planner's loose interpretation.
+    concerns: list[str] = []
+    acceptance_sketch: list[str] = []
 
 
 class _StepId(BaseModel):
@@ -3583,6 +3612,9 @@ class AddStep(_ClaudeTool):
             step_id=sid, kind="work", description=m.description,
             status="pending", depends_on=list(m.depends_on),
             execution=m.execution,
+            concerns=[c.strip() for c in m.concerns if c and c.strip()],
+            acceptance_sketch=[s.strip() for s in m.acceptance_sketch
+                               if s and s.strip()],
         ))
         self.ctx.recipes.save(r)
 
@@ -5140,6 +5172,12 @@ class _CtxIn(BaseModel):
     # each other's fields. Before W9 this field did not exist and
     # `record_context(constraint=…)` silently dropped it; see RecordContext.
     constraint: dict | None = None
+    # Context-diet Phase 1b: title/subject now PERSIST on the decision route.
+    # `subject` doubles as the topic tag the LB scoping floor accepts — a gate
+    # that accepted a tag and then dropped it would recreate the W9
+    # silent-drop defect class this file documents twice already.
+    title: str | None = None
+    subject: str | None = None
 
 
 class RecordDecision(_ClaudeTool):
@@ -5160,6 +5198,8 @@ class RecordDecision(_ClaudeTool):
                 at=_now(),
                 load_bearing=m.load_bearing,
                 scope_plan_id=m.scope_plan_id,
+                title=m.title,
+                subject=m.subject,
             )
         )
         self.ctx.recipes.save(r)
@@ -5599,9 +5639,10 @@ class _RecordContextIn(BaseModel):
     # a4: lineage-scoped facts. Omit scope to default from lineage
     # (recipe/<R>); scope='global' is neuron-only.
     scope: str | None = None
-    # W1 forward-looking: title/subject (typed decisions) are accepted so the
-    # consolidated verb SURFACE is stable, and are NOT yet persisted by the
-    # reused decision route.
+    # W1 typed-decision fields. Phase 1b: BOTH now persist on the decision
+    # route (they were accepted-and-dropped before, which would have let the
+    # LB scoping floor be satisfied by a tag that vanished). `subject` is the
+    # topic tag the floor accepts for recipe-wide load-bearing writes.
     title: str | None = None
     subject: str | None = None
     # W9 part 2 — `constraint` (W2 teeth) IS persisted now, on the
@@ -5676,11 +5717,64 @@ class RecordContext(_ClaudeTool):
                     "today. A constraint on this kind would be dropped "
                     "silently — record the ban as kind='rejected_option' with "
                     "the constraint, or drop the constraint and resend.")
+            # Context-diet Phase 1b — make `load_bearing` SCARCE at write
+            # time. The fold advisory alone was ignored on every live recipe
+            # (356 and 176 active, ~3-6% ever folded; one transcript restated
+            # the fold obligation 19x and never executed it), and 94% of
+            # active decisions were flagged load-bearing — so "must reach the
+            # worker" degenerated into "everything reaches the worker". Reads
+            # and dispatch are NEVER gated (running plans can't brick); only
+            # NEW load-bearing writes hit these two walls:
+            #   * past a soft floor (30 LB) the new decision must be scoped
+            #     (scope_plan_id) or carry a subject tag — recipe-wide
+            #     unscoped LB stays legal early, becomes a justified
+            #     exception late;
+            #   * at the fold threshold (EDP_DECISION_FOLD_THRESHOLD, 100)
+            #     new LB writes are REFUSED with the fold as the 2-call exit.
+            # Escape hatch: EDP_DECISION_FOLD_HARD=0 reverts to advisory.
+            if m.kind == "decision" and m.load_bearing:
+                _hard = (os.environ.get("EDP_DECISION_FOLD_HARD", "1")
+                         .lower() not in ("0", "false", "no", "off"))
+                if _hard:
+                    _r = self.ctx.recipes.load(m.recipe_id)
+                    _lb_active = [d for d in _r.context.decisions
+                                  if getattr(d, "load_bearing", False)
+                                  and getattr(d, "status", "active")
+                                  == "active"]
+                    _thr = int(os.environ.get(
+                        "EDP_DECISION_FOLD_THRESHOLD", "100"))
+                    _floor = int(os.environ.get(
+                        "EDP_LB_SCOPE_FLOOR", "30"))
+                    if len(_lb_active) >= _thr:
+                        return _precondition(
+                            f"record_context(load_bearing=true): {len(_lb_active)} "
+                            f"active load-bearing decisions already meet the "
+                            f"fold threshold ({_thr}). FOLD BEFORE ADDING: "
+                            "pick a settled cluster from the digest's "
+                            "id+title index and call fold_decisions("
+                            "recipe_id, decision_ids=[...], summary_text=…) "
+                            "— one atomic call per cluster — then resend "
+                            "this write. Or record it with "
+                            "load_bearing=false if it need not reach every "
+                            "worker. (Escape hatch, operator only: "
+                            "EDP_DECISION_FOLD_HARD=0.)")
+                    if (len(_lb_active) >= _floor and not m.scope_plan_id
+                            and not (m.subject or "").strip()):
+                        return _precondition(
+                            f"record_context(load_bearing=true): "
+                            f"{len(_lb_active)} active load-bearing decisions "
+                            f"exceed the scoping floor ({_floor}), so a NEW "
+                            "load-bearing decision must declare its reach: "
+                            "set scope_plan_id=<plan> if it binds one plan, "
+                            "or subject=<topic tag> if it is genuinely "
+                            "recipe-wide. Unscoped untagged LB past the "
+                            "floor is what made every worker brief carry "
+                            "every decision.")
             ctx_in = _CtxIn(
                 recipe_id=m.recipe_id, text=m.text, rationale=m.rationale,
                 reason=m.reason, by=m.by, load_bearing=m.load_bearing,
                 affects=m.affects, scope_plan_id=m.scope_plan_id,
-                constraint=m.constraint,
+                constraint=m.constraint, title=m.title, subject=m.subject,
             )
             if m.kind == "decision":
                 res = await RecordDecision(self.ctx)._run(ctx_in)
@@ -6198,8 +6292,107 @@ class PoolSpawnPlanner(_ClaudeTool):
             blk = _blocking_load_bearing_assumptions(rg, m.step_id)
             if blk:
                 return _assumption_gate_refusal(rg, blk)
+            # Context-diet Phase 1c — the fold ceiling. Past 2x the fold
+            # threshold, NEW planner spawns refuse until the neuron folds:
+            # every planner minted here fans the unfolded backlog out into
+            # more worker briefs, so this is the choke point where growth
+            # compounds. Workers/reviewers are NEVER blocked (in-flight work
+            # always finishes); only new planning capacity is held hostage
+            # to the map's hygiene. Same escape hatch as the write gate.
+            _hard = (os.environ.get("EDP_DECISION_FOLD_HARD", "1")
+                     .lower() not in ("0", "false", "no", "off"))
+            if _hard:
+                _thr = int(os.environ.get(
+                    "EDP_DECISION_FOLD_THRESHOLD", "100"))
+                _active = [d for d in rg.context.decisions
+                           if getattr(d, "status", "active") == "active"]
+                if len(_active) > 2 * _thr:
+                    return _precondition(
+                        f"pool_spawn_planner: {len(_active)} ACTIVE decisions "
+                        f"exceed the hard fold ceiling (2x threshold = "
+                        f"{2 * _thr}). Every new planner fans this unfolded "
+                        "backlog into more worker briefs. FOLD FIRST: pick "
+                        "settled clusters from the digest's id+title index "
+                        "and call fold_decisions(recipe_id, decision_ids="
+                        "[...], summary_text=…) until the active count is "
+                        f"under {2 * _thr}, then respawn. In-flight workers "
+                        "and reviewers are unaffected. (Escape hatch, "
+                        "operator only: EDP_DECISION_FOLD_HARD=0.)")
         return await self.ctx.pool.spawn_planner(
             m.recipe_id, m.step_id, model=m.model)
+
+
+def _step_flowdown_gaps(recipe, plan) -> list[str]:
+    """Context-diet Phase 2 — the step->plan flow-down check, pure and
+    deterministic (principle 6). Returns the list of uncovered obligations
+    for `plan` against its owning step; empty = pass.
+
+    * every step `concern` must appear on >=1 action's `concerns` (case-
+      insensitive exact tag match — tags are vocabulary, not prose);
+    * every step `acceptance_sketch` line must be EXPLICITLY mapped in
+      `Plan.sketch_covered_by` to >=1 existing action id. Explicit mapping
+      is what makes this testable; fuzzy text-matching would manufacture
+      coverage.
+
+    Legacy steps (no concerns, no sketch) yield no gaps — the gate is purely
+    additive and no existing plan is refused."""
+    step = next((s for s in getattr(recipe, "steps", [])
+                 if s.step_id == getattr(plan, "recipe_step_id", None)), None)
+    if step is None:
+        return []
+    gaps: list[str] = []
+    step_concerns = list(getattr(step, "concerns", []) or [])
+    if step_concerns:
+        covered = {c.strip().lower() for a in plan.actions
+                   for c in (getattr(a, "concerns", []) or [])}
+        for c in step_concerns:
+            if c.strip().lower() not in covered:
+                gaps.append(
+                    f"step concern '{c}' is covered by NO action — tag the "
+                    f"action(s) that touch it (add_action/update_object "
+                    f"concerns=['{c}']) so the {c} ruleset layer reaches "
+                    "the worker (assemble_ruleset picks it up from there)")
+    sketch = list(getattr(step, "acceptance_sketch", []) or [])
+    if sketch:
+        mapping = getattr(plan, "sketch_covered_by", None) or {}
+        known = {a.action_id for a in plan.actions}
+        for line in sketch:
+            aids = [a for a in (mapping.get(line) or [])]
+            unknown = [a for a in aids if a not in known]
+            if not aids:
+                gaps.append(
+                    f"acceptance sketch line {line!r} is mapped to no "
+                    "action — declare sketch_covered_by={<line>: "
+                    "[action_ids]} on the plan (update_object) naming the "
+                    "action(s) whose acceptance proves it")
+            elif unknown:
+                gaps.append(
+                    f"acceptance sketch line {line!r} maps to unknown "
+                    f"action id(s) {unknown!r}")
+    return gaps
+
+
+def _fold_obligation(r) -> str | None:
+    """Context-diet Phase 1c — the fold advisory, escalated onto the neuron's
+    instruction plane. None under the threshold. Deterministic (principle 6):
+    counts + the one-call remedy, phrased as an obligation because past the
+    threshold the write gate (Phase 1b) is already refusing new load-bearing
+    decisions and the 2x ceiling will refuse planner spawns."""
+    thr = int(os.environ.get("EDP_DECISION_FOLD_THRESHOLD", "100"))
+    active = [d for d in r.context.decisions
+              if getattr(d, "status", "active") == "active"]
+    if len(active) <= thr:
+        return None
+    lb = sum(1 for d in active if getattr(d, "load_bearing", False))
+    return (
+        f"FOLD BEFORE YOUR NEXT DISPATCH: {len(active)} active decisions "
+        f"({lb} load-bearing) exceed the fold threshold ({thr}). New "
+        "load-bearing writes are refused at this level and planner spawns "
+        f"refuse past {2 * thr}. Pick settled clusters from the digest's "
+        "id+title index and fold each with fold_decisions(recipe_id, "
+        "decision_ids=[...], summary_text=<the one decision that replaces "
+        "them>) — history is preserved, folded members stop reaching new "
+        "workers. Do not restate this obligation; execute it.")
 
 
 def _decision_in_scope(d, plan_id: str) -> bool:
@@ -6222,6 +6415,64 @@ def _decision_in_scope(d, plan_id: str) -> bool:
     """
     scope = getattr(d, "scope_plan_id", None)
     return not scope or scope == plan_id
+
+
+def _worker_brief_budget() -> int:
+    """Token budget for the decisions+banned share of a worker's injected
+    grounding (context-diet Phase 1a). Env-overridable so an operator can
+    tighten/loosen without a deploy; read at call time so tests can set it.
+    The grounding brief and briefing delta carry their OWN caps and are not
+    counted here."""
+    try:
+        return max(0, int(os.environ.get("EDP_WORKER_BRIEF_BUDGET", "6000")))
+    except (TypeError, ValueError):
+        return 6000
+
+
+def _rank_lb_for_action(decisions, plan_id: str, action) -> list:
+    """Rank load-bearing decisions for ONE action's injected grounding.
+
+    Order (context-diet Phase 1a): explicitly plan-scoped first, then
+    decisions whose text/title/subject mention any of the action's
+    concerns/specializations/spec_ids, then newest-first. This is what makes
+    the budget CUT the right tail: a legacy recipe-wide decision loses to a
+    scoped or relevant one, and among peers the stalest goes first.
+    """
+    tags = {t.strip().lower()
+            for t in (list(getattr(action, "concerns", []) or [])
+                      + list(getattr(action, "specializations", []) or [])
+                      + list(getattr(action, "spec_ids", []) or []))
+            if t and t.strip()}
+
+    def _key(d):
+        scoped = 0 if getattr(d, "scope_plan_id", None) == plan_id else 1
+        hay = " ".join(filter(None, (
+            getattr(d, "text", None), getattr(d, "title", None),
+            getattr(d, "subject", None)))).lower()
+        relevant = 0 if tags and any(t in hay for t in tags) else 1
+        try:
+            recency = -d.at.timestamp()
+        except (AttributeError, OSError, OverflowError, ValueError):
+            recency = 0.0
+        return (scoped, relevant, recency)
+
+    return sorted(decisions, key=_key)
+
+
+# The synthetic pointer id under which the Phase-1a elision marker text is
+# stored in the plan's by-id injection map. A reserved name, not a decision id.
+_ELISION_NOTE_ID = "elision-note"
+
+
+def _elision_marker(n_elided: int, n_total: int) -> str:
+    return (
+        f"*** {n_elided} of {n_total} active load-bearing decisions were NOT "
+        "injected into this brief (token budget). The ones delivered above "
+        "were ranked scope > relevance-to-your-action > recency, so what is "
+        "missing is the least likely to bind you — but do not assume. Before "
+        "building anything this grounding was meant to constrain, pull the "
+        "targeted remainder with search_context(query=<your action's topic>) "
+        "or ask your planner over the broker. ***")
 
 
 class _SpawnWorkerIn(BaseModel):
@@ -6500,6 +6751,22 @@ class PoolSpawnWorker(_ClaudeTool):
                             "assumption_gate_refused_pre_launch",
                             member_ids=member_ids)
                         return _assumption_gate_refusal(rg, blk)
+                # Context-diet Phase 2 — dispatch-time BACKSTOP of the
+                # step->plan flow-down gate (the incremental create_plan/
+                # add_action path never passes record_plan, so submission-
+                # time gating alone would miss it). Refused pre-launch, so
+                # the FSM pre-stamp is rolled back like every other guard.
+                _gaps = _step_flowdown_gaps(rg, p)
+                if _gaps:
+                    _rollback_failed_dispatch(
+                        self.ctx, m.plan_id, m.action_id,
+                        "step_flowdown_gate_refused_pre_launch",
+                        member_ids=member_ids)
+                    return _precondition(
+                        "pool_spawn_worker: the owning step declared "
+                        "cross-cutting obligations this plan does not "
+                        "cover:\n- " + "\n- ".join(_gaps)
+                        + "\nCover them on the plan, then re-dispatch.")
             a = next((x for x in p.actions
                       if x.action_id == m.action_id), None)
             # DESIGN-v7 1.4: resolve the whole unit, in the caller's declared
@@ -6769,15 +7036,26 @@ class PoolSpawnWorker(_ClaudeTool):
                     # be stamped into plan Y's a4, which would read it as its
                     # own instruction. `scope_plan_id=None` (every legacy
                     # decision) means recipe-wide — unchanged behaviour.
-                    lb = [(d.id, d.text) for d in rr.context.decisions
-                          if getattr(d, "load_bearing", False)
-                          and getattr(d, "status", "active") == "active"
-                          and _decision_in_scope(d, p.plan_id)]
-                    banned = [(x.id, x.text)
-                              for x in rr.context.rejected_options]
+                    # Context-diet Phase 1a: the stamp below used to ship EVERY
+                    # active in-scope load-bearing decision (measured live:
+                    # ~47.6k tokens/action, 94% of the brief, on a recipe with
+                    # 163 LB decisions). It is now a ranked BUDGET FILL:
+                    # plan-scoped > relevant-to-this-action > newest, cut at
+                    # _worker_brief_budget() with a LOUD per-member elision
+                    # marker (same doctrine as the grounding-brief truncation
+                    # banner — cut loudly or not at all).
+                    lb_all = [d for d in rr.context.decisions
+                              if getattr(d, "load_bearing", False)
+                              and getattr(d, "status", "active") == "active"
+                              and _decision_in_scope(d, p.plan_id)]
+                    brief_budget = _worker_brief_budget()
+                    banned, banned_elided = budget_fill(
+                        [(x.id, x.text) for x in rr.context.rejected_options],
+                        brief_budget)
+                    lb_budget = max(
+                        0, brief_budget - _approx_tokens(
+                            [t for _, t in banned]))
                     base_ptr: dict = {}
-                    if lb:
-                        base_ptr["load_bearing_decisions"] = [i for i, _ in lb]
                     if banned:
                         base_ptr["banned_options"] = [i for i, _ in banned]
                     changed = False
@@ -6837,9 +7115,27 @@ class PoolSpawnWorker(_ClaudeTool):
                     # over unchanged events recomputes the identical pointer
                     # and map, `changed` stays False, and the plan version
                     # does not churn.
+                    selected_lb: dict[str, str] = {}
                     for mem in members:
+                        # Phase 1a — rank + budget-fill THIS member's share of
+                        # the load-bearing decisions (its concerns/specs steer
+                        # relevance, so members of one batch may differ).
+                        ranked = _rank_lb_for_action(lb_all, p.plan_id, mem)
+                        lb_take, lb_elided = budget_fill(
+                            [(d.id, d.text) for d in ranked], lb_budget)
                         briefing = _briefing_delta(self.ctx, rr, p, mem)
                         ptr = dict(base_ptr)
+                        if lb_take:
+                            ptr["load_bearing_decisions"] = [
+                                i for i, _ in lb_take]
+                            selected_lb.update(dict(lb_take))
+                        if lb_elided or banned_elided:
+                            note_id = f"{_ELISION_NOTE_ID}-{mem.action_id}"
+                            ptr["elided_decisions"] = [note_id]
+                            note = _elision_marker(lb_elided, len(lb_all))
+                            if pmap.get(note_id) != note:
+                                pmap[note_id] = note
+                                changed = True
                         if briefing:
                             ptr["briefing"] = [i for i, _ in briefing]
                         if ptr and mem.injected_context_ids != ptr:
@@ -6853,11 +7149,10 @@ class PoolSpawnWorker(_ClaudeTool):
                             if pmap.get(i) != t:
                                 pmap[i] = t
                                 changed = True
-                    if base_ptr:
-                        for i, t in lb + banned:
-                            if pmap.get(i) != t:
-                                pmap[i] = t
-                                changed = True
+                    for i, t in list(selected_lb.items()) + banned:
+                        if pmap.get(i) != t:
+                            pmap[i] = t
+                            changed = True
                     if brief_text and pmap.get("grounding-brief") != \
                             brief_text:
                         pmap["grounding-brief"] = brief_text
@@ -11894,7 +12189,14 @@ class GetRecipeDigest(_ClaudeTool):
             {"step_id": s.step_id, "status": s.status, "kind": s.kind,
              "description": _digest_trim(s.description),
              "depends_on": s.depends_on, "execution": s.execution,
-             "plan_ref": s.plan_ref, "attempt": s.attempt}
+             "plan_ref": s.plan_ref, "attempt": s.attempt,
+             # Phase 2: the step's declared cross-cutting obligations ride
+             # the digest row so a planner sees them WITHOUT a full read
+             # (empty lists are omitted to keep legacy rows byte-identical).
+             **({"concerns": s.concerns}
+                if getattr(s, "concerns", None) else {}),
+             **({"acceptance_sketch": s.acceptance_sketch}
+                if getattr(s, "acceptance_sketch", None) else {})}
             for s in r.steps if s.status in ("pending", "in_progress")
         ]
 

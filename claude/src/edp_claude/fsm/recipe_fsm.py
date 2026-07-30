@@ -660,10 +660,15 @@ def recipe_context(r: Recipe) -> dict:
                 "window). If you already hold these decisions in your context "
                 "(steady state), do nothing. If you do NOT recognise them "
                 "(e.g. you were just compacted or restarted, or the count "
-                "above is unfamiliar), load the full text ON DEMAND, once, via "
-                f"read_object('recipe', recipe_id='{r.recipe_id}')"
-                ".context.decisions (or fetch a specific id). Do not expect "
-                "them re-shipped on the next tick."
+                "above is unfamiliar), re-ground the CHEAP way: "
+                "get_recipe_digest for the map, then search_context("
+                f"recipe_id='{r.recipe_id}', query=<your current topic>) for "
+                "the decisions that bear on what you are doing now. Do NOT "
+                "read_object the full recipe to re-learn decisions — on a "
+                "large recipe that one call hydrates every decision body "
+                "(oversize reads now degrade to the digest). Fetch a "
+                "specific id's full text only when the digest row is not "
+                "enough. Do not expect decisions re-shipped on the next tick."
             ),
         },
         "anti_patterns": _anti_patterns(r),

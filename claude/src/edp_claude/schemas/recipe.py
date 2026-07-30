@@ -277,12 +277,31 @@ class RecipeStep(BaseModel):
     # on-disk shape only; RecipeStore.load hydrates the full description
     # back before validation. Emission-gated (omitted when None).
     description_ref: str | None = None
+    # Context-diet Phase 2 — cross-cutting concerns DECLARED AT THE STEP.
+    # The Action layer has carried `concerns` since SPECIALIZATION-LAYERED-
+    # RULESETS.md, but the step layer could not, so a concern the neuron knew
+    # at map time died between recipe -> step -> plan and was left to the
+    # planner's loose interpretation (the reported worker-misalignment
+    # class). The flow-down gate (record_plan / dispatch) refuses a plan
+    # whose actions do not cover every step concern. Emission-gated (omitted
+    # when empty) so legacy recipes round-trip byte-identically.
+    concerns: list[str] = Field(default_factory=list)
+    # Phase 2 — the step's ACCEPTANCE SKETCH: free-text expected-outcome
+    # lines the neuron states up front ("the API rejects bad input with
+    # 4xx"). The planner formalizes each into action acceptance and maps it
+    # EXPLICITLY in Plan.sketch_covered_by (explicit mapping is testable;
+    # fuzzy text-matching is a lie generator). Emission-gated when empty.
+    acceptance_sketch: list[str] = Field(default_factory=list)
 
     @model_serializer(mode="wrap")
     def _ser_tiering_gate(self, handler):
         data = handler(self)
         if data.get("description_ref") is None:
             data.pop("description_ref", None)
+        if not data.get("concerns"):
+            data.pop("concerns", None)
+        if not data.get("acceptance_sketch"):
+            data.pop("acceptance_sketch", None)
         return data
 
 

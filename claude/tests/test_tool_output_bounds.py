@@ -232,14 +232,23 @@ async def test_query_objects_action_windowed_to_limit(env):
 # 5. P1 DEFAULT-UNCHANGED — full detail returns ALL rows; recap self-detect
 # ════════════════════════════════════════════════════════════════════════════
 async def test_read_object_full_returns_all_5000_decisions(env):
-    """detail='full' (the default) is byte-for-byte the pre-P1 behavior: every
-    decision row is present, nothing windowed. Full fidelity is one call away."""
+    """Context-diet Phase 1d: a full read past 3x BUDGET degrades to the
+    digest + a loud oversize note (a 5000-decision hydration blows a whole
+    context window); the explicit confirm_oversize override still hands back
+    every row — full fidelity stays one (deliberate) call away."""
     r = _recipe_scaled(5000, recipe_id="r-full-5000")
     env.ctx.recipes.save(r)
 
     got = await env.call("read_object", type="recipe",
                          ids={"recipe_id": r.recipe_id})   # detail defaults full
     assert isinstance(got, ToolOk), got
+    obj = got.data["object"]
+    assert obj["_detail"] == "digest" and obj["oversize"] is True
+    assert "confirm_oversize" in obj["full_available_via"]
+
+    got = await env.call("read_object", type="recipe",
+                         ids={"recipe_id": r.recipe_id,
+                              "confirm_oversize": True})
     obj = got.data["object"]
     assert "_detail" not in obj                             # NOT a digest
     assert len(obj["context"]["decisions"]) == 5000         # ALL rows returned

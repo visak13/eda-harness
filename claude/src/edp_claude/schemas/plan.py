@@ -411,6 +411,13 @@ class Plan(BaseModel):
     # TEXT by-id into every worker's grounding and the reviewer brief; this
     # field is the addressable pointer. Emission-gated below — o6.
     grounding_brief_path: str | None = None
+    # Context-diet Phase 2 — the EXPLICIT sketch->action coverage map:
+    # {<step acceptance_sketch line>: [action_id, …]}. The owning step
+    # declares WHAT done looks like (RecipeStep.acceptance_sketch); the
+    # planner declares WHICH actions prove each line. Explicit mapping is
+    # what makes the flow-down gate testable — fuzzy text-matching would
+    # manufacture coverage. Emission-gated below (omitted when empty).
+    sketch_covered_by: dict | None = None
 
     @model_serializer(mode="wrap")
     def _ser_injected_context_gate(self, handler):
@@ -430,7 +437,8 @@ class Plan(BaseModel):
         if not data.get("verify_leg_emitted"):
             data.pop("verify_leg_emitted", None)
         for k in ("parked", "grounded_at", "grounding_fingerprint",
-                  "staleness_delta_at", "grounding_brief_path"):
+                  "staleness_delta_at", "grounding_brief_path",
+                  "sketch_covered_by"):
             if not data.get(k):
                 data.pop(k, None)
         return data

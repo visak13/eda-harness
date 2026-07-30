@@ -116,6 +116,34 @@ def budget_report(payload, budget=BUDGET) -> dict:
     return {"approx_tokens": size, "budget": budget, "oversize": size > budget}
 
 
+def budget_fill(ranked, budget):
+    """Greedy PREFIX fill over ``ranked`` ``(key, text)`` pairs.
+
+    Takes items in rank order until adding the next would push the cumulative
+    :func:`approx_tokens` size past ``budget``, then STOPS — it never skips
+    ahead to squeeze in a smaller later item, because rank order carries
+    meaning (scope > relevance > recency) and bin-packing would silently
+    reorder that meaning.
+
+    The FIRST item is always taken even when it alone exceeds ``budget``:
+    delivering one oversize grounding item beats delivering none, and the
+    caller's budget_report will flag it.
+
+    Returns ``(taken, elided)`` — the accepted prefix and how many ranked
+    items were left out.
+    """
+    taken = []
+    used = 0
+    ranked = list(ranked)
+    for i, (key, text) in enumerate(ranked):
+        size = approx_tokens(text)
+        if taken and used + size > budget:
+            return taken, len(ranked) - i
+        taken.append((key, text))
+        used += size
+    return taken, 0
+
+
 def assert_bounded(payload, budget=BUDGET):
     """Guard a payload against the token ``budget``.
 
