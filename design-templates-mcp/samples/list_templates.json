@@ -1,0 +1,196 @@
+{
+  "ok": true,
+  "root": "C:\\Projects\\Learning\\eda-designs",
+  "count": 21,
+  "templates": [
+    {
+      "kind": "theme",
+      "name": "company",
+      "description": "Design direction 'company': token JSON source of truth plus generated CSS-variable output.",
+      "files": [
+        "tokens/themes/company/brand.json",
+        "tokens/themes/company/color.json",
+        "tokens/themes/company/radii.json",
+        "tokens/themes/company/spacing.json",
+        "tokens/themes/company/typography.json",
+        "dist/themes/company/variables.css"
+      ]
+    },
+    {
+      "kind": "theme",
+      "name": "default",
+      "description": "Design direction 'default': token JSON source of truth plus generated CSS-variable output.",
+      "files": [
+        "tokens/themes/default/brand.json",
+        "tokens/themes/default/color.json",
+        "tokens/themes/default/radii.json",
+        "tokens/themes/default/spacing.json",
+        "tokens/themes/default/typography.json",
+        "dist/themes/default/variables.css"
+      ]
+    },
+    {
+      "kind": "theme",
+      "name": "midnight",
+      "description": "Design direction 'midnight': token JSON source of truth plus generated CSS-variable output.",
+      "files": [
+        "tokens/themes/midnight/brand.json",
+        "tokens/themes/midnight/color.json",
+        "tokens/themes/midnight/radii.json",
+        "tokens/themes/midnight/spacing.json",
+        "tokens/themes/midnight/typography.json",
+        "dist/themes/midnight/variables.css"
+      ]
+    },
+    {
+      "kind": "component",
+      "name": "Button",
+      "description": "Token-consuming React component 'Button' (tsx + css).",
+      "files": [
+        "adapters/react/src/components/Button.css",
+        "adapters/react/src/components/Button.tsx"
+      ]
+    },
+    {
+      "kind": "component",
+      "name": "Card",
+      "description": "Token-consuming React component 'Card' (tsx + css).",
+      "files": [
+        "adapters/react/src/components/Card.css",
+        "adapters/react/src/components/Card.tsx"
+      ]
+    },
+    {
+      "kind": "scaffold",
+      "name": "react-adapter",
+      "description": "App/page scaffold 'react-adapter': adapter wiring showing how to consume design tokens at runtime.",
+      "files": [
+        "adapters/react/index.html",
+        "adapters/react/src/main.tsx",
+        "adapters/react/src/App.tsx",
+        "adapters/react/src/App.css"
+      ]
+    },
+    {
+      "kind": "scaffold",
+      "name": "theme-provider",
+      "description": "App/page scaffold 'theme-provider': adapter wiring showing how to consume design tokens at runtime.",
+      "files": [
+        "adapters/react/src/theme/ThemeProvider.tsx",
+        "adapters/react/src/theme/themes.ts"
+      ]
+    },
+    {
+      "kind": "doc",
+      "name": "readme",
+      "description": "Documentation file 'README.md'.",
+      "files": [
+        "README.md"
+      ]
+    },
+    {
+      "kind": "doc",
+      "name": "docs-adding-a-design-direction",
+      "description": "Documentation file 'docs/adding-a-design-direction.md'.",
+      "files": [
+        "docs/adding-a-design-direction.md"
+      ]
+    },
+    {
+      "kind": "doc",
+      "name": "docs-behavior-layer-design",
+      "description": "Documentation file 'docs/behavior-layer-design.md'.",
+      "files": [
+        "docs/behavior-layer-design.md"
+      ]
+    },
+    {
+      "kind": "doc",
+      "name": "docs-behavior-precedent-research",
+      "description": "Documentation file 'docs/behavior-precedent-research.md'.",
+      "files": [
+        "docs/behavior-precedent-research.md"
+      ]
+    },
+    {
+      "kind": "doc",
+      "name": "docs-foundation-state-audit",
+      "description": "Documentation file 'docs/foundation-state-audit.md'.",
+      "files": [
+        "docs/foundation-state-audit.md"
+      ]
+    },
+    {
+      "kind": "doc",
+      "name": "docs-guidelines",
+      "description": "Documentation file 'docs/guidelines.md'.",
+      "files": [
+        "docs/guidelines.md"
+      ]
+    },
+    {
+      "kind": "doc",
+      "name": "docs-page-scaffold",
+      "description": "Documentation file 'docs/page-scaffold.md'.",
+      "files": [
+        "docs/page-scaffold.md"
+      ]
+    },
+    {
+      "kind": "doc",
+      "name": "docs-readme",
+      "description": "Documentation file 'docs/README.md'.",
+      "files": [
+        "docs/README.md"
+      ]
+    },
+    {
+      "kind": "doc",
+      "name": "docs-separation-architecture",
+      "description": "Documentation file 'docs/separation-architecture.md'.",
+      "files": [
+        "docs/separation-architecture.md"
+      ]
+    },
+    {
+      "kind": "doc",
+      "name": "docs-separation-audit-s9",
+      "description": "Documentation file 'docs/separation-audit-s9.md'.",
+      "files": [
+        "docs/separation-audit-s9.md"
+      ]
+    },
+    {
+      "kind": "doc",
+      "name": "docs-theme-id-mapping",
+      "description": "Documentation file 'docs/theme-id-mapping.md'.",
+      "files": [
+        "docs/theme-id-mapping.md"
+      ]
+    },
+    {
+      "kind": "doc",
+      "name": "tokens-readme",
+      "description": "Documentation file 'tokens/README.md'.",
+      "files": [
+        "tokens/README.md"
+      ]
+    },
+    {
+      "kind": "doc",
+      "name": "adapters-readme",
+      "description": "Documentation file 'adapters/README.md'.",
+      "files": [
+        "adapters/README.md"
+      ]
+    },
+    {
+      "kind": "doc",
+      "name": "adapters-react-readme",
+      "description": "Documentation file 'adapters/react/README.md'.",
+      "files": [
+        "adapters/react/README.md"
+      ]
+    }
+  ]
+}

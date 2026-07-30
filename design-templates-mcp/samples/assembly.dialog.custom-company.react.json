@@ -1,0 +1,102 @@
+{
+  "ok": true,
+  "assembled_request": {
+    "theme": "custom/company",
+    "behavior_namespace": "custom",
+    "behavior_name": "dialog",
+    "framework": "react",
+    "transport": "cssvars"
+  },
+  "note": "Consumer-side ASSEMBLE per docs/assemble-contract.md §4.2. The MCP does NOT compose (§4.3); these primitives were fetched per-axis and stitched here in the fixed a..e EMIT order.",
+  "emit_order": [
+    {
+      "order": "a",
+      "step": "mount theme.variablesCss + brand fill",
+      "axis": "theme",
+      "source": "company",
+      "files": [
+        "dist/themes/company/variables.css"
+      ],
+      "brand": {
+        "on": 1,
+        "logo": "url(data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2048%2048'%3E%3Crect%20x='2'%20y='2'%20width='44'%20height='44'%20rx='12'%20fill='%23ffffff'%20stroke='%231d4ed8'%20stroke-width='2.5'/%3E%3Ccircle%20cx='18'%20cy='19'%20r='7.5'%20fill='%23facc15'/%3E%3Cpath%20d='M28%2011%20L41%2031%20L18%2031%20Z'%20fill='%23dc2626'/%3E%3Crect%20x='11'%20y='32'%20width='26'%20height='6'%20rx='3'%20fill='%231d4ed8'/%3E%3C/svg%3E)"
+      }
+    },
+    {
+      "order": "b",
+      "step": "mount neutral runtime",
+      "axis": "runtime",
+      "source": "core/runtime/machine-runtime.js"
+    },
+    {
+      "order": "c",
+      "step": "mount behavior machine + connect.react + parts",
+      "axis": "behavior",
+      "machine": "core/behaviors/dialog/machine.js",
+      "connect": "core/behaviors/dialog/connect.react.tsx",
+      "parts": "core/behaviors/dialog/parts.md",
+      "delta_machine": "custom/behaviors/dialog/machine.patch.js",
+      "delta_parts": "custom/behaviors/dialog/parts.extend.md"
+    },
+    {
+      "order": "d",
+      "step": "mount core designHooks THEN custom designHooks",
+      "axis": "design",
+      "core_designHooks": [
+        "core/design/dialog.css"
+      ],
+      "custom_designHooks": [
+        "custom/design/dialog.css"
+      ]
+    },
+    {
+      "order": "e",
+      "step": "wire via tech.scaffold",
+      "axis": "technology",
+      "scaffold_summary": "Wiring boilerplate to bind ONE behavior's neutral machine to a React component tree and feed it a theme via CSS custom properties. Colors come from the THEME primitive (fetch_theme) and structure/parts from the BEHAVIOR primitive (fetch_behavior_primitive); this scaffold only connects them — it owns no color and no structure."
+    }
+  ],
+  "apply_delta": {
+    "namespace": "custom",
+    "rule": "monotonic add-only (states/events/context/parts); delete/rebind = HARD ERROR",
+    "merge_check": {
+      "core_states_present": true,
+      "core_context_keys_present": true,
+      "core_state_names": [
+        "closed",
+        "open"
+      ],
+      "added_states": [
+        "minimized"
+      ],
+      "added_context_keys": [
+        "brandHeader"
+      ],
+      "patch_violations": [],
+      "additive_only": true
+    },
+    "additive_only": true
+  },
+  "primitives": {
+    "theme": {
+      "ok": true,
+      "name": "custom/company",
+      "dir": "company"
+    },
+    "behavior_core": {
+      "ok": true,
+      "name": "dialog",
+      "namespace": "core"
+    },
+    "behavior_custom": {
+      "ok": true,
+      "name": "dialog",
+      "namespace": "custom"
+    },
+    "tech": {
+      "ok": true,
+      "framework": "react",
+      "transport": "cssvars"
+    }
+  }
+}

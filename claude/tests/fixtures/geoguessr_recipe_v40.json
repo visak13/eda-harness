@@ -1,0 +1,286 @@
+{
+  "recipe_id": "recipe-create-a-machine-learning-algorithm-for-4b5305",
+  "user_goal_verbatim": "Create a machine learning algorithm for GeoGuessr-style image geolocation (own the ML logic, frameworks/pretrained NNs allowed) that takes a single static Street View image and predicts location, targeting near-exact (5k) matches via milestones (country\u2192region\u2192city\u2192block\u2192street\u2192exact). Discover/learn \"metas\" automatically, train on a free curated dataset (e.g. from HuggingFace), support pause/resume training, and test against single static Street View images. Base dir C:\\Projects\\GeoGuessr. No paid tools/datasets.",
+  "user_goal_distilled": "Create a machine learning algorithm for GeoGuessr-style image geolocation (own the ML logic, frameworks/pretrained NNs allowed) that takes a single static Street View image and predicts location, targeting near-exact (5k) matches via milestones (country\u2192region\u2192city\u2192block\u2192street\u2192exact). Discover/learn \"metas\" automatically, train on a free curated dataset (e.g. from HuggingFace), support pause/resume training, and test against single static Street View images. Base dir C:\\Projects\\GeoGuessr. No paid tools/datasets.",
+  "domain": "ml-geolocation",
+  "state": "executing",
+  "comprehension": {
+    "branches": [],
+    "expected_outcomes": [
+      {
+        "id": "o1",
+        "description": "A worldwide hierarchical single-image geolocation predictor: given one static street-level image, it always returns a best-guess location (lat/lon or geocell) + a confidence score + an estimated error radius, predicting country (primary), region/admin-1, and a coarse geocell/city tier. Built on generic pretrained image backbones (e.g. CLIP/ResNet) with the geolocation reasoning (geocell design, hierarchy, learned \"metas\") designed by us. Trained on free, license-clean datasets (Mapillary/KartaView/open geotagged sets), with pause/resume checkpointing sized for a 6GB-VRAM RTX 4050 laptop.",
+        "verification": "On a held-out test split never seen in training, run the predictor over all test images and produce a metrics report (JSON + human-readable) containing: country top-1 accuracy, region top-1 accuracy, and geodesic-error percentiles (median/p25/p75) in km. Targets I will set and prove (sensible bar, reviewable by user): country top-1 \u2265 80%, median geodesic error \u2264 ~1000 km worldwide. The report must show the actuals against these targets on the held-out set.",
+        "met": false,
+        "met_evidence": null
+      },
+      {
+        "id": "o2",
+        "description": "An embedding-based nearest-neighbour RETRIEVAL subsystem that delivers near-exact (\"5k-zone\") location hits when a query image is near street-level imagery we already hold. It builds a vector index over a free gallery (Mapillary/KartaView geotagged images), embeds the query image with the same encoder, and returns the geolocation of the top matches; it integrates with the hierarchical predictor as a confidence-gated refinement, falling back to the coarse guess when no strong match exists.",
+        "verification": "On a held-out evaluation where some test images ARE near gallery coverage and some are NOT: produce a report showing (a) near-exact hit-rate (fraction within 5 km / 1 km) on the covered subset, target \u2265 40% within ~5km on covered images; (b) that the combined system's overall geodesic-error percentiles are no worse than the hierarchical predictor alone on the uncovered subset (graceful fallback proven, not regressing). Report saved as JSON + readable summary.",
+        "met": false,
+        "met_evidence": null
+      },
+      {
+        "id": "o3",
+        "description": "A learn-from-mistakes / self-improvement loop with automatic \"meta\" discovery: across training/evaluation rounds the system logs its per-image errors, surfaces the visual cues (\"metas\") most predictive of location (learned automatically, e.g. via feature attribution / clustering \u2014 not hand-coded rules), and measurably improves on the held-out set across at least two successive rounds. A human-readable METAS log documents discovered cues over time.",
+        "verification": "Show a round-over-round metrics comparison (\u22652 rounds) on the SAME held-out set demonstrating improvement in at least one headline metric (country top-1 or median error). Produce a metas report listing automatically-discovered predictive cues with supporting evidence (e.g. attribution maps or cluster exemplars). Both artifacts saved to disk under the project docs.",
+        "met": false,
+        "met_evidence": null
+      },
+      {
+        "id": "o4",
+        "description": "Pause/resume-capable training infrastructure under strict free-only constraints: training checkpoints to disk and resumes cleanly from the last checkpoint (the machine is not available 24/7); the entire pipeline uses only free, license-clean data/tools (Mapillary/KartaView/open datasets \u2014 NO Google billing, NO paid datasets/software); sized to run on a 6GB-VRAM RTX 4050 laptop (mixed precision, gradient checkpointing, precomputed embeddings; heavy fine-tuning may offload to free Kaggle/Colab). Process-lifecycle hygiene: no name/image-wide process kills (broker/pool/MCP are Python); workers tear down their own spawned PIDs.",
+        "verification": "Demonstrate: (a) a training run interrupted mid-way and successfully resumed from checkpoint with no loss of prior progress (logs/checkpoint files show continuity); (b) a documented dependency/data manifest confirming all sources are free + license-permissive (no Google API key required to TRAIN, and a stated license for each dataset). Captured as logs + a manifest file on disk.",
+        "met": false,
+        "met_evidence": null
+      },
+      {
+        "id": "o5",
+        "description": "An end-to-end single-static-image inference + test harness with thorough, chronological/categorical documentation. Given ONE static street-level image (no panning), the harness runs the full system and outputs the predicted location, confidence, error estimate, the tier reached (country/region/city/near-exact), and which \"metas\"/retrieval matches drove the guess. Test images are sourced from the FREE Mapillary/KartaView alternative to Google. Documentation is maintained as the project knowledge store (chronological dev log + categorized design/architecture/data/metrics docs).",
+        "verification": "Run the harness on a set of held-out single static images and capture its outputs to disk (predicted vs true location, error in km, tier, rationale) \u2014 proving the single-image path works without Google. Confirm the docs tree exists with: a chronological dev log, a data/licensing manifest, an architecture/design doc, and the metrics + metas reports. Verified via file existence + readable captured run outputs.",
+        "met": false,
+        "met_evidence": null
+      }
+    ],
+    "curiosity_cleared": true,
+    "user_signoff": false,
+    "signoff_quote": "",
+    "baseline": {
+      "n_steps": 5,
+      "n_outcomes": 5
+    }
+  },
+  "specialist_consults": [
+    {
+      "consult_id": "c1",
+      "specialist_id": "feasibility",
+      "query": "Is \"5k/near-exact for ALL images, 100% accuracy\" feasible for single-static-image global geolocation on a personal machine with free datasets, and what's the realistic per-tier bar?",
+      "verdict": {
+        "feasible": true,
+        "blockers": [],
+        "requires_user_input": true,
+        "evidence": "BUILDING the system is feasible (no physical/sensor/irreversible-action blocker; image geolocation is a known ML domain). BUT the stated acceptance bar '100% accuracy / 5k near-exact for ALL images' is NOT achievable: single-image global street-EXACT geolocation is an open research problem. Realistic free-/personal-compute bars: country ~85-95% (very achievable, e.g. StreetCLIP/PIGEON-style), region/admin-1 ~50-70%, city plausible only for well-covered urban areas, block/street/exact only via embedding nearest-neighbour retrieval against a gallery you actually hold images for (works where coverage overlaps, fails on unseen roads). So '5k for all' is aspirational, not a definition-of-done. requires_user_input=true to reset the acceptance bar with the user: which tier is the recipe's DoD vs roadmap, and confirm retrieval-vs-classification framing."
+      },
+      "at": "2026-06-08T16:43:29.513636Z"
+    }
+  ],
+  "ocak_audit": null,
+  "inbox_cursor": null,
+  "steps": [
+    {
+      "step_id": "s1",
+      "kind": "work",
+      "description": "STEP 1 \u2014 Foundation & data pipeline. Scaffold the project at C:\\Projects\\GeoGuessr (empty scratch dir): Python env via `uv` (its own .venv), a clear dir structure (src/, data/, models/, docs/, tests/, scripts/), a docs skeleton (chronological dev log + categorized design/data/metrics/metas folders), and a config. Research and SELECT free, license-clean street-level geotagged datasets (e.g. Mapillary, KartaView, im2gps/MP-16 or YFCC100M-GPS subsets) \u2014 document each source's license in a data manifest. Build a pause/resume-friendly dataset downloader/ingest (idempotent, resumable, checkpoints partial progress) and create a frozen held-out TEST split that NO training step may touch. Confirm CUDA/GPU usability for PyTorch on the RTX 4050.\nCONSTRAINTS (recipe-wide, honor in every action): FREE-ONLY \u2014 no Google API/billing, no paid datasets/tools; Mapillary/KartaView/open sets only, for BOTH train and the single-image test. Hardware = NVIDIA RTX 4050 Laptop 6GB VRAM / 15.7GB RAM / Win11 \u2192 plan for mixed precision, gradient checkpointing, precomputed embeddings; heavy fine-tune may offload to free Kaggle/Colab. Pause/resume mandatory. PROCESS HYGIENE: NEVER name/image-wide python or node kills (broker/pool/MCP are python) \u2014 stop only your own PIDs by specific PID. VERIFY GATES: this host cannot run command-kind verify (no bash) \u2014 use ONLY file_exists / file_min_bytes / glob_matches verify kinds. SPECIALIST: do the engineering grounded in a GENERAL \"Python ML + computer-vision + geospatial/PyTorch\" specialist (stamp the action's spec_id); the specialist trains on the STACK/CRAFT, project facts live in the brief \u2014 you are PRE-AUTHORIZED to create_specialization \u2192 train_specialist \u2192 approve if a suitable one doesn't exist. Maintain the docs as you go (chronological + categorical).",
+      "status": "done",
+      "depends_on": [],
+      "execution": "spawn_planner",
+      "plan_ref": null,
+      "outputs": [],
+      "rationale_for_next": "",
+      "attempt": 0
+    },
+    {
+      "step_id": "s2",
+      "kind": "work",
+      "description": "STEP 2 \u2014 Hierarchical geolocation predictor (core ML model, Outcome 1). Design the geo-LOGIC ourselves: a geocell/hierarchy scheme (country \u2192 admin-1/region \u2192 coarse cell) on top of a generic pretrained image backbone (e.g. CLIP/ResNet features) \u2014 own the head, the cell design, the loss/hierarchy. Implement a training loop with pause/resume CHECKPOINTING (resume cleanly from last checkpoint), mixed precision + gradient checkpointing for the 6GB GPU. Train on the Step-1 datasets; the model must ALWAYS output a best-guess location + confidence + estimated error radius + the tier reached. Produce a metrics report (JSON + readable) on the FROZEN held-out test split: country top-1, region top-1, geodesic-error percentiles (median/p25/p75 km). Target bar to prove: country top-1 \u226580%, median error \u2264~1000km (report actuals vs targets honestly).\nCONSTRAINTS: same recipe-wide constraints as Step 1 \u2014 FREE-ONLY (Mapillary/KartaView/open), RTX 4050 6GB sizing (heavy fine-tune may offload to free Kaggle/Colab), pause/resume mandatory, NO name/image-wide process kills, verify gates use ONLY file_exists/file_min_bytes/glob_matches (no command-kind), execute grounded in the general Python-ML/CV/geospatial specialist (stamp spec_id), keep docs current. Read Step-1's data manifest + split; do NOT touch the held-out test split during training.",
+      "status": "done",
+      "depends_on": [],
+      "execution": "spawn_planner",
+      "plan_ref": null,
+      "outputs": [],
+      "rationale_for_next": "",
+      "attempt": 0
+    },
+    {
+      "step_id": "s3",
+      "kind": "work",
+      "description": "STEP 3 \u2014 Embedding nearest-neighbour retrieval subsystem (Outcome 2). Build a vector index over a free gallery of geotagged street-level images (Mapillary/KartaView), embedding each with an image encoder; at query time embed the input image with the SAME encoder and return the geolocation of the top-k matches. Integrate as a CONFIDENCE-GATED refinement of the Step-2 hierarchical predictor: when a strong near match exists, return the near-exact (\"5k-zone\") location; otherwise fall back gracefully to the coarse hierarchical guess (must NOT regress the uncovered case). Handle Google's cross-year image-quality variance (robust embeddings / augmentation). Produce a report on a held-out eval with covered + uncovered subsets: near-exact hit-rate (fraction within 5km / 1km) on the covered subset (target \u226540% within ~5km), and proof that combined geodesic-error percentiles on the uncovered subset are no worse than Step-2 alone.\nCONSTRAINTS: same recipe-wide constraints \u2014 FREE-ONLY, RTX 4050 6GB sizing (index must fit memory/disk budget; consider on-disk ANN like FAISS/hnswlib), pause/resume for index builds, NO name/image-wide process kills, verify gates ONLY file_exists/file_min_bytes/glob_matches, execute grounded in the Python-ML/CV/geospatial specialist (stamp spec_id), keep docs current. Reuse Step-1 data + Step-2 model artifacts.",
+      "status": "done",
+      "depends_on": [],
+      "execution": "spawn_planner",
+      "plan_ref": null,
+      "outputs": [],
+      "rationale_for_next": "",
+      "attempt": 0
+    },
+    {
+      "step_id": "s4",
+      "kind": "work",
+      "description": "STEP 4 \u2014 Learn-from-mistakes loop + automatic \"meta\" discovery (Outcome 3). Build the self-improvement loop: log per-image errors on the held-out set each round; AUTOMATICALLY discover the visual cues (\"metas\") most predictive of location \u2014 learned, NOT hand-coded (e.g. feature attribution / saliency, embedding clustering, error-stratified analysis surfacing what distinguishes hard vs easy images). Feed discoveries back (hard-example mining / targeted augmentation / cell rebalancing) and run \u22652 successive rounds on the SAME frozen held-out set, demonstrating measurable improvement in at least one headline metric (country top-1 or median error). Produce: a round-over-round metrics comparison and a human-readable METAS report listing discovered cues with evidence (attribution maps or cluster exemplars). Also feed condensed learnings back into the Python-ML/CV specialist via re-train (learning flowback) so future work inherits them.\nCONSTRAINTS: same recipe-wide constraints \u2014 FREE-ONLY, RTX 4050 6GB sizing, pause/resume, NO name/image-wide process kills, verify gates ONLY file_exists/file_min_bytes/glob_matches, execute grounded in the Python-ML/CV/geospatial specialist (stamp spec_id), keep docs current. Build on Step-2 + Step-3 artifacts and the same held-out split.",
+      "status": "in_progress",
+      "depends_on": [],
+      "execution": "spawn_planner",
+      "plan_ref": null,
+      "outputs": [],
+      "rationale_for_next": "",
+      "attempt": 0
+    },
+    {
+      "step_id": "s5",
+      "kind": "work",
+      "description": "STEP 5 \u2014 Single-static-image inference harness, end-to-end eval, pause/resume proof & documentation (Outcomes 4 & 5). Build a CLI/harness that takes ONE static street-level image (no panning) and outputs: predicted location, confidence, estimated error, tier reached (country/region/city/near-exact), and the rationale (which metas/retrieval matches drove the guess). Source test images from the FREE Mapillary/KartaView alternative to Google (single static images). Run the harness over held-out single images and CAPTURE outputs to disk (predicted vs true, error in km, tier, rationale). Demonstrate the pause/resume proof: interrupt a training run mid-way and resume cleanly from checkpoint with continuity shown in logs. Finalize the docs as the project knowledge store: chronological dev log, data/licensing manifest (every source free + license stated, no Google key needed to train), architecture/design doc, and the consolidated metrics + metas reports. NOTE: outcome verification for any UI/runtime behavior needs ACTUAL executed evidence captured to disk (do not infer from source) \u2014 and the final user blessing on a real single-image run is required before closing.\nCONSTRAINTS: same recipe-wide constraints \u2014 FREE-ONLY (no Google), RTX 4050 6GB sizing, pause/resume mandatory, NO name/image-wide process kills, verify gates ONLY file_exists/file_min_bytes/glob_matches, execute grounded in the Python-ML/CV/geospatial specialist (stamp spec_id), docs thorough + chronological/categorical. Integrate all prior steps' artifacts.",
+      "status": "pending",
+      "depends_on": [],
+      "execution": "spawn_planner",
+      "plan_ref": null,
+      "outputs": [],
+      "rationale_for_next": "",
+      "attempt": 0
+    },
+    {
+      "step_id": "s6",
+      "kind": "work",
+      "description": "STEP 6 \u2014 STAGE-B full predictor training (max-accuracy push; completes Outcome 1, which s2 only POC'd). CONTEXT: s2 closed at the Stage-A POC (44% country / 8.5% region, cheapest frozen generic-CLIP linear head) BEFORE the user's Stage-B greenlight landed. The user EXPLICITLY approved full training and rejected modest framing \u2014 goal is to PUSH THE FRONTIER / maximize accuracy (decision d3). This step runs the real training the POC only de-risked.\nWORK: Take the predictor from the 44% POC floor toward the maximum achievable, applying the Stage-B levers aggressively and in impact order: (1) swap to a geo-tuned backbone (StreetCLIP / open_clip) \u2014 biggest country lever, embeddings MUST stay transferable to s3 retrieval; (2) LP-FT low-LR unfreeze / fine-tune on the Google-SV train split; (3) country-conditioned region head + haversine label smoothing; (4) geocell head + ProtoNet (PIGEON-style) if it pays. Use perspective-crop representation (beat whole-pano in POC). Checkpoint/resume EVERY epoch (user not 24/7). Measure on the GSV VAL split during dev; only at the very end produce the honest report on the FROZEN TEST split: country/region top-1, geodesic median/P75/P90, acc@{25,200,750,2500}km. Treat a3's numbers (country 0.50-0.60, region 0.12-0.20, median 1500-2500km) as a FLOOR-TO-BEAT + progress gauge, NOT a ceiling \u2014 beat the previous number every round, climb toward the exact/5k north-star. Address the 3 a3 non-blocking CRs (crop-overlap wording, panorama_handling 2:1-vs-5.4:1 strip, 69-class coord-derived universe note) in docs. Independent domain-review leg before close.\nCONSTRAINTS: FREE-ONLY (OSV/Google-SV via HF, no billing); RTX 4050 6GB sizing (AMP, grad-checkpoint, grad-accum, embedding cache; heavy fine-tune may offload to free Kaggle/Colab); pause/resume mandatory; NO name/image-wide process kills (own PIDs only, by specific PID); verify gates ONLY file_exists/file_min_bytes/glob_matches; execute grounded in spec-python-ml-cv-geospatial-engineer (stamp spec_id); keep docs current (chronological + categorical). Reuse s1 data + frozen split + s2 POC artifacts (embedding_cache.py, poc_head.py, geocell_hierarchy.md). Do NOT touch the frozen test split until the final report.",
+      "status": "pending",
+      "depends_on": [],
+      "execution": "spawn_planner",
+      "plan_ref": null,
+      "outputs": [],
+      "rationale_for_next": "",
+      "attempt": 0
+    },
+    {
+      "step_id": "s7",
+      "kind": "work",
+      "description": "STEP 7 \u2014 Re-architecture to the EXPLAINABLE META-REASONING CORE (per load-bearing decision d4; supersedes the retrieval-first emphasis). TWO deliverables: (A) FIRST, author the AUTHORITATIVE strategy doc at C:\\Projects\\GeoGuessr\\docs\\design\\CORE-STRATEGY.md capturing d4 in full so future improvements build on it and do not re-guess \u2014 the human-like meta-reasoning core, the interpretable clue set (OCR/script, drive-side, sun/hemisphere, plate style, poles/signage/flags, vegetation/biome, road geometry, architecture, camera-generation artifacts), learn-its-own-metas via FINE-TUNING (not frozen-borrow) + interpretability, explainable evidence FUSION with per-prediction rationale, retrieval demoted to a local fine-pin, and the learn-from-mistakes loop; cross-reference it from the architecture docs. (B) Produce a concrete, decomposed BUILD PLAN/roadmap for the meta-reasoning system: which clue-extractors to build first (recommend highest-value-first: OCR/script + drive-side + plate/flag detection), how each is obtained FREE (derivable signals / free pretrained detectors / fine-tune+interpretability \u2014 we only have lat/lon/country labels), the fusion+explainability design, how s2's StreetCLIP predictor folds in as ONE evidence input (fine-tuned not frozen), and how retrieval becomes a local pin. The build plan should be sized into follow-on steps (do not build all extractors here; design + doc + a first proof-of-concept clue extractor is enough for this step). Use discovery/judgement \u2014 this is a craft/design task, do not just transcribe my words.\nCONSTRAINTS: FREE-ONLY (OCR/detectors must be free/open, e.g. Tesseract/PaddleOCR, open detection models; no paid APIs); RTX 4050 6GB sizing (heavy fine-tune/embedding may offload to free Kaggle/Colab); pause/resume; NO name/image-wide process kills; verify gates ONLY file_exists/file_min_bytes/glob_matches; execute grounded in spec-python-ml-cv-geospatial-engineer (stamp spec_id); keep docs current. Build on s1 data + frozen split + s2 predictor + s3 retrieval-POC findings (gallery density limiter).",
+      "status": "done",
+      "depends_on": [],
+      "execution": "spawn_planner",
+      "plan_ref": null,
+      "outputs": [],
+      "rationale_for_next": "",
+      "attempt": 0
+    },
+    {
+      "step_id": "s8",
+      "kind": "work",
+      "description": "STEP 8 \u2014 Drive the meta-reasoning roadmap forward: next clue-extractor(s) + the EXPLAINABLE FUSION SKELETON (per META-REASONING-BUILDPLAN.md / decision d4). Concretely: (A) build the next highest-value clue extractor \u2014 DRIVE-SIDE (left/right traffic), a free DERIVABLE signal (road-marking/lane analysis; supervision derivable from coordinates/geometry, no new labels), emitting a structured evidence record (distribution over country/region + confidence + named cue tokens like drive_side=left); run it on the held-out test with captured evidence. (B) Build the EXPLAINABLE FUSION SKELETON (BUILDPLAN \u00a74): consume structured evidence records from the available signals so far \u2014 the s2 StreetCLIP prior + OCR/script meta (a3) + drive-side \u2014 and fuse them into a calibrated country->region guess WITH a human-readable rationale per prediction and attributable per-meta contributions; measure on held-out (vs s2 prior alone \u2014 show fusion does not regress and ideally lifts where metas fire). Keep each meta's contribution inspectable (the d4 explainability requirement). (C) DOCUMENT in the roadmap a \"FUTURE STAGE B \u2014 multi-feed/multi-branch NN consolidation\" section per decision d5 (deferred until the modular pipeline works; must preserve explainability), so future sessions pick it up deliberately. Use discovery/judgement (craft task) \u2014 do not just transcribe; sequence further metas per the roadmap in follow-on steps, don't build them all here.\nCONSTRAINTS: FREE-ONLY (open detectors/derivable signals; no paid APIs/Google billing); RTX 4050 6GB sizing (heavy work offloadable to free Kaggle/Colab); pause/resume; NO name/image-wide process kills (own PIDs only); verify gates ONLY file_exists/file_min_bytes/glob_matches; execute grounded in spec-python-ml-cv-geospatial-engineer (stamp spec_id); keep docs current (chronological + categorical); independent domain-review leg before close. Build on s1 data + frozen split + s2 predictor + s7 strategy/buildplan + a3 OCR/script extractor. Do NOT touch the frozen test split for any training/fitting.",
+      "status": "done",
+      "depends_on": [],
+      "execution": "spawn_planner",
+      "plan_ref": null,
+      "outputs": [],
+      "rationale_for_next": "",
+      "attempt": 0
+    },
+    {
+      "step_id": "s9",
+      "kind": "work",
+      "description": "STEP 9 \u2014 Efficiency/batching retrofit (per load-bearing decision d7; user-escalated). Implement batched + IO-prefetched GPU inference across the existing meta extractors (OCR/script a3, drive-side) AND the fusion eval harness so bulk passes stop being batch=1. Concretely: (1) batch EasyOCR / CLIP / detector inference over MANY crops/images per GPU call; (2) ensure CUDA gpu=True and size batch to use the free VRAM headroom (BASELINE before = 56% GPU util / 0.64 img-s / 2924 of 6141 MiB \u2014 push toward ~80-90% VRAM); (3) parallelize/prefetch image IO + perspective-crop generation (DataLoader workers / threaded prefetch) so the GPU isn't disk/CPU-starved; (4) keep/extend the per-image hash-cache (already keyed by pano id/sha256). MEASURE and report BEFORE/AFTER GPU-util + throughput (img/s). HARD INTEGRITY CONSTRAINT: reuse the EXISTING cached OCR results \u2014 do NOT recompute/refit on the frozen test, and do NOT alter b2's honest batch=1 numbers (batched resize/pad can change OCR outputs, so the batched path is for FUTURE bulk passes + benchmarked on already-cached images, never overwriting the frozen-test measurement). Independent domain-review leg must confirm integrity preserved.\nCONSTRAINTS: FREE-ONLY; RTX 4050 6GB; pause/resume; NO name/image-wide process kills (own PIDs only); verify gates ONLY file_exists/file_min_bytes/glob_matches; execute grounded in spec-python-ml-cv-geospatial-engineer (stamp spec_id); keep docs current. This batched+prefetched path becomes the DEFAULT for all future meta extractors + evals (d7).",
+      "status": "done",
+      "depends_on": [],
+      "execution": "spawn_planner",
+      "plan_ref": null,
+      "outputs": [],
+      "rationale_for_next": "",
+      "attempt": 0
+    },
+    {
+      "step_id": "s10",
+      "kind": "work",
+      "description": "STEP 10 \u2014 ACCURACY PUSH: high-coverage metas + OCR-recall fix, fused & measured for LIFT (per d4; informed by the s8 zero-lift lesson that COVERAGE matters \u2014 sparse metas can't move the headline). Build the ALWAYS-ON / high-firing metas that apply to nearly every image: (a) vegetation/biome/soil (free scene/biome classifier or CLIP zero-shot over biome prompts -> climate-zone/continent-band prior, calibrated to coordinates); (b) sun/shadow -> hemisphere/latitude-band (pure image geometry); (c) road-geometry (free semantic segmentation -> lane-marking colour/pattern, shoulder, width -> regional road-design prior). ALSO fix OCR RECALL: perspective-crop tiling (zoom into sign regions) + more script readers so OCR fires on far more than the current ~12/1656. Integrate all into the explainable fusion (re-fit weights ON VAL ONLY, frozen->applied to frozen TEST, read once), and MEASURE the lift vs the s2 baseline (country 0.7542 / region 0.1908 / median 197km) on the held-out test: report per-meta firing rates, signed log-odds attribution, per-prediction rationale, and the new country/region/median/acc@km. Goal = BEAT the baseline; honest report either way. Use judgement/discovery (value-ordered: build the highest-coverage, highest-lift metas first; stop adding when a cue stops moving the stratified error). Independent domain-review leg.\nCONSTRAINTS: FREE-ONLY (open classifiers/segmentation/OCR; no paid APIs); RTX 4050 6GB; MUST use the batched + IO-prefetched inference path from s9 (d7 efficiency standard) for all bulk passes; pause/resume; NO name/image-wide process kills; verify gates ONLY file_exists/file_min_bytes/glob_matches; execute grounded in spec-python-ml-cv-geospatial-engineer (stamp spec_id); keep docs current; NEVER touch the frozen test split for fitting (val-only fit, read-once test). Build on s1 data + frozen split + s2 predictor + s7 strategy/buildplan + s8 OCR/drive-side extractors + fusion skeleton + s9 batched runner.",
+      "status": "pending",
+      "depends_on": [],
+      "execution": "spawn_planner",
+      "plan_ref": null,
+      "outputs": [],
+      "rationale_for_next": "",
+      "attempt": 0
+    },
+    {
+      "step_id": "s11",
+      "kind": "work",
+      "description": "STEP 11 \u2014 SINGLE-STATIC-IMAGE TEST HARNESS (so the user can run their own Street View image). Build a simple CLI/script: input = ONE static street-level image file (a screenshot or download from Google Street View \u2014 NO Google API key needed to RUN, the model only processes the local image); output = predicted location (country -> region -> finer where possible), confidence, estimated error radius, the tier reached, a HUMAN-READABLE RATIONALE (which metas fired + their named cues, e.g. \"Cyrillic signage + left-traffic -> likely RU/UA\"), and the contributing per-meta evidence. Run it on a few held-out example images and CAPTURE the outputs to disk as a demo. Write a short USER GUIDE (\"save a Street View image to <path>, run `uv run python -m geoguessr.infer.single_image <file>`, read the result\") so the user can self-test. Handle a single perspective image gracefully (the pipeline uses perspective crops anyway). Be honest in the output about current maturity (coarse country/region + rationale; near-exact only where coverage allows).\nCONSTRAINTS: FREE-ONLY (no Google billing to run); RTX 4050 6GB; use the batched inference path (d7) where applicable; NO name/image-wide process kills; verify gates ONLY file_exists/file_min_bytes/glob_matches; execute grounded in spec-python-ml-cv-geospatial-engineer (stamp spec_id); keep docs current. Build on the latest predictor + metas + fusion available when this runs (s2 + s8 + s10 metas).",
+      "status": "pending",
+      "depends_on": [],
+      "execution": "spawn_planner",
+      "plan_ref": null,
+      "outputs": [],
+      "rationale_for_next": "",
+      "attempt": 0
+    }
+  ],
+  "context": {
+    "assumptions": [],
+    "decisions": [
+      {
+        "id": "d1",
+        "text": "TARGET DOMAIN + ARCHITECTURE re-scope (user, 2026-06-09): Google Street View is the REAL eventual query target, but (a) no free Google-SV TRAINING data exists, so training stays on free OSV-5M/Mapillary; (b) user will NOT provide Google API creds yet \u2192 develop & measure on a Mapillary held-out split as the PROXY metric for now (creds + real Google-SV eval set come later). ARCHITECTURE = RETRIEVAL-FIRST: the embedding nearest-neighbour retrieval (s3) is the PRIMARY near-exact mechanism and must use DOMAIN-ROBUST embeddings (CLIP-style) so a Google-SV query image can match the Mapillary gallery at inference; the s2 hierarchical classifier is re-framed as the COARSE FALLBACK (still needed, work not wasted). Implication for steps: s2 continues (coarse fallback, report in-domain Mapillary metrics + note the domain gap); s3 becomes primary (prioritize domain-robust embeddings + a query path that accepts Google-SV images later); s5 harness must accept a Google-SV image at query time (creds-gated) and currently test on Mapillary proxy. NOTE: dataset images confirmed via neuron sanity-check = Mapillary dashcam (car hood/windshield visible, forward-facing single view), NOT Google 360\u00b0 panoramas \u2014 this is the domain gap retrieval-first is meant to bridge.",
+        "rationale": "User picked \"Google-SV as real target\" + \"not yet on creds\" + \"retrieval-first on Google SV\" during the neuron's training-data sanity check. Reconciles the impossible (free Google training data) with the real goal by making retrieval the primary path and Mapillary the free proxy until creds arrive.",
+        "by": "neuron",
+        "at": "2026-06-09T06:15:01.929774Z",
+        "load_bearing": true
+      },
+      {
+        "id": "d2",
+        "text": "DATA PIVOT TO GOOGLE STREET VIEW (user, 2026-06-09, supersedes the dataset choice in d1 and the s1 OSV-5M selection): THE corpus is now HuggingFace `stochastic/random_streetview_images_pano_v0.0.2` \u2014 real Google Street View imagery (scraped via randomstreetview.com), 11,054 360\u00b0 equirectangular panoramas, ~55 countries / 6 continents, GPS lat/lon + country ISO + address labels, MIT-licensed (free, no Google API key/billing). TRAIN AND TEST both on this Google SV dataset \u2192 the train(Mapillary)\u2192target(Google-SV) domain gap from d1 is ELIMINATED (this IS the target domain). OSV-5M/Mapillary is DROPPED as the corpus. Retrieval-first architecture from d1 still holds (s3 retrieval primary, s2 classifier coarse fallback). Known caveats accepted by user: (a) geographic imbalance (Europe/Asia heavy) \u2192 balance/weight per-country; (b) modest size 11k \u2192 fine for first build, can supplement later (e.g. GSV-Cities 530k as a city-level retrieval gallery); (c) license gray-area only matters if commercialized \u2014 personal/research use is fine. Data foundation (ingest + frozen leak-free test split) must be RE-DERIVED from this dataset; the s1 OSV-5M ingest/split is now obsolete. Panorama handling (whole-pano vs perspective crops to match a single-static-view query) = specialist's call, must be documented.",
+        "rationale": "User: \"no! nothing else matters. find a google sv dataset\" then chose \"Pivot fully to Google SV\". Neuron researched and found the MIT-licensed worldwide Google SV pano dataset on HF. This resolves the domain gap by training directly on the real target domain.",
+        "by": "neuron",
+        "at": "2026-06-09T06:19:01.204683Z",
+        "load_bearing": true
+      },
+      {
+        "id": "d3",
+        "text": "STAGE B APPROVED with AMBITION framing (user, 2026-06-09): Proceed to full Stage-B training. The user explicitly rejected the \"accept a realistic/modest bar\" framing \u2014 goal is to PUSH THE FRONTIER and maximize accuracy. The a3-recommended numbers (country 0.50-0.60, region 0.12-0.20, median 1500-2500km) are PROGRESS CHECKPOINTS / a floor-to-beat, NOT targets to stop at and NOT a ceiling. Working objective = pursue MAXIMUM accuracy aggressively through ALL levers (geo-tuned backbone e.g. StreetCLIP, full LP-FT fine-tuning, country\u2192region hierarchy, s3 retrieval for near-exact, s4 learn-from-mistakes loop), beat the previous number every round, climb toward the exact/\"5k\" north-star. Report honest metrics at each step (country/region top-1, geodesic median/P75/P90, acc@{25,200,750,2500}km) as situational awareness only. POC validated: 44% country / 8.5% region on GSV val from cheapest frozen-generic-CLIP head; learnability confirmed; freeze integrity confirmed by independent a3 review; backbone is GENERIC CLIP so geo-logic is genuinely ours.",
+        "rationale": "User pushed back on repeated expectation-downgrading; greenlit Stage B to maximize accuracy with checkpoints-as-floors not ceilings.",
+        "by": "neuron",
+        "at": "2026-06-09T09:34:52.412524Z",
+        "load_bearing": true
+      },
+      {
+        "id": "d4",
+        "text": "CORE STRATEGY = EXPLAINABLE META-REASONING (user-mandated 2026-06-09; SUPERSEDES the retrieval-first emphasis in d1). This is THE authoritative algorithm strategy \u2014 all future work builds on it, does not re-guess.\n\nThe core intelligence is HUMAN-LIKE META-REASONING, not embedding-similarity retrieval. Retrieval is DEMOTED to a LOCAL fine-grained pin used only where gallery coverage exists \u2014 it is NOT the primary engine (rationale: 11k/even 530k images can't cover the \"twin\" for arbitrary worldwide images, and embeddings are opaque \u2014 they give similarity but cannot NAME the features that distinguish places).\n\nThe system MUST:\n(1) EXTRACT interpretable clues (\"metas\") like a pro player: text/script via OCR (Cyrillic/Arabic/CJK/Latin \u2014 highest-value region cue); drive-side (left/right traffic); sun/shadow -> hemisphere; license-plate style/color incl. blurred (blue EU strip etc.); poles/bollards/signage/flags via object detection; vegetation/biome/soil; road geometry (width/bends/intersections/markings) via segmentation; architecture/building layout; camera-generation/noise/lens-artifact (\"Google-car\") metas.\n(2) LEARN ITS OWN METAS over time: FINE-TUNE the backbone on geolocation (NOT frozen-borrow \u2014 user explicitly rejected \"borrow a trained NN you can't improve\") + interpretability (saliency/Grad-CAM/clustering) to surface and NAME discriminative features.\n(3) FUSE metas into an EXPLAINABLE educated guess country->region->city WITH a human-readable rationale per prediction (e.g. \"left-hand traffic + Cyrillic signage + birch forest -> likely Russia/Ukraine\"), calibrated. Explainability (named clues + rationale) is a FIRST-CLASS requirement, not optional.\n(4) NARROW within the region via road-layout / landmark / retrieval matching \u2014 retrieval lives HERE as a local pin, not the global brain.\n(5) LEARN-FROM-MISTAKES loop that sharpens the metas each round.\n\nLabels reality: we have lat/lon/country only, so metas come from (a) FREE derivable signals + FREE pretrained detectors/OCR needing NO new labels, (b) learn-its-own-metas via fine-tune + interpretability, (c) calibrated fusion. KEEP s2's StreetCLIP hierarchical predictor (test country 75.4% / median 197km) as ONE evidence input (a visual-cortex prior), but fine-tuned/extended, not frozen-final.\n\nDOCUMENTATION MANDATE (user): this strategy MUST be written authoritatively to docs/design/CORE-STRATEGY.md (and referenced from the architecture docs) so future improvements build on the strategy rather than guessing.",
+        "rationale": "User critique: embedding-twin retrieval is coverage-bound + opaque and a poor primary; wants human-like clue/meta reasoning that the model learns & improves (fine-tune, not frozen-borrow), explainable, with retrieval as a local pin. User: \"Yes and please ensure this is documented as the core strategy so future improvements don't guess.\"",
+        "by": "neuron",
+        "at": "2026-06-09T12:48:09.050645Z",
+        "load_bearing": true
+      },
+      {
+        "id": "d5",
+        "text": "FUTURE \"STAGE B\" (deferred, user 2026-06-09): AFTER the modular explainable meta-reasoning pipeline (d4) is working end-to-end, CONSOLIDATE it into a single MULTI-FEED / MULTI-BRANCH NEURAL NETWORK for efficiency \u2014 i.e. fold the separate per-meta extractors + the hand-built fusion into one trained network with multiple input feeds/branches (the image + the meta signals) that learns the fusion end-to-end, rather than many separate models + a scripted fusion layer. GOAL of this phase = efficiency/consolidation (fewer separate passes, shared backbone, jointly-trained heads), NOT a strategy change \u2014 it must PRESERVE the explainability/named-cue requirement of d4 (the unified net must still expose attributable per-meta evidence + a human-readable rationale, e.g. via per-branch heads / attention attribution). SEQUENCING (hard): this is a LATER phase \u2014 do NOT start it until the modular pipeline demonstrably works and we know which metas carry weight (so the consolidation is informed by what actually matters). MUST be documented in the roadmap so future sessions pick it up deliberately and do not re-derive it. This is the user's explicit \"a Stage B to this goal.\"",
+        "rationale": "User: \"Keep driving forward but we want to break this algo into a multi-feed NN of some sorts just to increase efficiency but that is after we get this strategy working. A stage B to this goal if you will.\" Captured as a deferred consolidation phase that preserves d4 explainability.",
+        "by": "neuron",
+        "at": "2026-06-09T14:07:48.982091Z",
+        "load_bearing": true
+      },
+      {
+        "id": "d6",
+        "text": "REFINEMENT to d5 (FUTURE STAGE-B multi-feed NN), user 2026-06-09: DO NOT discard the algorithmic / modular pipeline when consolidating into a NN. The user (rightly) worried a naive \"melt everything into one NN\" would sacrifice the very properties d4 requires. CLARIFIED INTENT: Stage-B is a HYBRID consolidation for EFFICIENCY, not a replacement of the reasoning structure. Specifically: (1) replace only the hand-SCRIPTED FUSION GLUE with a small LEARNED fusion (consumes the structured evidence records + image features -> calibrated guess); (2) share ONE backbone with MULTIPLE meta-HEADS (multi-task) so perception is one pass instead of many (the efficiency win); (3) PRESERVE: the structured evidence-record interface, per-branch/per-meta ATTRIBUTION (so it still emits a human-readable rationale - d4 explainability is non-negotiable), the FREE derivable/no-label signals (a monolithic NN would forfeit data-efficiency we can't afford), per-meta graceful ABSTENTION, and the learn-from-mistakes SELF-LEARNING loop (which is independent of whether fusion is scripted or learned). Rationale the user must not lose: self-learning does NOT stop in a NN, but explainability + per-meta debuggability + free-signal data-efficiency + graceful abstention CAN be lost if consolidation is done monolithically \u2014 so the modular/algorithmic layer is KEPT (as the explainable reference + fallback), and only the glue is learned. Net: NN and algo COEXIST; efficiency comes from shared-encoder multi-head perception + learned fusion, NOT from deleting the reasoning structure. Still deferred until the modular pipeline demonstrably works.",
+        "rationale": "User: \"Do you think self-learning stops when you put it into a NN?... I am not sure if we should discard the algo.\" Refines d5 so the future consolidation is a hybrid that preserves explainability/data-efficiency/self-learning, not a black-box replacement.",
+        "by": "neuron",
+        "at": "2026-06-09T14:26:03.079539Z",
+        "load_bearing": true
+      },
+      {
+        "id": "d7",
+        "text": "EFFICIENCY STANDARD (user-escalated 2026-06-09): BATCHED + IO-PREFETCHED GPU INFERENCE IS THE DEFAULT for every meta extractor, the fusion eval harness, the single-image/inference harness, and all future steps. Requirements: (1) batch OCR / CLIP / detector inference over many crops/images per GPU call (never batch=1 in a loop for bulk eval); (2) run on CUDA (gpu=True) with batch size tuned to use the free VRAM headroom (~80-90% of the 6GB, was sitting at only ~61% util / 2.9GB during the batch=1 b2 eval); (3) parallelize/prefetch image IO + perspective-crop generation (DataLoader workers / threaded prefetch) so the GPU is not disk/CPU-starved; (4) cache expensive per-image results (e.g. OCR) keyed by image hash so re-runs never recompute. HARD CONSTRAINT: efficiency changes must NEVER compromise frozen-test integrity or the honesty of a measurement (reuse cached results; do not recompute/refit on test). Trigger: user observed GPU underutilized (~61%, 2.9/6GB) during the batch=1 b2 OCR eval and escalated. Being implemented in s8 as action b3 (batched extractors+harness with BEFORE/AFTER throughput+GPU-util measurement, r1 review extended to confirm integrity preserved); this decision generalizes it to ALL future steps so they inherit it.",
+        "rationale": "User escalated GPU underutilization (batch=1 OCR eval). Worker chose to finish the ~95%-complete b2 (clean batch=1 baseline, integrity preserved) then add b3 batching; worker asked neuron to capture the 'default for all future steps' as a durable decision. Done.",
+        "by": "neuron",
+        "at": "2026-06-09T16:00:28.596426Z",
+        "load_bearing": true
+      },
+      {
+        "id": "d8",
+        "text": "PAUSE POINT (user, 2026-06-09): After s9 (batching/efficiency retrofit) completes, PARK the recipe \u2014 do NOT auto-dispatch s10. User is taking a break and will resume ~Thursday 2026-06-11 (after the Claude usage limit resets). RESUME POINTER for the next session: steps s10 and s11 are already declared & queued in priority order \u2014 (s10) ACCURACY PUSH = high-coverage metas (vegetation/biome/soil, sun/hemisphere, road-geometry) + OCR-recall fix (crop-tiling), fused & measured for LIFT vs the s2 baseline (country 0.7542 / median 197km); then (s11) single-static-image TEST HARNESS so the user can run their own Street View image. On resume: reconcile, confirm s9 closed cleanly + relay its before/after GPU-util, then dispatch s10 (it must use the s9 batched path per d7), then s11. Do NOT start s10 until the user signals resume. All work durable; the detached compute is pause/resume-safe.",
+        "rationale": "User: \"Please dont dispatch s10 after s9. After s9 I will take a break and probably resume on Thursday after claude limit resets.\" Captured as a hard pause-after-s9 gate + resume pointer so no auto-advance and the next session knows where to continue.",
+        "by": "neuron",
+        "at": "2026-06-09T17:37:42.114051Z",
+        "load_bearing": true
+      },
+      {
+        "id": "d9",
+        "text": "REFINEMENT to d7 (efficiency standard), measured in s9 a2 (2026-06-09): \"batch many images per GPU call\" does NOT apply to EasyOCR. Honest benchmark (48 val imgs): OCR tensor-batching = NO throughput win (~1.02x, 0.707 vs 0.696 img/s; EasyOCR recognizer is compute-bound + already ~78% GPU) AND it CHANGES outputs (8/48 token divergence from ~1e-3 confidence wobble flipping near-threshold tokens) -> would violate the bit-exact integrity rule. THEREFORE: OCR runs recognizer_batch_size=1 (bit-identical); OCR's real efficiency levers are the sha256 hash-cache (compute-once) + IO/crop PREFETCH (both bit-exact). Tensor-batching's genuine win applies to the TENSOR-BATCHABLE models \u2014 the CLIP/StreetCLIP backbone + object detectors (plate/flag) \u2014 NOT OCR. So d7 stands but is scoped: batch the batchable backbones/detectors; for OCR use cache+prefetch, never tensor-batch. Implication for the user's earlier expectation: batching will NOT speed up the OCR-dominated eval (that was the bottleneck); the eval speedups come from (a) not re-OCRing cached images and (b) batching the CLIP/detector legs.",
+        "rationale": "s9 a2 measured OCR batching as a no-op that also breaks bit-exactness; scopes d7 so future steps don't waste effort tensor-batching OCR and instead use cache+prefetch (OCR) + batch the CLIP/detector legs.",
+        "by": "neuron",
+        "at": "2026-06-09T17:41:59.705914Z"
+      }
+    ],
+    "rejected_options": [],
+    "open_questions": []
+  },
+  "final_outcome": null,
+  "version": 40,
+  "created_at": "2026-06-08T16:33:21.331122Z",
+  "updated_at": "2026-06-08T16:33:21.331125Z"
+}

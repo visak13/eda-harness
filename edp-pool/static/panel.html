@@ -1,0 +1,684 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EDP control panel</title>
+<!--
+  DESIGN-v6 W12. One HTML file, vanilla JS, no build toolchain (the design's
+  explicit constraint). Served by the pool at GET /panel, loopback only.
+
+  THE ONE RULE THIS FILE OBEYS EVERYWHERE:
+  A PANEL THAT DISPLAYS A NUMBER IT DID NOT MEASURE IS THE SAME DEFECT AS A
+  PAUSE THAT REPORTS A BOOLEAN IT DID NOT OBSERVE.
+
+  Three places inside W12 could render something plausible and wrong, and all
+  three are handled the same way — show the absence, name the cause:
+    1. The paused indicator reflects OBSERVED thread state, measured at read
+       time by the pool. There is no stored `paused` flag to render.
+    2. `last_output_ts` cannot populate for monitor-mode shells on this host.
+       It renders as "unavailable" with the reason, never as a substitute
+       timestamp derived from last_seen or a poll clock.
+    3. Cost. DESIGN-v6 specifies a Cost view fed by W10b's `cost_report`; d77
+       removed cost_report from the build. The view says so and shows nothing.
+-->
+<style>
+  :root {
+    --bg: #14161a; --panel: #1c1f26; --line: #2b303a; --fg: #e6e9ef;
+    --dim: #8b93a3; --accent: #6ea8fe; --warn: #e5b567; --bad: #e06c75;
+    --ok: #7fb069; --frozen: #b48ead;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 14px/1.5 "Segoe UI", system-ui, sans-serif; }
+  header { display: flex; align-items: baseline; gap: 16px; padding: 12px 20px;
+           border-bottom: 1px solid var(--line); }
+  h1 { font-size: 15px; margin: 0; letter-spacing: .3px; }
+  nav { display: flex; gap: 4px; margin-left: auto; }
+  nav button { background: none; border: 1px solid transparent; color: var(--dim);
+               padding: 5px 12px; border-radius: 6px; cursor: pointer; font: inherit; }
+  nav button.on { color: var(--fg); border-color: var(--line); background: var(--panel); }
+  main { padding: 20px; }
+  section { display: none; } section.on { display: block; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line);
+           vertical-align: top; }
+  th { color: var(--dim); font-weight: 600; font-size: 12px; text-transform: uppercase;
+       letter-spacing: .5px; }
+  code, .mono { font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px; }
+  button.act { background: var(--panel); border: 1px solid var(--line); color: var(--fg);
+               border-radius: 5px; padding: 4px 9px; cursor: pointer; font-size: 12px; }
+  button.act:hover { border-color: var(--accent); }
+  .pill { padding: 1px 7px; border-radius: 10px; font-size: 11px; border: 1px solid var(--line); }
+  .frozen { color: var(--frozen); border-color: var(--frozen); }
+  .running { color: var(--ok); border-color: var(--ok); }
+  .unknown { color: var(--dim); }
+  .mixed, .bad { color: var(--bad); border-color: var(--bad); }
+  .absent { color: var(--dim); font-style: italic; }
+  .note { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--warn);
+          padding: 12px 14px; border-radius: 6px; margin: 0 0 18px; color: var(--dim); }
+  .note strong { color: var(--fg); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+          padding: 14px 16px; margin-bottom: 12px; }
+  textarea, input, select { background: var(--bg); border: 1px solid var(--line);
+          color: var(--fg); border-radius: 5px; padding: 6px 8px; font: inherit; }
+  textarea { width: 100%; min-height: 60px; }
+  #brief { white-space: pre-wrap; background: var(--panel); border: 1px solid var(--line);
+           border-radius: 6px; padding: 16px; max-height: 55vh; overflow: auto; }
+  .cmt { border-left: 2px solid var(--accent); padding-left: 10px; margin: 10px 0; }
+  .quote { color: var(--dim); font-style: italic; }
+  .err { color: var(--bad); }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>EDP control panel</h1>
+  <span class="mono" id="clock"></span>
+  <nav>
+    <button data-v="shells" class="on">Shells</button>
+    <button data-v="approvals">Approvals <span id="apprbadge"></span></button>
+    <button data-v="gates">Gates</button>
+    <button data-v="review">Plan review</button>
+    <button data-v="channels">Channels</button>
+    <button data-v="spawn">Spawn config</button>
+    <button data-v="cost">Cost</button>
+  </nav>
+</header>
+<main>
+
+<section id="shells" class="on">
+  <p class="note">
+    <strong>The paused column is measured, not remembered.</strong> Each read asks the OS
+    for the thread suspend counts of every process in the shell's tree. There is no stored
+    <code>paused</code> flag anywhere in the pool — so a shell that some other actor resumed
+    behind our back reads <span class="pill running">running</span> on the very next poll,
+    rather than continuing to claim it is paused while it burns tokens.
+  </p>
+  <div class="row" style="margin-bottom:12px">
+    <input id="rid" placeholder="recipe_id (for pause-all)" size="52" class="mono">
+    <button class="act" onclick="recipeAct('pause')">Pause all</button>
+    <button class="act" onclick="recipeAct('resume')">Resume all</button>
+    <label><input type="checkbox" id="showclosed" onchange="refreshShells()">
+      show closed shells</label>
+    <span id="shellcount" class="mono"></span>
+    <span id="fanout" class="mono"></span>
+  </div>
+  <table><thead><tr>
+    <th>Role</th><th>Handle</th><th>Liveness</th>
+    <th>Paused (measured)</th><th>last_output_ts</th><th>Actions</th>
+  </tr></thead><tbody id="shellrows"></tbody></table>
+</section>
+
+<section id="approvals">
+  <p class="note">
+    <strong>Tool-call approvals from live shells.</strong> A shell spawned with
+    <code>EDP_PANEL_APPROVALS=1</code> parks each permission-worthy tool call
+    (Bash / PowerShell / Write / Edit) here for ~50s. Allow/Deny answers it
+    instantly; <strong>doing nothing is safe</strong> — the call falls back to the
+    shell's own permission prompt. The panel accelerates approvals; it can never
+    strand a shell.
+  </p>
+  <div id="apprrows"></div>
+</section>
+
+<section id="gates">
+  <p class="note">
+    Gates are broker messages the recipe is waiting on. Answering posts one message back
+    through the pool's proxy. <strong>Every message submitted here is stamped with the channel
+    it arrived on</strong> (<code>via=panel</code>, <code>authenticated=false</code>) — the panel
+    is unauthenticated by design, so the stamp records the path a message travelled and says
+    nothing about who composed it.
+  </p>
+  <div class="row" style="margin-bottom:12px">
+    <label><input type="checkbox" id="notify"> Browser notification on a new gate</label>
+    <span id="gatecount" class="mono"></span>
+  </div>
+  <div class="card">
+    <strong>Message the neuron</strong>
+    <div class="absent">Sends a <code>steer</code> to the recipe's inbox. An external
+      (codex) neuron is woken by its heartbeat driver the moment this lands; a Claude
+      neuron wakes on its steer subscription. Its replies/questions appear above.</div>
+    <div class="row" style="margin-top:8px">
+      <input id="nrid" placeholder="recipe_id" size="44" class="mono">
+      <textarea id="nmsg" placeholder="steer text…" style="min-height:40px;width:340px"></textarea>
+      <button class="act" onclick="steerNeuron()">Send</button>
+      <span id="nmsgout" class="mono"></span>
+    </div>
+  </div>
+  <div id="gaterows"></div>
+</section>
+
+<section id="review">
+  <div class="row" style="margin-bottom:12px">
+    <input id="rrid" placeholder="recipe_id" size="52" class="mono">
+    <button class="act" onclick="loadBriefs()">List briefs</button>
+    <select id="briefsel" onchange="loadBrief()"></select>
+    <span id="reviewmsg" class="mono"></span>
+  </div>
+  <p class="note">Select text in the brief, then <strong>Add comment</strong>. All comments are
+    submitted together as ONE <code>review_comments</code> message.</p>
+  <div id="brief">No brief loaded.</div>
+  <div class="row" style="margin-top:12px">
+    <button class="act" onclick="addComment()">Add comment on selection</button>
+    <button class="act" onclick="submitComments()">Submit all comments</button>
+    <input id="rto" placeholder="to (recipe_id inbox)" size="52" class="mono">
+  </div>
+  <div id="comments"></div>
+</section>
+
+<section id="channels">
+  <p class="note">
+    Channels are the fleet's coordination rooms (a channel = a broker inbox
+    with members). Messages addressed <code>for: @operator</code> are yours
+    to answer. Posts from here are honestly stamped <code>from: panel</code>
+    (unauthenticated channel) — agents treat that AS the operator.
+  </p>
+  <div class="row" style="align-items:flex-start">
+    <div style="min-width:260px">
+      <div class="card"><div id="chanlist" class="mono">loading…</div></div>
+    </div>
+    <div style="flex:1">
+      <div class="card">
+        <div id="chantopic" class="note"></div>
+        <div id="chanfeed" class="mono"
+             style="max-height:420px;overflow-y:auto"></div>
+        <div class="row" style="margin-top:8px">
+          <select id="ch_kind">
+            <option>answer</option><option>steer</option>
+            <option>question</option><option>fyi</option>
+          </select>
+          <label>for <input id="ch_for" size="28" class="mono"
+                 placeholder="@all or a handle"></label>
+          <input id="ch_text" size="48" placeholder="message…">
+          <button class="act" onclick="chanSend()">Send</button>
+          <span id="chanmsg" class="mono"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="spawn">
+  <p class="note">
+    <strong>Changes affect FRESH spawns only.</strong> A running shell's argv and environment were
+    fixed at launch and are not rewritten.<br><br>
+    <code>EDP_SKIP_PERMISSIONS</code> is <strong>not here, and there is no hidden control for it</strong>.
+    DESIGN-v6 lists it as a toggle; that line is overruled by a standing user constraint. The pool
+    refuses the key outright rather than accepting and ignoring it.
+  </p>
+  <div class="card">
+    <div class="row">
+      <label>model <input id="sd_model" placeholder="(host default)" size="22" class="mono"></label>
+      <label>spawn_mode
+        <select id="sd_mode">
+          <option value="">(unset)</option><option>headless</option><option>monitor</option>
+        </select></label>
+      <label><input type="checkbox" id="sd_rtk"> rtk</label>
+      <button class="act" onclick="saveDefaults()">Save</button>
+      <span id="sdmsg" class="mono"></span>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row">
+      <strong>Spawn caps</strong>
+      <label>max workers <input id="lim_workers" type="number" min="1" size="4" class="mono"></label>
+      <label>max planners <input id="lim_planners" type="number" min="1" size="4" class="mono"></label>
+      <label>max total shells <input id="lim_total" type="number" min="1" size="4" class="mono"></label>
+      <button class="act" onclick="saveLimits()">Save caps</button>
+      <button onclick="clearLimits()">Reset to env defaults</button>
+      <span id="limmsg" class="mono"></span>
+    </div>
+    <p class="note">Caps gate FRESH spawns immediately (a refusal names this
+    surface). Saved caps persist across pool restarts and override the
+    <code>EDP_MAX_*</code> env knobs; Reset returns to env/defaults.</p>
+  </div>
+</section>
+
+<section id="cost">
+  <p class="note">
+    <strong>Not built, deliberately.</strong> DESIGN-v6 §W12 specifies this view fed by W10b's
+    <code>cost_report</code>. Decision <strong>d77</strong> dropped <code>cost_report</code> from
+    the build: <em>"cost report is not shell count. I dont want you to build a dumb harness and
+    hardcode the requirements."</em> No Phoenix query surface exists in the tree, so any number
+    rendered here would be one the panel did not measure.<br><br>
+    Measured token/cost figures for the one benchmarked tier live in
+    <code>docs/design/MODEL-TIERING-BENCHMARK.md</code>.
+  </p>
+</section>
+
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav button").forEach(x => x.classList.remove("on"));
+  document.querySelectorAll("section").forEach(x => x.classList.remove("on"));
+  b.classList.add("on"); $(b.dataset.v).classList.add("on");
+});
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.refused || body.detail || `HTTP ${r.status}`);
+  return body;
+}
+
+// ── Shells ──────────────────────────────────────────────────────────────
+// `pause.state` is whatever the pool MEASURED this second: frozen | running |
+// mixed | gone | unknown. `unknown` is rendered as unknown. It is never
+// rounded to "running" — an instrument that cannot see must not report a
+// clean result.
+function pauseCell(p) {
+  if (!p || p.measured === false)
+    return `<span class="pill unknown">unknown</span>
+            <div class="absent">${esc(p && p.reason || "not measured")}</div>`;
+  const s = p.state || "unknown";
+  const cls = {frozen:"frozen", running:"running", mixed:"mixed"}[s] || "unknown";
+  return `<span class="pill ${cls}">${esc(s)}</span>
+          <div class="absent mono">${esc(p.instrument || "")} @ ${esc((p.measured_at||"").slice(11,19))}Z</div>`;
+}
+
+// The honest-absence renderer. If the pool could not measure it, we print WHY,
+// and we print nothing that looks like a timestamp.
+function outputCell(row) {
+  if (row.last_output_available)
+    return `<span class="mono">${new Date(row.last_output_ts * 1000)
+              .toISOString().slice(11, 19)}Z</span>`;
+  return `<span class="absent">unavailable — ${esc(row.last_output_reason)}</span>`;
+}
+
+// ONE state-aware control per row, derived from what was MEASURED — never an
+// unconditional button pair on a shell that cannot honor it:
+//   parked session          → ▶ Resume (fork)  — POST /v1/resume/{handle}
+//   measured frozen         → ▶ Play           — resume_shell
+//   measured running        → ⏸ Pause          — pause_shell
+//   mixed / unknown         → both small buttons (the instrument cannot
+//                             decide; the operator can) — honest ambiguity.
+//   closed (state=done)     → no pause control at all (nothing to pause).
+function actionCell(r) {
+  const h = encodeURIComponent(r.handle);
+  const wind = `<button class="act" onclick="windDown('${h}')">Wind-down</button>`;
+  if (r.state === "done") return wind;
+  if (r.state === "parked" || r.state === "resuming")
+    return `<button class="act" onclick="forkResume('${h}')">&#9654; Resume (fork)</button> ${wind}`;
+  const s = r.pause && r.pause.measured !== false ? r.pause.state : "unknown";
+  if (s === "frozen")
+    return `<button class="act" onclick="shellAct('${h}','resume')">&#9654; Play</button> ${wind}`;
+  if (s === "running")
+    return `<button class="act" onclick="shellAct('${h}','pause')">&#10074;&#10074; Pause</button> ${wind}`;
+  return `<button class="act" onclick="shellAct('${h}','pause')">&#10074;&#10074;</button>
+          <button class="act" onclick="shellAct('${h}','resume')">&#9654;</button> ${wind}`;
+}
+
+// Live shells are the panel's subject; closed rows are history, opt-in.
+const STATE_ORDER = {active: 0, resuming: 1, parked: 2, done: 3};
+
+// ONE ROW PER SHELL, GROUPED INTO THE RECIPE'S TREE: a group header per
+// recipe with a single ⏸/▶ acting on the WHOLE tree (recipe + its planners
+// + workers) via the existing /v1/recipes/{rid}/pause|resume fan-out. The
+// header verdict is derived from the members' MEASURED states: any running
+// member → the tree offers Pause; all frozen → it offers Play.
+function shellRow(r) {
+  return `<tr>
+    <td>${esc(r.role)}<div class="absent">${esc(r.state || "")}</div></td>
+    <td class="mono">${esc(r.handle)}<div class="absent">${esc(r.spawn_mode || "mode?")}</div></td>
+    <td><span class="pill ${r.liveness === "alive" ? "running"
+        : r.liveness === "parked" ? "frozen" : "unknown"}">${esc(r.liveness)}</span></td>
+    <td>${pauseCell(r.pause)}</td>
+    <td>${outputCell(r)}</td>
+    <td>${actionCell(r)}</td></tr>`;
+}
+
+async function refreshShells() {
+  let rows;
+  try { rows = await api("/v1/panel/shells"); }
+  catch (e) { $("shellrows").innerHTML =
+      `<tr><td colspan="6" class="err">${esc(e.message)}</td></tr>`; return; }
+  const total = rows.length;
+  if (!$("showclosed").checked) rows = rows.filter(r => r.state !== "done");
+  rows.sort((a, b) =>
+    (STATE_ORDER[a.state] ?? 9) - (STATE_ORDER[b.state] ?? 9)
+    || String(a.handle).localeCompare(String(b.handle)));
+  $("shellcount").textContent = `${rows.length} shown / ${total} tracked`;
+
+  const groups = new Map();
+  for (const r of rows) {
+    const k = r.recipe_id || "(no recipe)";
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  }
+  let html = "";
+  for (const [rid, members] of groups) {
+    const anyRunning = members.some(m =>
+      m.state === "active" && m.pause && m.pause.state === "running");
+    const enc = encodeURIComponent(rid);
+    const treeBtn = rid === "(no recipe)" ? "" : (anyRunning
+      ? `<button class="act" onclick="recipeTree('${enc}','pause')">&#10074;&#10074; Pause tree</button>`
+      : `<button class="act" onclick="recipeTree('${enc}','resume')">&#9654; Play tree</button>`)
+      // durable W11 park/unpark (distinct from the process freeze above):
+      // suspend steers planners to close + writes the manifest; resume
+      // reconciles + puts planners back. Slow (minutes) — button disables
+      // itself while in flight.
+      + ` <button class="act" onclick="recipeDurable(this,'${enc}','suspend')">Suspend</button>`
+      + ` <button class="act" onclick="recipeDurable(this,'${enc}','resume-recipe')">Resume recipe</button>`;
+    html += `<tr style="background:var(--panel)">
+      <td colspan="5" class="mono"><strong>${esc(rid)}</strong>
+        <span class="absent">${members.length} shell(s)</span></td>
+      <td>${treeBtn}</td></tr>`
+      + members.map(shellRow).join("");
+  }
+  $("shellrows").innerHTML = html
+    || `<tr><td colspan="6" class="absent">no live shells${
+        $("showclosed").checked ? "" : " (closed hidden — toggle above)"}</td></tr>`;
+}
+
+async function recipeDurable(btn, rid, act) {
+  const label = act === "suspend" ? "Suspend" : "Resume";
+  if (!confirm(`${label} recipe ${decodeURIComponent(rid)}? Suspend steers `
+      + `its planners to close and parks the recipe durably.`)) return;
+  btn.disabled = true; btn.textContent = label + "…";
+  try {
+    const r = await api(`/v1/recipes/${rid}/${act}`, {method: "POST"});
+    $("fanout").textContent = r.ok
+      ? `${label}d: ${decodeURIComponent(rid)}`
+      : `refused: ${(r.error || "").slice(0, 200)}`;
+  } catch (e) { $("fanout").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+  btn.disabled = false; btn.textContent = label + (act === "suspend" ? "" : " recipe");
+  refreshShells();
+}
+
+async function recipeTree(rid, act) {
+  try { const r = await api(`/v1/recipes/${rid}/${act}`, {method: "POST"});
+        $("fanout").textContent =
+          `${act}: ${r.paused ?? r.resumed} of ${r.handles.length} shell(s)`; }
+  catch (e) { $("fanout").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+  refreshShells();
+}
+
+// ── Approvals ───────────────────────────────────────────────────────────
+let seenAppr = new Set(), apprPrimed = false;
+async function refreshApprovals() {
+  let rows = [];
+  try { rows = await api("/v1/approvals/pending"); } catch (e) { /* pool down */ }
+  $("apprbadge").textContent = rows.length ? `(${rows.length})` : "";
+  const fresh = rows.filter(a => !seenAppr.has(a.id));
+  rows.forEach(a => seenAppr.add(a.id));
+  if (apprPrimed && fresh.length && $("notify").checked
+      && Notification.permission === "granted")
+    new Notification(`${fresh.length} tool call(s) awaiting approval`,
+                     {body: fresh[0].tool_name});
+  apprPrimed = true;
+  $("apprrows").innerHTML = rows.map(a => `<div class="card">
+    <div class="row"><span class="pill">${esc(a.tool_name)}</span>
+      <span class="mono">${esc(a.role)} ${esc(a.handle)}</span>
+      <span class="absent mono">${esc((a.ts || "").slice(11, 19))}Z</span></div>
+    <pre class="mono" style="white-space:pre-wrap">${esc(a.summary)}</pre>
+    <div class="row">
+      <button class="act" onclick="decide('${a.id}','allow')">&#10003; Allow</button>
+      <button class="act" onclick="decide('${a.id}','deny')">&#10007; Deny</button>
+      <input id="why-${a.id}" placeholder="deny reason (optional)" size="40">
+    </div></div>`).join("")
+    || `<div class="absent">no pending approvals</div>`;
+}
+async function decide(aid, decision) {
+  const why = ($(`why-${aid}`) || {}).value || "";
+  try { await api(`/v1/approvals/${aid}/decide`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({decision, reason: why})}); }
+  catch (e) { alert(e.message); }
+  refreshApprovals();
+}
+
+async function forkResume(h) {
+  try { const r = await api(`/v1/resume/${h}`, {method: "POST"});
+        if (r.refused) alert(`refused: ${r.refused}`); }
+  catch (e) { alert(e.message); }
+  refreshShells();
+}
+
+async function shellAct(h, act) {
+  try { const r = await api(`/v1/shells/${h}/${act}`, {method: "POST"});
+        if (r.refused) alert(`refused: ${r.refused}`); }
+  catch (e) { alert(e.message); }
+  refreshShells();
+}
+async function windDown(h) {
+  if (!confirm("Wind-down kills the shell and releases its lock. Proceed?")) return;
+  try { await api(`/v1/reap/${h}`, {method: "POST"}); } catch (e) { alert(e.message); }
+  refreshShells();
+}
+async function recipeAct(act) {
+  const rid = $("rid").value.trim(); if (!rid) return;
+  try { const r = await api(`/v1/recipes/${encodeURIComponent(rid)}/${act}`, {method: "POST"});
+        $("fanout").textContent = `${act}: ${r.paused ?? r.resumed} of ${r.handles.length}`; }
+  catch (e) { $("fanout").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+  refreshShells();
+}
+
+// ── Gates ───────────────────────────────────────────────────────────────
+const GATE_KINDS = ["question", "grounding", "consult"];
+let seenGates = new Set(), gatesPrimed = false;
+
+async function refreshGates() {
+  let all = [];
+  for (const k of GATE_KINDS) {
+    try { all = all.concat(await api(`/v1/broker/messages?kind=${k}`)); }
+    catch (e) { /* broker down ≠ panel down */ }
+  }
+  all.sort((a, b) => (b.ts || "").localeCompare(a.ts || ""));
+  const fresh = all.filter(m => !seenGates.has(m.msg_id));
+  all.forEach(m => seenGates.add(m.msg_id));
+  // Do not fire a notification storm for history on first load.
+  if (gatesPrimed && fresh.length && $("notify").checked
+      && Notification.permission === "granted")
+    new Notification(`${fresh.length} new gate(s)`, {body: fresh[0].kind});
+  gatesPrimed = true;
+
+  $("gatecount").textContent = `${all.length} open`;
+  $("gaterows").innerHTML = all.slice(0, 40).map(m => `<div class="card">
+    <div class="row"><span class="pill">${esc(m.kind)}</span>
+      <span class="mono">${esc(m.from)}</span>
+      <span class="absent mono">${esc(m.ts)}</span></div>
+    <pre class="mono" style="white-space:pre-wrap">${esc(JSON.stringify(m.body, null, 1))}</pre>
+    <div class="row">
+      <textarea id="ans-${m.msg_id}" placeholder="answer…"></textarea>
+      <button class="act" onclick="answer('${m.msg_id}','${esc(m.from)}')">Send answer</button>
+    </div></div>`).join("") || `<div class="absent">no open gates</div>`;
+}
+
+async function answer(msgId, to) {
+  const text = $(`ans-${msgId}`).value.trim(); if (!text) return;
+  try {
+    await api("/v1/broker/publish", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({to, kind: "answer", corr_id: msgId,
+                            body: {answer: text, in_reply_to: msgId}}),
+    });
+    $(`ans-${msgId}`).value = "";
+  } catch (e) { alert(e.message); }
+}
+
+async function steerNeuron() {
+  const to = $("nrid").value.trim(), text = $("nmsg").value.trim();
+  if (!to || !text) return;
+  try {
+    await api("/v1/broker/publish", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({to, kind: "steer",
+                            body: {correction: text, via: "panel"}}),
+    });
+    $("nmsgout").textContent = "sent"; $("nmsg").value = "";
+  } catch (e) { $("nmsgout").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+
+$("notify").onchange = () => {
+  if ($("notify").checked && Notification.permission === "default")
+    Notification.requestPermission();
+};
+
+// ── Plan review ─────────────────────────────────────────────────────────
+let comments = [];
+
+async function loadBriefs() {
+  const rid = $("rrid").value.trim(); if (!rid) return;
+  try {
+    const r = await api(`/v1/panel/briefs?recipe_id=${encodeURIComponent(rid)}`);
+    $("briefsel").innerHTML = r.briefs.map(b => `<option>${esc(b)}</option>`).join("");
+    $("reviewmsg").textContent = `${r.briefs.length} brief(s)`;
+    if (r.briefs.length) loadBrief();
+  } catch (e) { $("reviewmsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+async function loadBrief() {
+  const rid = $("rrid").value.trim(), name = $("briefsel").value;
+  if (!rid || !name) return;
+  try {
+    const r = await api(`/v1/panel/brief?recipe_id=${encodeURIComponent(rid)}`
+                        + `&name=${encodeURIComponent(name)}`);
+    $("brief").textContent = r.text;
+    comments = []; renderComments();
+  } catch (e) { $("brief").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+function addComment() {
+  const q = String(window.getSelection()).trim();
+  if (!q) return alert("Select some text in the brief first.");
+  const c = prompt(`Comment on:\n\n"${q.slice(0, 200)}"`);
+  if (c) { comments.push({anchor_quote: q, comment: c}); renderComments(); }
+}
+function renderComments() {
+  $("comments").innerHTML = comments.map((c, i) => `<div class="cmt">
+    <div class="quote">"${esc(c.anchor_quote.slice(0, 160))}"</div>
+    <div>${esc(c.comment)}</div>
+    <button class="act" onclick="comments.splice(${i},1);renderComments()">remove</button>
+  </div>`).join("");
+}
+async function submitComments() {
+  const to = $("rto").value.trim() || $("rrid").value.trim();
+  if (!to || !comments.length) return alert("Need a recipient and at least one comment.");
+  try {
+    await api("/v1/broker/publish", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({to, kind: "review_comments",
+        body: {brief: $("briefsel").value, comments}}),
+    });
+    $("reviewmsg").textContent = `submitted ${comments.length} comment(s) as one message`;
+    comments = []; renderComments();
+  } catch (e) { $("reviewmsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+
+// ── Spawn config ────────────────────────────────────────────────────────
+async function loadDefaults() {
+  try {
+    const r = await api("/v1/panel/spawn_defaults");
+    $("sd_model").value = r.defaults.model || "";
+    $("sd_mode").value = r.defaults.spawn_mode || "";
+    $("sd_rtk").checked = !!r.defaults.rtk;
+  } catch (e) { $("sdmsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+async function saveDefaults() {
+  const d = {rtk: $("sd_rtk").checked};
+  if ($("sd_model").value.trim()) d.model = $("sd_model").value.trim();
+  if ($("sd_mode").value) d.spawn_mode = $("sd_mode").value;
+  try {
+    await api("/v1/panel/spawn_defaults", {method: "POST",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify(d)});
+    $("sdmsg").textContent = "saved — applies to fresh spawns only";
+  } catch (e) { $("sdmsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+
+// ── Channels ────────────────────────────────────────────────────────────
+let curChannel = null;
+async function refreshChannels() {
+  try {
+    const rows = await api("/v1/panel/channels");
+    if (!rows.length) {
+      $("chanlist").textContent = "no channels yet — they appear as the fleet spawns";
+      return;
+    }
+    $("chanlist").innerHTML = rows.map(c =>
+      `<div><a href="#" onclick="openChannel('${esc(c.channel)}');return false"
+        ${c.channel === curChannel ? 'style="font-weight:bold"' : ''}>#${esc(c.channel)}</a>
+        <span class="note">(${c.members.length})</span></div>`).join("");
+    if (curChannel) openChannel(curChannel, true);
+  } catch (e) { $("chanlist").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+async function openChannel(name, quiet) {
+  curChannel = name;
+  try {
+    const r = await api(`/v1/panel/channels/${encodeURIComponent(name)}/messages?tail=60`);
+    const reg = await api("/v1/panel/channels");
+    const row = reg.find(c => c.channel === name) || {};
+    $("chantopic").textContent = row.topic
+      ? `#${name} — ${row.topic}` : `#${name}`;
+    $("chanfeed").innerHTML = r.messages.map(m => {
+      const f = (m.body && m.body["for"]) || "";
+      const mine = f === "@operator";
+      const text = m.body && (m.body.text || m.body.note || m.body.question
+        || m.body.blocker) || JSON.stringify(m.body).slice(0, 220);
+      return `<div style="${mine ? 'background:rgba(255,193,7,.12);' : ''}
+        padding:2px 4px"><span class="note">${esc((m.ts||'').slice(11,19))}</span>
+        <b>${esc(m.from)}</b> · ${esc(m.kind)}${f ? ` → ${esc(f)}` : ""}<br>
+        ${esc(String(text))}</div>`;
+    }).join("") || "<span class='note'>empty</span>";
+    if (!quiet) $("chanfeed").scrollTop = $("chanfeed").scrollHeight;
+  } catch (e) { $("chanfeed").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+async function chanSend() {
+  if (!curChannel) { $("chanmsg").textContent = "open a channel first"; return; }
+  const body = {text: $("ch_text").value.trim()};
+  const f = $("ch_for").value.trim();
+  if (f) body["for"] = f;
+  if (!body.text) return;
+  try {
+    await api("/v1/broker/publish", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({to: curChannel, kind: $("ch_kind").value, body})});
+    $("ch_text").value = ""; $("chanmsg").textContent = "sent";
+    openChannel(curChannel, true);
+  } catch (e) { $("chanmsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+setInterval(() => { if (document.querySelector('#channels.on')) refreshChannels(); }, 5000);
+
+async function loadLimits() {
+  try {
+    const r = await api("/v1/limits");
+    $("lim_workers").value = r.max_workers;
+    $("lim_planners").value = r.max_planners;
+    $("lim_total").value = r.max_total_shells;
+    const o = Object.keys(r.overrides || {});
+    $("limmsg").textContent = o.length ? `overrides: ${o.join(", ")}` : "env/defaults";
+  } catch (e) { $("limmsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+async function saveLimits() {
+  const body = {
+    max_workers: parseInt($("lim_workers").value, 10) || null,
+    max_planners: parseInt($("lim_planners").value, 10) || null,
+    max_total_shells: parseInt($("lim_total").value, 10) || null,
+  };
+  try {
+    await api("/v1/limits", {method: "POST",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+    $("limmsg").textContent = "caps saved — gating fresh spawns now";
+    loadLimits();
+  } catch (e) { $("limmsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+async function clearLimits() {
+  try {
+    await api("/v1/limits", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({max_workers: null, max_planners: null, max_total_shells: null})});
+    $("limmsg").textContent = "overrides cleared — env/defaults active";
+    loadLimits();
+  } catch (e) { $("limmsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+
+setInterval(() => $("clock").textContent = new Date().toISOString().slice(11, 19) + "Z", 1000);
+setInterval(refreshShells, 4000);
+setInterval(refreshGates, 6000);
+setInterval(refreshApprovals, 2000);   // approvals are ~50s fuses — poll fast
+refreshShells(); refreshGates(); refreshApprovals(); loadDefaults(); loadLimits(); refreshChannels();
+</script>
+</body>
+</html>

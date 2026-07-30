@@ -1,0 +1,38 @@
+# Virtual envs & caches
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.uv-cache/
+node_modules/
+
+# Logs & runtime telemetry
+.logs/
+*.log
+
+# Live agent state stores (data, not code)
+edp-pool/.claude-pool/
+edp-pool/.pool-logs/
+edp-broker/.broker-data/
+opencode-fleet/.fleet-data/
+claude/.archive/
+claude/.playwright-mcp/
+claude/.shot_tmp/
+claude/scratch/
+*.png
+claude/.recipes/
+claude/.plans/
+claude/.specs/
+claude/.neurons/
+claude/.sessions/
+claude/.inbox_cursors/
+claude/.reactive/
+claude/.claude-pool/
+claude/.claude/settings.local.json
+vault/plans/
+vault/recipes/
+
+# OS noise
+Thumbs.db
+Desktop.ini

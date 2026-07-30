@@ -1,0 +1,268 @@
+{
+  "ok": true,
+  "name": "dialog",
+  "framework": "vanilla",
+  "layer": "composed",
+  "root": "C:\\Projects\\Learning\\eda-designs",
+  "composed_from": [
+    "core",
+    "company"
+  ],
+  "extends": "core/behaviors/dialog",
+  "core_registry": {
+    "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+    "name": "dialog",
+    "type": "registry:behavior",
+    "title": "Configurable Pop-up Dialog",
+    "description": "Open/close dialog; configurable scroll/no-scroll, resizable, dimensions. Framework-neutral FSM core + thin per-framework connectors.",
+    "extends": null,
+    "config": {
+      "scrollable": {
+        "type": "boolean",
+        "default": true
+      },
+      "resizable": {
+        "type": "boolean",
+        "default": false
+      },
+      "width": {
+        "type": "string",
+        "default": null
+      },
+      "height": {
+        "type": "string",
+        "default": null
+      }
+    },
+    "contract": {
+      "part": [
+        "overlay",
+        "content",
+        "title",
+        "close"
+      ],
+      "dataState": [
+        "open",
+        "closed"
+      ]
+    },
+    "files": [
+      {
+        "path": "core/runtime/machine-runtime.js",
+        "type": "registry:behavior-runtime"
+      },
+      {
+        "path": "core/behaviors/dialog/machine.js",
+        "type": "registry:behavior-core"
+      },
+      {
+        "path": "core/behaviors/dialog/parts.md",
+        "type": "registry:contract"
+      },
+      {
+        "path": "core/behaviors/dialog/connect.react.tsx",
+        "type": "registry:connect",
+        "framework": "react"
+      },
+      {
+        "path": "core/behaviors/dialog/connect.vanilla.js",
+        "type": "registry:connect",
+        "framework": "vanilla"
+      },
+      {
+        "path": "core/behaviors/dialog/connect.angular.ts",
+        "type": "registry:connect",
+        "framework": "angular"
+      },
+      {
+        "path": "core/design/dialog.css",
+        "type": "registry:design"
+      }
+    ],
+    "cssVars": {},
+    "css": {}
+  },
+  "company_registry": {
+    "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+    "name": "dialog",
+    "type": "registry:behavior",
+    "title": "Acme Dialog (brand)",
+    "description": "Company brand extension of the core dialog: adds a minimizable state + a brandHeader part, and ships brand config defaults (resizable, 640px). EXTENDS core additively — never edits a core file.",
+    "extends": "core/behaviors/dialog",
+    "config": {
+      "resizable": {
+        "type": "boolean",
+        "default": true
+      },
+      "width": {
+        "type": "string",
+        "default": "640px"
+      }
+    },
+    "contract": {
+      "part": [
+        "brandHeader"
+      ],
+      "dataState": []
+    },
+    "files": [
+      {
+        "path": "company/behaviors/dialog/machine.patch.js",
+        "type": "registry:behavior-patch"
+      },
+      {
+        "path": "company/behaviors/dialog/config.defaults.json",
+        "type": "registry:config"
+      },
+      {
+        "path": "company/behaviors/dialog/parts.extend.md",
+        "type": "registry:contract-extend"
+      },
+      {
+        "path": "company/design/dialog.css",
+        "type": "registry:design"
+      }
+    ],
+    "cssVars": {},
+    "css": {}
+  },
+  "config": {
+    "scrollable": true,
+    "resizable": true,
+    "width": "640px",
+    "height": null,
+    "brandHeader": true
+  },
+  "contract": {
+    "part": [
+      "overlay",
+      "content",
+      "title",
+      "close",
+      "brandHeader"
+    ],
+    "dataState": [
+      "open",
+      "closed"
+    ]
+  },
+  "machine": {
+    "composed": {
+      "id": "dialog",
+      "initial": "closed",
+      "context": {
+        "scrollable": true,
+        "resizable": false,
+        "width": null,
+        "height": null,
+        "brandHeader": true
+      },
+      "states": {
+        "closed": {
+          "on": {
+            "OPEN": "open"
+          }
+        },
+        "open": {
+          "on": {
+            "CLOSE": "animatingOut",
+            "MINIMIZE": "minimized"
+          },
+          "entry": [
+            "trapFocus",
+            "lockScrollIfModal"
+          ]
+        },
+        "animatingOut": {
+          "on": {
+            "ANIMATION_END": "closed"
+          },
+          "exit": [
+            "releaseFocus",
+            "unlockScroll"
+          ]
+        },
+        "minimized": {
+          "on": {
+            "RESTORE": "open",
+            "CLOSE": "animatingOut"
+          }
+        }
+      },
+      "guards": {}
+    },
+    "layers": [
+      {
+        "path": "core/behaviors/dialog/machine.js",
+        "bytes": 2451,
+        "content": "// core/behaviors/dialog/machine.js\n// The framework-NEUTRAL behavior CORE for the configurable pop-up dialog\n// (behavior-layer-design.md §1.3 / §5.1). Plain data + one pure transition() fn.\n// NO framework import, NO styling, NO DOM — the single source of truth that every\n// connector (React/vanilla/Angular) and the company bucket compose against.\n//\n// Config surface (per the project goal): scroll/no-scroll (`scrollable`),\n// resizable + dimensions (`resizable`/`width`/`height`), open/close (the events).\n// Per-instance config is merged onto `context` by the shared machine-runtime.\n\nexport const dialogMachine = {\n  id: \"dialog\",\n  initial: \"closed\",\n  // Config defaults; per-instance config is merged in by the connector/runtime.\n  context: { scrollable: true, resizable: false, width: null, height: null },\n  states: {\n    closed: {\n      on: { OPEN: \"open\" },\n    },\n    open: {\n      on: { CLOSE: \"animatingOut\" },\n      entry: [\"trapFocus\", \"lockScrollIfModal\"],\n    },\n    animatingOut: {\n      on: { ANIMATION_END: \"closed\" },\n      exit: [\"releaseFocus\", \"unlockScroll\"],\n    },\n  },\n  guards: {\n    // Pure guard: resizing is only offered when the instance opted in.\n    canResize: (ctx) => ctx.resizable === true,\n  },\n};\n\n// Pure, deterministic transition — same (state, event, ctx) always yields the same\n// result. A table lookup over states[state].on[event.type]; no side effects, no I/O.\n// Returns { state, changed, entry, exit }:\n//   - state:   the next state name (unchanged if the event is not accepted here)\n//   - changed: whether a transition fired\n//   - entry:   declarative entry-action names of the target state (for the connector)\n//   - exit:    declarative exit-action names of the source state (for the connector)\nexport function transition(state, event, ctx) {\n  const node = dialogMachine.states[state];\n  const type = typeof event === \"string\" ? event : event && event.type;\n  const target = node && node.on ? node.on[type] : undefined;\n\n  if (!target) {\n    return { state, changed: false, entry: [], exit: [] };\n  }\n\n  const exit = node.exit || [];\n  const targetNode = dialogMachine.states[target];\n  const entry = (targetNode && targetNode.entry) || [];\n  return { state: target, changed: true, entry, exit };\n}\n\n// Convenience: the initial context with per-instance config applied (pure).\nexport function initialContext(config = {}) {\n  return { ...dialogMachine.context, ...(config || {}) };\n}\n"
+      },
+      {
+        "path": "company/behaviors/dialog/machine.patch.js",
+        "bytes": 1986,
+        "content": "// company/behaviors/dialog/machine.patch.js\n// The COMPANY brand extension of the core dialog FSM (behavior-layer-design.md §3.2 / §5.2).\n//\n// PURELY ADDITIVE (monotonic). This patch is *merged* onto the core dialogMachine by the\n// resolver's applyPatch() (§4.2) — it may ONLY add states / events / context keys. It must\n// NOT delete, move, or rebind any core state (closed / open / animatingOut) or any existing\n// core transition. The determinism gate (recipe action a7) asserts exactly that.\n//\n// This file never imports core/behaviors/dialog/machine.js and never mutates it on disk —\n// core is read-only to the company bucket. The merge happens at fetch/compose time only.\n//\n// Patch grammar (consumed by applyPatch, §4.2):\n//   context:     { ...newKeys }   — added to core context (additive; no core key removed)\n//   addStates:   { <name>: node } — brand-new states only (name must NOT already exist in core)\n//   amendStates: { <state>: { on: { <EVENT>: target } } }\n//                                  — ADD new events to an existing core state's `on` map.\n//                                    May only introduce NEW event keys; rebinding an existing\n//                                    core event is a hard error in applyPatch (monotonic rule).\n\nexport const patch = {\n  // New config key — brand chrome toggle (additive; core context keys untouched).\n  context: { brandHeader: true },\n\n  // Brand-new state: the dialog can be MINIMIZED. RESTORE returns to open; CLOSE still\n  // funnels through the core animatingOut exit so focus/scroll cleanup stays canonical.\n  addStates: {\n    minimized: {\n      on: { RESTORE: \"open\", CLOSE: \"animatingOut\" },\n    },\n  },\n\n  // Amend the existing core `open` state by ADDING a MINIMIZE event (new event key only).\n  // Core's `open` already owns CLOSE → animatingOut; that binding is left exactly as-is.\n  amendStates: {\n    open: {\n      on: { MINIMIZE: \"minimized\" },\n    },\n  },\n};\n\nexport default patch;\n"
+      }
+    ]
+  },
+  "runtime": {
+    "path": "core/runtime/machine-runtime.js",
+    "bytes": 2757,
+    "content": "// core/runtime/machine-runtime.js\n// The shared, framework-NEUTRAL FSM runtime (behavior-layer-design.md §6.2 risk #1).\n// Dependency-free: ZERO imports, ZERO framework code. It drives ANY machine shaped\n// { initial, context, states } through a pure transition() fn (see machine.js). Every\n// per-framework connector (connect.react/vanilla/angular) layers its own reactivity on\n// top of this one interpreter, so React/Bootstrap/Angular never diverge — one source.\n//\n// Interface (the \"useMachineRuntime/send\" shape referenced by §5.1):\n//   const rt = createMachineRuntime(machine, transition, config)\n//   rt.state            -> current state name (\"closed\" | \"open\" | \"animatingOut\" | ...)\n//   rt.context          -> merged context (machine defaults <- per-instance config)\n//   rt.send(event)      -> apply an event; returns a snapshot {state, context, actions}\n//   rt.can(eventType)   -> is `eventType` accepted in the current state?\n//   rt.matches(state)   -> is the runtime in `state`?\n//   rt.subscribe(fn)    -> observe snapshots (fires immediately, returns unsubscribe)\n//   rt.snapshot()       -> {state, context, actions}\n//\n// `actions` carries the declarative entry/exit action NAMES the machine declared for the\n// transition (e.g. \"trapFocus\"). The runtime is intentionally side-effect-free: it does\n// NOT execute them — each connector decides how (focus trap, scroll lock, ...) for its DOM.\n\nexport function createMachineRuntime(machine, transition, config = {}) {\n  let state = machine.initial;\n  let context = { ...(machine.context || {}), ...(config || {}) };\n  const listeners = new Set();\n  let lastActions = { entry: [], exit: [] };\n\n  const snapshot = () => ({ state, context: { ...context }, actions: { ...lastActions } });\n  const notify = () => { for (const fn of listeners) fn(snapshot()); };\n\n  function send(event) {\n    const evt = typeof event === \"string\" ? { type: event } : (event || {});\n    const result = transition(state, evt, context) || { state, changed: false };\n    lastActions = { entry: result.entry || [], exit: result.exit || [] };\n    if (result.changed) {\n      state = result.state;\n      notify();\n    }\n    return snapshot();\n  }\n\n  const can = (eventType) => {\n    const node = machine.states[state];\n    return !!(node && node.on && node.on[eventType]);\n  };\n  const matches = (s) => state === s;\n\n  function subscribe(fn) {\n    listeners.add(fn);\n    fn(snapshot());\n    return () => listeners.delete(fn);\n  }\n\n  return {\n    get state() { return state; },\n    get context() { return context; },\n    send, can, matches, subscribe, snapshot,\n  };\n}\n\n// Alias: connectors that read the runtime as a hook-style factory import this name.\nexport const useMachineRuntime = createMachineRuntime;\n"
+  },
+  "connect": {
+    "framework": "vanilla",
+    "path": "core/behaviors/dialog/connect.vanilla.js",
+    "bytes": 8499,
+    "content": "// core/behaviors/dialog/connect.vanilla.js\n// CONNECTOR MODULE — vanilla / Bootstrap variant (framework axis).\n// behavior-layer-design.md §1.3 (a FIRST-CLASS deliverable, parity with connect.react.tsx).\n//\n// THIN by design: it owns NO behavior. It imports the framework-NEUTRAL dialog\n// machine + pure transition() from ./machine.js and drives them through the shared\n// core/runtime/machine-runtime.js (the `useMachineRuntime`/`send` interface). The ONLY\n// thing this file adds is the no-framework seam — plain-DOM reactivity (subscribe →\n// re-apply attributes) and the vanilla `normalizeProps` mapping (part/data-state/role/aria\n// + onClick→addEventListener / className→class / style-object→el.style).\n//\n// It does NOT import any CSS or token file: design stays orthogonal and meets behavior\n// only at the markup contract (parts.md). The prop-getters emit `part=\"…\"` /\n// `data-state=\"…\"` exactly so `core/design/dialog.css` can style them with zero coupling.\n//\n// API parity with the React connector (the cross-framework shape, §5.1):\n//   const dialog = useDialog(config)\n//   dialog.state                 -> \"closed\" | \"open\" | \"animatingOut\"\n//   dialog.isOpen                -> boolean\n//   dialog.open() / dialog.close()\n//   dialog.getOverlayProps() / getContentProps() / getTitleProps() / getCloseProps()\n//   dialog.subscribe(fn)         -> re-render hook (vanilla has no framework scheduler)\n//   normalizeProps(el, props)    -> apply a prop-getter bag onto a real DOM element\n\nimport { dialogMachine, transition } from \"./machine.js\";\nimport { createMachineRuntime } from \"../../runtime/machine-runtime.js\";\n\n// One title id per dialog instance so `content[aria-labelledby]` → `title[id]` (a11y baseline).\nlet __dialogTitleSeq = 0;\n\n// ---- vanilla normalizeProps ----\n// Per-framework seam (§1.3): React already speaks onClick/className/style, but plain DOM does\n// not — so HERE is where the neutral prop bag is translated into real DOM operations. This is\n// the one and only vanilla-specific spot; the prop-getters themselves stay framework-neutral.\n//\n// Mapping rules (mirror the React connector's prop bag keys):\n//   part / data-state / role / aria-* / id / type  -> setAttribute / removeAttribute\n//   className                                       -> el.className (toggled, not new parts)\n//   style (object)                                  -> Object.assign(el.style, …)\n//   onClick / onAnimationEnd / on<Event>           -> addEventListener(\"click\"/\"animationend\"/…)\n// Returns the same element for chaining. Re-applying is idempotent for attributes/class/style;\n// listeners are de-duplicated per (element, prop-key) so repeated renders don't stack handlers.\nconst __listenerRegistry = new WeakMap(); // el -> { propKey: {type, fn} }\n\nexport function normalizeProps(el, props) {\n  if (!el || !props) return el;\n  let bound = __listenerRegistry.get(el);\n  if (!bound) {\n    bound = {};\n    __listenerRegistry.set(el, bound);\n  }\n\n  for (const [key, value] of Object.entries(props)) {\n    if (value === undefined || value === null) {\n      // Drop empty values; also clear a stale attribute if one exists (e.g. style/class off).\n      if (key === \"className\") el.removeAttribute(\"class\");\n      else if (key !== \"style\" && !/^on[A-Z]/.test(key)) el.removeAttribute(key);\n      else if (key === \"style\") el.removeAttribute(\"style\");\n      continue;\n    }\n\n    if (key === \"className\") {\n      el.className = String(value);\n      continue;\n    }\n\n    if (key === \"style\" && typeof value === \"object\") {\n      // Reset prior inline style so toggling resizable off doesn't leave stale dimensions.\n      el.removeAttribute(\"style\");\n      for (const [sk, sv] of Object.entries(value)) {\n        if (sv === undefined || sv === null) continue;\n        el.style[sk] = sv;\n      }\n      continue;\n    }\n\n    if (/^on[A-Z]/.test(key) && typeof value === \"function\") {\n      // onClick -> \"click\", onAnimationEnd -> \"animationend\"\n      const type = key.slice(2).toLowerCase();\n      const prev = bound[key];\n      if (prev) el.removeEventListener(prev.type, prev.fn); // de-dup across re-renders\n      el.addEventListener(type, value);\n      bound[key] = { type, fn: value };\n      continue;\n    }\n\n    // Plain attribute (part, data-state, role, aria-modal, aria-labelledby, id, type, …).\n    el.setAttribute(key, String(value));\n  }\n  return el;\n}\n\n/**\n * useDialog(config) — the vanilla factory. Same name/shape as the React hook so the\n * cross-framework api stays identical; here it returns a plain object (no React scheduler).\n * The machine + transition are the single source of truth; this factory just wraps the\n * neutral runtime and projects snapshots onto DOM-shaped prop bags.\n *\n * @param {{scrollable?:boolean, resizable?:boolean, width?:string|null, height?:string|null}} config\n */\nexport function useDialog(config = {}) {\n  // The runtime is created ONCE per dialog instance. It merges machine defaults <- per-instance\n  // config exactly like the neutral runtime documents (parity with the React connector).\n  const rt = createMachineRuntime(dialogMachine, transition, config);\n  const titleId = `dialog-title-${++__dialogTitleSeq}`;\n\n  // Execute the machine's DECLARATIVE entry/exit action names against the real DOM. The runtime\n  // is side-effect-free and only NAMES actions (trapFocus / lockScrollIfModal / releaseFocus /\n  // unlockScroll); the connector decides how. Kept minimal + guarded on `document` for SSR/Node.\n  let prevOverflow = \"\";\n  let prevActive = null;\n  function runActions(snapshot) {\n    if (typeof document === \"undefined\") return;\n    const body = document.body;\n    if (snapshot.state === \"open\") {\n      prevActive = document.activeElement;\n      prevOverflow = body.style.overflow;\n      body.style.overflow = \"hidden\"; // lockScrollIfModal\n    } else {\n      // closed / animatingOut: release on the way out (mirrors the React effect cleanup).\n      body.style.overflow = prevOverflow; // unlockScroll\n      if (prevActive && typeof prevActive.focus === \"function\") prevActive.focus(); // releaseFocus\n      prevActive = null;\n    }\n  }\n  // Side effects run as a runtime subscriber so they fire on every state change, exactly once.\n  rt.subscribe(runActions);\n\n  const isOpenNow = () => rt.state === \"open\";\n  const open = () => rt.send(\"OPEN\");\n  const close = () => rt.send(\"CLOSE\");\n\n  // pure guard from the core machine — resizing only when the instance opted in.\n  const resizable = () => dialogMachine.guards.canResize(rt.context);\n\n  return {\n    // Snapshot getters (vanilla reads on demand; subscribe() drives re-renders).\n    get state() {\n      return rt.state;\n    },\n    get isOpen() {\n      return isOpenNow();\n    },\n    open,\n    close,\n\n    // Re-render seam: vanilla has no framework scheduler, so consumers subscribe and\n    // re-apply the prop-getters (and/or toggle visibility) on each snapshot.\n    subscribe: (fn) => rt.subscribe(fn),\n\n    // ---- Prop-getters — same contract attributes as the React connector (parts.md) ----\n\n    getOverlayProps: () => ({\n      part: \"overlay\",\n      \"data-state\": rt.state,\n      // Click-on-backdrop dismiss is a connector concern (parts.md), not styling.\n      onClick: () => close(),\n    }),\n\n    getContentProps: () => ({\n      part: \"content\",\n      role: \"dialog\",\n      \"aria-modal\": \"true\",\n      \"aria-labelledby\": titleId,\n      \"data-state\": rt.state,\n      // scroll / no-scroll variant — toggled via class so core/design/dialog.css styles it.\n      className: rt.context.scrollable ? \"scrollable\" : null,\n      // resizable + dimensions — inline style ONLY when the instance opted in (canResize).\n      style: resizable()\n        ? {\n            resize: \"both\",\n            overflow: \"auto\",\n            width: rt.context.width ?? undefined,\n            height: rt.context.height ?? undefined,\n          }\n        : null,\n      // Drive the FSM's animatingOut → closed leg from the real CSS animation end.\n      onAnimationEnd: () => {\n        if (rt.matches(\"animatingOut\")) rt.send(\"ANIMATION_END\");\n      },\n      // Stop backdrop click from bubbling and closing when interacting with content.\n      onClick: (e) => e.stopPropagation(),\n    }),\n\n    getTitleProps: () => ({\n      part: \"title\",\n      id: titleId,\n    }),\n\n    getCloseProps: () => ({\n      part: \"close\",\n      type: \"button\",\n      \"aria-label\": \"Close dialog\",\n      onClick: () => close(),\n    }),\n  };\n}\n\nexport default useDialog;\n",
+    "source_layer": "core"
+  },
+  "parts": [
+    {
+      "path": "core/behaviors/dialog/parts.md",
+      "bytes": 2732,
+      "content": "# Dialog — markup contract (the design ↔ behavior seam)\n\nThis file is the **shared vocabulary** between the behavior layer (machine + connectors,\nwhich *set* these attributes) and the design layer (`core/design/dialog.css`, which\n*styles* them). It is a human-readable spec — **not** a code dependency. Neither layer\nimports the other; they meet only here (behavior-layer-design.md §2).\n\n## Parts (`part=\"…\"`)\n\n| Part      | Element role                                  | Notes |\n|-----------|-----------------------------------------------|-------|\n| `overlay` | Full-viewport backdrop behind the dialog      | Click-to-dismiss is a connector concern, not styling. |\n| `content` | The dialog surface / panel                    | Carries `role=\"dialog\"` + `aria-modal=\"true\"`; receives `resize`/dimensions when `ctx.resizable`. |\n| `title`   | The dialog heading                            | Referenced by `aria-labelledby` from `content`. |\n| `close`   | The close affordance (button)                 | Wired to the `CLOSE` event by the connector. |\n\n## State attribute (`data-state=\"…\"`)\n\nBehavior emits the current FSM state outward via `data-state` on `overlay` and `content`:\n\n| `data-state` | Meaning                                                        |\n|--------------|----------------------------------------------------------------|\n| `open`       | Dialog is open (FSM state `open`).                             |\n| `closed`     | Dialog is closed (FSM state `closed`).                         |\n| `animatingOut` | Closing animation in flight; `ANIMATION_END` returns to `closed`. |\n\n> The §1.3 contract names `data-state ∈ {open, closed}` as the canonical pair the design\n> layer must handle; `animatingOut` is a transient value design MAY animate but is not\n> required to (it falls back to the `closed`-like hidden treatment when unstyled).\n\n## Config surface (drives attributes / inline style, not new parts)\n\n- **scroll / no-scroll** — `ctx.scrollable`: connector toggles `.scrollable` on `content`;\n  CSS provides scroll vs no-scroll variants (`core/design/dialog.css`).\n- **resizable + dimensions** — `ctx.resizable` / `ctx.width` / `ctx.height`: connector emits\n  inline `resize/overflow/width/height` on `content` only when `canResize(ctx)` is true.\n- **open / close** — the `OPEN` / `CLOSE` / `ANIMATION_END` events on the machine.\n\n## Accessibility baseline (borrowed from Radix's API shape, not its delivery)\n\n- `content`: `role=\"dialog\"`, `aria-modal=\"true\"`, `aria-labelledby` → the `title` id.\n- Focus is trapped on `open` (`trapFocus`) and released on close (`releaseFocus`) — declared\n  as entry/exit action names in `machine.js`; each connector performs them for its own DOM.\n"
+    },
+    {
+      "path": "company/behaviors/dialog/parts.extend.md",
+      "bytes": 2396,
+      "content": "# Dialog — company parts extension (`extends: core/behaviors/dialog`)\n\nThis file is the **company-only delta** to the core markup contract\n([`core/behaviors/dialog/parts.md`](../../../core/behaviors/dialog/parts.md)). It is purely\n**additive**: the composed contract is `core.parts ∪ company.parts.extend` (behavior-layer-design.md\n§3.2 / §4.2). It adds **no** new `data-state` value and **redefines no** core part — it only\nintroduces brand chrome. Like the core `parts.md`, this is a human-readable spec, **not** a code\ndependency: behavior sets these attributes, `company/design/dialog.css` styles them, and neither\nimports the other.\n\n## Added part (`part=\"…\"`)\n\n| Part          | Element role                                              | Notes |\n|---------------|----------------------------------------------------------|-------|\n| `brandHeader` | A company brand bar rendered at the top of `content`     | Optional; rendered only when `ctx.brandHeader` is true (the additive config key from `machine.patch.js`). Styled by `company/design/dialog.css`, layered AFTER core CSS. |\n\n## Added state vocabulary (from `machine.patch.js`)\n\nThe company patch adds one new FSM state and one new event (additive, monotonic — no core state or\ntransition is removed or rebound):\n\n| FSM state   | Meaning                                                                 |\n|-------------|-------------------------------------------------------------------------|\n| `minimized` | Dialog collapsed to its brand header; `RESTORE` → `open`, `CLOSE` → `animatingOut`. |\n\n| Event       | On state | Effect                                  |\n|-------------|----------|-----------------------------------------|\n| `MINIMIZE`  | `open`   | Added to core `open` (new event key) → `minimized`. |\n| `RESTORE`   | `minimized` | `minimized` → `open`.                |\n\n> `data-state` therefore composes to `{ open, closed, animatingOut, minimized }`. The core pair\n> `{ open, closed }` and the transient `animatingOut` are untouched; `minimized` is the only addition,\n> and design MAY style it (e.g. collapse `content` to show only `brandHeader`) or fall back to the\n> open treatment when unstyled.\n\n## Union result\n\nComposed parts = `overlay, content, title, close` (core) **∪** `brandHeader` (company).\nComposed `data-state` = `open, closed, animatingOut` (core) **∪** `minimized` (company).\n"
+    }
+  ],
+  "css": [
+    {
+      "path": "core/design/dialog.css",
+      "bytes": 4179,
+      "content": "/* core/design/dialog.css\n * The CORE design layer for the dialog behavior (behavior-layer-design.md §2 / §5.1).\n * TOKEN-ONLY: every value is a design token (--color-semantic-*/--space-*/--radius-*)\n * emitted by Style Dictionary into :root (default + midnight themes). This file targets\n * ONLY the markup contract ([part=...] / [data-state=...] from parts.md) and imports NO\n * behavior/machine/token file — design and behavior stay orthogonal. Re-skins for free\n * under any theme because it never hard-codes a color.\n */\n\n/* ── Overlay: the backdrop ────────────────────────────────────────────────── */\n/* A TRUE modal scrim: the connector portals this to document.body, so position:fixed\n * is viewport-relative (it no longer anchors inside an ancestor Card). It must clearly\n * DIM the page behind it in BOTH the default and midnight themes — so the scrim is a\n * neutral DARK token (--color-primitive-gray-900), which reads as a dim in either theme\n * (the semantic background/text tokens flip light↔dark with the theme and would wash out\n * in one of them). Still token-only (a --color-* token) and theme-stable by design. */\n[part=\"overlay\"] {\n  position: fixed;\n  inset: 0;\n  z-index: 1000; /* float above page content once portalled to <body> */\n  background: var(--color-primitive-gray-900);\n  /* token-driven translucency via color-mix: a clearly dimmed (~70%) dark scrim */\n  background: color-mix(in srgb, var(--color-primitive-gray-900) 70%, transparent);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: var(--space-6);\n}\n\n[part=\"overlay\"][data-state=\"closed\"] {\n  display: none;\n}\n\n/* ── Content: the dialog surface ──────────────────────────────────────────── */\n[part=\"content\"] {\n  /* ROOT-CAUSE FIX: the absolutely-positioned [part=\"close\"] (top/right) must anchor\n   * INSIDE this surface, not at the page corner. position:relative makes the content\n   * the containing block for that absolute close — eliminating the detached page-corner\n   * 'x' AND the page-scrollbar shift it caused. */\n  position: relative;\n  background: var(--color-semantic-surface-raised);\n  color: var(--color-semantic-text-primary);\n  border: 1px solid var(--color-semantic-border-default);\n  border-radius: var(--radius-lg);\n  padding: var(--space-6);\n  min-width: 18rem;\n  max-width: 90vw;\n  box-shadow: 0 10px 30px color-mix(in srgb, var(--color-primitive-gray-900) 35%, transparent);\n}\n\n[part=\"content\"][data-state=\"closed\"] {\n  display: none;\n}\n\n/* ── Scroll / no-scroll variants (config: ctx.scrollable) ─────────────────── */\n/* Connector toggles `.scrollable` on [part=\"content\"]. */\n[part=\"content\"].scrollable {\n  overflow: auto;\n  max-height: 80vh;\n}\n\n[part=\"content\"]:not(.scrollable) {\n  overflow: hidden;\n}\n\n/* ── Title ────────────────────────────────────────────────────────────────── */\n[part=\"title\"] {\n  margin: 0 0 var(--space-4);\n  color: var(--color-semantic-text-primary);\n  font-size: var(--font-size-xl);\n  font-weight: var(--font-weight-semibold);\n  line-height: var(--font-line-height-snug);\n}\n\n/* ── Close affordance ─────────────────────────────────────────────────────── */\n[part=\"close\"] {\n  position: absolute;\n  top: var(--space-4);\n  right: var(--space-4);\n  background: transparent;\n  border: none;\n  color: var(--color-semantic-text-secondary);\n  border-radius: var(--radius-md);\n  padding: var(--space-1) var(--space-2);\n  font-size: var(--font-size-lg);\n  cursor: pointer;\n}\n\n[part=\"close\"]:hover {\n  color: var(--color-semantic-text-primary);\n  background: var(--color-semantic-surface-sunken);\n}\n\n[part=\"close\"]:focus-visible {\n  outline: 2px solid var(--color-semantic-border-focus);\n  outline-offset: 2px;\n}\n"
+    },
+    {
+      "path": "company/design/dialog.css",
+      "bytes": 2598,
+      "content": "/* company/design/dialog.css\n * The COMPANY brand design layer for the dialog (behavior-layer-design.md §3.2 / §5.2).\n *\n * Layered AFTER core/design/dialog.css (the resolver returns css = [ core, company ] in that\n * order — §4.2). It is purely ADDITIVE brand chrome: it styles the company-only `brandHeader`\n * part and the company-only `minimized` data-state, and applies brand accents to core parts via\n * the SAME contract selectors — it never edits the core CSS file.\n *\n * TOKEN-ONLY: every value is a real Style Dictionary token emitted into :root for both the\n * default and midnight themes (--color-semantic-primary-*/--space-*/--radius-*). No color is\n * hard-coded, so the brand chrome re-skins for free under any theme. Imports NO behavior/machine\n * file — design and behavior meet only at the parts.extend.md contract.\n */\n\n/* ── Brand header: the company-only part, layered on top of [part=\"content\"] ──── */\n[part=\"brandHeader\"] {\n  /* The company demo puts the close button INSIDE this bar. Core now makes [part=content]\n   * position:relative, so a bare absolute close would anchor to the content's top-right.\n   * Making the brand header its OWN positioning context keeps the close anchored to the\n   * HEADER bar (where the brand variant shows it) — additive, core file untouched. */\n  position: relative;\n  display: flex;\n  align-items: center;\n  gap: var(--space-3);\n  background: var(--color-semantic-primary-default);\n  color: var(--color-semantic-primary-contrast);\n  padding: var(--space-3) var(--space-6);\n  /* sit flush with the rounded top of the core content surface */\n  border-top-left-radius: var(--radius-lg);\n  border-top-right-radius: var(--radius-lg);\n  font-size: var(--font-size-sm);\n  font-weight: var(--font-weight-semibold);\n  /* pull out to the content padding edges so the bar spans the surface */\n  margin: calc(-1 * var(--space-6)) calc(-1 * var(--space-6)) var(--space-6);\n}\n\n[part=\"brandHeader\"]:hover {\n  background: var(--color-semantic-primary-hover);\n}\n\n/* ── Brand accent on the core close affordance (additive — core file untouched) ── */\n[part=\"content\"] [part=\"brandHeader\"] [part=\"close\"] {\n  color: var(--color-semantic-primary-contrast);\n}\n\n/* ── Minimized: the company-only data-state (collapse to just the brand header) ── */\n[part=\"content\"][data-state=\"minimized\"] {\n  /* show only the brand header chrome; hide the body until RESTORE */\n  overflow: hidden;\n  max-height: none;\n  padding-bottom: 0;\n}\n\n[part=\"content\"][data-state=\"minimized\"] > :not([part=\"brandHeader\"]) {\n  display: none;\n}\n"
+    }
+  ],
+  "merge_check": {
+    "core_states_present": true,
+    "core_context_keys_present": true,
+    "core_state_names": [
+      "closed",
+      "open",
+      "animatingOut"
+    ],
+    "added_states": [
+      "minimized"
+    ],
+    "added_context_keys": [
+      "brandHeader"
+    ],
+    "patch_violations": [],
+    "additive_only": true
+  },
+  "files": [
+    "core/runtime/machine-runtime.js",
+    "core/behaviors/dialog/machine.js",
+    "company/behaviors/dialog/machine.patch.js",
+    "core/behaviors/dialog/connect.vanilla.js",
+    "core/design/dialog.css",
+    "company/design/dialog.css"
+  ]
+}

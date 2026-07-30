@@ -1,0 +1,17 @@
+[mcp_servers.edp-claude]
+command = "uv"
+args = [
+    "run",
+    "--directory",
+    'C:\Projects\Learning\eda-base3\claude',
+    "python",
+    "-m",
+    "edp_claude.mcp_server",
+]
+
+[mcp_servers.edp-claude.env]
+EDP_AGENT_HOME = 'C:\Projects\Learning\eda-base3\claude'
+EDP_LOG_DIR = 'C:\Projects\Learning\eda-base3\.logs'
+EDP_BROKER_URL = "http://127.0.0.1:9300"
+EDP_POOL_URL = "http://127.0.0.1:9301"
+EDP_TIER_WRITE = "1"

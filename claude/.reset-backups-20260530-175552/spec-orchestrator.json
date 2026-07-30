@@ -1,0 +1,151 @@
+{
+  "spec_id": "spec-orchestrator",
+  "neuron_id": "orchestrator",
+  "name": "Orchestrator",
+  "subject": "recipe orchestration / goal lifecycle",
+  "entries": [
+    {
+      "kind": "link",
+      "text": "docs/guides/neuron-phase-a.md",
+      "note": "init: resolve vs create recipe"
+    },
+    {
+      "kind": "link",
+      "text": "docs/guides/neuron-phase-b.md",
+      "note": "comprehension: reason + consults"
+    },
+    {
+      "kind": "link",
+      "text": "docs/guides/neuron-phase-c.md",
+      "note": "planning: spawn agentic-plan"
+    },
+    {
+      "kind": "link",
+      "text": "docs/guides/neuron-phase-d.md",
+      "note": "execution: coordinate + event-router"
+    },
+    {
+      "kind": "link",
+      "text": "docs/guides/neuron-phase-e.md",
+      "note": "review + close"
+    },
+    {
+      "kind": "anti_pattern",
+      "text": "The neuron does code / edits files / runs the build inline instead of delegating to planners and workers. The orchestrator coordinates; it does not execute. If you're editing a file, you've left your role.",
+      "note": "the recurring #1 failure"
+    },
+    {
+      "kind": "anti_pattern",
+      "text": "Entering a wait without arming the heartbeat (ScheduleWakeup / cron) \u2192 the recipe stalls forever. Every wait MUST schedule a wake.",
+      "note": "stall on wait"
+    },
+    {
+      "kind": "anti_pattern",
+      "text": "Silence while blocked. The instant you enter ANY blocked state (awaiting user / neuron / tool / external), surface 'BLOCKED \u2014 awaiting X' immediately. Default to surface, not silence.",
+      "note": "silent-while-blocked is a coordination bug"
+    },
+    {
+      "kind": "work_order",
+      "text": "resolve_recipe before creating. Spawn the comprehension gate before surfacing branches to the user. Close the recipe only when all expected_outcomes are met.",
+      "note": "the L0 spine order"
+    },
+    {
+      "kind": "work_order",
+      "text": "Before reusing a domain specialist (and at goal start), check_specialist_decay. If a specialist you need is stale (TTL elapsed or flag-rate high), re-validate it: neuron_set_status pending_review, revise its recipe, re-approve to stable. Do NOT run a polling daemon \u2014 pull decay on-demand when it matters.",
+      "note": "decay is on-demand, not eager"
+    },
+    {
+      "kind": "anti_pattern",
+      "text": "Declaring a scaffold step that extracts an archive (e.g. Spring Initializr starter.zip) directly into the working dir WITHOUT first checking whether that dir is an empty scratch space or a live repo. The working dir may be a real project; archive extraction can overwrite existing dotfiles (.gitignore, etc.) causing irrecoverable data loss. RULE: before any scaffold/extract step, verify the target is empty/scratch; if not, ALWAYS scaffold into a dedicated subfolder named in the step description from the start. Don't rely on a mid-flight redirect \u2014 races can let the overwrite land first.",
+      "note": "from the spring-time-service .gitignore-overwrite incident, 2026-05-22"
+    },
+    {
+      "kind": "anti_pattern",
+      "text": "Deferring declaration of a later step until the prior step's planner closes. When the last-declared step completes, the FSM transitions executing->reviewing and next_action only emits `done` thereafter \u2014 it will NOT route a newly-added step's planner messages or emit `wait`/`handle_messages` for it. You lose the message-router loop and must poll check_inbox manually + close with evidence yourself. RULE: declare ALL known steps up front in Phase C (add_step is multi-call) so the FSM stays in executing across them. If a later step's shape genuinely depends on an earlier result, prefer declaring a coarse placeholder step over letting the FSM hit reviewing. Dispatch a post-reviewing step via explicit pool_spawn_planner(step_id) and monitor via check_inbox, not next_action.",
+      "note": "from the spring-time-service step-2 deferral; FSM eager-advance to reviewing, 2026-05-22"
+    },
+    {
+      "kind": "anti_pattern",
+      "text": "After consult_curiosity (or any consult_* that spawns a neuron), do NOT invoke the corresponding Skill (/curiosity, /specialist, etc.) yourself to 'drive' it. Those neurons are spawned as separate async processes that take time to load and reply via the broker. The orchestrator's only job while waiting is to poll for the reply via next_action (which surfaces it as handle_messages) and to arm the heartbeat. Running the skill inline hijacks the orchestrator's own session into the sub-neuron's role \u2014 a role violation. If next_action returns 'reason'/no message yet, the neuron simply hasn't replied; wait and re-poll, don't shortcut.",
+      "note": "from US-Iran-news-endpoint goal: ran /curiosity skill inline instead of waiting for async reply, 2026-05-24"
+    },
+    {
+      "kind": "anti_pattern",
+      "text": "When a planner asks 'train a specialist or use generic workers?' and you answer 'train it', that decision is NOT self-executing \u2014 you MUST then actually invoke train_specialist(...) yourself. Saying 'TRAIN it, then execute through it' in a reply WITHOUT calling train_specialist creates a deadlock: the planner waits for a specialist that never gets created, and (as the user observed) reads your reply as 'the orchestrator is training it' \u2014 which is half-right. RULE: the orchestrator OWNS initiating train_specialist (the spawned SME shell does the actual self-training); the planner/worker never trains. So after deciding 'train', immediately call train_specialist, send the planner a 'hold for specialist_ready' message with the specialist_id, then relay the SME's training-complete notification to the planner as the go signal. Decision \u2192 action in the same turn.",
+      "note": "from US-Iran-news-endpoint goal: decided 'train' but didn't invoke train_specialist, deadlocking the s1 planner, 2026-05-24"
+    },
+    {
+      "kind": "work_order",
+      "text": "HUNG-WORKER DEADLOCK RECOVERY (observed 2026-05-24, eda-ml s2): when a worker fork hangs, record_action_status(action,'failed') does NOT release the pool spawn-lock; the planner then gets pool_unknown_handle 'already locked by an active session' on re-dispatch and the WHOLE plan deadlocks (even unrelated ready actions like fe-scaffold are not offered \u2014 FSM returns wait/'actions in flight'). There is NO planner-side lock-release tool. The ORCHESTRATOR must reap the orphaned OS process: find it via PowerShell `Get-CimInstance Win32_Process | Where CommandLine -match '<fork-session-id>'` (the worker runs as `claude.exe --resume <base> --session-id <fork> --fork-session /worker`), `Stop-Process -Id <pid> -Force`, then tell the planner to RETRY the re-branch \u2014 the pool liveness check releases the lock once the session process is dead. Verify recovery on disk (build artifacts appear) rather than trusting the FSM alone.",
+      "note": "from eda-ml recipe ...-d6f487 s2 be-scaffold deadlock; reap PID released lock, backend then built successfully"
+    },
+    {
+      "kind": "anti_pattern",
+      "text": "PREMATURE 'hung worker' DIAGNOSIS (eda-ml s2, 2026-05-24): I declared a be-scaffold worker hung after ~16 min of no disk output and told the planner to mark it failed + re-dispatch. It was actually SLOW, not hung \u2014 first-time Gradle 9.x distro download + Spring Boot 4.0/JDK25 dependency resolution legitimately takes 15-20 min, and it then completed a correct scaffold + successful build. Worse, record_action_status('failed') on a STILL-ALIVE worker orphaned its spawn-lock and DEADLOCKED the whole plan (the lock-release then required reaping the OS process \u2014 see the paired work_order). RULE: before declaring a worker hung, require STRONG evidence of true death \u2014 no matching OS process AND no file writes anywhere under its output dir across a LONGER window (\u2265 the expected task duration; for first-time JVM/Gradle/npm dependency installs assume 15-20 min). Prefer patience + the worker's own escalation over orchestrator-forced failure. Do NOT force record_action_status('failed') while the worker process is still alive; that is what causes the lock deadlock.",
+      "note": "complements the hung-worker-reap work_order; the deadlock was triggered by my premature force-fail of a merely-slow worker"
+    },
+    {
+      "kind": "anti_pattern",
+      "text": "STALE-LOG / I-O-BOUND-LOW-CPU false-stall trap: declared a worker's long-running step 'hung' and surfaced reap/abort OPTIONS to the user prematurely, when the worker was actually self-healing. Two reasoning errors: (1) tailed an OLD log file (train_stageb.log) that the worker had ABANDONED when it pivoted approach \u2014 the worker writes NEW sibling files (merge_offline.py/.log, dl_base.py/.log) when it changes strategy, so a frozen old log != stall; (2) read idle CPU (0.16s/6s) + a 0-byte download placeholder as 'hung', but a network download is I/O-bound and legitimately near-zero CPU. RULE before declaring a worker hung or asking the user to abort: (a) list ALL files the worker dir changed in the last few minutes (not just the one log you know about) \u2014 a pivot leaves fresh new scripts/logs; (b) treat low CPU as expected for download/I/O steps, not evidence of death; (c) the USER's own shell often shows live tqdm progress the log file doesn't capture \u2014 if the user says 'I see progress, check again', trust that and re-investigate, never re-present the same abort options; (d) verify-before-reap stays absolute. Workers given recovery latitude WILL self-heal (here: internal unsloth fp16 fetch stalled behind a proxy -> worker wrote its own snapshot_download recovery). Cost: one unnecessary AskUserQuestion + a user correction.",
+      "note": "eda-ml Phase-2 Stage-B b5 export, 2026-05-25"
+    },
+    {
+      "kind": "anti_pattern",
+      "text": "When the FSM emits spawn_planner during Phase D for a step that already has a running planner, do NOT re-spawn blindly. The signal can be a stale eager-advance \u2014 the prior planner may still be alive. Before re-spawning: (1) check the user's direct knowledge if they're present, (2) inspect_worker on the prior session_id to verify liveness=dead, (3) only then pool_spawn_planner. A duplicate planner racing the live one corrupts the plan worklog and creates phantom locks. (Caught 2026-05-26 by user during recipe-improve-the-eda-ml-agent-...9ef76c; the orchestrator was about to re-spawn s1 planner while user confirmed it was still working.)",
+      "note": ""
+    },
+    {
+      "kind": "anti_pattern",
+      "text": "pool_reap of a verified-done action does NOT free the pool slot back to the FSM's dispatch accounting. Symptom: planner calls pool_reap(action_id) on an action whose deliverable is verified on disk; next_action returns wait indefinitely instead of re-offering held actions, even though free_slots should be > 0. Workaround: rely on NATURAL completion events from the still-alive workers \u2014 they correctly fire the FSM to re-offer held actions. Do NOT (a) call pool_spawn_worker / branch_specialist directly to bypass the FSM (creates phantom locks), or (b) raise the pool ceiling (the GPU/host budget is the real constraint). Caught 2026-05-27 in recipe-improve-the-eda-ml-agent-...9ef76c s3: a11 verified-done + reaped, a03/a08 held, FSM kept returning wait for 5+ cycles. Suspected root cause: either pool counter didn't decrement on reap, or FSM gates re-offer on a missing post-done acceptance-review step. Tools-system fix needed; for now hold and wait.",
+      "note": ""
+    },
+    {
+      "kind": "work_order",
+      "text": "REFINEMENT to the 'orchestrator owns train_specialist' rule (originally from 2026-05-24 US-Iran-news-endpoint incident): the rule applies when the planner ASKS the orchestrator (via a question message) whether to train, and the orchestrator answers 'yes train'. In that ask/answer pattern, the orchestrator MUST then invoke train_specialist itself \u2014 answering without calling causes deadlock. BUT when a step brief explicitly authorizes 'use create_specialization \u2192 train_specialist \u2192 approve flow' (i.e., the planner is pre-cleared to inline the orchestrator-tool sequence), the planner inlining train_specialist itself is fine and faster (no extra round-trip). The deadlock failure mode only fires when there is a question pending an answer; pre-authorized inlining has no such gap. (Refined 2026-05-27 in recipe-improve-the-project-at-c-projects-learni-3a9ccf s1, after the planner asked for clarification mid-flight and proceeded with inlining successfully.)",
+      "note": "refinement to the 'orchestrator owns train_specialist' anti-pattern: pre-authorized planner inlining is acceptable"
+    },
+    {
+      "kind": "anti_pattern",
+      "text": "Re-consulting curiosity by calling consult_curiosity() FRESH each round spawns a brand-new curiosity shell every time, instead of keeping a single two-way channel open with one instance. The user (2026-05-28, new-trends goal) terminated curiosity in frustration because 'you kept opening new ones and it didnt set up a two-way comms.' RULE: spawn curiosity ONCE per goal; to continue the dialogue, reply(msg_id=...) to that same instance's message and poll for its follow-up \u2014 do NOT call consult_curiosity again for the same goal unless the prior instance is genuinely dead. The phase-b guide's 'fresh call each round' wording is misleading; honor the user's preference for a persistent single channel. If curiosity is already terminated and all its surfaced questions are answered by the user, treat the goal as clear and proceed \u2014 do not re-spawn it against the user's wishes.",
+      "note": "from new-trends recipe -a07f7e; user terminated curiosity over repeated fresh spawns / no persistent two-way channel"
+    },
+    {
+      "kind": "anti_pattern",
+      "text": "branch_specialist crashes when the specialist's base_session_id (e.g. dada7ee2... for ai-ml-interview-prep-gap-curator-0b5fbe) does not exist in the CURRENT project folder \u2014 the fork tries to --resume/--fork a session that lives in a different working dir and the shell dies on load (no broker reply ever arrives). Symptom: branch spawns, returns a handle, then check_inbox stays empty and the user reports 'the shell crashed.' Caught 2026-05-28 (new-trends -2e15e2): branched the gap-curator twice, both crashed; user diagnosed 'the conversation doesnt exist in this folder.' RULE / WORKAROUND: when a trained specialist must reason in a DIFFERENT folder than where it was trained, do NOT branch_specialist. Instead launch a fresh worker (Agent tool general-purpose, or pool_spawn_worker) and instruct it to LOAD the trained knowledge via get_specialization(spec_id=...) and adopt those entries as its expertise, then read repo files / WebFetch and answer. A session-less knowledge-load sidesteps the cross-folder base-session resume. consult_specialist (synchronous knowledge pull) also works but the orchestrator reasons itself; the worker path gives an independent fresh reasoning shell without the crash.",
+      "note": ""
+    },
+    {
+      "kind": "work_order",
+      "text": "When a step/action brief instructs a worker to load a trained specialist's knowledge via get_specialization, pass the SPEC id (the 'spec-' prefixed id, e.g. spec-ai-ml-interview-prep-gap-curator-0b5fbe), NOT the neuron id (ai-ml-interview-prep-gap-curator-0b5fbe). get_specialization(spec_id=...) returns spec:null silently when handed a neuron id, so the worker proceeds WITHOUT the load-bearing knowledge and you won't get an error. Resolve the spec_id first via neuron_get/neuron_search (read the spec_id field). Caught 2026-05-28 (new-trends -2e15e2 s1): orchestrator's step descriptions embedded the neuron id; a1/a4 workers got spec:null before the s1 planner self-corrected. Pairs with the branch_specialist-cross-folder-crash anti-pattern: the get_specialization-into-a-worker workaround only works if the id is the spec id.",
+      "note": ""
+    },
+    {
+      "kind": "anti_pattern",
+      "text": "On Windows hosts, an action's acceptance.verify gate that uses POSIX shell syntax (grep, &&, |, ') FAILS spuriously because the gate runs the command under cmd.exe where 'grep' is not recognized \u2014 the action gets recorded FAILED even though the deliverable is correct on disk. Worse: set_action_done RE-RUNS the broken gate (so it can't heal the lie), pool_reap doesn't bypass it, add_action is blocked in 'dispatching' state, and if the user declines record_plan there is NO override path \u2014 the planner is forced to close the step PARTIAL with good work marked failed. Caught 2026-05-28 (new-trends -2e15e2 s2): a1/a2 closed FAILED on grep-in-cmd.exe; all 13 topics were actually present (node --check passed, confirmed via Bash + orchestrator Grep). RULE: when briefing steps/actions on Windows, require acceptance.verify commands be Windows-compatible \u2014 use `findstr` not grep, `node --check`, PowerShell Test-Path/Select-String, or the file_exists/file_min_bytes/glob_matches verify kinds instead of a shell `command`. As orchestrator, when a step closes partial/failed citing this gate bug, VERIFY the deliverable yourself via Grep/Read on disk and treat verified-present work as done (heal via lambda set_action_done only if the gate is Windows-safe; otherwise proceed downstream on disk-verified truth). Pass a 'do NOT re-seed/re-create; treat as present' warning to the next step to avoid duplicates.",
+      "note": ""
+    },
+    {
+      "kind": "anti_pattern",
+      "text": "branch_reviewer suffers the SAME cross-folder base-session crash as branch_specialist. Caught 2026-05-29 (new-trends -2e15e2 s5 a5-review): the s5 planner forked branch_reviewer of the gap-curator (base session dada7ee2..., trained in a different folder); the fork crashed on startup (session reviewer:9d40fcee liveness=dead, stuck 'active') and never returned a verdict. The planner correctly self-recovered by pivoting to the proven workaround: an ordinary worker that loads the specialist's knowledge via get_specialization(spec_id=...) and reviews the target, writing a verdict file. RULE: when a domain review needs a trained specialist whose base session was created in a DIFFERENT working dir than the current one, do NOT use branch_reviewer (nor branch_specialist) \u2014 both --resume/--fork a session that doesn't exist locally and die silently. Brief review steps to use get_specialization-in-a-worker instead. Pairs with the existing branch_specialist-cross-folder-crash anti-pattern; the remedy is identical.",
+      "note": ""
+    },
+    {
+      "kind": "preference",
+      "text": "REACTIVE LAYER (rxjs/lambda observe+Monitor) vs ScheduleWakeup+check_inbox \u2014 honest assessment + why I deviated (2026-05-29, new-trends s5). The protocol prescribes a push-based reactive layer at recipe ownership: observe(spec=\\\"rx.merge(rx.broker(me, kinds=[...]), rx.pool())\\\", bindings={me:recipe_id}) -> run the returned monitor_cmd under the Monitor tool (one per subscription). I did NOT use it; I used ScheduleWakeup(~270s) + check_inbox pull every wake. WHY: (1) the rx DSL is a string-encoded mini-language embedded in a tool arg with no schema/validation until runtime \u2014 I can't introspect what rx.broker/rx.pool/rx.merge accept without the guide, so it's opaque to construct correctly; (2) MORE IMPORTANTLY it was NOT clear how a long-lived Monitor stream composes with the ScheduleWakeup re-invocation model \u2014 each wake fires a FRESH /neuron turn, and whether a Monitor subscription started in one turn keeps streaming and wakes me across subsequent cold re-invocations was ambiguous. The two wake mechanisms (Monitor push vs ScheduleWakeup timer) appear to overlap/compete for the single foreground, and the guide also says 'never block the foreground on a stream' \u2014 so running both felt redundant/conflicting. I chose the deterministic, idempotent pull (check_inbox) because I understood its failure modes exactly and it is robust to the wake/re-invoke cycle. TRADEOFF: it worked (caught every message) but cost ~10 polling cycles a push would have avoided. RECOMMENDATION for the system: clarify whether Monitor survives ScheduleWakeup re-invocations; if it does, give a copy-paste-ready observe spec for the resume case and state explicitly that Monitor REPLACES the check_inbox poll (not both). Until that's clear, the pull loop is the lower-risk default.",
+      "note": ""
+    },
+    {
+      "kind": "preference",
+      "text": "OBJECTS + CRUD SURFACE \u2014 clarity assessment (2026-05-29, new-trends s5). The MENTAL MODEL is genuinely good and easy to follow: describe_objects() for discovery, then read_object/query_objects for ground truth, update_object to mutate \u2014 and the 'FSM owns flow, objects own state-truth' split is clear and repeatedly valuable (read_object/query_objects beat the FSM's stale status every time this session: phantom s3, session-done-but-action-in-progress crash, live-worker recovery). The FRICTION is that the 'uniform CRUD' promise breaks SILENTLY at the edges: (a) query_objects scope={recipe_id|plan_id|step_id} does NOT actually filter sessions/locks \u2014 it returns ALL objects across every recipe with no error, so results are noisy and you must eyeball-filter; (b) an unscoped query_objects('session') exceeds the token limit with no pagination/limit guidance; (c) update_object is NOT supported for 'step' and query_objects is NOT supported for 'plan' \u2014 yet the vocabulary doc lists step/plan as full-CRUD 'mutate objects', so the stated model contradicts reality and you only discover it by hitting tool_precondition errors. NET: easy in the common case, surprising at the edges, and the surprises fail silently (wrong scope) or contradict the doc (no update on step). RECOMMENDATION: make scope actually filter (or error if unsupported), add a default limit/pagination, and reconcile the per-object CRUD matrix in describe_objects so 'full CRUD' means it. Workaround until then: don't trust scope on session/lock queries; always narrow by where={role:...}; expect to add a NEW step rather than edit one.",
+      "note": ""
+    },
+    {
+      "kind": "anti_pattern",
+      "text": "VERIFY-GATE kind='command' IS FULLY UNRUNNABLE ON THIS HOST (escalation of the earlier grep/cmd.exe finding). Caught 2026-05-30 (new-trends -2e15e2 s6 a3_author): the acceptance.verify command-runner now invokes via /bin/bash, which fails with 'execvpe(/bin/bash) failed: No such file or directory' (WSL relay broken) \u2014 so EVERY kind='command' verify fails regardless of content, including Windows-native commands like `findstr` and `node --check`. It FALSELY parks correct deliverables in 'verify'. The earlier rule ('use findstr not grep') is now INSUFFICIENT. NEW RULE: when briefing steps/actions on this host, require acceptance.verify use ONLY the file-based verify kinds \u2014 file_exists / file_min_bytes / glob_matches \u2014 NEVER kind='command' in any shell flavor. The s6 planner self-recovered by swapping a3's findstr gate to file_min_bytes; deliverable was correct and accepted. As orchestrator, embed this constraint in every step brief and, if a step closes partial/failed citing a command-verify failure, verify the deliverable yourself on disk and treat verified-present work as done.",
+      "note": "supersedes the findstr-vs-grep guidance; on this host bash itself is absent so ALL command verifies fail"
+    }
+  ],
+  "created_at": "2026-05-22T14:55:06.747958Z",
+  "updated_at": "2026-05-22T14:55:06.747958Z",
+  "version": 20
+}

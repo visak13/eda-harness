@@ -1,0 +1,92 @@
+{
+  "ok": true,
+  "name": "dialog",
+  "layer": "company",
+  "root": "C:\\Projects\\Learning\\eda-designs",
+  "extends": "core/behaviors/dialog",
+  "registry": {
+    "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+    "name": "dialog",
+    "type": "registry:behavior",
+    "title": "Acme Dialog (brand)",
+    "description": "Company brand extension of the core dialog: adds a minimizable state + a brandHeader part, and ships brand config defaults (resizable, 640px). EXTENDS core additively — never edits a core file.",
+    "extends": "core/behaviors/dialog",
+    "config": {
+      "resizable": {
+        "type": "boolean",
+        "default": true
+      },
+      "width": {
+        "type": "string",
+        "default": "640px"
+      }
+    },
+    "contract": {
+      "part": [
+        "brandHeader"
+      ],
+      "dataState": []
+    },
+    "files": [
+      {
+        "path": "company/behaviors/dialog/machine.patch.js",
+        "type": "registry:behavior-patch"
+      },
+      {
+        "path": "company/behaviors/dialog/config.defaults.json",
+        "type": "registry:config"
+      },
+      {
+        "path": "company/behaviors/dialog/parts.extend.md",
+        "type": "registry:contract-extend"
+      },
+      {
+        "path": "company/design/dialog.css",
+        "type": "registry:design"
+      }
+    ],
+    "cssVars": {},
+    "css": {}
+  },
+  "config_defaults": {
+    "scrollable": true,
+    "resizable": true,
+    "width": "640px",
+    "height": null,
+    "brandHeader": true
+  },
+  "contract": {
+    "part": [
+      "brandHeader"
+    ],
+    "dataState": []
+  },
+  "deltas": {
+    "machine_patch": {
+      "path": "company/behaviors/dialog/machine.patch.js",
+      "bytes": 1986,
+      "content": "// company/behaviors/dialog/machine.patch.js\n// The COMPANY brand extension of the core dialog FSM (behavior-layer-design.md §3.2 / §5.2).\n//\n// PURELY ADDITIVE (monotonic). This patch is *merged* onto the core dialogMachine by the\n// resolver's applyPatch() (§4.2) — it may ONLY add states / events / context keys. It must\n// NOT delete, move, or rebind any core state (closed / open / animatingOut) or any existing\n// core transition. The determinism gate (recipe action a7) asserts exactly that.\n//\n// This file never imports core/behaviors/dialog/machine.js and never mutates it on disk —\n// core is read-only to the company bucket. The merge happens at fetch/compose time only.\n//\n// Patch grammar (consumed by applyPatch, §4.2):\n//   context:     { ...newKeys }   — added to core context (additive; no core key removed)\n//   addStates:   { <name>: node } — brand-new states only (name must NOT already exist in core)\n//   amendStates: { <state>: { on: { <EVENT>: target } } }\n//                                  — ADD new events to an existing core state's `on` map.\n//                                    May only introduce NEW event keys; rebinding an existing\n//                                    core event is a hard error in applyPatch (monotonic rule).\n\nexport const patch = {\n  // New config key — brand chrome toggle (additive; core context keys untouched).\n  context: { brandHeader: true },\n\n  // Brand-new state: the dialog can be MINIMIZED. RESTORE returns to open; CLOSE still\n  // funnels through the core animatingOut exit so focus/scroll cleanup stays canonical.\n  addStates: {\n    minimized: {\n      on: { RESTORE: \"open\", CLOSE: \"animatingOut\" },\n    },\n  },\n\n  // Amend the existing core `open` state by ADDING a MINIMIZE event (new event key only).\n  // Core's `open` already owns CLOSE → animatingOut; that binding is left exactly as-is.\n  amendStates: {\n    open: {\n      on: { MINIMIZE: \"minimized\" },\n    },\n  },\n};\n\nexport default patch;\n"
+    },
+    "config_defaults": {
+      "path": "company/behaviors/dialog/config.defaults.json",
+      "bytes": 433,
+      "content": "{\n  \"_comment\": \"Company brand config defaults for the dialog (behavior-layer-design.md §3.2 / §4.2). Merged onto core config as { ...core.config, ...company.config.defaults } — company VALUE defaults win, but only for these bounded config keys; structure is never overridden. These are values, not new machine structure.\",\n  \"scrollable\": true,\n  \"resizable\": true,\n  \"width\": \"640px\",\n  \"height\": null,\n  \"brandHeader\": true\n}\n"
+    },
+    "parts_extend": {
+      "path": "company/behaviors/dialog/parts.extend.md",
+      "bytes": 2396,
+      "content": "# Dialog — company parts extension (`extends: core/behaviors/dialog`)\n\nThis file is the **company-only delta** to the core markup contract\n([`core/behaviors/dialog/parts.md`](../../../core/behaviors/dialog/parts.md)). It is purely\n**additive**: the composed contract is `core.parts ∪ company.parts.extend` (behavior-layer-design.md\n§3.2 / §4.2). It adds **no** new `data-state` value and **redefines no** core part — it only\nintroduces brand chrome. Like the core `parts.md`, this is a human-readable spec, **not** a code\ndependency: behavior sets these attributes, `company/design/dialog.css` styles them, and neither\nimports the other.\n\n## Added part (`part=\"…\"`)\n\n| Part          | Element role                                              | Notes |\n|---------------|----------------------------------------------------------|-------|\n| `brandHeader` | A company brand bar rendered at the top of `content`     | Optional; rendered only when `ctx.brandHeader` is true (the additive config key from `machine.patch.js`). Styled by `company/design/dialog.css`, layered AFTER core CSS. |\n\n## Added state vocabulary (from `machine.patch.js`)\n\nThe company patch adds one new FSM state and one new event (additive, monotonic — no core state or\ntransition is removed or rebound):\n\n| FSM state   | Meaning                                                                 |\n|-------------|-------------------------------------------------------------------------|\n| `minimized` | Dialog collapsed to its brand header; `RESTORE` → `open`, `CLOSE` → `animatingOut`. |\n\n| Event       | On state | Effect                                  |\n|-------------|----------|-----------------------------------------|\n| `MINIMIZE`  | `open`   | Added to core `open` (new event key) → `minimized`. |\n| `RESTORE`   | `minimized` | `minimized` → `open`.                |\n\n> `data-state` therefore composes to `{ open, closed, animatingOut, minimized }`. The core pair\n> `{ open, closed }` and the transient `animatingOut` are untouched; `minimized` is the only addition,\n> and design MAY style it (e.g. collapse `content` to show only `brandHeader`) or fall back to the\n> open treatment when unstyled.\n\n## Union result\n\nComposed parts = `overlay, content, title, close` (core) **∪** `brandHeader` (company).\nComposed `data-state` = `open, closed, animatingOut` (core) **∪** `minimized` (company).\n"
+    },
+    "css": {
+      "path": "company/design/dialog.css",
+      "bytes": 2598,
+      "content": "/* company/design/dialog.css\n * The COMPANY brand design layer for the dialog (behavior-layer-design.md §3.2 / §5.2).\n *\n * Layered AFTER core/design/dialog.css (the resolver returns css = [ core, company ] in that\n * order — §4.2). It is purely ADDITIVE brand chrome: it styles the company-only `brandHeader`\n * part and the company-only `minimized` data-state, and applies brand accents to core parts via\n * the SAME contract selectors — it never edits the core CSS file.\n *\n * TOKEN-ONLY: every value is a real Style Dictionary token emitted into :root for both the\n * default and midnight themes (--color-semantic-primary-*/--space-*/--radius-*). No color is\n * hard-coded, so the brand chrome re-skins for free under any theme. Imports NO behavior/machine\n * file — design and behavior meet only at the parts.extend.md contract.\n */\n\n/* ── Brand header: the company-only part, layered on top of [part=\"content\"] ──── */\n[part=\"brandHeader\"] {\n  /* The company demo puts the close button INSIDE this bar. Core now makes [part=content]\n   * position:relative, so a bare absolute close would anchor to the content's top-right.\n   * Making the brand header its OWN positioning context keeps the close anchored to the\n   * HEADER bar (where the brand variant shows it) — additive, core file untouched. */\n  position: relative;\n  display: flex;\n  align-items: center;\n  gap: var(--space-3);\n  background: var(--color-semantic-primary-default);\n  color: var(--color-semantic-primary-contrast);\n  padding: var(--space-3) var(--space-6);\n  /* sit flush with the rounded top of the core content surface */\n  border-top-left-radius: var(--radius-lg);\n  border-top-right-radius: var(--radius-lg);\n  font-size: var(--font-size-sm);\n  font-weight: var(--font-weight-semibold);\n  /* pull out to the content padding edges so the bar spans the surface */\n  margin: calc(-1 * var(--space-6)) calc(-1 * var(--space-6)) var(--space-6);\n}\n\n[part=\"brandHeader\"]:hover {\n  background: var(--color-semantic-primary-hover);\n}\n\n/* ── Brand accent on the core close affordance (additive — core file untouched) ── */\n[part=\"content\"] [part=\"brandHeader\"] [part=\"close\"] {\n  color: var(--color-semantic-primary-contrast);\n}\n\n/* ── Minimized: the company-only data-state (collapse to just the brand header) ── */\n[part=\"content\"][data-state=\"minimized\"] {\n  /* show only the brand header chrome; hide the body until RESTORE */\n  overflow: hidden;\n  max-height: none;\n  padding-bottom: 0;\n}\n\n[part=\"content\"][data-state=\"minimized\"] > :not([part=\"brandHeader\"]) {\n  display: none;\n}\n"
+    }
+  },
+  "files": [
+    "company/behaviors/dialog/machine.patch.js",
+    "company/behaviors/dialog/config.defaults.json",
+    "company/behaviors/dialog/parts.extend.md",
+    "company/design/dialog.css"
+  ]
+}

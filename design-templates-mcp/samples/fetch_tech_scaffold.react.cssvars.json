@@ -1,0 +1,93 @@
+{
+  "ok": true,
+  "framework": "react",
+  "transport": "cssvars",
+  "root": "C:\\Projects\\Learning\\eda-designs",
+  "files": [
+    "core/runtime/machine-runtime.js",
+    "core/behaviors/dialog/connect.react.tsx",
+    "core/behaviors/dialog/machine.js",
+    "core/behaviors/dialog/parts.md"
+  ],
+  "scaffold": {
+    "summary": "Wiring boilerplate to bind ONE behavior's neutral machine to a React component tree and feed it a theme via CSS custom properties. Colors come from the THEME primitive (fetch_theme) and structure/parts from the BEHAVIOR primitive (fetch_behavior_primitive); this scaffold only connects them — it owns no color and no structure.",
+    "imports": {
+      "runtime": "core/runtime/machine-runtime.js",
+      "connector": "core/behaviors/dialog/connect.react.tsx",
+      "machine": "core/behaviors/dialog/machine.js",
+      "parts": "core/behaviors/dialog/parts.md"
+    },
+    "steps": [
+      {
+        "step": 1,
+        "name": "inject-theme-tokens",
+        "detail": "Inject the THEME primitive's variablesCss into a <style> tag (or :root) at app root so the token contract (--color-*/--space-*/--radius-*) is in scope. With transport 'cssvars' the theme primitive already returns ready-to-mount CSS custom properties; no transpile step. Swapping the active variables.css re-colors everything with no structure change.",
+        "code": "// from fetch_theme(theme, transport='cssvars').variablesCss\nconst styleEl = document.createElement('style');\nstyleEl.textContent = theme.variablesCss;\ndocument.head.appendChild(styleEl);\n// if theme.brand.on === 1, also mount the brand fill / logo token."
+      },
+      {
+        "step": 2,
+        "name": "mount-neutral-runtime",
+        "detail": "Import the dependency-free interpreter from 'core/runtime/machine-runtime.js'. It drives ANY machine shaped { initial, context, states } through a pure transition() fn. Connectors layer reactivity on top of this ONE interpreter so frameworks never diverge.",
+        "code": "import { createMachineRuntime } from 'core/runtime/machine-runtime.js';\n// alias also exported as useMachineRuntime\n// rt = createMachineRuntime(machine, transition, config)\n//   rt.state / rt.context / rt.send(event) / rt.can(type)\n//   rt.matches(state) / rt.subscribe(fn) / rt.snapshot()"
+      },
+      {
+        "step": 3,
+        "name": "bind-behavior-connector",
+        "detail": "Import the behavior's machine + the React connector ('core/behaviors/dialog/connect.react.tsx') and call its hook. The connector is THIN: it imports machine.js + machine-runtime.js, subscribes React via useSyncExternalStore, and exposes the api + prop-getters. It imports NO CSS and NO tokens — design meets behavior only at the parts contract.",
+        "code": "import { useDialog } from 'core/behaviors/dialog/connect.react.tsx';\nconst api = useDialog(config); // config keys from registry.json\n// api.state, api.isOpen, api.open(), api.close(), api.contentRef"
+      },
+      {
+        "step": 4,
+        "name": "render-parts",
+        "detail": "Render the markup by SPREADING the connector's prop-getters. Each getter emits the parts.md contract attributes (part / data-state / role / aria-*) and event handlers. The theme CSS targets those [part=...][data-state=...] selectors with token vars — zero coupling between behavior and design.",
+        "code": "<div {...api.getOverlayProps()}>\n  <div {...api.getContentProps()}>\n    <h2 {...api.getTitleProps()}>Title</h2>\n    <button {...api.getCloseProps()}>x</button>\n    <div {...api.getBodyProps()}>...content...</div>\n  </div>\n</div>"
+      }
+    ],
+    "api": {
+      "hook": "useDialog(config)",
+      "state": [
+        "state",
+        "isOpen"
+      ],
+      "actions": [
+        "open()",
+        "close()"
+      ],
+      "refs": [
+        "contentRef"
+      ],
+      "propGetters": [
+        "getOverlayProps()",
+        "getContentProps()",
+        "getBodyProps()",
+        "getTitleProps()",
+        "getCloseProps()"
+      ],
+      "emits": [
+        "part",
+        "data-state",
+        "role",
+        "aria-modal",
+        "aria-labelledby"
+      ]
+    },
+    "runtimeApi": [
+      "createMachineRuntime(machine, transition, config)",
+      "useMachineRuntime (alias)",
+      "rt.state",
+      "rt.context",
+      "rt.send(event)",
+      "rt.can(eventType)",
+      "rt.matches(state)",
+      "rt.subscribe(fn)",
+      "rt.snapshot()"
+    ],
+    "notes": [
+      "No colors / no tokens live in the connector (§5.2 rule 3); styling is the THEME axis. This scaffold is wiring only.",
+      "The connector imports the neutral machine; it never re-implements the FSM (§5.2 rule 1).",
+      "Emit every part from parts.md verbatim so one design CSS works for all frameworks (§5.2 rule 2).",
+      "Tech swap re-renders only — no color or structure change (§1.5)."
+    ],
+    "contract": "eda-designs/docs/separation-architecture.md §5 (tech-adapter contract)"
+  }
+}

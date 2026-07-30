@@ -1,0 +1,28 @@
+# Python (reconstructed: original was overwritten by a Spring Initializr zip and is unrecoverable; adjust as needed)
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Test / coverage / tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# Build / dist
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store

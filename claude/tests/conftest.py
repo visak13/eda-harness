@@ -1,0 +1,35 @@
+import pytest
+
+from edp_claude.server import make_context
+from edp_claude.tools import build_registry
+
+
+@pytest.fixture(autouse=True)
+def _clear_leaked_shell_env(monkeypatch):
+    """d7 (DESIGN-v6) — neutralise the worker-shell env that leaks into pytest.
+
+    When the suite is launched from a spawned shell (e.g. a `/worker` shell),
+    EDP_ROLE / EDP_HANDLE / EDP_TIER_WRITE are set in the ambient environment and
+    are inherited by pytest. Lineage / role-scoping tests then resolve those
+    ambient values instead of their own pinned ones and fail spuriously (the
+    documented worker-shell-env-leak: ~15 lineage/role tests). d7 requires every
+    such test to run under a cleared/pinned env; doing it once here makes the
+    WHOLE suite deterministic regardless of the launching shell. Tests that need
+    a role/handle set them explicitly via their own monkeypatch, so clearing the
+    ambient default never removes a value a test depends on (proven: the suite is
+    green with these unset)."""
+    for var in ("EDP_ROLE", "EDP_HANDLE", "EDP_TIER_WRITE"):
+        monkeypatch.delenv(var, raising=False)
+
+
+@pytest.fixture
+def env(tmp_path):
+    ctx = make_context(tmp_path)
+    tools = {t.name: t for t in build_registry(ctx)}
+
+    async def call(_tool_name, **inp):
+        # underscore-prefix avoids collision with tool input fields
+        # named `name` (e.g. get_guide).
+        return await tools[_tool_name].run(inp)
+
+    return type("Env", (), {"ctx": ctx, "tools": tools, "call": staticmethod(call)})

@@ -1,0 +1,201 @@
+{
+  "designs_root": "C:\\Projects\\Learning\\eda-designs",
+  "list_templates": {
+    "ok": true,
+    "root": "C:\\Projects\\Learning\\eda-designs",
+    "count": 17,
+    "templates": [
+      {
+        "kind": "theme",
+        "name": "default",
+        "description": "Design direction 'default': token JSON source of truth plus generated CSS-variable output.",
+        "files": [
+          "tokens/themes/default/color.json",
+          "tokens/themes/default/radii.json",
+          "tokens/themes/default/spacing.json",
+          "tokens/themes/default/typography.json",
+          "dist/themes/default/variables.css"
+        ]
+      },
+      {
+        "kind": "theme",
+        "name": "midnight",
+        "description": "Design direction 'midnight': token JSON source of truth plus generated CSS-variable output.",
+        "files": [
+          "tokens/themes/midnight/color.json",
+          "tokens/themes/midnight/radii.json",
+          "tokens/themes/midnight/spacing.json",
+          "tokens/themes/midnight/typography.json",
+          "dist/themes/midnight/variables.css"
+        ]
+      },
+      {
+        "kind": "component",
+        "name": "Button",
+        "description": "Token-consuming React component 'Button' (tsx + css).",
+        "files": [
+          "adapters/react/src/components/Button.css",
+          "adapters/react/src/components/Button.tsx"
+        ]
+      },
+      {
+        "kind": "component",
+        "name": "Card",
+        "description": "Token-consuming React component 'Card' (tsx + css).",
+        "files": [
+          "adapters/react/src/components/Card.css",
+          "adapters/react/src/components/Card.tsx"
+        ]
+      },
+      {
+        "kind": "scaffold",
+        "name": "react-adapter",
+        "description": "App/page scaffold 'react-adapter': adapter wiring showing how to consume design tokens at runtime.",
+        "files": [
+          "adapters/react/index.html",
+          "adapters/react/src/main.tsx",
+          "adapters/react/src/App.tsx",
+          "adapters/react/src/App.css"
+        ]
+      },
+      {
+        "kind": "scaffold",
+        "name": "theme-provider",
+        "description": "App/page scaffold 'theme-provider': adapter wiring showing how to consume design tokens at runtime.",
+        "files": [
+          "adapters/react/src/theme/ThemeProvider.tsx",
+          "adapters/react/src/theme/themes.ts"
+        ]
+      },
+      {
+        "kind": "doc",
+        "name": "readme",
+        "description": "Documentation file 'README.md'.",
+        "files": [
+          "README.md"
+        ]
+      },
+      {
+        "kind": "doc",
+        "name": "docs-adding-a-design-direction",
+        "description": "Documentation file 'docs/adding-a-design-direction.md'.",
+        "files": [
+          "docs/adding-a-design-direction.md"
+        ]
+      },
+      {
+        "kind": "doc",
+        "name": "docs-behavior-layer-design",
+        "description": "Documentation file 'docs/behavior-layer-design.md'.",
+        "files": [
+          "docs/behavior-layer-design.md"
+        ]
+      },
+      {
+        "kind": "doc",
+        "name": "docs-behavior-precedent-research",
+        "description": "Documentation file 'docs/behavior-precedent-research.md'.",
+        "files": [
+          "docs/behavior-precedent-research.md"
+        ]
+      },
+      {
+        "kind": "doc",
+        "name": "docs-foundation-state-audit",
+        "description": "Documentation file 'docs/foundation-state-audit.md'.",
+        "files": [
+          "docs/foundation-state-audit.md"
+        ]
+      },
+      {
+        "kind": "doc",
+        "name": "docs-guidelines",
+        "description": "Documentation file 'docs/guidelines.md'.",
+        "files": [
+          "docs/guidelines.md"
+        ]
+      },
+      {
+        "kind": "doc",
+        "name": "docs-page-scaffold",
+        "description": "Documentation file 'docs/page-scaffold.md'.",
+        "files": [
+          "docs/page-scaffold.md"
+        ]
+      },
+      {
+        "kind": "doc",
+        "name": "docs-readme",
+        "description": "Documentation file 'docs/README.md'.",
+        "files": [
+          "docs/README.md"
+        ]
+      },
+      {
+        "kind": "doc",
+        "name": "tokens-readme",
+        "description": "Documentation file 'tokens/README.md'.",
+        "files": [
+          "tokens/README.md"
+        ]
+      },
+      {
+        "kind": "doc",
+        "name": "adapters-readme",
+        "description": "Documentation file 'adapters/README.md'.",
+        "files": [
+          "adapters/README.md"
+        ]
+      },
+      {
+        "kind": "doc",
+        "name": "adapters-react-readme",
+        "description": "Documentation file 'adapters/react/README.md'.",
+        "files": [
+          "adapters/react/README.md"
+        ]
+      }
+    ]
+  },
+  "fetch_template_by_name(theme/default)": {
+    "ok": true,
+    "kind": "theme",
+    "name": "default",
+    "description": "Design direction 'default': token JSON source of truth plus generated CSS-variable output.",
+    "root": "C:\\Projects\\Learning\\eda-designs",
+    "files": [
+      "tokens/themes/default/color.json",
+      "tokens/themes/default/radii.json",
+      "tokens/themes/default/spacing.json",
+      "tokens/themes/default/typography.json",
+      "dist/themes/default/variables.css"
+    ],
+    "contents": [
+      {
+        "path": "tokens/themes/default/color.json",
+        "bytes": 4260,
+        "content": "{\n  \"color\": {\n    \"primitive\": {\n      \"white\": { \"value\": \"#ffffff\", \"type\": \"color\" },\n      \"black\": { \"value\": \"#000000\", \"type\": \"color\" },\n      \"gray\": {\n        \"50\":  { \"value\": \"#f8fafc\", \"type\": \"color\" },\n        \"100\": { \"value\": \"#f1f5f9\", \"type\": \"color\" },\n        \"200\": { \"value\": \"#e2e8f0\", \"type\": \"color\" },\n        \"300\": { \"value\": \"#cbd5e1\", \"type\": \"color\" },\n        \"400\": { \"value\": \"#94a3b8\", \"type\": \"color\" },\n        \"500\": { \"value\": \"#64748b\", \"type\": \"color\" },\n        \"600\": { \"value\": \"#475569\", \"type\": \"color\" },\n        \"700\": { \"value\": \"#334155\", \"type\": \"color\" },\n        \"800\": { \"value\": \"#1e293b\", \"type\": \"color\" },\n        \"900\": { \"value\": \"#0f172a\", \"type\": \"color\" }\n      },\n      \"blue\": {\n        \"50\":  { \"value\": \"#eff6ff\", \"type\": \"color\" },\n        \"100\": { \"value\": \"#dbeafe\", \"type\": \"color\" },\n        \"200\": { \"value\": \"#bfdbfe\", \"type\": \"color\" },\n        \"300\": { \"value\": \"#93c5fd\", \"type\": \"color\" },\n        \"400\": { \"value\": \"#60a5fa\", \"type\": \"color\" },\n        \"500\": { \"value\": \"#3b82f6\", \"type\": \"color\" },\n        \"600\": { \"value\": \"#2563eb\", \"type\": \"color\" },\n        \"700\": { \"value\": \"#1d4ed8\", \"type\": \"color\" },\n        \"800\": { \"value\": \"#1e40af\", \"type\": \"color\" },\n        \"900\": { \"value\": \"#1e3a8a\", \"type\": \"color\" }\n      },\n      \"green\": {\n        \"50\":  { \"value\": \"#f0fdf4\", \"type\": \"color\" },\n        \"500\": { \"value\": \"#22c55e\", \"type\": \"color\" },\n        \"600\": { \"value\": \"#16a34a\", \"type\": \"color\" },\n        \"700\": { \"value\": \"#15803d\", \"type\": \"color\" }\n      },\n      \"amber\": {\n        \"50\":  { \"value\": \"#fffbeb\", \"type\": \"color\" },\n        \"500\": { \"value\": \"#f59e0b\", \"type\": \"color\" },\n        \"600\": { \"value\": \"#d97706\", \"type\": \"color\" },\n        \"700\": { \"value\": \"#b45309\", \"type\": \"color\" }\n      },\n      \"red\": {\n        \"50\":  { \"value\": \"#fef2f2\", \"type\": \"color\" },\n        \"500\": { \"value\": \"#ef4444\", \"type\": \"color\" },\n        \"600\": { \"value\": \"#dc2626\", \"type\": \"color\" },\n        \"700\": { \"value\": \"#b91c1c\", \"type\": \"color\" }\n      }\n    },\n    \"semantic\": {\n      \"background\": {\n        \"default\": { \"value\": \"{color.primitive.white.value}\", \"type\": \"color\" },\n        \"subtle\":  { \"value\": \"{color.primitive.gray.50.value}\", \"type\": \"color\" }\n      },\n      \"surface\": {\n        \"default\": { \"value\": \"{color.primitive.white.value}\", \"type\": \"color\" },\n        \"raised\":  { \"value\": \"{color.primitive.gray.50.value}\", \"type\": \"color\" },\n        \"sunken\":  { \"value\": \"{color.primitive.gray.100.value}\", \"type\": \"color\" }\n      },\n      \"text\": {\n        \"primary\":   { \"value\": \"{color.primitive.gray.900.value}\", \"type\": \"color\" },\n        \"secondary\": { \"value\": \"{color.primitive.gray.600.value}\", \"type\": \"color\" },\n        \"muted\":     { \"value\": \"{color.primitive.gray.400.value}\", \"type\": \"color\" },\n        \"inverse\":   { \"value\": \"{color.primitive.white.value}\", \"type\": \"color\" }\n      },\n      \"primary\": {\n        \"default\":  { \"value\": \"{color.primitive.blue.600.value}\", \"type\": \"color\" },\n        \"hover\":    { \"value\": \"{color.primitive.blue.700.value}\", \"type\": \"color\" },\n        \"active\":   { \"value\": \"{color.primitive.blue.800.value}\", \"type\": \"color\" },\n        \"subtle\":   { \"value\": \"{color.primitive.blue.50.value}\", \"type\": \"color\" },\n        \"contrast\": { \"value\": \"{color.primitive.white.value}\", \"type\": \"color\" }\n      },\n      \"border\": {\n        \"default\": { \"value\": \"{color.primitive.gray.200.value}\", \"type\": \"color\" },\n        \"strong\":  { \"value\": \"{color.primitive.gray.300.value}\", \"type\": \"color\" },\n        \"focus\":   { \"value\": \"{color.primitive.blue.500.value}\", \"type\": \"color\" }\n      },\n      \"success\": {\n        \"default\": { \"value\": \"{color.primitive.green.600.value}\", \"type\": \"color\" },\n        \"subtle\":  { \"value\": \"{color.primitive.green.50.value}\", \"type\": \"color\" }\n      },\n      \"warning\": {\n        \"default\": { \"value\": \"{color.primitive.amber.600.value}\", \"type\": \"color\" },\n        \"subtle\":  { \"value\": \"{color.primitive.amber.50.value}\", \"type\": \"color\" }\n      },\n      \"danger\": {\n        \"default\": { \"value\": \"{color.primitive.red.600.value}\", \"type\": \"color\" },\n        \"subtle\":  { \"value\": \"{color.primitive.red.50.value}\", \"type\": \"color\" }\n      }\n    }\n  }\n}\n"
+      },
+      {
+        "path": "tokens/themes/default/radii.json",
+        "bytes": 410,
+        "content": "{\n  \"radius\": {\n    \"none\": { \"value\": \"0\", \"type\": \"dimension\" },\n    \"sm\":   { \"value\": \"0.125rem\", \"type\": \"dimension\" },\n    \"md\":   { \"value\": \"0.25rem\", \"type\": \"dimension\" },\n    \"lg\":   { \"value\": \"0.5rem\", \"type\": \"dimension\" },\n    \"xl\":   { \"value\": \"0.75rem\", \"type\": \"dimension\" },\n    \"2xl\":  { \"value\": \"1rem\", \"type\": \"dimension\" },\n    \"full\": { \"value\": \"9999px\", \"type\": \"dimension\" }\n  }\n}\n"
+      },
+      {
+        "path": "tokens/themes/default/spacing.json",
+        "bytes": 708,
+        "content": "{\n  \"space\": {\n    \"0\":  { \"value\": \"0\", \"type\": \"dimension\" },\n    \"1\":  { \"value\": \"0.25rem\", \"type\": \"dimension\" },\n    \"2\":  { \"value\": \"0.5rem\", \"type\": \"dimension\" },\n    \"3\":  { \"value\": \"0.75rem\", \"type\": \"dimension\" },\n    \"4\":  { \"value\": \"1rem\", \"type\": \"dimension\" },\n    \"5\":  { \"value\": \"1.25rem\", \"type\": \"dimension\" },\n    \"6\":  { \"value\": \"1.5rem\", \"type\": \"dimension\" },\n    \"8\":  { \"value\": \"2rem\", \"type\": \"dimension\" },\n    \"10\": { \"value\": \"2.5rem\", \"type\": \"dimension\" },\n    \"12\": { \"value\": \"3rem\", \"type\": \"dimension\" },\n    \"16\": { \"value\": \"4rem\", \"type\": \"dimension\" },\n    \"20\": { \"value\": \"5rem\", \"type\": \"dimension\" },\n    \"24\": { \"value\": \"6rem\", \"type\": \"dimension\" }\n  }\n}\n"
+      },
+      {
+        "path": "tokens/themes/default/typography.json",
+        "bytes": 1680,
+        "content": "{\n  \"font\": {\n    \"family\": {\n      \"sans\": { \"value\": \"system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif\", \"type\": \"fontFamily\" },\n      \"serif\": { \"value\": \"Georgia, Cambria, 'Times New Roman', Times, serif\", \"type\": \"fontFamily\" },\n      \"mono\": { \"value\": \"ui-monospace, SFMono-Regular, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace\", \"type\": \"fontFamily\" }\n    },\n    \"size\": {\n      \"xs\":   { \"value\": \"0.75rem\", \"type\": \"dimension\" },\n      \"sm\":   { \"value\": \"0.875rem\", \"type\": \"dimension\" },\n      \"base\": { \"value\": \"1rem\", \"type\": \"dimension\" },\n      \"lg\":   { \"value\": \"1.125rem\", \"type\": \"dimension\" },\n      \"xl\":   { \"value\": \"1.25rem\", \"type\": \"dimension\" },\n      \"2xl\":  { \"value\": \"1.5rem\", \"type\": \"dimension\" },\n      \"3xl\":  { \"value\": \"1.875rem\", \"type\": \"dimension\" },\n      \"4xl\":  { \"value\": \"2.25rem\", \"type\": \"dimension\" },\n      \"5xl\":  { \"value\": \"3rem\", \"type\": \"dimension\" }\n    },\n    \"weight\": {\n      \"regular\":  { \"value\": \"400\", \"type\": \"fontWeight\" },\n      \"medium\":   { \"value\": \"500\", \"type\": \"fontWeight\" },\n      \"semibold\": { \"value\": \"600\", \"type\": \"fontWeight\" },\n      \"bold\":     { \"value\": \"700\", \"type\": \"fontWeight\" }\n    },\n    \"lineHeight\": {\n      \"tight\":   { \"value\": \"1.2\", \"type\": \"number\" },\n      \"snug\":    { \"value\": \"1.375\", \"type\": \"number\" },\n      \"normal\":  { \"value\": \"1.5\", \"type\": \"number\" },\n      \"relaxed\": { \"value\": \"1.625\", \"type\": \"number\" }\n    },\n    \"letterSpacing\": {\n      \"tight\":  { \"value\": \"-0.01em\", \"type\": \"dimension\" },\n      \"normal\": { \"value\": \"0\", \"type\": \"dimension\" },\n      \"wide\":   { \"value\": \"0.02em\", \"type\": \"dimension\" }\n    }\n  }\n}\n"
+      },
+      {
+        "path": "dist/themes/default/variables.css",
+        "bytes": 3733,
+        "content": "/**\n * Do not edit directly, this file was auto-generated.\n */\n\n:root {\n  --color-primitive-white: #ffffff;\n  --color-primitive-black: #000000;\n  --color-primitive-gray-50: #f8fafc;\n  --color-primitive-gray-100: #f1f5f9;\n  --color-primitive-gray-200: #e2e8f0;\n  --color-primitive-gray-300: #cbd5e1;\n  --color-primitive-gray-400: #94a3b8;\n  --color-primitive-gray-500: #64748b;\n  --color-primitive-gray-600: #475569;\n  --color-primitive-gray-700: #334155;\n  --color-primitive-gray-800: #1e293b;\n  --color-primitive-gray-900: #0f172a;\n  --color-primitive-blue-50: #eff6ff;\n  --color-primitive-blue-100: #dbeafe;\n  --color-primitive-blue-200: #bfdbfe;\n  --color-primitive-blue-300: #93c5fd;\n  --color-primitive-blue-400: #60a5fa;\n  --color-primitive-blue-500: #3b82f6;\n  --color-primitive-blue-600: #2563eb;\n  --color-primitive-blue-700: #1d4ed8;\n  --color-primitive-blue-800: #1e40af;\n  --color-primitive-blue-900: #1e3a8a;\n  --color-primitive-green-50: #f0fdf4;\n  --color-primitive-green-500: #22c55e;\n  --color-primitive-green-600: #16a34a;\n  --color-primitive-green-700: #15803d;\n  --color-primitive-amber-50: #fffbeb;\n  --color-primitive-amber-500: #f59e0b;\n  --color-primitive-amber-600: #d97706;\n  --color-primitive-amber-700: #b45309;\n  --color-primitive-red-50: #fef2f2;\n  --color-primitive-red-500: #ef4444;\n  --color-primitive-red-600: #dc2626;\n  --color-primitive-red-700: #b91c1c;\n  --color-semantic-background-default: #ffffff;\n  --color-semantic-background-subtle: #f8fafc;\n  --color-semantic-surface-default: #ffffff;\n  --color-semantic-surface-raised: #f8fafc;\n  --color-semantic-surface-sunken: #f1f5f9;\n  --color-semantic-text-primary: #0f172a;\n  --color-semantic-text-secondary: #475569;\n  --color-semantic-text-muted: #94a3b8;\n  --color-semantic-text-inverse: #ffffff;\n  --color-semantic-primary-default: #2563eb;\n  --color-semantic-primary-hover: #1d4ed8;\n  --color-semantic-primary-active: #1e40af;\n  --color-semantic-primary-subtle: #eff6ff;\n  --color-semantic-primary-contrast: #ffffff;\n  --color-semantic-border-default: #e2e8f0;\n  --color-semantic-border-strong: #cbd5e1;\n  --color-semantic-border-focus: #3b82f6;\n  --color-semantic-success-default: #16a34a;\n  --color-semantic-success-subtle: #f0fdf4;\n  --color-semantic-warning-default: #d97706;\n  --color-semantic-warning-subtle: #fffbeb;\n  --color-semantic-danger-default: #dc2626;\n  --color-semantic-danger-subtle: #fef2f2;\n  --radius-none: 0;\n  --radius-sm: 0.125rem;\n  --radius-md: 0.25rem;\n  --radius-lg: 0.5rem;\n  --radius-xl: 0.75rem;\n  --radius-2xl: 1rem;\n  --radius-full: 9999px;\n  --space-0: 0;\n  --space-1: 0.25rem;\n  --space-2: 0.5rem;\n  --space-3: 0.75rem;\n  --space-4: 1rem;\n  --space-5: 1.25rem;\n  --space-6: 1.5rem;\n  --space-8: 2rem;\n  --space-10: 2.5rem;\n  --space-12: 3rem;\n  --space-16: 4rem;\n  --space-20: 5rem;\n  --space-24: 6rem;\n  --font-family-sans: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;\n  --font-family-serif: Georgia, Cambria, 'Times New Roman', Times, serif;\n  --font-family-mono: ui-monospace, SFMono-Regular, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;\n  --font-size-xs: 0.75rem;\n  --font-size-sm: 0.875rem;\n  --font-size-base: 1rem;\n  --font-size-lg: 1.125rem;\n  --font-size-xl: 1.25rem;\n  --font-size-2xl: 1.5rem;\n  --font-size-3xl: 1.875rem;\n  --font-size-4xl: 2.25rem;\n  --font-size-5xl: 3rem;\n  --font-weight-regular: 400;\n  --font-weight-medium: 500;\n  --font-weight-semibold: 600;\n  --font-weight-bold: 700;\n  --font-line-height-tight: 1.2;\n  --font-line-height-snug: 1.375;\n  --font-line-height-normal: 1.5;\n  --font-line-height-relaxed: 1.625;\n  --font-letter-spacing-tight: -0.01em;\n  --font-letter-spacing-normal: 0;\n  --font-letter-spacing-wide: 0.02em;\n}\n"
+      }
+    ]
+  }
+}

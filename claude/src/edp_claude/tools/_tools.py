@@ -1,0 +1,12235 @@
+"""All MCP tools (LLD §5). One module; surface unchanged.
+
+Error rule (edp-contracts §13.2): port/upstream errors are returned
+verbatim (the ports already return ToolOk/ToolError). Local precondition
+failures become ToolError(TOOL_PRECONDITION) — instruction-shaped, never a
+raised exception.
+"""
+
+import asyncio
+import hashlib
+import json
+import os
+import re
+import time
+import uuid
+from datetime import datetime, timezone
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, Literal
+
+from edp_contracts import BrokerMessage, Tool
+from edp_contracts.errors import ErrorCode
+from pydantic import BaseModel, model_serializer
+
+# Shared bounds primitives promoted to ONE place (coding-standard #16).
+# approx_tokens/_BUDGET are re-exported under their old local names so the
+# existing get_recipe_digest call sites keep resolving unchanged.
+from ._bounds import (  # noqa: F401
+    BUDGET,
+    INBOX_MAX_BYTES,
+    WINDOW,
+    approx_tokens as _approx_tokens,
+    budget_report,
+    windowed,
+)
+
+from ..cadence import (
+    RECONCILE_LOOP_CRON_PROMPT,  # noqa: F401 — canonical single source (W2 imports it)
+    heartbeat_secs as _heartbeat_secs,
+    wait_escalate_multiplier as _wait_escalate_multiplier,  # noqa: F401
+    wait_escalate_secs as _wait_escalate_secs,
+)
+from ..compose import compose_specialist_docs
+from ..guards import check_constraints as _check_constraints
+from ..guards import describe as _describe_violations
+from ..fsm import (
+    STALE_OUTPUT_SECS_DEFAULT,
+    bump_verify_failure,
+    compose_question_envelope,
+    consult_pending_view,
+    grounding_epoch,
+    handle_pacing_state,
+    pacing_hint,
+    pending_load_bearing_assumptions,
+    plan_next_action,
+    plan_pacing_state,
+    plan_ready_wave,
+    recipe_context,
+    recipe_next_action,
+    recipe_pacing_state,
+    recipe_ready_step_wave,
+    refresh_comprehension_baseline,
+    stuck_actions,
+)
+from ..ruleset import AssembledRuleset, AssembleError, assemble_ruleset
+from ..sessions import foreground_session_by_id, latest_foreground_session
+from ..schemas import (
+    Instruction,
+    InstructionKind,
+    NeuronRecord,
+    OcakAudit,
+    Plan,
+    PlanState,
+    Recipe,
+    RecipeState,
+    SpecEntry,
+    SpecialistConsult,
+    Specialization,
+)
+from ..store.atomic import write_atomic
+from ..store.neuron_store import TRANSITIONS as _NEURON_TRANSITIONS
+from ..store.spec_store import ProtectedSpecError
+from .base import _ClaudeTool, _log, instruction_error
+
+# S3b: extracted from inline literals. Status tokens are Pydantic Literal
+# field types on Action (kept Literal per the base-contracts precedent);
+# these sets are the *logic* groupings the tools branch on.
+_TERMINAL_ACTION_STATUS = ("done", "failed", "skipped")
+_KIND_PLAN_CLOSED = "plan_closed"  # an edp_contracts CORE_KIND
+
+# DESIGN-v6 W1.1 (neuron steer): the WRITE-TIME cap for a NEW record_context
+# decision/assumption/rejected_option text. Enforced ONLY in the tool path
+# (never on load/hydration) so legacy long texts load unchanged; NOT a schema
+# validator (the schema must accept any length for byte-identical hydration).
+_CONTEXT_TEXT_MAX = 1200
+
+# P5 proactive comms (2026-06-10): `fyi` + `grounding` were once registered
+# HERE, in-process. But notify_above/broker_send cross into the SEPARATE broker
+# process, which validates against CORE_KINDS only — so an in-process-only kind
+# was accepted here yet rejected at the broker (the grounding-kind gap a3 hit).
+# DESIGN-v6 W2/a5 promoted both to CORE_KINDS (edp_contracts.broker); they are
+# registered at contracts import in EVERY process now, so no local call is
+# needed (both are in edp_contracts.broker.CORE_KINDS).
+
+# Phase 7 (2026-05-21) crash recovery (Option C): how many times a
+# crashed child is auto-re-dispatched before surfacing to the parent.
+# 1 = first crash auto-recovers, second crash surfaces. Most crashes
+# are transient (spawn failure, OOM); one retry clears them without
+# babysitting, and the cap prevents an infinite respawn loop.
+_MAX_REDISPATCH = 1
+
+# 2026-06-03 (eda-ml s12:a4 spawn-deadlock fix): the pool returns success
+# the moment it LAUNCHES a worker shell — it does not wait to confirm the
+# shell survived startup. A worker that launches but instantly dies (e.g.
+# its own MCP servers fail to come up under resource/lock contention from
+# leaked MCP-server procs of earlier shells) otherwise looks like a clean
+# spawn, so the planner marks in_progress → sees the lock dead →
+# re-dispatches → LOOPS. pool_spawn_worker briefly polls the new worker's
+# liveness to catch a startup death and return a clear error instead. Kept
+# short so a healthy spawn (liveness goes 'alive' fast) returns promptly.
+_SPAWN_STARTUP_POLL_SECS = 1.0
+_SPAWN_STARTUP_CHECKS = 6   # ~6s startup-survival window
+
+
+def _precondition(msg: str):
+    return Tool.propagate(
+        source="tool", code=ErrorCode.TOOL_PRECONDITION, message=msg
+    )
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _warn_comms_constraints(ctx, body, source: str,
+                            recipe_id: str | None = None) -> None:
+    """W2 leg 3 WARN-ONLY stamp for comms bodies (`applies_to=["llm_payload"]`).
+
+    NEVER blocks — emit_recipe_event / broker_send must keep flowing even when
+    a body matches a constraint. Resolves the recipe (explicit `recipe_id`
+    else the caller's lineage); if one is found, logs a warning naming the
+    violated decision(s). Best-effort: any failure resolving the recipe or
+    scanning is swallowed WITH a logged cause (comms must not break on the
+    guard), never re-raised."""
+    try:
+        rid = recipe_id or _resolve_recipe_lineage(ctx)[0]
+        if not rid or not ctx.recipes.exists(rid):
+            return
+        rc = ctx.recipes.load(rid)
+        text = body if isinstance(body, str) else json.dumps(body, default=str)
+        vios = _check_constraints(rc, "llm_payload", text)
+        if vios:
+            _log.warning(
+                "comms_constraint_warn",
+                f"{source} body matches a recorded constraint (warn-only)",
+                source=source, recipe_id=rid,
+                violations=_describe_violations(vios),
+            )
+    except Exception as e:  # noqa: BLE001 — comms must never break on the guard
+        _log.warning("comms_constraint_guard_error",
+                     "constraint warn-stamp failed (comms proceeds)",
+                     source=source, error=str(e))
+
+
+# ── W8 fail-closed assumption dispatch gate (principle 6 / d13) ───────────────
+# A DETERMINISTIC state-correctness check — no LLM, no judgment call — that
+# principle 6 / d13 explicitly sanctions ("the W8 unacked-assumption set" is a
+# listed fail-closed guard). Both spawn tools refuse while a pending
+# load-bearing assumption bears on the work being dispatched.
+def _direction_override_active(r: "Recipe", assumption_id: str) -> bool:
+    """W8 §5 escape hatch (visible, never silent): the neuron may proceed past
+    a pending load-bearing assumption ONLY by recording an ACTIVE decision
+    kind="direction" that NAMES it — "proceeding on unacked assumption <id> at
+    user risk". That decision is itself pushed in every digest thereafter, so
+    the override is auditable, not a silent bypass. Deterministic token match
+    (no regex, no LLM)."""
+    aid = assumption_id.lower()
+    for d in r.context.decisions:
+        if getattr(d, "kind", None) != "direction":
+            continue
+        if getattr(d, "status", "active") != "active":
+            continue
+        text = (getattr(d, "text", "") or "").lower()
+        if "unacked assumption" not in text or "at user risk" not in text:
+            continue
+        # boundary-safe: the id must appear as a STANDALONE token so a
+        # direction naming "a12" cannot accidentally unblock "a1".
+        tokens = {tok.strip(".,;:()[]'\"") for tok in text.split()}
+        if aid in tokens:
+            return True
+    return False
+
+
+def _blocking_load_bearing_assumptions(r: "Recipe", target_id: str | None):
+    """W8 dispatch-guard SET: the pending load-bearing assumptions that must
+    block a spawn targeting `target_id` (a step_id for a planner spawn, an
+    action_id for a worker spawn).
+
+    - A pending load-bearing assumption with EMPTY `affects` blocks ANY spawn.
+    - One with a populated `affects` blocks only a spawn whose `target_id` is
+      in that list (advisory scoping — an assumption bearing on a specific
+      action/step does not hold up unrelated dispatch).
+    - The W8 §5 direction-decision escape hatch drops an assumption from the
+      set (auditable override).
+    """
+    blocking = []
+    for a in r.context.assumptions:
+        if getattr(a, "status", "acked") != "pending":
+            continue
+        affects = list(getattr(a, "affects", []) or [])
+        if affects and target_id is not None and target_id not in affects:
+            continue
+        if _direction_override_active(r, a.id):
+            continue
+        blocking.append(a)
+    return blocking
+
+
+def _assumption_gate_refusal(r: "Recipe", blocking: list):
+    """The VERBATIM fail-closed refusal naming the N unacked ids+titles and the
+    fix. Titles come from the same pending_load_bearing_assumptions helper the
+    digest surfaces, so the ids+titles a user sees match across every surface."""
+    titles = {row["id"]: row["title"]
+              for row in pending_load_bearing_assumptions(r)}
+    ids_titles = [f"{a.id}: {titles.get(a.id, '')}" for a in blocking]
+    return _precondition(
+        f"recipe has {len(blocking)} unacked load-bearing assumptions "
+        f"{ids_titles} — surface to the user (neuron: one batched "
+        f"AskUserQuestion) and ack via record_user_answer(assumption_id=...) "
+        f"before dispatching dependent work."
+    )
+
+
+def _recipe_sig(r: Recipe):
+    """Cheap mutable-state signature for the next_action save-guard.
+    Captures state + per-step (status, attempt) so a single call that
+    round-trips state but mutates a step still persists.
+
+    (W9's direction-review latch used to be captured here too. Removed with the
+    checkpoint itself — d128/d132.)"""
+    return (
+        r.state,
+        tuple((s.step_id, s.status, s.attempt) for s in r.steps),
+        len(r.comprehension.expected_outcomes),
+        r.ocak_audit is not None,
+    )
+
+
+# ── W5 consult/steer drain helpers (DESIGN-v6 §W5) ──────────────────────────
+_CONSULT_KINDS = ("consult", "steer")
+_CONSULT_PREVIEW_MAX = 200
+
+
+def _aware_utc(ts: datetime) -> datetime:
+    """`BrokerMessage.ts` is DOCUMENTED tz-aware UTC but is not validator-
+    enforced (edp-contracts/broker.py). A naive ts makes `max()` and `>` raise
+    TypeError against an aware one — inside the reconcile tick that would take
+    down the heartbeat spine. Read it as UTC instead; aware ts pass through
+    unchanged."""
+    return ts if ts.tzinfo is not None else ts.replace(tzinfo=timezone.utc)
+
+
+def _consult_preview(body: dict, limit: int = _CONSULT_PREVIEW_MAX) -> str:
+    """A short human-readable preview of a consult/steer body for the digest.
+    Prefers the common text-bearing keys; falls back to a compact JSON repr.
+    Bounded so the pending record stays O(1) in body size."""
+    if not isinstance(body, dict):
+        return ""
+    text = (body.get("question") or body.get("text")
+            or body.get("summary") or body.get("body") or "")
+    if not text:
+        try:
+            text = json.dumps(body, ensure_ascii=False, sort_keys=True)
+        except (TypeError, ValueError):
+            text = str(body)
+    text = str(text).strip()
+    return text[:limit] + ("…" if len(text) > limit else "")
+
+
+def _referenced_context_ids(r: Recipe) -> set[str]:
+    """W5 steer-ack — the pending consult/steer msg_ids that a record_context
+    DECISION references (the msg_id appears as a plain substring of a
+    decision's text / title / subject / rationale). A pending entry with a
+    referencing decision has been acknowledged and stops re-surfacing; an
+    unacked steer keeps nagging every tick. Plain substring, no regex
+    (coding-standard #7)."""
+    ids = [e.get("msg_id") for e in r.consult_pending if e.get("msg_id")]
+    if not ids:
+        return set()
+    parts: list[str] = []
+    for d in r.context.decisions:
+        for attr in ("text", "title", "subject", "rationale"):
+            v = getattr(d, attr, None)
+            if v:
+                parts.append(str(v))
+    blob = "\n".join(parts)
+    return {mid for mid in ids if mid in blob}
+
+
+# Cadence knobs (_heartbeat_secs / _wait_escalate_multiplier /
+# _wait_escalate_secs) now live in the shared canonical home
+# edp_claude.cadence and are imported at module top — beside
+# RECONCILE_LOOP_CRON_PROMPT, the single source W2's rewire block imports.
+
+
+def _wait_clock() -> float:
+    """Monotonic clock for wait-patience accounting. A seam, so a patience test
+    can inject time instead of sleeping through it. Distinct from `_now()`
+    above, which is the module's wall-clock datetime source — do not merge the
+    two: patience needs a monotonic reading, timestamps need a datetime."""
+    return time.monotonic()
+
+
+class _WaitState:
+    """Per-handle wait accounting: what the world looked like when this wait
+    began, when it began, and how many ticks have observed it since.
+
+    `sig` is a PROGRESS SIGNATURE, not a tick count — the moment it changes the
+    wait is no longer 'silent' and the patience clock restarts."""
+
+    __slots__ = ("sig", "since", "cycles", "escalations")
+
+    def __init__(self, sig, since: float):
+        self.sig = sig
+        self.since = since
+        self.cycles = 0
+        self.escalations = 0
+
+
+class _WaitTick:
+    """One tick's reading of a handle's wait clock. A value object, so the
+    clock is advanced exactly once per next_action call (by `_tick_wait`,
+    BEFORE the idle short-circuit) and merely rendered later."""
+
+    __slots__ = ("cycles", "waited", "escalate_after", "due", "escalations")
+
+    def __init__(self, cycles: int, waited: float, escalate_after: int,
+                 due: bool, escalations: int):
+        self.cycles = cycles
+        self.waited = waited
+        self.escalate_after = escalate_after
+        self.due = due
+        self.escalations = escalations
+
+
+# Per-handle wait state (2026-05-24 Fix C; rebuilt 2026-07-10 for backlog
+# items 10+11). In-memory: resets on MCP-server restart, which only loses the
+# accounting, not safety.
+_WAIT_STATE: dict[str, _WaitState] = {}
+
+
+def _plan_progress_sig(ctx, r) -> tuple:
+    """The recipe's plan-level progress signature: every in-flight step's plan,
+    reduced to (plan state, terminal status, per-action status+attempt).
+
+    Backlog item 10. Escalation used to fire off a tick counter that only reset
+    on a RECIPE-level change, so a plan advancing briskly underneath — four
+    actions driven, planner healthy — was indistinguishable from a wedged one.
+    It cried wolf twice on 2026-07-09 and a liveness check found everything
+    healthy both times. Action-status transitions ARE that missing progress.
+
+    This is local store reads only — the same class as the recipe load
+    `next_action` already performs — so the pure-phase-pacer contract (no
+    broker/pool IO) holds. An unreadable plan contributes a distinct marker
+    rather than raising: a heartbeat must never die on a corrupt sidecar, and a
+    marker that stays constant simply lets the patience clock run, which is the
+    safe direction (it escalates rather than silently sleeping)."""
+    sig: list[tuple] = []
+    for step_id in sorted(s.step_id for s in r.steps
+                          if s.status == "in_progress"):
+        plan_id = f"{r.recipe_id}-{step_id}"
+        try:
+            if not ctx.plans.exists(plan_id):
+                sig.append((plan_id, "no_plan"))
+                continue
+            p = ctx.plans.load(plan_id)
+        except Exception as exc:  # noqa: BLE001 — never kill a heartbeat
+            _log.warning("wait_progress_sig_plan_unreadable",
+                         plan_id=plan_id, error=str(exc))
+            sig.append((plan_id, "unreadable"))
+            continue
+        sig.append((
+            plan_id, str(p.state), str(p.terminal_status),
+            tuple((a.action_id, str(a.status), a.attempt) for a in p.actions),
+        ))
+    return tuple(sig)
+
+
+def _progress_sig(ctx, handle_type: str, obj) -> tuple:
+    """The signature whose change means 'the world moved' for this handle.
+
+    recipe (neuron waiting on planners) → recipe state + step statuses, PLUS
+    the action statuses inside every in-flight plan (item 10's missing term).
+    plan (planner waiting on workers) → plan state + its action statuses."""
+    if handle_type == "recipe":
+        return (_recipe_sig(obj), _plan_progress_sig(ctx, obj))
+    return (
+        str(obj.state), str(obj.terminal_status),
+        tuple((a.action_id, str(a.status), a.attempt) for a in obj.actions),
+    )
+
+
+def _spawn_model_for(role: str, task_class: str = "*", *,
+                     allow_candidate_tier: bool = False) -> str | None:
+    """DESIGN-v6 W10b — the `model` a spawn passes to the pool, or None for the
+    host default (Opus). Thin shim over `roles.spawn_model_for`.
+
+    DEFERRED IMPORT, not laziness: `roles.py` imports THIS module for
+    ALL_TOOL_CLASSES, so a module-level import here is a cycle. The existing
+    `crud_scope_violation` call site resolves the same way, for the same reason."""
+    from .roles import spawn_model_for
+    return spawn_model_for(role, task_class,
+                           allow_candidate_tier=allow_candidate_tier)
+
+
+# W10b, the ladder's THIRD stuck signal. `_tick_wait` re-arms the clock each
+# time the escalation window elapses, so `escalations` counts how many whole
+# patience windows this handle has burned with NO progress. Two windows is the
+# design's "> 2x wait_hint".
+_PARKED_ESCALATIONS = 2
+
+
+def _parked_action_ids(p, handle: str) -> frozenset[str]:
+    """The plan's in-flight actions whose child has been silent past TWICE its
+    wait_hint — the escalation ladder's third stuck signal, computed HERE (in
+    the tool layer, off the in-process wait clock) and handed to the pure FSM as
+    an input, exactly as `live_action_ids` is (s27/C7). The FSM holds no clock.
+
+    WHAT THIS IS AND IS NOT, stated because the design's wording is narrower than
+    what any code here can see. DESIGN-v6 W10b calls this signal "a worker parked
+    on a question > 2x wait_hint". This function CANNOT distinguish a worker
+    parked on an unanswered `ask_above` from one grinding silently on a hard
+    problem: the wait clock measures the plan's progress signature, not the
+    broker's inbox. It therefore fires on a SUPERSET of the design's condition —
+    any in-flight action whose plan has burned two full patience windows with no
+    progress. That is a deliberate, disclosed over-approximation: the instruction
+    it feeds is advisory, latched, and holds no dispatch (d76), so a false
+    positive costs exactly one tick of a planner's attention and a consult it may
+    decline to convene. Narrowing it to genuinely-parked-on-a-question needs a
+    broker read this pure-FSM seam does not have, and would be a new IO path.
+
+    Returns an empty set when the handle has no wait state (a fresh or
+    progressing plan), which is every plan on its first ticks."""
+    st = _WAIT_STATE.get(handle)
+    if st is None or st.escalations < _PARKED_ESCALATIONS:
+        return frozenset()
+    return frozenset(a.action_id for a in p.actions
+                     if a.status in ("in_progress", "verify"))
+
+
+def _worklog_tails(ctx, p, action_ids) -> dict[str, list[str]]:
+    """The last few worklog lines PER stuck action, rendered as plain strings for
+    the auto-composed consult question. Read HERE so `compose_consult_question`
+    stays pure. Bounded by construction (`tail=6` per action, and the caller only
+    ever passes the handful of actions the FSM flagged stuck), so this is not a
+    CORE-#18 list payload that grows with plan/event count."""
+    out: dict[str, list[str]] = {}
+    for aid in action_ids:
+        try:
+            rows = ctx.plans.read_worklog(p.plan_id, tail=6, action_id=aid)
+        except Exception:      # a missing/corrupt worklog must not break a tick
+            continue
+        lines = []
+        for r in rows:
+            kind = r.get("kind", "?")
+            detail = (r.get("detail") or r.get("status")
+                      or r.get("action") or "")
+            lines.append(f"{kind}: {detail}"[:240] if detail else kind)
+        if lines:
+            out[aid] = lines
+    return out
+
+
+def _tick_wait(instr, handle: str, state: str,
+               progress_sig: tuple) -> _WaitTick | None:
+    """Advance this handle's wait clock exactly once per next_action call, and
+    report whether an escalation is DUE. None for a non-WAIT instruction (the
+    FSM moved — that IS progress, so the accounting is dropped).
+
+    Called BEFORE the idle short-circuit on purpose. Item 8 collapses idle ticks
+    to a one-liner, and a collapsed tick never reaches `_enrich_wait` — so a
+    clock that only advanced during rendering would stop precisely when the
+    plan went quiet, which is the one situation escalation exists for. The two
+    fixes would have silently cancelled each other. The clock ticks here; the
+    due flag rides out through the wake predicate's `alert` term.
+
+    Escalation RE-ARMS (`since = now`) when it fires, so a genuinely wedged
+    plan surfaces once per patience window rather than defeating the collapse
+    on every tick thereafter."""
+    if instr.kind != InstructionKind.WAIT:
+        _WAIT_STATE.pop(handle, None)
+        return None
+    now = _wait_clock()
+    st = _WAIT_STATE.get(handle)
+    if st is None or st.sig != progress_sig:
+        st = _WaitState(sig=progress_sig, since=now)
+        _WAIT_STATE[handle] = st
+    st.cycles += 1
+    waited = max(0.0, now - st.since)
+    escalate_after = _wait_escalate_secs(pacing_hint(state)[0] * 60)
+    due = waited >= escalate_after
+    if due:
+        st.escalations += 1
+        st.since = now
+    return _WaitTick(cycles=st.cycles, waited=waited,
+                     escalate_after=escalate_after, due=due,
+                     escalations=st.escalations)
+
+
+# ── DESIGN-v7 1.5.2: the park hint ──────────────────────────────────────────
+# A planner whose expected wait is LONG (a child heads-down, or the user away)
+# burns one LLM turn per heartbeat forever while holding a shell — the exact
+# fleet shape park/resume exists to convert to "a durable plan file + a resume
+# token". The hint is CODE-COMPUTED (no LLM judgement about when to park) and
+# ADVISORY: the planner drains its inbox once more and calls
+# pool_close_self(park=true); the pool's resume watchdog wakes it on the next
+# inbound message. Threshold knob:
+_PARK_THRESHOLD_SECS_DEFAULT = 600
+
+# HARNESS GATE (2026-07-21, operator ruling). Park/resume is an OPENCODE
+# affordance, not a universal one. The two harnesses park differently:
+#
+#   opencode — pool_close_self(park=true) kills the CLI process but the TUI
+#     WINDOW survives, and the resume forks the same session straight back
+#     into it. The seat is genuinely freed at ~zero visible cost. This is
+#     what 1.5.2 was designed against.
+#   claude   — the shell IS the process. A park closes it outright, and the
+#     resume is a NEW shell replaying the transcript and reading a
+#     "You were parked and resumed" activation line that costs a turn to
+#     act on. The operator watched this close 3-4 times in one step.
+#
+# In Claude Code an idle shell holding a Monitor costs NOTHING while it waits
+# — the tokens are spent re-sending context on WAKE, which park+fork-resume
+# pays anyway when it reloads the transcript. So parking buys no tokens here;
+# it buys seat headroom, and it pays for that by replacing a pacing the shell
+# CHOSE (its own wait_hint + Monitor) with wake heuristics written elsewhere.
+# Those heuristics then have to guess: reconcile's RESUME_PLANNER fallback
+# fires on "a parked plan with non-terminal actions whose park is older than
+# the threshold — unknown age counts as old", which misfires on a healthy
+# two-minute-old park with a live worker.
+#
+# So: on the claude harness the planner STAYS RESIDENT and paces itself via
+# Monitor + heartbeat cron. Parking remains available as an explicit
+# pool_close_self(park=true) call (suspend_recipe still uses it) — what is
+# withdrawn is the standing ADVICE to park on every long structural wait.
+# Unknown/unset harness reads as claude: never advise killing a shell we
+# cannot classify.
+_PARK_HARNESS = "opencode"
+
+
+def _harness() -> str:
+    """Which agent harness this shell runs under: 'claude' | 'opencode'.
+
+    Stamped by the pool at spawn (EDP_HARNESS). Absent = a bare/foreground/
+    unit-test caller, which is claude-side by construction."""
+    return (os.environ.get("EDP_HARNESS", "").strip().lower()
+            or "claude")
+
+
+def _park_threshold_secs() -> int:
+    try:
+        return int(os.environ.get("EDP_PARK_THRESHOLD_SECS",
+                                  str(_PARK_THRESHOLD_SECS_DEFAULT)))
+    except ValueError:
+        return _PARK_THRESHOLD_SECS_DEFAULT
+
+
+def _park_hint(handle_type: str, state: str | None) -> dict | None:
+    """The code-computed park hint for a WAIT tick, or None.
+
+    Attached ONLY on the planner surface (handle_type=='plan' AND the calling
+    shell's EDP_ROLE is 'planner'): the neuron drives the whole recipe and
+    must stay resident, and a bare/unit caller with no role gets no hint —
+    parking is a pool-spawned planner's move, nobody else's.
+
+    HARNESS-GATED (see _PARK_HARNESS): emitted only on the opencode harness,
+    where a park keeps the window and the resume forks back into it. On
+    claude a park CLOSES the shell and the resume is a fresh one replaying
+    the transcript, so the planner stays resident and paces itself instead.
+
+    Fires when the pacing state says the wait is STRUCTURAL — a child in
+    flight (child_in_progress_*) or the user away (awaiting_user) — AND the
+    PACING table's expected wait for that state is at least
+    EDP_PARK_THRESHOLD_SECS (default 600s). At the default, the 10-min
+    heads-down band and the 30-min awaiting_user band are park-eligible; the
+    short probe/acceptance bands (2 min / 1 min) never are — a wait about to
+    resolve is cheaper ridden out than parked. Deterministic table lookup, no
+    clock, no LLM (principle 6)."""
+    if handle_type != "plan":
+        return None
+    if (os.environ.get("EDP_ROLE", "").strip() or None) != "planner":
+        return None
+    if _harness() != _PARK_HARNESS:
+        return None
+    if state is None or not (state.startswith("child_in_progress")
+                             or state == "awaiting_user"):
+        return None
+    expected_secs = pacing_hint(state)[0] * 60
+    threshold = _park_threshold_secs()
+    if expected_secs < threshold:
+        return None
+    return {
+        "park": True,
+        "expected_wait_secs": expected_secs,
+        "threshold_secs": threshold,
+        "reason": (f"pacing state {state!r} expects ~{expected_secs}s of "
+                   f"waiting (>= EDP_PARK_THRESHOLD_SECS={threshold}) — "
+                   "drain your inbox once more, then pool_close_self("
+                   "park=true); the pool resumes you when a message lands."),
+    }
+
+
+def _enrich_wait(instr, handle: str, handle_type: str,
+                 tick: _WaitTick | None = None,
+                 pacing_state: str | None = None):
+    """v5 wake: a WAIT means 'you are a waiting parent'. Carry the
+    deterministic heartbeat directive (handle + interval) so the
+    activator arms/keeps its protocol cron — zero LLM discretion.
+
+    v2.1 (2026-05-22): the rationale reinforces the MCP procedure — on
+    wake, drive the recipe ONLY via next_action; never hand-dispatch
+    planners or poll the broker to route around the FSM.
+
+    Fix C (2026-05-24), rebuilt 2026-07-10 (backlog items 10 + 11): after
+    enough WALL-CLOCK time with no PLAN-LEVEL PROGRESS, the rationale escalates
+    — the waiting party must proactively surface a status upward rather than
+    loop silently. Two things it is deliberately NOT:
+
+    * not a tick counter — how often the loop looks cannot change when it
+      escalates (item 11). `wait_cycles` survives as pure observability.
+    * not a recipe-only change check — any action status transition inside an
+      in-flight plan restarts the patience clock (item 10).
+
+    Rendering only: `_tick_wait` already advanced the clock.
+
+    DESIGN-v7 1.5.2: a WAIT on the PLANNER surface whose pacing state expects
+    a long structural wait additionally carries a code-computed `park_hint`
+    (see _park_hint) telling the planner to self-park instead of heartbeating
+    an idle shell."""
+    if tick is None:
+        return instr
+    instr.args = {
+        **instr.args,
+        "handle": handle,
+        "handle_type": handle_type,
+        "heartbeat_secs": _heartbeat_secs(),
+        "wait_cycles": tick.cycles,
+        "waited_secs": int(tick.waited),
+        "escalate_after_secs": tick.escalate_after,
+    }
+    hint = _park_hint(handle_type, pacing_state)
+    if hint is not None:
+        instr.args = {**instr.args, "park_hint": hint}
+    base = (
+        (instr.rationale or "")
+        + " On wake: `reconcile` (sync the record to broker/pool "
+        "reality — a plan_closed or a crash may not be reflected yet), "
+        "THEN call next_action again and obey what it returns. React "
+        "to rx events as they arrive; the heartbeat's reconcile is "
+        "your backstop. If the FSM still isn't advancing after a "
+        "reconcile, THEN surface it — don't hand-dispatch around it."
+    )
+    if tick.due:
+        mins = int(tick.waited // 60)
+        base += (
+            f" PROACTIVE ESCALATION: {mins} minutes have passed with NO "
+            "plan-level progress — no action status transition, no step "
+            "advanced. Do NOT keep waiting silently — surface a "
+            "status UP NOW (ask_above/notify_above to your parent, or "
+            "the neuron AskUserQuestion to the user): 'still waiting "
+            f"on <what> after {mins} minutes — is this expected, or is "
+            "something stuck?' Silence-while-stuck is the bug; the "
+            "bidirectional channel is for proactive use."
+        )
+    instr.rationale = base.strip()
+    return instr
+
+
+# ── W7 item 1: computed pacing (wait_hint minutes + wait_reason) ────────────
+# The PACING policy TABLE + the pacing-state CLASSIFIERS are pure data/logic in
+# the FSM package (state_machines.PACING / recipe_fsm.recipe_pacing_state /
+# plan_fsm.plan_pacing_state / handle_pacing_state). These helpers are the thin
+# surfacing layer: derive output-staleness from the worklog and stamp the
+# (minutes, reason) onto next_action / reconcile / status_ping. No LLM anywhere
+# (principle 6) — deterministic table lookup only.
+
+def _stale_output_secs() -> int:
+    try:
+        return int(os.environ.get("EDP_STALE_OUTPUT_SECS",
+                                  str(STALE_OUTPUT_SECS_DEFAULT)))
+    except ValueError:
+        return STALE_OUTPUT_SECS_DEFAULT
+
+
+def _output_stale(last_ts) -> bool:
+    """True if the last worklog output ts is older than the stale threshold.
+    A missing/unparseable ts → NOT stale (optimistic: never nag a child whose
+    output we can't measure). Item 2 will refine the ts SOURCE (pool-side
+    last_output_ts); today it is the worklog's own last-entry ts."""
+    if not last_ts:
+        return False
+    try:
+        t = datetime.fromisoformat(str(last_ts))
+    except (ValueError, TypeError):
+        return False
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    age = (datetime.now(timezone.utc) - t).total_seconds()
+    return age > _stale_output_secs()
+
+
+def _pacing_fields(state: str) -> dict:
+    """The two surfaced fields for a pacing state: {wait_hint (int minutes),
+    wait_reason (str)}. Single lookup through the shared PACING table."""
+    mins, reason = pacing_hint(state)
+    return {"wait_hint": mins, "wait_reason": reason}
+
+
+def _attach_pacing(instr, state: str):
+    """Stamp wait_hint (minutes int) + wait_reason onto an Instruction's args
+    (surfaced on every next_action output, wait or not). Keys are distinct from
+    _enrich_wait's heartbeat_secs/wait_cycles, so the two compose cleanly."""
+    instr.args = {**instr.args, **_pacing_fields(state)}
+    return instr
+
+
+# ── W7 item 3: reconcile->next_action short-circuit (DESIGN-v6:384) ──────────
+# When a tick makes NO forward move (a WAIT with no record mutation — the
+# next_action-side analog of reconcile's changed=False) AND the inbox surfaces
+# nothing new, next_action collapses its full instruction+context push to a
+# one-line {no_change, wait_hint, wait_reason} payload. The token cost of an
+# over-frequent idle tick then collapses even if the cron interval is never
+# retuned. Stateless (d13 + neuron steer): the PRIMARY gate is changed=False +
+# empty-inbox-diff; `ack_epoch` is surfaced BEST-EFFORT (there is NO
+# last_acked_epoch store and none is built here) and NEVER gates correctness.
+
+class _NoChangeOut(BaseModel):
+    """The one-line reply that replaces next_action's full instruction+context
+    push on an idle no-change tick (W7 item 3)."""
+    no_change: bool = True
+    wait_hint: int            # minutes, from the shared PACING table
+    wait_reason: str
+    # best-effort epoch surfaced for observability; there is no store to match
+    # against, so it is informational only — never a short-circuit gate (d13).
+    # W2: now the 12-hex-char grounding_epoch string (was an int stub pre-W2);
+    # None when no backing recipe is resolvable for the handle.
+    ack_epoch: str | None = None
+
+
+# handle_type → the role whose wake-set governs that handle's idle check. The
+# reconcile-loop roles are the only callers of next_action (cadence.py:45).
+_HANDLE_TYPE_ROLE = {"recipe": "neuron", "plan": "planner"}
+
+
+def _should_wake(instr_kind, reconcile_changed, record_changed,
+                 alert, inbox_wake) -> bool:
+    """The PURE wake predicate (backlog item 8):
+
+        wake  <=>  kind != WAIT  or  reconcile.changed  or  alert
+                   or  event.kind in WAKE_KINDS
+
+    No IO, no clock, no globals — so every term is directly assertable. The bug
+    it replaces was an ASYMMETRY, not a missing term: the rx subscription woke
+    on a kind-FILTERED set while the idle check tested `bool(msgs)`, kind-BLIND.
+    Any message at all — a `progress` ping the neuron would have absorbed and
+    dropped — therefore defeated the idle collapse and bought a full LLM turn.
+    `inbox_wake` is now the wake-set-filtered term, so the two agree.
+
+    `alert` is any attention-demanding condition surfaced for this tick. Today
+    that is a DUE wait-escalation (`_tick_wait`): an escalation the caller never
+    sees is not an escalation, so it must beat the collapse.
+
+    `reconcile_changed is not False` is the opt-in: None (a bare next_action
+    call, every direct/unit caller) reads as 'wake', so only the paced loop that
+    explicitly reported `changed=False` can ever collapse a tick."""
+    return (
+        instr_kind != InstructionKind.WAIT
+        or reconcile_changed is not False
+        or bool(record_changed)
+        or bool(alert)
+        or bool(inbox_wake)
+    )
+
+
+async def _inbox_has_new(ctx, recipient: str,
+                         wake_kinds: set[str] | None = None) -> bool:
+    """NON-CONSUMING inbox-diff for the W7 short-circuit: is any message newer
+    than the recipient's cursor waiting? Reads the same cursor check_inbox uses
+    (in-process dict, else the persisted file) but NEVER advances it, so the
+    real check_inbox / rx push still delivers the message. Best-effort: a poll
+    failure reads as 'new' (True) so a transient broker error can never collapse
+    a tick that might be hiding a wake — correctness before token savings.
+
+    `wake_kinds` (item 8) narrows the question from "is ANY message waiting" to
+    "is a message this role WAKES ON waiting", against the same ROLE_WAKE_KINDS
+    table the rx subscription filters by. None = unknown role = kind-blind, the
+    safe fallback: an unmapped role can lose token savings, never a wake.
+    Messages outside the set are NOT dropped — they stay in the inbox and are
+    read on the next real wake."""
+    from ..reactive.runtime import kind_of
+
+    cursor = _INBOX_CURSORS.get(recipient)
+    if cursor is None:
+        cursor = _load_persisted_cursor(ctx, recipient)
+    try:
+        msgs = await ctx.broker.poll(recipient, since_ts=cursor)
+    except Exception:  # noqa: BLE001 — a poll error must not collapse the tick
+        return True
+    if wake_kinds is None:
+        return bool(msgs)
+    return any(kind_of(m) in wake_kinds for m in msgs)
+
+
+async def _maybe_short_circuit(ctx, recipient, instr, changed_sig, state,
+                               epoch, reconcile_changed, handle_type=None,
+                               alert=None):
+    """DESIGN-v6:384 (W7 item 3) — return the ok(no_change) short-circuit
+    result, or None to fall through to the full instruction+context push.
+
+    The decision IS `_should_wake`; this is only its IO shell. The cheap,
+    already-in-hand terms are evaluated first and the inbox poll — the one term
+    that costs a broker round-trip — is reached only when nothing else has
+    already decided to wake. `ack_epoch` is surfaced best-effort only (no
+    store; d13) and NEVER gates. Any real change — a mutation, a non-WAIT
+    instruction, or a new WAKE-SET message — returns None so the full
+    instruction is restored on the very next tick."""
+    from ..reactive.runtime import wake_kinds as _wake_kinds
+
+    if _should_wake(instr.kind, reconcile_changed, changed_sig, alert,
+                    inbox_wake=False):
+        return None
+    role = _HANDLE_TYPE_ROLE.get(handle_type or "")
+    if await _inbox_has_new(ctx, recipient, _wake_kinds(role) if role else None):
+        return None
+    mins, reason = pacing_hint(state)
+    return Tool.ok(_NoChangeOut(wait_hint=mins, wait_reason=reason,
+                                ack_epoch=epoch))
+
+
+# ── W2: stateless grounding-epoch trigger (DESIGN-v6 §W2 leg 1) ─────────────
+# The server recomputes grounding_epoch from the LOADED recipe (the recipe IS
+# the state — d13, no ack store) and compares it to the caller's echoed
+# `ack_epoch`. Four outcomes drive the trigger table:
+#   match    ack present + equals current -> steady-state (pointer / W7 SC)
+#   stale    ack present + differs        -> full digest + 'ground changed' banner
+#   absent   ack None (a lean cron tick never carried one — NOT compaction)
+#            -> steady-state, current epoch echoed in the push
+#   reground reground=true               -> full digest + rewire block, always
+# Compaction detection is the HARNESS's job (W13 hook), NOT epoch self-
+# inference; the recipe_context count/index gap check stays the BACKSTOP.
+
+def _grounding_for(ctx, handle_obj) -> str | None:
+    """Current grounding_epoch for a recipe OR plan handle. A plan grounds
+    against its owning recipe; a recipe against itself. None when no backing
+    recipe is resolvable (keeps every packet shape stable — the epoch is
+    additive, never load-bearing for correctness)."""
+    if isinstance(handle_obj, Recipe):
+        return grounding_epoch(handle_obj)
+    rid = getattr(handle_obj, "recipe_id", None)
+    if rid and ctx.recipes.exists(rid):
+        return grounding_epoch(ctx.recipes.load(rid))
+    return None
+
+
+def _classify_epoch(epoch, ack_epoch, reground) -> str:
+    """Pure trigger-table classifier (principle 6 — no LLM). `reground` wins
+    unconditionally; an unresolvable epoch (None) reads as 'absent' so a
+    handle with no backing recipe never spuriously re-grounds."""
+    if reground:
+        return "reground"
+    if ack_epoch is None or epoch is None:
+        return "absent"
+    return "match" if ack_epoch == epoch else "stale"
+
+
+def _observe_call_str(spec: str, bindings: dict) -> str:
+    """The exact `observe(...)` call a rehydrated shell re-issues to restore a
+    subscription. Deterministic string assembly (no LLM): observe() is
+    idempotent on (subscription_id, spec, bindings), so re-running is safe —
+    an identical re-arm returns reused=True and the SAME monitor_cmd."""
+    if bindings:
+        return f"observe(spec={spec!r}, bindings={json.dumps(bindings)})"
+    return f"observe(spec={spec!r})"
+
+
+def _rewire_block(ctx, handle: str) -> dict:
+    """The FULL monitor rewire HAND-BACK (W2 leg 2, DESIGN-v6 §W2 section 2).
+
+    A compacted / re-hydrated shell is HANDED its wiring back verbatim, not
+    asked to reconstruct it. Deterministic assembly, no LLM (principle 6):
+
+      (a) `observe_specs` — every observe() subscription PERSISTED for THIS
+          handle (from the `.reactive` handle->sid index), each carrying its
+          ACTUAL spec + bindings + the exact `observe(...)` call to re-issue +
+          the note to run the returned monitor_cmd under the Monitor tool.
+          observe() is idempotent, so re-issuing is always safe.
+      (b) `heartbeat` — the CANONICAL reconcile-loop cron prompt CONSTANT from
+          the single `cadence` source + the roles that arm it + the current
+          cadence. NEVER the verbatim goal — the recipe/plan state carries the
+          goal; the cron fires only a short role reflex.
+      (c) `durable_rules` — any register_rule -> RuleSupervisor rule OWNED by
+          this handle, noted as the DURABLE path ALREADY ACTIVE (a running
+          supervisor re-subscribes it on restart, so NO re-arm is needed).
+
+    The flat `cron_prompt` / `roles` / `heartbeat_secs` keys are ALSO kept at
+    the top level for the a2 epoch consumers that read them directly."""
+    from ..cadence import (
+        RECONCILE_LOOP_CRON_PROMPT,
+        RECONCILE_LOOP_ROLES,
+        heartbeat_secs,
+    )
+    from ..reactive.handle_index import specs_for_handle
+
+    root = ctx.recipes.root.parent / ".reactive"
+
+    # (a) the handle's ACTUAL persisted observe subscriptions.
+    observe_specs: list[dict] = []
+    for sub in specs_for_handle(root, handle):
+        observe_specs.append({
+            "subscription_id": sub["sid"],
+            "spec": sub["spec"],
+            "bindings": sub.get("bindings") or {},
+            "effect": sub.get("effect"),
+            "observe_call": _observe_call_str(
+                sub["spec"], sub.get("bindings") or {}),
+            "note": ("re-issue this observe(...) then run the returned "
+                     "monitor_cmd under the Monitor tool; observe is "
+                     "idempotent so re-running is safe (reused=True)."),
+        })
+
+    # (c) durable RuleSupervisor rules owned by this handle — already active.
+    durable_rules: list[dict] = []
+    try:
+        from ..reactive import RuleRegistry
+        registry = RuleRegistry(root=root / "registry")
+        for rule in registry.list_rules():
+            if rule.owner == handle:
+                durable_rules.append({
+                    "name": rule.name,
+                    "enabled": rule.enabled,
+                    "has_effect": rule.effect is not None,
+                    "note": ("DURABLE path ALREADY ACTIVE — a running "
+                             "RuleSupervisor re-subscribes this rule on "
+                             "restart; do NOT re-arm it as a session Monitor."),
+                })
+    except Exception:  # noqa: BLE001 — a registry read must never break rewire
+        durable_rules = []
+
+    return {
+        "handle": handle,
+        # (a)
+        "observe_specs": observe_specs,
+        # (b)
+        "heartbeat": {
+            "cron_prompt": RECONCILE_LOOP_CRON_PROMPT,
+            "roles": list(RECONCILE_LOOP_ROLES),
+            "heartbeat_secs": heartbeat_secs(),
+            "note": ("re-arm your reconcile-loop heartbeat cron with this "
+                     "EXACT cron_prompt (neuron/planner only) — NEVER the "
+                     "verbatim goal; the recipe/plan state carries the goal."),
+        },
+        # (c)
+        "durable_rules": durable_rules,
+        # flat keys kept for the a2 epoch consumers that read them directly.
+        "cron_prompt": RECONCILE_LOOP_CRON_PROMPT,
+        "roles": list(RECONCILE_LOOP_ROLES),
+        "heartbeat_secs": heartbeat_secs(),
+        "note": ("monitor rewire hand-back — re-issue every observe_specs entry "
+                 "under Monitor + re-arm the heartbeat cron; durable_rules are "
+                 "already active and need no re-arm. Deterministic (no LLM)."),
+    }
+
+
+def _ground_signature(r) -> dict:
+    """v7 P6.1 — the id-level snapshot of the ground a shell acked: active
+    decision ids, superseded ids, closed step ids. Pure projection; the diff
+    of two signatures IS the 'changes since your last ground' screenful."""
+    return {
+        "decision_ids": [d.id for d in r.context.decisions
+                         if getattr(d, "status", "active") == "active"],
+        "superseded_ids": [d.id for d in r.context.decisions
+                           if getattr(d, "status", "active") != "active"],
+        "done_step_ids": [s.step_id for s in r.steps
+                          if s.status in ("done", "skipped")],
+    }
+
+
+def _touch_ack_ledger(ctx, r, handle: str, mode: str) -> None:
+    """On an epoch MATCH, record what this handle provably internalized —
+    the baseline the next reground diffs against. Best-effort, never a tick
+    failure."""
+    if mode != "match":
+        return
+    try:
+        entry = _ground_signature(r)
+        entry["at"] = _now().isoformat()
+        ctx.recipes.write_ack_entry(r.recipe_id, handle, entry)
+    except Exception:
+        pass
+
+
+def _changes_since_last_ground(ctx, r, handle: str) -> dict | None:
+    """v7 P6.1 — the code-computed delta between the handle's ack-ledger
+    baseline and the current ground: decisions added (id + digest line),
+    decisions superseded, steps closed. None when no ledger entry exists
+    (legacy / first ground — the full digest alone) or nothing changed."""
+    try:
+        led = ctx.recipes.read_ack_ledger(r.recipe_id).get(handle)
+    except Exception:
+        led = None
+    if not led:
+        return None
+    sig = _ground_signature(r)
+    known_active = set(led.get("decision_ids") or [])
+    known_superseded = set(led.get("superseded_ids") or [])
+    known_done = set(led.get("done_step_ids") or [])
+    by_id = {d.id: d for d in r.context.decisions}
+    added = [i for i in sig["decision_ids"] if i not in known_active]
+    superseded = [i for i in sig["superseded_ids"]
+                  if i not in known_superseded]
+    steps_closed = [i for i in sig["done_step_ids"] if i not in known_done]
+    if not (added or superseded or steps_closed):
+        return None
+    def _line(i: str) -> str:
+        d = by_id.get(i)
+        return f"{i}: {str(getattr(d, 'text', ''))[:140]}" if d else i
+    return {
+        "since": led.get("at"),
+        "decisions_added": [_line(i) for i in added[:10]]
+                           + ([f"(+{len(added)-10} more)"]
+                              if len(added) > 10 else []),
+        "decisions_superseded": superseded[:10],
+        "steps_closed": steps_closed[:10],
+        "note": ("code-computed diff since YOUR last acked ground — read "
+                 "this FIRST; the full digest below is the fallback, not "
+                 "the entry point."),
+    }
+
+
+async def _reground_payload(ctx, r, epoch, mode, handle) -> dict:
+    """The re-ground block attached to next_action's context / reconcile's
+    output when the ground is stale or a reground was requested: the full W1
+    digest + a banner + the monitor rewire hand-back. The digest is assembled
+    by the SAME code-assembled (no-LLM) get_recipe_digest tool the cold-start
+    path uses — one source of truth, no duplicated projection.
+
+    W2 leg 2 (a3): the `rewire` hand-back rides on BOTH `stale` AND `reground`
+    — DESIGN-v6 §W2 section 2 ("Monitor rewire hand-back") states verbatim
+    "The reground=true (and stale-epoch) response ALSO includes a rewire block
+    the shell executes verbatim." A stale ground is exactly the case where a
+    freshly-hydrated shell likely also lost its Monitor wiring, so it needs its
+    subscriptions handed back too — not only on an explicit reground. (This is
+    why the earlier a2 assertion that a stale response omits `rewire` was
+    superseded here; see tests/test_epochs.py.)"""
+    if mode == "stale":
+        banner = (
+            "GROUND CHANGED — the grounding_epoch you acked is STALE. The "
+            "recipe's load-bearing decisions / constraints / pending "
+            "assumptions have shifted since you last grounded. Re-read the "
+            "`digest` below and reconcile your plan of action BEFORE acting on "
+            "the instruction, then re-arm your wiring from `rewire` and "
+            "RE-LOAD your role-discipline guides from `reload_role_guides`. "
+            "(Server-detected from the epoch mismatch — no self-inference; "
+            "d13.)")
+    else:  # reground
+        banner = (
+            "RE-GROUND REQUESTED — full digest below; re-arm your reconcile "
+            "loop + monitors from `rewire`, RE-LOAD your role-discipline "
+            "guides from `reload_role_guides`, then continue driving the FSM.")
+    dres = await GetRecipeDigest(ctx)._run(
+        _GetRecipeDigestIn(recipe_id=r.recipe_id))
+    digest = (dres.data.model_dump(mode="json")
+              if hasattr(dres.data, "model_dump") else dres.data)
+    block = {
+        "grounding_epoch": epoch,
+        "banner": banner,
+        # v7 P6.1: the delta FIRST — a compacted shell re-internalizes what
+        # changed since ITS last ack (a screenful), not the whole digest cold.
+        "changes_since_your_last_ground":
+            _changes_since_last_ground(ctx, r, handle),
+        "digest": digest,
+        # W2 leg 2: the full monitor rewire hand-back on stale AND reground.
+        "rewire": _rewire_block(ctx, handle),
+        # W15 (a11): phase-aware role-discipline guide RELOAD directive.
+        "reload_role_guides": _reload_role_guides_block(digest),
+    }
+    return block
+
+
+def _reload_role_guides_block(digest: dict) -> dict:
+    """W15 (a11, follow-up to W13): the role-discipline GUIDE reload hand-back.
+
+    W13's reground restores recipe STATE (the digest) + WIRING (the rewire
+    block) but NOT the neuron's ROLE-DISCIPLINE guides, so a compacted shell
+    reloads state while its operating discipline (the orchestrator launch
+    contract + its CURRENT phase guide) stays thinned out. This directs the
+    shell — deterministically, NO LLM (principle-6), O(1) NAMES not bodies —
+    to RE-LOAD them via get_guide().
+
+    The current phase is read straight from the digest's already-computed
+    `recap.phase` (recipe state -> neuron phase, the single `_phase_for`
+    source) — no new projection, no phase re-derivation here. A worker shell
+    (which runs no role-discipline loop) can ignore this, exactly like it
+    ignores the rewire heartbeat."""
+    phase = (digest.get("recap") or {}).get("phase") if digest else None
+    guides = ["orchestrator-launch"]
+    if phase:
+        guides.append(f"neuron-phase-{phase}")
+    return {
+        "phase": phase,
+        "guides": guides,
+        "note": ("RE-LOAD your role-discipline guides — call get_guide(name) "
+                 "for each name in `guides` (the orchestrator launch contract "
+                 "+ your CURRENT neuron-phase guide). Compaction thins out how "
+                 "you OPERATE; the digest restored your STATE, these restore "
+                 "your discipline. NAMES only (O(1)) — the shell reloads the "
+                 "bodies cheaply. Neuron/planner only; a worker shell can "
+                 "ignore this, like the rewire heartbeat."),
+    }
+
+
+# ── DESIGN-v7 1.5.6: the plan STALENESS CONTRACT ────────────────────────────
+# A plan is grounded in a snapshot (Plan.grounded_at, stamped at authoring); a
+# sibling step's diff landing while the plan sits DRAFTED or its planner is
+# parked can invalidate the DAG (the d39 class). Parallel planners (1.5.1)
+# make that the COMMON case. Defense, all code-computed (principle 6):
+#   1. compute a STALENESS DELTA at the two pickup moments — the first
+#      next_action of a DRAFTED plan whose grounded_at predates the latest
+#      sibling closure, and any next_action(reground=true) on a plan handle;
+#   2. hand it out as instr.context["staleness_delta"] (empty delta attaches
+#      nothing) and stamp Plan.staleness_delta_at;
+#   3. REFUSE the first dispatch until a `plan_revalidated` worklog line
+#      NEWER than that stamp exists — next_action(revalidate=true) writes it
+#      (review the delta, amend the DAG if needed, then affirm). Same
+#      "the artifact must exist to be judged" shape as 3.1, no prose-sniffing.
+
+_STALENESS_LIST_CAP = 8   # bounded delta payload (CORE #18 discipline)
+_KIND_PLAN_REVALIDATED = "plan_revalidated"
+
+
+def _plan_grounding_fingerprint(p) -> frozenset[str]:
+    """The plan's EFFECTIVE grounding fingerprint: the stored
+    Plan.grounding_fingerprint paths (Phase 8's record_grounding_brief
+    appends there — the seam is built now, populated later) UNION the plan's
+    action spec_ids (which live on the actions and are never duplicated into
+    the stored field). Recomputed per call — the plan IS the state."""
+    fp: set[str] = set(p.grounding_fingerprint or [])
+    for a in p.actions:
+        fp.update(a.effective_spec_ids())
+    return frozenset(x for x in fp if x)
+
+
+def _action_evidence_paths(a) -> set[str]:
+    """The file-path-shaped evidence a done action left behind: its
+    deterministic verify target(s), its result_ref, and its tiered-evidence
+    sidecar ref. These are what a sibling's landed diff intersects against
+    once Phase 8 puts real paths into the fingerprint."""
+    out: set[str] = set()
+    v = getattr(a.acceptance, "verify", None)
+    if isinstance(v, dict):
+        for k in ("path", "pattern"):
+            if v.get(k):
+                out.add(str(v[k]))
+    if getattr(a, "result_ref", None):
+        out.add(str(a.result_ref))
+    if getattr(a.acceptance, "actual_ref", None):
+        out.add(str(a.acceptance.actual_ref))
+    return out
+
+
+def _latest_sibling_closure_ts(ctx, p) -> str | None:
+    """The newest sibling plan_closed worklog ts, or None. ISO strings from
+    ONE writer (append_jsonl, tz-aware UTC) compare correctly as strings —
+    the same convention filter_entries' `since` already relies on."""
+    latest: str | None = None
+    for sib in ctx.plans.list_for_recipe(p.recipe_id):
+        if sib.plan_id == p.plan_id:
+            continue
+        rows = ctx.plans.read_worklog(sib.plan_id, tail=1,
+                                      kinds=[_KIND_PLAN_CLOSED])
+        ts = str(rows[-1].get("ts", "")) if rows else ""
+        if ts and (latest is None or ts > latest):
+            latest = ts
+    return latest
+
+
+def _staleness_delta(ctx, p) -> dict | None:
+    """Assemble the staleness delta IN CODE, or None when empty.
+
+    Delta = (a) sibling plans' actions marked done since grounded_at whose
+    spec_ids OR evidence paths intersect this plan's fingerprint, (b) the
+    closures of THOSE intersecting siblings since grounded_at, (c) new
+    ACTIVE load-bearing decisions since grounded_at, (d) `discovery` events
+    since grounded_at. (c)/(d) are recipe-wide (a direction change or a
+    discovery can invalidate a DAG whose files never overlap); (a)/(b) are
+    fingerprint-filtered — a DISJOINT sibling's closure alone yields an
+    EMPTY delta and no gate, otherwise every trigger (the trigger IS a
+    sibling closure) would gate every plan and the contract would become a
+    universal speed bump instead of a targeted one. Every list is capped
+    (`*_count` reports the true total) so the payload is O(1), never
+    O(history). Best-effort on every read: a corrupt sibling/events file
+    degrades to a smaller delta, never a broken tick."""
+    grounded = p.grounded_at
+    if not grounded:
+        return None    # legacy plan with no provenance — no baseline, no delta
+    from ..fsm.recipe_fsm import _decision_title
+    fp = _plan_grounding_fingerprint(p)
+    sibling_actions: list[dict] = []
+    closed_plans: list[dict] = []
+    for sib in ctx.plans.list_for_recipe(p.recipe_id):
+        if sib.plan_id == p.plan_id:
+            continue
+        try:
+            rows = ctx.plans.read_worklog(
+                sib.plan_id, tail=500, since=grounded,
+                kinds=["action_status_changed", _KIND_PLAN_CLOSED])
+        except Exception:
+            continue
+        done_ids = {r.get("action_id") for r in rows
+                    if r.get("kind") == "action_status_changed"
+                    and r.get("status") == "done"}
+        sib_hits = []
+        for a in sib.actions:
+            if a.action_id not in done_ids:
+                continue
+            overlap = sorted((set(a.effective_spec_ids()) & fp)
+                             | (_action_evidence_paths(a) & fp))
+            if overlap:
+                sib_hits.append({
+                    "plan_id": sib.plan_id, "action_id": a.action_id,
+                    "description": (a.description or "")[:200],
+                    "overlap": overlap,
+                })
+        sibling_actions.extend(sib_hits)
+        # A closure rides the delta only for a sibling whose landed work
+        # actually intersects this plan's fingerprint (see docstring).
+        closed = [r for r in rows if r.get("kind") == _KIND_PLAN_CLOSED]
+        if closed and sib_hits:
+            closed_plans.append({
+                "plan_id": sib.plan_id, "ts": closed[-1].get("ts"),
+                "terminal_status": closed[-1].get("terminal_status"),
+            })
+    new_decisions: list[dict] = []
+    discoveries: list[dict] = []
+    if ctx.recipes.exists(p.recipe_id):
+        r = ctx.recipes.load(p.recipe_id)
+        for d in r.context.decisions:
+            if not (getattr(d, "load_bearing", False)
+                    and getattr(d, "status", "active") == "active"):
+                continue
+            at = getattr(d, "at", None)
+            at_s = at.isoformat() if hasattr(at, "isoformat") else str(at or "")
+            if at_s and at_s > grounded:
+                new_decisions.append({"id": d.id, "at": at_s,
+                                      "title": _decision_title(d.text)})
+        try:
+            from ..store.atomic import read_jsonl
+            for e in read_jsonl(Path(ctx.recipes.root) / p.recipe_id
+                                / "events.jsonl"):
+                if (str(e.get("kind", "")) == "discovery"
+                        and str(e.get("ts", "")) > grounded):
+                    discoveries.append({
+                        "ts": e.get("ts"),
+                        "summary": json.dumps(
+                            e.get("body") or e.get("summary") or "",
+                            default=str, ensure_ascii=False)[:200],
+                    })
+        except Exception:
+            pass   # unreadable events tail — smaller delta, not a broken tick
+    if not (sibling_actions or closed_plans or new_decisions or discoveries):
+        return None
+    return {
+        "computed_at": _now().isoformat(),
+        "grounded_at": grounded,
+        "fingerprint": sorted(fp)[:_STALENESS_LIST_CAP],
+        "sibling_actions_count": len(sibling_actions),
+        "sibling_actions": sibling_actions[:_STALENESS_LIST_CAP],
+        "closed_sibling_plans_count": len(closed_plans),
+        "closed_sibling_plans": closed_plans[:_STALENESS_LIST_CAP],
+        "new_load_bearing_decisions_count": len(new_decisions),
+        "new_load_bearing_decisions": new_decisions[:_STALENESS_LIST_CAP],
+        "discovery_events_count": len(discoveries),
+        "discovery_events": discoveries[:_STALENESS_LIST_CAP],
+    }
+
+
+def _revalidation_pending(ctx, p) -> bool:
+    """The GATE predicate: a non-empty delta was handed out
+    (Plan.staleness_delta_at set) and no `plan_revalidated` worklog line
+    NEWER than it exists. The worklog line is the auditable artifact —
+    exactly the 3.1 shape."""
+    if not p.staleness_delta_at:
+        return False
+    rows = ctx.plans.read_worklog(p.plan_id, tail=1,
+                                  kinds=[_KIND_PLAN_REVALIDATED])
+    return not (rows and str(rows[-1].get("ts", "")) > p.staleness_delta_at)
+
+
+def _record_plan_revalidated(ctx, p) -> None:
+    """next_action(revalidate=true): write the `plan_revalidated` worklog
+    line (the gate's artifact), clear the gate stamp, and REFRESH
+    grounded_at — a revalidation IS a re-grounding, so the next delta is
+    computed against NOW (the "delta recomputed fresh after revalidation"
+    contract), not against the original authoring snapshot forever."""
+    ctx.plans.append_worklog(p.plan_id, {
+        "kind": _KIND_PLAN_REVALIDATED,
+        "plan_id": p.plan_id,
+        "against_delta_at": p.staleness_delta_at,
+        "agent_role": os.environ.get("EDP_ROLE", "").strip() or "unknown",
+    })
+    p.staleness_delta_at = None
+    p.grounded_at = _now().isoformat()
+    ctx.plans.save(p)
+
+
+def _staleness_refusal(p, delta: dict | None):
+    """The advisory refusal for a dispatch attempted under an unrevalidated
+    non-empty delta. Names EXACTLY what to do; embeds the (bounded) delta so
+    the refused caller holds everything needed to act."""
+    return _precondition(
+        f"STALENESS GATE — plan {p.plan_id!r} was handed a non-empty "
+        f"staleness_delta at {p.staleness_delta_at} (sibling work landed "
+        "after this plan was grounded) and no plan_revalidated worklog line "
+        "newer than that exists, so the FIRST dispatch is refused. Do this: "
+        "(1) review the delta below; (2) if the DAG still stands, call "
+        "next_action(handle=<plan_id>, handle_type=\"plan\", "
+        "revalidate=true) — it records the plan_revalidated line and clears "
+        "this gate; (3) if the delta invalidates part of the DAG, amend it "
+        "first (update_object / add_action / delete_object — see "
+        "docs/guides/planner-dynamic-coordination.md) and THEN revalidate. "
+        f"DELTA: {json.dumps(delta or {}, default=str, ensure_ascii=False)}"
+    )
+
+
+# ── next_action ───────────────────────────────────────────────────────────
+class _NAIn(BaseModel):
+    handle: str
+    handle_type: Literal["recipe", "plan"]
+    hint: str | None = None
+    # W7 item 3 (DESIGN-v6:384): the paced RECONCILE-LOOP passes reconcile's
+    # `changed` result here so the reconcile->next_action PAIR can collapse an
+    # idle tick to a one-line no_change payload. Explicit OPT-IN: only
+    # reconcile_changed=False (reconcile just reported the record already
+    # matches reality) makes a WAIT tick eligible for the short-circuit. Left
+    # None on a bare next_action call → the full instruction (item 1's wait_hint
+    # in args) is returned unchanged. Stateless (d13): a per-call signal, NOT a
+    # last_acked_epoch store.
+    reconcile_changed: bool | None = None
+    # W2 (DESIGN-v6 §W2 leg 1): the caller echoes back the grounding_epoch it
+    # last saw (from a prior recipe_context push / action grounding). The server
+    # recomputes the CURRENT epoch from the loaded recipe and compares — the
+    # recipe IS the state, so NO last_acked_epoch store is kept (d13). Absent
+    # (a lean cron tick that never carried an epoch) reads as steady-state, NOT
+    # compaction. A mismatch triggers a full re-ground (digest + banner).
+    ack_epoch: str | None = None
+    # W2: force a full re-ground (digest + rewire block) unconditionally,
+    # regardless of the epoch comparison — the explicit "I was just
+    # compacted / re-hydrate me" request.
+    reground: bool = False
+    # ALL-READY-WAVE surface: fire the WHOLE currently-ready frontier in ONE
+    # turn instead of one item per tick. On a PLAN handle the branch returns a
+    # LIST of DISPATCH_ACTION instructions — one for every action that is
+    # currently ready (pending + all depends_on satisfied) — and stamps them
+    # ALL in_progress in ONE atomic plan save. DESIGN-v7 1.5.1: on a RECIPE
+    # handle it is the STEP-frontier wave — one SPAWN_PLANNER instruction per
+    # ready spawn_planner step, all stamped in_progress in ONE atomic
+    # recipes.save (this is the parallel-planners mechanism; pre-1.5.1 the
+    # recipe handle was an empty no-op). Both reuse their FSM's single
+    # readiness predicate (single source of truth); never an unmet-dep item,
+    # never a double-dispatch of an in_progress/live/PARKED-owned item.
+    # Empty wave on a non-dispatching plan / a recipe outside
+    # PLANNING/EXECUTING (or REVIEWING-with-ready-steps, which reopens).
+    all_ready: bool = False
+    # DESIGN-v7 1.5.6 (plan handle only): the planner's REVALIDATION anchor.
+    # After a non-empty staleness_delta is handed out, dispatch is REFUSED
+    # until revalidation; next_action(revalidate=true) writes the
+    # `plan_revalidated` worklog line (the auditable artifact the gate reads
+    # — one fewer tool than a dedicated verb), refreshes Plan.grounded_at
+    # (a revalidation IS a re-grounding) and clears the gate. Call it AFTER
+    # reviewing the delta — either the DAG stands, or you amended it first
+    # (update_object/add_action/delete_object) and then affirm.
+    revalidate: bool = False
+
+
+class _Ok(BaseModel):
+    ok: bool = True
+
+
+# CORE #18 delivery-class oversize threshold for the dispatch wave: a
+# non-blocking review flag (NOT a truncation cap). A ready frontier this large
+# is pathological (an authored plan rarely has this many simultaneously-ready
+# actions); the flag surfaces it without dropping any dispatch.
+_WAVE_OVERSIZE_TOKENS = 20_000
+
+
+class _WaveOut(BaseModel):
+    """ALL-READY-WAVE result: the full ready frontier as DISPATCH_ACTION
+    instructions, all stamped in_progress in ONE atomic save. `count` is the
+    number of actions in this wave; `actions` is the full dispatch list (empty
+    when nothing is ready — the planner then falls through to normal
+    next_action to advance the plan). Per CORE #18 this is a DELIVERY-class
+    payload (the planner applies it in full to dispatch the frontier), so it is
+    NOT truncated; `approx_tokens` + `oversize` are the non-truncating guard so
+    a ballooned frontier is caught in review without dropping a dispatch.
+
+    DESIGN-v7 1.1 — the wave is ANNOTATED so a planner facing a frontier wider
+    than the pool can act on arithmetic instead of eating rollbacks:
+    * each instruction dict carries `dispatch_order` (its index in this wave) —
+      the deterministic spawn order, so "spawn the first `capacity` of them"
+      is a well-defined move;
+    * `capacity` is the pool's CURRENT worker headroom (worker cap − live
+      active workers, floored at 0) from ONE pool probe. A 6-wide wave with
+      capacity=3 means: spawn dispatch_order 0-2 now, leave the rest stamped
+      in_progress and spawn them as slots free (reconcile's crash/rollback
+      machinery already handles a stamped-but-unspawned action, and each
+      refused spawn rolls itself back) — instead of firing all six and eating
+      three POOL_CAPACITY_EXCEEDED rollbacks. `None` = the probe failed
+      (pool unreachable) — FAIL-OPEN: the planner behaves as before and lets
+      the pool's own cap refuse, which the rollback path already survives.
+
+    DESIGN-v7 1.5.1 — the RECIPE handle now returns this same shape for its
+    STEP-frontier wave: `actions` holds SPAWN_PLANNER instructions (one per
+    ready step, each stamped in_progress in ONE atomic recipes.save) and
+    `capacity` is the PLANNER headroom (EDP_MAX_PLANNERS − live active
+    planners) instead of worker headroom. Same fail-open None contract."""
+    kind: str = "dispatch_wave"
+    count: int
+    actions: list[dict]
+    capacity: int | None = None
+    approx_tokens: int = 0
+    oversize: bool = False
+
+
+def _progress_rollup(ctx, r) -> dict:
+    """v7 P5.2 — the neuron's measured view of its children, assembled from
+    pure store reads (no broker/pool IO, no LLM). Per NON-TERMINAL plan:
+    action-status counts, in-flight ids, the last worklog ts, and whether its
+    planner is parked. Terminal plans collapse to a count. Bounded (12 plans,
+    8 in-flight ids) so the payload is O(1) however wide the recipe fans out.
+    Best-effort per plan: an unreadable sibling shrinks the rollup, never
+    breaks the tick."""
+    plans: list[dict] = []
+    terminal = 0
+    try:
+        siblings = ctx.plans.list_for_recipe(r.recipe_id)
+    except Exception:
+        return {"plans": [], "terminal_plans": 0}
+    for p in siblings:
+        if getattr(p, "terminal_status", None):
+            terminal += 1
+            continue
+        try:
+            counts: dict[str, int] = {}
+            for a in p.actions:
+                counts[str(a.status)] = counts.get(str(a.status), 0) + 1
+            rows = ctx.plans.read_worklog(p.plan_id, tail=1)
+            plans.append({
+                "plan_id": p.plan_id,
+                "state": (p.state.value if hasattr(p.state, "value")
+                          else str(p.state)),
+                "action_counts": counts,
+                "in_flight": [a.action_id for a in p.actions
+                              if a.status == "in_progress"][:8],
+                "last_worklog_ts": rows[-1].get("ts") if rows else None,
+                "parked": p.parked is not None,
+            })
+        except Exception:
+            continue
+    return {"plans": plans[:12], "terminal_plans": terminal}
+
+
+class NextAction(_ClaudeTool):
+    name = "next_action"
+    idempotent = True
+    InputModel = _NAIn
+    OutputModel = BaseModel  # returns an Instruction dump
+
+    async def _run(self, m: _NAIn):
+        # PURE phase pacer (FSM-RESPONSIBILITY.md Step 3): next_action
+        # reads the STORED state and returns the next legal phase move,
+        # making only the forward FSM mutation that move entails (stamp a
+        # step/action in_progress at dispatch, advance the state). It does
+        # ZERO external IO — syncing the record to broker/pool/disk
+        # reality is `reconcile`'s job. The loop is: react (rx) →
+        # reconcile (sync) → next_action (decide). The heartbeat runs
+        # reconcile+next_action as the backstop.
+        if m.all_ready and m.handle_type == "recipe":
+            # DESIGN-v7 1.5.1 — the RECIPE STEP-FRONTIER WAVE (this used to be
+            # an empty no-op; serial planners were structural). One
+            # SPAWN_PLANNER instruction per ready spawn_planner step, every
+            # returned step stamped in_progress and persisted in ONE atomic
+            # recipes.save — the neuron then pool_spawn_planner's EVERY
+            # returned instruction. Fires from PLANNING AND EXECUTING (a step
+            # newly ready while others run must dispatch — that IS the
+            # parallelism).
+            if not self.ctx.recipes.exists(m.handle):
+                return _precondition(
+                    f"no recipe {m.handle!r}; call record_recipe first"
+                )
+            r = self.ctx.recipes.load(m.handle)
+            # W11: a suspended recipe dispatches NOTHING — same refusal the
+            # spawn tools give, surfaced before any step is stamped.
+            suspended = _suspension_refusal(r)
+            if suspended is not None:
+                return suspended
+            # Pool-truth liveness for the frontier (mirrors _live_action_ids,
+            # s27/C7/d78): a step already OWNED by a live — or 1.5.2 PARKED/
+            # resuming — planner shell is never re-dispatched. Fail-open per
+            # probe: an unreachable pool reads as not-owned, and the pool's
+            # own handle lock stays the enforcer (a cold spawn on a parked
+            # handle is REFUSED pool-side, naming POST /v1/resume).
+            live_steps = await _owned_step_ids(self.ctx.pool, r)
+            before = _recipe_sig(r)
+            instrs = recipe_ready_step_wave(r, live_steps)
+            if _recipe_sig(r) != before:
+                # The ONE atomic save persisting the WHOLE wave (RecipeStore.
+                # save = a single write_atomic): a partial failure can neither
+                # double-dispatch nor strand a step. A pure no-op wave skips
+                # the save (no spurious version bump).
+                self.ctx.recipes.save(r)
+            actions = [i.model_dump(mode="json") for i in instrs]
+            # Same annotations as the plan wave (DESIGN-v7 1.1): dispatch
+            # order + the pool's CURRENT planner headroom, so a neuron facing
+            # a frontier wider than EDP_MAX_PLANNERS spawns the first
+            # `capacity` and lets reconcile's machinery pick up the rest.
+            for order, a in enumerate(actions):
+                a["dispatch_order"] = order
+            capacity = (await _pool_planner_capacity(self.ctx.pool)
+                        if actions else None)
+            approx_tokens = sum(len(json.dumps(a)) for a in actions) // 4
+            return Tool.ok(_WaveOut(
+                count=len(actions),
+                actions=actions,
+                capacity=capacity,
+                approx_tokens=approx_tokens,
+                oversize=approx_tokens > _WAVE_OVERSIZE_TOKENS,
+            ))
+        if m.handle_type == "recipe":
+            if not self.ctx.recipes.exists(m.handle):
+                return _precondition(
+                    f"no recipe {m.handle!r}; call record_recipe first"
+                )
+            r = self.ctx.recipes.load(m.handle)
+            before = _recipe_sig(r)
+            instr = recipe_next_action(r)
+            changed_sig = _recipe_sig(r) != before
+            if changed_sig:
+                self.ctx.recipes.save(r)
+            # W7 item 1: computed pacing hint. next_action does ZERO external
+            # IO (staleness needs a worklog/pool read reconcile/status_ping do),
+            # so output_stale stays False here — the optimistic heads-down band;
+            # reconcile/status_ping downgrade it to the probe band on real
+            # staleness. awaiting_user is read straight off the instruction.
+            state = recipe_pacing_state(
+                r, output_stale=False,
+                awaiting_user=(instr.kind == InstructionKind.AWAIT_USER))
+            # W2 (DESIGN-v6 §W2 leg 1): recompute the CURRENT grounding epoch
+            # (stateless — the recipe IS the state; no ack store, d13) and
+            # classify the caller's echoed ack_epoch against it.
+            epoch = _grounding_for(self.ctx, r)
+            mode = _classify_epoch(epoch, m.ack_epoch, m.reground)
+            # v7 P6.1: a MATCH is the moment this handle provably holds the
+            # current ground — record it as the reground-delta baseline.
+            _touch_ack_ledger(self.ctx, r, m.handle, mode)
+            # Items 10+11: advance the wait clock BEFORE the collapse, so a
+            # quiet plan still accrues patience and a due escalation can wake.
+            tick = _tick_wait(instr, m.handle, state,
+                              _progress_sig(self.ctx, m.handle_type, r))
+            # W7 item 3 (DESIGN-v6:384): an idle no-change tick collapses to a
+            # one-line no_change payload BEFORE the expensive re-grounding push.
+            # A stale epoch or an explicit reground must NOT collapse — the
+            # ground changed, so the full digest has to be delivered.
+            if mode in ("match", "absent"):
+                sc = await _maybe_short_circuit(
+                    self.ctx, m.handle, instr, changed_sig, state,
+                    epoch, m.reconcile_changed, handle_type=m.handle_type,
+                    alert=tick.due if tick else None)
+                if sc is not None:
+                    return sc
+            # PUSH context every call (re-grounds a compacted session). The
+            # push already carries the current grounding_epoch (recipe_context).
+            instr.context = recipe_context(r)
+            # W3 triage surfacing: the pending spec-learning queue counts, pushed
+            # every tick so the neuron cannot forget untriaged flow-back.
+            instr.context["pending_spec_learnings"] = _pending_spec_learnings(
+                self.ctx, r)
+            # v7 P5.2 — MEASURED child state on every neuron tick. `progress`
+            # events stay out of the neuron's wake set (d53 stands); instead
+            # the rollup below is code-assembled from the plan stores, so an
+            # over-confident claim about a child ("s18 is done") is checkable
+            # against data the neuron was just handed (the d68/d110 class).
+            # neuron.md: never state child progress not present in this.
+            instr.context["progress_rollup"] = _progress_rollup(self.ctx, r)
+            if mode in ("stale", "reground"):
+                instr.context["reground"] = await _reground_payload(
+                    self.ctx, r, epoch, mode, m.handle)
+            _attach_pacing(instr, state)
+            return Tool.ok(_enrich_wait(instr, m.handle, m.handle_type, tick,
+                                        pacing_state=state))
+
+        if not self.ctx.plans.exists(m.handle):
+            return _precondition(
+                f"no plan {m.handle!r}; call record_plan first"
+            )
+        p = self.ctx.plans.load(m.handle)
+        # DESIGN-v7 1.5.2: the plan's next successful next_action CLEARS
+        # Plan.parked — the resumed (or fresh) planner touching the plan
+        # proves it is live again, so the durable recovery copy must stop
+        # claiming "parked" (reconcile's RESUME_PLANNER backstop reads it).
+        # The pool registry stays authoritative for the session row itself.
+        if p.parked is not None:
+            p.parked = None
+            self.ctx.plans.save(p)
+        # DESIGN-v7 1.5.6 — the staleness contract, ahead of any dispatch.
+        # revalidate=true is the planner's affirmation: it writes the
+        # plan_revalidated worklog line (the gate's artifact), clears the
+        # gate and refreshes grounded_at (a revalidation IS a re-grounding).
+        if m.revalidate:
+            _record_plan_revalidated(self.ctx, p)
+        # Compute the delta at the two pickup moments the design names:
+        # (a) the FIRST next_action of a DRAFTED plan whose grounded_at
+        #     predates the latest sibling closure (the plan sat authored
+        #     while siblings landed diffs), and
+        # (b) any explicit next_action(reground=true) on a plan handle (the
+        #     resumed-planner activation says exactly this).
+        staleness_delta = None
+        if p.grounded_at and not m.revalidate:
+            # The sibling scan is paid ONLY at a trigger moment: reground is
+            # explicit, and the DRAFTED check is the pickup of a plan that
+            # sat authored — a steady DISPATCHING tick never scans siblings.
+            trigger = m.reground
+            if not trigger and p.state == PlanState.DRAFTED:
+                _sibling_closed = _latest_sibling_closure_ts(self.ctx, p)
+                trigger = bool(_sibling_closed
+                               and _sibling_closed > p.grounded_at)
+            if trigger:
+                staleness_delta = _staleness_delta(self.ctx, p)
+                if staleness_delta and not p.staleness_delta_at:
+                    # Stamp the hand-out moment — the revalidation gate's
+                    # anchor. Persisted immediately so a crash between this
+                    # tick and the next cannot lose the gate.
+                    p.staleness_delta_at = staleness_delta["computed_at"]
+                    self.ctx.plans.save(p)
+        # s27/C7 (d78): ask the pool — the only authority on what is alive —
+        # which pending actions already have a live shell, and hand that to the
+        # (pure) FSM as an input. Without it the FSM instructs a dispatch for
+        # work a live worker is already doing, because a spawn made outside its
+        # dispatch instruction leaves the action `pending`. One GET per pending
+        # action; the frontier is small and the probe is fail-open.
+        live_ids = await _live_action_ids(self.ctx.pool, p)
+        # 1.5.6 REVALIDATION GATE: while a handed-out non-empty delta has no
+        # newer plan_revalidated worklog line, the dispatch/wave branch
+        # refuses the FIRST dispatch. Non-dispatch ticks (nothing ready — a
+        # WAIT) flow through and carry the delta in instr.context instead.
+        if _revalidation_pending(self.ctx, p):
+            from ..fsm.plan_fsm import _first_ready_action
+            if m.all_ready or _first_ready_action(p, live_ids) is not None:
+                return _staleness_refusal(
+                    p, staleness_delta or _staleness_delta(self.ctx, p))
+        # ALL-READY-WAVE surface: fire the whole currently-ready frontier in
+        # ONE turn. plan_ready_wave stamps every ready action in_progress; we
+        # persist that mutation in ONE atomic plan save (PlanStore.save = a
+        # single write_atomic), so a partial failure can neither
+        # double-dispatch nor strand an action. The wave reuses the
+        # single-action readiness predicate (single source of truth) so the
+        # W2 duplicate-dispatch guard + depends_on gating stay authoritative.
+        if m.all_ready:
+            wave_before = tuple(a.status for a in p.actions)
+            instrs = plan_ready_wave(p, live_ids)
+            wave_after = tuple(a.status for a in p.actions)
+            if wave_after != wave_before:
+                # The ONE atomic save that persists the WHOLE wave: every
+                # stamped-in_progress action lands in a single write_atomic
+                # (PlanStore.save), so a partial failure can neither
+                # double-dispatch nor strand an action. A pure no-op wave
+                # (nothing ready, state settled) skips the save so it doesn't
+                # spuriously bump plan.version.
+                self.ctx.plans.save(p)
+            # CORE #18: a dispatch wave is a DELIVERY-class payload — the
+            # planner must receive EVERY ready action or work gets stranded, so
+            # it is NOT hard-truncated. It stays DAG-bounded (one row per ready
+            # action, not per cumulative recipe/event), and carries a
+            # NON-truncating oversize flag so a pathological frontier is caught
+            # in review without dropping any dispatch.
+            actions = [i.model_dump(mode="json") for i in instrs]
+            # DESIGN-v7 1.1: annotate each instruction with its deterministic
+            # spawn order, and the payload with the pool's live worker
+            # headroom (ONE probe, fail-open None) — see _WaveOut's docstring
+            # for the contract this hands the planner.
+            for order, a in enumerate(actions):
+                a["dispatch_order"] = order
+            capacity = (await _pool_worker_capacity(self.ctx.pool)
+                        if actions else None)
+            approx_tokens = sum(len(json.dumps(a)) for a in actions) // 4
+            return Tool.ok(_WaveOut(
+                count=len(actions),
+                actions=actions,
+                capacity=capacity,
+                approx_tokens=approx_tokens,
+                oversize=approx_tokens > _WAVE_OVERSIZE_TOKENS,
+            ))
+        # plan_next_action stamps an action in_progress at dispatch WITHOUT
+        # changing p.state, so persist on any state/action-status/terminal
+        # change (the 2026-05-20 wake gap).
+        #
+        # W10b: the escalation ladder's two caller-computed inputs. `parked_ids`
+        # reads the in-process wait clock; the worklog tails are read ONLY for
+        # the actions the pure FSM already considers stuck, so a healthy plan
+        # does zero extra IO here. The latch (`p.escalation_emitted`) and the
+        # per-cycle counter latch (`a.verify_failure_counted`, cleared at
+        # dispatch) both ride the change signature below so next_action persists
+        # them — an un-persisted latch would re-emit the escalation every tick,
+        # which is the blocking mechanism d76 forbids.
+        parked_ids = _parked_action_ids(p, m.handle)
+        tails = _worklog_tails(
+            self.ctx, p,
+            [a.action_id for a, _ in stuck_actions(p, parked_ids)])
+        before = (p.state, tuple(a.status for a in p.actions),
+                  p.terminal_status,
+                  tuple((a.action_id, a.verify_failure_counted)
+                        for a in p.actions),
+                  json.dumps(p.escalation_emitted or {}, sort_keys=True),
+                  json.dumps(p.verify_leg_emitted or {}, sort_keys=True))
+        instr = plan_next_action(p, live_ids, parked_ids, tails)
+        after = (p.state, tuple(a.status for a in p.actions),
+                 p.terminal_status,
+                 tuple((a.action_id, a.verify_failure_counted)
+                       for a in p.actions),
+                 json.dumps(p.escalation_emitted or {}, sort_keys=True),
+                 json.dumps(p.verify_leg_emitted or {}, sort_keys=True))
+        changed_sig = after != before
+        if changed_sig:
+            # Legibility (principle-6 deterministic worklog write, no LLM):
+            # emit a plan-close line EXACTLY when the plan crosses into
+            # TERMINAL (before != TERMINAL, now == TERMINAL). plan_next_action
+            # (pure FSM, no IO) is the ONLY driver of that transition and this
+            # is its single persistence seam, so the guard makes it emit-once
+            # (a later next_action on an already-terminal plan is a no-op:
+            # changed_sig is False). This means a close is recorded on the
+            # trail even if the planner forgets to broker plan_closed or dies.
+            if (before[0] != PlanState.TERMINAL
+                    and p.state == PlanState.TERMINAL):
+                self.ctx.plans.append_worklog(p.plan_id, {
+                    "kind": "plan_closed",
+                    "plan_id": p.plan_id,
+                    "terminal_status": p.terminal_status,
+                    "agent_role":
+                        os.environ.get("EDP_ROLE", "").strip() or "unknown",
+                })
+            self.ctx.plans.save(p)
+        # W7 item 1: computed pacing hint. output_stale stays False here for the
+        # same reason as the recipe branch above — next_action does not read the
+        # worklog clock (reconcile/status_ping own the probe band). s27/C7 added
+        # ONE pool probe to this path (`_live_action_ids`); it asks what is
+        # ALIVE, not what is stale, so the output_stale reasoning is unchanged.
+        state = plan_pacing_state(
+            p, output_stale=False,
+            awaiting_user=(instr.kind == InstructionKind.AWAIT_USER))
+        # W2: a plan grounds against its owning recipe; classify the echoed
+        # ack_epoch against the CURRENT (recomputed, stateless) epoch.
+        epoch = _grounding_for(self.ctx, p)
+        mode = _classify_epoch(epoch, m.ack_epoch, m.reground)
+        # v7 P6.1: baseline the planner's ground on a MATCH too.
+        if mode == "match" and self.ctx.recipes.exists(p.recipe_id):
+            _touch_ack_ledger(self.ctx, self.ctx.recipes.load(p.recipe_id),
+                              m.handle, mode)
+        # Items 10+11: advance the wait clock BEFORE the collapse (see the
+        # recipe branch above for why the order is load-bearing).
+        tick = _tick_wait(instr, m.handle, state,
+                          _progress_sig(self.ctx, m.handle_type, p))
+        # W7 item 3 (DESIGN-v6:384): an idle no-change tick collapses to a
+        # one-line no_change payload BEFORE the recipe-context push below —
+        # unless the ground is stale / a reground was requested.
+        if mode in ("match", "absent"):
+            sc = await _maybe_short_circuit(
+                self.ctx, m.handle, instr, changed_sig, state,
+                epoch, m.reconcile_changed, handle_type=m.handle_type,
+                alert=tick.due if tick else None)
+            if sc is not None:
+                return sc
+        # Item 3B (delivery channel): push the recipe's settled context
+        # (decisions / assumptions / rejected) onto the plan path too. The
+        # plan branch previously set NO instr.context, so the planner never
+        # received the recipe's decisions through the FSM and relied on a
+        # silent manual hand-copy into action briefs (the s26 embedder-drift
+        # class of leak). Mirrors the recipe-path push above (instr.context =
+        # recipe_context(r)).
+        if self.ctx.recipes.exists(p.recipe_id):
+            r = self.ctx.recipes.load(p.recipe_id)
+            instr.context = recipe_context(r)
+            # W3 triage surfacing (mirrors the recipe branch above): pending
+            # spec-learning counts on the plan path too.
+            instr.context["pending_spec_learnings"] = _pending_spec_learnings(
+                self.ctx, r)
+            if mode in ("stale", "reground"):
+                instr.context["reground"] = await _reground_payload(
+                    self.ctx, r, epoch, mode, m.handle)
+        # DESIGN-v7 1.5.6: hand out the staleness delta on the context plane.
+        # An EMPTY delta attaches nothing (steady state stays lean); a
+        # non-empty one is what the planner reviews before next_action(
+        # revalidate=true) — the dispatch gate above holds until then.
+        if staleness_delta:
+            instr.context["staleness_delta"] = staleness_delta
+        _attach_pacing(instr, state)
+        return Tool.ok(_enrich_wait(instr, m.handle, m.handle_type, tick,
+                                    pacing_state=state))
+
+
+def _instr_alert(instr) -> dict | None:
+    """Package a surfaced crash Instruction (CHILD_CRASHED from reconcile)
+    as a plain alert dict for the reconcile result. None when nothing
+    surfaced."""
+    if instr is None:
+        return None
+    kind = instr.kind.value if hasattr(instr.kind, "value") else instr.kind
+    return {"kind": kind, "args": instr.args, "rationale": instr.rationale}
+
+
+def _reconcile_detail(scope: str, changed: bool, alert, state: str) -> str:
+    if alert is not None:
+        return ("a child crashed and auto-recovery is spent — surface the "
+                "`alert` (ask the user/parent: re-dispatch, change, abort)")
+    if changed:
+        return (f"synced: {scope} record advanced to match reality "
+                f"(now `{state}`) — call next_action for the next phase")
+    return f"nothing to reconcile ({scope} record already matches reality)"
+
+
+class _ReconcileOut(BaseModel):
+    changed: bool              # did reconcile mutate the record to match reality?
+    detail: str                # what happened
+    alert: dict | None = None  # a crash payload to surface, or None
+    # W7 item 1: computed pacing — how long to wait before the next tick and
+    # why, driven by the shared PACING table (minutes int + reason string).
+    wait_hint: int = 30
+    wait_reason: str = "wrap-up cadence"
+    # W2 (DESIGN-v6 §W2 leg 1): the CURRENT stateless grounding epoch, echoed
+    # on every reconcile so the caller can carry it into next_action(ack_epoch=).
+    # None when no backing recipe is resolvable. `reground` holds the full
+    # digest + banner (+ rewire on an explicit reground) when the caller's
+    # echoed ack_epoch is stale or reground=true; None on a steady tick.
+    grounding_epoch: str | None = None
+    reground: dict | None = None
+    # DESIGN-v7 1.5.3: the resume BACKSTOP advisory (recipe handle only) — a
+    # packaged RESUME_PLANNER instruction when a parked planner looks like it
+    # needs waking and the pool's resume watchdog may be down. ADVISORY, d76:
+    # the neuron may act (pool_resume_planner) or ignore it; latched so it
+    # re-fires only when the signal advances. None on a steady tick. Kept a
+    # SEPARATE field from `alert` — an advisory is not a crash.
+    advisory: dict | None = None
+    # v7 P3.2: steers this caller SENT that nothing ever acknowledged, named
+    # one by one past the grace window ("absorbed unread" made visible).
+    # Advisory prose, not a crash and not a latched instruction — the sender
+    # judges (re-send / escalate). None when every steer is acked or fresh.
+    unacked_steers: str | None = None
+    # v7 P6.2: the decision-fold nag — set when the ACTIVE decision count
+    # exceeds EDP_DECISION_FOLD_THRESHOLD (recipe handle only). Advisory:
+    # names the counts and the one-call remedy (fold_decisions).
+    fold_advisory: str | None = None
+
+
+class Reconcile(_ClaudeTool):
+    """Sync the recipe/plan RECORD to external reality: poll the broker /
+    pool / plan file and make the DETERMINISTIC record update (mark a step
+    done, reset a crashed action, converge the comprehension gate) — the
+    sync half split out of next_action. Loop: rx wake → **reconcile** →
+    next_action; the heartbeat runs reconcile+next_action as the backstop
+    so a missed rx event can never hang the recipe. Returns {changed,
+    detail, alert} — **surface `alert`** to the user/parent when present (a
+    child crashed and auto-recovery is spent). Worked usage:
+    get_guide('architecture-vocabulary')."""
+
+    name = "reconcile"
+    idempotent = True
+    InputModel = _NAIn          # same handle / handle_type contract as next_action
+    OutputModel = _ReconcileOut
+
+    async def _run(self, m: _NAIn):
+        if m.handle_type == "recipe":
+            if not self.ctx.recipes.exists(m.handle):
+                return _precondition(f"no recipe {m.handle!r}")
+            r = self.ctx.recipes.load(m.handle)
+            # s12(c): bridge the neuron's symbolic send-identity "neuron" to the
+            # recipe_id inbox it actually polls (next_action, ~_tools.py:318) —
+            # the neuron analog of the s16 planner colon->dash bridge. Without
+            # it a reply()/steer derived from from_="neuron" dead-letters in
+            # neuron.jsonl. Idempotent + restart-safe (re-asserted each tick);
+            # best-effort (broker down ≠ tick failure). CAVEAT: this is a single
+            # GLOBAL "neuron" alias keyed to the currently-driven recipe — a
+            # hypothetical concurrent multi-neuron host would need a per-neuron
+            # send-identity instead of the shared "neuron" constant.
+            await self.ctx.broker.register_alias("neuron", r.recipe_id)
+            before = _recipe_sig(r)
+            synced = await self._sync_steps_from_disk(r)   # s17 Fix 1 (runs first)
+            flipped = await self._refresh_comprehension(r)
+            drained = await self._drain_consults(r)        # W5 consult channel
+            alert_instr = await self._advance_executing(r)
+            # DESIGN-v7 1.5.3: the resume BACKSTOP sweep (parked planner that
+            # looks like it needs waking → advisory RESUME_PLANNER). Runs on
+            # the recipe reconcile because that is the NEURON's tick — the
+            # role that holds pool_resume_planner. Mutates only PLAN records
+            # (its latch), never the recipe, so it does not ride `changed`.
+            advisory_instr = await self._resume_backstop(r)
+            # v7 P3.2: surface steers this neuron sent that nothing ever
+            # acknowledged — the "absorbed unread" defect, detected in code.
+            steer_adv = await self._unacked_steer_advisory(
+                r.recipe_id,
+                self.ctx.recipes.read_events_tail(
+                    r.recipe_id, kinds=["steer_sent"], limit=50))
+            # v7 P6.2: decision-count hygiene. Append-only growth is what
+            # made DESIGN-v6's recipe unreadable (170 decisions, 88 load-
+            # bearing) — nag deterministically past the threshold; the
+            # neuron folds settled clusters (fold_decisions) at step
+            # boundaries.
+            _active_dec = [d for d in r.context.decisions
+                           if getattr(d, "status", "active") == "active"]
+            _fold_thr = int(os.environ.get(
+                "EDP_DECISION_FOLD_THRESHOLD", "100"))
+            fold_adv = None
+            if len(_active_dec) > _fold_thr:
+                _lb = sum(1 for d in _active_dec
+                          if getattr(d, "load_bearing", False))
+                fold_adv = (
+                    f"{len(_active_dec)} ACTIVE decisions ({_lb} load-"
+                    f"bearing) exceed EDP_DECISION_FOLD_THRESHOLD="
+                    f"{_fold_thr} — fold settled clusters at the next step "
+                    "boundary: fold_decisions(recipe_id, decision_ids=[...],"
+                    " summary_text=<the one decision that replaces them>). "
+                    "One atomic call per cluster; folded members stop "
+                    "reaching new workers, history is preserved.")
+            changed = (synced or flipped or drained
+                       or (_recipe_sig(r) != before))
+            if changed:
+                self.ctx.recipes.save(r)
+            # W7 item 1: pacing. A recipe has no single worklog (its in-flight
+            # plan does), so staleness stays optimistic here — the plan-level
+            # reconcile / status_ping carry the probe-band downgrade.
+            state = recipe_pacing_state(r, output_stale=False)
+            # W2: echo the current grounding epoch + surface a re-ground block
+            # if the caller's echoed ack_epoch is stale (or reground=true).
+            epoch = _grounding_for(self.ctx, r)
+            mode = _classify_epoch(epoch, m.ack_epoch, m.reground)
+            _touch_ack_ledger(self.ctx, r, m.handle, mode)   # v7 P6.1
+            reground = (await _reground_payload(
+                            self.ctx, r, epoch, mode, m.handle)
+                        if mode in ("stale", "reground") else None)
+            return Tool.ok(_ReconcileOut(
+                changed=changed,
+                detail=_reconcile_detail("recipe", changed, alert_instr,
+                                         r.state.value),
+                alert=_instr_alert(alert_instr),
+                advisory=_instr_alert(advisory_instr),
+                unacked_steers=steer_adv,
+                fold_advisory=fold_adv,
+                grounding_epoch=epoch, reground=reground,
+                **_pacing_fields(state),
+            ))
+
+        if not self.ctx.plans.exists(m.handle):
+            return _precondition(f"no plan {m.handle!r}")
+        p = self.ctx.plans.load(m.handle)
+        before = (p.state, tuple(a.status for a in p.actions),
+                  p.terminal_status)
+        alert_instr = await self._advance_plan_liveness(p)
+        changed = (p.state, tuple(a.status for a in p.actions),
+                   p.terminal_status) != before
+        if changed:
+            self.ctx.plans.save(p)
+        # W7 item 1: pacing. reconcile is allowed IO, so derive real
+        # output-staleness from the plan's last worklog ts (an in-flight child
+        # silent past the threshold flips heads-down → probe).
+        recent = self.ctx.plans.read_worklog(m.handle, tail=1)
+        last_ts = recent[-1].get("ts") if recent else None
+        state = plan_pacing_state(p, output_stale=_output_stale(last_ts))
+        # v7 P3.2 (planner side): steers this planner sent, never acked.
+        steer_adv = await self._unacked_steer_advisory(
+            p.plan_id,
+            [ln for ln in self.ctx.plans.read_worklog(
+                m.handle, tail=200, kinds=["message_sent"])
+             if ln.get("msg_kind") == "steer" and ln.get("msg_id")])
+        # W2: a plan grounds against its owning recipe.
+        epoch = _grounding_for(self.ctx, p)
+        mode = _classify_epoch(epoch, m.ack_epoch, m.reground)
+        reground = None
+        if mode in ("stale", "reground") and self.ctx.recipes.exists(
+                p.recipe_id):
+            reground = await _reground_payload(
+                self.ctx, self.ctx.recipes.load(p.recipe_id), epoch, mode,
+                m.handle)
+        return Tool.ok(_ReconcileOut(
+            changed=changed,
+            detail=_reconcile_detail("plan", changed, alert_instr,
+                                     p.state.value),
+            alert=_instr_alert(alert_instr),
+            unacked_steers=steer_adv,
+            grounding_epoch=epoch, reground=reground,
+            **_pacing_fields(state),
+        ))
+
+    # ── reconcile helpers (the sync logic — moved out of next_action) ──
+    async def _unacked_steer_advisory(
+        self, inbox: str, sent: list[dict],
+    ) -> str | None:
+        """v7 P3.2 — the general defense for d101(4) ("a surface that accepts
+        a directive it does not consume, and stays silent"). Correlate the
+        caller's durably-recorded outbound steers (msg_id + recipient) with
+        inbound `steer_ack`s on its own inbox (non-consuming poll). A steer
+        older than the grace window (`EDP_STEER_ACK_GRACE_SECS`, default
+        900s) with no matching ack is surfaced BY NAME — the sender decides
+        (re-send / escalate); code only guarantees the silence is visible."""
+        if not sent:
+            return None
+        grace = float(os.environ.get("EDP_STEER_ACK_GRACE_SECS", "900"))
+        try:
+            msgs = await self.ctx.broker.poll(inbox)  # all, non-consuming
+        except Exception:
+            return None   # broker down ≠ tick failure (reconcile contract)
+        acked = {
+            (mm.body or {}).get("steer_msg_id")
+            for mm in msgs if getattr(mm, "kind", "") == "steer_ack"
+        }
+        now = datetime.now(timezone.utc)
+        stale: list[str] = []
+        for ln in sent:
+            mid = ln.get("msg_id")
+            if not mid or mid in acked:
+                continue
+            try:
+                age = (now - datetime.fromisoformat(ln["ts"])).total_seconds()
+            except (KeyError, ValueError, TypeError):
+                continue   # unstampable age — never nag on a guess
+            if age >= grace:
+                stale.append(f"steer {mid} -> {ln.get('to', '?')} "
+                             f"({int(age // 60)} min, no steer_ack)")
+        if not stale:
+            return None
+        return ("UNACKED STEERS (v7 P3.2): " + "; ".join(stale[:5])
+                + (f" (+{len(stale) - 5} more)" if len(stale) > 5 else "")
+                + " — no acknowledgment past the grace window; each may have "
+                "been absorbed unread. Re-send or escalate; do not assume "
+                "it landed.")
+
+    async def _refresh_comprehension(self, r: Recipe) -> bool:
+        """The comprehension gate's auto-capture: if a curiosity reply
+        with clear/done has arrived on the broker, converge the gate.
+
+        Non-consuming on purpose — it does NOT touch `inbox_cursor` /
+        `_INBOX_CURSORS`, so the very same curiosity message is still
+        delivered to the agent via rx push / check_inbox. The flag is set
+        ONLY by a real curiosity verdict (the neuron can't fake it; a
+        TERMINATED curiosity never sets it). Returns True if it changed
+        anything (so the caller persists).
+
+        P6 (2026-06-10): a curiosity clear is also a RE-GROUNDING moment —
+        a clear that arrives AFTER the last recorded re-grounding refreshes
+        the recheck baseline (clearing the scope-change / load-bearing-
+        drift nag), even when curiosity_cleared latched long ago."""
+        msgs = await self.ctx.broker.poll(r.recipe_id)  # all, non-consuming
+        clears = [
+            mm for mm in msgs
+            if str(getattr(mm, "from_", "")).startswith("curiosity")
+            and ((mm.body or {}).get("clear") is True
+                 or (mm.body or {}).get("status") == "done")
+        ]
+        if not clears:
+            return False
+        changed = False
+        if not r.comprehension.curiosity_cleared:
+            r.comprehension.curiosity_cleared = True
+            changed = True
+        # v7: the clear ends the interrogation — release the one-open-
+        # curiosity latch so a FUTURE recheck cycle may spawn fresh.
+        if getattr(r.comprehension, "curiosity_open_id", None):
+            r.comprehension.curiosity_open_id = None
+            changed = True
+        newest = max(mm.ts for mm in clears).isoformat()
+        last = r.comprehension.last_recheck_at
+        if last is None or newest > last:
+            refresh_comprehension_baseline(r, at=newest)
+            changed = True
+        return changed
+
+    async def _drain_consults(self, r: Recipe) -> bool:
+        """W5 (DESIGN-v6 §W5) — the POLL BACKSTOP for the consult channel.
+
+        `reconcile` (allowed IO; `next_action` is zero-external-IO by design)
+        polls THIS recipe's OWN inbox — the durable recipe_id recipient the
+        neuron already observes, so a message posted here (broker_send /
+        curl, kind=consult|steer) actually wakes the shell, no separate
+        `consult:<rid>` recipient — and stashes each consult/steer message as
+        a compact pending record onto the recipe. `recipe_context` /
+        `get_recipe_digest` then surface it, and W2 reground re-delivers an
+        undrained consult after a compaction (the reground reuses the digest).
+
+        Two clears, both re-checked every tick:
+          • `consult_cursor` high-water (mirrors `inbox_cursor`; the broker
+            poll is strict `>`), so a message drained once is never re-added —
+            even after it clears;
+          • steer/consult ACK: a pending entry whose msg_id a subsequent
+            `record_context` decision references is dropped. Until then it
+            re-surfaces every tick (an unacked steer keeps nagging).
+
+        Best-effort: a broker that is down must NOT fail the tick (mirrors
+        the `register_alias` / poll discipline elsewhere in reconcile), and
+        neither may a message whose ts violates the tz-aware-UTC contract.
+        Returns True iff it mutated the recipe (so the caller persists)."""
+        cursor = r.consult_cursor
+        try:
+            # Only what's newer than the high-water we've already drained.
+            msgs = await self.ctx.broker.poll(r.recipe_id, since_ts=cursor)
+        except Exception as exc:            # broker down ≠ tick failure
+            _log.warning("consult_drain_poll_failed",
+                         f"broker poll failed, skipping drain: {exc!r}",
+                         recipe_id=r.recipe_id)
+            return False
+        new_cs = [m for m in msgs if m.kind in _CONSULT_KINDS]
+        changed = False
+        if new_cs:
+            have = {e.get("msg_id") for e in r.consult_pending}
+            for m in new_cs:
+                if m.msg_id in have:
+                    continue                # defensive dedupe within a tick
+                r.consult_pending.append({
+                    "msg_id": m.msg_id,
+                    "kind": m.kind,
+                    "from": m.from_,
+                    "ts": m.ts.isoformat(),
+                    "preview": _consult_preview(m.body),
+                })
+                changed = True
+            # Advance the high-water to the newest consult/steer ts drained so
+            # a later ACK-clear of this entry can never resurrect it. Both
+            # sides are read as UTC (a naive ts is a contract violation the
+            # validator doesn't catch), and the advance is best-effort on its
+            # own: a ts we cannot order leaves the cursor where it was — the
+            # entries still drain, and the msg_id dedupe above stops the next
+            # tick from re-adding them.
+            try:
+                newest = max(_aware_utc(m.ts) for m in new_cs)
+                if cursor is None or newest > _aware_utc(cursor):
+                    r.consult_cursor = newest
+                    changed = True
+            except (TypeError, AttributeError, ValueError) as exc:
+                _log.warning("consult_cursor_advance_skipped",
+                             f"unorderable consult ts, cursor held: {exc!r}",
+                             recipe_id=r.recipe_id)
+        # ACK-clear: drop any pending entry a record_context decision references.
+        if r.consult_pending:
+            acked = _referenced_context_ids(r)
+            if acked:
+                kept = [e for e in r.consult_pending
+                        if e.get("msg_id") not in acked]
+                if len(kept) != len(r.consult_pending):
+                    r.consult_pending = kept
+                    changed = True
+        return changed
+
+    async def _resume_backstop(self, r: Recipe):
+        """DESIGN-v7 1.5.3 — the neuron-side RESUME backstop sweep.
+
+        The PRIMARY wake for a parked planner is the pool's resume watchdog
+        (inbox depth > watermark → fork-resume, within seconds). This sweep
+        exists for when the watchdog is down: on each recipe reconcile it
+        scans the recipe's non-terminal plans for a PARKED planner
+        (Plan.parked set — the durable recovery copy — or the pool's own
+        liveness reporting "parked") that shows a wake signal, and emits ONE
+        advisory RESUME_PLANNER instruction naming pool_resume_planner.
+
+        Wake signals, in order:
+          • INBOX (cheaply checkable MCP-side because Plan.parked carries
+            parked_at): a non-consuming broker poll of the planner's dash
+            plan_id inbox for messages STRICTLY NEWER than parked_at. Any
+            message → the planner has mail it cannot read → advise. Zero
+            messages and a working poll → genuinely idle park, NO advisory
+            (the watchdog owns the fast path; this is the backstop, not a
+            second watchdog).
+          • AGE fallback (inbox NOT cheaply checkable: broker down, or the
+            park was observed only via pool liveness so parked_at is
+            unknown): advise on a parked plan with NON-TERMINAL actions
+            whose park is older than EDP_PARK_THRESHOLD_SECS (unknown age =
+            eligible, conservative toward waking) — and the advisory text
+            SAYS the inbox was unverifiable.
+
+        ADVISORY + LATCHED (d76, mirroring plan_fsm's escalation-ladder
+        latch): the exact signal state at emission is stored inside the
+        plan's own `parked` dict (`resume_advised`), so it re-fires only when
+        the signal ADVANCES (a newer message, a re-park) and clears with the
+        park itself. Best-effort throughout: no probe failure may break the
+        tick."""
+        for p in self.ctx.plans.list_for_recipe(r.recipe_id):
+            if p.state == PlanState.TERMINAL:
+                continue
+            handle = _planner_handle(r.recipe_id, p.recipe_step_id)
+            parked = p.parked
+            if parked is None:
+                # No durable stamp — believe the pool if IT says parked
+                # (e.g. an operator parked via POST /v1/park, which never
+                # touches the plan record).
+                try:
+                    if (await self.ctx.pool.liveness(handle))["state"] \
+                            != "parked":
+                        continue
+                except Exception:
+                    continue      # pool unreachable — nothing provable here
+                parked = {"parked_at": None, "inbox_watermark": None,
+                          "claude_session_id": None,
+                          "observed_from_pool": True}
+                p.parked = parked
+            parked_at = parked.get("parked_at")
+            # ── wake signal 1: unread inbox since the park ──────────────
+            unread: int | None = None
+            newest = ""
+            if parked_at:
+                try:
+                    since = datetime.fromisoformat(str(parked_at))
+                    msgs = await self.ctx.broker.poll(p.plan_id,
+                                                      since_ts=since)
+                    unread = len(msgs)
+                    if msgs:
+                        newest = max(mm.ts for mm in msgs).isoformat()
+                except Exception:
+                    unread = None    # not cheaply checkable → age fallback
+            if unread == 0:
+                continue             # provably idle park — watchdog's job
+            if unread:
+                key = ["inbox", newest]
+                why = (f"{unread} message(s) landed on the parked planner's "
+                       f"inbox ({p.plan_id}) after it parked at {parked_at} "
+                       "— it has mail it cannot read.")
+            else:
+                # ── wake signal 2: aged park, inbox unverifiable ────────
+                nonterminal = [a.action_id for a in p.actions
+                               if a.status not in _TERMINAL_ACTION_STATUS]
+                if not nonterminal:
+                    continue
+                if parked_at:
+                    try:
+                        age = (_now() - datetime.fromisoformat(
+                            str(parked_at))).total_seconds()
+                    except (ValueError, TypeError):
+                        age = None
+                    if age is not None and age <= _park_threshold_secs():
+                        continue     # young park — give the watchdog time
+                key = ["age", str(parked_at or "unknown")]
+                why = ("the planner's inbox depth was NOT cheaply checkable "
+                       "MCP-side (broker poll failed or the park carries no "
+                       "parked_at), so this advisory fired on the fallback "
+                       f"signal: a parked plan with {len(nonterminal)} "
+                       "non-terminal action(s) whose park is older than "
+                       f"EDP_PARK_THRESHOLD_SECS={_park_threshold_secs()} "
+                       "(unknown age counts as old). Verify before acting "
+                       "if in doubt.")
+            if parked.get("resume_advised") == key:
+                continue             # latched at this exact signal state
+            parked = dict(parked)
+            parked["resume_advised"] = key
+            p.parked = parked
+            self.ctx.plans.save(p)   # persist the latch (plan-side)
+            return Instruction(
+                kind=InstructionKind.RESUME_PLANNER,
+                args={"handle": handle, "plan_id": p.plan_id,
+                      "parked_at": parked_at, "signal": key[0]},
+                rationale=(
+                    f"RESUME_PLANNER — the planner for plan {p.plan_id!r} "
+                    f"(handle {handle!r}) is PARKED and shows a wake signal: "
+                    f"{why} The pool's resume watchdog normally wakes it "
+                    "within seconds; if it clearly has not, call "
+                    f"pool_resume_planner(handle={handle!r}). This is "
+                    "ADVICE (d76): emitted once per signal crossing, it "
+                    "holds nothing and resumes nothing itself."
+                ),
+            )
+        return None
+
+    async def _sync_steps_from_disk(self, r: Recipe) -> bool:
+        """s17 Fix 1 — per-tick, ALL-steps, disk-grounded step reconciler.
+
+        The per-step done-transition used to live ONLY in _advance_executing
+        (single in_progress spawn_planner step ip[0], only while EXECUTING), so
+        a step whose plan reached terminal/succeeded on disk under ANY ending —
+        self-close, crash, OR a neuron/planner REAP that fires no plan_closed —
+        could stay pending/in_progress forever, leaving the recipe "lying"
+        (token burn + FSM mis-pick). This hoists the exact close_recipe catch-up
+        (the only prior disk->recipe sync) to run on EVERY recipe reconcile,
+        over ALL steps: a step whose plan is terminal/succeeded on disk becomes
+        `done` regardless of how its planner ended. Only `succeeded` advances; a
+        `partial`/`failed` plan is left for the neuron to judge. Idempotent and
+        monotonic (only pending/in_progress -> done). Returns True if it changed
+        anything (so the caller persists)."""
+        changed = False
+        for step in r.steps:
+            if step.status not in ("pending", "in_progress"):
+                continue
+            plan = self.ctx.plans.find_by_step(r.recipe_id, step.step_id)
+            if (plan is not None
+                    and plan.state == PlanState.TERMINAL
+                    and plan.terminal_status == "succeeded"):
+                step.status = "done"
+                changed = True
+        # If we advanced a step and the recipe is EXECUTING with no
+        # spawn_planner step still in_progress, hand back to PLANNING so
+        # next_action re-picks (mirrors _advance_executing's transition;
+        # avoids an EXECUTING-with-nothing-running stall).
+        if changed and r.state == RecipeState.EXECUTING:
+            still_running = any(
+                s.status == "in_progress" and s.execution == "spawn_planner"
+                for s in r.steps
+            )
+            if not still_running:
+                r.state = RecipeState.PLANNING
+        return changed
+
+    async def _advance_executing(self, r: Recipe):
+        """EXECUTING + a spawn_planner step in flight. Reconcile, in
+        priority order:
+          1. broker plan_closed   (F1 — fast path)
+          2. plan terminal on disk (F2 — disk backstop)
+          3. planner liveness     (Phase 7 — crash recovery)
+        Returns None for the normal cases (mutates r), or a
+        CHILD_CRASHED Instruction when the planner died and the single
+        auto-re-dispatch is already spent. IO lives here, not the pure
+        FSM."""
+        if r.state != RecipeState.EXECUTING:
+            return None
+        ip = [
+            s for s in r.steps
+            if s.status == "in_progress" and s.execution == "spawn_planner"
+        ]
+        if not ip:
+            return None
+        step = ip[0]
+        # Identify THIS step's plan (convention-first, then scan).
+        p = self.ctx.plans.find_by_step(r.recipe_id, step.step_id)
+        expected_pid = (
+            p.plan_id if p is not None
+            else f"{r.recipe_id}-{step.step_id}"
+        )
+        # 1. Fast path: a plan_closed FOR THIS STEP'S PLAN. MUST filter
+        #    by plan_id — the broker inbox is append-only, so a stale
+        #    plan_closed from an EARLIER step would otherwise falsely
+        #    complete this one. (2026-05-22 fitness HITL: s1's
+        #    plan_closed prematurely marked s2..s12 done; the neuron
+        #    caught "FSM jumped to done=2 while s2 still version(1)".)
+        msgs = await self.ctx.broker.poll(r.recipe_id)
+        if any(
+            m.kind == _KIND_PLAN_CLOSED
+            and m.body.get("plan_id") == expected_pid
+            for m in msgs
+        ):
+            step.status = "done"
+            r.state = RecipeState.PLANNING
+            return None
+        # 2. Disk backstop: this step's plan is terminal on disk.
+        if p is not None and p.state == PlanState.TERMINAL:
+            step.status = "done"
+            r.state = RecipeState.PLANNING
+            return None
+        # 3. Crash recovery: the planner is neither done nor terminal.
+        #    Is it still alive? Only "dead" (tracked-but-exited) counts;
+        #    "unknown" (e.g. after a pool restart) stays conservative.
+        #
+        #    W11 (DESIGN-v6 §W11): NOT while the recipe is PARKED. A suspended
+        #    recipe's planner is dead BY DESIGN — suspend_recipe steered it to
+        #    close and reaped the stragglers — so reading that as a crash is a
+        #    category error with two real costs: it would burn the step's single
+        #    auto-re-dispatch budget (_MAX_REDISPATCH), sending a LATER genuine
+        #    crash straight to CHILD_CRASHED, and it would flip the step back to
+        #    `pending`, so resume_recipe could no longer fork the planner whose
+        #    session the manifest snapshotted. Suspension is orthogonal to the
+        #    FSM: leave the step in_progress and let resume put the planner back.
+        #    The plan_closed / disk-terminal paths above still run — a planner
+        #    that DID close cleanly inside the suspend grace window legitimately
+        #    completes its step.
+        if r.suspended_at:
+            return None
+        planner_handle = _planner_handle(r.recipe_id, step.step_id)
+        # W7: liveness returns {state, last_output_ts}; only state gates here.
+        if (await self.ctx.pool.liveness(planner_handle))["state"] != "dead":
+            return None  # alive or unknown → keep waiting
+        # Confirmed crash. Option C: first crash auto-re-dispatches;
+        # second surfaces.
+        if step.attempt < _MAX_REDISPATCH:
+            step.attempt += 1
+            step.status = "pending"  # FSM re-emits spawn_planner
+            r.state = RecipeState.PLANNING
+            # s27/C10: the event states what the code DID, not what it wished.
+            # This branch DETECTS a dead planner and RESETS the step to pending;
+            # it spawns NOTHING (per d76 the FSM advises, it does not enforce).
+            # The re-dispatch is performed later, by whoever obeys the
+            # spawn_planner instruction the FSM will now emit. The old
+            # `auto_re_dispatch` name asserted a spawn this code never made.
+            self.ctx.recipes.append_worklog(r.recipe_id, {
+                "kind": "crash_recovery", "agent_role": "neuron",
+                "child": planner_handle, "step_id": step.step_id,
+                "attempt": step.attempt,
+                "action": "crash_detected_redispatch_recommended",
+                "performed": "reset_step_to_pending",
+                "recommends": "spawn_planner",
+                "detail": ("planner died before terminal; step reset to "
+                           "pending. NO spawn was performed here — the FSM "
+                           "will emit spawn_planner and its caller performs "
+                           "the re-dispatch."),
+            })
+            return None
+        # Auto-re-dispatch already spent → surface.
+        self.ctx.recipes.append_worklog(r.recipe_id, {
+            "kind": "crash_recovery", "agent_role": "neuron",
+            "child": planner_handle, "step_id": step.step_id,
+            "attempt": step.attempt, "action": "surfaced_to_user",
+            "detail": "planner crashed again after re-dispatch",
+        })
+        return Instruction(
+            kind=InstructionKind.CHILD_CRASHED,
+            args={"child": planner_handle, "step_id": step.step_id,
+                  "attempt": step.attempt, "kind": "planner"},
+            rationale=(
+                f"The planner for step '{step.step_id}' crashed and the "
+                "automatic re-dispatch also failed. This needs your "
+                "judgement — surface to the user via AskUserQuestion "
+                "(re-dispatch again? change the step? abort?). Do not "
+                "silently loop."
+            ),
+        )
+
+    async def _advance_plan_liveness(self, p: Plan):
+        """Phase 7: worker crash recovery (plan side). For each
+        in_progress action whose worker is confirmed dead, tiered
+        recovery: first crash re-dispatches (reset to pending,
+        attempt++); second returns CHILD_CRASHED. Only "dead" acts;
+        "unknown"/"alive" keep waiting.
+
+        Design note (s16, 2026-07-05): the pre-stamp invariant —
+        in_progress ALWAYS means "a spawn really happened" — is enforced
+        AT THE SOURCE by the dispatch tools (`_rollback_failed_dispatch`
+        now fires on EARLY precondition refusals too, not just spawn
+        failure). This sweep is the safety net for a phantom that still
+        slips through: an in_progress action with liveness=='unknown'
+        backed by NO pool lock/session AND quiet past one heartbeat-
+        cadence grace window is a PHANTOM (no live spawn) and is recovered
+        exactly like 'dead'. Within grace, or while a lock/session still
+        backs the handle, "unknown" stays conservative — a just-dispatched
+        worker whose lock is not yet visible is NOT reaped. Phantom is
+        computed CLIENT-SIDE (pool.locks()/pool.sessions())."""
+        if p.state != PlanState.DISPATCHING:
+            return None
+        for a in p.actions:
+            if a.status != "in_progress":
+                continue
+            worker_handle = f"{p.plan_id}:{a.action_id}"
+            # W7: liveness returns {state, last_output_ts}; only state gates.
+            live = (await self.ctx.pool.liveness(worker_handle))["state"]
+            # s16: recover a confirmed-'dead' worker OR a PHANTOM in_progress
+            # (liveness unknown + no backing lock/session + past grace). Both
+            # mean "no live spawn is doing this action"; both reset->pending
+            # and re-dispatch identically. Order matters: check the cheap
+            # grace gate before the client-side backing probe (two GETs).
+            cause = None
+            if live == "dead":
+                cause = "dead"
+            elif (live == "unknown"
+                  and _phantom_grace_elapsed(self.ctx.plans, p.plan_id)
+                  and not await _handle_backed_by_pool(
+                      self.ctx.pool, worker_handle)):
+                cause = "phantom"
+            if cause is None:
+                continue
+            # DESIGN-v7 1.4 — a BATCH MEMBER is executed under its HEAD's
+            # shell: only the head's handle ever holds a session, so every
+            # non-head member of a live batch reads liveness=='unknown' with
+            # no backing lock — the exact phantom signature this sweep
+            # recovers. That is NOT a phantom: the unit's one shell is alive
+            # and will reach this member in declared order. So before
+            # recovering an in_progress action that carries a batch_group,
+            # ask whether ANY same-group sibling still holds a live/backed
+            # handle; if one does, the unit is running and this member waits.
+            # (When the head really dies, no sibling handle is backed either
+            # — every member then recovers through this same sweep, exactly
+            # as a solo action would.) Probed only on the already-suspect
+            # path, so a healthy plan pays nothing new.
+            if getattr(a, "batch_group", None):
+                unit_live = False
+                for sib in p.actions:
+                    if (sib.action_id == a.action_id
+                            or sib.batch_group != a.batch_group
+                            or sib.status != "in_progress"):
+                        continue
+                    sib_handle = f"{p.plan_id}:{sib.action_id}"
+                    if ((await self.ctx.pool.liveness(sib_handle))["state"]
+                            == "alive"
+                            or await _handle_backed_by_pool(
+                                self.ctx.pool, sib_handle)):
+                        unit_live = True
+                        break
+                if unit_live:
+                    continue
+            if a.attempt < _MAX_REDISPATCH:
+                a.attempt += 1
+                a.status = "pending"  # FSM re-emits dispatch_action
+                # s27/C10: see the recipe-side twin above. This branch DETECTS
+                # (dead worker | phantom in_progress) and RESETS the action to
+                # pending. It spawns NOTHING. The observed s26/a1 line claimed
+                # `auto_re_dispatch` while the session that appeared was created
+                # by the planner's own explicit pool_spawn_worker call.
+                self.ctx.plans.append_worklog(p.plan_id, {
+                    "kind": "crash_recovery", "agent_role": "planner",
+                    "child": worker_handle, "action_id": a.action_id,
+                    "attempt": a.attempt,
+                    "action": "crash_detected_redispatch_recommended",
+                    "performed": "reset_action_to_pending",
+                    "recommends": "dispatch_action",
+                    "cause": cause,
+                    "detail": ("worker died before done; action reset to "
+                               "pending" if cause == "dead" else
+                               "phantom in_progress (liveness unknown, no "
+                               "backing lock/session past grace); action "
+                               "reset to pending")
+                    + (". NO spawn was performed here — the FSM will emit "
+                       "dispatch_action and its caller performs the "
+                       "re-dispatch."),
+                })
+                return None
+            self.ctx.plans.append_worklog(p.plan_id, {
+                "kind": "crash_recovery", "agent_role": "planner",
+                "child": worker_handle, "action_id": a.action_id,
+                "attempt": a.attempt, "action": "surfaced_to_neuron",
+                "cause": cause,
+                "detail": "worker crashed again after re-dispatch",
+            })
+            return Instruction(
+                kind=InstructionKind.CHILD_CRASHED,
+                args={"child": worker_handle, "action_id": a.action_id,
+                      "attempt": a.attempt, "kind": "worker"},
+                rationale=(
+                    f"The worker for action '{a.action_id}' crashed and "
+                    "the automatic re-dispatch also failed. Surface to "
+                    "the neuron via ask_above (pivot, abort, or change "
+                    "the action). Do not silently loop."
+                ),
+            )
+        return None
+
+
+async def _handle_backed_by_pool(pool, handle: str) -> bool:
+    """s16 phantom cross-check (CLIENT-SIDE, hot-appliable): True when a live
+    pool LOCK or SESSION backs `handle`. This is what distinguishes a genuine
+    spawn whose lock is not yet visible / an orphaned-but-alive shell (backed
+    → conservative wait) from a PHANTOM in_progress that never spawned or was
+    rolled back (NOT backed → phantom). Reads the GET-only inspection
+    endpoints (`pool.locks()` / `pool.sessions()`) — no pool mutation, no
+    restart. FAIL-SAFE: any probe error returns True so a transient inspection
+    failure never classifies a real worker as phantom (and never reaps one)."""
+    try:
+        for lk in await pool.locks():
+            if lk.get("handle") == handle and lk.get("liveness") != "dead":
+                return True
+    except Exception:
+        return True   # inspection failed — assume backed, never false-reap
+    try:
+        for s in await pool.sessions():
+            if (s.get("handle") == handle
+                    and s.get("state") not in ("done", "dead")):
+                return True
+    except Exception:
+        return True
+    return False
+
+
+async def _session_is_live(pool, handle: str) -> bool:
+    """s27/C7 (d78): the SINGLE liveness notion used to suppress and to refuse
+    a dispatch. Reuses the pool's existing per-handle oracle — the same
+    `pool.liveness(handle)['state']` that `_advance_plan_liveness` gates crash
+    recovery on and that `status_ping` surfaces to a planner — so a planner's
+    read and the machinery's read cannot disagree. NOT a second notion.
+
+    ONLY a confirmed 'alive' returns True. 'dead', 'unknown', and any probe
+    error return False, i.e. dispatch is ALLOWED. That direction is deliberate
+    and load-bearing: a false True would convert this double-dispatch fix into
+    a crash-recovery DEADLOCK (a dead worker's action could never be
+    re-dispatched), which is strictly worse than the bug being fixed. Suppress
+    only on positive proof that a shell is alive."""
+    try:
+        return (await pool.liveness(handle))["state"] == "alive"
+    except Exception:
+        return False   # never let a probe failure deadlock crash recovery
+
+
+async def _live_action_ids(pool, p) -> frozenset[str]:
+    """The `live_action_ids` input plan_fsm consumes (it is pure and holds no
+    pool client — principle 6). Probes ONLY `pending` actions: they are the
+    sole dispatch candidates (`_ready_actions` gates on `pending`), and
+    `pending` + a live shell is exactly the drift state C7 rides on — a spawn
+    performed outside the FSM's dispatch instruction (the interleaved
+    `pool_spawn_worker` that planner-phase-author mandates, and the explicit
+    re-dispatch crash recovery prompts) never stamps `in_progress`."""
+    ids = set()
+    for a in p.actions:
+        if a.status != "pending":
+            continue
+        if await _session_is_live(pool, f"{p.plan_id}:{a.action_id}"):
+            ids.add(a.action_id)
+    return frozenset(ids)
+
+
+async def _pool_worker_capacity(pool) -> int | None:
+    """DESIGN-v7 1.1 — the pool's CURRENT worker headroom, or None (fail-open).
+
+    headroom = worker cap − live active workers, floored at 0. The cap is read
+    from the SAME `EDP_MAX_WORKERS` knob the pool's `_max_workers()` reads
+    (edp-pool/service.py — both processes are launched from the one
+    start-stack env, so the values agree by construction; the pool exposes no
+    capacity endpoint to ask instead). The active count is ONE GET-only pool
+    probe (`pool.sessions()`), counting rows the pool itself would count
+    against the cap: role=="worker" AND state=="active" — the exact predicate
+    of the pool's `active_workers()`, minus its server-side liveness
+    reconciliation (a stale "active" row here can only UNDER-report headroom,
+    which degrades to the pre-v7 behaviour of trying and being refused; it can
+    never over-spawn, because the pool's own cap stays the enforcer).
+
+    FAIL-OPEN to None on ANY error (pool unreachable, malformed knob): the
+    annotation is an optimisation that saves rollbacks, never a gate — a
+    planner given None simply spawns the wave and lets POOL_CAPACITY_EXCEEDED
+    + `_rollback_failed_dispatch` do what they always did."""
+    return await _pool_role_capacity(pool, "worker", "EDP_MAX_WORKERS", 3)
+
+
+async def _pool_planner_capacity(pool) -> int | None:
+    """DESIGN-v7 1.5.1 — the planner twin of `_pool_worker_capacity`, for the
+    recipe step-frontier wave: EDP_MAX_PLANNERS (default 4, the SAME knob the
+    pool's role-parametrized cap reads — one start-stack env, values agree by
+    construction) minus live ACTIVE planner sessions. A PARKED planner's row
+    (state="parked") deliberately does NOT count against the cap — freeing
+    that slot is the whole point of the park mechanism. Same fail-open None
+    contract as the worker probe."""
+    return await _pool_role_capacity(pool, "planner", "EDP_MAX_PLANNERS", 4)
+
+
+async def _pool_role_capacity(pool, role: str, env_key: str,
+                              default_cap: int) -> int | None:
+    """The shared role-capacity probe both wave annotations read: cap (from
+    the named env knob) − sessions the pool would count against that role's
+    cap (role match AND state=="active" — a parked/done row holds no slot),
+    floored at 0. FAIL-OPEN to None on any error; see _pool_worker_capacity's
+    docstring for why the annotation is never a gate."""
+    try:
+        cap = int(os.environ.get(env_key, str(default_cap)))
+        sessions = await pool.sessions()
+        active = sum(
+            1 for s in sessions
+            if s.get("role") == role and s.get("state") == "active")
+        return max(cap - active, 0)
+    except Exception:
+        return None
+
+
+# DESIGN-v7 1.5.2: the pool liveness states that mean "a shell OWNS this
+# handle" for DISPATCH purposes. 'parked'/'resuming' are deliberately in the
+# set: a parked planner is 0 process but its session row keeps the handle
+# lock and the resume token — instructing a dispatch for its step would be
+# false (and the pool would refuse the cold spawn anyway, naming /v1/resume).
+_OWNED_LIVENESS_STATES = frozenset({"alive", "parked", "resuming"})
+
+
+async def _owned_step_ids(pool, r) -> frozenset[str]:
+    """The `live_step_ids` input recipe_fsm consumes (it is pure and holds no
+    pool client — principle 6): every PENDING spawn_planner step whose
+    planner handle (`<recipe_id>:<step_id>`) the pool reports as alive OR
+    parked/resuming. Pending steps only — they are the sole dispatch
+    candidates (`_ready_steps` gates on `pending`), exactly as
+    `_live_action_ids` probes only pending actions (s27/C7). FAIL-OPEN per
+    probe: a probe error reads as not-owned, so a transient pool failure can
+    never deadlock dispatch — the pool's own handle lock stays the final
+    enforcer."""
+    ids = set()
+    for s in r.steps:
+        if s.status != "pending" or s.execution != "spawn_planner":
+            continue
+        handle = _planner_handle(r.recipe_id, s.step_id)
+        try:
+            state = (await pool.liveness(handle))["state"]
+        except Exception:
+            continue   # never let a probe failure suppress a dispatch
+        if state in _OWNED_LIVENESS_STATES:
+            ids.add(s.step_id)
+    return frozenset(ids)
+
+
+def _worklog_age_secs(ts) -> float | None:
+    """Age in seconds of a worklog ts (tz-naive treated as UTC). None when
+    absent/unparseable so callers can distinguish 'no basis' from 'fresh'."""
+    if not ts:
+        return None
+    try:
+        t = datetime.fromisoformat(str(ts))
+    except (ValueError, TypeError):
+        return None
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - t).total_seconds()
+
+
+def _phantom_grace_elapsed(plans, plan_id: str) -> bool:
+    """s16 grace window for phantom reaping, tied to the heartbeat cadence.
+    True only once the plan's trail has been quiet (no new worklog) for at
+    least one cadence — the proxy for "no worklog since the in_progress stamp
+    AND at least one cadence elapsed". A plan with NO worklog at all yields
+    None age → NOT elapsed (conservative: we have no basis to call an action
+    stranded, so a just-created in_progress action is never reaped)."""
+    recent = plans.read_worklog(plan_id, tail=1)
+    if not recent:
+        return False
+    age = _worklog_age_secs(recent[-1].get("ts"))
+    return age is not None and age > _heartbeat_secs()
+
+
+def _rollback_failed_dispatch(
+    ctx, plan_id: str, action_id: str, reason: str,
+    member_ids: list[str] | None = None,
+) -> None:
+    """Bug fix (2026-05-26 eda-ml stall): plan_fsm pre-stamps
+    `status=in_progress` at dispatch (so next_action no longer re-selects
+    the action — load-bearing for the FSM). If the planner's subsequent
+    spawn FAILS (POOL_CAPACITY_EXCEEDED, broker error, anything), no
+    lock is acquired — the action sits in_progress with no live worker,
+    and the FSM waits forever ("phantom lock"). Every dispatch tool must
+    roll back the FSM's pre-stamp on failure so the invariant holds:
+    `in_progress` always means "a spawn really happened." Cheap to call;
+    silently no-ops if the plan/action isn't where we expect (defensive
+    — a partial state we didn't create should be left alone).
+
+    DESIGN-v7 1.4: `member_ids` widens the rollback to a BATCH dispatch —
+    the FSM stamps EVERY unit member in_progress atomically, so a failed
+    spawn of the head must revert every member or the tail of the chain
+    strands exactly the phantom this function exists to prevent. Absent
+    (every pre-v7 caller), the rollback covers `action_id` alone. One
+    worklog line per rolled-back action, one atomic save for all of them."""
+    try:
+        if not ctx.plans.exists(plan_id):
+            return
+        ids = list(member_ids or [action_id])
+        if action_id not in ids:
+            ids.insert(0, action_id)
+        p = ctx.plans.load(plan_id)
+        rolled: list[str] = []
+        for a in p.actions:
+            if a.action_id in ids and a.status == "in_progress":
+                a.status = "pending"
+                rolled.append(a.action_id)
+        if rolled:
+            ctx.plans.save(p)
+            for aid in rolled:
+                ctx.plans.append_worklog(plan_id, {
+                    "kind": "dispatch_failed", "agent_role": "planner",
+                    "action_id": aid, "action": "rollback_in_progress",
+                    "detail": f"spawn failed ({reason}); reverted to pending "
+                              "so the FSM can re-dispatch",
+                })
+    except Exception:
+        pass   # best-effort — don't mask the original spawn error
+
+
+# ── resolve_recipe — the cross-session resume front door ──────────────────
+# THE fix for the prior system's signature failure (orphaned work / same
+# goal restarted every session). The neuron calls this FIRST, before
+# creating anything: disk (.recipes/) is the source of truth that
+# survives a `/clear`.
+#
+# TODO(resume-fuzzy): normalized-exact + Jaccard-overlap is the
+# deterministic MVP. Embedding-cosine similarity (DESIGN-v4 §10) is the
+# later refinement for reworded goals; the `confirm` path + user
+# judgement covers near-matches until then.
+def _norm(s: str) -> str:
+    return " ".join(s.lower().split())
+
+
+def _overlap(a: str, b: str) -> float:
+    sa, sb = set(_norm(a).split()), set(_norm(b).split())
+    if not sa or not sb:
+        return 0.0
+    return len(sa & sb) / len(sa | sb)
+
+
+_CONFIRM_THRESHOLD = 0.8
+
+
+class _ResolveIn(BaseModel):
+    goal: str
+
+
+class _ResolveOut(BaseModel):
+    decision: Literal["resume", "confirm", "create"]
+    recipe_id: str | None = None
+    matched_goal: str | None = None
+    rationale: str
+    # 2026-05-26: ALL currently-open recipes (id + goal), most-recent
+    # first. Lets the neuron resume by intent ("resume working") even
+    # when the typed text doesn't match a goal — and makes orphaning
+    # open work (silent `create`) impossible.
+    # s17 a7: a LIST output (one row per open recipe) — windowed to WINDOW
+    # (most-recent first) with the true total in `open_recipes_count`. Open
+    # recipes are few in practice, but the bound keeps #18 by construction.
+    open_recipes: list[dict] = []
+    open_recipes_count: int = 0
+
+
+class ResolveRecipe(_ClaudeTool):
+    name = "resolve_recipe"
+    idempotent = True
+    InputModel = _ResolveIn
+    OutputModel = _ResolveOut
+
+    async def _run(self, m: _ResolveIn):
+        goal_n = _norm(m.goal)
+        best_id = None
+        best_goal = None
+        best_score = 0.0
+        open_recipes: list[dict] = []
+        for rid in self.ctx.recipes.list_ids():
+            try:
+                r = self.ctx.recipes.load(rid)
+            except Exception:
+                continue
+            # OPEN = not closed and no final_outcome. A finished recipe
+            # correctly yields a NEW one (resume is for incomplete work).
+            if r.state == RecipeState.CLOSED or r.final_outcome is not None:
+                continue
+            open_recipes.append({
+                "recipe_id": rid,
+                "goal": r.user_goal_verbatim,
+                "updated_at": str(r.updated_at),
+            })
+            if _norm(r.user_goal_verbatim) == goal_n:
+                return Tool.ok(_ResolveOut(
+                    decision="resume", recipe_id=rid,
+                    matched_goal=r.user_goal_verbatim,
+                    open_recipes=open_recipes[:WINDOW],
+                    open_recipes_count=len(open_recipes),
+                    rationale="exact open recipe for this goal — resume, "
+                    "do NOT start fresh",
+                ))
+            s = _overlap(m.goal, r.user_goal_verbatim)
+            if s > best_score:
+                best_id, best_goal, best_score = (
+                    rid, r.user_goal_verbatim, s
+                )
+        open_recipes.sort(key=lambda o: o["updated_at"], reverse=True)
+        if best_id is not None and best_score >= _CONFIRM_THRESHOLD:
+            return Tool.ok(_ResolveOut(
+                decision="confirm", recipe_id=best_id,
+                matched_goal=best_goal, open_recipes=open_recipes[:WINDOW],
+                open_recipes_count=len(open_recipes),
+                rationale=f"an open recipe is {best_score:.0%} similar; "
+                "ask the user: resume it or start fresh?",
+            ))
+        # 2026-05-26: open work exists but the typed text doesn't match it
+        # (e.g. the user typed "resume working", not the goal). NEVER
+        # silently `create` — that orphans the open recipe. Surface the
+        # open recipes (most-recent first) for the user to pick.
+        if open_recipes:
+            recent = open_recipes[0]
+            return Tool.ok(_ResolveOut(
+                decision="confirm", recipe_id=recent["recipe_id"],
+                matched_goal=recent["goal"], open_recipes=open_recipes[:WINDOW],
+                open_recipes_count=len(open_recipes),
+                rationale=(
+                    f"{len(open_recipes)} open recipe(s) exist; none "
+                    f"matches {m.goal!r} by text. Resume one (see "
+                    "open_recipes; most-recent is recipe_id) or start "
+                    "fresh — but do NOT create blindly, that orphans open "
+                    "work. If the user's input was a resume intent, "
+                    "resume the open recipe."
+                ),
+            ))
+        return Tool.ok(_ResolveOut(
+            decision="create",
+            rationale="no open recipe exists; author a new one",
+        ))
+
+
+# ── record_recipe / record_plan ───────────────────────────────────────────
+class _RecIn(BaseModel):
+    recipe: dict
+
+
+class _Ver(BaseModel):
+    version: int
+    # P3 advisory FSM: present when the mutation proceeded WITH warnings
+    # (e.g. add_action reopening an acceptance_review plan). Heed them —
+    # each is also recorded in the owning trail.
+    advisories: list[dict] | None = None
+
+
+class _CreatePlanOut(BaseModel):
+    plan_id: str       # 2026-05-28 friction #2: echo it, don't make the
+    domain: str        # planner infer "<recipe_id>-<step_id>"
+    version: int
+
+
+class RecordRecipe(_ClaudeTool):
+    name = "record_recipe"
+    InputModel = _RecIn
+    OutputModel = _Ver
+
+    async def _run(self, m: _RecIn):
+        from pydantic import ValidationError
+
+        try:
+            recipe = Recipe.model_validate(m.recipe)
+        except ValidationError as e:  # v5 P4: instruction-shaped
+            return _precondition(instruction_error(e, Recipe))
+        except Exception as e:
+            return _precondition(f"recipe invalid: {e}")
+        v = self.ctx.recipes.save(recipe)
+        return Tool.ok(_Ver(version=v))
+
+
+class _PlanIn(BaseModel):
+    plan: dict
+
+
+class RecordPlan(_ClaudeTool):
+    name = "record_plan"
+    InputModel = _PlanIn
+    OutputModel = _Ver
+
+    async def _run(self, m: _PlanIn):
+        from pydantic import ValidationError
+
+        try:
+            plan = Plan.model_validate(m.plan)
+        except ValidationError as e:  # v5 P4: instruction-shaped
+            return _precondition(instruction_error(e, Plan))
+        except Exception as e:
+            return _precondition(f"plan invalid: {e}")
+        v = self.ctx.plans.save(plan)
+        return Tool.ok(_Ver(version=v))
+
+
+# ── incremental plan builders (2026-05-22): the recipe got intent tools
+#    (start_recipe/add_step/record_outcome) and never has schema fights;
+#    the plan only had monolithic record_plan, so every planner reverse-
+#    engineered the Plan schema + retried 2-3× (fitness HITL token burn).
+#    create_plan + add_action give the plan the same treatment: small,
+#    obvious per-call schemas; the tool fills scaffolding. ────────────────
+class _CreatePlanIn(BaseModel):
+    recipe_id: str
+    step_id: str
+    shape: str
+    goal: str
+
+
+class CreatePlan(_ClaudeTool):
+    """Create an empty drafted plan for a recipe step. plan_id and
+    domain are filled by the tool (domain inherited from the recipe);
+    you supply only shape + goal. Then call add_action per action — no
+    monolithic plan object, no schema guessing."""
+
+    name = "create_plan"
+    InputModel = _CreatePlanIn
+    OutputModel = _CreatePlanOut
+
+    async def _run(self, m: _CreatePlanIn):
+        if not self.ctx.recipes.exists(m.recipe_id):
+            return _precondition(f"no recipe {m.recipe_id!r}")
+        recipe = self.ctx.recipes.load(m.recipe_id)
+        pid = f"{m.recipe_id}-{m.step_id}"
+        if self.ctx.plans.exists(pid):
+            existing = self.ctx.plans.load(pid)
+            if existing.state != PlanState.DRAFTED:
+                return _precondition(
+                    f"plan {pid} already exists in state "
+                    f"{existing.state!r}; cannot re-create a non-drafted "
+                    "plan (use add_action / replan instead)."
+                )
+        plan = Plan.model_validate({
+            "plan_id": pid,
+            "recipe_id": m.recipe_id,
+            "recipe_step_id": m.step_id,
+            "domain": recipe.domain,
+            "shape": m.shape,
+            "goal": m.goal,
+            "state": "drafted",
+            "actions": [],
+            # DESIGN-v7 1.5.6: grounding provenance, stamped AT AUTHORING —
+            # the snapshot moment the staleness delta measures sibling work
+            # against. The fingerprint field stays unset here (Phase 8's
+            # record_grounding_brief appends file paths; action spec_ids are
+            # folded in at delta time by _plan_grounding_fingerprint).
+            "grounded_at": _now().isoformat(),
+        })
+        v = self.ctx.plans.save(plan)
+        # 2026-05-28 (friction #2): echo plan_id + domain so the planner
+        # uses them for add_action directly, not infer "<recipe>-<step>".
+        return Tool.ok(_CreatePlanOut(
+            plan_id=pid, domain=recipe.domain, version=v))
+
+
+class _AddActionIn(BaseModel):
+    plan_id: str
+    action_id: str
+    description: str
+    depends_on: list[str] = []
+    executor_mode: Literal["inline", "subagent"] = "subagent"
+    acceptance_kind: str = "manual_review"
+    acceptance_expected: str = ""
+    # outcome-verify block (deterministic gate): e.g.
+    # {"check": "file_exists", "path": "<abs>"}. Author it for every
+    # file-producing action.
+    verify: dict | None = None
+    # phase 7: expertise this action needs (e.g. "Java Spring Boot REST
+    # API"). If set, the dispatcher branches a matching specialist
+    # instead of a fresh worker. Leave null for ordinary work.
+    # MULTI-SPEC (2026-06-03): a cross-stack action declares MORE THAN ONE
+    # descriptor here (e.g. ["Java Spring Boot REST backend", "React +
+    # TypeScript frontend"]); the planner resolves+stamps all their spec_ids
+    # at dispatch. `specialization` (singular) stays accepted as the N=1 form
+    # and is folded into the list. Leave both empty for ordinary work.
+    specialization: str | None = None
+    specializations: list[str] = []
+    # 2026-06-01 (SPECIALIZATION-LAYERED-RULESETS.md, Decision 3b/4):
+    # cross-cutting concerns this action touches (e.g. ["security"] for an
+    # endpoint handling user input). They pull the matching `spec-<concern>`
+    # layer into the assembled ruleset (and the matching reviewer at verify).
+    # Empty for actions with no cross-cutting concern.
+    concerns: list[str] = []
+    # DESIGN-v7 1.4 Stage A — action batching, stamped AT AUTHORING TIME.
+    # Actions sharing a batch_group (a small serial chain — ≤4 members
+    # sharing spec_ids is the shape the planner guide names) dispatch as ONE
+    # unit under ONE worker shell; see Action.batch_group in schemas/plan.py
+    # for the full contract. None (the default) = unbatched, byte-identical
+    # to pre-v7 authoring.
+    batch_group: str | None = None
+
+
+class AddAction(_ClaudeTool):
+    """Append one action to any NON-TERMINAL plan — the cheap incremental
+    alternative to re-emitting the whole plan via record_plan. Drafted and
+    dispatching plans append directly; an acceptance_review plan REOPENS to
+    dispatching (you get an `advisories` entry + an audit-trail record —
+    drive the new action to terminal so the plan can close again). Only a
+    terminal plan refuses (immutable history). Small flat schema — no
+    nested Acceptance object to hand-author (the tool builds it from
+    acceptance_kind/expected/verify)."""
+
+    name = "add_action"
+    InputModel = _AddActionIn
+    OutputModel = _Ver
+
+    async def _run(self, m: _AddActionIn):
+        from ..schemas import Acceptance, Action
+
+        if not self.ctx.plans.exists(m.plan_id):
+            return _precondition(
+                f"no plan {m.plan_id!r}; call create_plan first"
+            )
+        p = self.ctx.plans.load(m.plan_id)
+        # s12 item (b): an action may be appended both while DRAFTED
+        # (initial authoring) and while DISPATCHING (incremental append to
+        # an in-flight plan). A freshly-added action enters `pending`
+        # (below), respects depends_on, and is subject to its own
+        # acceptance gate at done-time.
+        #
+        # P3 advisory FSM (2026-06-10): ACCEPTANCE_REVIEW no longer refuses —
+        # the plan REOPENS to dispatching with an advisory + audit record
+        # (the old flat refusal pushed agents into recording a whole new
+        # plan instead of appending the one missing action). Only TERMINAL
+        # stays hard-blocked: a closed plan is immutable history.
+        advisories: list[dict] | None = None
+        if p.state == PlanState.TERMINAL:
+            return _precondition(
+                f"plan {m.plan_id} is terminal "
+                f"({p.terminal_status!r}) — immutable history; record a new "
+                "plan (record_plan/replan) for genuinely new work."
+            )
+        if p.state == PlanState.ACCEPTANCE_REVIEW:
+            from ..objects import advise
+            p.state = PlanState.DISPATCHING
+            advisories = advise(
+                self.ctx, op="add_action", target=m.action_id,
+                plan_id=m.plan_id,
+                warnings=[(
+                    "plan_reopened",
+                    f"plan {m.plan_id} was in acceptance_review; appending "
+                    f"{m.action_id} REOPENED it to dispatching — drive the "
+                    "new action to terminal so the plan can close again."
+                )])
+        if any(a.action_id == m.action_id for a in p.actions):
+            return _precondition(
+                f"action {m.action_id!r} already in plan {m.plan_id}"
+            )
+        # Bug B (2026-05-26): refuse a producer command as a verify — it
+        # re-runs the build on every record and hangs the gate. Force an
+        # artifact check at authoring time.
+        bad = _reject_producer_verify(m.verify)
+        if bad:
+            return _precondition(bad)
+        # Guard A (2026-06-01): refuse specialist-intent expressed as prose
+        # in the description (set the `specialization` field instead).
+        prose = _reject_dispatch_prose(m.description)
+        if prose:
+            return _precondition(prose)
+        p.actions.append(Action(
+            action_id=m.action_id,
+            description=m.description,
+            status="pending",
+            depends_on=m.depends_on,
+            executor_mode=m.executor_mode,
+            acceptance=Acceptance(
+                kind=m.acceptance_kind,
+                expected=m.acceptance_expected,
+                verify=m.verify,
+            ),
+            # MULTI-SPEC: the canonical list wins; the singular descriptor is
+            # folded in by the Action load shim when only it is supplied.
+            specialization=m.specialization,
+            specializations=m.specializations,
+            concerns=m.concerns,
+            batch_group=m.batch_group,
+        ))
+        v = self.ctx.plans.save(p)
+        return Tool.ok(_Ver(version=v, advisories=advisories))
+
+
+# ── v5 P4 intent-level tools (the tool fills scaffolding; the LLM only
+#    supplies meaning — kills the schema-guessing friction) ──────────────
+def _slug(goal: str) -> str:
+    s = re.sub(r"[^a-z0-9]+", "-", goal.lower()).strip("-")
+    return f"recipe-{s[:40].strip('-')}-{uuid.uuid4().hex[:6]}"
+
+
+_TRIVIAL_VERDICT = {"ok", "n/a", "na", "none", "yes", "no", "tbd", "."}
+
+
+class _StartIn(BaseModel):
+    goal: str
+    domain: str
+
+
+class _Rid(BaseModel):
+    recipe_id: str
+
+
+class StartRecipe(_ClaudeTool):
+    name = "start_recipe"
+    InputModel = _StartIn
+    OutputModel = _Rid
+
+    async def _run(self, m: _StartIn):
+        rid = _slug(m.goal)
+        recipe = Recipe(
+            recipe_id=rid,
+            user_goal_verbatim=m.goal,
+            user_goal_distilled=m.goal,
+            domain=m.domain,
+            state="created",
+            comprehension={"branches": [], "expected_outcomes": []},
+            steps=[],
+            created_at=_now(),
+            updated_at=_now(),
+        )
+        self.ctx.recipes.save(recipe)
+        return Tool.ok(_Rid(recipe_id=rid))
+
+
+class _BVIn(BaseModel):
+    recipe_id: str
+    branch_id: str
+    verdict: str = ""
+    needs_user: bool = False
+    question_for_user: str | None = None
+    # s26 item 6 — ACTION-LEVEL VERDICT. When set, the verdict is stamped on
+    # `plan_id`'s action `branch_id` instead of a comprehension branch. The
+    # reviewer's own handle is `<plan_id>:<action_id>`, so it already knows
+    # both ids. Absent → the legacy comprehension-branch path, unchanged.
+    plan_id: str | None = None
+    # W10b — DID THE RE-RUN ACCEPTANCE GATE PASS? The reviewer STATES it; the
+    # engine never infers it. `verdict` is free prose, and deciding pass/fail by
+    # substring-matching prose is precisely the "engine heuristic over prose"
+    # dumbness d77/d83 forbids (add_action's bare-substring anti-dispatch guard
+    # is named there as the single live instance of it — not a pattern to copy).
+    # So the outcome arrives as DATA or not at all.
+    #
+    # `None` (the default) = the reviewer said nothing about the gate, and NOTHING
+    # is counted — every pre-W10b caller is byte-identical. `False` counts one
+    # failed acceptance cycle (idempotent with the worker's own report of the
+    # same cycle). `True` counts nothing: a passing gate is not a failure.
+    passed: bool | None = None
+    # v7 P4.2 — DID THE REVIEWER FIX ANYTHING IN-SESSION? Stated as DATA
+    # (never sniffed from "FIXED:" prose — the same d77/d83 rule as `passed`).
+    # True stamps `fixed_inline` on the action's review_verdict, which makes
+    # the plan FSM emit ONE latched DISPATCH_VERIFY_LEG advisory: a cheap
+    # verify-only worker re-runs the recorded acceptance commands verbatim,
+    # closing the d74 gap (the reviewer's own fix was the one artifact in the
+    # batch nothing independently re-ran) without reviewer-reviews-reviewer
+    # regress. Default False = byte-identical for every existing caller.
+    fixed_inline: bool = False
+
+
+def _caller_owns_action(plan_id: str, action_id: str) -> bool:
+    """Does THIS shell's own handle name `plan_id:action_id`?
+
+    A pool-spawned worker's EDP_HANDLE is exactly `<plan_id>:<action_id>`. The
+    handle is stamped by the pool at spawn (pty_launcher), not by the shell, so
+    a shell cannot forge someone else's identity by editing its own request —
+    it would have to edit its own environment, which is the pool's to set.
+
+    Used to enforce d30: nobody blesses the action they themselves executed.
+    """
+    me, _parent = _self_and_parent_addresses()
+    return bool(me) and me == f"{plan_id}:{action_id}"
+
+
+class RecordBranchVerdict(_ClaudeTool):
+    """Record a substantive verdict — on a COMPREHENSION BRANCH (the neuron's
+    OCAK path, unchanged) or, when `plan_id` is passed, on a PLAN ACTION (s26
+    item 6, the reviewer's path).
+
+    Why the action path exists: d29/d30 make the reviewer's independent re-run
+    THE objective gate of an action, and every plan carries a reviewer leg — but
+    the verdict had nowhere to land. This tool resolved ONLY
+    `recipe.comprehension.branches`, so a reviewer stamping a verdict for action
+    `a4` (or step `s25`) got `no branch 'a4'`. It failed in WARN mode, today,
+    independent of role scope. s24 and s25 both hit that wall and survived only
+    by filing the verdict as `record_action_status` evidence.
+
+    d30 SEPARATION, enforced two independent ways:
+      1. This verb is NOT on the worker's surface (roles.py `_WORKER`), so the
+         shell that DID the work cannot call it at all. Granting it there is the
+         trap the s26 brief names explicitly — do not.
+      2. Even if a shell reaches it, `_caller_owns_action` REFUSES a verdict on
+         the caller's OWN action. Belt and braces: the role table is warn-mode
+         today (d14/d15), so the in-tool guard is the one that actually holds.
+
+    A verdict is a JUDGEMENT, not a status: it lands on `action.review_verdict`
+    and never touches `action.status` or `acceptance.actual`. The worker owns
+    those. That asymmetry is the whole point."""
+
+    name = "record_branch_verdict"
+    InputModel = _BVIn
+    OutputModel = _Ok
+
+    async def _run(self, m: _BVIn):
+        if m.plan_id:
+            return await self._action_verdict(m)
+        r = self.ctx.recipes.load(m.recipe_id)
+        for b in r.comprehension.branches:
+            if b.id != m.branch_id:
+                continue
+            if m.needs_user:
+                b.status = "needs_user_input"
+                if m.question_for_user:
+                    b.question = m.question_for_user
+                self.ctx.recipes.save(r)
+                return Tool.ok(_Ok())
+            v = (m.verdict or "").strip()
+            if len(v) < 40 or v.lower() in _TRIVIAL_VERDICT:
+                return _precondition(
+                    f"branch '{m.branch_id}' verdict is too shallow — "
+                    "answer THIS goal specifically (≥40 chars, concrete), "
+                    "or set needs_user=True. Do not guess-and-resolve."
+                )
+            b.status = "resolved"
+            b.verdict = v
+            self.ctx.recipes.save(r)
+            return Tool.ok(_Ok())
+        return _precondition(
+            f"no branch {m.branch_id!r} in this recipe. (To stamp a verdict on "
+            f"a PLAN ACTION instead, pass plan_id=<the plan> and "
+            f"branch_id=<the action_id>.)"
+        )
+
+    async def _action_verdict(self, m: _BVIn):
+        if not self.ctx.plans.exists(m.plan_id or ""):
+            return _precondition(f"no plan {m.plan_id!r}")
+        p = self.ctx.plans.load(m.plan_id or "")
+        a = next((x for x in p.actions if x.action_id == m.branch_id), None)
+        if a is None:
+            return _precondition(
+                f"no action {m.branch_id!r} in plan {m.plan_id!r}")
+        # d30: a shell may not bless the action it itself executed.
+        if _caller_owns_action(m.plan_id or "", m.branch_id):
+            return _precondition(
+                f"REFUSED: {m.branch_id!r} is YOUR OWN action — a worker "
+                "cannot bless its own work (d30). The verdict on an action is "
+                "an INDEPENDENT reviewer's, recorded from a different shell. "
+                "Record your own result with record_action_status(status, "
+                "evidence) instead; the reviewer re-runs the gate and stamps "
+                "the verdict."
+            )
+        if m.needs_user:
+            return _precondition(
+                "needs_user is a COMPREHENSION-BRANCH escape (it parks a "
+                "branch for the user). An action verdict has no such state — "
+                "record the verdict text, or raise the question with "
+                "ask_above/notify_above."
+            )
+        v = (m.verdict or "").strip()
+        if len(v) < 40 or v.lower() in _TRIVIAL_VERDICT:
+            return _precondition(
+                f"action '{m.branch_id}' verdict is too shallow — say what you "
+                "re-ran, what you observed, and why it passes or fails "
+                "(≥40 chars, concrete). Do not rubber-stamp."
+            )
+        me, _parent = _self_and_parent_addresses()
+        a.review_verdict = {
+            "verdict": v,
+            "by": me or os.environ.get("EDP_ROLE", "").strip() or "unknown",
+            "at": _now().isoformat(),
+        }
+        if m.passed is not None:
+            a.review_verdict["passed"] = m.passed
+        # v7 P4.2: the reviewer STATES it fixed something in-session — the
+        # stamp the plan FSM's DISPATCH_VERIFY_LEG advisory keys on.
+        if m.fixed_inline:
+            a.review_verdict["fixed_inline"] = True
+        # W10b SEAM (b) — the REVIEWER's independent re-run of the acceptance
+        # gate (d29/d30: this re-run IS the objective gate). Counted only when
+        # the reviewer explicitly STATES the gate failed; never inferred from the
+        # prose above. `bump_verify_failure` is idempotent per DISPATCH cycle, so
+        # if the worker already reported this same failed cycle via
+        # record_action_status(status="failed"), this is a no-op — one cycle,
+        # one count. That matters: worker-fails-then-reviewer-agrees is the
+        # dual gate working, not a stuck action.
+        if m.passed is False:
+            bump_verify_failure(a)
+        self.ctx.plans.append_worklog(p.plan_id, {
+            "kind": "action_verdict_recorded",
+            "action_id": m.branch_id,
+            "agent_role": os.environ.get("EDP_ROLE", "").strip() or "unknown",
+            "passed": m.passed,
+            "detail": v[:200],
+        })
+        self.ctx.plans.save(p)
+        return Tool.ok(_Ok())
+
+
+class _OutIn(BaseModel):
+    recipe_id: str
+    description: str
+    verification: str
+
+
+class RecordOutcome(_ClaudeTool):
+    name = "record_outcome"
+    InputModel = _OutIn
+    OutputModel = _Ok
+
+    async def _run(self, m: _OutIn):
+        from ..schemas import Outcome
+
+        r = self.ctx.recipes.load(m.recipe_id)
+        # 2026-05-28 HARD GATE: declaring an outcome = "comprehension is
+        # complete," which the FSM then rides into PLANNING. It is only
+        # legitimate once curiosity has CONVERGED. `curiosity_cleared` is
+        # set automatically when a curiosity reply with clear/done arrives
+        # (the neuron can't fake it); a TERMINATED/crashed curiosity never
+        # sets it. The only other path is an explicit user sign-off
+        # (record_comprehension_signoff with the user's verbatim
+        # proceed-instruction). This stops the neuron laundering a
+        # disrupted curiosity into "goal clear" and skipping the loop
+        # (the new-trends 2026-05-28 failure).
+        c = r.comprehension
+        if not (c.curiosity_cleared or c.user_signoff):
+            return _precondition(
+                "comprehension is NOT converged — cannot declare outcomes "
+                "yet. curiosity has not returned clear/done for this recipe "
+                "(a terminated or crashed curiosity does NOT count as "
+                "clear), and there is no user sign-off. Either: (a) consult "
+                "curiosity through to convergence — it sets this flag "
+                "automatically when it replies clear/done (re-spawn a fresh "
+                "two-way curiosity if you disrupted the prior one); or (b) "
+                "if the user EXPLICITLY told you to proceed without full "
+                "comprehension, call record_comprehension_signoff(recipe_id="
+                f"{m.recipe_id!r}, user_quote='<their verbatim words>') "
+                "first. Do not infer 'clear' from 'all my questions were "
+                "answered'."
+            )
+        n = len(c.expected_outcomes) + 1
+        c.expected_outcomes.append(
+            Outcome(id=f"o{n}", description=m.description,
+                    verification=m.verification)
+        )
+        self.ctx.recipes.save(r)
+        return Tool.ok(_Ok())
+
+
+class _SignoffIn(BaseModel):
+    recipe_id: str
+    # the user's VERBATIM instruction to proceed — recorded for audit.
+    # Required unless skipped=true.
+    user_quote: str = ""
+    # P6 (2026-06-10): the deliberate autonomous bypass — the recipe may
+    # leave COMPREHENDING without the user seeing the brief ONLY via this
+    # recorded skip. `reason` is mandatory and audit-trailed.
+    skipped: bool = False
+    reason: str = ""
+
+
+class RecordComprehensionSignoff(_ClaudeTool):
+    """Record the user's go-ahead on the comprehension BRIEF — the gate
+    between drafting the map and dispatching the first planner (P6). Two
+    forms:
+    (1) user_quote='<their verbatim approval>' — after you PRESENTED the
+        brief conversationally (plan-mode discussion / AskUserQuestion):
+        distilled goal, outcomes + verification bars, step map, load-
+        bearing decisions, risks. This is the normal path.
+    (2) skipped=true, reason='<why>' — the deliberate autonomous bypass
+        when the user is genuinely unavailable and the work must proceed.
+        Audited; never the default.
+    It also doubles as the 2026-05-28 curiosity-gate escape (an explicit
+    user 'just go' counts as signoff). NEVER self-author a quote; a
+    terminated curiosity is NOT a sign-off. Recording either form is a
+    RE-GROUNDING moment: it refreshes the recheck baseline (clears any
+    pending scope-change / decision-drift nag)."""
+
+    name = "record_comprehension_signoff"
+    InputModel = _SignoffIn
+    OutputModel = _Ok
+
+    async def _run(self, m: _SignoffIn):
+        if m.skipped:
+            if not m.reason.strip():
+                return _precondition(
+                    "skipped=true requires a real `reason` — the audit "
+                    "trail must show WHY the user never saw the brief."
+                )
+        elif not m.user_quote.strip():
+            return _precondition(
+                "record_comprehension_signoff requires the user's verbatim "
+                "proceed-instruction in `user_quote` (audit trail), or "
+                "skipped=true with a reason. Don't self-author a quote."
+            )
+        r = self.ctx.recipes.load(m.recipe_id)
+        if m.skipped:
+            r.comprehension.signoff_skipped = True
+            r.comprehension.skip_reason = m.reason.strip()
+        else:
+            r.comprehension.user_signoff = True
+            r.comprehension.signoff_quote = m.user_quote.strip()
+        # P6: either form is a re-grounding moment for the recheck nags.
+        refresh_comprehension_baseline(r, at=_now().isoformat())
+        self.ctx.recipes.save(r)
+        self.ctx.recipes.append_worklog(m.recipe_id, {
+            "kind": ("comprehension_signoff_skipped" if m.skipped
+                     else "comprehension_signoff"),
+            "agent_role": "neuron",
+            "detail": (f"SKIPPED (autonomous): {m.reason.strip()[:200]}"
+                       if m.skipped else
+                       f"user proceed-instruction: "
+                       f"{m.user_quote.strip()[:200]}"),
+        })
+        return Tool.ok(_Ok())
+
+
+class _MarkOutcomeMetIn(BaseModel):
+    recipe_id: str
+    outcome_id: str
+    evidence: str   # how it was verified (reviewer verdict + user confirm)
+
+
+class MarkOutcomeMet(_ClaudeTool):
+    """2026-05-24: mark an expected outcome VERIFIED. Set only from real
+    verification — a passing recipe-end reviewer-fork verdict and/or the
+    user's confirmation — never on the neuron's word. `close_recipe`
+    'succeeded' now REQUIRES every outcome met, so this is the gate that
+    makes a success claim honest (closes the 'succeeded with met:false'
+    gap). Requires non-trivial evidence."""
+
+    name = "mark_outcome_met"
+    InputModel = _MarkOutcomeMetIn
+    OutputModel = _Ok
+
+    async def _run(self, m: _MarkOutcomeMetIn):
+        if not self.ctx.recipes.exists(m.recipe_id):
+            return _precondition(f"no recipe {m.recipe_id!r}")
+        if len((m.evidence or "").strip()) < 20:
+            return _precondition(
+                "mark_outcome_met requires concrete evidence (≥20 chars: "
+                "the reviewer verdict / user confirmation / verification "
+                "result). An outcome is not 'met' on assertion."
+            )
+        r = self.ctx.recipes.load(m.recipe_id)
+        for o in r.comprehension.expected_outcomes:
+            if o.id == m.outcome_id:
+                o.met = True
+                o.met_evidence = m.evidence
+                self.ctx.recipes.save(r)
+                return Tool.ok(_Ok())
+        return _precondition(
+            f"no outcome {m.outcome_id!r} in recipe {m.recipe_id}"
+        )
+
+
+class _AddStepIn(BaseModel):
+    recipe_id: str
+    description: str
+    execution: Literal["inline", "spawn_planner"]
+    # v7 P1.5.1 completion (2026-07-12): the step-frontier wave dispatches
+    # CONCURRENT planners for steps whose depends_on are satisfied — but this
+    # tool, the one place steps are born, could not declare a dependency
+    # (guides said "add_step with depends_on"; the argument did not exist and
+    # the workaround was an undocumented update_object patch). Declared here,
+    # validated against EXISTING step ids so a typo cannot strand a step
+    # behind a dependency that never completes. Default [] = byte-compat.
+    depends_on: list[str] = []
+    # MID-FLIGHT STEP CREATION IS THE EXPENSIVE ANSWER (operator ruling
+    # 2026-07-26). When the recipe is already EXECUTING, a step born here is
+    # not part of the agreed map — it is a scope change discovered late, and
+    # it costs a planner spawn + a plan authored cold + N workers + review
+    # legs + a rebuild. The caller must say WHY no existing step can own it.
+    # Empty is fine while the map is still being DECLARED (phase c); it is
+    # refused once execution has begun. See _AFTER_DECLARATION_JUSTIFY below.
+    justification: str = ""
+
+
+class _StepId(BaseModel):
+    step_id: str
+    note: str = ""
+    advisories: list[str] = []
+
+
+# The escalation order a caller must have tried before creating a step
+# mid-flight. Quoted back at them on refusal so the rule travels with the
+# error rather than living only in a guide they may not have read.
+_CHEAPER_FIRST = (
+    "(1) a LIVE plan already owns the territory -> steer its planner to ADD "
+    "AN ACTION (minutes; it is already grounded there, and the gap was "
+    "usually found by one of its own workers); "
+    "(2) a PENDING step owns it -> update_object its description (seconds, "
+    "and binding, because it has no planner yet); "
+    "(3) an IN-PROGRESS step owns it but genuinely cannot reach it -> amend "
+    "the step and notify its planner, accepting the drift advisory; "
+    "(4) only then a new step."
+)
+
+
+class AddStep(_ClaudeTool):
+    """Declare a step on the recipe map.
+
+    CHEAP DURING DECLARATION, EXPENSIVE AFTER. While the recipe is still
+    being planned, declaring every known step up front is exactly right.
+    Once it is EXECUTING, a new step is the costliest possible answer to a
+    discovered gap — hours of build, review and rebuild — and this tool is
+    the easiest verb to reach for, which biases callers toward the most
+    expensive option. So after execution begins it REQUIRES a justification
+    naming why no existing step can own the work.
+    """
+
+    name = "add_step"
+    InputModel = _AddStepIn
+    OutputModel = _StepId
+
+    async def _run(self, m: _AddStepIn):
+        from ..schemas import RecipeStep
+
+        r = self.ctx.recipes.load(m.recipe_id)
+        known = {s.step_id for s in r.steps}
+        missing = [d for d in m.depends_on if d not in known]
+        if missing:
+            return _precondition(
+                f"depends_on names unknown step(s) {missing!r} — known: "
+                f"{sorted(known)}. A dependency on a step that does not "
+                "exist would strand this step forever; add prerequisites "
+                "first (steps are ordered by insertion).")
+
+        # Has WORK ALREADY BEGUN? Declaring steps up front is the lifecycle
+        # spine (R4) and must stay frictionless — created / comprehending /
+        # planning are all still "authoring the map". Only EXECUTING and
+        # REVIEWING mean shells have run, which is what makes a new step a
+        # scope change discovered late rather than part of the agreed plan.
+        # Named off the enum rather than string-guessed: the first version of
+        # this compared against "comprehension" and "drafted", neither of
+        # which is a recipe state at all ("drafted" is a PLAN state), so it
+        # fired on every fresh recipe and stayed silent on none.
+        from ..schemas.instruction import RecipeState
+        declared = getattr(r, "state", None) in (
+            RecipeState.EXECUTING, RecipeState.REVIEWING,
+            RecipeState.EXECUTING.value, RecipeState.REVIEWING.value)
+        live = [s.step_id for s in r.steps if s.status == "in_progress"]
+        pending = [s.step_id for s in r.steps if s.status == "pending"]
+
+        sid = f"s{len(r.steps) + 1}"
+        r.steps.append(RecipeStep(
+            step_id=sid, kind="work", description=m.description,
+            status="pending", depends_on=list(m.depends_on),
+            execution=m.execution,
+        ))
+        self.ctx.recipes.save(r)
+
+        # ADVISORY, NOT A REFUSAL. This framework's guards WARN and leave the
+        # call to the caller (P3 advisory FSM); hard blocks are reserved for
+        # the genuinely unsafe, and a late step is expensive rather than
+        # unsafe. A refusal here also breaks the legitimate reopen-on-add
+        # flows. So the cost is made LOUD at the moment of the decision —
+        # which is the point the guide could never reach, because a guide is
+        # read before the work and this fires during it.
+        advisories: list[str] = []
+        note = "step declared"
+        if declared:
+            note = (f"step {sid} declared MID-FLIGHT — the recipe is already "
+                    f"{getattr(r, 'state', 'executing')!r} with "
+                    f"{len(r.steps)} steps. This LENGTHENS THE CRITICAL PATH "
+                    "by a full step: a planner spawn, a plan authored cold, "
+                    "N worker shells, review legs and a rebuild. Say that to "
+                    "the operator rather than letting it be a silent "
+                    "schedule decision.")
+            if not m.justification.strip():
+                advisories.append(
+                    "mid_flight_step_UNJUSTIFIED: no `justification` given "
+                    "for creating a step after execution began. A new step "
+                    "is the COSTLIEST answer to a discovered gap and this "
+                    "tool is the easiest verb to reach for, so the surface "
+                    f"biases you toward it. CHEAPER FIRST: {_CHEAPER_FIRST} "
+                    f"LIVE plans that could take an action now: "
+                    f"{live or 'none'}. PENDING steps editable for free via "
+                    f"update_object: {pending or 'none'}. If one of those "
+                    "could own this, delete_object this step and use it.")
+            else:
+                advisories.append(
+                    "mid_flight_step_created: "
+                    f"{m.justification.strip()[:300]}")
+            if m.depends_on:
+                advisories.append(
+                    "CHECK THE TELL: this step depends on "
+                    f"{m.depends_on!r}. If it was split out BECAUSE it needs "
+                    "one of those, that argues for building it INSIDE that "
+                    "step. Needing a step is not the same as being separate "
+                    "from it. A new step is right for a distinct USER-VISIBLE "
+                    "CAPABILITY, not for a gap-fix that belongs to an owner.")
+        return Tool.ok(_StepId(step_id=sid, note=note, advisories=advisories))
+
+
+class _CloseRecipeIn(BaseModel):
+    recipe_id: str
+    final_outcome: dict  # {"status": "...", "summary": "..."}
+
+
+class CloseRecipe(_ClaudeTool):
+    """v5 intent tool — the missing close-path counterpart to
+    start_recipe/record_outcome/add_step. The neuron declares the
+    verdict; the tool fills the scaffolding. The recipe already has
+    goal/domain/steps on disk, so this just flips state + records the
+    outcome (no hand-authoring the full Recipe — the 2026-05-20 HITL
+    6-rejection friction)."""
+
+    name = "close_recipe"
+    InputModel = _CloseRecipeIn
+    OutputModel = _Ok
+
+    async def _run(self, m: _CloseRecipeIn):
+        if not self.ctx.recipes.exists(m.recipe_id):
+            return _precondition(f"no recipe {m.recipe_id!r}")
+        r = self.ctx.recipes.load(m.recipe_id)
+        # v2.1: reconcile steps whose plan is already terminal-succeeded
+        # (the map catches up to reality), THEN guard. A `succeeded`
+        # close is FORBIDDEN while any step is still pending/in_progress
+        # — the recipe must never lie "succeeded" over unfinished steps
+        # (the Java-REST close that reported succeeded with s2/s3
+        # pending). Honest non-success closes (partial/failed/abandoned)
+        # may close over incomplete steps.
+        for step in r.steps:
+            if step.status in ("pending", "in_progress"):
+                plan = self.ctx.plans.find_by_step(r.recipe_id, step.step_id)
+                if (plan is not None
+                        and plan.state == PlanState.TERMINAL
+                        and plan.terminal_status == "succeeded"):
+                    step.status = "done"
+        status = (m.final_outcome or {}).get("status")
+        if status in ("succeeded", "done"):
+            unfinished = [
+                s.step_id for s in r.steps
+                if s.status in ("pending", "in_progress")
+            ]
+            if unfinished:
+                return _precondition(
+                    f"cannot close {status!r} — steps {unfinished} are "
+                    "not done (their plans aren't terminal-succeeded). "
+                    "Drive them to completion via next_action first, or "
+                    "close with status='partial' if the deliverable is "
+                    "genuinely incomplete. The recipe must not report "
+                    "success over unfinished steps."
+                )
+            # 2026-05-24: success requires VERIFIED outcomes, not just
+            # finished steps (the 'succeeded with met:false' gap). Each
+            # outcome must be marked met (mark_outcome_met, set from a
+            # reviewer-fork verdict + user confirm).
+            unmet = [
+                o.id for o in r.comprehension.expected_outcomes
+                if not o.met
+            ]
+            if unmet:
+                return _precondition(
+                    f"cannot close {status!r} — outcomes {unmet} are not "
+                    "verified (met=false). Fork a recipe-end reviewer "
+                    "(branch_reviewer) per specialist used, confirm the "
+                    "deliverable meets each outcome's verification, then "
+                    "mark_outcome_met(outcome_id, evidence). Or close "
+                    "'partial' if an outcome genuinely wasn't verified. "
+                    "The recipe must not claim success it didn't verify."
+                )
+        # W3 (DESIGN-v6 §W3): WARN — never block — when the recipe closes with
+        # untriaged flow-back learnings (discovered in the field but never
+        # accept/reject-ed). Emitted onto the recipe's flowback trail so the
+        # close is on the record even if the neuron missed the per-tick counts;
+        # the fix is resolve_spec_learnings before the knowledge is lost.
+        _pending = _pending_spec_learnings(self.ctx, r)
+        if _pending:
+            _emit_recipe_event(self.ctx, "spec_learnings_pending", {
+                "summary": "recipe closing with untriaged spec-learnings",
+                "pending_spec_learnings": _pending,
+                "note": ("triage via resolve_spec_learnings(spec_id, accept, "
+                         "reject) — accepted rules overlay live immediately."),
+            }, recipe_id=r.recipe_id)
+        r.state = RecipeState.CLOSED
+        r.final_outcome = m.final_outcome
+        self.ctx.recipes.save(r)
+        return Tool.ok(_Ok())
+
+
+# ── suspend_recipe (DESIGN-v6 §W11) ───────────────────────────────────────
+# Parking a recipe is a COORDINATED shutdown, not a kill. Its planners are
+# ASKED to finish the tool call in flight, persist their state and close
+# themselves; only a straggler that misses the bounded grace window is
+# force-reaped. Workers are disposable — reaped outright, never steered, with
+# their actions left `in_progress` for `reconcile` to true up on resume.
+#
+# Suspension is ORTHOGONAL to the FSM `state`: nothing here transitions the
+# recipe. It stamps `suspended_at` / `neuron_session_id` and writes a manifest.
+SUSPEND_GRACE_SECONDS = 30.0   # bounded wait for a steered planner to close
+SUSPEND_POLL_SECS = 1.0        # how often the grace loop re-reads the registry
+SUSPEND_MANIFEST_NAME = "suspension.json"
+SUSPEND_EVENT_KIND = "recipe_suspended"
+# The registry lists every row this recipe ever spawned, terminal ones included.
+# Only an `active` row names a shell that is still running: reaping a row the
+# pool already closed asks it to kill a session it has forgotten.
+_ACTIVE_SESSION_STATE = "active"
+_PARK_INSTRUCTION = (
+    "SUSPEND: finish the tool call in flight, record_action_status / worklog "
+    "your state, then pool_close_self. Do not start new work."
+)
+_NO_SESSION_REASON = (
+    "no neuron session id resolved — recipe.neuron_session_id is unset and no "
+    "foreground session is recorded. A guessed id would resume the wrong shell."
+)
+_NO_LAUNCHER_REASON = (
+    "no CLAUDE_CONFIG_DIR was captured for the foreground session, so the "
+    "launcher that pins it cannot be named. Transcripts live under "
+    "CLAUDE_CONFIG_DIR, so a bare `claude --resume` would silently find nothing."
+)
+# How `config_dir` (hence the launcher) was tied to the resolved session id.
+_LAUNCHER_MATCHED = "matched_by_session_id"
+_LAUNCHER_INFERRED = "inferred_from_latest_foreground_record"
+
+
+def _planner_inbox(handle: str) -> str:
+    """A planner's broker inbox is its DASH plan_id, while the pool's session
+    handle is the COLON form `<recipe_id>:<step_id>`. A recipe id never contains
+    a colon, so swapping that single separator is unambiguous."""
+    return handle.replace(":", "-", 1)
+
+
+def _planner_handle(recipe_id: str, step_id: str) -> str:
+    """The pool SESSION handle a step's planner holds. The one place this shape
+    is spelled — suspend snapshots it, resume matches live rows against it."""
+    return f"{recipe_id}:{step_id}"
+
+
+def _manifest_path(ctx, recipe_id: str) -> Path:
+    """Where `suspension.json` lives for a recipe. Written by suspend, read by
+    resume — spelled once so the two can never drift apart."""
+    return Path(ctx.recipes.root) / recipe_id / SUSPEND_MANIFEST_NAME
+
+
+def _launcher_for_config_dir(config_dir: str | None) -> str | None:
+    """The launcher that pins `config_dir` as CLAUDE_CONFIG_DIR — e.g.
+    `~/.claude-personal` → `claude-personal`. DERIVED from what the capture hook
+    recorded; no path is hardcoded.
+
+    None when no launcher can be NAMED (nothing captured, or the config dir is
+    the default `.claude`, whose launcher is the bare `claude`). The caller then
+    omits the resume command and says why, rather than emitting a bare
+    `claude --resume` that would find no transcript.
+
+    Splitting on both separators keeps this correct for a manifest read on a
+    different OS than the one that captured the path."""
+    if not config_dir:
+        return None
+    tail = str(config_dir).replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+    name = tail.lstrip(".")
+    return name if name and name != "claude" else None
+
+
+def _resume_command(
+    session_id: str | None, config_dir: str | None
+) -> tuple[str | None, str | None]:
+    """`(command, omitted_reason)` — exactly one is set. The user protocol is
+    `<launcher> --resume <neuron_session_id>`; when either half is unknown the
+    command is OMITTED with the reason, never guessed."""
+    if not session_id:
+        return None, _NO_SESSION_REASON
+    launcher = _launcher_for_config_dir(config_dir)
+    if not launcher:
+        return None, _NO_LAUNCHER_REASON
+    return f"{launcher} --resume {session_id}", None
+
+
+class _NeuronSessionRef(BaseModel):
+    """Which shell a resume reattaches to, and how each half was established."""
+
+    session_id: str | None = None
+    source: str | None = None          # where the id came from
+    config_dir: str | None = None      # the CLAUDE_CONFIG_DIR it was launched under
+    launcher_source: str | None = None # how config_dir was tied to the id
+
+
+def _resolve_neuron_session(r: Recipe) -> _NeuronSessionRef:
+    """Resolve the shell to resume into, recording the provenance of both halves.
+
+    SESSION ID — a stamped `recipe.neuron_session_id` is the AUTHORITY (bind-time
+    capture at /neuron activation). The foreground registry is only a FALLBACK:
+    its last entry is the newest foreground shell started in this repo, which is
+    the neuron's only if the user opened no other one since.
+
+    CONFIG DIR — read from the registry entry FOR THAT SAME session id, so the
+    launcher is correct by construction. A session stamped before the capture
+    hook existed has no entry; only then do we borrow the latest record's
+    launcher, and the manifest says the launcher was INFERRED, not matched. A
+    manifest that quietly pairs a real session id with a guessed launcher prints
+    a command that fails in a way the user cannot diagnose."""
+    latest = latest_foreground_session()
+    if r.neuron_session_id:
+        session_id, source = r.neuron_session_id, "recipe.neuron_session_id"
+    elif latest:
+        session_id, source = latest["session_id"], "foreground_log"
+    else:
+        return _NeuronSessionRef()
+
+    matched = foreground_session_by_id(session_id)
+    if matched:
+        return _NeuronSessionRef(
+            session_id=session_id, source=source,
+            config_dir=matched.get("config_dir"),
+            launcher_source=_LAUNCHER_MATCHED)
+    if latest:
+        return _NeuronSessionRef(
+            session_id=session_id, source=source,
+            config_dir=latest.get("config_dir"),
+            launcher_source=_LAUNCHER_INFERRED)
+    return _NeuronSessionRef(session_id=session_id, source=source)
+
+
+def _open_steps(r: Recipe) -> list[dict]:
+    return [{"step_id": s.step_id, "status": s.status} for s in r.steps
+            if s.status in ("pending", "in_progress")]
+
+
+def _open_actions(ctx, r: Recipe) -> list[dict]:
+    """Every not-yet-terminal action across this recipe's plans. Workers are
+    reaped mid-flight, so an `in_progress` action here is EXPECTED — it is what
+    `reconcile` re-dispatches on resume, not a failure."""
+    out: list[dict] = []
+    for step in r.steps:
+        plan = ctx.plans.find_by_step(r.recipe_id, step.step_id)
+        if plan is None:
+            continue
+        out.extend(
+            {"plan_id": plan.plan_id, "action_id": a.action_id,
+             "status": a.status}
+            for a in plan.actions if a.status not in _TERMINAL_ACTION_STATUS
+        )
+    return out
+
+
+def _session_snapshot(rows: list[dict]) -> list[dict]:
+    """What a resume needs to re-launch: each shell's handle + the claude
+    session it was launched with (a planner's is forkable; a worker pins none).
+    Read with `.get` — a row persisted by an OLDER pool lacks the newer keys."""
+    return [
+        {"handle": row.get("handle"), "role": row.get("role"),
+         "session_id": row.get("session_id"),
+         "claude_session_id": row.get("claude_session_id"),
+         "state": row.get("state")}
+        for row in rows
+    ]
+
+
+class _SuspendRecipeIn(BaseModel):
+    recipe_id: str
+    reason: str = ""
+
+
+class _SuspendRecipeOut(BaseModel):
+    recipe_id: str
+    suspended_at: str
+    manifest_path: str
+    # COUNTS, not rows (#18): this payload must not grow with the recipe's
+    # shell/step/action count. The manifest FILE carries the full fidelity.
+    planners_steered: int
+    planners_reaped: int
+    others_reaped: int
+    reap_failures: int      # reaps that errored; the suspend completed anyway
+    neuron_session_id: str | None = None
+    neuron_session_source: str | None = None
+    launcher_source: str | None = None
+    resume_command: str | None = None
+    resume_command_omitted_reason: str | None = None
+    note: str
+
+
+class SuspendRecipe(_ClaudeTool):
+    """Park a recipe: steer its planners to close cleanly, reap the rest, and
+    write `.recipes/<recipe_id>/suspension.json` — the manifest a later resume
+    reads. NEURON-ONLY (no other role's allowlist names it).
+
+    Planners are ASKED to stop (a `steer` park message), given a bounded grace
+    period to persist their state and `pool_close_self`, and only then reaped if
+    they overran. Workers are disposable: reaped outright, never steered, never
+    marked failed — their `in_progress` actions are what `reconcile` trues up on
+    resume.
+
+    The recipe's FSM `state` is untouched; suspension is orthogonal to it."""
+
+    name = "suspend_recipe"
+    InputModel = _SuspendRecipeIn
+    OutputModel = _SuspendRecipeOut
+
+    async def _run(self, m: _SuspendRecipeIn):
+        ctx = self.ctx
+        if not ctx.recipes.exists(m.recipe_id):
+            return _precondition(f"no recipe {m.recipe_id!r}")
+        r = ctx.recipes.load(m.recipe_id)
+
+        # The SERVER owns which rows belong to this recipe (edp-pool's
+        # `_row_matches_recipe` also finds a crash-orphaned worker whose stored
+        # recipe_id is None). Re-filtering on MEMBERSHIP here would diverge from
+        # it and strand exactly that orphan against a suspended recipe. LIVENESS
+        # is a different axis, and one we must judge: a terminal row names a
+        # shell the pool already closed.
+        rows = await ctx.pool.sessions(recipe_id=m.recipe_id)
+        live = [row for row in rows
+                if row.get("state") == _ACTIVE_SESSION_STATE]
+        planners = [row for row in live if row.get("role") == "planner"]
+        others = [row for row in live if row.get("role") != "planner"]
+
+        for row in planners:
+            await self._park(row, m.recipe_id)
+        stragglers = await self._await_planner_close(m.recipe_id, planners)
+
+        failures = 0
+        for handle in stragglers:
+            failures += not await self._reap(
+                handle, "planner overran the suspend grace window")
+        for row in others:
+            failures += not await self._reap(row.get("handle"),
+                                             "disposable shell")
+
+        suspended_at = _now().isoformat()
+        neuron = _resolve_neuron_session(r)
+        command, omitted = _resume_command(neuron.session_id, neuron.config_dir)
+        manifest_path = self._write_manifest(
+            r, rows, suspended_at=suspended_at, reason=m.reason,
+            neuron=neuron, command=command, omitted=omitted,
+        )
+
+        r.suspended_at = suspended_at
+        if neuron.session_id:
+            r.neuron_session_id = neuron.session_id
+        ctx.recipes.save(r)
+        _emit_recipe_event(ctx, SUSPEND_EVENT_KIND, {
+            "summary": f"recipe suspended: {m.reason or 'no reason given'}",
+            "suspended_at": suspended_at,
+            "manifest": str(manifest_path),
+            "resume_command": command,
+        }, recipe_id=m.recipe_id)
+
+        return Tool.ok(_SuspendRecipeOut(
+            recipe_id=m.recipe_id, suspended_at=suspended_at,
+            manifest_path=str(manifest_path),
+            planners_steered=len(planners),
+            planners_reaped=len(stragglers), others_reaped=len(others),
+            reap_failures=failures,
+            neuron_session_id=neuron.session_id,
+            neuron_session_source=neuron.source,
+            launcher_source=neuron.launcher_source,
+            resume_command=command, resume_command_omitted_reason=omitted,
+            note=("planners were steered to close and the remaining live shells "
+                  "reaped; in_progress actions are left for reconcile to true "
+                  "up on resume. The manifest holds the full state snapshot."),
+        ))
+
+    async def _park(self, row: dict, recipe_id: str) -> None:
+        """Ask ONE planner to finish, persist and close itself. `steer` is an
+        already-registered broker kind and already in the planner's canonical
+        rx.broker filter, so no contract changes.
+
+        Never fatal: a park that does not land leaves the planner active, and
+        the grace loop then reaps it. Aborting here would be far worse — steers
+        have already gone out to its siblings."""
+        handle = row.get("handle")
+        if not handle:
+            return
+        try:
+            res = await self.ctx.broker.send(BrokerMessage(
+                msg_id=str(uuid.uuid4()), ts=_now(), **{"from": "neuron"},
+                to=_planner_inbox(handle), kind="steer",
+                body={"action": "suspend", "recipe_id": recipe_id,
+                      "instruction": _PARK_INSTRUCTION},
+            ))
+            delivered = getattr(res, "ok", False)
+            error = None
+        except Exception as exc:  # noqa: BLE001 — one bad inbox must not abort
+            delivered, error = False, exc
+        if not delivered:
+            _log.warning("suspend_park_undelivered",
+                         f"steer to planner {handle} was not accepted; it will "
+                         "be reaped as a straggler",
+                         handle=handle, recipe_id=recipe_id,
+                         error=str(error) if error else None)
+
+    async def _await_planner_close(
+        self, recipe_id: str, planners: list[dict]
+    ) -> list[str]:
+        """Poll the registry until every steered planner has left `active`, or
+        the bounded grace expires. Returns the handles still active — the
+        stragglers the caller force-reaps. The wait is BOUNDED by construction:
+        a planner wedged inside a long tool call must not park the neuron."""
+        pending = {row["handle"] for row in planners if row.get("handle")}
+        if not pending:
+            return []
+        deadline = time.monotonic() + SUSPEND_GRACE_SECONDS
+        while True:
+            rows = await self.ctx.pool.sessions(recipe_id=recipe_id)
+            active = {row.get("handle") for row in rows
+                      if row.get("state") == "active"}
+            pending &= active
+            if not pending or time.monotonic() >= deadline:
+                return sorted(pending)
+            await asyncio.sleep(SUSPEND_POLL_SECS)
+
+    async def _reap(self, handle: str | None, why: str) -> bool:
+        """Reap ONE shell. True on success. INDIVIDUALLY non-fatal: a suspend
+        that aborts halfway is worse than one that reaps nothing, because the
+        park steers have already gone out — so a row that refuses to die is
+        logged and the remaining live shells are still reaped."""
+        if not handle:
+            return True
+        try:
+            res = await self.ctx.pool.reap(handle)
+        except Exception as exc:  # noqa: BLE001 — never strand the other shells
+            _log.warning("suspend_reap_failed",
+                         f"reaping {handle} raised ({why}); continuing",
+                         handle=handle, reason=why, error=str(exc))
+            return False
+        if not getattr(res, "ok", False):
+            _log.warning("suspend_reap_refused",
+                         f"pool refused to reap {handle} ({why}); continuing",
+                         handle=handle, reason=why,
+                         error=getattr(res, "message", None))
+            return False
+        return True
+
+    def _write_manifest(self, r: Recipe, rows: list[dict], *,
+                        suspended_at: str, reason: str,
+                        neuron: _NeuronSessionRef,
+                        command: str | None, omitted: str | None) -> Path:
+        """Write the suspension manifest IN CODE (no LLM). `rows` is the
+        pre-reap registry read — after reaping, the shells that a resume must
+        re-launch are gone from the pool."""
+        manifest = {
+            "recipe_id": r.recipe_id,
+            "suspended_at": suspended_at,
+            "reason": reason,
+            "grounding_epoch": grounding_epoch(r),
+            "open_steps": _open_steps(r),
+            "open_actions": _open_actions(self.ctx, r),
+            "sessions": _session_snapshot(rows),
+            "pending_assumptions": len(pending_load_bearing_assumptions(r)),
+            "pending_spec_learnings": _pending_spec_learnings(self.ctx, r),
+            "neuron_session_id": neuron.session_id,
+            "neuron_session_source": neuron.source,
+            "launcher_source": neuron.launcher_source,
+            "resume_command": command,
+            "resume_command_omitted_reason": omitted,
+        }
+        path = _manifest_path(self.ctx, r.recipe_id)
+        write_atomic(path, json.dumps(manifest, indent=2))
+        return path
+
+
+# ── resume_recipe (DESIGN-v6 §W11) ────────────────────────────────────────
+# The inverse of suspend: true the record up to reality, re-ground, and put the
+# planners back. Two properties shape the whole tool.
+#
+# 1. THE MANIFEST IS AN OPTIMIZATION, NOT A REQUIREMENT. A missing
+#    `suspension.json` is the ordinary CRASH-resume path (power loss, killed
+#    stack, closed laptop) — not an error. Every durable fact already lives in
+#    recipe/plan JSON, the broker's JSONL inboxes and the spec store; the
+#    manifest only adds session continuity (WHICH planner shell to fork). So a
+#    resume without one degrades to reconcile + digest + fresh spawns.
+#
+# 2. RESUME IS IDEMPOTENT. Planners are put back BEFORE `suspended_at` is
+#    cleared, so a crash between those two steps leaves live planners under a
+#    still-parked recipe: their dispatches are refused — noisy, but VISIBLE,
+#    which is the failure mode we want. (Clear-then-spawn fails SILENTLY, as a
+#    live recipe with no planners.) The recovery is therefore "run resume_recipe
+#    again", and a second run must not produce a SECOND planner for a step. We
+#    ASK THE POOL which step handles are already live and skip those, rather
+#    than assuming a duplicate spawn would be refused by lock-by-spawn-lifetime
+#    — that would be a guess about the pool's semantics, not a contract. This
+#    also mitigates the in_progress dispatch window noted on the guard below.
+RESUME_EVENT_KIND = "recipe_resumed"
+
+
+def _read_manifest(ctx, recipe_id: str) -> dict | None:
+    """The suspension manifest, or None when there is none to use.
+
+    ABSENT is normal (property 1 above). A manifest that EXISTS but is corrupt
+    or unreadable also degrades to None — a resume must never be blocked by a
+    damaged optimization — but it is LOGGED, never silently swallowed
+    (coding-standard #11): losing planner session continuity without a word
+    would look exactly like a clean crash-resume."""
+    path = _manifest_path(ctx, recipe_id)
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        _log.warning(
+            "resume_manifest_unreadable",
+            f"{path} exists but could not be read ({exc}); resuming via "
+            "reconcile alone — planner sessions will be spawned fresh, "
+            "not forked",
+            recipe_id=recipe_id, path=str(path), error=str(exc))
+        return None
+
+
+def _planner_base_sessions(rows: list[dict]) -> dict[str, str]:
+    """`handle -> claude_session_id` over the PLANNER rows of a session
+    snapshot. A planner's pinned session is what makes a resume a FORK
+    (`--resume <base> --session-id <fork> --fork-session`) instead of a cold
+    spawn. Worker rows pin no session and are never forked, so they are dropped
+    here; a planner row missing its id is dropped too — a fresh planner is
+    correct, a fabricated base id is not."""
+    return {row["handle"]: row["claude_session_id"] for row in rows
+            if row.get("role") == "planner" and row.get("handle")
+            and row.get("claude_session_id")}
+
+
+def _in_flight_steps(r: Recipe) -> list[str]:
+    """The steps whose planner a resume puts back: exactly the `in_progress`
+    ones.
+
+    `pending` steps are excluded because the FSM stamps a step `in_progress` AT
+    DISPATCH — before its planner is spawned (`recipe_fsm.py`, the PLANNING
+    branch) — so on the sanctioned path a pending step has no planner and the
+    normal `next_action` flow is what dispatches it.
+
+    That is a property of the DISPATCH PATH, not an invariant of the world. A
+    planner spawned outside that path, or one still live when its step reached a
+    terminal status, leaves a snapshot planner row whose step is NOT
+    `in_progress`. Such a row is not respawned here — see
+    `_orphaned_planner_rows` for why a union would double-dispatch — but it is
+    WARN-logged, never silently dropped."""
+    return [s.step_id for s in r.steps if s.status == "in_progress"]
+
+
+def _step_status(r: Recipe, step_id: str) -> str | None:
+    """The recorded status of one step, or None when the snapshot names a step
+    the recipe no longer carries."""
+    return next((s.status for s in r.steps if s.step_id == step_id), None)
+
+
+def _orphaned_planner_rows(snapshot: list[dict],
+                           respawn_handles: set[str]) -> list[dict]:
+    """The snapshot's LIVE planner rows that resume will not put back — the
+    suspend/resume divergence (d59).
+
+    suspend snapshots ANY live planner from the pool registry; resume selects
+    its respawn targets from `_in_flight_steps`. The two sets agree BY
+    CONSTRUCTION on the sanctioned path (in_progress is stamped before the
+    spawn) and can diverge off it. A diverging row pins a real
+    `claude_session_id` — a fork anchor about to be dropped — so it is surfaced
+    (coding-standard #11) rather than silently discarded behind a note that
+    claims every planner is back.
+
+    Scoped to `state == active` ON PURPOSE. The snapshot is the PRE-REAP
+    registry read, so it also carries the TERMINAL rows of planners that closed
+    normally on earlier steps. Warning about those would fire once per completed
+    step on every resume — noise that trains the reader to ignore the signal.
+
+    These rows are reported, NOT respawned. Selecting respawn targets from the
+    UNION of in-flight steps and snapshot planner rows would spawn a planner for
+    a step the FSM still calls `pending` — which `next_action` then dispatches
+    too (double-dispatch) — or for a step already `done` (resurrecting a planner
+    for finished work). Making the union safe would mean stamping the step
+    `in_progress` from resume: an FSM mutation this tool deliberately does not
+    make, and one that would be plainly wrong for a step whose planner had in
+    fact finished. What the WARN leaves unfixed is session continuity only: the
+    step is re-dispatched cold by `next_action`, so no recorded work is lost —
+    just the parked planner's in-shell context, whose base session id the
+    warning names so it can be forked by hand."""
+    return [row for row in snapshot
+            if row.get("role") == "planner"
+            and row.get("state") == _ACTIVE_SESSION_STATE
+            and row.get("handle")
+            and row["handle"] not in respawn_handles]
+
+
+_RESUME_NOTE_TAIL = (
+    "Workers are NOT re-dispatched here — reconcile returned their actions to "
+    "pending and next_action picks them up fresh. Re-arm your heartbeat with "
+    "rewire.heartbeat.cron_prompt and re-issue every rewire.observe_specs entry."
+)
+
+
+def _resume_planner_note(*, respawned: int, forked: int, skipped_live: int,
+                         failed: int, orphaned: int) -> str:
+    """The planner clause of the resume note, DERIVED from the counts the tool
+    actually measured.
+
+    The note used to assert, unconditionally, that "planners of in-flight steps
+    are back (forked onto their old sessions where one was recorded)" — a
+    reassuring string not guarded by the thing it asserted. A resume that put
+    back nothing, forked nothing, or dropped a live planner row read exactly
+    like a clean one. Every clause below is now emitted only when its counter
+    says so, and the zero case says zero."""
+    parts: list[str] = []
+    if respawned:
+        how = (f"{forked} forked onto the sessions suspend snapshotted"
+               + (f", {respawned - forked} started fresh"
+                  if respawned > forked else "")
+               if forked else
+               "none had a recorded session, so all started fresh (cold)")
+        parts.append(f"{respawned} planner(s) of in-flight steps are back "
+                     f"({how})")
+    if skipped_live:
+        parts.append(f"{skipped_live} planner(s) were already live and were "
+                     "left alone")
+    if failed:
+        parts.append(f"{failed} planner spawn(s) FAILED (see the "
+                     "resume_spawn_* warnings); those steps have no planner")
+    if not parts:
+        parts.append("NO planners were put back — no step was in_progress")
+    if orphaned:
+        parts.append(
+            f"{orphaned} live planner session(s) in the snapshot belong to "
+            "steps that are not in_progress and were NOT respawned (see the "
+            "resume_planner_row_orphaned warnings); their steps are "
+            "re-dispatched cold by next_action")
+    return "; ".join(parts) + "."
+
+
+class _ResumeRecipeIn(BaseModel):
+    recipe_id: str
+
+
+class _ResumeRecipeOut(BaseModel):
+    recipe_id: str
+    resumed_at: str
+    manifest_found: bool
+    reconciled: bool          # did reconcile move the record to match reality?
+    reconcile_detail: str
+    # COUNTS, not rows (#18 class (a)): this payload must not grow with the
+    # recipe's step count. `planners` is a bounded WINDOW over the same rows.
+    planners_respawned: int
+    planners_forked: int      # of those, how many carried a resume_session
+    planners_skipped_live: int  # already running (idempotent re-run)
+    planners_failed: int      # spawns that errored; the resume completed anyway
+    # live planner rows in the snapshot whose step is not in_progress: the
+    # suspend/resume divergence. WARN-logged, never silently dropped (d59).
+    planners_orphaned: int = 0
+    planners: list[dict]
+    planners_cursor: int | None = None
+    # #18 class (b): the W1 re-ground packet is a CONTENT / GROUNDING-DELIVERY
+    # payload — the neuron applies it IN FULL and there is no deferred pull
+    # target — so it is passed through UNTRUNCATED. It is already bounded at
+    # author time by get_recipe_digest itself.
+    digest: dict
+    rewire: dict              # canonical heartbeat prompt + observe re-arm (W7)
+    note: str
+
+
+class ResumeRecipe(_ClaudeTool):
+    """Un-park a recipe: reconcile the record to pool/broker reality, re-ground
+    off the W1 digest, fork the planners of in-flight steps back into life, then
+    clear `suspended_at` and emit `recipe_resumed`. NEURON-ONLY (no other role's
+    explicit allowlist names it).
+
+    Workers are NEVER forked or re-dispatched here — they are disposable. The
+    reconcile pass trues their reaped `in_progress` actions back to `pending`,
+    and the normal `next_action` flow re-dispatches them FRESH.
+
+    Safe to run twice: a step whose planner is already live is skipped, so a
+    resume interrupted between "spawn" and "clear suspended_at" heals by simply
+    being re-run. The recipe's FSM `state` is untouched throughout — suspension
+    is orthogonal to it."""
+
+    name = "resume_recipe"
+    InputModel = _ResumeRecipeIn
+    OutputModel = _ResumeRecipeOut
+
+    async def _run(self, m: _ResumeRecipeIn):
+        ctx = self.ctx
+        rid = m.recipe_id
+        if not ctx.recipes.exists(rid):
+            return _precondition(f"no recipe {rid!r}")
+
+        # (a) the manifest, if there is one. Absent == the crash path.
+        manifest = _read_manifest(ctx, rid)
+
+        # (b) reconcile the RECORD to reality before acting on it: dead handles
+        #     cleaned, stale locks released, in-flight action statuses trued up
+        #     from the worklogs. Reuse the Reconcile TOOL rather than re-deriving
+        #     the sync — it is the one place that logic lives. The recipe pass
+        #     syncs steps from disk; the per-plan pass is what resets the actions
+        #     of the workers suspend reaped (`_advance_plan_liveness`).
+        reconciled, detail = await self._reconcile_all(rid)
+
+        # (c) re-ground (W1). Read AFTER reconcile so the digest describes the
+        #     trued-up record, not the pre-resume one.
+        digest = await self._digest(rid)
+
+        # (d) put the planners back. Still parked at this point — see property 2.
+        r = ctx.recipes.load(rid)
+        planners, orphaned = await self._respawn_planners(r, manifest)
+
+        # (e) workers: nothing to do. Deliberately absent. Their actions are now
+        #     `pending` again (step b) and next_action re-dispatches them fresh
+        #     through PoolSpawnWorker — which is also why resume never needs, and
+        #     never passes, that tool's `force=true` re-run escape.
+
+        # (f) un-park: clear the stamp, announce it, hand back the wiring.
+        resumed_at = _now().isoformat()
+        r.suspended_at = None
+        ctx.recipes.save(r)
+        _emit_recipe_event(ctx, RESUME_EVENT_KIND, {
+            "summary": f"recipe resumed at {resumed_at}",
+            "resumed_at": resumed_at,
+            "manifest_found": manifest is not None,
+            "planners_respawned": sum(
+                1 for p in planners if p["action"] == "respawned"),
+        }, recipe_id=rid)
+
+        respawned = sum(1 for p in planners if p["action"] == "respawned")
+        forked = sum(1 for p in planners if p.get("resume_session"))
+        skipped_live = sum(
+            1 for p in planners if p["action"] == "skipped_already_live")
+        failed = sum(1 for p in planners if p["action"] == "spawn_failed")
+
+        win = windowed(planners)
+        return Tool.ok(_ResumeRecipeOut(
+            recipe_id=rid, resumed_at=resumed_at,
+            manifest_found=manifest is not None,
+            reconciled=reconciled, reconcile_detail=detail,
+            planners_respawned=respawned, planners_forked=forked,
+            planners_skipped_live=skipped_live, planners_failed=failed,
+            planners_orphaned=orphaned,
+            planners=win["items"], planners_cursor=win["cursor"],
+            digest=digest,
+            # W7: the CANONICAL cron prompt comes from the single `cadence`
+            # source via the shared rewire block — the neuron re-arms its
+            # heartbeat from this, and no new prompt string is invented here.
+            rewire=_rewire_block(ctx, rid),
+            # The planner clause is DERIVED from the counts above, so a resume
+            # that put nothing back cannot read as one that did (d59).
+            note=("suspended_at cleared; "
+                  + _resume_planner_note(
+                      respawned=respawned, forked=forked,
+                      skipped_live=skipped_live, failed=failed,
+                      orphaned=orphaned)
+                  + " " + _RESUME_NOTE_TAIL),
+        ))
+
+    async def _reconcile_all(self, recipe_id: str) -> tuple[bool, str]:
+        """Reconcile the recipe, then each of its plans. Returns
+        `(changed_anything, detail)`. Plan-level reconcile is where a reaped
+        worker's `in_progress` action is reset to `pending`, so skipping it
+        would leave the recipe with actions no live shell is working."""
+        tool = Reconcile(self.ctx)
+        res = await tool.run({"handle": recipe_id, "handle_type": "recipe"})
+        if not getattr(res, "ok", False):
+            return False, f"recipe reconcile failed: {res.message}"
+        changed = bool(res.data["changed"])
+        details = [res.data["detail"]]
+
+        r = self.ctx.recipes.load(recipe_id)
+        for step in r.steps:
+            plan = self.ctx.plans.find_by_step(recipe_id, step.step_id)
+            if plan is None:
+                continue
+            pres = await tool.run(
+                {"handle": plan.plan_id, "handle_type": "plan"})
+            if not getattr(pres, "ok", False):
+                # One unreconcilable plan must not abort the resume: the recipe
+                # would stay parked and NOTHING could run. Surface it instead.
+                _log.warning("resume_plan_reconcile_failed",
+                             f"plan {plan.plan_id} did not reconcile; resuming "
+                             "anyway (next_action will re-derive its state)",
+                             recipe_id=recipe_id, plan_id=plan.plan_id,
+                             error=getattr(pres, "message", None))
+                details.append(f"{plan.plan_id}: reconcile failed")
+                continue
+            changed = changed or bool(pres.data["changed"])
+            details.append(f"{plan.plan_id}: {pres.data['detail']}")
+        return changed, " | ".join(details)
+
+    async def _digest(self, recipe_id: str) -> dict:
+        """The W1 re-ground packet. GetRecipeDigest is defined further down this
+        module, so it is resolved at CALL time (same module namespace)."""
+        res = await GetRecipeDigest(self.ctx).run({"recipe_id": recipe_id})
+        if not getattr(res, "ok", False):
+            # A digest is grounding, not a gate. Say what went wrong rather than
+            # refusing to un-park a recipe over a read.
+            _log.warning("resume_digest_failed",
+                         f"get_recipe_digest({recipe_id}) failed; resuming "
+                         "without the re-ground packet",
+                         recipe_id=recipe_id,
+                         error=getattr(res, "message", None))
+            return {"error": getattr(res, "message", "digest unavailable"),
+                    "note": "re-ground manually via get_recipe_digest"}
+        return res.data
+
+    async def _respawn_planners(
+        self, r: Recipe, manifest: dict | None
+    ) -> tuple[list[dict], int]:
+        """`(one row per in-flight step, orphaned_row_count)`. Each row is
+        respawned / skipped_already_live / spawn_failed.
+
+        The base session to FORK from comes from the manifest snapshot when we
+        have one, else from the pool's LIVE registry (the crash path, where the
+        pool outlived the neuron). Absent either way → a fresh planner, which is
+        correct: a resume without session continuity still re-grounds off the
+        digest.
+
+        The pool is spawned through the PORT, not through PoolSpawnPlanner —
+        see the suspended-dispatch guard on that tool for why.
+
+        Individually non-fatal (suspend's discipline): a resume that aborts on
+        one bad spawn leaves the recipe parked, so nothing at all can run."""
+        rows = await self.ctx.pool.sessions(recipe_id=r.recipe_id)
+        live = {row.get("handle") for row in rows
+                if row.get("state") == _ACTIVE_SESSION_STATE}
+        snapshot = (manifest or {}).get("sessions") or rows
+        bases = _planner_base_sessions(snapshot)
+
+        steps = _in_flight_steps(r)
+        orphaned = self._warn_orphaned_planner_rows(
+            r, snapshot, {_planner_handle(r.recipe_id, s) for s in steps})
+
+        out: list[dict] = []
+        for step_id in steps:
+            handle = _planner_handle(r.recipe_id, step_id)
+            # IDEMPOTENCE (property 2): a planner already holding this step's
+            # handle means a previous resume got this far. Ask the pool; never
+            # assume a duplicate spawn would be refused.
+            if handle in live:
+                out.append({"step_id": step_id, "handle": handle,
+                            "action": "skipped_already_live",
+                            "resume_session": None})
+                continue
+            base = bases.get(handle)
+            res = await self._spawn_planner(r.recipe_id, step_id, base)
+            out.append({
+                "step_id": step_id, "handle": handle,
+                "action": "respawned" if res else "spawn_failed",
+                # recorded only on success: a fork we did not perform must not
+                # read as one we did.
+                "resume_session": base if res else None,
+            })
+        return out, orphaned
+
+    def _warn_orphaned_planner_rows(self, r: Recipe, snapshot: list[dict],
+                                    respawn_handles: set[str]) -> int:
+        """WARN once per live planner row this resume will not put back, and
+        return how many there were. Dropping such a row in silence is exactly
+        what made the old unconditional note lie (d59): the fork anchor
+        disappears and the resume still reads as clean."""
+        orphans = _orphaned_planner_rows(snapshot, respawn_handles)
+        for row in orphans:
+            handle = row["handle"]
+            step_id = handle.rsplit(":", 1)[-1]
+            status = _step_status(r, step_id)
+            _log.warning(
+                "resume_planner_row_orphaned",
+                f"the snapshot holds a LIVE planner row for {handle} but step "
+                f"{step_id} is {status or 'absent from the recipe'}, not "
+                "in_progress; it is NOT respawned (that would double-dispatch "
+                "against next_action), so its pinned claude session is dropped "
+                "and the step will be re-dispatched cold",
+                recipe_id=r.recipe_id, handle=handle, step_id=step_id,
+                step_status=status,
+                claude_session_id=row.get("claude_session_id"))
+        return len(orphans)
+
+    async def _spawn_planner(self, recipe_id: str, step_id: str,
+                             base: str | None) -> bool:
+        """Re-spawn ONE planner. True on success. Passing `resume_session`
+        together with the fresh pin the pool client makes is what drives
+        `--resume <base> --session-id <fork> --fork-session`, branching the
+        parked planner rather than mutating it."""
+        try:
+            res = await self.ctx.pool.spawn_planner(
+                recipe_id, step_id, resume_session=base)
+        except Exception as exc:  # noqa: BLE001 — never strand the other steps
+            _log.warning("resume_spawn_failed",
+                         f"re-spawning the planner for step {step_id} raised; "
+                         "continuing with the remaining steps",
+                         recipe_id=recipe_id, step_id=step_id,
+                         resume_session=base, error=str(exc))
+            return False
+        if not getattr(res, "ok", False):
+            _log.warning("resume_spawn_refused",
+                         f"pool refused to re-spawn the planner for step "
+                         f"{step_id}; continuing",
+                         recipe_id=recipe_id, step_id=step_id,
+                         resume_session=base,
+                         error=getattr(res, "message", None))
+            return False
+        return True
+
+
+# ── record_step / record_step_result ──────────────────────────────────────
+class _StepIn(BaseModel):
+    recipe_id: str
+    step: dict
+
+
+class _StepOut(BaseModel):
+    step_id: str
+
+
+class RecordStep(_ClaudeTool):
+    """Write ONE whole step dict onto the recipe (upsert by step_id) —
+    the LOW-LEVEL escape hatch when you must set every field at once
+    (e.g. reconstructing a step from a snapshot). For normal work prefer
+    the intent tools: `add_step` to append (it generates the id),
+    `update_object('step', ids=…, patch=…)` to edit specific fields with
+    advisory guards, `record_step_result` to mark completion. This tool
+    replaces the matching step VERBATIM with what you pass — no guards,
+    no advisories — so a malformed dict here corrupts the map."""
+
+    name = "record_step"
+    InputModel = _StepIn
+    OutputModel = _StepOut
+
+    async def _run(self, m: _StepIn):
+        if not self.ctx.recipes.exists(m.recipe_id):
+            return _precondition(f"no recipe {m.recipe_id!r}")
+        r = self.ctx.recipes.load(m.recipe_id)
+        from ..schemas import RecipeStep
+
+        step = RecipeStep.model_validate(m.step)
+        r.steps = [s for s in r.steps if s.step_id != step.step_id] + [step]
+        self.ctx.recipes.save(r)
+        return Tool.ok(_StepOut(step_id=step.step_id))
+
+
+class _StepResIn(BaseModel):
+    recipe_id: str
+    step_id: str
+    result: dict
+
+
+def _state_synthesis_md(ctx, r) -> str:
+    """v7 P6.3 — the code-generated 'state of the recipe' narrative, refreshed
+    at every step close and written to context/state-synthesis.md. NOT a new
+    projection engine: composed from the same store reads the digest and the
+    progress rollup already make (principle 6, no LLM). This is the file a
+    cold shell or the operator reads FIRST after a compaction — where things
+    stand, what is unresolved, what was folded — instead of archaeology over
+    recipe.json."""
+    lines = [f"# State of the recipe — {r.recipe_id}",
+             f"_generated {_now().isoformat()} (code-assembled, no LLM)_", ""]
+    lines += [f"**Goal:** {r.user_goal_verbatim}",
+              f"**State:** {getattr(r.state, 'value', r.state)}", ""]
+    open_steps = [s for s in r.steps if s.status not in ("done", "skipped")]
+    lines.append(f"## Steps ({len(r.steps)} total, {len(open_steps)} open)")
+    for s in r.steps:
+        mark = "x" if s.status in ("done", "skipped") else " "
+        lines.append(f"- [{mark}] {s.step_id} ({s.status}): "
+                     f"{s.description[:120]}")
+    roll = _progress_rollup(ctx, r)
+    if roll["plans"]:
+        lines += ["", "## Live plans"]
+        for p in roll["plans"]:
+            lines.append(
+                f"- {p['plan_id']} ({p['state']}"
+                + (", PARKED" if p["parked"] else "")
+                + f"): {p['action_counts']}, in flight {p['in_flight']}")
+    pend_a = [a for a in getattr(r.context, "assumptions", [])
+              if getattr(a, "load_bearing", False)
+              and not getattr(a, "user_ack", None)]
+    open_q = list(getattr(r.context, "open_questions", []) or [])
+    lines += ["", "## Unresolved",
+              f"- load-bearing assumptions pending ack: {len(pend_a)}",
+              f"- open questions: {len(open_q)}"]
+    active = [d for d in r.context.decisions
+              if getattr(d, "status", "active") == "active"]
+    lb = [d for d in active if getattr(d, "load_bearing", False)]
+    lines += ["", f"## Decisions ({len(active)} active, {len(lb)} "
+                  "load-bearing) — top load-bearing"]
+    for d in lb[-8:]:
+        lines.append(f"- {d.id}: {d.text[:140]}")
+    folds = ctx.recipes.read_events_tail(
+        r.recipe_id, kinds=["decisions_folded"], limit=5)
+    if folds:
+        lines += ["", "## Recent folds"]
+        for f in folds:
+            lines.append(f"- {f.get('folded')} -> {f.get('summary_id')}")
+    return "\n".join(lines) + "\n"
+
+
+class RecordStepResult(_ClaudeTool):
+    name = "record_step_result"
+    InputModel = _StepResIn
+    OutputModel = _Ok
+
+    async def _run(self, m: _StepResIn):
+        r = self.ctx.recipes.load(m.recipe_id)
+        for s in r.steps:
+            if s.step_id == m.step_id:
+                s.status = "done"
+                s.outputs = list(m.result.get("outputs", []))
+                if r.state == RecipeState.EXECUTING:
+                    r.state = RecipeState.PLANNING
+                self.ctx.recipes.save(r)
+                # v7 P6.3: refresh the state-synthesis sidecar on every step
+                # close — best-effort (a failed write never fails the close).
+                try:
+                    self.ctx.recipes.write_state_synthesis(
+                        r.recipe_id, _state_synthesis_md(self.ctx, r))
+                except Exception:
+                    pass
+                return Tool.ok(_Ok())
+        return _precondition(f"no step {m.step_id!r} in recipe")
+
+
+# ── producer-verify guard (Bug B, 2026-05-26) ─────────────────────────────
+# A `command` verify must CHECK a result, not PRODUCE one. A build /
+# install / dev-server command re-executes the producer on every
+# (re-)record — wasteful, and it can hang the gate. This is exactly the
+# stall that recurred across b2/b5/b6/b7/b8: the planner authored
+# `command: npm run build` as the acceptance gate, and each re-record
+# (the worker's done-signal kept getting lost to recording lag) re-ran
+# the build, which hung on an stdin prompt. Verify the ARTIFACT the
+# producer emits instead. Tests / linters / validators are fine — they
+# don't produce and they exit.
+_PRODUCER_VERIFY_RE = re.compile(
+    r"(?:\b|^)(?:"
+    r"(?:npm|yarn|pnpm)\s+(?:run\s+)?(?:build|dev|start|serve|watch|install|ci)"
+    r"|(?:vite|webpack|rollup|next|nuxt|esbuild|parcel)(?:\s+(?:build|dev|serve))?"
+    r"|tsc\s+(?:-b|--build)"
+    r"|(?:cargo|go|dotnet)\s+(?:build|run)"
+    r"|(?:mvn|gradle|\./gradlew)\s+(?:build|install|package|assemble)"
+    r"|(?:pip|poetry|uv)\s+install"
+    r"|docker(?:-compose)?\s+(?:build|up)"
+    r")(?:\b|$)",
+    re.IGNORECASE,
+)
+
+
+def _reject_producer_verify(verify: dict | None) -> str | None:
+    """Return an error string if `verify` is a producer command (reject
+    it), else None (allow). Enforces 'verify the artifact, not the build'
+    in code so the landmine can't enter a plan at all."""
+    if not verify or verify.get("check") != "command":
+        return None
+    cmd = str(verify.get("cmd") or "")
+    if _PRODUCER_VERIFY_RE.search(cmd):
+        return (
+            f"acceptance.verify runs a producer command ({cmd!r}) — that is "
+            "not a verification. It re-executes the build/install on EVERY "
+            "record (wasteful) and can hang the gate. Verify the ARTIFACT "
+            "the producer emits instead, e.g. "
+            '{"check": "file_min_bytes", "path": "<abs path to built '
+            'output>", "min": 100} or {"check": "glob_matches", "pattern": '
+            '"<dist dir>/**/*.js", "min_count": 1}. (A test runner / linter '
+            "/ validator as a command verify is fine — those don't produce.)"
+        )
+    return None
+
+
+# Dispatch-mechanism tool names that have NO business in an action's WORK
+# description — putting them there is a category error (description = WHAT
+# to do, not HOW it's dispatched). The live failure: a planner wrote "call
+# get_specialization(spec_id=...)" in the description and left the
+# `specialization` FIELD null, so the action dispatched as a GENERIC worker
+# that merely read the spec doc instead of forking the trained SME.
+_DISPATCH_PROSE_TOKENS = (
+    "get_specialization", "branch_specialist", "pool_spawn_worker",
+)
+
+
+def _reject_dispatch_prose(description: str) -> str | None:
+    """Guard A (2026-06-01): refuse a description that embeds a
+    dispatch-mechanism token. The way to make an action run AS a
+    specialist is the structured `specialization` field (→ at dispatch the
+    planner resolves it to a stable neuron, stamps `spec_id`, and a FRESH
+    worker loads the compiled doc), NOT a prose instruction to call
+    get_specialization."""
+    low = description.lower()
+    hit = next((t for t in _DISPATCH_PROSE_TOKENS if t in low), None)
+    if hit is None:
+        return None
+    return (
+        f"the action description mentions `{hit}` — that is a DISPATCH "
+        "MECHANISM, not work. A description is WHAT to do; do not put how "
+        "it's dispatched in it. To run this action AS a specialist, set the "
+        "structured `specialization=<subject>` field instead — at dispatch "
+        "the planner resolves it, stamps `spec_id`, and a fresh worker loads "
+        "the specialist's compiled doc (no fork). A prose "
+        "`get_specialization` line only makes a GENERIC worker read the "
+        "spec doc — it is NOT the trained specialist and bypasses the whole "
+        "layered ruleset."
+    )
+
+
+# ── record_action_status ──────────────────────────────────────────────────
+# d30 (USER DIRECTIVE, refines d29): record_action_status runs LITERALLY
+# NOTHING at record time. d29 had kept a pure in-process stat/glob helper
+# (_verify_nonexecuting: file_exists / file_min_bytes / glob_matches) gating
+# the done path; d30 removes that too, so the helper is deleted (no dead
+# path). The file/glob acceptance criteria live on as action.acceptance DATA
+# and are enforced by the WORKER (runs the check in its own shell + reports
+# evidence) and independently by the REVIEWER (fresh-shell re-run) — the
+# dual-gate model. The tool records status + evidence as INERT DATA only.
+class _ActIn(BaseModel):
+    plan_id: str
+    action_id: str
+    status: str
+    evidence: str | None = None
+
+
+class _ActStatusOut(BaseModel):
+    status: str        # the action's resulting status (done / failed / …)
+    detail: str = ""   # reserved; empty on the d30 pure-write path
+
+
+#: s26 item 1 — statuses after which the executing shell has nothing left to
+#: do. `needs_review`/`in_progress`/`pending` are explicitly NOT terminal: the
+#: shell may still be working or awaiting a bounce-back.
+_TERMINAL_ACTION_STATUSES = frozenset({"done", "failed", "skipped"})
+
+#: Grace window the pool waits for an idle shell before reaping it. Long enough
+#: for a reporting shell to run its whole close sequence (CronDelete → stop
+#: Monitor → pool_close_self) unhurried; short enough that a leaked shell does
+#: not hold RAM for long. The pool re-checks rather than killing a busy shell.
+_CLOSE_WHEN_IDLE_SECS = 120.0
+
+
+class RecordActionStatus(_ClaudeTool):
+    """Record an action's status. d30 (USER DIRECTIVE): a `done` CLAIM is a
+    PURE WRITE — the tool records status + `evidence` as INERT DATA, runs NO
+    acceptance check of any kind (not even the pure in-process
+    file_exists/file_min_bytes/glob stat checks), spawns nothing, executes
+    nothing, and returns instantly. The file/glob acceptance criteria live on
+    as action.acceptance DATA and are enforced by the WORKER (runs them in its
+    own shell + reports evidence) and independently by the REVIEWER (fresh
+    shell) — the dual-gate model. A done-claim is worker-done-awaiting-review:
+    it lands as `done` with evidence, and the planner-enforced
+    worker->reviewer chain (`needs_review`) is the gate before the step
+    closes. The record path NEVER routes to `verify`. **A `done` requires
+    `evidence`** — the tool refuses otherwise."""
+
+    name = "record_action_status"
+    InputModel = _ActIn
+    OutputModel = _ActStatusOut
+
+    async def _run(self, m: _ActIn):
+        role = os.environ.get("EDP_ROLE", "").strip()
+        handle = os.environ.get("EDP_HANDLE", "").strip()
+        # v7 P4.1 — the reviewer's grant is OWN-LEG ONLY. The verb reached
+        # _REVIEWER so a review leg can close itself (killing the d67/d100
+        # role="worker" workaround), but d30 independence over REVIEWED
+        # actions stands: any other action is refused here, by construction.
+        if role == "reviewer" and handle != f"{m.plan_id}:{m.action_id}":
+            return _precondition(
+                f"record_action_status refused: you are the reviewer shell "
+                f"{handle or '<no handle>'} and {m.plan_id}:{m.action_id} is "
+                "not YOUR review leg. A reviewer closes only its own leg; "
+                "for the action you REVIEWED, stamp the judgement with "
+                "record_branch_verdict — a verdict never flips status or "
+                "touches the worker's evidence (d30)."
+            )
+        # v7 P3.1 — the grounding echo is the price of a result. A worker
+        # reporting a terminal claim for its own dispatch must have restated
+        # the directive first (notify_above kind='grounding'); a surface that
+        # accepts a directive it never restated and then claims done is the
+        # d101(4) silent-consume defect, made structurally impossible here.
+        # Scoped to role=worker + this plan's own handle so planner resets,
+        # crash recovery, and test/neuron surfaces are untouched.
+        if (role == "worker"
+                and m.status in ("done", "failed")
+                and handle.split(":", 1)[0] == m.plan_id):
+            _sent = self.ctx.plans.read_worklog(
+                m.plan_id, tail=400, kinds=["message_sent"])
+            if not any(
+                ln.get("msg_kind") == "grounding"
+                and ln.get("from_handle") == handle
+                for ln in _sent
+            ):
+                return _precondition(
+                    f"action {m.action_id} -> {m.status} refused: no "
+                    "grounding echo was posted for this dispatch. Before "
+                    "reporting a result, restate the directive: "
+                    "notify_above(kind='grounding', body={'restatement': "
+                    "<the task in your own words>, 'will_verify_by': <the "
+                    "acceptance in your own words>, 'assumptions': [...]}) "
+                    "— then re-record. Nothing was recorded."
+                )
+        p = self.ctx.plans.load(m.plan_id)
+        for a in p.actions:
+            if a.action_id != m.action_id:
+                continue
+            if m.status == "done":
+                if not m.evidence:
+                    return _precondition(
+                        f"action {m.action_id} -> done requires evidence; "
+                        "pass `evidence`"
+                    )
+                # W2 leg 3 (fail-closed constraint guard, DESIGN-v6 §W2):
+                # a completion whose text matches an ACTIVE
+                # applies_to=["action_result"] constraint is REFUSED at the
+                # moment of violation, naming the decision id + why. This is
+                # deterministic (principle 6) — a pure match, no LLM. Legacy
+                # prose decisions carry no constraint → this no-ops on them.
+                if self.ctx.recipes.exists(p.recipe_id):
+                    _rc = self.ctx.recipes.load(p.recipe_id)
+                    _vios = _check_constraints(
+                        _rc, "action_result", m.evidence or "")
+                    if _vios:
+                        return _precondition(
+                            f"action {m.action_id} completion VIOLATES a "
+                            f"recorded constraint — {_describe_violations(_vios)}"
+                            ". Fail-closed guard (DESIGN-v6 W2): the decision "
+                            "named above bans this. Fix the deliverable to "
+                            "comply; or if the constraint itself is wrong the "
+                            "neuron supersedes it (record_context) before you "
+                            "re-record. Nothing was recorded."
+                        )
+                # d30 PURE WRITE (USER DIRECTIVE, refines d29): the tool runs
+                # LITERALLY NOTHING here. It records the worker's status +
+                # evidence as INERT DATA — a CLAIM, NEVER interpreted or
+                # executed — spawns ZERO subprocesses, runs NO acceptance check
+                # of any kind (not even the pure in-process file_exists /
+                # file_min_bytes / glob_matches stat checks d29 had kept), and
+                # cannot hang. The file/glob acceptance criteria survive as
+                # action.acceptance DATA and are enforced by the WORKER (runs
+                # the check in its own shell, reports the result as evidence)
+                # and independently by the REVIEWER (fresh-shell re-run) — the
+                # dual-gate model. A done-claim is therefore worker-done-
+                # awaiting-review: it lands as `done` with evidence, and the
+                # planner-enforced worker->reviewer chain (needs_review) is the
+                # gate before the step closes. The record path NEVER routes to
+                # `verify` — that state loses its only writer here.
+                a.acceptance.actual = m.evidence
+                a.status = "done"
+                # Legibility (principle-6 deterministic worklog write, no
+                # LLM): a status transition is surfaced UNIFORMLY on the
+                # rx.worklog / read_worklog stream. Modeled on the
+                # action_reset line below; agent_role is derived from the
+                # recording shell's env (a worker records its own status =>
+                # EDP_ROLE=worker) rather than hardcoded.
+                self.ctx.plans.append_worklog(p.plan_id, {
+                    "kind": "action_status_changed",
+                    "action_id": m.action_id, "status": "done",
+                    "agent_role":
+                        os.environ.get("EDP_ROLE", "").strip() or "unknown",
+                })
+                self.ctx.plans.save(p)
+                # s26 item 1: the write is DURABLE above; only now do we arm.
+                await self._arm_close(m.plan_id, m.action_id, "done")
+                return Tool.ok(_ActStatusOut(status="done"))
+            # non-done statuses (failed / skipped / in_progress / …).
+            prev = a.status
+            a.status = m.status  # type: ignore[assignment]
+            if m.evidence:
+                a.acceptance.actual = m.evidence
+            # W10b SEAM (a) — the WORKER's own report that it ran the acceptance
+            # gate in its own shell (d30) and the gate did NOT pass. This is one
+            # of exactly two places a failed acceptance cycle is REPORTED; the
+            # other is the reviewer's independent re-run (RecordBranchVerdict).
+            # `bump_verify_failure` is idempotent per DISPATCH cycle, so when
+            # both seams report the same cycle it counts once — see its docstring.
+            # Note this is a PURE WRITE like everything else here: nothing is
+            # run, nothing is verified; the worker's claim is recorded as data.
+            if m.status == "failed":
+                bump_verify_failure(a)
+            # DESIGN-v7 1.4 — MID-BATCH FAILURE RELEASES THE TAIL. A batch
+            # unit's members were all stamped in_progress atomically at
+            # dispatch, and its ONE worker executes them in declared order,
+            # stopping at the first failure (worker.md member loop). The
+            # members AFTER the failed one were therefore never started —
+            # leaving them in_progress would strand them as phantoms until
+            # the sweep's grace window expires. Reset them to pending HERE,
+            # deterministically (principle 6), at the same seam that records
+            # the failure: later members of the SAME batch_group, declared
+            # after the failed one, still in_progress. Members BEFORE the
+            # failure keep whatever status the worker already recorded for
+            # them. Unbatched actions (no batch_group) are untouched.
+            if m.status == "failed" and getattr(a, "batch_group", None):
+                past_failed = False
+                for sib in p.actions:
+                    if sib.action_id == a.action_id:
+                        past_failed = True
+                        continue
+                    if (not past_failed
+                            or sib.batch_group != a.batch_group
+                            or sib.status != "in_progress"):
+                        continue
+                    sib.status = "pending"
+                    self.ctx.plans.append_worklog(p.plan_id, {
+                        "kind": "action_reset",
+                        "agent_role":
+                            os.environ.get("EDP_ROLE", "").strip()
+                            or "unknown",
+                        "action_id": sib.action_id,
+                        "detail": (f"batch member released to pending: "
+                                   f"earlier member {a.action_id!r} of batch "
+                                   f"{a.batch_group!r} failed, so this member "
+                                   "was never started"),
+                    })
+            # Legibility (principle-6): same uniform action_status_changed
+            # line for failed / needs_review / skipped / … . This is
+            # ADDITIVE to the action_reset line below — a crash-recovery
+            # reset emits both (the uniform status line + the specific
+            # reset line).
+            self.ctx.plans.append_worklog(p.plan_id, {
+                "kind": "action_status_changed",
+                "action_id": m.action_id, "status": m.status,
+                "agent_role":
+                    os.environ.get("EDP_ROLE", "").strip() or "unknown",
+            })
+            # crash-recovery reset: a worker died (rx pool() crash event
+            # woke the planner) → reap the session → reset the stuck
+            # in_progress action to pending so the FSM re-dispatches it.
+            # Worklog it so the reset is visible (and surfaces on the
+            # rx worklog() source). The transition is legal — no guard.
+            if prev == "in_progress" and m.status == "pending":
+                self.ctx.plans.append_worklog(p.plan_id, {
+                    "kind": "action_reset", "agent_role": "planner",
+                    "action_id": m.action_id,
+                    "detail": m.evidence or "reset for re-dispatch "
+                    "(crash recovery)",
+                })
+            self.ctx.plans.save(p)
+            # s26 item 1: the write is DURABLE above; only now do we arm.
+            await self._arm_close(m.plan_id, m.action_id, m.status)
+            return Tool.ok(_ActStatusOut(status=m.status))
+        return _precondition(f"no action {m.action_id!r} in plan")
+
+    async def _arm_close(
+        self, plan_id: str, action_id: str, status: str,
+    ) -> None:
+        """s26 item 1 — STRUCTURAL FIX for the leaked worker shell.
+
+        A worker that ends its turn with a report never reaches its own
+        `pool_close_self`, and idles at a prompt holding RAM until a human
+        closes it. So closure stops being an act of will: reporting a TERMINAL
+        status ARMS the pool to reap this shell once it falls idle.
+
+        FOUR GUARDS, each load-bearing:
+
+        1. TERMINAL ONLY. `needs_review`/`in_progress`/`pending` never arm — the
+           shell may still be working, or awaiting a bounce-back.
+
+        2. THE CALLER MUST OWN THE ACTION. `record_action_status` takes an
+           ARBITRARY plan_id + action_id, and the PLANNER calls it too — its
+           crash-recovery path records a dead worker's action as `failed`. Arming
+           on the caller's session without this guard would REAP THE PLANNER at
+           the moment it cleaned up after a worker. This is also why "a terminal
+           status releases the calling session" (the option-(ii) shape) is
+           unsound as stated: the caller is not necessarily the action's owner.
+
+        3. ONLY A POOL-SPAWNED SHELL. No `EDP_SPAWN_SESSION_ID` → the neuron's
+           foreground shell or the user's terminal. Never armed, never reaped.
+
+        4. ARM, DON'T RELEASE. The pool defers the reap behind an idle check, so
+           the tool RETURNS NORMALLY to its caller and the shell keeps its full
+           grace window to flush, stop its Monitor, and close itself cleanly. A
+           synchronous release here would reap the independent REVIEWER at the
+           instant it files its verdict — the objective gate of the whole step —
+           and would kill a shell mid-close, orphaning its Monitor driver.
+
+        Best-effort by construction: a pool error is swallowed. The status write
+        already succeeded and must never be failed by a reaping optimisation.
+        """
+        if status not in _TERMINAL_ACTION_STATUSES:
+            return
+        # DONE FLOWBACK (2026-07-19, opencode M3 stranding #2): a PARKED
+        # planner wakes ONLY on broker-inbox growth, but nothing ever
+        # published a message on action completion — worker.md ends with
+        # "the planner's heartbeat will see your result on disk", which
+        # only an ALIVE polling planner can do. CORE_KINDS["done"] and the
+        # planner's rx wake-set had the kind all along with no publisher.
+        # Publish here, at the one seam every terminal status crosses.
+        # Best-effort: broker down never fails the recorded status; an
+        # extra wake of an alive planner is a cheap no-op.
+        try:
+            # msg_id/ts are REQUIRED BrokerMessage fields — omitting them
+            # made this publish a silent ValidationError for a full day
+            # (the a4 stranding: done recorded, parent never woken).
+            await self.ctx.broker.send(BrokerMessage(
+                msg_id=str(uuid.uuid4()),
+                ts=_now(),
+                from_=f"{plan_id}:{action_id}", to=plan_id, kind="done",
+                body={"action_id": action_id, "status": status,
+                      "for": plan_id},
+            ))
+        except Exception as exc:  # noqa: BLE001
+            from .base import _log as _flow_log
+            _flow_log.warning("done_flowback_publish_failed", action_id,
+                              plan_id=plan_id, action_id=action_id,
+                              err=repr(exc))
+        sid = os.environ.get("EDP_SPAWN_SESSION_ID")
+        if not sid:
+            return
+        if not _caller_owns_action(plan_id, action_id):
+            return
+        try:
+            await self.ctx.pool.close_when_idle(
+                sid, idle_secs=_CLOSE_WHEN_IDLE_SECS,
+                reason=f"action {action_id} reached terminal status {status!r}",
+            )
+        except Exception:  # noqa: BLE001 — never fail a recorded status
+            pass
+
+
+# ── record_user_answer ────────────────────────────────────────────────────
+class _UAIn(BaseModel):
+    recipe_id: str
+    # branch_id (comprehension-branch resolution) and assumption_id (W8
+    # load-bearing-assumption ack/reject) are MUTUALLY EXCLUSIVE modes —
+    # exactly one is set. Both default None so the schema widens without
+    # breaking the legacy branch_id-only callers.
+    branch_id: str | None = None
+    assumption_id: str | None = None
+    answer: str
+    by: str = "neuron"
+
+
+class RecordUserAnswer(_ClaudeTool):
+    name = "record_user_answer"
+    InputModel = _UAIn
+    OutputModel = _Ok
+
+    async def _run(self, m: _UAIn):
+        if m.branch_id and m.assumption_id:
+            return _precondition(
+                "branch_id and assumption_id are mutually exclusive — pass "
+                "exactly one (branch_id resolves a comprehension branch; "
+                "assumption_id acks/rejects a W8 load-bearing assumption).")
+        if m.assumption_id:
+            return await self._answer_assumption(m)
+        if not m.branch_id:
+            return _precondition(
+                "record_user_answer needs a branch_id (comprehension branch) "
+                "or an assumption_id (W8 assumption ack/reject).")
+        r = self.ctx.recipes.load(m.recipe_id)
+        for b in r.comprehension.branches:
+            if b.id == m.branch_id:
+                b.status = "resolved"
+                b.verdict = m.answer
+                r.context.open_questions = [
+                    q for q in r.context.open_questions
+                    if q.get("for_branch") != m.branch_id
+                ]
+                self.ctx.recipes.save(r)
+                return Tool.ok(_Ok())
+        return _precondition(f"no branch {m.branch_id!r}")
+
+    async def _answer_assumption(self, m: _UAIn):
+        """W8 assumption ack/reject mode. `answer` carries the verdict:
+        - ack   -> status="acked" (+ acked_by/acked_at stamped) so the
+          fail-closed dispatch guard stops blocking on it;
+        - reject -> flip the assumption to status="rejected" AND append a
+          rejected_option CANDIDATE (from the assumption's text) the neuron
+          resolves — the new W8 reject flow. Either verdict clears it from the
+          pending set so dependent work can proceed."""
+        from ..schemas import RejectedOption
+
+        r = self.ctx.recipes.load(m.recipe_id)
+        a = next((x for x in r.context.assumptions
+                  if x.id == m.assumption_id), None)
+        if a is None:
+            known = [x.id for x in r.context.assumptions]
+            return _precondition(
+                f"no assumption {m.assumption_id!r} in recipe "
+                f"{m.recipe_id!r}; known assumption ids: {known}")
+        verdict = (m.answer or "").strip().lower()
+        if verdict in ("ack", "acked", "accept", "accepted", "yes",
+                       "confirm", "confirmed", "approve", "approved"):
+            a.status = "acked"
+            a.acked_by = m.by
+            a.acked_at = _now().isoformat()
+            self.ctx.recipes.save(r)
+            return Tool.ok(_Ok())
+        if verdict in ("reject", "rejected", "no", "deny", "denied"):
+            a.status = "rejected"
+            r.context.rejected_options.append(
+                RejectedOption(
+                    id=f"x{len(r.context.rejected_options)+1}",
+                    text=a.text,
+                    reason=(f"rejected load-bearing assumption {a.id} via "
+                            f"record_user_answer — neuron to resolve"),
+                )
+            )
+            self.ctx.recipes.save(r)
+            return Tool.ok(_Ok())
+        return _precondition(
+            f"assumption_id mode needs answer='ack' or 'reject' (got "
+            f"{m.answer!r}).")
+
+
+# ── record_decision / assumption / rejected_option ────────────────────────
+# TODO(revisit,#2): consolidate these three into record_context(kind,...)
+# once real usage frequency is known (user directive 2026-05-17).
+class _CtxIn(BaseModel):
+    recipe_id: str
+    text: str
+    rationale: str | None = None
+    reason: str | None = None
+    by: str = "neuron"
+    # s27 Item 3A: mark a decision load-bearing so it is AUTO-stamped into
+    # worker grounding (Action.injected_context) at spawn. record_decision
+    # stamps grounding; W8 record_assumption persists it as the acknowledgement
+    # gate (load_bearing -> status "pending"); record_rejected_option ignores it.
+    load_bearing: bool = False
+    # W8: optional step/action ids this assumption bears on (advisory scoping
+    # for the a3 dispatch guard). Only record_assumption persists it.
+    affects: list[str] = []
+    # s26 item 13: scope a decision to ONE plan, so it is stamped only into
+    # that plan's actions. Set it whenever the text addresses a step-relative
+    # actor ("Reviewer a4 owns the fix") — such a decision read by a LATER
+    # plan's same-named action is read as its own instruction. Unset (the
+    # default) = recipe-wide, exactly as before. Only the decision route uses it.
+    scope_plan_id: str | None = None
+    # W9 part 2: the executable Constraint a BAN carries (W1: "a ban becomes
+    # checkable, not remembered"). ONLY RecordRejectedOption persists it —
+    # RecordDecision and RecordAssumption ignore it, exactly as they ignore
+    # each other's fields. Before W9 this field did not exist and
+    # `record_context(constraint=…)` silently dropped it; see RecordContext.
+    constraint: dict | None = None
+
+
+class RecordDecision(_ClaudeTool):
+    name = "record_decision"
+    InputModel = _CtxIn
+    OutputModel = _Ok
+
+    async def _run(self, m: _CtxIn):
+        r = self.ctx.recipes.load(m.recipe_id)
+        from ..schemas import Decision
+
+        r.context.decisions.append(
+            Decision(
+                id=f"d{len(r.context.decisions)+1}",
+                text=m.text,
+                rationale=m.rationale or "",
+                by=m.by,
+                at=_now(),
+                load_bearing=m.load_bearing,
+                scope_plan_id=m.scope_plan_id,
+            )
+        )
+        self.ctx.recipes.save(r)
+        return Tool.ok(_Ok())
+
+
+# How much of the grounding brief rides the worker's injected_context.
+#
+# THE CAP IS DELIBERATE; THE SILENCE WAS THE DEFECT (reported live 2026-07-25
+# by the Fit s13 planner, whose worker volunteered that its brief stopped
+# MID-SENTENCE). `record_grounding_brief` accepted and stored the full text
+# without complaint, so the loss happened at DELIVERY, not at write, and was
+# invisible from BOTH sides: the planner saw a successful write, the worker
+# saw a brief that simply ended. The planner therefore BELIEVED it had
+# transferred knowledge it had not — and the brief exists precisely to stop
+# every shell re-exploring the codebase, so a silent tail-drop defeats the
+# one mechanism sold as the fix for that.
+#
+# WHY THE TAIL IS THE WORST HALF TO LOSE: a brief opens with orientation and
+# closes with LANDMINES, so a tail cut eats exactly the part that prevents
+# defects. In the reported case it ate a retention rule, a "boolean is not a
+# valid key" trap, the evidence standard and an explicit do-not-touch list.
+#
+# ONLY CAUGHT because the worker mentioned it in its grounding restatement.
+# Nothing in the tooling flagged it. That is the shape this whole build keeps
+# meeting: AN ABSENCE THAT LOOKS EXACTLY LIKE A PASS. So the cap stays (a
+# sprawling brief really can blow a worker's grounding), but it is now LOUD at
+# both ends — the worker is told its brief was cut and how to get the rest,
+# and the planner is told at WRITE time, before it ever dispatches.
+_GROUNDING_BRIEF_INJECT_CAP = 6000
+
+
+class _GroundingBriefIn(BaseModel):
+    plan_id: str
+    content: str                 # the brief markdown (see planner-phase-ground)
+    # file paths in play, stated as DATA (never sniffed out of the prose) —
+    # appended to Plan.grounding_fingerprint, which is what the 1.5.6
+    # staleness delta intersects sibling diffs against.
+    paths: list[str] = []
+
+
+class _GroundingBriefOut(BaseModel):
+    path: str                    # the sidecar's plan-relative path
+    fingerprint_paths: int       # fingerprint size after the append
+    note: str
+
+
+class RecordGroundingBrief(_ClaudeTool):
+    """v7 Phase 8 — kill the triple read. The PLANNER writes ONE grounding
+    brief per plan (files in play + one-line roles, key symbols/signatures,
+    invariants discovered, landmines, test entry points) and every worker —
+    plus the reviewer brief — receives it via the same by-id injection the
+    decisions ride, so each fresh shell starts from the planner's map instead
+    of re-exploring the codebase from zero. `paths` doubles as the staleness
+    fingerprint (1.5.6): a sibling plan's diff touching a named path is what
+    triggers the revalidation gate. Re-recordable (the brief is living: a
+    worker's `discovery` flowback corrects it); the sidecar is versioned with
+    the plan dir."""
+
+    name = "record_grounding_brief"
+    InputModel = _GroundingBriefIn
+    OutputModel = _GroundingBriefOut
+
+    async def _run(self, m: _GroundingBriefIn):
+        if not self.ctx.plans.exists(m.plan_id):
+            return _precondition(f"no plan {m.plan_id!r}")
+        if not m.content.strip():
+            return _precondition(
+                "an empty grounding brief grounds nobody — write the map "
+                "(files in play, key symbols, invariants, landmines, test "
+                "entry points).")
+        p = self.ctx.plans.load(m.plan_id)
+        rel = self.ctx.plans.write_grounding_brief(m.plan_id, m.content)
+        p.grounding_brief_path = rel
+        fp = list(p.grounding_fingerprint or [])
+        fp.extend(x for x in m.paths if x and x not in fp)
+        p.grounding_fingerprint = fp or None
+        self.ctx.plans.save(p)
+        # CHANNELS (2026-07-21): the brief IS the team channel's pinned
+        # topic — visible in the panel header, updated on revalidation.
+        # Best-effort: registry down never fails the brief write.
+        try:
+            import httpx as _hx
+            _burl = os.environ.get("EDP_BROKER_URL", "").strip()
+            if _burl:
+                cur = _hx.get(f"{_burl}/v1/channels/{m.plan_id}",
+                              timeout=5.0)
+                members = (cur.json().get("members", [])
+                           if cur.status_code == 200 else [])
+                _hx.put(f"{_burl}/v1/channels/{m.plan_id}",
+                        json={"members": members,
+                              "topic": m.content.strip()[:300]},
+                        timeout=5.0)
+        except Exception:  # noqa: BLE001
+            pass
+        # TELL THE PLANNER NOW, NOT NEVER. The store keeps the brief whole,
+        # but only the first _GROUNDING_BRIEF_INJECT_CAP characters are
+        # INJECTED into a worker. A planner that is not told here will not
+        # find out at all — it sees a successful write and dispatches
+        # believing the whole map travelled.
+        n = len(m.content)
+        over = n - _GROUNDING_BRIEF_INJECT_CAP
+        if over > 0:
+            note = (
+                f"*** STORED WHOLE ({n} chars) BUT ONLY THE FIRST "
+                f"{_GROUNDING_BRIEF_INJECT_CAP} ARE DELIVERED TO A WORKER — "
+                f"THE LAST {over} CHARACTERS WILL NOT REACH ANYONE via "
+                "injection. *** Workers see a truncation marker, so this is "
+                "not silent any more, but they still do not get the text. "
+                "FIX IT BEFORE YOU DISPATCH, in this order of preference: "
+                "(1) MOVE LOAD-BEARING RULES INTO THE ACTION DESCRIPTION, "
+                "which is delivered in full — the brief is the map, never the "
+                "only home of a rule; (2) FRONT-LOAD the brief so landmines, "
+                "prohibitions and do-not-touch lists come EARLY and "
+                "orientation comes late, because the closing section is what "
+                "gets cut; (3) split per-action detail out of the plan-wide "
+                "map. Then re-record. If you keep it as is, send the tail "
+                "over the broker yourself and CONFIRM the worker restates it."
+            )
+        else:
+            note = ("brief stored + stamped; every subsequent worker dispatch "
+                    "injects it (read_object('action') → grounding_brief), and "
+                    "the named paths now arm the staleness gate against "
+                    "sibling diffs. Within the "
+                    f"{_GROUNDING_BRIEF_INJECT_CAP}-char injection cap "
+                    f"({n} chars), so it travels whole.")
+        return Tool.ok(_GroundingBriefOut(
+            path=rel, fingerprint_paths=len(fp), note=note))
+
+
+class _FoldDecisionsIn(BaseModel):
+    recipe_id: str
+    decision_ids: list[str]     # the settled cluster leaving the ACTIVE set
+    summary_text: str           # the ONE decision that replaces them
+    rationale: str = ""
+
+
+class _FoldDecisionsOut(BaseModel):
+    summary_id: str
+    folded: list[str]
+    active_decisions: int       # the active count AFTER the fold
+    note: str
+
+
+class FoldDecisions(_ClaudeTool):
+    """v7 P6.2 — fold a SETTLED decision cluster into one summary decision,
+    atomically. DESIGN-v6 grew 170 decisions (88 load-bearing) because the
+    store was append-only and nothing prompted `supersede_decision`; folding
+    one cluster by hand cost N+1 calls. This is the one-call version: append
+    the summary decision, supersede every member with `replaced_by=<summary>`
+    in the SAME save. The summary inherits `load_bearing=true` iff any member
+    had it (folding must never drop a constraint from workers' grounding).
+    History is preserved exactly as supersede_decision preserves it; folded
+    members stop reaching new workers via the same active-only injection
+    filter. Use at step boundaries on clusters that are fully settled — the
+    reconcile fold advisory names the moment (`EDP_DECISION_FOLD_THRESHOLD`).
+    Neuron-scoped (the map is the neuron's)."""
+
+    name = "fold_decisions"
+    InputModel = _FoldDecisionsIn
+    OutputModel = _FoldDecisionsOut
+
+    async def _run(self, m: _FoldDecisionsIn):
+        if not self.ctx.recipes.exists(m.recipe_id):
+            return _precondition(f"unknown recipe {m.recipe_id!r}")
+        if len(m.decision_ids) < 2:
+            return _precondition(
+                "fold_decisions folds a CLUSTER (>= 2 decisions); for one "
+                "decision use supersede_decision.")
+        r = self.ctx.recipes.load(m.recipe_id)
+        by_id = {d.id: d for d in r.context.decisions}
+        missing = [i for i in m.decision_ids if i not in by_id]
+        if missing:
+            return _precondition(
+                f"decision id(s) {missing!r} not found in {m.recipe_id!r} — "
+                "nothing was folded.")
+        already = [i for i in m.decision_ids
+                   if getattr(by_id[i], "status", "active") != "active"]
+        if already:
+            return _precondition(
+                f"decision id(s) {already!r} are not ACTIVE — a fold covers "
+                "an active cluster; drop the superseded members and retry. "
+                "Nothing was folded.")
+        from ..schemas import Decision
+        nums = [int(mm.group(1)) for d in r.context.decisions
+                if (mm := re.fullmatch(r"d(\d+)", d.id))]
+        nid = f"d{(max(nums) + 1) if nums else len(r.context.decisions) + 1}"
+        members = [by_id[i] for i in m.decision_ids]
+        summary = Decision(
+            id=nid,
+            text=m.summary_text,
+            rationale=(m.rationale
+                       or f"fold of settled cluster {m.decision_ids}"),
+            by=os.environ.get("EDP_ROLE", "").strip() or "neuron",
+            at=_now(),
+            load_bearing=any(getattr(d, "load_bearing", False)
+                             for d in members),
+        )
+        r.context.decisions.append(summary)
+        for d in members:
+            d.status = "superseded"
+            d.superseded_by = nid
+        self.ctx.recipes.save(r)   # ONE atomic save — the whole fold or none
+        for i in m.decision_ids:
+            _restamp_context_status(
+                self.ctx, m.recipe_id, "decision", i, "superseded")
+        self.ctx.recipes.append_worklog(m.recipe_id, {
+            "kind": "decisions_folded", "summary_id": nid,
+            "folded": list(m.decision_ids), "note": m.rationale[:300],
+        })
+        active = sum(1 for d in r.context.decisions
+                     if getattr(d, "status", "active") == "active")
+        return Tool.ok(_FoldDecisionsOut(
+            summary_id=nid, folded=list(m.decision_ids),
+            active_decisions=active,
+            note=(f"{len(members)} decision(s) folded into {nid} in one "
+                  "atomic save; members archived with replaced_by, summary "
+                  f"load_bearing={summary.load_bearing}. New workers now "
+                  "receive the summary, never the folded members.")))
+
+
+class _SupersedeDecisionIn(BaseModel):
+    recipe_id: str
+    decision_id: str            # the decision leaving the ACTIVE set
+    replaced_by: str | None = None   # the decision id that supersedes it
+    note: str = ""              # why — recorded in the events trail
+
+
+class _SupersedeDecisionOut(BaseModel):
+    decision_id: str
+    status: str
+    replaced_by: str | None
+    note: str
+
+
+class SupersedeDecision(_ClaudeTool):
+    """Archive a decision out of the ACTIVE set without deleting history
+    (P2). A superseded decision stays in context.decisions (full reads and
+    the events trail keep the honest record) but it STOPS being indexed in
+    the steady-state context push and STOPS being stamped into new workers'
+    grounding — use this whenever a new decision replaces an old one, so
+    stale direction cannot keep reaching fresh shells. Typical flow:
+    record_decision(<the new direction>, load_bearing=true) then
+    supersede_decision(decision_id=<the old one>, replaced_by=<new id>).
+    Idempotent: superseding an already-superseded decision just updates
+    replaced_by/note."""
+
+    name = "supersede_decision"
+    InputModel = _SupersedeDecisionIn
+    OutputModel = _SupersedeDecisionOut
+
+    async def _run(self, m: _SupersedeDecisionIn):
+        if not self.ctx.recipes.exists(m.recipe_id):
+            return _precondition(f"unknown recipe {m.recipe_id!r}")
+        r = self.ctx.recipes.load(m.recipe_id)
+        target = next(
+            (d for d in r.context.decisions if d.id == m.decision_id), None)
+        if target is None:
+            known = [d.id for d in r.context.decisions]
+            return _precondition(
+                f"decision {m.decision_id!r} not found in recipe "
+                f"{m.recipe_id!r}; known decision ids: {known}")
+        if m.replaced_by and not any(
+                d.id == m.replaced_by for d in r.context.decisions):
+            return _precondition(
+                f"replaced_by={m.replaced_by!r} is not a recorded decision "
+                "of this recipe — record the replacement decision FIRST "
+                "(record_decision), then supersede the old one.")
+        target.status = "superseded"
+        target.superseded_by = m.replaced_by
+        self.ctx.recipes.save(r)
+        # The SEARCH surface must learn this too. recipe.json now reads
+        # `superseded`, but search_context serves `status` out of the sidecar —
+        # leave it unstamped and the falsified decision keeps coming back
+        # `active` to every shell that searches for it (s30/a5, measured on
+        # d155). Sidecar-only, no re-embed, best-effort.
+        _restamp_context_status(
+            self.ctx, m.recipe_id, "decision", m.decision_id, "superseded")
+        self.ctx.recipes.append_worklog(m.recipe_id, {
+            "kind": "decision_superseded",
+            "decision_id": m.decision_id,
+            "replaced_by": m.replaced_by,
+            "note": m.note,
+        })
+        return Tool.ok(_SupersedeDecisionOut(
+            decision_id=m.decision_id, status="superseded",
+            replaced_by=m.replaced_by, note=(
+                "decision archived out of the active set — it no longer "
+                "appears in the steady-state decisions index and is no "
+                "longer stamped into new workers' grounding; history "
+                "preserved in context.decisions + the events trail.")))
+
+
+class RecordAssumption(_ClaudeTool):
+    name = "record_assumption"
+    InputModel = _CtxIn
+    OutputModel = _Ok
+
+    async def _run(self, m: _CtxIn):
+        r = self.ctx.recipes.load(m.recipe_id)
+        from ..schemas import Assumption
+
+        # W8: persist the acknowledgement-gate fields. load_bearing and affects
+        # come straight from the caller; the schema's after-validator resolves
+        # status (a load_bearing assumption stays "pending" until acked; a
+        # non-load-bearing one grandfathers to "acked"). Previously these were
+        # DROPPED — a load-bearing assumption silently persisted as acked.
+        r.context.assumptions.append(
+            Assumption(
+                id=f"a{len(r.context.assumptions)+1}",
+                text=m.text,
+                by=m.by,
+                at=_now(),
+                load_bearing=m.load_bearing,
+                affects=list(m.affects),
+            )
+        )
+        self.ctx.recipes.save(r)
+        return Tool.ok(_Ok())
+
+
+class _RejectedOptionOut(BaseModel):
+    id: str
+    # "proposed" whenever a constraint was supplied; "active" otherwise.
+    status: str
+
+
+class RecordRejectedOption(_ClaudeTool):
+    """Record a rejected option (a ban) on the recipe.
+
+    W9 part 2 — THE PROPOSED-BY-CONSTRUCTION INVARIANT. A ban that carries an
+    executable `constraint` lands `status="proposed"`, and this is a property
+    of the WRITE, not of the writer: there is no role check here and no input
+    field that overrides it, so a proposed ban is the only representable
+    outcome of a constraint-bearing write. `guards.check_constraints` skips
+    every record whose status is not "active", so a proposal has no teeth
+    until a neuron activates it via `confirm_direction_constraints`. That is
+    d76 as a structural invariant rather than a policy: a direction reviewer
+    cannot steer the build even if it tries, and neither can a neuron that
+    forgets to confirm.
+
+    CALLERS, ENUMERATED (the universal above is only as good as this list —
+    d66/d75: a docstring asserting "every caller" must enumerate or be
+    deleted). Two, both pinned by
+    `tests/test_w9_direction_reviewer.py::test_t5c_every_caller_of_the_ban_
+    write_path_lands_proposed`:
+      1. `RecordContext._run` (kind="rejected_option") — the routed verb, the
+         only one on any role surface (tools/roles.py: RECORD_CONTEXT).
+      2. this tool directly (`record_rejected_option`) — registered, off every
+         role surface (_CONSOLIDATED_OUT), retained for the unit tests and the
+         absent-role full set.
+    A THIRD caller would have to be added to this list; the test derives the
+    caller set from the source rather than trusting this comment.
+
+    A ban with NO constraint keeps `status="active"` (its pre-W9 shape and
+    behaviour): it is prose, a structural no-op in the guard, and nothing to
+    confirm."""
+
+    name = "record_rejected_option"
+    InputModel = _CtxIn
+    OutputModel = _RejectedOptionOut
+
+    async def _run(self, m: _CtxIn):
+        from pydantic import ValidationError
+
+        from ..schemas import RejectedOption
+        from ..schemas.recipe import Constraint
+
+        constraint = None
+        if m.constraint is not None:
+            try:
+                constraint = Constraint.model_validate(m.constraint)
+            except ValidationError as e:
+                return _precondition(
+                    "record_context(kind=rejected_option): `constraint` is not "
+                    f"a valid Constraint — {e.error_count()} problem(s): "
+                    f"{e.errors()[0].get('msg', '')}. Shape: {{match, "
+                    "match_kind: 'regex'|'substring', applies_to: "
+                    "['action_result'|'spec_doc'|'llm_payload'], message}}.")
+            if constraint.match_kind == "regex":
+                # Validate at WRITE time: guards._hit treats an un-compilable
+                # stored pattern as a no-hit, so a bad regex would land a ban
+                # that can never fire — a constraint that lies about guarding.
+                try:
+                    re.compile(constraint.match)
+                except re.error as e:
+                    return _precondition(
+                        "record_context(kind=rejected_option): `constraint."
+                        f"match` is not a compilable regex — {e}. A stored "
+                        "pattern that cannot compile never matches, so the "
+                        "ban would silently guard nothing.")
+
+        r = self.ctx.recipes.load(m.recipe_id)
+        ro = RejectedOption(
+            id=f"x{len(r.context.rejected_options)+1}",
+            text=m.text,
+            reason=m.reason or "",
+            constraint=constraint,
+            status=("proposed" if constraint is not None else "active"),
+        )
+        r.context.rejected_options.append(ro)
+        self.ctx.recipes.save(r)
+        return Tool.ok(_RejectedOptionOut(id=ro.id, status=ro.status))
+
+
+class _RecordContextIn(BaseModel):
+    """Flat InputModel for the consolidated record_context verb (DESIGN-v6
+    W4). Union of _CtxIn (decision/assumption/rejected_option) + _RememberIn
+    (fact) fields, plus the W1/W2 forward-looking title/subject/constraint
+    and load_bearing. `kind` selects the route; the handler validates the
+    per-kind required fields and DELEGATES to the existing verb bodies — no
+    storage logic is duplicated here. House pattern: flat InputModel, no
+    nested unions; per-kind optionality is enforced in the handler with
+    refuse-and-explain guards."""
+
+    kind: Literal[
+        "decision", "assumption", "rejected_option", "fact",
+        "north_star_update", "note",
+    ]
+    # _CtxIn fields (decision / assumption / rejected_option)
+    recipe_id: str | None = None
+    text: str | None = None
+    rationale: str | None = None
+    reason: str | None = None
+    by: str = "neuron"
+    load_bearing: bool = False
+    # W8: optional step/action ids a load-bearing assumption bears on
+    # (advisory scoping for the a3 dispatch guard). Only the assumption route
+    # persists it.
+    affects: list[str] = []
+    # s26 item 13: scope a DECISION to one plan (see _CtxIn.scope_plan_id).
+    # Ignored by the assumption / rejected_option / fact routes.
+    scope_plan_id: str | None = None
+    # _RememberIn fields (fact)
+    fact: dict | None = None
+    domain: str | None = None
+    # a4: lineage-scoped facts. Omit scope to default from lineage
+    # (recipe/<R>); scope='global' is neuron-only.
+    scope: str | None = None
+    # W1 forward-looking: title/subject (typed decisions) are accepted so the
+    # consolidated verb SURFACE is stable, and are NOT yet persisted by the
+    # reused decision route.
+    title: str | None = None
+    subject: str | None = None
+    # W9 part 2 — `constraint` (W2 teeth) IS persisted now, on the
+    # rejected_option route only; it lands `status="proposed"` (see
+    # RecordRejectedOption). Passing it with any other `kind` is REFUSED, not
+    # dropped: it used to be accepted and silently discarded, which is how a
+    # caller came to believe W2 constraints were reachable through this verb.
+    constraint: dict | None = None
+    # W15 — kind=note ephemera routes to the PLAN worklog (never the recipe
+    # digest/epoch). plan_id defaults from the caller's lineage; an explicit
+    # plan_id/action_id overrides (e.g. an observer noting on another action).
+    plan_id: str | None = None
+    action_id: str | None = None
+
+
+class RecordContext(_ClaudeTool):
+    """DESIGN-v6 W4 — the single memory-write verb. Routes by `kind` to the
+    EXISTING record_decision / record_assumption / record_rejected_option /
+    remember(fact) storage; it does NOT re-implement any of them. It
+    delegates to the same tool bodies (single source of truth: object-state
+    writes still go through the recipe store / atomic.py, facts through the
+    memory port). The individual verb classes stay registered for tests +
+    the full-set fallback; role toolsets expose only record_context (see
+    tools/roles.py).
+
+    Guards refuse-and-explain via _precondition (never mutate input):
+    decision/assumption/rejected_option require recipe_id + text; fact
+    requires a fact body (domain + scope default from the caller's lineage,
+    a4); north_star_update is neuron-only and appends to the recipe's
+    immutable-goal north star — LIVE as of W1 (user_goal_verbatim is
+    immutable, active_constraints are auto-derived, and the append-only
+    evolution_log is patched via this verb)."""
+
+    name = "record_context"
+    InputModel = _RecordContextIn
+    OutputModel = BaseModel
+
+    async def _run(self, m: _RecordContextIn):
+        if m.kind in ("decision", "assumption", "rejected_option"):
+            if not m.recipe_id:
+                return _precondition(
+                    f"record_context(kind={m.kind}) requires recipe_id — "
+                    "add recipe_id and resend.")
+            if not m.text:
+                return _precondition(
+                    f"record_context(kind={m.kind}) requires text (the "
+                    "statement) — add text and resend.")
+            # DESIGN-v6 W1.1: WRITE-TIME 1200-char cap, NEW writes ONLY. This
+            # lives in the TOOL path (never on load/hydration/construction — a
+            # legacy >1200-char decision must still deserialize unchanged, so
+            # the schema stays cap-free). Refuse-and-explain, don't truncate.
+            if len(m.text) > _CONTEXT_TEXT_MAX:
+                return _precondition(
+                    f"record_context(kind={m.kind}): text is {len(m.text)} "
+                    f"chars, exceeds the {_CONTEXT_TEXT_MAX}-char write cap — "
+                    "split it into focused entries, or attach a context file "
+                    "ref (text_ref). Then resend.")
+            if not self.ctx.recipes.exists(m.recipe_id):
+                return _precondition(f"unknown recipe {m.recipe_id!r}")
+            # W9 part 2 — `constraint` was ACCEPTED AND SILENTLY DROPPED here
+            # (the field was declared on _RecordContextIn as "W1/W2 forward-
+            # looking" and never read: no `m.constraint` existed anywhere in
+            # src). Callers passing one got ok:true and stored nothing, so W2's
+            # constraint teeth were unreachable through the routed verb. The
+            # rejected_option route is now wired; the other two are REFUSED
+            # rather than silently dropped, because a silent drop is what the
+            # defect was.
+            if m.constraint is not None and m.kind != "rejected_option":
+                return _precondition(
+                    f"record_context(kind={m.kind}, constraint=…): only "
+                    "kind='rejected_option' persists an executable constraint "
+                    "today. A constraint on this kind would be dropped "
+                    "silently — record the ban as kind='rejected_option' with "
+                    "the constraint, or drop the constraint and resend.")
+            ctx_in = _CtxIn(
+                recipe_id=m.recipe_id, text=m.text, rationale=m.rationale,
+                reason=m.reason, by=m.by, load_bearing=m.load_bearing,
+                affects=m.affects, scope_plan_id=m.scope_plan_id,
+                constraint=m.constraint,
+            )
+            if m.kind == "decision":
+                res = await RecordDecision(self.ctx)._run(ctx_in)
+            elif m.kind == "assumption":
+                res = await RecordAssumption(self.ctx)._run(ctx_in)
+            else:
+                res = await RecordRejectedOption(self.ctx)._run(ctx_in)
+            # W15 — index the just-written context item into the embeddings
+            # sidecar (search_context's read source). Best-effort + sidecar-
+            # only: it never mutates recipe.json (o6) and a failure (embed
+            # backend down) never fails the record — the entry is stored
+            # text-only and ranks by token-overlap fallback at search time.
+            if getattr(res, "ok", False):
+                await _index_context_write(self.ctx, m.recipe_id, m.kind)
+            return res
+
+        if m.kind == "fact":
+            if not m.fact:
+                return _precondition(
+                    "record_context(kind=fact) requires a fact body (a "
+                    "non-empty object) — add fact={...} and resend.")
+            # a4: scope defaults from lineage (recipe/<R> for a lineage-
+            # bearing caller, global only for a truly bare shell). domain
+            # defaults to the recipe's domain. Delegates to Remember, the
+            # single fact-write path; explicit scope/recipe_id/domain
+            # override, subject to the global-neuron guard.
+            return await Remember(self.ctx)._run(
+                _RememberIn(fact=m.fact, domain=m.domain, scope=m.scope,
+                            recipe_id=m.recipe_id))
+
+        if m.kind == "note":
+            # W15 — EPHEMERA (scheduling, acks, "user away till Monday"). Its
+            # canonical home is the WORKLOG, and ONLY the worklog: it must NEVER
+            # reach the recipe digest or the grounding_epoch.
+            #   • grounding_epoch reads ONLY recipe decisions/constraints/
+            #     assumptions (recipe_fsm.grounding_epoch) — a worklog note can
+            #     never touch it.
+            #   • get_recipe_digest.recent_events scans events.jsonl, so it is
+            #     HARDENED to drop kind=note (read-side invariant) — even a
+            #     recipe-level note is invisible to the digest.
+            # Routing (per planner steer, msg bcf8f49d): a plan-scoped caller
+            # (worker/planner) → its plan worklog; a plan-LESS caller (the
+            # neuron's canonical "user away" note) → the recipe worklog, which
+            # RecipeStore already exposes for arbitrary recipe-level entries.
+            # Either way it is a worklog the digest/epoch do not surface.
+            if not m.text:
+                return _precondition(
+                    "record_context(kind=note) requires text — the ephemeral "
+                    "note to append to the worklog. Add text and resend.")
+            from ..store.attribution import actor
+            lin_recipe, _extras = _resolve_recipe_lineage(self.ctx)
+            plan_id = m.plan_id or _extras.get("plan_id")
+            action_id = m.action_id or _extras.get("action_id")
+            record = {"kind": "note", "text": m.text, "by": actor()}
+            if action_id:
+                record["action_id"] = action_id
+            if plan_id:
+                if not self.ctx.plans.exists(plan_id):
+                    return _precondition(f"unknown plan {plan_id!r}")
+                self.ctx.plans.append_worklog(plan_id, record)
+                return Tool.ok(_Ok())
+            recipe_id = m.recipe_id or lin_recipe
+            if not recipe_id:
+                return _precondition(
+                    "record_context(kind=note) needs a worklog to land in but "
+                    "no plan or recipe resolved from your lineage — pass "
+                    "recipe_id (or plan_id) and resend.")
+            if not self.ctx.recipes.exists(recipe_id):
+                return _precondition(f"unknown recipe {recipe_id!r}")
+            self.ctx.recipes.append_worklog(recipe_id, record)
+            return Tool.ok(_Ok())
+
+        # kind == "north_star_update"  (DESIGN-v6 W1 — now FILLED)
+        role = os.environ.get("EDP_ROLE", "").strip()
+        if role and role != "neuron":
+            return _precondition(
+                "record_context(kind=north_star_update) is neuron-only — "
+                f"the {role!r} role may not patch the immutable-goal north "
+                "star.")
+        if not m.recipe_id:
+            return _precondition(
+                "record_context(kind=north_star_update) requires recipe_id — "
+                "add recipe_id and resend.")
+        if not self.ctx.recipes.exists(m.recipe_id):
+            return _precondition(f"unknown recipe {m.recipe_id!r}")
+        if not m.text:
+            return _precondition(
+                "record_context(kind=north_star_update) requires text — the "
+                "evolution note appended to the north star's append-only "
+                "evolution_log (capped at 400 chars). Add text and resend. "
+                "(Pass title=<short label> to also set current_shape.)")
+        from ..store.north_star import (
+            NorthStar, NorthStarImmutable, derive_active_constraints)
+        r = self.ctx.recipes.load(m.recipe_id)
+        now = _now()
+        # The immutable goal is always RE-SOURCED from the recipe (the single
+        # source of truth). If it ever drifts from the pinned north-star copy,
+        # the store's save() refuses — that IS the immutable-field guard.
+        goal = r.user_goal_verbatim
+        if self.ctx.north_star.exists(m.recipe_id):
+            ns = self.ctx.north_star.load(m.recipe_id)
+            ns.user_goal_verbatim = goal
+        else:
+            ns = NorthStar(
+                recipe_id=m.recipe_id, user_goal_verbatim=goal,
+                created_at=now, updated_at=now)
+        if m.title:
+            ns.current_shape = m.title
+        ns.append_evolution(text=m.text, by=m.by, at=now)
+        active = derive_active_constraints(r)   # auto-derived, never written
+        try:
+            self.ctx.north_star.save(ns, active)
+        except NorthStarImmutable as e:
+            return _precondition(str(e))
+        return Tool.ok(_Ok())
+
+
+# ── W15 search_context — retrieval into recipe context memory ─────────────
+# The embeddings sidecar lives alongside the P2 tiering sidecars, under the
+# recipe dir's context/ subdir (context/embeddings.jsonl). INVARIANT o6:
+# search_context and the sidecar NEVER mutate recipe.json — search reads the
+# sidecar; the one-time lazy backfill loads the recipe READ-ONLY (no save).
+# No generative/LLM call anywhere here — only the existing embed client
+# (principle-6), degrading to token overlap exactly like neuron_search.
+_CONTEXT_SEARCH_KINDS = (
+    "decision", "assumption", "rejected_option", "north_star")
+_WORD = re.compile(r"[a-z0-9]+")
+
+
+def _context_embeddings_path(ctx, recipe_id: str) -> Path:
+    return Path(ctx.recipes.root) / recipe_id / "context" / "embeddings.jsonl"
+
+
+def _context_embed_text(item: dict) -> str:
+    """The text embedded + ranked for a context item: title + subject + body
+    (the W1 typed-decision fields are optional; legacy items carry only text,
+    per DESIGN-v6 W15 §4 'decision title+subject+body embeddings')."""
+    parts = [item.get("title"), item.get("subject"), item.get("text")]
+    return " ".join(str(p) for p in parts if p).strip()
+
+
+def _context_items(recipe, kinds) -> list[dict]:
+    """Flatten a recipe's searchable context to plain dicts
+    {id, kind, title, subject, text, status}. north_star is the immutable
+    goal as a single pseudo-item. Order is append order, so the LAST item of a
+    kind is the newest (used by the write-time indexer)."""
+    items: list[dict] = []
+    c = recipe.context
+    if "decision" in kinds:
+        for d in c.decisions:
+            items.append({"id": d.id, "kind": "decision",
+                          "title": getattr(d, "title", None),
+                          "subject": getattr(d, "subject", None),
+                          "text": d.text,
+                          "status": getattr(d, "status", "active")})
+    if "assumption" in kinds:
+        for a in c.assumptions:
+            items.append({"id": a.id, "kind": "assumption",
+                          "title": None, "subject": None, "text": a.text,
+                          "status": getattr(a, "status", None)})
+    if "rejected_option" in kinds:
+        for ro in c.rejected_options:
+            items.append({"id": ro.id, "kind": "rejected_option",
+                          "title": None, "subject": None, "text": ro.text,
+                          "status": None})
+    if "north_star" in kinds:
+        goal = getattr(recipe, "user_goal_verbatim", "") or ""
+        if goal:
+            items.append({"id": "north_star", "kind": "north_star",
+                          "title": None, "subject": None, "text": goal,
+                          "status": None})
+    return items
+
+
+def _context_index_entry(item: dict, embedding) -> dict:
+    return {
+        "key": f"{item['kind']}:{item['id']}",
+        "id": item["id"],
+        "kind": item["kind"],
+        "embed_text": _context_embed_text(item),
+        "embedding": embedding,
+        "status": item.get("status"),
+    }
+
+
+def _restamp_context_status(ctx, recipe_id: str, kind: str, item_id: str,
+                            status: str) -> None:
+    """Re-stamp ONE context item's `status` in the embeddings sidecar.
+
+    THE BUG THIS EXISTS TO NOT REPEAT (measured, s30/a5). `supersede_decision`
+    writes `status="superseded"` into recipe.json — and stopped there. But
+    `search_context` reads the SIDECAR (that is what lets it search without
+    loading recipe.json), and the sidecar's `status` is a snapshot taken at
+    `record_context` WRITE time. Nothing refreshed it: `_backfill_context_index`
+    fires only when the sidecar does not EXIST, which is never true of a live
+    recipe. So a superseded decision kept coming back from search as
+    `status="active"`, permanently.
+
+    That is not cosmetic. supersede_decision's own docstring promises stale
+    direction "cannot keep reaching fresh shells" — TRUE of the context push
+    (which filters recipe.json on `status == "active"`), FALSE of the search
+    path. Measured here on `d155`: a FALSIFIED safety finding — one that had
+    been escalated to the user, who RULED on it — was still served to any shell
+    that searched for it as an ACTIVE decision. The record was corrected; the
+    surface that shells actually ask went on telling them the falsified thing.
+
+    Append-only and embedding-preserving. `_load_context_index` takes LATER
+    lines as winners, so re-appending the entry under the same key IS the
+    update, and reusing the stored embedding means no re-embed — the supersede
+    path makes no backend call and cannot fail when embeddings are down.
+    Sidecar-only: recipe.json is never touched here (o6). Best-effort: a
+    supersede must still succeed even if the sidecar cannot be written.
+    """
+    try:
+        index = _load_context_index(ctx, recipe_id)
+        entry = index.get(f"{kind}:{item_id}")
+        if entry is None or entry.get("status") == status:
+            return
+        _append_context_index(ctx, recipe_id, [{**entry, "status": status}])
+    except Exception:  # noqa: BLE001 — never fail a supersede over its index
+        return
+
+
+def _load_context_index(ctx, recipe_id: str) -> dict[str, dict]:
+    """Read the embeddings sidecar into a key→entry map (later lines win, so a
+    re-embedded entry supersedes an older one). Empty when the sidecar does not
+    exist yet (a legacy recipe, or one with no context)."""
+    from ..store.atomic import read_jsonl
+    out: dict[str, dict] = {}
+    for rec in read_jsonl(_context_embeddings_path(ctx, recipe_id)):
+        key = rec.get("key")
+        if key:
+            out[key] = rec
+    return out
+
+
+def _append_context_index(ctx, recipe_id: str, entries: list[dict]) -> None:
+    from ..store.atomic import append_jsonl
+    path = _context_embeddings_path(ctx, recipe_id)
+    for e in entries:
+        append_jsonl(path, e)
+
+
+def _embed_timeout_s() -> float:
+    """Hard per-call bound on ONE embedding request. The shared httpx
+    client's 30s timeout is fine for a single call but catastrophic in a
+    loop: the legacy backfill below runs per context item, and 370 items x
+    30s against an unreachable ollama wedged a live neuron's search_context
+    for HOURS (measured on recipe -0e7ca8, 2026-07-12). 10s is generous for
+    a local embed; anything slower is treated as down. Read per call
+    (EDP_EMBED_TIMEOUT_S) so ops and tests can tune it without a reload."""
+    try:
+        return float(os.environ.get("EDP_EMBED_TIMEOUT_S", "10"))
+    except ValueError:
+        return 10.0
+
+
+async def _embed_context_text(ctx, text: str):
+    """Embed `text` for the context index; None on backend failure OR timeout
+    — the entry then ranks by token-overlap fallback (same degrade path as
+    neuron_search). Hard-bounded per call (_embed_timeout_s) so no
+    caller can be held hostage by a hung backend. No LLM: this is the pure
+    embedding client (principle-6)."""
+    if not text:
+        return None
+    try:
+        return await asyncio.wait_for(
+            ctx.embed.embed(text, kind="document"),
+            timeout=_embed_timeout_s())
+    except Exception:
+        return None
+
+
+async def _index_context_write(ctx, recipe_id: str, kind: str) -> None:
+    """Append the JUST-written context item of `kind` to the embeddings sidecar
+    (record_context write-time hook), and seed the north_star (recipe goal)
+    ONCE so it is searchable too. SIDECAR-ONLY + best-effort: it reads the
+    recipe to pick up the id the delegate assigned but NEVER saves it (o6), and
+    any failure is swallowed so a down embed backend can't fail the record.
+    Maintaining the sidecar at write time is what lets STEADY-STATE search read
+    it WITHOUT loading recipe.json (backfill only fires on a never-indexed
+    legacy recipe)."""
+    try:
+        if not ctx.recipes.exists(recipe_id):
+            return
+        r = ctx.recipes.load(recipe_id)
+        items = _context_items(r, (kind,))
+        if not items:
+            return
+        existing = _load_context_index(ctx, recipe_id)
+        new_entries: list[dict] = []
+        item = items[-1]   # append order → the newest of this kind
+        if f"{item['kind']}:{item['id']}" not in existing:
+            emb = await _embed_context_text(ctx, _context_embed_text(item))
+            new_entries.append(_context_index_entry(item, emb))
+        # Seed the north_star goal on first write so search covers it without a
+        # later recipe load (the write-time recipe is already in hand here).
+        if "north_star:north_star" not in existing:
+            ns = _context_items(r, ("north_star",))
+            if ns:
+                emb = await _embed_context_text(ctx, _context_embed_text(ns[0]))
+                new_entries.append(_context_index_entry(ns[0], emb))
+        if new_entries:
+            _append_context_index(ctx, recipe_id, new_entries)
+    except Exception:
+        return
+
+
+async def _backfill_context_index(ctx, recipe_id: str, index: dict) -> dict:
+    """Lazily embed a LEGACY recipe's context on the FIRST search — i.e. only
+    when the sidecar file does not exist yet (a recipe authored before
+    write-time indexing, like the 0e7ca8 fixture). READ-ONLY on the recipe
+    (o6 — no save); indexes ALL kinds once, appends them to the sidecar and
+    returns the updated in-memory index. A recipe whose sidecar already exists
+    is maintained at write time, so search skips the recipe load entirely —
+    the 'search without loading recipe.json' steady-state guarantee."""
+    if _context_embeddings_path(ctx, recipe_id).exists():
+        return index
+    if not ctx.recipes.exists(recipe_id):
+        return index
+    items = _context_items(ctx.recipes.load(recipe_id), _CONTEXT_SEARCH_KINDS)
+    # PRODUCTION BOUNDS (2026-07-12, learned the hard way on a live recipe):
+    # this loop used to await the embed backend PER ITEM with no breaker and
+    # no budget — 370 legacy items x the client's 30s timeout against a down
+    # ollama = one search_context call wedged for hours. Three rules now:
+    #   1. CIRCUIT BREAKER — the first embed failure/timeout stops ALL
+    #      further backend calls this pass; the remaining entries are built
+    #      text-only and rank by token overlap (the same degrade the scorer
+    #      already handles).
+    #   2. WALL BUDGET — even a healthy-but-slow backend cannot hold the
+    #      tool call past EDP_EMBED_BACKFILL_BUDGET_SECS (default 120s).
+    #   3. NO DEGRADED PERSIST — the sidecar is written ONLY when every
+    #      entry embedded. Persisting null embeddings would make the
+    #      degradation PERMANENT (the sidecar's existence is what disables
+    #      backfill), so a one-tick ollama outage would poison the recipe's
+    #      semantic search forever. Absent sidecar = the next search retries
+    #      the full backfill when the backend is back.
+    budget = float(os.environ.get("EDP_EMBED_BACKFILL_BUDGET_SECS", "120"))
+    deadline = time.monotonic() + budget
+    embed_ok = True
+    new_entries = []
+    for it in items:
+        key = f"{it['kind']}:{it['id']}"
+        if key in index:
+            continue
+        emb = None
+        text = _context_embed_text(it)
+        if text and embed_ok and time.monotonic() < deadline:
+            emb = await _embed_context_text(ctx, text)
+            if emb is None:
+                embed_ok = False   # breaker: backend is down/slow — stop asking
+        entry = _context_index_entry(it, emb)
+        new_entries.append(entry)
+        index[entry["key"]] = entry
+    fully_embedded = embed_ok and time.monotonic() < deadline
+    if new_entries and fully_embedded:
+        _append_context_index(ctx, recipe_id, new_entries)
+    elif new_entries:
+        _log.warning(
+            "context_backfill_degraded",
+            f"embed backend unavailable/slow during backfill of "
+            f"{recipe_id!r} — served {len(new_entries)} entries text-only, "
+            "sidecar NOT persisted (will retry when the backend returns)")
+    return index
+
+
+def _tokens(text: str) -> set:
+    return set(_WORD.findall((text or "").lower()))
+
+
+class _SearchContextIn(BaseModel):
+    query: str
+    # recipe_id defaults from the caller's lineage (like recall); pass it
+    # explicitly to search another recipe you own.
+    recipe_id: str | None = None
+    kinds: list[str] = list(_CONTEXT_SEARCH_KINDS)
+    top_k: int = 8
+
+
+class _SearchContextOut(BaseModel):
+    matches: list[dict]         # ranked top_k, provenance-tagged (bounded)
+    mode: str                   # "embedding" | "text-fallback"
+    recipe_id: str
+    count: int                  # indexed items considered (after kind filter)
+
+
+class SearchContext(_ClaudeTool):
+    """DESIGN-v6 W15 — semantic retrieval INTO a recipe's context memory
+    (decisions / assumptions / rejected options / north star), so an agent can
+    ASK the recipe instead of loading the whole thing. Embeds the query with
+    the SAME client as neuron_search and cosine-ranks over embeddings computed
+    at record_context write time and stored in a sidecar
+    (context/embeddings.jsonl); a legacy recipe is lazily backfilled on the
+    first search. Degrades to token-overlap when the embed backend is down
+    (same Jaccard floor as neuron_search). Reads the sidecar — it NEVER mutates
+    recipe.json. Results are the search ARM of the recall family, tagged with
+    provenance (recipe / kind / id)."""
+
+    name = "search_context"
+    idempotent = True
+    InputModel = _SearchContextIn
+    OutputModel = _SearchContextOut
+
+    async def _run(self, m: _SearchContextIn):
+        recipe_id = m.recipe_id or _resolve_recipe_lineage(self.ctx)[0]
+        if not recipe_id:
+            return _precondition(
+                "search_context needs a recipe to search but none resolved "
+                "from your lineage — pass recipe_id and resend.")
+        if not self.ctx.recipes.exists(recipe_id):
+            return _precondition(f"unknown recipe {recipe_id!r}")
+        kinds = tuple(m.kinds) if m.kinds else _CONTEXT_SEARCH_KINDS
+
+        # 1. read the sidecar; lazily backfill a legacy recipe on first search
+        #    (steady-state recipes skip this and never load recipe.json).
+        index = _load_context_index(self.ctx, recipe_id)
+        index = await _backfill_context_index(self.ctx, recipe_id, index)
+        entries = [e for e in index.values() if e.get("kind") in kinds]
+
+        # 2. embed the query; degrade to token overlap when the backend is down.
+        from ..store.neuron_store import cosine
+        mode = "embedding"
+        qv = None
+        try:
+            qv = await asyncio.wait_for(
+                self.ctx.embed.embed(m.query, kind="query"),
+                timeout=_embed_timeout_s())
+        except Exception:
+            mode = "text-fallback"
+        qtokens = _tokens(m.query)
+
+        def _score(e) -> float:
+            emb = e.get("embedding")
+            if qv is not None and emb:
+                return cosine(qv, emb)
+            dt = _tokens(e.get("embed_text") or "")
+            if not qtokens or not dt:
+                return 0.0
+            return len(qtokens & dt) / (len(qtokens | dt) or 1)
+
+        scored = sorted(
+            ((_score(e), e) for e in entries),
+            key=lambda t: t[0], reverse=True)
+        top_k = max(0, m.top_k)
+        matches = [{
+            "id": e["id"],
+            "kind": e["kind"],
+            "recipe_id": recipe_id,
+            "score": round(score, 4),
+            "status": e.get("status"),
+            "text": _digest_trim(e.get("embed_text") or "", 300),
+            # provenance: this row's canonical home in recipe context memory.
+            "provenance": f"recipe:{recipe_id}/context/{e['kind']}:{e['id']}",
+        } for score, e in scored[:top_k]]
+        return Tool.ok(_SearchContextOut(
+            matches=matches, mode=mode, recipe_id=recipe_id,
+            count=len(entries)))
+
+
+# ── pool / broker / memory pass-throughs ──────────────────────────────────
+# W11 suspended-dispatch precondition (DESIGN-v6 §W11). A parked recipe accepts
+# no new shells: suspend has just reaped the ones it had, and a shell spawned
+# now would work against a record nothing is reconciling.
+#
+# THIS IS A TOOL-SURFACE GUARD, AND DELIBERATELY SO. `resume_recipe` re-spawns
+# its planners through `ctx.pool.spawn_planner` — the PORT — precisely because
+# it must spawn while `suspended_at` is STILL SET (it clears the stamp only
+# after the planners are back, so an interrupted resume fails loudly rather
+# than silently). Moving this check down onto the port would deadlock resume
+# against its own guard. Do not "fix" it there.
+SUSPENDED_DISPATCH_REFUSAL = "recipe is suspended — resume_recipe first"
+
+
+def _suspension_refusal(r: Recipe):
+    """The refusal for a dispatch against a parked recipe, or None when the
+    recipe is live. Pure over a loaded Recipe — both spawn tools already hold
+    one for their assumption gate."""
+    if not r.suspended_at:
+        return None
+    return _precondition(
+        f"{SUSPENDED_DISPATCH_REFUSAL} (recipe {r.recipe_id!r} was suspended "
+        f"at {r.suspended_at}). Suspension is orthogonal to the FSM state: the "
+        "recipe is not failed, it is parked. resume_recipe reconciles the "
+        "record, re-grounds, and puts its planners back — then dispatch works "
+        "again.")
+
+
+class _SpawnPlannerIn(BaseModel):
+    recipe_id: str
+    step_id: str
+    # W8 guard-wiring note / W10a: thread an optional per-spawn model tier at
+    # the TOOL layer — the client/port/stub already accept it, only this
+    # passthrough was pending. Planner spawns pass None today (host default =
+    # Opus; planner/reviewer/specialist stay Opus per MODEL_TIERS), so
+    # behaviour is unchanged; the param completes the plumbing.
+    model: str | None = None
+
+
+class PoolSpawnPlanner(_ClaudeTool):
+    name = "pool_spawn_planner"
+    InputModel = _SpawnPlannerIn
+    OutputModel = BaseModel
+
+    async def _run(self, m: _SpawnPlannerIn):
+        if self.ctx.recipes.exists(m.recipe_id):
+            rg = self.ctx.recipes.load(m.recipe_id)
+            # W11 suspended-dispatch precondition — first, because a parked
+            # recipe dispatches nothing regardless of its assumption state.
+            parked = _suspension_refusal(rg)
+            if parked:
+                return parked
+            # W8 fail-closed assumption gate (principle 6 / d13): same
+            # deterministic unacked-assumption refusal as the worker spawn,
+            # scoped to this step.
+            blk = _blocking_load_bearing_assumptions(rg, m.step_id)
+            if blk:
+                return _assumption_gate_refusal(rg, blk)
+        return await self.ctx.pool.spawn_planner(
+            m.recipe_id, m.step_id, model=m.model)
+
+
+def _decision_in_scope(d, plan_id: str) -> bool:
+    """s26 item 13 — may decision `d` be stamped into an action of `plan_id`?
+
+    True when the decision is recipe-wide (`scope_plan_id` unset — the default
+    and every legacy decision), or when it is scoped to exactly this plan.
+
+    THE BUG THIS CLOSES. `pool_spawn_worker` stamped EVERY active load-bearing
+    decision onto EVERY action, recipe-wide, with no notion of scope. A decision
+    recorded under plan …-s18 whose text addressed "Reviewer a4" was therefore
+    stamped verbatim into a LATER plan's a4, which read it as addressed to
+    itself. Action ids are only meaningful RELATIVE TO A PLAN; the stamp erased
+    that relativity, and there was no way to express "this one is for one step".
+
+    Note what this does NOT do: it cannot retroactively scope a decision nobody
+    scoped. An existing recipe-wide decision that happens to name an action id
+    still reaches every action — that is the neuron's to scope or supersede, not
+    a worker's to rewrite. This adds the mechanism and honours it at selection.
+    """
+    scope = getattr(d, "scope_plan_id", None)
+    return not scope or scope == plan_id
+
+
+class _SpawnWorkerIn(BaseModel):
+    plan_id: str
+    action_id: str
+    # DESIGN-v7 1.4 — BATCH dispatch. The `batch_action_ids` list from a batch
+    # head's DISPATCH_ACTION instruction, verbatim: every member of the batch
+    # unit, declared order, head first. `action_id` (the head) MUST be among
+    # them, and the spawn handle stays `<plan_id>:<action_id>` — one shell,
+    # one lock, one pool slot for the whole unit; the worker executes the
+    # members in this order and records status PER MEMBER. Absent/None (every
+    # pre-v7 caller and every unbatched dispatch) = the unit is [action_id],
+    # byte-identical behaviour. Every pre-launch guard below (assumption,
+    # suspension, duplicate-dispatch/liveness, status, spec) runs over EVERY
+    # member, and every rollback covers every member — a batch is admitted or
+    # refused as a UNIT, never half-spawned.
+    action_ids: list[str] | None = None
+    # W2 leg 4 (duplicate-dispatch guard): refuse to re-dispatch an action
+    # already `done`/`needs_review` (the "neuron re-requested delivered work"
+    # case) — the refusal echoes the recorded completion. `force=true` is the
+    # explicit override for a genuine re-run.
+    force: bool = False
+    # s26 item 6(b) — SPAWN-ROLE MISMATCH. This is a planner's ONLY spawn verb,
+    # and it hardcoded EDP_ROLE=worker. So a planner-authored REVIEWER leg ran
+    # as a worker: it never loaded reviewer.md and never held the reviewer's
+    # surface. `role` lets the planner spawn the leg it actually authored.
+    #
+    # ALLOWLIST, not a free string. The pool maps role → activator slash command
+    # and stamps EDP_ROLE from it, so an arbitrary role here would let a planner
+    # mint a shell of ANY role — including `neuron`. Two values only.
+    #
+    # DEFAULT STAYS "worker" (byte-compat: every existing dispatch spawns a
+    # worker unchanged). v7 P4.1 removed the old reason to avoid "reviewer" —
+    # the reviewer now closes its own leg (own-leg-guarded
+    # record_action_status) and the dispatcher composes its review brief, so
+    # review legs SHOULD be dispatched role="reviewer" (planner-phase-author).
+    role: Literal["worker", "reviewer"] = "worker"
+    # W10b — the tier lookup key for this spawn, and the opt-in that lets a
+    # CANDIDATE row be selected at all. `task_class` defaults to "*" (the role's
+    # Opus default row) and `allow_candidate_tier` to False, so every existing
+    # dispatch resolves to the host default and passes no --model flag, exactly
+    # as before. A per-action `Action.model` override (s17 FA3) still WINS over
+    # the table — it is the planner's explicit, per-action decision.
+    task_class: str = "*"
+    allow_candidate_tier: bool = False
+
+
+# (`_direction_review_overdue_warning` lived here: the spawn-time nag that told
+# the reader to "Branch a direction reviewer (branch_reviewer(scope='direction',
+# …))". REMOVED — d128/d132. It rode every worker spawn of an overdue recipe and
+# named a verb only the neuron holds, for a review the neuron cannot own.)
+
+
+# ── DESIGN-v7 2.2 — the code-assembled BRIEFING DELTA ───────────────────────
+# THE ROOT CAUSE: the injection seam below shipped ONLY load-bearing decisions;
+# DESIGN-v6 recorded 248 `learning` events that structurally never reached a
+# worker unless the neuron hand-flagged one into a decision. The briefing delta
+# closes that: at dispatch, the recipe's recent field events (learning /
+# review_finding / discovery) that are RELEVANT TO THIS ACTION are folded into
+# the same store-once-by-id injection the decisions ride, so read_object(
+# 'action') resolves them with ZERO worker-side code change.
+_BRIEFING_KINDS = ("learning", "review_finding", "discovery")
+_BRIEFING_CAP = 8          # newest-first entries per action — a briefing, not a feed
+_BRIEFING_CHAR_CAP = 300   # per-entry truncation (identify, don't reproduce)
+
+
+def _briefing_event_id(rec: dict) -> str:
+    """Deterministic by-id key for an event record. Events carry no native id
+    (they are bare jsonl appends), so derive one by CONTENT HASH: the same
+    record always maps to the same id, which is what makes the re-dispatch
+    idempotency below hold (unchanged events → unchanged pointer → no plan
+    save, no version churn)."""
+    blob = json.dumps(rec, sort_keys=True, default=str)
+    return "ev-" + hashlib.sha1(blob.encode("utf-8")).hexdigest()[:12]
+
+
+def _briefing_quarantine_label(ctx, rec: dict) -> str | None:
+    """QUARANTINE, represented honestly (DESIGN-v7 2.2): a spec-scoped
+    `learning` event may or may not have been RATIFIED through the W3 human
+    gate, and a worker must be able to tell the difference. Events carry no
+    acceptance state, so derive it from the spec store: a learning whose
+    rule text stands ACCEPTED on its spec (status 'promoted' — the word
+    `resolve_spec_learnings` writes) is tagged '[rule]'; anything else —
+    still proposed, rejected, or not matchable in the store — is labeled
+    'proposed (unratified)'. Non-learning kinds and unscoped learnings get
+    no label (there is no ratification lifecycle to represent)."""
+    if rec.get("kind") != "learning":
+        return None
+    body = rec.get("body") or {}
+    spec_id = body.get("spec_id")
+    if not spec_id:
+        return None
+    rule_text = (body.get("summary") or body.get("detail") or "").strip()
+    try:
+        if rule_text and ctx.specs.exists(spec_id):
+            accepted = ctx.specs.read_learnings(spec_id, status="promoted")
+            if any((a.get("rule_text") or "").strip() == rule_text
+                   for a in accepted):
+                return "[rule]"
+    except Exception:  # noqa: BLE001 — a store hiccup must not block dispatch
+        pass
+    return "proposed (unratified)"
+
+
+def _briefing_entry_text(ctx, rec: dict) -> str:
+    """One capped briefing line: kind, quarantine label (when applicable),
+    the event's own summary/detail, and its provenance (who/when) so a worker
+    can weigh it. Truncated to _BRIEFING_CHAR_CAP — the pointer to go deeper
+    is the recipe events trail, not this line."""
+    body = rec.get("body") or {}
+    text = (body.get("summary") or body.get("detail") or body.get("text")
+            or "").strip()
+    if not text:
+        text = json.dumps(body, default=str)
+    label = _briefing_quarantine_label(ctx, rec)
+    head = f"[{rec.get('kind', '?')}]" + (f" {label}" if label else "")
+    prov_bits = [b for b in (rec.get("from"), str(rec.get("ts") or "")[:19])
+                 if b]
+    prov = f" ({', '.join(prov_bits)})" if prov_bits else ""
+    line = f"{head} {text}"
+    if len(line) > _BRIEFING_CHAR_CAP:
+        line = line[:_BRIEFING_CHAR_CAP].rstrip() + "…"
+    return line + prov
+
+
+def _briefing_delta(ctx, recipe, plan, action) -> list[tuple[str, str]]:
+    """Assemble the deterministic briefing delta for ONE action at dispatch:
+    `[(event_id, text), …]`, newest-first, capped at _BRIEFING_CAP.
+
+    Scope filter — an event reaches this action when ANY of:
+      (a) its `body.spec_id` intersects the action's effective spec_ids
+          (a stack-scoped learning follows the stack, across plans),
+      (b) it was emitted under THIS plan (`plan_id` stamped by the emitter's
+          lineage — siblings' field notes are this action's context), or
+      (c) it is RECIPE-WIDE with no spec scope (no spec_id, no plan_id —
+          the neuron's broadcast discoveries).
+    Anything else (another plan's unshared-spec traffic) is noise, kept out.
+
+    BOUNDED BY CONSTRUCTION: reads only the live events tail
+    (`RecipeStore.read_events_tail` — never the rolled-up archive segments),
+    then caps at 8 entries of ≤ ~300 chars. DETERMINISTIC (principle 6): same
+    events → same ids → same texts, which is what lets the seam's compare-
+    before-write skip the plan save on an unchanged re-dispatch. Best-effort:
+    any failure returns [] rather than blocking the spawn."""
+    try:
+        events = ctx.recipes.read_events_tail(
+            recipe.recipe_id, kinds=_BRIEFING_KINDS)
+    except Exception:  # noqa: BLE001
+        return []
+    try:
+        spec_ids = set(action.effective_spec_ids() or [])
+    except Exception:  # noqa: BLE001
+        spec_ids = set(getattr(action, "spec_ids", None) or [])
+    out: list[tuple[str, str]] = []
+    for rec in reversed(events):            # file order is oldest→newest
+        body = rec.get("body") or {}
+        ev_spec = body.get("spec_id")
+        ev_plan = rec.get("plan_id")
+        if not ((ev_spec and ev_spec in spec_ids)
+                or (ev_plan and ev_plan == plan.plan_id)
+                or (not ev_spec and not ev_plan)):
+            continue
+        out.append((_briefing_event_id(rec), _briefing_entry_text(ctx, rec)))
+        if len(out) >= _BRIEFING_CAP:
+            break
+    return out
+
+
+class PoolSpawnWorker(_ClaudeTool):
+    """Spawn the shell for ONE action — or, DESIGN-v7 1.4, for ONE BATCH of
+    actions (`action_ids` = the head instruction's `batch_action_ids`): one
+    shell, one pool slot, the members executed in declared order with status
+    recorded per member. The handle stays `<plan_id>:<head_action_id>` either
+    way. `role` (s26 item 6b) selects the shell's activator + tool surface; it
+    defaults to `worker` so every existing dispatch is byte-identical.
+
+    On `role="reviewer"` (v7 P4.1): the DISPATCHER composes and sends the
+    review brief (kind="consult": reviewed actions + acceptance + evidence +
+    specs) BEFORE the spawn, so a reviewer can never boot into an empty inbox
+    (the d100 no-op). The shell runs /reviewer and holds `_REVIEWER`, whose
+    write verbs are `record_branch_verdict` (the judgement, refused on its
+    own leg) and `record_action_status` **guarded to its OWN leg only** —
+    the in-tool guard refuses any other action, so the d30 separation
+    stands: a reviewer stamps a VERDICT on what it reviewed and a STATUS
+    only on the leg it owns; the worker's evidence is never overwritten."""
+
+    name = "pool_spawn_worker"
+    InputModel = _SpawnWorkerIn
+    OutputModel = BaseModel
+
+    async def _run(self, m: _SpawnWorkerIn):
+        # s17 FA3 model-tiering (2026-06-07): an optional PER-ACTION model
+        # override the PLANNER stamped on the action for a genuinely NARROW
+        # worker. Captured below (`model_override = a.model`) and threaded to
+        # the pool spawn; when None the spawn carries no model → the host
+        # default tier (Opus).
+        #
+        # W10b: the TABLE (roles.MODEL_TIERS) is the FALLBACK when the action
+        # carries no explicit override. `task_class` defaults to "*" and
+        # `allow_candidate_tier` to False, so a caller that names no task_class
+        # resolves to the Opus default row → None → no --model flag,
+        # byte-identical to pre-W10b.
+        #
+        # ONE thing now yields Sonnet: a caller deliberately opting into a
+        # CANDIDATE tier via allow_candidate_tier (USER RULING, 2026-07-16: Opus
+        # is the default for every role, Sonnet is opt-in only). The 2026-07-10
+        # flip of ("worker","coding") to MEASURED was withdrawn when the tiered
+        # Sonnet re-pointed from claude-sonnet-5 (what a4b measured) to
+        # claude-sonnet-4-6 — a different model; that measurement no longer backs
+        # a live row (d80). NO row is measured now, so nothing reaches Sonnet
+        # without the flag.
+        #
+        # Note the s17 FA3 docstring on Action.model names Sonnet 4.6 as
+        # "MEASURED-safe" on the authority of a MODEL-TIERING-BENCHMARK.md that
+        # did not exist at the time (d80). It still does not govern this path:
+        # the table does. The doc now exists and records ("worker","coding") as a
+        # candidate (unmeasured on 4.6) — its a4b entry measured claude-sonnet-5.
+        model_override: str | None = _spawn_model_for(
+            m.role, m.task_class,
+            allow_candidate_tier=m.allow_candidate_tier)
+        # W9 part 1 item 3: set when the recipe is overdue for a direction
+        # review. Carried to the SUCCESS payload — never to a refusal.
+        overdue_warning: str | None = None
+        # DESIGN-v7 1.4 — the DISPATCH UNIT. [head] for every pre-v7 caller;
+        # the batch head's `batch_action_ids` when the planner passes them.
+        # The head must be IN the unit (it names the handle + lock the shell
+        # holds); a list that omits it is a mis-copied instruction, refused
+        # before any state is touched (nothing to roll back yet — the FSM
+        # pre-stamp, if any, is left for the correctly-addressed retry).
+        member_ids: list[str] = list(m.action_ids or [m.action_id])
+        # The id set ROLLBACKS cover. Starts as the caller's unit and — once
+        # the head is resolved below — widens to every same-group member the
+        # FSM stamped in_progress, so a garbled/stale `action_ids` list can
+        # never leave part of the real unit stranded as a phantom.
+        rollback_ids: list[str] = list(member_ids)
+        if m.action_id not in member_ids:
+            return _precondition(
+                f"action_ids {member_ids!r} does not contain the head action "
+                f"{m.action_id!r} — pass the batch head's `batch_action_ids` "
+                "verbatim (head first); the spawn handle is "
+                "<plan_id>:<head_action_id>."
+            )
+        # Guard B (2026-06-02 SPECIALIST-COMPILED-DOCS; 2026-06-03 MULTI-SPEC):
+        # a specialist worker launches FRESH like any worker — the difference
+        # is data, its action's `spec_ids`, which it loads + concatenates the
+        # compiled docs by. An action may now carry N specs. So before spawn:
+        # (a) any DECLARED specialization that the planner has NOT resolved to
+        #     a spec_id → refuse (resolve+stamp first), and
+        # (b) EVERY stamped spec MUST have a compiled doc — else the worker is
+        #     groundless on that stack. A SINGLE missing doc fails CLOSED, and
+        #     the error NAMES exactly which spec(s) so the planner heals
+        #     precisely. N=1 reduces to the exact two refusals shipped
+        #     2026-06-02. The execution fork is retired; the only remaining
+        #     fork is re-training (update_specialist).
+        if self.ctx.plans.exists(m.plan_id):
+            p = self.ctx.plans.load(m.plan_id)
+            # W8 fail-closed assumption gate (principle 6 / d13): refuse to
+            # spawn while a pending load-bearing assumption bears on THIS
+            # action (affects-scoped, direction-escape-hatch honoured).
+            if self.ctx.recipes.exists(p.recipe_id):
+                rg = self.ctx.recipes.load(p.recipe_id)
+                # DESIGN-v7 1.4: over EVERY unit member — one shell executes
+                # them all, so an assumption bearing on ANY member gates the
+                # whole spawn (a batch is admitted or refused as a unit).
+                for _aid in member_ids:
+                    blk = _blocking_load_bearing_assumptions(rg, _aid)
+                    if blk:
+                        # s16 part 3: this refusal fires BEFORE launch, so the
+                        # FSM pre-stamp would strand the action in_progress
+                        # with no live worker. Roll the pre-stamp back to
+                        # pending (no-op if it wasn't pre-stamped) so
+                        # in_progress keeps meaning "a spawn really happened".
+                        # 1.4: the rollback covers every unit member.
+                        _rollback_failed_dispatch(
+                            self.ctx, m.plan_id, m.action_id,
+                            "assumption_gate_refused_pre_launch",
+                            member_ids=member_ids)
+                        return _assumption_gate_refusal(rg, blk)
+            a = next((x for x in p.actions
+                      if x.action_id == m.action_id), None)
+            # DESIGN-v7 1.4: resolve the whole unit, in the caller's declared
+            # order. An id that names no action is a mis-authored batch —
+            # refuse (rolling the stamped members back) rather than spawn a
+            # shell whose brief the worker cannot resolve.
+            by_id = {x.action_id: x for x in p.actions}
+            # 1.4: widen the ROLLBACK set to the head's whole batch group as
+            # the FSM stamped it — the caller's list is not the authority on
+            # what the dispatch pre-stamped (see rollback_ids above). The
+            # rollback itself only ever flips in_progress → pending, so a
+            # member in any other state is untouched by the widening.
+            if a is not None and getattr(a, "batch_group", None):
+                rollback_ids += [
+                    x.action_id for x in p.actions
+                    if x.batch_group == a.batch_group
+                    and x.action_id not in rollback_ids]
+            missing_members = [i for i in member_ids if i not in by_id]
+            if a is not None and missing_members:
+                _rollback_failed_dispatch(
+                    self.ctx, m.plan_id, m.action_id,
+                    "unknown_batch_member_pre_launch",
+                    member_ids=rollback_ids)
+                return _precondition(
+                    f"action_ids name(s) {missing_members!r} that do not "
+                    f"exist in plan {m.plan_id!r} — pass the batch head's "
+                    "`batch_action_ids` verbatim."
+                )
+            members = [by_id[i] for i in member_ids if i in by_id]
+            if a is not None:
+                # ── the two dispatch preconditions, read together ──
+                #
+                # W11 suspended-dispatch precondition (DESIGN-v6 §W11): a parked
+                # recipe accepts no new workers. This fires BEFORE launch, so
+                # roll back the FSM's `in_progress` pre-stamp exactly as the
+                # sibling pre-launch refusals do (s16 part 3) — otherwise a
+                # racing planner, steered mid-tool-call during the suspend grace
+                # window, strands a phantom `in_progress` with no live worker.
+                # Rolling back is also what reconcile would do on resume, so
+                # this only reaches that state sooner.
+                if self.ctx.recipes.exists(p.recipe_id):
+                    parked = _suspension_refusal(
+                        self.ctx.recipes.load(p.recipe_id))
+                    if parked:
+                        # 1.4: the rollback covers every unit member.
+                        _rollback_failed_dispatch(
+                            self.ctx, m.plan_id, m.action_id,
+                            "recipe_suspended_pre_launch",
+                            member_ids=rollback_ids)
+                        return parked
+                # W2 leg 4 (duplicate-dispatch guard, DESIGN-v6 §W2): an
+                # action already `done`/`needs_review` is delivered work —
+                # re-dispatching it re-does completed work (the "neuron
+                # re-requested delivered work" case). Refuse and ATTACH the
+                # recorded completion, so the answer comes back instead of a
+                # redundant spawn. `force=true` is the explicit re-run escape.
+                #
+                # s27/C7 (d78) — DEFENCE IN DEPTH, gated on LIVENESS, not on the
+                # status string. The status is not a truthful proxy for "nothing
+                # is running this": an interleaved `pool_spawn_worker` (which
+                # planner-phase-author mandates) and crash recovery's explicit
+                # re-dispatch both spawn WITHOUT the FSM's dispatch instruction,
+                # so no `in_progress` stamp results and the action sits at
+                # `pending` with a live shell inside it. Refusing only
+                # `in_progress` would therefore miss the very state that shipped
+                # the s26/s27 double-dispatches. Ask the pool instead.
+                #
+                # This SUPERSEDES the W11/a6 caveat that this guard "does not
+                # cover in_progress": it now covers any status whose handle has a
+                # confirmed-live shell. A dead/unknown handle stays dispatchable
+                # (see `_session_is_live`) so crash recovery cannot deadlock, and
+                # `force=true` is the same explicit escape the guard already
+                # offers. `resume_recipe` keeps its own pool query for step
+                # handles — that is the recipe plane, not this one.
+                #
+                # No `_rollback_failed_dispatch` here, deliberately: the other
+                # pre-launch refusals roll back an `in_progress` this dispatch
+                # itself pre-stamped, whereas here a LIVE worker legitimately
+                # owns the action. Rolling it back to `pending` would strand the
+                # live worker in exactly the drift state being fixed.
+                # DESIGN-v7 1.4: the liveness probe runs over EVERY unit
+                # member's handle, not just the head's — a member may hold a
+                # live shell from an earlier SOLO dispatch of that action
+                # (interleaved spawn / crash recovery), and absorbing it into
+                # a batch would be exactly the double-dispatch C7 closed.
+                # Unbatched (member_ids == [head]) this is one probe,
+                # byte-identical to pre-v7.
+                if not m.force:
+                    for mem in members:
+                        if await _session_is_live(
+                                self.ctx.pool,
+                                f"{m.plan_id}:{mem.action_id}"):
+                            return _precondition(
+                                f"action {mem.action_id!r} already has a LIVE "
+                                f"worker (pool liveness='alive' for "
+                                f"{m.plan_id}:{mem.action_id}; action status "
+                                f"{mem.status!r}) — refusing to spawn a "
+                                "second shell for the same action "
+                                "(duplicate-dispatch guard, DESIGN-v6 W2 / "
+                                "s27 C7). The running worker will report via "
+                                "record_action_status; wait for it. If it is "
+                                "wedged, pool_reap the handle and "
+                                "re-dispatch, or pass force=true to spawn "
+                                "alongside it deliberately."
+                            )
+                if not m.force:
+                    for mem in members:
+                        if mem.status in ("done", "needs_review"):
+                            done_text = (mem.acceptance.actual
+                                         or "(no recorded evidence)")
+                            if len(members) > 1:
+                                # 1.4: a BATCH naming delivered work is a
+                                # stale unit — release the other members'
+                                # pre-stamps so the refusal strands nothing.
+                                # (Solo dispatch keeps the pre-v7 behaviour:
+                                # nothing was pre-stamped for a done head, so
+                                # there is nothing to roll back.)
+                                _rollback_failed_dispatch(
+                                    self.ctx, m.plan_id, m.action_id,
+                                    "stale_batch_member_pre_launch",
+                                    member_ids=rollback_ids)
+                            return _precondition(
+                                f"action {mem.action_id!r} is already "
+                                f"{mem.status!r} — refusing to re-dispatch "
+                                "already-delivered work (duplicate-dispatch "
+                                "guard, DESIGN-v6 W2). The recorded "
+                                "completion is attached below; if you truly "
+                                "need to re-run it, pass force=true."
+                                f"\nRecorded completion: {done_text[:1500]}"
+                            )
+                # DESIGN-v7 1.4: every unit member must be `pending` or
+                # `in_progress` (the FSM's own pre-stamp for THIS dispatch).
+                # `verify`/`failed`/`skipped` members mean the caller batched
+                # stale ids — refuse the UNIT and roll the pre-stamps back, so
+                # a batch can never half-execute around a member whose state
+                # someone else owns. Unbatched, a head in these states was
+                # already dispatchable pre-v7 (crash recovery re-dispatches a
+                # `failed` action deliberately), so the guard applies only
+                # when a real batch (len > 1) was passed.
+                if len(members) > 1:
+                    stale = [mem.action_id for mem in members
+                             if mem.status not in ("pending", "in_progress")]
+                    if stale:
+                        _rollback_failed_dispatch(
+                            self.ctx, m.plan_id, m.action_id,
+                            "stale_batch_member_pre_launch",
+                            member_ids=rollback_ids)
+                        return _precondition(
+                            f"batch member(s) {stale!r} are not pending / "
+                            "in_progress-by-this-dispatch — the unit is "
+                            "refused whole (a batch never half-executes). "
+                            "Re-derive `batch_action_ids` from a fresh "
+                            "dispatch instruction, or dispatch the live "
+                            "members individually."
+                        )
+                # s17 FA3: an EXPLICIT per-action tier the planner stamped WINS
+                # over the W10b table — the planner authored the action and knows
+                # its shape. Absent (the default), the table's resolution above
+                # stands, which for an un-opted-in spawn is the Opus default.
+                if a.model:
+                    model_override = a.model
+                # DESIGN-v7 1.4: Guard B runs over EVERY unit member — the ONE
+                # shell executes them all, so it needs every member's compiled
+                # grounding, and an unresolved specialization on ANY member
+                # refuses the unit. Unbatched (members == [a]) this is
+                # byte-identical to the pre-v7 two refusals. `specs` becomes
+                # the ORDER-PRESERVING UNION of the unit's spec_ids for the
+                # constraint scan below (one scan per distinct spec).
+                specs: list[str] = []
+                for mem in members:
+                    declared = mem.effective_specializations()
+                    mem_specs = mem.effective_spec_ids()
+                    if declared and not mem_specs:
+                        # s16 part 3: pre-launch refusal → roll back the FSM
+                        # pre-stamp so the action doesn't strand in_progress.
+                        _rollback_failed_dispatch(
+                            self.ctx, m.plan_id, m.action_id,
+                            "unresolved_specialization_pre_launch",
+                            member_ids=rollback_ids)
+                        return _precondition(
+                            f"action {mem.action_id!r} declares "
+                            f"specialization(s) {declared!r} but spec_ids is "
+                            f"empty — RESOLVE each first: neuron_search the "
+                            f"specialization, then stamp the matching stable "
+                            f"neuron(s)' spec_ids onto the action "
+                            f"(update_object('action', ids=..., patch="
+                            f"{{'spec_ids': ['<spec>', …]}})) so the worker "
+                            f"can load each compiled doc. If the action is "
+                            f"genuinely generic, clear its specializations."
+                        )
+                    specs.extend(s for s in mem_specs if s not in specs)
+                missing = [s for s in specs
+                           if not self.ctx.specs.has_doc(s)]
+                if missing:
+                    # s16 part 3: pre-launch refusal → roll back the FSM
+                    # pre-stamp so the action doesn't strand in_progress.
+                    _rollback_failed_dispatch(
+                        self.ctx, m.plan_id, m.action_id,
+                        "missing_compiled_doc_pre_launch",
+                        member_ids=rollback_ids)
+                    return _precondition(
+                        f"action {m.action_id!r} has spec_ids with NO compiled "
+                        f"doc: {missing!r} — the worker would have no grounding "
+                        f"on the named stack(s). (Re)train each so its SME "
+                        f"compiles the doc (the neuron's update_specialist), "
+                        f"or drop it from spec_ids for generic work."
+                    )
+                # W2 leg 3 (fail-closed spec-doc constraint guard, DESIGN-v6
+                # §W2): scan each stamped spec's compiled doc against the
+                # recipe's ACTIVE applies_to=["spec_doc"] constraints. A doc
+                # that contradicts a recorded decision REFUSES the spawn — a
+                # poisoned spec can never reach another worker (d50 "the fix
+                # is at the source"). Deterministic (principle 6), no LLM.
+                # W3 (DESIGN-v6 §W3): reads the OVERLAID compiled doc (accepted
+                # pending spec-learnings folded in) — the SAME live form
+                # GetSpecialistDoc(s) and the reviewer read, so a worker, a
+                # reviewer, and this spawn-guard all judge one current doc.
+                if self.ctx.recipes.exists(p.recipe_id):
+                    _rc = self.ctx.recipes.load(p.recipe_id)
+                    for _sid in specs:
+                        _doc = self.ctx.specs.read_doc(_sid, with_overlay=True)
+                        if not _doc:
+                            continue
+                        _vios = _check_constraints(_rc, "spec_doc", _doc)
+                        if _vios:
+                            # s16 part 3: pre-launch refusal → roll back the
+                            # FSM pre-stamp so the action doesn't strand
+                            # in_progress.
+                            _rollback_failed_dispatch(
+                                self.ctx, m.plan_id, m.action_id,
+                                "poisoned_spec_pre_launch",
+                                member_ids=rollback_ids)
+                            return _precondition(
+                                f"spec {_sid!r} contradicts a recorded "
+                                f"constraint — {_describe_violations(_vios)}. "
+                                f"Refusing to spawn {m.action_id!r}: a poisoned "
+                                "spec must be fixed AT THE SOURCE (resolve via "
+                                "flowback / re-train the spec) before dispatch "
+                                "(DESIGN-v6 W2 leg 3)."
+                            )
+                # s27 Item 3A (automatic context -> worker): stamp the recipe's
+                # LOAD-BEARING settled context onto the action so the FRESH
+                # worker receives it automatically via the read_object('action')
+                # it already does — closing the silent hand-copy gap that let
+                # the s26 embedder-drift class through. Only load_bearing
+                # decisions + banned (rejected) options are injected, kept tight
+                # (not the whole context). Idempotent (only writes on a change).
+                #
+                # s17 RP-A (2026-06-07): STORE-ONCE-BY-ID. Instead of copying the
+                # full decision TEXT onto every action (the 92.8%-of-plan
+                # duplication offender), stamp only the by-id POINTERS on the
+                # action (`injected_context_ids`) and store each referenced
+                # decision/banned text ONCE in the plan's by-id map
+                # (`p.injected_context`). read_object('action') resolves the
+                # ids→text at read time, so the worker still receives a
+                # byte-identical full-text grounding dict. Same decisions-by-id
+                # model the RP-B next_action pointer indexes.
+                if self.ctx.recipes.exists(p.recipe_id):
+                    rr = self.ctx.recipes.load(p.recipe_id)
+                    # P2: stamp ACTIVE load-bearing decisions only — a
+                    # superseded decision must stop reaching new workers
+                    # (that is the point of superseding it).
+                    #
+                    # s26 item 13: …and only decisions IN SCOPE for THIS plan.
+                    # An action id is meaningful only RELATIVE TO ITS PLAN, so a
+                    # decision written under plan X that addresses "a4" must not
+                    # be stamped into plan Y's a4, which would read it as its
+                    # own instruction. `scope_plan_id=None` (every legacy
+                    # decision) means recipe-wide — unchanged behaviour.
+                    lb = [(d.id, d.text) for d in rr.context.decisions
+                          if getattr(d, "load_bearing", False)
+                          and getattr(d, "status", "active") == "active"
+                          and _decision_in_scope(d, p.plan_id)]
+                    banned = [(x.id, x.text)
+                              for x in rr.context.rejected_options]
+                    base_ptr: dict = {}
+                    if lb:
+                        base_ptr["load_bearing_decisions"] = [i for i, _ in lb]
+                    if banned:
+                        base_ptr["banned_options"] = [i for i, _ in banned]
+                    changed = False
+                    pmap = dict(p.injected_context or {})
+                    # DESIGN-v7 P8: the plan's GROUNDING BRIEF rides the same
+                    # by-id injection — text once in the plan map, pointer on
+                    # every member, resolved at read_object('action'). Capped
+                    # so a sprawling brief cannot blow the worker's grounding.
+                    brief_text = None
+                    if getattr(p, "grounding_brief_path", None):
+                        brief_text = self.ctx.plans.read_grounding_brief(
+                            p.plan_id)
+                        if brief_text:
+                            # TRUNCATE LOUDLY OR NOT AT ALL. The bare
+                            # [:CAP] slice ended briefs mid-sentence with no
+                            # marker, so a worker could not distinguish a
+                            # brief that ENDED from one that was CUT — and
+                            # the planner never learned either. See the cap
+                            # constant for the live incident.
+                            if len(brief_text) > _GROUNDING_BRIEF_INJECT_CAP:
+                                _full = len(brief_text)
+                                brief_text = (
+                                    brief_text[:_GROUNDING_BRIEF_INJECT_CAP]
+                                    + "\n\n*** GROUNDING BRIEF TRUNCATED HERE"
+                                    f" — {_GROUNDING_BRIEF_INJECT_CAP} of"
+                                    f" {_full} characters delivered. THE TEXT"
+                                    " ABOVE STOPS MID-BRIEF AND MAY STOP"
+                                    " MID-SENTENCE. The missing tail is the"
+                                    " END of the brief, which is where"
+                                    " LANDMINES, PROHIBITIONS and DO-NOT-TOUCH"
+                                    " lists normally live — i.e. the half most"
+                                    " likely to prevent a defect. DO NOT treat"
+                                    " what you received as the whole map and"
+                                    " DO NOT infer that the omitted part was"
+                                    " unimportant. ASK YOUR PLANNER OVER THE"
+                                    " BROKER for the tail before you build"
+                                    " anything the brief was meant to"
+                                    " constrain. ***")
+                            base_ptr = dict(base_ptr)
+                            base_ptr["grounding_brief"] = ["grounding-brief"]
+                    # DESIGN-v7 1.4: stamp EVERY unit member — the worker
+                    # read_object's each member's action as it walks the
+                    # batch, so each must resolve the same load-bearing
+                    # grounding. Unbatched (members == [a]) this is the
+                    # pre-v7 single stamp. The by-id map keeps text stored
+                    # ONCE per plan regardless of member count (RP-A).
+                    #
+                    # DESIGN-v7 2.2: each member ALSO gets its BRIEFING DELTA
+                    # — the recipe's recent learning/review_finding/discovery
+                    # events relevant to THAT member (spec-intersect / same-
+                    # plan / recipe-wide-unscoped; see _briefing_delta). Same
+                    # store-once-by-id mechanics: ids on the action, text once
+                    # in the plan map, resolved by read_object('action') with
+                    # zero worker-side change. Per-MEMBER (not per-unit)
+                    # because filter (a) keys on each member's own spec_ids.
+                    # IDEMPOTENT: ids are content-hashes, so a re-dispatch
+                    # over unchanged events recomputes the identical pointer
+                    # and map, `changed` stays False, and the plan version
+                    # does not churn.
+                    for mem in members:
+                        briefing = _briefing_delta(self.ctx, rr, p, mem)
+                        ptr = dict(base_ptr)
+                        if briefing:
+                            ptr["briefing"] = [i for i, _ in briefing]
+                        if ptr and mem.injected_context_ids != ptr:
+                            mem.injected_context_ids = ptr
+                            # supersede any legacy full-text copy on this
+                            # action (e.g. a pre-RP-A re-dispatch) — text now
+                            # lives in the plan map, resolved at read time.
+                            mem.injected_context = None
+                            changed = True
+                        for i, t in briefing:
+                            if pmap.get(i) != t:
+                                pmap[i] = t
+                                changed = True
+                    if base_ptr:
+                        for i, t in lb + banned:
+                            if pmap.get(i) != t:
+                                pmap[i] = t
+                                changed = True
+                    if brief_text and pmap.get("grounding-brief") != \
+                            brief_text:
+                        pmap["grounding-brief"] = brief_text
+                        changed = True
+                    if (p.injected_context or {}) != pmap:
+                        p.injected_context = pmap
+                        changed = True
+                    if changed:
+                        self.ctx.plans.save(p)
+        # ── v7 P4.1: the dispatcher-composed REVIEW BRIEF ────────────────
+        # d100: a reviewer spawned into an empty inbox reviewed nothing,
+        # reported "Nothing reviewed; no verdict issued" and closed — an
+        # honest no-op. The fix is structural: for role="reviewer" the
+        # DISPATCHER composes and sends the kind="consult" review task
+        # BEFORE the shell exists, so a reviewer can never boot into
+        # silence. Composed in code (principle 6) from the plan itself:
+        # every non-review action with recorded work, its acceptance, its
+        # evidence, its specs. A failed send REFUSES the dispatch (pre-
+        # launch, rolled back) — better no reviewer than a blind one.
+        # INDEPENDENT-REVIEW GUARD (2026-07-21, observed live: a brief-
+        # send refusal was "worked around" by re-dispatching the review
+        # leg as role="worker" — the builder model reviewed its own
+        # plan's work, the exact d67 self-review the reviewer role
+        # exists to prevent). A review leg (the `review*`/`*-review`
+        # naming every planner guide teaches) runs as role="reviewer",
+        # full stop; fix the named cause and RETRY as reviewer.
+        # 2026-07-25 (operator instruction, live finding): this guard was
+        # NAME-BASED on the literal string "review" and therefore MISSED every
+        # review leg in the Fit recipe, whose planners named them `r1`..`r4`
+        # — the r-prefix IS this framework's review-leg convention, taught by
+        # the planner guides' own worked examples. One leg reached a worker
+        # shell. The gap is not stylistic: `record_branch_verdict` is on
+        # _REVIEWER and NOT on _WORKER (roles.py), so a worker-role review leg
+        # CANNOT STAMP ITS VERDICT — the review is unrecordable, not merely
+        # differently flavoured. Widened to the r-prefix convention.
+        #
+        # `v<n>` is deliberately NOT matched. A VERIFY leg is by design a cheap
+        # worker that re-runs recorded acceptance commands verbatim and judges
+        # nothing (v7 P4.2, DISPATCH_VERIFY_LEG) — worker is the CORRECT role
+        # for it, and blocking it would break the mechanism that closes the
+        # d74 gap.
+        #
+        # Asymmetry that justifies the broader net: a false POSITIVE is a loud
+        # refusal naming its cause, recoverable by renaming in seconds. A false
+        # NEGATIVE is a builder-class shell reviewing work it cannot record a
+        # verdict on — which is what actually happened.
+        if m.role != "reviewer" and re.search(
+                r"(^|[-_])review|^r\d+$", m.action_id, re.IGNORECASE):
+            _rollback_failed_dispatch(
+                self.ctx, m.plan_id, m.action_id,
+                "review_leg_as_worker_refused",
+                member_ids=rollback_ids)
+            return _precondition(
+                f"action {m.action_id!r} looks like a REVIEW leg (name "
+                "matches 'review' or the r<n> convention) — it must be "
+                "dispatched with role='reviewer' (independent judgment, "
+                "sol-class seat), never as a worker. TWO reasons, and the "
+                "first is a hard capability limit rather than a "
+                "preference: record_branch_verdict is on the REVIEWER "
+                "surface and NOT the worker's, so a worker-role review "
+                "leg cannot stamp its verdict at all; and the builder "
+                "reviewing its own work is the d67 defect. If the "
+                "reviewer dispatch refused, fix the cause it named and "
+                "retry role='reviewer'. If this is genuinely NOT a review "
+                "leg, rename it — 'review*' and 'r<n>' are reserved. If "
+                "it is a VERIFY-ONLY leg (re-runs recorded commands, "
+                "judges nothing), name it 'v<n>' and dispatch it as a "
+                "worker, which is correct for that leg."
+            )
+        if m.role == "reviewer" and self.ctx.plans.exists(m.plan_id):
+            _reviewed = [x for x in p.actions
+                         if x.action_id not in {mem.action_id
+                                                for mem in members}
+                         and x.status in ("done", "needs_review", "failed")]
+            _brief = BrokerMessage(
+                msg_id=str(uuid.uuid4()), ts=_now(),
+                **{"from": p.plan_id},
+                to=f"{m.plan_id}:{m.action_id}",
+                kind="consult",
+                body={
+                    "task": "domain-review",
+                    "target": [{
+                        "action_id": x.action_id,
+                        "description": x.description,
+                        "acceptance_kind": x.acceptance.kind,
+                        "expected": x.acceptance.expected,
+                        "evidence": (x.acceptance.actual or "")[:1500],
+                        "spec_ids": x.effective_spec_ids(),
+                    } for x in _reviewed],
+                    "criteria": (
+                        "Independently re-run every acceptance criterion "
+                        "in this shell; judge conformance to the compiled "
+                        "doc(s) by [adherence] tag; FIX what you safely "
+                        "can in-session (reviewer.md Step 2.5); stamp "
+                        "record_branch_verdict per reviewed action "
+                        "(fixed_inline=true if you fixed anything); then "
+                        "close YOUR OWN leg via record_action_status."),
+                    "spec_ids": specs,
+                    "spec_id": specs[0] if specs else None,
+                    "grounding_brief":
+                        getattr(p, "grounding_brief_path", None),
+                    "caller": p.plan_id,
+                },
+            )
+            _sent = await self.ctx.broker.send(_brief)
+            if not getattr(_sent, "ok", False):
+                _rollback_failed_dispatch(
+                    self.ctx, m.plan_id, m.action_id,
+                    "review_brief_send_failed", member_ids=rollback_ids)
+                return _precondition(
+                    f"could not deliver the review brief to "
+                    f"{m.plan_id}:{m.action_id} — refusing to spawn a "
+                    "reviewer with an empty inbox (the d100 no-op). "
+                    f"Broker said: {getattr(_sent, 'message', _sent)!r}. "
+                    "Fix that cause and RETRY with role='reviewer'. "
+                    "NEVER fall back to role='worker' for a review leg — "
+                    "that dispatch is refused (self-review, d67)."
+                )
+        res = await self.ctx.pool.spawn_worker(
+            m.plan_id, m.action_id, model=model_override, role=m.role)
+        # 2026-05-26: roll back the FSM's pre-stamped in_progress on
+        # dispatch failure so it can't sit as a phantom. The eda-ml
+        # stall (POOL_CAPACITY_EXCEEDED on a4) is the canonical case.
+        if not getattr(res, "ok", False):
+            reason = getattr(res, "code", "spawn_failed")
+            # 1.4: a failed batch spawn rolls back EVERY unit member.
+            _rollback_failed_dispatch(
+                self.ctx, m.plan_id, m.action_id, str(reason),
+                member_ids=rollback_ids)
+            return res
+        # 2026-06-03: the pool reported a successful LAUNCH, but the shell
+        # may still die during startup (see _SPAWN_STARTUP_* above). Confirm
+        # the worker actually initialised; if it dies in the startup window,
+        # roll back and surface a CLEAR error so the planner escalates
+        # instead of re-dispatching into the same wall (the s12:a4 deadlock).
+        handle = f"{m.plan_id}:{m.action_id}"
+        for _ in range(_SPAWN_STARTUP_CHECKS):
+            await asyncio.sleep(_SPAWN_STARTUP_POLL_SECS)
+            try:
+                live = (await self.ctx.pool.liveness(handle))["state"]  # W7 dict
+            except Exception:
+                break   # liveness probe failed — don't false-fail the spawn
+            if live == "dead":
+                # 1.4: a startup death strands the WHOLE unit — roll back
+                # every member, exactly as the spawn-failure path above.
+                _rollback_failed_dispatch(
+                    self.ctx, m.plan_id, m.action_id,
+                    "worker_died_at_startup", member_ids=rollback_ids)
+                return _precondition(
+                    f"worker {handle!r} LAUNCHED but DIED during startup "
+                    f"(liveness=dead, no worklog) — the shell exited before "
+                    f"doing any work. This is NOT a task/spec failure; the "
+                    f"spawn ENVIRONMENT is degraded — commonly the spawned "
+                    f"shell's own MCP servers fail to start under resource/"
+                    f"lock contention from leaked MCP-server procs of earlier "
+                    f"shells. Do NOT blindly re-dispatch (it will hit the "
+                    f"same wall and loop). Surface to the neuron/user: clear "
+                    f"the leaked MCP-server procs (restart/reboot is the "
+                    f"interim fix) before retrying {m.action_id!r}."
+                )
+            if live == "alive":
+                break   # confirmed initialised — normal success
+        # (W9's overdue direction-review NAG rode a successful spawn from here,
+        # onto both the worklog and res.data["direction_review"]. REMOVED —
+        # d128/d132. A spawn payload now carries no direction-review surface.)
+        return res
+
+
+class _ArmDriverIn(BaseModel):
+    recipe_id: str
+    # the ONE-TURN resume command for YOUR harness, with {PROMPT} where the
+    # reconcile-loop prompt goes (e.g. `<codex> exec resume --last -C <ws>
+    # --skip-git-repo-check --color never {PROMPT}`).
+    resume_cmd: str
+    heartbeat_secs: float = 1800
+
+
+class _ArmDriverOut(BaseModel):
+    ok: bool
+    note: str
+
+
+def _pool_http(method: str, path: str, payload: dict | None = None) -> dict:
+    """Thin, bounded call to the pool's HTTP surface for the driver
+    registry (module seam — tests patch this)."""
+    import httpx
+    base = os.environ.get("EDP_POOL_URL", "http://127.0.0.1:9301").rstrip("/")
+    r = httpx.request(method, f"{base}{path}", json=payload, timeout=30)
+    r.raise_for_status()
+    return r.json()
+
+
+class ArmExternalDriver(_ClaudeTool):
+    """v7 (2026-07-13) — the EXTERNAL neuron's counterpart of arming a
+    CronCreate heartbeat + Monitor subscription. A Claude neuron self-arms
+    with harness tools; a codex/Sol neuron calls THIS at activation instead:
+    the POOL (always-on) then runs the wake driver for your recipe — one
+    resumed turn every `heartbeat_secs` (backstop) AND instantly when any
+    broker message lands on the recipe's inbox (the push plane). The
+    registration persists across pool restarts; disarm_external_driver (or
+    the recipe's durable suspend) ends it. Refuses with the concrete reason
+    when the pool is unreachable — cadence you believe is armed but is not
+    would be the silent-stall class."""
+
+    name = "arm_external_driver"
+    InputModel = _ArmDriverIn
+    OutputModel = _ArmDriverOut
+
+    async def _run(self, m: _ArmDriverIn):
+        if not self.ctx.recipes.exists(m.recipe_id):
+            return _precondition(f"unknown recipe {m.recipe_id!r}")
+        if "{PROMPT}" not in m.resume_cmd:
+            return _precondition(
+                "resume_cmd must contain the literal token {PROMPT} — the "
+                "driver substitutes the reconcile-loop prompt there; a cmd "
+                "without it would fire turns with no instruction.")
+        try:
+            res = await asyncio.to_thread(
+                _pool_http, "POST", "/v1/neuron-driver",
+                {"recipe_id": m.recipe_id, "cmd": m.resume_cmd,
+                 "heartbeat_secs": m.heartbeat_secs})
+        except Exception as e:  # noqa: BLE001
+            return _precondition(
+                f"pool unreachable ({e}) — cadence NOT armed. Start the "
+                "stack (start-stack.bat) and re-call; do not proceed "
+                "believing you have a heartbeat.")
+        if not res.get("ok"):
+            return _precondition(
+                f"pool refused to arm the driver: {res.get('refused')}")
+        return Tool.ok(_ArmDriverOut(ok=True, note=res.get("note", "")))
+
+
+class _DisarmDriverIn(BaseModel):
+    recipe_id: str
+
+
+class DisarmExternalDriver(_ClaudeTool):
+    """Stop the pool-owned wake driver for a recipe (the inverse of
+    arm_external_driver). Idempotent."""
+
+    name = "disarm_external_driver"
+    idempotent = True
+    InputModel = _DisarmDriverIn
+    OutputModel = _ArmDriverOut
+
+    async def _run(self, m: _DisarmDriverIn):
+        try:
+            res = await asyncio.to_thread(
+                _pool_http, "DELETE", f"/v1/neuron-driver/{m.recipe_id}")
+        except Exception as e:  # noqa: BLE001
+            return _precondition(f"pool unreachable ({e}) — driver state "
+                                 "unknown; check the panel when it is back.")
+        return Tool.ok(_ArmDriverOut(ok=True, note=res.get("note", "")))
+
+
+# ── Sol (GPT / codex CLI) bridge tools (v7 follow-up, 2026-07-16) ─────────────
+# The DETERMINISTIC engine is tools/sol_bridge.py — it hard-wires the binary
+# selection, argv order, the five landmines, the JSONL parse, the non-zero-exit
+# blocker rule, and per-(caller,advisor) thread stickiness. These two classes are
+# the MINIMUM agent-facing surface over it: a worker/consult shell passes a brief
+# and (for authoring) a directory; it never touches a codex flag. Role-scoped in
+# roles.py: sol_author_asset -> worker, sol_consult -> consult.
+
+def _sol_caller() -> str:
+    """The stickiness identity of the calling shell: its EDP_HANDLE (worker
+    `<plan>:<action>`, planner `<recipe>:<step>`), or its role when it has none
+    (the neuron). The agent never derives this — the tool reads it, exactly as
+    _self_and_parent_addresses does."""
+    return (os.environ.get("EDP_HANDLE", "").strip()
+            or os.environ.get("EDP_ROLE", "").strip() or "anon")
+
+
+def _sol_scratch_dir() -> str:
+    """A non-code scratch cwd for read-only consults (codex needs a working root
+    and writes its own session stubs there even when Sol cannot write)."""
+    home = os.environ.get("EDP_AGENT_HOME") or os.getcwd()
+    d = Path(home) / ".sol" / "consult-scratch"
+    d.mkdir(parents=True, exist_ok=True)
+    return str(d)
+
+
+def _sol_out(run) -> "_SolRunOut":
+    return _SolRunOut(
+        ok=run.ok, thread_id=run.thread_id, sol_messages=run.agent_messages,
+        files_changed=run.file_changes, last_message=run.last_message,
+        exit_code=run.exit_code, evidence_path=run.raw_path, blocker=run.error)
+
+
+class _SolRunOut(BaseModel):
+    ok: bool
+    thread_id: str | None
+    sol_messages: list[str]
+    files_changed: list[str]
+    last_message: str
+    exit_code: int
+    evidence_path: str | None
+    # Set IFF ok is False. Its presence is the whole contract: surface it upward
+    # (emit_recipe_event(kind="blocker") / ask_above) and STOP — never retry-loop,
+    # grind, or silently shrink the request. Sol spend bills the user's ChatGPT
+    # plan quota and the CLI exposes no rate-limit telemetry.
+    blocker: str | None
+
+
+class _SolAuthorAssetIn(BaseModel):
+    # what Sol should author. State the deliverable's SHAPE explicitly and name
+    # what NOT to bring (no framework scaffold, no hosting, no starter template) —
+    # an under-specified brief gets reshaped into a web-app by Sol's bundled skill.
+    brief: str
+    # Sol's write root (-C). REFUSED if it is, or is inside, a code tree — Sol
+    # authors assets, never code. Point it at a dedicated asset directory.
+    asset_dir: str
+    # local image files attached via -i so Sol can SEE them (a reference to match,
+    # or a render you captured of Sol's PREVIOUS output — the feedback loop). A
+    # path merely cited in the brief is a no-op; attaching is the only channel.
+    reference_images: list[str] = []
+    # names the sticky Sol thread. Reuse the same name to ACCRETE on one thread;
+    # use DISTINCT names to hold independent advisors without cross-polluting them.
+    advisor: str = "sol"
+    effort: str | None = None            # low|medium|high|xhigh|max|ultra
+    new_thread: bool = False             # force a fresh thread instead of resuming
+
+
+class SolAuthorAsset(_ClaudeTool):
+    """Have Sol (GPT, via the Codex CLI) AUTHOR a visual/3D/image asset — a model,
+    material, texture, sprite, render, or the Blender/WebGL script that builds one
+    — writing the file(s) into `asset_dir` and returning their paths.
+
+    USE THIS instead of hand-authoring an SVG/canvas placeholder or claiming an
+    asset exists: Sol is the asset author, you are its EYES. Sol cannot open its
+    own render, so the loop is yours to close — render/capture Sol's output, pass
+    the capture back as `reference_images`, and Sol iterates on the SAME thread
+    (stickiness is automatic per caller+advisor). It writes ONLY under `asset_dir`
+    (workspace-write, confined by -C) and that directory is refused if it lands in
+    a code tree, so Sol structurally cannot touch source.
+
+    On `ok=False`, read `blocker`: surface it upward (emit_recipe_event(
+    kind="blocker") / ask_above) and STOP. Do NOT retry — Sol spend bills the
+    user's ChatGPT plan quota and a cap is only visible on failure."""
+
+    name = "sol_author_asset"
+    InputModel = _SolAuthorAssetIn
+    OutputModel = _SolRunOut
+
+    async def _run(self, m: _SolAuthorAssetIn):
+        from .sol_bridge import SolBridgeError, refuse_code_tree, run_sol
+        try:
+            asset_dir = refuse_code_tree(m.asset_dir)
+        except SolBridgeError as e:
+            return _precondition(str(e))
+        try:
+            run = await asyncio.to_thread(
+                run_sol, prompt=m.brief, workdir=str(asset_dir),
+                sandbox="workspace-write", caller=_sol_caller(),
+                advisor=m.advisor, images=m.reference_images,
+                effort=m.effort, new_thread=m.new_thread)
+        except SolBridgeError as e:
+            return _precondition(str(e))
+        return Tool.ok(_sol_out(run))
+
+
+class _SolConsultIn(BaseModel):
+    question: str
+    # renders/references for Sol to SEE via -i (attaching is the only channel; a
+    # path cited in the question text is a no-op).
+    images: list[str] = []
+    advisor: str = "sol"
+    effort: str | None = None
+    new_thread: bool = False
+
+
+class SolConsult(_ClaudeTool):
+    """Ask Sol (GPT, via the Codex CLI) for CREATIVE / VISUAL judgment — "does this
+    render read as calm?", "why does this material look plastic?" — optionally
+    attaching a render via `images` so Sol can actually SEE what it is judging.
+    Sol runs READ-ONLY here: it returns advice as text and writes NOTHING. This is
+    the independent, non-Opus perspective for design calls; for code bugs use the
+    ordinary Opus consult, not this.
+
+    Session-sticky per caller+advisor (Sol remembers the thread). On `ok=False`,
+    read `blocker` and surface it upward — do NOT retry (Sol spend bills the
+    user's ChatGPT plan quota)."""
+
+    name = "sol_consult"
+    InputModel = _SolConsultIn
+    OutputModel = _SolRunOut
+
+    async def _run(self, m: _SolConsultIn):
+        from .sol_bridge import SolBridgeError, run_sol
+        try:
+            run = await asyncio.to_thread(
+                run_sol, prompt=m.question, workdir=_sol_scratch_dir(),
+                sandbox="read-only", caller=_sol_caller(), advisor=m.advisor,
+                images=m.images, effort=m.effort, new_thread=m.new_thread)
+        except SolBridgeError as e:
+            return _precondition(str(e))
+        return Tool.ok(_sol_out(run))
+
+
+class _CloseSelfIn(BaseModel):
+    # DESIGN-v7 1.5.2: park=true turns the close into a SELF-PARK — the shell
+    # is torn down (0 tokens, 0 process) but its session row survives as the
+    # resume token, and the pool's resume watchdog forks it back the moment a
+    # message lands on its inbox. A planner does this on a WAIT carrying
+    # `park_hint`, AFTER one final inbox drain. Default false = the unchanged
+    # terminal close.
+    park: bool = False
+
+
+class PoolCloseSelf(_ClaudeTool):
+    """v5 wake — close-on-done. A spawned shell calls this once its work
+    is finished (worker after record_action_status; planner after
+    plan_closed). Reads its own EDP_SPAWN_SESSION_ID; the pool releases
+    the lock + reaps the shell.
+
+    DESIGN-v7 1.5.2 — `park=true` (planner self-park, on a `park_hint`):
+    instead of a terminal release, (1) stamp `Plan.parked` — the DURABLE
+    recovery copy of the park (the pool registry stays authoritative) — and
+    (2) arm the pool's idle-gated park (`close_when_idle(park=true)`), then
+    END YOUR TURN. The pool parks the quiesced shell: watermark → state=
+    "parked" → transcript flush → kill, keeping the handle lock + resume
+    token. Deliberately NOT the immediate release(park=true) path: an
+    immediate park kills the caller MID-TURN and can truncate the very
+    transcript the fork-resume exists to reload — the pool's own park route
+    docstring names close_when_idle as the shell-callable trigger. You are
+    resumed automatically when a message lands (watchdog) or by the neuron's
+    pool_resume_planner backstop; your first act on resume is
+    reconcile(reground=true) (the resume activation says so)."""
+
+    name = "pool_close_self"
+    idempotent = True
+    InputModel = _CloseSelfIn
+    OutputModel = BaseModel
+
+    async def _run(self, m: _CloseSelfIn):
+        sid = os.environ.get("EDP_SPAWN_SESSION_ID")
+        if not sid:
+            return _precondition(
+                "EDP_SPAWN_SESSION_ID not set — not a pool-spawned shell; "
+                "nothing to close. (Neuron/main shell never self-closes.)"
+            )
+        if not m.park:
+            return await self.ctx.pool.release(sid)
+        # ── the self-park path ─────────────────────────────────────────
+        # (1) Durable recovery copy on the plan. The plan is resolved from
+        # the shell's own EDP_HANDLE (`<recipe_id>:<step_id>` → dash
+        # plan_id). claude_session_id comes from the pool's session row when
+        # readable; the real inbox WATERMARK is cut pool-side INSIDE the
+        # park op (after the shell stopped consuming) — MCP-side it is
+        # honestly None, never a guessed number. Stamp what we have: it is
+        # fine for either to be unknown here (the pool registry is
+        # authoritative; this copy exists for recovery/reconcile reads).
+        handle = os.environ.get("EDP_HANDLE", "").strip()
+        pid = _planner_inbox(handle) if handle else ""
+        # DRAIN GATE (2026-07-19, opencode M3 stranding): the pool's park
+        # watermark is RAW inbox depth, so mail that arrived before the park
+        # but was never READ sits inside the watermark and the watchdog never
+        # fires — the shell sleeps on work forever. The read cursors live
+        # HERE (state-side), so this is the one surface that can see unread
+        # mail. Refuse the park naming the unread handles; the shell drains
+        # (check_inbox per handle) and re-parks. Broker unobservable → gate
+        # waived (the pool's no-watermark fail-open path covers that case).
+        unread: dict[str, int] = {}
+        for h in {handle, pid} - {""}:
+            cursor = _INBOX_CURSORS.get(h) or _load_persisted_cursor(
+                self.ctx, h)
+            try:
+                msgs = await self.ctx.broker.poll(h, since_ts=cursor)
+            except Exception:
+                continue
+            if msgs:
+                unread[h] = len(msgs)
+        if unread:
+            return _precondition(
+                "park refused — UNREAD inbox mail would strand you (the "
+                f"park watermark counts it as seen): {unread}. Drain each "
+                "listed handle via check_inbox(handle=...), act on or "
+                "acknowledge what you find, then call "
+                "pool_close_self(park=true) again."
+            )
+        if pid and self.ctx.plans.exists(pid):
+            claude_session = None
+            try:
+                for row in await self.ctx.pool.sessions():
+                    if row.get("session_id") == sid or (
+                            handle and row.get("handle") == handle):
+                        claude_session = row.get("claude_session_id")
+                        break
+            except Exception:
+                pass    # registry unreadable ≠ park failure — stamp None
+            p = self.ctx.plans.load(pid)
+            p.parked = {
+                "parked_at": _now().isoformat(),
+                "inbox_watermark": None,
+                "claude_session_id": claude_session,
+            }
+            self.ctx.plans.save(p)
+        # (2) Arm the pool's idle-gated park and hand back — the caller's
+        # last obligation is to END ITS TURN so the pool sees it quiesce.
+        # idle_secs is short: the shell goes quiet immediately after this
+        # call returns, and a shorter gate just means the slot frees sooner.
+        return await self.ctx.pool.close_when_idle(
+            sid, idle_secs=30.0, reason="self-park (park_hint)", park=True)
+
+
+class _ResumePlannerIn(BaseModel):
+    # the parked planner's POOL handle — `<recipe_id>:<step_id>` (colon), the
+    # same shape reconcile's RESUME_PLANNER advisory carries in args.handle.
+    handle: str
+
+
+class PoolResumePlanner(_ClaudeTool):
+    """DESIGN-v7 1.5.3 — the neuron's resume BACKSTOP: fork-resume the
+    PARKED planner holding `handle`'s lock (POST /v1/resume/{handle}).
+    The pool's resume watchdog is the PRIMARY wake (it polls parked inboxes
+    and resumes within seconds); call this only on reconcile's
+    RESUME_PLANNER advisory — i.e. when a parked planner shows a wake
+    signal and the watchdog evidently has not acted. Safe to race the
+    watchdog: the pool's parked→resuming transition makes the second
+    caller a truthful no-op (`resumed=false, no_op=true`), never a
+    double-spawn. A cold pool_spawn_planner on a parked handle is REFUSED
+    pool-side naming this route — resume is the only legal successor to a
+    park."""
+
+    name = "pool_resume_planner"
+    InputModel = _ResumePlannerIn
+    OutputModel = BaseModel
+
+    async def _run(self, m: _ResumePlannerIn):
+        return await self.ctx.pool.resume(m.handle)
+
+
+class _ReadWorklogIn(BaseModel):
+    plan_id: str
+    tail: int = 20
+    # P1 read-efficiency filters — applied BEFORE the tail cut, so
+    # tail=20 + kinds=['action_status_changed'] = the last 20 of THAT kind.
+    kinds: list[str] | None = None     # e.g. ['action_status_changed']
+    since: str | None = None           # ISO ts; entries strictly after
+    action_id: str | None = None       # entries for one action/worker
+    # digest=True returns one compact line per entry instead of the full
+    # dict: "ts|kind|action_id|detail[:120]". Use for cheap catch-up
+    # scans; re-read with digest=False for the full entries.
+    digest: bool = False
+
+
+class _WorklogOut(BaseModel):
+    entries: list
+
+
+def _digest_worklog_entry(e: dict) -> str:
+    """One compact line per entry: ts|kind|action_id|detail[:120]."""
+    rest = {k: v for k, v in e.items()
+            if k not in ("ts", "kind", "action_id")}
+    detail = json.dumps(rest, default=str, ensure_ascii=False)[:120]
+    return (f"{e.get('ts', '')}|{e.get('kind', '')}|"
+            f"{e.get('action_id', '')}|{detail}")
+
+
+class ReadWorklog(_ClaudeTool):
+    """Read a plan's recent worklog entries — the OBSERVER's window into a
+    worker's externally-visible progress (a working LLM is heads-down and
+    cannot heartbeat, so you read its trail instead of waiting for it to
+    report). Default = last `tail` (20) full entries, unchanged behavior.
+    Narrow cheaply with kinds=[...] / since=<ISO ts> / action_id=...
+    (filters apply BEFORE the tail cut), and pass digest=true for one
+    compact line per entry ("ts|kind|action_id|detail") when you only need
+    to scan what happened — full fidelity is one digest=false call away."""
+
+    name = "read_worklog"
+    idempotent = True
+    InputModel = _ReadWorklogIn
+    OutputModel = _WorklogOut
+
+    async def _run(self, m: _ReadWorklogIn):
+        entries = self.ctx.plans.read_worklog(
+            m.plan_id, tail=m.tail, kinds=m.kinds, since=m.since,
+            action_id=m.action_id,
+        )
+        if m.digest:
+            return Tool.ok(_WorklogOut(
+                entries=[_digest_worklog_entry(e) for e in entries]))
+        return Tool.ok(_WorklogOut(entries=entries))
+
+
+class _InspectWorkerIn(BaseModel):
+    plan_id: str
+    action_id: str
+
+
+class _InspectOut(BaseModel):
+    handle: str
+    liveness: str                 # alive | dead | unknown
+    action_status: str | None     # the action's current status
+    last_activity: str | None     # ts of the most recent worklog entry
+    recent: list[dict]            # worklog tail (what it's been doing)
+    note: str
+
+
+class InspectWorker(_ClaudeTool):
+    """2026-05-25: inspect a dispatched worker WITHOUT it self-reporting
+    — the fix for "is it slow or hung?". Returns its pool liveness, the
+    action's status, the timestamp of its last worklog activity, and a
+    worklog tail. Judge from EVIDENCE: `liveness=alive` means it's still
+    a live shell — do NOT force-fail it; a long gap with new activity
+    still means working (a single reasoning/inference block can take
+    20-40 min and writes nothing meanwhile). Only after `liveness=dead`
+    (or you've reasoned it's genuinely stuck) call `pool_reap`."""
+
+    name = "inspect_worker"
+    idempotent = True
+    InputModel = _InspectWorkerIn
+    OutputModel = _InspectOut
+
+    async def _run(self, m: _InspectWorkerIn):
+        handle = f"{m.plan_id}:{m.action_id}"
+        live = (await self.ctx.pool.liveness(handle))["state"]  # W7 dict
+        recent = self.ctx.plans.read_worklog(m.plan_id, tail=10)
+        last = recent[-1].get("ts") if recent else None
+        status = None
+        if self.ctx.plans.exists(m.plan_id):
+            for a in self.ctx.plans.load(m.plan_id).actions:
+                if a.action_id == m.action_id:
+                    status = a.status
+                    break
+        # s16: an in_progress action with liveness=unknown backed by NO pool
+        # lock/session is a PHANTOM (no live spawn) — REPLACE the old
+        # alive-vs-dead-only note with the truthful phantom classification,
+        # computed CLIENT-SIDE (locks()/sessions()). Any other unknown (backed,
+        # or action not in_progress) keeps the conservative reading.
+        phantom = (
+            live == "unknown" and status == "in_progress"
+            and not await _handle_backed_by_pool(self.ctx.pool, handle)
+        )
+        if live == "alive":
+            note = (
+                "liveness=alive → still a live shell; do NOT force-fail, a "
+                "reasoning block can run long with no worklog writes. "
+                "Only pool_reap after liveness=dead or a reasoned "
+                "stuck-judgement."
+            )
+        elif phantom:
+            note = (
+                f"PHANTOM — {handle} is in_progress but liveness=unknown with "
+                "NO backing pool lock/session: no spawn is live (the pre-stamp "
+                "stranded). reconcile resets it ->pending and re-dispatches "
+                f"once past the grace window; pool_reap({handle}) frees any "
+                "stale lock."
+            )
+        else:
+            note = (
+                f"liveness={live} — if dead, pool_reap({handle}) to free the "
+                "lock."
+            )
+        return Tool.ok(_InspectOut(
+            handle=handle, liveness=live, action_status=status,
+            last_activity=last, recent=recent, note=note,
+        ))
+
+
+class _StatusPingIn(BaseModel):
+    handle: str   # worker "<plan_id>:<action_id>" | planner "<recipe_id>:<step_id>"
+    # v7 P5.3 — same epoch/rewire seam as check_inbox (see _CheckInboxIn):
+    # echo YOUR OWN last-pushed epoch here (whatever handle you are pinging)
+    # and a stale echo hands back the reground block. Absent = byte-identical.
+    ack_epoch: str | None = None
+
+
+class _StatusPingOut(BaseModel):
+    handle: str
+    liveness: str                  # alive | dead | unknown
+    action_status: str | None      # when the handle is a worker's
+    last_worklog_ts: str | None
+    last_worklog_kind: str | None
+    # W7 item 1: wait_hint upgraded from qualitative prose to MINUTES (int) +
+    # wait_reason, both from the shared PACING table. The prior liveness prose
+    # (still operationally useful — a reasoning block can run 20-40 min with no
+    # writes; do NOT force-fail an alive shell) is preserved verbatim in
+    # liveness_note so nothing is lost.
+    wait_hint: int
+    wait_reason: str
+    liveness_note: str
+    # v7 P5.3: epoch echoed when the caller passed ack_epoch; `reground`
+    # only on a stale echo (the caller's own grounding, not the child's).
+    grounding_epoch: str | None = None
+    reground: dict | None = None
+
+
+class StatusPing(_ClaudeTool):
+    """The CHEAP heartbeat-tick check on a child shell — one pool liveness
+    call + the single most recent worklog line (no bodies, no tail dump).
+    Use this on every heartbeat to sanity-check the layer below; reach for
+    `inspect_worker` (full worklog tail) only when the ping looks wrong
+    (dead, or silent far longer than the work warrants). Works for worker
+    handles (<plan_id>:<action_id>) and planner handles
+    (<recipe_id>:<step_id> — its plan's trail is read via the dash form)."""
+
+    name = "status_ping"
+    idempotent = True
+    InputModel = _StatusPingIn
+    OutputModel = _StatusPingOut
+
+    async def _run(self, m: _StatusPingIn):
+        live = (await self.ctx.pool.liveness(m.handle))["state"]  # W7 dict
+        prefix, _, tail_part = m.handle.rpartition(":")
+        action_status = None
+        plan_id = None
+        if prefix and self.ctx.plans.exists(prefix):
+            plan_id = prefix          # worker handle: prefix is the plan
+            for a in self.ctx.plans.load(prefix).actions:
+                if a.action_id == tail_part:
+                    action_status = a.status
+                    break
+        elif prefix:
+            dash = f"{prefix}-{tail_part}"      # planner handle → its plan
+            if self.ctx.plans.exists(dash):
+                plan_id = dash
+        last_ts = last_kind = None
+        if plan_id:
+            recent = self.ctx.plans.read_worklog(plan_id, tail=1)
+            if recent:
+                last_ts = str(recent[-1].get("ts"))
+                last_kind = str(recent[-1].get("kind"))
+        if live == "alive":
+            note = ("alive — working. A reasoning block can run 20-40 min "
+                    "writing nothing; do NOT force-fail. inspect_worker "
+                    "only if silence outlasts the work's nature.")
+        elif live == "dead":
+            note = (f"dead — if a lock lingers, pool_reap('{m.handle}') "
+                    "frees it; reconcile re-dispatches.")
+        elif (action_status == "in_progress"
+              and not await _handle_backed_by_pool(self.ctx.pool, m.handle)):
+            # s16: in_progress + liveness unknown + NO backing pool lock/
+            # session = PHANTOM. Replace the optimistic "a spawn really
+            # happened" note with the truthful classification (client-side
+            # cross-check of locks()/sessions()).
+            note = ("PHANTOM — in_progress but liveness=unknown with NO "
+                    "backing pool lock/session: no spawn is live. reconcile "
+                    "resets it ->pending and re-dispatches once past the "
+                    f"grace window; pool_reap('{m.handle}') frees any stale "
+                    "lock.")
+        else:
+            note = ("unknown — conservative wait; a spawn really happened "
+                    "(dispatch failures roll back to pending).")
+        # W7 item 1: computed pacing from liveness + this action's status +
+        # output-staleness (last worklog ts vs now). Classifier lives in the
+        # plan FSM (handle_pacing_state); this surface just derives staleness
+        # and looks up the (minutes, reason).
+        pstate = handle_pacing_state(
+            live, action_status, output_stale=_output_stale(last_ts))
+        # v7 P5.3: the epoch/rewire seam — the CALLER's own grounding (its
+        # own handle from env, not the pinged child's), only when echoed.
+        epoch = reground = None
+        if m.ack_epoch is not None:
+            me = os.environ.get("EDP_HANDLE", "").strip() or m.handle
+            rr = _recipe_for_handle(self.ctx, me)
+            if rr is not None:
+                epoch = _grounding_for(self.ctx, rr)
+                emode = _classify_epoch(epoch, m.ack_epoch, False)
+                if emode == "stale":
+                    reground = await _reground_payload(
+                        self.ctx, rr, epoch, emode, me)
+        return Tool.ok(_StatusPingOut(
+            handle=m.handle, liveness=live, action_status=action_status,
+            last_worklog_ts=last_ts, last_worklog_kind=last_kind,
+            liveness_note=note, grounding_epoch=epoch, reground=reground,
+            **_pacing_fields(pstate)))
+
+
+class _ReapIn(BaseModel):
+    handle: str   # "<plan_id>:<action_id>" — the stuck worker's lock key
+
+
+class PoolReap(_ClaudeTool):
+    """2026-05-25: force-kill the worker holding `handle`'s lock + release
+    it, so a deadlocked plan can re-dispatch. The DELIBERATE escape —
+    call it only AFTER you've judged a worker genuinely stuck/dead
+    (inspect_worker → liveness=dead, or a reasoned stuck-verdict). Never
+    reap a `liveness=alive` worker mid-work (a reasoning block runs long
+    and writes nothing — force-killing it is what self-inflicted the
+    2026-05-25 deadlock). Replaces the OS-kill hack; not an auto-reaper."""
+
+    name = "pool_reap"
+    InputModel = _ReapIn
+    OutputModel = BaseModel
+
+    async def _run(self, m: _ReapIn):
+        return await self.ctx.pool.reap(m.handle)
+
+
+class _SendIn(BaseModel):
+    to: str
+    kind: str
+    body: dict = {}
+    from_: str = "neuron"
+
+
+class BrokerSend(_ClaudeTool):
+    """Send a RAW broker message — you supply from/to/kind/body yourself.
+    This is the low-level escape hatch; prefer the routed tools, which
+    resolve addresses for you and never dead-letter: `reply(msg_id, …)`
+    to answer anything (routes to the sender), `ask_above` /
+    `notify_above` for upward traffic (parent or audience='neuron'),
+    `emit_recipe_event` for recipe-wide broadcasts. Reach for broker_send
+    only when none of those fit: messaging a specific live handle you
+    discovered (e.g. steering the planner of an edited step at
+    `<recipe_id>-<step_id>`), or publishing to a `topic:<name>` recipient.
+    Addressing gotcha: a planner's inbox is its DASH plan_id; a worker's
+    is its colon `<plan_id>:<action_id>`; the neuron's is the recipe_id.
+    Use whoami()/lineage values — never hand-build an address."""
+
+    name = "broker_send"
+    InputModel = _SendIn
+    OutputModel = BaseModel
+
+    async def _run(self, m: _SendIn):
+        # W2 leg 3: warn-only constraint stamp on the body — NEVER blocks.
+        _warn_comms_constraints(self.ctx, m.body, "broker_send")
+        msg = BrokerMessage(
+            msg_id=str(uuid.uuid4()),
+            ts=_now(),
+            **{"from": m.from_},
+            to=m.to,
+            kind=m.kind,
+            body=m.body,
+        )
+        res = await self.ctx.broker.send(msg)
+        # v7 P3.2 — a steer is VERIFIED, not assumed. Record the send
+        # durably (msg_id + recipient) where the sender's own reconcile can
+        # correlate it against inbound steer_acks: the planner/worker side
+        # in its plan worklog, the neuron side in the recipe events trail
+        # (a neuron has no plan worklog — _sender_plan_id returns None).
+        # Best-effort: a failed record never fails the send.
+        if m.kind == "steer" and getattr(res, "ok", False):
+            try:
+                pid = _sender_plan_id()
+                if pid and self.ctx.plans.exists(pid):
+                    self.ctx.plans.append_worklog(pid, {
+                        "kind": "message_sent", "msg_kind": "steer",
+                        "msg_id": msg.msg_id, "to": m.to,
+                        "agent_role":
+                            os.environ.get("EDP_ROLE", "").strip()
+                            or "unknown",
+                        "from_handle":
+                            os.environ.get("EDP_HANDLE", "").strip() or None,
+                        "summary": str(m.body)[:300],
+                    })
+                else:
+                    rid = re.sub(r"-s\d+$", "", m.to.split(":", 1)[0])
+                    if self.ctx.recipes.exists(rid):
+                        self.ctx.recipes.append_worklog(rid, {
+                            "kind": "steer_sent", "msg_id": msg.msg_id,
+                            "to": m.to, "summary": str(m.body)[:300],
+                        })
+            except Exception as e:
+                _log.warning("steer_send_record_failed",
+                             "steer-send record failed", error=str(e))
+        return res
+
+
+class _RecallIn(BaseModel):
+    query: str
+    scope: str | None = None
+    # s17 a7: recall fans out over global + recipe + domain scopes, so the
+    # merged result set grows with the total facts stored — a LIST output that
+    # #18 requires bounded by construction. Window it (default WINDOW) with a
+    # count-first cursor; page the rest with offset/limit.
+    offset: int = 0
+    limit: int = WINDOW
+
+
+class _RecallOut(BaseModel):
+    results: list[dict]           # a7: the bounded <=limit slice
+    count: int = 0                # FULL number of recalled facts
+    cursor: int | None = None     # next offset to page from, or None at the end
+
+
+class Recall(_ClaudeTool):
+    name = "recall"
+    idempotent = True
+    InputModel = _RecallIn
+    OutputModel = _RecallOut
+
+    async def _run(self, m: _RecallIn):
+        # recall FANS OUT over the caller's lineage scopes (global + this
+        # recipe + its domain). Resolve them from the handle; the port merges
+        # and falls back to the legacy trail when no scoped file exists yet.
+        recipe_id, _extras = _resolve_recipe_lineage(self.ctx)
+        domain = _recipe_domain(self.ctx, recipe_id)
+        rows = await self.ctx.memory.recall(
+            m.query, m.scope, recipe_id=recipe_id, domain=domain)
+        w = windowed(rows, m.offset, m.limit)
+        return Tool.ok(_RecallOut(
+            results=w["items"], count=w["count"], cursor=w["cursor"]))
+
+
+class _RememberIn(BaseModel):
+    fact: dict
+    # domain is optional in v6: when omitted it defaults to the caller's
+    # recipe domain (kg_filter falls back to `generic` for None). scope +
+    # recipe_id let a caller override the lineage-derived default scope.
+    domain: str | None = None
+    scope: str | None = None
+    recipe_id: str | None = None
+
+
+class Remember(_ClaudeTool):
+    name = "remember"
+    InputModel = _RememberIn
+    OutputModel = BaseModel
+
+    async def _run(self, m: _RememberIn):
+        err, scope, recipe_id, domain = _resolve_fact_write_scope(
+            self.ctx, scope=m.scope, recipe_id=m.recipe_id, domain=m.domain)
+        if err is not None:
+            return err
+        return await self.ctx.memory.remember(
+            m.fact, domain, scope=scope, recipe_id=recipe_id)
+
+
+# ── team-architecture Phase 2: bi-directional comms (2026-05-21) ─────────
+# The agent never thinks about brokers, addresses, or http. They call
+# ask_above / notify_above / respond — the tool resolves parent from
+# EDP_HANDLE and the broker handles delivery. Messages reach the
+# receiver via next_action (not Monitor, not subscribe, not a fetch
+# decision) — recipient's recipe/plan FSM polls inbox at the top of
+# every next_action call and emits HANDLE_MESSAGES when pending.
+
+def _self_and_parent_addresses() -> tuple[str | None, str | None]:
+    """Resolve (self_id, parent_id) from environment.
+
+    - Worker: EDP_HANDLE=<plan_id>:<action_id>; self = handle (workers
+      don't loop on next_action so they don't have an inbox-poll
+      identity yet — v0 leaves them as outbound-only); parent = plan_id.
+    - Planner: EDP_HANDLE=<recipe_id>:<step_id>; self = plan_id (dash
+      form, "<recipe_id>-<step_id>") because that's what the planner's
+      next_action polls under; parent = recipe_id.
+    - Neuron: no EDP_HANDLE; parent is the user (AskUserQuestion, not
+      ask_above).
+
+    The agent never derives this. The tool does."""
+    handle = os.environ.get("EDP_HANDLE", "").strip()
+    role = os.environ.get("EDP_ROLE", "").strip()
+    if not handle:
+        return None, None
+    idx = handle.rfind(":")
+    if idx < 0:
+        return handle, None
+    parent = handle[:idx]
+    tail = handle[idx + 1:]
+    if role == "planner":
+        # planner's inbox is its plan_id (dash form), not its EDP_HANDLE.
+        return f"{parent}-{tail}", parent
+    return handle, parent
+
+
+def _sender_plan_id() -> str | None:
+    """The plan whose worklog should record an outbound message.
+    planner → its own plan_id; worker → its plan_id (handle prefix);
+    neuron → None (no plan worklog; the receiver captures it on
+    delivery). Used to make inter-shell comms VISIBLE in the worklog
+    (2026-05-22: messages were invisible in scattered broker inboxes)."""
+    role = os.environ.get("EDP_ROLE", "").strip()
+    me, parent = _self_and_parent_addresses()
+    if role == "planner":
+        return me       # plan_id (dash form)
+    if role == "worker":
+        return parent   # plan_id (handle prefix)
+    return None
+
+
+def _worklog_outbound(ctx, msg_kind: str, to: str, body: dict) -> None:
+    pid = _sender_plan_id()
+    if not pid:
+        return  # neuron / unknown — captured on the receiver's side
+    role = os.environ.get("EDP_ROLE", "").strip() or "unknown"
+    ctx.plans.append_worklog(pid, {
+        "kind": "message_sent", "agent_role": role,
+        "to": to, "msg_kind": msg_kind,
+        # v7 P3.1: sender attribution. The grounding-echo gate in
+        # record_action_status must find THIS shell's echo among the plan's
+        # outbound lines; the handle (`<plan_id>:<action_id>`) is the only
+        # per-dispatch key the sender carries.
+        "from_handle": os.environ.get("EDP_HANDLE", "").strip() or None,
+        "summary": str(body)[:300],
+    })
+
+
+class _WhoAmIIn(BaseModel):
+    pass
+
+
+class _WhoAmIOut(BaseModel):
+    role: str | None
+    self_address: str | None     # YOUR broker inbox — bind rx.broker(me) to THIS
+    parent_address: str | None   # who you escalate to (ask_above target)
+    # P5 lineage discovery (2026-06-10): your place in the recipe tree —
+    # strictly OWN-lineage, no cross-recipe listing. Keys (when derivable):
+    # recipe_id, plan_id, action_id, step_id, planner_address (the dash-form
+    # plan_id inbox), neuron_address (== recipe_id — the neuron's inbox).
+    recipe_id: str | None = None
+    lineage: dict = {}
+    note: str
+
+
+class WhoAmI(_ClaudeTool):
+    """Return YOUR canonical broker identity + your recipe LINEAGE — call
+    this at cold start to discover your environment instead of string-
+    munging EDP_HANDLE. Use `self_address` as `me` for `rx.broker(me)`.
+    **GOTCHA:** a planner's inbox is its plan_id (`<recipe_id>-<step_id>`,
+    DASH), NOT its `EDP_HANDLE` (`<recipe_id>:<step_id>`, COLON). Workers:
+    self_address == your EDP_HANDLE. Neuron: no EDP_HANDLE → self_address
+    is null; your inbox is your recipe_id.
+
+    `lineage` tells a worker which recipe/neuron it ultimately works under
+    (recipe_id, plan_id, planner_address, neuron_address) — addressing
+    knowledge for emit_recipe_event tagging and for routing decision-class
+    questions to the neuron (ask_above audience='neuron'). It is strictly
+    your OWN lineage; there is no global agent registry."""
+
+    name = "whoami"
+    idempotent = True
+    InputModel = _WhoAmIIn
+    OutputModel = _WhoAmIOut
+
+    async def _run(self, m: _WhoAmIIn):
+        role = os.environ.get("EDP_ROLE", "").strip() or None
+        me, parent = _self_and_parent_addresses()
+        lineage: dict = {}
+        recipe_id, extras = _resolve_recipe_lineage(self.ctx)
+        if recipe_id:
+            lineage["recipe_id"] = recipe_id
+            lineage["neuron_address"] = recipe_id
+            if extras.get("plan_id"):
+                lineage["plan_id"] = extras["plan_id"]
+                lineage["planner_address"] = extras["plan_id"]
+            if extras.get("action_id"):
+                lineage["action_id"] = extras["action_id"]
+            if role == "planner" and me:
+                lineage["step_id"] = me[len(recipe_id) + 1:] or None
+        return Tool.ok(_WhoAmIOut(
+            role=role, self_address=me, parent_address=parent,
+            recipe_id=recipe_id, lineage=lineage,
+            note=("bind rx.broker(me) to self_address — it's the inbox "
+                  "others reply to you at (planner: dash plan_id, NOT "
+                  "colon EDP_HANDLE). lineage shows the recipe/neuron you "
+                  "work under; prefer your parent or the flowback channel "
+                  "(emit_recipe_event) for routine traffic."),
+        ))
+
+
+def _question_envelope_for_caller(ctx, options=None) -> dict | None:
+    """DESIGN-v7 2.1 — load whatever objects the CALLER's lineage resolves to
+    (plan/action for a worker; recipe/step for a planner) and compose the
+    question envelope from them. This is the ONE IO wrapper around the pure
+    `fsm.envelope.compose_question_envelope`; `ask_above` calls it on every
+    send so enrichment happens BY CONSTRUCTION — no guide compliance, no
+    refusal path. Returns None (never raises) when nothing resolves or a load
+    fails: a degraded envelope must never block the question itself."""
+    try:
+        recipe_id, extras = _resolve_recipe_lineage(ctx)
+        plan = action = recipe = step = None
+        pid = extras.get("plan_id")
+        if pid and ctx.plans.exists(pid):
+            plan = ctx.plans.load(pid)
+            aid = extras.get("action_id")
+            if aid:
+                action = next(
+                    (a for a in plan.actions if a.action_id == aid), None)
+        if recipe_id and ctx.recipes.exists(recipe_id):
+            recipe = ctx.recipes.load(recipe_id)
+            # A planner's EDP_HANDLE is <recipe_id>:<step_id> — resolve the
+            # step so a step-level (no-action) question still carries a
+            # what-I-was-doing line and its dependents.
+            if os.environ.get("EDP_ROLE", "").strip() == "planner":
+                handle = os.environ.get("EDP_HANDLE", "").strip()
+                sid = handle.rsplit(":", 1)[-1] if ":" in handle else None
+                if sid:
+                    step = next(
+                        (s for s in recipe.steps if s.step_id == sid), None)
+        if not (plan or action or recipe or step or options):
+            return None
+        env = compose_question_envelope(
+            plan=plan, action=action, recipe=recipe, step=step,
+            options=options)
+        return env or None
+    except Exception:  # noqa: BLE001 — enrichment must never block the ask
+        return None
+
+
+class _AskAboveIn(BaseModel):
+    question: str
+    body: dict = {}
+    # P5 routing (2026-06-10). 'parent' (default) = one level up, exactly
+    # as before. 'neuron' = route a DECISION-CLASS question (goal, scope,
+    # recorded decisions, user preferences) STRAIGHT to the recipe's
+    # neuron, CC-ing your parent planner with an fyi — the planner is not
+    # the decision-maker and used to absorb these. Mechanics of YOUR
+    # action (deps, environment, acceptance gate) stay audience='parent'.
+    audience: Literal["parent", "neuron"] = "parent"
+
+
+class AskAbove(_ClaudeTool):
+    """Escalate a question upward. audience='parent' (default): your
+    direct parent (worker→planner; planner→neuron), exactly as before.
+    audience='neuron': route a DECISION-CLASS question — about the goal,
+    scope, a recorded decision, or a user preference — DIRECTLY to the
+    recipe's neuron (the actual decision-maker), with an automatic
+    `kind='fyi'` CC to your parent planner so it isn't blind. ROUTING
+    RULE: who OWNS the answer? Mechanics of your action (deps, gates,
+    environment) → parent; anything you'd otherwise have to guess about
+    intent → neuron. Addresses resolve from EDP_HANDLE/lineage — never
+    hand-build them. The receiver answers asynchronously: their reply
+    lands in YOUR inbox (Monitor wake / check_inbox)."""
+
+    name = "ask_above"
+    InputModel = _AskAboveIn
+    OutputModel = BaseModel
+
+    async def _run(self, m: _AskAboveIn):
+        me, parent = _self_and_parent_addresses()
+        if not parent:
+            return _precondition(
+                "no parent to ask — EDP_HANDLE is empty (you are the "
+                "neuron / main shell; use AskUserQuestion to escalate)."
+            )
+        # DESIGN-v7 2.1 — AUTO-ENRICH IN CODE: attach the composed question
+        # envelope (goal / what-I-was-doing / acceptance diff / what-blocks-
+        # on-this) before the asker's own body keys are folded in. The asker's
+        # explicit keys WIN on collision (including an explicit `envelope`),
+        # so enrichment can never clobber deliberate content — and because it
+        # rides `body`, it survives BOTH routes below (two-hop via the parent
+        # and the audience='neuron' direct route) unchanged.
+        body = {"question": m.question}
+        envelope = _question_envelope_for_caller(
+            self.ctx, options=m.body.get("options"))
+        if envelope is not None:
+            body["envelope"] = envelope
+        body.update(m.body)
+        to = parent
+        if m.audience == "neuron":
+            recipe_id, _extras = _resolve_recipe_lineage(self.ctx)
+            if not recipe_id:
+                return _precondition(
+                    "audience='neuron' but no recipe lineage resolves from "
+                    "your handle — ask your parent instead "
+                    "(audience='parent'), or check whoami().lineage."
+                )
+            if recipe_id == parent:
+                to = parent          # planner: the parent IS the neuron
+            else:
+                to = recipe_id
+        msg = BrokerMessage(
+            msg_id=str(uuid.uuid4()),
+            ts=_now(),
+            **{"from": me or "unknown"},
+            to=to,
+            kind="question",
+            body=body,
+        )
+        res = await self.ctx.broker.send(msg)
+        if not getattr(res, "ok", False):
+            return res
+        _worklog_outbound(self.ctx, "question", to, body)
+        if m.audience == "neuron" and to != parent:
+            # CC the parent planner so it isn't blind to the bypass.
+            cc = BrokerMessage(
+                msg_id=str(uuid.uuid4()),
+                ts=_now(),
+                **{"from": me or "unknown"},
+                to=parent,
+                kind="fyi",
+                body={"note": ("decision-class question routed directly "
+                               "to the neuron"),
+                      "question": m.question},
+            )
+            await self.ctx.broker.send(cc)
+        return res
+
+
+class _NotifyAboveIn(BaseModel):
+    kind: str  # e.g. "progress", "alert", "observation"
+    body: dict = {}
+
+
+class NotifyAbove(_ClaudeTool):
+    """Push a progress / alert / observation up to your parent.
+    Auto-addressed via EDP_HANDLE. One-way — no answer expected."""
+
+    name = "notify_above"
+    InputModel = _NotifyAboveIn
+    OutputModel = BaseModel
+
+    async def _run(self, m: _NotifyAboveIn):
+        me, parent = _self_and_parent_addresses()
+        if not parent:
+            return _precondition(
+                "no parent to notify — EDP_HANDLE is empty (neuron has "
+                "no parent in-system; surface to user instead)."
+            )
+        msg = BrokerMessage(
+            msg_id=str(uuid.uuid4()),
+            ts=_now(),
+            **{"from": me or "unknown"},
+            to=parent,
+            kind=m.kind,
+            body=m.body,
+        )
+        res = await self.ctx.broker.send(msg)
+        if getattr(res, "ok", False):
+            _worklog_outbound(self.ctx, m.kind, parent, m.body)
+        return res
+
+
+def _resolve_recipe_lineage(ctx) -> tuple[str | None, dict]:
+    """P4: resolve the recipe this shell works under, from EDP_HANDLE —
+    the agent never string-munges this itself. Returns (recipe_id, extras)
+    where extras carries plan_id/action_id when derivable.
+
+    - worker  (EDP_HANDLE=<plan_id>:<action_id>): plan → its recipe_id.
+    - planner (EDP_HANDLE=<recipe_id>:<step_id>): parent IS the recipe.
+    - neuron/bare shell: no handle → (None, {}) — caller passes recipe_id.
+    """
+    role = os.environ.get("EDP_ROLE", "").strip()
+    me, parent = _self_and_parent_addresses()
+    if not parent:
+        return None, {}
+    if role == "planner":
+        return parent, {"plan_id": me}
+    # worker (and worker-like spawns): parent is the plan
+    if ctx.plans.exists(parent):
+        plan = ctx.plans.load(parent)
+        action_id = (me or "").rsplit(":", 1)[-1] if me else None
+        return plan.recipe_id, {"plan_id": parent, "action_id": action_id}
+    # parent might already be a recipe (planner without role env, etc.)
+    if ctx.recipes.exists(parent):
+        return parent, {}
+    return None, {}
+
+
+def _recipe_domain(ctx, recipe_id: str | None) -> str | None:
+    """The domain a recipe was seeded with (facts default to it). None when
+    the recipe is unknown/unresolved — kg_filter falls back to `generic`."""
+    if not recipe_id:
+        return None
+    try:
+        if ctx.recipes.exists(recipe_id):
+            return getattr(ctx.recipes.load(recipe_id), "domain", None)
+    except Exception:
+        return None
+    return None
+
+
+def _resolve_fact_write_scope(ctx, *, scope, recipe_id, domain):
+    """Resolve (err, scope, recipe_id, domain) for a lineage-scoped fact
+    write (DESIGN-v6 W4/a4). LINEAGE-FIRST default: if a recipe resolves
+    from the caller's handle (or is passed explicitly) the fact defaults to
+    recipe/<R> — this INCLUDES a neuron, whose facts belong to the recipe it
+    owns, NOT the shared global namespace. Only a truly bare shell with no
+    recipe lineage defaults to global. scope='global' is WRITE-gated to the
+    neuron role; a non-neuron scope='global' refuses+explains. `err` is a
+    _precondition ToolResult when the write must be refused, else None."""
+    role = os.environ.get("EDP_ROLE", "").strip()
+    lin_recipe, _extras = _resolve_recipe_lineage(ctx)
+    recipe_id = recipe_id or lin_recipe
+    if not domain:
+        domain = _recipe_domain(ctx, recipe_id)
+    if scope is None:
+        scope = "recipe" if recipe_id else "global"
+    scope = scope.strip().lower()
+    if scope not in ("global", "recipe", "domain"):
+        return (_precondition(
+            f"record_context(kind=fact): unknown scope {scope!r} — use one "
+            "of global|recipe|domain (omit to default from your lineage)."),
+            scope, recipe_id, domain)
+    if scope == "global" and role and role != "neuron":
+        return (_precondition(
+            f"fact scope='global' is neuron-only — the {role!r} role may not "
+            "write global facts. Omit scope to record it recipe-scoped "
+            "(recipe/<your recipe>), or use scope='domain'."),
+            scope, recipe_id, domain)
+    if scope == "recipe" and not recipe_id:
+        return (_precondition(
+            "fact scope='recipe' needs a recipe, but none resolves from your "
+            "lineage — pass recipe_id, or use scope='domain'/'global'."),
+            scope, recipe_id, domain)
+    if scope == "domain" and not domain:
+        return (_precondition(
+            "fact scope='domain' needs a domain, but none resolves from your "
+            "recipe — pass domain explicitly."),
+            scope, recipe_id, domain)
+    return None, scope, recipe_id, domain
+
+
+_RECIPE_EVENT_KINDS = ("learning", "discovery", "progress", "blocker",
+                       "status_ping", "spec_learning_proposed",
+                       "review_finding")
+
+
+def _emit_recipe_event(ctx, kind: str, body: dict,
+                       recipe_id: str | None = None) -> str | None:
+    """Append one flowback event to the recipe's events.jsonl (the
+    recipe-scoped broadcast channel rx.recipe_events tails). Returns the
+    resolved recipe_id, or None if no recipe could be resolved."""
+    extras: dict = {}
+    if not recipe_id:
+        recipe_id, extras = _resolve_recipe_lineage(ctx)
+    if not recipe_id or not ctx.recipes.exists(recipe_id):
+        return None
+    me, _ = _self_and_parent_addresses()
+    record = {
+        "kind": kind,
+        "channel": "flowback",
+        "agent_role": os.environ.get("EDP_ROLE", "unknown"),
+        "from": me or "neuron",
+        **extras,
+        "body": body,
+    }
+    ctx.recipes.append_worklog(recipe_id, record)
+    return recipe_id
+
+
+# ── W3 automated spec flowback (DESIGN-v6 §W3) — the _tools.py wiring over a1's
+# SpecStore primitives: auto-propose on a `learning` event, deterministic triage
+# surfacing (pending counts pushed every tick + at close), and the batch human
+# gate. All CODE, no LLM (principle 6).
+def _autopropose_learning(ctx, recipe_id: str | None, body: dict) -> str | None:
+    """When a `learning` event carries a resolvable spec, ALSO append a
+    STRUCTURED `proposed` record to that spec's flow-back queue (precedent:
+    ProposeSpecLearning performs both writes). Spec resolution: explicit
+    ``body.spec_id``, else the lineage action's SINGLE effective spec — a
+    MULTI-spec action REQUIRES explicit ``body.spec_id`` (we SKIP rather than
+    guess which stack the learning is about). Best-effort: returns the new
+    ``learning_id`` when appended, else None (unresolvable / ambiguous spec,
+    empty rule text, or not-a-real-spec) — auto-propose never blocks the emit."""
+    body = body or {}
+    _lin_recipe, extras = _resolve_recipe_lineage(ctx)
+    plan_id = extras.get("plan_id")
+    action_id = extras.get("action_id")
+    spec_id = body.get("spec_id")
+    if not spec_id and plan_id and action_id:
+        try:
+            if ctx.plans.exists(plan_id):
+                plan = ctx.plans.load(plan_id)
+                action = next(
+                    (a for a in getattr(plan, "actions", [])
+                     if getattr(a, "action_id", None) == action_id), None)
+                if action is not None:
+                    sids = action.effective_spec_ids()
+                    if len(sids) == 1:          # single stamped spec = unambiguous
+                        spec_id = sids[0]
+                    # multi-spec ⇒ ambiguous; require explicit body.spec_id
+        except Exception:  # noqa: BLE001 — derivation must never break the emit
+            return None
+    if not spec_id:
+        return None
+    try:
+        if not ctx.specs.exists(spec_id):
+            return None
+        rule_text = (body.get("summary") or body.get("detail") or "").strip()
+        if not rule_text:
+            return None
+        return ctx.specs.append_proposed_learning(
+            spec_id,
+            rule_text=rule_text,
+            tag=body.get("tag") or "[expected]",
+            overrides=body.get("overrides"),
+            source={"recipe_id": recipe_id, "action_id": action_id},
+        )
+    except Exception:  # noqa: BLE001 — best-effort flow-back, never blocks emit
+        return None
+
+
+def _recipe_consulted_spec_ids(ctx, r) -> list[str]:
+    """The spec_ids this recipe consults (DESIGN-v6 §W3 triage surfacing).
+    "Specs this recipe consults" is NOT a recipe field — derive it in CODE:
+    PRIMARY = every spec_id stamped on the recipe's plans' actions
+    (``action.effective_spec_ids()``); PLUS the neuron→spec hop for each
+    ``specialist_consults[].specialist_id`` (that id is a neuron_id → its
+    ``spec_id``). Order-preserving + deduped; any missing/unresolvable ref is
+    skipped (never raises)."""
+    seen: set[str] = set()
+    out: list[str] = []
+
+    def _add(sid):
+        if sid and sid not in seen:
+            seen.add(sid)
+            out.append(sid)
+
+    for step in getattr(r, "steps", []):
+        try:
+            plan = ctx.plans.find_by_step(r.recipe_id, step.step_id)
+        except Exception:  # noqa: BLE001
+            plan = None
+        if plan is None:
+            continue
+        for a in getattr(plan, "actions", []):
+            try:
+                sids = a.effective_spec_ids()
+            except Exception:  # noqa: BLE001
+                sids = list(getattr(a, "spec_ids", []) or [])
+            for sid in sids:
+                _add(sid)
+    for c in getattr(r, "specialist_consults", []):
+        nid = getattr(c, "specialist_id", None)
+        if not nid:
+            continue
+        try:
+            rec = ctx.neurons.get(nid)
+        except Exception:  # noqa: BLE001
+            rec = None
+        _add(getattr(rec, "spec_id", None) if rec else None)
+    return out
+
+
+def _pending_spec_learnings(ctx, r) -> dict[str, int]:
+    """``{spec_id: n}`` — the count of still-PROPOSED (untriaged) flow-back
+    learnings per spec this recipe consults (DESIGN-v6 §W3). Only specs with a
+    non-empty queue are listed, so ``{}`` == nothing to triage. Pure (no LLM);
+    pushed every tick (recipe_context / next_action) and in get_recipe_digest so
+    the neuron cannot forget the queue, and close_recipe warns when it's
+    non-empty."""
+    out: dict[str, int] = {}
+    for sid in _recipe_consulted_spec_ids(ctx, r):
+        try:
+            if not ctx.specs.exists(sid):
+                continue
+            n = len(ctx.specs.read_learnings(sid, status="proposed"))
+        except Exception:  # noqa: BLE001
+            continue
+        if n:
+            out[sid] = n
+    return out
+
+
+class _EmitRecipeEventIn(BaseModel):
+    kind: Literal["learning", "discovery", "progress", "blocker",
+                  "status_ping", "spec_learning_proposed", "review_finding"]
+    body: dict = {}
+    # Usually omitted — resolved from YOUR lineage (worker → its plan's
+    # recipe; planner → its recipe). The neuron (no EDP_HANDLE) passes it.
+    recipe_id: str | None = None
+
+
+class _EmitRecipeEventOut(BaseModel):
+    recipe_id: str
+    kind: str
+    note: str
+
+
+class EmitRecipeEvent(_ClaudeTool):
+    """Broadcast a structured event onto YOUR recipe's flowback channel —
+    the way a worker's or reviewer's discoveries reach the NEURON live,
+    without the planner relaying. The neuron subscribes via
+    rx.recipe_events(recipe_id, kinds=[...]); every shell in the recipe's
+    lineage can emit (recipe_id resolves automatically from your handle).
+    Use it for things the layer above your parent should know NOW:
+    - kind='learning'  : durable insight from the work — body convention
+      {summary, detail?, spec_id?, evidence_ref?}. Emit your final
+      learnings BEFORE closing your shell.
+    - kind='discovery' : an unexpected fact that may change the map.
+    - kind='blocker'   : you are stuck in a way your parent can't resolve.
+    - kind='review_finding': a reviewer's verdict-relevant finding.
+    - kind='progress'/'status_ping': cheap liveness/phase signal (body
+      {phase, pct?}) — emit on your heartbeat tick during long work.
+    This complements (does not replace) notify_above/ask_above: those are
+    DIRECTED messages to your parent; this is the recipe-wide broadcast.
+    The event also lands in the recipe's durable events trail, so it is
+    readable later via read_object('worklog', recipe_id=..., kinds=[...])."""
+
+    name = "emit_recipe_event"
+    InputModel = _EmitRecipeEventIn
+    OutputModel = _EmitRecipeEventOut
+
+    async def _run(self, m: _EmitRecipeEventIn):
+        # W2 leg 3: warn-only constraint stamp on the body — NEVER blocks.
+        _warn_comms_constraints(self.ctx, m.body, "emit_recipe_event",
+                                recipe_id=m.recipe_id)
+        rid = _emit_recipe_event(self.ctx, m.kind, m.body,
+                                 recipe_id=m.recipe_id)
+        if not rid:
+            return _precondition(
+                "could not resolve a recipe for this event — no recipe_id "
+                "was passed and your EDP_HANDLE lineage does not lead to an "
+                "existing recipe. Pass recipe_id=<the recipe you work "
+                "under> explicitly (whoami() shows your lineage)."
+            )
+        # W3 AUTO-PROPOSE (DESIGN-v6 §W3): a `learning` event on a resolvable
+        # spec ALSO lands as a structured `proposed` flow-back record — the
+        # live read path no longer misses learnings.jsonl. propose_spec_learning
+        # stays an explicit verb but is no longer load-bearing. Best-effort.
+        proposed_id = (
+            _autopropose_learning(self.ctx, rid, m.body)
+            if m.kind == "learning" else None)
+        # v7 P0: with the explicit propose_spec_learning verb DELETED, this
+        # is the ONLY writer of the spec_learning_proposed pointer event —
+        # the kind the neuron's flowback wake-set includes so an untriaged
+        # proposal is never pull-only-invisible. Best-effort, like the
+        # auto-propose itself.
+        if proposed_id:
+            try:
+                _emit_recipe_event(
+                    self.ctx, "spec_learning_proposed",
+                    {"spec_id": (m.body or {}).get("spec_id"),
+                     "learning_id": proposed_id},
+                    recipe_id=rid)
+            except Exception:
+                pass
+        note = ("event appended to the recipe's flowback channel; any "
+                "rx.recipe_events subscriber (the neuron) wakes on it.")
+        if proposed_id:
+            note += (f" learning auto-proposed to a spec as {proposed_id} "
+                     "(W3 flow-back; the neuron triages via "
+                     "resolve_spec_learnings).")
+        return Tool.ok(_EmitRecipeEventOut(
+            recipe_id=rid, kind=m.kind, note=note))
+
+
+# v2.4 (2026-05-22): /critic is RETIRED. Generic adversarial review is
+# replaced by the domain reviewer-fork (branch_reviewer) — a fork of the
+# relevant trained specialist reviews its own domain at recipe end. The
+# process-level "pivot the whole approach?" lens moved up front to the
+# curiosity neuron. consult_critic + spawn_critic are gone.
+
+
+# W5 (DESIGN-v6, 2026-07-09): the consult tier. Opus is the DEFAULT for a
+# convened consult — never a weaker tier (the advisor is the thinking seat),
+# and never auto-escalated ABOVE Opus either: a stronger tier costs real money
+# and is chosen only when the caller passes `model` explicitly (design W5/W10).
+#
+# This constant is the single migration seam: when W10b lands its `MODEL_TIERS`
+# table in tools/roles.py, this default moves there as ("consult", *) → opus.
+# It is NOT wired into MODEL_TIERS today because that table does not yet exist.
+CONSULT_DEFAULT_MODEL = "opus"
+
+
+class _ConveneConsultIn(BaseModel):
+    recipe_id: str          # the recipe the consult reasons about (digest)
+    question: str           # what the asker needs answered
+    spec_ids: list[str] = []   # optional stack docs to overlay as grounding
+    model: str | None = None   # None → CONSULT_DEFAULT_MODEL (opus)
+    mode: str = "monitor"      # visible console the user can type into
+
+
+class _ConveneConsultOut(BaseModel):
+    consult_id: str
+    model: str
+    mode: str
+    answers_to: str
+    note: str = (
+        "consult shell convened; it reads the question from its inbox, "
+        "grounds via get_recipe_digest, and answers ASYNCHRONOUSLY to "
+        "answers_to. Keep working — the reply arrives on your inbox."
+    )
+
+
+class ConveneConsult(_ClaudeTool):
+    """Convene an on-demand CONSULT shell — a visible console the user can
+    talk to directly — to answer a question about this recipe. Use it for a
+    design/decision question that would otherwise pollute the driving shell's
+    context, or when an action is stuck and needs a second opinion (W10's
+    escalation ladder). The consult grounds itself cheaply via
+    `get_recipe_digest`, optionally overlays the compiled specialist docs you
+    name in `spec_ids`, ANSWERS to your inbox, and records keep-worthy
+    findings via `record_context(kind="decision", by="consult")`.
+
+    Defaults to Opus (`CONSULT_DEFAULT_MODEL`) — pass `model` only to choose a
+    STRONGER tier explicitly; it is never auto-selected. The reply is
+    ASYNCHRONOUS (it lands on your inbox), so do NOT block waiting on it and
+    never run the `/consult` skill yourself to drive it."""
+
+    name = "convene_consult"
+    InputModel = _ConveneConsultIn
+    OutputModel = _ConveneConsultOut
+
+    async def _run(self, m: _ConveneConsultIn):
+        # Fail fast at the boundary (CORE #14): a consult grounds itself on
+        # the recipe digest, so an unknown recipe_id would spawn a console
+        # that can only flounder. Refuse here, not three hops later.
+        if not self.ctx.recipes.exists(m.recipe_id):
+            return _precondition(
+                f"convene_consult: unknown recipe {m.recipe_id!r} — the "
+                "consult grounds on its digest, so the recipe must exist."
+            )
+        # The reply must route to the inbox the ASKER actually polls: a
+        # spawned caller's own address, else the neuron's recipe handle
+        # (the user's foreground session polls the recipe inbox too).
+        me, _parent = _self_and_parent_addresses()
+        asker = me or m.recipe_id
+
+        consult_id = f"consult-{uuid.uuid4().hex[:8]}"
+        # Consult-before-spawn (the curiosity/specialist pattern): /v1/spawn
+        # carries no question field, so the BRIEF is posted to the consult's
+        # inbox FIRST — its activation reads it. Posting before the spawn
+        # means the message is already durable when the shell wakes; there is
+        # no race where /consult checks an empty inbox.
+        send_res = await self.ctx.broker.send(BrokerMessage(
+            msg_id=str(uuid.uuid4()),
+            ts=_now(),
+            **{"from": asker},
+            to=consult_id,
+            kind="consult",
+            body={
+                "question": m.question,
+                "spec_ids": m.spec_ids,
+                "recipe_id": m.recipe_id,
+                "asker": asker,
+            },
+        ))
+        if not getattr(send_res, "ok", False):
+            return send_res  # broker refusal, verbatim
+
+        # W5/W10 tier policy lives HERE (the client stays mechanical): an
+        # unspecified tier resolves to Opus, so the spawn body always names
+        # the tier rather than silently inheriting the host default.
+        model = m.model or CONSULT_DEFAULT_MODEL
+        spawn_res = await self.ctx.pool.spawn_consult(
+            asker, consult_id, mode=m.mode, model=model,
+        )
+        if not getattr(spawn_res, "ok", False):
+            return spawn_res  # capacity/route error, verbatim
+
+        return Tool.ok(_ConveneConsultOut(
+            consult_id=consult_id, model=model, mode=m.mode,
+            answers_to=asker,
+        ))
+
+
+class _ConsultCuriosityIn(BaseModel):
+    decision: str          # the decision the neuron is about to make
+    context: str = ""      # what's known so far (incl. prior answers)
+    # the handle YOU poll next_action on (the neuron's recipe_id). The
+    # curiosity reply is routed back here — without it the reply
+    # dead-letters at the literal "neuron" (the 2026-05-24 bug).
+    handle: str | None = None
+    # Persistent two-way (2026-05-28): pass the `curiosity_id` you got
+    # from the FIRST consult to send a FOLLOW-UP to the SAME, still-alive
+    # curiosity — it remembers the prior rounds and builds on them.
+    # Omit it ONLY for the first consult of a comprehension cycle (that
+    # spawns the shell). NEVER spawn a second curiosity for the same
+    # cycle — talk to the one you have until it returns clear.
+    curiosity_id: str | None = None
+
+
+class _ConsultCuriosityOut(BaseModel):
+    curiosity_id: str
+    mode: str = "spawned"      # "spawned" (first) | "followup" (same shell)
+    note: str = (
+        "curiosity spawned; its questions (or 'clear') arrive via "
+        "handle_messages. Relay questions to the user, then send the "
+        "answers as a FOLLOW-UP with curiosity_id=<this id> (do NOT "
+        "spawn a new one) — loop until its reply carries status='done' "
+        "(clear), at which point it has closed itself."
+    )
+
+
+class ConsultCuriosity(_ClaudeTool):
+    """Interrogate a decision the neuron would otherwise make ALONE — at
+    each decision point (comprehension, framework, location, scope, cost,
+    tech) it replies with the sharp ambiguity questions a skeptic would ask
+    (or `clear`). PERSISTENT TWO-WAY: the FIRST call (omit `curiosity_id`)
+    spawns ONE curiosity shell and returns its `curiosity_id`; relay its
+    questions, collect answers, then call AGAIN with that `curiosity_id`
+    (the same still-alive shell, which remembers every round) until the
+    reply's `status="done"`. **NEVER omit curiosity_id mid-cycle** — that
+    spawns a second shell and loses memory. **Pass `handle`** (your
+    recipe_id) or the reply dead-letters; it replies ASYNCHRONOUSLY via
+    next_action, so never run the curiosity skill yourself to drive it."""
+
+    name = "consult_curiosity"
+    InputModel = _ConsultCuriosityIn
+    OutputModel = _ConsultCuriosityOut
+
+    async def _run(self, m: _ConsultCuriosityIn):
+        me, _ = _self_and_parent_addresses()
+        # reply must route to the handle the caller POLLS on: a spawned
+        # caller's own id (me), else the neuron's recipe handle. "neuron"
+        # is a last-resort that the neuron never polls — so require the
+        # handle when called from the main shell.
+        caller_id = me or m.handle
+        if not caller_id:
+            return _precondition(
+                "consult_curiosity needs `handle` (your recipe_id) when "
+                "called from the neuron's main shell — the curiosity reply "
+                "is routed back to it; without it the reply dead-letters."
+            )
+        # Persistent two-way (2026-05-28): FOLLOW-UP vs first SPAWN.
+        followup = bool(m.curiosity_id)
+        if followup:
+            curiosity_id = m.curiosity_id
+            # Guard: don't dead-letter into a curiosity that already
+            # closed itself (it closes on `clear`). If it's not alive,
+            # the cycle is over — tell the neuron to spawn fresh.
+            live = (await self.ctx.pool.liveness(curiosity_id))["state"]  # W7
+            if live != "alive":
+                return _precondition(
+                    f"curiosity {curiosity_id!r} is {live!r}, not alive — "
+                    "it closed (likely returned clear). Do NOT follow up a "
+                    "closed curiosity; omit curiosity_id to spawn a fresh "
+                    "one for a NEW decision, or treat the cycle as done."
+                )
+        else:
+            curiosity_id = f"curiosity-{uuid.uuid4().hex[:8]}"
+        # P6 curiosity independence (2026-06-10): give curiosity GROUND
+        # TRUTH, not just the caller's framing. When the consult is about
+        # an existing recipe, carry its id so curiosity reads the recipe
+        # itself (read_object) and treats `context` as a CLAIM to diff
+        # against the record — not the whole picture. First-consult of a
+        # brand-new goal has no recipe yet; framing-only is unavoidable.
+        recipe_id = None
+        if m.handle and self.ctx.recipes.exists(m.handle):
+            recipe_id = m.handle
+        else:
+            recipe_id, _extras = _resolve_recipe_lineage(self.ctx)
+        # v7 (2026-07-13) — ONE open interrogator per recipe. A fresh spawn
+        # while the recipe's recorded curiosity is STILL ALIVE forks the
+        # conversation and strands both halves (measured: a neuron consumed
+        # the open curiosity's questions from its inbox, spawned a second
+        # one, and declared itself blocked). Refuse-and-explain, naming the
+        # follow-up path. A dead/closed open id is stale bookkeeping — the
+        # spawn proceeds and replaces it. Fail-open on an unreachable pool
+        # (can't verify ≠ is dead).
+        if not followup and recipe_id:
+            rr = self.ctx.recipes.load(recipe_id)
+            open_id = getattr(rr.comprehension, "curiosity_open_id", None)
+            if open_id:
+                try:
+                    live = (await self.ctx.pool.liveness(open_id))["state"]
+                except Exception:
+                    live = "unknown"
+                if live == "alive":
+                    return _precondition(
+                        f"curiosity {open_id!r} is ALREADY OPEN and alive "
+                        f"for recipe {recipe_id!r} — do not spawn a second "
+                        "interrogator. Check your inbox for its questions "
+                        "(check_inbox), relay them to the user, and send "
+                        "the answers as a FOLLOW-UP: consult_curiosity("
+                        f"curiosity_id='{open_id}', ...). Spawning fresh "
+                        "forks the conversation and strands both halves."
+                    )
+        body = {
+            "decision": m.decision,
+            # kept under its historical key for running shells; the
+            # curiosity protocol now reads it as `caller_framing`.
+            "context": m.context,
+            "caller_framing": m.context,
+            "caller": caller_id,
+        }
+        if recipe_id:
+            body["recipe_id"] = recipe_id
+        consult_msg = BrokerMessage(
+            msg_id=str(uuid.uuid4()),
+            ts=_now(),
+            **{"from": caller_id},
+            to=curiosity_id,
+            kind="consult",
+            body=body,
+        )
+        send_res = await self.ctx.broker.send(consult_msg)
+        if not getattr(send_res, "ok", False):
+            return send_res
+        if followup:
+            # No spawn — the persistent shell wakes on its heartbeat,
+            # reads this follow-up, and replies (remembering prior rounds).
+            return Tool.ok(_ConsultCuriosityOut(
+                curiosity_id=curiosity_id, mode="followup",
+                note="follow-up delivered to the existing curiosity; its "
+                     "next reply arrives via handle_messages. Keep using "
+                     "this curiosity_id until status='done'.",
+            ))
+        spawn_res = await self.ctx.pool.spawn_curiosity(
+            caller_id, curiosity_id
+        )
+        if not getattr(spawn_res, "ok", False):
+            return spawn_res
+        # v7: record the open interrogator on the recipe (the one-open-
+        # curiosity guard above reads it; reconcile clears it on the
+        # clear/done convergence). Best-effort — a failed stamp only means
+        # the guard cannot protect this cycle.
+        if recipe_id and self.ctx.recipes.exists(recipe_id):
+            try:
+                rr = self.ctx.recipes.load(recipe_id)
+                rr.comprehension.curiosity_open_id = curiosity_id
+                self.ctx.recipes.save(rr)
+            except Exception as e:  # noqa: BLE001
+                _log.warning("curiosity_open_stamp_failed", str(e))
+        return Tool.ok(_ConsultCuriosityOut(
+            curiosity_id=curiosity_id, mode="spawned"))
+
+
+class _ConsultGoalKeeperIn(BaseModel):
+    recipe_id: str  # the recipe whose drift is being checked
+    query: str = "check tactical-vs-strategic drift on the current plan"
+
+
+class _ConsultGoalKeeperOut(BaseModel):
+    gk_id: str
+    note: str = "goal-keeper spawned; drift report arrives via handle_messages"
+
+
+class ConsultGoalKeeper(_ClaudeTool):
+    """Phase 6 (2026-05-21): externality for tactical-vs-strategic
+    drift. Consulted at plan-creation time. The goal-keeper reads the
+    recipe's user_goal_verbatim (strategic) and the latest plan's
+    goal (tactical), scores drift, and replies — does NOT decide
+    pivot/abort itself (the caller decides what to do with the
+    drift signal)."""
+
+    name = "consult_goal_keeper"
+    InputModel = _ConsultGoalKeeperIn
+    OutputModel = _ConsultGoalKeeperOut
+
+    async def _run(self, m: _ConsultGoalKeeperIn):
+        me, _ = _self_and_parent_addresses()
+        caller_id = me or m.recipe_id
+        gk_id = f"{m.recipe_id}-goalkeeper-{uuid.uuid4().hex[:8]}"
+
+        consult_msg = BrokerMessage(
+            msg_id=str(uuid.uuid4()),
+            ts=_now(),
+            **{"from": caller_id},
+            to=gk_id,
+            kind="consult",
+            body={
+                "scope": "recipe",
+                "handle": m.recipe_id,
+                "query": m.query,
+                "caller": caller_id,
+            },
+        )
+        send_res = await self.ctx.broker.send(consult_msg)
+        if not getattr(send_res, "ok", False):
+            return send_res
+        spawn_res = await self.ctx.pool.spawn_goal_keeper(caller_id, gk_id)
+        if not getattr(spawn_res, "ok", False):
+            return spawn_res
+        return Tool.ok(_ConsultGoalKeeperOut(gk_id=gk_id))
+
+
+class _ConsultPatternObserverIn(BaseModel):
+    query: str = "surface recurring failure patterns from recent worklogs"
+    scope_handle: str | None = None  # optional: focus on one recipe/plan
+
+
+class _ConsultPatternObserverOut(BaseModel):
+    po_id: str
+    note: str = "pattern-observer spawned; report arrives via handle_messages"
+
+
+class ConsultPatternObserver(_ClaudeTool):
+    """Phase 6 (2026-05-21): externality for cross-plan failure
+    pattern aggregation. Consulted at plan-close time. The
+    pattern-observer reads recent worklogs across plans, surfaces
+    recurring failure shapes — does NOT fix anything itself."""
+
+    name = "consult_pattern_observer"
+    InputModel = _ConsultPatternObserverIn
+    OutputModel = _ConsultPatternObserverOut
+
+    async def _run(self, m: _ConsultPatternObserverIn):
+        me, _ = _self_and_parent_addresses()
+        # route the report back to the handle the caller polls: its own
+        # spawned id, else the recipe handle it passed as scope_handle.
+        caller_id = me or m.scope_handle
+        if not caller_id:
+            return _precondition(
+                "consult_pattern_observer needs `scope_handle` (your "
+                "recipe_id) when called from the neuron's main shell — "
+                "the report routes back to it."
+            )
+        po_id = f"patterns-observer-{uuid.uuid4().hex[:8]}"
+
+        consult_msg = BrokerMessage(
+            msg_id=str(uuid.uuid4()),
+            ts=_now(),
+            **{"from": caller_id},
+            to=po_id,
+            kind="consult",
+            body={
+                "scope": "cross-plan",
+                "handle": m.scope_handle or "",
+                "query": m.query,
+                "caller": caller_id,
+            },
+        )
+        send_res = await self.ctx.broker.send(consult_msg)
+        if not getattr(send_res, "ok", False):
+            return send_res
+        spawn_res = await self.ctx.pool.spawn_pattern_observer(
+            caller_id, po_id
+        )
+        if not getattr(spawn_res, "ok", False):
+            return spawn_res
+        return Tool.ok(_ConsultPatternObserverOut(po_id=po_id))
+
+
+def _recipe_for_handle(ctx, handle: str):
+    """Resolve the RECIPE a handle grounds against, or None. Accepts every
+    address form in the system: a recipe_id, a planner colon handle
+    (`<recipe_id>:<step_id>`), a dash plan_id, and a worker handle
+    (`<plan_id>:<action_id>`). Used by the P5.3 epoch seam on the
+    worker-called surfaces — best-effort by design (an unresolvable handle
+    just means no reground block, never an error)."""
+    head = handle.split(":", 1)[0]
+    try:
+        if ctx.recipes.exists(head):
+            return ctx.recipes.load(head)
+        if ctx.plans.exists(head):
+            rid = ctx.plans.load(head).recipe_id
+            if ctx.recipes.exists(rid):
+                return ctx.recipes.load(rid)
+        rid = re.sub(r"-s\d+$", "", head)
+        if ctx.recipes.exists(rid):
+            return ctx.recipes.load(rid)
+    except Exception:
+        return None
+    return None
+
+
+class _CheckInboxIn(BaseModel):
+    # Optional override; default = the worker's own handle from env
+    handle: str | None = None
+    # CHANNELS (2026-07-21): poll a CHANNEL as a member instead of an
+    # inbox as its owner. Delivery = messages addressed to YOU
+    # (body.for == your handle or "@all"); unaddressed mail stays the
+    # channel owner's (today's semantics, so nothing existing changes).
+    # Cursor is per-(channel, member) — your reads never disturb the
+    # owner's or other members' positions.
+    channel: str | None = None
+    # s17 RP-C: explicit opt-in to replay the recipient's FULL retained
+    # inbox (ignores the persisted cursor, polls since_ts=None). Default
+    # False = resume from last-seen. Mirrors rx.broker(..., replay=True).
+    replay: bool = False
+    # P1 read-efficiency. summary=True returns per-message summary rows
+    # (msg_id/from/kind/at/body_bytes/preview) instead of full bodies.
+    # max_bytes returns full bodies oldest-first until the cumulative
+    # body budget would be exceeded, then summaries for the rest. Either
+    # way the cursor advances over EVERYTHING returned — recover any
+    # summarized body via read_object('message', ids={'msg_id': ...}).
+    # s17 a7: the byte-budget is the DEFAULT (INBOX_MAX_BYTES) when max_bytes
+    # is None — pass an explicit max_bytes to widen/tighten, or summary=True
+    # for rows-only.
+    summary: bool = False
+    max_bytes: int | None = None
+    # v7 P5.3 — the epoch/rewire seam, extended to the surfaces WORKERS and
+    # REVIEWERS actually call (they never run next_action/reconcile, so a
+    # compacted worker used to lose its Monitor wake plane PERMANENTLY —
+    # nothing it called could hand the rewire back). Echo the grounding
+    # epoch from your last context push; on a stale echo the response
+    # carries the same `reground` block next_action(reground=true) returns
+    # (digest + idempotent observe() re-arm strings + guide reload). Absent
+    # (default) = byte-identical pre-v7 behaviour.
+    ack_epoch: str | None = None
+
+
+class _CheckInboxOut(BaseModel):
+    messages: list[dict]
+    note: str | None = None
+    # v7 P5.3: current epoch echoed when the caller passed ack_epoch;
+    # `reground` populated only on a stale echo.
+    grounding_epoch: str | None = None
+    reground: dict | None = None
+
+
+# Per-recipient cursor — module-level so it survives turn boundaries
+# within the MCP server's lifetime (= the parent shell's life). Survives
+# /clear (subprocess state untouched), wake-from-cron, and intra-shell
+# loops.
+#
+# s17 RP-C (cursor-persist, 2026-06-07): the in-process dict is now BACKED
+# by a tiny per-recipient cursor file under <agent_home>/.inbox_cursors/.
+# Before this, a FRESH shell (new worker/planner, cron-resumed/compacted
+# neuron) started with an EMPTY dict → polled `since_ts=None` → the broker
+# re-streamed the recipient's ENTIRE retained inbox (96KB+ measured), so the
+# shell's first act post-restart polluted its own context window with stale
+# history instead of the few messages it needed to resume. Persisting the
+# cursor lets a fresh shell resume from last-seen. The dict stays the fast
+# in-process path; disk is the cross-shell fallback (read once to warm the
+# dict on a cold lookup, written on every advance). Bodies are NEVER capped
+# (body-cap withdrawn) — only the count is bounded, by the cursor.
+#
+# Equivalence (the hard gate): the persisted cursor is always set to the
+# max ts of messages already RETURNED to an agent, and `broker.poll` filters
+# with strict `>` (store.read: `m.ts > since`). So a fresh shell's cursored
+# poll delivers EXACTLY the zero-cursor set minus the already-seen prefix —
+# no unseen message is ever dropped. `replay=True` restores the full-history
+# poll (explicit opt-in, mirrors FA2-F1's `rx.broker(..., replay=True)`).
+_INBOX_CURSORS: dict[str, datetime] = {}
+
+
+def _inbox_cursor_root(ctx) -> Path:
+    """`<agent_home>/.inbox_cursors` — sibling of `.reactive`, resolved the
+    same way (recipes store root's parent = the agent home dir)."""
+    return ctx.recipes.root.parent / ".inbox_cursors"
+
+
+def _inbox_cursor_file(ctx, recipient: str) -> Path:
+    """Filesystem-safe path for a recipient's cursor. Handles contain `:`
+    (worker `plan:action`) and other chars illegal on Windows, so sanitize
+    to an alnum/._- slug (truncated for MAX_PATH safety) and append a short
+    sha1 of the FULL recipient to guarantee no two distinct recipients
+    collide onto one file."""
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", recipient)[:80]
+    digest = hashlib.sha1(recipient.encode("utf-8")).hexdigest()[:12]
+    return _inbox_cursor_root(ctx) / f"{safe}.{digest}.ts"
+
+
+def _load_persisted_cursor(ctx, recipient: str) -> datetime | None:
+    """Read the on-disk cursor for `recipient`; None if absent/unreadable.
+    Best-effort: a missing/corrupt file degrades to the pre-RP-C behavior
+    (poll from None) rather than erroring the agent's inbox read."""
+    try:
+        raw = _inbox_cursor_file(ctx, recipient).read_text(
+            encoding="utf-8"
+        ).strip()
+    except (FileNotFoundError, OSError):
+        return None
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def _save_persisted_cursor(ctx, recipient: str, ts: datetime) -> None:
+    """Write the recipient's cursor atomically-ish (write tmp + replace).
+    Best-effort: the in-process dict remains authoritative for this shell,
+    so a write failure never breaks inbox delivery — it only means the NEXT
+    fresh shell falls back to a wider poll."""
+    try:
+        root = _inbox_cursor_root(ctx)
+        root.mkdir(parents=True, exist_ok=True)
+        dst = _inbox_cursor_file(ctx, recipient)
+        tmp = dst.with_suffix(dst.suffix + ".tmp")
+        tmp.write_text(ts.isoformat(), encoding="utf-8")
+        tmp.replace(dst)
+    except OSError:
+        pass
+
+
+class CheckInbox(_ClaudeTool):
+    """Pull pending messages addressed to you (workers / any shell not
+    looping on next_action). Returns the HANDLE_MESSAGES per-message shape
+    (msg_id / from / kind / body / at), bodies UNTRUNCATED by default. The
+    cursor is managed and PERSISTED per recipient under
+    <agent_home>/.inbox_cursors/ (s17 RP-C), so repeated cron ticks — and a
+    fresh / compacted / cron-resumed shell — resume from last-seen instead
+    of re-delivering old messages. **Pass replay=True** to re-poll the full
+    retained inbox (ignores the cursor) — the catch-up/audit opt-in,
+    mirroring rx.broker(..., replay=True).
+
+    Big-inbox efficiency (P1): summary=True returns one compact row per
+    message ({msg_id, from, kind, at, body_bytes, preview}) — scan first,
+    then read the few that matter via read_object('message',
+    ids={'msg_id': ...}). max_bytes=N keeps full bodies oldest-first
+    within the byte budget and summarizes the rest. The cursor advances
+    over everything returned either way — a summarized message will NOT
+    re-appear on the next poll, so follow up on its msg_id, don't re-poll."""
+
+    name = "check_inbox"
+    idempotent = True
+    InputModel = _CheckInboxIn
+    OutputModel = _CheckInboxOut
+
+    async def _run(self, m: _CheckInboxIn):
+        member = None
+        if m.channel:
+            # CHANNEL read: poll the channel inbox AS a member. `me` is
+            # required (the for-filter and the cursor are member-scoped).
+            me = (m.handle or "").strip()
+            if not me:
+                me, _ = _self_and_parent_addresses()
+            if not me:
+                return _precondition(
+                    "channel reads need YOUR identity — pass handle=... "
+                    "or run with EDP_HANDLE set.")
+            member = me
+            recipient = m.channel
+        elif m.handle:
+            recipient = m.handle
+        else:
+            me, _ = _self_and_parent_addresses()
+            if not me:
+                return _precondition(
+                    "no handle to check — pass handle=... or set "
+                    "EDP_HANDLE (workers/planners are spawned with it)."
+                )
+            recipient = me
+        # cursor identity: owner reads keep the recipient key (unchanged);
+        # member channel reads get their own `<channel>::<member>` key.
+        cursor_key = f"{recipient}::{member}" if member else recipient
+        if m.replay:
+            # explicit full-history opt-in — ignore the cursor entirely
+            cursor = None
+        else:
+            cursor = _INBOX_CURSORS.get(cursor_key)
+            if cursor is None:
+                # cold in-process cache (fresh shell): fall back to the
+                # persisted cursor so we resume from last-seen, not None.
+                cursor = _load_persisted_cursor(self.ctx, cursor_key)
+                if cursor is not None:
+                    _INBOX_CURSORS[cursor_key] = cursor
+        msgs = await self.ctx.broker.poll(recipient, since_ts=cursor)
+        scanned_newest = max((x.ts for x in msgs), default=None)
+        if member is not None:
+            # CHANNEL delivery filter: only mail FOR this member (its
+            # mentions and @all). Unaddressed mail stays the owner's.
+            # The cursor advances over everything SCANNED (below), so a
+            # member never re-scans other people's traffic.
+            from ..channels import addressed_to
+            msgs = [x for x in msgs
+                    if addressed_to(x.body, member, recipient)]
+        # Delivery-count visibility (2026-07-20, operator demand: "add
+        # logs if not visible"): an empty delivery versus a cursor-eaten
+        # delivery versus real mail was undiagnosable from the generic
+        # tool_done line. One structured line per poll names all three.
+        from .base import _log as _mcp_log
+        _mcp_log.info(
+            "inbox_delivered", recipient, recipient=recipient,
+            delivered=len(msgs),
+            cursor=cursor.isoformat() if cursor else None,
+            kinds=sorted({x.kind for x in msgs}) if msgs else [])
+        if scanned_newest is not None:
+            _INBOX_CURSORS[cursor_key] = scanned_newest
+            _save_persisted_cursor(self.ctx, cursor_key, scanned_newest)
+        if msgs:
+            # Comms visibility (moved here from next_action when the latter
+            # became a pure-protocol pacer): record inbound on the
+            # delivery path. Recipe recipient → events; plan recipient →
+            # plan worklog; a worker handle (plan:action) → skip.
+            for x in msgs:
+                entry = {
+                    "kind": "message_received",
+                    "from": x.from_, "msg_kind": x.kind,
+                    "msg_id": x.msg_id, "summary": str(x.body)[:300],
+                }
+                try:
+                    if self.ctx.recipes.exists(recipient):
+                        self.ctx.recipes.append_worklog(recipient, entry)
+                    elif self.ctx.plans.exists(recipient):
+                        self.ctx.plans.append_worklog(recipient, entry)
+                except Exception:  # noqa: BLE001 — best-effort visibility
+                    pass
+        def _full(x) -> dict:
+            return {
+                "msg_id": x.msg_id,
+                "from": x.from_,
+                "kind": x.kind,
+                "body": x.body,
+                "at": x.ts.isoformat(),
+            }
+
+        def _row(x) -> dict:
+            body = json.dumps(x.body, default=str, ensure_ascii=False)
+            return {
+                "msg_id": x.msg_id,
+                "from": x.from_,
+                "kind": x.kind,
+                "at": x.ts.isoformat(),
+                "body_bytes": len(body.encode("utf-8")),
+                "preview": body[:200],
+            }
+
+        note = None
+        ordered = sorted(msgs, key=lambda x: x.ts)
+        if m.summary:
+            out = [_row(x) for x in ordered]
+            if out:
+                note = ("summary mode — bodies omitted; read any message "
+                        "in full via read_object('message', "
+                        "ids={'msg_id': ...}).")
+        else:
+            # s17 a7 — the byte-budget is now the DEFAULT, not opt-in: a fresh
+            # or compacted shell polling a large retained inbox no longer dumps
+            # every full body (the ~96KB re-stream #18 targets). max_bytes=None
+            # applies INBOX_MAX_BYTES; pass an explicit max_bytes to widen or
+            # tighten. Full bodies come oldest-first until the budget would be
+            # exceeded, then compact rows for the rest (at least one full body
+            # always). The cursor still advances over EVERYTHING returned.
+            budget = m.max_bytes if m.max_bytes is not None else INBOX_MAX_BYTES
+            out, used, summarized = [], 0, 0
+            for x in ordered:
+                size = len(json.dumps(
+                    x.body, default=str, ensure_ascii=False).encode("utf-8"))
+                if used + size <= budget or not out:
+                    out.append(_full(x))
+                    used += size
+                else:
+                    out.append(_row(x))
+                    summarized += 1
+            if summarized:
+                how = ("max_bytes" if m.max_bytes is not None
+                       else "the default inbox byte-budget")
+                note = (f"{summarized} message(s) summarized to fit {how}"
+                        f"={budget} — full body via read_object('message', "
+                        "ids={'msg_id': ...}); pass a larger max_bytes to "
+                        "widen.")
+        # v7 P5.3: the epoch/rewire seam on the worker-called surface. Only
+        # when the caller echoes an epoch — a bare check_inbox stays
+        # byte-identical.
+        epoch = reground = None
+        if m.ack_epoch is not None:
+            rr = _recipe_for_handle(self.ctx, recipient)
+            if rr is not None:
+                epoch = _grounding_for(self.ctx, rr)
+                mode = _classify_epoch(epoch, m.ack_epoch, False)
+                if mode == "stale":
+                    reground = await _reground_payload(
+                        self.ctx, rr, epoch, mode, recipient)
+        return Tool.ok(_CheckInboxOut(messages=out, note=note,
+                                      grounding_epoch=epoch,
+                                      reground=reground))
+
+
+class _ReplyIn(BaseModel):
+    msg_id: str  # the msg_id of the message you're answering
+    body: dict = {}
+
+
+class Reply(_ClaudeTool):
+    """Answer a specific message you received via HANDLE_MESSAGES.
+    Just pass the `msg_id` from the message; the tool looks up the
+    original sender via the broker and routes the answer back. The
+    agent never types `to=` — addressing lives under the MCP layer."""
+
+    name = "reply"
+    InputModel = _ReplyIn
+    OutputModel = BaseModel
+
+    async def _run(self, m: _ReplyIn):
+        original = await self.ctx.broker.get_message(m.msg_id)
+        if original is None:
+            return _precondition(
+                f"no message {m.msg_id!r} in broker — was it ever "
+                "sent? (the msg_id should come verbatim from the "
+                "HANDLE_MESSAGES instruction you received)."
+            )
+        # Original sender lives in `from_` (the BrokerMessage field
+        # name; wire alias is `from`). Route the answer there.
+        target = original.from_
+        me, _ = _self_and_parent_addresses()
+        sender_id = me or "neuron"
+        body = {"in_reply_to": m.msg_id, **m.body}
+        msg = BrokerMessage(
+            msg_id=str(uuid.uuid4()),
+            ts=_now(),
+            **{"from": sender_id},
+            to=target,
+            kind="answer",
+            body=body,
+        )
+        res = await self.ctx.broker.send(msg)
+        if getattr(res, "ok", False):
+            _worklog_outbound(self.ctx, "answer", target, body)
+        return res
+
+
+# ── guides + OCAK helpers (post-HITL sweep 2026-05-20) ────────────────────
+# Helpers are pure Python scaffolds — NO LLM inside (see
+# docs/design/philosophy/ocak-as-helper-not-enforcer.md). They return
+# content and structure; the AGENT does the reasoning.
+
+@lru_cache(maxsize=64)
+def _read_guide_cached(path_str: str, stamp: tuple = ()) -> str:
+    """In-process LRU cache, keyed on the file's IDENTITY *and* its
+    (mtime_ns, size) stamp — never on the path alone.
+
+    Why the stamp (2026-07-27, found live): the MCP server subprocess
+    outlives turns and wake-from-cron, so a path-only key meant an edit
+    to a guide was INVISIBLE to every long-lived shell for the rest of
+    its life. The neuron whose own launch contract tells it to fold
+    corrected rules back into `orchestrator-launch.md` then read its
+    OWN pre-edit text back, with no signal that it was stale — the edit
+    landed on disk and reached nobody. "Restart is the natural
+    invalidation" is not an invalidation policy when the reader is the
+    writer and never restarts. One `stat` per call buys correctness."""
+    return Path(path_str).read_text(encoding="utf-8")
+
+
+def _read_guide(path: Path) -> str:
+    """Cached guide read that re-reads when the file changed on disk."""
+    try:
+        st = path.stat()
+        stamp = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        stamp = ()
+    return _read_guide_cached(str(path), stamp)
+
+
+def _guides_root(ctx) -> Path:
+    """Guides ship with the package (docs/guides/). In production
+    ctx.recipes.root.parent == the agent home, which is the package
+    root. In tests ctx.recipes.root is tmp_path/.recipes and the
+    guides aren't there — fall back to the source-tree location."""
+    primary = ctx.recipes.root.parent / "docs" / "guides"
+    if primary.exists():
+        return primary
+    # Source-tree fallback: <claude>/docs/guides relative to this file.
+    return Path(__file__).resolve().parents[3] / "docs" / "guides"
+
+
+class _GuideIn(BaseModel):
+    name: str  # e.g. "framework-ocak" or "specialist-feasibility"
+
+
+class _GuideOut(BaseModel):
+    name: str
+    content: str
+
+
+class GetGuide(_ClaudeTool):
+    """Load a markdown guide from docs/guides/. The neuron uses this
+    when its reasoning needs scaffolding (a framework, a specialist's
+    criteria, a protocol reference). LRU-cached in process."""
+
+    name = "get_guide"
+    idempotent = True
+    InputModel = _GuideIn
+    OutputModel = _GuideOut
+
+    async def _run(self, m: _GuideIn):
+        path = _guides_root(self.ctx) / f"{m.name}.md"
+        if not path.exists():
+            return _precondition(
+                f"no guide {m.name!r} at {path}; check docs/guides/"
+            )
+        return Tool.ok(
+            _GuideOut(name=m.name, content=_read_guide(path))
+        )
+
+
+class _ConsultIn(BaseModel):
+    query: str                       # what you need expertise on
+    # optional exact pick; if omitted, VECTOR SIMILARITY over the neuron
+    # DB resolves the best-matching specialist for `query`.
+    specialist_id: str | None = None
+
+
+class _ConsultOut(BaseModel):
+    specialist_id: str
+    knowledge: str                   # the guide (seed) OR recipe (trained)
+    source: str                      # "guide" | "recipe"
+    score: float | None = None       # vector match score (when resolved)
+    mode: str                        # "vector" | "text-fallback" | "exact"
+    structured_prompt: str
+    # s17 a7 — CONTENT-delivery guard (#18 class-b): `knowledge` is the
+    # specialist's whole expertise, applied IN FULL, so it is NOT truncated;
+    # instead it carries a non-truncating {approx_tokens, oversize} signal so a
+    # ballooned spec dump is caught in review. The recipe (spec-JSON) branch is
+    # the one that grows with training; the guide branch is author-bounded.
+    approx_tokens: int | None = None
+    oversize: bool = False
+
+
+class ConsultSpecialist(_ClaudeTool):
+    """Consult a specialist for expertise. Resolves the specialist by
+    vector-similarity search over the neuron DB (embed `query`, cosine-rank;
+    degrades to token overlap if the embed backend is down), so it finds the
+    right one — guide-backed comprehension seed or trained domain SME —
+    without you knowing its id. Returns that specialist's KNOWLEDGE (guide
+    file or specialization recipe) + a structured prompt; **the AGENT
+    reasons through it and records the verdict via
+    record_specialist_consult** (no LLM inside the tool beyond the ranking
+    embed). Pass an explicit `specialist_id` to bypass the search."""
+
+    name = "consult_specialist"
+    idempotent = True
+    InputModel = _ConsultIn
+    OutputModel = _ConsultOut
+
+    async def _run(self, m: _ConsultIn):
+        # 1) resolve the specialist — exact pick or vector search.
+        sid = m.specialist_id
+        score = None
+        mode = "exact"
+        if not sid:
+            try:
+                qv = await self.ctx.embed.embed(m.query, kind="query")
+                ranked = self.ctx.neurons.search(qv, top_k=1)
+                mode = "vector"
+            except Exception:
+                ranked = self.ctx.neurons.search_text(m.query, top_k=1)
+                mode = "text-fallback"
+            if not ranked:
+                return _precondition(
+                    "no specialist matches this query in the neuron DB "
+                    "(empty registry?). seed_comprehension_specialists or "
+                    "train_specialist first."
+                )
+            rec, sc = ranked[0]
+            sid, score = rec.neuron_id, round(sc, 4)
+
+        # 2) load that specialist's knowledge: guide file if present
+        #    (seeds), else its specialization recipe (trained).
+        path = _guides_root(self.ctx) / f"specialist-{sid}.md"
+        if path.exists():
+            content, source = _read_guide(path), "guide"
+        else:
+            rec = self.ctx.neurons.get(sid)
+            spec_id = rec.spec_id if rec else None
+            if not spec_id or not self.ctx.specs.exists(spec_id):
+                return _precondition(
+                    f"specialist {sid!r} has neither a guide file nor a "
+                    "specialization recipe to consult."
+                )
+            spec = self.ctx.specs.load(spec_id)
+            content, source = (
+                json.dumps(spec.model_dump(mode="json"), indent=2),
+                "recipe",
+            )
+        prompt = (
+            f"You consulted the {sid!r} specialist (matched by {mode}) "
+            f"for:\n> {m.query}\n\n"
+            f"The specialist's {source} above is its expertise — walk "
+            f"through it, produce a verdict, then call "
+            f"`record_specialist_consult(specialist_id={sid!r}, "
+            f"query={m.query!r}, verdict=<your structured verdict>)`."
+        )
+        guard = budget_report(content)
+        return Tool.ok(_ConsultOut(
+            specialist_id=sid,
+            knowledge=content,
+            source=source,
+            score=score,
+            mode=mode,
+            structured_prompt=prompt,
+            approx_tokens=guard["approx_tokens"],
+            oversize=guard["oversize"],
+        ))
+
+
+class _RecordConsultIn(BaseModel):
+    recipe_id: str
+    specialist_id: str
+    query: str
+    verdict: dict
+
+
+class RecordSpecialistConsult(_ClaudeTool):
+    """Persist a specialist consult to recipe.specialist_consults. The
+    consult is append-only; specialists can be re-consulted (each
+    consult gets its own id)."""
+
+    name = "record_specialist_consult"
+    InputModel = _RecordConsultIn
+    OutputModel = BaseModel
+
+    async def _run(self, m: _RecordConsultIn):
+        if not self.ctx.recipes.exists(m.recipe_id):
+            return _precondition(f"no recipe {m.recipe_id!r}")
+        r = self.ctx.recipes.load(m.recipe_id)
+        r.specialist_consults.append(SpecialistConsult(
+            consult_id=f"c{len(r.specialist_consults) + 1}",
+            specialist_id=m.specialist_id,
+            query=m.query,
+            verdict=m.verdict,
+            at=_now(),
+        ))
+        self.ctx.recipes.save(r)
+        return Tool.ok(_Ok())
+
+
+# OCAK's 4 audit questions (verbatim from framework-ocak.md).
+_OCAK_QUESTIONS = {
+    "O": ("Observation: What prior approach to this goal-class did you "
+          "notice? Did you apply it? (Null is a valid answer.)"),
+    "C": ("Comprehension: Is this addressing the symptom or the root "
+          "cause? Is the stated goal the real goal, or a proxy?"),
+    "A": ("Awareness: Does the proposed approach address the actual "
+          "class of error, or just this instance?"),
+    "K": ("Concerns: Effort, risk, maintenance — what's the K-cost? "
+          "Pin effort low/medium/high + one-line risk + a maintenance "
+          "note."),
+}
+
+
+class _AuditIn(BaseModel):
+    scope: Literal["recipe", "plan"]
+    handle: str  # recipe_id when scope=recipe, plan_id when scope=plan
+
+
+class _AuditOut(BaseModel):
+    scope: Literal["recipe", "plan"]
+    handle: str
+    questions: dict
+    slot_status: dict  # structural what-is-populated check
+    structured_prompt: str
+
+
+class RunOcakAudit(_ClaudeTool):
+    """Helper: walk recipe/plan state, return the 4 OCAK questions plus
+    a structural slot-status report. The AGENT then audits itself and
+    records the verdict via `record_audit_verdict`. NO LLM inside —
+    structural checks are deterministic. Per framework-ocak.md, OCAK is
+    post-reasoning validation, never a thinking lens."""
+
+    name = "run_ocak_audit"
+    idempotent = True
+    InputModel = _AuditIn
+    OutputModel = _AuditOut
+
+    async def _run(self, m: _AuditIn):
+        if m.scope == "recipe":
+            if not self.ctx.recipes.exists(m.handle):
+                return _precondition(f"no recipe {m.handle!r}")
+            r = self.ctx.recipes.load(m.handle)
+            slot_status = {
+                "real_goal_stated": bool(r.user_goal_distilled),
+                "outcomes_declared": len(r.comprehension.expected_outcomes),
+                "specialists_consulted": [
+                    c.specialist_id for c in r.specialist_consults
+                ],
+                "assumptions_recorded": len(r.context.assumptions),
+                "decisions_recorded": len(r.context.decisions),
+                "rejected_options_recorded": len(r.context.rejected_options),
+            }
+        else:
+            if not self.ctx.plans.exists(m.handle):
+                return _precondition(f"no plan {m.handle!r}")
+            p = self.ctx.plans.load(m.handle)
+            slot_status = {
+                "goal_stated": bool(p.goal),
+                "actions_count": len(p.actions),
+                "shape": p.shape,
+                "prior_audit": p.ocak_audit is not None,
+            }
+        prompt = (
+            f"OCAK is a POST-reasoning audit, not a thinking lens. "
+            f"Apply the 4 questions above to the {m.scope!r} as it now "
+            f"stands. For each question, produce a one-line finding "
+            f"(null is valid if the question doesn't apply). Then "
+            f"decide: do the findings reveal a GAP (something missed) "
+            f"or does the {m.scope} pass? Call "
+            f"`record_audit_verdict(scope={m.scope!r}, "
+            f"handle={m.handle!r}, findings={{O,C,A,K}}, verdict=..., "
+            f"gaps=[...], notes=...)`."
+        )
+        return Tool.ok(_AuditOut(
+            scope=m.scope,
+            handle=m.handle,
+            questions=_OCAK_QUESTIONS,
+            slot_status=slot_status,
+            structured_prompt=prompt,
+        ))
+
+
+class _RecordAuditIn(BaseModel):
+    scope: Literal["recipe", "plan"]
+    handle: str
+    findings: dict  # {"O": "...", "C": "...", "A": "...", "K": "..."}
+    verdict: Literal["passed", "gaps_found", "overridden_by_user"]
+    gaps: list[str] = []
+    notes: str = ""
+
+
+class RecordAuditVerdict(_ClaudeTool):
+    """Persist OCAK audit verdict on the recipe or plan. The agent fills
+    `findings` with its per-question audit, `verdict` with the overall
+    call, and `gaps` with anything flagged for surfacing to the user."""
+
+    name = "record_audit_verdict"
+    InputModel = _RecordAuditIn
+    OutputModel = BaseModel
+
+    async def _run(self, m: _RecordAuditIn):
+        audit = OcakAudit(
+            scope=m.scope,
+            findings=m.findings,
+            verdict=m.verdict,
+            gaps=m.gaps,
+            notes=m.notes,
+            at=_now(),
+        )
+        if m.scope == "recipe":
+            if not self.ctx.recipes.exists(m.handle):
+                return _precondition(f"no recipe {m.handle!r}")
+            r = self.ctx.recipes.load(m.handle)
+            r.ocak_audit = audit
+            self.ctx.recipes.save(r)
+        else:
+            if not self.ctx.plans.exists(m.handle):
+                return _precondition(f"no plan {m.handle!r}")
+            p = self.ctx.plans.load(m.handle)
+            p.ocak_audit = audit.model_dump(mode="json")
+            self.ctx.plans.save(p)
+        return Tool.ok(_Ok())
+
+
+# ── Neuron DB + specialization_recipe (vision 2026-05-22, phases 2+3) ──
+# The unified specialization registry (decision #1) + the versioned
+# specialization_recipe (the rollback anchor, decision #2). NO LLM here
+# beyond the embedding port (ranks, never decides). Discovery by
+# description-embedding cosine; degrades to token overlap if the embed
+# backend is down.
+def _neuron_slug(name: str) -> str:
+    s = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    return (s[:48].strip("-") or "neuron")
+
+
+class _NeuronOut(BaseModel):
+    neuron: dict | None
+
+
+class _NeuronList(BaseModel):
+    neurons: list[dict]           # a3: summary rows (<=limit); read one in full
+    count: int = 0                # FULL number of matching neurons
+    cursor: int | None = None     # next offset to page from, or None at the end
+
+
+class _NeuronMatches(BaseModel):
+    matches: list[dict]
+    mode: str  # "embedding" | "text-fallback"
+
+
+class _SpecCreated(BaseModel):
+    neuron_id: str
+    spec_id: str
+
+
+class _SpecOut(BaseModel):
+    spec: dict | None
+    # s17 a7 — CONTENT-delivery guard (#18 class-b): the spec dump grows with
+    # the SME's training (entries/versions) but is read + applied in full, so
+    # it is NOT truncated — it carries a non-truncating oversize signal instead.
+    approx_tokens: int | None = None
+    oversize: bool = False
+
+
+class _SearchIn(BaseModel):
+    query: str
+    top_k: int = 5
+
+
+class NeuronSearch(_ClaudeTool):
+    """Discover the specialist(s) that best match a problem/skill
+    description (decision #1: domain experts, comprehension checkers,
+    orchestration — all one DB). Embeds the query and cosine-ranks; if
+    the embed backend is unreachable, falls back to token overlap. The
+    caller branches a `stable` match's base_session_id, or creates one."""
+
+    name = "neuron_search"
+    InputModel = _SearchIn
+    OutputModel = _NeuronMatches
+
+    async def _run(self, m: _SearchIn):
+        mode = "embedding"
+        try:
+            qv = await self.ctx.embed.embed(m.query, kind="query")
+            ranked = self.ctx.neurons.search(qv, top_k=m.top_k)
+        except Exception:
+            mode = "text-fallback"
+            ranked = self.ctx.neurons.search_text(m.query, top_k=m.top_k)
+        matches = [
+            {**rec.model_dump(mode="json"), "score": round(score, 4)}
+            for rec, score in ranked
+        ]
+        return Tool.ok(_NeuronMatches(matches=matches, mode=mode))
+
+
+class _NeuronIdIn(BaseModel):
+    neuron_id: str
+
+
+class NeuronGet(_ClaudeTool):
+    name = "neuron_get"
+    InputModel = _NeuronIdIn
+    OutputModel = _NeuronOut
+
+    async def _run(self, m: _NeuronIdIn):
+        rec = self.ctx.neurons.get(m.neuron_id)
+        return Tool.ok(_NeuronOut(
+            neuron=rec.model_dump(mode="json") if rec else None
+        ))
+
+
+class _NeuronListIn(BaseModel):
+    status: str | None = None
+    category: str | None = None
+    # a3: this list scales with the GLOBAL neuron count — window it and ship a
+    # summary row per neuron. Full fidelity is one neuron_get / read_object(
+    # 'neuron', …) away, so trimming here loses nothing recoverable.
+    offset: int = 0
+    limit: int = WINDOW
+
+
+def _neuron_summary(d: dict) -> dict:
+    """Compact discovery row for a neuron: the identity + lifecycle scalars,
+    with the (embedded-for-search) `description` capped to one line. Drops the
+    timestamps; keeps everything a caller needs to pick a neuron to read in
+    full."""
+    keep = ("neuron_id", "name", "category", "status", "spec_id",
+            "base_session_id", "editable", "use_count", "flag_count")
+    out = {k: d[k] for k in keep if k in d}
+    if d.get("description"):
+        out["description"] = _digest_trim(d["description"], 160)
+    return out
+
+
+class NeuronList(_ClaudeTool):
+    name = "neuron_list"
+    InputModel = _NeuronListIn
+    OutputModel = _NeuronList
+
+    async def _run(self, m: _NeuronListIn):
+        recs = self.ctx.neurons.list(status=m.status, category=m.category)
+        w = windowed([r.model_dump(mode="json") for r in recs],
+                     m.offset, m.limit)
+        return Tool.ok(_NeuronList(
+            neurons=[_neuron_summary(d) for d in w["items"]],
+            count=w["count"], cursor=w["cursor"],
+        ))
+
+
+class _SetStatusIn(BaseModel):
+    neuron_id: str
+    status: Literal[
+        "trained", "pending_review", "stable", "underused", "archived"
+    ]
+
+
+class NeuronSetStatus(_ClaudeTool):
+    """Transition a neuron's lifecycle state (validated). The HITL gate
+    (decision #3) is pending_review → stable; re-validation on decay
+    (decision #4) is stable → pending_review."""
+
+    name = "neuron_set_status"
+    InputModel = _SetStatusIn
+    OutputModel = _NeuronOut
+
+    async def _run(self, m: _SetStatusIn):
+        rec = self.ctx.neurons.get(m.neuron_id)
+        if rec is None:
+            return _precondition(f"no neuron {m.neuron_id!r}")
+        allowed = _NEURON_TRANSITIONS.get(rec.status, set())
+        if m.status not in allowed:
+            return _precondition(
+                f"illegal transition {rec.status!r} -> {m.status!r}; "
+                f"allowed from {rec.status!r}: {sorted(allowed) or 'none (terminal)'}"
+            )
+        updated = self.ctx.neurons.set_status(m.neuron_id, m.status)
+        return Tool.ok(_NeuronOut(neuron=updated.model_dump(mode="json")))
+
+
+class _SetBaseIn(BaseModel):
+    neuron_id: str
+    session_id: str
+
+
+class NeuronSetBaseSession(_ClaudeTool):
+    """Set/promote the branchable base snapshot pointer (decision #2
+    flow-back): after an accepted task, the fork's session_id becomes
+    the new base. Also stamps trained_at (the TTL-decay anchor)."""
+
+    name = "neuron_set_base_session"
+    InputModel = _SetBaseIn
+    OutputModel = _NeuronOut
+
+    async def _run(self, m: _SetBaseIn):
+        updated = self.ctx.neurons.set_base_session(
+            m.neuron_id, m.session_id
+        )
+        if updated is None:
+            return _precondition(f"no neuron {m.neuron_id!r}")
+        return Tool.ok(_NeuronOut(neuron=updated.model_dump(mode="json")))
+
+
+class NeuronTouch(_ClaudeTool):
+    """Record a use (use_count++, last_used_at=now). Drives the
+    underused/decay signal."""
+
+    name = "neuron_touch"
+    InputModel = _NeuronIdIn
+    OutputModel = _NeuronOut
+
+    async def _run(self, m: _NeuronIdIn):
+        updated = self.ctx.neurons.touch(m.neuron_id)
+        if updated is None:
+            return _precondition(f"no neuron {m.neuron_id!r}")
+        return Tool.ok(_NeuronOut(neuron=updated.model_dump(mode="json")))
+
+
+class NeuronFlag(_ClaudeTool):
+    """Record that a specialist's output was flagged/corrected
+    (flag_count++). The feedback half of decay (decision #4)."""
+
+    name = "neuron_flag"
+    InputModel = _NeuronIdIn
+    OutputModel = _NeuronOut
+
+    async def _run(self, m: _NeuronIdIn):
+        updated = self.ctx.neurons.flag(m.neuron_id)
+        if updated is None:
+            return _precondition(f"no neuron {m.neuron_id!r}")
+        return Tool.ok(_NeuronOut(neuron=updated.model_dump(mode="json")))
+
+
+class _CreateSpecIn(BaseModel):
+    name: str
+    subject: str        # "Java / DDD / Spring Boot"
+    description: str     # what it specializes in (embedded for search)
+    category: Literal["comprehension", "domain", "orchestration"] = "domain"
+
+
+class CreateSpecialization(_ClaudeTool):
+    """Bootstrap a specialization: registers a neuron (status `trained`
+    — the SME researches FIRST, then authors, so the recipe exists =
+    trained) AND creates its specialization_recipe v1. The description
+    is embedded for neuron_search. Then add_spec_entry to fill
+    steps/links/checklists/anti-patterns, and neuron_set_status
+    `pending_review` to submit for the HITL gate (decision #3). Returns
+    {neuron_id, spec_id}."""
+
+    name = "create_specialization"
+    InputModel = _CreateSpecIn
+    OutputModel = _SpecCreated
+
+    async def _run(self, m: _CreateSpecIn):
+        base = _neuron_slug(m.name)
+        nid = base
+        if self.ctx.neurons.exists(nid):
+            nid = f"{base}-{uuid.uuid4().hex[:6]}"
+        sid = f"spec-{nid}"
+        now = _now()
+        # spec recipe v1
+        self.ctx.specs.save(Specialization(
+            spec_id=sid, neuron_id=nid, name=m.name, subject=m.subject,
+            entries=[], created_at=now, updated_at=now,
+        ))
+        # discovery embedding (best-effort; null on backend failure →
+        # search degrades to token overlap)
+        emb = None
+        try:
+            emb = await self.ctx.embed.embed(
+                f"{m.name}. {m.subject}. {m.description}", kind="document"
+            )
+        except Exception:
+            emb = None
+        self.ctx.neurons.create(NeuronRecord(
+            neuron_id=nid, name=m.name, description=m.description,
+            category=m.category, status="trained",
+            spec_id=sid, created_at=now, updated_at=now,
+        ), embedding=emb)
+        return Tool.ok(_SpecCreated(neuron_id=nid, spec_id=sid))
+
+
+class _TrainSpecialistIn(BaseModel):
+    subject: str          # "Java / DDD / Spring Boot"
+    description: str       # what the specialist should master (+embedded)
+    category: Literal["comprehension", "domain", "orchestration"] = "domain"
+    name: str = ""        # optional display name; defaults to subject
+    # the handle YOU poll next_action on (recipe_id). training_complete
+    # is routed back here; without it the reply dead-letters.
+    handle: str | None = None
+
+
+class _TrainSpecialistOut(BaseModel):
+    specialist_id: str
+    base_session_id: str   # pinned claude session = the branchable base
+    note: str = (
+        "SME spawned; it will create_specialization, self-train, submit "
+        "for review, and notify training-complete via handle_messages"
+    )
+
+
+class TrainSpecialist(_ClaudeTool):
+    """Spawn an SME shell to train a NEW specialization (consult-before-
+    spawn: posts the {subject, description, category} task to the SME inbox
+    FIRST, then spawns). **Spawns in monitor mode (a VISIBLE console)** so
+    the USER converses with the SME directly until they declare training
+    complete; the SME learns the subject GENERALLY (it will be forked for
+    many use cases), then learn→snapshot, submits to `pending_review` (the
+    HITL gate), and notifies training-complete. The pinned base session is
+    the branchable snapshot."""
+
+    name = "train_specialist"
+    InputModel = _TrainSpecialistIn
+    OutputModel = _TrainSpecialistOut
+
+    async def _run(self, m: _TrainSpecialistIn):
+        me, _ = _self_and_parent_addresses()
+        caller_id = me or m.handle
+        if not caller_id:
+            return _precondition(
+                "train_specialist needs `handle` (your recipe_id) when "
+                "called from the neuron's main shell — the "
+                "training_complete reply routes back to it."
+            )
+        slug = _neuron_slug(m.name or m.subject)
+        specialist_id = f"specialist-{slug}-{uuid.uuid4().hex[:8]}"
+        # phase 5: pin the SME's claude session id up front so the
+        # trained base is branchable. The SME records this as the
+        # neuron's base_session_id (it reads it from the consult).
+        base_session_id = str(uuid.uuid4())
+        task = BrokerMessage(
+            msg_id=str(uuid.uuid4()),
+            ts=_now(),
+            **{"from": caller_id},
+            to=specialist_id,
+            kind="consult",
+            body={
+                "task": "self-train",
+                "subject": m.subject,
+                "description": m.description,
+                "category": m.category,
+                "name": m.name or m.subject,
+                "base_session_id": base_session_id,
+                "interactive": True,   # v2.3: converse with the user
+                "caller": caller_id,
+            },
+        )
+        send_res = await self.ctx.broker.send(task)
+        if not getattr(send_res, "ok", False):
+            return send_res
+        # v2.3: monitor mode = a visible console the user trains in.
+        spawn_res = await self.ctx.pool.spawn_specialist(
+            caller_id, specialist_id, claude_session=base_session_id,
+            mode="monitor",
+        )
+        if not getattr(spawn_res, "ok", False):
+            return spawn_res
+        return Tool.ok(_TrainSpecialistOut(
+            specialist_id=specialist_id, base_session_id=base_session_id
+        ))
+
+
+class _UpdateSpecialistIn(BaseModel):
+    neuron_id: str
+    update_instructions: str   # what to refine/add/correct
+    handle: str | None = None  # caller's poll-handle (recipe_id)
+
+
+class UpdateSpecialist(_ClaudeTool):
+    """2026-05-24 lifecycle: UPDATE an existing trained specialist —
+    refine its recipe (e.g. 'enforce writing tests; your output skipped
+    them') WITHOUT throwing away prior expertise. Spawns the SME
+    resuming the existing base (`--resume <base> --fork-session`, visible
+    monitor mode) with the update instructions; the SME refines the
+    recipe + re-snapshots to a NEW base + re-submits `pending_review` for
+    re-approval. (To RECREATE fresh instead — discard the old base —
+    `neuron_set_status(archived)` then `train_specialist` anew.)"""
+
+    name = "update_specialist"
+    InputModel = _UpdateSpecialistIn
+    OutputModel = _TrainSpecialistOut
+
+    async def _run(self, m: _UpdateSpecialistIn):
+        rec = self.ctx.neurons.get(m.neuron_id)
+        if rec is None:
+            return _precondition(f"no neuron {m.neuron_id!r}")
+        if not rec.base_session_id:
+            return _precondition(
+                f"neuron {m.neuron_id} has no base_session_id to resume "
+                "— use train_specialist to create it first."
+            )
+        me, _ = _self_and_parent_addresses()
+        caller_id = me or m.handle
+        if not caller_id:
+            return _precondition(
+                "update_specialist needs `handle` (your recipe_id) when "
+                "called from the neuron's main shell."
+            )
+        new_base = str(uuid.uuid4())
+        specialist_id = f"specialist-{m.neuron_id}-upd-{uuid.uuid4().hex[:8]}"
+        task = BrokerMessage(
+            msg_id=str(uuid.uuid4()),
+            ts=_now(),
+            **{"from": caller_id},
+            to=specialist_id,
+            kind="consult",
+            body={
+                "task": "update",
+                "neuron_id": m.neuron_id,
+                "spec_id": rec.spec_id,
+                "update_instructions": m.update_instructions,
+                "base_session_id": new_base,      # the refined snapshot
+                "resume_from": rec.base_session_id,
+                "interactive": True,
+                "caller": caller_id,
+            },
+        )
+        send_res = await self.ctx.broker.send(task)
+        if not getattr(send_res, "ok", False):
+            return send_res
+        spawn_res = await self.ctx.pool.spawn_specialist(
+            caller_id, specialist_id, claude_session=new_base,
+            mode="monitor", resume_session=rec.base_session_id,
+        )
+        if not getattr(spawn_res, "ok", False):
+            return spawn_res
+        return Tool.ok(_TrainSpecialistOut(
+            specialist_id=specialist_id, base_session_id=new_base
+        ))
+
+
+class _AddSpecEntryIn(BaseModel):
+    spec_id: str
+    kind: Literal[
+        "step", "link", "checklist", "anti_pattern", "preference",
+        "work_order",
+    ]
+    text: str       # for kind="link": the URL / doc path
+    note: str = ""
+    # 2026-06-01 (additive, SPECIALIZATION-LAYERED-RULESETS.md): adherence
+    # strength (verify-worker behavior) + link role. Optional — omitting
+    # them keeps the legacy flat-entry shape (adherence defaults
+    # `expected`, link_role null).
+    adherence: Literal["required", "expected", "preferred"] = "expected"
+    link_role: Literal[
+        "ruleset", "checklist", "guideline", "reference", "mcp_binding",
+    ] | None = None
+    # W15 (DESIGN-v6): amending a PROTECTED spec (spec-universal) requires
+    # an explicit unlock. Default False so an
+    # ordinary spec write is unchanged; a protected write without it is
+    # refused (and every protected write is actor-attributed in-code).
+    unlock: bool = False
+
+
+class AddSpecEntry(_ClaudeTool):
+    """Append one entry to a specialization_recipe (small flat schema).
+    kind="link" stores knowledge as a LINK (decision: links, not an
+    embedded content store); the others are the memory layer (steps,
+    checklists, anti-patterns, preferences, work-order) the specialist
+    reads via get_specialization."""
+
+    name = "add_spec_entry"
+    InputModel = _AddSpecEntryIn
+    OutputModel = _Ver
+
+    async def _run(self, m: _AddSpecEntryIn):
+        if not self.ctx.specs.exists(m.spec_id):
+            return _precondition(
+                f"no specialization {m.spec_id!r}; create_specialization first"
+            )
+        entry = SpecEntry(
+            kind=m.kind, text=m.text, note=m.note,
+            adherence=m.adherence, link_role=m.link_role,
+        )
+        # W15: the guarded write path. add_entry enforces the protected-spec
+        # policy (unlock required, actor-attributed) and the growth-budget cap
+        # at write time; a refusal surfaces as a user-facing precondition.
+        try:
+            v = self.ctx.specs.add_entry(m.spec_id, entry, unlock=m.unlock)
+        except ProtectedSpecError as e:
+            return _precondition(str(e))
+        return Tool.ok(_Ver(version=v))
+
+
+class _RecordSpecVersionIn(BaseModel):
+    spec_id: str
+    summary: str
+
+
+class RecordSpecVersion(_ClaudeTool):
+    """Freeze + label the current specialization_recipe version as a
+    reviewed checkpoint (the rollback anchor, decision #2). Writes a
+    labelled worklog entry; returns the current version."""
+
+    name = "record_spec_version"
+    InputModel = _RecordSpecVersionIn
+    OutputModel = _Ver
+
+    async def _run(self, m: _RecordSpecVersionIn):
+        if not self.ctx.specs.exists(m.spec_id):
+            return _precondition(f"no specialization {m.spec_id!r}")
+        spec = self.ctx.specs.load(m.spec_id)
+        self.ctx.specs.append_worklog(m.spec_id, {
+            "kind": "version_checkpoint", "version": spec.version,
+            "summary": m.summary,
+        })
+        return Tool.ok(_Ver(version=spec.version))
+
+
+# ── spec-learning flow-back (SPEC-FLOWBACK, 2026-06-04) ─────────────────────
+# A worker that discovers durable STACK-CRAFT in the field (a rule, anti-
+# pattern, or checklist item the compiled doc lacked) proposes it BACK to the
+# spec — but into a QUARANTINED sidecar, never the live recipe/ruleset. The
+# proposal sits in `.specs/<spec_id>/learnings.jsonl` with status='proposed'
+# until a human approves it through the EXISTING update_specialist→recompile→
+# pending_review→USER gate; nothing here lets a proposal reach a worker. This
+# is additive surface only — no daemon, no watchdog, no new approval path.
+class _ProposeSpecLearningIn(BaseModel):
+    spec_id: str
+    # mirrors the SpecEntry kinds so an approved learning can become a
+    # spec entry verbatim through the existing update path.
+    kind: Literal[
+        "step", "link", "checklist", "anti_pattern", "preference",
+        "work_order",
+    ]
+    text: str                    # the proposed stack-craft (for link: the URL)
+    adherence: Literal["required", "expected", "preferred"] = "expected"
+    rationale: str = ""          # WHY this is durable stack-craft, not a quirk
+    evidence_ref: str = ""       # path/handle to the field evidence
+
+
+class _ProposeSpecLearningOut(BaseModel):
+    spec_id: str
+    learning_id: str
+    status: str                  # always 'proposed' — quarantined until approved
+    path: str                    # the sidecar it was appended to
+
+
+class ProposeSpecLearning(_ClaudeTool):
+    """Propose ONE piece of field-discovered stack-craft back to a spec, into
+    a QUARANTINED sidecar (SPEC-FLOWBACK). Appends a {status:'proposed', …}
+    record to `.specs/<spec_id>/learnings.jsonl` — a file the live read path
+    (load / assemble_ruleset / get_specialist_doc) never reads, so the proposal
+    CANNOT reach a worker until a human approves it through the existing
+    update_specialist→recompile→pending_review→USER gate. Only durable stack-
+    craft flows back; project/host facts never do. Append-only, no approval
+    side effect."""
+
+    name = "propose_spec_learning"
+    InputModel = _ProposeSpecLearningIn
+    OutputModel = _ProposeSpecLearningOut
+
+    async def _run(self, m: _ProposeSpecLearningIn):
+        if not self.ctx.specs.exists(m.spec_id):
+            return _precondition(
+                f"no specialization {m.spec_id!r}; create_specialization first"
+            )
+        if not m.text.strip():
+            return _precondition(
+                "proposed learning text is empty — state the stack-craft rule."
+            )
+        learning_id = f"learn-{uuid.uuid4().hex[:12]}"
+        self.ctx.specs.append_learning(m.spec_id, {
+            "learning_id": learning_id,
+            "status": "proposed",
+            "kind": m.kind,
+            "text": m.text,
+            "adherence": m.adherence,
+            "rationale": m.rationale,
+            "evidence_ref": m.evidence_ref,
+        })
+        # P4 FLOWBACK: surface the proposal on the recipe's broadcast
+        # channel so the neuron SEES it live instead of the queue staying
+        # pull-only-forever. The event is a POINTER to the quarantined
+        # sidecar — quarantine semantics unchanged (nothing reaches a
+        # worker until the human-gated promote path runs). Best-effort:
+        # a bare shell with no recipe lineage just skips it.
+        try:
+            _emit_recipe_event(self.ctx, "spec_learning_proposed", {
+                "spec_id": m.spec_id,
+                "learning_id": learning_id,
+                "kind": m.kind,
+                "text": m.text[:200],
+            })
+        except Exception:  # noqa: BLE001 — surfacing must never block
+            pass
+        return Tool.ok(_ProposeSpecLearningOut(
+            spec_id=m.spec_id,
+            learning_id=learning_id,
+            status="proposed",
+            path=str(self.ctx.specs.learnings_path(m.spec_id)),
+        ))
+
+
+class _ListSpecLearningsIn(BaseModel):
+    spec_id: str
+    # null = every record regardless of status; default surfaces the queue
+    # a human triages at the existing checkpoint.
+    status: str | None = "proposed"
+    # a3: window the queue (the records carry full triage fields, so they are
+    # not trimmed — only bounded). `count` stays the FULL queue size.
+    offset: int = 0
+    limit: int = WINDOW
+
+
+class _ListSpecLearningsOut(BaseModel):
+    spec_id: str
+    status: str | None
+    count: int
+    cursor: int | None = None     # next offset to page from, or None at the end
+    learnings: list[dict]
+
+
+class ListSpecLearnings(_ClaudeTool):
+    """Read the quarantined flow-back queue for a spec (SPEC-FLOWBACK). Returns
+    the proposed-learning records from `.specs/<spec_id>/learnings.jsonl`,
+    filtered by `status` (default 'proposed'; null = all). PULL-ONLY — this is
+    the read a human/triage step runs at an existing checkpoint; there is no
+    daemon pushing it. An unknown spec returns an empty queue (graceful), never
+    an error."""
+
+    name = "list_spec_learnings"
+    idempotent = True
+    InputModel = _ListSpecLearningsIn
+    OutputModel = _ListSpecLearningsOut
+
+    async def _run(self, m: _ListSpecLearningsIn):
+        learnings = (
+            self.ctx.specs.read_learnings(m.spec_id, status=m.status)
+            if self.ctx.specs.exists(m.spec_id) else []
+        )
+        w = windowed(learnings, m.offset, m.limit)
+        return Tool.ok(_ListSpecLearningsOut(
+            spec_id=m.spec_id,
+            status=m.status,
+            count=w["count"],
+            cursor=w["cursor"],
+            learnings=w["items"],
+        ))
+
+
+class _ResolveSpecLearningIn(BaseModel):
+    spec_id: str
+    learning_id: str
+    resolution: Literal["promoted", "rejected"]
+    note: str = ""
+
+
+class _ResolveSpecLearningOut(BaseModel):
+    spec_id: str
+    learning_id: str
+    status: str
+    path: str
+
+
+class ResolveSpecLearning(_ClaudeTool):
+    """Terminally resolve a proposed spec-learning (SPEC-FLOWBACK): append a
+    {learning_id, status:'promoted'|'rejected', note} record to
+    `.specs/<spec_id>/learnings.jsonl` (read is last-write-wins, so the
+    learning LEAVES the 'proposed' queue). 'rejected' drains a stale /
+    duplicate record; 'promoted' marks it approved — **a human still makes
+    it a real spec entry via add_spec_entry + update_specialist→recompile→
+    USER; that is what actually reaches a worker.** Sidecar-only: the live
+    read path (load / assemble_ruleset / get_specialist_doc) never reads
+    learnings.jsonl, so this cannot affect any running worker/broker/pool/
+    MCP. Append-only (crash-safe)."""
+
+    name = "resolve_spec_learning"
+    InputModel = _ResolveSpecLearningIn
+    OutputModel = _ResolveSpecLearningOut
+
+    async def _run(self, m: _ResolveSpecLearningIn):
+        if not self.ctx.specs.exists(m.spec_id):
+            return _precondition(f"no specialization {m.spec_id!r}")
+        known = {
+            r.get("learning_id")
+            for r in self.ctx.specs.read_learnings(m.spec_id)
+        }
+        if m.learning_id not in known:
+            return _precondition(
+                f"no learning {m.learning_id!r} in {m.spec_id!r}'s queue"
+            )
+        self.ctx.specs.append_learning(m.spec_id, {
+            "learning_id": m.learning_id,
+            "status": m.resolution,
+            "note": m.note,
+        })
+        return Tool.ok(_ResolveSpecLearningOut(
+            spec_id=m.spec_id,
+            learning_id=m.learning_id,
+            status=m.resolution,
+            path=str(self.ctx.specs.learnings_path(m.spec_id)),
+        ))
+
+
+class _ResolveSpecLearningsIn(BaseModel):
+    spec_id: str
+    accept: list[str] = []      # learning_ids to promote (fold into spec.entries)
+    reject: list[str] = []      # learning_ids to drain without spec mutation
+    note: str = ""              # carried onto every resolution record
+
+
+class _ResolveSpecLearningsOut(BaseModel):
+    spec_id: str
+    accepted: list[str]
+    rejected: list[str]
+    version: int                # spec version AFTER the fold (bumped iff accepted)
+    path: str
+
+
+class ResolveSpecLearnings(_ClaudeTool):
+    """The SINGLE cheap human gate for W3 spec flow-back (DESIGN-v6 §W3) —
+    BATCH resolve a spec's proposed learnings in one accept/reject decision
+    (supersedes the per-item `resolve_spec_learning`, which stays registered
+    but is no longer load-bearing). A GENUINE semantic change over the old verb,
+    all in CODE (no LLM, no auto-accept):
+
+    - REJECT ids → drained from the proposed queue (last-write-wins); no spec
+      mutation.
+    - ACCEPT ids → the learning's rule folds into `spec.entries` (tag→adherence)
+      and the version bumps ONCE, AND the accepted record carries its content
+      forward so the read-path overlay renders it LIVE immediately — a worker /
+      reviewer sees it before the periodic full SME recompile clears the overlay.
+
+    The neuron presents a compact diff ("3 rules proposed for spec-X, 1 overrides
+    an existing mandate — accept?"); this tool applies exactly that decision.
+    Unknown learning_ids are refused up front (list_spec_learnings shows valid
+    ids). Append-only + crash-safe."""
+
+    name = "resolve_spec_learnings"
+    InputModel = _ResolveSpecLearningsIn
+    OutputModel = _ResolveSpecLearningsOut
+
+    async def _run(self, m: _ResolveSpecLearningsIn):
+        if not self.ctx.specs.exists(m.spec_id):
+            return _precondition(f"no specialization {m.spec_id!r}")
+        if not m.accept and not m.reject:
+            return _precondition(
+                "nothing to resolve — pass accept=[<learning_id>, …] and/or "
+                "reject=[…] (list_spec_learnings shows the proposed queue)."
+            )
+        known = {
+            r.get("learning_id")
+            for r in self.ctx.specs.read_learnings(m.spec_id)
+            if r.get("learning_id") is not None
+        }
+        unknown = [lid for lid in (list(m.accept) + list(m.reject))
+                   if lid not in known]
+        if unknown:
+            return _precondition(
+                f"unknown learning id(s) {unknown!r} in {m.spec_id!r}'s queue — "
+                "list_spec_learnings(spec_id) shows the valid ids."
+            )
+        result = self.ctx.specs.resolve_spec_learnings(
+            m.spec_id, accept=list(m.accept), reject=list(m.reject),
+            note=m.note)
+        return Tool.ok(_ResolveSpecLearningsOut(
+            spec_id=result["spec_id"],
+            accepted=result["accepted"],
+            rejected=result["rejected"],
+            version=result["version"],
+            path=str(self.ctx.specs.learnings_path(m.spec_id)),
+        ))
+
+
+class _SpecIdIn(BaseModel):
+    spec_id: str
+
+
+class GetSpecialization(_ClaudeTool):
+    """Load a specialization_recipe — a specialist shell calls this to
+    read its steps / knowledge links / anti-patterns / checklists /
+    preferences (the memory layer)."""
+
+    name = "get_specialization"
+    InputModel = _SpecIdIn
+    OutputModel = _SpecOut
+
+    async def _run(self, m: _SpecIdIn):
+        if not self.ctx.specs.exists(m.spec_id):
+            return Tool.ok(_SpecOut(spec=None))
+        spec = self.ctx.specs.load(m.spec_id)
+        dumped = spec.model_dump(mode="json")
+        guard = budget_report(dumped)
+        return Tool.ok(_SpecOut(
+            spec=dumped,
+            approx_tokens=guard["approx_tokens"], oversize=guard["oversize"]))
+
+
+class _AssembleRulesetIn(BaseModel):
+    spec_id: str                       # the leaf tech spec for this action
+    concerns: list[str] = []           # planner-tagged, e.g. ["security"]
+
+
+class AssembleRuleset(_ClaudeTool):
+    """Resolve a worker's EFFECTIVE ruleset by composing the layers
+    (SPECIALIZATION-LAYERED-RULESETS.md): the leaf tech spec's
+    `extends`-chain (universal-first, most-specific-last) plus any
+    per-action `concerns` (each filled by `spec-<concern>`). Returns the
+    additive union split into two VIEWS — `constructive` (how to build) and
+    `enforced` (what to check) — plus `mcp_bindings`. **An unresolvable
+    layering** (a cycle, or a missing parent/concern spec) is refused as a
+    precondition, never a partial assembly. Pure lookup, byte-stable per
+    inputs."""
+
+    name = "assemble_ruleset"
+    idempotent = True
+    InputModel = _AssembleRulesetIn
+    OutputModel = AssembledRuleset
+
+    async def _run(self, m: _AssembleRulesetIn):
+        def _load(sid: str):
+            return self.ctx.specs.load(sid) if self.ctx.specs.exists(sid) else None
+        try:
+            result = assemble_ruleset(_load, m.spec_id, m.concerns)
+        except AssembleError as e:
+            return _precondition(str(e.instruction))
+        guard = budget_report(result.model_dump(mode="json"))
+        result.approx_tokens = guard["approx_tokens"]
+        result.oversize = guard["oversize"]
+        return Tool.ok(result)
+
+
+# ── compiled specialist doc (SPECIALIST-COMPILED-DOCS.md, 2026-06-02) ────────
+class _WriteSpecDocIn(BaseModel):
+    spec_id: str
+    content: str            # the full self-contained, per-stack instruction doc
+
+
+class _WriteSpecDocOut(BaseModel):
+    path: str
+    bytes: int
+    # s17 a7 — AUTHOR-TIME bound (#18 class-b): a compiled doc is delivered to
+    # a worker IN FULL (never truncated), so the real size bound belongs HERE,
+    # at creation. Non-blocking by design — a hard refuse would block SME
+    # training; instead the SME/reviewer sees the oversize flag and trims the
+    # doc. `approx_tokens` is the same estimator the delivery guards use.
+    approx_tokens: int | None = None
+    oversize: bool = False
+
+
+class WriteSpecialistDoc(_ClaudeTool):
+    """Persist the SME's COMPILED, self-contained per-stack instruction doc
+    (SPECIALIST-COMPILED-DOCS.md). The SME calls this at the end of
+    (re)training, after distilling its assembled ruleset (universal⊗stack)
+    into crisp, adherence-tagged instructions — NOT links. The worker later
+    loads it clean via get_specialist_doc; it is the artifact the user
+    reviews before `stable`. Writes `.specs/<spec_id>/compiled.md` (baked-in
+    path — the SME never guesses a location)."""
+
+    name = "write_specialist_doc"
+    InputModel = _WriteSpecDocIn
+    OutputModel = _WriteSpecDocOut
+
+    async def _run(self, m: _WriteSpecDocIn):
+        if not self.ctx.specs.exists(m.spec_id):
+            return _precondition(
+                f"no specialization {m.spec_id!r}; create_specialization first"
+            )
+        if not m.content.strip():
+            return _precondition(
+                "compiled doc is empty — distill the assembled ruleset into "
+                "the self-contained per-stack instruction doc first."
+            )
+        path = self.ctx.specs.write_doc(m.spec_id, m.content)
+        guard = budget_report(m.content)
+        return Tool.ok(_WriteSpecDocOut(
+            path=str(path), bytes=len(m.content),
+            approx_tokens=guard["approx_tokens"], oversize=guard["oversize"]))
+
+
+class _GetSpecDocOut(BaseModel):
+    spec_id: str
+    content: str | None     # the compiled doc, or null if not compiled yet
+    # s17 a7 — CONTENT-delivery guard (#18 class-b): the compiled doc IS the
+    # worker's whole grounding, applied in full, so it is NEVER truncated at
+    # delivery (that would drop [required] rules); it carries a non-truncating
+    # oversize signal instead. The real bound is at AUTHOR time
+    # (write_specialist_doc).
+    approx_tokens: int | None = None
+    oversize: bool = False
+
+
+class GetSpecialistDoc(_ClaudeTool):
+    """Load a specialist's COMPILED per-stack instruction doc — the worker's
+    clean-context grounding (SPECIALIST-COMPILED-DOCS.md). A specialist
+    worker calls this with its action's `spec_id`; the returned doc is
+    self-contained (universal⊗stack already distilled in) and IS the
+    grounding — no session fork, no assemble_ruleset, no link-chasing.
+    Returns `content=null` if the spec has no compiled doc yet (the worker
+    surfaces that as BLOCKED — a specialist action needs its doc compiled)."""
+
+    name = "get_specialist_doc"
+    idempotent = True
+    InputModel = _SpecIdIn
+    OutputModel = _GetSpecDocOut
+
+    async def _run(self, m: _SpecIdIn):
+        if not self.ctx.specs.exists(m.spec_id):
+            return Tool.ok(_GetSpecDocOut(spec_id=m.spec_id, content=None))
+        # W3 read-path overlay (DESIGN-v6 §W3): serve the OVERLAID doc so an
+        # accepted flow-back learning is live to the worker immediately (before
+        # the periodic SME recompile folds it in). No pending → base unchanged.
+        doc = self.ctx.specs.read_doc(m.spec_id, with_overlay=True)
+        guard = budget_report(doc)
+        return Tool.ok(_GetSpecDocOut(
+            spec_id=m.spec_id, content=doc,
+            approx_tokens=guard["approx_tokens"], oversize=guard["oversize"]))
+
+
+class _GetSpecDocsIn(BaseModel):
+    spec_ids: list[str]
+
+
+class _GetSpecDocsOut(BaseModel):
+    spec_ids: list[str]            # echo of the requested set (order preserved)
+    missing: list[str]             # requested spec_ids with NO compiled doc
+    count: int                     # number of docs actually composed in
+    grounding: str | None          # the composed grounding, or null if none
+    # s17 a7 — CONTENT-delivery guard (#18 class-b): the composed grounding is
+    # the multi-stack worker's whole instruction set, applied in full — it is
+    # NEVER truncated at delivery (that would drop a stack's [required] rules).
+    # Instead it carries a non-truncating oversize signal so a bundle that
+    # ballooned across N stacks is caught in review; the real bound is at
+    # AUTHOR time (write_specialist_doc, per stack).
+    approx_tokens: int | None = None
+    oversize: bool = False
+
+
+class GetSpecialistDocs(_ClaudeTool):
+    """Load + COMPOSE the compiled docs for N `spec_ids` into ONE worker
+    grounding (call once with your action's effective `spec_ids`). N == 1 →
+    that doc bit-for-bit (identical to get_specialist_doc); N >= 2 → ORDERED
+    CONCATENATION, each doc under a per-stack header — **the universal layer
+    repeating across stacks is EXPECTED (no dedup)**, so honor EVERY stack's
+    [required]/[expected] rules. `missing` names any requested spec with no
+    compiled doc (should be empty — Guard B fails the spawn closed first);
+    `grounding` is null only when nothing could be composed."""
+
+    name = "get_specialist_docs"
+    idempotent = True
+    InputModel = _GetSpecDocsIn
+    OutputModel = _GetSpecDocsOut
+
+    async def _run(self, m: _GetSpecDocsIn):
+        parts: list[tuple[str, str | None]] = []
+        missing: list[str] = []
+        for spec_id in m.spec_ids:
+            if (not self.ctx.specs.exists(spec_id)
+                    or not self.ctx.specs.has_doc(spec_id)):
+                missing.append(spec_id)
+                parts.append((spec_id, None))
+            else:
+                # W3 read-path overlay (DESIGN-v6 §W3): compose the OVERLAID
+                # form so workers/reviewers read the same live, current doc.
+                parts.append(
+                    (spec_id, self.ctx.specs.read_doc(spec_id, with_overlay=True)))
+        grounding = compose_specialist_docs(parts)
+        guard = budget_report(grounding or "")
+        return Tool.ok(_GetSpecDocsOut(
+            spec_ids=list(m.spec_ids),
+            missing=missing,
+            count=sum(1 for _, c in parts if c is not None),
+            grounding=(grounding or None),
+            approx_tokens=guard["approx_tokens"],
+            oversize=guard["oversize"],
+        ))
+
+
+# (W9's _DIRECTION_RUBRIC lived here — the three questions a scope="direction"
+# reviewer judged an artifact by. REMOVED with the whole direction path; see the
+# note on BranchReviewer below.)
+
+
+class _BranchReviewerIn(BaseModel):
+    # SPEC IS THE ONLY SCOPE. `scope="direction"` was W9's neuron-facing mode;
+    # it is removed (d128/d132), and the Literal is kept at one value on purpose
+    # so a stale `scope="direction"` call FAILS LOUDLY on input validation
+    # instead of being silently ignored (pydantic's default for an unknown key)
+    # and quietly running a spec review.
+    scope: Literal["spec"] = "spec"
+    neuron_id: str | None = None
+    target: str = ""   # what to review (path/desc of the deliverable)
+    criteria: str = ""  # what "correct" means for this domain
+    # the handle YOU poll next_action on (recipe_id). The reviewer's
+    # verdict routes back here; without it the verdict dead-letters.
+    handle: str | None = None
+    # 2026-06-01: the cross-cutting concerns the reviewed action(s) carried
+    # (e.g. ["security"]). Forwarded so the reviewer knows which concerns
+    # applied; it enforces the specialist's COMPILED doc (which folds in the
+    # universal + stack rules). Empty = no cross-cutting concern.
+    concerns: list[str] = []
+    # W10b — opt in to this reviewer's CANDIDATE model tier (MODEL_TIERS).
+    # Default False: the reviewer's independent re-run is the objective
+    # acceptance gate (d29/d30) and the last defence layer to degrade, so it
+    # launches on the host default (Opus) unless a caller is deliberately
+    # running the experiment. No reviewer tier is measured; the only measured
+    # row in the table is ("worker", "coding").
+    allow_candidate_tier: bool = False
+
+
+class _ReviewerOut(BaseModel):
+    reviewer_id: str
+    fork_session_id: str
+    note: str = (
+        "domain reviewer fork spawned from the specialist's trained "
+        "base; its verdict arrives via handle_messages"
+    )
+
+
+class BranchReviewer(_ClaudeTool):
+    """Spawn a recipe-end DOMAIN REVIEWER of a stable specialist (replaces
+    /critic). 2026-06-02: the reviewer launches FRESH (no chat fork) and
+    enforces the specialist's COMPILED doc (`get_specialist_doc`) by its
+    `[adherence]` tags — the SAME artifact the coder built against, so review
+    is as cheap as a worker (no trained-chat replay). Requires the neuron
+    `stable` with a compiled doc; the verdict arrives on the caller's next
+    next_action as handle_messages. (The execution fork is retired; the only
+    remaining fork is re-training, `update_specialist`.)
+
+    THIS IS THE PLANNER'S REVIEWER — the objective acceptance gate (d29/d30),
+    untouched by d128/d132. W9's `scope="direction"` mode is gone: the neuron
+    never owned a reviewer, and its direction integrity is curiosity + signoff.
+    """
+
+    name = "branch_reviewer"
+    InputModel = _BranchReviewerIn
+    OutputModel = _ReviewerOut
+
+    async def _run(self, m: _BranchReviewerIn):
+        if not m.neuron_id:
+            return _precondition(
+                "branch_reviewer requires `neuron_id` — the reviewer enforces "
+                "that specialist's compiled doc.")
+        if not m.target:
+            return _precondition(
+                "branch_reviewer requires `target` — what to review (a path or "
+                "a description of the deliverable).")
+        rec = self.ctx.neurons.get(m.neuron_id)
+        if rec is None:
+            return _precondition(f"no neuron {m.neuron_id!r}")
+        if rec.status != "stable":
+            return _precondition(
+                f"neuron {m.neuron_id} is {rec.status!r}, not 'stable' — "
+                "only approved specialists can review."
+            )
+        if not rec.spec_id or not self.ctx.specs.has_doc(rec.spec_id):
+            return _precondition(
+                f"neuron {m.neuron_id} has no compiled doc — the reviewer "
+                "enforces the compiled doc, so (re)train it to compile one "
+                "before review."
+            )
+        me, _ = _self_and_parent_addresses()
+        caller_id = me or m.handle
+        if not caller_id:
+            return _precondition(
+                "branch_reviewer needs `handle` (your recipe_id) when "
+                "called from the neuron's main shell — the verdict routes "
+                "back to it."
+            )
+        fork_session_id = str(uuid.uuid4())
+        reviewer_id = f"review-{m.neuron_id}-{uuid.uuid4().hex[:8]}"
+        task = BrokerMessage(
+            msg_id=str(uuid.uuid4()),
+            ts=_now(),
+            **{"from": caller_id},
+            to=reviewer_id,
+            kind="consult",
+            body={
+                "task": "domain-review",
+                "target": m.target,
+                "criteria": m.criteria,
+                "neuron_id": m.neuron_id,
+                "spec_id": rec.spec_id,
+                "concerns": m.concerns,
+                "caller": caller_id,
+            },
+        )
+        send_res = await self.ctx.broker.send(task)
+        if not getattr(send_res, "ok", False):
+            return send_res
+        spawn_res = await self.ctx.pool.spawn_reviewer(
+            caller_id, reviewer_id, session_id=fork_session_id,
+            # W10b: ("reviewer", "spec") is an Opus DEFAULT row, so this
+            # resolves to None (no --model flag) and the spawn body stays
+            # byte-identical. A spec review does not degrade: it IS the gate.
+            model=_spawn_model_for(
+                "reviewer", "spec",
+                allow_candidate_tier=m.allow_candidate_tier),
+        )
+        if not getattr(spawn_res, "ok", False):
+            return spawn_res
+        self.ctx.neurons.touch(m.neuron_id)
+        return Tool.ok(_ReviewerOut(
+            reviewer_id=reviewer_id, fork_session_id=fork_session_id
+        ))
+
+
+# (BranchReviewer._run_direction and the `record_direction_verdict` tool lived
+# here. REMOVED — d128/d132: the reviewer is the PLANNER's subagent, the
+# direction review was the NEURON's to call, and the neuron has no such
+# subagent. Its only callers were neuron-facing (the FSM checkpoint and the pool
+# spawn nag, both removed with it); the grep is quoted in the a2 evidence.
+#
+# The harvest bug (d127/d124) goes with it: the direction brief harvested
+# deliverable paths through PlanStore.harvest_artifact_paths, whose
+# `Path().glob(pattern)` is RELATIVE-ONLY and raised
+# "Non-relative patterns are unsupported" on this host's absolute Windows
+# acceptance paths. Deleting the only caller retires the bug rather than
+# patching a path nobody can reach.
+#
+# `confirm_direction_constraints` below SURVIVES and is deliberately NOT part of
+# this removal: despite its name it is the ONLY proposed->active path for a
+# constraint-bearing rejected_option from ANY caller, so deleting it by
+# name-match would disable constraint activation wholesale.)
+
+
+class _ConfirmConstraintsIn(BaseModel):
+    recipe_id: str
+    # The rejected-option ids ("x1", "x2", …) the neuron is dispositioning.
+    ids: list[str]
+    # "activate" gives the ban its teeth; "discard" drops the proposal.
+    action: Literal["activate", "discard"] = "activate"
+
+
+class _ConfirmConstraintsOut(BaseModel):
+    activated: list[str] = []
+    discarded: list[str] = []
+    not_proposed: list[str] = []   # ids that were not in "proposed" state
+    unknown: list[str] = []
+
+
+class ConfirmDirectionConstraints(_ClaudeTool):
+    """The NEURON's batch confirmation of proposed bans — **the ONLY
+    proposed->active path for a constraint-bearing rejected_option, FROM ANY
+    CALLER.**
+
+    *** THE NAME IS NARROWER THAN THE VERB, AND IT NEARLY GOT THIS DELETED. ***
+    It reads as part of the "direction review" surface. IT IS NOT. When s29/a2
+    removed the neuron-facing direction-review machinery, this verb matched by
+    NAME and was one edit from being swept out with it — which would have
+    SILENTLY DISABLED CONSTRAINT ACTIVATION WHOLESALE, removing a live guard
+    while claiming to remove a dead feature. It survived only because a2 read
+    what the verb DOES instead of what it is CALLED. The direction reviewer that
+    the original docstring named as the producer no longer exists; the verb does,
+    and it is load-bearing. Read this before you sweep it: a naming lie is not a
+    dead feature.
+
+    THE ACTUAL CONTRACT. `RecordRejectedOption` lands EVERY constraint-bearing
+    ban `status="proposed"` — a property of the WRITE, not of the writer (no role
+    branch, no input field overrides it). `guards.check_constraints` skips every
+    record whose status is not "active", so a proposal carries NO teeth until
+    this verb activates it. Only then do the W2 guards bite, at
+    `record_action_status` / spawn time. It is NEURON-SCOPED (`tools/roles.py`
+    grants it to `_NEURON` by derivation and to no other role — `_REVIEWER` is an
+    explicit list and does not name it, which
+    `test_w9_direction_reviewer.py::test_t5d_reviewer_cannot_reach_the_
+    activation_verb` pins). Findings are proposals; the human's delegate confirms.
+
+    `discard` drops a proposal by clearing its constraint — the ban's TEXT stays
+    in the recipe (the honest record of what was raised), it simply carries no
+    teeth and can never be re-activated by this verb."""
+
+    name = "confirm_direction_constraints"
+    InputModel = _ConfirmConstraintsIn
+    OutputModel = _ConfirmConstraintsOut
+
+    async def _run(self, m: _ConfirmConstraintsIn):
+        if not self.ctx.recipes.exists(m.recipe_id):
+            return _precondition(f"no recipe {m.recipe_id!r}")
+        r = self.ctx.recipes.load(m.recipe_id)
+        by_id = {x.id: x for x in r.context.rejected_options}
+        out = _ConfirmConstraintsOut()
+        for rid in m.ids:
+            ro = by_id.get(rid)
+            if ro is None:
+                out.unknown.append(rid)
+                continue
+            if ro.status != "proposed":
+                out.not_proposed.append(rid)
+                continue
+            if m.action == "activate":
+                ro.status = "active"
+                out.activated.append(rid)
+            else:
+                ro.constraint = None
+                ro.status = "active"   # inert prose again; no teeth to carry
+                out.discarded.append(rid)
+        if out.activated or out.discarded:
+            self.ctx.recipes.save(r)
+        return Tool.ok(out)
+
+
+# Phase 6 (2026-05-22): the shipped comprehension specialists, SUBSUMED
+# into the neuron DB (decision #1). Seeds are `stable` (pre-approved —
+# tried-and-tested, no HITL), `editable=False` (protected), and
+# guide-backed (no base_session_id → consulted via their guide, not
+# branched). neuron_id == the guide id so consult_specialist(<id>)
+# loads `specialist-<id>.md` directly.
+_COMPREHENSION_SEEDS: list[tuple[str, str, str, str]] = [
+    ("feasibility", "Feasibility Checker",
+     "feasibility / can-this-be-done-at-all",
+     "Determine whether a goal is achievable at all given tools, "
+     "resources, authorization, and constraints; hard-stop on "
+     "infeasibility before any work begins."),
+    ("role-clarity", "Role Clarity Checker", "user role clarity",
+     "Check whether the user's role and responsibility in the work is "
+     "clear: owner, observer, approver, or delegator."),
+    ("actor-identifier", "Actor Identifier",
+     "actor / stakeholder identification",
+     "Identify the actors, stakeholders, systems, and parties involved "
+     "in or affected by the goal."),
+    ("actor-clarity", "Actor Clarity Checker", "actor definition clarity",
+     "Check whether the identified actors are well-defined, distinct, "
+     "and unambiguous, or whether any are unknown to the system."),
+    ("concern-validator", "Concern Validator",
+     "ethics / safety / irreversibility",
+     "Flag ethical, sensitive, irreversible, legal, privacy, or safety "
+     "concerns in the goal that warrant surfacing to the user."),
+    ("new-tech-detector", "New-Tech Detector",
+     "unfamiliar technology detection",
+     "Detect unfamiliar or novel technologies, libraries, or domains in "
+     "the goal that require research or learning before building."),
+    ("estimation", "Estimation Checker",
+     "effort / time / cost estimation",
+     "Estimate effort, time, and cost; check whether the scope is "
+     "realistic and whether the goal should be split."),
+    ("goal-setter", "Goal Setter", "goal verifiability",
+     "Make the goal concrete, measurable, and verifiable; define exact "
+     "success criteria that prove the goal is met."),
+]
+
+
+class _SeedIn(BaseModel):
+    pass
+
+
+class _SeedOut(BaseModel):
+    seeded: list[str]
+    skipped: list[str]
+
+
+class SeedComprehensionSpecialists(_ClaudeTool):
+    """Phase 6: register the shipped comprehension specialists into the
+    neuron DB as `stable`, `editable=False`, guide-backed seeds
+    (decision #1 — they live in the same DB as domain experts). Idempotent
+    — skips any already present. Call once at the start of comprehension,
+    then `neuron_search` to discover which apply to THIS goal instead of
+    consulting a hardcoded list."""
+
+    name = "seed_comprehension_specialists"
+    idempotent = True
+    InputModel = _SeedIn
+    OutputModel = _SeedOut
+
+    async def _run(self, m: _SeedIn):
+        seeded, skipped = [], []
+        now = _now()
+        for nid, name, subject, desc in _COMPREHENSION_SEEDS:
+            if self.ctx.neurons.exists(nid):
+                skipped.append(nid)
+                continue
+            sid = f"spec-{nid}"
+            self.ctx.specs.save(Specialization(
+                spec_id=sid, neuron_id=nid, name=name, subject=subject,
+                entries=[SpecEntry(
+                    kind="link",
+                    text=f"docs/guides/specialist-{nid}.md",
+                    note="the specialist's reasoning guide",
+                )],
+                created_at=now, updated_at=now,
+            ))
+            emb = None
+            try:
+                emb = await self.ctx.embed.embed(
+                    f"{name}. {subject}. {desc}", kind="document"
+                )
+            except Exception:
+                emb = None
+            self.ctx.neurons.create(NeuronRecord(
+                neuron_id=nid, name=name, description=desc,
+                category="comprehension", status="stable",
+                editable=False, spec_id=sid,
+                created_at=now, updated_at=now, trained_at=now,
+            ), embedding=emb)
+            seeded.append(nid)
+        return Tool.ok(_SeedOut(seeded=seeded, skipped=skipped))
+
+
+# W15 (DESIGN-v6, 2026-07): the orchestrator was mis-modeled as an
+# append-only SPEC (decision #5) and accreted to 63 rules. Reverted to a
+# directly-edited GUIDE (docs/guides/orchestrator-launch.md, loaded via
+# get_guide) — the EnsureOrchestrator tool + _ORCHESTRATOR_ID +
+# _ORCHESTRATOR_SEED_ENTRIES are RETIRED. The seed was just links to the
+# five neuron-phase guides + architecture-vocabulary (redundant wrapping)
+# plus distilled prose now living in the guide. The protected-spec
+# subsystem (_ensure_protected) stays — it serves the legit spec-universal.
+
+
+def _ensure_protected(specs, spec_id: str) -> None:
+    """W15: idempotently flag an EXISTING spec `protected` — additive
+    metadata only. Loads the LIVE spec, preserves every entry as-is, and
+    writes back solely to set the flag (never a reseed/truncate — the cap is
+    ADD-time, so saving an already-over-cap spec is fine). No-op once
+    protected, so it costs nothing on the steady-state path."""
+    if not specs.exists(spec_id):
+        return
+    spec = specs.load(spec_id)
+    if not spec.protected:
+        spec.protected = True
+        specs.save(spec)
+
+
+# SPECIALIZATION-LAYERED-RULESETS.md (2026-06-01), Stage 2 / Decision 6.
+# The UNIVERSAL coding-standards layer (CORE). Every tech spec `extends`
+# it (the schema default), so its rules compose under every worker. It is
+# a base spec, NOT a discoverable/branchable neuron — no NeuronRecord, so
+# it never shows up in neuron_search. `extends=[]` (it is the root; this
+# also prevents the self-cycle the default `["spec-universal"]` would make).
+# The eight standards are a SEED, refined on iterative learning (the doc is
+# the readable source; these entries are the verify worker's discrete,
+# adherence-tagged checks). Adherence = verify-worker behavior, NOT a coder
+# straitjacket (Decision 1): the coder builds freely; the reviewer enforces.
+_UNIVERSAL_ID = "universal"
+# (kind, text, note, adherence, link_role)
+_UNIVERSAL_SEED_ENTRIES: list[tuple[str, str, str, str, str | None]] = [
+    ("link", "docs/guides/coding-standards.md",
+     "the universal coding standards every worker is held to",
+     "required", "ruleset"),
+    ("checklist", "Object-oriented design: behavior lives on objects, not "
+     "in procedural dumping grounds.",
+     "the verify worker refactors clear violations", "required", None),
+    ("checklist", "Standard, consistent naming conventions throughout.",
+     "the verify worker renames to conform", "required", None),
+    ("checklist", "SOLID — single responsibility per class: controllers "
+     "only route, repositories only do CRUD, only service classes hold "
+     "business logic, and one business concern per class.",
+     "the verify worker re-layers misplaced logic", "required", None),
+    ("checklist", "Proper logging so failures are traceable (log on "
+     "failure/exception paths, not just happy paths).",
+     "the verify worker adds missing failure-path logging", "required", None),
+    ("checklist", "Separation of concerns — no module owns two concerns.",
+     "the verify worker splits conflated concerns", "required", None),
+    ("checklist", "Unit AND integration tests exist for every logical "
+     "component.",
+     "the verify worker adds missing tests before done", "required", None),
+    ("checklist", "No regex in code without explicit user approval — "
+     "ESCALATE for approval, do not silently keep or remove it.",
+     "the verify worker flags + escalates, never auto-decides", "required",
+     None),
+    ("checklist", "Close every resource where it is opened — a file / "
+     "socket / connection / lock / process / handle is released by the "
+     "same scope (with / try-finally / RAII), so it can't leak on the "
+     "error path.",
+     "the verify worker wraps unclosed resources", "required", None),
+    ("checklist", "Never silently swallow an exception — every caught "
+     "error is handled (a real recovery) or logged with its cause; no "
+     "empty catch/except-pass, and preserve the original cause on re-raise.",
+     "the verify worker fills empty catch blocks", "required", None),
+    ("checklist", "No secrets in code or logs — never hardcode "
+     "credentials/keys/tokens and never log them; read from config/env "
+     "and redact in log lines.",
+     "the verify worker flags any hardcoded/logged secret", "required",
+     None),
+    ("checklist", "No dead or commented-out code committed — delete unused "
+     "code, old 'previous version' comment blocks, unreachable branches "
+     "(version control is the history). The anti-slop rule.",
+     "the verify worker strips dead code + scaffolding", "required", None),
+    ("checklist", "Fail fast at boundaries — validate inputs at the public "
+     "edge and reject bad input there, not deep inside.",
+     "the verify worker adds boundary validation", "expected", None),
+    ("checklist", "Timeouts on every outbound I/O — every network/IO/"
+     "external call (HTTP, DB, socket, subprocess, queue) has an explicit "
+     "timeout; never an unbounded wait that can hang forever.",
+     "the verify worker adds a timeout to any unbounded call", "required",
+     None),
+    ("checklist", "No magic numbers/strings; externalize config — name "
+     "literals as constants and externalize paths/hosts/hyperparameters/"
+     "IDs/thresholds, don't scatter hardcoded values inline.",
+     "the verify worker names constants + externalizes config", "expected",
+     None),
+    ("checklist", "Clean up on completion; never blind-delete — remove what "
+     "a change made obsolete (dead code, references left DANGLING by a "
+     "rename/removal, orphaned files/artifacts). The reviewer verifies "
+     "cleanup is complete; a consequential delete (code block/module/file "
+     "or artifact) is surfaced to the user via the neuron and removed only "
+     "on approval — never silent, never left behind.",
+     "the verify worker surfaces needed deletions for approval, never "
+     "blind-deletes", "required", None),
+    ("checklist", "Methods stay short and readable (no hard line limit; "
+     "the bar is 'a future reader follows it without untangling').",
+     "refactor if clearly tangled; a justified long method is allowed",
+     "expected", None),
+    ("checklist", "Code is documented so the logic still makes sense to a "
+     "future session (intent of non-obvious logic, not noise).",
+     "add docs on complex logic; trivial code is exempt", "expected", None),
+]
+
+
+class _EnsureUniversalOut(BaseModel):
+    spec_id: str
+    created: bool   # True on cold-start, False if already present
+
+
+class EnsureUniversal(_ClaudeTool):
+    """Cold-start floor for the UNIVERSAL coding-standards layer
+    (SPECIALIZATION-LAYERED-RULESETS.md, Decision 6). Idempotent — creates
+    `spec-universal` (the CORE layer every tech spec extends) if absent,
+    seeded with the eight standards as adherence-tagged checks + a link to
+    `docs/guides/coding-standards.md`. It is a base spec, NOT a neuron
+    (no NeuronRecord → never branched, never in neuron_search), and it has
+    `extends=[]` (it is the root of the layering). The neuron/specialist
+    calls this so every worker's assembled ruleset starts from CORE."""
+
+    name = "ensure_universal"
+    idempotent = True
+    InputModel = _SeedIn
+    OutputModel = _EnsureUniversalOut
+
+    async def _run(self, m: _SeedIn):
+        sid = f"spec-{_UNIVERSAL_ID}"
+        if self.ctx.specs.exists(sid):
+            # W15: an existing install keeps its LIVE entries untouched — only
+            # ensure the additive `protected` flag (metadata-only; never a
+            # reseed or truncate). Idempotent: write once, then no-op.
+            _ensure_protected(self.ctx.specs, sid)
+            return Tool.ok(_EnsureUniversalOut(spec_id=sid, created=False))
+        now = _now()
+        self.ctx.specs.save(Specialization(
+            spec_id=sid, neuron_id=_UNIVERSAL_ID, name="Universal Standards",
+            subject="universal coding standards (every worker)",
+            entries=[
+                SpecEntry(kind=k, text=t, note=n, adherence=a, link_role=lr)
+                for k, t, n, a, lr in _UNIVERSAL_SEED_ENTRIES
+            ],
+            extends=[],   # the root layer — no parent, no self-cycle
+            protected=True,   # W15: spec-universal is a load-bearing contract
+            created_at=now, updated_at=now,
+        ))
+        return Tool.ok(_EnsureUniversalOut(spec_id=sid, created=True))
+
+
+class _DecayIn(BaseModel):
+    ttl_days: int = 90              # decision #4 TTL window
+    flag_rate_threshold: float = 0.3  # flag_count/use_count over this = stale
+    min_flags: int = 2             # need >=2 flags before flag-rate counts
+    # s17 a7: the `stale` report is one row per neuron, so it scales with the
+    # GLOBAL neuron count — a LIST output #18 requires bounded. Window it
+    # (default WINDOW) with a count-first cursor; `checked` still reports the
+    # true number scanned.
+    offset: int = 0
+    limit: int = WINDOW
+
+
+class _DecayOut(BaseModel):
+    stale: list[dict]              # a7: the bounded <=limit slice of stale neurons
+    checked: int
+    count: int = 0                # FULL number of stale neurons found
+    cursor: int | None = None     # next offset to page from, or None at the end
+
+
+class CheckSpecialistDecay(_ClaudeTool):
+    """Deterministic, ON-DEMAND staleness detection — **NOT a polling
+    daemon** (pull it when you actually need the answer, e.g. before reusing
+    a specialist or at goal start). A `stable`/`underused` neuron is stale
+    when its TTL elapsed (now - trained_at > ttl_days) OR its flag-rate is
+    high (flag_count >= min_flags AND flag_count/use_count >= threshold) —
+    whichever fires first. Pure computation: it REPORTS, it does not mutate;
+    the neuron acts on the result — neuron_set_status(stale,
+    'pending_review') → revise the recipe (add_spec_entry +
+    record_spec_version) → re-approve to `stable`."""
+
+    name = "check_specialist_decay"
+    idempotent = True
+    InputModel = _DecayIn
+    OutputModel = _DecayOut
+
+    async def _run(self, m: _DecayIn):
+        now = _now()
+        stale: list[dict] = []
+        checked = 0
+        for r in self.ctx.neurons.list():
+            if r.status not in ("stable", "underused"):
+                continue
+            checked += 1
+            reasons: list[str] = []
+            age_days = None
+            if r.trained_at is not None:
+                age_days = (now - r.trained_at).days
+                if age_days > m.ttl_days:
+                    reasons.append(
+                        f"TTL: {age_days}d since last (re)training "
+                        f"> {m.ttl_days}d"
+                    )
+            flag_rate = r.flag_count / max(r.use_count, 1)
+            if r.flag_count >= m.min_flags and flag_rate >= m.flag_rate_threshold:
+                reasons.append(
+                    f"flag-rate: {r.flag_count}/{max(r.use_count, 1)} = "
+                    f"{flag_rate:.2f} >= {m.flag_rate_threshold}"
+                )
+            if reasons:
+                stale.append({
+                    "neuron_id": r.neuron_id, "reasons": reasons,
+                    "age_days": age_days, "flag_rate": round(flag_rate, 2),
+                    "use_count": r.use_count, "flag_count": r.flag_count,
+                })
+        w = windowed(stale, m.offset, m.limit)
+        return Tool.ok(_DecayOut(
+            stale=w["items"], checked=checked,
+            count=w["count"], cursor=w["cursor"]))
+
+
+# NOTE: the `work_via_lambda` / `get_lambda_guide` surface (the lens
+# grab-bag) was RETIRED 2026-05-28 (OBJECT-MODEL.md increment 2). It had
+# no encapsulation and a sprawling method list ("more info = more
+# confusion"). Replaced by the uniform object + CRUD surface above
+# (describe_objects / read_object / query_objects / create_object /
+# update_object), with invariants encapsulated in each object.
+
+
+# ── object model: read-side CRUD (OBJECT-MODEL.md increment 1) ─────────────
+# Uniform inspect surface over the domain objects. describe_objects =
+# the schema docs (read first); read_object/query_objects = the data.
+# Call form: read_object(type='recipe', ids={'recipe_id': '…'});
+# query_objects(type='action', where={'status':'verify'},
+# scope={'plan_id':'…'}).
+
+class _DescribeIn(BaseModel):
+    name: str | None = None     # None → catalog index; else one object
+
+
+class _DescribeOut(BaseModel):
+    doc: str
+
+
+class DescribeObjects(_ClaudeTool):
+    """Document the domain object model — read this BEFORE read_object /
+    query_objects. With no name: the catalog index (every object, its
+    class mutate-vs-inspect-only, and the call form). With name=<object>:
+    that object's fields + read/query examples. Objects: recipe, plan,
+    action, step, outcome, neuron, spec (mutate); session, lock, message,
+    worklog (inspect-only). The schema IS the documentation — you reason
+    over a clean data model, not a sprawling method list."""
+
+    name = "describe_objects"
+    idempotent = True
+    InputModel = _DescribeIn
+    OutputModel = _DescribeOut
+
+    async def _run(self, m: _DescribeIn):
+        from ..objects import describe_objects
+        return Tool.ok(_DescribeOut(doc=describe_objects(m.name)))
+
+
+class _ReadObjIn(BaseModel):
+    type: str
+    ids: dict = {}      # e.g. {'recipe_id': '…'} / {'plan_id','action_id'}
+    # P1: 'full' (default) = the complete object, exactly as before.
+    # 'digest' = trimmed projection for recipe/plan/action (long texts
+    # become one-line rows + byte indicators); other types ignore it.
+    detail: str = "full"
+
+
+class _ReadObjOut(BaseModel):
+    object: Any         # the object dict, or null
+
+
+class ReadObject(_ClaudeTool):
+    """Read ONE domain object as a plain dict (or null). Pass the
+    object `type` + its id(s) in `ids`. e.g.
+    read_object(type='action', ids={'plan_id':'p','action_id':'a1'}).
+    See describe_objects for each object's required ids.
+
+    detail='digest' returns a cheap trimmed view of recipe/plan/action
+    (statuses, ids, one-line text rows, has_actual/byte indicators) — use
+    it to orient before pulling the full object; the digest self-labels
+    with `_detail` and a `_full` hint. detail='full' (default) is the
+    complete object. Worklog reads also accept kinds/since/action_id in
+    `ids` to filter entries before the tail cut."""
+
+    name = "read_object"
+    idempotent = True
+    InputModel = _ReadObjIn
+    OutputModel = _ReadObjOut
+
+    async def _run(self, m: _ReadObjIn):
+        from ..objects import ObjectError, read_object
+        try:
+            obj = await read_object(self.ctx, m.type, detail=m.detail,
+                                    **m.ids)
+        except ObjectError as e:
+            return _precondition(str(e))
+        return Tool.ok(_ReadObjOut(object=obj))
+
+
+class _QueryObjIn(BaseModel):
+    type: str
+    where: dict = {}    # field-equality filter (+ handle_prefix/since/tail)
+    scope: dict = {}    # the scoping id(s), e.g. {'plan_id':'…'} for action
+    # a3: count-first paging. offset/limit bound the returned slice; limit
+    # defaults to WINDOW. Page the rest with offset=cursor from the result.
+    offset: int = 0
+    limit: int | None = None
+
+
+class _QueryObjOut(BaseModel):
+    objects: list           # the <=limit slice (still a plain list)
+    # a3 count-first envelope: full match total + the next page cursor.
+    count: int = 0          # FULL number of matches (before windowing)
+    offset: int = 0         # the clamped start offset actually used
+    cursor: int | None = None   # next offset to page from, or None at the end
+    elided: int = 0         # how many matches were NOT returned this page
+
+
+class QueryObjects(_ClaudeTool):
+    """Query a filtered LIST of domain objects. Pass `type`, a `where`
+    field-equality filter, and any `scope` id the object needs. e.g.
+    query_objects(type='action', where={'status':'verify'},
+    scope={'plan_id':'p'}); query_objects(type='session',
+    where={'role':'worker','handle_prefix':'recipe-x'}). Inspect-only
+    objects (session/lock/message/worklog) are read here too. See
+    describe_objects for scopes + special where keys.
+
+    Count-first + windowed: `objects` is the `<=limit` slice (limit defaults
+    to WINDOW); `count` is the FULL match total and `cursor` the next offset
+    to page from (null at the end). Page the rest with offset=cursor, or pass
+    a bigger `limit` to widen the page — an unscoped query can no longer dump
+    every object and blow the token budget."""
+
+    name = "query_objects"
+    idempotent = True
+    InputModel = _QueryObjIn
+    OutputModel = _QueryObjOut
+
+    async def _run(self, m: _QueryObjIn):
+        from ..objects import ObjectError, query_objects
+        try:
+            env = await query_objects(self.ctx, m.type, where=m.where,
+                                      offset=m.offset, limit=m.limit,
+                                      **m.scope)
+        except ObjectError as e:
+            return _precondition(str(e))
+        return Tool.ok(_QueryObjOut(
+            objects=env["items"], count=env["count"], offset=env["offset"],
+            cursor=env["cursor"], elided=env["elided"]))
+
+
+class _CreateObjIn(BaseModel):
+    type: str
+    fields: dict = {}
+
+
+class _UpdateObjIn(BaseModel):
+    type: str
+    ids: dict = {}
+    patch: dict = {}
+
+
+class _ObjResultOut(BaseModel):
+    result: Any         # the create/update result dict
+
+
+# ── DESIGN-v6 W4: per-role / per-object-type object-CRUD guard ──────────────
+# roles.py owns the PURE policy (crud_scope_violation); the I/O (env read +
+# worklog write + warn-vs-enforce) lives here, next to the tools it guards.
+def _role_scope_worklog_key() -> str | None:
+    """The worklog key under which this shell's role_scope_violation is
+    recorded. Reuses _self_and_parent_addresses so the mapping stays in ONE
+    place (mirrors _sender_plan_id but covers every scoped role).
+
+    - planner  → its dash plan_id (the plan it owns).
+    - worker   → its plan_id (the handle prefix before the last ':').
+    - BARE-HANDLE roles (reviewer / specialist / consult / curiosity /
+      goal_keeper / pattern_observer) → THE HANDLE ITSELF. Their handles carry
+      no ':' (`review-<neuron_id>-<hex8>`, `consult-<hex8>`, …), so
+      _self_and_parent_addresses returns (handle, None) and there is no plan to
+      attribute the event to. This used to mean `if pid:` was False and the
+      event was SILENTLY DROPPED — so "zero violations" from those six roles was
+      indistinguishable from "never instrumented", while four of the seven known
+      guide↔toolset gaps live in exactly those roles. The d14/d15 flip gate ("a
+      zero-violation recipe") was therefore measuring nothing for them. Keying
+      the trail by the handle records the event under a shell-scoped worklog
+      (readable with `read_worklog(<handle>)`); no plan.json exists there, so
+      `plans.exists(handle)` stays False and nothing mistakes it for a plan.
+    - neuron / a truly bare shell (no EDP_HANDLE at all) → None. It is
+      unconstrained by design (toolset_for_role returns None), so it has no
+      off-scope calls to record.
+    """
+    role = os.environ.get("EDP_ROLE", "").strip()
+    me, parent = _self_and_parent_addresses()
+    if role == "planner":
+        return me       # dash plan_id (the plan the planner owns)
+    return parent or me  # worker: plan_id prefix; bare handle: the handle
+
+
+def record_role_scope_violation(ctx, tool_name: str,
+                                object_type: str | None = None) -> str:
+    """Append a role_scope_violation worklog event for the current shell and
+    return the active EDP_ROLE_SCOPE mode ('warn'|'enforce', default
+    'enforce' — DESIGN-v7 P0 flipped it; warn stays as the diagnostic
+    opt-out).
+
+    Shared by the build_mcp warn-mode seam (an off-SET tool CALL) and the
+    object-CRUD guard (an off-OBJECT-TYPE mutation). The write is best-effort
+    and advisory: a failed write NEVER blocks the call. Every role with an
+    EDP_HANDLE is now logged (see _role_scope_worklog_key) — the observability
+    prerequisite for any future EDP_ROLE_SCOPE=enforce decision."""
+    role = os.environ.get("EDP_ROLE", "").strip() or "unknown"
+    mode = (os.environ.get("EDP_ROLE_SCOPE", "enforce").strip()
+            or "enforce")
+    key = _role_scope_worklog_key()
+    if key:
+        entry: dict = {
+            "kind": "role_scope_violation", "agent_role": role,
+            "tool": tool_name, "mode": mode,
+            # the shell that made the off-scope call. Load-bearing for the
+            # bare-handle roles, whose trail is keyed by handle rather than by
+            # a plan — without it the event cannot be attributed to a shell.
+            "handle": os.environ.get("EDP_HANDLE", "").strip() or None,
+        }
+        if object_type is not None:
+            entry["object_type"] = object_type
+        try:
+            ctx.plans.append_worklog(key, entry)
+        except Exception:
+            pass  # advisory only — never let logging break the tool call
+    return mode
+
+
+def _guard_object_crud(ctx, tool_name: str, object_type: str):
+    """The in-tool CRUD guard. Returns a ToolError to REFUSE (enforce mode +
+    off-scope) or None to PROCEED. The on-role path (e.g. a planner mutating
+    its own plan/action) returns None immediately with NO event and ALWAYS
+    succeeds. An off-scope call is ALWAYS recorded as a role_scope_violation
+    first; under EDP_ROLE_SCOPE=warn (the shipped Phase-1 default, d15) it
+    then PROCEEDS, under enforce it is refused with a _precondition message
+    naming the role and its allowed object-types."""
+    from .roles import crud_scope_violation
+    role = os.environ.get("EDP_ROLE", "").strip() or None
+    msg = crud_scope_violation(role, object_type)
+    if msg is None:
+        return None  # on-scope (or unconstrained shell) — proceed silently
+    mode = record_role_scope_violation(ctx, tool_name, object_type=object_type)
+    if mode == "enforce":
+        return _precondition(
+            f"role-scope refused: {msg} (EDP_ROLE_SCOPE=enforce)")
+    return None  # warn — logged above, now proceed
+
+
+class CreateObject(_ClaudeTool):
+    """Create a domain object. `type` + `fields`. e.g.
+    create_object(type='plan', fields={'recipe_id':'r','step_id':'s1',
+    'shape':'linear-build','goal':'…'}); create_object(type='action',
+    fields={'plan_id':'p','action_id':'a1','description':'…',
+    'specialization':'…'}). Delegates to the object's creation
+    invariants (spec resolution, comprehension gate, …) — so the rules
+    are enforced exactly once. Inspect-only objects refuse create."""
+
+    name = "create_object"
+    InputModel = _CreateObjIn
+    OutputModel = _ObjResultOut
+
+    async def _run(self, m: _CreateObjIn):
+        from ..objects import ObjectError, create_object
+        refuse = _guard_object_crud(self.ctx, self.name, m.type)
+        if refuse is not None:
+            return refuse
+        try:
+            res = await create_object(self.ctx, m.type, m.fields)
+        except ObjectError as e:
+            return _precondition(str(e))
+        return Tool.ok(_ObjResultOut(result=res))
+
+
+class UpdateObject(_ClaudeTool):
+    """Patch a domain object through its encapsulated validation: `type` +
+    `ids` + `patch` (e.g. type='action',
+    ids={'plan_id':'p','action_id':'a1'}, patch={'status':'done',
+    'evidence':'…'}). An action `done` patch is a **pure write (d30): it
+    records status + evidence, runs NO acceptance check, and lands as `done`
+    awaiting the worker->reviewer chain**; patching `{'verify':{…}}` CORRECTS
+    a wrong acceptance.verify (data the worker/reviewer re-run in-shell) and is
+    allowed while dispatching. Invalid transitions are refused by the object; inspect-only
+    objects refuse update. Worked examples (outcome / recipe-close / etc.):
+    get_guide('architecture-vocabulary')."""
+
+    name = "update_object"
+    InputModel = _UpdateObjIn
+    OutputModel = _ObjResultOut
+
+    async def _run(self, m: _UpdateObjIn):
+        from ..objects import ObjectError, update_object
+        refuse = _guard_object_crud(self.ctx, self.name, m.type)
+        if refuse is not None:
+            return refuse
+        try:
+            res = await update_object(self.ctx, m.type, m.ids, m.patch)
+        except ObjectError as e:
+            return _precondition(str(e))
+        return Tool.ok(_ObjResultOut(result=res))
+
+
+class _DeleteObjIn(BaseModel):
+    type: str           # 'step' | 'action'
+    ids: dict = {}      # step: {recipe_id, step_id}; action: {plan_id, action_id}
+    reason: str = ""    # why — recorded in the audit trail (give a real one)
+
+
+class DeleteObject(_ClaudeTool):
+    """Delete a step or an action from the live map (P3 advisory FSM) —
+    use this when work is genuinely obsolete (superseded scope, a wrongly
+    authored action), instead of leaving zombie entries or recording a
+    whole new plan. e.g. delete_object(type='action', ids={'plan_id':'p',
+    'action_id':'a3'}, reason='superseded by a4'). Risky-but-legal deletes
+    PROCEED and return `advisories` (dependents' depends_on auto-rewritten,
+    orphaned plan noted, done-work evidence digested into the audit trail).
+    HARD-BLOCKED only when genuinely unsafe: the recipe/plan is terminal,
+    the target is in_progress under a LIVE shell (steer or pool_reap it
+    first), or it is the recipe's last step past comprehension (mark it
+    'skipped' instead). The deletion + your `reason` are recorded in the
+    owning trail — history stays honest."""
+
+    name = "delete_object"
+    InputModel = _DeleteObjIn
+    OutputModel = _ObjResultOut
+
+    async def _run(self, m: _DeleteObjIn):
+        from ..objects import ObjectError, delete_object
+        refuse = _guard_object_crud(self.ctx, self.name, m.type)
+        if refuse is not None:
+            return refuse
+        try:
+            res = await delete_object(self.ctx, m.type, m.ids, m.reason)
+        except ObjectError as e:
+            return _precondition(str(e))
+        return Tool.ok(_ObjResultOut(result=res))
+
+
+# ── observe (reactive subscription) ────────────────────────────────────────
+class _ObserveIn(BaseModel):
+    spec: str                              # the rx lambda (a single expr)
+    bindings: dict = {}                    # e.g. {"me": "...", "plan_id": ...}
+    subscription_id: str | None = None     # omit → generated
+    # Phase-2-A motor nerve (OPTIONAL): a governed EffectSpec dict. Absent →
+    # pure sensory subscription (wake-only), exactly as before. Present →
+    # each emission ALSO dispatches ONE allowlisted, idempotency-keyed,
+    # rate-capped, audited, advisory-by-default action via the SAME governed
+    # sink the driver already runs at phase=2 (Tier-2 stays DARK).
+    effect: dict | None = None
+    owner: str = ""                        # provenance inbox (echo filter)
+    # W7 part 4 (DESIGN-v6 §W7.4): per-spec RATE-LIMIT knob. 0 (default) =
+    # today's behavior (every emission wakes). >0 caps the CHATTY POLLED sources
+    # (rx.pool/rx.plan/rx.external) at one wake per this window (ms), applied
+    # per-source BEFORE the spec's merge; the critical planes (rx.worklog,
+    # rx.broker, rx.recipe_events) are NEVER limited, at any setting.
+    #
+    # It was a debounce on the MERGED stream until s29, and that DISCARDED a
+    # worker's `done` whenever a poller was merged in (debounce waits for a
+    # quiet that a 2s poller never allows, and keeps only the burst's last
+    # item). Never rate-limit a merged stream. Wired via --min-interval-ms.
+    min_interval_ms: float = 0.0
+
+
+class _ObserveOut(BaseModel):
+    subscription_id: str
+    bound_to: list[str]                    # source names the spec referenced
+    monitor_cmd: str                       # run THIS under the Monitor tool
+    has_effect: bool = False               # True → a governed effect is wired
+    reused: bool = False                   # True → an identical subscription
+                                           # already exists; DO NOT start a
+                                           # second Monitor (idempotent reuse,
+                                           # s17 FA2-F2 / RC2)
+
+
+# Default lifetime after which an idle .reactive/sub-*.spec artifact triplet
+# (.spec + .bindings.json + .effect.json) is eligible for garbage collection
+# on the NEXT observe() call. A live subscription rewrites/refreshes its spec
+# at arm time, so its mtime is always recent — only abandoned artifacts from
+# closed shells age past this and get swept. Override with the env var.
+# (s17 FA2-F2 / RC2: bound the 777-and-growing leak.)
+_REACTIVE_SPEC_TTL_SECS = int(
+    os.environ.get("EDP_REACTIVE_SPEC_TTL_SECS", str(24 * 3600)))
+
+
+def _subscription_matches(root: Path, sid: str, spec: str,
+                          bindings: dict, effect: dict | None) -> bool:
+    """True iff a persisted subscription `sid` is byte-identical to the
+    (spec, bindings, effect) being requested now. Used to make observe()
+    IDEMPOTENT: re-arming the SAME subscription returns the existing one
+    (reused=True) instead of minting a duplicate driver (s17 FA2-F2 / RC2).
+    A differing spec/bindings/effect under the same sid is a genuine
+    re-spec and is NOT a match (the caller overwrites + re-arms)."""
+    spec_path = root / f"{sid}.spec"
+    if not spec_path.exists():
+        return False
+    try:
+        if spec_path.read_text(encoding="utf-8") != spec:
+            return False
+        # bindings: file present iff bindings non-empty; content must match.
+        b_path = root / f"{sid}.bindings.json"
+        if bindings:
+            if not b_path.exists() or \
+                    b_path.read_text(encoding="utf-8") != json.dumps(bindings):
+                return False
+        elif b_path.exists():
+            return False
+        # effect: file present iff an effect was wired; content must match.
+        e_path = root / f"{sid}.effect.json"
+        if effect is not None:
+            if not e_path.exists():
+                return False
+        elif e_path.exists():
+            return False
+    except OSError:
+        return False
+    return True
+
+
+def _gc_stale_subscriptions(root: Path, *, keep: str, ttl_secs: int,
+                            now_ts: float) -> int:
+    """Sweep abandoned `.reactive/sub-*.spec` artifact triplets whose spec
+    file is older than `ttl_secs`, returning the count of triplets removed.
+
+    Age-scoped: a LIVE subscription re-writes its `.spec` at arm time, so its
+    mtime stays recent and it is never swept; only artifacts left behind by
+    closed shells age past the TTL. Never removes the `keep` sid (the one
+    being armed right now). Only touches `sub-*.{spec,bindings.json,effect.json}`
+    directly under `root` — the `registry/` and `effect_audit/` SUBDIRS (the
+    durable rule registry + the governed-effect audit trail) are left intact.
+    Best-effort: a per-file error is logged and skipped, never fatal to the
+    observe() call (s17 FA2-F2 / RC2 — bound the unbounded leak)."""
+    removed = 0
+    try:
+        candidates = list(root.glob("sub-*.spec"))
+    except OSError:
+        return 0
+    for spec_path in candidates:
+        sid = spec_path.name[:-len(".spec")]
+        if sid == keep:
+            continue
+        try:
+            if now_ts - spec_path.stat().st_mtime <= ttl_secs:
+                continue
+            for suffix in (".spec", ".bindings.json", ".effect.json"):
+                p = root / f"{sid}{suffix}"
+                if p.exists():
+                    p.unlink()
+            removed += 1
+        except OSError as exc:
+            _log.warning("observe_gc_skip", f"could not sweep {sid}: {exc}",
+                         sid=sid)
+            continue
+    return removed
+
+
+class ObserveStream(_ClaudeTool):
+    """Set up a reactive subscription (REACTIVE-STREAMS.md). `spec` is a
+    single RxPY expression over `rx` (sources + operators); the tool
+    validates it compiles to an Observable (no I/O), persists it, and
+    returns a command to run under the harness `Monitor` tool — **one
+    Monitor per observe() call = one Subscription**. The sink only WAKES +
+    delivers; mutation stays in the object/CRUD surface. A bad spec returns
+    a consumable error, never a silent no-op. OPTIONAL: pass `effect` (a
+    governed EffectSpec dict) + `owner` to turn it into an ACTIONABLE reflex
+    — each emission ALSO dispatches ONE allowlisted, idempotency-keyed,
+    rate-capped, audited action via the phase=2 governed sink (advisory-by-
+    default; Tier-2 mutating effects stay DARK; a bad effect fails fast
+    here). For a DURABLE reflex that survives a restart, use register_rule
+    instead. IDEMPOTENT: re-arming with the SAME `subscription_id` and an
+    identical spec/bindings/effect returns the existing subscription with
+    `reused=True` and the same `monitor_cmd` — do NOT start a second Monitor
+    in that case (one logical subscription = one live driver). Each call also
+    garbage-collects abandoned `.reactive/sub-*.spec` artifacts older than the
+    TTL. Worked usage: get_guide('reactive-streams') /
+    get_guide('reactive-streams-effects')."""
+
+    name = "observe"
+    InputModel = _ObserveIn
+    OutputModel = _ObserveOut
+
+    async def _run(self, m: _ObserveIn):
+        import json as _json
+        import uuid as _uuid
+
+        import reactivex as _rx
+
+        from ..reactive import (
+            EffectError,
+            EffectSpec,
+            RxRuntime,
+            SpecError,
+            compile_spec,
+        )
+
+        seen: list[str] = []
+
+        def _validation_provider(name, **kw):
+            seen.append(name)
+            return _rx.empty()   # no I/O — just exercise the composition
+
+        runtime = RxRuntime(_validation_provider)
+        try:
+            compile_spec(m.spec, runtime, m.bindings)
+        except SpecError as exc:
+            return _precondition(str(exc))
+
+        sid = m.subscription_id or f"sub-{_uuid.uuid4().hex[:12]}"
+        root = self.ctx.recipes.root.parent / ".reactive"
+        root.mkdir(parents=True, exist_ok=True)
+
+        # (s17 FA2-F2 / RC2) IDEMPOTENT REUSE: if the caller supplied a
+        # subscription_id whose persisted (spec, bindings, effect) is
+        # byte-identical to what's being asked for now, this is a re-arm of
+        # the SAME subscription — return reused=True and the same monitor_cmd
+        # WITHOUT rewriting the artifacts, so the caller knows NOT to start a
+        # second Monitor (one logical subscription = one live driver). A
+        # differing spec under the same sid is a genuine re-spec → overwrite.
+        reused = bool(
+            m.subscription_id
+            and _subscription_matches(root, sid, m.spec, m.bindings, m.effect))
+
+        # (s17 FA2-F2 / RC2) bound the .reactive/sub-*.spec leak: sweep
+        # abandoned artifact triplets older than the TTL on every arm. The
+        # subscription we're arming right now (sid) is never swept, and the
+        # registry/ + effect_audit/ subdirs are left intact. Best-effort.
+        gc_removed = _gc_stale_subscriptions(
+            root, keep=sid, ttl_secs=_REACTIVE_SPEC_TTL_SECS,
+            now_ts=time.time())
+        if gc_removed:
+            _log.info("observe_gc_swept",
+                      f"swept {gc_removed} stale sub-*.spec artifact(s)",
+                      removed=gc_removed)
+
+        spec_path = root / f"{sid}.spec"
+        if not reused:
+            spec_path.write_text(m.spec, encoding="utf-8")
+        # monitor_cmd runs under the harness `Monitor` (a bash shell), so:
+        #  1. pin the interpreter to THIS MCP server's venv (`sys.executable`)
+        #     — bare `python` under bash resolved to the wrong venv
+        #     (edp-pool's, no `edp_claude`) → ModuleNotFoundError.
+        #  2. emit forward-slash, quoted paths — bash strips Windows
+        #     backslashes (`C:\X` → `C:X`, exit 127). `.as_posix()` keeps
+        #     the drive-letter form bash accepts.
+        import sys as _sys
+        py = Path(_sys.executable).as_posix()
+        # The driver SUBPROCESS resolves its worklog path from EDP_AGENT_HOME
+        # and its broker/pool from EDP_BROKER_URL/EDP_POOL_URL. The Monitor
+        # may NOT inherit this MCP server's env — if it doesn't, the driver
+        # defaults repo_root to "." and tails the WRONG worklog file → zero
+        # emissions → a silently-dead subscription (the planner then falls
+        # back to the slow heartbeat — the 2026-06-01 "rx not working" bug).
+        # So BAKE the values into the command (same care already taken to pin
+        # the interpreter), resolved from THIS process (authoritative): the
+        # stores' actual root + the live client URLs.
+        agent_home = self.ctx.recipes.root.parent.as_posix()
+        broker_url = (getattr(self.ctx.broker, "base", None)
+                      or os.environ.get("EDP_BROKER_URL",
+                                        "http://127.0.0.1:9300"))
+        pool_url = (getattr(self.ctx.pool, "base", None)
+                    or os.environ.get("EDP_POOL_URL", "http://127.0.0.1:9301"))
+        env_prefix = (
+            f'EDP_AGENT_HOME="{agent_home}" '
+            f'EDP_BROKER_URL="{broker_url}" '
+            f'EDP_POOL_URL="{pool_url}" '
+        )
+        cmd = (f'{env_prefix}"{py}" -m edp_claude.reactive.driver '
+               f'--spec-file "{spec_path.as_posix()}"')
+        if m.bindings:
+            b_path = root / f"{sid}.bindings.json"
+            if not reused:
+                b_path.write_text(_json.dumps(m.bindings), encoding="utf-8")
+            cmd += f' --bindings-file "{b_path.as_posix()}"'
+
+        # OPTIONAL governed effect (Phase-2-A motor nerve). Validate it HERE
+        # through the SAME EffectSpec.compile gate the driver applies — so an
+        # un-allowlisted / un-opted / malformed effect fails fast with a
+        # consumable error instead of a driver that dies on launch. rule_id
+        # defaults to the subscription id (audit-trail identity). We do NOT
+        # build the dispatcher here (this MCP shell does not run effects); the
+        # driver subprocess wires it at phase=2 via --effect-file (Tier-2 DARK,
+        # advisory-by-default). owner = provenance/echo-filter inbox.
+        has_effect = False
+        if m.effect is not None:
+            eff = {**m.effect}
+            eff.setdefault("rule_id", sid)
+            try:
+                EffectSpec.compile(eff)   # allowlist + opt-in + arg contract
+            except EffectError as exc:
+                return _precondition(f"invalid effect: {exc}")
+            eff_path = root / f"{sid}.effect.json"
+            if not reused:
+                eff_path.write_text(_json.dumps(eff), encoding="utf-8")
+            owner = m.owner or str(m.bindings.get("me", ""))
+            cmd += (f' --effect-file "{eff_path.as_posix()}"'
+                    f' --owner "{owner}"')
+            has_effect = True
+
+        # W7 part 4: thread the per-spec RATE-LIMIT knob into the driver ONLY
+        # when set (>0), so the default (0) leaves the command byte-identical
+        # to today's — preserving existing behavior + the idempotent-reuse
+        # cmd equality.
+        #
+        # IT IS NOT A DEBOUNCE, AND THE DRIVER DOES NOT WRAP THE PIPELINE. This
+        # comment used to read "the driver wires it to RxRuntime.debounce_ms",
+        # which is what shipped and was the defect: one debounce over the COMPILED
+        # (merged) stream waits for a silence that never comes when a poller is
+        # merged in, and it keeps only the burst's LAST item — so a worker's
+        # once-only `done` was DISCARDED and a pool snapshot delivered in its
+        # place. s29/a3 deleted `_apply_debounce`; driver.main now hands the knob
+        # to the RUNTIME, which applies `ops.sample` PER SOURCE, as each source is
+        # constructed and BEFORE any merge, and only to the polled snapshot planes
+        # (RATE_LIMITABLE_SOURCES). CRITICAL_SOURCES (broker/worklog/…) are never
+        # rate-limited at any setting, so no knob value can starve a once-only
+        # event.
+        if m.min_interval_ms and m.min_interval_ms > 0:
+            cmd += f' --min-interval-ms {m.min_interval_ms}'
+
+        # W2 leg 2 (DESIGN-v6 §W2): associate this subscription with its OWNING
+        # handle so the rewire hand-back can return it to a compacted shell.
+        # The handle is the owner/me inbox (a plan_id / recipe_id / worker addr)
+        # — the SAME address a shell drives next_action/reconcile under, so the
+        # rewire block looks its subscriptions up by m.handle. Idempotent + dedup
+        # so a reused=True re-arm re-indexes harmlessly (also self-heals a lost
+        # index entry). Best-effort: an index write must NEVER fail the observe.
+        from ..reactive.handle_index import register_subscription
+        owner_handle = m.owner or str(m.bindings.get("me", ""))
+        if owner_handle:
+            try:
+                register_subscription(root, owner_handle, sid)
+            except OSError as exc:
+                _log.warning("observe_index_skip",
+                             f"could not index {sid} -> {owner_handle}: {exc}",
+                             sid=sid)
+
+        return Tool.ok(_ObserveOut(
+            subscription_id=sid,
+            bound_to=sorted(set(seen)),
+            monitor_cmd=cmd,
+            has_effect=has_effect,
+            reused=reused,
+        ))
+
+
+# ── register_rule / list_rules (durable reactive rule registry) ─────────────
+# These expose the existing edp_claude.reactive.registry APIs as agent-callable
+# MCP tools so a FRESH no-context shell (spawned after a coordinated restart)
+# can register a standing reflex and rediscover the ones already registered —
+# the durability story of EVENT-PLANE-UPGRADE-DESIGN.md §4C. They DELEGATE to
+# RuleRegistry (the source of truth, one JSON file per rule); they do NOT
+# reimplement persistence, validation, the governed-effect safety model, or the
+# compile_spec sandbox. The RuleSupervisor (started as a service) is what keeps
+# every enabled rule subscribed across restarts.
+def _registry_root(ctx) -> "Path":
+    """Where registered rules persist: <agent_home>/.reactive/registry.
+    Mirrors RuleRegistry.default_registry_root() (EDP_AGENT_HOME-based) but is
+    resolved from THIS server's store root so the MCP tool and the supervisor
+    agree on one location regardless of the supervisor's cwd."""
+    return ctx.recipes.root.parent / ".reactive" / "registry"
+
+
+class _RegisterRuleIn(BaseModel):
+    name: str                              # unique rule name (audit identity)
+    spec: str                              # the rx observe lambda (one expr)
+    owner: str                             # provenance inbox (echo filter)
+    bindings: dict = {}                    # spec bindings, e.g. {"me": "..."}
+    effect: dict | None = None             # OPTIONAL governed EffectSpec dict
+    enabled: bool = True                   # registered + auto-subscribed if True
+    replace: bool = False                  # overwrite an existing same-name rule
+
+
+class _RegisterRuleOut(BaseModel):
+    name: str
+    owner: str
+    enabled: bool
+    has_effect: bool
+    created_ts: str
+    updated_ts: str
+    note: str
+
+
+class RegisterRule(_ClaudeTool):
+    """Register a DURABLE reactive rule = (an observe `spec` + optional
+    governed `effect` + `owner`), persisted to disk so it SURVIVES a shell /
+    broker / pool restart — a running RuleSupervisor re-subscribes every
+    ENABLED rule on startup, so a standing reflex (e.g. the 6th-sense
+    watcher) is a registered rule, not a session-bound monitor that dies
+    with its shell. The `spec` (composition, no I/O) and `effect` (same
+    allowlist + opt-in gate as the driver; advisory-by-default, Tier-2
+    mutating effects DARK) are validated BEFORE disk, so an invalid rule
+    never persists. **Use a unique `name`; set `replace=true` to
+    overwrite.** Delegates to reactive.registry.RuleRegistry. Worked usage:
+    get_guide('reactive-streams-effects')."""
+
+    name = "register_rule"
+    InputModel = _RegisterRuleIn
+    OutputModel = _RegisterRuleOut
+
+    async def _run(self, m: _RegisterRuleIn):
+        from ..reactive import (
+            EffectError,
+            RegistryError,
+            RuleRegistry,
+            SpecError,
+        )
+
+        registry = RuleRegistry(root=_registry_root(self.ctx))
+        try:
+            rule = registry.register_rule(
+                name=m.name, spec=m.spec, effect=m.effect, owner=m.owner,
+                enabled=m.enabled, bindings=m.bindings, replace=m.replace)
+        # register_rule validates the observe spec (SpecError) and the
+        # governed effect (EffectError) BEFORE persisting, and rejects a
+        # duplicate name (RegistryError). All three are user-fixable inputs →
+        # surface as ONE consumable precondition, never an uncaught 500.
+        except (RegistryError, SpecError, EffectError) as exc:
+            return _precondition(str(exc))
+        return Tool.ok(_RegisterRuleOut(
+            name=rule.name, owner=rule.owner, enabled=rule.enabled,
+            has_effect=rule.effect is not None,
+            created_ts=rule.created_ts, updated_ts=rule.updated_ts,
+            note=("registered durably; the rule supervisor subscribes it "
+                  "on its next load (now if enabled and the supervisor is "
+                  "running). Rediscover via list_rules."),
+        ))
+
+
+class _ListRulesIn(BaseModel):
+    enabled_only: bool = False             # True → only currently-enabled rules
+    # a3: window the registry (it scales with the global rule count). Records
+    # stay FULL (re-authoring needs spec/effect/bindings, and there is no
+    # per-rule read to recover from a summary); `count` is the FULL total.
+    offset: int = 0
+    limit: int = WINDOW
+
+
+class _ListRulesOut(BaseModel):
+    count: int
+    cursor: int | None = None              # next offset to page from, or None
+    rules: list[dict]                      # each: full rule record (rediscovery)
+
+
+class ListRules(_ClaudeTool):
+    """Enumerate the DURABLE reactive rules registered on disk so a no-context
+    shell can REDISCOVER the standing reflexes after a restart (the durability
+    counterpart of register_rule). Returns each rule's full record — name,
+    owner, enabled, the observe `spec` + bindings, and the governed `effect`
+    (if any) — which is exactly what's needed to understand or re-author a
+    rule. Pass `enabled_only=true` to list just the rules the supervisor is
+    actively keeping subscribed. Read-only; delegates to
+    edp_claude.reactive.registry.RuleRegistry."""
+
+    name = "list_rules"
+    InputModel = _ListRulesIn
+    OutputModel = _ListRulesOut
+
+    async def _run(self, m: _ListRulesIn):
+        from ..reactive import RuleRegistry
+
+        registry = RuleRegistry(root=_registry_root(self.ctx))
+        rules = (registry.enabled_rules() if m.enabled_only
+                 else registry.list_rules())
+        w = windowed([r.to_json() for r in rules], m.offset, m.limit)
+        return Tool.ok(_ListRulesOut(
+            count=w["count"],
+            cursor=w["cursor"],
+            rules=w["items"],
+        ))
+
+
+def _digest_trim(text: Any, limit: int = 200) -> str:
+    """First-line, length-capped one-line projection for the digest packet."""
+    s = str(text or "").strip()
+    first = s.splitlines()[0].strip() if s else ""
+    return (first[:limit].rstrip() + "…") if len(first) > limit else first
+
+
+class _GetRecipeDigestIn(BaseModel):
+    recipe_id: str
+    # v7 P6.3: synthesis=true additionally returns the code-generated
+    # "state of the recipe" markdown (the same content record_step_result
+    # refreshes into context/state-synthesis.md on every step close).
+    synthesis: bool = False
+
+
+class _GetRecipeDigestOut(BaseModel):
+    recipe_id: str
+    # The 7 parts, in order — names match the top-level fields below.
+    parts: list[str]
+    north_star: dict          # 1 — immutable goal + current shape + constraints
+    recap: dict               # 2 — FSM focus (state/phase/counts), no LLM
+    expected_outcomes: list[dict]  # 3 — with met flags
+    active_decisions: dict    # 4 — digest form + id+title index of the rest
+    open_steps: list[dict]    # 5 — open steps/actions
+    pending: dict             # 6 — pending assumptions/questions/bans counts
+    recent_events: dict       # 7 — recent-events digest (+ epoch/segment ptr)
+    # W8 — the unacked load-bearing assumptions in full ({id,title,body}), so a
+    # cold-start shell re-lists them without a raw recipe read (compaction-safe:
+    # re-derived from persisted state every call). Empty when none pend.
+    pending_assumptions: list[dict] = []
+    # W3 (DESIGN-v6 §W3) — {spec_id: n} untriaged flow-back learnings per spec
+    # this recipe consults (empty == nothing to triage). The SAME map
+    # recipe_context pushes every tick, so the re-ground digest agrees with the
+    # live push; `pending.spec_learnings` carries the scalar total.
+    pending_spec_learnings: dict[str, int] = {}
+    # W5 (DESIGN-v6 §W5) — undrained consult/steer on the recipe's own inbox
+    # (reconcile stashes them; this re-delivers them to a compacted shell via
+    # the W2 reground digest). The SAME bounded window+cursor view (#18)
+    # recipe_context pushes. `{}` == none pending.
+    consult_pending: dict = {}
+    approx_tokens: int
+    synthesized_north_star: bool
+    # v7 P6.3: the "state of the recipe" markdown, only when synthesis=true.
+    synthesis_md: str | None = None
+    note: str
+
+
+def _segment_digest_kind_counts(digest_text: str) -> dict[str, int]:
+    """Parse the ``## counts by kind`` block of a code-generated segment digest
+    (``events.NNNN.digest.md``, built by store.recipe_store._build_segment_digest)
+    into a ``{kind: count}`` map.
+
+    Reading these tiny per-segment digests lets get_recipe_digest report an
+    ACCURATE total-events-by-kind without re-reading the full archived history
+    on every call (s17 a2) — the archived head is summarized once at rollup
+    time; only the live tail is scanned per call. Deterministic, no LLM, and
+    no regex (plain line parsing) so it honors principle-6 + coding-standard #7.
+    """
+    counts: dict[str, int] = {}
+    in_section = False
+    for line in digest_text.splitlines():
+        stripped = line.strip()
+        if stripped == "## counts by kind":
+            in_section = True
+            continue
+        if not in_section:
+            continue
+        if not stripped:
+            continue
+        if not stripped.startswith("- "):
+            break                       # the bullet list ended
+        kind, sep, num = stripped[2:].rpartition(": ")
+        if not sep:
+            continue
+        try:
+            counts[kind] = counts.get(kind, 0) + int(num)
+        except ValueError:
+            continue                    # non-numeric tail — skip defensively
+    return counts
+
+
+class GetRecipeDigest(_ClaudeTool):
+    """The <10k-token code-assembled (NO LLM) re-ground packet for a recipe
+    (DESIGN-v6 W1): north star, recap, outcomes, active decisions, open steps,
+    recent events. A cold-start / post-compaction shell grounds from THIS
+    instead of the raw recipe.json + events.jsonl (the ~220k-token re-ground)."""
+
+    name = "get_recipe_digest"
+    idempotent = True
+    InputModel = _GetRecipeDigestIn
+    OutputModel = _GetRecipeDigestOut
+
+    async def _run(self, m: _GetRecipeDigestIn):
+        rid = m.recipe_id
+        if not self.ctx.recipes.exists(rid):
+            return _precondition(f"no recipe {rid!r}")
+        r = self.ctx.recipes.load(rid)
+
+        # Lazy imports (same seam discipline the rest of this module uses).
+        from ..fsm.recipe_fsm import _decision_title
+        from ..store.atomic import read_jsonl
+        from ..store.north_star import derive_active_constraints
+
+        # active_constraints is the AUTO-DERIVED view (never hand-written) —
+        # recomputed from the LIVE recipe so the digest can't ship a stale ban.
+        active_constraints = [
+            c.model_dump(mode="json") for c in derive_active_constraints(r)
+        ]
+
+        # ── Part 1: north_star (immutable goal + current shape + constraints) ──
+        synthesized = False
+        if self.ctx.north_star.exists(rid):
+            ns = self.ctx.north_star.load(rid)
+            north_star = {
+                "user_goal_verbatim": ns.user_goal_verbatim,
+                "current_shape": ns.current_shape,
+                "active_constraints": active_constraints,
+                "recent_evolution": [
+                    {"at": e.at.isoformat(), "by": e.by, "text": e.text}
+                    for e in ns.evolution_log[-5:]
+                ],
+            }
+        else:
+            # Legacy migration (DESIGN-v6 W1): the north star is synthesized
+            # IN-MEMORY from the verbatim goal + active constraints and marked
+            # synthesized=true. NOT persisted here — the north star is created
+            # only via record_context(kind='north_star_update') (neuron-only),
+            # so this read-only tool never materializes state.
+            synthesized = True
+            north_star = {
+                "user_goal_verbatim": r.user_goal_verbatim,
+                "current_shape": "",
+                "active_constraints": active_constraints,
+                "recent_evolution": [],
+            }
+        north_star["synthesized"] = synthesized
+
+        # ── Part 2: recap — the FSM focus (recipe_context, pure, no LLM) ──
+        rc = recipe_context(r)
+        recap = {
+            "recap": rc.get("recap"),
+            "phase": rc.get("phase"),
+            "state": getattr(r.state, "value", str(r.state)),
+            "domain": r.domain,
+            "curiosity_cleared": r.comprehension.curiosity_cleared,
+            "user_signoff": r.comprehension.user_signoff,
+        }
+        if rc.get("comprehension_recheck"):
+            recap["comprehension_recheck"] = rc["comprehension_recheck"]
+
+        # ── Part 3: expected_outcomes with met flags ──
+        expected_outcomes = [
+            {"id": o.id, "met": o.met,
+             "description": _digest_trim(o.description),
+             "met_evidence": (_digest_trim(o.met_evidence)
+                              if o.met_evidence else None)}
+            for o in r.comprehension.expected_outcomes
+        ]
+
+        # ── Part 4: active decisions (DIGEST FORM) + id+title index ──
+        active = [d for d in r.context.decisions
+                  if getattr(d, "status", "active") == "active"]
+        superseded = len(r.context.decisions) - len(active)
+        load_bearing = [d for d in active if getattr(d, "load_bearing", False)]
+
+        def _dec_row(d) -> dict:
+            row = {"id": d.id,
+                   "title": d.title or _decision_title(d.text),
+                   "text": _digest_trim(d.text, 300)}
+            c = getattr(d, "constraint", None)
+            if c is not None:
+                row["constraint"] = {
+                    "match": c.match, "match_kind": c.match_kind,
+                    "applies_to": list(c.applies_to), "message": c.message}
+            return row
+
+        # s17 a2 — bound BY CONSTRUCTION (window+cursor from the START, not the
+        # old reactive last-resort index cap): both the must-hold set and the
+        # id+title index are fixed WINDOWs (<= WINDOW), so the digest is O(1) in
+        # decision count. count/superseded/*_count report the true totals; a
+        # non-null cursor means more rows exist past the window (fetch the full
+        # text on demand via read_object('recipe').context.decisions).
+        _lb_win = windowed(load_bearing)
+        _idx_win = windowed(
+            [{"id": d.id, "title": d.title or _decision_title(d.text)}
+             for d in active])
+        active_decisions = {
+            "count": len(active),
+            "superseded": superseded,
+            # the must-hold set in digest form (trimmed bodies + constraints)
+            "load_bearing": [_dec_row(d) for d in _lb_win["items"]],
+            "load_bearing_count": len(load_bearing),
+            "load_bearing_cursor": _lb_win["cursor"],
+            # the cheap id+title index of the active decisions (the pointer:
+            # a shell fetches full text on demand via read_object('recipe'))
+            "index": _idx_win["items"],
+            "index_cursor": _idx_win["cursor"],
+        }
+
+        # ── Part 5: open steps/actions ──
+        open_steps = [
+            {"step_id": s.step_id, "status": s.status, "kind": s.kind,
+             "description": _digest_trim(s.description),
+             "depends_on": s.depends_on, "execution": s.execution,
+             "plan_ref": s.plan_ref, "attempt": s.attempt}
+            for s in r.steps if s.status in ("pending", "in_progress")
+        ]
+
+        # W8 — the unacked load-bearing assumptions in full (compaction-safe:
+        # the SAME helper the a3 dispatch guard reads, re-derived here).
+        pending_assumptions = pending_load_bearing_assumptions(r)
+
+        # ── Part 6: pending counts (recipe-derived) ──
+        # W3: the untriaged spec-learning queue per consulted spec ({spec_id:n};
+        # empty == nothing to triage) — the SAME map recipe_context pushes every
+        # tick, so the re-ground digest and the live push agree.
+        pending_spec_learnings = _pending_spec_learnings(self.ctx, r)
+        # W5 — undrained consult/steer view (bounded window+cursor, #18); {} when
+        # none pend, mirroring the recipe_context push (single source of truth).
+        _cpv = consult_pending_view(r)
+        consult_pending = _cpv if _cpv["count"] else {}
+        pending = {
+            "assumptions": len(r.context.assumptions),
+            "load_bearing_pending": len(pending_assumptions),
+            "open_questions": len(r.context.open_questions),
+            "rejected_options": len(r.context.rejected_options),
+            "spec_learnings": sum(pending_spec_learnings.values()),
+        }
+
+        # ── Part 7: recent-events digest (counts by kind + last few) ──
+        # s17 a2 — counts come from the archived per-segment digests (summarized
+        # once at rollup time) PLUS a scan of only the LIVE tail, instead of
+        # re-reading the entire events history every call. After a rollup
+        # events.jsonl already holds only the bounded tail; the archived head
+        # lives in events.NNNN.jsonl with a code-generated events.NNNN.digest.md
+        # counts-by-kind summary — so summing those digests keeps the reported
+        # total ACCURATE without an O(history) re-read.
+        rdir = Path(self.ctx.recipes.root) / rid
+        seg = sorted(rdir.glob("events.*.digest.md"))
+        archived_counts: dict[str, int] = {}
+        for sp in seg:
+            try:
+                seg_text = sp.read_text(encoding="utf-8")
+            except OSError:
+                continue                # missing/unreadable segment — skip
+            for k, c in _segment_digest_kind_counts(seg_text).items():
+                archived_counts[k] = archived_counts.get(k, 0) + c
+        archived_total = sum(archived_counts.values())
+
+        # W15 — kind=note is EPHEMERA (record_context(kind=note)); it lands in
+        # the recipe worklog for a plan-less caller but must NEVER surface in
+        # the digest (read-side invariant, mirrored by the epoch which already
+        # ignores worklog events). Drop it before it can be counted or listed.
+        tail_events = [
+            e for e in read_jsonl(rdir / "events.jsonl")   # bounded live tail
+            if str(e.get("kind", "")) != "note"
+        ]
+        kind_counts: dict[str, int] = dict(archived_counts)
+        for e in tail_events:
+            k = str(e.get("kind", "?"))
+            kind_counts[k] = kind_counts.get(k, 0) + 1
+        recent_events: dict = {
+            "total": archived_total + len(tail_events),
+            "archived_events": archived_total,
+            "live_tail": len(tail_events),
+            "counts_by_kind": dict(
+                sorted(kind_counts.items(), key=lambda kv: -kv[1])),
+            "recent": [
+                {"ts": e.get("ts"), "kind": e.get("kind"),
+                 "summary": _digest_trim(
+                     e.get("summary") or e.get("detail")
+                     or e.get("body") or "", 160)}
+                for e in tail_events[-8:]
+            ],
+            # W2 grounding epoch — the STATELESS fingerprint recomputed from
+            # the live recipe (recipe IS the state; no stored field — d13), so
+            # the re-ground digest self-labels the ground it was cut at.
+            "grounding_epoch": grounding_epoch(r),
+        }
+        if seg:
+            recent_events["latest_event_digest_ref"] = str(seg[-1])
+
+        # ── Defensive token budget (NO LLM): keep the packet < 10k tokens even
+        # on the largest legacy recipe, by progressive downshift. Rough
+        # estimate (~4 chars/token) is deliberately conservative. ──
+        out = {
+            "north_star": north_star, "recap": recap,
+            "expected_outcomes": expected_outcomes,
+            "active_decisions": active_decisions, "open_steps": open_steps,
+            "pending": pending, "recent_events": recent_events,
+            # W3: {spec_id: n} untriaged flow-back per consulted spec.
+            "pending_spec_learnings": pending_spec_learnings,
+            # W5: undrained consult/steer view (empty when none pend).
+            "consult_pending": consult_pending,
+        }
+
+        # _approx_tokens + BUDGET now come from the shared ._bounds module
+        # (imported at top). Behavior is identical — same estimator, same
+        # 9000-token ceiling — just no longer defined inline (#16).
+        if _approx_tokens(out) > BUDGET:
+            # 1) collapse load-bearing decision bodies to titles (index stays).
+            active_decisions["load_bearing"] = [
+                {k: v for k, v in row.items() if k != "text"}
+                for row in active_decisions["load_bearing"]
+            ]
+            active_decisions["_downshift"] = (
+                "load_bearing bodies dropped to titles to fit the budget; "
+                "load full text via read_object('recipe').context.decisions")
+        if _approx_tokens(out) > BUDGET:
+            # 2) trim the recent-events tail and outcome evidence.
+            recent_events["recent"] = recent_events["recent"][-4:]
+            for o in expected_outcomes:
+                o["met_evidence"] = None
+        # s17 a2 — the old step (3) "last resort: cap the decision index" is
+        # gone: index + load_bearing are now bounded to WINDOW BY CONSTRUCTION
+        # above, so there is no O(n) index left to trim reactively.
+
+        return Tool.ok(_GetRecipeDigestOut(
+            recipe_id=rid,
+            # v7 P6.3: opt-in narrative view, same content as the sidecar
+            # record_step_result refreshes; best-effort.
+            synthesis_md=(_state_synthesis_md(self.ctx, r)
+                          if m.synthesis else None),
+            parts=["north_star", "recap", "expected_outcomes",
+                   "active_decisions", "open_steps", "pending",
+                   "recent_events"],
+            north_star=north_star, recap=recap,
+            expected_outcomes=expected_outcomes,
+            active_decisions=active_decisions, open_steps=open_steps,
+            pending=pending, recent_events=recent_events,
+            pending_assumptions=pending_assumptions,
+            pending_spec_learnings=pending_spec_learnings,
+            consult_pending=consult_pending,
+            approx_tokens=_approx_tokens(out),
+            synthesized_north_star=synthesized,
+            note=("code-assembled (no-LLM) re-ground packet; 7 parts in "
+                  "`parts` order. Load-bearing decisions are digest-form — "
+                  "fetch full text on demand via read_object('recipe')."),
+        ))
+
+
+class _ListSubsIn(BaseModel):
+    # default: the caller's own EDP_HANDLE; the neuron passes one explicitly.
+    handle: str | None = None
+
+
+class _ListSubsOut(BaseModel):
+    handle: str
+    count: int
+    subscriptions: list[dict]
+
+
+class _UnobserveOut(BaseModel):
+    unobserved: str
+    handle: str
+    artifacts_removed: list[str]
+
+
+class ListSubscriptions(_ClaudeTool):
+    """LIGHTWEIGHT read of the persisted observe() subscriptions for a
+    handle (2026-07-20 — before this, seeing your own wake set cost a full
+    reconcile(reground=true) digest). Returns each subscription's id, spec,
+    bindings and effect from the `.reactive` handle index — the same data
+    the rewire block hands back, without the digest. Use at heartbeat to
+    diff your wiring against what your phase requires; repair by
+    re-issuing observe() (same subscription_id + new spec = overwrite),
+    delete with unobserve."""
+
+    name = "list_subscriptions"
+    idempotent = True
+    InputModel = _ListSubsIn
+    OutputModel = _ListSubsOut
+
+    async def _run(self, m: _ListSubsIn):
+        from ..reactive.handle_index import specs_for_handle
+        handle = (m.handle or "").strip() \
+            or os.environ.get("EDP_HANDLE", "").strip()
+        if not handle:
+            return _precondition(
+                "no handle: pass `handle` explicitly (EDP_HANDLE is unset "
+                "in this shell — e.g. the neuron's main seat).")
+        root = self.ctx.recipes.root.parent / ".reactive"
+        subs = [{"subscription_id": s["sid"], "spec": s["spec"],
+                 "bindings": s.get("bindings") or {},
+                 "effect": s.get("effect")}
+                for s in specs_for_handle(root, handle)]
+        return Tool.ok(_ListSubsOut(
+            handle=handle, count=len(subs), subscriptions=subs))
+
+
+class _UnobserveIn(BaseModel):
+    subscription_id: str
+    handle: str | None = None      # defaults to the caller's EDP_HANDLE
+
+
+class Unobserve(_ClaudeTool):
+    """DELETE one persisted observe() subscription you own (2026-07-20 —
+    completes the monitor CRUD: observe creates/overwrites,
+    list_subscriptions reads, this removes). Scope-guarded: the
+    subscription must be indexed to YOUR handle (or the one you name);
+    deleting another handle's wiring is refused. Removes the index entry
+    AND the sub-artifacts, so the pool watchdog stops executing it on the
+    next tick. Anonymous/unindexed sids age out via the TTL sweep."""
+
+    name = "unobserve"
+    InputModel = _UnobserveIn
+    OutputModel = _UnobserveOut
+
+    async def _run(self, m: _UnobserveIn):
+        from ..reactive.handle_index import (
+            sids_for_handle,
+            unregister_subscription,
+        )
+        handle = (m.handle or "").strip() \
+            or os.environ.get("EDP_HANDLE", "").strip()
+        if not handle:
+            return _precondition(
+                "no handle: pass `handle` explicitly (EDP_HANDLE is unset "
+                "in this shell).")
+        root = self.ctx.recipes.root.parent / ".reactive"
+        sid = m.subscription_id.strip()
+        if sid not in sids_for_handle(root, handle):
+            return _precondition(
+                f"subscription {sid!r} is not indexed to handle "
+                f"{handle!r} — list_subscriptions shows what you own; "
+                "another handle's wiring is not yours to delete.")
+        unregister_subscription(root, handle, sid)
+        removed = []
+        for suffix in (".spec", ".bindings.json", ".effect.json"):
+            p = root / f"{sid}{suffix}"
+            try:
+                if p.exists():
+                    p.unlink()
+                    removed.append(p.name)
+            except OSError:
+                pass    # index entry is gone either way; TTL sweep mops up
+        return Tool.ok(_UnobserveOut(
+            unobserved=sid, handle=handle, artifacts_removed=removed))
+
+
+ALL_TOOL_CLASSES = [
+    NextAction,
+    Reconcile,
+    ResolveRecipe,
+    StartRecipe,
+    RecordBranchVerdict,
+    RecordOutcome,
+    RecordComprehensionSignoff,
+    MarkOutcomeMet,
+    AddStep,
+    CloseRecipe,
+    RecordRecipe,
+    RecordPlan,
+    CreatePlan,
+    AddAction,
+    # v7 P0 — the RETIRED verbs are DEREGISTERED (break-and-migrate ruling,
+    # 2026-07-12): RecordStep, RecordDecision, RecordAssumption,
+    # RecordRejectedOption, Remember, GetSpecialistDoc, ProposeSpecLearning
+    # and ResolveSpecLearning no longer register as tools ANYWHERE — not
+    # even on the absent-role full set. The four memory-write class bodies
+    # survive as RecordContext's internal delegation targets (single source
+    # of truth for the storage writes); the rest are dead surface.
+    RecordStepResult,
+    RecordActionStatus,
+    RecordUserAnswer,
+    SupersedeDecision,
+    FoldDecisions,      # v7 P6.2 — one-call settled-cluster fold (neuron)
+    RecordGroundingBrief,   # v7 P8 — the planner's shared code map
+    RecordContext,
+    SearchContext,
+    PoolSpawnPlanner,
+    PoolSpawnWorker,
+    PoolCloseSelf,
+    PoolResumePlanner,
+    ArmExternalDriver,      # v7 — external neuron's CronCreate+Monitor analog
+    DisarmExternalDriver,
+    SolAuthorAsset,         # v7 follow-up — Sol (GPT/codex) asset authoring (worker)
+    SolConsult,             # v7 follow-up — Sol read-only visual/creative advice (consult)
+    PoolReap,
+    SuspendRecipe,
+    ResumeRecipe,
+    ReadWorklog,
+    InspectWorker,
+    StatusPing,
+    BrokerSend,
+    AskAbove,
+    NotifyAbove,
+    EmitRecipeEvent,
+    Reply,
+    # ConveneConsult — DEREGISTERED 2026-07-25 by operator ruling. The v7 P0
+    # contract is that a retired verb resolves NOWHERE (roles.py
+    # `_OPERATOR_RETIRED`; tests/test_s26_guide_tool_names.py asserts
+    # RETIRED_VERBS is disjoint from the registry), so removing it from the
+    # role surfaces alone would not have retired it. The CLASS above is left
+    # intact and importable — only its registration is withdrawn — so
+    # restoring it is re-adding this one line.
+    ConsultCuriosity,
+    ConsultGoalKeeper,
+    ConsultPatternObserver,
+    CheckInbox,
+    Recall,
+    GetGuide,
+    ConsultSpecialist,
+    RecordSpecialistConsult,
+    RunOcakAudit,
+    RecordAuditVerdict,
+    ConfirmDirectionConstraints,
+    NeuronSearch,
+    NeuronGet,
+    NeuronList,
+    NeuronSetStatus,
+    NeuronSetBaseSession,
+    NeuronTouch,
+    NeuronFlag,
+    CreateSpecialization,
+    TrainSpecialist,
+    UpdateSpecialist,
+    AddSpecEntry,
+    RecordSpecVersion,
+    ListSpecLearnings,
+    ResolveSpecLearnings,
+    GetSpecialization,
+    BranchReviewer,
+    SeedComprehensionSpecialists,
+    AssembleRuleset,
+    EnsureUniversal,
+    GetSpecialistDocs,
+    WhoAmI,
+    WriteSpecialistDoc,
+    CheckSpecialistDecay,
+    DescribeObjects,
+    ReadObject,
+    GetRecipeDigest,
+    QueryObjects,
+    CreateObject,
+    UpdateObject,
+    DeleteObject,
+    ObserveStream,
+    ListSubscriptions,
+    Unobserve,
+    RegisterRule,
+    ListRules,
+]

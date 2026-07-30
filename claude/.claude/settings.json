@@ -1,0 +1,86 @@
+{
+  "effortLevel": "medium",
+  "permissions": {
+    "allow": [
+      "mcp__edp-claude__next_action",
+      "mcp__edp-claude__reconcile",
+      "mcp__edp-claude__observe",
+      "mcp__edp-claude__check_inbox",
+      "mcp__edp-claude__reply",
+      "mcp__edp-claude__ask_above",
+      "mcp__edp-claude__notify_above",
+      "Monitor",
+      "TaskStop",
+      "CronCreate",
+      "CronList",
+      "CronDelete"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR}/.venv/Scripts/python.exe\" \"${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-destructive.py\""
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR}/.venv/Scripts/python.exe\" \"${CLAUDE_PROJECT_DIR}/.claude/hooks/rtk-pretooluse.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR}/.venv/Scripts/python.exe\" \"${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-destructive.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell|Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR}/.venv/Scripts/python.exe\" \"${CLAUDE_PROJECT_DIR}/.claude/hooks/panel-approval.py\"",
+            "timeout": 70
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR}/.venv/Scripts/python.exe\" \"${CLAUDE_PROJECT_DIR}/.claude/hooks/worker-close-nudge.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR}/.venv/Scripts/python.exe\" \"${CLAUDE_PROJECT_DIR}/.claude/hooks/reground-on-compact.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR}/.venv/Scripts/python.exe\" \"${CLAUDE_PROJECT_DIR}/.claude/hooks/capture-session.py\""
+          }
+        ]
+      }
+    ]
+  }
+}

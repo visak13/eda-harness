@@ -1,0 +1,2178 @@
+ ▐▛███▜▌   Claude Code v2.1.150
+▝▜█████▛▘  Opus 4.7 · Claude Max
+  ▘▘ ▝▝    C:\Projects\Learning\eda-base\claude
+
+❯ /specialist                                                                   
+
+● I'll start by reading my environment and pulling the training task from my
+  inbox.
+
+● Bash(echo "$EDP_ROLE | $EDP_HANDLE | $EDP_BROKER_URL")
+  ⎿  specialist | specialist-react-vite-typescript-frontend-2a3fa8c7 | http
+     ://127.0.0.1:9100
+
+● I'm a specialist for React/Vite/TypeScript frontend. Let me load the MCP tools
+   and check my inbox.
+
+● The MCP tools are now available. Let me load the ones I need and check my
+  inbox.
+
+  Called edp-claude (ctrl+o to expand)
+
+● I have my training task. This is an interactive session, so you're here with
+  me. Let me confirm what I understand and get your guidance before I start
+  training.
+
+  ---
+  What I understand my specialization to be
+
+  I'm being trained as a reusable React + Vite + TypeScript frontend domain
+  specialist. Based on the consult, my expertise needs to cover:
+
+  - Scaffolding — Vite + React + TS template, tsconfig, ESLint/Prettier setup
+  - Component architecture & hooks — composition, custom hooks, state management
+  - Data-fetching against a REST backend — fetch/axios, React Query (TanStack
+  Query)
+  - Client-side routing — React Router
+  - Rendering structured/JSON data — lists, detail views, tree/DAG and timeline 
+  visualizations, diff views
+  - Clearly-labeled placeholder/stub UI surfaces — for not-yet-built features
+
+  The immediate consumer is the Phase-1 HMI read-only explorer for the eda-ml 
+  project (actions: fe-scaffold, fe-corpus, fe-timeline-docs,
+  fe-mining-placeholders), but I'm meant to be reusable for your other frontend
+  work too — so I'll train broadly, not just for this one task.
+
+  Hard invariant I'll bake into the recipe: never write inside
+  C:\Projects\Learning\eda-base\claude; all frontend output goes under
+  C:\Projects\Learning\eda-ml.
+
+  ---
+  Before I dive into reading current sources, a few questions to make sure I
+  prioritize what you actually want:
+
+● User answered Claude's questions:
+  ⎿  · What's the data-fetching / server-state approach you want me to 
+     standardize on? → Latest stack; choose the best stack available on web
+     · For the tree/DAG and timeline visualizations, do you have a preferred 
+     library family? → choose the best available library on web but for all 
+     searches make sure they are free to use
+     · Is there existing house style, a component library, or docs I should 
+     follow? → same, choose the best but remember that this specialization is 
+     for all possible use cases. so all kind of ui should be specialized. like 
+     graphs, ui, etc. please also check html as a canvas and see if it is 
+     applicable. this was recently released
+
+● Got it. The mandate is clear: research the latest/best stack from the web, 
+  ensure everything is free to use (license-checked), and specialize broadly for
+   all UI use cases — graphs, charts, general UI, diffs, timelines — plus
+  investigate the recently-released "HTML in Canvas" capability.
+
+  Let me load the web tools and start real research. I'll read current primary
+  sources rather than rely on memory.
+
+● Let me start with the core stack research — running searches in parallel.
+
+● Web Search("Vite 7 React TypeScript create vite latest 2026 setup")
+  ⎿  Did 1 search in 6s
+
+● Web Search("TanStack Query v5 React latest 2026 vs TanStack Router")
+  ⎿  Did 1 search in 8s
+
+● Web Search("HTML in Canvas Chrome 2025 drawElement live HTML element")
+  ⎿  Did 1 search in 7s
+
+● Web Search("best free open source React DAG graph visualization library 2026
+            React Flow license")
+  ⎿  Did 2 searches in 7s
+
+● Strong results. Let me fetch the primary sources and run the remaining
+  searches (charts, diff views, timelines, UI kits, ESLint) in parallel.
+
+● Fetch(https://developer.chrome.com/blog/html-in-canvas-origin-trial)
+  ⎿  Received 143.1KB (200 OK)
+
+● Fetch(https://tanstack.com/query/latest)
+  ⎿  Received 532.9KB (200 OK)
+
+● Web Search("best free open source React charting library 2026 Recharts visx
+            ECharts Apache license MIT")
+  ⎿  Did 1 search in 8s
+
+● Web Search("React code diff viewer library 2026 free open source
+            react-diff-viewer Monaco diff json diff")  ⎿  Did 1 search in 5s
+
+● Let me round out the research — timelines, UI kits/licensing, ESLint flat
+  config, React Router, and confirm the xyflow/charting licenses.
+
+● Web Search("best free React UI component library 2026 shadcn/ui Mantine MUI
+            license comparison Tailwind")
+  ⎿  Did 1 search in 8s
+
+● Web Search("React timeline visualization library 2026 free open source
+            vis-timeline react-chrono")
+  ⎿  Did 1 search in 7s
+
+● Web Search("ESLint 9 flat config React TypeScript typescript-eslint 2026
+            Prettier setup")
+  ⎿  Did 1 search in 8s
+
+● Web Search("React Router v7 vs TanStack Router 2026 which to choose SPA data
+            loading")
+  ⎿  Did 1 search in 9s
+
+● Let me cover the remaining gaps — client-state management, tree view
+  components, and Tailwind v4 — then I'll have enough to author the recipe.
+
+● Web Search("React client state management 2026 Zustand vs Redux Toolkit vs
+            Jotai free")
+  ⎿  Did 1 search in 8s
+
+● Web Search("React tree view component 2026 react-arborist file tree
+            virtualized free open source")
+  ⎿  Did 1 search in 6s
+
+● Web Search("Tailwind CSS v4 2026 setup Vite plugin release")
+  ⎿  Did 1 search in 6s
+
+● I now have a thorough, current picture. Here's the recommended stack I've
+  synthesized from primary sources — all MIT/Apache-2.0, free for commercial 
+  use:
+
+  Recommended stack (May 2026)
+
+  ┌─────────────┬─────────────────────────────────────┬─────────────────────┐
+  │   Concern   │           Recommendation            │       License       │
+  ├─────────────┼─────────────────────────────────────┼─────────────────────┤
+  │             │ Vite 7 + --template react-ts, React │                     │
+  │ Scaffold    │  19.2, TS 5.x/6, ESLint 9 flat      │ MIT                 │
+  │             │ config + Prettier                   │                     │
+  │             │ (eslint-config-prettier), Vitest    │                     │
+  ├─────────────┼─────────────────────────────────────┼─────────────────────┤
+  │             │ Tailwind CSS v4 (@tailwindcss/vite  │                     │
+  │ Styling/UI  │ plugin) + shadcn/ui (copy-paste,    │ MIT                 │
+  │             │ you own the code) on Radix          │                     │
+  │             │ primitives                          │                     │
+  ├─────────────┼─────────────────────────────────────┼─────────────────────┤
+  │ Server      │ TanStack Query v5                   │                     │
+  │ state /     │ (@tanstack/react-query) over fetch  │ MIT                 │
+  │ fetching    │                                     │                     │
+  ├─────────────┼─────────────────────────────────────┼─────────────────────┤
+  │ Client      │ Zustand (~3KB) — only when local UI │ MIT                 │
+  │ state       │  state outgrows hooks               │                     │
+  ├─────────────┼─────────────────────────────────────┼─────────────────────┤
+  │ Routing     │ TanStack Router (type-safe SPA) —   │ MIT                 │
+  │             │ alt: React Router v7                │                     │
+  ├─────────────┼─────────────────────────────────────┼─────────────────────┤
+  │ DAG / node  │ React Flow (@xyflow/react)          │ MIT                 │
+  │ graph       │                                     │                     │
+  ├─────────────┼─────────────────────────────────────┼─────────────────────┤
+  │ Tree view   │ react-arborist (virtualized, 10k+   │ MIT                 │
+  │             │ nodes)                              │                     │
+  ├─────────────┼─────────────────────────────────────┼─────────────────────┤
+  │             │ Apache ECharts (echarts-for-react)  │                     │
+  │ Charts      │ for rich/canvas dashboards;         │ Apache-2.0 / MIT    │
+  │             │ Recharts or visx for React-native   │                     │
+  │             │ SVG                                 │                     │
+  ├─────────────┼─────────────────────────────────────┼─────────────────────┤
+  │             │ vis-timeline (interactive,          │ (Apache-2.0/MIT) —  │
+  │ Timeline    │ zoom/pan) or react-chrono           │ will verify exact   │
+  │             │ (presentational)                    │ license in recipe   │
+  ├─────────────┼─────────────────────────────────────┼─────────────────────┤
+  │ Diff view   │ @git-diff-view/react or             │ MIT                 │
+  │             │ react-diff-viewer-continued         │                     │
+  └─────────────┴─────────────────────────────────────┴─────────────────────┘
+
+  On "HTML in Canvas" (the recently-released one you flagged)
+
+  This is the WICG HTML-in-Canvas API (drawElementImage() for 2D,
+  texElementImage2D() for WebGL, copyElementImageToTexture() for WebGPU). It
+  draws live, interactive, accessible DOM into a canvas/GPU texture, driven by a
+   paint event. Status: experimental origin trial, Chromium 147/148+ only, 
+  behind chrome://flags/#canvas-draw-element. Cross-origin content is blocked.
+  My recommendation: capture it as an advanced/experimental recipe entry — great
+   for canvas+DOM hybrid viz, but NOT a production default (single-browser,
+  OT-gated). I'll record it with that caveat so future forks know when it's safe
+   to reach for.
+
+  Two things before I author the recipe:
+
+● User answered Claude's questions:
+  ⎿  · For routing, which should be the recipe's default for SPAs? → React 
+     Router v7
+     · Anything to add/change before I author the specialization recipe, or are 
+     you happy to proceed? → Proceed — author the recipe
+
+● Decisions locked: React Router v7 as default (TanStack Router as type-safe
+  alternative), and proceed. Let me author the specialization recipe now.
+
+  Called edp-claude (ctrl+o to expand)
+
+● Now record my session as the branchable base so future forks reuse my trained
+  context:
+
+  Called edp-claude (ctrl+o to expand)
+
+● Neuron registered and base session pinned. Now I'll populate the recipe.
+  Starting with the authoritative reference links:
+
+  Called edp-claude 8 times (ctrl+o to expand)
+
+● Now the visualization/specialty links (graphs, trees, charts, timelines,
+  diffs, HTML-in-Canvas, testing):
+
+  Called edp-claude 9 times (ctrl+o to expand)
+
+● Now the steps (the ordered work order for building a frontend):
+
+  Called edp-claude 10 times (ctrl+o to expand)
+
+● Now checklists, anti-patterns, preferences, and the work_order:
+
+  Called edp-claude 18 times (ctrl+o to expand)
+
+● The recipe is authored — 46 entries: 18 reference links, 10 build steps, 8
+  checklists, 6 anti-patterns, 3 preferences, and the work-order. It covers the
+  full lifecycle (scaffold → tooling → data → routing → components → all viz
+  types → placeholders → verify), all libraries license-checked as free, and the
+   HTML-in-Canvas capability captured as advanced/opt-in.
+
+  One last decision before I checkpoint:
+● User answered Claude's questions:
+  ⎿  · Is the training complete, and how should I finalize the neuron's status? 
+     → Can you also check if any mcp tools help us and install them if needed?
+
+● Good call — let me research which MCP servers genuinely help React/Vite/TS
+  frontend work, then we can decide on installing. Searching now:
+
+● Web Search("best MCP servers for React frontend development 2026 Playwright
+            Chrome DevTools shadcn")
+  ⎿  Did 1 search in 10s
+
+● Web Search("Playwright MCP server official Microsoft install npx
+            @playwright/mcp")
+  ⎿  Did 1 search in 7s
+
+● Web Search("shadcn ui MCP server install registry components 2026")
+  ⎿  Did 1 search in 7s
+
+● Web Search("chrome-devtools-mcp server Google install debugging frontend")
+  ⎿  Did 1 search in 7s
+
+● These four MCP servers are the high-value ones for this domain. Let me record
+  them in the recipe, then check whether the claude CLI is available to install
+  the top picks.
+
+  Called edp-claude 4 times (ctrl+o to expand)
+
+● Bash(claude --version 2>&1; echo "---"; claude mcp list 2>&1 | head -40)
+  ⎿  2.1.150 (Claude Code)
+     ---
+     Checking MCP server health…
+     … +9 lines (ctrl+o to expand)
+
+● claude CLI v2.1.150 is available; only edp-claude and the (unauthenticated)
+  Google servers are installed. No Playwright or Chrome DevTools MCP yet. The
+  user authorized installing helpful ones — I'll add the two highest-value
+  official, free servers at user scope (so they're available to the eda-ml
+  project and future work, not tied to this directory).
+
+● Bash(claude mcp add playwright --scope user -- npx @playwright/mcp@latest
+      2>&1; echo "=== exit: $? ===")
+  ⎿  Added stdio MCP server playwright with command: npx @playwright/mcp@la
+     test to user config
+     File modified: C:\Users\aksou\.claude.json
+     === exit: 0 ===
+
+● Bash(claude mcp add chrome-devtools --scope user -- npx
+      chrome-devtools-mcp@latest 2>&1; echo "=== exit: $? ===")
+  ⎿  Added stdio MCP server chrome-devtools with command: npx chrome-devtoo
+     ls-mcp@latest to user config
+     File modified: C:\Users\aksou\.claude.json
+     === exit: 0 ===
+
+● Both installed. Let me verify they're registered and connect:
+
+● Bash(claude mcp list 2>&1 | head -40)
+  ⎿  Checking MCP server health…
+
+     claude.ai Google Drive: https://drivemcp.googleapis.com/mcp/v1 - ! Nee
+     … +9 lines (ctrl+o to expand)
+
+● Done — both are installed at user scope and health-checked as Connected:
+
+  - ✅ playwright — npx @playwright/mcp@latest (browser-drive + E2E
+  verification)
+  - ✅ chrome-devtools — npx chrome-devtools-mcp@latest
+  (console/network/performance debugging)
+
+  They were written to C:\Users\aksou\.claude.json (user scope) — so they're
+  available to the eda-ml project and any future Claude Code session, and will
+  be picked up by branched coder/reviewer forks. I did not install shadcn MCP or
+   Context7 as separate servers — shadcn's MCP ships with the shadcn CLI (no
+  extra server needed), and I left Context7 out as optional; both are documented
+   in the recipe if you want them later. All four are recorded in the recipe so
+  future forks know to use them.
+
+  Now, back to finalizing the neuron:
+
+● User answered Claude's questions:
+  ⎿  · The recipe is complete (51 entries) and the MCP tools are installed. How 
+     should I finalize the neuron's status? → Approve directly to stable
+
+● The user approves directly to stable. Let me record the version and set the
+  status:
+
+  Called edp-claude 2 times (ctrl+o to expand)
+
+● The state machine requires passing through pending_review first. Since you've
+  approved directly to stable (the interactive approval path), I'll transition
+  through it:
+
+  Called edp-claude 2 times (ctrl+o to expand)
+
+● Status is now stable. Let me notify the caller that training is complete, then
+   close.
+
+  Called edp-claude (ctrl+o to expand)
+
+● Recipe finalized and the caller notified. Closing my specialist shell.
+
+❯ /worker                                                                       
+● I'll start by reading my brief and arming the heartbeat. Let me load the cron
+  tool and read my environment in parallel.
+
+● Bash(echo "$EDP_ROLE | $EDP_HANDLE | $EDP_BROKER_URL"; echo
+      "HB=${EDP_WORKER_HEARTBEAT_MIN:-5}")
+  ⎿  worker | recipe-build-a-java-rest-application-with-a-rea-d6f487-s2:fe-
+     timeline-docs | http://127.0.0.1:9100
+     HB=5
+
+● My brief:
+  - plan_id: recipe-build-a-java-rest-application-with-a-rea-d6f487-s2
+  - action_id: fe-timeline-docs
+  - Heartbeat: every 5 min
+
+  The edp-claude MCP server is reconnecting. Let me arm the heartbeat first
+  (Step 0), then load the edp tools.
+
+● CronCreate(*/5 * * * *: call check_inbox() and if there is an answer, continue
+             your…)
+  ⎿  Scheduled 96bfd652 (Every 5 minutes)
+
+● Heartbeat armed (job 96bfd652). The edp-claude tools reconnected — and I can
+  also see the playwright/chrome-devtools MCP servers I installed earlier are
+  live. Let me load the edp worker tools.
+
+● Let me use the fully-qualified MCP tool names:
+
+● Now let me load the action from the plan file (Step 2):
+
+  Read 1 file (ctrl+o to expand)
+
+● My action is fe-timeline-docs — build the Timelines, Versions & Diffs, and
+  Docs-evolution views, consuming the be-timelines-docs endpoints. Its spec_id
+  is spec-react-vite-typescript-frontend (the recipe I authored earlier).
+  Dependencies fe-scaffold and be-timelines-docs are both done.
+
+  Let me load the spec and explore the existing frontend structure in parallel.
+
+  Searched for 1 pattern, called edp-claude (ctrl+o to expand)
+
+● I have my spec recipe (the one I authored — note it explicitly says
+  vis-timeline for the eda-ml fe-timeline-docs action and @git-diff-view/react 
+  for diffs). The scaffold already has stub pages for Timelines/Diffs/Docs that
+  I need to fill in. The prior fe-corpus worker flagged that the scaffold's
+  types.ts diverged from the real backend, so I must derive types from the
+  actual backend DTOs + live API.
+
+  Let me read the existing frontend conventions and the backend contract in
+  parallel.
+
+  Read 5 files (ctrl+o to expand)
+
+● The client already has most endpoint functions, but the
+  timeline/version/diff/docs types are placeholders (the file says so) and I'm
+  missing plan-version/plan-diff functions. Per the recipe and the prior
+  worker's lesson, I must derive exact types from the real backend. Let me read
+  the backend history DTOs/controllers and the existing frontend conventions
+  (reference feature + shared components + the three stub pages) in parallel.
+
+  Searched for 1 pattern, read 4 files (ctrl+o to expand)
+
+● Now the exact backend contract — reading all 8 history DTOs and the 4
+  controllers:
+
+  Read 8 files (ctrl+o to expand)
+
+● The real contract differs substantially from the placeholder types (timeline
+  uses kind/details, structural diff uses entries with op/path/from/to, snapshot
+   diff uses fromTs/toTs + per-category added/removed/changed, docs returns
+  lineages not a tree). Let me read the 4 controllers for exact routes,
+  query-param names, and the versions return shape:
+
+  Read 4 files (ctrl+o to expand)
+
+● Now I have the precise backend contract. Key correction needed: the
+  placeholder types (EventRow/type/detail, VersionRef, DiffResult/changes,
+  DocNode tree) all diverge from the real DTOs. The real shapes are: timeline
+  {ts, kind, details}; versions string[]; structural diff {from, to, 
+  entries:[{op,path,from,to}]}; snapshot diff {fromTs, toTs, 
+  recipes/plans/docs:{added,removed,changed}}; docs DocLineage[].
+
+  Notably, the backend pre-computes the diffs (structural leaf entries + corpus
+  deltas), so a text-diff lib isn't the right tool here — these need structural
+  renderers. Let me read the remaining conventions (query keys, stub pages,
+  list/detail pattern, shared UI, theme, package.json) before writing.
+
+  Read 6 files (ctrl+o to expand)
+● Let me read the final shared pieces I'll reuse (SearchInput, Badge,
+  NoActiveSnapshot, cn, theme CSS, package.json, and the snapshot/plan hooks for
+   selectors):
+
+  Read 6 files (ctrl+o to expand)
+
+● I have the full picture of the conventions now. Let me check the theme tokens
+  and environment state (npm, backend, snapshot) before writing code.
+
+  Read 1 file (ctrl+o to expand)
+
+● Bash(cd /c/Projects/Learning/eda-ml/frontend && node -v && npm -v && echo "---
+       backend health (no proxy) ---" && curl -s --noproxy '*'
+      http://localhost:8080/api/heal…)
+  ⎿  v25.1.0
+     11.6.2
+     --- backend health (no proxy) ---
+     (backend not reachable)
+  ⎿  Shell cwd was reset to C:\Projects\Learning\eda-base\claude
+
+● Backend isn't running right now — I'll build the views, pass the static gates
+  with a mocked API, then start the backend for a live smoke at the end. Note:
+  the shell cwd resets between Bash calls (cosmetic) and I'll only ever write
+  under eda-ml.
+
+  Let me kick off the react-markdown install (MIT, for the Docs view) in the
+  background while I write the type/client updates.
+
+● Bash(cd /c/Projects/Learning/eda-ml/frontend && npm install react-markdown@^10
+       remark-gfm@^4 2>&1 | tail -20)
+  ⎿  Running in the background (↓ to manage)
+
+● While that installs, I'll rewrite the timeline/version/diff/docs types to
+  match the real backend DTOs. Replacing the placeholder block in types.ts:
+
+● Update(C:\Projects\Learning\eda-ml\frontend\src\lib\api\types.ts)
+  ⎿  Added 64 lines, removed 35 lines
+      167    actions: PlanAction[]
+      168  }
+      169  
+      170 -/* ---- Timelines (refined by fe-timeline-docs) ---- */       
+      170 +/* ---- Timelines ---- */                                     
+      171  
+      172 -export interface EventRow {                                   
+      172 +/**                                                           
+      173 + * One row of GET .../events or .../worklog (backend TimelineE
+          +ntryResponse).                                                
+      174 + * Both endpoints share this shape. `details` carries every ki
+          +nd-specific field                                             
+      175 + * verbatim (acceptance proof, message from/summary, crash_rec
+          +overy                                                         
+      176 + * action/attempt/child) so the UI can render and highlight ea
+          +ch kind without a                                             
+      177 + * fixed schema.                                              
+      178 + */                                                           
+      179 +export interface TimelineEntry {                              
+      180    ts: string
+      174 -  type: string                                                
+      175 -  detail?: Record<string, unknown>                            
+      181 +  kind: string                                                
+      182 +  details: Record<string, unknown>                            
+      183  }
+      184  
+      178 -export interface WorklogRow {                                 
+      179 -  ts: string                                                  
+      180 -  type: string                                                
+      181 -  detail?: Record<string, unknown>                            
+      182 -}                                                             
+      185 +/* ---- Versions & diffs ---- */                              
+      186  
+      184 -/* ---- Versions & diffs (refined by fe-timeline-docs) ---- */
+      185 -                                                              
+      186 -export interface VersionRef {                                 
+      187 -  version: string                                             
+      188 -  ts?: string                                                 
+      189 -}                                                             
+      190 -                                                              
+      191 -export interface DiffChange {                                 
+      187 +/**                                                           
+      188 + * One leaf difference in a structural diff (backend DiffEntry
+          +Response).                                                    
+      189 + * `op` is added | removed | changed; `from`/`to` are the leaf
+          + values (the                                                  
+      190 + * absent side is null).                                      
+      191 + */                                                           
+      192 +export interface DiffEntry {                                  
+      193 +  op: 'added' | 'removed' | 'changed' | string                
+      194    path: string
+      193 -  kind: 'added' | 'removed' | 'changed' | string              
+      194 -  before?: unknown                                            
+      195 -  after?: unknown                                             
+      195 +  from: string | null                                         
+      196 +  to: string | null                                           
+      197  }
+      198  
+      198 -export interface DiffResult {                                 
+      199 +/**                                                           
+      200 + * GET .../recipes|plans/{id}/diff?from=vN&to=vM (backend Stru
+          +cturalDiffResponse):                                          
+      201 + * the two version labels plus the ordered leaf diffs between 
+          +them.                                                         
+      202 + */                                                           
+      203 +export interface StructuralDiff {                             
+      204    from: string
+      205    to: string
+      201 -  changes: DiffChange[]                                       
+      206 +  entries: DiffEntry[]                                        
+      207  }
+      208  
+      209 +/** Per-category (recipes/plans/docs) change set in a snapshot
+          + diff (CorpusDeltaResponse). */                               
+      210 +export interface CorpusDelta {                                
+      211 +  added: string[]                                             
+      212 +  removed: string[]                                           
+      213 +  changed: string[]                                           
+      214 +}                                                             
+      215 +                                                              
+      216 +/**                                                           
+      217 + * GET /api/snapshots/diff?from={tsA}&to={tsB} (backend Snapsh
+          +otDiffResponse):                                              
+      218 + * what changed in the live corpus between two ingests, split 
+          +per category.                                                 
+      219 + */                                                           
+      220  export interface SnapshotDiff {
+      205 -  from: string                                                
+      206 -  to: string                                                  
+      207 -  changes: DiffChange[]                                       
+      221 +  fromTs: string                                              
+      222 +  toTs: string                                                
+      223 +  recipes: CorpusDelta                                        
+      224 +  plans: CorpusDelta                                          
+      225 +  docs: CorpusDelta                                           
+      226  }
+      227  
+      210 -/* ---- Docs evolution (refined by fe-timeline-docs) ---- */  
+      228 +/* ---- Docs evolution ---- */                                
+      229  
+      212 -export interface DocNode {                                    
+      230 +/** One doc version within a lineage (backend DocEntryResponse
+          +; metadata only, no body). */                                 
+      231 +export interface DocEntry {                                   
+      232    path: string
+      214 -  title?: string                                              
+      215 -  version?: string                                            
+      216 -  status?: string                                             
+      217 -  supersedes?: string | null                                  
+      218 -  supersededBy?: string | null                                
+      219 -  children?: DocNode[]                                        
+      233 +  title: string                                               
+      234 +  status: string                                              
+      235 +  version: number                                             
+      236 +  lineageKey: string                                          
+      237 +  /** Paths/ids this version replaces or supersedes (from the 
+          +markdown header). */                                          
+      238 +  supersedes: string[]                                        
+      239  }
+      240  
+      241 +/** A documentation lineage: all versions sharing a key, order
+          +ed v1 -> vN (DocLineageResponse). */                          
+      242 +export interface DocLineage {                                 
+      243 +  key: string                                                 
+      244 +  versions: DocEntry[]                                        
+      245 +}                                                             
+      246 +                                                              
+      247 +/** GET .../docs/{path} (backend DocContentResponse): lineage 
+          +metadata + markdown body. */                                  
+      248  export interface DocContent {
+      249    path: string
+      250 +  title: string                                               
+      251 +  status: string                                              
+      252 +  version: number                                             
+      253 +  lineageKey: string                                          
+      254 +  supersedes: string[]                                        
+      255    markdown: string
+      225 -  version?: string                                            
+      226 -  status?: string                                             
+      256  }
+      257  
+      258  /* ---- Deterministic mining (refined by fe-mining-placeholder
+           s) ---- */
+
+● Now update client.ts — fix the imports, the timeline/version/diff/doc return
+  types, add plan-version/plan-diff functions, and fix doc-path encoding (the
+  backend's /{*path} captures slashes, so I must encode per-segment, not the
+  whole path):
+
+● Update(C:\Projects\Learning\eda-ml\frontend\src\lib\api\client.ts)
+  ⎿  Added 3 lines, removed 5 lines
+       7   */
+       8  import type {
+       9    CreateSnapshotResult,
+      10 -  DiffResult,                                                  
+      10    DocContent,
+      12 -  DocNode,                                                     
+      13 -  EventRow,                                                    
+      11 +  DocLineage,                                                  
+      12    HealthStatus,
+      13    MiningResult,
+      14    PlanDetail,
+     ...
+      18    SnapshotDiff,
+      19    SnapshotMeta,
+      20    SnapshotSummary,
+      23 -  VersionRef,                                                  
+      24 -  WorklogRow,                                                  
+      21 +  StructuralDiff,                                              
+      22 +  TimelineEntry,                                               
+      23  } from './types'
+      24  
+      25  const BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? '
+          http://localhost:8080/api'
+
+● Background command "Install react-markdown and remark-gfm" completed (exit code 0)
+
+● Install finished (exit 0). Now update the recipe version/diff/events
+  functions:
+
+● Update(C:\Projects\Learning\eda-ml\frontend\src\lib\api\client.ts)
+  ⎿  Added 3 lines, removed 3 lines
+       96    getRecipe: (ts: string, recipeId: string, signal?: AbortSign
+           al) =>
+       97      request<RecipeDetail>(`/snapshots/${enc(ts)}/recipes/${enc
+           (recipeId)}`, { signal }),
+       98    listRecipeVersions: (ts: string, recipeId: string, signal?: 
+           AbortSignal) =>
+       99 -    request<VersionRef[]>(`/snapshots/${enc(ts)}/recipes/${enc
+          -(recipeId)}/versions`, {                                      
+       99 +    request<string[]>(`/snapshots/${enc(ts)}/recipes/${enc(rec
+          +ipeId)}/versions`, {                                          
+      100        signal,
+      101      }),
+      102    diffRecipe: (ts: string, recipeId: string, from: string, to:
+            string, signal?: AbortSignal) =>
+      103 -    request<DiffResult>(`/snapshots/${enc(ts)}/recipes/${enc(r
+          -ecipeId)}/diff`, {                                            
+      103 +    request<StructuralDiff>(`/snapshots/${enc(ts)}/recipes/${e
+          +nc(recipeId)}/diff`, {                                        
+      104        query: { from, to },
+      105        signal,
+      106      }),
+      107    getRecipeEvents: (ts: string, recipeId: string, signal?: Abo
+           rtSignal) =>
+      108 -    request<EventRow[]>(`/snapshots/${enc(ts)}/recipes/${enc(r
+          -ecipeId)}/events`, {                                          
+      108 +    request<TimelineEntry[]>(`/snapshots/${enc(ts)}/recipes/${
+          +enc(recipeId)}/events`, {                                     
+      109        signal,
+      110      }),
+      111  
+
+● Now the plans section — fix worklog type and add plan versions + plan diff:
+
+● Update(C:\Projects\Learning\eda-ml\frontend\src\lib\api\client.ts)
+  ⎿  Added 10 lines, removed 1 line
+      115    getPlan: (ts: string, planId: string, signal?: AbortSignal) 
+           =>
+      116      request<PlanDetail>(`/snapshots/${enc(ts)}/plans/${enc(pla
+           nId)}`, { signal }),
+      117    getPlanWorklog: (ts: string, planId: string, signal?: AbortS
+           ignal) =>
+      118 -    request<WorklogRow[]>(`/snapshots/${enc(ts)}/plans/${enc(p
+          -lanId)}/worklog`, {                                           
+      118 +    request<TimelineEntry[]>(`/snapshots/${enc(ts)}/plans/${en
+          +c(planId)}/worklog`, {                                        
+      119        signal,
+      120      }),
+      121 +  listPlanVersions: (ts: string, planId: string, signal?: Abor
+          +tSignal) =>                                                   
+      122 +    request<string[]>(`/snapshots/${enc(ts)}/plans/${enc(planI
+          +d)}/versions`, {                                              
+      123 +      signal,                                                 
+      124 +    }),                                                       
+      125 +  diffPlan: (ts: string, planId: string, from: string, to: str
+          +ing, signal?: AbortSignal) =>                                 
+      126 +    request<StructuralDiff>(`/snapshots/${enc(ts)}/plans/${enc
+          +(planId)}/diff`, {                                            
+      127 +      query: { from, to },                                    
+      128 +      signal,                                                 
+      129 +    }),                                                       
+      130  
+      131    /* Docs */
+      132    listDocs: (ts: string, signal?: AbortSignal) =>
+
+● Now the docs section — fix listDocs to return lineages and fix getDoc path
+  encoding (encode per-segment so the backend /{*path} wildcard matches;
+  whole-path encoding would turn / into %2F, which Tomcat rejects):
+
+● Update(C:\Projects\Learning\eda-ml\frontend\src\lib\api\client.ts)
+  ⎿  Added 4 lines, removed 2 lines
+      130  
+      131    /* Docs */
+      132    listDocs: (ts: string, signal?: AbortSignal) =>
+      133 -    request<DocNode[]>(`/snapshots/${enc(ts)}/docs`, { signal 
+          -}),                                                           
+      133 +    request<DocLineage[]>(`/snapshots/${enc(ts)}/docs`, { sign
+          +al }),                                                        
+      134    getDoc: (ts: string, path: string, signal?: AbortSignal) =>
+      135 -    request<DocContent>(`/snapshots/${enc(ts)}/docs/${enc(path
+          -)}`, { signal }),                                             
+      135 +    // The backend route is `/docs/{*path}` (captures slashes)
+          +, so encode each                                              
+      136 +    // segment but keep the `/` separators rather than percent
+          +-encoding them.                                               
+      137 +    request<DocContent>(`/snapshots/${enc(ts)}/docs/${encodePa
+          +th(path)}`, { signal }),                                      
+      138  
+      139    /* Mining */
+      140    getMining: (ts: string, signal?: AbortSignal) =>
+
+● Now add the encodePath helper next to enc:
+
+● Update(C:\Projects\Learning\eda-ml\frontend\src\lib\api\client.ts)
+  ⎿  Added 5 lines
+      78  /** Path segments may contain characters needing URL encoding (
+          e.g. doc paths). */
+      79  const enc = encodeURIComponent
+      80  
+      81 +/** Encode a slash-separated path per-segment, preserving the `
+         +/` separators. */                                              
+      82 +function encodePath(path: string): string {                    
+      83 +  return path.split('/').map(enc).join('/')                    
+      84 +}                                                              
+      85 +                                                               
+      86  export const api = {
+      87    health: (signal?: AbortSignal) => request<HealthStatus>('/hea
+          lth', { signal }),
+      88  
+
+● Now add query keys for the new resources in query-client.ts:
+
+● Update(C:\Projects\Learning\eda-ml\frontend\src\lib\query-client.ts)
+  ⎿  Added 18 lines
+      27    plans: (ts: string) => ['snapshots', ts, 'plans'] as const,
+      28    plan: (ts: string, planId: string) => ['snapshots', ts, 'plan
+          s', planId] as const,
+      29    docs: (ts: string) => ['snapshots', ts, 'docs'] as const,
+      30 +  doc: (ts: string, path: string) => ['snapshots', ts, 'docs', 
+         +path] as const,                                                
+      31    mining: (ts: string) => ['snapshots', ts, 'mining'] as const,
+      32 +                                                               
+      33 +  /* Timelines */                                              
+      34 +  recipeEvents: (ts: string, recipeId: string) =>              
+      35 +    ['snapshots', ts, 'recipes', recipeId, 'events'] as const, 
+      36 +  planWorklog: (ts: string, planId: string) =>                 
+      37 +    ['snapshots', ts, 'plans', planId, 'worklog'] as const,    
+      38 +                                                               
+      39 +  /* Versions & diffs */                                       
+      40 +  recipeVersions: (ts: string, recipeId: string) =>            
+      41 +    ['snapshots', ts, 'recipes', recipeId, 'versions'] as const
+         +,                                                              
+      42 +  planVersions: (ts: string, planId: string) =>                
+      43 +    ['snapshots', ts, 'plans', planId, 'versions'] as const,   
+      44 +  recipeDiff: (ts: string, recipeId: string, from: string, to: 
+         +string) =>                                                     
+      45 +    ['snapshots', ts, 'recipes', recipeId, 'diff', from, to] as
+         + const,                                                        
+      46 +  planDiff: (ts: string, planId: string, from: string, to: stri
+         +ng) =>                                                         
+      47 +    ['snapshots', ts, 'plans', planId, 'diff', from, to] as con
+         +st,                                                            
+      48 +  snapshotDiff: (from: string, to: string) => ['snapshots', 'di
+         +ff', from, to] as const,                                       
+      49  }
+
+● Type/client/query-key plumbing is done. Now the feature views. First two
+  shared pieces I'll reuse across views — a collapsible JSON block (for timeline
+   details / raw inspection per the recipe) and a reusable entity picker
+  (recipes or plans, used by both Timelines and Diffs):
+● Write(C:\Projects\Learning\eda-ml\frontend\src\components\ui\JsonBlock.tsx)
+  ⎿  Wrote 45 lines to
+     ..\..\eda-ml\frontend\src\components\ui\JsonBlock.tsx
+       2 import { useState } from 'react'
+       3 /**
+       4  * Collapsible, pretty-printed JSON viewer for raw inspection (e
+       5  * entry's kind-specific `details` map). Collapsed by default to
+          keep feeds
+       6  * scannable; the spec calls for raw JSON to be available but no
+       7  */verwhelming.
+       8 export function JsonBlock({
+       9   value,
+      10   label = 'Raw details',
+     … +41 lines (ctrl+o to expand)
+
+● Write(C:\Projects\Learning\eda-ml\frontend\src\components\domain\EntityPicker.
+       tsx)
+  ⎿  Wrote 184 lines to
+     ..\..\eda-ml\frontend\src\components\domain\EntityPicker.tsx
+       2 import { LoadingState, ErrorState, EmptyState } from '@/componen
+         ts/ui/AsyncState'
+       3 import { SearchInput } from '@/components/ui/SearchInput'
+       4 import { Badge } from '@/components/ui/Badge'
+       5 import { StateBadge } from '@/components/domain/badges'
+       6 import { cn } from '@/lib/cn'
+       7 import { useRecipes } from '@/features/recipes/hooks'
+       8 import { usePlans } from '@/features/plans/hooks'
+       9 
+      10 export type EntityKind = 'recipe' | 'plan'
+     … +194 lines (ctrl+o to expand)
+
+● Now the Timelines feature — hooks, the chronological feed (crash_recovery
+  highlighted), and the page:
+
+● Write(C:\Projects\Learning\eda-ml\frontend\src\features\timelines\hooks.ts)
+  ⎿  Wrote 21 lines to
+     ..\..\eda-ml\frontend\src\features\timelines\hooks.ts
+       2 import { api } from '@/lib/api/client'act-query'
+       3 import { queryKeys } from '@/lib/query-client'
+       5 /** GET .../recipes/{recipeId}/events — chronological events.jso
+         nl rows. */
+       6 export function useRecipeEvents(ts: string | null, recipeId: str
+       7   return useQuery({
+       8     queryKey: ts && recipeId ? queryKeys.recipeEvents(ts, recipe
+       9     queryFn: ({ signal }) => api.getRecipeEvents(ts as string, r
+         ecipeId as string, signal),
+      10     enabled: ts != null && recipeId != null,
+     … +19 lines (ctrl+o to expand)
+
+● Write(C:\Projects\Learning\eda-ml\frontend\src\features\timelines\TimelineFeed
+       .tsx)
+  ⎿  Wrote 190 lines to
+     ..\..\eda-ml\frontend\src\features\timelines\TimelineFeed.tsx
+       2 import { Badge, type BadgeTone } from '@/components/ui/Badge'
+       3 import { JsonBlock } from '@/components/ui/JsonBlock'
+       4 import { cn } from '@/lib/cn'
+       5 import type { TimelineEntry } from '@/lib/api/types'
+       6 
+         per acceptance). */al trouble and must be visually highlighted (
+       8 const ALERT_KINDS = new Set(['crash_recovery', 'crash', 'error',
+          'failed', 'abort', 'aborted'])
+       9 
+      10 function kindTone(kind: string): BadgeTone {
+     … +210 lines (ctrl+o to expand)
+
+● Now the Timelines page — target toggle (recipe events / plan worklog) + picker
+   + feed, with selection in the URL for shareability:
+
+● Write(C:\Projects\Learning\eda-ml\frontend\src\features\timelines\TimelinesPag
+       e.tsx)
+  ⎿  Added 119 lines, removed 6 lines
+        1 -import { ViewPlaceholder } from '@/components/ViewPlaceholder'
+        1 +import { useSearchParams } from 'react-router'                
+        2 +import { NoActiveSnapshot } from '@/components/domain/NoActive
+          +Snapshot'                                                     
+        3 +import { EntityPicker, type EntityKind } from '@/components/do
+          +main/EntityPicker'                                            
+        4 +import { LoadingState, ErrorState, EmptyState } from '@/compon
+          +ents/ui/AsyncState'                                           
+        5 +import { useActiveSnapshot } from '@/lib/store/active-snapshot
+          +'                                                             
+        6 +import { cn } from '@/lib/cn'                                 
+        7 +import { TimelineFeed } from './TimelineFeed'                 
+        8 +import { useRecipeEvents, usePlanWorklog } from './hooks'     
+        9  
+       10 +/**                                                           
+       11 + * Timelines view: chronological events.jsonl (per recipe) or 
+          +worklog.jsonl                                                 
+       12 + * (per plan), with crash_recovery highlighted. The target kin
+          +d + id live in the                                            
+       13 + * URL (?target=recipe|plan&id=…) so a timeline is shareable a
+          +nd back-navigable.                                            
+       14 + */                                                           
+       15  export function TimelinesPage() {
+       16 +  const { ts } = useActiveSnapshot()                          
+       17 +  const [params, setParams] = useSearchParams()               
+       18 +                                                              
+       19 +  const target: EntityKind = params.get('target') === 'plan' ?
+          + 'plan' : 'recipe'                                            
+       20 +  const id = params.get('id')                                 
+       21 +                                                              
+       22 +  function setTarget(next: EntityKind) {                      
+       23 +    const p = new URLSearchParams(params)                     
+       24 +    p.set('target', next)                                     
+       25 +    p.delete('id') // ids aren't shared between recipes and pl
+          +ans                                                           
+       26 +    setParams(p)                                              
+       27 +  }                                                           
+       28 +                                                              
+       29 +  function setId(next: string) {                              
+       30 +    const p = new URLSearchParams(params)                     
+       31 +    p.set('target', target)                                   
+       32 +    p.set('id', next)                                         
+       33 +    setParams(p)                                              
+       34 +  }                                                           
+       35 +                                                              
+       36 +  if (!ts) {                                                  
+       37 +    return (                                                  
+       38 +      <section>                                               
+       39 +        <h1 className="mb-4 text-2xl font-semibold">Timelines<
+          +/h1>                                                          
+       40 +        <NoActiveSnapshot />                                  
+       41 +      </section>                                              
+       42 +    )                                                         
+       43 +  }                                                           
+       44 +                                                              
+       45    return (
+        5 -    <ViewPlaceholder                                          
+        6 -      title="Timelines"                                       
+        7 -      summary="Chronological render of events.jsonl and worklo
+          -g.jsonl for a selected recipe/plan — saves, acceptance_verifie
+          -d proofs, messages, with crash_recovery visually highlighted."
+        8 -      builtBy="fe-timeline-docs"                              
+        9 -    />                                                        
+       46 +    <section>                                                 
+       47 +      <h1 className="mb-1 text-2xl font-semibold">Timelines</h
+          +1>                                                            
+       48 +      <p className="mb-4 text-sm text-muted-foreground">      
+       49 +        Chronological {target === 'recipe' ? 'events.jsonl' : 
+          +'worklog.jsonl'} for a selected{' '}                          
+       50 +        {target}; crash_recovery and other alerts are highligh
+          +ted.                                                          
+       51 +      </p>                                                    
+       52 +                                                              
+       53 +      <div className="mb-4 inline-flex rounded-[var(--radius)]
+          + border border-border p-0.5">                                 
+       54 +        <TargetTab label="Recipe events" active={target === 'r
+          +ecipe'} onClick={() => setTarget('recipe')} />                
+       55 +        <TargetTab label="Plan worklog" active={target === 'pl
+          +an'} onClick={() => setTarget('plan')} />                     
+       56 +      </div>                                                  
+       57 +                                                              
+       58 +      <div className="grid gap-6 lg:grid-cols-[minmax(300px,40
+          +0px)_1fr]">                                                   
+       59 +        <div className="lg:max-h-[calc(100vh-14rem)] lg:overfl
+          +ow-y-auto lg:pr-1">                                           
+       60 +          <EntityPicker ts={ts} kind={target} selectedId={id} 
+          +onSelect={setId} />                                           
+       61 +        </div>                                                
+       62 +        <div className="min-w-0">                             
+       63 +          {!id ? (                                            
+       64 +            <EmptyState title={`Select a ${target}`}>         
+       65 +              Pick a {target} from the list to see its timelin
+          +e.                                                            
+       66 +            </EmptyState>                                     
+       67 +          ) : target === 'recipe' ? (                         
+       68 +            <RecipeTimeline ts={ts} recipeId={id} />          
+       69 +          ) : (                                               
+       70 +            <PlanTimeline ts={ts} planId={id} />              
+       71 +          )}                                                  
+       72 +        </div>                                                
+       73 +      </div>                                                  
+       74 +    </section>                                                
+       75    )
+       76  }
+       77 +                                                              
+       78 +function TargetTab({                                          
+       79 +  label,                                                      
+       80 +  active,                                                     
+       81 +  onClick,                                                    
+       82 +}: {                                                          
+       83 +  label: string                                               
+       84 +  active: boolean                                             
+       85 +  onClick: () => void                                         
+       86 +}) {                                                          
+       87 +  return (                                                    
+       88 +    <button                                                   
+       89 +      type="button"                                           
+       90 +      onClick={onClick}                                       
+       91 +      aria-pressed={active}                                   
+       92 +      className={cn(                                          
+       93 +        'rounded-[calc(var(--radius)-2px)] px-3 py-1.5 text-sm
+          + font-medium transition-colors',                              
+       94 +        active ? 'bg-primary text-primary-foreground' : 'text-
+          +muted-foreground hover:bg-accent/40',                         
+       95 +      )}                                                      
+       96 +    >                                                         
+       97 +      {label}                                                 
+       98 +    </button>                                                 
+       99 +  )                                                           
+      100 +}                                                             
+      101 +                                                              
+      102 +function RecipeTimeline({ ts, recipeId }: { ts: string; recipe
+          +Id: string }) {                                               
+      103 +  const { data, isPending, isError, error, refetch } = useReci
+          +peEvents(ts, recipeId)                                        
+      104 +  if (isPending) return <LoadingState label="Loading events…" 
+          +/>                                                            
+      105 +  if (isError) return <ErrorState error={error} onRetry={() =>
+          + void refetch()} />                                           
+      106 +  return (                                                    
+      107 +    <>                                                        
+      108 +      <p className="mb-3 font-mono text-xs text-muted-foregrou
+          +nd">{recipeId}</p>                                            
+      109 +      <TimelineFeed entries={data ?? []} emptyLabel="No events
+          + recorded for this recipe." />                                
+      110 +    </>                                                       
+      111 +  )                                                           
+      112 +}                                                             
+      113 +                                                              
+      114 +function PlanTimeline({ ts, planId }: { ts: string; planId: st
+          +ring }) {                                                     
+      115 +  const { data, isPending, isError, error, refetch } = usePlan
+          +Worklog(ts, planId)                                           
+      116 +  if (isPending) return <LoadingState label="Loading worklog…"
+          + />                                                           
+      117 +  if (isError) return <ErrorState error={error} onRetry={() =>
+          + void refetch()} />                                           
+      118 +  return (                                                    
+      119 +    <>                                                        
+      120 +      <p className="mb-3 font-mono text-xs text-muted-foregrou
+          +nd">{planId}</p>                                              
+      121 +      <TimelineFeed entries={data ?? []} emptyLabel="No worklo
+          +g entries recorded for this plan." />                         
+      122 +    </>                                                       
+      123 +  )                                                           
+      124 +}                                                             
+
+● Now the Versions & Diffs feature — hooks for version lists, structural diffs,
+  and snapshot diff:
+
+● Write(C:\Projects\Learning\eda-ml\frontend\src\features\diffs\hooks.ts)
+  ⎿  Wrote 55 lines to ..\..\eda-ml\frontend\src\features\diffs\hooks.ts
+       2 import { api } from '@/lib/api/client'act-query'
+       3 import { queryKeys } from '@/lib/query-client'
+       4 import type { EntityKind } from '@/components/domain/EntityPicke
+         r'
+       5 
+       7 export function useVersions(ts: string | null, kind: EntityKind,
+          id: string | null) {
+       8   return useQuery({
+       9     queryKey:
+      10       ts && id
+     … +53 lines (ctrl+o to expand)
+
+● Write(C:\Projects\Learning\eda-ml\frontend\src\features\diffs\StructuralDiffVi
+       ew.tsx)
+  ⎿  Wrote 129 lines to
+     ..\..\eda-ml\frontend\src\features\diffs\StructuralDiffView.tsx
+       2 import { Badge, type BadgeTone } from '@/components/ui/Badge'
+       3 import { EmptyState } from '@/components/ui/AsyncState'
+       4 import { cn } from '@/lib/cn'
+       6 import type { DiffEntry, StructuralDiff } from '@/lib/api/types'
+       7 /**
+       8  * Renders a backend-computed StructuralDiff (the leaf-level cha
+       9  * recipe/plan versions). The backend already diffs the parsed J
+         SON trees and
+      10  * returns op/path/from/to entries, so this is a structural chan
+         ge list — not a
+     … +146 lines (ctrl+o to expand)
+
+● Write(C:\Projects\Learning\eda-ml\frontend\src\features\diffs\SnapshotDiffView
+       .tsx)
+  ⎿  Wrote 89 lines to
+     ..\..\eda-ml\frontend\src\features\diffs\SnapshotDiffView.tsx
+       2 import { EmptyState } from '@/components/ui/AsyncState'
+       3 import type { CorpusDelta, SnapshotDiff } from '@/lib/api/types'
+       4 
+       6  * Renders a cross-snapshot corpus diff: what recipes/plans/docs
+          were
+       7  * added/removed/changed in the live corpus between two ingests.
+       8  * computes the deltas by content fingerprint; this view groups 
+         them per
+       9  * category.
+      10  */
+     … +94 lines (ctrl+o to expand)
+
+● Now the Diffs page — two modes (version diff of a recipe/plan, and
+  cross-snapshot corpus diff), with selections in the URL:
+
+● Write(C:\Projects\Learning\eda-ml\frontend\src\features\diffs\DiffsPage.tsx)
+  ⎿  Added 336 lines, removed 6 lines
+        1 -import { ViewPlaceholder } from '@/components/ViewPlaceholder'
+        1 +import { useEffect } from 'react'                             
+        2 +import { useSearchParams } from 'react-router'                
+        3 +import { NoActiveSnapshot } from '@/components/domain/NoActive
+          +Snapshot'                                                     
+        4 +import { EntityPicker, type EntityKind } from '@/components/do
+          +main/EntityPicker'                                            
+        5 +import { LoadingState, ErrorState, EmptyState } from '@/compon
+          +ents/ui/AsyncState'                                           
+        6 +import { useActiveSnapshot } from '@/lib/store/active-snapshot
+          +'                                                             
+        7 +import { useSnapshots } from '@/features/dashboard/hooks'     
+        8 +import { cn } from '@/lib/cn'                                 
+        9 +import { useVersions, useStructuralDiff, useSnapshotDiff } fro
+          +m './hooks'                                                   
+       10 +import { StructuralDiffView } from './StructuralDiffView'     
+       11 +import { SnapshotDiffView } from './SnapshotDiffView'         
+       12  
+       13 +type Mode = 'version' | 'snapshot'                            
+       14 +                                                              
+       15 +/**                                                           
+       16 + * Versions & Diffs view. Two modes, selected in the URL:     
+       17 + *  - version: structural diff between two versions (vN → vM) 
+          +of a recipe/plan.                                             
+       18 + *  - snapshot: what changed in the live corpus between two in
+          +gest timestamps.                                              
+       19 + */                                                           
+       20  export function DiffsPage() {
+       21 +  const { ts } = useActiveSnapshot()                          
+       22 +  const [params, setParams] = useSearchParams()               
+       23 +  const mode: Mode = params.get('mode') === 'snapshot' ? 'snap
+          +shot' : 'version'                                             
+       24 +                                                              
+       25 +  function setMode(next: Mode) {                              
+       26 +    const p = new URLSearchParams(params)                     
+       27 +    p.set('mode', next)                                       
+       28 +    setParams(p)                                              
+       29 +  }                                                           
+       30 +                                                              
+       31    return (
+        5 -    <ViewPlaceholder                                          
+        6 -      title="Versions & Diffs"                                
+        7 -      summary="Pick two versions of a recipe/plan to see a str
+          -uctural diff, or two snapshot timestamps to see what changed i
+          -n the live corpus between ingests."                           
+        8 -      builtBy="fe-timeline-docs"                              
+        9 -    />                                                        
+       32 +    <section>                                                 
+       33 +      <h1 className="mb-1 text-2xl font-semibold">Versions &am
+          +p; Diffs</h1>                                                 
+       34 +      <p className="mb-4 text-sm text-muted-foreground">      
+       35 +        Compare two versions of a recipe/plan, or two corpus s
+          +napshots.                                                     
+       36 +      </p>                                                    
+       37 +                                                              
+       38 +      <div className="mb-4 inline-flex rounded-[var(--radius)]
+          + border border-border p-0.5">                                 
+       39 +        <ModeTab label="Version diff" active={mode === 'versio
+          +n'} onClick={() => setMode('version')} />                     
+       40 +        <ModeTab label="Snapshot diff" active={mode === 'snaps
+          +hot'} onClick={() => setMode('snapshot')} />                  
+       41 +      </div>                                                  
+       42 +                                                              
+       43 +      {mode === 'version' ? (                                 
+       44 +        !ts ? (                                               
+       45 +          <NoActiveSnapshot />                                
+       46 +        ) : (                                                 
+       47 +          <VersionDiffMode ts={ts} params={params} setParams={
+          +setParams} />                                                 
+       48 +        )                                                     
+       49 +      ) : (                                                   
+       50 +        <SnapshotDiffMode params={params} setParams={setParams
+          +} />                                                          
+       51 +      )}                                                      
+       52 +    </section>                                                
+       53    )
+       54  }
+       55 +                                                              
+       56 +/* ---- Version diff mode ---- */                             
+       57 +                                                              
+       58 +function VersionDiffMode({                                    
+       59 +  ts,                                                         
+       60 +  params,                                                     
+       61 +  setParams,                                                  
+       62 +}: {                                                          
+       63 +  ts: string                                                  
+       64 +  params: URLSearchParams                                     
+       65 +  setParams: (p: URLSearchParams) => void                     
+       66 +}) {                                                          
+       67 +  const target: EntityKind = params.get('target') === 'plan' ?
+          + 'plan' : 'recipe'                                            
+       68 +  const id = params.get('id')                                 
+       69 +                                                              
+       70 +  function setTarget(next: EntityKind) {                      
+       71 +    const p = new URLSearchParams(params)                     
+       72 +    p.set('target', next)                                     
+       73 +    p.delete('id')                                            
+       74 +    p.delete('from')                                          
+       75 +    p.delete('to')                                            
+       76 +    setParams(p)                                              
+       77 +  }                                                           
+       78 +  function setId(next: string) {                              
+       79 +    const p = new URLSearchParams(params)                     
+       80 +    p.set('target', target)                                   
+       81 +    p.set('id', next)                                         
+       82 +    p.delete('from')                                          
+       83 +    p.delete('to')                                            
+       84 +    setParams(p)                                              
+       85 +  }                                                           
+       86 +                                                              
+       87 +  return (                                                    
+       88 +    <>                                                        
+       89 +      <div className="mb-4 inline-flex rounded-[var(--radius)]
+          + border border-border p-0.5">                                 
+       90 +        <ModeTab label="Recipe" active={target === 'recipe'} o
+          +nClick={() => setTarget('recipe')} />                         
+       91 +        <ModeTab label="Plan" active={target === 'plan'} onCli
+          +ck={() => setTarget('plan')} />                               
+       92 +      </div>                                                  
+       93 +                                                              
+       94 +      <div className="grid gap-6 lg:grid-cols-[minmax(300px,40
+          +0px)_1fr]">                                                   
+       95 +        <div className="lg:max-h-[calc(100vh-16rem)] lg:overfl
+          +ow-y-auto lg:pr-1">                                           
+       96 +          <EntityPicker ts={ts} kind={target} selectedId={id} 
+          +onSelect={setId} />                                           
+       97 +        </div>                                                
+       98 +        <div className="min-w-0">                             
+       99 +          {!id ? (                                            
+      100 +            <EmptyState title={`Select a ${target}`}>         
+      101 +              Pick a {target} to compare two of its versions. 
+      102 +            </EmptyState>                                     
+      103 +          ) : (                                               
+      104 +            <VersionDiffPanel ts={ts} kind={target} id={id} pa
+          +rams={params} setParams={setParams} />                        
+      105 +          )}                                                  
+      106 +        </div>                                                
+      107 +      </div>                                                  
+      108 +    </>                                                       
+      109 +  )                                                           
+      110 +}                                                             
+      111 +                                                              
+      112 +function VersionDiffPanel({                                   
+      113 +  ts,                                                         
+      114 +  kind,                                                       
+      115 +  id,                                                         
+      116 +  params,                                                     
+      117 +  setParams,                                                  
+      118 +}: {                                                          
+      119 +  ts: string                                                  
+      120 +  kind: EntityKind                                            
+      121 +  id: string                                                  
+      122 +  params: URLSearchParams                                     
+      123 +  setParams: (p: URLSearchParams) => void                     
+      124 +}) {                                                          
+      125 +  const versionsQ = useVersions(ts, kind, id)                 
+      126 +  const versions = versionsQ.data ?? []                       
+      127 +  const from = params.get('from')                             
+      128 +  const to = params.get('to')                                 
+      129 +                                                              
+      130 +  // Default to oldest → newest once versions load and nothing
+          + is chosen yet.                                               
+      131 +  useEffect(() => {                                           
+      132 +    if (versions.length >= 2 && (!from || !to)) {             
+      133 +      const p = new URLSearchParams(params)                   
+      134 +      p.set('from', versions[0] as string)                    
+      135 +      p.set('to', versions[versions.length - 1] as string)    
+      136 +      setParams(p)                                            
+      137 +    }                                                         
+      138 +    // eslint-disable-next-line react-hooks/exhaustive-deps   
+      139 +  }, [versions.length])                                       
+      140 +                                                              
+      141 +  function setSide(side: 'from' | 'to', value: string) {      
+      142 +    const p = new URLSearchParams(params)                     
+      143 +    p.set(side, value)                                        
+      144 +    setParams(p)                                              
+      145 +  }                                                           
+      146 +                                                              
+      147 +  if (versionsQ.isPending) return <LoadingState label="Loading
+          + versions…" />                                                
+      148 +  if (versionsQ.isError)                                      
+      149 +    return <ErrorState error={versionsQ.error} onRetry={() => 
+          +void versionsQ.refetch()} />                                  
+      150 +  if (versions.length < 2)                                    
+      151 +    return (                                                  
+      152 +      <EmptyState title="Not enough versions">                
+      153 +        This {kind} has {versions.length} saved version{versio
+          +ns.length === 1 ? '' : 's'}; at least                         
+      154 +        two are needed to diff.                               
+      155 +      </EmptyState>                                           
+      156 +    )                                                         
+      157 +                                                              
+      158 +  return (                                                    
+      159 +    <div>                                                     
+      160 +      <p className="mb-3 font-mono text-xs text-muted-foregrou
+          +nd">{id}</p>                                                  
+      161 +      <div className="mb-4 flex flex-wrap items-end gap-3">   
+      162 +        <VersionSelect label="From" value={from} versions={ver
+          +sions} onChange={(v) => setSide('from', v)} />                
+      163 +        <VersionSelect label="To" value={to} versions={version
+          +s} onChange={(v) => setSide('to', v)} />                      
+      164 +      </div>                                                  
+      165 +      {from && to ? (                                         
+      166 +        <DiffResult ts={ts} kind={kind} id={id} from={from} to
+          +={to} />                                                      
+      167 +      ) : (                                                   
+      168 +        <EmptyState title="Pick two versions" />              
+      169 +      )}                                                      
+      170 +    </div>                                                    
+      171 +  )                                                           
+      172 +}                                                             
+      173 +                                                              
+      174 +function DiffResult({                                         
+      175 +  ts,                                                         
+      176 +  kind,                                                       
+      177 +  id,                                                         
+      178 +  from,                                                       
+      179 +  to,                                                         
+      180 +}: {                                                          
+      181 +  ts: string                                                  
+      182 +  kind: EntityKind                                            
+      183 +  id: string                                                  
+      184 +  from: string                                                
+      185 +  to: string                                                  
+      186 +}) {                                                          
+      187 +  const { data, isPending, isError, error, refetch } = useStru
+          +cturalDiff(ts, kind, id, from, to)                            
+      188 +  if (isPending) return <LoadingState label="Computing diff…" 
+          +/>                                                            
+      189 +  if (isError) return <ErrorState error={error} onRetry={() =>
+          + void refetch()} />                                           
+      190 +  if (!data) return <EmptyState title="No diff" />            
+      191 +  return <StructuralDiffView diff={data} />                   
+      192 +}                                                             
+      193 +                                                              
+      194 +function VersionSelect({                                      
+      195 +  label,                                                      
+      196 +  value,                                                      
+      197 +  versions,                                                   
+      198 +  onChange,                                                   
+      199 +}: {                                                          
+      200 +  label: string                                               
+      201 +  value: string | null                                        
+      202 +  versions: string[]                                          
+      203 +  onChange: (value: string) => void                           
+      204 +}) {                                                          
+      205 +  const id = `version-${label.toLowerCase()}`                 
+      206 +  return (                                                    
+      207 +    <div className="flex flex-col gap-1">                     
+      208 +      <label htmlFor={id} className="text-xs font-medium text-
+          +muted-foreground">                                            
+      209 +        {label}                                               
+      210 +      </label>                                                
+      211 +      <select                                                 
+      212 +        id={id}                                               
+      213 +        value={value ?? ''}                                   
+      214 +        onChange={(e) => onChange(e.target.value)}            
+      215 +        className="rounded-md border border-border bg-card px-
+          +3 py-1.5 text-sm outline-none focus:border-primary focus:ring-
+          +1 focus:ring-primary"                                         
+      216 +      >                                                       
+      217 +        {versions.map((v) => (                                
+      218 +          <option key={v} value={v}>                          
+      219 +            {v}                                               
+      220 +          </option>                                           
+      221 +        ))}                                                   
+      222 +      </select>                                               
+      223 +    </div>                                                    
+      224 +  )                                                           
+      225 +}                                                             
+      226 +                                                              
+      227 +/* ---- Snapshot diff mode ---- */                            
+      228 +                                                              
+      229 +function SnapshotDiffMode({                                   
+      230 +  params,                                                     
+      231 +  setParams,                                                  
+      232 +}: {                                                          
+      233 +  params: URLSearchParams                                     
+      234 +  setParams: (p: URLSearchParams) => void                     
+      235 +}) {                                                          
+      236 +  const snapshotsQ = useSnapshots()                           
+      237 +  const snapshots = snapshotsQ.data ?? []                     
+      238 +  const from = params.get('sfrom')                            
+      239 +  const to = params.get('sto')                                
+      240 +                                                              
+      241 +  function setSide(side: 'sfrom' | 'sto', value: string) {    
+      242 +    const p = new URLSearchParams(params)                     
+      243 +    p.set(side, value)                                        
+      244 +    setParams(p)                                              
+      245 +  }                                                           
+      246 +                                                              
+      247 +  if (snapshotsQ.isPending) return <LoadingState label="Loadin
+          +g snapshots…" />                                              
+      248 +  if (snapshotsQ.isError)                                     
+      249 +    return <ErrorState error={snapshotsQ.error} onRetry={() =>
+          + void snapshotsQ.refetch()} />                                
+      250 +  if (snapshots.length < 2)                                   
+      251 +    return (                                                  
+      252 +      <EmptyState title="Not enough snapshots">               
+      253 +        At least two ingested snapshots are needed to diff the
+          + corpus. Trigger another ingest on the                        
+      254 +        Dashboard.                                            
+      255 +      </EmptyState>                                           
+      256 +    )                                                         
+      257 +                                                              
+      258 +  const options = snapshots.map((s) => s.ts)                  
+      259 +                                                              
+      260 +  return (                                                    
+      261 +    <div>                                                     
+      262 +      <div className="mb-4 flex flex-wrap items-end gap-3">   
+      263 +        <SnapshotSelect label="From" value={from} options={opt
+          +ions} onChange={(v) => setSide('sfrom', v)} />                
+      264 +        <SnapshotSelect label="To" value={to} options={options
+          +} onChange={(v) => setSide('sto', v)} />                      
+      265 +      </div>                                                  
+      266 +      {from && to ? (                                         
+      267 +        <SnapshotDiffResult from={from} to={to} />            
+      268 +      ) : (                                                   
+      269 +        <EmptyState title="Pick two snapshots">               
+      270 +          Choose two ingest timestamps to see what changed in 
+          +the corpus between them.                                      
+      271 +        </EmptyState>                                         
+      272 +      )}                                                      
+      273 +    </div>                                                    
+      274 +  )                                                           
+      275 +}                                                             
+      276 +                                                              
+      277 +function SnapshotDiffResult({ from, to }: { from: string; to: 
+          +string }) {                                                   
+      278 +  const { data, isPending, isError, error, refetch } = useSnap
+          +shotDiff(from, to)                                            
+      279 +  if (isPending) return <LoadingState label="Computing corpus 
+          +diff…" />                                                     
+      280 +  if (isError) return <ErrorState error={error} onRetry={() =>
+          + void refetch()} />                                           
+      281 +  if (!data) return <EmptyState title="No diff" />            
+      282 +  return <SnapshotDiffView diff={data} />                     
+      283 +}                                                             
+      284 +                                                              
+      285 +function SnapshotSelect({                                     
+      286 +  label,                                                      
+      287 +  value,                                                      
+      288 +  options,                                                    
+      289 +  onChange,                                                   
+      290 +}: {                                                          
+      291 +  label: string                                               
+      292 +  value: string | null                                        
+      293 +  options: string[]                                           
+      294 +  onChange: (value: string) => void                           
+      295 +}) {                                                          
+      296 +  const id = `snapshot-${label.toLowerCase()}`                
+      297 +  return (                                                    
+      298 +    <div className="flex flex-col gap-1">                     
+      299 +      <label htmlFor={id} className="text-xs font-medium text-
+          +muted-foreground">                                            
+      300 +        {label}                                               
+      301 +      </label>                                                
+      302 +      <select                                                 
+      303 +        id={id}                                               
+      304 +        value={value ?? ''}                                   
+      305 +        onChange={(e) => onChange(e.target.value)}            
+      306 +        className="rounded-md border border-border bg-card px-
+          +3 py-1.5 font-mono text-sm outline-none focus:border-primary f
+          +ocus:ring-1 focus:ring-primary"                               
+      307 +      >                                                       
+      308 +        <option value="">— select —</option>                  
+      309 +        {options.map((o) => (                                 
+      310 +          <option key={o} value={o}>                          
+      311 +            {o}                                               
+      312 +          </option>                                           
+      313 +        ))}                                                   
+      314 +      </select>                                               
+      315 +    </div>                                                    
+      316 +  )                                                           
+      317 +}                                                             
+      318 +                                                              
+      319 +function ModeTab({                                            
+      320 +  label,                                                      
+      321 +  active,                                                     
+      322 +  onClick,                                                    
+      323 +}: {                                                          
+      324 +  label: string                                               
+      325 +  active: boolean                                             
+      326 +  onClick: () => void                                         
+      327 +}) {                                                          
+      328 +  return (                                                    
+      329 +    <button                                                   
+      330 +      type="button"                                           
+      331 +      onClick={onClick}                                       
+      332 +      aria-pressed={active}                                   
+      333 +      className={cn(                                          
+      334 +        'rounded-[calc(var(--radius)-2px)] px-3 py-1.5 text-sm
+          + font-medium transition-colors',                              
+      335 +        active ? 'bg-primary text-primary-foreground' : 'text-
+          +muted-foreground hover:bg-accent/40',                         
+      336 +      )}                                                      
+      337 +    >                                                         
+      338 +      {label}                                                 
+      339 +    </button>                                                 
+      340 +  )                                                           
+      341 +}                                                             
+
+● Now the Docs Evolution feature — hooks, a markdown renderer (react-markdown +
+  remark-gfm), and the page with lineage navigation:
+
+● Write(C:\Projects\Learning\eda-ml\frontend\src\features\docs\hooks.ts)
+  ⎿  Wrote 21 lines to ..\..\eda-ml\frontend\src\features\docs\hooks.ts
+       2 import { api } from '@/lib/api/client'act-query'
+       3 import { queryKeys } from '@/lib/query-client'
+       4 
+       5 /** GET .../docs — doc tree grouped into version lineages (v1 → 
+         vN). */
+       6 export function useDocs(ts: string | null) {
+       7   return useQuery({
+       8     queryKey: ts ? queryKeys.docs(ts) : ['docs', 'none'],
+       9     queryFn: ({ signal }) => api.listDocs(ts as string, signal),
+      10     enabled: ts != null,
+     … +15 lines (ctrl+o to expand)
+
+● Write(C:\Projects\Learning\eda-ml\frontend\src\features\docs\MarkdownView.tsx)
+  ⎿  Wrote 61 lines to
+     ..\..\eda-ml\frontend\src\features\docs\MarkdownView.tsx
+       2 import remarkGfm from 'remark-gfm'wn'
+       3 
+       5  * Renders trusted corpus markdown (from the read-only snapshot)
+          with GitHub
+         -markdown doesarkdown (tables, task lists, strikethrough). react
+       7  * not render raw HTML by default, so this is safe without an ex
+       8  * Tailwind utility classes style the rendered elements (no typo
+         graphy plugin).
+      10 export function MarkdownView({ markdown }: { markdown: string })
+          {
+     … +71 lines (ctrl+o to expand)
+
+● Write(C:\Projects\Learning\eda-ml\frontend\src\features\docs\DocsPage.tsx)
+  ⎿  Added 235 lines, removed 6 lines
+        1 -import { ViewPlaceholder } from '@/components/ViewPlaceholder'
+        1 +import { useMemo, useState } from 'react'                     
+        2 +import { useSearchParams } from 'react-router'                
+        3 +import { NoActiveSnapshot } from '@/components/domain/NoActive
+          +Snapshot'                                                     
+        4 +import { LoadingState, ErrorState, EmptyState } from '@/compon
+          +ents/ui/AsyncState'                                           
+        5 +import { SearchInput } from '@/components/ui/SearchInput'     
+        6 +import { Badge } from '@/components/ui/Badge'                 
+        7 +import { cn } from '@/lib/cn'                                 
+        8 +import { useActiveSnapshot } from '@/lib/store/active-snapshot
+          +'                                                             
+        9 +import { useDocs, useDoc } from './hooks'                     
+       10 +import { MarkdownView } from './MarkdownView'                 
+       11 +import type { DocEntry, DocLineage } from '@/lib/api/types'   
+       12  
+       13 +/**                                                           
+       14 + * Docs Evolution view: the docs/ tree grouped into Status: ve
+          +rsion lineages                                                
+       15 + * (v1 → vN) on the left; selecting a version renders its mark
+          +down + supersede/                                             
+       16 + * replace lineage on the right. Selected doc path lives in th
+          +e URL (?doc=…).                                               
+       17 + */                                                           
+       18  export function DocsPage() {
+       19 +  const { ts } = useActiveSnapshot()                          
+       20 +  const [params, setParams] = useSearchParams()               
+       21 +  const selectedPath = params.get('doc')                      
+       22 +                                                              
+       23 +  function selectDoc(path: string) {                          
+       24 +    const p = new URLSearchParams(params)                     
+       25 +    p.set('doc', path)                                        
+       26 +    setParams(p)                                              
+       27 +  }                                                           
+       28 +                                                              
+       29 +  if (!ts) {                                                  
+       30 +    return (                                                  
+       31 +      <section>                                               
+       32 +        <h1 className="mb-4 text-2xl font-semibold">Docs Evolu
+          +tion</h1>                                                     
+       33 +        <NoActiveSnapshot />                                  
+       34 +      </section>                                              
+       35 +    )                                                         
+       36 +  }                                                           
+       37 +                                                              
+       38    return (
+        5 -    <ViewPlaceholder                                          
+        6 -      title="Docs Evolution"                                  
+        7 -      summary="Walks the docs tree ordered by the Status: vers
+          -ion lineage (v1 to v5), renders markdown, and shows supersede/
+          -replace lineage between document versions."                   
+        8 -      builtBy="fe-timeline-docs"                              
+        9 -    />                                                        
+       39 +    <section>                                                 
+       40 +      <h1 className="mb-1 text-2xl font-semibold">Docs Evoluti
+          +on</h1>                                                       
+       41 +      <p className="mb-4 text-sm text-muted-foreground">      
+       42 +        The docs tree ordered by Status: version lineage, with
+          + supersede/replace links.                                     
+       43 +      </p>                                                    
+       44 +      <div className="grid gap-6 lg:grid-cols-[minmax(300px,40
+          +0px)_1fr]">                                                   
+       45 +        <div className="lg:max-h-[calc(100vh-12rem)] lg:overfl
+          +ow-y-auto lg:pr-1">                                           
+       46 +          <LineageNav ts={ts} selectedPath={selectedPath} onSe
+          +lect={selectDoc} />                                           
+       47 +        </div>                                                
+       48 +        <div className="min-w-0">                             
+       49 +          {!selectedPath ? (                                  
+       50 +            <EmptyState title="Select a document">            
+       51 +              Pick a version from a lineage to read it.       
+       52 +            </EmptyState>                                     
+       53 +          ) : (                                               
+       54 +            <DocView ts={ts} path={selectedPath} onSelect={sel
+          +ectDoc} />                                                    
+       55 +          )}                                                  
+       56 +        </div>                                                
+       57 +      </div>                                                  
+       58 +    </section>                                                
+       59    )
+       60  }
+       61 +                                                              
+       62 +function LineageNav({                                         
+       63 +  ts,                                                         
+       64 +  selectedPath,                                               
+       65 +  onSelect,                                                   
+       66 +}: {                                                          
+       67 +  ts: string                                                  
+       68 +  selectedPath: string | null                                 
+       69 +  onSelect: (path: string) => void                            
+       70 +}) {                                                          
+       71 +  const [search, setSearch] = useState('')                    
+       72 +  const { data, isPending, isError, error, refetch } = useDocs
+          +(ts)                                                          
+       73 +                                                              
+       74 +  const filtered = useMemo(() => {                            
+       75 +    if (!data) return []                                      
+       76 +    const q = search.trim().toLowerCase()                     
+       77 +    if (!q) return data                                       
+       78 +    return data                                               
+       79 +      .map((lin) => ({                                        
+       80 +        ...lin,                                               
+       81 +        versions: lin.versions.filter(                        
+       82 +          (v) =>                                              
+       83 +            v.title.toLowerCase().includes(q) ||              
+       84 +            v.path.toLowerCase().includes(q) ||               
+       85 +            lin.key.toLowerCase().includes(q),                
+       86 +        ),                                                    
+       87 +      }))                                                     
+       88 +      .filter((lin) => lin.versions.length > 0)               
+       89 +  }, [data, search])                                          
+       90 +                                                              
+       91 +  if (isPending) return <LoadingState label="Loading docs…" />
+       92 +  if (isError) return <ErrorState error={error} onRetry={() =>
+          + void refetch()} />                                           
+       93 +  if (!data || data.length === 0) return <EmptyState title="No
+          + docs in this snapshot" />                                    
+       94 +                                                              
+       95 +  return (                                                    
+       96 +    <div className="flex flex-col gap-3">                     
+       97 +      <SearchInput                                            
+       98 +        label="Search docs"                                   
+       99 +        placeholder="Search docs by title or path…"           
+      100 +        value={search}                                        
+      101 +        onChange={setSearch}                                  
+      102 +      />                                                      
+      103 +      {filtered.length === 0 ? (                              
+      104 +        <EmptyState title="No docs match your search" />      
+      105 +      ) : (                                                   
+      106 +        <ul className="space-y-4">                            
+      107 +          {filtered.map((lineage) => (                        
+      108 +            <LineageGroup                                     
+      109 +              key={lineage.key}                               
+      110 +              lineage={lineage}                               
+      111 +              selectedPath={selectedPath}                     
+      112 +              onSelect={onSelect}                             
+      113 +            />                                                
+      114 +          ))}                                                 
+      115 +        </ul>                                                 
+      116 +      )}                                                      
+      117 +    </div>                                                    
+      118 +  )                                                           
+      119 +}                                                             
+      120 +                                                              
+      121 +function LineageGroup({                                       
+      122 +  lineage,                                                    
+      123 +  selectedPath,                                               
+      124 +  onSelect,                                                   
+      125 +}: {                                                          
+      126 +  lineage: DocLineage                                         
+      127 +  selectedPath: string | null                                 
+      128 +  onSelect: (path: string) => void                            
+      129 +}) {                                                          
+      130 +  const multi = lineage.versions.length > 1                   
+      131 +  return (                                                    
+      132 +    <li>                                                      
+      133 +      <p className="mb-1.5 flex items-center gap-2 text-xs fon
+          +t-semibold tracking-wide text-muted-foreground uppercase">    
+      134 +        {lineage.key}                                         
+      135 +        {multi && <span className="font-normal">({lineage.vers
+          +ions.length} versions)</span>}                                
+      136 +      </p>                                                    
+      137 +      <ol className={cn('space-y-1', multi && 'border-l border
+          +-border pl-3')}>                                              
+      138 +        {lineage.versions.map((v) => (                        
+      139 +          <li key={v.path}>                                   
+      140 +            <button                                           
+      141 +              type="button"                                   
+      142 +              onClick={() => onSelect(v.path)}                
+      143 +              aria-current={v.path === selectedPath ? 'true' :
+          + undefined}                                                   
+      144 +              className={cn(                                  
+      145 +                'block w-full rounded-[var(--radius)] border p
+          +-2.5 text-left transition-colors',                            
+      146 +                v.path === selectedPath                       
+      147 +                  ? 'border-primary bg-primary/5'             
+      148 +                  : 'border-border bg-card hover:bg-accent/40'
+          +,                                                             
+      149 +              )}                                              
+      150 +            >                                                 
+      151 +              <div className="flex items-start justify-between
+          + gap-2">                                                      
+      152 +                <span className="line-clamp-2 text-sm font-med
+          +ium">{v.title || v.path}</span>                               
+      153 +                <Badge tone="accent" title={`version ${v.versi
+          +on}`}>                                                        
+      154 +                  v{v.version}                                
+      155 +                </Badge>                                      
+      156 +              </div>                                          
+      157 +              <div className="mt-1 flex flex-wrap items-center
+          + gap-1.5">                                                    
+      158 +                {v.status && <StatusBadge status={v.status} />
+          +}                                                             
+      159 +                {v.supersedes.length > 0 && (                 
+      160 +                  <span className="text-[0.7rem] text-muted-fo
+          +reground">                                                    
+      161 +                    replaces {v.supersedes.length}            
+      162 +                  </span>                                     
+      163 +                )}                                            
+      164 +              </div>                                          
+      165 +            </button>                                         
+      166 +          </li>                                               
+      167 +        ))}                                                   
+      168 +      </ol>                                                   
+      169 +    </li>                                                     
+      170 +  )                                                           
+      171 +}                                                             
+      172 +                                                              
+      173 +function DocView({                                            
+      174 +  ts,                                                         
+      175 +  path,                                                       
+      176 +  onSelect,                                                   
+      177 +}: {                                                          
+      178 +  ts: string                                                  
+      179 +  path: string                                                
+      180 +  onSelect: (path: string) => void                            
+      181 +}) {                                                          
+      182 +  const { data, isPending, isError, error, refetch } = useDoc(
+          +ts, path)                                                     
+      183 +  if (isPending) return <LoadingState label="Loading document…
+          +" />                                                          
+      184 +  if (isError) return <ErrorState error={error} onRetry={() =>
+          + void refetch()} />                                           
+      185 +  if (!data) return <EmptyState title="Document not found" /> 
+      186 +                                                              
+      187 +  return (                                                    
+      188 +    <article>                                                 
+      189 +      <header className="border-b border-border pb-4">        
+      190 +        <div className="flex flex-wrap items-center gap-2">   
+      191 +          <Badge tone="accent">v{data.version}</Badge>        
+      192 +          {data.status && <StatusBadge status={data.status} />
+          +}                                                             
+      193 +          <span className="font-mono text-xs text-muted-foregr
+          +ound">{data.lineageKey}</span>                                
+      194 +        </div>                                                
+      195 +        <h2 className="mt-2 text-xl font-semibold">{data.title
+          + || data.path}</h2>                                           
+      196 +        <p className="mt-1 font-mono text-xs text-muted-foregr
+          +ound">{data.path}</p>                                         
+      197 +        {data.supersedes.length > 0 && (                      
+      198 +          <div className="mt-2 flex flex-wrap items-center gap
+          +-1.5">                                                        
+      199 +            <span className="text-xs text-muted-foreground">Re
+          +places:</span>                                                
+      200 +            {data.supersedes.map((ref) => (                   
+      201 +              <button                                         
+      202 +                key={ref}                                     
+      203 +                type="button"                                 
+      204 +                onClick={() => onSelect(ref)}                 
+      205 +                className="rounded-full border border-border b
+          +g-card px-2 py-0.5 font-mono text-xs text-muted-foreground hov
+          +er:bg-accent/40"                                              
+      206 +                title={`Open ${ref}`}                         
+      207 +              >                                               
+      208 +                {ref}                                         
+      209 +              </button>                                       
+      210 +            ))}                                               
+      211 +          </div>                                              
+      212 +        )}                                                    
+      213 +      </header>                                               
+      214 +      <div className="mt-4">                                  
+      215 +        <MarkdownView markdown={data.markdown} />             
+      216 +      </div>                                                  
+      217 +    </article>                                                
+      218 +  )                                                           
+      219 +}                                                             
+      220 +                                                              
+      221 +/** Doc Status: line (DRAFT / ACTIVE / SUPERSEDED / …) → tone.
+          + */                                                           
+      222 +function StatusBadge({ status }: { status: string }) {        
+      223 +  const s = status.toLowerCase()                              
+      224 +  const tone = s.includes('supersed') || s.includes('replac') 
+          +|| s.includes('deprecat')                                     
+      225 +    ? 'warning'                                               
+      226 +    : s.includes('active') || s.includes('current') || s.inclu
+          +des('accept')                                                 
+      227 +      ? 'success'                                             
+      228 +      : s.includes('draft')                                   
+      229 +        ? 'info'                                              
+      230 +        : 'neutral'                                           
+      231 +  // Status lines can be long ("DRAFT — Replaces `X`"); show t
+          +he first clause as the badge.                                 
+      232 +  const short = status.split(/[—\-.]/)[0]?.trim() || status   
+      233 +  return (                                                    
+      234 +    <Badge tone={tone} title={status}>                        
+      235 +      {short}                                                 
+      236 +    </Badge>                                                  
+      237 +  )                                                           
+      238 +}                                                             
+      239 +                                                              
+      240 +export type { DocEntry }                                      
+
+● Let me remove an unused DocEntry import/export I left in DocsPage (would trip
+  the linter):
+● Update(C:\Projects\Learning\eda-ml\frontend\src\features\docs\DocsPage.tsx)
+  ⎿  Added 1 line, removed 1 line
+       8  import { useActiveSnapshot } from '@/lib/store/active-snapshot'
+       9  import { useDocs, useDoc } from './hooks'
+      10  import { MarkdownView } from './MarkdownView'
+      11 -import type { DocEntry, DocLineage } from '@/lib/api/types'    
+      11 +import type { DocLineage } from '@/lib/api/types'              
+      12  
+      13  /**
+      14   * Docs Evolution view: the docs/ tree grouped into Status: ver
+          sion lineages
+
+● Update(C:\Projects\Learning\eda-ml\frontend\src\features\docs\DocsPage.tsx)
+  ⎿  Removed 2 lines
+      236      </Badge>
+      237    )
+      238  }
+      239 -                                                              
+      240 -export type { DocEntry }                                      
+
+● Now tests. The acceptance glob (*Timeline*) is already satisfied, but the spec
+   requires real Vitest + RTL tests. Let me check the test setup, then add
+  component tests for the timeline feed and the diff view:
+
+  Read 2 files (ctrl+o to expand)
+
+● vi/describe/it/expect are globals; my components take props directly so no
+  mocking needed. Writing the two component tests:
+
+● Write(C:\Projects\Learning\eda-ml\frontend\src\features\timelines\TimelineFeed
+       .test.tsx)
+  ⎿  Wrote 44 lines to
+     ..\..\eda-ml\frontend\src\features\timelines\TimelineFeed.test.tsx
+       2 import { TimelineFeed } from './TimelineFeed'ary/react'
+       3 import type { TimelineEntry } from '@/lib/api/types'
+       4 
+       5 const entries: TimelineEntry[] = [
+       6   { ts: '2026-05-24T01:00:00Z', kind: 'recipe_saved', details: {
+          version: 12 } },
+       7   {
+       8     ts: '2026-05-24T01:05:00Z',
+       9     kind: 'message_received',
+      10     details: { from: 'planner', summary: 'please continue' },
+     … +42 lines (ctrl+o to expand)
+
+● Write(C:\Projects\Learning\eda-ml\frontend\src\features\diffs\StructuralDiffVi
+       ew.test.tsx)
+  ⎿  Wrote 35 lines to
+     ..\..\eda-ml\frontend\src\features\diffs\StructuralDiffView.test.tsx
+       2 import { StructuralDiffView } from './StructuralDiffView'
+       3 import type { StructuralDiff } from '@/lib/api/types'
+       4 
+       5 const diff: StructuralDiff = {
+       6   from: 'v2',
+       8   entries: [
+       9     { op: 'added', path: 'actions[3].status', from: null, to: 'p
+         ending' },
+      10     { op: 'removed', path: 'context.note', from: 'old note', to:
+          null },
+     … +32 lines (ctrl+o to expand)
+
+● Now let me verify the markdown libs installed cleanly (and their licenses —
+  checklist requirement), then run the static gates. Starting with typecheck and
+   lint:
+
+● Bash(cd /c/Projects/Learning/eda-ml/frontend && node -e "const
+      p=require('react-markdown/package.json'),g=require('remark-gfm/package.jso
+      n');console.log('react-markd…)
+  ⎿  Error: Exit code 1
+     node:internal/modules/cjs/loader:685
+           throw e;
+           ^
+
+     Error [ERR_PACKAGE_PATH_NOT_EXPORTED]: Package subpath './package.json' is 
+     not defined by "exports" in C:\Projects\Learning\eda-ml\frontend\node_modul
+     es\react-markdown\package.json
+         at exportsNotFound (node:internal/modules/esm/resolve:313:10)
+         at packageExportsResolve (node:internal/modules/esm/resolve:661:9)
+         at resolveExports (node:internal/modules/cjs/loader:678:36)
+         at Module._findPath (node:internal/modules/cjs/loader:745:31)
+
+     … +10 lines (ctrl+o to expand)
+
+● Package-json subpath isn't exported (that's fine, ESM). Let me check licenses
+  via npm and run typecheck/lint:
+
+● Bash(cd /c/Projects/Learning/eda-ml/frontend && npm ls react-markdown
+      remark-gfm 2>&1 | head -5 && echo "--- licenses ---" && npm view
+      react-markdown@$(node -p "requ…)
+  ⎿  frontend@0.0.0 C:\Projects\Learning\eda-ml\frontend
+     +-- react-markdown@10.1.0
+     `-- remark-gfm@4.0.1
+     … +5 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to C:\Projects\Learning\eda-base\claude
+
+● Both MIT ✓ (react-markdown 10.1.0, remark-gfm 4.0.1). Now the typecheck:
+
+● Bash(cd /c/Projects/Learning/eda-ml/frontend && npm run typecheck 2>&1 | tail
+      -30)
+  ⎿  > frontend@0.0.0 typecheck
+     > tsc -b --noEmit
+  ⎿  Shell cwd was reset to C:\Projects\Learning\eda-base\claude
+
+● Typecheck clean. Now lint:
+
+● Bash(cd /c/Projects/Learning/eda-ml/frontend && npm run lint 2>&1 | tail -40)
+  ⎿  > frontend@0.0.0 lint
+     > eslint .
+  ⎿  Shell cwd was reset to C:\Projects\Learning\eda-base\claude
+
+● Lint clean. Now tests and production build:
+
+● Bash(cd /c/Projects/Learning/eda-ml/frontend && npm test 2>&1 | tail -40)
+  ⎿  > frontend@0.0.0 test
+     > vitest run
+     … +9 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to C:\Projects\Learning\eda-base\claude
+
+● All 17 tests pass (4 files: my 7 new + 10 prior). Now the production build:
+
+● Bash(cd /c/Projects/Learning/eda-ml/frontend && npm run build 2>&1 | tail -30)
+  ⎿  > frontend@0.0.0 build
+     > tsc -b && vite build
+     … +16 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to C:\Projects\Learning\eda-base\claude
+
+● Build passes. The main chunk (535 KB) crossed the 500 KB warning because
+  react-markdown landed in the initial bundle — but it's only used in the Docs
+  view. Per the recipe's code-splitting checklist (the prior worker did the same
+   for the DAG graph), let me lazy-load MarkdownView so react-markdown becomes
+  its own chunk:
+
+● Update(C:\Projects\Learning\eda-ml\frontend\src\features\docs\DocsPage.tsx)
+  ⎿  Added 7 lines, removed 2 lines
+      1 -import { useMemo, useState } from 'react'                       
+      1 +import { lazy, Suspense, useMemo, useState } from 'react'       
+      2  import { useSearchParams } from 'react-router'
+      3  import { NoActiveSnapshot } from '@/components/domain/NoActiveSn
+         apshot'
+      4  import { LoadingState, ErrorState, EmptyState } from '@/componen
+         ts/ui/AsyncState'
+     ...
+       7  import { cn } from '@/lib/cn'
+       8  import { useActiveSnapshot } from '@/lib/store/active-snapshot'
+       9  import { useDocs, useDoc } from './hooks'
+      10 -import { MarkdownView } from './MarkdownView'                  
+      10  import type { DocLineage } from '@/lib/api/types'
+      11  
+      12 +// react-markdown (+ remark-gfm) is only needed when a doc is o
+         +pen, so split it                                               
+      13 +// into its own chunk to keep the initial bundle lean (spec cod
+         +e-split checklist).                                            
+      14 +const MarkdownView = lazy(() =>                                
+      15 +  import('./MarkdownView').then((m) => ({ default: m.MarkdownVi
+         +ew })),                                                        
+      16 +)                                                              
+      17 +                                                               
+      18  /**
+      19   * Docs Evolution view: the docs/ tree grouped into Status: ver
+          sion lineages
+      20   * (v1 → vN) on the left; selecting a version renders its markd
+          own + supersede/
+● Update(C:\Projects\Learning\eda-ml\frontend\src\features\docs\DocsPage.tsx)
+  ⎿  Added 3 lines, removed 1 line
+      217          )}
+      218        </header>
+      219        <div className="mt-4">
+      220 -        <MarkdownView markdown={data.markdown} />             
+      220 +        <Suspense fallback={<LoadingState label="Rendering…" /
+          +>}>                                                           
+      221 +          <MarkdownView markdown={data.markdown} />           
+      222 +        </Suspense>                                           
+      223        </div>
+      224      </article>
+      225    )
+
+● Bash(cd /c/Projects/Learning/eda-ml/frontend && npm run build 2>&1 | tail -18)
+  ⎿  > frontend@0.0.0 build
+     > tsc -b && vite build
+     … +12 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to C:\Projects\Learning\eda-base\claude
+
+● All gates green now: typecheck ✓, lint ✓, 17 tests ✓, build ✓ (main chunk down
+   to 380 KB; react-markdown split into its own 155 KB chunk).
+
+  Now the live verification. The highest-value check (and the prior worker's
+  hard-won lesson) is confirming my TS types match the actual be-timelines-docs
+  endpoint shapes. Let me start the backend and curl those endpoints. First,
+  check port state and the built jar:
+
+● Bash(cd /c/Projects/Learning/eda-ml/backend && curl -s --noproxy '*' -o
+      /dev/null -w "8080 health: %{http_code}\n"
+      http://localhost:8080/api/health 2>&1; ls -1 build…)
+  ⎿  8080 health: 000
+     build/libs/backend-0.0.1-SNAPSHOT-plain.jar
+     build/libs/backend-0.0.1-SNAPSHOT.jar
+     20260524-012041-760/
+  ⎿  Shell cwd was reset to C:\Projects\Learning\eda-base\claude
+
+● Port 8080 is free, the bootJar exists, and snapshot 20260524-012041-760 is
+  present. Let me start the backend in the background:
+
+● Bash(cd /c/Projects/Learning/eda-ml/backend && java -jar
+      build/libs/backend-0.0.1-SNAPSHOT.jar > /tmp/eda-backend-fetd.log 2>&1 &
+      echo "started backend pid $!")
+  ⎿  started backend pid 751396
+
+● Let me wait for the backend to come up, then verify health:
+
+● Bash(for i in $(seq 1 30); do code=$(curl -s --noproxy '*' -o /dev/null -w
+      "%{http_code}" http://localhost:8080/api/health 2>/dev/null); if [ "$code"
+       = "200" ]; then…)
+  ⎿  backend up after 1s
+     {
+       "status": "ok"
+     … +10 lines (ctrl+o to expand)
+
+● Backend up. Now validate my TS types against the actual endpoint shapes (the
+  critical contract check). Using the known recipe/plan ids from this plan:
+
+● Bash(cd /c/Projects/Learning/eda-ml/backend
+      TS=20260524-012041-760…)
+  ⎿  === recipe events[0] ===
+     count 56 keys [ 'ts', 'kind', 'details' ] kinds [ 'recipe_saved', 'mes
+     sage_received' ]
+     … +11 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to C:\Projects\Learning\eda-base\claude
+
+● Timeline + versions shapes match exactly. Now the diff and docs endpoints:
+
+● Bash(cd /c/Projects/Learning/eda-ml/backend
+      TS=20260524-012041-760…)
+  ⎿  === recipe diff v2->v39 ===
+     keys [ 'from', 'to', 'entries' ] from v2 to v39 entries 21 entry0 {
+       op: 'added',
+     … +16 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to C:\Projects\Learning\eda-base\claude
+
+● Every shape matches my TS types exactly (note diff to is the Java toString of
+  the leaf — a string, matching my string | null). Now the critical doc-content
+  test — a path with a slash, to confirm my per-segment encodePath works against
+   the /{*path} route:
+
+● Bash(cd /c/Projects/Learning/eda-ml/backend
+      TS=20260524-012041-760…)
+  ⎿  === doc content (slashed path) ===
+     keys [
+       'path',
+     … +15 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to C:\Projects\Learning\eda-base\claude
+
+● All contract checks pass — slashed doc paths work (my encodePath fix is
+  correct), supersedes lineage and 404s behave. My TS types match the live
+  backend field-for-field.
+
+  Now a live browser smoke of the three views. Per the project memory, headless
+  Chromium hangs on localhost here (system proxy) and the proven workaround is a
+   standalone Playwright launch with --no-proxy-server. Let me start the Vite
+  dev server and check the Playwright browser is available:
+
+● Bash(cd /c/Projects/Learning/eda-ml/frontend && (npm run dev >
+      /tmp/eda-vite-fetd.log 2>&1 &) ; echo "vite starting"; ls
+      "$HOME/AppData/Local/ms-playwright" 2>/dev/n…)
+  ⎿  vite starting
+     chromium-1208/
+     chromium-1223/
+     … +5 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to C:\Projects\Learning\eda-base\claude
+
+● Chromium is available. Let me wait for Vite to be ready, then write a smoke
+  script that deep-links into each view (my views encode selection in URL search
+   params, which makes this clean) and checks for render + console errors, using
+   the --no-proxy-server workaround:
+
+● Bash(for i in $(seq 1 30); do code=$(curl -s --noproxy '*' -o /dev/null -w
+      "%{http_code}" http://localhost:5173/ 2>/dev/null); if [ "$code" = "200"
+      ]; then echo "vit…)
+  ⎿  vite up after 1s (port 5173)
+     5173=200 5174=
+       VITE v8.0.14  ready in 696 ms
+
+● Vite is up on 5173. Writing the smoke script (deep-links into each view via
+  URL params, seeds the active snapshot, captures console errors, screenshots):
+
+● Write(~\AppData\Local\Temp\eda-smoke-fetd.mjs)
+  ⎿  Wrote 46 lines to
+     ..\..\..\..\Users\aksou\AppData\Local\Temp\eda-smoke-fetd.mjs
+       2 import { chromium } from 'playwright'
+       3 const TS = '20260524-012041-760'
+         7'nst R = 'recipe-build-a-java-rest-application-with-a-rea-d6f48
+       5 const P = 'recipe-build-a-java-rest-application-with-a-rea-d6f48
+         7-s2'
+       7 const OUT = process.env.TEMP || '/tmp'
+       8 
+         --no-proxy-server'] })chromium.launch({ headless: true, args: ['
+      10 const ctx = await browser.newContext({ viewport: { width: 1400, 
+         height: 1000 } })
+     … +55 lines (ctrl+o to expand)
+● Bash(cd /c/Projects/Learning/eda-ml/frontend && node
+      "$TEMP/eda-smoke-fetd.mjs" 2>&1 | tail -30; echo "exit=$?")
+  ⎿  node:internal/modules/package_json_reader:316
+       throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), nul
+     l);
+     … +15 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to C:\Projects\Learning\eda-base\claude
+
+● The temp script can't resolve playwright (Node resolves from the script's
+  location). Let me place it inside the frontend dir (under eda-ml, allowed) and
+   run, then clean it up:
+
+● Bash(cp "$TEMP/eda-smoke-fetd.mjs"
+      /c/Projects/Learning/eda-ml/frontend/_smoke-fetd.mjs && cd
+      /c/Projects/Learning/eda-ml/frontend && node _smoke-fetd.mjs 2>&1 | tai…)
+  ⎿  Interrupted · What should Claude do instead?
+
+✻ Running scheduled task (May 24 8:39am)
+
+  Called edp-claude (ctrl+o to expand)
+
+● Understood — I've stopped. The inbox is empty (no planner message), and I
+  won't write that smoke script into the repo since you declined it.
+
+  Here's exactly where the fe-timeline-docs action stands:
+
+  Done and verified:
+  - Built all three views — Timelines (recipe events / plan worklog,
+  crash_recovery highlighted, kind filter, expandable details), Versions & Diffs
+   (version structural diff for recipes/plans + cross-snapshot corpus diff), and
+   Docs Evolution (lineage navigator + react-markdown rendering + supersede
+  links). Selections are URL-driven for shareability.
+  - Rewrote the placeholder timeline/version/diff/docs types to match the real 
+  backend DTOs, fixed the doc-path encoding for the /{*path} route, and added
+  the missing plan-version/plan-diff client functions + query keys.
+  - Static gates all green: typecheck ✓, lint ✓, 17 tests ✓ (7 new), production
+  build ✓ (main chunk trimmed to 380 KB; react-markdown lazy-split into its own
+  chunk).
+  - Live contract validation via curl (the critical check) — every endpoint's
+  shape matches my TS types exactly: events/worklog {ts,kind,details}, versions
+  string[], structural diff {from,to,entries[{op,path,from,to}]}, snapshot diff
+  {fromTs,toTs,recipes/plans/docs:{added,removed,changed}}, docs DocLineage[],
+  and slashed doc paths resolve correctly.
+
+  Only thing not completed: the optional in-browser smoke of the three views —
+  the standalone Playwright approach (a script in the repo) is what you just
+  declined.
+
+  Still running in the background (started by me): the backend java -jar on
+  :8080 and the Vite dev server on :5173.
+
+  How would you like me to proceed?
+  - Finalize now (record the action done on the strong build/test/contract
+  evidence) and stop the two background servers, or
+  - Run the browser smoke a different way (e.g. a script kept entirely in your
+  %TEMP% importing Playwright by absolute path — nothing written into the repo),
+   or
+  - something else.
+
+  I'll wait for your direction.
+
+✻ Churned for 41s
