@@ -3051,6 +3051,14 @@ class _AddActionIn(BaseModel):
     # for the full contract. None (the default) = unbatched, byte-identical
     # to pre-v7 authoring.
     batch_group: str | None = None
+    # Phase 3d — DECLARE the leg kind at authoring ("build" default,
+    # "review" for an independent-judgment leg, "verify" for a cheap
+    # re-run-recorded-commands leg). The dispatch guard keys on the
+    # declaration (capability-based: record_branch_verdict is reviewer-only)
+    # instead of the legacy `review*`/`r<n>` name regex, which reserved
+    # identifier namespace. Undeclared legacy actions still fall back to
+    # the name convention at dispatch.
+    leg_kind: Literal["build", "review", "verify"] | None = None
 
 
 class AddAction(_ClaudeTool):
@@ -3137,6 +3145,7 @@ class AddAction(_ClaudeTool):
             specializations=m.specializations,
             concerns=m.concerns,
             batch_group=m.batch_group,
+            leg_kind=m.leg_kind,
         ))
         v = self.ctx.plans.save(p)
         return Tool.ok(_Ver(version=v, advisories=advisories))
@@ -6322,6 +6331,23 @@ class PoolSpawnPlanner(_ClaudeTool):
             m.recipe_id, m.step_id, model=m.model)
 
 
+def _effective_leg_kind(action, action_id: str) -> str:
+    """Phase 3d — resolve an action's leg kind. The planner's DECLARATION
+    (Action.leg_kind) wins; an undeclared legacy action falls back to the
+    naming conventions the planner guides teach (`v<n>`/`verify*` = verify,
+    `r<n>`/`review*` = review); everything else is a build leg. The verify
+    check runs FIRST so a legacy `verify-review-notes` style id stays a
+    cheap verify leg rather than tripping the review guard."""
+    declared = getattr(action, "leg_kind", None) if action is not None else None
+    if declared:
+        return declared
+    if re.search(r"(^|[-_])verify|^v\d+$", action_id, re.IGNORECASE):
+        return "verify"
+    if re.search(r"(^|[-_])review|^r\d+$", action_id, re.IGNORECASE):
+        return "review"
+    return "build"
+
+
 def _step_flowdown_gaps(recipe, plan) -> list[str]:
     """Context-diet Phase 2 — the step->plan flow-down check, pure and
     deterministic (principle 6). Returns the list of uncovered obligations
@@ -7199,28 +7225,38 @@ class PoolSpawnWorker(_ClaudeTool):
         # refusal naming its cause, recoverable by renaming in seconds. A false
         # NEGATIVE is a builder-class shell reviewing work it cannot record a
         # verdict on — which is what actually happened.
-        if m.role != "reviewer" and re.search(
-                r"(^|[-_])review|^r\d+$", m.action_id, re.IGNORECASE):
+        # Phase 3d — the guard is now CAPABILITY-BASED: it keys on the
+        # planner's declared Action.leg_kind, falling back to the legacy
+        # name regex only for undeclared actions (_effective_leg_kind). A
+        # declared leg_kind='build' UN-RESERVES the review*/r<n> namespace;
+        # a declared leg_kind='review' is caught regardless of its name —
+        # which the regex never could.
+        _head_for_kind = None
+        if self.ctx.plans.exists(m.plan_id):
+            _head_for_kind = next(
+                (x for x in self.ctx.plans.load(m.plan_id).actions
+                 if x.action_id == m.action_id), None)
+        if m.role != "reviewer" and _effective_leg_kind(
+                _head_for_kind, m.action_id) == "review":
             _rollback_failed_dispatch(
                 self.ctx, m.plan_id, m.action_id,
                 "review_leg_as_worker_refused",
                 member_ids=rollback_ids)
             return _precondition(
-                f"action {m.action_id!r} looks like a REVIEW leg (name "
-                "matches 'review' or the r<n> convention) — it must be "
-                "dispatched with role='reviewer' (independent judgment, "
-                "sol-class seat), never as a worker. TWO reasons, and the "
-                "first is a hard capability limit rather than a "
-                "preference: record_branch_verdict is on the REVIEWER "
-                "surface and NOT the worker's, so a worker-role review "
-                "leg cannot stamp its verdict at all; and the builder "
-                "reviewing its own work is the d67 defect. If the "
-                "reviewer dispatch refused, fix the cause it named and "
-                "retry role='reviewer'. If this is genuinely NOT a review "
-                "leg, rename it — 'review*' and 'r<n>' are reserved. If "
-                "it is a VERIFY-ONLY leg (re-runs recorded commands, "
-                "judges nothing), name it 'v<n>' and dispatch it as a "
-                "worker, which is correct for that leg."
+                f"action {m.action_id!r} is a REVIEW leg (declared "
+                "leg_kind='review', or an undeclared action matching the "
+                "'review*'/'r<n>' convention) — it must be dispatched with "
+                "role='reviewer' (independent judgment), never as a "
+                "worker. TWO reasons, and the first is a hard capability "
+                "limit rather than a preference: record_branch_verdict is "
+                "on the REVIEWER surface and NOT the worker's, so a "
+                "worker-role review leg cannot stamp its verdict at all; "
+                "and the builder reviewing its own work is the d67 "
+                "defect. If the reviewer dispatch refused, fix the cause "
+                "it named and retry role='reviewer'. If this is genuinely "
+                "NOT a review leg, declare it: update_object the action "
+                "with leg_kind='build' (or 'verify' for a re-run-only "
+                "leg) — declaration beats the name convention."
             )
         if m.role == "reviewer" and self.ctx.plans.exists(m.plan_id):
             _reviewed = [x for x in p.actions

@@ -364,35 +364,71 @@ _CONSULT: frozenset[str] = frozenset({
     "pool_close_self",
 })
 
-# NEURON — the recipe owner drives everything EXCEPT authoring spec content:
-# the full registered surface minus SPECIALIST_ONLY, minus every RETIRED verb,
-# plus the replacement record_context. Derived from ALL_TOOL_CLASSES so it stays
-# in sync as tools are added or removed.
+# NEURON — POSITIVE LIST (context-diet Phase 3b, 2026-07-30). The old
+# derived-subtractive form (`_ALL_TOOL_NAMES - SPECIALIST_ONLY -
+# RETIRED_VERBS`) auto-granted every NEW tool to the neuron and left it
+# holding 83 of 87 verbs — including the specialist's read/consult internals
+# and the planner's authoring verbs, which is how the neuron came to DO
+# specialist work instead of delegating it (operator complaint, 2026-07-30).
 #
-# W6.4 subtracts RETIRED_VERBS (not just _CONSOLIDATED_OUT): the neuron held all
-# four superseded verbs purely by DERIVATION, so a retirement that only edited the
-# explicit role sets would have left them on the one surface nobody was looking at.
+# CURATION BASIS: the audited guide floor — every verb the neuron's OWN
+# corpus (.claude/commands/neuron.md + docs/guides/neuron*/orchestrator*/
+# loop-and-heartbeat/channel-coordination/framework-ocak/external-neuron/
+# environment-discovery/verification-craft) instructs with a call form
+# (54 names, audit 2026-07-30) — plus the operational verbs below that no
+# guide spells with parens but the role demonstrably needs. The d14 rule
+# holds: no guide instructs a verb this surface lacks.
 #
-# THE NEURON HAS NO ENFORCED CEILING, AND THE DESIGN'S NUMBER WAS UNREACHABLE.
-# DESIGN-v6 used to target "neuron <= 45 registered tools". The derivation makes
-# that impossible by construction, and no test asserts a neuron ceiling
-# (test_w4_roles.CEILINGS covers worker/reviewer/planner only) — so nothing was
-# quietly relaxed here; the bound was never implemented. The design line is now
-# CORRECTED (s29/a3b) rather than left to mislead the next reader.
+# CUT (22): the planner's authoring surface (add_action, create_plan,
+# record_plan, record_grounding_brief, create_object), the reviewer's verdict
+# verb (record_branch_verdict), the specialist's craft/read surface
+# (assemble_ruleset, get_specialist_docs, get_specialization,
+# record_spec_version, register_rule, list_rules, check_specialist_decay,
+# neuron_set_base_session, neuron_set_status), Sol authoring/consult
+# (sol_author_asset, sol_consult), the expensive child probe
+# (inspect_worker — status_ping is the neuron's probe), and the neuron-DB
+# row verbs no neuron guide calls (neuron_flag, neuron_get, neuron_list,
+# neuron_touch). The neuron DELEGATES: it train_specialist's, it never
+# authors or assembles spec content.
 #
-# DO NOT HARD-CODE THE ARITHMETIC HERE. An earlier version of this comment spelled
-# it "88 registered - 4 SPECIALIST_ONLY - 8 RETIRED = 76" and was STALE within one
-# action: s29/a2 deleted the RecordDirectionVerdict tool with the neuron-facing
-# direction-review surface, taking the registry 88 -> 87 and this derived surface
-# 76 -> 75. A comment asserting a computed total is a claim that rots the moment
-# any sibling edits the registry. Read the live numbers instead:
-#     len(_ALL_TOOL_NAMES) - len(SPECIALIST_ONLY) - len(RETIRED_VERBS)
-# The SHAPE is the durable fact: _NEURON is every registered tool MINUS the o7
-# spec-authoring carve-out MINUS every retired verb. It falls only as verbs retire.
+# CEILING IS THE FLOOR (test_w4_roles discipline): 61 today. The DESIGN-v6
+# "<=45" target is now reachable but requires the Phase-5 guide triage
+# first — several floor entries (record_action_status, pool_spawn_worker,
+# record_recipe, run_ocak_audit) are believed to be DESCRIPTIVE mentions
+# that the card rewrite will delete; each deletion lowers the floor and the
+# ceiling together. Do not re-add a cut verb without a guide call form.
 _ALL_TOOL_NAMES: frozenset[str] = frozenset(
     cls.name for cls in ALL_TOOL_CLASSES
 ) | {RECORD_CONTEXT}
-_NEURON: frozenset[str] = _ALL_TOOL_NAMES - SPECIALIST_ONLY - RETIRED_VERBS
+_NEURON: frozenset[str] = frozenset({
+    # identity + lifecycle of the recipe itself
+    "whoami", "start_recipe", "resolve_recipe", "resume_recipe",
+    "suspend_recipe", "close_recipe", "record_recipe",
+    # comprehension + outcomes
+    "record_comprehension_signoff", "record_user_answer", "record_outcome",
+    "mark_outcome_met", "record_audit_verdict", "run_ocak_audit",
+    "seed_comprehension_specialists",
+    # the map: steps + decisions + context hygiene
+    "add_step", "record_step_result", "update_object", "delete_object",
+    RECORD_CONTEXT, "fold_decisions", "supersede_decision",
+    "confirm_direction_constraints", "ensure_universal",
+    # grounding reads
+    "get_recipe_digest", "read_object", "query_objects", "describe_objects",
+    "recall", "search_context", "read_worklog", "get_guide", "neuron_search",
+    # the drive loop + wiring
+    "next_action", "reconcile", "observe", "unobserve", "list_subscriptions",
+    "emit_recipe_event", "arm_external_driver", "disarm_external_driver",
+    # comms
+    "check_inbox", "reply", "broker_send", "ask_above", "notify_above",
+    # children: spawn planners, probe cheaply, reap, resume
+    "pool_spawn_planner", "pool_resume_planner", "pool_spawn_worker",
+    "pool_reap", "status_ping", "record_action_status", "branch_reviewer",
+    # advisors + specialist DELEGATION (never authoring)
+    "consult_curiosity", "consult_goal_keeper", "consult_pattern_observer",
+    "consult_specialist", "record_specialist_consult", "train_specialist",
+    "list_spec_learnings", "resolve_spec_learnings",
+    "pool_close_self",
+})
 
 # ── the three ADVISORY roles (s25/a4, B3) ──────────────────────────────────
 # `clients/http_pool.py` spawns these and `pty_launcher.py:400` stamps their

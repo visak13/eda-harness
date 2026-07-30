@@ -126,9 +126,12 @@ def _derived_doc_crud_floor() -> dict[str, set[str]]:
 
 def test_floor_reproduces_derived_crud_grant_exactly():
     floor = _derived_doc_crud_floor()
-    # parser sanity — a silently-empty parse must not vacuously pass. The
-    # neuron is the one role granted the full generic CRUD in the snapshot.
-    assert floor.get("neuron") == set(CRUD_VERBS), floor.get("neuron")
+    # parser sanity — a silently-empty parse must not vacuously pass. Phase 3b
+    # (2026-07-30): the neuron's snapshot grant is update+delete only —
+    # create_object left the surface (the neuron creates via start_recipe/
+    # add_step, the same argument that keeps the verb off the planner).
+    assert floor.get("neuron") == {"update_object", "delete_object"}, \
+        floor.get("neuron")
 
     crud = set(CRUD_VERBS)
     checked = 0
@@ -366,9 +369,14 @@ async def test_worker_object_crud_off_role_warn_logs_and_proceeds(tmp_path, monk
 #      violation logger the warn-mode off-set shim calls on each off-set call.
 # ════════════════════════════════════════════════════════════════════════════
 def _seam_names(tmp_path):
+    """The CALLABLE surface: real tools only (Phase 3c refusal stubs — one
+    per off-scope tool under enforce, description '(not available to
+    role=…)' — grant nothing and are excluded)."""
     from edp_claude.mcp_server import build_mcp
     mcp = build_mcp(tmp_path)
-    return {t.name for t in mcp._tool_manager.list_tools()}
+    return {t.name for t in mcp._tool_manager.list_tools()
+            if not (t.description or "").startswith(
+                "(not available to role=")}
 
 
 def test_seam_default_is_enforce_and_filters(tmp_path, monkeypatch):

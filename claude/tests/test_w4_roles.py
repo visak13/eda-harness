@@ -169,7 +169,13 @@ RECORD_CONTEXT = "record_context"
 # delegates VISUAL/3D/image asset authoring to Sol, which it cannot verify by
 # hand. NO new reach into the recipe/plan: Sol writes only under a validated
 # asset dir OUTSIDE the code tree, enforced by the tool, never edp objects).
-CEILINGS = {"worker": 24, "reviewer": 20, "planner": 37}  # +list_subscriptions +unobserve (2026-07-20 monitor CRUD)
+# Context-diet Phase 3b (2026-07-30): the neuron ceiling EXISTS at last —
+# _NEURON became a POSITIVE list (61 = the audited 54-verb guide floor + 7
+# operational verbs), so the DESIGN-v6 "<=45" bound is finally assertable
+# territory. 61 today; the descent to 45 rides the Phase-5 guide triage
+# (descriptive call-form mentions deleted from the corpus lower the floor
+# and this ceiling TOGETHER — the ceiling is the floor, never headroom).
+CEILINGS = {"worker": 24, "reviewer": 20, "planner": 37, "neuron": 61}  # +list_subscriptions +unobserve (2026-07-20 monitor CRUD)
 
 
 # ── helpers (mirror tests/test_scoped_facts.py so patterns stay uniform) ────
@@ -314,9 +320,15 @@ def test_role_sizes_within_ceilings():
 # (3) SEAM — build_mcp scopes the registered surface to EDP_ROLE
 # ════════════════════════════════════════════════════════════════════════
 def _build_mcp_names(tmp_path):
+    """The CALLABLE surface: real tools only. Phase 3c registers off-scope
+    tools as refusal STUBS under enforce (description '(not available to
+    role=…)') so a mis-scoped call gets a structured refusal instead of an
+    unknown-tool error — they grant nothing and are excluded here."""
     from edp_claude.mcp_server import build_mcp
     mcp = build_mcp(tmp_path)
-    return sorted(t.name for t in mcp._tool_manager.list_tools())
+    return sorted(t.name for t in mcp._tool_manager.list_tools()
+                  if not (t.description or "").startswith(
+                      "(not available to role="))
 
 
 def test_seam_worker_role_scopes_to_worker_surface(tmp_path, monkeypatch):
@@ -1139,8 +1151,11 @@ def test_assemble_ruleset_is_a_read_verb_not_an_authoring_verb():
         assert "assemble_ruleset" in ROLE_TOOLSETS[role], role
     # the specialist's grant is EXPLICIT, not inherited through | SPECIALIST_ONLY
     assert "assemble_ruleset" in ROLE_TOOLSETS["specialist"] - SPECIALIST_ONLY
-    # and it flows into the DERIVED neuron surface (ALL - SPECIALIST_ONLY - …)
-    assert "assemble_ruleset" in ROLE_TOOLSETS["neuron"]
+    # Phase 3b (2026-07-30): _NEURON is a POSITIVE list now and deliberately
+    # does NOT hold assemble_ruleset — composing a ruleset is CRAFT-role work
+    # (worker/reviewer/specialist); the neuron delegates, it never assembles.
+    # This inverted: the old derived surface inherited the verb automatically.
+    assert "assemble_ruleset" not in ROLE_TOOLSETS["neuron"]
     # o7 still holds: the authoring verbs remain specialist-exclusive
     assert SPECIALIST_ONLY == {"add_spec_entry", "update_specialist",
                                "write_specialist_doc", "create_specialization"}

@@ -126,6 +126,15 @@ class Action(BaseModel):
     # universal ⊕ tech-extends-chain ⊕ these concerns. A non-tagged action
     # has the concern structurally absent (it cannot leak). Empty default.
     concerns: list[str] = Field(default_factory=list)
+    # Context-diet Phase 3d — the DECLARED leg kind. The d67 dispatch guard
+    # used to infer "is this a review leg?" from a name regex
+    # (`review*`/`r<n>`), which reserved identifier namespace and missed the
+    # real invariant: record_branch_verdict is reviewer-surface-only, so a
+    # review leg dispatched as a worker cannot record its verdict AT ALL.
+    # The planner now DECLARES the kind at authoring; the guard keys on the
+    # declaration (capability-based) and falls back to the legacy regex only
+    # for undeclared legacy actions. Emission-gated (omitted when None).
+    leg_kind: Literal["build", "review", "verify"] | None = None
     # s27 Item 3A (automatic context -> worker). The dispatcher stamps the
     # recipe's LOAD-BEARING settled context (decisions tagged load_bearing,
     # banned options, hard constraints) here at spawn, so a worker receives it
@@ -267,6 +276,11 @@ class Action(BaseModel):
                 # schema (a pre-restart extra='forbid' reader never sees it).
                 if value:
                     out["review_verdict"] = value
+            elif key == "leg_kind":
+                # Phase 3d emission gate: omit when None so an undeclared
+                # (legacy) action serializes byte-shape-identical.
+                if value:
+                    out["leg_kind"] = value
             elif key == "batch_group":
                 # DESIGN-v7 1.4 emission gate (o6): omit when None so an
                 # unbatched action serializes byte-shape-identical to the

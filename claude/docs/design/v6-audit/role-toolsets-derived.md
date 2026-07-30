@@ -6,11 +6,26 @@
 
 ## NEURON
 
-`ensure_orchestrator`, `ensure_universal`, `get_specialization`, `add_spec_entry`*, `get_guide`, `describe_objects`, `read_object`, `query_objects`, `update_object`, `create_object`, `delete_object`, `read_worklog`, `status_ping`, `supersede_decision`, `reconcile`, `next_action`, `observe`, `check_inbox`, `reply`, `resolve_recipe`, `start_recipe`, `record_recipe` (escape hatch — referenced by phase-a/e anti-patterns), `consult_curiosity`, `seed_comprehension_specialists`, `neuron_search`, `consult_specialist`, `record_specialist_consult`, `record_outcome`, `record_comprehension_signoff`, `add_step`, `consult_goal_keeper`, `pool_spawn_planner`, `branch_reviewer`, `train_specialist`, `append_revision`, `remember`†, `record_decision`†, `list_spec_learnings`, `resolve_spec_learning`†, `mark_outcome_met`, `close_recipe`, `suspend_recipe`§, `resume_recipe`§, `consult_pattern_observer`, `run_ocak_audit`, `record_audit_verdict`, `record_user_answer`, `record_step_result`, `broker_send`, `update_specialist`*
+`ensure_orchestrator`, `ensure_universal`, `get_specialization`, `add_spec_entry`*, `get_guide`, `describe_objects`, `read_object`, `query_objects`, `update_object`, `delete_object`, `read_worklog`, `status_ping`, `supersede_decision`, `reconcile`, `next_action`, `observe`, `check_inbox`, `reply`, `resolve_recipe`, `start_recipe`, `record_recipe` (escape hatch — referenced by phase-a/e anti-patterns), `consult_curiosity`, `seed_comprehension_specialists`, `neuron_search`, `consult_specialist`, `record_specialist_consult`, `record_outcome`, `record_comprehension_signoff`, `add_step`, `consult_goal_keeper`, `pool_spawn_planner`, `branch_reviewer`, `train_specialist`, `append_revision`, `remember`†, `record_decision`†, `list_spec_learnings`, `resolve_spec_learning`†, `mark_outcome_met`, `close_recipe`, `suspend_recipe`§, `resume_recipe`§, `consult_pattern_observer`, `run_ocak_audit`, `record_audit_verdict`, `record_user_answer`, `record_step_result`, `broker_send`, `update_specialist`*
 
 **[H]** Monitor, CronCreate, CronList, CronDelete, TaskStop, AskUserQuestion, EnterPlanMode/ExitPlanMode. (ScheduleWakeup referenced only as deprecated.)
 
 CRUD object-types instructed: recipe, step, action (status/verify healing), outcome, decision, spec*, neuron (train).
+
+> **Phase 3b (2026-07-30):** _NEURON in tools/roles.py is now a POSITIVE
+> list (61 verbs = the re-audited guide floor + operational verbs), not the
+> old ALL - SPECIALIST_ONLY - RETIRED derivation. Deliberately NO backticks
+> on any verb in this note — tests parse backticked names in this section as
+> floor entries. Cut from the neuron surface: create_object (the neuron
+> creates via start_recipe/add_step, the same argument that keeps the verb
+> off the planner), the specialist read/craft internals (get_specialist_docs,
+> get_specialization, assemble_ruleset, record_spec_version, register_rule,
+> list_rules, check_specialist_decay, neuron_set_base_session,
+> neuron_set_status), Sol verbs (sol_consult, sol_author_asset),
+> inspect_worker, the neuron-DB row verbs (neuron_flag/get/list/touch), and
+> the planner's authoring verbs (add_action, create_plan, record_plan,
+> record_grounding_brief) plus record_branch_verdict. The neuron DELEGATES
+> craft work; it never performs it.
 
 \* W4/W15 carve-out: `add_spec_entry`/`update_specialist` move to SPECIALIST_ONLY — sweep neuron.md:40/315 + phase-d references in the same change (the neuron spawns the specialist instead).
 † Consolidated by W6.4 (`record_context`, batch `resolve_spec_learnings`) — sweep the guide references in the same change.
