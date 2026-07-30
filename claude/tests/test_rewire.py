@@ -230,7 +230,12 @@ async def test_reground_rewire_carries_actual_observe_spec(env):
     # the exact observe(...) call to re-issue is handed back verbatim.
     assert got["observe_call"].startswith("observe(spec=")
     assert spec in got["observe_call"]
-    assert "monitor_cmd" in got["note"].lower() or "monitor" in got["note"].lower()
+    # Phase 5 prose diet: the per-entry note is HOISTED — the single
+    # top-level note carries the re-issue + Monitor instruction once.
+    assert "note" not in got
+    rewire = d["context"]["reground"]["rewire"]
+    assert "monitor" in rewire["note"].lower()
+    assert "observe_call" in rewire["note"]
 
 
 async def test_rewire_heartbeat_is_canonical_constant_not_goal(env):
@@ -258,10 +263,13 @@ async def test_rewire_notes_durable_rule_for_handle(env):
     reg.register_rule(name="not-mine", spec="rx.broker(me)",
                       effect=None, owner="someone-else", bindings={"me": "x"})
     d = await _na(env, rid, reground=True)
-    rules = d["context"]["reground"]["rewire"]["durable_rules"]
+    rewire = d["context"]["reground"]["rewire"]
+    rules = rewire["durable_rules"]
     names = {r["name"] for r in rules}
     assert names == {"sixth-sense"}                # only THIS handle's rule
-    assert "already active" in rules[0]["note"].lower()
+    # Phase 5 prose diet: per-rule note hoisted to the single top-level note.
+    assert "note" not in rules[0]
+    assert "already active" in rewire["note"].lower()
 
 
 async def test_rewire_empty_when_no_subscriptions(env):

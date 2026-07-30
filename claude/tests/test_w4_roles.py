@@ -1059,9 +1059,12 @@ def test_shared_reference_docs_are_not_descended_through():
     guides past the >=2 shared threshold and OUT of its corpus — a gate blinder
     than the one-hop rule it replaced. A catalogue entry is not a load."""
     shared = _shared_guides()
-    # the three role-neutral docs, and ONLY those, are shared
+    # the four role-neutral docs, and ONLY those, are shared. terse-output
+    # joined in the Phase-5 instruction diet (2026-07-30): every CRAFT command
+    # file (worker/reviewer/specialist) loads it at boot, so it is by
+    # construction addressed to no single role.
     assert shared == {"architecture-vocabulary", "reactive-streams",
-                      "loop-and-heartbeat"}, sorted(shared)
+                      "loop-and-heartbeat", "terse-output"}, sorted(shared)
     # orchestrator-launch is reachable from architecture-vocabulary's TABLE,
     # but it belongs to the neuron alone and must stay in the neuron's corpus.
     assert "orchestrator-launch" not in shared

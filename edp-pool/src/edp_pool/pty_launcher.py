@@ -500,6 +500,22 @@ def build_env(session_id: str, role: str, handle: str,
         env["EDP_RTK"] = "1"
     else:
         env.pop("EDP_RTK", None)
+    # Context-diet Phase 6 (2026-07-30): ARM the worker-close-nudge Stop hook
+    # for spawned shells. The hook shipped in PROBE mode (log-only) with two
+    # dead-guard bugs (wrong env var, wrong plan path) — all three are fixed;
+    # the guard itself stays narrow (role=worker + own action terminal +
+    # block cap 2 + fail-open). An explicit pre-set 0 wins (operator knob).
+    env.setdefault("EDP_WORKER_CLOSE_NUDGE", "1")
+    # Phase 6: auto-compact safety net (operator request — ~350k). Treat the
+    # model's 1M window as this many tokens for compaction purposes so a
+    # spawned shell compacts early instead of dragging a bloated context to
+    # the cliff. Per-role override via EDP_AUTO_COMPACT_WINDOW_<ROLE>, e.g.
+    # EDP_AUTO_COMPACT_WINDOW_WORKER=250000; explicit pre-set wins; set the
+    # generic knob to "0" to disable stamping entirely.
+    _acw = env.get(f"EDP_AUTO_COMPACT_WINDOW_{role.upper()}") \
+        or env.get("EDP_AUTO_COMPACT_WINDOW") or "350000"
+    if _acw != "0":
+        env.setdefault("CLAUDE_CODE_AUTO_COMPACT_WINDOW", _acw)
     if broker_url:
         env["EDP_BROKER_URL"] = broker_url
     if pool_url:

@@ -351,8 +351,11 @@ def test_author_is_worker_scoped_consult_is_consult_scoped():
     assert "sol_author_asset" not in ROLE_TOOLSETS["consult"]
     assert "sol_consult" in ROLE_TOOLSETS["consult"]
     assert "sol_consult" not in ROLE_TOOLSETS["worker"]
-    # the neuron (derived from the full registry) holds both
-    assert {"sol_author_asset", "sol_consult"} <= ROLE_TOOLSETS["neuron"]
+    # Phase 3b (2026-07-30): _NEURON is a positive list and holds NEITHER —
+    # Sol authoring is craft work (worker) and Sol consulting is the consult
+    # seat's; the neuron delegates. The old derived surface inherited both.
+    assert "sol_author_asset" not in ROLE_TOOLSETS["neuron"]
+    assert "sol_consult" not in ROLE_TOOLSETS["neuron"]
 
 
 def test_worker_guide_instructs_the_author_tool():

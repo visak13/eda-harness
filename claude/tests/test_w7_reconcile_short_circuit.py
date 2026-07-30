@@ -91,6 +91,8 @@ async def test_idle_plan_pair_collapses_to_no_change(env):
     assert rc["changed"] is False                       # rides the changed=False path
     d = await _na(env, "p-idle", "plan", reconcile_changed=rc["changed"])
     # collapsed: the one-line payload, NOT the full instruction.
+    # Phase 6: the payload now carries the just-in-time zero-prose directive.
+    d.pop("directive", None)
     assert d == {"no_change": True, "wait_hint": 10,
                  "wait_reason": "heads-down; leave alone", "ack_epoch": None}
     assert "kind" not in d and "context" not in d       # full push suppressed

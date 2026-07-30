@@ -42,13 +42,16 @@ _BANNER = (
     "acting on anything else, your VERY NEXT reconcile-loop turn must call "
     "next_action(reground=true) (neuron/planner: pass your recipe/plan "
     "handle). That returns the full W1 recipe digest + banner + W2 monitor "
-    "rewire block from the single source of truth — re-read the digest, "
-    "reconcile your plan of action, re-arm your Monitor wiring + "
-    "reconcile-loop heartbeat from the `rewire` block, and RE-LOAD your "
-    "role-discipline guides (orchestrator-launch + your current neuron-phase "
-    "guide) named in the `reload_role_guides` block BEFORE continuing to "
-    "drive the FSM. (A worker shell that does not run a reconcile loop can "
-    "ignore this — check_inbox and continue your one action.)")
+    "rewire block from the single source of truth — read the "
+    "changes_since_your_last_ground delta first, re-arm your Monitor wiring "
+    "+ reconcile-loop heartbeat from the `rewire` block, and RE-LOAD the "
+    "role CONTRACT CARD named in the `reload_role_guides` block (Phase 5: "
+    "the card, <=100 lines, replaced the old orchestrator-launch + "
+    "neuron-phase full-guide reload — pull those on demand only when the "
+    "card points at them) BEFORE continuing to drive the FSM. Do not "
+    "narrate this re-grounding; execute it. (A worker shell that does not "
+    "run a reconcile loop can ignore this — check_inbox and continue your "
+    "one action.)")
 
 
 def reground_context(data: dict) -> str | None:

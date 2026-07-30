@@ -741,6 +741,12 @@ class _NoChangeOut(BaseModel):
     no_change: bool = True
     wait_hint: int            # minutes, from the shared PACING table
     wait_reason: str
+    # Context-diet Phase 6: the terse-output rule delivered at the EXACT
+    # moment it applies (tier-2 just-in-time instruction). The measured 34.5%
+    # turn-closer burn happened on precisely these ticks.
+    # Kept SHORT deliberately: the W7 acceptance floor requires the collapsed
+    # payload to stay >=10x smaller than a full push.
+    directive: str = "No change — end turn NOW, zero prose."
     # best-effort epoch surfaced for observability; there is no store to match
     # against, so it is informational only — never a short-circuit gate (d13).
     # W2: now the 12-hex-char grounding_epoch string (was an int stub pre-W2);
@@ -924,9 +930,9 @@ def _rewire_block(ctx, handle: str) -> dict:
             "effect": sub.get("effect"),
             "observe_call": _observe_call_str(
                 sub["spec"], sub.get("bindings") or {}),
-            "note": ("re-issue this observe(...) then run the returned "
-                     "monitor_cmd under the Monitor tool; observe is "
-                     "idempotent so re-running is safe (reused=True)."),
+            # Phase 5 prose diet: the per-entry re-issue instruction was
+            # repeated ~30 words per subscription; it is hoisted ONCE into
+            # the top-level note below.
         })
 
     # (c) durable RuleSupervisor rules owned by this handle — already active.
@@ -940,9 +946,8 @@ def _rewire_block(ctx, handle: str) -> dict:
                     "name": rule.name,
                     "enabled": rule.enabled,
                     "has_effect": rule.effect is not None,
-                    "note": ("DURABLE path ALREADY ACTIVE — a running "
-                             "RuleSupervisor re-subscribes this rule on "
-                             "restart; do NOT re-arm it as a session Monitor."),
+                    # Phase 5 prose diet: per-rule note hoisted into the
+                    # top-level note below.
                 })
     except Exception:  # noqa: BLE001 — a registry read must never break rewire
         durable_rules = []
@@ -966,9 +971,14 @@ def _rewire_block(ctx, handle: str) -> dict:
         "cron_prompt": RECONCILE_LOOP_CRON_PROMPT,
         "roles": list(RECONCILE_LOOP_ROLES),
         "heartbeat_secs": heartbeat_secs(),
-        "note": ("monitor rewire hand-back — re-issue every observe_specs entry "
-                 "under Monitor + re-arm the heartbeat cron; durable_rules are "
-                 "already active and need no re-arm. Deterministic (no LLM)."),
+        "note": ("monitor rewire hand-back — for EACH observe_specs entry: "
+                 "re-issue its observe_call (idempotent, reused=True is fine) "
+                 "then run the returned monitor_cmd under the Monitor tool; "
+                 "re-arm the heartbeat cron with the exact cron_prompt "
+                 "(neuron/planner only, never the verbatim goal); "
+                 "durable_rules are ALREADY ACTIVE (RuleSupervisor "
+                 "re-subscribes on restart) — do NOT re-arm them as session "
+                 "Monitors. Deterministic (no LLM)."),
     }
 
 
@@ -1083,40 +1093,40 @@ async def _reground_payload(ctx, r, epoch, mode, handle) -> dict:
         # W2 leg 2: the full monitor rewire hand-back on stale AND reground.
         "rewire": _rewire_block(ctx, handle),
         # W15 (a11): phase-aware role-discipline guide RELOAD directive.
-        "reload_role_guides": _reload_role_guides_block(digest),
+        "reload_role_guides": _reload_role_guides_block(digest, handle,
+                                                        r.recipe_id),
     }
     return block
 
 
-def _reload_role_guides_block(digest: dict) -> dict:
-    """W15 (a11, follow-up to W13): the role-discipline GUIDE reload hand-back.
+def _reload_role_guides_block(digest: dict, handle: str | None = None,
+                              recipe_id: str | None = None) -> dict:
+    """W15 (a11) role-discipline reload hand-back — Phase 5 CARD form.
 
-    W13's reground restores recipe STATE (the digest) + WIRING (the rewire
-    block) but NOT the neuron's ROLE-DISCIPLINE guides, so a compacted shell
-    reloads state while its operating discipline (the orchestrator launch
-    contract + its CURRENT phase guide) stays thinned out. This directs the
-    shell — deterministically, NO LLM (principle-6), O(1) NAMES not bodies —
-    to RE-LOAD them via get_guide().
+    The old directive re-pulled orchestrator-launch (~2,757 words) plus the
+    current neuron-phase guide on EVERY compaction. Post-Phase-5 the
+    re-injected discipline is the role's CONTRACT CARD (<=100 lines; rules
+    the code now enforces were DELETED from prose, not summarized), and the
+    phase guide is a NAMED on-demand pointer, not a reload obligation.
 
-    The current phase is read straight from the digest's already-computed
-    `recap.phase` (recipe state -> neuron phase, the single `_phase_for`
-    source) — no new projection, no phase re-derivation here. A worker shell
-    (which runs no role-discipline loop) can ignore this, exactly like it
-    ignores the rewire heartbeat."""
+    Card selection is by handle shape: a plan handle regrounds a PLANNER
+    (the old block told planners to reload the NEURON's guides); anything
+    else is the neuron. Deterministic, O(1) names, no LLM (principle 6)."""
     phase = (digest.get("recap") or {}).get("phase") if digest else None
-    guides = ["orchestrator-launch"]
-    if phase:
-        guides.append(f"neuron-phase-{phase}")
+    is_plan = bool(handle and recipe_id and handle != recipe_id)
+    card = "planner-card" if is_plan else "neuron-card"
     return {
         "phase": phase,
-        "guides": guides,
-        "note": ("RE-LOAD your role-discipline guides — call get_guide(name) "
-                 "for each name in `guides` (the orchestrator launch contract "
-                 "+ your CURRENT neuron-phase guide). Compaction thins out how "
-                 "you OPERATE; the digest restored your STATE, these restore "
-                 "your discipline. NAMES only (O(1)) — the shell reloads the "
-                 "bodies cheaply. Neuron/planner only; a worker shell can "
-                 "ignore this, like the rewire heartbeat."),
+        "guides": [card],
+        "phase_guide": (None if is_plan or not phase
+                        else f"neuron-phase-{phase}"),
+        "note": (f"RE-LOAD your contract card: get_guide('{card}') — the "
+                 "<=100-line role contract (compaction thins your "
+                 "discipline; the digest restored your STATE, the card "
+                 "restores your CONTRACT). Pull `phase_guide` / any "
+                 "reference guide ON DEMAND only when the card points you "
+                 "at it. Worker shells ignore this, like the rewire "
+                 "heartbeat."),
     }
 
 

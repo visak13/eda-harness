@@ -1,27 +1,18 @@
-"""W15 (a11) — the reground payload RELOADS the neuron's role-discipline guides.
+"""W15 (a11) reground role-discipline reload — Phase 5 CARD contract.
 
-W13's compact-reground restores recipe STATE (the digest) + WIRING (the rewire
-block) but NOT the neuron's ROLE-DISCIPLINE guides, so after a /compact the
-neuron reloads state while its operating discipline (the orchestrator launch
-contract + its current phase guide) stays thinned out. This module pins the FIX:
+The original block re-pulled orchestrator-launch (~2,757 words) + the current
+neuron-phase guide on EVERY compaction. Context-diet Phase 5 replaced that
+with the role CONTRACT CARD (<=100 lines): the reground payload names ONE
+card to reload; the phase guide survives only as a named on-demand pointer
+(`phase_guide`), never a reload obligation. Card selection is handle-aware —
+a PLAN handle regrounds a planner (the old block told planners to reload the
+NEURON's guides), anything else the neuron.
 
-  * ``next_action(reground=true)`` (and the STALE-epoch path) now attach a
-    ``reload_role_guides`` block to the reground payload naming
-    ``orchestrator-launch`` + ``neuron-phase-<current-phase>``.
-  * The phase is PHASE-AWARE and DETERMINISTIC (principle-6, NO LLM): it is
-    read straight from the digest's already-computed ``recap.phase``
-    (recipe state -> neuron phase via the single ``_phase_for`` source).
-  * It is O(1): the block carries guide NAMES to reload, never guide BODIES.
-  * The compaction hook ``_BANNER`` reminds the shell of the reload.
-
-Env discipline (d7/d8): every assertion is pure Python — no POSIX shell, no
-grep. The hook is imported by file path; leaked worker env is neutralised
-in-process. The full W1 digest + W2 rewire shape is covered in
-tests/test_epochs.py + tests/test_rewire.py and is NOT duplicated here (d7).
+Env discipline (d7/d8): pure Python, hook imported by file path, leaked
+worker env neutralised in-process.
 """
 
 import importlib.util
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -36,7 +27,6 @@ REPO = Path(__file__).resolve().parents[1]
 HOOK_PATH = REPO / ".claude" / "hooks" / "reground-on-compact.py"
 
 
-# ── env discipline (d7/d8): clear inherited worker env in-process ─────────────
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch):
     for var in ("EDP_ROLE", "EDP_HANDLE", "EDP_TIER_WRITE"):
@@ -53,8 +43,6 @@ def _ok(res):
 
 
 def _mk_recipe(env, rid="r-w15", *, state="executing"):
-    """A recipe with one idle spawn_planner step so next_action makes no
-    forward move — the reground trigger table is clean to read."""
     env.ctx.recipes.save(Recipe.model_validate(dict(
         recipe_id=rid, user_goal_verbatim="g", user_goal_distilled="g",
         domain="software_engineering", state=state,
@@ -80,7 +68,6 @@ async def _reground(env, rid):
     return d["context"]["reground"]
 
 
-# ── load the hyphenated hook script by file path ──────────────────────────────
 def _load_hook():
     assert HOOK_PATH.exists(), f"W13 hook missing at {HOOK_PATH}"
     spec = importlib.util.spec_from_file_location("reground_on_compact",
@@ -90,88 +77,93 @@ def _load_hook():
     return mod
 
 
-# ── 1. reground=true includes the role-guide reload directive (CORE claim) ────
-async def test_reground_payload_names_orchestrator_and_current_phase_guide(env):
+# ── 1. reground=true reloads the CARD, points at the phase guide ───────────
+async def test_reground_payload_names_card_and_phase_pointer(env):
     rid = _mk_recipe(env, state="executing")   # EXECUTING -> neuron phase 'd'
     rg = await _reground(env, rid)
 
     block = rg["reload_role_guides"]
     assert block["phase"] == "d"
-    guides = block["guides"]
-    # names the launch contract + the CURRENT phase guide (phase-aware).
-    assert "orchestrator-launch" in guides
-    assert "neuron-phase-d" in guides
-    # the note actually DIRECTS a reload via get_guide.
-    assert "get_guide" in block["note"]
+    assert block["guides"] == ["neuron-card"]
+    assert block["phase_guide"] == "neuron-phase-d"
+    assert "get_guide('neuron-card')" in block["note"]
+    # the big guides are NOT reload obligations any more
+    assert "orchestrator-launch" not in block["guides"]
 
 
-# ── 2a. PHASE-AWARE (deterministic assembly, no LLM): the block reads the
-#      phase straight from the digest's recap and names that phase's guide. ────
+# ── 2a. phase-aware, deterministic ─────────────────────────────────────────
 @pytest.mark.parametrize("phase", ["a", "b", "c", "d", "e"])
 def test_reload_block_is_phase_aware_over_the_digest(phase):
     block = _reload_role_guides_block({"recap": {"phase": phase}})
     assert block["phase"] == phase
-    assert block["guides"] == ["orchestrator-launch", f"neuron-phase-{phase}"]
+    assert block["guides"] == ["neuron-card"]
+    assert block["phase_guide"] == f"neuron-phase-{phase}"
 
 
 def test_reload_block_degrades_gracefully_when_phase_absent():
-    # a digest with no resolvable phase → still name the launch contract; no
-    # bogus 'neuron-phase-None' guide is emitted.
     for digest in ({}, {"recap": {}}, {"recap": {"phase": None}}):
         block = _reload_role_guides_block(digest)
-        assert block["guides"] == ["orchestrator-launch"]
-        assert all("None" not in g for g in block["guides"])
+        assert block["guides"] == ["neuron-card"]
+        assert block["phase_guide"] is None
 
 
-# ── 2b. FAITHFUL PASSTHROUGH: the block's phase equals the digest's recap
-#      phase on the REAL reground path (state -> neuron phase, one source). ────
+# ── 2b. handle-aware card selection ────────────────────────────────────────
+def test_plan_handle_selects_planner_card():
+    block = _reload_role_guides_block(
+        {"recap": {"phase": "d"}}, handle="recipe-x-s3",
+        recipe_id="recipe-x")
+    assert block["guides"] == ["planner-card"]
+    # the planner has no neuron phase guide obligation
+    assert block["phase_guide"] is None
+    block2 = _reload_role_guides_block(
+        {"recap": {"phase": "d"}}, handle="recipe-x", recipe_id="recipe-x")
+    assert block2["guides"] == ["neuron-card"]
+
+
+# ── 2c. faithful passthrough on the real path ──────────────────────────────
 async def test_block_phase_matches_the_live_digest_recap_phase(env):
     rid = _mk_recipe(env, state="executing")
     rg = await _reground(env, rid)
     live_phase = recipe_context(env.ctx.recipes.load(rid))["phase"]
     block = rg["reload_role_guides"]
     assert block["phase"] == live_phase
-    assert f"neuron-phase-{live_phase}" in block["guides"]
-    assert "orchestrator-launch" in block["guides"]
+    assert block["phase_guide"] == f"neuron-phase-{live_phase}"
 
 
-# ── 3. O(1): the block carries guide NAMES, never guide BODIES ────────────────
+# ── 3. O(1): names, never bodies — and SMALLER than the pre-card block ─────
 async def test_reload_directive_is_o1_names_not_bodies(env):
     rid = _mk_recipe(env, state="executing")
     rg = await _reground(env, rid)
     block = rg["reload_role_guides"]
-    # every guide entry is a short slug (a name), not a document body.
     for g in block["guides"]:
         assert isinstance(g, str) and "\n" not in g and len(g) < 60, g
-    assert len(block["guides"]) == 2      # exactly launch + one phase guide
-    # the whole block stays tiny — a fixed directive, not recipe-size output.
+    assert len(block["guides"]) == 1      # exactly the card
     import json
-    assert len(json.dumps(block)) < 1500
+    assert len(json.dumps(block)) < 1200
 
 
-# ── 4. the banner points the shell at the reload block (reground + stale) ─────
+# ── 4. banners still point the shell at the reload block ───────────────────
 async def test_reground_banner_directs_role_guide_reload(env):
     rid = _mk_recipe(env, state="executing")
     rg = await _reground(env, rid)
     assert "reload_role_guides" in rg["banner"]
     assert "RE-GROUND REQUESTED" in rg["banner"]
 
-    # the STALE-epoch path carries the same block + banner cue.
     d = _ok(await env.call("next_action", handle=rid, handle_type="recipe",
                            ack_epoch="deadbeefdead"))
     stale = d["context"]["reground"]
     assert "GROUND CHANGED" in stale["banner"]
     assert "reload_role_guides" in stale["banner"]
-    assert "orchestrator-launch" in stale["reload_role_guides"]["guides"]
+    assert stale["reload_role_guides"]["guides"] == ["neuron-card"]
 
 
-# ── 5. the compaction hook _BANNER reminds of the role-guide reload ───────────
-def test_hook_banner_mentions_role_discipline_reload():
+# ── 5. the compaction hook banner speaks card, not full guides ─────────────
+def test_hook_banner_mentions_card_reload():
     hook = _load_hook()
     banner = hook._BANNER
-    assert "role-discipline" in banner
-    assert "orchestrator-launch" in banner
-    assert "neuron-phase" in banner
-    # it still POINTS at the reground path (does not inline the guides).
+    assert "CONTRACT CARD" in banner
     assert "next_action(reground=true)" in banner
     assert "reload_role_guides" in banner
+    # the old full-guide reload obligation is gone from the banner
+    assert "RE-LOAD your role-discipline guides (orchestrator-launch" \
+        not in banner

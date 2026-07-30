@@ -111,8 +111,15 @@ def _action_is_terminal(handle: str) -> bool | None:
     if not handle or ":" not in handle:
         return None
     plan_id, _, action_id = handle.rpartition(":")
-    root = Path(__file__).resolve().parent.parent.parent / ".plans" / plan_id
-    for candidate in (root / "plan.json", root / f"{plan_id}.json"):
+    plans_root = Path(__file__).resolve().parent.parent.parent / ".plans"
+    # Phase 6 fix (2026-07-30): plans live at .plans/<plan_id>.json — the
+    # <plan_id>/ DIRECTORY is the sidecar (worklog/evidence/snapshots) and
+    # holds no plan.json. The original candidates both pointed inside the
+    # sidecar dir, so this check ALWAYS returned None and the guard could
+    # never pass. The sidecar forms are kept as fallbacks only.
+    for candidate in (plans_root / f"{plan_id}.json",
+                      plans_root / plan_id / "plan.json",
+                      plans_root / plan_id / f"{plan_id}.json"):
         try:
             plan = json.loads(candidate.read_text(encoding="utf-8"))
         except Exception:
@@ -148,7 +155,13 @@ def main() -> int:
             parse_error = f"stdin was not JSON: {exc!r}"
 
     role = (os.environ.get("EDP_ROLE") or "").strip().lower()
-    handle = (os.environ.get("EDP_SPAWN_HANDLE") or "").strip()
+    # Phase 6 fix (2026-07-30): the launcher stamps EDP_HANDLE; nothing in
+    # the repo ever set EDP_SPAWN_HANDLE — the 2026-07-25 probe RECORDED
+    # exactly this ("EDP_SPAWN_HANDLE was NULL, so the guard as first
+    # written could never have passed") and it was logged, not fixed. Read
+    # the real variable first; keep the old name as a fallback.
+    handle = (os.environ.get("EDP_HANDLE")
+              or os.environ.get("EDP_SPAWN_HANDLE") or "").strip()
     spawn_sid = (os.environ.get("EDP_SPAWN_SESSION_ID") or "").strip()
     session_id = event.get("session_id") or ""
     armed = (os.environ.get("EDP_WORKER_CLOSE_NUDGE") or "").lower() in (
