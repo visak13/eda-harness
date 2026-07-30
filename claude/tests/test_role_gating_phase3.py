@@ -28,12 +28,21 @@ def _ok(res):
 # ── 3a: the neuron shell is stamped ────────────────────────────────────────
 
 def test_mcp_json_stamps_neuron_role():
+    """LIVE REGRESSION (2026-07-31, caught by a spawned reviewer): a HARD
+    "EDP_ROLE": "neuron" in .mcp.json OVERRIDES the pool-stamped role for
+    EVERY spawned shell's MCP server — the whole fleet reported role=neuron.
+    The stamp must be the ${VAR:-default} expansion form: spawned shells
+    keep their launcher-stamped role; only the bare foreground neuron gets
+    the default."""
     cfg = json.loads((Path(__file__).resolve().parents[1] / ".mcp.json")
                      .read_text(encoding="utf-8"))
     env = cfg["mcpServers"]["edp-claude"]["env"]
-    assert env.get("EDP_ROLE") == "neuron", (
-        "the foreground neuron shell must be scoped — it was the only "
-        "unscoped shell and fail-opened to the full registry")
+    assert env.get("EDP_ROLE") == "${EDP_ROLE:-neuron}", (
+        "EDP_ROLE must be the expansion form — a hard value overrides the "
+        "pool-stamped role for every spawned shell (live incident)")
+    scope = env.get("EDP_ROLE_SCOPE", "")
+    assert scope.startswith("${EDP_ROLE_SCOPE:-"), (
+        "EDP_ROLE_SCOPE must be the expansion form for the same reason")
 
 
 # ── 3b: positive list, delegation shape ────────────────────────────────────
