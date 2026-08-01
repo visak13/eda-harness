@@ -1,6 +1,18 @@
 {
   "effortLevel": "medium",
+  "outputStyle": "edp-terse",
   "permissions": {
+    "deny": [
+      "Artifact",
+      "Workflow",
+      "NotebookEdit",
+      "EnterWorktree",
+      "ExitWorktree",
+      "DesignSync",
+      "RemoteTrigger",
+      "PushNotification",
+      "EndConversation"
+    ],
     "allow": [
       "mcp__edp-claude__next_action",
       "mcp__edp-claude__reconcile",

@@ -818,6 +818,39 @@ async def _inbox_has_new(ctx, recipient: str,
     return any(kind_of(m) in wake_kinds for m in msgs)
 
 
+def _lean_tick_context(ctx_full: dict) -> dict:
+    """RP-C (context-diet follow-up, 2026-08-01) — the steady-state tick diet.
+
+    On a MATCH tick the caller PROVED it holds the current ground (it echoed
+    the live epoch); on an ABSENT tick W2 rules the shell is steady-state
+    (a lean cron tick never carried an epoch — compaction is the W13 hook's
+    job, which forces next_action(reground=true), never self-inference).
+    Yet both modes re-shipped the full recipe_context push every tick —
+    measured live: 247.5k tokens (25% of a 1M window) of next_action
+    results in ONE neuron session on a busy recipe.
+
+    Keep the WORKING keys (epoch to echo, measured child state, gates and
+    obligations that change tick to tick); drop the re-ship of the decision
+    index/anti-patterns/load-hints the shell already internalized. The full
+    push still rides stale/reground ticks (with the digest + rewire), and
+    the W7 short-circuit still collapses genuinely idle ticks to one line."""
+    keep = ("grounding_epoch", "phase", "recap", "progress_rollup",
+            "pending_spec_learnings", "pending_assumptions",
+            "fold_obligation", "staleness_delta", "comprehension_recheck")
+    lean = {k: ctx_full[k] for k in keep
+            if ctx_full.get(k) not in (None, [], {})}
+    ad = ctx_full.get("active_decisions")
+    if isinstance(ad, dict):
+        lean["active_decisions"] = {
+            "count": ad.get("count"),
+            "load_bearing_count": len(ad.get("load_bearing_ids") or []),
+            "note": ("steady-state tick: index omitted — you hold the "
+                     "ground; get_recipe_digest / next_action(reground="
+                     "true) re-ships it"),
+        }
+    return lean
+
+
 async def _maybe_short_circuit(ctx, recipient, instr, changed_sig, state,
                                epoch, reconcile_changed, handle_type=None,
                                alert=None):
@@ -1613,6 +1646,10 @@ class NextAction(_ClaudeTool):
             if mode in ("stale", "reground"):
                 instr.context["reground"] = await _reground_payload(
                     self.ctx, r, epoch, mode, m.handle)
+            else:
+                # RP-C: a match/absent tick is steady-state — ship the
+                # working keys only, not the whole context again.
+                instr.context = _lean_tick_context(instr.context)
             _attach_pacing(instr, state)
             return Tool.ok(_enrich_wait(instr, m.handle, m.handle_type, tick,
                                         pacing_state=state))
@@ -1814,6 +1851,9 @@ class NextAction(_ClaudeTool):
             if mode in ("stale", "reground"):
                 instr.context["reground"] = await _reground_payload(
                     self.ctx, r, epoch, mode, m.handle)
+            else:
+                # RP-C: steady-state plan tick — working keys only.
+                instr.context = _lean_tick_context(instr.context)
         # DESIGN-v7 1.5.6: hand out the staleness delta on the context plane.
         # An EMPTY delta attaches nothing (steady state stays lean); a
         # non-empty one is what the planner reviews before next_action(

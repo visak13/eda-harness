@@ -1,38 +1,57 @@
-# Terse output — every role, every turn
+# Output discipline — every role, every turn
 
-Measured on a live neuron transcript: ~80% of the burn was the agent's own
-prose — a ritual turn-closing status report on all 77 wakes (34.5% of the
-whole session) and re-derivations of things the record already held. These
-rules delete that class. They bind every role.
+Two failure modes, one guide. Measured live: ~80% of a neuron session was
+self-narration (a closing status ritual on all 77 wakes + re-derivations of
+things the record already held). The first fix suppressed volume; this
+revision adds what was missing — STRUCTURE. Terse does not mean fragmentary:
+an unstructured trickle of half-sentences is as unreadable as the essay it
+replaced.
 
-## The ten rules
+## When you write, write pyramid
 
-1. **Lead with the action.** First line = what you are doing or what changed.
-   No "Great", no "Let me", no restating the ask.
-2. **A no-change wake emits ZERO prose.** `reconcile.changed=false` +
-   `next_action` says wait ⇒ end the turn silently. The state machine is
-   queryable; a report on an unchanged state is pure cost.
-3. **No closing status ritual.** Never end a turn with "ending the turn,
-   s8 at 2 done…". The record holds the state; anyone who needs it reads it.
-4. **Cite ids, don't re-derive.** A settled decision is `d35`, not three
-   paragraphs reconstructing it. If your framing differs from the record,
-   the record wins — say `per d35` and move.
-5. **Ground silently.** Call the tool; don't narrate that you are about to
-   check, then narrate that you checked. The tool trail IS the narration.
-6. **One statement per fact.** Explained a standing condition once? Do not
-   re-explain it on the next wake, or the one after (observed: the same
-   queue explained three times at 6, 7 and 10 pending).
-7. **Number multi-step work; suppress tangents.** If it doesn't change what
-   happens next, it doesn't go in the message.
-8. **Questions to the operator: the question, its options, your
-   recommendation.** Not the journey that produced it.
-9. **Self-corrections are one line.** "Correcting: X, not Y (per dN)." Not a
-   re-litigation of the decision you just made.
-10. **When work is done, say what shipped and stop.** Evidence pointer, not
-    an essay. `record_action_status` is the report; the message is a receipt.
+Every message that carries content follows this shape — no exceptions:
+
+1. **Line 1 = the point.** The verdict, the action taken, or the ask —
+   stated as a complete sentence a reader could act on alone.
+   `a3 failed its verify: the CSV export writes 0 rows.` Not the journey,
+   not "Looking at a3…".
+2. **Then the support, as bullets.** 2-5 bullets max, one fact each:
+   evidence pointer, the record id it rests on with a 5-10 word gloss
+   (`d35 — escrow slots settle at close`), the constraint that binds. A
+   bare id with no gloss is cryptic, not terse.
+3. **Then the next move, if any.** One line: what you will do, or the ONE
+   question with its options and your recommendation.
+4. **Stop.** No recap of what you just said, no restated state, no
+   closing ritual.
+
+Tables for enumerable state (3+ rows of the same shape); prose sentences
+for reasoning; bullets for support. Never a stream of clause-fragments —
+complete sentences, just few of them.
+
+## What never gets written
+
+- **A no-change wake emits NOTHING.** `reconcile.changed=false` + wait ⇒
+  end the turn silently. The state machine is queryable.
+- **No narrated grounding.** Call the tool; don't announce before and
+  after. The tool trail is the narration.
+- **No re-derivation of settled record.** Cite the id + gloss (see above);
+  if your framing differs from the record, the record wins.
+- **No re-explanation of a standing condition** you already explained this
+  session. Once.
+- **No preamble** ("Great", "Let me", restating the ask) and **no closer**
+  ("ending the turn, s8 at 2 done…").
+- **Self-corrections are one line**: `Correcting: X, not Y (per dN).`
+
+## Reports and verdicts
+
+Done work: line 1 = what shipped; bullets = evidence pointers (paths,
+counts, verify output); `record_action_status` carries the full evidence —
+the message is the receipt, not the report. Reviewer verdicts: line 1 =
+pass/concerns/fail + the one decisive reason; findings as bullets ordered
+most-severe first.
 
 ## Why this is safe
 
-Nothing here hides information: every state this prose used to restate is in
-the recipe/plan record, the digest, or the worklog — queryable, durable, and
-cheaper there. The rules cut restatement, never evidence.
+Nothing here hides information: every state this prose used to restate is
+in the recipe/plan record, the digest, or the worklog — queryable, durable,
+cheaper there. The rules cut restatement and fragmentation, never evidence.

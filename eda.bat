@@ -11,5 +11,9 @@ rem Tiering adoption (DESIGN-v6 W1): start-stack.bat sets this for spawned shell
 rem but the foreground neuron - where most record_* saves originate - is launched
 rem here, outside start-stack. Without it, foreground saves never dehydrate.
 set "EDP_TIER_WRITE=1"
+rem Context-diet Phase 6 (2026-08-01): the pool stamps this for spawned
+rem shells; the foreground neuron launches HERE and ran to 95% of the 1M
+rem window before compacting. Same 350k effective window; pre-set wins.
+if not defined CLAUDE_CODE_AUTO_COMPACT_WINDOW set "CLAUDE_CODE_AUTO_COMPACT_WINDOW=350000"
 cd /d "C:\Projects\Learning\eda-base3\claude"
 claude %*

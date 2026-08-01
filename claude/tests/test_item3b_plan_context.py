@@ -51,15 +51,23 @@ async def test_item3b_plan_path_carries_recipe_decisions(env):
                   "executor_mode": "subagent",
                   "acceptance": {"kind": "manual_review"}}],
         context={})))
-    # next_action on the PLAN handle now carries the decisions POINTER
+    # RP-C (2026-08-01): a steady-state tick (absent epoch) carries the
+    # decisions COUNTS only — the id+title index rides stale/reground ticks.
     d = _ok(await env.call("next_action", handle=f"{rid}-{sid}",
                            handle_type="plan"))
     ad = d["context"]["active_decisions"]
-    # the pointer indexes the decision by id+title; full text is NOT re-dumped
     assert ad["count"] == 1, ad
-    titles = [e["title"] for e in ad["index"]]
-    assert any("never nomic" in t for t in titles), titles
+    assert "index" not in ad, "steady-state tick re-shipped the index (RP-C)"
+    assert "reground" in ad.get("note", ""), ad
     # the un-missable count rides in the recap (self-detection trigger)
     assert "decisions=1" in d["context"]["recap"], d["context"]["recap"]
+
+    # a REGROUND tick still carries the full pointer index on the plan path
+    # (the item-3B delivery channel survives; it just costs a reground).
+    d2 = _ok(await env.call("next_action", handle=f"{rid}-{sid}",
+                            handle_type="plan", reground=True))
+    ad2 = d2["context"]["active_decisions"]
+    titles = [e["title"] for e in ad2["index"]]
+    assert any("never nomic" in t for t in titles), titles
     # and the heavy full-text dump is gone from the push
-    assert "decisions" not in d["context"]["prior"], d["context"]["prior"]
+    assert "decisions" not in d2["context"]["prior"], d2["context"]["prior"]

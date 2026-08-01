@@ -201,26 +201,34 @@ async def test_idle_tick_token_cost_drops_at_least_10x(env):
     _save_plan(env)
     _fresh_output(env)
 
-    # SAME idle tick, two ways:
+    # SAME idle tick, three ways (RP-C 2026-08-01 added the middle rung):
     #  - collapsed: the paced loop opts in (reconcile_changed=False) -> no_change
-    #  - full: a bare next_action (reconcile_changed=None) -> full instruction
-    #          + pushed recipe context, exactly what the collapse suppresses.
+    #  - steady: a bare next_action (absent epoch) -> lean working-keys push
+    #  - reground: the FULL context+digest+rewire push, now paid only on
+    #    stale/reground ticks — this is the push the collapse must beat 10x.
     rc = await _reconcile(env)
     collapsed = await _next_action(env, reconcile_changed=rc["changed"])
-    full = await _next_action(env)              # bare == the un-collapsed push
+    steady = await _next_action(env)            # bare == the lean RP-C push
+    full = await _next_action(env, reground=True)
 
     assert collapsed.get("no_change") is True
-    assert "no_change" not in full and full["kind"] == "wait"
-    assert "context" in full                    # the expensive re-grounding push
+    assert "no_change" not in steady and steady["kind"] == "wait"
+    assert "context" in steady
+    assert "reground" in full["context"]        # the expensive re-ground push
 
     collapsed_tokens = _token_count(collapsed)
+    steady_tokens = _token_count(steady)
     full_tokens = _token_count(full)
-    ratio = full_tokens / collapsed_tokens
 
-    # order-of-magnitude reduction per idle tick (ticks/hour constant -> this IS
-    # the idle-hour drop). Real tiktoken count, not a proxy.
+    # order-of-magnitude reduction of the EXPENSIVE push per idle tick, and
+    # the steady tick itself must stay a small multiple of the collapse (the
+    # RP-C invariant: a match/absent tick never re-ships the ground).
+    ratio = full_tokens / collapsed_tokens
     assert ratio >= TOKEN_DROP_FLOOR, (
         f"idle-tick token drop only {ratio:.1f}x "
         f"(full={full_tokens} tok, collapsed={collapsed_tokens} tok); "
         f"expected >= {TOKEN_DROP_FLOOR:.0f}x"
     )
+    assert steady_tokens <= full_tokens / 2, (
+        f"steady tick ({steady_tokens} tok) is not meaningfully leaner than "
+        f"the reground push ({full_tokens} tok) — RP-C regressed")
