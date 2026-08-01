@@ -3066,6 +3066,45 @@ class CreatePlan(_ClaudeTool):
             plan_id=pid, domain=recipe.domain, version=v))
 
 
+# ── Plan-growth bounds (context-diet follow-up, 2026-08-01) ────────────────
+# THE ABUSE THESE CLOSE (measured live, plan …39fd30-s11): 44 actions in one
+# plan, ZERO batched, descriptions of 2-4KB each ("READ THIS FIRST — THIS IS
+# A RE-DISPATCH…" essays), 230KB plan file. Every action is a SPAWNED SHELL
+# (~10k-token cold start + ~6k brief), so an unbatched 44-action plan costs
+# ~44 shells no matter how small each task is — and nothing surfaced that
+# cost to the planner at the moment it authored action #13, #20, #44.
+#
+# Three mechanisms, same shape as the decision-store gates (advise, then
+# refuse with the remedy quoted back; reads/loads never gated):
+#   * description WRITE cap (mirror of _CONTEXT_TEXT_MAX): the description
+#     is the WHAT; the HOW lives in the grounding brief / spec docs / the
+#     worklog. Re-dispatch history belongs in the worklog, not the brief.
+#   * a SOFT meter: past EDP_PLAN_ACTION_SOFT the response carries the
+#     running shell-cost advisory (non-blocking).
+#   * a CEILING: past EDP_PLAN_ACTION_CEILING new actions are accepted only
+#     BATCHED (batch_group set — one shell per group, the structural remedy)
+#     — an unbatched append is refused with the alternatives named.
+_ACTION_DESC_MAX = int(os.environ.get("EDP_ACTION_DESC_MAX", "1200"))
+
+
+def _plan_action_soft() -> int:
+    return int(os.environ.get("EDP_PLAN_ACTION_SOFT", "12"))
+
+
+def _plan_action_ceiling() -> int:
+    return int(os.environ.get("EDP_PLAN_ACTION_CEILING", "24"))
+
+
+def _shell_cost_advisory(n_actions: int) -> str:
+    return (
+        f"COST METER: this plan now has {n_actions} actions. Every unbatched "
+        "action dispatches its OWN shell (~10k-token cold start + ~6k brief) "
+        "— actions are not free lines in a list. Before adding more: fold "
+        "small related tasks into ONE action, or batch them (batch_group — "
+        "one shell executes the group), or extend an existing pending "
+        "action via update_object. Review/verify legs count too.")
+
+
 class _AddActionIn(BaseModel):
     plan_id: str
     action_id: str
@@ -3167,6 +3206,29 @@ class AddAction(_ClaudeTool):
             return _precondition(
                 f"action {m.action_id!r} already in plan {m.plan_id}"
             )
+        # Plan-growth bounds (2026-08-01): description write cap + shell
+        # ceiling. Tool-path only — legacy plans with essay descriptions
+        # still load unchanged (the RecordContext/_CONTEXT_TEXT_MAX pattern).
+        if len(m.description) > _ACTION_DESC_MAX:
+            return _precondition(
+                f"add_action: description is {len(m.description)} chars, "
+                f"exceeds the {_ACTION_DESC_MAX}-char write cap. The "
+                "description states WHAT the action does and its bounds; "
+                "the HOW belongs in the grounding brief "
+                "(record_grounding_brief — delivered budgeted to every "
+                "worker), craft rules in the spec docs, and re-dispatch "
+                "history in the worklog — never re-narrated per action. "
+                "Tighten and resend.")
+        if len(p.actions) >= _plan_action_ceiling() and not m.batch_group:
+            return _precondition(
+                f"add_action: plan {m.plan_id} already has "
+                f"{len(p.actions)} actions — at/past the ceiling "
+                f"({_plan_action_ceiling()}), new actions are accepted "
+                "BATCHED ONLY (set batch_group — one shell executes the "
+                "whole group). Alternatives: fold this into an existing "
+                "pending action (update_object its description), or tell "
+                "your neuron the step is bigger than one plan. "
+                f"{_shell_cost_advisory(len(p.actions))}")
         # Bug B (2026-05-26): refuse a producer command as a verify — it
         # re-runs the build on every record and hangs the gate. Force an
         # artifact check at authoring time.
@@ -3198,6 +3260,15 @@ class AddAction(_ClaudeTool):
             leg_kind=m.leg_kind,
         ))
         v = self.ctx.plans.save(p)
+        # Soft meter: past the soft floor every append carries the running
+        # shell-cost line — the planner sees the price at the exact moment
+        # it authors action #13, not in a guide it read at boot.
+        if len(p.actions) > _plan_action_soft():
+            advisories = list(advisories or [])
+            advisories.append({
+                "kind": "plan_growth_cost",
+                "detail": _shell_cost_advisory(len(p.actions)),
+            })
         return Tool.ok(_Ver(version=v, advisories=advisories))
 
 
@@ -3641,6 +3712,15 @@ class AddStep(_ClaudeTool):
         from ..schemas import RecipeStep
 
         r = self.ctx.recipes.load(m.recipe_id)
+        # Plan-growth bounds (2026-08-01): the step description carries the
+        # STEP's scope, not an essay — same write cap as decisions/actions.
+        if len(m.description) > _ACTION_DESC_MAX:
+            return _precondition(
+                f"add_step: description is {len(m.description)} chars, "
+                f"exceeds the {_ACTION_DESC_MAX}-char write cap. A step "
+                "states scope + concerns + acceptance_sketch; detail "
+                "belongs to the planner's grounding brief and the spec "
+                "docs. Tighten and resend.")
         known = {s.step_id for s in r.steps}
         missing = [d for d in m.depends_on if d not in known]
         if missing:
@@ -3717,6 +3797,16 @@ class AddStep(_ClaudeTool):
                     "step. Needing a step is not the same as being separate "
                     "from it. A new step is right for a distinct USER-VISIBLE "
                     "CAPABILITY, not for a gap-fix that belongs to an owner.")
+        # Step-count meter (2026-08-01): the map's price, stated at the
+        # moment of growth. A step is the costliest unit in the system —
+        # planner spawn + plan + N shells + review legs + rebuild.
+        if len(r.steps) > int(os.environ.get("EDP_RECIPE_STEP_SOFT", "10")):
+            advisories.append(
+                f"map_growth_cost: {len(r.steps)} steps now. Each step "
+                "costs a planner spawn + a cold-authored plan + N worker "
+                "shells + review legs + a rebuild. If the remaining work "
+                "is fixes/polish rather than a distinct capability, it "
+                "belongs in an EXISTING step's plan as actions.")
         return Tool.ok(_StepId(step_id=sid, note=note, advisories=advisories))
 
 

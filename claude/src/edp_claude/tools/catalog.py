@@ -35,9 +35,9 @@ TOOL_ONE_LINERS: dict[str, str] = {
     "consult_specialist": "Read a compiled specialist doc inline for one question — consult, never author.",
     "record_specialist_consult": "Log that a specialist consult happened (trust/decay bookkeeping).",
     # ── map: steps / decisions / context ────────────────────────────────
-    "add_step": "Declare a step (description, execution, depends_on, concerns, acceptance_sketch); mid-flight creation needs a justification — CRUD an existing step first.",
+    "add_step": "Declare a step (execution, depends_on, concerns, acceptance_sketch). description = scope, HARD CAP 1200 chars; mid-flight needs justification — CRUD an existing step first; a step costs a planner + N shells.",
     "record_step_result": "Record a step's terminal result + outputs; refreshes the state synthesis.",
-    "record_context": "The routed memory-write verb: decision/assumption/rejected_option/fact/north_star_update/note by kind; load-bearing decisions are budgeted — fold before adding past the threshold.",
+    "record_context": "Routed memory-write by kind. text = the statement, HARD CAP 1200 chars (author within it on the FIRST call); why goes in rationale, detail in a sidecar ref; LB writes refuse past the fold threshold.",
     "fold_decisions": "Atomically supersede a settled decision cluster with ONE summary decision (history preserved; folded members stop reaching workers).",
     "supersede_decision": "Retire one decision with a replacement pointer; the single-decision fold.",
     "confirm_direction_constraints": "Activate proposed constraint-bearing bans (neuron authority; reviewers only propose).",
@@ -80,7 +80,7 @@ TOOL_ONE_LINERS: dict[str, str] = {
     "record_branch_verdict": "Record a reviewer's verdict on a branch or plan action — judgement, never status.",
     # ── plan authoring (planner) ────────────────────────────────────────
     "create_plan": "Create an empty drafted plan for a step (tool fills plan_id/domain); then add_action per action.",
-    "add_action": "Append one action (acceptance, verify, concerns, specializations, leg_kind, batch_group) to a non-terminal plan.",
+    "add_action": "Append one action (acceptance, verify, concerns, leg_kind, batch_group). description = the WHAT, HARD CAP 1200 chars (how -> grounding brief); past the ceiling only batched appends land — an action costs a shell.",
     "record_plan": "Validate+save a whole Plan; refuses when step concerns/acceptance_sketch are uncovered (flow-down gate).",
     "record_grounding_brief": "Write the plan's grounding brief sidecar (injected into every worker, capped at delivery — keep it tight).",
     "update_object": "Patch fields on your OWN objects (role-scoped by object type); read back what you wrote.",
