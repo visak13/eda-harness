@@ -30,8 +30,8 @@ TOOL_ONE_LINERS: dict[str, str] = {
     "run_ocak_audit": "Run the OCAK framework audit over the recipe and return findings.",
     "seed_comprehension_specialists": "Spawn the comprehension advisor set (curiosity/goal-keeper/pattern-observer) for a fresh recipe.",
     "consult_curiosity": "Ask the persistent comprehension curiosity; put FACTS in `question` — context/framing fields are not delivered.",
-    "consult_goal_keeper": "Ask the goal-keeper whether current work still serves the north star.",
-    "consult_pattern_observer": "Ask the pattern-observer for cross-recipe drift/pattern findings.",
+    # consult_goal_keeper / consult_pattern_observer — DELETED with their dead
+    # roles (owner ruling 2026-08-04).
     "consult_specialist": "Read a compiled specialist doc inline for one question — consult, never author.",
     "record_specialist_consult": "Log that a specialist consult happened (trust/decay bookkeeping).",
     # ── map: steps / decisions / context ────────────────────────────────
@@ -75,7 +75,7 @@ TOOL_ONE_LINERS: dict[str, str] = {
     "pool_reap": "Reap dead/finished shells from the pool registry.",
     "pool_close_self": "Close THIS shell's pool seat (park=true keeps the shell; only park=false advances the FSM).",
     "inspect_worker": "Deep probe of one child shell (expensive; prefer status_ping).",
-    "branch_reviewer": "Branch an independent reviewer for a comprehension/scope target.",
+    # branch_reviewer — DELETED (owner ruling 2026-08-04; d128 absolute).
     "record_action_status": "Pure write of status+evidence (no gate runs here); workers need a prior grounding echo; reviewers may close only their OWN leg.",
     "record_branch_verdict": "Record a reviewer's verdict on a branch or plan action — judgement, never status.",
     # ── plan authoring (planner) ────────────────────────────────────────

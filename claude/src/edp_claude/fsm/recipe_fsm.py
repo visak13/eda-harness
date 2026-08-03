@@ -69,7 +69,8 @@ def refresh_comprehension_baseline(r: Recipe, at: str) -> None:
 # mutually-agreed decision may be signed off without a consult. The recipe is the
 # neuron's MEMORY LAYER, not a dictator.
 #
-# The PLANNER's reviewer leg (branch_reviewer(scope="spec")) is untouched.
+# The PLANNER's reviewer leg (a role="reviewer" dispatch) is untouched.
+# (`branch_reviewer` itself is deleted — owner ruling 2026-08-04.)
 
 
 def _ready_steps(r: Recipe, live_step_ids: frozenset[str] = frozenset()):

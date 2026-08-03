@@ -37,12 +37,11 @@ Example Stage-A final action:
   AskUserQuestion if the threshold judgement is theirs).
 - The Stage-A acceptance is a **metric** — the filesystem can't verify
   whether the number is real or whether it actually means the risk is
-  retired. For a borderline or high-stakes result, escalate to the
-  neuron (`ask_above`) for an external read — the neuron forks a
-  `branch_reviewer` of the relevant specialist (domain review replaced
-  the generic critic in v2.4). This is the non-deterministic
-  counterpart to the outcome-verify file gate: a metric claim gets
-  external review, not self-attestation.
+  retired. For a borderline or high-stakes result, dispatch your OWN
+  review leg (`role="reviewer"`) against the relevant specialist's
+  compiled doc (domain review replaced the generic critic in v2.4).
+  This is the non-deterministic counterpart to the outcome-verify file
+  gate: a metric claim gets external review, not self-attestation.
 - If the result clears the threshold → continue to Stage B.
 - If it doesn't → `ask_above(question="POC underperformed: X vs
   required Y. Pivot, abort, or extend?")`. Do NOT silently proceed.

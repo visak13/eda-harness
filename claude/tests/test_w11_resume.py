@@ -829,12 +829,12 @@ async def test_a_resumed_recipe_stops_advertising_suspension(env, recipe):
 # future verb added to an allowlist, or a future subtraction from _NEURON, would
 # move them silently. So state it, over every surface.
 SUSPENSION_VERBS = ("suspend_recipe", "resume_recipe")
-# s25/a4: six became NINE — curiosity/goal_keeper/pattern_observer gained rows,
-# closing the build_mcp fail-open over-grant. This pin is what forced them to be
-# enumerated here too, which is exactly its job: the suspension verbs must stay
-# neuron-only across EVERY surface, including three that did not exist before.
+# s25/a4 took six roles to nine (curiosity/goal_keeper/pattern_observer gained
+# rows); the owner ruling of 2026-08-04 took nine to SEVEN — goal_keeper and
+# pattern_observer are DEAD and deleted. The pin's job is unchanged: the
+# suspension verbs must stay neuron-only across EVERY surface that exists.
 ALL_ROLES = ("worker", "planner", "reviewer", "specialist", "consult", "neuron",
-             "curiosity", "goal_keeper", "pattern_observer")
+             "curiosity")
 
 
 def test_the_six_role_sets_are_exactly_the_ones_enumerated_here():

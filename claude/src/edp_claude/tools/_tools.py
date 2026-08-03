@@ -3871,9 +3871,9 @@ class CloseRecipe(_ClaudeTool):
             if unmet:
                 return _precondition(
                     f"cannot close {status!r} — outcomes {unmet} are not "
-                    "verified (met=false). Fork a recipe-end reviewer "
-                    "(branch_reviewer) per specialist used, confirm the "
-                    "deliverable meets each outcome's verification, then "
+                    "verified (met=false). Have the planner's reviewer leg "
+                    "confirm the deliverable meets each outcome's "
+                    "verification, then "
                     "mark_outcome_met(outcome_id, evidence). Or close "
                     "'partial' if an outcome genuinely wasn't verified. "
                     "The recipe must not claim success it didn't verify."
@@ -8846,10 +8846,10 @@ class EmitRecipeEvent(_ClaudeTool):
             recipe_id=rid, kind=m.kind, note=note))
 
 
-# v2.4 (2026-05-22): /critic is RETIRED. Generic adversarial review is
-# replaced by the domain reviewer-fork (branch_reviewer) — a fork of the
-# relevant trained specialist reviews its own domain at recipe end. The
-# process-level "pivot the whole approach?" lens moved up front to the
+# v2.4 (2026-05-22): /critic is RETIRED. Generic adversarial review was first
+# replaced by the domain reviewer-fork (branch_reviewer) — itself deleted by
+# owner ruling 2026-08-04; domain review now rides the planner's reviewer leg.
+# The process-level "pivot the whole approach?" lens moved up front to the
 # curiosity neuron. consult_critic + spawn_critic are gone.
 
 
@@ -9118,110 +9118,9 @@ class ConsultCuriosity(_ClaudeTool):
             curiosity_id=curiosity_id, mode="spawned"))
 
 
-class _ConsultGoalKeeperIn(BaseModel):
-    recipe_id: str  # the recipe whose drift is being checked
-    query: str = "check tactical-vs-strategic drift on the current plan"
-
-
-class _ConsultGoalKeeperOut(BaseModel):
-    gk_id: str
-    note: str = "goal-keeper spawned; drift report arrives via handle_messages"
-
-
-class ConsultGoalKeeper(_ClaudeTool):
-    """Phase 6 (2026-05-21): externality for tactical-vs-strategic
-    drift. Consulted at plan-creation time. The goal-keeper reads the
-    recipe's user_goal_verbatim (strategic) and the latest plan's
-    goal (tactical), scores drift, and replies — does NOT decide
-    pivot/abort itself (the caller decides what to do with the
-    drift signal)."""
-
-    name = "consult_goal_keeper"
-    InputModel = _ConsultGoalKeeperIn
-    OutputModel = _ConsultGoalKeeperOut
-
-    async def _run(self, m: _ConsultGoalKeeperIn):
-        me, _ = _self_and_parent_addresses()
-        caller_id = me or m.recipe_id
-        gk_id = f"{m.recipe_id}-goalkeeper-{uuid.uuid4().hex[:8]}"
-
-        consult_msg = BrokerMessage(
-            msg_id=str(uuid.uuid4()),
-            ts=_now(),
-            **{"from": caller_id},
-            to=gk_id,
-            kind="consult",
-            body={
-                "scope": "recipe",
-                "handle": m.recipe_id,
-                "query": m.query,
-                "caller": caller_id,
-            },
-        )
-        send_res = await self.ctx.broker.send(consult_msg)
-        if not getattr(send_res, "ok", False):
-            return send_res
-        spawn_res = await self.ctx.pool.spawn_goal_keeper(caller_id, gk_id)
-        if not getattr(spawn_res, "ok", False):
-            return spawn_res
-        return Tool.ok(_ConsultGoalKeeperOut(gk_id=gk_id))
-
-
-class _ConsultPatternObserverIn(BaseModel):
-    query: str = "surface recurring failure patterns from recent worklogs"
-    scope_handle: str | None = None  # optional: focus on one recipe/plan
-
-
-class _ConsultPatternObserverOut(BaseModel):
-    po_id: str
-    note: str = "pattern-observer spawned; report arrives via handle_messages"
-
-
-class ConsultPatternObserver(_ClaudeTool):
-    """Phase 6 (2026-05-21): externality for cross-plan failure
-    pattern aggregation. Consulted at plan-close time. The
-    pattern-observer reads recent worklogs across plans, surfaces
-    recurring failure shapes — does NOT fix anything itself."""
-
-    name = "consult_pattern_observer"
-    InputModel = _ConsultPatternObserverIn
-    OutputModel = _ConsultPatternObserverOut
-
-    async def _run(self, m: _ConsultPatternObserverIn):
-        me, _ = _self_and_parent_addresses()
-        # route the report back to the handle the caller polls: its own
-        # spawned id, else the recipe handle it passed as scope_handle.
-        caller_id = me or m.scope_handle
-        if not caller_id:
-            return _precondition(
-                "consult_pattern_observer needs `scope_handle` (your "
-                "recipe_id) when called from the neuron's main shell — "
-                "the report routes back to it."
-            )
-        po_id = f"patterns-observer-{uuid.uuid4().hex[:8]}"
-
-        consult_msg = BrokerMessage(
-            msg_id=str(uuid.uuid4()),
-            ts=_now(),
-            **{"from": caller_id},
-            to=po_id,
-            kind="consult",
-            body={
-                "scope": "cross-plan",
-                "handle": m.scope_handle or "",
-                "query": m.query,
-                "caller": caller_id,
-            },
-        )
-        send_res = await self.ctx.broker.send(consult_msg)
-        if not getattr(send_res, "ok", False):
-            return send_res
-        spawn_res = await self.ctx.pool.spawn_pattern_observer(
-            caller_id, po_id
-        )
-        if not getattr(spawn_res, "ok", False):
-            return spawn_res
-        return Tool.ok(_ConsultPatternObserverOut(po_id=po_id))
+# OWNER RULING (2026-08-04): goal_keeper and pattern_observer are DEAD roles.
+# ConsultGoalKeeper and ConsultPatternObserver (Phase 6, 2026-05-21) deleted
+# with them — full class bodies in git history at 18cac3f.
 
 
 def _recipe_for_handle(ctx, handle: str):
@@ -10862,132 +10761,14 @@ class GetSpecialistDocs(_ClaudeTool):
 
 
 # (W9's _DIRECTION_RUBRIC lived here — the three questions a scope="direction"
-# reviewer judged an artifact by. REMOVED with the whole direction path; see the
-# note on BranchReviewer below.)
-
-
-class _BranchReviewerIn(BaseModel):
-    # SPEC IS THE ONLY SCOPE. `scope="direction"` was W9's neuron-facing mode;
-    # it is removed (d128/d132), and the Literal is kept at one value on purpose
-    # so a stale `scope="direction"` call FAILS LOUDLY on input validation
-    # instead of being silently ignored (pydantic's default for an unknown key)
-    # and quietly running a spec review.
-    scope: Literal["spec"] = "spec"
-    neuron_id: str | None = None
-    target: str = ""   # what to review (path/desc of the deliverable)
-    criteria: str = ""  # what "correct" means for this domain
-    # the handle YOU poll next_action on (recipe_id). The reviewer's
-    # verdict routes back here; without it the verdict dead-letters.
-    handle: str | None = None
-    # 2026-06-01: the cross-cutting concerns the reviewed action(s) carried
-    # (e.g. ["security"]). Forwarded so the reviewer knows which concerns
-    # applied; it enforces the specialist's COMPILED doc (which folds in the
-    # universal + stack rules). Empty = no cross-cutting concern.
-    concerns: list[str] = []
-    # W10b — opt in to this reviewer's CANDIDATE model tier (MODEL_TIERS).
-    # Default False: the reviewer's independent re-run is the objective
-    # acceptance gate (d29/d30) and the last defence layer to degrade, so it
-    # launches on the host default (Opus) unless a caller is deliberately
-    # running the experiment. No reviewer tier is measured; the only measured
-    # row in the table is ("worker", "coding").
-    allow_candidate_tier: bool = False
-
-
-class _ReviewerOut(BaseModel):
-    reviewer_id: str
-    fork_session_id: str
-    note: str = (
-        "domain reviewer fork spawned from the specialist's trained "
-        "base; its verdict arrives via handle_messages"
-    )
-
-
-class BranchReviewer(_ClaudeTool):
-    """Spawn a recipe-end DOMAIN REVIEWER of a stable specialist (replaces
-    /critic). 2026-06-02: the reviewer launches FRESH (no chat fork) and
-    enforces the specialist's COMPILED doc (`get_specialist_doc`) by its
-    `[adherence]` tags — the SAME artifact the coder built against, so review
-    is as cheap as a worker (no trained-chat replay). Requires the neuron
-    `stable` with a compiled doc; the verdict arrives on the caller's next
-    next_action as handle_messages. (The execution fork is retired; the only
-    remaining fork is re-training, `update_specialist`.)
-
-    THIS IS THE PLANNER'S REVIEWER — the objective acceptance gate (d29/d30),
-    untouched by d128/d132. W9's `scope="direction"` mode is gone: the neuron
-    never owned a reviewer, and its direction integrity is curiosity + signoff.
-    """
-
-    name = "branch_reviewer"
-    InputModel = _BranchReviewerIn
-    OutputModel = _ReviewerOut
-
-    async def _run(self, m: _BranchReviewerIn):
-        if not m.neuron_id:
-            return _precondition(
-                "branch_reviewer requires `neuron_id` — the reviewer enforces "
-                "that specialist's compiled doc.")
-        if not m.target:
-            return _precondition(
-                "branch_reviewer requires `target` — what to review (a path or "
-                "a description of the deliverable).")
-        rec = self.ctx.neurons.get(m.neuron_id)
-        if rec is None:
-            return _precondition(f"no neuron {m.neuron_id!r}")
-        if rec.status != "stable":
-            return _precondition(
-                f"neuron {m.neuron_id} is {rec.status!r}, not 'stable' — "
-                "only approved specialists can review."
-            )
-        if not rec.spec_id or not self.ctx.specs.has_doc(rec.spec_id):
-            return _precondition(
-                f"neuron {m.neuron_id} has no compiled doc — the reviewer "
-                "enforces the compiled doc, so (re)train it to compile one "
-                "before review."
-            )
-        me, _ = _self_and_parent_addresses()
-        caller_id = me or m.handle
-        if not caller_id:
-            return _precondition(
-                "branch_reviewer needs `handle` (your recipe_id) when "
-                "called from the neuron's main shell — the verdict routes "
-                "back to it."
-            )
-        fork_session_id = str(uuid.uuid4())
-        reviewer_id = f"review-{m.neuron_id}-{uuid.uuid4().hex[:8]}"
-        task = BrokerMessage(
-            msg_id=str(uuid.uuid4()),
-            ts=_now(),
-            **{"from": caller_id},
-            to=reviewer_id,
-            kind="consult",
-            body={
-                "task": "domain-review",
-                "target": m.target,
-                "criteria": m.criteria,
-                "neuron_id": m.neuron_id,
-                "spec_id": rec.spec_id,
-                "concerns": m.concerns,
-                "caller": caller_id,
-            },
-        )
-        send_res = await self.ctx.broker.send(task)
-        if not getattr(send_res, "ok", False):
-            return send_res
-        spawn_res = await self.ctx.pool.spawn_reviewer(
-            caller_id, reviewer_id, session_id=fork_session_id,
-            # W10b: ("reviewer", "spec") is an Opus DEFAULT row, so this
-            # resolves to None (no --model flag) and the spawn body stays
-            # byte-identical. A spec review does not degrade: it IS the gate.
-            model=_spawn_model_for(
-                "reviewer", "spec",
-                allow_candidate_tier=m.allow_candidate_tier),
-        )
-        if not getattr(spawn_res, "ok", False):
-            return spawn_res
-        self.ctx.neurons.touch(m.neuron_id)
-        return Tool.ok(_ReviewerOut(
-            reviewer_id=reviewer_id, fork_session_id=fork_session_id
-        ))
+# reviewer judged an artifact by. REMOVED with the whole direction path.)
+#
+# OWNER RULING (2026-08-04): `branch_reviewer` DELETED OUTRIGHT — it should
+# never have been on the neuron's surface at all (this settles the d128 scope
+# question architecture-vocabulary.md left open: the absolute reading stands).
+# Domain-correctness review routes through the PLANNER's reviewer leg
+# (role="reviewer" dispatch, the d29/d30 gate); the neuron surfaces doubt to
+# the user or via consult_curiosity. Full class body in git history at 18cac3f.
 
 
 # (BranchReviewer._run_direction and the `record_direction_verdict` tool lived
@@ -11564,8 +11345,8 @@ def _role_scope_worklog_key() -> str | None:
 
     - planner  → its dash plan_id (the plan it owns).
     - worker   → its plan_id (the handle prefix before the last ':').
-    - BARE-HANDLE roles (reviewer / specialist / consult / curiosity /
-      goal_keeper / pattern_observer) → THE HANDLE ITSELF. Their handles carry
+    - BARE-HANDLE roles (reviewer / specialist / consult / curiosity) →
+      THE HANDLE ITSELF. Their handles carry
       no ':' (`review-<neuron_id>-<hex8>`, `consult-<hex8>`, …), so
       _self_and_parent_addresses returns (handle, None) and there is no plan to
       attribute the event to. This used to mean `if pid:` was False and the
@@ -12665,8 +12446,8 @@ ALL_TOOL_CLASSES = [
     # intact and importable — only its registration is withdrawn — so
     # restoring it is re-adding this one line.
     ConsultCuriosity,
-    ConsultGoalKeeper,
-    ConsultPatternObserver,
+    # ConsultGoalKeeper / ConsultPatternObserver — DELETED with their roles,
+    # owner ruling 2026-08-04 (classes in git history at 18cac3f).
     CheckInbox,
     Recall,
     GetGuide,
@@ -12690,7 +12471,7 @@ ALL_TOOL_CLASSES = [
     ListSpecLearnings,
     ResolveSpecLearnings,
     GetSpecialization,
-    BranchReviewer,
+    # BranchReviewer — DELETED, owner ruling 2026-08-04 (d128 absolute).
     SeedComprehensionSpecialists,
     AssembleRuleset,
     EnsureUniversal,

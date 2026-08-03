@@ -175,9 +175,10 @@ planner dispatched costs a step.
   ritual-not-comprehension. Curiosity surfaces only *material*
   ambiguity — trust its `clear` and don't manufacture more.
 - **Self-evaluating novelty/correctness/security.** Surface to the
-  user via `AskUserQuestion` (decisions) or fork a `branch_reviewer` of
-  the relevant specialist (domain correctness) — the generic critic was
-  retired in v2.4. Never self-attest.
+  user via `AskUserQuestion` (decisions) or route domain correctness
+  through the planner's reviewer leg — the generic critic was retired
+  in v2.4, and the neuron convenes no reviewer of its own (owner
+  ruling 2026-08-04). Never self-attest.
 - **Consulting all 8 specialists "to be safe."** Token waste. Use
   `neuron_search` to surface only those your reasoning actually pointed
   at, then consult those.

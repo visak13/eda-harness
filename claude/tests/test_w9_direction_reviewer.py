@@ -93,94 +93,47 @@ async def _recipe_with_plan(env, *, goal=_GOAL, action_ids=("a1",)):
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# T2 — THE GUARD THIS CHANGE MUST NOT WEAKEN: the planner's spec reviewer
-#      still spawns, and its brief is byte-identical to the pre-removal one.
+# T2 — THE GUARD THIS CHANGE MUST NOT WEAKEN: with branch_reviewer deleted
+#      outright (owner ruling 2026-08-04), the reviewer LEG machinery — the
+#      d29/d30 objective gate — must survive whole.
 # ══════════════════════════════════════════════════════════════════════════
-async def test_t2_spec_reviewer_still_spawns_with_a_byte_identical_brief(env):
-    """EXERCISED, not asserted. The spec review IS the acceptance gate (d29/d30);
-    if this removal touched it, the framework loses its objective check."""
-    nid = await _stable_specialist(env)
-    spec_id = env.ctx.neurons.get(nid).spec_id
+def test_t2_the_reviewer_leg_machinery_survives_the_verb_deletion():
+    """The spec review IS the acceptance gate; the verb's deletion must not
+    take any of its machinery with it: the verdict verb stays registered and
+    reviewer-scoped, and the reviewer activator card exists."""
+    import tempfile
 
-    async def _brief(**extra):
-        out = _ok(await env.call(
-            "branch_reviewer", neuron_id=nid,
-            target="/path/TimeController.java",
-            criteria="GET /time returns 200 + ISO-8601 JSON",
-            concerns=["security"], handle="recipe-x", **extra))
-        msgs = await env.ctx.broker.poll(out["reviewer_id"])
-        return out, msgs[0].body
+    from edp_claude.server import make_context
+    from edp_claude.tools import build_registry
 
-    out_omitted, body_omitted = await _brief()
-    out_explicit, body_explicit = await _brief(scope="spec")
-
-    assert body_omitted == body_explicit, "scope='spec' must equal the default"
-    # PINNED against a literal: a new key in the spec brief fails here.
-    assert body_omitted == {
-        "task": "domain-review",
-        "target": "/path/TimeController.java",
-        "criteria": "GET /time returns 200 + ISO-8601 JSON",
-        "neuron_id": nid,
-        "spec_id": spec_id,
-        "concerns": ["security"],
-        "caller": "recipe-x",
-    }
-    # the RESULT shape is unchanged by the removal (the two direction-only
-    # fields were emission-gated, so a spec result never carried them anyway)
-    assert set(out_omitted) == {"reviewer_id", "fork_session_id", "note"}
-    assert out_omitted["reviewer_id"].startswith(f"review-{nid}-")
-
-    # a REAL reviewer shell was spawned, in the reviewer role
-    sp = [s for s in env.ctx.pool.spawns
-          if s["handle"] == out_omitted["reviewer_id"]]
-    assert len(sp) == 1 and sp[0]["role"] == "reviewer"
+    names = {t.name for t in build_registry(make_context(tempfile.mkdtemp()))}
+    assert "branch_reviewer" not in names
+    assert "record_branch_verdict" in names           # the gate's verdict verb
+    assert "record_branch_verdict" in ROLE_TOOLSETS["reviewer"]
+    assert (_CMD / "reviewer.md").exists()
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# T3 — the input contract: spec's preconditions intact, direction REFUSED
+# T3 — the deletion is total: no surface, no catalog line, no symbol
 # ══════════════════════════════════════════════════════════════════════════
-async def test_t3_spec_preconditions_intact_and_direction_is_refused(env):
-    rid, sid, pid = await _recipe_with_plan(env)
-    c = _ok(await env.call("create_specialization", name="X", subject="x",
-                           description="x"))
+def test_t3_branch_reviewer_is_gone_from_every_surface():
+    from edp_claude.tools.catalog import TOOL_ONE_LINERS
 
-    # (a) spec: neuron_id absent → refused (unchanged)
-    r1 = await env.call("branch_reviewer", target="/t.java", handle=rid)
-    assert isinstance(r1, ToolError) and "neuron_id" in r1.message
-
-    # (b) spec: an unstable neuron → refused (unchanged)
-    r2 = await env.call("branch_reviewer", neuron_id=c["neuron_id"],
-                        target="/t.java", handle=rid)
-    assert isinstance(r2, ToolError) and "stable" in r2.message
-
-    # (c) spec: a stable neuron with no target → refused (unchanged)
-    nid = await _stable_specialist(env)
-    r3 = await env.call("branch_reviewer", neuron_id=nid, handle=rid)
-    assert isinstance(r3, ToolError) and "target" in r3.message
-
-    # (d) THE REMOVAL: scope="direction" is REFUSED, loudly. The Literal is
-    #     held at one value on purpose — a stale caller must fail validation,
-    #     not be silently ignored (pydantic's default) and quietly run a SPEC
-    #     review it never asked for.
-    r4 = await env.call("branch_reviewer", scope="direction", handle=rid)
-    assert isinstance(r4, ToolError), (
-        "branch_reviewer(scope='direction') was accepted — the direction "
-        "reviewer is back")
-
-    # ...and it is refused even when it would otherwise look well-formed
-    r5 = await env.call("branch_reviewer", scope="direction", handle=rid,
-                        neuron_id=nid, target="/t.java")
-    assert isinstance(r5, ToolError)
+    assert "branch_reviewer" not in TOOL_ONE_LINERS
+    for role, verbs in ROLE_TOOLSETS.items():
+        assert "branch_reviewer" not in verbs, role
+    # POSITIVE CONTROL: the catalog itself is being read.
+    assert "record_branch_verdict" in TOOL_ONE_LINERS
 
 
 def test_t3b_the_direction_path_and_its_verdict_verb_are_gone_from_source():
-    """Symbols, not just call sites — nothing survives to be re-wired."""
+    """Symbols, not just call sites — nothing survives to be re-wired.
+    (BranchReviewer itself joined the deleted set, owner ruling 2026-08-04.)"""
     import edp_claude.tools._tools as tools
 
-    assert hasattr(tools, "BranchReviewer")          # the spec reviewer lives
+    assert not hasattr(tools, "BranchReviewer")
     assert not hasattr(tools, "RecordDirectionVerdict")
     assert not hasattr(tools, "_DIRECTION_RUBRIC")
-    assert not hasattr(tools.BranchReviewer, "_run_direction")
 
     # the verb is off every role surface, and out of the registry
     for role, verbs in ROLE_TOOLSETS.items():
@@ -192,13 +145,14 @@ def test_t3b_the_direction_path_and_its_verdict_verb_are_gone_from_source():
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# T4 — NO NEW ROLE (o7), and none removed either
+# T4 — the role SET is exactly the seven that exist (o7, amended 2026-08-04)
 # ══════════════════════════════════════════════════════════════════════════
 def test_t4_no_new_role_exists_in_role_toolsets():
-    """o7 pins the role SET. The removal must not add or drop a role either."""
+    """o7 pins the role SET — amended by the owner ruling of 2026-08-04 that
+    deleted goal_keeper and pattern_observer as dead roles."""
     assert set(ROLE_TOOLSETS) == {
         "worker", "planner", "reviewer", "specialist", "consult", "neuron",
-        "curiosity", "goal_keeper", "pattern_observer",
+        "curiosity",
     }
     assert "direction_reviewer" not in ROLE_TOOLSETS
     assert not any("direction" in role for role in ROLE_TOOLSETS)

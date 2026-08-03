@@ -89,7 +89,8 @@ async def test_bad_input_is_envelope_not_raise(tmp_path):
 
 def test_skills_pass_validate_skill():
     # critic-review retired in v2.4 (the reviewer is a spawned-shell
-    # brief, not a front-matter skill).
-    for name in ("ocak", "goal-keeper-check"):
+    # brief, not a front-matter skill). goal-keeper-check deleted with its
+    # dead role (owner ruling 2026-08-04).
+    for name in ("ocak",):
         v = validate_skill(str(SKILLS_DIR / f"{name}.md"))
         assert v == [], f"{name}: {v}"

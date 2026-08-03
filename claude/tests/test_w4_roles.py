@@ -638,8 +638,8 @@ ROLE_COMMAND_FILE = {
     "consult": "consult.md",
     "neuron": "neuron.md",
     "curiosity": "curiosity.md",
-    "goal_keeper": "goal-keeper.md",
-    "pattern_observer": "pattern-observer.md",
+    # goal_keeper / pattern_observer rows deleted with their DEAD roles
+    # (owner ruling 2026-08-04).
 }
 
 # ── DECLARED corpus: guides that GOVERN a role but that the derived walk below
@@ -1215,32 +1215,32 @@ def test_every_pool_spawned_role_has_a_toolset():
         f"http_pool.py spawns {sorted(missing)} but tools/roles.py has no "
         "ROLE_TOOLSETS row, so toolset_for_role returns None and build_mcp "
         "FAILS OPEN to the full registry for those shells")
-    # the underscore forms specifically — the trap, pinned
-    assert {"curiosity", "goal_keeper", "pattern_observer"} <= sent, sent
-    for role in ("curiosity", "goal_keeper", "pattern_observer"):
-        assert toolset_for_role(role) is not None, role
-        assert CRUD_OBJECT_SCOPE[role] == frozenset(), (
-            f"{role} must be read-only over the generic object-CRUD verbs")
-    # …and the hyphen forms must NOT be keys (that is the silent-no-op shape)
-    for hyphen in ("goal-keeper", "pattern-observer"):
-        assert toolset_for_role(hyphen) is None, hyphen
+    # the underscore form specifically — the trap, pinned
+    assert "curiosity" in sent, sent
+    assert toolset_for_role("curiosity") is not None
+    assert CRUD_OBJECT_SCOPE["curiosity"] == frozenset(), (
+        "curiosity must be read-only over the generic object-CRUD verbs")
+    # goal_keeper / pattern_observer are DEAD (owner ruling 2026-08-04):
+    # the pool no longer spawns them and no row may return for any key form.
+    for dead in ("goal_keeper", "goal-keeper",
+                 "pattern_observer", "pattern-observer"):
+        assert dead not in sent, dead
+        assert toolset_for_role(dead) is None, dead
 
 
-def test_advisory_roles_are_read_only_and_name_only_registered_tools():
-    """The three new rows grant no authoring, no spawn, no mutation. And every
-    name resolves: `build_mcp` fails CLOSED on drift (mcp_server.py:150-158), so
-    a row naming `pattern_observer_analyze` — which pattern-observer.md calls but
-    which is NOT a registered tool — would take the MCP server down at startup
-    for every shell. That verb is a GUIDE bug, deliberately not papered over."""
+def test_advisory_role_is_read_only_and_names_only_registered_tools():
+    """The advisory row grants no authoring, no spawn, no mutation. And every
+    name resolves: `build_mcp` fails CLOSED on drift (mcp_server.py:150-158) —
+    a row naming an unregistered verb would take the MCP server down at startup
+    for every shell. (goal_keeper / pattern_observer rows deleted with their
+    dead roles, owner ruling 2026-08-04.)"""
     all_names = _all_names() | {RECORD_CONTEXT}
     forbidden = {"close_recipe", "suspend_recipe", "resume_recipe",
                  "delete_object", "create_object", "update_object",
                  "pool_spawn_planner", "pool_spawn_worker", "record_recipe"}
-    for role in ("curiosity", "goal_keeper", "pattern_observer"):
-        surface = ROLE_TOOLSETS[role]
-        assert surface <= all_names, sorted(surface - all_names)
-        assert surface.isdisjoint(forbidden), sorted(surface & forbidden)
-        assert surface.isdisjoint(SPECIALIST_ONLY), role
-        assert "pool_close_self" in surface, role
+    surface = ROLE_TOOLSETS["curiosity"]
+    assert surface <= all_names, sorted(surface - all_names)
+    assert surface.isdisjoint(forbidden), sorted(surface & forbidden)
+    assert surface.isdisjoint(SPECIALIST_ONLY)
+    assert "pool_close_self" in surface
     assert "pattern_observer_analyze" not in all_names
-    assert "pattern_observer_analyze" not in ROLE_TOOLSETS["pattern_observer"]

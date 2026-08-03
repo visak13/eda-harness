@@ -42,36 +42,28 @@ suffices; don't spend an LLM where a script will do.
    confirm it meets the outcome's `verification`.
 3. **Domain reviewer — ONLY when judgment is needed.** For high-stakes or
    complex deliverables where "is this actually sound / does it meet the
-   intent" needs domain expertise a script can't give, spawn a **fresh**
-   reviewer of the specialist that did the work (it loads the compiled
-   doc — no chat fork):
-   ```
-   branch_reviewer(neuron_id=<the specialist used>,
-                   target="<path/desc of the deliverable>",
-                   criteria="<the outcome's verification>",
-                   concerns=<the concerns tagged on the plan's actions>,
-                   handle="<your recipe_id>")
-   ```
-   It checks recipe-CONFORMANCE (did the output follow the specialist's
-   own standards — whatever they are for that domain) PLUS judgment. Pass
-   the **`concerns`** the plan's actions carried (e.g. `["security"]`) —
-   the reviewer `assemble_ruleset`s the FULL layered ruleset (universal +
-   tech + those concerns) and enforces all of it, so the security/a11y/etc.
-   rules are checked even by a tech reviewer.
+   intent" needs domain expertise a script can't give, have the PLANNER
+   dispatch a review leg (`role="reviewer"`, named `r<n>`/`review-…`)
+   against the specialist's compiled doc — the neuron convenes no reviewer
+   of its own (owner ruling 2026-08-04; d128's absolute reading stands).
+   If the plan is already terminal, add a small review step to the recipe
+   and dispatch a planner for it. The review leg checks recipe-CONFORMANCE
+   (the specialist's own standards) PLUS judgment; the plan's `concerns`
+   ride the dispatch brief, and the reviewer `assemble_ruleset`s the FULL
+   layered ruleset (universal + tech + those concerns).
 
    **Prefer a concern-matched reviewer when one exists (Decision 5).** If
    actions carried a concern that has its own trained specialist
-   (`neuron_search("security")` → a `stable` neuron), fork THAT as an
-   ADDITIONAL reviewer for the concern-tagged deliverables — a security
+   (`neuron_search("security")` → a `stable` neuron), have the planner
+   dispatch an ADDITIONAL review leg against THAT doc — a security
    expert catches what a Spring expert won't. If no such specialist exists
-   yet, the tech reviewer above still enforces the concern's *rules* via
-   the assembled ruleset (it just lacks the dedicated expertise — that's
-   the graceful fallback until you train one).
+   yet, the tech review leg still enforces the concern's *rules* via
+   the assembled ruleset (the graceful fallback until you train one).
 
-   Don't fork a reviewer for a tiny/objective deliverable the deterministic
-   gate already covered — that's wasted tokens. (Pass `handle` so the
-   verdict routes back; it's a spawned shell that takes time — wait via the
-   heartbeat, don't review it yourself.)
+   Don't request a review leg for a tiny/objective deliverable the
+   deterministic gate already covered — that's wasted tokens. Verdicts
+   arrive via the normal loop — wait via the heartbeat, don't review it
+   yourself.
 
 Then fold the evidence into the close:
 - verified (gate passed / your check / reviewer `pass`) →
@@ -128,23 +120,13 @@ SETTLED clusters — never an active disagreement.
 
 ## Optional: cross-plan pattern scan before close
 
-For recipes with multiple plans or for goals that surfaced
-unexpected failures along the way, consult the pattern-observer
-externality before closing:
-
-```
-consult_pattern_observer(query="any recurring failures from this recipe's plans?",
-                         scope_handle=<recipe_id>)
-```
-
-The pattern-observer reads recent worklogs, surfaces top
-recurring failure shapes (anti-patterns), returns a report. The
-report arrives via `handle_messages` (kind=`answer`); read it before
-close. If significant patterns surface, mention them in the close
-summary to the user. This builds the system's memory across runs.
-
-Optional, not enforced — for single-plan recipes that went smoothly,
-the scan adds little.
+For recipes with multiple plans or goals that surfaced unexpected
+failures, skim the plans' worklogs yourself (`read_worklog`) for
+recurring failure shapes before closing, and mention significant ones
+in the close summary. (The pattern-observer externality that did this
+is a DEAD role — deleted by owner ruling 2026-08-04.) Optional, not
+enforced — for single-plan recipes that went smoothly, the scan adds
+little.
 
 ## Surface to the user
 

@@ -128,23 +128,8 @@ class StubPool(PoolPort):
         )
         return Tool.ok(_Spawned(handle=f"{plan_id}:{action_id}"))
 
-    async def spawn_goal_keeper(
-        self, parent_id: str, gk_id: str, model: str | None = None
-    ) -> ToolResult:
-        self._record(
-            {"role": "goal_keeper", "handle": gk_id,
-             "parent": parent_id, "model": model}
-        )
-        return Tool.ok(_Spawned(handle=gk_id))
-
-    async def spawn_pattern_observer(
-        self, parent_id: str, po_id: str, model: str | None = None
-    ) -> ToolResult:
-        self._record(
-            {"role": "pattern_observer", "handle": po_id,
-             "parent": parent_id, "model": model}
-        )
-        return Tool.ok(_Spawned(handle=po_id))
+    # (spawn_goal_keeper / spawn_pattern_observer stubs lived here — DELETED
+    # with their roles, owner ruling 2026-08-04.)
 
     async def spawn_curiosity(
         self, parent_id: str, curiosity_id: str, model: str | None = None

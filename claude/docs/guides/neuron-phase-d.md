@@ -87,7 +87,7 @@ Each message in `args.messages` carries `msg_id`, `from`, `kind`,
 
 | Message kind | Your action |
 |---|---|
-| `question` | The planner is stuck and needs a decision. **Do not self-evaluate.** If it's a *decision/ambiguity* (which approach, scope, cost, location), route it through the curiosity neuron / surface to the user — don't decide alone. If it's a *domain-correctness* question and a specialist did the work, `branch_reviewer(neuron_id=<specialist>, target=..., criteria=..., handle=<recipe_id>)`; its verdict arrives as a `handle_messages` reply — relay it to the planner via `reply`. Otherwise answer directly with `reply(msg_id=<msg_id>, body={"answer": "..."})`. |
+| `question` | The planner is stuck and needs a decision. **Do not self-evaluate.** If it's a *decision/ambiguity* (which approach, scope, cost, location), route it through the curiosity neuron / surface to the user — don't decide alone. If it's a *domain-correctness* question, reply telling the planner to route it through its own reviewer leg (a `role="reviewer"` dispatch against the specialist's compiled doc) — the neuron convenes no reviewer of its own (owner ruling 2026-08-04). Otherwise answer directly with `reply(msg_id=<msg_id>, body={"answer": "..."})`. |
 | `question` — **"no specialist for X — train one?"** | The SPECIAL case (it hung a plan once). **(1) Ask the USER** via `AskUserQuestion` — train vs proceed-without; never decide training yourself. **(2) If train:** call `train_specialist(handle=<recipe_id>)` **in this same turn** — deciding "train" does nothing until you invoke the tool. **(3) Reply to the planner** only `"hold — I'm training the specialist; I'll signal when it's stable"`. **NEVER reply "train it"** — the planner CANNOT call `train_specialist`; that reply is the deadlock that hangs the plan forever. When the SME reports stable, signal the planner to proceed. |
 | `progress` | One-way notification. No response required. Read it — if it reframes the goal, `append_revision` to the recipe. Otherwise absorb the signal. |
 | `observation` | The planner surfaced a discovery (new tech, prior approach, side-finding). Read it — if KG-worthy, `record_context(kind="fact", …)` it; if it reframes the goal, `append_revision`. Otherwise absorb. |
@@ -97,11 +97,10 @@ Each message in `args.messages` carries `msg_id`, `from`, `kind`,
 ## Three rules that don't change
 
 1. **Do NOT self-evaluate claims of novelty / correctness / security.**
-   Domain correctness → a `branch_reviewer` fork of the relevant
-   specialist (real expertise). Decisions/ambiguity → the curiosity
-   neuron / the user. Do not answer the question yourself even if you
-   could — the answer needs an external
-   review.
+   Domain correctness → the planner's reviewer leg (real expertise,
+   against the specialist's compiled doc). Decisions/ambiguity → the
+   curiosity neuron / the user. Do not answer the question yourself even
+   if you could — the answer needs an external review.
 
 2. **Use `reply`, not addressing.** The tool looks up the original
    message via the broker; you don't need to know the planner's
@@ -137,9 +136,9 @@ next instruction is `done`. Load `neuron-phase-e.md`.
 
 ## Anti-patterns
 
-- **Self-evaluating "is this correct?" claims.** Fork a
-  `branch_reviewer` of the relevant specialist (domain correctness) or
-  surface to the user. Never self-attest.
+- **Self-evaluating "is this correct?" claims.** Route domain
+  correctness through the planner's reviewer leg, or surface to the
+  user. Never self-attest.
 - **Auto-invoking `/review-plan` after plan close.** The user invokes
   `/review-plan` from their main shell when ready. Not here. Not
   auto.

@@ -243,7 +243,8 @@ _PLANNER: frozenset[str] = frozenset({
     "record_action_status", "record_step_result",
     "pool_spawn_worker", "pool_reap", "inspect_worker", "read_worklog",
     RECORD_CONTEXT, "recall", "search_context",
-    "consult_specialist", "consult_pattern_observer",
+    # -consult_pattern_observer — the role is DEAD (owner ruling 2026-08-04).
+    "consult_specialist",
     # W5 (DESIGN-v6 §W5) granted the planner `convene_consult` so it could
     # convene a consult for a stuck action. RETIRED 2026-07-25 by operator
     # ruling — see `_OPERATOR_RETIRED` above for the reason, the disclosed cost
@@ -346,8 +347,9 @@ _CONSULT: frozenset[str] = frozenset({
     "get_guide",
     "read_object", "query_objects", "describe_objects", "observe", "list_subscriptions", "unobserve",
     "recall", "get_recipe_digest",
-    "consult_specialist", "consult_curiosity", "consult_goal_keeper",
-    "consult_pattern_observer",
+    # -consult_goal_keeper / -consult_pattern_observer — DEAD roles (owner
+    # ruling 2026-08-04).
+    "consult_specialist", "consult_curiosity",
     "record_specialist_consult",
     # W5: the two verbs `.claude/commands/consult.md` is contractually built
     # on — `get_specialist_docs` overlays the stack docs named in the spawn
@@ -421,57 +423,40 @@ _NEURON: frozenset[str] = frozenset({
     # comms
     "check_inbox", "reply", "broker_send", "ask_above", "notify_above",
     # children: spawn planners, probe cheaply, reap, resume
+    # OWNER RULING (2026-08-04): -branch_reviewer — should never have been on
+    # the neuron's surface at all (d128's absolute reading confirmed); the
+    # neuron delegates review, it does not convene reviewers itself.
     "pool_spawn_planner", "pool_resume_planner", "pool_spawn_worker",
-    "pool_reap", "status_ping", "record_action_status", "branch_reviewer",
+    "pool_reap", "status_ping", "record_action_status",
     # advisors + specialist DELEGATION (never authoring)
-    "consult_curiosity", "consult_goal_keeper", "consult_pattern_observer",
+    # -consult_goal_keeper / -consult_pattern_observer — DEAD roles (owner
+    # ruling 2026-08-04); their tool classes are deleted with them.
+    "consult_curiosity",
     "consult_specialist", "record_specialist_consult", "train_specialist",
     "list_spec_learnings", "resolve_spec_learnings",
     "pool_close_self",
 })
 
-# ── the three ADVISORY roles (s25/a4, B3) ──────────────────────────────────
-# `clients/http_pool.py` spawns these and `pty_launcher.py:400` stamps their
-# EDP_ROLE, but they had NO row here — so `toolset_for_role` returned None and
-# `build_mcp` FAILED OPEN, handing each shell the full 86-tool registry
-# (including close_recipe, delete_object, pool_spawn_planner and the o7
-# SPECIALIST_ONLY authoring verbs) while the six named roles were scoped. An
-# over-GRANT, not a break: nothing failed, which is exactly why it stayed
-# invisible for so long.
-#
-# THE KEY IS THE UNDERSCORE FORM, AND IT COMES FROM `http_pool.py`. The derived
-# snapshot heads these roles with hyphens (`## GOAL-KEEPER / PATTERN-OBSERVER`)
-# and their activator commands are `/goal-keeper` / `/pattern-observer`, but the
-# stamped EDP_ROLE is `goal_keeper` / `pattern_observer` (http_pool.py:99,107).
-# A row keyed `"goal-keeper"` would never match, `toolset_for_role` would keep
-# returning None, and the fix would SILENTLY DO NOTHING while looking landed.
-# `test_every_pool_spawned_role_has_a_toolset` derives the keys from
-# http_pool.py's source so that trap cannot be re-entered.
-#
-# Each set is the union of the verbs the role's OWN command file calls, plus
-# `pool_close_self` (all three are instructed to close themselves). They are
-# read-only: no authoring, no spawn, no mutation.
-#
-# NOT included: `pattern_observer_analyze`, which is NOT a registered tool.
-# `build_mcp` fails CLOSED on such drift (mcp_server.py:150-158) — naming it here
-# would take the MCP server down at startup for every shell. It was a GUIDE bug,
-# reported rather than papered over with a hardcoded carve-out; d70 ruled the
-# text dead and s26/a2 deleted the call form from pattern-observer.md.
-# `tests/test_s26_guide_tool_names.py` now fails if any live guide re-introduces
-# a call form of a name no registry holds.
+# ── the ADVISORY role (s25/a4, B3) ─────────────────────────────────────────
+# `clients/http_pool.py` spawns curiosity and `pty_launcher.py:400` stamps its
+# EDP_ROLE; a role spawned without a row here makes `toolset_for_role` return
+# None and `build_mcp` FAIL OPEN to the full registry — the over-grant trap
+# this row exists to close. THE KEY IS THE UNDERSCORE FORM, from
+# `http_pool.py`; `test_every_pool_spawned_role_has_a_toolset` derives the
+# keys from that source so a mismatched key cannot silently do nothing.
+# The set is the union of the verbs the role's OWN command file calls, plus
+# `pool_close_self`. Read-only: no authoring, no spawn, no mutation.
+# (goal_keeper / pattern_observer, the other two advisory roles this block
+# once defined, are DEAD — owner ruling 2026-08-04; see below.)
 _CURIOSITY: frozenset[str] = frozenset({
     "check_inbox", "get_guide", "notify_above", "observe", "list_subscriptions", "unobserve", "read_object",
     "reply", "pool_close_self",
 })
 
-_GOAL_KEEPER: frozenset[str] = frozenset({
-    "check_inbox", "read_object", "reply", "pool_close_self",
-})
-
-_PATTERN_OBSERVER: frozenset[str] = frozenset({
-    "check_inbox", "query_objects", "read_object", "recall", "reply",
-    "pool_close_self",
-})
+# OWNER RULING (2026-08-04): goal_keeper and pattern_observer are DEAD roles —
+# rows, toolsets, tool classes, activator cards and spawn paths all deleted
+# (history at 18cac3f). `test_every_pool_spawned_role_has_a_toolset` derives
+# its keys from http_pool.py, whose spawn methods went with them.
 
 ROLE_TOOLSETS: dict[str, frozenset[str]] = {
     "worker": _WORKER,
@@ -481,8 +466,6 @@ ROLE_TOOLSETS: dict[str, frozenset[str]] = {
     "consult": _CONSULT,
     "neuron": _NEURON,
     "curiosity": _CURIOSITY,
-    "goal_keeper": _GOAL_KEEPER,
-    "pattern_observer": _PATTERN_OBSERVER,
 }
 
 
@@ -580,8 +563,8 @@ MODEL_TIERS: dict[tuple[str, str], dict] = {
     # TIERS ARE NEVER AUTO-SELECTED — a human passes one explicitly or nothing.
     ("consult", DEFAULT_TASK_CLASS): _OPUS_DEFAULT,
     ("curiosity", DEFAULT_TASK_CLASS): _OPUS_DEFAULT,
-    ("goal_keeper", DEFAULT_TASK_CLASS): _OPUS_DEFAULT,
-    ("pattern_observer", DEFAULT_TASK_CLASS): _OPUS_DEFAULT,
+    # goal_keeper / pattern_observer rows deleted — DEAD roles (owner ruling
+    # 2026-08-04).
 
     # ── worker ──────────────────────────────────────────────────────────────
     ("worker", DEFAULT_TASK_CLASS): _OPUS_DEFAULT,
@@ -702,12 +685,11 @@ CRUD_OBJECT_SCOPE: dict[str, frozenset[str]] = {
     "reviewer": frozenset(),
     "specialist": frozenset(),
     "consult": frozenset(),
-    # s25/a4: the three advisory roles are read-only over the generic verbs,
-    # closing the same fail-open hole `crud_scope_violation` had for them
-    # (an ABSENT role returns None = UNCONSTRAINED full CRUD).
+    # s25/a4: the advisory role is read-only over the generic verbs, closing
+    # the same fail-open hole `crud_scope_violation` had for it (an ABSENT
+    # role returns None = UNCONSTRAINED full CRUD). goal_keeper /
+    # pattern_observer rows deleted with their roles (owner ruling 2026-08-04).
     "curiosity": frozenset(),
-    "goal_keeper": frozenset(),
-    "pattern_observer": frozenset(),
 }
 
 

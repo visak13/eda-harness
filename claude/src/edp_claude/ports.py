@@ -53,21 +53,8 @@ class PoolPort(ABC):
     # cannot be synchronous, because the transcript must flush and the shell
     # must stop consuming before the inbox watermark is cut.
 
-    @abstractmethod
-    async def spawn_goal_keeper(
-        self, parent_id: str, gk_id: str, model: str | None = None
-    ) -> ToolResult:
-        """Phase 6 (2026-05-21): externality shell for tactical-vs-
-        strategic drift detection. Consulted at plan-creation time.
-        Same consult-before-spawn pattern as critic."""
-
-    @abstractmethod
-    async def spawn_pattern_observer(
-        self, parent_id: str, po_id: str, model: str | None = None
-    ) -> ToolResult:
-        """Phase 6 (2026-05-21): externality shell for cross-plan
-        failure pattern aggregation. Consulted at plan-close time.
-        Same consult-before-spawn pattern as critic."""
+    # (spawn_goal_keeper / spawn_pattern_observer lived here — Phase 6
+    # externality shells. DELETED with their roles, owner ruling 2026-08-04.)
 
     @abstractmethod
     async def spawn_curiosity(

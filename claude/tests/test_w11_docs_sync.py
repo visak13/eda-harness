@@ -120,13 +120,10 @@ ROLE_COMMAND_FILES: dict[str, str] = {
     "reviewer": ".claude/commands/reviewer.md",
     "specialist": ".claude/commands/specialist.md",
     "consult": ".claude/commands/consult.md",
-    # s25/a4: these three gained ROLE_TOOLSETS rows, closing the fail-open
-    # over-grant. Keyed by the UNDERSCORE strings http_pool.py stamps as
-    # EDP_ROLE — NOT by the hyphenated activator/filename (a "goal-keeper" key
-    # would match nothing and the fix would silently do nothing).
+    # s25/a4: keyed by the UNDERSCORE string http_pool.py stamps as EDP_ROLE —
+    # NOT by the hyphenated activator/filename. goal_keeper / pattern_observer
+    # rows deleted with their DEAD roles (owner ruling 2026-08-04).
     "curiosity": ".claude/commands/curiosity.md",
-    "goal_keeper": ".claude/commands/goal-keeper.md",
-    "pattern_observer": ".claude/commands/pattern-observer.md",
 }
 
 # ── command files that are NOT keyed by ROLE_TOOLSETS (a9 review finding) ───
@@ -149,10 +146,7 @@ ROLE_COMMAND_FILES: dict[str, str] = {
 # no longer fail open, and their briefs are no longer the only thing standing
 # between those shells and a neuron-only verb.
 NON_ROLE_COMMAND_FILES: dict[str, str] = {
-    "goal-keeper-check.md": (
-        "A check prompt run inside an existing shell, not a spawned role; it "
-        "carries no toolset of its own."
-    ),
+    # goal-keeper-check.md deleted with its dead role (owner ruling 2026-08-04).
     "ocak.md": (
         "RETIRED (DESIGN-v5 P1) — no longer an LLM-invoked skill. Kept as a "
         "tombstone; it instructs no shell to call anything."

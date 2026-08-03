@@ -105,8 +105,11 @@ def test_mcp_1_registry_has_59_named_tools(tmp_path):
     assert {"get_guide", "consult_specialist", "record_specialist_consult",
             "run_ocak_audit", "record_audit_verdict"} <= set(names)
     assert {"ask_above", "notify_above", "reply", "check_inbox"} <= set(names)
-    assert {"consult_goal_keeper", "consult_pattern_observer",
-            "consult_curiosity", "branch_reviewer"} <= set(names)
+    assert "consult_curiosity" in names
+    # DELETED with their dead roles / by owner ruling (2026-08-04):
+    for gone in ("consult_goal_keeper", "consult_pattern_observer",
+                 "branch_reviewer"):
+        assert gone not in names, gone
     assert "consult_critic" not in names  # retired in v2.4
     assert "respond" not in names  # renamed; addressing moved under tool
     assert {"next_action", "resolve_recipe", "start_recipe",

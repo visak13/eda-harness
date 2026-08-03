@@ -45,5 +45,5 @@ novel performance assumptions.
   `poc-iterate-build` — every action will look "done" while the
   system-level requirement quietly fails.
 - **Skipping acceptance signals.** Each action's acceptance is what
-  the planner (and the recipe-end `branch_reviewer`) reads to know the
-  action succeeded. Empty acceptance = no verification.
+  the planner (and the review leg) reads to know the action
+  succeeded. Empty acceptance = no verification.

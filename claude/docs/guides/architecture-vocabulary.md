@@ -20,8 +20,8 @@ recap, they mean exactly what's defined here.
   dispatch of **actions**). **The reviewer leg is the planner's subagent.**
 - **worker** — one **action** per shell. Does the work, records status.
 - helpers — **curiosity** (comprehension / per-decision interrogation),
-  **specialist** (research / advice), **reviewer**, **goal-keeper**,
-  **pattern-observer**.
+  **specialist** (research / advice), **reviewer**. (goal-keeper and
+  pattern-observer were DEAD roles — deleted by owner ruling 2026-08-04.)
 
 > **The FSM/recipe is a MEMORY LAYER for the neuron, not a dictator.** It
 > advises; the model decides. When `next_action` surfaces a prompt, that is the
@@ -76,15 +76,11 @@ recap, they mean exactly what's defined here.
 >    why one pass is insufficient, what must NOT be raised as a defect — belongs
 >    in the **grounding brief** as well as the action text, because the grounding
 >    brief is the half that is delivered.
-> 2. **`branch_reviewer` — the NEURON'S verb** for forking a DOMAIN/spec review of
->    a deliverable against a specialist's compiled doc. It is on the neuron's
->    toolset and no other. This is a different mechanism from (1), not a rival to
->    it — and **the planner is not missing a verb it ought to have.**
->
-> The one genuinely open point: d128's wording is absolute (*"the neuron must
-> never call `branch_reviewer`"*) but its trigger was only the DIRECTION review,
-> which is gone. **The neuron's retention of `branch_reviewer(scope='spec')` for
-> domain review awaits user confirmation of d128's intended scope.**
+ 2. **`branch_reviewer` — DELETED (owner ruling 2026-08-04).** d128's absolute
+>    wording (*"the neuron must never call `branch_reviewer`"*) was confirmed by
+>    the owner and the verb removed outright: the reviewer LEG above is the ONE
+>    review mechanism, and domain/spec review reaches it through the planner's
+>    dispatch. The neuron convenes no reviewer of its own.
 
 ## The infrastructure
 

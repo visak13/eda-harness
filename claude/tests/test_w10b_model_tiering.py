@@ -284,30 +284,23 @@ async def test_t3_candidate_flag_launches_the_spawn_on_sonnet(env):
         f"{SONNET!r} with allow_candidate_tier=True")
 
 
-async def test_t3b_default_reviewer_spawn_stays_opus_host_default(env):
-    """The reviewer passes NO model → host default (Opus). The safety net
+def test_t3b_default_reviewer_spawn_stays_opus_host_default():
+    """The reviewer resolves NO model → host default (Opus). The safety net
     degrades last (d29/d30: the reviewer's re-run IS the gate).
 
-    RE-POINTED (d128/d132) onto the SPEC reviewer — which is the only reviewer
-    there is now, and is the planner's. It is also the guard the direction-review
-    removal must not weaken, so exercising it here is the point, not a detour."""
-    nid = await _stable_specialist(env)
+    RE-POINTED TWICE: first (d128/d132) onto the SPEC reviewer, then again
+    when `branch_reviewer` was deleted outright (owner ruling 2026-08-04) —
+    the property survives the verb, so it is pinned at the resolver every
+    reviewer spawn reads (`spawn_model_for`)."""
+    from edp_claude.tools.roles import spawn_model_for
 
-    _ok(await env.call("branch_reviewer", neuron_id=nid, target="/t.java",
-                       criteria="c", handle="recipe-x"))
-    spawned = [s for s in env.ctx.pool.spawns if s["role"] == "reviewer"]
-    assert len(spawned) == 1
-    assert spawned[0]["model"] is None, (
-        f"the spec reviewer passed model={spawned[0]['model']!r}; it must "
-        "carry no --model flag — it is the acceptance gate, not a candidate")
-
+    assert spawn_model_for("reviewer", "spec") is None, (
+        "the spec reviewer resolved a --model; it must carry none — it is "
+        "the acceptance gate, not a candidate")
     # ...and even asking for the candidate tier cannot degrade it: no reviewer
     # candidate row exists to select.
-    _ok(await env.call("branch_reviewer", neuron_id=nid, target="/t2.java",
-                       criteria="c", handle="recipe-x",
-                       allow_candidate_tier=True))
-    assert [s for s in env.ctx.pool.spawns
-            if s["role"] == "reviewer"][1]["model"] is None
+    assert spawn_model_for(
+        "reviewer", "spec", allow_candidate_tier=True) is None
 
 
 async def test_t3c_default_worker_spawn_stays_opus_host_default(env):

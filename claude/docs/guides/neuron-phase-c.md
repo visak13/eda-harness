@@ -36,22 +36,12 @@ not a step; that's `execution="inline"` (rare). Keep step descriptions
 
 ## Optional: drift check before dispatch
 
-For non-trivial plans, consult the goal-keeper externality before
-spawning the planner:
-
-```
-consult_goal_keeper(recipe_id=<rid>,
-                    query="check drift on the planned step")
-```
-
-The goal-keeper reads the recipe's `user_goal_verbatim` (strategic)
-and the step's description (tactical), scores drift, returns a
-report. The verdict arrives later via `handle_messages` (kind=
-`answer`); read it before deciding to dispatch.
-
-This is optional, not enforced — trivial steps don't need it. For
-multi-step recipes or steps that touch a new domain, the early-
-warning signal is cheap insurance.
+For non-trivial steps, re-read the recipe's `user_goal_verbatim`
+(strategic) against the step's description (tactical) yourself before
+spawning the planner, and surface a mismatch to the user rather than
+dispatching through it. (The goal-keeper externality that scored this
+is a DEAD role — deleted by owner ruling 2026-08-04.) Optional, not
+enforced — trivial steps don't need it.
 
 ## Multi-step plans — declare the DAG, not a queue
 

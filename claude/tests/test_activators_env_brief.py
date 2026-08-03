@@ -114,8 +114,12 @@ def test_neuron_phase_d_carries_event_router():
     assert "observation" in d and "alert" in d
     # The verbatim discipline from the old design:
     assert "do not self-evaluate" in d
-    # Domain correctness now goes to a reviewer fork, not /critic:
-    assert "branch_reviewer" in d
+    # Domain correctness routes through the PLANNER's reviewer leg —
+    # branch_reviewer was deleted by owner ruling 2026-08-04, and /critic
+    # was retired in v2.4. Absence asserted for both, with the positive
+    # control that the replacement route is actually named.
+    assert "branch_reviewer" not in d
+    assert "reviewer leg" in d
     assert "/critic" not in d
     # Uses the new reply tool (not respond / addressing):
     assert "reply" in d

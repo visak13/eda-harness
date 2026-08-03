@@ -102,17 +102,14 @@ def test_briefs_read_state_via_object_surface_not_raw_files():
     # edp-pool/.edp_state, hedging powershell+python in parallel). State
     # reads MUST go through read_object/query_objects — the old raw-file
     # instructions are removed and the shells use the object surface.
-    for name in ("worker.md", "goal-keeper.md", "pattern-observer.md"):
+    # (goal-keeper.md / pattern-observer.md deleted with their dead roles,
+    # owner ruling 2026-08-04 — the worker brief is the surviving surface.)
+    for name in ("worker.md",):
         b = (_CMD / name).read_text(encoding="utf-8")
         assert "read_object" in b, name
     w = (_CMD / "worker.md").read_text(encoding="utf-8")
     assert "Read `.plans/<plan_id>.json` (normal Read tool)" not in w
     assert 'read_object("action"' in w
-    gk = (_CMD / "goal-keeper.md").read_text(encoding="utf-8")
-    assert "Read('.recipes/<recipe_id>/recipe.json')" not in gk
-    assert "Read('.plans/<plan_id>.json')" not in gk
-    po = (_CMD / "pattern-observer.md").read_text(encoding="utf-8")
-    assert "Read('.plans/<plan_id>/worklog.jsonl')" not in po
 
 
 def test_vocab_guide_forbids_raw_state_file_reads():

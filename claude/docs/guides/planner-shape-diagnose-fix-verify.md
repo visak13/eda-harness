@@ -47,14 +47,13 @@ Without this, you won't know when to stop investigating.
 - Add a regression test that would have caught the bug, so future
   reverts surface immediately.
 - "Fixed" is a `tests_pass` / behavioural claim the filesystem can't
-  fully verify. For a non-trivial fix, escalate to the neuron
-  (`ask_above`) for external review — the neuron forks a
-  `branch_reviewer` of the relevant specialist to judge whether the fix
-  addresses the root cause or just the reproduced symptom (the
-  Comprehension question in `framework-ocak`). Self-attesting "it's
-  fixed" is the trap; external review is the counterpart to the
-  outcome-verify file
-  gate for non-deterministic acceptance.
+  fully verify. For a non-trivial fix, dispatch your OWN review leg
+  (`role="reviewer"`, named `r<n>`/`review-…`) against the relevant
+  specialist's compiled doc to judge whether the fix addresses the root
+  cause or just the reproduced symptom (the Comprehension question in
+  `framework-ocak`). Self-attesting "it's fixed" is the trap; external
+  review is the counterpart to the outcome-verify file gate for
+  non-deterministic acceptance.
 
 ## Action acceptance shapes
 

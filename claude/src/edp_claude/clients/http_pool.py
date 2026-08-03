@@ -155,21 +155,8 @@ class HttpPool(PoolPort):
             return Tool.ok(_Armed(**r.json()))
         return Tool.from_upstream(r)
 
-    async def spawn_goal_keeper(
-        self, parent_id: str, gk_id: str, model: str | None = None
-    ) -> ToolResult:
-        extra = {"model": model} if model else {}
-        return await self._spawn(
-            "goal_keeper", gk_id, parent_session=parent_id, **extra
-        )
-
-    async def spawn_pattern_observer(
-        self, parent_id: str, po_id: str, model: str | None = None
-    ) -> ToolResult:
-        extra = {"model": model} if model else {}
-        return await self._spawn(
-            "pattern_observer", po_id, parent_session=parent_id, **extra
-        )
+    # (spawn_goal_keeper / spawn_pattern_observer lived here — DELETED with
+    # their roles, owner ruling 2026-08-04.)
 
     async def spawn_curiosity(
         self, parent_id: str, curiosity_id: str, model: str | None = None
