@@ -30,6 +30,36 @@ claude/.inbox_cursors/
 claude/.reactive/
 claude/.claude-pool/
 claude/.claude/settings.local.json
+claude/.reset-backups-*/
+
+# Loose session-debug dumps at claude/ root (untracked in the baseline; keep them out).
+# Named individually where a glob would risk catching real files.
+claude/*_logs.txt
+claude/*_example*.txt
+claude/*_debug*.txt
+claude/debug*.txt
+claude/*_comms_error.txt
+claude/_msfr_action.txt
+claude/a.txt
+claude/aa.txt
+claude/c.txt
+claude/d.txt
+claude/neuron.txt
+claude/neuron2.txt
+claude/neuron2-mcp-calls.md
+claude/neuron_iran_us.txt
+claude/new-trends-s5-orchestration-debug.md
+claude/new_file.txt
+claude/now_this.txt
+claude/planner.txt
+claude/planner-s1-session-debug.md
+claude/planner_us_iran.txt
+claude/scratch_lbd.txt
+claude/specialist.txt
+claude/tool-use-friction-notes.md
+claude/worker2.txt
+claude/chat_after_third_compact.txt
+claude/before-390.json
 vault/plans/
 vault/recipes/
 

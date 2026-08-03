@@ -20,33 +20,10 @@
         "EDP_ROLE_SCOPE": "${EDP_ROLE_SCOPE:-warn}"
       }
     },
-    "design-templates": {
-      "command": "uv",
-      "args": [
-        "run",
-        "--directory",
-        "C:\\Projects\\Learning\\eda-base3\\design-templates-mcp",
-        "python",
-        "-m",
-        "design_templates_mcp.server"
-      ],
-      "env": {
-        "EDA_DESIGNS_ROOT": "C:\\Projects\\Learning\\eda-designs"
-      }
-    },
     "playwright": {
       "command": "npx",
       "args": [
         "@playwright/mcp@latest"
-      ]
-    },
-    "unrealMCP": {
-      "command": "uv",
-      "args": [
-        "--directory",
-        "C:\\Projects\\NationsFrontierUE\\_mcp\\unreal-engine-mcp\\Python",
-        "run",
-        "unreal_mcp_server_advanced.py"
       ]
     }
   }
