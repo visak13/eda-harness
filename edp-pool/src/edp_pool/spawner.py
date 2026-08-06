@@ -135,6 +135,23 @@ class FakeSpawner(Spawner):
         return self._output_ts.get(session_id)
 
 
+def seat_model_for(role: str, agent_home: str | None) -> str | None:
+    """v7 WS4/live-drill fix (2026-08-07): resolve the seat registry AT THE
+    SPAWN SEAM — the single chokepoint every role passes through. The first
+    drill ran planners/curiosity on the config-dir default model (Opus 5)
+    because only SOME engine tools pass `model` down; now an explicit None
+    is resolved from models.json here, so the registry binds EVERY spawned
+    role. Absent registry / unmapped role → None (legacy host default)."""
+    if not agent_home:
+        return None
+    try:
+        from edp_contracts.seats import seat_for_role
+        seat = seat_for_role(agent_home, role)
+    except Exception:      # noqa: BLE001 — registry trouble never blocks spawn
+        return None
+    return seat.model if seat is not None else None
+
+
 class SubprocessSpawner(Spawner):
     """Real claude-shell launch via the ported ConPTY mechanics
     (`pty_launcher`). Headless: no human proxy. The shell talks to the
@@ -193,6 +210,10 @@ class SubprocessSpawner(Spawner):
             resolve_claude_bin,
         )
 
+        # v7 live-drill fix: the seat registry binds EVERY role at this
+        # seam (see seat_model_for above) — an unpassed model no longer
+        # falls to the config-dir default.
+        model = model or seat_model_for(role, self.cwd)
         bin_ = resolve_claude_bin(self.claude_bin)
         # W14: pre-spawn health gate at the single resolved-bin chokepoint —
         # covers BOTH the monitor (ConsoleLaunch) and headless (PtyLaunch)

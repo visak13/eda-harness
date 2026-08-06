@@ -496,16 +496,27 @@ class RealSources:
             return {str(lk.get("handle")) for lk in rows
                     if lk.get("liveness") == "alive"}
 
-        def _aged(unit_id: str, backing: str, now: float,
+        def _aged(unit_id: str, backing: str | set[str], now: float,
                   seen: set[str], alive: set[str]) -> int | None:
-            """None if backed or still inside the grace window; else the age."""
-            if backing in alive:
+            """None if backed or still inside the grace window; else the age.
+            `backing` may be a SET of candidate handle forms — live-drill fix
+            (2026-08-07): a planner's pool LOCK registers under the COLON
+            spawn handle while its broker inbox is the DASH form; probing
+            only one form false-fired "orphaned" every poll for a planner
+            that was alive all along (the monitor-event flood)."""
+            candidates = backing if isinstance(backing, set) else {backing}
+            if candidates & alive:
                 first_unbacked.pop(unit_id, None)
                 return None
             seen.add(unit_id)
             since = first_unbacked.setdefault(unit_id, now)
             age = now - since
-            return None if age < grace_secs else int(age)
+            if age < grace_secs:
+                return None
+            # MINUTE-quantized so the emitted payload is stable between
+            # polls — a raw seconds age made every poll look "changed" and
+            # defeated downstream dedup (part of the 2026-08-07 flood).
+            return int(age // 60) * 60
 
         def fetch_recipe():
             """The NEURON's half of the same defect. One level up, the shell
@@ -530,15 +541,18 @@ class RealSources:
             orphans, seen = [], set()
             for s in open_steps:
                 sid = str(s.get("step_id"))
-                # A planner's canonical inbox/lock handle is the DASH form.
-                backing = f"{recipe_id}-{sid}"
-                age = _aged(sid, backing, now, seen, alive)
+                # Live-drill fix (2026-08-07): the pool LOCK registers the
+                # COLON spawn handle `<recipe>:<step>`; the broker inbox is
+                # the DASH form. Accept either — probing only the dash form
+                # false-fired every 2s for a demonstrably alive planner.
+                backings = {f"{recipe_id}:{sid}", f"{recipe_id}-{sid}"}
+                age = _aged(sid, backings, now, seen, alive)
                 if age is None:
                     continue
                 orphans.append({
                     "step_id": sid,
                     "status": s.get("status"),
-                    "backing_handle": backing,
+                    "backing_handle": sorted(backings),
                     "unbacked_secs": age,
                     "reason": "step dispatched with no live planner",
                 })

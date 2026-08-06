@@ -62,7 +62,7 @@ ROLE_SPECS: dict[str, str] = {
 
 #: default heartbeat per role (seconds) — reflex(pace) overrides live.
 ROLE_HEARTBEAT_S: dict[str, float] = {
-    "worker": 300.0, "reviewer": 300.0, "curiosity": 120.0,
+    "worker": 300.0, "reviewer": 300.0, "curiosity": 300.0,
     "consult": 300.0, "specialist": 600.0, "planner": 1800.0,
 }
 
@@ -289,6 +289,10 @@ class ShadowSpawner(Spawner):
             PtyLaunch, activation_text, build_argv, build_env,
             build_session_args, ensure_claude_healthy, resolve_claude_bin,
         )
+        from .spawner import seat_model_for
+
+        # v7 live-drill fix: registry binds every shadowed role too.
+        model = model or seat_model_for(role, self.legacy.cwd)
 
         cfg = ShadowConfig(
             handle=handle, role=role, ledger_dir=self.shadow_dir,

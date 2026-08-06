@@ -21,7 +21,7 @@ the wiring; `[shadow <you> #<seq> :<nonce>]` lines are your senses
 (nonce must match your env); `reflex(verb="status")` on doubt; your
 close stays YOURS (Step 4b — the shadow cannot see `clear`).
 
-`CronCreate` recurring, cron = `*/2 * * * *`, prompt = `call
+`CronCreate` recurring, cron = `*/5 * * * *`, prompt = `call
 check_inbox() and if there is a NEW consult, process it; otherwise end
 your turn and wait.` Keep the job id. (Your heartbeat stays this
 `check_inbox` reflex — the reconcile-loop prompt is neuron/planner

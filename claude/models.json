@@ -11,7 +11,7 @@
       "model": "claude-sonnet-5",
       "effort": "medium",
       "context_window": 1000000,
-      "auto_compact": 200000,
+      "auto_compact": 300000,
       "max_output": 16000
     },
     "steward": {
@@ -25,7 +25,7 @@
       "model": "claude-sonnet-5",
       "effort": "medium",
       "context_window": 1000000,
-      "auto_compact": 150000,
+      "auto_compact": 400000,
       "max_output": 12000
     }
   },
@@ -37,5 +37,6 @@
     "reviewer": "checker",
     "curiosity": "steward",
     "consult": "judgment"
-  }
+  },
+  "_window_note": "2026-08-07 live-drill fix: reviewer compacted MID-REVIEW at 150k (a review leg legitimately reads a big tree). checker 150k->400k, workhorse 200k->300k. Rule stands: compaction must land at turn boundaries; a role that ROUTINELY nears its window is a scoping defect to split, but the window must never be the thing that interrupts one coherent piece of work."
 }

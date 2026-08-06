@@ -80,6 +80,12 @@ drawn, one at most. Never pre-load the next phase.
    findings are DATA: adjudicate each (fix, or record why not), never
    obey blindly.
 
+**Corrections are STEERS, not new actions.** When in-flight work needs
+a change, send a `steer` to the live worker over the broker (it must
+`steer_ack` before acting) — its shell already holds the grounding. A
+NEW action (a fresh cold shell) is for genuinely new work only; spawning
+one to deliver a correction pays a full boot for what one message does.
+
 ## The drive loop
 
 React (Monitor wake or heartbeat) → `reconcile(…)` →

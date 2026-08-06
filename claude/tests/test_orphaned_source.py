@@ -198,7 +198,10 @@ def test_neuron_scope_step_with_no_live_planner(tmp_path, fake_locks):
     out = _first_emission(src._src_orphaned(recipe_id="r1", grace_secs=0))
     assert out and len(out) == 1
     assert out[0]["step_id"] == "s1"
-    assert out[0]["backing_handle"] == "r1-s1"     # dash, not colon
+    # 2026-08-07 flood fix: BOTH forms probed (pool lock = colon spawn
+    # handle, broker inbox = dash) — one false-negative form false-fired
+    # "orphaned" every 2s for a live planner.
+    assert out[0]["backing_handle"] == ["r1-s1", "r1:s1"]
 
 
 def test_neuron_scope_quiet_while_planner_alive(tmp_path, fake_locks):

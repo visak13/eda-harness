@@ -70,5 +70,23 @@
     "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
     "created_at": "2026-08-06T12:39:30Z",
     "last_used": "2026-08-06T12:39:30Z"
+  },
+  "recipe-update-the-harness-presentation-site-htt-31fc24:s1|sol": {
+    "thread_id": "019fd79a-8a12-7aa2-ad09-86443fe24b09",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-06T15:05:26Z",
+    "last_used": "2026-08-06T15:05:26Z"
+  },
+  "recipe-update-the-harness-presentation-site-htt-31fc24:s2|sol": {
+    "thread_id": "019fd7ac-d3d1-7fe3-b889-3bd6b0996e95",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-06T15:25:24Z",
+    "last_used": "2026-08-06T15:25:24Z"
+  },
+  "recipe-update-the-harness-presentation-site-htt-31fc24-s2:a2|sol": {
+    "thread_id": "019fd7b1-9111-7e52-b7ce-05d7c6bf20af",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\claude\\C--Projects-Learning-eda-base3-claude\\bd8deb95-3493-4787-bab6-06395492fda5\\scratchpad\\sol-assets\\s7",
+    "created_at": "2026-08-06T15:30:58Z",
+    "last_used": "2026-08-06T15:38:20Z"
   }
 }

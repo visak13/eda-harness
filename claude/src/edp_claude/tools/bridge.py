@@ -326,20 +326,84 @@ def _run_http(delegate: Delegate, work_order: str) -> tuple[str, int, int, str |
             int(usage.get("completion_tokens", 0)), None)
 
 
+#: ToS-safety concurrency cap for subscription-CLI delegates (user ruling
+#: 2026-08-07): N shells calling codex simultaneously looks like automated
+#: hammering of a consumer ChatGPT plan. Cross-PROCESS slot lock (every
+#: shell's MCP server is a separate process, so an in-process semaphore
+#: guards nothing): atomic mkdir slots under the agent home. Default 2
+#: concurrent codex turns fleet-wide; EDP_BRIDGE_CLI_MAX=1 serializes.
+_CLI_MAX_ENV = "EDP_BRIDGE_CLI_MAX"
+_CLI_SLOT_WAIT_S = 900.0            # matches sol_bridge's turn ceiling
+_CLI_SLOT_STALE_S = 1200.0          # reap a slot from a crashed process
+
+
+def _cli_slot_acquire() -> Path | None:
+    home = Path(os.environ.get("EDP_AGENT_HOME") or os.getcwd())
+    slots_dir = home / ".bridge" / "cli-slots"
+    slots_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        n = max(1, int(os.environ.get(_CLI_MAX_ENV, "2")))
+    except ValueError:
+        n = 2
+    deadline = time.time() + _CLI_SLOT_WAIT_S
+    while time.time() < deadline:
+        for i in range(n):
+            slot = slots_dir / f"slot-{i}.lock"
+            try:
+                slot.mkdir()                     # atomic acquire
+                (slot / "pid").write_text(str(os.getpid()))
+                return slot
+            except FileExistsError:
+                # reap a stale slot left by a crashed process
+                try:
+                    age = time.time() - slot.stat().st_mtime
+                    if age > _CLI_SLOT_STALE_S:
+                        (slot / "pid").unlink(missing_ok=True)
+                        slot.rmdir()
+                except OSError:
+                    pass
+        time.sleep(2.0)
+    return None
+
+
+def _cli_slot_release(slot: Path | None) -> None:
+    if slot is None:
+        return
+    try:
+        (slot / "pid").unlink(missing_ok=True)
+        slot.rmdir()
+    except OSError:
+        pass
+
+
 def _run_cli(delegate: Delegate, work_order: str, caller: str,
              kind: str) -> tuple[str, int, int, str | None]:
     """One Codex-CLI turn via sol_bridge — ALWAYS read-only sandbox: bridge
     delegates return text, they never write. Thread stickiness per
     (caller, delegate) via sol_bridge's own store; a challenge always starts a
-    FRESH thread so the adversary never accretes sympathy for prior context."""
-    import tempfile
-    workdir = str(Path(tempfile.gettempdir()) / "edp-bridge" / delegate.name)
-    run = sol_bridge.run_sol(
-        prompt=work_order, workdir=workdir, sandbox="read-only",
-        caller=caller, advisor=delegate.name, effort=delegate.effort,
-        new_thread=(kind == "challenge"))
-    content = run.last_message or "\n".join(run.agent_messages)
-    return content, 0, 0, (None if run.ok else run.error)
+    FRESH thread so the adversary never accretes sympathy for prior context.
+    Fleet-wide concurrency is slot-capped (see _CLI_MAX_ENV above): a shell
+    that cannot get a slot within the wait window gets a BLOCKER, never a
+    pile-on."""
+    slot = _cli_slot_acquire()
+    if slot is None:
+        return "", 0, 0, (
+            f"no codex slot free within {_CLI_SLOT_WAIT_S:.0f}s "
+            f"({_CLI_MAX_ENV} caps fleet-wide concurrent sol turns to "
+            f"protect the ChatGPT plan) — surface upward and continue other "
+            f"work; do NOT retry-loop.")
+    try:
+        import tempfile
+        workdir = str(Path(tempfile.gettempdir()) / "edp-bridge"
+                      / delegate.name)
+        run = sol_bridge.run_sol(
+            prompt=work_order, workdir=workdir, sandbox="read-only",
+            caller=caller, advisor=delegate.name, effort=delegate.effort,
+            new_thread=(kind == "challenge"))
+        content = run.last_message or "\n".join(run.agent_messages)
+        return content, 0, 0, (None if run.ok else run.error)
+    finally:
+        _cli_slot_release(slot)
 
 
 def delegate_call(*, kind: str, delegate_name: str, task: str,
