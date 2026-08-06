@@ -170,6 +170,18 @@ _WORKER: frozenset[str] = frozenset({
     # cannot verify by hand. Sol writes ONLY under a validated asset dir (never
     # code); the worker is Sol's eyes (render -> capture -> feed back via -i).
     "sol_author_asset",
+    # v7 WS1 (2026-08-05) — the delegation layer: bulk generation routed to a
+    # cheap external model (frontier plans, cheap executes, the WORKER
+    # verifies). Route-gated in .bridge.json — an unrouted (role, task_class)
+    # refuses with "do this work yourself", so holding the verb grants nothing
+    # until a human routes it. The draft returns as TEXT; the worker still owns
+    # integrate/build/test/record — no reach beyond work it already does.
+    "delegate_generate",
+    # v7 WS3 (§2.5b) — the worker REGISTERS every test it writes (verifies +
+    # covers). Write-only over the derived graph sidecar; refusing a test
+    # that verifies nothing is the false-security gate. No new reach — it
+    # describes work the worker already did.
+    "record_test_lineage",
     "pool_close_self",
 })
 
@@ -245,6 +257,20 @@ _PLANNER: frozenset[str] = frozenset({
     RECORD_CONTEXT, "recall", "search_context",
     # -consult_pattern_observer — the role is DEAD (owner ruling 2026-08-04).
     "consult_specialist",
+    # v7 WS1 (2026-08-05) — the ADVERSARIAL pass on the planner's OWN
+    # pre-ratification plan (§2.2b): Sol attacks the DAG/acceptance through a
+    # named lens and returns FINDINGS-ONLY data the planner adjudicates through
+    # the normal write-gates. The delegate holds no shell, no broker sender
+    # beyond `challenge` kinds, no write path — attacking one's own draft
+    # grants no reach. Route-gated in .bridge.json (unrouted = refuse).
+    "adversarial_challenge",
+    # v7 WS3 (§2.5b) — the planner reads the dead-test report to author
+    # retirement actions and the impacted set to size review legs. Read-only
+    # over the derived graph index.
+    "test_lineage_report",
+    # v7 WS3 (§2.6c) — the planner estimates at declaration and re-checks
+    # planned-vs-actual when sizing waves. Read-only.
+    "budget_status",
     # W5 (DESIGN-v6 §W5) granted the planner `convene_consult` so it could
     # convene a consult for a stuck action. RETIRED 2026-07-25 by operator
     # ruling — see `_OPERATOR_RETIRED` above for the reason, the disclosed cost
@@ -299,6 +325,16 @@ _REVIEWER: frozenset[str] = frozenset({
     # this answers the objection that kept the verb off this floor and
     # forced review legs to run as role="worker", the d67/d100 no-op class).
     "record_action_status",
+    # v7 WS1 (2026-08-05) — cheap cross-family PRE-SCREEN of an artifact
+    # against its acceptance. The delegate's verdict never decides — the
+    # reviewer adjudicates in record_branch_verdict exactly as before, so this
+    # is a cheaper path to scrutiny the reviewer already performs, not new
+    # reach. Route-gated in .bridge.json (unrouted = refuse).
+    "delegate_review",
+    # v7 WS3 (§2.5b) — the impacted-test set for the diff under review (run
+    # these, not the world) + the dead-test report. Read-only over the
+    # derived graph index.
+    "test_lineage_report",
     "pool_close_self",
 })
 
@@ -336,6 +372,12 @@ _SPECIALIST: frozenset[str] = frozenset({
     # specialist.md:218 calls. Named here so the grant is visible, not inherited.
     "assemble_ruleset",
     "record_specialist_consult", "register_rule", "list_rules",
+    # v7 WS1 (2026-08-05) — the adversarial pass on the specialist's OWN spec
+    # `decision` entries (§2.6: chosen-option + alternatives + revisit_when —
+    # exactly where wrong-option-baked-in lives). Findings-only, adjudicated by
+    # this same role through resolve_spec_learnings/recompile; no write path in
+    # the delegate. Route-gated in .bridge.json (unrouted = refuse).
+    "adversarial_challenge",
     "pool_close_self",
 }) | SPECIALIST_ONLY
 
@@ -363,6 +405,11 @@ _CONSULT: frozenset[str] = frozenset({
     # from the model-tiering ruling: the consult shell stays an Opus Claude that
     # REACHES Sol through this tool (Sol is not a --model).
     "sol_consult",
+    # v7 WS1 (2026-08-05) — one-shot CROSS-PROVIDER verdict (bias removal by
+    # model family, §2.4): text in, text out, the advisor changes nothing.
+    # Same read-only-plus-record posture as sol_consult; route-gated in
+    # .bridge.json (unrouted = refuse).
+    "consult_external",
     "pool_close_self",
 })
 
@@ -434,6 +481,10 @@ _NEURON: frozenset[str] = frozenset({
     "consult_curiosity",
     "consult_specialist", "record_specialist_consult", "train_specialist",
     "list_spec_learnings", "resolve_spec_learnings",
+    # v7 WS3 (§2.6c) — planned-vs-actual budget, code-assembled (star budget
+    # + step estimates + delegate audit sidecars). Read-only; feeds the G6
+    # budget gate at reconcile. No reach beyond reads the neuron holds.
+    "budget_status",
     "pool_close_self",
 })
 
@@ -450,7 +501,13 @@ _NEURON: frozenset[str] = frozenset({
 # once defined, are DEAD — owner ruling 2026-08-04; see below.)
 _CURIOSITY: frozenset[str] = frozenset({
     "check_inbox", "get_guide", "notify_above", "observe", "list_subscriptions", "unobserve", "read_object",
-    "reply", "pool_close_self",
+    "reply",
+    # v7 WS1 (2026-08-05) — the curiosity role's PURPOSE is bias removal; a
+    # cross-provider verdict makes that structural (a different model family
+    # audits the same evidence). Read-only advisory posture unchanged;
+    # route-gated in .bridge.json (unrouted = refuse).
+    "consult_external",
+    "pool_close_self",
 })
 
 # OWNER RULING (2026-08-04): goal_keeper and pattern_observer are DEAD roles —
@@ -652,7 +709,29 @@ def spawn_model_for(role: str, task_class: str = DEFAULT_TASK_CLASS, *,
     flag. No row is `measured`, so there is no auto-adopt path: Opus is the
     default for every role (USER RULING, 2026-07-16).
 
-    Pure (no IO, no env read: `SONNET` is read from env once at import)."""
+    v7 WS4 (§2.4b, 2026-08-05) — SEAT REGISTRY OVERRIDE: when `models.json`
+    exists at the agent home and maps this role to a seat, the seat's exact
+    pinned model WINS over the tier table (still returning None when it
+    equals the host default, preserving the no-flag byte-identity). Absent
+    registry / unmapped role = the legacy tier path below, unchanged — the
+    staged-adoption discipline every v7 gate uses. A PRESENT-but-invalid
+    registry raises SeatsError at spawn: misconfiguration is loud, never a
+    silent host-default."""
+    # Registry home resolves from EDP_AGENT_HOME ONLY — never cwd. A
+    # coincidental-cwd config pickup is the PWD-resolution landmine class
+    # (the opencode M1 lesson), and it would leak the live registry into
+    # every hermetic test and stray invocation. Unset env = no registry =
+    # legacy, deterministically.
+    _home = os.environ.get("EDP_AGENT_HOME", "").strip()
+    _seat = None
+    if _home:
+        try:
+            from edp_contracts.seats import seat_for_role as _seat_for_role
+            _seat = _seat_for_role(_home, role)
+        except ImportError:
+            _seat = None
+    if _seat is not None:
+        return None if _seat.model == HOST_DEFAULT_MODEL else _seat.model
     tier = resolve_model_tier(role, task_class,
                               allow_candidate_tier=allow_candidate_tier)
     if tier is None or tier["model"] == HOST_DEFAULT_MODEL:

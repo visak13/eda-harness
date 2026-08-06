@@ -1,5 +1,12 @@
 @echo off
 rem ==========================================================================
+rem  RETIRED (v7 ruling, 2026-08-05): codex seat frozen as experiment record
+rem  (superseded 2026-07-19 by the opencode seat, itself now frozen). Codex
+rem  serves as a BRIDGE backend (sol delegate) instead. Neuron seat = eda.bat.
+rem ==========================================================================
+echo RETIRED: codex neuron seat is frozen. Use eda.bat; sol joins via the bridge.
+exit /b 1
+rem ==========================================================================
 rem  launch-codex-neuron.bat [--auto]
 rem
 rem  default:  a NORMAL, interactive codex window (Windows Terminal when

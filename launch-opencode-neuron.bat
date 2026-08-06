@@ -1,5 +1,11 @@
 @echo off
 rem ==========================================================================
+rem  RETIRED (v7 ruling, 2026-08-05): opencode seat frozen as experiment
+rem  record. Neuron seat = eda.bat (Claude Code). Exits without starting.
+rem ==========================================================================
+echo RETIRED: opencode neuron seat is frozen. Use eda.bat.
+exit /b 1
+rem ==========================================================================
 rem  launch-opencode-neuron.bat [--auto]
 rem
 rem  The SOL NEURON seat - a 1:1 copy of opening a Claude shell and typing

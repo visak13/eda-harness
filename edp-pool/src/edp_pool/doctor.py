@@ -173,6 +173,81 @@ def _fetch_locks(pool_url: str, timeout: float) -> tuple[list[dict], str | None]
 
 
 # ── orchestration ──────────────────────────────────────────────────────────
+def check_seat_registry() -> dict:
+    """v7 WS4 (§2.4b): validate models.json at the agent home. ABSENT is ok
+    (staged rollout = legacy MODEL_TIERS); PRESENT-but-invalid is an ERROR —
+    an unknown pin or an over-cap effort must fail the stack start loudly,
+    never degrade to a silent host-default at spawn."""
+    start = _now()
+    home = os.environ.get("EDP_AGENT_HOME", "").strip()
+    if not home:
+        return _result("seat_registry", "warn",
+                       "EDP_AGENT_HOME unset — registry not checked", start)
+    try:
+        from edp_contracts.seats import load
+        loaded = load(home)
+    except Exception as e:  # noqa: BLE001 — SeatsError or import trouble
+        return _result("seat_registry", "error",
+                       f"models.json INVALID: {e}", start)
+    if loaded is None:
+        return _result("seat_registry", "warn",
+                       "no models.json — legacy MODEL_TIERS behavior", start)
+    seats, roles = loaded
+    return _result(
+        "seat_registry", "ok",
+        f"{len(seats)} seats, {len(roles)} roles bound "
+        f"({', '.join(f'{r}->{s}' for r, s in sorted(roles.items()))})",
+        start)
+
+
+def check_config_parity() -> dict:
+    """v7 WS4 (§2.4b 'one spawn contract'): the seat (personal CLAUDE_CONFIG_
+    DIR) and pool shells (.claude-pool) must run the SAME hooks — silent
+    behavior skew between the two paths is the drift class this check makes
+    loud. Compares the PROJECT hook files (shared by both, the canonical
+    source) against the .claude-pool settings' hook references: every hook
+    the pool settings name must exist and be readable. Hash-level parity of
+    settings themselves is not required (the dirs legitimately differ on
+    tui/credentials); the HOOKS are the behavior-bearing part."""
+    start = _now()
+    home = os.environ.get("EDP_AGENT_HOME", "").strip()
+    if not home:
+        return _result("config_parity", "warn",
+                       "EDP_AGENT_HOME unset — parity not checked", start)
+    import json as _json
+    from pathlib import Path
+    problems: list[str] = []
+    pool_settings = Path(__file__).resolve().parents[2] / \
+        ".claude-pool" / "settings.json"
+    project_hooks_dir = Path(home) / ".claude" / "hooks"
+    if not project_hooks_dir.is_dir():
+        problems.append(f"project hooks dir missing: {project_hooks_dir}")
+    if pool_settings.is_file():
+        try:
+            cfg = _json.loads(pool_settings.read_text(encoding="utf-8"))
+            for event, groups in (cfg.get("hooks") or {}).items():
+                for g in groups if isinstance(groups, list) else []:
+                    for h in g.get("hooks", []):
+                        cmd = str(h.get("command", ""))
+                        for part in cmd.split():
+                            if part.endswith(".py"):
+                                p = Path(part.replace(
+                                    "${CLAUDE_PROJECT_DIR}", home))
+                                if not p.is_file():
+                                    problems.append(
+                                        f"{event}: hook file missing {p}")
+        except (OSError, _json.JSONDecodeError) as e:
+            problems.append(f".claude-pool/settings.json unreadable: {e}")
+    else:
+        problems.append(f"pool settings missing: {pool_settings}")
+    if problems:
+        return _result("config_parity", "error",
+                       "; ".join(problems[:4]), start)
+    return _result("config_parity", "ok",
+                   "pool hook references resolve against the project "
+                   "hooks (one spawn contract)", start)
+
+
 def run_doctor(
     *,
     claude_bin: str | None = None,
@@ -200,6 +275,8 @@ def run_doctor(
         check_http_health("broker", broker_url, to),
         check_http_health("pool", pool_url, to),
         check_phoenix(phoenix_url, to),
+        check_seat_registry(),
+        check_config_parity(),
     ]
 
     if locks is None:

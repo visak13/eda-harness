@@ -50,7 +50,21 @@ class NeuronRecord(BaseModel):
 
 
 SpecEntryKind = Literal[
-    "step", "link", "checklist", "anti_pattern", "preference", "work_order"
+    "step", "link", "checklist", "anti_pattern", "preference", "work_order",
+    # v7 WS3 (§2.6, 2026-08-05) — the CONVENTION/DECISION split. Every other
+    # kind is convention-shaped ("how code is written here") and stays
+    # binding per its adherence. A `decision` is a CHOSEN OPTION and is the
+    # one kind a worker may lawfully challenge: it records what was chosen,
+    # what was rejected (`alternatives`), and the falsifiable condition that
+    # reopens it (`revisit_when` — e.g. "native tool-calls drop/malform
+    # args"). The ollama-native-vs-JSON failure class: the wrong option was
+    # baked in with no recorded alternative and no reopening condition, so
+    # workers could neither flex nor challenge, and triage nuance overflowed
+    # into the compiled doc. Challenge path: worker files
+    # emit_recipe_event(kind="learning") with evidence → quarantined sidecar
+    # → the SPECIALIST adjudicates (resolve_spec_learnings) and flips
+    # `text`/recompiles — never the neuron, never the worker unilaterally.
+    "decision",
 ]
 
 # SPECIALIZATION-LAYERED-RULESETS.md (2026-06-01), Decision 2.
@@ -81,13 +95,37 @@ class SpecEntry(BaseModel):
     model_config = ConfigDict(extra="forbid")
     kind: SpecEntryKind
     # for kind="link" this is the URL / doc path (knowledge-as-links);
+    # for kind="decision" it is the CHOSEN option, stated as one line;
     # for everything else it is the line of guidance.
     text: str = Field(min_length=1)
     note: str = ""
     # 2026-06-01 (additive): adherence strength + link role. Defaults keep
     # every pre-existing entry valid and equally-weighted (`expected`).
+    # v7 §2.6: a `decision` entry defaults `expected` BY DESIGN — deviation
+    # with a recorded exception is lawful; `required` on a decision is the
+    # rare safety case and the write path demands a justification for it.
     adherence: SpecAdherence = "expected"
     link_role: SpecLinkRole | None = None
+    # v7 WS3 (§2.6) — kind="decision" only; both empty on every other kind
+    # and on every legacy entry (emission-gated below → byte-identical
+    # round-trip). The WRITE path requires both non-empty for a NEW decision
+    # entry: a decision with no recorded alternatives is indistinguishable
+    # from a convention, and one with no revisit_when can never be lawfully
+    # reopened — the two halves of the rigidity failure.
+    alternatives: list[str] = Field(default_factory=list)
+    revisit_when: str = ""
+
+    @model_serializer(mode="wrap")
+    def _ser_decision_gate(self, handler):
+        # v7 emission gate: omit the decision-only fields at their defaults
+        # so every legacy entry serializes byte-shape-identical (the same
+        # discipline as Specialization.protected below).
+        data = handler(self)
+        if not data.get("alternatives"):
+            data.pop("alternatives", None)
+        if not data.get("revisit_when"):
+            data.pop("revisit_when", None)
+        return data
 
 
 class Specialization(BaseModel):

@@ -15,5 +15,9 @@ rem Context-diet Phase 6 (2026-08-01): the pool stamps this for spawned
 rem shells; the foreground neuron launches HERE and ran to 95% of the 1M
 rem window before compacting. Same 350k effective window; pre-set wins.
 if not defined CLAUDE_CODE_AUTO_COMPACT_WINDOW set "CLAUDE_CODE_AUTO_COMPACT_WINDOW=350000"
+rem v7 WS4 (2026-08-06): outcome-lineage write gates ON — the compiled boot
+rem docs teach `serves`/`affects`, so empty-serves refusals are now live for
+rem NEW steps/actions (legacy objects unaffected). Set to 0 to revert.
+if not defined EDP_V7_WRITE_GATES set "EDP_V7_WRITE_GATES=1"
 cd /d "C:\Projects\Learning\eda-base3\claude"
 claude %*

@@ -152,8 +152,23 @@ class PlanStore:
     def append_worklog(self, plan_id: str, record: dict) -> None:
         """Append an arbitrary worklog entry (crash recovery, drift,
         etc.). The trail is the working-memory layer that survives
-        compaction (ADR-013). `ts` is added by append_jsonl."""
-        append_jsonl(self._dir(plan_id) / "worklog.jsonl", record)
+        compaction (ADR-013). `ts` is added by append_jsonl.
+
+        v7 WS3 (§2.1): worklogs are ARCHIVE-tier and now ROLL like recipe
+        events — at the same threshold the head is archived to
+        worklog.NNNN.jsonl + a code-generated digest, the hot tail stays.
+        The O(1) stat gate makes the common append free; read_worklog's
+        tail semantics are unchanged (it reads the bounded hot file).
+        Live measurement that motivated this: a 558KB never-rolled hot
+        worklog on plan …39fd30-s11. Best-effort — a rollup failure never
+        fails the append."""
+        pdir = self._dir(plan_id)
+        append_jsonl(pdir / "worklog.jsonl", record)
+        try:
+            from .recipe_store import rollup_events
+            rollup_events(pdir, filename="worklog.jsonl")
+        except Exception:  # noqa: BLE001 — maintenance never blocks the write
+            pass
 
     def read_worklog(
         self,

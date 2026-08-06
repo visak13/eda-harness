@@ -110,6 +110,16 @@ class Decision(BaseModel):
     # fields emission-gated (omitted at defaults).
     status: Literal["active", "superseded"] = "active"
     superseded_by: str | None = None
+    # v7 WS3 (2026-08-05) — CONSEQUENCES AT WRITE (§2.1): the step/action ids
+    # this decision constrains. The edge index derives decision→target edges
+    # from it, and scoped invalidation wakes ONLY shells whose handle
+    # intersects the transitive closure — everyone else's ground (and prompt
+    # cache) stays valid. [] (every legacy decision) = recipe-wide, exactly
+    # the pre-v7 behavior — purely additive, like scope_plan_id above. The
+    # MEANING-at-write digest is NOT a new field: `title` (≤90, required for
+    # NEW writes at the tool layer) already is it — d76/d77: use the
+    # mechanism that exists. Emission-gated below (omitted when empty).
+    affects: list[str] = Field(default_factory=list)
 
     @model_serializer(mode="wrap")
     def _ser_load_bearing_gate(self, handler):
@@ -133,6 +143,10 @@ class Decision(BaseModel):
         # byte-shape-identical to the pre-change schema.
         if data.get("scope_plan_id") is None:
             data.pop("scope_plan_id", None)
+        # v7 WS3 emission gate: omit when empty so an unscoped decision
+        # serializes byte-shape-identical to pre-v7.
+        if not data.get("affects"):
+            data.pop("affects", None)
         # W1 typed fields: omit at their None defaults so an untouched
         # (legacy) decision serializes byte-shape-identical to pre-W1.
         for _f in ("title", "kind", "subject", "constraint"):
@@ -292,6 +306,17 @@ class RecipeStep(BaseModel):
     # EXPLICITLY in Plan.sketch_covered_by (explicit mapping is testable;
     # fuzzy text-matching is a lie generator). Emission-gated when empty.
     acceptance_sketch: list[str] = Field(default_factory=list)
+    # v7 WS3 (2026-08-05) — OUTCOME LINEAGE (§2.5/§2.6): the star
+    # expected-outcome ids this step exists to serve. The anti-trivial gate:
+    # a step serving no outcome is orphaned work the write path (declare-step
+    # tool, next increment) refuses to admit; the edge index surfaces legacy
+    # orphans as a query instead. [] on every legacy step = unlinked, exactly
+    # the pre-v7 shape. Emission-gated (omitted when empty).
+    serves: list[str] = Field(default_factory=list)
+    # v7 WS3 (§2.6c) — the step ESTIMATE, authored at declaration (planner
+    # PM discipline: estimate, don't vibe): {tokens?: int, hours?: float}.
+    # budget_status compares planned vs actual per step. Emission-gated.
+    estimate: dict | None = None
 
     @model_serializer(mode="wrap")
     def _ser_tiering_gate(self, handler):
@@ -302,6 +327,12 @@ class RecipeStep(BaseModel):
             data.pop("concerns", None)
         if not data.get("acceptance_sketch"):
             data.pop("acceptance_sketch", None)
+        # v7 WS3 emission gate: omit when empty so a legacy step serializes
+        # byte-shape-identical to pre-v7.
+        if not data.get("serves"):
+            data.pop("serves", None)
+        if not data.get("estimate"):
+            data.pop("estimate", None)
         return data
 
 
@@ -484,6 +515,12 @@ class Recipe(BaseModel):
     # emission-gated below, so a recipe that never carried them still doesn't.
     actions_done_since_direction_review: int = Field(default=0, ge=0)
     direction_review: DirectionReview = Field(default_factory=DirectionReview)
+    # v7 WS3 (§2.6c, 2026-08-05) — the recipe BUDGET, first-class on the
+    # star: {claude_tokens?: int, delegate_usd?: float, wall_clock_hours?:
+    # float} — any subset. Planned side of budget_status; delegate actuals
+    # come from the bridge audit sidecars. None (every legacy recipe) = no
+    # budget declared, no gate. Emission-gated below.
+    budget: dict | None = None
     version: int = Field(ge=1, default=1)
     created_at: datetime
     updated_at: datetime
@@ -513,6 +550,10 @@ class Recipe(BaseModel):
             data.pop("actions_done_since_direction_review", None)
         if data.get("direction_review") == _DIRECTION_REVIEW_RESTING:
             data.pop("direction_review", None)
+        # v7 WS3 emission gate: no declared budget → no key (byte-identical
+        # legacy round-trip).
+        if not data.get("budget"):
+            data.pop("budget", None)
         return data
 
     @model_validator(mode="after")

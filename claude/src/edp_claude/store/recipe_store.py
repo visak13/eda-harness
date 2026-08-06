@@ -113,12 +113,12 @@ def _line_count(path: Path) -> int:
     return n
 
 
-def _next_segment_index(rdir: Path) -> int:
-    """Next events.NNNN.jsonl index (1-based, zero-padded to 4 at write time)."""
+def _next_segment_index(rdir: Path, stem: str = "events") -> int:
+    """Next <stem>.NNNN.jsonl index (1-based, zero-padded to 4 at write time)."""
     existing: list[int] = []
-    for p in rdir.glob("events.[0-9][0-9][0-9][0-9].jsonl"):
-        parts = p.name.split(".")   # events . NNNN . jsonl
-        if len(parts) == 3 and parts[0] == "events" and parts[2] == "jsonl":
+    for p in rdir.glob(f"{stem}.[0-9][0-9][0-9][0-9].jsonl"):
+        parts = p.name.split(".")   # <stem> . NNNN . jsonl
+        if len(parts) == 3 and parts[0] == stem and parts[2] == "jsonl":
             try:
                 existing.append(int(parts[1]))
             except ValueError:
@@ -126,7 +126,8 @@ def _next_segment_index(rdir: Path) -> int:
     return (max(existing) + 1) if existing else 1
 
 
-def _build_segment_digest(records: list[dict], seg_index: int) -> str:
+def _build_segment_digest(records: list[dict], seg_index: int,
+                          stem: str = "events") -> str:
     """CODE-generated (deterministic, NO-LLM) markdown digest of an archived
     events segment: counts by kind, ts range, learning/spec tallies."""
     n = len(records)
@@ -135,7 +136,7 @@ def _build_segment_digest(records: list[dict], seg_index: int) -> str:
     ts_first = ts[0] if ts else "?"
     ts_last = ts[-1] if ts else "?"
     lines = [
-        f"# events segment {seg_index:04d} digest",
+        f"# {stem} segment {seg_index:04d} digest",
         "",
         f"- records: {n}",
         f"- ts range: {ts_first} … {ts_last}",
@@ -159,17 +160,29 @@ def _dump_records(records: list[dict]) -> str:
 
 
 def rollup_events(rdir: Path,
-                  threshold: int = EVENTS_ROLLUP_THRESHOLD,
-                  tail_keep: int = EVENTS_TAIL_KEEP) -> dict | None:
-    """If events.jsonl holds ≥ threshold records, archive the HEAD into the next
-    numbered segment (events.NNNN.jsonl) + a code-generated digest
-    (events.NNNN.digest.md), and atomically rewrite events.jsonl to the recent
+                  threshold: int | None = None,
+                  tail_keep: int | None = None,
+                  filename: str = "events.jsonl") -> dict | None:
+    """If `filename` holds ≥ threshold records, archive the HEAD into the next
+    numbered segment (<stem>.NNNN.jsonl) + a code-generated digest
+    (<stem>.NNNN.digest.md), and atomically rewrite the hot file to the recent
     TAIL. Returns a summary dict, or None if under threshold.
 
     Nothing is lost — the head is preserved full-fidelity in the segment, just
-    off the hot read path. events.jsonl's format is unchanged, so
-    read_object/get_recipe_digest read it exactly as before."""
-    events = rdir / "events.jsonl"
+    off the hot read path. The hot file's format is unchanged, so
+    read_object/get_recipe_digest read it exactly as before.
+
+    v7 WS3 (§2.1): `filename` generalizes the SAME mechanism to plan
+    worklogs (worklog.jsonl — 558KB live hot files today), which never
+    rolled. ARCHIVE-tier files are never re-read raw; the digest is the read."""
+    # Resolve policy at CALL time (module globals), not def time — a test or
+    # operator override of the module constants takes effect immediately.
+    if threshold is None:
+        threshold = EVENTS_ROLLUP_THRESHOLD
+    if tail_keep is None:
+        tail_keep = EVENTS_TAIL_KEEP
+    stem = filename.rsplit(".", 1)[0]
+    events = rdir / filename
     # C3 (s18): cheap O(1) stat gate BEFORE the full-file _line_count scan. A
     # file under threshold*EVENTS_MIN_RECORD_BYTES bytes cannot hold `threshold`
     # records, so a rollup is impossible — skip the scan (result is provably the
@@ -187,11 +200,11 @@ def rollup_events(rdir: Path,
         return None
     head = records[:-tail_keep] if tail_keep else records
     tail = records[-tail_keep:] if tail_keep else []
-    seg_index = _next_segment_index(rdir)
-    seg_path = rdir / f"events.{seg_index:04d}.jsonl"
+    seg_index = _next_segment_index(rdir, stem)
+    seg_path = rdir / f"{stem}.{seg_index:04d}.jsonl"
     write_atomic(seg_path, _dump_records(head))
-    write_atomic(rdir / f"events.{seg_index:04d}.digest.md",
-                 _build_segment_digest(head, seg_index))
+    write_atomic(rdir / f"{stem}.{seg_index:04d}.digest.md",
+                 _build_segment_digest(head, seg_index, stem))
     write_atomic(events, _dump_records(tail))   # same format, bounded length
     return {"segment": seg_index, "archived": len(head),
             "kept_tail": len(tail), "segment_path": str(seg_path)}

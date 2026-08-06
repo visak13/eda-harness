@@ -191,6 +191,14 @@ class Action(BaseModel):
     # (omitted when None) so a legacy plan JSON and a pre-restart
     # extra='forbid' reader are untouched — the o6 standing bar.
     batch_group: str | None = None
+    # v7 WS3 (2026-08-05) — OUTCOME LINEAGE (§2.5/§2.6): the star
+    # expected-outcome ids this action's acceptance descends from (usually
+    # inherited from its step's `serves` at authoring). Gives every action an
+    # addressable "why", makes decision→action impact queries transitive in
+    # the edge index, and lets test lineage (`verifies`) resolve to a real
+    # outcome. [] on every legacy action = unlinked, the pre-v7 shape.
+    # Emission-gated in _ser_legacy_shape (omitted when empty).
+    serves: list[str] = Field(default_factory=list)
     # s17 FA3 model-tiering (2026-06-07; MODEL-TIERING-BENCHMARK.md §5 +
     # S17-FINDINGS-V2-AUTONOMY-LENS.md FA3). Optional PER-ACTION model override
     # for the WORKER shell this action dispatches. The PLANNER sets it (it
@@ -288,6 +296,11 @@ class Action(BaseModel):
                 # sees the new key). Emit only when the planner batched it.
                 if value:
                     out["batch_group"] = value
+            elif key == "serves":
+                # v7 WS3 emission gate: omit when empty so an unlinked
+                # (legacy) action serializes byte-shape-identical.
+                if value:
+                    out["serves"] = value
             elif key == "model":
                 # s17 FA3 emission gate: omit when None so an action with no
                 # per-action model override serializes byte-shape-identical to
@@ -425,6 +438,19 @@ class Plan(BaseModel):
     # TEXT by-id into every worker's grounding and the reviewer brief; this
     # field is the addressable pointer. Emission-gated below — o6.
     grounding_brief_path: str | None = None
+    # v7 WS3 (§2.4b/§2.5b, 2026-08-05) — MEASURED review + test governance,
+    # stamped at authoring. Both optional dicts, emission-gated (a legacy
+    # plan serializes byte-identically):
+    #   review_policy — {triggers: [risk trigger names], justify: {action_id:
+    #     one-line reason}}: a review leg must be justified against a named
+    #     trigger (spec-required surface, protected surface, novel decision,
+    #     acceptance complexity, first-action-on-spec); blanket per-action
+    #     review is the write-gate refusal class.
+    #   test_budget — {unit: <scope line>, integration: [seams], e2e_max: N}:
+    #     the pyramid stamped from strategy + concerns; workers cannot
+    #     freelance suites beyond it (the 2000-test-SPA class).
+    review_policy: dict | None = None
+    test_budget: dict | None = None
     # Context-diet Phase 2 — the EXPLICIT sketch->action coverage map:
     # {<step acceptance_sketch line>: [action_id, …]}. The owning step
     # declares WHAT done looks like (RecipeStep.acceptance_sketch); the
@@ -452,7 +478,9 @@ class Plan(BaseModel):
             data.pop("verify_leg_emitted", None)
         for k in ("parked", "grounded_at", "grounding_fingerprint",
                   "staleness_delta_at", "grounding_brief_path",
-                  "sketch_covered_by"):
+                  "sketch_covered_by",
+                  # v7 WS3: review/test governance ride the same gate.
+                  "review_policy", "test_budget"):
             if not data.get(k):
                 data.pop(k, None)
         return data

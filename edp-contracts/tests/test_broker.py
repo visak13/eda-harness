@@ -60,9 +60,15 @@ def test_brk_4_core_kinds_registered():
     only in the MCP server is rejected on arrival).
     2026-07-12: 17 → 18 with steer_ack (receiver restates a steer in its own
     terms; sender verifies the restatement — defense against a directive being
-    absorbed unread)."""
+    absorbed unread).
+    2026-08-05: 18 → 19 with challenge (v7 WS1 adversarial layer: findings-only
+    data from adversarial_challenge, published by the challenging shell;
+    adjudicated, never obeyed).
+    2026-08-05b: 19 → 20 with ground_delta (v7 WS3 scoped invalidation: a
+    decision revision wakes ONLY the handles in its transitive impact
+    closure, as a digest delta — never a fleet-wide re-ground)."""
     reg = registered_kinds()
-    assert len(CORE_KINDS) == 18
+    assert len(CORE_KINDS) == 20
     assert {"progress", "observation", "alert",
             "grounding", "fyi"} <= set(CORE_KINDS)
     for k, doc in CORE_KINDS.items():

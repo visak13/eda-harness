@@ -111,4 +111,13 @@ TOOL_ONE_LINERS: dict[str, str] = {
     # ── Sol bridge ──────────────────────────────────────────────────────
     "sol_consult": "Ask Sol (read-only, sees renders via -i) for creative/visual judgment.",
     "sol_author_asset": "Delegate a visual/3D/image asset to Sol; writes ONLY under the validated asset dir, never code.",
+    # ── provider bridge (v7 WS1) ────────────────────────────────────────
+    "delegate_generate": "Delegate bulk generation to the routed cheap model; the draft is untrusted — you integrate, test, record.",
+    "delegate_review": "Cheap cross-family pre-screen of an artifact against acceptance; the reviewer still adjudicates.",
+    "consult_external": "One-shot cross-provider verdict (bias removal by model family); text in, text out.",
+    "adversarial_challenge": "Sol red-teams a plan/spec_decision/artifact through a named lens; findings-only, adjudicated via gates.",
+    # ── test lineage (v7 WS3) ───────────────────────────────────────────
+    "record_test_lineage": "Register why a new test exists: verifies (acceptance/outcome ids) + covers (files).",
+    "test_lineage_report": "Impacted-test set for changed files + dead-test report + orphan steps, from the edge index.",
+    "budget_status": "Planned-vs-actual recipe budget: star budget, step estimates, delegate spend from audit sidecars.",
 }

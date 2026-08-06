@@ -16,11 +16,14 @@ from pathlib import Path
 from edp_claude import cadence
 
 
-# The exact, load-bearing value (DESIGN-v6 lines 383, 389). Spelled out
-# literally here so a reword of the constant fails the assertion.
+# The exact, load-bearing value (DESIGN-v6 lines 383, 389; v7 WS4
+# 2026-08-06 extended it with the SILENT-UNLESS-GATE micro-ack contract —
+# every reconcile wake used to end in a ~0.5-1k-token narrated status no
+# one reads). Spelled out literally here so a reword fails the assertion.
 _CANONICAL = (
     "call reconcile then next_action and obey wait_hint: "
-    "if it says wait, end your turn"
+    "if it says wait, end your turn; final text at most `OK w=<wait>` "
+    "unless a gate or question fires"
 )
 
 
@@ -52,7 +55,9 @@ def test_scoped_to_neuron_and_planner_only():
 def test_prompt_is_never_the_verbatim_goal():
     # The invariant: the cron prompt is a short reflex, never a per-recipe
     # goal. Guard the length so a future goal-as-prompt regression is caught.
-    assert len(cadence.RECONCILE_LOOP_CRON_PROMPT) < 120
+    # (160: raised from 120 for the v7 silent-unless-gate clause — still a
+    # reflex, never a goal.)
+    assert len(cadence.RECONCILE_LOOP_CRON_PROMPT) < 160
     assert "reconcile" in cadence.RECONCILE_LOOP_CRON_PROMPT
     assert "next_action" in cadence.RECONCILE_LOOP_CRON_PROMPT
 

@@ -66,3 +66,7 @@ vault/recipes/
 # OS noise
 Thumbs.db
 Desktop.ini
+
+# v7 derived/runtime (rebuildable)
+claude/.graph/
+claude/.bridge/

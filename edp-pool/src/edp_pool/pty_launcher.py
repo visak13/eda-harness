@@ -506,16 +506,43 @@ def build_env(session_id: str, role: str, handle: str,
     # the guard itself stays narrow (role=worker + own action terminal +
     # block cap 2 + fail-open). An explicit pre-set 0 wins (operator knob).
     env.setdefault("EDP_WORKER_CLOSE_NUDGE", "1")
+    # v7 WS4 (2026-08-06): outcome-lineage write gates ON for spawned shells
+    # — the compiled boot docs teach `serves`; a NEW step/action naming no
+    # outcome is refused (legacy objects unaffected). Pre-set 0 wins.
+    env.setdefault("EDP_V7_WRITE_GATES", "1")
     # Phase 6: auto-compact safety net (operator request — ~350k). Treat the
     # model's 1M window as this many tokens for compaction purposes so a
     # spawned shell compacts early instead of dragging a bloated context to
     # the cliff. Per-role override via EDP_AUTO_COMPACT_WINDOW_<ROLE>, e.g.
     # EDP_AUTO_COMPACT_WINDOW_WORKER=250000; explicit pre-set wins; set the
     # generic knob to "0" to disable stamping entirely.
+    # v7 WS4 (§2.4b): the SEAT REGISTRY (models.json at the agent home) is
+    # the preferred source — per-seat auto_compact, one file, doctor-
+    # validated. Env overrides still win (operator escape hatch); absent
+    # registry / unmapped role falls back to the legacy 350000.
+    _seat_acw = None
+    try:
+        from edp_contracts.seats import seat_for_role as _sfr
+        _seat = _sfr(agent_home, role) if agent_home else None
+        if _seat is not None:
+            _seat_acw = str(_seat.auto_compact)
+    except Exception:  # noqa: BLE001 — registry trouble never blocks a spawn
+        _seat_acw = None
     _acw = env.get(f"EDP_AUTO_COMPACT_WINDOW_{role.upper()}") \
-        or env.get("EDP_AUTO_COMPACT_WINDOW") or "350000"
+        or env.get("EDP_AUTO_COMPACT_WINDOW") or _seat_acw or "350000"
     if _acw != "0":
         env.setdefault("CLAUDE_CODE_AUTO_COMPACT_WINDOW", _acw)
+    # v7 WS4 (§2.8) — HARD OUTPUT CAP per seat: only the neuron's gate
+    # surfaces are read by a human; every other role's prose is written for
+    # no reader, so the ceiling is enforced at the API level where no prompt
+    # can exceed it. Registry-driven (models.json max_output); absent = no
+    # stamp (legacy). Explicit pre-set wins (operator escape hatch).
+    try:
+        if _seat is not None and _seat.max_output is not None:
+            env.setdefault("CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+                           str(_seat.max_output))
+    except NameError:
+        pass
     if broker_url:
         env["EDP_BROKER_URL"] = broker_url
     if pool_url:

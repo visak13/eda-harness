@@ -175,7 +175,7 @@ RECORD_CONTEXT = "record_context"
 # territory. 61 today; the descent to 45 rides the Phase-5 guide triage
 # (descriptive call-form mentions deleted from the corpus lower the floor
 # and this ceiling TOGETHER — the ceiling is the floor, never headroom).
-CEILINGS = {"worker": 24, "reviewer": 20, "planner": 37, "neuron": 61}  # +list_subscriptions +unobserve (2026-07-20 monitor CRUD)
+CEILINGS = {"worker": 26, "reviewer": 22, "planner": 40, "neuron": 62}  # +budget_status (planner/neuron, v7 §2.6c — read-only planned-vs-actual)  # +1 each for the v7 WS3 test-lineage verbs (record_test_lineage worker / test_lineage_report reviewer+planner, 2026-08-05 — graph-sidecar only, no object reach); before that +1 each for the v7 WS1 bridge verbs (delegate_generate / delegate_review / adversarial_challenge — route-gated in .bridge.json, so the verb grants nothing until a human routes it); before that +list_subscriptions +unobserve (2026-07-20 monitor CRUD)
 
 
 # ── helpers (mirror tests/test_scoped_facts.py so patterns stay uniform) ────
@@ -758,12 +758,11 @@ KNOWN_GUIDE_TOOLSET_GAPS: dict[tuple[str, str], str] = {}
 # a role's corpus, so it gains toolset-gap checking it never had (it was already
 # read by the s26 unregistered-tool gate, which reads every guide regardless).
 UNSCANNED_GUIDES: dict[str, str] = {
-    "channel-coordination": (
-        "CHANNELS topology (2026-07-21): role-neutral coordination craft "
-        "for EVERY seat (drive + craft + operator) over the broker channel "
-        "registry. Names no single role's toolset; the verbs it references "
-        "(check_inbox/broker_send/record_grounding_brief) are governed by "
-        "their owning roles' own guides."),
+    "provider-bridge": (
+        "v7 WS1 (2026-08-05): OPERATOR-facing configuration note — how to add "
+        ".bridge.json delegates (http backends, key env vars, routes). No role "
+        "is instructed to read it; the bridge VERBS are governed by the owning "
+        "roles' own guides and the tool docstrings."),
     "framework-ocak": "OCAK is a RETIRED role (see .claude/commands/ocak.md).",
     "reactive-streams-effects": (
         "Companion reference to the SHARED reactive-streams.md (:3, 'Companion "
@@ -1059,12 +1058,12 @@ def test_shared_reference_docs_are_not_descended_through():
     guides past the >=2 shared threshold and OUT of its corpus — a gate blinder
     than the one-hop rule it replaced. A catalogue entry is not a load."""
     shared = _shared_guides()
-    # the four role-neutral docs, and ONLY those, are shared. terse-output
+    # the role-neutral docs, and ONLY those, are shared. v7 bootdocs: terse
     # joined in the Phase-5 instruction diet (2026-07-30): every CRAFT command
     # file (worker/reviewer/specialist) loads it at boot, so it is by
     # construction addressed to no single role.
     assert shared == {"architecture-vocabulary", "reactive-streams",
-                      "loop-and-heartbeat", "terse-output"}, sorted(shared)
+                      "channel-coordination", "loop-and-heartbeat", "verification-craft"}, sorted(shared)
     # orchestrator-launch is reachable from architecture-vocabulary's TABLE,
     # but it belongs to the neuron alone and must stay in the neuron's corpus.
     assert "orchestrator-launch" not in shared

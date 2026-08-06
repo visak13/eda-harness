@@ -18,7 +18,13 @@ def _clear_leaked_shell_env(monkeypatch):
     a role/handle set them explicitly via their own monkeypatch, so clearing the
     ambient default never removes a value a test depends on (proven: the suite is
     green with these unset)."""
-    for var in ("EDP_ROLE", "EDP_HANDLE", "EDP_TIER_WRITE"):
+    for var in ("EDP_ROLE", "EDP_HANDLE", "EDP_TIER_WRITE",
+                # v7 WS4: the seat registry resolves from EDP_AGENT_HOME
+                # only — an ambient value (or config override) inherited
+                # from a spawned shell would leak the LIVE models.json into
+                # hermetic tiering tests. Same d7 discipline: tests that
+                # need a registry pin their own env.
+                "EDP_AGENT_HOME", "EDP_MODELS_CONFIG"):
         monkeypatch.delenv(var, raising=False)
 
 

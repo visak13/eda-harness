@@ -28,5 +28,47 @@
     "workdir": "C:\\Projects\\Learning\\eda-assets\\harness-beforeafter",
     "created_at": "2026-08-03T20:57:56Z",
     "last_used": "2026-08-03T20:57:56Z"
+  },
+  "ws2:gen-codegen-1|sol": {
+    "thread_id": "019fd713-04cb-7701-8be8-75a695c74252",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-06T12:36:36Z",
+    "last_used": "2026-08-06T12:36:36Z"
+  },
+  "ws2:gen-tests-1|sol": {
+    "thread_id": "019fd713-e6dc-7d93-9eb3-205859de2b2f",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-06T12:37:37Z",
+    "last_used": "2026-08-06T12:37:37Z"
+  },
+  "ws2:gen-docs-1|sol": {
+    "thread_id": "019fd714-4667-7261-87d6-fec5142bb8f7",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-06T12:37:53Z",
+    "last_used": "2026-08-06T12:37:53Z"
+  },
+  "ws2:gen-refactor-1|sol": {
+    "thread_id": "019fd714-827d-77e3-84b5-18ae214ce3b7",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-06T12:38:08Z",
+    "last_used": "2026-08-06T12:38:08Z"
+  },
+  "ws2:adv-acceptance-1|sol": {
+    "thread_id": "019fd714-bd98-7310-ad88-adc2fc68992a",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-06T12:38:39Z",
+    "last_used": "2026-08-06T12:38:39Z"
+  },
+  "ws2:adv-wrong-option-1|sol": {
+    "thread_id": "019fd715-370a-7d53-9598-34b0ce325313",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-06T12:39:02Z",
+    "last_used": "2026-08-06T12:39:02Z"
+  },
+  "ws2:adv-missing-concern-1|sol": {
+    "thread_id": "019fd715-90ff-7620-a692-d33b5bc920a4",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-06T12:39:30Z",
+    "last_used": "2026-08-06T12:39:30Z"
   }
 }

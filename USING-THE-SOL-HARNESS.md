@@ -1,5 +1,12 @@
 # Using the sol harness (edp on opencode/gpt-5.6)
 
+> **RETIRED — EXPERIMENT RECORD (v7 ruling, 2026-08-05).** The opencode/sol
+> fleet is frozen; nothing below is a live instruction. Sol (GPT-5.6 @ medium,
+> Codex subscription) now joins the Claude stack via the in-shell provider
+> bridge (delegate/consult/adversarial tools). The launchers named here exit
+> early with a RETIRED banner. Kept verbatim as the port's proof record —
+> see `claude\docs\design\PORT-OPENCODE.md` for parity claims and evidence.
+
 The edp engine is unchanged. Exactly two things differ from the Claude
 harness: the TUI is **opencode** (models gpt-5.6, never a fast variant:
 **sol** for neuron/reviewer/consult and all judgment seats, **terra** for

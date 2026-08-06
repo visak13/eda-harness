@@ -155,8 +155,15 @@ def test_run_doctor_all_checks_run_and_healthy(tmp_path, monkeypatch):
 
     names = [c["name"] for c in report["checks"]]
     assert names == ["claude_binary", "broker", "pool", "phoenix",
-                     "stale_locks"]
-    assert all(c["status"] == "ok" for c in report["checks"])
+                     "seat_registry", "config_parity", "stale_locks"]
+    # v7 WS4: the two registry/parity checks WARN in a hermetic env (no
+    # EDP_AGENT_HOME) by design — absent config is staged-legacy, never an
+    # error. Everything else must be strictly ok, and nothing may error.
+    for c in report["checks"]:
+        if c["name"] in ("seat_registry", "config_parity"):
+            assert c["status"] in ("ok", "warn"), c
+        else:
+            assert c["status"] == "ok", c
     assert report["ok"] is True
     assert report["elapsed_ms"] < 10_000
     assert all("elapsed_ms" in c for c in report["checks"])
@@ -257,7 +264,7 @@ def test_doctor_endpoint_returns_checks_json(monkeypatch):
     body = resp.json()
     names = [c["name"] for c in body["checks"]]
     assert names == ["claude_binary", "broker", "pool", "phoenix",
-                     "stale_locks"]
+                     "seat_registry", "config_parity", "stale_locks"]
     # Phoenix down is a warn, so the endpoint still reports a well-formed
     # payload with the ok flag present.
     assert "ok" in body

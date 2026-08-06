@@ -88,6 +88,26 @@ CORE_KINDS: dict[str, str] = {
     "steer_ack": "receiver restates a steer in its own terms ({restatement, "
     "steer_msg_id}); the sender verifies the restatement matches its intent "
     "— the general defense against a directive being absorbed unread.",
+    # v7 WS1 (2026-08-05) — the adversarial layer's ONLY protocol surface.
+    # Body = adversary FINDINGS ({finding, evidence, severity, target} rows
+    # from adversarial_challenge) published BY the challenging shell under its
+    # own identity. DATA for adjudication (specialist/consult), never a
+    # directive: no receiver treats challenge text as an instruction, and the
+    # delegate itself has no broker access at all — this kind exists so
+    # findings flow as typed events instead of prose.
+    "challenge": "adversarial findings against a plan/spec_decision/artifact "
+    "({target_kind, target_id, lens, findings:[{finding, evidence, severity, "
+    "target}]}); adjudicate then act via normal gates — never a directive",
+    # v7 WS3 (§2.1, 2026-08-05) — SCOPED INVALIDATION. When a decision with
+    # an `affects` scope is recorded/superseded, the engine publishes this
+    # ONLY to the handles inside the transitive impact closure (edge index);
+    # every other shell's ground — and prompt cache — stays valid. Receivers
+    # fold the digest into their working ground; a full re-ground is needed
+    # only if the delta contradicts work in flight.
+    "ground_delta": "a decision affecting YOUR handle changed ({decision_id, "
+    "digest, change: recorded|superseded, replaced_by?}); fold the digest "
+    "into your ground — do NOT full-re-ground unless it contradicts your "
+    "in-flight work",
 }
 
 for _k, _doc in CORE_KINDS.items():

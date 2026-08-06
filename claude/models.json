@@ -1,0 +1,41 @@
+{
+  "_doc": "v7 seat registry (edp_contracts/seats.py). ONE file remixes the fleet: seats bind EXACT model ids (never aliases); roles bind seats. Claude effort is capped at medium fleet-wide (validator-enforced). auto_compact sits below the window so compaction is planned, never mid-work. Edit + pass doctor; no code changes.",
+  "seats": {
+    "judgment": {
+      "model": "claude-fable-5",
+      "effort": "medium",
+      "context_window": 1000000,
+      "auto_compact": 350000
+    },
+    "workhorse": {
+      "model": "claude-sonnet-5",
+      "effort": "medium",
+      "context_window": 1000000,
+      "auto_compact": 200000,
+      "max_output": 16000
+    },
+    "steward": {
+      "model": "claude-sonnet-5",
+      "effort": "low",
+      "context_window": 1000000,
+      "auto_compact": 250000,
+      "max_output": 8000
+    },
+    "checker": {
+      "model": "claude-sonnet-5",
+      "effort": "medium",
+      "context_window": 1000000,
+      "auto_compact": 150000,
+      "max_output": 12000
+    }
+  },
+  "roles": {
+    "neuron": "judgment",
+    "planner": "judgment",
+    "specialist": "judgment",
+    "worker": "workhorse",
+    "reviewer": "checker",
+    "curiosity": "steward",
+    "consult": "judgment"
+  }
+}

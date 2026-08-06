@@ -35,9 +35,20 @@ import os
 # Exact value is load-bearing (DESIGN-v6 lines 383, 389 + W2's rewire block
 # imports it verbatim). Do NOT reword — it is asserted char-for-char by
 # tests/test_w7_canonical_prompt.py.
+#
+# v7 WS4 (§2.7/§2.8, 2026-08-06) — SILENT-UNLESS-GATE is now part of the
+# canonical string. Measured live: every reconcile wake ended in a
+# narrated status paragraph (~0.5-1k output tokens × dozens of wakes/day)
+# that no one reads — the panel and the record already carry the state.
+# The contract: a wake's final text is at most the micro-ack `OK w=<wait>`
+# unless a GATE fires (comprehension, scope revision, learnings
+# ratification, budget overrun, close, a relayed question) — those get the
+# full pyramid surface. terse-output's "no-change wake emits NOTHING"
+# still applies on top: no change → zero text, not even the ack.
 RECONCILE_LOOP_CRON_PROMPT = (
     "call reconcile then next_action and obey wait_hint: "
-    "if it says wait, end your turn"
+    "if it says wait, end your turn; final text at most `OK w=<wait>` "
+    "unless a gate or question fires"
 )
 
 # Roles that arm their heartbeat with RECONCILE_LOOP_CRON_PROMPT. Worker and

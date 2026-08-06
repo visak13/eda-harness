@@ -1,5 +1,13 @@
 @echo off
 rem ============================================================================
+rem  RETIRED (v7 ruling, 2026-08-05): this legacy mixed-fleet launcher armed
+rem  the opencode sol fleet by default (EDP_OPENCODE_ROLES below), which is
+rem  now frozen as an experiment record. Use start-stack-claude.bat.
+rem  This script exits without starting anything.
+rem ============================================================================
+echo RETIRED: use start-stack-claude.bat (the opencode fleet is frozen).
+exit /b 1
+rem ============================================================================
 rem  eda-base3 stack: broker (:9300) + pool (:9301) + RuleSupervisor
 rem
 rem  Thin wrapper over `python -m edp_claude.stack_launcher`, which owns the

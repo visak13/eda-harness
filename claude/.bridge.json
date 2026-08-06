@@ -1,0 +1,23 @@
+{
+  "_doc": "Provider-bridge delegate registry (v7 \u00a72.2). backend: 'cli' = Codex CLI on the ChatGPT subscription (plan quota, $0 here); 'http' = OpenAI-compatible endpoint, key read from the NAMED env var. Routes: 'role:task_class' -> delegate; 'role:*' wildcard; absent = do not delegate. Edit this file, never code. Prices are USD per 1M tokens, vendor list, estimation only.",
+  "delegates": {
+    "sol": {
+      "backend": "cli",
+      "model": "gpt-5.6",
+      "effort": "medium",
+      "max_context_tokens": 250000,
+      "max_output_tokens": 16000
+    }
+  },
+  "routes": {
+    "_calibrated": "WS2 2026-08-06: 4/4 generation classes passed probes; 3/3 adversary lenses hit planted defects (ws2_results.jsonl)",
+    "worker:codegen": "sol",
+    "worker:tests": "sol",
+    "worker:docs": "sol",
+    "worker:refactor": "sol",
+    "reviewer:review": "sol",
+    "curiosity:consult": "sol",
+    "planner:challenge": "sol",
+    "specialist:challenge": "sol"
+  }
+}

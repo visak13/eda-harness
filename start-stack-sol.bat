@@ -1,5 +1,13 @@
 @echo off
 rem ============================================================================
+rem  RETIRED (v7 ruling, 2026-08-05): the opencode/sol fleet is frozen as an
+rem  experiment record. Sol (GPT-5.6) now joins via the in-shell provider
+rem  bridge on the Claude stack — use start-stack-claude.bat.
+rem  This script exits without starting anything. See plan: eda v7.
+rem ============================================================================
+echo RETIRED: sol fleet is frozen. Use start-stack-claude.bat (Sol joins via the bridge).
+exit /b 1
+rem ============================================================================
 rem  SOL / GPT SEAT stack: broker (:9300) + pool (:9301) + RuleSupervisor
 rem
 rem  Every spawned role is an OPENCODE shell on gpt-5.6 (the Sol fleet). Pair

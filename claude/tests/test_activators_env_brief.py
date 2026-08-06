@@ -290,9 +290,14 @@ def test_planner_dispatcher_stays_thin_and_phases_one_at_a_time():
     # the dispatch-loop instruction prose belongs to the drive guide.
     assert "dispatch_action" not in d
     # a thin dispatcher stays small (the monolith was 323 lines).
+    # v7 bootdocs (2026-08-06): the command is now COMPILED — identity,
+    # laws and the shared cores are deliberately inlined (the boot-fetch
+    # fan-out died), so thinness is enforced as a TOKEN budget by
+    # tests/test_v7_bootdocs.py; this line cap stays only as the
+    # monolith backstop.
     line_count = len((_CMD / "agentic-plan.md").read_text(
         encoding="utf-8").splitlines())
-    assert line_count < 130, f"dispatcher grew to {line_count} lines"
+    assert line_count < 230, f"dispatcher grew to {line_count} lines"
 
 
 # --- Phase 4: shape pipelines for planner ---------------------------------
