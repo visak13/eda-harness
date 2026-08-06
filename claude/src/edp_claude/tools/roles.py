@@ -182,6 +182,11 @@ _WORKER: frozenset[str] = frozenset({
     # that verifies nothing is the false-security gate. No new reach — it
     # describes work the worker already did.
     "record_test_lineage",
+    # v7 WS7 (SHADOW.md §4) — the shadowed shell's sovereignty seam:
+    # inspect/repair/override the sidecar that runs your wiring. Reads a
+    # ledger file + appends commands; no object reach. Refuses outright in
+    # an unshadowed shell, so the grant is inert on the legacy path.
+    "reflex",
     "pool_close_self",
 })
 
@@ -271,6 +276,12 @@ _PLANNER: frozenset[str] = frozenset({
     # v7 WS3 (§2.6c) — the planner estimates at declaration and re-checks
     # planned-vs-actual when sizing waves. Read-only.
     "budget_status",
+    # v7 WS7 (SHADOW.md §4) — the shadowed shell's sovereignty seam:
+    # inspect/repair/override the sidecar that runs your wiring. Reads a
+    # ledger file + appends commands; no object reach. Refuses outright in
+    # an unshadowed shell, so the grant is inert on the legacy path.
+    "reflex",
+
     # W5 (DESIGN-v6 §W5) granted the planner `convene_consult` so it could
     # convene a consult for a stuck action. RETIRED 2026-07-25 by operator
     # ruling — see `_OPERATOR_RETIRED` above for the reason, the disclosed cost
@@ -335,6 +346,11 @@ _REVIEWER: frozenset[str] = frozenset({
     # these, not the world) + the dead-test report. Read-only over the
     # derived graph index.
     "test_lineage_report",
+    # v7 WS7 (SHADOW.md §4) — the shadowed shell's sovereignty seam:
+    # inspect/repair/override the sidecar that runs your wiring. Reads a
+    # ledger file + appends commands; no object reach. Refuses outright in
+    # an unshadowed shell, so the grant is inert on the legacy path.
+    "reflex",
     "pool_close_self",
 })
 
@@ -378,6 +394,11 @@ _SPECIALIST: frozenset[str] = frozenset({
     # this same role through resolve_spec_learnings/recompile; no write path in
     # the delegate. Route-gated in .bridge.json (unrouted = refuse).
     "adversarial_challenge",
+    # v7 WS7 (SHADOW.md §4) — the shadowed shell's sovereignty seam:
+    # inspect/repair/override the sidecar that runs your wiring. Reads a
+    # ledger file + appends commands; no object reach. Refuses outright in
+    # an unshadowed shell, so the grant is inert on the legacy path.
+    "reflex",
     "pool_close_self",
 }) | SPECIALIST_ONLY
 
@@ -410,6 +431,11 @@ _CONSULT: frozenset[str] = frozenset({
     # Same read-only-plus-record posture as sol_consult; route-gated in
     # .bridge.json (unrouted = refuse).
     "consult_external",
+    # v7 WS7 (SHADOW.md §4) — the shadowed shell's sovereignty seam:
+    # inspect/repair/override the sidecar that runs your wiring. Reads a
+    # ledger file + appends commands; no object reach. Refuses outright in
+    # an unshadowed shell, so the grant is inert on the legacy path.
+    "reflex",
     "pool_close_self",
 })
 
@@ -507,6 +533,11 @@ _CURIOSITY: frozenset[str] = frozenset({
     # audits the same evidence). Read-only advisory posture unchanged;
     # route-gated in .bridge.json (unrouted = refuse).
     "consult_external",
+    # v7 WS7 (SHADOW.md §4) — the shadowed shell's sovereignty seam:
+    # inspect/repair/override the sidecar that runs your wiring. Reads a
+    # ledger file + appends commands; no object reach. Refuses outright in
+    # an unshadowed shell, so the grant is inert on the legacy path.
+    "reflex",
     "pool_close_self",
 })
 

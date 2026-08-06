@@ -1,5 +1,5 @@
 {
-  "_doc": "v7 boot-doc compiler manifest (§2.3). Each command's body is COMPILED from these source modules by `python -m edp_claude.bootdocs` into .claude/commands/<name>.md — one read at boot, budget-enforced (approx tokens, chars/4), drift-gated in CI (compiled output must match the checked-in command). Every module must be used by a command or listed in `uncompiled`/`notes` — the orphan gate is how 'no value lost' stays checkable.",
+  "_doc": "v7 boot-doc compiler manifest (\u00a72.3). Each command's body is COMPILED from these source modules by `python -m edp_claude.bootdocs` into .claude/commands/<name>.md \u2014 one read at boot, budget-enforced (approx tokens, chars/4), drift-gated in CI (compiled output must match the checked-in command). Every module must be used by a command or listed in `uncompiled`/`notes` \u2014 the orphan gate is how 'no value lost' stays checkable.",
   "budgets": {
     "neuron": 4000,
     "agentic-plan": 4000,
@@ -8,15 +8,37 @@
     "curiosity": 1500
   },
   "commands": {
-    "neuron": ["roles/neuron.md", "shared/vocabulary-core.md", "shared/terse-core.md"],
-    "agentic-plan": ["roles/planner.md", "shared/seat-law.md", "shared/vocabulary-core.md", "shared/terse-core.md"],
-    "worker": ["roles/worker.md", "shared/seat-law.md", "shared/vocabulary-core.md", "shared/terse-core.md"],
-    "reviewer": ["roles/reviewer.md", "shared/seat-law.md", "shared/vocabulary-core.md", "shared/terse-core.md"],
-    "curiosity": ["roles/curiosity.md", "shared/terse-core.md"]
+    "neuron": [
+      "roles/neuron.md",
+      "shared/vocabulary-core.md",
+      "shared/terse-core.md"
+    ],
+    "agentic-plan": [
+      "roles/planner.md",
+      "shared/seat-law.md",
+      "shared/vocabulary-core.md",
+      "shared/terse-core.md"
+    ],
+    "worker": [
+      "roles/worker.md",
+      "shared/seat-law.md",
+      "shared/vocabulary-core.md",
+      "shared/terse-core.md"
+    ],
+    "reviewer": [
+      "roles/reviewer.md",
+      "shared/seat-law.md",
+      "shared/terse-core.md"
+    ],
+    "curiosity": [
+      "roles/curiosity.md",
+      "shared/terse-core.md"
+    ]
   },
   "uncompiled": {
-    "consult": "hand-maintained command — advisory seat, low churn; compile when it next changes materially",
-    "specialist": "hand-maintained command — SME training protocol, low churn; compile when it next changes materially",
-    "ocak": "RETIRED stub (DESIGN-v5 P1) — never compiled"
-  }
+    "consult": "hand-maintained command \u2014 advisory seat, low churn; compile when it next changes materially",
+    "specialist": "hand-maintained command \u2014 SME training protocol, low churn; compile when it next changes materially",
+    "ocak": "RETIRED stub (DESIGN-v5 P1) \u2014 never compiled"
+  },
+  "_reviewer_note": "reviewer omits vocabulary-core: a one-shot verdict leg reads 3 object verbs taught inline; the shared core's planes/CRUD table is planner/worker/neuron material (budget ruling 2026-08-06)"
 }

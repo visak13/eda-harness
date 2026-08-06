@@ -175,7 +175,7 @@ RECORD_CONTEXT = "record_context"
 # territory. 61 today; the descent to 45 rides the Phase-5 guide triage
 # (descriptive call-form mentions deleted from the corpus lower the floor
 # and this ceiling TOGETHER — the ceiling is the floor, never headroom).
-CEILINGS = {"worker": 26, "reviewer": 22, "planner": 40, "neuron": 62}  # +budget_status (planner/neuron, v7 §2.6c — read-only planned-vs-actual)  # +1 each for the v7 WS3 test-lineage verbs (record_test_lineage worker / test_lineage_report reviewer+planner, 2026-08-05 — graph-sidecar only, no object reach); before that +1 each for the v7 WS1 bridge verbs (delegate_generate / delegate_review / adversarial_challenge — route-gated in .bridge.json, so the verb grants nothing until a human routes it); before that +list_subscriptions +unobserve (2026-07-20 monitor CRUD)
+CEILINGS = {"worker": 27, "reviewer": 23, "planner": 41, "neuron": 62}  # +reflex (v7 WS7 — shadow sovereignty seam; inert in unshadowed shells)  # +budget_status (planner/neuron, v7 §2.6c — read-only planned-vs-actual)  # +1 each for the v7 WS3 test-lineage verbs (record_test_lineage worker / test_lineage_report reviewer+planner, 2026-08-05 — graph-sidecar only, no object reach); before that +1 each for the v7 WS1 bridge verbs (delegate_generate / delegate_review / adversarial_challenge — route-gated in .bridge.json, so the verb grants nothing until a human routes it); before that +list_subscriptions +unobserve (2026-07-20 monitor CRUD)
 
 
 # ── helpers (mirror tests/test_scoped_facts.py so patterns stay uniform) ────

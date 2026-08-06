@@ -21,12 +21,14 @@ Drill goal (small on purpose): "build a two-command CLI note-taker
 
 | # | drill | evidence of pass |
 |---|---|---|
-| 1 | boot diet | the spawned planner/worker transcripts show ONE boot read (the compiled command), zero get_guide fan-out at boot |
+| 1 | boot diet + SHADOW boot | spawned shells start with ONE typed activation carrying the brief inline (`YOUR BRIEF` block) and the `[shadow … :nonce] wiring live` frame — zero arming turns, zero get_guide fan-out |
+| 1b | shadow ledgers | `edp-pool/.shadows/<handle>.json` exists per spawned shell: driver alive, fires counting, wakes framed+delivered |
+| 1c | reflex sovereignty | in one shell, run `reflex(verb="status")` (ledger returns) and `reflex(verb="silence")` → wakes stop being typed, `resume_auto` restores |
 | 2 | serves gate | `add_step` without `serves` REFUSES (EDP_V7_WRITE_GATES=1 is stamped); with serves → edge index shows the step→outcome edge |
 | 3 | scoped invalidation | `record_context(decision, affects=[s1])` → `.broker-data/<handle>.jsonl` holds ONE `ground_delta`; unaffected handles hold none |
 | 4 | silent-unless-gate | heartbeat wakes end with ≤`OK w=…` (read `.logs/verbosity-gate.jsonl` — `over:false` on wake turns) |
 | 5 | verbosity probe → arm | after ~20 wakes, read the gate log; if the budget holds, set `EDP_VERBOSITY_GATE=1` in start-stack-claude.bat |
-| 6 | open/close symmetry | after recipe close: `CronList` empty, no Monitor tasks alive, pool `/v1/locks` empty — no leaked driver/cron/lock |
+| 6 | open/close symmetry | after recipe close: pool `/v1/locks` empty, every shadow ledger state=closed, no rx driver processes alive — no leaked driver/cron/lock/slot (shadowed shells armed nothing themselves) |
 | 7 | delegation reflex | a routed worker task calls `delegate_generate` (audit row in `.bridge/audit-*.jsonl`); an unrouted one gets the "yours to do" refusal |
 | 8 | test lineage | worker registers tests (`test_edges` rows); reviewer's `test_lineage_report(files=…)` returns the impacted set only |
 | 9 | review policy | an unjustified `leg_kind="review"` add_action REFUSES; the justified one dispatches |

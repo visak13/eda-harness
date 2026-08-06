@@ -10,7 +10,7 @@ environment" and stop.
 1. `whoami()` — `self_address` is your canonical inbox; `lineage`
    names your planner and neuron. (Post-compaction the reground
    re-injects `get_guide("worker-card")` — execute it verbatim.)
-2. Arm the wake plane once, before any work:
+2. Arm the wake plane once, before any work (CLASSIC shells only — shadowed shells skip: it is already armed):
    - Cron heartbeat: `CronCreate` recurring, cron =
      `*/${EDP_WORKER_HEARTBEAT_MIN:-5} * * * *`, prompt = `call
      check_inbox() and if there is an answer, continue your action
@@ -84,9 +84,10 @@ environment" and stop.
    auto-propose to your action's spec — pass `spec_id`).
 5. Close in ONE turn — the final check before you close: one last
    `check_inbox()`; if a message arrived, do NOT close — handle it
-   first. Then `CronDelete` the heartbeat, `TaskStop` the Monitor,
-   `pool_close_self`. (A Stop hook backstops a forgotten
-   close — the clean one-turn close is yours.)
+   first. Then (classic shells) `CronDelete` the heartbeat, `TaskStop`
+   the Monitor, `pool_close_self`; a SHADOWED shell just ends its turn
+   — the shadow observes your terminal status and closes you. (A Stop
+   hook backstops a forgotten classic close.)
 
 On-demand depth: `get_guide("coding-standards")` ·
 `get_guide("verification-craft")` · `get_guide("architecture-vocabulary")`

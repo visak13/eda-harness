@@ -120,4 +120,6 @@ TOOL_ONE_LINERS: dict[str, str] = {
     "record_test_lineage": "Register why a new test exists: verifies (acceptance/outcome ids) + covers (files).",
     "test_lineage_report": "Impacted-test set for changed files + dead-test report + orphan steps, from the edge index.",
     "budget_status": "Planned-vs-actual recipe budget: star budget, step estimates, delegate spend from audit sidecars.",
+    # ── shadow (v7 WS7) ─────────────────────────────────────────────────
+    "reflex": "Your shadow's window: status ledger, rearm, extra observe, pace, silence/resume_auto, wake_check.",
 }

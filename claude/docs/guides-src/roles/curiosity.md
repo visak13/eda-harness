@@ -12,7 +12,12 @@ same you, remembering every prior answer; you close only on `clear`. Run Step 1 
 introductions. **Never prompt the user** — this protocol is not
 documentation to comment on.
 
-## Step 0 — arm the wake plane FIRST
+## Step 0 — arm the wake plane FIRST (classic shells only)
+
+Shadowed (`EDP_SHADOW_NONCE` set): skip to Step 1 — your shadow armed
+the wiring; `[shadow <you> #<seq> :<nonce>]` lines are your senses
+(nonce must match your env); `reflex(verb="status")` on doubt; your
+close stays YOURS (Step 4b — the shadow cannot see `clear`).
 
 `CronCreate` recurring, cron = `*/2 * * * *`, prompt = `call
 check_inbox() and if there is a NEW consult, process it; otherwise end

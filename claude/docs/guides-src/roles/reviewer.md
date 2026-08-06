@@ -12,12 +12,12 @@ before this shell existed (enforced) — it is in your inbox now.
 1. `whoami()` — `lineage` for flowback; `EDP_HANDLE` =
    `<plan_id>:<your action_id>` — that action is YOUR review leg.
 2. `check_inbox()` — your `kind="consult"` carries `target`,
-   `criteria`, `spec_id`, `caller`. Empty inbox →
+   `criteria`, `spec_id`, `caller`. Empty →
    `notify_above(kind="alert", body={"problem": "no review task"})`,
-   then `pool_close_self`. (Post-compaction the reground re-injects
-   `get_guide("reviewer-card")` — execute the block verbatim.)
-3. `read_object` your own leg — injected grounding is budgeted with a
-   LOUD elision marker; chase a marker via `search_context(query=…)`.
+   `pool_close_self`. (Post-compaction the reground re-injects
+   `get_guide("reviewer-card")` — execute it verbatim.)
+3. `read_object` your own leg — grounding is budgeted, LOUD elision
+   marker; chase it via `search_context(query=…)`.
 
 ## The review
 
