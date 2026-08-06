@@ -43,12 +43,12 @@ set "EDP_WORKER_SONNET_MODEL=claude-sonnet-4-6"
 
 rem --- TRAPS THIS LAUNCHER DISARMS -------------------------------------------
 rem Visible consoles for every spawned shell (you watch the agents work).
-rem WS7 (2026-08-07): HEADLESS is the shadow-era default — shadows v1
-rem only wrap headless shells (SHADOW.md §1); visible consoles ran the
-rem whole first drill on the LEGACY path (still arming cron/monitor).
-rem Observability = shadow ledgers + panel + per-session drain logs.
-rem Opt back into visible consoles with EDP_SPAWN_MODE=monitor.
-if not defined EDP_SPAWN_MODE set "EDP_SPAWN_MODE=headless"
+rem MONITOR is the default (user ruling 2026-08-06: the operator works
+rem watching the consoles; headless is a deliberate opt-in). Shadows now
+rem wrap BOTH modes: monitor shells get their activation+brief via argv
+rem (claude's initial prompt) and later wakes via console-input injection
+rem (AttachConsole/WriteConsoleInput helper) — see SHADOW.md §1.
+if not defined EDP_SPAWN_MODE set "EDP_SPAWN_MODE=monitor"
 
 rem THE BIG ONE. Headless Claude shells always get --dangerously-skip-
 rem permissions (no window to click), but MONITOR shells do NOT unless this is

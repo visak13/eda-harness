@@ -27,13 +27,25 @@ Why parent, not sibling: typing into a console requires owning its input
 pipe; the launcher owns it. Making the shadow the launcher removes every
 attach problem on the happy path.
 
-V1 SCOPE (code-reading finding, 2026-08-06): only HEADLESS (ConPTY)
-shells have a live input pipe after launch — monitor-mode consoles get
-their activation via argv and cannot be typed into afterwards. So
-shadows v1 wrap headless shells (PtyLaunch.send generalized to
-send_line); EDP_SPAWN_MODE=monitor keeps legacy behavior un-shadowed.
-Visible-console injection (AttachConsole/WriteConsoleInput) is a later
-extension; operator visibility meanwhile = ledger + panel + drain logs.
+BOTH MODES ARE SHADOWED (2026-08-06, user ruling: monitor is the
+operator's default and the shadow must not be a headless-only feature).
+Two wake pipes, one shadow:
+
+* **headless** (ConPTY): the original v1 path — the shadow owns the PTY
+  and types framed wakes via `send_line` (PtyLaunch.send_activation).
+* **monitor** (visible console): the first line (activation + brief +
+  wiring frame) rides argv as claude's initial prompt — claude submits
+  it when ready, so there is no readiness race and no drain log needed.
+  Later wakes are injected into the child's console input buffer via a
+  detached helper process (`edp_pool.console_input`: FreeConsole →
+  AttachConsole(pid) → WriteConsoleInputW KEY_EVENTs + Enter). The
+  helper is a separate process because AttachConsole is process-global
+  — the multithreaded pool cannot borrow a child's console. A wake that
+  lands before the TUI is ready just queues in the console input
+  buffer. Delivery failure is fail-open: recorded in the ledger, never
+  fatal to shell or shadow.
+
+`EDP_SHADOW=0` restores the legacy un-shadowed spawner for both modes.
 
 ## 2. The ledger — durable truth per handle
 
@@ -191,3 +203,10 @@ comms. One shadow, one shell, one handle.
 * **Brief injection covers worker/reviewer.** Planners ground
   themselves from the digest (their brief IS the recipe); curiosity
   gets its consult from the inbox as before.
+* **Monitor wake delivery is console-input injection** (added
+  2026-08-06 when monitor became shadowed). The plumbing is unit-tested
+  with fakes; WriteConsoleInputW delivery into claude's live TUI needs
+  one live-drill verification (watch the first heartbeat wake appear in
+  a visible console). If a TUI build ever rejects injected KEY_EVENTs,
+  the fallback is flipping that role to headless — the shadow itself is
+  mode-agnostic.

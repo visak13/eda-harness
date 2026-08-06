@@ -77,16 +77,79 @@ def test_terminal_check_reads_action_status(sp, tmp_path):
     assert sp._terminal_check("curiosity", "curiosity-1")() is False
 
 
-def test_monitor_mode_and_disabled_flag_delegate_to_legacy(
-        sp, monkeypatch):
+def test_disabled_flag_delegates_to_legacy_both_modes(sp, monkeypatch):
     calls = []
     monkeypatch.setattr(sp.legacy, "launch",
                         lambda *a, **k: calls.append((a, k)))
-    sp.launch("s1", "worker", "p:a", mode="monitor")
-    assert len(calls) == 1
     monkeypatch.setenv("EDP_SHADOW", "0")
+    sp.launch("s1", "worker", "p:a", mode="monitor")
     sp.launch("s2", "worker", "p:a", mode="headless")
     assert len(calls) == 2
+
+
+def test_monitor_launch_builds_console_shadow(sp, tmp_path, monkeypatch):
+    """Monitor spawns are SHADOWED (2026-08-06 ruling): first line rides
+    argv as claude's initial prompt; wakes go via console injection."""
+    _write_plan(tmp_path)
+    captured = {}
+
+    class FakeConsole:
+        def __init__(self, argv, env, cwd):
+            captured["argv"] = argv
+            captured["env"] = env
+            self._alive = False
+            self.pid = 777
+
+        def spawn(self):
+            self._alive = True
+
+        def is_alive(self):
+            return self._alive
+
+        def terminate(self):
+            self._alive = False
+
+    injected = []
+    import edp_pool.console_input as ci
+    import edp_pool.console_launcher as cl
+    import edp_pool.shadow_spawner as mod
+    monkeypatch.setattr(cl, "ConsoleLaunch", FakeConsole)
+    monkeypatch.setattr(ci, "inject_line",
+                        lambda pid, text: injected.append((pid, text)))
+    monkeypatch.setattr(
+        "edp_pool.pty_launcher.resolve_claude_bin", lambda b: "claude.exe")
+    monkeypatch.setattr(
+        "edp_pool.pty_launcher.ensure_claude_healthy", lambda b: b)
+    monkeypatch.setattr(mod.ShadowSpawner, "_agent_python",
+                        lambda self: "python.exe")
+    monkeypatch.setattr(
+        mod, "_RxDriverAdapter",
+        lambda **kw: type("D", (), {"start": lambda s: None,
+                                    "stop": lambda s: None,
+                                    "is_alive": lambda s: True})())
+    monkeypatch.delenv("EDP_SHADOW", raising=False)
+
+    sp.launch("worker:mon", "worker", "plan-x-s2:a3", mode="monitor")
+
+    sh = sp._shadows["worker:mon"]
+    sh.stop()
+    # nonced env + shadow dir stamped, exactly like headless
+    assert captured["env"]["EDP_SHADOW_NONCE"] == sh.cfg.nonce
+    # first line rides argv (initial prompt), NOT send_line
+    first = captured["argv"][-1]
+    assert first.startswith("/worker")
+    assert "build the CSV export" in first
+    assert f":{sh.cfg.nonce}]" in first
+    assert injected == []          # no injection at spawn time
+    # a later wake IS injected into the console by pid
+    sh._on_event({"kind": "mail", "body": {"x": 1}})
+    assert injected and injected[0][0] == 777
+    assert "mail:" in injected[0][1]
+    # Spawner surface truthful for the console route
+    assert sp.alive("worker:mon") and sp.pid("worker:mon") == 777
+    assert sp.last_output_ts("worker:mon") is None   # no drain log
+    sp.kill("worker:mon")
+    assert not sp.alive("worker:mon")
 
 
 def test_headless_launch_builds_shadow_with_nonced_env(

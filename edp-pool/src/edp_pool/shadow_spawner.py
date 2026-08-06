@@ -30,9 +30,13 @@ means shadow death. The restore story is unchanged in shape: ledgers are
 durable, and on pool restart the supervisor rebirths non-closed handles
 (park+resume) under fresh shadows. Process isolation is v2.
 
-Staged rollout: EDP_SHADOW=1 (default ON) shadows headless spawns;
-monitor-mode spawns always pass through to the legacy SubprocessSpawner
-(no post-launch input pipe — SHADOW.md v1 scope).
+Staged rollout: EDP_SHADOW=1 (default ON) shadows EVERY spawn — both
+modes. Headless shells get the ConPTY pipe (PtyLaunch.send_activation);
+monitor shells (visible console, the operator's default) get their
+activation+brief as claude's initial-prompt argv and later wakes via
+console-input injection (console_input.inject_line — AttachConsole +
+WriteConsoleInputW in a detached helper). EDP_SHADOW=0 restores the
+legacy un-shadowed SubprocessSpawner for both modes.
 """
 
 import json
@@ -107,6 +111,58 @@ class _PtyShellAdapter:
         return self.launch.pid
 
 
+class _ConsoleShellAdapter:
+    """ShellShadow's shell interface over a VISIBLE console (monitor mode).
+
+    First line: `prepare_first_line` stashes it pre-spawn; spawn() appends
+    it to argv as claude's initial prompt (claude submits it when its
+    session is ready — no readiness race, same as legacy monitor spawns).
+    Later lines (the framed wakes): console-input injection into the
+    child's console via the detached helper. wait_ready() is trivially
+    True — argv delivery needs no marker, and an injected wake that lands
+    before the TUI is ready just queues in the console input buffer."""
+
+    log_path = None            # visible console: the window IS the output
+
+    def __init__(self, argv: list, env: dict, cwd: str | None) -> None:
+        self._argv = argv
+        self._env = env
+        self._cwd = cwd
+        self._first: str | None = None
+        self.launch = None
+
+    def prepare_first_line(self, line: str) -> None:
+        self._first = line
+
+    def spawn(self) -> None:
+        from .console_launcher import ConsoleLaunch
+
+        argv = self._argv + ([self._first] if self._first else [])
+        self.launch = ConsoleLaunch(argv=argv, env=self._env, cwd=self._cwd)
+        self.launch.spawn()
+
+    def wait_ready(self) -> bool:
+        return True
+
+    def send_line(self, line: str) -> None:
+        from .console_input import inject_line
+
+        pid = getattr(self.launch, "pid", None)
+        if pid:
+            inject_line(pid, line)
+
+    def is_alive(self) -> bool:
+        return bool(self.launch and self.launch.is_alive())
+
+    def terminate(self) -> None:
+        if self.launch is not None:
+            self.launch.terminate()
+
+    @property
+    def pid(self):
+        return getattr(self.launch, "pid", None)
+
+
 class _RxDriverAdapter:
     """Hosts the rx driver subprocess; NDJSON stdout lines → on_event.
     The exact process observe()'s monitor_cmd describes, re-parented."""
@@ -167,8 +223,9 @@ class _RxDriverAdapter:
 
 
 class ShadowSpawner(Spawner):
-    """Drop-in Spawner: headless spawns get shadows; monitor spawns (and
-    EDP_SHADOW=0) delegate to the wrapped legacy SubprocessSpawner."""
+    """Drop-in Spawner: EVERY spawn gets a shadow — headless over ConPTY,
+    monitor over argv-first-line + console-input injection. Only
+    EDP_SHADOW=0 delegates to the wrapped legacy SubprocessSpawner."""
 
     def __init__(self, legacy: SubprocessSpawner,
                  shadow_dir: Path | None = None) -> None:
@@ -279,7 +336,7 @@ class ShadowSpawner(Spawner):
                resume_session: str | None = None,
                model: str | None = None,
                activation: str | None = None) -> None:
-        if mode == "monitor" or not shadow_enabled():
+        if not shadow_enabled():
             self.legacy.launch(session_id, role, handle, mode,
                                claude_session, resume_session, model,
                                activation)
@@ -315,11 +372,26 @@ class ShadowSpawner(Spawner):
         log_path = (self.legacy.log_dir / f"{safe}.log"
                     if self.legacy.log_dir else None)
 
-        def shell_factory():
-            return _PtyShellAdapter(PtyLaunch(
-                argv=build_argv(bin_, extra=sargs, skip_permissions=True,
-                                model=model),
-                env=env, cwd=self.legacy.cwd, log_path=log_path))
+        if mode == "monitor":
+            # Visible console (the operator's default): same permission
+            # rule as the legacy monitor spawn — the operator can click-
+            # approve, so autonomy is the explicit EDP_SKIP_PERMISSIONS
+            # opt-in, never a shadow side effect.
+            skip_perms = os.environ.get(
+                "EDP_SKIP_PERMISSIONS", "0").lower() in ("1", "true", "yes")
+
+            def shell_factory():
+                return _ConsoleShellAdapter(
+                    argv=build_argv(bin_, extra=sargs,
+                                    skip_permissions=skip_perms,
+                                    model=model),
+                    env=env, cwd=self.legacy.cwd)
+        else:
+            def shell_factory():
+                return _PtyShellAdapter(PtyLaunch(
+                    argv=build_argv(bin_, extra=sargs,
+                                    skip_permissions=True, model=model),
+                    env=env, cwd=self.legacy.cwd, log_path=log_path))
 
         def driver_factory(on_event):
             return _RxDriverAdapter(

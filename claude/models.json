@@ -1,31 +1,32 @@
 {
   "_doc": "v7 seat registry (edp_contracts/seats.py). ONE file remixes the fleet: seats bind EXACT model ids (never aliases); roles bind seats. Claude effort is capped at medium fleet-wide (validator-enforced). auto_compact sits below the window so compaction is planned, never mid-work. Edit + pass doctor; no code changes.",
+  "_model_note": "2026-08-06 user ruling: judgment tier is claude-opus-4-6 (1M context is native — no suffix), paired with claude-fable-5 as the ADVISOR (curiosity) seat only. NO Opus 5 anywhere. Reviewer runs on the judgment model too — Sonnet cannot be trusted to catch what an Opus review is for.",
   "seats": {
     "judgment": {
-      "model": "claude-fable-5",
+      "model": "claude-opus-4-6",
       "effort": "medium",
       "context_window": 1000000,
       "auto_compact": 350000
+    },
+    "advisor": {
+      "model": "claude-fable-5",
+      "effort": "medium",
+      "context_window": 1000000,
+      "auto_compact": 350000,
+      "max_output": 8000
     },
     "workhorse": {
       "model": "claude-sonnet-5",
       "effort": "medium",
       "context_window": 1000000,
-      "auto_compact": 300000,
+      "auto_compact": 350000,
       "max_output": 16000
     },
-    "steward": {
-      "model": "claude-sonnet-5",
-      "effort": "low",
-      "context_window": 1000000,
-      "auto_compact": 250000,
-      "max_output": 8000
-    },
     "checker": {
-      "model": "claude-sonnet-5",
+      "model": "claude-opus-4-6",
       "effort": "medium",
       "context_window": 1000000,
-      "auto_compact": 400000,
+      "auto_compact": 350000,
       "max_output": 12000
     }
   },
@@ -35,8 +36,8 @@
     "specialist": "judgment",
     "worker": "workhorse",
     "reviewer": "checker",
-    "curiosity": "steward",
+    "curiosity": "advisor",
     "consult": "judgment"
   },
-  "_window_note": "2026-08-07 live-drill fix: reviewer compacted MID-REVIEW at 150k (a review leg legitimately reads a big tree). checker 150k->400k, workhorse 200k->300k. Rule stands: compaction must land at turn boundaries; a role that ROUTINELY nears its window is a scoping defect to split, but the window must never be the thing that interrupts one coherent piece of work."
+  "_window_note": "2026-08-06 user ruling: auto_compact is 350k on EVERY seat — one number, no per-seat window tuning. The rule stands: compaction must land at turn boundaries; a role that ROUTINELY nears its window is a scoping defect to split."
 }

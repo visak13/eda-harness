@@ -22,7 +22,11 @@ DESIGN RULES (the contract, enforced by tests):
     shadow error never kills the shell; `silenced` mode stops all
     autonomous action but keeps logging (the on-the-fly escape hatch).
 
-V1 scope: headless (ConPTY) shells only — see SHADOW.md §1.
+Shells come in two wake-pipe flavors (SHADOW.md §1): headless (ConPTY —
+send_line writes the PTY) and monitor (visible console — first line rides
+argv as claude's initial prompt via prepare_first_line; later wakes are
+injected through console_input.inject_line). The shadow is identical
+either way; only the shell adapter differs.
 """
 
 import json
@@ -158,8 +162,6 @@ class ShellShadow:
         self._state = "launching"
         self._write_ledger()
         self.shell = self._shell_factory()
-        self.shell.spawn()
-        self.shell.wait_ready()
         first = self.cfg.activation
         if self.cfg.brief:
             first = f"{first}\n\nYOUR BRIEF (injected by your shadow):\n" \
@@ -167,7 +169,19 @@ class ShellShadow:
         first += (f"\n\n[shadow {self.cfg.handle} #0 :{self.cfg.nonce}] "
                   f"wiring live: {self.cfg.spec or 'heartbeat only'}; "
                   f"reflex(status) shows the ledger")
-        self.shell.send_line(first)
+        # Monitor-mode shells (visible console) take the first line as
+        # claude's initial-prompt argv — claude submits it when ready, so
+        # there is no post-launch readiness race. A shell that offers
+        # prepare_first_line gets it PRE-spawn; the PTY route keeps the
+        # proven spawn → wait_ready → type sequence.
+        if hasattr(self.shell, "prepare_first_line"):
+            self.shell.prepare_first_line(first)
+            self.shell.spawn()
+            self.shell.wait_ready()
+        else:
+            self.shell.spawn()
+            self.shell.wait_ready()
+            self.shell.send_line(first)
         self._publish("ready", {"handle": self.cfg.handle,
                                 "inbox": self.cfg.handle})
         self._state = "ready"

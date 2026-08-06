@@ -73,16 +73,17 @@ if _oc_roles:
 else:
     _spawner = _claude_spawner
 
-# WS7 (SHADOW.md): headless spawns get a per-shell shadow (wake plane,
+# WS7 (SHADOW.md): every spawn gets a per-shell shadow (wake plane,
 # brief injection, observed close) — Spawner-compatible wrapper, so the
-# service is untouched. Monitor-mode spawns pass through to legacy.
+# service is untouched. Headless rides ConPTY; monitor (the default)
+# rides argv-first-line + console-input injection.
 # Staged: EDP_SHADOW=0 disables outright.
 from .shadow_spawner import ShadowSpawner, shadow_enabled  # noqa: E402
 
 if shadow_enabled() and _spawner is _claude_spawner:
     _spawner = ShadowSpawner(_claude_spawner)
     _log.info("shadow_backend_armed",
-              "headless spawns are shadow-wrapped (WS7)")
+              "all spawns (monitor + headless) are shadow-wrapped (WS7)")
 
 app = create_app(
     spawner=_spawner,

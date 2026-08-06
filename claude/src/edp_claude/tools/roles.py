@@ -583,7 +583,13 @@ def toolset_for_role(role: str | None) -> frozenset[str] | None:
 # token-HUNGRY Sonnet; 4.6 uses the older, leaner tokenizer, which is the whole
 # reason to pick it for the cheaper opt-in tier. The id is overridable via
 # EDP_WORKER_SONNET_MODEL for a future re-point without a code edit.
-HOST_DEFAULT_MODEL = "claude-opus-4-8"   # what a spawn gets with NO --model
+# 2026-08-06: the pool config dir now PINS its own default model
+# (.claude-pool/settings.json "model": "claude-opus-4-6") so a no-flag spawn
+# can never fall to the ACCOUNT default (the first drill's "Opus 5
+# everywhere"). HOST_DEFAULT_MODEL is kept at 4-8 deliberately: no seat
+# equals it, so the registry emits an explicit --model for EVERY role —
+# explicit beats implicit at the spawn seam.
+HOST_DEFAULT_MODEL = "claude-opus-4-8"   # legacy no-registry sentinel
 SONNET = os.environ.get("EDP_WORKER_SONNET_MODEL", "claude-sonnet-4-6")
 
 # The task_class used when a caller names no narrower one. Every role has a
