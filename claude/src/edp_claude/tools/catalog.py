@@ -108,9 +108,8 @@ TOOL_ONE_LINERS: dict[str, str] = {
     "neuron_flag": "Flag a neuron-DB row.",
     "neuron_set_base_session": "Bind a specialist's base session id to its row (what makes it usable).",
     "neuron_set_status": "Set a neuron-DB row's status (HITL approval gate).",
-    # ── Sol bridge ──────────────────────────────────────────────────────
-    "sol_consult": "Ask Sol (read-only, sees renders via -i) for creative/visual judgment.",
-    "sol_author_asset": "Delegate a visual/3D/image asset to Sol; writes ONLY under the validated asset dir, never code.",
+    # (sol_consult / sol_author_asset retired 2026-08-12 — superseded by the
+    # provider-bridge delegates below; sol_bridge.py stays as the cli backend.)
     # ── provider bridge (v7 WS1) ────────────────────────────────────────
     "delegate_generate": "Delegate bulk generation to the routed cheap model; the draft is untrusted — you integrate, test, record.",
     "delegate_review": "Cheap cross-family pre-screen of an artifact against acceptance; the reviewer still adjudicates.",

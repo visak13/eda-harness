@@ -105,11 +105,11 @@ _SUPERSEDED_OUT: frozenset[str] = frozenset({
     #   RETIRED ON AN EMPTY AUDIT, as DESIGN-v6 W6.4 requires ("only retire
     #   record_step if the call-site audit comes back empty"). The audit: ZERO
     #   call sites in the live shell-facing corpus (.claude/commands/*.md +
-    #   docs/guides/*.md) and ZERO callers in src/. The one live-code reference is
-    #   `InstructionKind.RECORD_STEP` (schemas/instruction.py:31) — a declared
-    #   instruction kind that NO FSM emits (unlike `invoke_skill`, which
-    #   plan_fsm.py:168 really does emit). A dead enum member is not a call site;
-    #   it is left alone here and reported as a finding.
+    #   docs/guides/*.md) and ZERO callers in src/. The one live-code reference
+    #   WAS `InstructionKind.RECORD_STEP` — a declared instruction kind that NO
+    #   FSM ever emitted (unlike `invoke_skill`, which plan_fsm.py really does
+    #   emit); the dead enum member and the RecordStep class were deleted in the
+    #   2026-08-12 dead-surface retirement.
     "record_step",
 })
 
@@ -137,12 +137,30 @@ _OPERATOR_RETIRED: frozenset[str] = frozenset({
     "convene_consult",
 })
 
+# ── DEAD-SURFACE RETIREMENT (2026-08-12) ───────────────────────────────────
+# Superseded by the provider-bridge delegates (tools/bridge.py, v7 WS1):
+#   sol_consult      → consult_external (one-shot cross-provider verdict)
+#   sol_author_asset → delegate_generate (route-gated delegation)
+# Both tool CLASSES are deleted from _tools.py along with their registrations
+# and catalog entries. The sol_bridge.py ENGINE survives untouched — it is the
+# live `cli` backend of the bridge (bridge.py imports run_sol), so retiring
+# the two direct verbs removes surface, never capability. The standalone
+# consult SHELL ROLE was retired in the same sweep (its only spawn verb,
+# convene_consult above, went 2026-07-25); the LIVE consult_* tools
+# (consult_specialist / consult_curiosity / consult_external /
+# record_specialist_consult) are untouched.
+_BRIDGE_SUPERSEDED: frozenset[str] = frozenset({
+    "sol_consult",
+    "sol_author_asset",
+})
+
 # Every verb retired from every role surface. DERIVED, so a consumer (the
 # guide-corpus gate, the neuron subtraction) can never hand-copy a list that
 # drifts from this one — the same argument test_w4_roles makes for importing
 # _CONSOLIDATED_OUT rather than re-spelling it.
 RETIRED_VERBS: frozenset[str] = (
-    _CONSOLIDATED_OUT | _SUPERSEDED_OUT | _OPERATOR_RETIRED)
+    _CONSOLIDATED_OUT | _SUPERSEDED_OUT | _OPERATOR_RETIRED
+    | _BRIDGE_SUPERSEDED)
 
 # ── per-role scoped surfaces (tool NAMES) ──────────────────────────────────
 # WORKER — execute ONE action + report: read state, load spec docs, record
@@ -166,10 +184,8 @@ _WORKER: frozenset[str] = frozenset({
     # form as the get_recipe_digest and status_ping arguments.
     "assemble_ruleset",
     "consult_specialist",
-    # v7 follow-up (2026-07-16) — Sol authors visual/3D/image ASSETS the worker
-    # cannot verify by hand. Sol writes ONLY under a validated asset dir (never
-    # code); the worker is Sol's eyes (render -> capture -> feed back via -i).
-    "sol_author_asset",
+    # (sol_author_asset retired 2026-08-12 — see _BRIDGE_SUPERSEDED above.
+    # Visual/asset delegation rides delegate_generate below.)
     # v7 WS1 (2026-08-05) — the delegation layer: bulk generation routed to a
     # cheap external model (frontier plans, cheap executes, the WORKER
     # verifies). Route-gated in .bridge.json — an unrouted (role, task_class)
@@ -402,42 +418,15 @@ _SPECIALIST: frozenset[str] = frozenset({
     "pool_close_self",
 }) | SPECIALIST_ONLY
 
-# CONSULT — the on-demand advisory role: an inbox + the consult verbs,
-# read-only over state. No authoring, no spawn. No count ceiling.
-_CONSULT: frozenset[str] = frozenset({
-    "whoami", "check_inbox", "reply", "notify_above", "ask_above",
-    "emit_recipe_event",
-    "get_guide",
-    "read_object", "query_objects", "describe_objects", "observe", "list_subscriptions", "unobserve",
-    "recall", "get_recipe_digest",
-    # -consult_goal_keeper / -consult_pattern_observer — DEAD roles (owner
-    # ruling 2026-08-04).
-    "consult_specialist", "consult_curiosity",
-    "record_specialist_consult",
-    # W5: the two verbs `.claude/commands/consult.md` is contractually built
-    # on — `get_specialist_docs` overlays the stack docs named in the spawn
-    # brief's `spec_ids`, and `record_context` writes the keep-worthy finding
-    # back as a decision (`by="consult"`, which the neuron then confirms).
-    # Read-only-plus-record: the consult still cannot author specs or spawn.
-    "get_specialist_docs", RECORD_CONTEXT,
-    # v7 follow-up (2026-07-16) — the consult's independent, non-Opus perspective
-    # for CREATIVE / VISUAL judgment. Sol runs READ-ONLY (sees an attached render
-    # via -i, returns advice, writes nothing). This is the "consult -> Sol" wiring
-    # from the model-tiering ruling: the consult shell stays an Opus Claude that
-    # REACHES Sol through this tool (Sol is not a --model).
-    "sol_consult",
-    # v7 WS1 (2026-08-05) — one-shot CROSS-PROVIDER verdict (bias removal by
-    # model family, §2.4): text in, text out, the advisor changes nothing.
-    # Same read-only-plus-record posture as sol_consult; route-gated in
-    # .bridge.json (unrouted = refuse).
-    "consult_external",
-    # v7 WS7 (SHADOW.md §4) — the shadowed shell's sovereignty seam:
-    # inspect/repair/override the sidecar that runs your wiring. Reads a
-    # ledger file + appends commands; no object reach. Refuses outright in
-    # an unshadowed shell, so the grant is inert on the legacy path.
-    "reflex",
-    "pool_close_self",
-})
+# (CONSULT — the standalone convened-consult SHELL ROLE — was retired in the
+# 2026-08-12 dead-surface sweep. Its only spawn verb, `convene_consult`, went
+# 2026-07-25 (_OPERATOR_RETIRED above), which left the role unreachable: no
+# registered tool spawned role="consult" and .claude/commands/consult.md was
+# an activator no shell could receive. The toolset row, the activator card,
+# the models.json seat mapping and the edp-pool shadow entries were deleted
+# together. The LIVE consult verbs — consult_specialist, consult_curiosity,
+# consult_external, record_specialist_consult — are untouched; they belong to
+# the surviving roles' surfaces.)
 
 # NEURON — POSITIVE LIST (context-diet Phase 3b, 2026-07-30). The old
 # derived-subtractive form (`_ALL_TOOL_NAMES - SPECIALIST_ONLY -
@@ -551,7 +540,6 @@ ROLE_TOOLSETS: dict[str, frozenset[str]] = {
     "planner": _PLANNER,
     "reviewer": _REVIEWER,
     "specialist": _SPECIALIST,
-    "consult": _CONSULT,
     "neuron": _NEURON,
     "curiosity": _CURIOSITY,
 }
@@ -566,214 +554,47 @@ def toolset_for_role(role: str | None) -> frozenset[str] | None:
     return ROLE_TOOLSETS.get(role)
 
 
-# ── model tiers (DESIGN-v6 W10b, tables-as-data) ───────────────────────────
-# Same discipline as ROLE_TOOLSETS above: pure data plus two tiny lookup
-# helpers, no behaviour. The spawn tools read `spawn_model_for(...)` and pass
-# the result (or nothing) to the pool.
-#
-# ONLY TWO MODELS EXIST HERE (d53, USER RULING): Opus 4.8 and Sonnet 5.
-# HAIKU IS NEVER A TIER — not as a row, not as a comment, not as a fallback.
-# d53 forbids it on cost/judgment grounds; the API forbids it on two more:
-# Haiku 4.5 REJECTS `effort` outright and carries a 200K window against our 1M.
-#
-# EXACT MODEL IDS, never date-suffixed aliases. The Sonnet this table tiers to
-# is `claude-sonnet-4-6` (USER RULING, 2026-07-16): Opus is the DEFAULT for
-# every role, and Sonnet is opt-in "where it makes sense" — never auto-selected.
-# Sonnet 5 is NOT used here: it shares Opus 4.7/4.8's tokenizer and is the
-# token-HUNGRY Sonnet; 4.6 uses the older, leaner tokenizer, which is the whole
-# reason to pick it for the cheaper opt-in tier. The id is overridable via
-# EDP_WORKER_SONNET_MODEL for a future re-point without a code edit.
-# 2026-08-06: the pool config dir now PINS its own default model
-# (.claude-pool/settings.json "model": "claude-opus-4-6") so a no-flag spawn
-# can never fall to the ACCOUNT default (the first drill's "Opus 5
-# everywhere"). HOST_DEFAULT_MODEL is kept at 4-8 deliberately: no seat
-# equals it, so the registry emits an explicit --model for EVERY role —
-# explicit beats implicit at the spawn seam.
-HOST_DEFAULT_MODEL = "claude-opus-4-8"   # legacy no-registry sentinel
-SONNET = os.environ.get("EDP_WORKER_SONNET_MODEL", "claude-sonnet-4-6")
-
-# The task_class used when a caller names no narrower one. Every role has a
-# row at this key: it is the role's DEFAULT tier, and `resolve_model_tier`
-# falls back to it whenever a candidate is not explicitly allowed.
-DEFAULT_TASK_CLASS = "*"
-
-# TOKENIZER NOTE. DESIGN-v6 W10b's "~30% more tokens for the same text" is the
-# Sonnet 4.6 -> Sonnet 5 tokenizer change: Sonnet 5 shares Opus 4.7/4.8's
-# tokenizer and is the token-HUNGRY one, Sonnet 4.6 uses the older, leaner
-# tokenizer. Tiering to 4.6 is therefore the token-lean Sonnet choice — which is
-# exactly why it is the opt-in tier (opus-4-8 $5/$25 per MTok in/out vs
-# sonnet-4-6 $3/$15). These are vendor list prices, unverified-by-measurement
-# inputs, not a measured result — see MODEL-TIERING-BENCHMARK.md.
-#
-# A ROW IS `{model, status}` (+ `benchmark_task` on a candidate OR a measured
-# row, naming the benchmark that will measure it / did). NOTHING ELSE.
-# DESIGN-v6 line 490 specifies exactly that shape. a4 additionally stamped
-# `thinking` and `effort` on every row; a4b DELETED them (USER RULING,
-# 2026-07-10) for the reason they were never noticed: NOTHING CONSUMED THEM.
-# `spawn_model_for` returns a model string; `pty_launcher.build_argv` emits only
-# `["--model", model]`. Both fields were declared and dropped — the same
-# disease a3 found in `record_context`'s `constraint`. They are NOT re-wired
-# here: model/thinking/effort belong to the Claude Code settings+env surface the
-# harness ALREADY owns (`build_argv` threads `--model`, `build_env` injects
-# DISABLE_AUTOUPDATER and EDP_RTK), not to a new field in this table (d76/d77:
-# where you are tempted to build a mechanism, use the one that exists).
-#
-# MEASURED BEHAVIOUR OF THE TWO MODELS AS THE SPAWN PATH ACTUALLY LAUNCHES THEM
-# (a4b, 2026-07-10, probed via `claude -p --output-format stream-json`, NOT
-# inherited from the API reference):
-#   * BOTH models think ADAPTIVELY out of the box, with no flag and no env.
-#     `claude-opus-4-8` emits a thinking block even on a trivial prompt;
-#     `claude-sonnet-5` declines to think on a trivial prompt and DOES think on
-#     a hard one. Adaptive means THE MODEL DECIDES — a trivial-prompt probe
-#     showing no thinking block is NOT evidence that a model cannot think.
-#   * `MAX_THINKING_TOKENS=0` suppresses thinking on both. Nothing sets it.
-#
-# `status` IS "default" OR "candidate". "measured" is a legal third value the
-# schema/tests still recognise, but NO ROW carries it: Opus is the default for
-# every role and Sonnet is opt-in only (USER RULING, 2026-07-16). a4b DID run a
-# real benchmark (BENCH-WORKER-CODING, 2026-07-10) — but it measured
-# `claude-sonnet-5`, and the tiered Sonnet is now `claude-sonnet-4-6`, so that
-# measurement backs no live row. `MODEL-TIERING-BENCHMARK.md` records the a4b
-# entry as history and states, per its own §8 ground rule 1, that no tier is
-# measured and the flip is withheld — an honest negative, not an omission.
-_OPUS_DEFAULT = {"model": HOST_DEFAULT_MODEL, "status": "default"}
-
-
-def _candidate(benchmark_task: str) -> dict:
-    """A Sonnet CANDIDATE row. Never selected unless a spawn passes
-    `allow_candidate_tier=True`; each names the benchmark task that must measure
-    it before any flip to a default — the measured-only-adoption discipline whose
-    cautionary precedent is the withdrawn heartbeat tier (DESIGN-v6 principle 4)."""
-    return {"model": SONNET, "status": "candidate",
-            "benchmark_task": benchmark_task}
-
-
-MODEL_TIERS: dict[tuple[str, str], dict] = {
-    # ── the brains: Opus, full stop ─────────────────────────────────────────
-    ("neuron", DEFAULT_TASK_CLASS): _OPUS_DEFAULT,
-    ("planner", DEFAULT_TASK_CLASS): _OPUS_DEFAULT,
-    ("specialist", DEFAULT_TASK_CLASS): _OPUS_DEFAULT,
-    # The consult tier the W10b escalation ladder reads. STRONGER-THAN-OPUS
-    # TIERS ARE NEVER AUTO-SELECTED — a human passes one explicitly or nothing.
-    ("consult", DEFAULT_TASK_CLASS): _OPUS_DEFAULT,
-    ("curiosity", DEFAULT_TASK_CLASS): _OPUS_DEFAULT,
-    # goal_keeper / pattern_observer rows deleted — DEAD roles (owner ruling
-    # 2026-08-04).
-
-    # ── worker ──────────────────────────────────────────────────────────────
-    ("worker", DEFAULT_TASK_CLASS): _OPUS_DEFAULT,
-    # OPT-IN, NOT MEASURED (USER RULING, 2026-07-16: "keep Opus as default and
-    # use Sonnet where it makes sense"). a4b DID benchmark a Sonnet coding arm on
-    # 2026-07-10 (BENCH-WORKER-CODING, 5 trials/arm) and Sonnet held quality —
-    # BUT it measured `claude-sonnet-5`, and this tier now resolves to
-    # `claude-sonnet-4-6`, a DIFFERENT model with a different tokenizer. A
-    # measurement of one model is not a measurement of another (d80), so this row
-    # is a CANDIDATE: the planner opts in per task via `allow_candidate_tier`;
-    # a bare spawn stays on the Opus default. Re-running BENCH-WORKER-CODING on
-    # 4.6 under §8's ground rules is what a future flip to "measured" would
-    # require. See MODEL-TIERING-BENCHMARK.md.
-    ("worker", "coding"): _candidate("a4b/BENCH-WORKER-CODING"),
-    # BENCHMARK TASK (a4b): a bounded, fully-specified, single-file-verified
-    # deliverable — no large-surface tool selection, no open-ended judgment.
-    ("worker", "narrow"): _candidate(
-        "a4b/BENCH-WORKER-NARROW: replay a bounded single-file action (no "
-        "open-ended judgment, no irreversible side-effects) on both arms."),
-    # DESIGN-v7 1.3 — CANDIDATE, NOT MEASURED, and the distinction is the whole
-    # entry. The verify class only RE-RUNS recorded `acceptance.verify`
-    # commands and TRANSCRIBES their output verbatim ("run, record, judge
-    # nothing, fix nothing" — the Phase-4 verify-only leg), which is the
-    # narrowest worker shape in the system — narrower than the measured
-    # ("worker","coding") row. That argument is a HYPOTHESIS, not a result:
-    # v7/BENCH-WORKER-VERIFY has NOT run, so this row stays `candidate` and is
-    # never selected without an explicit `allow_candidate_tier=True` — the
-    # same measured-only-adoption discipline as ("worker","narrow") above,
-    # whose cautionary precedent (d80: a tier labelled measured on the
-    # authority of a benchmark doc that did not exist) is exactly the mistake
-    # this comment refuses to repeat. The named task is carried in
-    # docs/design/MODEL-TIERING-BENCHMARK.md §5's candidates table; the
-    # test_w10b gates hold the doc and this table in sync.
-    ("worker", "verify"): _candidate(
-        "v7/BENCH-WORKER-VERIFY: replay a verify-only leg (re-run recorded "
-        "acceptance.verify commands, transcribe raw output verbatim, judge "
-        "nothing, fix nothing) on both arms."),
-
-    # ── reviewer ────────────────────────────────────────────────────────────
-    # DEGRADE THE SAFETY NET LAST. The reviewer's independent re-run IS the
-    # objective acceptance gate (d29/d30); a spec review stays on Opus until a
-    # benchmark says otherwise, and no benchmark has run.
-    ("reviewer", DEFAULT_TASK_CLASS): _OPUS_DEFAULT,
-    ("reviewer", "spec"): _OPUS_DEFAULT,
-    # (("reviewer", "direction") was the one reviewer CANDIDATE row. Removed
-    # with the direction reviewer itself — d128/d132. No reviewer class is a
-    # tiering candidate now: every reviewer spawn resolves to the Opus default,
-    # which is the intended "degrade the safety net last" posture anyway.)
-}
-
-
-def resolve_model_tier(role: str, task_class: str = DEFAULT_TASK_CLASS, *,
-                       allow_candidate_tier: bool = False) -> dict | None:
-    """The tier row a spawn of (`role`, `task_class`) resolves to, or None when
-    the role is absent from the table (fail-open: the caller passes no model and
-    the host default applies).
-
-    A CANDIDATE row is returned ONLY when `allow_candidate_tier=True`. Otherwise
-    the lookup falls back to the role's `DEFAULT_TASK_CLASS` row — which is Opus
-    for every role in the table. An unknown `task_class` falls back the same way,
-    so a typo degrades to the safe tier rather than to nothing.
-
-    Pure (no IO, no env read). Returns a COPY so a caller cannot mutate the
-    table through the row it was handed."""
-    tier = MODEL_TIERS.get((role, task_class))
-    if tier is None or (tier["status"] == "candidate"
-                        and not allow_candidate_tier):
-        tier = MODEL_TIERS.get((role, DEFAULT_TASK_CLASS))
-    return dict(tier) if tier is not None else None
-
-
-def spawn_model_for(role: str, task_class: str = DEFAULT_TASK_CLASS, *,
+# ── spawn model resolution (v7 WS4 seat registry) ──────────────────────────
+# DEAD-SURFACE RETIREMENT (2026-08-12): the DESIGN-v6 W10b MODEL_TIERS table
+# and its lookups (`resolve_model_tier`, `HOST_DEFAULT_MODEL`, `SONNET` /
+# EDP_WORKER_SONNET_MODEL, `DEFAULT_TASK_CLASS`) are DELETED. The seat
+# registry (edp_contracts.seats over models.json at EDP_AGENT_HOME) has been
+# the authoritative role→model binding since v7 WS4 §2.4b; the tier table was
+# its dormant fallback and — with no measured row and Opus the default for
+# every role — resolved to "pass no --model flag" for every un-opted-in
+# spawn. The pool config dir pins its own default model
+# (.claude-pool/settings.json "model"), so a no-flag spawn still never falls
+# to the ACCOUNT default. History: git tag checkpoint-pre-harness-improvements.
+def spawn_model_for(role: str, task_class: str = "*", *,
                     allow_candidate_tier: bool = False) -> str | None:
-    """The `model` a spawn should pass to the pool, or None to pass NO model
-    flag at all (the host default tier, Opus).
+    """The `model` a spawn should pass to the pool, resolved ONLY via the v7
+    seat registry (models.json at EDP_AGENT_HOME), or None to pass NO model
+    flag at all (the shell then falls to the pool config's pinned default,
+    never the account default).
 
-    The None is not a shrug: the tier table names `claude-opus-4-8` explicitly,
-    and passing it on the wire would be equivalent — but every default spawn
-    today omits the key, and keeping that byte-identical is what lets this land
-    with no behaviour change on the roles it does not tier. A model is passed
-    EXACTLY when the resolved tier differs from `HOST_DEFAULT_MODEL`, which is
-    exactly when a caller opts into a CANDIDATE tier via `allow_candidate_tier`
-    (e.g. the planner selecting Sonnet 4.6 for a coding or narrow action). Every
-    un-opted-in spawn resolves to the Opus host default and passes no `--model`
-    flag. No row is `measured`, so there is no auto-adopt path: Opus is the
-    default for every role (USER RULING, 2026-07-16).
+    `task_class` and `allow_candidate_tier` are accepted for call-site
+    compatibility (pool_spawn_worker threads them) and IGNORED: the retired
+    tier table was their only consumer. A mapped seat's exact pinned model is
+    returned VERBATIM — explicit beats implicit at the spawn seam. Unset
+    EDP_AGENT_HOME / absent registry / unmapped role → None. A
+    PRESENT-but-invalid registry raises SeatsError at spawn: misconfiguration
+    is loud, never a silent default.
 
-    v7 WS4 (§2.4b, 2026-08-05) — SEAT REGISTRY OVERRIDE: when `models.json`
-    exists at the agent home and maps this role to a seat, the seat's exact
-    pinned model WINS over the tier table (still returning None when it
-    equals the host default, preserving the no-flag byte-identity). Absent
-    registry / unmapped role = the legacy tier path below, unchanged — the
-    staged-adoption discipline every v7 gate uses. A PRESENT-but-invalid
-    registry raises SeatsError at spawn: misconfiguration is loud, never a
-    silent host-default."""
-    # Registry home resolves from EDP_AGENT_HOME ONLY — never cwd. A
-    # coincidental-cwd config pickup is the PWD-resolution landmine class
-    # (the opencode M1 lesson), and it would leak the live registry into
-    # every hermetic test and stray invocation. Unset env = no registry =
-    # legacy, deterministically.
+    Registry home resolves from EDP_AGENT_HOME ONLY — never cwd. A
+    coincidental-cwd config pickup is the PWD-resolution landmine class (the
+    opencode M1 lesson), and it would leak the live registry into every
+    hermetic test and stray invocation. Unset env = no registry = None,
+    deterministically."""
+    del task_class, allow_candidate_tier    # legacy tier-table params, unused
     _home = os.environ.get("EDP_AGENT_HOME", "").strip()
-    _seat = None
-    if _home:
-        try:
-            from edp_contracts.seats import seat_for_role as _seat_for_role
-            _seat = _seat_for_role(_home, role)
-        except ImportError:
-            _seat = None
-    if _seat is not None:
-        return None if _seat.model == HOST_DEFAULT_MODEL else _seat.model
-    tier = resolve_model_tier(role, task_class,
-                              allow_candidate_tier=allow_candidate_tier)
-    if tier is None or tier["model"] == HOST_DEFAULT_MODEL:
+    if not _home:
         return None
-    return tier["model"]
+    try:
+        from edp_contracts.seats import seat_for_role as _seat_for_role
+    except ImportError:
+        return None
+    _seat = _seat_for_role(_home, role)
+    return _seat.model if _seat is not None else None
 
 
 # ── per-role object-CRUD object-type scope (tables-as-data, DESIGN-v6 W4) ────
@@ -800,7 +621,7 @@ CRUD_OBJECT_SCOPE: dict[str, frozenset[str]] = {
     "worker": frozenset(),
     "reviewer": frozenset(),
     "specialist": frozenset(),
-    "consult": frozenset(),
+    # ("consult" row deleted with its role — 2026-08-12 dead-surface sweep.)
     # s25/a4: the advisory role is read-only over the generic verbs, closing
     # the same fail-open hole `crud_scope_violation` had for it (an ABSENT
     # role returns None = UNCONSTRAINED full CRUD). goal_keeper /
@@ -836,6 +657,5 @@ def crud_scope_violation(role: str | None, object_type: str) -> str | None:
 __all__ = [
     "SPECIALIST_ONLY", "RETIRED_VERBS", "ROLE_TOOLSETS", "toolset_for_role",
     "CRUD_OBJECT_SCOPE", "crud_scope_violation",
-    "MODEL_TIERS", "resolve_model_tier", "spawn_model_for",
-    "HOST_DEFAULT_MODEL", "SONNET", "DEFAULT_TASK_CLASS",
+    "spawn_model_for",
 ]

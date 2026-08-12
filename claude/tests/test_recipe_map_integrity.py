@@ -82,7 +82,9 @@ async def test_close_reconciles_terminal_plan_steps(env):
     _recipe(env, rid, [_step("s1", "done"), _step("s2", "pending")],
             state="reviewing")
     # s2's plan is actually terminal-succeeded — the map just hadn't
-    # caught up. close reconciles it, then succeeds honestly.
+    # caught up. close reconciles it, then succeeds honestly. (WP1 G-STEP:
+    # the already-done s1 needs its own terminal-succeeded plan too.)
+    _terminal_plan(env, rid, "s1", "succeeded")
     _terminal_plan(env, rid, "s2", "succeeded")
     # outcome must be verified for a 'succeeded' close (2026-05-24 gate)
     _ok(await env.call("mark_outcome_met", recipe_id=rid, outcome_id="o1",
@@ -100,6 +102,9 @@ async def test_close_succeeded_refused_over_unmet_outcomes(env):
     # an outcome is unverified (the 'succeeded with met:false' gap).
     rid = "recipe-unmet"
     _recipe(env, rid, [_step("s1", "done")], state="reviewing")
+    # WP1 G-STEP: back the done step with its terminal-succeeded plan so
+    # the close reaches the OUTCOME gate under test.
+    _terminal_plan(env, rid, "s1", "succeeded")
     res = await env.call("close_recipe", recipe_id=rid,
                          final_outcome={"status": "succeeded", "summary": "x"})
     assert isinstance(res, ToolError)

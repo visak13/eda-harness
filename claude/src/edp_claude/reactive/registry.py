@@ -434,7 +434,14 @@ class RuleSupervisor:
         # break. We still tear them down by their specific PID via _terminate.
         popen_kw: dict[str, Any] = {}
         if os.name == "nt":
-            popen_kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            # CREATE_NO_WINDOW: when the supervisor itself has no console
+            # (WMI/detached launch), a bare console-subsystem child ALLOCATES
+            # a fresh visible console — one window flash per driver (re)start.
+            # (WP0/WP3 shadow-shell fix; precedent: pool service.py neuron
+            # driver spawn.)
+            popen_kw["creationflags"] = (
+                subprocess.CREATE_NEW_PROCESS_GROUP
+                | getattr(subprocess, "CREATE_NO_WINDOW", 0))
         try:
             proc = subprocess.Popen(
                 cmd, stdout=out_f, stderr=err_f, text=True, bufsize=1,

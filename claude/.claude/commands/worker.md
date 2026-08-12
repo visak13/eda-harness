@@ -62,9 +62,9 @@ environment" and stop.
   impacted-set selection and retirement; a test that verifies nothing
   anyone asked for should not exist. Respect the plan's stamped
   `test_budget` — the pyramid is the planner's call, not yours.
-- **Visual/3D/image assets** go through `sol_author_asset(brief=…,
-  asset_dir=<OUTSIDE the source tree>, reference_images=[…])` — you
-  are Sol's eyes: render, capture, feed back, verify the pixels.
+- **Visual/3D/image assets** go through `delegate_generate(task_class=
+  "asset", …)` when a route exists — the draft returns as text/files
+  you integrate; render, capture, and verify the pixels yourself.
 - **Ambiguous action?** `read_object("recipe", …)` → expected outcomes
   + decisions — serve the outcome, not your reading of one string.
 - **Batch** (`batch_group` set): enumerate members via `query_objects`,

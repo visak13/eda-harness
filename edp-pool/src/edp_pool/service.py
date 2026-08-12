@@ -975,15 +975,24 @@ class PoolService(Microservice):
                 stale["state"] = "done"
             del self.locks[handle]
         sid = f"{role}:{uuid.uuid4()}"
+        # WP2 provenance (2026-08-12): resolve the seat model HERE, before
+        # the ledger write — the df971d post-mortem found all 63 session rows
+        # carried no model at all (resolution happened below this seam, in
+        # the spawner), so which model wrote each artifact was unrecoverable.
+        # The spawner's own seat lookup remains as a no-op fallback.
+        from .spawner import seat_model_for
+        resolved_model = model or seat_model_for(
+            role, os.environ.get("EDP_AGENT_HOME"))
         # STEP log AROUND the launch — it's the blocking part (PTY spawn
         # + wait_ready); a slow/hung launch now shows launch_start with no
         # launch_done in edp-pool.log.
         _log.info("launch_start", handle, role=role, handle=handle,
-                  sid=sid, mode=mode, resume=bool(resume_session))
+                  sid=sid, mode=mode, resume=bool(resume_session),
+                  model=resolved_model)
         self.spawner.launch(
             sid, role, handle, mode,
             claude_session=claude_session, resume_session=resume_session,
-            model=model,  # s17 FA3: per-action tier (None → host default/Opus)
+            model=resolved_model,
         )
         _log.info("launch_done", handle, role=role, handle=handle, sid=sid)
         self._register_channel_membership(role, handle)
@@ -1008,6 +1017,9 @@ class PoolService(Microservice):
             # Rows written by an older pool have no `mode` key; every reader
             # uses `.get`, so a legacy row degrades to "reason unknown".
             "mode": mode,
+            # WP2 provenance: the RESOLVED model this shell actually launched
+            # with (None only when no seat registry resolves — host default).
+            "model": resolved_model,
         }
         self.locks[handle] = sid  # lock-by-spawn-lifetime
         self._persist()

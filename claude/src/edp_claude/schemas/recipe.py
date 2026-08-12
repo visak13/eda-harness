@@ -33,6 +33,25 @@ class Outcome(BaseModel):
     # reviewer-fork verdict + user confirmation). `met=True` is only
     # legitimate WITH evidence — close_recipe 'succeeded' requires it.
     met_evidence: str | None = None
+    # WP1 G-OUTCOME (2026-08-12): a USER-waived outcome. `waiver_ref` is the
+    # answer_id of a recorded `user_gate_answer` event (record_user_answer
+    # gate mode) — a RECORDED ARTIFACT, never a free-text quote param. Both
+    # emission-gated below (omitted at their defaults) so a legacy recipe
+    # round-trips byte-identically.
+    waived: bool = False
+    waiver_ref: str | None = None
+
+    @model_serializer(mode="wrap")
+    def _ser_waiver_gate(self, handler):
+        # WP1 emission gate: omit the waiver pair at their defaults so an
+        # unwaived (legacy) outcome serializes byte-shape-identical to the
+        # pre-WP1 schema (RP-A discipline).
+        data = handler(self)
+        if not data.get("waived"):
+            data.pop("waived", None)
+        if data.get("waiver_ref") is None:
+            data.pop("waiver_ref", None)
+        return data
 
 
 class Constraint(BaseModel):

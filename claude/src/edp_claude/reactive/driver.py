@@ -25,13 +25,14 @@ from reactivex import Observable
 from reactivex import operators as ops
 from reactivex.disposable import Disposable
 
-from .effects import EffectDispatcher, EffectSpec
+from .effects import EffectDispatcher, EffectSpec, is_self_echo
 from .runtime import RxRuntime, compile_spec
 
 
 # ── NDJSON sink + run loop ────────────────────────────────────────────────
 def run(observable: Observable, out: TextIO | None = None,
-        dispatcher: "EffectDispatcher | None" = None) -> None:
+        dispatcher: "EffectDispatcher | None" = None,
+        owner: str = "") -> None:
     """Subscribe to `observable`, emit NDJSON to `out` (stdout), block
     until the stream completes or errors. For an infinite stream this
     blocks until the process is killed (Monitor stops it = unsubscribe).
@@ -53,6 +54,11 @@ def run(observable: Observable, out: TextIO | None = None,
         out.flush()
 
     def on_next(value: Any) -> None:
+        # WP3 sensory echo filter (2026-08-12): never wake a shell for an
+        # event it authored itself (own-worklog tail, own outbound mirror).
+        # Silent drop — a self-echo is non-signal by definition.
+        if owner and is_self_echo(value, owner):
+            return
         _emit({"event": value})
         if dispatcher is not None:
             # the motor nerve: one governed, audited decision per emission.
@@ -755,7 +761,7 @@ def main(argv: list[str] | None = None) -> int:
             liveness_probe=_make_liveness_probe(cfg),
             phase=2)  # Tier-2 stays dark until Phase 3
 
-    run(observable, dispatcher=dispatcher)
+    run(observable, dispatcher=dispatcher, owner=args.owner)
     return 0
 
 

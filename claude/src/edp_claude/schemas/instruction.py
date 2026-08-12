@@ -34,13 +34,10 @@ class InstructionKind(StrEnum):
     ANSWER_BRANCH = "answer_branch"
     DECLARE_OUTCOME = "declare_outcome"
     DECLARE_STEP = "declare_step"
-    # DECLARED BUT EMITTED BY NO STATE MACHINE (audited s29/a1, re-verified
-    # s29/a3b: zero emissions anywhere in src/). Unlike INVOKE_SKILL above — which
-    # really is emitted — nothing constructs an Instruction of this kind, so a
-    # reader must NOT assume the FSM ever asks a shell to record a step. Left in
-    # place deliberately (removing an enum member is a behaviour change, not a
-    # wording fix); noted here so the next reader does not build on a dead branch.
-    RECORD_STEP = "record_step"
+    # (RECORD_STEP — declared but emitted by NO state machine, audited s29/a1 +
+    # s29/a3b — was DELETED in the 2026-08-12 dead-surface sweep along with the
+    # deregistered RecordStep tool class. Unlike INVOKE_SKILL above, nothing
+    # ever constructed an Instruction of that kind.)
     SPAWN_PLANNER = "spawn_planner"
     RUN_INLINE = "run_inline"
     DISPATCH_ACTION = "dispatch_action"

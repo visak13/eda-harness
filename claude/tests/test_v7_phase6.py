@@ -133,6 +133,14 @@ async def test_reconcile_nags_past_the_fold_threshold(env, monkeypatch):
 # ── 6.3 state synthesis ──────────────────────────────────────────────────────
 async def test_step_close_writes_the_synthesis_sidecar(env):
     _save_recipe(env, decisions=[_decision("d1", "D", load_bearing=True)])
+    # WP1 G-STEP: a spawn_planner step closes off its plan's terminal-
+    # succeeded state — give s1 an honestly-finished plan.
+    from edp_claude.schemas import Plan
+    env.ctx.plans.save(Plan.model_validate(dict(
+        plan_id=f"{RID}-s1", recipe_id=RID, recipe_step_id="s1",
+        domain="generic", shape="x", goal="g", state="terminal",
+        terminal_status="succeeded", actions=[],
+    )))
     _ok(await env.call("record_step_result", recipe_id=RID, step_id="s1",
                        result={"outputs": ["out"]}))
     path = env.ctx.recipes.root / RID / "context" / "state-synthesis.md"

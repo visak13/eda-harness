@@ -35,6 +35,12 @@ class Acceptance(BaseModel):
     # Non-deterministic acceptance (tests_pass / metric / manual_review)
     # leaves this null and relies on evidence + /critic review.
     verify: dict | None = None
+    # WP1 G-RUNS (2026-08-12): the EXECUTION EVIDENCE ledger for a gate
+    # action's `done`. Entries are {command: str, exit_code: int,
+    # output_tail?: str, at: str} — an actual run, not evidence prose.
+    # record_action_status APPENDS here; emission-gated below (omitted when
+    # empty) so a legacy acceptance round-trips byte-identically.
+    runs: list[dict] = Field(default_factory=list)
 
     @model_serializer(mode="wrap")
     def _ser_tiering_gate(self, handler):
@@ -43,6 +49,9 @@ class Acceptance(BaseModel):
         data = handler(self)
         if data.get("actual_ref") is None:
             data.pop("actual_ref", None)
+        # WP1 emission gate: omit `runs` when empty (legacy byte-identity).
+        if not data.get("runs"):
+            data.pop("runs", None)
         return data
 
 
@@ -215,6 +224,14 @@ class Action(BaseModel):
     # None) so a pre-restart OLD-schema reader under extra='forbid' never sees
     # the new key — nothing populates it until after the coordinated restart.
     model: str | None = None
+    # WP1 G-SKIP/G-RUNS (2026-08-12): a GATE ACTION — one whose completion
+    # protects an expected outcome (serves non-empty + an executable
+    # acceptance.verify check), derived by add_action or declared explicitly
+    # by the planner. A gate action cannot be `skipped` without a recorded
+    # user gate answer (override_ref) and cannot be `done` without >=1
+    # acceptance.runs entry (real command + exit code). Emission-gated in
+    # _ser_legacy_shape (omitted when False) — legacy byte-identity.
+    gate: bool = False
 
     @model_validator(mode="before")
     @classmethod
@@ -313,6 +330,12 @@ class Action(BaseModel):
                 # action serializes byte-shape-identical to pre-tiering.
                 if value:
                     out["description_ref"] = value
+            elif key == "gate":
+                # WP1 emission gate: omit when False so a non-gate (legacy)
+                # action serializes byte-shape-identical to the pre-WP1
+                # schema (a pre-restart extra='forbid' reader never sees it).
+                if value:
+                    out["gate"] = value
             elif key in ("verify_failures", "verify_failure_counted"):
                 # W10b emission gate (o6): omit at the 0/False default so every
                 # legacy action — and every action that never failed acceptance

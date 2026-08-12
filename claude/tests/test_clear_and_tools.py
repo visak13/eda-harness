@@ -90,7 +90,13 @@ async def test_bad_input_is_envelope_not_raise(tmp_path):
 def test_skills_pass_validate_skill():
     # critic-review retired in v2.4 (the reviewer is a spawned-shell
     # brief, not a front-matter skill). goal-keeper-check deleted with its
-    # dead role (owner ruling 2026-08-04).
-    for name in ("ocak",):
-        v = validate_skill(str(SKILLS_DIR / f"{name}.md"))
-        assert v == [], f"{name}: {v}"
+    # dead role (owner ruling 2026-08-04). ocak.md — the last front-matter
+    # skill file — was deleted in the 2026-08-12 dead-surface sweep, so the
+    # commands dir now carries NO front-matter skills; pin that so a new one
+    # cannot land unvalidated.
+    assert not (SKILLS_DIR / "ocak.md").exists()
+    for path in SKILLS_DIR.glob("*.md"):
+        head = path.read_text(encoding="utf-8").lstrip()[:4]
+        assert not head.startswith("---"), (
+            f"{path.name} looks like a front-matter skill — run "
+            "validate_skill on it here")

@@ -55,8 +55,9 @@ wakes you.
 - Specialist actions: the compiled doc(s) from
   `get_specialist_docs(spec_ids=…)` are your whole stack grounding; a
   missing doc is BLOCKED, not improvised.
-- Visual/3D/image assets are authored by Sol via `sol_author_asset(…)` —
-  you are Sol's eyes: render, capture, feed back, verify the pixels.
+- Visual/3D/image assets ride the routed delegation path
+  (`delegate_generate(task_class="asset", …)`) — you integrate the
+  draft: render, capture, verify the pixels yourself.
   `ok=false` is a blocker to surface, never a retry loop.
 - Batch (`batch_group` on your action): execute members in declared
   order, one status record per member; a failed member stops the loop

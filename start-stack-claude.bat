@@ -34,12 +34,8 @@ rem list is non-empty. Empty means CompositeSpawner is never constructed and
 rem every role launches claude.exe with NO --model, i.e. the host default Opus.
 set "EDP_OPENCODE_ROLES="
 
-rem Claude model tier table. NOTE: this must stay a CLAUDE model id on BOTH
-rem stacks - the engine's tier table only ever speaks Claude ids, and the
-rem opencode backend TRANSLATES them (map_model matches on the substring
-rem "sonnet"). Putting a gpt id here would be emitted verbatim as
-rem "--model openai/..." to claude.exe, and nothing in the stack validates it.
-set "EDP_WORKER_SONNET_MODEL=claude-sonnet-4-6"
+rem (EDP_WORKER_SONNET_MODEL retired 2026-08-12 with the W10b tier table -
+rem claude\models.json seats are the only role->model binding now.)
 
 rem --- TRAPS THIS LAUNCHER DISARMS -------------------------------------------
 rem Visible consoles for every spawned shell (you watch the agents work).
@@ -94,11 +90,11 @@ rem --- DELIBERATELY NOT SET --------------------------------------------------
 rem EDP_ROLE / EDP_NEURON_URL : seat identity, belongs to the NEURON launcher.
 rem                             EDP_ROLE leaking in would scope the pool's own
 rem                             MCP calls.
-rem EDP_SOL_CODEX_BIN et al   : the Sol bridge (sol_author_asset / sol_consult)
-rem                             is a SEPARATE bridge to the Codex CLI and works
-rem                             on a 100%% Claude stack with zero env - it
-rem                             auto-resolves the right codex.exe. Those tools
-rem                             stay available to workers/consults here.
+rem EDP_SOL_CODEX_BIN et al   : the Sol/Codex CLI backend of the provider
+rem                             bridge (delegate_generate / consult_external /
+rem                             adversarial_challenge, route-gated in
+rem                             .bridge.json) works on a 100%% Claude stack
+rem                             with zero env - it auto-resolves codex.exe.
 rem EDP_OPENCODE_*            : nothing on this stack reads them.
 
 cd /d "%CLAUDE_DIR%"

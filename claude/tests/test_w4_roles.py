@@ -175,7 +175,11 @@ RECORD_CONTEXT = "record_context"
 # territory. 61 today; the descent to 45 rides the Phase-5 guide triage
 # (descriptive call-form mentions deleted from the corpus lower the floor
 # and this ceiling TOGETHER — the ceiling is the floor, never headroom).
-CEILINGS = {"worker": 27, "reviewer": 23, "planner": 41, "neuron": 62}  # +reflex (v7 WS7 — shadow sovereignty seam; inert in unshadowed shells)  # +budget_status (planner/neuron, v7 §2.6c — read-only planned-vs-actual)  # +1 each for the v7 WS3 test-lineage verbs (record_test_lineage worker / test_lineage_report reviewer+planner, 2026-08-05 — graph-sidecar only, no object reach); before that +1 each for the v7 WS1 bridge verbs (delegate_generate / delegate_review / adversarial_challenge — route-gated in .bridge.json, so the verb grants nothing until a human routes it); before that +list_subscriptions +unobserve (2026-07-20 monitor CRUD)
+# 2026-08-12 dead-surface retirement: worker 27 -> 26 (-sol_author_asset —
+# superseded by the route-gated delegate_generate the worker already holds;
+# see roles.py _BRIDGE_SUPERSEDED). The consult surface was deleted whole with
+# its role. The ceiling IS the floor.
+CEILINGS = {"worker": 26, "reviewer": 23, "planner": 41, "neuron": 62}  # +reflex (v7 WS7 — shadow sovereignty seam; inert in unshadowed shells)  # +budget_status (planner/neuron, v7 §2.6c — read-only planned-vs-actual)  # +1 each for the v7 WS3 test-lineage verbs (record_test_lineage worker / test_lineage_report reviewer+planner, 2026-08-05 — graph-sidecar only, no object reach); before that +1 each for the v7 WS1 bridge verbs (delegate_generate / delegate_review / adversarial_challenge — route-gated in .bridge.json, so the verb grants nothing until a human routes it); before that +list_subscriptions +unobserve (2026-07-20 monitor CRUD)
 
 
 # ── helpers (mirror tests/test_scoped_facts.py so patterns stay uniform) ────
@@ -277,14 +281,21 @@ def test_w6_4_every_retired_verb_is_absent_from_every_role_and_still_registered(
                                "resolve_spec_learning", "record_step"}
     # 2026-07-25: RETIRED_VERBS gained a THIRD source — `_OPERATOR_RETIRED`, for
     # verbs withdrawn by operator ruling rather than because a successor reaches
-    # further. The union is asserted against the same three sets roles.py builds
-    # it from, so this stays a real pin and not a tautology, while remaining
-    # open to a future operator retirement without another test edit.
+    # further. 2026-08-12: a FOURTH — `_BRIDGE_SUPERSEDED` (sol_consult /
+    # sol_author_asset, superseded by the provider-bridge delegates). The union
+    # is asserted against the same sets roles.py builds it from, so this stays
+    # a real pin and not a tautology, while remaining open to a future
+    # retirement without another test edit.
+    from edp_claude.tools.roles import _BRIDGE_SUPERSEDED
     assert RETIRED_VERBS == (
-        _CONSOLIDATED_OUT | _SUPERSEDED_OUT | _OPERATOR_RETIRED)
+        _CONSOLIDATED_OUT | _SUPERSEDED_OUT | _OPERATOR_RETIRED
+        | _BRIDGE_SUPERSEDED)
     assert "convene_consult" in _OPERATOR_RETIRED
+    assert _BRIDGE_SUPERSEDED == {"sol_consult", "sol_author_asset"}
     assert _CONSOLIDATED_OUT.isdisjoint(_SUPERSEDED_OUT)
     assert _OPERATOR_RETIRED.isdisjoint(_CONSOLIDATED_OUT | _SUPERSEDED_OUT)
+    assert _BRIDGE_SUPERSEDED.isdisjoint(
+        _CONSOLIDATED_OUT | _SUPERSEDED_OUT | _OPERATOR_RETIRED)
 
     for role, toolset in ROLE_TOOLSETS.items():
         leaked = sorted(RETIRED_VERBS & toolset)
@@ -304,6 +315,10 @@ def test_w6_4_every_retired_verb_is_absent_from_every_role_and_still_registered(
     assert "resolve_spec_learnings" in ROLE_TOOLSETS["specialist"]
     # record_step's guarded successors stay with the recipe owner
     assert {"add_step", "record_step_result"} <= ROLE_TOOLSETS["neuron"]
+    # 2026-08-12: the bridge successors really stand where the sol verbs fell —
+    # delegation for the worker, the cross-provider consult for the advisory role
+    assert "delegate_generate" in ROLE_TOOLSETS["worker"]
+    assert "consult_external" in ROLE_TOOLSETS["curiosity"]
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -635,11 +650,11 @@ ROLE_COMMAND_FILE = {
     "planner": "agentic-plan.md",
     "reviewer": "reviewer.md",
     "specialist": "specialist.md",
-    "consult": "consult.md",
     "neuron": "neuron.md",
     "curiosity": "curiosity.md",
     # goal_keeper / pattern_observer rows deleted with their DEAD roles
-    # (owner ruling 2026-08-04).
+    # (owner ruling 2026-08-04); consult.md deleted with the retired consult
+    # shell role (2026-08-12 dead-surface sweep).
 }
 
 # ── DECLARED corpus: guides that GOVERN a role but that the derived walk below
@@ -763,7 +778,9 @@ UNSCANNED_GUIDES: dict[str, str] = {
         ".bridge.json delegates (http backends, key env vars, routes). No role "
         "is instructed to read it; the bridge VERBS are governed by the owning "
         "roles' own guides and the tool docstrings."),
-    "framework-ocak": "OCAK is a RETIRED role (see .claude/commands/ocak.md).",
+    "framework-ocak": (
+        "OCAK is a RETIRED role — its tombstone card ocak.md was deleted "
+        "2026-08-12; the audit questions live on for run_ocak_audit."),
     "reactive-streams-effects": (
         "Companion reference to the SHARED reactive-streams.md (:3, 'Companion "
         "to get_guide(\"reactive-streams\")'). Role-neutral: it documents the "
@@ -1161,7 +1178,7 @@ def test_assemble_ruleset_is_a_read_verb_not_an_authoring_verb():
     # o7 still holds: the authoring verbs remain specialist-exclusive
     assert SPECIALIST_ONLY == {"add_spec_entry", "update_specialist",
                                "write_specialist_doc", "create_specialization"}
-    for role in ("worker", "reviewer", "planner", "neuron", "consult"):
+    for role in ("worker", "reviewer", "planner", "neuron", "curiosity"):
         assert SPECIALIST_ONLY.isdisjoint(ROLE_TOOLSETS[role]), role
 
 

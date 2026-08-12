@@ -119,7 +119,7 @@ ROLE_COMMAND_FILES: dict[str, str] = {
     "worker": ".claude/commands/worker.md",
     "reviewer": ".claude/commands/reviewer.md",
     "specialist": ".claude/commands/specialist.md",
-    "consult": ".claude/commands/consult.md",
+    # ("consult" row deleted 2026-08-12 with its retired shell role + card.)
     # s25/a4: keyed by the UNDERSCORE string http_pool.py stamps as EDP_ROLE —
     # NOT by the hyphenated activator/filename. goal_keeper / pattern_observer
     # rows deleted with their DEAD roles (owner ruling 2026-08-04).
@@ -147,10 +147,9 @@ ROLE_COMMAND_FILES: dict[str, str] = {
 # between those shells and a neuron-only verb.
 NON_ROLE_COMMAND_FILES: dict[str, str] = {
     # goal-keeper-check.md deleted with its dead role (owner ruling 2026-08-04).
-    "ocak.md": (
-        "RETIRED (DESIGN-v5 P1) — no longer an LLM-invoked skill. Kept as a "
-        "tombstone; it instructs no shell to call anything."
-    ),
+    # ocak.md — the DESIGN-v5 P1 retirement tombstone — was deleted outright in
+    # the 2026-08-12 dead-surface sweep (the comprehension flow it pointed at is
+    # tool-forced; the run_ocak_audit / record_audit_verdict TOOLS are live).
 }
 
 

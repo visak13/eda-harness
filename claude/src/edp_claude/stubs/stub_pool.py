@@ -167,18 +167,7 @@ class StubPool(PoolPort):
         )
         return Tool.ok(_Spawned(handle=handle))
 
-    async def spawn_consult(
-        self, parent_id: str, consult_id: str,
-        mode: str = "monitor",
-        model: str | None = None,
-    ) -> ToolResult:
-        # W5: record mode + the resolved tier so tests can assert the
-        # convene_consult dispatch threads them (mode=monitor, model=opus).
-        self._record(
-            {"role": "consult", "handle": consult_id,
-             "parent": parent_id, "mode": mode, "model": model}
-        )
-        return Tool.ok(_Spawned(handle=consult_id))
+    # (spawn_consult deleted 2026-08-12 with the consult shell role.)
 
     async def liveness(self, handle: str) -> dict:
         # W7: {state, last_output_ts} mirroring HttpPool. state is the

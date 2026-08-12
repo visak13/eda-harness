@@ -337,39 +337,50 @@ def test_missing_image_is_a_hard_error(tmp_path):
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# tool wiring — registered, role-scoped, neuron-derived
+# tool wiring — RETIRED (2026-08-12 dead-surface sweep). The direct verbs
+# (sol_author_asset / sol_consult) were superseded by the provider-bridge
+# delegates (delegate_generate / consult_external, tools/bridge.py) and their
+# classes deleted. The ENGINE above is untouched: bridge.py drives
+# sol_bridge.run_sol as its `cli` backend, which is what this file's engine
+# half keeps proving. What is worth pinning now is that the retirement is
+# total (a half-deleted verb is the d14 regression class) and that the
+# bridge really still reaches the engine.
 # ══════════════════════════════════════════════════════════════════════════
-def test_both_sol_tools_are_registered():
+def test_the_direct_sol_verbs_are_retired_everywhere():
     from edp_claude.tools._tools import ALL_TOOL_CLASSES
+    from edp_claude.tools.catalog import TOOL_ONE_LINERS
+    from edp_claude.tools.roles import RETIRED_VERBS, ROLE_TOOLSETS
     names = {c.name for c in ALL_TOOL_CLASSES}
-    assert {"sol_author_asset", "sol_consult"} <= names
+    for verb in ("sol_author_asset", "sol_consult"):
+        assert verb not in names, f"{verb} is back in the registry"
+        assert verb not in TOOL_ONE_LINERS, f"{verb} has a catalog line again"
+        assert verb in RETIRED_VERBS, f"{verb} missing from RETIRED_VERBS"
+        for role, toolset in ROLE_TOOLSETS.items():
+            assert verb not in toolset, f"{role} grants retired {verb}"
+    # POSITIVE CONTROL: the successors are registered and scoped.
+    assert {"delegate_generate", "consult_external"} <= names
+    assert "delegate_generate" in ROLE_TOOLSETS["worker"]
+    assert "consult_external" in ROLE_TOOLSETS["curiosity"]
 
 
-def test_author_is_worker_scoped_consult_is_consult_scoped():
-    from edp_claude.tools.roles import ROLE_TOOLSETS
-    assert "sol_author_asset" in ROLE_TOOLSETS["worker"]
-    assert "sol_author_asset" not in ROLE_TOOLSETS["consult"]
-    assert "sol_consult" in ROLE_TOOLSETS["consult"]
-    assert "sol_consult" not in ROLE_TOOLSETS["worker"]
-    # Phase 3b (2026-07-30): _NEURON is a positive list and holds NEITHER —
-    # Sol authoring is craft work (worker) and Sol consulting is the consult
-    # seat's; the neuron delegates. The old derived surface inherited both.
-    assert "sol_author_asset" not in ROLE_TOOLSETS["neuron"]
-    assert "sol_consult" not in ROLE_TOOLSETS["neuron"]
+def test_the_bridge_still_drives_the_sol_engine():
+    """The engine survives the verbs: bridge.py's `cli` backend runs turns
+    through sol_bridge.run_sol (the module under test here)."""
+    import inspect
+
+    from edp_claude.tools import bridge
+    src = inspect.getsource(bridge)
+    assert "sol_bridge" in src and "run_sol" in src
 
 
-def test_worker_guide_instructs_the_author_tool():
+def test_no_live_guide_instructs_the_retired_sol_verbs():
     root = Path(__file__).resolve().parents[1]
-    worker = (root / ".claude" / "commands" / "worker.md").read_text(
-        encoding="utf-8")
-    assert "sol_author_asset(" in worker
-
-
-def test_consult_guide_instructs_the_consult_tool():
-    root = Path(__file__).resolve().parents[1]
-    consult = (root / ".claude" / "commands" / "consult.md").read_text(
-        encoding="utf-8")
-    assert "sol_consult(" in consult
+    corpus = (sorted((root / ".claude" / "commands").glob("*.md"))
+              + sorted((root / "docs" / "guides").glob("*.md")))
+    for path in corpus:
+        text = path.read_text(encoding="utf-8")
+        for verb in ("sol_author_asset(", "sol_consult("):
+            assert verb not in text, f"{path.name} still calls {verb}...)"
 
 
 # ══════════════════════════════════════════════════════════════════════════

@@ -175,7 +175,8 @@ def _fetch_locks(pool_url: str, timeout: float) -> tuple[list[dict], str | None]
 # ── orchestration ──────────────────────────────────────────────────────────
 def check_seat_registry() -> dict:
     """v7 WS4 (§2.4b): validate models.json at the agent home. ABSENT is ok
-    (staged rollout = legacy MODEL_TIERS); PRESENT-but-invalid is an ERROR —
+    (spawns then pass no --model and the pool config default rules);
+    PRESENT-but-invalid is an ERROR —
     an unknown pin or an over-cap effort must fail the stack start loudly,
     never degrade to a silent host-default at spawn."""
     start = _now()
@@ -191,13 +192,64 @@ def check_seat_registry() -> dict:
                        f"models.json INVALID: {e}", start)
     if loaded is None:
         return _result("seat_registry", "warn",
-                       "no models.json — legacy MODEL_TIERS behavior", start)
+                       "no models.json — spawns pass no --model "
+                       "(pool config default applies)", start)
     seats, roles = loaded
     return _result(
         "seat_registry", "ok",
         f"{len(seats)} seats, {len(roles)} roles bound "
         f"({', '.join(f'{r}->{s}' for r, s in sorted(roles.items()))})",
         start)
+
+
+def check_foreground_model() -> dict:
+    """WP4 (2026-08-12): the FOREGROUND seat must match the neuron seat in
+    models.json. The df971d post-mortem found the operator's `eda.bat` config
+    dir pinning a different model than every doc claimed the neuron ran —
+    undetected for months because parity checks covered hooks only. Warn
+    (never error) on skew: the operator may deliberately bless a different
+    foreground model, but the skew must be LOUD."""
+    start = _now()
+    home = os.environ.get("EDP_AGENT_HOME", "").strip()
+    if not home:
+        return _result("foreground_model", "warn",
+                       "EDP_AGENT_HOME unset — not checked", start)
+    import json as _json
+    from pathlib import Path
+    cfg_dir = os.environ.get("CLAUDE_CONFIG_DIR", "").strip() or str(
+        Path.home() / ".claude-personal")
+    settings = Path(cfg_dir) / "settings.json"
+    if not settings.is_file():
+        return _result("foreground_model", "warn",
+                       f"no settings.json under {cfg_dir} — not checked",
+                       start)
+    try:
+        pinned = str(_json.loads(
+            settings.read_text(encoding="utf-8")).get("model") or "")
+    except (OSError, _json.JSONDecodeError) as e:
+        return _result("foreground_model", "warn",
+                       f"settings unreadable: {e}", start)
+    try:
+        from edp_contracts.seats import seat_for_role
+        seat = seat_for_role(home, "neuron")
+    except Exception as e:  # noqa: BLE001
+        return _result("foreground_model", "warn",
+                       f"seat registry unreadable: {e}", start)
+    if seat is None:
+        return _result("foreground_model", "warn",
+                       "no neuron seat in models.json — not checked", start)
+    # the pin may carry a mode suffix like "[1m]" — compare the model id part.
+    pinned_id = pinned.split("[", 1)[0].strip()
+    if pinned_id and pinned_id != seat.model:
+        return _result(
+            "foreground_model", "warn",
+            f"FOREGROUND/SEAT SKEW: {settings} pins {pinned!r} but "
+            f"models.json binds neuron -> {seat.model!r}. Every doc reasons "
+            "about the seat model; align the pin or bless the skew in "
+            "models.json's _model_note.", start)
+    return _result("foreground_model", "ok",
+                   f"foreground pin matches neuron seat ({seat.model})",
+                   start)
 
 
 def check_config_parity() -> dict:
@@ -277,6 +329,7 @@ def run_doctor(
         check_phoenix(phoenix_url, to),
         check_seat_registry(),
         check_config_parity(),
+        check_foreground_model(),
     ]
 
     if locks is None:

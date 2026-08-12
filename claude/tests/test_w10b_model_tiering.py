@@ -1,24 +1,27 @@
-"""DESIGN-v6 W10b — model tiers + the stuck→consult escalation ladder.
+"""DESIGN-v6 W10b — spawn model resolution + the stuck→consult escalation
+ladder. RE-POINTED (2026-08-12 dead-surface retirement): the MODEL_TIERS
+table and its lookups (resolve_model_tier / HOST_DEFAULT_MODEL / SONNET /
+DEFAULT_TASK_CLASS) are DELETED — the v7 WS4 seat registry (models.json via
+edp_contracts.seats) is the only role→model binding, and `spawn_model_for`
+resolves ONLY through it. The old T1–T5 pinned the table's shape and its
+never-auto-candidate discipline; their subject is gone, so they are replaced
+by seat-registry pins of the SAME properties (an un-configured spawn passes
+no --model; the registry binding really reaches the pool).
 
 The bar this pins:
 
-* T1  NO row in MODEL_TIERS is status="measured". a4b owns any flip, and it
-      owns it only once a real benchmark exists (d80: the design labelled a tier
-      "measured" citing a MODEL-TIERING-BENCHMARK.md that did not exist).
-* T2  a spawn WITHOUT allow_candidate_tier NEVER selects a candidate. ENUMERATED
-      over the same table the resolver reads, plus the strict-superset property
-      that makes the enumeration a LOAD and not a catalogue (d65).
-* T3  a spawn WITH allow_candidate_tier=true launches the reviewer on
-      claude-sonnet-5 — driven through the real branch_reviewer tool.
-* T4  "haiku" appears NOWHERE in the tier table or its resolution path.
-* T5  a tier row is `{model, status}` (+`benchmark_task`) and NOTHING else — the
-      shape DESIGN-v6 line 490 specifies. The original T5 (every row declares
-      `thinking` + `effort`) is WITHDRAWN: a4b measured that no production code
-      reads either field, so the pin guaranteed a well-formed TABLE and was read
-      as a guarantee about the SPAWNED SHELL. Both fields deleted, user ruling.
+* T2  with NO registry, spawn_model_for resolves None for every role — the
+      spawn passes no --model flag and the pool config default rules. The
+      legacy `task_class` / `allow_candidate_tier` params are accepted and
+      IGNORED (the retired table was their only consumer).
+* T3  a registry-mapped role's pinned model reaches the pool spawn VERBATIM,
+      driven through the real pool_spawn_worker tool; an un-mapped spawn is
+      byte-identical to pre-W10b (model=None).
 * T6  the escalation ladder. Two failed acceptance CYCLES emit ESCALATE_CONSULT
       with an auto-composed, non-empty, action-specific question — and ONE cycle
-      reported through BOTH d30 seams counts ONCE and emits NOTHING.
+      reported through BOTH d30 seams counts ONCE and emits NOTHING. The
+      instruction carries NO `model` key: the tier it used to name was retired
+      with the table (how a raised question is answered is the parent's call).
 * T6b the emission is LATCHED and ADVISORY: it fires once per signal crossing and
       the very next tick dispatches. An un-latched instruction would wedge the
       plan — the control mechanism d76 forbids.
@@ -49,17 +52,13 @@ from edp_claude.fsm.plan_fsm import (
     plan_next_action,
 )
 from edp_claude.schemas import InstructionKind, Plan, PlanState, Recipe
-from edp_claude.tools import roles as roles_mod
-from edp_claude.tools.roles import (
-    DEFAULT_TASK_CLASS,
-    HOST_DEFAULT_MODEL,
-    MODEL_TIERS,
-    SONNET,
-    resolve_model_tier,
-    spawn_model_for,
-)
+from edp_claude.tools.roles import spawn_model_for
 
 K = InstructionKind
+
+#: an arbitrary exact model id for pass-through assertions (T3/T9); nothing
+#: resolves it — it only proves the wire carries what a caller/registry pins.
+PINNED_MODEL = "claude-sonnet-5"
 
 _ROOT = Path(__file__).resolve().parents[1]
 _RECIPES = _ROOT / ".recipes"
@@ -72,185 +71,44 @@ def _ok(res):
     return res.data
 
 
-# ── T1 ─────────────────────────────────────────────────────────────────────
-def test_t1_no_row_is_measured_opus_is_the_default():
-    """NO row may claim `measured` — Opus is the default, Sonnet is opt-in only.
-
-    a4b DID run BENCH-WORKER-CODING (5 trials/arm, 2026-07-10) and once flipped
-    ('worker','coding') to `measured`. But it measured `claude-sonnet-5`, and the
-    tiered Sonnet is now `claude-sonnet-4-6` (USER RULING, 2026-07-16: "keep Opus
-    as default and use Sonnet where it makes sense"). A measurement of one model
-    is not a measurement of another (d80), so the row reverted to `candidate` and
-    NO row is measured. This is the doc's own §8 ground-rule-1 honest negative,
-    not an omission — MODEL-TIERING-BENCHMARK.md must say the flip is withheld."""
-    measured = {k for k, v in MODEL_TIERS.items() if v["status"] == "measured"}
-    assert measured == set(), (
-        f"measured rows are {sorted(measured)}; Opus is the default and Sonnet "
-        f"is opt-in only (USER RULING, 2026-07-16). a4b measured claude-sonnet-5, "
-        f"but the Sonnet tier now resolves to claude-sonnet-4-6 — a different "
-        f"model, so its measurement does not transfer (d80).")
-    assert {v["status"] for v in MODEL_TIERS.values()} == {"default", "candidate"}
-
-    # the safety net is NOT degraded: reviewer stays Opus, both classes
-    for tc in (DEFAULT_TASK_CLASS, "spec"):
-        assert MODEL_TIERS[("reviewer", tc)]["model"] == HOST_DEFAULT_MODEL, (
-            "the reviewer's independent re-run IS the acceptance gate (d29/d30); "
-            "degrade the safety net last")
+# ── T1/T2 — the table is RETIRED; the resolver is registry-only ────────────
+# (T1/T1b/T2b — the measured/candidate discipline and its benchmark-doc sync —
+# are REMOVED with their subject, the 2026-08-12 dead-surface retirement of
+# MODEL_TIERS. Their doc-side residue is pinned in test_w10b_benchmark.py.)
+def test_t2_without_a_registry_every_spawn_resolves_no_model(monkeypatch):
+    """The universal the old T2 pinned — an un-opted-in spawn passes NO --model
+    flag — survives the table it was pinned on. With no seat registry there is
+    nothing to resolve: every role, every task_class, flag or no flag, is None,
+    and the pool config's pinned default model rules the spawned shell."""
+    monkeypatch.delenv("EDP_AGENT_HOME", raising=False)
+    for role in ("neuron", "planner", "worker", "reviewer", "specialist",
+                 "curiosity", "no-such-role"):
+        assert spawn_model_for(role) is None, role
+        # the legacy tier-table params are accepted and IGNORED — the retired
+        # table was their only consumer; neither may conjure a model.
+        assert spawn_model_for(role, "coding") is None, role
+        assert spawn_model_for(role, "narrow",
+                               allow_candidate_tier=True) is None, role
 
 
-def test_t1b_benchmark_doc_backs_every_measured_and_candidate_row():
-    """The design's own gate: a tier needs a MODEL-TIERING-BENCHMARK.md entry.
-
-    a4 wrote the honest stub ("no benchmark has been run"); a4b replaced it with
-    a real entry. The doc must (a) name every candidate's benchmark task, (b) name
-    every measured row's task, and (c) NOT launder the design's unverified
-    `-40% / quality-delta ~0` into a measured result — a4b measured 24.8%."""
-    doc = (_ROOT / "docs" / "design" / "MODEL-TIERING-BENCHMARK.md").read_text(
-        encoding="utf-8")
-
-    # the stub's claim is GONE — a benchmark has now run
-    assert "NO BENCHMARK HAS BEEN RUN" not in doc
-
-    # every candidate AND every measured row names its benchmark task in the doc
-    for (role, tc), tier in MODEL_TIERS.items():
-        if tier["status"] in ("candidate", "measured"):
-            assert tier["benchmark_task"].split(":")[0] in doc, (
-                f"{tier['status']} ({role},{tc}) names benchmark task "
-                f"{tier['benchmark_task']!r} which the doc does not carry")
-
-    # the unverified price ratio is never presented as the measured cost delta
-    assert "24.8%" in doc, "the doc must carry the MEASURED cost saving"
-    assert "unverified price ratio" in doc, (
-        "the doc must still mark the design's -40% as unverified, not adopt it")
-
-
-# ── T2 ─────────────────────────────────────────────────────────────────────
-def test_t2_no_candidate_tier_is_ever_selected_without_the_flag():
-    """NEVER, and the enumeration below is what proves the word.
-
-    This docstring asserts a UNIVERSAL ("never"), which d75 says must be PINNED
-    BY A TEST or deleted. It is pinned HERE, by enumerating `MODEL_TIERS.keys()`
-    ITSELF — the exact same mapping `resolve_model_tier` reads — rather than a
-    hand-maintained list of pairs that could silently fall behind it.
-
-    d65 (A CATALOGUE ENTRY IS NOT A LOAD): enumerating the table the resolver
-    reads is only a load if adding a row cannot widen the exclusion. So the
-    STRICT-SUPERSET property is asserted explicitly below: every role appearing
-    anywhere in the table must own a DEFAULT_TASK_CLASS row, or the fallback has
-    nowhere to land and a new row would resolve to None — silently passing no
-    model, which looks identical to "resolved to the host default" and is not."""
-    assert MODEL_TIERS, "empty table would make this test vacuous"
-
-    roles_in_table = {role for role, _ in MODEL_TIERS}
-    # STRICT-SUPERSET: the fallback target must exist for every role present.
-    missing = [r for r in roles_in_table
-               if (r, DEFAULT_TASK_CLASS) not in MODEL_TIERS]
-    assert not missing, (
-        f"roles {missing} have tier rows but NO ({DEFAULT_TASK_CLASS!r}) "
-        "default row to fall back to; a candidate row for them would resolve "
-        "to None and silently bypass this guard")
-
-    # ENUMERATED over the same table the resolver reads — not a spot check.
-    #
-    # a4b flipped ("worker","coding") to status="measured". A MEASURED row is
-    # ADOPTED: it resolves WITHOUT the flag, by design — that is what "measured"
-    # means and what the benchmark bought. The universal this test pins is
-    # therefore about CANDIDATE rows, which is what its name says. Each status
-    # gets its own explicit expectation, so a row silently changing status can
-    # never slip through by matching a weaker branch.
-    for (role, task_class), tier in MODEL_TIERS.items():
-        got = resolve_model_tier(role, task_class)          # NO flag
-        assert got is not None, (role, task_class)
-
-        if tier["status"] == "measured":
-            # ADOPTED: selected with no opt-in, and it DOES pass --model.
-            assert got["status"] == "measured", (role, task_class)
-            assert got["model"] == tier["model"] != HOST_DEFAULT_MODEL
-            assert spawn_model_for(role, task_class) == tier["model"], (
-                f"({role},{task_class}) is measured but passes no --model")
-            # a measured row must be backed by a benchmark entry (T2 in
-            # test_w10b_benchmark.py enforces the doc side of this)
-            assert tier["benchmark_task"], (
-                f"measured ({role},{task_class}) names no benchmark task")
-            continue
-
-        assert got["status"] == "default", (
-            f"({role},{task_class}) resolved to a {got['status']} tier "
-            "without allow_candidate_tier")
-        assert got["model"] == HOST_DEFAULT_MODEL, (
-            f"({role},{task_class}) resolved to {got['model']!r}; every "
-            f"un-opted-in spawn must resolve to {HOST_DEFAULT_MODEL!r}")
-        # and the wire stays byte-identical: no --model flag at all
-        assert spawn_model_for(role, task_class) is None, (
-            f"({role},{task_class}) would pass a --model flag on a default "
-            "spawn, changing the pool body for an untiered role")
-
-        # the candidate is reachable ONLY behind the flag
-        if tier["status"] == "candidate":
-            opted = resolve_model_tier(role, task_class,
-                                       allow_candidate_tier=True)
-            assert opted["status"] == "candidate"
-            assert opted["model"] == SONNET
-            assert spawn_model_for(role, task_class,
-                                   allow_candidate_tier=True) == SONNET
-
-    # an unknown task_class degrades to the SAFE tier, never to None
-    assert spawn_model_for("worker", "no-such-class") is None
-    assert resolve_model_tier("worker", "no-such-class")["model"] == \
-        HOST_DEFAULT_MODEL
-    # an unknown ROLE fails open to "no model flag" (host default)
-    assert spawn_model_for("no-such-role") is None
-
-
-def test_t2b_the_candidate_branch_runs_and_measured_is_dormant_by_design():
-    """d66 — a guard that passes because the condition is absent guards nothing.
-
-    T2's DEFAULT and CANDIDATE branches iterate real rows: every role has an Opus
-    default, and ('worker','coding'/'narrow'/'verify') are live candidates, so
-    neither universal is proved over an empty set. T2's `measured` branch is dead
-    code — DELIBERATELY (USER RULING, 2026-07-16: Opus is the default, Sonnet is
-    opt-in only). It is kept as a FORWARD guard: if a real 4.6 benchmark ever
-    re-earns a measured row, that branch is already correct. This test asserts the
-    dormancy is intentional, not an accident — no measured row exists to run it.
-
-    RE-POINTED (d128/d132): ("reviewer", "direction") WAS the only reviewer
-    candidate row; the direction reviewer is removed, so it went with it. The
-    reviewer's absence from the candidate set is itself the assertion — it states
-    the "degrade the safety net LAST" posture (d29/d30) as a property."""
-    cands = [k for k, v in MODEL_TIERS.items() if v["status"] == "candidate"]
-    assert cands, "no candidate rows: T2's candidate assertions never run"
-    assert ("worker", "narrow") in cands
-    assert ("worker", "coding") in cands   # demoted from measured 2026-07-16
-
-    measured = [k for k, v in MODEL_TIERS.items() if v["status"] == "measured"]
-    assert not measured, (
-        f"a row is 'measured' ({sorted(measured)}) — but Opus is the default and "
-        "Sonnet is opt-in only (USER RULING, 2026-07-16). a4b measured "
-        "claude-sonnet-5; the tier now resolves to claude-sonnet-4-6, so no "
-        "measurement backs a live row.")
-
-    # NO reviewer class is a tiering candidate: the reviewer's independent re-run
-    # IS the acceptance gate, so every reviewer spawn resolves to the Opus default.
-    assert not [role for role, _tc in cands if role == "reviewer"]
-    assert ("reviewer", "direction") not in MODEL_TIERS
+def test_t2c_a_registry_binding_wins_and_ignores_the_legacy_flags(
+        tmp_path, monkeypatch):
+    """A mapped seat's pinned model is returned VERBATIM — and the legacy
+    params still change nothing (explicit seat beats every implicit path)."""
+    (tmp_path / "models.json").write_text(json.dumps({
+        "seats": {"w": {"model": PINNED_MODEL}},
+        "roles": {"worker": "w"},
+    }), encoding="utf-8")
+    monkeypatch.setenv("EDP_AGENT_HOME", str(tmp_path))
+    assert spawn_model_for("worker") == PINNED_MODEL
+    assert spawn_model_for("worker", "coding") == PINNED_MODEL
+    assert spawn_model_for("worker", "narrow",
+                           allow_candidate_tier=True) == PINNED_MODEL
+    # unmapped role in a PRESENT registry → still no flag
+    assert spawn_model_for("planner") is None
 
 
 # ── T3 ─────────────────────────────────────────────────────────────────────
-async def _stable_specialist(env):
-    """A stable specialist with a compiled doc — branch_reviewer's precondition."""
-    c = _ok(await env.call("create_specialization", name="Java Expert",
-                           subject="Java", description="java spring boot"))
-    nid, sid = c["neuron_id"], c["spec_id"]
-    _ok(await env.call("neuron_set_base_session", neuron_id=nid,
-                       session_id="base-1"))
-    _ok(await env.call("write_specialist_doc", spec_id=sid,
-                       content="# Java\n- tests pass. [required]\n"))
-    _ok(await env.call("neuron_set_status", neuron_id=nid,
-                       status="pending_review"))
-    _ok(await env.call("neuron_set_status", neuron_id=nid, status="stable"))
-    return nid
-
-
 async def _recipe_with_plan(env, goal="make the CSV totals line up"):
     rid = _ok(await env.call("start_recipe", goal=goal,
                              domain="framework"))["recipe_id"]
@@ -263,48 +121,46 @@ async def _recipe_with_plan(env, goal="make the CSV totals line up"):
     return rid, sid, pid
 
 
-async def test_t3_candidate_flag_launches_the_spawn_on_sonnet(env):
+async def test_t3_registry_binding_reaches_the_real_worker_spawn(
+        env, tmp_path, monkeypatch):
     """Driven through a REAL spawn tool and read off the pool's recorded spawn —
     not off the resolver, which T2 already covers.
 
-    RE-POINTED (d128/d132): this drove `branch_reviewer(scope="direction",
-    allow_candidate_tier=True)`, the only reviewer candidate row. That row and
-    that mode are gone. The PROPERTY under test is unchanged and still live —
-    the opt-in flag really reaches the pool and selects the candidate model —
-    so it is now driven through `pool_spawn_worker` on ("worker", "narrow"), the
-    surviving candidate row."""
+    RE-POINTED (2026-08-12): this drove the retired candidate-tier opt-in
+    (`allow_candidate_tier=True` → Sonnet from MODEL_TIERS). The PROPERTY under
+    test is unchanged and still live — the configured model resolution really
+    reaches the pool — so it now drives the SEAT REGISTRY binding through
+    `pool_spawn_worker`."""
+    (tmp_path / "models.json").write_text(json.dumps({
+        "seats": {"w": {"model": PINNED_MODEL}},
+        "roles": {"worker": "w"},
+    }), encoding="utf-8")
+    monkeypatch.setenv("EDP_AGENT_HOME", str(tmp_path))
     _rid, _sid, pid = await _recipe_with_plan(env)
 
-    _ok(await env.call("pool_spawn_worker", plan_id=pid, action_id="a1",
-                       task_class="narrow", allow_candidate_tier=True))
+    _ok(await env.call("pool_spawn_worker", plan_id=pid, action_id="a1"))
     spawned = [s for s in env.ctx.pool.spawns if s["role"] == "worker"]
     assert len(spawned) == 1
-    assert spawned[0]["model"] == SONNET, (
-        f"candidate spawn launched on {spawned[0]['model']!r}, expected "
-        f"{SONNET!r} with allow_candidate_tier=True")
+    assert spawned[0]["model"] == PINNED_MODEL, (
+        f"registry-bound spawn launched on {spawned[0]['model']!r}, expected "
+        f"{PINNED_MODEL!r} from models.json")
 
 
-def test_t3b_default_reviewer_spawn_stays_opus_host_default():
-    """The reviewer resolves NO model → host default (Opus). The safety net
-    degrades last (d29/d30: the reviewer's re-run IS the gate).
-
-    RE-POINTED TWICE: first (d128/d132) onto the SPEC reviewer, then again
-    when `branch_reviewer` was deleted outright (owner ruling 2026-08-04) —
-    the property survives the verb, so it is pinned at the resolver every
-    reviewer spawn reads (`spawn_model_for`)."""
-    from edp_claude.tools.roles import spawn_model_for
-
-    assert spawn_model_for("reviewer", "spec") is None, (
-        "the spec reviewer resolved a --model; it must carry none — it is "
-        "the acceptance gate, not a candidate")
-    # ...and even asking for the candidate tier cannot degrade it: no reviewer
-    # candidate row exists to select.
+def test_t3b_default_reviewer_spawn_carries_no_model(monkeypatch):
+    """With no registry the reviewer resolves NO model — the pool config
+    default (the judgment-class pin) rules. The safety net degrades last
+    (d29/d30: the reviewer's re-run IS the gate), and no legacy flag can
+    degrade it: the candidate tier it could once opt into is deleted."""
+    monkeypatch.delenv("EDP_AGENT_HOME", raising=False)
+    assert spawn_model_for("reviewer", "spec") is None
     assert spawn_model_for(
         "reviewer", "spec", allow_candidate_tier=True) is None
 
 
-async def test_t3c_default_worker_spawn_stays_opus_host_default(env):
-    """And the worker dispatch path is byte-identical to pre-W10b."""
+async def test_t3c_default_worker_spawn_stays_no_model(env, monkeypatch):
+    """And the un-configured worker dispatch path is byte-identical to
+    pre-W10b: no registry → no --model key on the wire."""
+    monkeypatch.delenv("EDP_AGENT_HOME", raising=False)
     _rid, _sid, pid = await _recipe_with_plan(env)
     _ok(await env.call("pool_spawn_worker", plan_id=pid, action_id="a1"))
     spawned = [s for s in env.ctx.pool.spawns if s["role"] == "worker"]
@@ -312,66 +168,9 @@ async def test_t3c_default_worker_spawn_stays_opus_host_default(env):
     assert spawned[0]["model"] is None
 
 
-# ── T4 ─────────────────────────────────────────────────────────────────────
-def test_t4_haiku_appears_nowhere_in_the_tier_table_or_its_resolution_path():
-    """d53: NEVER haiku — in any table, comment, or test. Asserted on SOURCE,
-    case-insensitively, over the tier table and the two functions that resolve
-    it. (Haiku 4.5 also rejects `effort` outright and carries a 200K window
-    against our 1M, so d53 is right for a stronger reason than d53 states.)"""
-    # the DATA
-    blob = json.dumps(
-        {f"{r}|{t}": v for (r, t), v in MODEL_TIERS.items()}).lower()
-    assert "haiku" not in blob
-
-    # the RESOLUTION PATH, read as source
-    for fn in (roles_mod.resolve_model_tier, roles_mod.spawn_model_for):
-        assert "haiku" not in inspect.getsource(fn).lower(), fn.__name__
-
-    # and the whole module that owns the table, comments included
-    src = Path(inspect.getfile(roles_mod)).read_text(encoding="utf-8").lower()
-    # the ONLY sanctioned occurrences are the prohibitions themselves
-    for line in src.splitlines():
-        if "haiku" in line:
-            assert ("never" in line or "not a tier" in line
-                    or "forbids" in line or "excludes" in line
-                    or "rejects" in line), (
-                f"unsanctioned mention of haiku in roles.py: {line.strip()!r}")
-
-
-# ── T5 (WITHDRAWN, replaced) ───────────────────────────────────────────────
-def test_t5_a_tier_row_is_model_and_status_and_nothing_else():
-    """T5 AS WRITTEN IS WITHDRAWN — its SUBJECT is withdrawn, not its reasoning.
-
-    The old T5 pinned that every row set `thinking` and `effort` explicitly, to
-    keep a4b's benchmark arms comparable. a4b ran, and found the pin guaranteed
-    nothing it claimed: NO production code reads either field. `spawn_model_for`
-    returns a model string and `pty_launcher.build_argv` emits only
-    `["--model", model]`, so a row could declare `thinking="disabled"` while the
-    spawned shell thought freely. The table was well-formed; the shell was
-    unaffected. A pin on a field nothing consumes asserts a property of the
-    TABLE and reads as a property of the SYSTEM.
-
-    Both fields were DELETED (user ruling, 2026-07-10). DESIGN-v6 line 490
-    specifies the row shape as `(role, task_class) -> {model, status}`. This test
-    now pins THAT — the shape the design actually specifies — so the deleted
-    fields cannot creep back in as inert declarations.
-
-    Where do model/thinking/effort belong? The Claude Code settings+env surface
-    the harness already owns. Not a new field here (d76/d77)."""
-    allowed = {"model", "status", "benchmark_task"}
-    for key, tier in MODEL_TIERS.items():
-        assert set(tier) <= allowed, (
-            f"tier {key} carries unexpected keys {sorted(set(tier) - allowed)}. "
-            f"A row is {{model, status}} (+benchmark_task on a candidate). "
-            f"`thinking`/`effort` were deleted because nothing consumed them; "
-            f"do not re-add an inert field — wire the env surface instead.")
-        assert "model" in tier and "status" in tier, f"tier {key} is malformed"
-        assert "thinking" not in tier and "effort" not in tier, (
-            f"tier {key} re-declares `thinking`/`effort`. NOTHING READS THEM "
-            f"(pty_launcher.build_argv emits only --model). Re-adding them "
-            f"recreates the declared-and-dropped field a4b deleted.")
-        if tier["status"] == "candidate":
-            assert tier["benchmark_task"], f"candidate {key} names no benchmark"
+# (T4 — "no haiku in the tier table" — and T5 — the tier-row shape — are
+# REMOVED with their subject; test_w10b_benchmark.py::test_r2 keeps the d53
+# haiku ban pinned on the surviving resolution path.)
 
 
 # ── T6 — the escalation ladder ─────────────────────────────────────────────
@@ -569,8 +368,9 @@ def test_t6b_two_distinct_failed_cycles_emit_escalate_consult():
     assert "failed acceptance cycles" in q          # the signal that fired
     assert instr.args["action_id"] == "a1"
     assert instr.args["recipe_id"] == "r-w10b"
-    # consult -> opus, from the ONE table. Never auto-stronger.
-    assert instr.args["model"] == HOST_DEFAULT_MODEL
+    # 2026-08-12: the escalation names NO model — the consult tier went with
+    # the retired table; how a raised question is answered is the parent's call.
+    assert "model" not in instr.args
 
 
 def test_t6c_redispatch_churn_alone_escalates():
@@ -741,7 +541,7 @@ async def test_t6j_the_parked_signal_is_actually_FED_in_production(env):
         f"next_action returned {out['kind']!r}; the parked signal is not fed "
         "in the live path")
     assert "parked on an unanswered question" in out["args"]["question"]
-    assert out["args"]["model"] == HOST_DEFAULT_MODEL
+    assert "model" not in out["args"]     # the consult tier retired 2026-08-12
 
     # and the latch PERSISTED, so the next tick does not re-emit
     assert env.ctx.plans.load(pid).escalation_emitted == {"a1": [0, 0, True]}
@@ -868,9 +668,9 @@ async def test_t9_planner_spawn_already_accepts_and_passes_model(env):
 
     # accepts it, and passes it through to the pool verbatim
     _ok(await env.call("pool_spawn_planner", recipe_id=rid, step_id=sid,
-                       model=SONNET))
+                       model=PINNED_MODEL))
     planners = [s for s in env.ctx.pool.spawns if s["role"] == "planner"]
-    assert planners[-1]["model"] == SONNET
+    assert planners[-1]["model"] == PINNED_MODEL
 
     # and omitting it still means "host default" (no flag), unchanged
     _ok(await env.call("pool_spawn_planner", recipe_id=rid, step_id=sid))

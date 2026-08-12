@@ -347,6 +347,57 @@ class EffectDecision:
         }
 
 
+# ── echo detection (shared by the motor AND sensory nerves) ────────────────
+# _prov_echo: provenance-stamp matching — effect-plane writes carry `_prov`
+# and are recognized exactly. is_self_echo: authorship matching for the
+# sensory path (WP3 2026-08-12) — a shell must not be WOKEN by events it
+# authored itself (the planner tails its own worklog, which its own tool
+# calls append; 265k self-inflicted polls/wakes in the df971d log corpus).
+
+# handles appear in two spellings: EDP_HANDLE uses colons, broker inboxes
+# use dashes (and plan ids themselves contain dashes, so the mapping is only
+# well-defined colon→dash). Compare in normalized (all-dash) space.
+def _norm_handle(handle: str) -> str:
+    return (handle or "").strip().replace(":", "-")
+
+
+# worklog bookkeeping kinds that are BY CONSTRUCTION self-caused on the
+# reader's own log (written on the check_inbox delivery path) — never signal.
+_SELF_BOOKKEEPING_KINDS = frozenset({"message_received"})
+
+_AUTHOR_FIELDS = ("from", "from_", "by", "actor", "agent", "handle", "owner")
+
+
+def _prov_echo(event: Any, rule_id: str, owner: str) -> bool:
+    prov = event.get("_prov") if isinstance(event, dict) else None
+    if not isinstance(prov, dict):
+        # provenance may also live under a `body` wrapper (broker shape)
+        body = event.get("body") if isinstance(event, dict) else None
+        prov = body.get("_prov") if isinstance(body, dict) else None
+    if not isinstance(prov, dict):
+        return False
+    return (prov.get("rule_id") == rule_id
+            or prov.get("owner") == owner)
+
+
+def is_self_echo(event: Any, owner: str) -> bool:
+    """True iff `event` was authored by `owner` (either handle spelling), or
+    is reader-side bookkeeping. Used by the sensory nerve to drop self-wakes
+    before they reach the shell; the motor nerve's provenance filter
+    (`_prov_echo`) remains separate and stricter."""
+    if not owner or not isinstance(event, dict):
+        return False
+    me = _norm_handle(owner)
+    if event.get("kind") in _SELF_BOOKKEEPING_KINDS:
+        return True
+    for scope in (event, event.get("body") if isinstance(event.get("body"), dict) else {}):
+        for field in _AUTHOR_FIELDS:
+            v = scope.get(field)
+            if isinstance(v, str) and _norm_handle(v) == me:
+                return True
+    return False
+
+
 # ── the dispatcher (one per registered rule) ───────────────────────────────
 ToolExecutor = Callable[[str, dict[str, Any]], Any]
 AuditSink = Callable[[dict[str, Any]], None]
@@ -407,15 +458,7 @@ class EffectDispatcher:
             self._seen.popitem(last=False)
 
     def _is_echo(self, event: Any) -> bool:
-        prov = event.get("_prov") if isinstance(event, dict) else None
-        if not isinstance(prov, dict):
-            # provenance may also live under a `body` wrapper (broker shape)
-            body = event.get("body") if isinstance(event, dict) else None
-            prov = body.get("_prov") if isinstance(body, dict) else None
-        if not isinstance(prov, dict):
-            return False
-        return (prov.get("rule_id") == self.spec.rule_id
-                or prov.get("owner") == self.owner)
+        return _prov_echo(event, self.spec.rule_id, self.owner)
 
     # ── the single entry point ──────────────────────────────────────────────
     def handle(self, event: Any) -> EffectDecision:

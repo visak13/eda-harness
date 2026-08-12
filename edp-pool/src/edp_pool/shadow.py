@@ -40,7 +40,14 @@ from typing import Callable
 
 #: sensory kinds the shadow may type. Grammar, not policy — imperatives
 #: are structurally absent.
-WAKE_KINDS = ("mail", "tick", "flowback", "resumed", "orphan", "alert")
+WAKE_KINDS = ("mail", "tick", "flowback", "resumed", "orphan", "alert",
+              # WP3 (2026-08-12): broker lifecycle kinds pass through with
+              # their real names — before this, every rx emission degraded
+              # to a contentless "mail" (the empty-tick defect: a planner
+              # could not tell `done` from noise without a reconcile round).
+              "done", "plan_closed", "step_done", "question", "answer",
+              "steer", "crashed", "ready", "progress", "observation",
+              "verdict", "consult", "review_comments", "grounding", "fyi")
 
 _TICK_S = 2.0                      # cmd/close/driver supervision cadence
 _DEFAULT_HEARTBEAT_S = 300.0
@@ -209,7 +216,13 @@ class ShellShadow:
         kind = str(event.get("kind", "mail"))
         if kind not in WAKE_KINDS:
             kind = "mail"
-        digest = json.dumps(event.get("body", event), default=str)[:400]
+        # digest: body first; else a compact envelope summary (from/kind/ts)
+        # — never the raw wrapper blob (WP3).
+        body = event.get("body")
+        if body is None:
+            body = {k: event[k] for k in ("from", "kind", "ts", "msg_id")
+                    if k in event} or event
+        digest = json.dumps(body, default=str)[:400]
         delivered = False
         if self._mode == "auto" and self.shell and self.shell.is_alive():
             self.shell.send_line(self._frame(kind, digest))
@@ -260,6 +273,14 @@ class ShellShadow:
         if (self._state not in ("closed", "crashed") and self.shell
                 and not self.shell.is_alive()):
             self._state = "crashed"
+            # WP3 (2026-08-12): a dead shell must not leave a live driver —
+            # orphaned drivers polling for nobody were a large share of the
+            # 265k-polls-per-219-publishes broker storm.
+            if self.driver is not None:
+                try:
+                    self.driver.stop()
+                except Exception:    # noqa: BLE001 — crash path stays robust
+                    pass
             self._publish("crashed", {"handle": self.cfg.handle})
             self._write_ledger()
 

@@ -51,7 +51,7 @@ from pathlib import Path
 from edp_contracts import ToolError, ToolOk
 
 from edp_claude.guards import check_constraints
-from edp_claude.tools.roles import MODEL_TIERS, ROLE_TOOLSETS
+from edp_claude.tools.roles import ROLE_TOOLSETS
 
 _SRC = Path(__file__).resolve().parents[1] / "src" / "edp_claude"
 _CMD = Path(__file__).resolve().parents[1] / ".claude" / "commands"
@@ -138,10 +138,8 @@ def test_t3b_the_direction_path_and_its_verdict_verb_are_gone_from_source():
     # the verb is off every role surface, and out of the registry
     for role, verbs in ROLE_TOOLSETS.items():
         assert "record_direction_verdict" not in verbs, role
-
-    # and no reviewer model-tier row references the dead task class
-    assert ("reviewer", "direction") not in MODEL_TIERS
-    assert ("reviewer", "spec") in MODEL_TIERS        # the survivor
+    # (The reviewer model-tier row half of this pin went with MODEL_TIERS
+    # itself — 2026-08-12 dead-surface retirement.)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -150,8 +148,10 @@ def test_t3b_the_direction_path_and_its_verdict_verb_are_gone_from_source():
 def test_t4_no_new_role_exists_in_role_toolsets():
     """o7 pins the role SET — amended by the owner ruling of 2026-08-04 that
     deleted goal_keeper and pattern_observer as dead roles."""
+    # ("consult" left the set 2026-08-12 — the convened-consult shell role is
+    # retired; its only spawn verb went 2026-07-25.)
     assert set(ROLE_TOOLSETS) == {
-        "worker", "planner", "reviewer", "specialist", "consult", "neuron",
+        "worker", "planner", "reviewer", "specialist", "neuron",
         "curiosity",
     }
     assert "direction_reviewer" not in ROLE_TOOLSETS

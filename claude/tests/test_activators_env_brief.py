@@ -56,12 +56,13 @@ def test_neuron_resumes_before_creating():
 
 
 def test_ocak_is_retired_comprehension_is_tool_forced():
-    # v5 P1 marker on the legacy /ocak pointer file (kept as a
-    # tombstone). The CURRENT comprehension design lives in the
-    # post-HITL sweep doc, but the pointer must still surface that
-    # OCAK-as-skill is retired.
-    b = _body("ocak")
-    assert "retired" in b
+    # v5 P1 retired OCAK-as-skill; the 2026-08-12 dead-surface sweep deleted
+    # the tombstone card itself (comprehension is TOOL-FORCED — next_action
+    # seeds the checklist — so no shell has an /ocak to run). Pin the absence,
+    # with a positive control that the commands dir is really being read.
+    cmd_dir = Path(__file__).resolve().parents[1] / ".claude" / "commands"
+    assert not (cmd_dir / "ocak.md").exists(), "the retired ocak card is back"
+    assert (cmd_dir / "neuron.md").exists()
 
 
 def test_neuron_drives_post_hitl_comprehension_and_intent_tools():

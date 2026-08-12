@@ -89,15 +89,50 @@ def test_wakes_are_framed_sequenced_and_sensory_only(tmp_path):
     sh, shell, drivers, _, _ = _mk(tmp_path)
     sh.start(run_loop=False)
     drivers[0].emit({"kind": "mail", "body": {"from": "planner", "q": 1}})
-    drivers[0].emit({"kind": "steer", "body": {}})     # unknown → mail
+    # WP3 (2026-08-12): broker kinds pass through with their REAL names now
+    # (`steer` used to degrade to a contentless "mail" — the empty-tick
+    # defect); a kind outside the grammar still degrades.
+    drivers[0].emit({"kind": "steer", "body": {}})
+    drivers[0].emit({"kind": "made-up-kind", "body": {}})   # unknown → mail
     sh.stop()
-    w1, w2 = shell.lines[1], shell.lines[2]
+    w1, w2, w3 = shell.lines[1], shell.lines[2], shell.lines[3]
     assert w1.startswith(f"[shadow plan-x:a3 #1 :{sh.cfg.nonce}] mail:")
-    assert w2.startswith(f"[shadow plan-x:a3 #2 :{sh.cfg.nonce}] mail:")
+    assert w2.startswith(f"[shadow plan-x:a3 #2 :{sh.cfg.nonce}] steer:")
+    assert w3.startswith(f"[shadow plan-x:a3 #3 :{sh.cfg.nonce}] mail:")
     ledger = json.loads(
         (sh.cfg.ledger_dir / f"{safe_name('plan-x:a3')}.json").read_text())
-    assert ledger["wakes_seq"] == 2
+    assert ledger["wakes_seq"] == 3
     assert all(w["delivered"] for w in ledger["wakes"])
+
+
+def test_broker_done_event_survives_the_unwrap_with_its_kind(tmp_path):
+    """WP3 regression pin: a driver-envelope `{"event": {done…}}` NDJSON line
+    reaches the shell as a `done:` wake carrying the body — never as `mail:`
+    with the stringified wrapper (the df971d empty-tick defect)."""
+    import io
+    import subprocess as sp
+    from unittest.mock import patch
+
+    from edp_pool.shadow_spawner import _RxDriverAdapter
+
+    seen = []
+    ad = _RxDriverAdapter(
+        python="py", agent_home=str(tmp_path), broker_url="", pool_url="",
+        spec="rx.broker(me)", bindings={}, spec_dir=tmp_path / "specs",
+        name="t", on_event=seen.append, owner="plan-x:a3")
+    assert "--owner" in ad._argv and "plan-x:a3" in ad._argv
+
+    lines = [
+        json.dumps({"event": {"kind": "done", "from": "plan-x:a3",
+                              "body": {"action_id": "a3", "status": "done"}}}),
+        json.dumps({"error": "boom"}),
+    ]
+    fake = type("P", (), {"stdout": io.StringIO("\n".join(lines) + "\n")})()
+    with patch.object(ad, "_proc", fake):
+        ad._pump()
+    assert seen[0]["kind"] == "done"
+    assert seen[0]["body"] == {"action_id": "a3", "status": "done"}
+    assert seen[1]["kind"] == "alert" and seen[1]["body"] == {"error": "boom"}
 
 
 def test_dead_driver_rearmed_and_counted(tmp_path):

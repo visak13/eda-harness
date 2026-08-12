@@ -28,9 +28,11 @@ def test_shadow_flag(monkeypatch):
 
 
 def test_role_specs_cover_every_pool_role():
-    for role in ("worker", "planner", "reviewer", "specialist",
-                 "consult", "curiosity"):
+    # ("consult" left this list 2026-08-12 — its ROLE_SPECS/ROLE_HEARTBEAT_S
+    # rows were deleted with the retired consult shell role.)
+    for role in ("worker", "planner", "reviewer", "specialist", "curiosity"):
         assert role in ROLE_SPECS
+    assert "consult" not in ROLE_SPECS
 
 
 @pytest.fixture

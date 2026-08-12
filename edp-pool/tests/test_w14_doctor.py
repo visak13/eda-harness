@@ -155,12 +155,14 @@ def test_run_doctor_all_checks_run_and_healthy(tmp_path, monkeypatch):
 
     names = [c["name"] for c in report["checks"]]
     assert names == ["claude_binary", "broker", "pool", "phoenix",
-                     "seat_registry", "config_parity", "stale_locks"]
-    # v7 WS4: the two registry/parity checks WARN in a hermetic env (no
+                     "seat_registry", "config_parity", "foreground_model",
+                     "stale_locks"]
+    # v7 WS4: the registry/parity checks WARN in a hermetic env (no
     # EDP_AGENT_HOME) by design — absent config is staged-legacy, never an
     # error. Everything else must be strictly ok, and nothing may error.
     for c in report["checks"]:
-        if c["name"] in ("seat_registry", "config_parity"):
+        if c["name"] in ("seat_registry", "config_parity",
+                         "foreground_model"):
             assert c["status"] in ("ok", "warn"), c
         else:
             assert c["status"] == "ok", c
@@ -264,9 +266,57 @@ def test_doctor_endpoint_returns_checks_json(monkeypatch):
     body = resp.json()
     names = [c["name"] for c in body["checks"]]
     assert names == ["claude_binary", "broker", "pool", "phoenix",
-                     "seat_registry", "config_parity", "stale_locks"]
+                     "seat_registry", "config_parity", "foreground_model",
+                     "stale_locks"]
     # Phoenix down is a warn, so the endpoint still reports a well-formed
     # payload with the ok flag present.
     assert "ok" in body
     phoenix = next(c for c in body["checks"] if c["name"] == "phoenix")
     assert phoenix["status"] == "warn"
+
+
+# -- WP4 (2026-08-12): foreground-model parity check ------------------------
+def _write_registry(home, neuron_model):
+    import json
+    (home / "models.json").write_text(json.dumps({
+        "seats": {"judgment": {"model": neuron_model}},
+        "roles": {"neuron": "judgment"},
+    }), encoding="utf-8")
+
+
+def _write_pin(cfg_dir, model):
+    import json
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    (cfg_dir / "settings.json").write_text(
+        json.dumps({"model": model}), encoding="utf-8")
+
+
+def test_foreground_model_skew_warns(tmp_path, monkeypatch):
+    home = tmp_path / "agent"; home.mkdir()
+    _write_registry(home, "claude-opus-4-6")
+    cfg = tmp_path / "cfgdir"
+    _write_pin(cfg, "claude-fable-5[1m]")
+    monkeypatch.setenv("EDP_AGENT_HOME", str(home))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(cfg))
+    r = doctor.check_foreground_model()
+    assert r["status"] == "warn" and "SKEW" in r["detail"]
+
+
+def test_foreground_model_match_is_ok_mode_suffix_ignored(tmp_path, monkeypatch):
+    home = tmp_path / "agent"; home.mkdir()
+    _write_registry(home, "claude-opus-4-6")
+    cfg = tmp_path / "cfgdir"
+    _write_pin(cfg, "claude-opus-4-6[1m]")
+    monkeypatch.setenv("EDP_AGENT_HOME", str(home))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(cfg))
+    r = doctor.check_foreground_model()
+    assert r["status"] == "ok"
+
+
+def test_foreground_model_missing_settings_warns_not_errors(tmp_path, monkeypatch):
+    home = tmp_path / "agent"; home.mkdir()
+    _write_registry(home, "claude-opus-4-6")
+    monkeypatch.setenv("EDP_AGENT_HOME", str(home))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "nope"))
+    r = doctor.check_foreground_model()
+    assert r["status"] == "warn" and "not checked" in r["detail"]

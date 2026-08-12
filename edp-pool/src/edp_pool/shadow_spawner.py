@@ -57,7 +57,7 @@ ROLE_SPECS: dict[str, str] = {
     "worker": "rx.broker(me)",
     "reviewer": "rx.broker(me)",
     "curiosity": "rx.broker(me)",
-    "consult": "rx.broker(me)",
+    # ("consult" row deleted 2026-08-12 with the retired consult shell role.)
     "specialist": "rx.broker(me)",
     "planner": ("rx.merge(rx.broker(me), rx.worklog(plan_id), "
                 "rx.pool(scope=plan_id), rx.orphaned(plan_id), "
@@ -67,7 +67,7 @@ ROLE_SPECS: dict[str, str] = {
 #: default heartbeat per role (seconds) — reflex(pace) overrides live.
 ROLE_HEARTBEAT_S: dict[str, float] = {
     "worker": 300.0, "reviewer": 300.0, "curiosity": 300.0,
-    "consult": 300.0, "specialist": 600.0, "planner": 1800.0,
+    "specialist": 600.0, "planner": 1800.0,
 }
 
 
@@ -169,7 +169,8 @@ class _RxDriverAdapter:
 
     def __init__(self, *, python: str, agent_home: str, broker_url: str,
                  pool_url: str, spec: str, bindings: dict,
-                 spec_dir: Path, name: str, on_event) -> None:
+                 spec_dir: Path, name: str, on_event,
+                 owner: str = "") -> None:
         self._on_event = on_event
         self._proc: subprocess.Popen | None = None
         self._thread: threading.Thread | None = None
@@ -182,6 +183,11 @@ class _RxDriverAdapter:
         self._argv = [python, "-m", "edp_claude.reactive.driver",
                       "--spec-file", str(self._spec_path),
                       "--bindings-file", str(self._bindings_path)]
+        if owner:
+            # WP3 (2026-08-12): sensory self-echo filter — the driver drops
+            # events authored by the shell it wakes (the planner used to be
+            # woken by every line its own tools appended to its worklog).
+            self._argv += ["--owner", owner]
         self._env = {**os.environ,
                      "EDP_AGENT_HOME": agent_home,
                      "EDP_BROKER_URL": broker_url,
@@ -189,10 +195,16 @@ class _RxDriverAdapter:
         self._agent_home = agent_home
 
     def start(self) -> None:
+        # WP3 (2026-08-12): CREATE_NO_WINDOW — when the pool runs without a
+        # console, a bare console-subsystem child ALLOCATES a visible one;
+        # one window flash per driver (re)start was a major "shadow shell"
+        # source. Precedent: service.py neuron-driver spawn.
         self._proc = subprocess.Popen(
             self._argv, env=self._env, cwd=self._agent_home,
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-            text=True, encoding="utf-8", errors="replace")
+            text=True, encoding="utf-8", errors="replace",
+            creationflags=(getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                           | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)))
         self._thread = threading.Thread(target=self._pump, daemon=True)
         self._thread.start()
 
@@ -208,6 +220,17 @@ class _RxDriverAdapter:
                 event = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            # WP3 (2026-08-12): UNWRAP the driver envelope. run() emits one
+            # NDJSON object per emission with the payload nested under
+            # "event" — forwarding the wrapper erased every kind (the shadow
+            # read event["kind"] off the WRAPPER, so a broker `done` framed
+            # as a contentless "mail" wake — the empty-tick defect).
+            if isinstance(event, dict) and set(event) == {"event"}:
+                event = event["event"]
+            elif isinstance(event, dict) and (
+                    "error" in event or "completed" in event):
+                # driver lifecycle lines surface as alerts, not fake mail.
+                event = {"kind": "alert", "body": event}
             try:
                 self._on_event(event if isinstance(event, dict)
                                else {"body": event})
@@ -293,7 +316,7 @@ class ShadowSpawner(Spawner):
                     return False
                 return bool(plan.get("terminal_status"))
             return check
-        return lambda: False       # curiosity/consult/specialist self-close
+        return lambda: False       # curiosity/specialist self-close
 
     def _publish(self, handle: str):
         broker = self.legacy.broker_url
@@ -401,7 +424,8 @@ class ShadowSpawner(Spawner):
                 pool_url=self.legacy.pool_url or "",
                 spec=cfg.spec, bindings=self._bindings_for(role, handle),
                 spec_dir=self.shadow_dir / "specs",
-                name=safe, on_event=on_event)
+                name=safe, on_event=on_event,
+                owner=handle)
 
         sh = ShellShadow(
             cfg, shell_factory=shell_factory,

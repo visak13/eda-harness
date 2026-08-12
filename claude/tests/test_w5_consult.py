@@ -358,41 +358,30 @@ def test_the_convene_consult_spawn_path_is_unreachable(tmp_path):
     assert "convene_consult" not in {t.name for t in build_registry(ctx)}
 
 
-# ── 12. the client stays mechanical: no model → no `model` key ──────────────
-async def test_spawn_consult_client_omits_model_when_none():
-    """Tier POLICY lives in the tool (CONSULT_DEFAULT_MODEL); the client is
-    mechanical, exactly like its six W10a siblings — so a None model posts a
-    body with NO `model` key rather than inventing a default."""
-    c = _Client()
-    await HttpPool("http://p", c).spawn_consult("parent-1", "consult-abc")
+# ── 12. the client spawn path is DELETED with the role ──────────────────────
+def test_spawn_consult_client_path_is_deleted():
+    """2026-08-12 dead-surface sweep: `HttpPool.spawn_consult` (and its port /
+    stub siblings) went with the consult shell role — its only caller was the
+    deregistered ConveneConsult tool. A surviving client method would be a
+    spawn path to a role with no toolset row (the fail-open over-grant trap
+    test_w4_roles guards)."""
+    assert not hasattr(HttpPool, "spawn_consult")
+    from edp_claude.stubs.stub_pool import StubPool
+    assert not hasattr(StubPool, "spawn_consult")
+    # POSITIVE CONTROL: the sibling spawn methods survive.
+    assert hasattr(HttpPool, "spawn_reviewer")
 
-    assert "model" not in c.last_json
-    assert c.last_json == {
-        "role": "consult", "handle": "consult-abc",
-        "parent_session": "parent-1", "mode": "monitor",
-    }
 
-
-# ── 13. the activator file exists and honours its W5 contract ───────────────
-def test_consult_command_file_exists_and_honours_contract():
-    """The spawn emits `/consult` (activation_text falls back to `/{role}`),
-    which fails loudly as "Unknown command" if this file is absent."""
-    assert CONSULT_MD.exists(), f"missing activator: {CONSULT_MD}"
-    body = CONSULT_MD.read_text(encoding="utf-8")
-
-    # cheap grounding via the W1 digest — the whole reason W5 depends on W1
-    assert "get_recipe_digest" in body
-    # reads the question from the spawn brief / consult inbox
-    assert "check_inbox" in body
-    # optionally overlays the spec docs named in the brief
-    assert "get_specialist_docs" in body and "spec_ids" in body
-    # answers to the ASKER's inbox (reply routes back to the sender)
-    assert "reply(" in body
-    # records keep-worthy findings as a consult-authored decision
-    assert 'record_context(kind="decision"' in body
-    assert 'by="consult"' in body
-    # releases its own shell
-    assert "pool_close_self" in body
+# ── 13. the activator card is DELETED with the role ─────────────────────────
+def test_consult_command_file_is_gone():
+    """The card was the `/consult` activation target; with the spawn path
+    deleted no shell can ever receive it, and a live-looking card for an
+    unreachable role is exactly the dead surface the 2026-08-12 sweep
+    retired."""
+    assert not CONSULT_MD.exists(), (
+        f"{CONSULT_MD} is back — the consult shell role was retired 2026-08-12")
+    # POSITIVE CONTROL: the sweep looked at the real commands dir.
+    assert (COMMANDS / "worker.md").exists()
 
 
 # ── 14. registered for exactly the roles W5 names ───────────────────────────
@@ -421,12 +410,14 @@ def test_convene_consult_is_retired_everywhere():
     assert "consult_curiosity" in ROLE_TOOLSETS["neuron"]
 
 
-# ── 15. the consult role can actually run its own command file ──────────────
-def test_consult_role_surface_covers_the_verbs_consult_md_uses():
-    """Derived-floor discipline: every tool the activator tells the shell to
-    call must be on that role's surface, or the spawned console is starved."""
-    consult = ROLE_TOOLSETS["consult"]
-    for verb in ("check_inbox", "get_recipe_digest", "get_specialist_docs",
-                 "reply", "record_context", "read_object", "query_objects",
-                 "recall", "pool_close_self"):
-        assert verb in consult, f"/consult calls {verb} but it is off-surface"
+# ── 15. the role itself is gone (2026-08-12 dead-surface sweep) ─────────────
+def test_consult_role_row_is_gone_with_its_role():
+    """Block 15 pinned that the consult surface covered its own command file.
+    Both are deleted now — the verb retirement of 2026-07-25 left the role
+    unreachable, and the 2026-08-12 sweep removed the toolset row, the card,
+    the seat mapping and the spawn client together (atomicity: a row without a
+    spawn path is the fail-open trap in reverse)."""
+    assert "consult" not in ROLE_TOOLSETS
+    from edp_claude.tools.roles import CRUD_OBJECT_SCOPE, toolset_for_role
+    assert toolset_for_role("consult") is None
+    assert "consult" not in CRUD_OBJECT_SCOPE

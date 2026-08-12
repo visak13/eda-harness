@@ -101,25 +101,9 @@ class PoolPort(ABC):
         clean context, so review is as cheap as a worker (no chat replay).
         `session_id` pins a fresh `--session-id` (no `--resume`)."""
 
-    @abstractmethod
-    async def spawn_consult(
-        self, parent_id: str, consult_id: str,
-        mode: str = "monitor",
-        model: str | None = None,
-    ) -> ToolResult:
-        """DESIGN-v6 W5 (2026-07-09): the convened consult shell — an
-        on-demand advisor the USER can talk to directly. `mode="monitor"`
-        by default (a VISIBLE console the user types into; the whole point
-        of the role), unlike every other spawn which is headless.
-
-        Same consult-before-spawn pattern as curiosity/specialist: the
-        caller posts the {question, spec_ids, recipe_id} brief to
-        `consult_id`'s inbox FIRST, then spawns; `/consult` reads it on
-        activation. The pool needs NO change — its capacity cap applies
-        only to `role=="worker"` (service.py) and `activation_text` falls
-        back to `/{role}` for unmapped roles (pty_launcher.py), so the
-        spawn emits `/consult`. `model` carries the W10 tier (the caller
-        resolves consult's default, Opus)."""
+    # (spawn_consult — the DESIGN-v6 W5 convened-consult spawn — was DELETED
+    # in the 2026-08-12 dead-surface sweep with the consult shell role; its
+    # only caller was the deregistered ConveneConsult tool.)
 
     @abstractmethod
     async def liveness(self, handle: str) -> dict:

@@ -18,28 +18,11 @@ SKILL_ACCEPTANCE = "acceptance-review"
 STUCK_ATTEMPT_THRESHOLD = 2
 STUCK_VERIFY_FAILURES_THRESHOLD = 2
 
-# The consult tier the ladder names. Read from the ONE table (roles.MODEL_TIERS)
-# so a tier change cannot drift a hardcoded model id in here out of sync.
-# STRONGER-THAN-OPUS TIERS ARE NEVER AUTO-SELECTED — this resolves to Opus, and
-# a human must pass anything else explicitly.
-CONSULT_ROLE = "consult"
-
-
-def _consult_model() -> str:
-    """The model the escalation ladder names for the consult shell.
-
-    DEFERRED IMPORT, not laziness: `tools/roles.py` imports `tools/_tools.py`
-    (for ALL_TOOL_CLASSES) and `_tools.py` imports this package, so a
-    module-level `from ..tools.roles import …` here is a genuine import cycle.
-    Resolving inside the call keeps MODEL_TIERS the single source of truth —
-    which the brief requires to live beside ROLE_TOOLSETS — without one.
-
-    Note this reads the tier WITHOUT `allow_candidate_tier`: an escalation is
-    the ladder asking for the strongest sanctioned opinion, so it must never
-    resolve to a candidate even if one is someday added under ("consult", …)."""
-    from ..tools.roles import HOST_DEFAULT_MODEL, resolve_model_tier
-    tier = resolve_model_tier(CONSULT_ROLE)
-    return tier["model"] if tier else HOST_DEFAULT_MODEL
+# (The W10b consult-tier lookup — CONSULT_ROLE + `_consult_model`, which read
+# roles.MODEL_TIERS — was deleted in the 2026-08-12 dead-surface retirement
+# along with the tier table itself and the consult shell role. The escalation
+# instruction below no longer names a model: the advisory carries the question,
+# and how a raised question is answered is the parent's call.)
 
 
 def _ready_actions(p: Plan, live_action_ids: frozenset[str] = frozenset()):
@@ -342,9 +325,10 @@ def plan_escalation_instruction(
     the escalation costs exactly one tick and the plan proceeds; if nothing changes,
     the next tick dispatches or waits as it otherwise would.
 
-    ADVISORY, NOT AN ACTION. The instruction TELLS the planner to call
-    convene_consult(...). This function convenes nothing, spawns nothing, and
-    does no IO — it returns a description of a call the planner may ignore.
+    ADVISORY, NOT AN ACTION. The instruction TELLS the planner to raise the
+    auto-composed question via ask_above. This function convenes nothing,
+    spawns nothing, and does no IO — it returns a description of a call the
+    planner may ignore.
 
     Mutates only the latch (`p.escalation_emitted`), which is a bookkeeping
     mutation of the same class as the `p.state` advance its caller already makes.
@@ -371,8 +355,6 @@ def plan_escalation_instruction(
                 "action_id": a.action_id,
                 "recipe_id": p.recipe_id,
                 "question": question,
-                # consult -> opus, from MODEL_TIERS. Never auto-stronger.
-                "model": _consult_model(),
                 "signals": signals,
             },
             rationale=(
@@ -385,8 +367,7 @@ def plan_escalation_instruction(
                 "what you do with the answer via record_context. "
                 "NOTE: the spawned-consult verb this instruction used to name "
                 "was retired by operator ruling on 2026-07-25 (see "
-                "tools/roles.py `_OPERATOR_RETIRED`); args.model is retained "
-                "for compatibility and no longer selects a consult tier."
+                "tools/roles.py `_OPERATOR_RETIRED`)."
             ),
         )
     return None

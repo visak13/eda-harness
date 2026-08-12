@@ -198,24 +198,9 @@ class HttpPool(PoolPort):
             claude_session=session_id, **extra,
         )
 
-    async def spawn_consult(
-        self, parent_id: str, consult_id: str,
-        mode: str = "monitor",
-        model: str | None = None,
-    ) -> ToolResult:
-        # W5 (2026-07-09): the convened consult shell. There is no consult
-        # route on the pool and none is needed — /v1/spawn is generic, the
-        # capacity cap is worker-only, and activation_text falls back to
-        # `/consult`. `mode` is ALWAYS sent (monitor = a visible console the
-        # user types into — the role's purpose), so unlike `model` it is not
-        # omission-gated. `model` follows the W10a idiom: omitted when None
-        # so the body stays minimal; the TOOL layer resolves consult's Opus
-        # default, keeping tier POLICY out of this mechanical client.
-        extra = {"model": model} if model else {}
-        return await self._spawn(
-            "consult", consult_id, parent_session=parent_id, mode=mode,
-            **extra,
-        )
+    # (spawn_consult — the W5 convened-consult spawn — was DELETED in the
+    # 2026-08-12 dead-surface sweep with the consult shell role. Its only
+    # caller was the deregistered ConveneConsult tool.)
 
     async def liveness(self, handle: str) -> dict:
         # W7: return {state, last_output_ts} — state is the pid/fingerprint

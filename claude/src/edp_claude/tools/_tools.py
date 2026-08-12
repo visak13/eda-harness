@@ -403,8 +403,10 @@ def _progress_sig(ctx, handle_type: str, obj) -> tuple:
 
 def _spawn_model_for(role: str, task_class: str = "*", *,
                      allow_candidate_tier: bool = False) -> str | None:
-    """DESIGN-v6 W10b — the `model` a spawn passes to the pool, or None for the
-    host default (Opus). Thin shim over `roles.spawn_model_for`.
+    """The `model` a spawn passes to the pool — the seat-registry binding, or
+    None for no --model flag. Thin shim over `roles.spawn_model_for` (the
+    W10b tier-table fallback was retired 2026-08-12; the legacy params are
+    threaded and ignored).
 
     DEFERRED IMPORT, not laziness: `roles.py` imports THIS module for
     ALL_TOOL_CLASSES, so a module-level import here is a cycle. The existing
@@ -1926,6 +1928,106 @@ class _ReconcileOut(BaseModel):
     budget_advisory: str | None = None
 
 
+# ── WP1 stale-subscription reaping (the 265k-poll storm) ──────────────────
+# Subscriptions registered to a TERMINAL owner (a closed recipe, a terminal
+# plan) keep their driver processes polling forever — the measured storm was
+# 265k polls from drivers whose owners had long since finished. Reconcile
+# sweeps them: artifacts + index entry always; the driver process itself
+# best-effort when psutil is importable.
+_SUB_REAP_INTERVAL_SECS = 60.0
+_SUB_REAP_LAST_TS = 0.0            # module timestamp — at most one sweep/60s
+_SUB_REAP_CAP = 20                 # handles reaped per sweep (bounded work)
+
+
+def _sub_owner_terminal(ctx, handle: str) -> bool:
+    """Is the OWNER a registered subscription handle names terminal?
+    A handle matching a plan id (dash form, or the pool's colon form
+    `<recipe_id>:<step_id>`) is terminal when the plan's terminal_status is
+    set; a handle matching a recipe id is terminal when the recipe is
+    CLOSED. Unknown handles are NOT terminal (never reap what we cannot
+    attribute)."""
+    try:
+        candidates = [handle]
+        if ":" in handle:
+            candidates.append(handle.replace(":", "-", 1))
+        for cand in candidates:
+            if ctx.plans.exists(cand):
+                return ctx.plans.load(cand).terminal_status is not None
+        if ctx.recipes.exists(handle):
+            return ctx.recipes.load(handle).state == RecipeState.CLOSED
+    except Exception:  # noqa: BLE001 — an unreadable owner is not terminal
+        return False
+    return False
+
+
+def _kill_stale_drivers(root: Path, sids: list[str]) -> int:
+    """Best-effort kill of still-running reactive driver processes serving
+    the reaped subscriptions: a process whose cmdline contains
+    `edp_claude.reactive.driver` AND one of the reaped sub ids (or the
+    handle's spec-file path). Uses psutil WHEN IMPORTABLE — the claude
+    package does not declare a psutil dependency, so when the import fails
+    the kill is skipped entirely and only artifacts + index entries are
+    removed (documented contract; do NOT add the dependency)."""
+    try:
+        import psutil
+    except ImportError:
+        return 0
+    tokens = set(sids) | {(Path(root) / f"{s}.spec").as_posix() for s in sids}
+    killed = 0
+    try:
+        for proc in psutil.process_iter(["pid", "cmdline"]):
+            try:
+                cmd = " ".join(proc.info.get("cmdline") or [])
+                if ("edp_claude.reactive.driver" in cmd
+                        and any(t in cmd for t in tokens)):
+                    proc.kill()
+                    killed += 1
+            except Exception:  # noqa: BLE001 — per-proc errors never abort
+                continue
+    except Exception:  # noqa: BLE001
+        pass
+    return killed
+
+
+def _reap_terminal_subscriptions(ctx, root: Path) -> list[str]:
+    """Sweep `.reactive` subscriptions whose owning handle is TERMINAL
+    (see _sub_owner_terminal): delete the artifact triplet
+    (<sid>.spec / .bindings.json / .effect.json), unregister the (handle,
+    sid) pair from handle_index.json, and best-effort kill any lingering
+    driver process (psutil-gated — skipped when psutil is not importable;
+    artifacts + index are always cleaned). Capped at _SUB_REAP_CAP handles
+    per sweep. Returns the reaped sub ids. Never raises past its caller's
+    try/except — reaping must never break reconcile."""
+    from ..reactive import handle_index as _hindex
+
+    root = Path(root)
+    index = _hindex._load(root)
+    reaped: list[str] = []
+    handles_done = 0
+    for handle, sids in list(index.items()):
+        if handles_done >= _SUB_REAP_CAP:
+            break
+        if not _sub_owner_terminal(ctx, handle):
+            continue
+        for sid in list(sids):
+            for suffix in (".spec", ".bindings.json", ".effect.json"):
+                p = root / f"{sid}{suffix}"
+                try:
+                    if p.exists():
+                        p.unlink()
+                except OSError:
+                    pass
+            _hindex.unregister_subscription(root, handle, sid)
+            reaped.append(sid)
+        handles_done += 1
+        _log.info("terminal_subscription_reaped",
+                  f"reaped {len(sids)} subscription(s) of terminal owner "
+                  f"{handle}", handle=handle, sids=list(sids))
+    if reaped:
+        _kill_stale_drivers(root, reaped)
+    return reaped
+
+
 class Reconcile(_ClaudeTool):
     """Sync the recipe/plan RECORD to external reality: poll the broker /
     pool / plan file and make the DETERMINISTIC record update (mark a step
@@ -1943,6 +2045,17 @@ class Reconcile(_ClaudeTool):
     OutputModel = _ReconcileOut
 
     async def _run(self, m: _NAIn):
+        # WP1: reap subscriptions of terminal owners — at most once per 60s
+        # per process, and NEVER allowed to break the reconcile itself.
+        global _SUB_REAP_LAST_TS
+        try:
+            _now_ts = time.time()
+            if _now_ts - _SUB_REAP_LAST_TS >= _SUB_REAP_INTERVAL_SECS:
+                _SUB_REAP_LAST_TS = _now_ts
+                _reap_terminal_subscriptions(
+                    self.ctx, self.ctx.recipes.root.parent / ".reactive")
+        except Exception:  # noqa: BLE001 — reaping never breaks reconcile
+            pass
         if m.handle_type == "recipe":
             if not self.ctx.recipes.exists(m.handle):
                 return _precondition(f"no recipe {m.handle!r}")
@@ -3203,6 +3316,11 @@ class _AddActionIn(BaseModel):
     # EDP_V7_WRITE_GATES=1 until the boot docs teach the field (WS4) —
     # flipping the env flag is the cutover, not a code edit.
     serves: list[str] = []
+    # WP1 G-SKIP/G-RUNS: explicit gate declaration. None (default) = DERIVE:
+    # gate=True when `serves` is non-empty AND `verify` carries an executable
+    # check ({"check": ...}). An explicit True/False from the planner wins
+    # over the derivation.
+    gate: bool | None = None
 
 
 def _v7_gates_on() -> bool:
@@ -3353,6 +3471,16 @@ class AddAction(_ClaudeTool):
                     f"update_object first, or close the action on worker "
                     f"self-verification with evidence. A review leg is not "
                     f"free; blanket per-action review is the refusal class.")
+        # WP1 G-SKIP/G-RUNS gate derivation: an action that SERVES a declared
+        # outcome and carries an EXECUTABLE acceptance check (verify.check —
+        # the deterministic file_exists / file_min_bytes / glob_matches /
+        # command shapes) is a GATE action: it cannot be skipped without a
+        # recorded user answer, and its `done` requires >=1 real run
+        # (command + exit_code) in acceptance.runs. An explicit `gate` input
+        # from the planner wins over the derivation.
+        gate_val = (m.gate if m.gate is not None
+                    else bool(m.serves) and bool(
+                        m.verify and m.verify.get("check")))
         p.actions.append(Action(
             action_id=m.action_id,
             description=m.description,
@@ -3364,6 +3492,7 @@ class AddAction(_ClaudeTool):
                 expected=m.acceptance_expected,
                 verify=m.verify,
             ),
+            gate=gate_val,
             # MULTI-SPEC: the canonical list wins; the singular descriptor is
             # folded in by the Action load shim when only it is supplied.
             specialization=m.specialization,
@@ -3945,7 +4074,17 @@ class AddStep(_ClaudeTool):
 
 class _CloseRecipeIn(BaseModel):
     recipe_id: str
-    final_outcome: dict  # {"status": "...", "summary": "..."}
+    # Shape: {"status": <succeeded|partial|failed|abandoned>, "summary": str}.
+    # WP0 (2026-08-12): the status set is validated up front in _run — this
+    # verb had a 37.5% failure rate with 742 retries in the log corpus, much
+    # of it callers discovering the contract one refusal at a time.
+    final_outcome: dict
+    # WP1 G-OUTCOME: {outcome_id: override_ref} — each ref must resolve to a
+    # recorded user_gate_answer whose gate_target is
+    # "G-OUTCOME:<recipe_id>:<outcome_id>". An unmet outcome closes ONLY met
+    # (mark_outcome_met) or USER-waived via one of these; never on the
+    # orchestrator's say-so.
+    outcome_waivers: dict[str, str] = {}
 
 
 class CloseRecipe(_ClaudeTool):
@@ -3963,6 +4102,16 @@ class CloseRecipe(_ClaudeTool):
     async def _run(self, m: _CloseRecipeIn):
         if not self.ctx.recipes.exists(m.recipe_id):
             return _precondition(f"no recipe {m.recipe_id!r}")
+        _status = (m.final_outcome or {}).get("status")
+        # "done" tolerated as a legacy synonym for succeeded (the handler's
+        # own `status in ("succeeded", "done")` branch) — not advertised.
+        if _status not in ("succeeded", "partial", "failed", "abandoned",
+                           "done"):
+            return _precondition(
+                f"final_outcome.status is {_status!r} — it must be one of "
+                "succeeded | partial | failed | abandoned, alongside a "
+                "'summary' string: final_outcome={'status': ..., "
+                "'summary': ...}.")
         r = self.ctx.recipes.load(m.recipe_id)
         # v2.1: reconcile steps whose plan is already terminal-succeeded
         # (the map catches up to reality), THEN guard. A `succeeded`
@@ -3993,24 +4142,45 @@ class CloseRecipe(_ClaudeTool):
                     "genuinely incomplete. The recipe must not report "
                     "success over unfinished steps."
                 )
+            # WP1 G-STEP (close-side laundering check): a spawn_planner
+            # step showing `done` whose plan never reached terminal-
+            # succeeded is a LAUNDERED step (the df971d 10/10-done shape) —
+            # unless a recorded `step_forced_done` override event exists
+            # for it. The reconcile catch-up loop above already trued up
+            # honestly-finished steps.
+            laundered = self._laundered_steps(r)
+            if laundered:
+                targets = [f"G-STEP:{r.recipe_id}:{sid}" for sid in laundered]
+                return _precondition(
+                    f"cannot close {status!r} — steps {laundered} are "
+                    "marked done but their plans never reached "
+                    "terminal-succeeded and no recorded user override "
+                    "(step_forced_done) exists for them. A done step whose "
+                    "plan didn't finish is a laundered step. Either drive "
+                    "each plan to terminal, or force each step done with a "
+                    f"recorded user answer (gate targets: {targets}). "
+                    + _gate_override_howto(targets[0])
+                )
             # 2026-05-24: success requires VERIFIED outcomes, not just
             # finished steps (the 'succeeded with met:false' gap). Each
             # outcome must be marked met (mark_outcome_met, set from a
-            # reviewer-fork verdict + user confirm).
-            unmet = [
-                o.id for o in r.comprehension.expected_outcomes
-                if not o.met
-            ]
-            if unmet:
-                return _precondition(
-                    f"cannot close {status!r} — outcomes {unmet} are not "
-                    "verified (met=false). Have the planner's reviewer leg "
-                    "confirm the deliverable meets each outcome's "
-                    "verification, then "
-                    "mark_outcome_met(outcome_id, evidence). Or close "
-                    "'partial' if an outcome genuinely wasn't verified. "
-                    "The recipe must not claim success it didn't verify."
-                )
+            # reviewer-fork verdict + user confirm). WP1 G-OUTCOME: an
+            # unmet outcome may instead be USER-waived via a recorded
+            # user_gate_answer ref in `outcome_waivers`.
+            refusal = self._apply_outcome_waivers(r, m, status)
+            if refusal is not None:
+                return refusal
+        elif (status == "partial" and r.steps
+                and all(s.status == "done" for s in r.steps)):
+            # WP1 G-OUTCOME, laundering shape: "partial" with EVERY step
+            # done and outcomes unmet is the df971d 'all done, nothing met'
+            # close wearing an honest label — it claims the work finished
+            # while nothing was verified. Same rule as success: each unmet
+            # outcome must be met or USER-waived. A plain partial/failed/
+            # abandoned close over genuinely unfinished steps stays free.
+            refusal = self._apply_outcome_waivers(r, m, status)
+            if refusal is not None:
+                return refusal
         # W3 (DESIGN-v6 §W3): WARN — never block — when the recipe closes with
         # untriaged flow-back learnings (discovered in the field but never
         # accept/reject-ed). Emitted onto the recipe's flowback trail so the
@@ -4028,6 +4198,67 @@ class CloseRecipe(_ClaudeTool):
         r.final_outcome = m.final_outcome
         self.ctx.recipes.save(r)
         return Tool.ok(_Ok())
+
+    def _laundered_steps(self, r) -> list[str]:
+        """WP1 G-STEP close check: done spawn_planner steps whose plan is
+        not terminal-succeeded AND that carry no recorded step_forced_done
+        override event."""
+        forced = {
+            ev.get("step_id")
+            for ev in self.ctx.recipes.read_events_tail(
+                r.recipe_id, kinds=["step_forced_done"], limit=0)
+        }
+        out: list[str] = []
+        for s in r.steps:
+            if s.execution != "spawn_planner" or s.status != "done":
+                continue
+            if s.step_id in forced:
+                continue
+            plan = self.ctx.plans.find_by_step(r.recipe_id, s.step_id)
+            if (plan is not None
+                    and plan.state == PlanState.TERMINAL
+                    and plan.terminal_status == "succeeded"):
+                continue
+            out.append(s.step_id)
+        return out
+
+    def _apply_outcome_waivers(self, r, m: _CloseRecipeIn, status: str):
+        """WP1 G-OUTCOME: each unmet outcome must be met, already waived, or
+        waived NOW via a validating `outcome_waivers` ref. Stamps
+        waived/waiver_ref + appends an `outcome_waived` event per waiver.
+        Returns a refusal (ToolError) or None (all outcomes accounted for).
+        The caller saves the recipe on the successful close path."""
+        still_unmet: list[str] = []
+        for o in r.comprehension.expected_outcomes:
+            if o.met or o.waived:
+                continue
+            ref = (m.outcome_waivers or {}).get(o.id)
+            gate_target = f"G-OUTCOME:{r.recipe_id}:{o.id}"
+            if ref and _gate_override_ok(self.ctx, r.recipe_id, ref,
+                                         gate_target):
+                o.waived = True
+                o.waiver_ref = ref
+                self.ctx.recipes.append_worklog(r.recipe_id, {
+                    "kind": "outcome_waived", "outcome_id": o.id,
+                    "override_ref": ref, "gate_target": gate_target,
+                })
+                continue
+            still_unmet.append(o.id)
+        if still_unmet:
+            targets = [f"G-OUTCOME:{r.recipe_id}:{oid}"
+                       for oid in still_unmet]
+            return _precondition(
+                f"cannot close {status!r} — outcomes {still_unmet} are not "
+                "verified (met=false) and not user-waived. Have the "
+                "planner's reviewer leg confirm the deliverable meets each "
+                "outcome's verification, then mark_outcome_met(outcome_id, "
+                "evidence); or the USER may waive an outcome — pass "
+                "outcome_waivers={<outcome_id>: <override_ref>} with a ref "
+                f"recorded against its gate target (targets: {targets}). "
+                "The recipe must not claim success it didn't verify. "
+                + _gate_override_howto(targets[0])
+            )
+        return None
 
 
 # ── suspend_recipe (DESIGN-v6 §W11) ───────────────────────────────────────
@@ -4832,46 +5063,20 @@ class ResumeRecipe(_ClaudeTool):
         return True
 
 
-# ── record_step / record_step_result ──────────────────────────────────────
-class _StepIn(BaseModel):
-    recipe_id: str
-    step: dict
-
-
-class _StepOut(BaseModel):
-    step_id: str
-
-
-class RecordStep(_ClaudeTool):
-    """Write ONE whole step dict onto the recipe (upsert by step_id) —
-    the LOW-LEVEL escape hatch when you must set every field at once
-    (e.g. reconstructing a step from a snapshot). For normal work prefer
-    the intent tools: `add_step` to append (it generates the id),
-    `update_object('step', ids=…, patch=…)` to edit specific fields with
-    advisory guards, `record_step_result` to mark completion. This tool
-    replaces the matching step VERBATIM with what you pass — no guards,
-    no advisories — so a malformed dict here corrupts the map."""
-
-    name = "record_step"
-    InputModel = _StepIn
-    OutputModel = _StepOut
-
-    async def _run(self, m: _StepIn):
-        if not self.ctx.recipes.exists(m.recipe_id):
-            return _precondition(f"no recipe {m.recipe_id!r}")
-        r = self.ctx.recipes.load(m.recipe_id)
-        from ..schemas import RecipeStep
-
-        step = RecipeStep.model_validate(m.step)
-        r.steps = [s for s in r.steps if s.step_id != step.step_id] + [step]
-        self.ctx.recipes.save(r)
-        return Tool.ok(_StepOut(step_id=step.step_id))
-
-
+# ── record_step_result ─────────────────────────────────────────────────────
+# (The RecordStep class — `record_step`, retired W6.4 and deregistered by
+# v7 P0 — was DELETED outright in the 2026-08-12 dead-surface sweep: it was
+# referenced by nothing (no registration, no delegation, no test). Its
+# guarded successors are add_step / update_object("step", …) /
+# record_step_result below.)
 class _StepResIn(BaseModel):
     recipe_id: str
     step_id: str
     result: dict
+    # WP1 G-STEP: recorded user_gate_answer ref (answer_id) validating
+    # against gate_target "G-STEP:<recipe_id>:<step_id>" — the ONLY way to
+    # flip a spawn_planner step done while its plan is not terminal-succeeded.
+    override_ref: str | None = None
 
 
 def _state_synthesis_md(ctx, r) -> str:
@@ -4932,6 +5137,13 @@ class RecordStepResult(_ClaudeTool):
         r = self.ctx.recipes.load(m.recipe_id)
         for s in r.steps:
             if s.step_id == m.step_id:
+                # WP1 G-STEP: a spawn_planner step flips done only off its
+                # plan's terminal-succeeded state, or a recorded user
+                # override (override_ref -> user_gate_answer artifact).
+                refusal, _forced = _check_g_step(
+                    self.ctx, m.recipe_id, s, m.override_ref)
+                if refusal:
+                    return _precondition(refusal)
                 s.status = "done"
                 s.outputs = list(m.result.get("outputs", []))
                 if r.state == RecipeState.EXECUTING:
@@ -5040,13 +5252,43 @@ def _reject_dispatch_prose(description: str) -> str | None:
 class _ActIn(BaseModel):
     plan_id: str
     action_id: str
-    status: str
+    # WP0 (2026-08-12): closed set from ACTION_TRANSITIONS — was a bare `str`.
+    # 427 tool_precondition failures in the log corpus were bad status/arg
+    # combinations; the schema now names the legal values itself.
+    status: Literal["in_progress", "verify", "done", "failed",
+                    "skipped", "pending"]
     evidence: str | None = None
+    # WP1 G-SKIP: recorded user_gate_answer ref (answer_id) validating
+    # against "G-SKIP:<plan_id>:<action_id>" — required to skip a GATE
+    # action. Ignored for non-gate actions.
+    override_ref: str | None = None
+    # WP1 G-RUNS: execution evidence — {command: str, exit_code: int,
+    # output_tail?: str, at?: str} entries, appended to acceptance.runs.
+    # REQUIRED (>=1 valid entry) for `done` on a GATE action; accepted and
+    # persisted, never required, on non-gate actions.
+    runs: list[dict] = []
 
 
 class _ActStatusOut(BaseModel):
     status: str        # the action's resulting status (done / failed / …)
     detail: str = ""   # reserved; empty on the d30 pure-write path
+
+
+def _valid_run_entries(runs: list[dict] | None) -> list[dict]:
+    """WP1 G-RUNS: the entries of `runs` that constitute execution proof — a
+    dict with a non-empty `command` string and an integer `exit_code` (bool
+    excluded: True is not an exit code). Deterministic shape check only; the
+    dual worker/reviewer gate remains the judge of MEANING (d30)."""
+    out: list[dict] = []
+    for entry in runs or []:
+        if not isinstance(entry, dict):
+            continue
+        cmd = entry.get("command")
+        code = entry.get("exit_code")
+        if (isinstance(cmd, str) and cmd.strip()
+                and isinstance(code, int) and not isinstance(code, bool)):
+            out.append(entry)
+    return out
 
 
 #: s26 item 1 — statuses after which the executing shell has nothing left to
@@ -5125,11 +5367,48 @@ class RecordActionStatus(_ClaudeTool):
         for a in p.actions:
             if a.action_id != m.action_id:
                 continue
+            valid_runs = _valid_run_entries(m.runs)
+            # WP1 G-SKIP: skipping a GATE action needs a recorded USER
+            # answer — the df971d E2E gate was skipped on the
+            # orchestrator's own say-so, which is exactly what a gate
+            # action exists to make impossible.
+            if m.status == "skipped" and getattr(a, "gate", False):
+                gate_target = f"G-SKIP:{m.plan_id}:{m.action_id}"
+                if not _gate_override_ok(self.ctx, p.recipe_id,
+                                         m.override_ref, gate_target):
+                    return _precondition(
+                        f"G-SKIP: action {m.action_id!r} is a GATE action "
+                        "(it protects a declared outcome with an executable "
+                        "acceptance check) — it cannot be skipped on the "
+                        "orchestrator's say-so. Either run it, or the USER "
+                        "skips it. " + _gate_override_howto(gate_target))
+                self.ctx.plans.append_worklog(p.plan_id, {
+                    "kind": "gate_skipped_by_user",
+                    "action_id": m.action_id,
+                    "override_ref": m.override_ref,
+                    "gate_target": gate_target,
+                })
             if m.status == "done":
                 if not m.evidence:
                     return _precondition(
                         f"action {m.action_id} -> done requires evidence; "
                         "pass `evidence`"
+                    )
+                # WP1 G-RUNS: a GATE action's `done` requires EXECUTION
+                # PROOF — >=1 runs entry with the exact command and its
+                # integer exit code. Evidence prose is a claim about a run;
+                # it is not the run (the df971d py_compile "smoke test").
+                if getattr(a, "gate", False) and not valid_runs:
+                    return _precondition(
+                        f"G-RUNS: action {m.action_id!r} is a GATE action — "
+                        "`done` requires `runs`: at least one entry "
+                        "{'command': <the exact command executed>, "
+                        "'exit_code': <integer result>, 'output_tail': "
+                        "<last output lines>, 'at': <ISO ts>}. Evidence "
+                        "PROSE is not execution proof: the acceptance check "
+                        "must have actually run. Execute acceptance.verify "
+                        "in your shell, then re-record with runs=[...]. "
+                        "Nothing was recorded."
                     )
                 # W2 leg 3 (fail-closed constraint guard, DESIGN-v6 §W2):
                 # a completion whose text matches an ACTIVE
@@ -5167,6 +5446,10 @@ class RecordActionStatus(_ClaudeTool):
                 # gate before the step closes. The record path NEVER routes to
                 # `verify` — that state loses its only writer here.
                 a.acceptance.actual = m.evidence
+                # WP1: append the run ledger (gate actions: required above;
+                # non-gate: persisted whenever provided).
+                if valid_runs:
+                    a.acceptance.runs = list(a.acceptance.runs) + valid_runs
                 a.status = "done"
                 # Legibility (principle-6 deterministic worklog write, no
                 # LLM): a status transition is surfaced UNIFORMLY on the
@@ -5189,6 +5472,11 @@ class RecordActionStatus(_ClaudeTool):
             a.status = m.status  # type: ignore[assignment]
             if m.evidence:
                 a.acceptance.actual = m.evidence
+            # WP1: the run ledger persists on any status when provided (a
+            # failed run is evidence too — it is how verify_failures gets
+            # its honest history).
+            if valid_runs:
+                a.acceptance.runs = list(a.acceptance.runs) + valid_runs
             # W10b SEAM (a) — the WORKER's own report that it ran the acceptance
             # gate in its own shell (d30) and the gate did NOT pass. This is one
             # of exactly two places a failed acceptance cycle is REPORTED; the
@@ -5340,35 +5628,137 @@ class RecordActionStatus(_ClaudeTool):
 
 
 # ── record_user_answer ────────────────────────────────────────────────────
+# ── WP1 (2026-08-12) — recorded user gate answers ─────────────────────────
+# The df971d post-mortem: a recipe closed 10/10 steps "done" while 3 plans
+# never reached terminal, 5/5 outcomes met:false, a gate action skipped on
+# the orchestrator's own say-so. The WP1 gates (G-STEP / G-OUTCOME / G-SKIP /
+# G-RUNS) make that structurally impossible; the ONLY override is a RECORDED
+# ARTIFACT — a `user_gate_answer` event carrying the user's verbatim words,
+# minted by record_user_answer(gate_target=...) and referenced by its
+# answer_id. Free-text quote params were explicitly rejected by the operator
+# (agents fabricate them); an answer_id must resolve to a recorded event.
+def _gate_override_ok(ctx, recipe_id: str, override_ref: str | None,
+                      gate_target: str) -> bool:
+    """True iff `override_ref` names a recorded `user_gate_answer` event on
+    this recipe whose gate_target matches EXACTLY. Deterministic read of the
+    events trail (principle 6) — no prose, no LLM."""
+    if not (override_ref and recipe_id):
+        return False
+    try:
+        if not ctx.recipes.exists(recipe_id):
+            return False
+        events = ctx.recipes.read_events_tail(
+            recipe_id, kinds=["user_gate_answer"], limit=0)
+    except Exception:  # noqa: BLE001 — an unreadable trail is NOT an override
+        return False
+    for ev in events:
+        body = ev.get("body") or {}
+        if (body.get("answer_id") == override_ref
+                and body.get("gate_target") == gate_target):
+            return True
+    return False
+
+
+def _gate_override_howto(gate_target: str) -> str:
+    """The teaching tail every WP1 gate refusal carries: names the EXACT
+    gate_target and the recorded-artifact override path. The ANSWER must come
+    from the REAL USER — AWAIT_USER, ask, record, retry."""
+    return (
+        "To override this gate you need the REAL USER's answer, recorded as "
+        "an artifact: AWAIT_USER -> ask the user -> record_user_answer("
+        f"recipe_id=..., gate_target={gate_target!r}, answer=<the user's "
+        "verbatim words>) -> retry this call with override_ref=<the returned "
+        "answer_id>. Never write the answer yourself — a fabricated override "
+        "is the exact failure this gate exists to prevent."
+    )
+
+
+def _check_g_step(ctx, recipe_id: str, step, override_ref: str | None):
+    """WP1 G-STEP — a spawn_planner step cannot be flipped `done` unless its
+    plan is TERMINAL + terminal_status='succeeded', OR the call carries a
+    recorded user override. Returns (refusal_msg | None, forced: bool);
+    `forced=True` means the override validated and a `step_forced_done`
+    event was appended to the recipe trail (CloseRecipe's laundering check
+    reads it)."""
+    if getattr(step, "execution", None) != "spawn_planner" \
+            or step.status == "done":
+        return None, False
+    plan = ctx.plans.find_by_step(recipe_id, step.step_id)
+    if (plan is not None
+            and plan.state == PlanState.TERMINAL
+            and plan.terminal_status == "succeeded"):
+        return None, False
+    gate_target = f"G-STEP:{recipe_id}:{step.step_id}"
+    if _gate_override_ok(ctx, recipe_id, override_ref, gate_target):
+        ctx.recipes.append_worklog(recipe_id, {
+            "kind": "step_forced_done", "step_id": step.step_id,
+            "override_ref": override_ref, "gate_target": gate_target,
+        })
+        return None, True
+    if plan is None:
+        plan_desc = "no plan exists for it"
+    else:
+        plan_desc = (
+            f"its plan {plan.plan_id!r} is "
+            f"state={getattr(plan.state, 'value', plan.state)!r} / "
+            f"terminal_status={plan.terminal_status!r}")
+    return (
+        f"G-STEP: step {step.step_id!r} is execution='spawn_planner' and "
+        f"cannot be marked done — {plan_desc}, not terminal-succeeded. A "
+        "step is done when its PLAN finished, not when the orchestrator "
+        "says so (the df971d laundering class). Drive the plan to terminal "
+        "via next_action first. " + _gate_override_howto(gate_target),
+        False,
+    )
+
+
 class _UAIn(BaseModel):
     recipe_id: str
-    # branch_id (comprehension-branch resolution) and assumption_id (W8
-    # load-bearing-assumption ack/reject) are MUTUALLY EXCLUSIVE modes —
-    # exactly one is set. Both default None so the schema widens without
-    # breaking the legacy branch_id-only callers.
+    # branch_id (comprehension-branch resolution), assumption_id (W8
+    # load-bearing-assumption ack/reject) and gate_target (WP1 recorded gate
+    # answer) are MUTUALLY EXCLUSIVE modes — exactly one is set. All default
+    # None so the schema widens without breaking legacy branch_id callers.
     branch_id: str | None = None
     assumption_id: str | None = None
+    # WP1: the exact gate string a refusing gate named (e.g.
+    # "G-STEP:<recipe_id>:<step_id>"). `answer` must be the user's VERBATIM
+    # words (>=10 chars). Returns `answer_id` — the recorded-artifact ref the
+    # gated call then carries as `override_ref`.
+    gate_target: str | None = None
     answer: str
     by: str = "neuron"
+
+
+class _UAOut(BaseModel):
+    ok: bool = True
+    # WP1 gate mode only: the recorded user_gate_answer's id (the
+    # override_ref a gated call carries). None on branch/assumption modes.
+    answer_id: str | None = None
 
 
 class RecordUserAnswer(_ClaudeTool):
     name = "record_user_answer"
     InputModel = _UAIn
-    OutputModel = _Ok
+    OutputModel = _UAOut
 
     async def _run(self, m: _UAIn):
-        if m.branch_id and m.assumption_id:
+        modes = [x for x in (m.branch_id, m.assumption_id, m.gate_target) if x]
+        if len(modes) > 1:
             return _precondition(
-                "branch_id and assumption_id are mutually exclusive — pass "
-                "exactly one (branch_id resolves a comprehension branch; "
-                "assumption_id acks/rejects a W8 load-bearing assumption).")
+                "branch_id, assumption_id and gate_target are mutually "
+                "exclusive — pass exactly one (branch_id resolves a "
+                "comprehension branch; assumption_id acks/rejects a W8 "
+                "load-bearing assumption; gate_target records the user's "
+                "verbatim answer for a WP1 gate override).")
+        if m.gate_target:
+            return await self._answer_gate(m)
         if m.assumption_id:
             return await self._answer_assumption(m)
         if not m.branch_id:
             return _precondition(
-                "record_user_answer needs a branch_id (comprehension branch) "
-                "or an assumption_id (W8 assumption ack/reject).")
+                "record_user_answer needs a branch_id (comprehension branch), "
+                "an assumption_id (W8 assumption ack/reject) or a gate_target "
+                "(WP1 gate override).")
         r = self.ctx.recipes.load(m.recipe_id)
         for b in r.comprehension.branches:
             if b.id == m.branch_id:
@@ -5379,8 +5769,32 @@ class RecordUserAnswer(_ClaudeTool):
                     if q.get("for_branch") != m.branch_id
                 ]
                 self.ctx.recipes.save(r)
-                return Tool.ok(_Ok())
+                return Tool.ok(_UAOut())
         return _precondition(f"no branch {m.branch_id!r}")
+
+    async def _answer_gate(self, m: _UAIn):
+        """WP1 gate-answer mode: record the REAL USER's verbatim words as a
+        durable `user_gate_answer` event and return its `answer_id` — the
+        recorded artifact a refused gate call then carries as `override_ref`.
+        The answer is the user's words, not the agent's: an orchestrator that
+        writes its own quote here is fabricating authorization."""
+        if not self.ctx.recipes.exists(m.recipe_id):
+            return _precondition(f"no recipe {m.recipe_id!r}")
+        answer = (m.answer or "").strip()
+        if len(answer) < 10:
+            return _precondition(
+                f"gate_target mode requires `answer` to be the user's "
+                f"VERBATIM words (>=10 chars; got {len(answer)}). Go back to "
+                "the user (AWAIT_USER), ask about the gate "
+                f"{m.gate_target!r}, and record what THEY said — a "
+                "one-word or empty answer is not a decision the user made.")
+        answer_id = str(uuid.uuid4())
+        _emit_recipe_event(self.ctx, "user_gate_answer", {
+            "answer_id": answer_id,
+            "gate_target": m.gate_target,
+            "answer": answer,
+        }, recipe_id=m.recipe_id)
+        return Tool.ok(_UAOut(answer_id=answer_id))
 
     async def _answer_assumption(self, m: _UAIn):
         """W8 assumption ack/reject mode. `answer` carries the verdict:
@@ -5407,7 +5821,7 @@ class RecordUserAnswer(_ClaudeTool):
             a.acked_by = m.by
             a.acked_at = _now().isoformat()
             self.ctx.recipes.save(r)
-            return Tool.ok(_Ok())
+            return Tool.ok(_UAOut())
         if verdict in ("reject", "rejected", "no", "deny", "denied"):
             a.status = "rejected"
             r.context.rejected_options.append(
@@ -5419,7 +5833,7 @@ class RecordUserAnswer(_ClaudeTool):
                 )
             )
             self.ctx.recipes.save(r)
-            return Tool.ok(_Ok())
+            return Tool.ok(_UAOut())
         return _precondition(
             f"assumption_id mode needs answer='ack' or 'reject' (got "
             f"{m.answer!r}).")
@@ -6612,8 +7026,8 @@ class _SpawnPlannerIn(BaseModel):
     step_id: str
     # W8 guard-wiring note / W10a: thread an optional per-spawn model tier at
     # the TOOL layer — the client/port/stub already accept it, only this
-    # passthrough was pending. Planner spawns pass None today (host default =
-    # Opus; planner/reviewer/specialist stay Opus per MODEL_TIERS), so
+    # passthrough was pending. Planner spawns pass None today (the seat
+    # registry, models.json, binds each role's model at the spawn seam), so
     # behaviour is unchanged; the param completes the plumbing.
     model: str | None = None
 
@@ -7032,20 +7446,13 @@ class PoolSpawnWorker(_ClaudeTool):
         # the pool spawn; when None the spawn carries no model → the host
         # default tier (Opus).
         #
-        # W10b: the TABLE (roles.MODEL_TIERS) is the FALLBACK when the action
-        # carries no explicit override. `task_class` defaults to "*" and
-        # `allow_candidate_tier` to False, so a caller that names no task_class
-        # resolves to the Opus default row → None → no --model flag,
-        # byte-identical to pre-W10b.
-        #
-        # ONE thing now yields Sonnet: a caller deliberately opting into a
-        # CANDIDATE tier via allow_candidate_tier (USER RULING, 2026-07-16: Opus
-        # is the default for every role, Sonnet is opt-in only). The 2026-07-10
-        # flip of ("worker","coding") to MEASURED was withdrawn when the tiered
-        # Sonnet re-pointed from claude-sonnet-5 (what a4b measured) to
-        # claude-sonnet-4-6 — a different model; that measurement no longer backs
-        # a live row (d80). NO row is measured now, so nothing reaches Sonnet
-        # without the flag.
+        # 2026-08-12 dead-surface retirement: the W10b MODEL_TIERS fallback is
+        # GONE. `_spawn_model_for` now resolves ONLY via the v7 seat registry
+        # (models.json at EDP_AGENT_HOME): a mapped seat's pinned model is
+        # passed verbatim; no registry / unmapped role → None → no --model
+        # flag (the pool config's pinned default rules). `task_class` /
+        # `allow_candidate_tier` are threaded for compatibility and ignored —
+        # the retired tier table was their only consumer.
         #
         # Note the s17 FA3 docstring on Action.model names Sonnet 4.6 as
         # "MEASURED-safe" on the authority of a MODEL-TIERING-BENCHMARK.md that
@@ -7780,13 +8187,15 @@ class DisarmExternalDriver(_ClaudeTool):
         return Tool.ok(_ArmDriverOut(ok=True, note=res.get("note", "")))
 
 
-# ── Sol (GPT / codex CLI) bridge tools (v7 follow-up, 2026-07-16) ─────────────
+# ── Sol (GPT / codex CLI) bridge (v7 follow-up, 2026-07-16) ───────────────────
 # The DETERMINISTIC engine is tools/sol_bridge.py — it hard-wires the binary
 # selection, argv order, the five landmines, the JSONL parse, the non-zero-exit
-# blocker rule, and per-(caller,advisor) thread stickiness. These two classes are
-# the MINIMUM agent-facing surface over it: a worker/consult shell passes a brief
-# and (for authoring) a directory; it never touches a codex flag. Role-scoped in
-# roles.py: sol_author_asset -> worker, sol_consult -> consult.
+# blocker rule, and per-(caller,advisor) thread stickiness. The two DIRECT tool
+# classes over it (SolAuthorAsset / SolConsult) were RETIRED 2026-08-12
+# (roles.py `_BRIDGE_SUPERSEDED`): the provider-bridge delegates below
+# (delegate_generate / consult_external / adversarial_challenge, tools/bridge.py)
+# superseded them, and bridge.py still drives sol_bridge.run_sol as its `cli`
+# backend — the engine survives, only the direct verbs went.
 
 def _sol_caller() -> str:
     """The stickiness identity of the calling shell: its EDP_HANDLE (worker
@@ -7795,132 +8204,6 @@ def _sol_caller() -> str:
     _self_and_parent_addresses does."""
     return (os.environ.get("EDP_HANDLE", "").strip()
             or os.environ.get("EDP_ROLE", "").strip() or "anon")
-
-
-def _sol_scratch_dir() -> str:
-    """A non-code scratch cwd for read-only consults (codex needs a working root
-    and writes its own session stubs there even when Sol cannot write)."""
-    home = os.environ.get("EDP_AGENT_HOME") or os.getcwd()
-    d = Path(home) / ".sol" / "consult-scratch"
-    d.mkdir(parents=True, exist_ok=True)
-    return str(d)
-
-
-def _sol_out(run) -> "_SolRunOut":
-    return _SolRunOut(
-        ok=run.ok, thread_id=run.thread_id, sol_messages=run.agent_messages,
-        files_changed=run.file_changes, last_message=run.last_message,
-        exit_code=run.exit_code, evidence_path=run.raw_path, blocker=run.error)
-
-
-class _SolRunOut(BaseModel):
-    ok: bool
-    thread_id: str | None
-    sol_messages: list[str]
-    files_changed: list[str]
-    last_message: str
-    exit_code: int
-    evidence_path: str | None
-    # Set IFF ok is False. Its presence is the whole contract: surface it upward
-    # (emit_recipe_event(kind="blocker") / ask_above) and STOP — never retry-loop,
-    # grind, or silently shrink the request. Sol spend bills the user's ChatGPT
-    # plan quota and the CLI exposes no rate-limit telemetry.
-    blocker: str | None
-
-
-class _SolAuthorAssetIn(BaseModel):
-    # what Sol should author. State the deliverable's SHAPE explicitly and name
-    # what NOT to bring (no framework scaffold, no hosting, no starter template) —
-    # an under-specified brief gets reshaped into a web-app by Sol's bundled skill.
-    brief: str
-    # Sol's write root (-C). REFUSED if it is, or is inside, a code tree — Sol
-    # authors assets, never code. Point it at a dedicated asset directory.
-    asset_dir: str
-    # local image files attached via -i so Sol can SEE them (a reference to match,
-    # or a render you captured of Sol's PREVIOUS output — the feedback loop). A
-    # path merely cited in the brief is a no-op; attaching is the only channel.
-    reference_images: list[str] = []
-    # names the sticky Sol thread. Reuse the same name to ACCRETE on one thread;
-    # use DISTINCT names to hold independent advisors without cross-polluting them.
-    advisor: str = "sol"
-    effort: str | None = None            # low|medium|high|xhigh|max|ultra
-    new_thread: bool = False             # force a fresh thread instead of resuming
-
-
-class SolAuthorAsset(_ClaudeTool):
-    """Have Sol (GPT, via the Codex CLI) AUTHOR a visual/3D/image asset — a model,
-    material, texture, sprite, render, or the Blender/WebGL script that builds one
-    — writing the file(s) into `asset_dir` and returning their paths.
-
-    USE THIS instead of hand-authoring an SVG/canvas placeholder or claiming an
-    asset exists: Sol is the asset author, you are its EYES. Sol cannot open its
-    own render, so the loop is yours to close — render/capture Sol's output, pass
-    the capture back as `reference_images`, and Sol iterates on the SAME thread
-    (stickiness is automatic per caller+advisor). It writes ONLY under `asset_dir`
-    (workspace-write, confined by -C) and that directory is refused if it lands in
-    a code tree, so Sol structurally cannot touch source.
-
-    On `ok=False`, read `blocker`: surface it upward (emit_recipe_event(
-    kind="blocker") / ask_above) and STOP. Do NOT retry — Sol spend bills the
-    user's ChatGPT plan quota and a cap is only visible on failure."""
-
-    name = "sol_author_asset"
-    InputModel = _SolAuthorAssetIn
-    OutputModel = _SolRunOut
-
-    async def _run(self, m: _SolAuthorAssetIn):
-        from .sol_bridge import SolBridgeError, refuse_code_tree, run_sol
-        try:
-            asset_dir = refuse_code_tree(m.asset_dir)
-        except SolBridgeError as e:
-            return _precondition(str(e))
-        try:
-            run = await asyncio.to_thread(
-                run_sol, prompt=m.brief, workdir=str(asset_dir),
-                sandbox="workspace-write", caller=_sol_caller(),
-                advisor=m.advisor, images=m.reference_images,
-                effort=m.effort, new_thread=m.new_thread)
-        except SolBridgeError as e:
-            return _precondition(str(e))
-        return Tool.ok(_sol_out(run))
-
-
-class _SolConsultIn(BaseModel):
-    question: str
-    # renders/references for Sol to SEE via -i (attaching is the only channel; a
-    # path cited in the question text is a no-op).
-    images: list[str] = []
-    advisor: str = "sol"
-    effort: str | None = None
-    new_thread: bool = False
-
-
-class SolConsult(_ClaudeTool):
-    """Ask Sol (GPT, via the Codex CLI) for CREATIVE / VISUAL judgment — "does this
-    render read as calm?", "why does this material look plastic?" — optionally
-    attaching a render via `images` so Sol can actually SEE what it is judging.
-    Sol runs READ-ONLY here: it returns advice as text and writes NOTHING. This is
-    the independent, non-Opus perspective for design calls; for code bugs use the
-    ordinary Opus consult, not this.
-
-    Session-sticky per caller+advisor (Sol remembers the thread). On `ok=False`,
-    read `blocker` and surface it upward — do NOT retry (Sol spend bills the
-    user's ChatGPT plan quota)."""
-
-    name = "sol_consult"
-    InputModel = _SolConsultIn
-    OutputModel = _SolRunOut
-
-    async def _run(self, m: _SolConsultIn):
-        from .sol_bridge import SolBridgeError, run_sol
-        try:
-            run = await asyncio.to_thread(
-                run_sol, prompt=m.question, workdir=_sol_scratch_dir(),
-                sandbox="read-only", caller=_sol_caller(), advisor=m.advisor,
-                images=m.images, effort=m.effort, new_thread=m.new_thread)
-        except SolBridgeError as e:
-            return _precondition(str(e))
-        return Tool.ok(_sol_out(run))
 
 
 # ── provider-bridge tools (v7 WS1, 2026-08-05) ───────────────────────────────
@@ -8095,9 +8378,11 @@ class AdversarialChallenge(_ClaudeTool):
     severity, target}) for adjudication — never instructions: route accepted
     findings through the normal ledger/gates; a challenge can never steer,
     dispatch, or edit anything by itself. Always a FRESH thread (the adversary
-    accretes no sympathy for prior context). Invocation is policy-gated like
-    review legs: pre-ratification plans and spec decision entries, artifacts
-    only on risk triggers. On ok=False: blocker upward, no retry."""
+    accretes no sympathy for prior context). Invocation is planner/specialist
+    DISCIPLINE, not an enforced gate — nothing in the engine forces a
+    challenge; recorded findings persist to the plan's challenges sidecar and
+    (once WP1f lands) block the plan's first build-leg dispatch until each is
+    adjudicated. On ok=False: blocker upward, no retry."""
 
     name = "adversarial_challenge"
     InputModel = _AdversarialChallengeIn
@@ -9179,13 +9464,25 @@ class AskAbove(_ClaudeTool):
 
 
 class _NotifyAboveIn(BaseModel):
-    kind: str  # e.g. "progress", "alert", "observation"
+    # WP0 (2026-08-12): closed set — this was a bare `str` and agents invented
+    # kinds the broker rejects at publish time (285 broker_unregistered_kind
+    # failures in the log corpus). The Literal makes the schema itself teach;
+    # lifecycle kinds (done/crashed/ready/…) are engine-emitted, never typed
+    # by a shell through this verb.
+    kind: Literal[
+        "progress", "observation", "alert", "fyi",
+        "grounding", "ground_delta", "review_comments",
+    ]
     body: dict = {}
 
 
 class NotifyAbove(_ClaudeTool):
-    """Push a progress / alert / observation up to your parent.
-    Auto-addressed via EDP_HANDLE. One-way — no answer expected."""
+    """Push a one-way note up to your parent (auto-addressed via EDP_HANDLE;
+    no answer expected). kind is a CLOSED set: progress | observation | alert
+    | fyi | grounding | ground_delta | review_comments. Lifecycle kinds
+    (done, crashed, ready, plan_closed…) are emitted by the engine — never
+    send them by hand. For a question that needs an answer use ask_above;
+    for learnings/discoveries use emit_recipe_event."""
 
     name = "notify_above"
     InputModel = _NotifyAboveIn
@@ -9528,9 +9825,10 @@ class EmitRecipeEvent(_ClaudeTool):
 # and never auto-escalated ABOVE Opus either: a stronger tier costs real money
 # and is chosen only when the caller passes `model` explicitly (design W5/W10).
 #
-# This constant is the single migration seam: when W10b lands its `MODEL_TIERS`
-# table in tools/roles.py, this default moves there as ("consult", *) → opus.
-# It is NOT wired into MODEL_TIERS today because that table does not yet exist.
+# (Historic: this default once migrated into W10b's MODEL_TIERS table as
+# ("consult", *) → opus; that table was retired 2026-08-12 with the consult
+# shell role itself. The constant survives only for the dead ConveneConsult
+# class below.)
 CONSULT_DEFAULT_MODEL = "opus"
 
 
@@ -12039,6 +12337,11 @@ class _UpdateObjIn(BaseModel):
     type: str
     ids: dict = {}
     patch: dict = {}
+    # WP1: recorded user_gate_answer ref (answer_id) for a gated patch —
+    # e.g. flipping a spawn_planner step to done without a terminal-
+    # succeeded plan requires one validating against
+    # "G-STEP:<recipe_id>:<step_id>".
+    override_ref: str | None = None
 
 
 class _ObjResultOut(BaseModel):
@@ -12179,7 +12482,8 @@ class UpdateObject(_ClaudeTool):
         if refuse is not None:
             return refuse
         try:
-            res = await update_object(self.ctx, m.type, m.ids, m.patch)
+            res = await update_object(self.ctx, m.type, m.ids, m.patch,
+                                      override_ref=m.override_ref)
         except ObjectError as e:
             return _precondition(str(e))
         return Tool.ok(_ObjResultOut(result=res))
@@ -13138,12 +13442,13 @@ ALL_TOOL_CLASSES = [
     CreatePlan,
     AddAction,
     # v7 P0 — the RETIRED verbs are DEREGISTERED (break-and-migrate ruling,
-    # 2026-07-12): RecordStep, RecordDecision, RecordAssumption,
-    # RecordRejectedOption, Remember, GetSpecialistDoc, ProposeSpecLearning
-    # and ResolveSpecLearning no longer register as tools ANYWHERE — not
-    # even on the absent-role full set. The four memory-write class bodies
-    # survive as RecordContext's internal delegation targets (single source
-    # of truth for the storage writes); the rest are dead surface.
+    # 2026-07-12): RecordDecision, RecordAssumption, RecordRejectedOption,
+    # Remember, GetSpecialistDoc, ProposeSpecLearning and ResolveSpecLearning
+    # no longer register as tools ANYWHERE — not even on the absent-role full
+    # set. The four memory-write class bodies survive as RecordContext's
+    # internal delegation targets (single source of truth for the storage
+    # writes); the rest are dead surface. (RecordStep, the eighth, was
+    # deleted outright in the 2026-08-12 dead-surface sweep.)
     RecordStepResult,
     RecordActionStatus,
     RecordUserAnswer,
@@ -13158,8 +13463,9 @@ ALL_TOOL_CLASSES = [
     PoolResumePlanner,
     ArmExternalDriver,      # v7 — external neuron's CronCreate+Monitor analog
     DisarmExternalDriver,
-    SolAuthorAsset,         # v7 follow-up — Sol (GPT/codex) asset authoring (worker)
-    SolConsult,             # v7 follow-up — Sol read-only visual/creative advice (consult)
+    # SolAuthorAsset / SolConsult — RETIRED 2026-08-12 (roles.py
+    # `_BRIDGE_SUPERSEDED`): superseded by the bridge delegates below; the
+    # sol_bridge.py engine survives as bridge.py's `cli` backend.
     DelegateGenerate,       # v7 WS1 — route-gated bulk generation via the bridge (worker)
     DelegateReview,         # v7 WS1 — cheap cross-family pre-screen (reviewer)
     ConsultExternal,        # v7 WS1 — cross-provider verdict for bias removal (consult/curiosity)
@@ -13184,8 +13490,11 @@ ALL_TOOL_CLASSES = [
     # `_OPERATOR_RETIRED`; tests/test_s26_guide_tool_names.py asserts
     # RETIRED_VERBS is disjoint from the registry), so removing it from the
     # role surfaces alone would not have retired it. The CLASS above is left
-    # intact and importable — only its registration is withdrawn — so
-    # restoring it is re-adding this one line.
+    # intact and importable — only its registration is withdrawn. NOTE
+    # (2026-08-12 dead-surface sweep): the consult SHELL ROLE and the
+    # pool-client spawn_consult path were deleted with the role, so restoring
+    # this verb now also means restoring those (see roles.py, the retired
+    # _CONSULT note).
     ConsultCuriosity,
     # ConsultGoalKeeper / ConsultPatternObserver — DELETED with their roles,
     # owner ruling 2026-08-04 (classes in git history at 18cac3f).

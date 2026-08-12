@@ -11,7 +11,7 @@ standing absence-testing rule).
 from pathlib import Path
 
 from edp_claude.tools._tools import ALL_TOOL_CLASSES
-from edp_claude.tools.roles import CRUD_OBJECT_SCOPE, MODEL_TIERS, ROLE_TOOLSETS
+from edp_claude.tools.roles import CRUD_OBJECT_SCOPE, ROLE_TOOLSETS
 
 _CMD = Path(__file__).resolve().parents[1] / ".claude" / "commands"
 
@@ -29,15 +29,14 @@ def test_dead_role_tools_are_deregistered():
 
 
 def test_dead_roles_have_no_row_anywhere():
+    # (The MODEL_TIERS half of this pin went with the table itself —
+    # 2026-08-12 dead-surface retirement; test_w10b_benchmark.py pins that.)
     for role in _DEAD_ROLES:
         assert role not in ROLE_TOOLSETS, f"{role} has a toolset row again"
         assert role not in CRUD_OBJECT_SCOPE, f"{role} has a CRUD row again"
-        assert not any(r == role for r, _ in MODEL_TIERS), (
-            f"{role} has a model-tier row again")
-    # POSITIVE CONTROL: curiosity keeps all three rows.
+    # POSITIVE CONTROL: curiosity keeps both rows.
     assert "curiosity" in ROLE_TOOLSETS
     assert "curiosity" in CRUD_OBJECT_SCOPE
-    assert any(r == "curiosity" for r, _ in MODEL_TIERS)
 
 
 def test_no_surface_grants_the_dead_consult_verbs():

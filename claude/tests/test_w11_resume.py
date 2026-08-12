@@ -831,9 +831,11 @@ async def test_a_resumed_recipe_stops_advertising_suspension(env, recipe):
 SUSPENSION_VERBS = ("suspend_recipe", "resume_recipe")
 # s25/a4 took six roles to nine (curiosity/goal_keeper/pattern_observer gained
 # rows); the owner ruling of 2026-08-04 took nine to SEVEN — goal_keeper and
-# pattern_observer are DEAD and deleted. The pin's job is unchanged: the
-# suspension verbs must stay neuron-only across EVERY surface that exists.
-ALL_ROLES = ("worker", "planner", "reviewer", "specialist", "consult", "neuron",
+# pattern_observer are DEAD and deleted — and the 2026-08-12 dead-surface
+# retirement of the consult shell role took seven to SIX. The pin's job is
+# unchanged: the suspension verbs must stay neuron-only across EVERY surface
+# that exists.
+ALL_ROLES = ("worker", "planner", "reviewer", "specialist", "neuron",
              "curiosity")
 
 

@@ -401,7 +401,12 @@ def _shell_otel_env(role: str, handle: str, base: dict) -> dict:
         "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
         "CLAUDE_CODE_ENHANCED_TELEMETRY_BETA": "1",  # the span tree w/ tokens
         "OTEL_TRACES_EXPORTER": base.get("OTEL_TRACES_EXPORTER", "otlp"),
-        "OTEL_METRICS_EXPORTER": base.get("OTEL_METRICS_EXPORTER", "none"),
+        # WP2 (2026-08-12): metrics default console, not none — the token/
+        # cost counters (claude_code.token.usage / cost.usage) land on the
+        # shell's stdout, which the PTY DRAIN LOG already captures per shell.
+        # Zero collector infrastructure; budget_status parses the drain log.
+        # A pre-set override (e.g. otlp to a real backend) still wins.
+        "OTEL_METRICS_EXPORTER": base.get("OTEL_METRICS_EXPORTER", "console"),
         "OTEL_LOGS_EXPORTER": base.get("OTEL_LOGS_EXPORTER", "none"),
         "OTEL_EXPORTER_OTLP_PROTOCOL": base.get(
             "OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf"),

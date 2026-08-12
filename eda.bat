@@ -19,5 +19,11 @@ rem v7 WS4 (2026-08-06): outcome-lineage write gates ON — the compiled boot
 rem docs teach `serves`/`affects`, so empty-serves refusals are now live for
 rem NEW steps/actions (legacy objects unaffected). Set to 0 to revert.
 if not defined EDP_V7_WRITE_GATES set "EDP_V7_WRITE_GATES=1"
+rem WP2 (2026-08-12): token/cost observability for the FOREGROUND seat.
+rem Spawned shells get this from pty_launcher.build_env; the foreground
+rem neuron launches HERE. console exporter -> metrics land in this window's
+rem scrollback and /usage stays authoritative; no collector needed.
+if not defined CLAUDE_CODE_ENABLE_TELEMETRY set "CLAUDE_CODE_ENABLE_TELEMETRY=1"
+if not defined OTEL_METRICS_EXPORTER set "OTEL_METRICS_EXPORTER=console"
 cd /d "C:\Projects\Learning\eda-base3\claude"
 claude %*

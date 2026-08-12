@@ -190,7 +190,8 @@ def test_crud_object_scope_table_matches_the_snapshot():
     # planner = plan + action ONLY; neuron additionally recipe/step/north_star.
     assert CRUD_OBJECT_SCOPE["planner"] == frozenset({"plan", "action"})
     assert {"recipe", "step", "north_star"} <= CRUD_OBJECT_SCOPE["neuron"]
-    for readonly in ("worker", "reviewer", "specialist", "consult"):
+    # ("consult" left this list 2026-08-12 — row deleted with its retired role.)
+    for readonly in ("worker", "reviewer", "specialist"):
         assert CRUD_OBJECT_SCOPE[readonly] == frozenset()
 
 

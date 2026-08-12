@@ -1009,9 +1009,12 @@ async def create_object(ctx, obj_type: str, fields: dict | None = None) -> dict:
 
 
 async def update_object(ctx, obj_type: str, ids: dict | None = None,
-                        patch: dict | None = None) -> dict:
+                        patch: dict | None = None, *,
+                        override_ref: str | None = None) -> dict:
     """Patch a domain object through its encapsulated validation.
-    Refused for inspect-only objects."""
+    Refused for inspect-only objects. `override_ref` (WP1) is a recorded
+    user_gate_answer id, consumed by gated patches (G-STEP step done-flip;
+    G-SKIP action skip)."""
     ids = ids or {}
     patch = patch or {}
     if obj_type not in _CATALOG:
@@ -1029,10 +1032,16 @@ async def update_object(ctx, obj_type: str, ids: dict | None = None,
         # status change → record_action_status (d30 pure write: records
         # status + evidence, runs no gate; a `done` lands as done directly).
         if "status" in patch:
-            return await _run_intent(
-                ctx, "RecordActionStatus",
+            kw: dict = dict(
                 plan_id=ids["plan_id"], action_id=ids["action_id"],
                 status=patch["status"], evidence=patch.get("evidence"))
+            # WP1 G-SKIP / G-RUNS: thread the recorded override + runs
+            # ledger through to record_action_status (the gate owner).
+            if override_ref is not None:
+                kw["override_ref"] = override_ref
+            if patch.get("runs"):
+                kw["runs"] = patch["runs"]
+            return await _run_intent(ctx, "RecordActionStatus", **kw)
         # correctable verify / description (friction #4): a targeted edit
         # of a single action field, allowed even while dispatching — it's
         # a CORRECTION, the gate still actually checks afterward.
@@ -1043,7 +1052,8 @@ async def update_object(ctx, obj_type: str, ids: dict | None = None,
         # P3: steps are editable (advisory-guarded) — see _update_step_fields.
         _need(ids, "recipe_id", "step_id")
         return await _update_step_fields(ctx, ids["recipe_id"],
-                                         ids["step_id"], patch)
+                                         ids["step_id"], patch,
+                                         override_ref=override_ref)
 
     if obj_type == "outcome":
         _need(ids, "recipe_id", "outcome_id")
@@ -1057,9 +1067,12 @@ async def update_object(ctx, obj_type: str, ids: dict | None = None,
     if obj_type == "recipe":
         _need(ids, "recipe_id")
         if "final_outcome" in patch:
-            return await _run_intent(
-                ctx, "CloseRecipe", recipe_id=ids["recipe_id"],
-                final_outcome=patch["final_outcome"])
+            kw = dict(recipe_id=ids["recipe_id"],
+                      final_outcome=patch["final_outcome"])
+            # WP1 G-OUTCOME: waiver refs ride along to close_recipe.
+            if patch.get("outcome_waivers"):
+                kw["outcome_waivers"] = patch["outcome_waivers"]
+            return await _run_intent(ctx, "CloseRecipe", **kw)
         if patch.get("user_signoff"):
             return await _run_intent(
                 ctx, "RecordComprehensionSignoff",
@@ -1230,7 +1243,8 @@ _STEP_STATUSES = {"pending", "in_progress", "done", "skipped"}
 
 
 async def _update_step_fields(ctx, recipe_id: str, step_id: str,
-                              patch: dict) -> dict:
+                              patch: dict, *,
+                              override_ref: str | None = None) -> dict:
     """P3: steps are EDITABLE (the old APPEND-ONLY rule is retired — the
     advisory audit trail now carries the honest history). Hard block only
     when the recipe is closed; an edit while the recipe is executing
@@ -1256,6 +1270,14 @@ async def _update_step_fields(ctx, recipe_id: str, step_id: str,
     if "status" in patch and patch["status"] not in _STEP_STATUSES:
         raise ObjectError(
             f"step status must be one of {sorted(_STEP_STATUSES)}")
+    # WP1 G-STEP: a spawn_planner step cannot be patched to done unless its
+    # plan is terminal-succeeded, or the call carries a recorded user
+    # override (validated + audit-trailed by _check_g_step).
+    if patch.get("status") == "done":
+        from .tools._tools import _check_g_step
+        refusal, _forced = _check_g_step(ctx, recipe_id, target, override_ref)
+        if refusal:
+            raise ObjectError(refusal)
 
     warnings: list[tuple[str, str]] = []
     if target.status == "in_progress" and (

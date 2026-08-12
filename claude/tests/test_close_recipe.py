@@ -13,8 +13,8 @@ from edp_contracts import ToolError, ToolOk
 RID = "recipe-close-x"
 
 
-def _reviewing_recipe(env):
-    from edp_claude.schemas import Recipe
+def _reviewing_recipe(env, step_status="done"):
+    from edp_claude.schemas import Plan, Recipe
 
     env.ctx.recipes.save(Recipe.model_validate(dict(
         recipe_id=RID, user_goal_verbatim="g", domain="generic",
@@ -26,16 +26,26 @@ def _reviewing_recipe(env):
                                    "verification": "v"}],
         },
         steps=[{"step_id": "s1", "kind": "work", "description": "d",
-                "status": "done", "depends_on": [],
+                "status": step_status, "depends_on": [],
                 "execution": "spawn_planner"}],
         context={},
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
     )))
+    # WP1 G-STEP: a done spawn_planner step must be backed by a
+    # terminal-succeeded plan (an unbacked done step is a laundered step).
+    if step_status == "done":
+        env.ctx.plans.save(Plan.model_validate(dict(
+            plan_id=f"{RID}-s1", recipe_id=RID, recipe_step_id="s1",
+            domain="generic", shape="x", goal="g", state="terminal",
+            terminal_status="succeeded", actions=[],
+        )))
 
 
 async def test_close_recipe_flips_state_and_records_outcome(env):
-    _reviewing_recipe(env)
+    # An honestly-incomplete recipe (s1 still in_progress) closes 'partial'
+    # freely — WP1 gates only the all-done laundering shape.
+    _reviewing_recipe(env, step_status="in_progress")
     fo = {"status": "partial", "summary": "outcomes not yet verified"}
     res = await env.call("close_recipe", recipe_id=RID, final_outcome=fo)
     assert isinstance(res, ToolOk), res
