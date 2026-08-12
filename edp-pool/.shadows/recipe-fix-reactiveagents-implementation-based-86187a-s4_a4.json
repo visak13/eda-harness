@@ -1,0 +1,64 @@
+{
+ "handle": "recipe-fix-reactiveagents-implementation-based-86187a-s4:a4",
+ "role": "worker",
+ "nonce": "9e7948",
+ "shell": {
+  "state": "closed",
+  "alive": false
+ },
+ "driver": {
+  "spec": "rx.broker(me)",
+  "alive": false,
+  "restarts": 0
+ },
+ "heartbeat": {
+  "interval_s": 300.0
+ },
+ "mode": "auto",
+ "wakes_seq": 7,
+ "wakes": [
+  {
+   "seq": 1,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786163277.6661906
+  },
+  {
+   "seq": 2,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786163578.2273371
+  },
+  {
+   "seq": 3,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786163878.281571
+  },
+  {
+   "seq": 4,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786164180.505483
+  },
+  {
+   "seq": 5,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786164481.1261532
+  },
+  {
+   "seq": 6,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786164782.491311
+  },
+  {
+   "seq": 7,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786165083.0537379
+  }
+ ],
+ "updated_at": 1786165258.1013145
+}

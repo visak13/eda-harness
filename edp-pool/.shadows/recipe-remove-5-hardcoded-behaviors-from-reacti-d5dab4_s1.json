@@ -1,0 +1,21 @@
+{
+ "handle": "recipe-remove-5-hardcoded-behaviors-from-reacti-d5dab4:s1",
+ "role": "planner",
+ "nonce": "a4f19a",
+ "shell": {
+  "state": "closed",
+  "alive": false
+ },
+ "driver": {
+  "spec": "rx.merge(rx.broker(me), rx.worklog(plan_id), rx.pool(scope=plan_id), rx.orphaned(plan_id), rx.recipe_events(recipe_id))",
+  "alive": false,
+  "restarts": 0
+ },
+ "heartbeat": {
+  "interval_s": 1800.0
+ },
+ "mode": "auto",
+ "wakes_seq": 57,
+ "wakes": [],
+ "updated_at": 1786196736.4071922
+}

@@ -1,0 +1,28 @@
+{
+ "handle": "specialist-doc-ingestion-poc-frontend-e1399695",
+ "role": "specialist",
+ "nonce": "ea1e29",
+ "shell": {
+  "state": "ready",
+  "alive": true
+ },
+ "driver": {
+  "spec": "rx.broker(me)",
+  "alive": true,
+  "restarts": 0
+ },
+ "heartbeat": {
+  "interval_s": 600.0
+ },
+ "mode": "auto",
+ "wakes_seq": 1,
+ "wakes": [
+  {
+   "seq": 1,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786442949.2557101
+  }
+ ],
+ "updated_at": 1786443293.6910124
+}

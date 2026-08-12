@@ -1,0 +1,21 @@
+{
+ "handle": "recipe-fix-reactiveagents-implementation-based-86187a-s1:a5",
+ "role": "reviewer",
+ "nonce": "c3de45",
+ "shell": {
+  "state": "closed",
+  "alive": false
+ },
+ "driver": {
+  "spec": "rx.broker(me)",
+  "alive": false,
+  "restarts": 0
+ },
+ "heartbeat": {
+  "interval_s": 300.0
+ },
+ "mode": "auto",
+ "wakes_seq": 0,
+ "wakes": [],
+ "updated_at": 1786157131.9230192
+}

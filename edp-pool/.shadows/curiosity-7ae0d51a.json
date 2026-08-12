@@ -1,0 +1,34 @@
+{
+ "handle": "curiosity-7ae0d51a",
+ "role": "curiosity",
+ "nonce": "bc1400",
+ "shell": {
+  "state": "ready",
+  "alive": true
+ },
+ "driver": {
+  "spec": "rx.broker(me)",
+  "alive": true,
+  "restarts": 0
+ },
+ "heartbeat": {
+  "interval_s": 300.0
+ },
+ "mode": "auto",
+ "wakes_seq": 2,
+ "wakes": [
+  {
+   "seq": 1,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786042302.7529001
+  },
+  {
+   "seq": 2,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786042525.222251
+  }
+ ],
+ "updated_at": 1786042547.8040476
+}

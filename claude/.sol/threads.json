@@ -88,5 +88,125 @@
     "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\claude\\C--Projects-Learning-eda-base3-claude\\bd8deb95-3493-4787-bab6-06395492fda5\\scratchpad\\sol-assets\\s7",
     "created_at": "2026-08-06T15:30:58Z",
     "last_used": "2026-08-06T15:38:20Z"
+  },
+  "recipe-update-reactiveagents-framework-c-projec-61ad9c:s1|sol": {
+    "thread_id": "019fd887-044b-7d42-b701-3b27fd2feddd",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-06T19:23:21Z",
+    "last_used": "2026-08-06T19:23:21Z"
+  },
+  "recipe-update-reactiveagents-framework-c-projec-61ad9c:s2|sol": {
+    "thread_id": "019fd8ac-44da-74a1-b4da-4601edf611fc",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-06T20:03:50Z",
+    "last_used": "2026-08-06T20:03:50Z"
+  },
+  "recipe-update-reactiveagents-framework-c-projec-61ad9c:s3|sol": {
+    "thread_id": "019fd8be-21d6-7063-ab5f-e6d9390d6f14",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-06T20:23:49Z",
+    "last_used": "2026-08-06T20:23:49Z"
+  },
+  "recipe-update-reactiveagents-framework-c-projec-61ad9c:s4|sol": {
+    "thread_id": "019fd8d8-0f19-73d2-bbc5-1749c7143ef0",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-06T20:51:37Z",
+    "last_used": "2026-08-06T20:51:37Z"
+  },
+  "recipe-fix-reactiveagents-implementation-based-86187a:s1|sol": {
+    "thread_id": "019fdf2d-d19f-7d71-8429-bc706137d3e0",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-08T02:23:10Z",
+    "last_used": "2026-08-08T02:23:10Z"
+  },
+  "recipe-fix-reactiveagents-implementation-based-86187a:s2|sol": {
+    "thread_id": "019fdf4f-36c3-7d81-a7b6-12de26db26fc",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-08T02:59:36Z",
+    "last_used": "2026-08-08T02:59:36Z"
+  },
+  "recipe-fix-reactiveagents-implementation-based-86187a:s3|sol": {
+    "thread_id": "019fdf6b-fd2e-7c52-8f52-d6b05579ed6d",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-08T03:31:22Z",
+    "last_used": "2026-08-08T03:31:22Z"
+  },
+  "recipe-fix-reactiveagents-implementation-based-86187a:s4|sol": {
+    "thread_id": "019fdf99-1424-7df1-8e7b-449b904fcb85",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-08T04:20:19Z",
+    "last_used": "2026-08-08T04:20:19Z"
+  },
+  "recipe-fix-reactiveagents-implementation-based-86187a:s5|sol": {
+    "thread_id": "019fdfdb-1e47-7093-9017-f993e48d5544",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-08T05:32:28Z",
+    "last_used": "2026-08-08T05:32:28Z"
+  },
+  "recipe-remove-5-hardcoded-behaviors-from-reacti-d5dab4:s1|sol": {
+    "thread_id": "019fe178-abce-7513-a594-9972a15f7691",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-08T13:04:18Z",
+    "last_used": "2026-08-08T13:04:18Z"
+  },
+  "recipe-build-a-conversational-rag-agent-poc-rea-df971d:s1|sol": {
+    "thread_id": "019ff049-2e6a-7d43-a069-ecffb4991a96",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-11T10:06:37Z",
+    "last_used": "2026-08-11T10:06:37Z"
+  },
+  "recipe-build-a-conversational-rag-agent-poc-rea-df971d:s2|sol": {
+    "thread_id": "019ff05b-8732-75c2-9bf5-c8d4b54b2752",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-11T10:26:50Z",
+    "last_used": "2026-08-11T10:26:50Z"
+  },
+  "recipe-build-a-conversational-rag-agent-poc-rea-df971d:s3|sol": {
+    "thread_id": "019ff07d-19fe-76c1-87c5-7ae1e5f34c08",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-11T11:03:16Z",
+    "last_used": "2026-08-11T11:03:16Z"
+  },
+  "recipe-build-a-conversational-rag-agent-poc-rea-df971d:s4|sol": {
+    "thread_id": "019ff095-798b-7f71-805e-fb22e85e9e97",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-11T11:29:58Z",
+    "last_used": "2026-08-11T11:29:58Z"
+  },
+  "recipe-build-a-conversational-rag-agent-poc-rea-df971d:s5|sol": {
+    "thread_id": "019ff0b1-2fd0-7361-933b-da9a84abc07f",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-11T12:00:18Z",
+    "last_used": "2026-08-11T12:00:18Z"
+  },
+  "recipe-build-a-conversational-rag-agent-poc-rea-df971d:s6|sol": {
+    "thread_id": "019ff0d0-1f6c-7312-a843-094302036734",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-11T12:33:52Z",
+    "last_used": "2026-08-11T12:33:52Z"
+  },
+  "recipe-build-a-conversational-rag-agent-poc-rea-df971d:s7|sol": {
+    "thread_id": "019ff0e0-edd8-7d62-a20c-ae6c38a722d9",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-11T12:52:23Z",
+    "last_used": "2026-08-11T12:52:23Z"
+  },
+  "recipe-build-a-conversational-rag-agent-poc-rea-df971d:s8|sol": {
+    "thread_id": "019ff0f3-aeb4-7380-9ae5-52aa687f64fb",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-11T13:12:59Z",
+    "last_used": "2026-08-11T13:12:59Z"
+  },
+  "recipe-build-a-conversational-rag-agent-poc-rea-df971d:s9|sol": {
+    "thread_id": "019ff120-77c7-75d0-be4a-af7197f810ea",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-11T14:01:42Z",
+    "last_used": "2026-08-11T14:01:42Z"
+  },
+  "recipe-build-a-conversational-rag-agent-poc-rea-df971d:s10|sol": {
+    "thread_id": "019ff18d-c3ff-7d20-b236-041d9555e23a",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-11T16:01:01Z",
+    "last_used": "2026-08-11T16:01:01Z"
   }
 }

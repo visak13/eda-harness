@@ -1,0 +1,142 @@
+{
+ "handle": "recipe-update-reactiveagents-framework-c-projec-61ad9c:s4",
+ "role": "planner",
+ "nonce": "213e94",
+ "shell": {
+  "state": "closed",
+  "alive": false
+ },
+ "driver": {
+  "spec": "rx.merge(rx.broker(me), rx.worklog(plan_id), rx.pool(scope=plan_id), rx.orphaned(plan_id), rx.recipe_events(recipe_id))",
+  "alive": false,
+  "restarts": 0
+ },
+ "heartbeat": {
+  "interval_s": 1800.0
+ },
+ "mode": "auto",
+ "wakes_seq": 146,
+ "wakes": [
+  {
+   "seq": 127,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786060182.4448924
+  },
+  {
+   "seq": 128,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786060183.2223105
+  },
+  {
+   "seq": 129,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786060183.751266
+  },
+  {
+   "seq": 130,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786060185.2176669
+  },
+  {
+   "seq": 131,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786060185.7851095
+  },
+  {
+   "seq": 132,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786060187.2633262
+  },
+  {
+   "seq": 133,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786060187.813433
+  },
+  {
+   "seq": 134,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786060189.2519689
+  },
+  {
+   "seq": 135,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786060189.788022
+  },
+  {
+   "seq": 136,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786060190.3327224
+  },
+  {
+   "seq": 137,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786060190.8693132
+  },
+  {
+   "seq": 138,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786060191.4527087
+  },
+  {
+   "seq": 139,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786060191.9906592
+  },
+  {
+   "seq": 140,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786060192.5263803
+  },
+  {
+   "seq": 141,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786060193.0642285
+  },
+  {
+   "seq": 142,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786060201.0940151
+  },
+  {
+   "seq": 143,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786060201.6207452
+  },
+  {
+   "seq": 144,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786060202.1635282
+  },
+  {
+   "seq": 145,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786060207.1619759
+  },
+  {
+   "seq": 146,
+   "kind": "mail",
+   "delivered": false,
+   "ts": 1786060207.1704621
+  }
+ ],
+ "updated_at": 1786060207.1704676
+}

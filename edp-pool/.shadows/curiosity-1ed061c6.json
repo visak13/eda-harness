@@ -1,0 +1,58 @@
+{
+ "handle": "curiosity-1ed061c6",
+ "role": "curiosity",
+ "nonce": "4ee93e",
+ "shell": {
+  "state": "ready",
+  "alive": true
+ },
+ "driver": {
+  "spec": "rx.broker(me)",
+  "alive": true,
+  "restarts": 0
+ },
+ "heartbeat": {
+  "interval_s": 300.0
+ },
+ "mode": "auto",
+ "wakes_seq": 6,
+ "wakes": [
+  {
+   "seq": 1,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786153936.8103232
+  },
+  {
+   "seq": 2,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786154225.5173903
+  },
+  {
+   "seq": 3,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786154238.721218
+  },
+  {
+   "seq": 4,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786154540.7187843
+  },
+  {
+   "seq": 5,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786154842.5588226
+  },
+  {
+   "seq": 6,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786155048.7720904
+  }
+ ],
+ "updated_at": 1786155067.4486587
+}

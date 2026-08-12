@@ -1,0 +1,21 @@
+{
+ "handle": "recipe-build-a-conversational-rag-agent-poc-rea-df971d-s5:a3-verify",
+ "role": "worker",
+ "nonce": "a1ae6d",
+ "shell": {
+  "state": "closed",
+  "alive": false
+ },
+ "driver": {
+  "spec": "rx.broker(me)",
+  "alive": false,
+  "restarts": 0
+ },
+ "heartbeat": {
+  "interval_s": 300.0
+ },
+ "mode": "auto",
+ "wakes_seq": 0,
+ "wakes": [],
+ "updated_at": 1786451173.09044
+}

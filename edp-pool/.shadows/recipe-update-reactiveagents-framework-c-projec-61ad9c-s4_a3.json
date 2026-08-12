@@ -1,0 +1,70 @@
+{
+ "handle": "recipe-update-reactiveagents-framework-c-projec-61ad9c-s4:a3",
+ "role": "worker",
+ "nonce": "1bca68",
+ "shell": {
+  "state": "closed",
+  "alive": false
+ },
+ "driver": {
+  "spec": "rx.broker(me)",
+  "alive": false,
+  "restarts": 0
+ },
+ "heartbeat": {
+  "interval_s": 300.0
+ },
+ "mode": "auto",
+ "wakes_seq": 8,
+ "wakes": [
+  {
+   "seq": 1,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786051290.6022115
+  },
+  {
+   "seq": 2,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786051594.4496055
+  },
+  {
+   "seq": 3,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786051895.204177
+  },
+  {
+   "seq": 4,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786052194.8965614
+  },
+  {
+   "seq": 5,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786052496.854344
+  },
+  {
+   "seq": 6,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786052797.6115608
+  },
+  {
+   "seq": 7,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786053097.7958958
+  },
+  {
+   "seq": 8,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786053399.7545302
+  }
+ ],
+ "updated_at": 1786053520.648961
+}

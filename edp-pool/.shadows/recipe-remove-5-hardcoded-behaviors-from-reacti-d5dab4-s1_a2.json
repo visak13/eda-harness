@@ -1,0 +1,21 @@
+{
+ "handle": "recipe-remove-5-hardcoded-behaviors-from-reacti-d5dab4-s1:a2",
+ "role": "reviewer",
+ "nonce": "e6723e",
+ "shell": {
+  "state": "closed",
+  "alive": false
+ },
+ "driver": {
+  "spec": "rx.broker(me)",
+  "alive": false,
+  "restarts": 0
+ },
+ "heartbeat": {
+  "interval_s": 300.0
+ },
+ "mode": "auto",
+ "wakes_seq": 0,
+ "wakes": [],
+ "updated_at": 1786194829.4295032
+}

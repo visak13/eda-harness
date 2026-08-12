@@ -1,0 +1,118 @@
+{
+ "handle": "recipe-fix-reactiveagents-implementation-based-86187a-s5:a2",
+ "role": "worker",
+ "nonce": "38419d",
+ "shell": {
+  "state": "closed",
+  "alive": false
+ },
+ "driver": {
+  "spec": "rx.broker(me)",
+  "alive": false,
+  "restarts": 0
+ },
+ "heartbeat": {
+  "interval_s": 300.0
+ },
+ "mode": "auto",
+ "wakes_seq": 16,
+ "wakes": [
+  {
+   "seq": 1,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786167696.040113
+  },
+  {
+   "seq": 2,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786167997.950806
+  },
+  {
+   "seq": 3,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786168299.7430978
+  },
+  {
+   "seq": 4,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786168601.4078214
+  },
+  {
+   "seq": 5,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786168903.0953634
+  },
+  {
+   "seq": 6,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786169204.8986359
+  },
+  {
+   "seq": 7,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786169506.862393
+  },
+  {
+   "seq": 8,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786169808.5078628
+  },
+  {
+   "seq": 9,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786170110.2325928
+  },
+  {
+   "seq": 10,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786170411.8755763
+  },
+  {
+   "seq": 11,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786170713.7767162
+  },
+  {
+   "seq": 12,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786171015.4857993
+  },
+  {
+   "seq": 13,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786171317.0489812
+  },
+  {
+   "seq": 14,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786171618.65535
+  },
+  {
+   "seq": 15,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786171920.2069504
+  },
+  {
+   "seq": 16,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786172221.8791785
+  }
+ ],
+ "updated_at": 1786172364.735065
+}

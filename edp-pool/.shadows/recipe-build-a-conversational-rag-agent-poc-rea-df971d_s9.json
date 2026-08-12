@@ -1,0 +1,142 @@
+{
+ "handle": "recipe-build-a-conversational-rag-agent-poc-rea-df971d:s9",
+ "role": "planner",
+ "nonce": "26e9d1",
+ "shell": {
+  "state": "closed",
+  "alive": false
+ },
+ "driver": {
+  "spec": "rx.merge(rx.broker(me), rx.worklog(plan_id), rx.pool(scope=plan_id), rx.orphaned(plan_id), rx.recipe_events(recipe_id))",
+  "alive": false,
+  "restarts": 0
+ },
+ "heartbeat": {
+  "interval_s": 1800.0
+ },
+ "mode": "auto",
+ "wakes_seq": 111,
+ "wakes": [
+  {
+   "seq": 92,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786460822.3661273
+  },
+  {
+   "seq": 93,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786460822.8959537
+  },
+  {
+   "seq": 94,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786460827.4454875
+  },
+  {
+   "seq": 95,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786460827.9645114
+  },
+  {
+   "seq": 96,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786460845.4875968
+  },
+  {
+   "seq": 97,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786460859.5462103
+  },
+  {
+   "seq": 98,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786460869.2344582
+  },
+  {
+   "seq": 99,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786460869.950935
+  },
+  {
+   "seq": 100,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786460880.8131545
+  },
+  {
+   "seq": 101,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786460905.7003517
+  },
+  {
+   "seq": 102,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786460909.7401712
+  },
+  {
+   "seq": 103,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786460910.2807524
+  },
+  {
+   "seq": 104,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786460910.8199136
+  },
+  {
+   "seq": 105,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786460911.3530645
+  },
+  {
+   "seq": 106,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786460911.8863757
+  },
+  {
+   "seq": 107,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786460923.7612267
+  },
+  {
+   "seq": 108,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786460924.2719338
+  },
+  {
+   "seq": 109,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786460924.6467247
+  },
+  {
+   "seq": 110,
+   "kind": "mail",
+   "delivered": false,
+   "ts": 1786460924.6524205
+  },
+  {
+   "seq": 111,
+   "kind": "mail",
+   "delivered": false,
+   "ts": 1786460924.6594357
+  }
+ ],
+ "updated_at": 1786460924.6594417
+}

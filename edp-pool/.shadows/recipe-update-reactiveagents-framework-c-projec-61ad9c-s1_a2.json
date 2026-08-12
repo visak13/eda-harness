@@ -1,0 +1,28 @@
+{
+ "handle": "recipe-update-reactiveagents-framework-c-projec-61ad9c-s1:a2",
+ "role": "worker",
+ "nonce": "ac6f48",
+ "shell": {
+  "state": "closed",
+  "alive": false
+ },
+ "driver": {
+  "spec": "rx.broker(me)",
+  "alive": false,
+  "restarts": 0
+ },
+ "heartbeat": {
+  "interval_s": 300.0
+ },
+ "mode": "auto",
+ "wakes_seq": 1,
+ "wakes": [
+  {
+   "seq": 1,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786044541.3842509
+  }
+ ],
+ "updated_at": 1786044678.1179528
+}

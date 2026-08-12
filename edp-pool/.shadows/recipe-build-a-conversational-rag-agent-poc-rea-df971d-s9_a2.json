@@ -1,0 +1,64 @@
+{
+ "handle": "recipe-build-a-conversational-rag-agent-poc-rea-df971d-s9:a2",
+ "role": "worker",
+ "nonce": "b328cd",
+ "shell": {
+  "state": "closed",
+  "alive": false
+ },
+ "driver": {
+  "spec": "rx.broker(me)",
+  "alive": false,
+  "restarts": 0
+ },
+ "heartbeat": {
+  "interval_s": 300.0
+ },
+ "mode": "auto",
+ "wakes_seq": 7,
+ "wakes": [
+  {
+   "seq": 1,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786457425.2857418
+  },
+  {
+   "seq": 2,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786457725.4449697
+  },
+  {
+   "seq": 3,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786458025.6665483
+  },
+  {
+   "seq": 4,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786458325.838089
+  },
+  {
+   "seq": 5,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786458625.9543517
+  },
+  {
+   "seq": 6,
+   "kind": "mail",
+   "delivered": true,
+   "ts": 1786458868.879306
+  },
+  {
+   "seq": 7,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786458925.843573
+  }
+ ],
+ "updated_at": 1786459072.6646812
+}
