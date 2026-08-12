@@ -33,7 +33,7 @@ async def _scaffold(env):
                              domain="api"))["recipe_id"]
     sid = _ok(await env.call("add_step", recipe_id=rid,
                              description="build the tokenizer step",
-                             execution="spawn_planner"))["step_id"]
+                             execution="spawn_planner", estimate={"hours": 1}))["step_id"]
     pid = _ok(await env.call("create_plan", recipe_id=rid, step_id=sid,
                              shape="poc-iterate-build",
                              goal="build the tokenizer"))["plan_id"]
@@ -115,7 +115,7 @@ async def test_planner_step_level_envelope_without_action(env, monkeypatch):
     # a second step depending on the first — the step-level blocks slot
     sid2 = _ok(await env.call("add_step", recipe_id=rid,
                               description="integrate the parser end-to-end",
-                              execution="spawn_planner"))["step_id"]
+                              execution="spawn_planner", estimate={"hours": 1}))["step_id"]
     _ok(await env.call("update_object", type="step",
                        ids={"recipe_id": rid, "step_id": sid2},
                        patch={"depends_on": [sid]}))

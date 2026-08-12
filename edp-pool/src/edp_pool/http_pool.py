@@ -38,14 +38,22 @@ class HttpPool:
             )
         return Tool.from_upstream(r)  # capacity error verbatim
 
-    async def spawn_planner(self, recipe_id: str, step_id: str):
+    async def spawn_planner(self, recipe_id: str, step_id: str,
+                            model: str | None = None):
         return await self._spawn(
-            "planner", f"{recipe_id}:{step_id}", parent_session=recipe_id
+            "planner", f"{recipe_id}:{step_id}", parent_session=recipe_id,
+            **({"model": model} if model else {}),
         )
 
-    async def spawn_worker(self, plan_id: str, action_id: str):
+    async def spawn_worker(self, plan_id: str, action_id: str,
+                           model: str | None = None, role: str = "worker"):
+        # Signature parity with edp-claude's own HttpPool client (s17 FA3
+        # model forwarding + s26 reviewer role) — this seam drifted and the
+        # integration suite caught the engine passing kwargs this class
+        # rejected (2026-08-12). Omitted-when-None keeps the body identical.
         return await self._spawn(
-            "worker", f"{plan_id}:{action_id}", parent_session=plan_id
+            role, f"{plan_id}:{action_id}", parent_session=plan_id,
+            **({"model": model} if model else {}),
         )
 
     async def liveness(self, handle: str):

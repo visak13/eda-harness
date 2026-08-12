@@ -162,7 +162,7 @@ async def _recipe_with_plan(t, *, action_ids=("a1",)):
         {"goal": "g", "domain": "api"}))["recipe_id"]
     sid = _data(await t["add_step"].run(
         {"recipe_id": rid, "description": "build",
-         "execution": "spawn_planner"}))["step_id"]
+         "execution": "spawn_planner", "estimate": {"hours": 1}}))["step_id"]
     pid = _data(await t["create_plan"].run(
         {"recipe_id": rid, "step_id": sid, "shape": "poc-iterate-build",
          "goal": "build the thing"}))["plan_id"]

@@ -61,7 +61,7 @@ async def test_walk_1_full_trace(env):
     sid = _ok(await env.call(
         "add_step", recipe_id=rid,
         description="Implement + test the stateless auth scheme",
-        execution="spawn_planner"))["step_id"]
+        execution="spawn_planner", estimate={"hours": 1}))["step_id"]
 
     # 6 — spawn_planner, then wait
     k, d = await _na(env, rid, "recipe")

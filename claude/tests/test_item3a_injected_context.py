@@ -35,7 +35,7 @@ async def test_item3a_spawn_stamps_load_bearing_context(env):
     _ok(await env.call("record_context", kind="rejected_option", recipe_id=rid,
                        text="ollama/nomic-embed-text"))
     sid = _ok(await env.call("add_step", recipe_id=rid, description="build",
-                             execution="spawn_planner"))["step_id"]
+                             execution="spawn_planner", estimate={"hours": 1}))["step_id"]
     pid = _ok(await env.call("create_plan", recipe_id=rid, step_id=sid,
                              shape="poc-iterate-build",
                              goal="build the thing"))["plan_id"]
@@ -84,7 +84,7 @@ async def test_item3a_no_load_bearing_context_leaves_action_clean(env):
     _ok(await env.call("record_context", kind="decision", recipe_id=rid,
                        text="ordinary decision"))   # not load_bearing
     sid = _ok(await env.call("add_step", recipe_id=rid, description="build",
-                             execution="spawn_planner"))["step_id"]
+                             execution="spawn_planner", estimate={"hours": 1}))["step_id"]
     pid = _ok(await env.call("create_plan", recipe_id=rid, step_id=sid,
                              shape="poc-iterate-build",
                              goal="build the thing"))["plan_id"]
@@ -118,7 +118,7 @@ async def test_item3a_storage_is_deduped_across_actions(env):
         at=datetime.now(timezone.utc), load_bearing=True))
     env.ctx.recipes.save(_r)
     sid = _ok(await env.call("add_step", recipe_id=rid, description="build",
-                             execution="spawn_planner"))["step_id"]
+                             execution="spawn_planner", estimate={"hours": 1}))["step_id"]
     pid = _ok(await env.call("create_plan", recipe_id=rid, step_id=sid,
                              shape="poc-iterate-build", goal="g"))["plan_id"]
     for aid in ("a1", "a2", "a3"):

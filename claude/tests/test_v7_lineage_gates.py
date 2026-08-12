@@ -59,7 +59,7 @@ async def test_add_step_empty_serves_refused_under_gate_flag(env, monkeypatch):
 async def test_add_action_serves_validated_and_persisted(env):
     rid = await _mk_recipe_with_outcome(env)
     await env.call("add_step", recipe_id=rid, description="step",
-                   serves=["o1"], execution="spawn_planner")
+                   serves=["o1"], execution="spawn_planner", estimate={"hours": 1})
     res = await env.call("create_plan", recipe_id=rid, step_id="s1",
                          goal="do it", shape="linear-build")
     pid = res.data["plan_id"]
@@ -94,7 +94,7 @@ async def test_record_context_decision_persists_affects(env):
 async def test_review_policy_gates_review_legs(env):
     rid = await _mk_recipe_with_outcome(env)
     await env.call("add_step", recipe_id=rid, description="step",
-                   execution="spawn_planner", serves=["o1"])
+                   execution="spawn_planner", estimate={"hours": 1}, serves=["o1"])
     res = await env.call("create_plan", recipe_id=rid, step_id="s1",
                          goal="do it", shape="linear-build",
                          review_policy={"triggers": ["protected surface"],

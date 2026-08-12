@@ -29,7 +29,7 @@ def _ok(res):
 async def _plan_with_done_work(env):
     rid = _ok(await env.call("start_recipe", goal="g", domain="api"))["recipe_id"]
     sid = _ok(await env.call("add_step", recipe_id=rid, description="build",
-                             execution="spawn_planner"))["step_id"]
+                             execution="spawn_planner", estimate={"hours": 1}))["step_id"]
     pid = _ok(await env.call("create_plan", recipe_id=rid, step_id=sid,
                              shape="poc-iterate-build", goal="g"))["plan_id"]
     _ok(await env.call("add_action", plan_id=pid, action_id="a1",

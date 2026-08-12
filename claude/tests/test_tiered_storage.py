@@ -430,7 +430,7 @@ async def test_supersede_decision_archives_from_index_and_stamp(env):
 
     # dispatch stamp: only the ACTIVE load-bearing decision reaches a worker
     sid = _ok(await env.call("add_step", recipe_id=rid, description="build",
-                             execution="spawn_planner"))["step_id"]
+                             execution="spawn_planner", estimate={"hours": 1}))["step_id"]
     pid = _ok(await env.call("create_plan", recipe_id=rid, step_id=sid,
                              shape="poc-iterate-build", goal="g"))["plan_id"]
     _ok(await env.call("add_action", plan_id=pid, action_id="a1",

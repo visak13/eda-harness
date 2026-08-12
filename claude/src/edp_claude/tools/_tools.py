@@ -3321,6 +3321,10 @@ class _AddActionIn(BaseModel):
     # check ({"check": ...}). An explicit True/False from the planner wins
     # over the derivation.
     gate: bool | None = None
+    # WP2 inline execution: "spawn" (default — a pool worker shell) or
+    # "inline" (the PLANNER does it itself and records status directly; a
+    # worker spawn for it draws an advisory). None = "spawn" (byte-compat).
+    execution: str | None = None
 
 
 def _v7_gates_on() -> bool:
@@ -3481,6 +3485,13 @@ class AddAction(_ClaudeTool):
         gate_val = (m.gate if m.gate is not None
                     else bool(m.serves) and bool(
                         m.verify and m.verify.get("check")))
+        # WP2 inline execution: validated HERE (the schema field is a plain
+        # str so legacy plan JSON always loads) — write-path values only.
+        if m.execution not in (None, "spawn", "inline"):
+            return _precondition(
+                f"add_action: execution must be 'spawn' (a pool worker "
+                f"shell) or 'inline' (the planner does it itself and "
+                f"records status directly) — got {m.execution!r}.")
         p.actions.append(Action(
             action_id=m.action_id,
             description=m.description,
@@ -3493,6 +3504,7 @@ class AddAction(_ClaudeTool):
                 verify=m.verify,
             ),
             gate=gate_val,
+            execution=m.execution or "spawn",
             # MULTI-SPEC: the canonical list wins; the singular descriptor is
             # folded in by the Action load shim when only it is supplied.
             specialization=m.specialization,
@@ -3525,6 +3537,32 @@ def _slug(goal: str) -> str:
 _TRIVIAL_VERDICT = {"ok", "n/a", "na", "none", "yes", "no", "tbd", "."}
 
 
+def _workspace_refusal(workspace: str | None) -> str | None:
+    """WP2 — validate a recipe `workspace` at RECORD time (StartRecipe /
+    the update_object recipe patch): it must be the target repo root — an
+    absolute path that exists and contains a `.git` directory. Returns the
+    teaching refusal string, or None when valid (or unset). Validated at
+    record time so the reviewer git-diff brief and the G-COMMIT close gate
+    can trust the path without re-validating."""
+    if workspace is None:
+        return None
+    try:
+        p = Path(workspace)
+        ok = p.is_absolute() and p.is_dir() and (p / ".git").is_dir()
+    except (OSError, ValueError):
+        ok = False
+    if ok:
+        return None
+    return (
+        f"workspace {workspace!r} must be the TARGET REPO ROOT: an ABSOLUTE "
+        "path that exists and contains a `.git` directory. The reviewer "
+        "git-diff brief and the G-COMMIT close gate run git against this "
+        "path, so it is validated at record time — fix the path (git init "
+        "the repo first if it is genuinely new), or omit `workspace` for "
+        "work that lands in no repo."
+    )
+
+
 class _StartIn(BaseModel):
     goal: str
     domain: str
@@ -3532,6 +3570,10 @@ class _StartIn(BaseModel):
     # any subset of {claude_tokens: int, delegate_usd: float,
     # wall_clock_hours: float}. Omit = no budget, no gate (legacy behavior).
     budget: dict | None = None
+    # WP2 — the target repo root this recipe's work lands in. Optional;
+    # validated by _workspace_refusal (absolute + exists + contains .git).
+    # Settable later via update_object('recipe', patch={'workspace': ...}).
+    workspace: str | None = None
 
 
 class _Rid(BaseModel):
@@ -3544,6 +3586,10 @@ class StartRecipe(_ClaudeTool):
     OutputModel = _Rid
 
     async def _run(self, m: _StartIn):
+        # WP2: workspace is validated at record time (see _workspace_refusal).
+        bad_ws = _workspace_refusal(m.workspace)
+        if bad_ws:
+            return _precondition(bad_ws)
         rid = _slug(m.goal)
         recipe = Recipe(
             recipe_id=rid,
@@ -3554,6 +3600,7 @@ class StartRecipe(_ClaudeTool):
             comprehension={"branches": [], "expected_outcomes": []},
             steps=[],
             budget=m.budget,
+            workspace=m.workspace,
             created_at=_now(),
             updated_at=_now(),
         )
@@ -3593,6 +3640,9 @@ class _BVIn(BaseModel):
     # batch nothing independently re-ran) without reviewer-reviews-reviewer
     # regress. Default False = byte-identical for every existing caller.
     fixed_inline: bool = False
+    # WP2 G-COMMIT: the commit hash the reviewer verified the deliverable at
+    # (its re-run judged THIS commit). Stored in the verdict payload as data.
+    commit: str | None = None
 
 
 def _caller_owns_action(plan_id: str, action_id: str) -> bool:
@@ -3712,6 +3762,9 @@ class RecordBranchVerdict(_ClaudeTool):
         # stamp the plan FSM's DISPATCH_VERIFY_LEG advisory keys on.
         if m.fixed_inline:
             a.review_verdict["fixed_inline"] = True
+        # WP2 G-COMMIT: the commit the reviewer's re-run judged, as data.
+        if m.commit:
+            a.review_verdict["commit"] = m.commit
         # W10b SEAM (b) — the REVIEWER's independent re-run of the acceptance
         # gate (d29/d30: this re-run IS the objective gate). Counted only when
         # the reviewer explicitly STATES the gate failed; never inferred from the
@@ -3981,6 +4034,22 @@ class AddStep(_ClaudeTool):
                                    "step:new")
         if bad_serves:
             return _precondition(bad_serves)
+        # WP2 G-EST: a spawn_planner step is the costliest unit in the
+        # system (planner spawn + cold plan + N shells + review legs), so it
+        # must be ESTIMATED at declaration — budget_status compares planned
+        # vs actual, and an unestimated step makes the recipe budget
+        # unenforceable. Inline steps are exempt (the neuron does them in
+        # its own shell). PM discipline: estimate, don't vibe.
+        if m.execution == "spawn_planner":
+            est = m.estimate or {}
+            if not any(est.get(k) is not None for k in ("tokens", "hours")):
+                return _precondition(
+                    "G-EST: a spawn_planner step requires an estimate — "
+                    "pass estimate={'tokens': <int>?, 'hours': <float>?} "
+                    "(at least one key). budget_status compares each step's "
+                    "declared estimate against actuals; an unestimated step "
+                    "makes the recipe budget unenforceable. Inline steps "
+                    "are exempt. Add the estimate and resend.")
         known = {s.step_id for s in r.steps}
         missing = [d for d in m.depends_on if d not in known]
         if missing:
@@ -4085,6 +4154,10 @@ class _CloseRecipeIn(BaseModel):
     # (mark_outcome_met) or USER-waived via one of these; never on the
     # orchestrator's say-so.
     outcome_waivers: dict[str, str] = {}
+    # WP2 G-COMMIT: recorded user_gate_answer ref (answer_id) validating
+    # against "G-COMMIT:<recipe_id>" — required to close succeeded over a
+    # DIRTY workspace tree. Ignored when the recipe has no workspace.
+    commit_waiver_ref: str | None = None
 
 
 class CloseRecipe(_ClaudeTool):
@@ -4170,6 +4243,12 @@ class CloseRecipe(_ClaudeTool):
             refusal = self._apply_outcome_waivers(r, m, status)
             if refusal is not None:
                 return refusal
+            # WP2 G-COMMIT: a succeeded close over a recipe with a recorded
+            # workspace requires the tree COMMITTED (or a recorded user
+            # waiver); a clean tree records head_commit into final_outcome.
+            refusal = self._check_commit_gate(r, m, status)
+            if refusal is not None:
+                return refusal
         elif (status == "partial" and r.steps
                 and all(s.status == "done" for s in r.steps)):
             # WP1 G-OUTCOME, laundering shape: "partial" with EVERY step
@@ -4198,6 +4277,54 @@ class CloseRecipe(_ClaudeTool):
         r.final_outcome = m.final_outcome
         self.ctx.recipes.save(r)
         return Tool.ok(_Ok())
+
+    def _check_commit_gate(self, r, m: _CloseRecipeIn, status: str):
+        """WP2 G-COMMIT — a succeeded/done close over a recipe with a
+        recorded `workspace` must leave the tree COMMITTED: a dirty
+        `git status --porcelain` refuses unless `commit_waiver_ref` is a
+        recorded user answer for "G-COMMIT:<recipe_id>"; a clean tree
+        records `rev-parse HEAD` into final_outcome["head_commit"]. No
+        workspace → no gate (legacy). Returns a refusal or None."""
+        ws = getattr(r, "workspace", None)
+        if not ws:
+            return None
+        gate_target = f"G-COMMIT:{r.recipe_id}"
+        waived = _gate_override_ok(self.ctx, r.recipe_id,
+                                   m.commit_waiver_ref, gate_target)
+        try:
+            dirty = _git_capture(ws, "status", "--porcelain")
+        except Exception as e:  # noqa: BLE001 — unverifiable ≠ clean
+            dirty = None
+            if not waived:
+                return _precondition(
+                    f"G-COMMIT: cannot verify the workspace tree at {ws!r} "
+                    f"({e}) — refusing to close {status!r} over an "
+                    "unverifiable tree. Fix the workspace (it validated as "
+                    "a git repo when recorded), or the USER waives the "
+                    "commit gate. " + _gate_override_howto(gate_target))
+        if dirty:
+            if not waived:
+                return _precondition(
+                    f"G-COMMIT: the workspace {ws!r} has UNCOMMITTED "
+                    f"changes:\n{dirty[:800]}\nA succeeded close means the "
+                    "deliverable LANDED — commit (and push where the plan "
+                    "says so) first, or the USER waives the commit gate. "
+                    + _gate_override_howto(gate_target))
+        if waived and (dirty or dirty is None):
+            self.ctx.recipes.append_worklog(r.recipe_id, {
+                "kind": "commit_gate_waived",
+                "override_ref": m.commit_waiver_ref,
+                "gate_target": gate_target,
+            })
+            return None
+        # Clean tree — record the honest landing point.
+        try:
+            head = _git_capture(ws, "rev-parse", "HEAD")
+        except Exception:  # noqa: BLE001 — a repo with no HEAD stays honest
+            head = ""
+        if head:
+            m.final_outcome["head_commit"] = head
+        return None
 
     def _laundered_steps(self, r) -> list[str]:
         """WP1 G-STEP close check: done spawn_planner steps whose plan is
@@ -5267,6 +5394,10 @@ class _ActIn(BaseModel):
     # REQUIRED (>=1 valid entry) for `done` on a GATE action; accepted and
     # persisted, never required, on non-gate actions.
     runs: list[dict] = []
+    # WP2 G-COMMIT: the git commit hash the worker states the deliverable
+    # landed as. Persisted onto acceptance.commit as DATA (the CloseRecipe
+    # G-COMMIT gate independently checks the workspace tree).
+    commit: str | None = None
 
 
 class _ActStatusOut(BaseModel):
@@ -5450,6 +5581,9 @@ class RecordActionStatus(_ClaudeTool):
                 # non-gate: persisted whenever provided).
                 if valid_runs:
                     a.acceptance.runs = list(a.acceptance.runs) + valid_runs
+                # WP2 G-COMMIT: the stated landing commit, recorded as data.
+                if m.commit:
+                    a.acceptance.commit = m.commit
                 a.status = "done"
                 # Legibility (principle-6 deterministic worklog write, no
                 # LLM): a status transition is surfaced UNIFORMLY on the
@@ -5477,6 +5611,9 @@ class RecordActionStatus(_ClaudeTool):
             # its honest history).
             if valid_runs:
                 a.acceptance.runs = list(a.acceptance.runs) + valid_runs
+            # WP2 G-COMMIT: persisted on any status when provided.
+            if m.commit:
+                a.acceptance.commit = m.commit
             # W10b SEAM (a) — the WORKER's own report that it ran the acceptance
             # gate in its own shell (d30) and the gate did NOT pass. This is one
             # of exactly two places a failed acceptance cycle is REPORTED; the
@@ -6376,7 +6513,7 @@ class _RecordContextIn(BaseModel):
 
     kind: Literal[
         "decision", "assumption", "rejected_option", "fact",
-        "north_star_update", "note",
+        "north_star_update", "note", "challenge_adjudication",
     ]
     # _CtxIn fields (decision / assumption / rejected_option)
     recipe_id: str | None = None
@@ -6415,6 +6552,14 @@ class _RecordContextIn(BaseModel):
     # plan_id/action_id overrides (e.g. an observer noting on another action).
     plan_id: str | None = None
     action_id: str | None = None
+    # WP2 G-ADJ — kind=challenge_adjudication: the recorded VERDICT on one
+    # adversarial-challenge line in the plan's challenges sidecar. All three
+    # are required for that kind (refuse-and-explain in the handler); `text`
+    # carries the rationale. Ignored by every other kind.
+    challenge_id: str | None = None
+    disposition: Literal[
+        "accepted_fixed", "accepted_wontfix", "rejected", "duplicate",
+    ] | None = None
 
 
 class RecordContext(_ClaudeTool):
@@ -6440,6 +6585,8 @@ class RecordContext(_ClaudeTool):
     OutputModel = BaseModel
 
     async def _run(self, m: _RecordContextIn):
+        if m.kind == "challenge_adjudication":
+            return await self._adjudicate_challenge(m)
         if m.kind in ("decision", "assumption", "rejected_option"):
             if not m.recipe_id:
                 return _precondition(
@@ -6648,6 +6795,55 @@ class RecordContext(_ClaudeTool):
             self.ctx.north_star.save(ns, active)
         except NorthStarImmutable as e:
             return _precondition(str(e))
+        return Tool.ok(_Ok())
+
+    async def _adjudicate_challenge(self, m: _RecordContextIn):
+        """WP2 G-ADJ — record the verdict on ONE adversarial-challenge line.
+        Appends {adjudication: {challenge_id, disposition, rationale, at}}
+        to the plan's challenges sidecar; the pool_spawn_worker gate then
+        stops holding non-review dispatch on that challenge. Findings are
+        PROPOSALS (d76): this verb is the ONLY way a challenge affects
+        anything, and it records a judgment — it edits nothing itself."""
+        # Adjudication is planner+specialist WORK (the shells that own the
+        # plan's direction) — same env-role check pattern as
+        # north_star_update's neuron-only guard.
+        role = os.environ.get("EDP_ROLE", "").strip()
+        if role and role not in ("planner", "specialist"):
+            return _precondition(
+                "record_context(kind=challenge_adjudication) is planner/"
+                f"specialist work — the {role!r} role does not adjudicate "
+                "adversarial findings. Hand the open challenge to the "
+                "plan's planner.")
+        missing = [name for name, val in (
+            ("plan_id", m.plan_id), ("challenge_id", m.challenge_id),
+            ("disposition", m.disposition)) if not val]
+        if missing:
+            return _precondition(
+                "record_context(kind=challenge_adjudication) requires "
+                f"{missing} — pass plan_id=<the plan>, challenge_id=<the "
+                "challenge line's id from its challenges sidecar>, "
+                f"disposition=<one of {list(_ADJ_DISPOSITIONS)}> and text="
+                "<the rationale>, then resend.")
+        if not self.ctx.plans.exists(m.plan_id):
+            return _precondition(f"unknown plan {m.plan_id!r}")
+        entries = _read_challenges(self.ctx.plans.root, m.plan_id)
+        known = [e["challenge_id"] for e in entries
+                 if e.get("challenge_id")]
+        if m.challenge_id not in known:
+            return _precondition(
+                f"no challenge {m.challenge_id!r} recorded for plan "
+                f"{m.plan_id!r}; known challenge ids: {known or '(none)'}. "
+                "Adjudicate a challenge that exists — read the plan's "
+                "challenges sidecar (the dispatch refusal names the open "
+                "ids).")
+        _append_challenge(self.ctx.plans.root, m.plan_id, {
+            "adjudication": {
+                "challenge_id": m.challenge_id,
+                "disposition": m.disposition,
+                "rationale": (m.text or ""),
+                "at": _now().isoformat(),
+            },
+        })
         return Tool.ok(_Ok())
 
 
@@ -7030,6 +7226,10 @@ class _SpawnPlannerIn(BaseModel):
     # registry, models.json, binds each role's model at the spawn seam), so
     # behaviour is unchanged; the param completes the plumbing.
     model: str | None = None
+    # WP2 G-BUDGET: recorded user_gate_answer ref (answer_id) validating
+    # against "G-BUDGET:<recipe_id>" — required to spawn once the recipe's
+    # measurable budget bounds are exceeded.
+    override_ref: str | None = None
 
 
 class PoolSpawnPlanner(_ClaudeTool):
@@ -7038,6 +7238,7 @@ class PoolSpawnPlanner(_ClaudeTool):
     OutputModel = BaseModel
 
     async def _run(self, m: _SpawnPlannerIn):
+        _spawn_advisories: list[dict] = []
         if self.ctx.recipes.exists(m.recipe_id):
             rg = self.ctx.recipes.load(m.recipe_id)
             # W11 suspended-dispatch precondition — first, because a parked
@@ -7077,8 +7278,42 @@ class PoolSpawnPlanner(_ClaudeTool):
                         f"under {2 * _thr}, then respawn. In-flight workers "
                         "and reviewers are unaffected. (Escape hatch, "
                         "operator only: EDP_DECISION_FOLD_HARD=0.)")
-        return await self.ctx.pool.spawn_planner(
+            # WP2 G-BUDGET: judged in code from the recipe's MEASURABLE
+            # bounds (delegate USD from the bridge audits; wall-clock from
+            # created_at). warn (>=80%) advises on the success payload;
+            # exceeded refuses unless the USER answered the gate
+            # (override_ref, the recorded-artifact mechanism).
+            _bc = _budget_check(self.ctx, m.recipe_id)
+            if _bc["level"] == "exceeded":
+                gate_target = f"G-BUDGET:{m.recipe_id}"
+                if _gate_override_ok(self.ctx, m.recipe_id, m.override_ref,
+                                     gate_target):
+                    self.ctx.recipes.append_worklog(m.recipe_id, {
+                        "kind": "budget_overridden",
+                        "override_ref": m.override_ref,
+                        "gate_target": gate_target,
+                        "detail": _bc["detail"],
+                    })
+                else:
+                    return _precondition(
+                        f"G-BUDGET: recipe {m.recipe_id!r} has EXCEEDED its "
+                        f"declared budget ({_bc['detail']}) — refusing to "
+                        "spawn new planning capacity. A real overrun is a "
+                        "decision the USER makes, never a silent grind: "
+                        "either close/park the recipe honestly, or the user "
+                        "raises the budget. "
+                        + _gate_override_howto(gate_target))
+            elif _bc["level"] == "warn":
+                _spawn_advisories.append({
+                    "kind": "budget_warning",
+                    "detail": (f"recipe budget >= "
+                               f"{_BUDGET_WARN_FRACTION:.0%} consumed "
+                               f"({_bc['detail']}) — check budget_status "
+                               "before fanning out more work."),
+                })
+        res = await self.ctx.pool.spawn_planner(
             m.recipe_id, m.step_id, model=m.model)
+        return _with_spawn_advisories(res, _spawn_advisories)
 
 
 def _effective_leg_kind(action, action_id: str) -> str:
@@ -7294,6 +7529,10 @@ class _SpawnWorkerIn(BaseModel):
     # the table — it is the planner's explicit, per-action decision.
     task_class: str = "*"
     allow_candidate_tier: bool = False
+    # WP2 G-BUDGET: recorded user_gate_answer ref (answer_id) validating
+    # against "G-BUDGET:<recipe_id>" — required to spawn once the recipe's
+    # measurable budget bounds are exceeded.
+    override_ref: str | None = None
 
 
 # (`_direction_review_overdue_warning` lived here: the spawn-time nag that told
@@ -7417,6 +7656,52 @@ def _briefing_delta(ctx, recipe, plan, action) -> list[tuple[str, str]]:
     return out
 
 
+# ── WP2 — bounded git reads for the reviewer brief + G-COMMIT gate ─────────
+_GIT_BRIEF_CAP = 2000       # per-field cap in the reviewer brief's git block
+_GIT_TIMEOUT_SECS = 10
+
+
+def _git_capture(workspace: str, *args: str) -> str:
+    """Run ONE bounded git command against a recipe workspace and return its
+    stripped stdout (capped). Bounded by construction: 10s timeout, no
+    window, output captured — never a shell. Raises on any failure (non-zero
+    exit, timeout, missing git) so callers represent unavailability honestly
+    instead of treating an error message as repo state."""
+    import subprocess
+    res = subprocess.run(
+        ["git", "-C", workspace, *args],
+        capture_output=True, text=True, timeout=_GIT_TIMEOUT_SECS,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    if res.returncode != 0:
+        tail = (res.stderr or res.stdout or "").strip()[:200]
+        raise RuntimeError(
+            f"git {' '.join(args)} exited {res.returncode}: {tail}")
+    return (res.stdout or "").strip()[:_GIT_BRIEF_CAP]
+
+
+def _reviewer_git_block(ctx, recipe_id: str) -> dict:
+    """WP2 — the reviewer brief's `git` block: the workspace's actual state
+    (status / diff --stat / recent commits), each capped, read via the
+    recipe's validated `workspace`. When the workspace is unset or any git
+    read fails, the block carries an honest `note` telling the reviewer to
+    locate and diff the repo itself — never a silently absent key."""
+    why = "recipe has no workspace recorded"
+    try:
+        if recipe_id and ctx.recipes.exists(recipe_id):
+            ws = getattr(ctx.recipes.load(recipe_id), "workspace", None)
+            if ws:
+                return {
+                    "status": _git_capture(ws, "status", "--porcelain"),
+                    "diff_stat": _git_capture(ws, "diff", "--stat", "HEAD"),
+                    "recent_commits": _git_capture(
+                        ws, "log", "--oneline", "-5"),
+                }
+    except Exception as e:  # noqa: BLE001 — unavailability is representable
+        why = f"git read failed ({e})"
+    return {"note": f"{why} — locate and diff the target repo yourself "
+                    "before judging"}
+
+
 class PoolSpawnWorker(_ClaudeTool):
     """Spawn the shell for ONE action — or, DESIGN-v7 1.4, for ONE BATCH of
     actions (`action_ids` = the head instruction's `batch_action_ids`): one
@@ -7465,6 +7750,9 @@ class PoolSpawnWorker(_ClaudeTool):
         # W9 part 1 item 3: set when the recipe is overdue for a direction
         # review. Carried to the SUCCESS payload — never to a refusal.
         overdue_warning: str | None = None
+        # WP2: advisories (budget warn / inline-action note) attached to the
+        # SUCCESS payload via _with_spawn_advisories — never to a refusal.
+        _spawn_advisories: list[dict] = []
         # DESIGN-v7 1.4 — the DISPATCH UNIT. [head] for every pre-v7 caller;
         # the batch head's `batch_action_ids` when the planner passes them.
         # The head must be IN the unit (it names the handle + lock the shell
@@ -7536,6 +7824,40 @@ class PoolSpawnWorker(_ClaudeTool):
                         "cross-cutting obligations this plan does not "
                         "cover:\n- " + "\n- ".join(_gaps)
                         + "\nCover them on the plan, then re-dispatch.")
+                # WP2 G-BUDGET: same code-judged gate as the planner spawn —
+                # warn advises on success; exceeded refuses (pre-launch, so
+                # the FSM pre-stamp rolls back) unless the USER answered the
+                # gate (override_ref, the recorded-artifact mechanism).
+                _bc = _budget_check(self.ctx, p.recipe_id)
+                if _bc["level"] == "exceeded":
+                    gate_target = f"G-BUDGET:{p.recipe_id}"
+                    if _gate_override_ok(self.ctx, p.recipe_id,
+                                         m.override_ref, gate_target):
+                        self.ctx.recipes.append_worklog(p.recipe_id, {
+                            "kind": "budget_overridden",
+                            "override_ref": m.override_ref,
+                            "gate_target": gate_target,
+                            "detail": _bc["detail"],
+                        })
+                    else:
+                        _rollback_failed_dispatch(
+                            self.ctx, m.plan_id, m.action_id,
+                            "budget_exceeded_pre_launch",
+                            member_ids=member_ids)
+                        return _precondition(
+                            f"G-BUDGET: recipe {p.recipe_id!r} has EXCEEDED "
+                            f"its declared budget ({_bc['detail']}) — "
+                            "refusing to spawn. A real overrun is a decision "
+                            "the USER makes, never a silent grind. "
+                            + _gate_override_howto(gate_target))
+                elif _bc["level"] == "warn":
+                    _spawn_advisories.append({
+                        "kind": "budget_warning",
+                        "detail": (f"recipe budget >= "
+                                   f"{_BUDGET_WARN_FRACTION:.0%} consumed "
+                                   f"({_bc['detail']}) — check budget_status "
+                                   "before fanning out more work."),
+                    })
             a = next((x for x in p.actions
                       if x.action_id == m.action_id), None)
             # DESIGN-v7 1.4: resolve the whole unit, in the caller's declared
@@ -7586,6 +7908,67 @@ class PoolSpawnWorker(_ClaudeTool):
                             "recipe_suspended_pre_launch",
                             member_ids=rollback_ids)
                         return parked
+                # WP2 G-ADJ: recorded adversarial challenges are PROPOSALS
+                # that must be ADJUDICATED before the plan builds on the
+                # challenged ground — a finding nobody ruled on is neither
+                # accepted nor rejected, and building past it silently is
+                # the exact steering-by-omission d76 forbids. NON-review
+                # legs only: review legs always dispatch (judgment is never
+                # held hostage to judgment), and an absent sidecar = no gate
+                # (legacy plans).
+                if (m.role != "reviewer"
+                        and _effective_leg_kind(a, m.action_id) != "review"):
+                    _open = _open_challenges(self.ctx.plans.root, p.plan_id)
+                    if _open:
+                        _rollback_failed_dispatch(
+                            self.ctx, m.plan_id, m.action_id,
+                            "open_challenges_pre_launch",
+                            member_ids=rollback_ids)
+                        return _precondition(
+                            f"G-ADJ: plan {p.plan_id!r} has UNADJUDICATED "
+                            f"adversarial challenge(s) {_open} — refusing "
+                            "to dispatch non-review work over unruled "
+                            "findings. Adjudicate EACH first: "
+                            "record_context(kind='challenge_adjudication', "
+                            f"plan_id={p.plan_id!r}, challenge_id=<id>, "
+                            "disposition=<accepted_fixed|accepted_wontfix|"
+                            "rejected|duplicate>, text=<the rationale>). "
+                            "Read the findings in the plan's "
+                            "challenges.jsonl sidecar; review legs are "
+                            "never blocked by this gate.")
+                # WP2 inline execution — ADVISORY, never a refusal: the
+                # planner may still deliberately spawn (e.g. it cannot do
+                # the work itself), but the cost is stated at the moment of
+                # the decision.
+                if getattr(a, "execution", "spawn") == "inline":
+                    _spawn_advisories.append({
+                        "kind": "inline_action_spawned",
+                        "detail": (
+                            f"action {m.action_id!r} is marked "
+                            "execution='inline' — the planner executes it "
+                            "itself and records status directly; spawning "
+                            "a worker for it wastes a pool slot."),
+                    })
+                # WP2 G-REWORK: true up `attempt` from the pool's OWN
+                # session history — the registry keeps every row ever
+                # spawned for a handle (terminal ones included, see the
+                # suspend-path note), so the count of PRIOR sessions for
+                # `<plan_id>:<action_id>` is the honest number of times a
+                # shell has already been minted for this action. reconcile's
+                # crash-recovery bump stays the primary writer; this floor
+                # catches re-dispatches that bypassed it (force=true,
+                # interleaved spawns). Best-effort: an unreachable pool
+                # never blocks the spawn.
+                try:
+                    _rows = await self.ctx.pool.sessions()
+                    _prior = sum(
+                        1 for s_ in _rows
+                        if s_.get("handle") == f"{m.plan_id}:{m.action_id}")
+                except Exception:  # noqa: BLE001
+                    _prior = 0
+                if _prior and a.attempt < _prior:
+                    a.attempt = _prior
+                    self.ctx.plans.save(p)
                 # W2 leg 4 (duplicate-dispatch guard, DESIGN-v6 §W2): an
                 # action already `done`/`needs_review` is delivered work —
                 # re-dispatching it re-does completed work (the "neuron
@@ -8020,6 +8403,10 @@ class PoolSpawnWorker(_ClaudeTool):
                         "expected": x.acceptance.expected,
                         "evidence": (x.acceptance.actual or "")[:1500],
                         "spec_ids": x.effective_spec_ids(),
+                        # WP2: the worker's recorded execution ledger
+                        # ({command, exit_code} entries, WP1 G-RUNS) — the
+                        # reviewer re-runs these SAME commands verbatim.
+                        "runs": list(x.acceptance.runs or []),
                     } for x in _reviewed],
                     "criteria": (
                         "Independently re-run every acceptance criterion "
@@ -8028,7 +8415,14 @@ class PoolSpawnWorker(_ClaudeTool):
                         "can in-session (reviewer.md Step 2.5); stamp "
                         "record_branch_verdict per reviewed action "
                         "(fixed_inline=true if you fixed anything); then "
-                        "close YOUR OWN leg via record_action_status."),
+                        "close YOUR OWN leg via record_action_status. "
+                        "Re-run the recorded acceptance runs verbatim; "
+                        "verify deliverables are committed and record the "
+                        "hash in your verdict."),
+                    # WP2: the workspace's ACTUAL git state (or an honest
+                    # note when unavailable) — the reviewer judges the repo,
+                    # not the worker's prose about it.
+                    "git": _reviewer_git_block(self.ctx, p.recipe_id),
                     "spec_ids": specs,
                     "spec_id": specs[0] if specs else None,
                     "grounding_brief":
@@ -8097,7 +8491,9 @@ class PoolSpawnWorker(_ClaudeTool):
         # (W9's overdue direction-review NAG rode a successful spawn from here,
         # onto both the worklog and res.data["direction_review"]. REMOVED —
         # d128/d132. A spawn payload now carries no direction-review surface.)
-        return res
+        # WP2: budget-warn / inline-action advisories ride the SUCCESS
+        # payload only (a refusal teaches its own lesson).
+        return _with_spawn_advisories(res, _spawn_advisories)
 
 
 class _ArmDriverIn(BaseModel):
@@ -8372,6 +8768,43 @@ class _AdversarialChallengeIn(BaseModel):
     lens: str
 
 
+# ── WP2 G-ADJ — adversarial-challenge adjudication sidecar ─────────────────
+# One jsonl per plan (.plans/<plan_id>/challenges.jsonl): challenge lines
+# ({challenge_id, lens, at, findings_raw}) appended by AdversarialChallenge,
+# adjudication lines ({adjudication: {challenge_id, disposition, rationale,
+# at}}) appended by record_context(kind='challenge_adjudication'). The
+# dispatch gate (pool_spawn_worker) refuses NON-review legs while any
+# challenge has no adjudication; absent sidecar = no gate (legacy).
+_CHALLENGE_FINDINGS_CAP = 20000
+_ADJ_DISPOSITIONS = ("accepted_fixed", "accepted_wontfix", "rejected",
+                     "duplicate")
+
+
+def _challenges_path(root: Path, plan_id: str) -> Path:
+    return Path(root) / plan_id / "challenges.jsonl"
+
+
+def _append_challenge(root: Path, plan_id: str, entry: dict) -> None:
+    from ..store.atomic import append_jsonl
+    append_jsonl(_challenges_path(root, plan_id), entry)
+
+
+def _read_challenges(root: Path, plan_id: str) -> list[dict]:
+    from ..store.atomic import read_jsonl
+    return read_jsonl(_challenges_path(root, plan_id))
+
+
+def _open_challenges(root: Path, plan_id: str) -> list[str]:
+    """Challenge ids with NO adjudication line yet, in append order. [] when
+    the sidecar is absent (legacy plans carry no gate)."""
+    entries = _read_challenges(root, plan_id)
+    adjudicated = {
+        (e.get("adjudication") or {}).get("challenge_id")
+        for e in entries if e.get("adjudication")}
+    return [e["challenge_id"] for e in entries
+            if e.get("challenge_id") and e["challenge_id"] not in adjudicated]
+
+
 class AdversarialChallenge(_ClaudeTool):
     """Have the cross-family adversary (Sol) try to BREAK the target through
     one named lens. Output is FINDINGS-ONLY data ({finding, evidence,
@@ -8394,13 +8827,32 @@ class AdversarialChallenge(_ClaudeTool):
             return _precondition(
                 f"target_kind must be plan|spec_decision|artifact|assumption, "
                 f"got {m.target_kind!r}")
-        return await _bridge_call(
+        res = await _bridge_call(
             "challenge", "challenge", "",
             task=f"Attack this {m.target_kind} ({m.target_id}) through the "
                  f"lens: {m.lens}. Find what is WRONG — a wrong option baked "
                  f"in, an acceptance that can be satisfied while the goal "
                  f"fails, a hidden coupling, a missing concern.",
             context=m.content)
+        # WP2 G-ADJ: a SUCCESSFUL plan challenge persists to the plan's
+        # challenges sidecar; the dispatch gate then holds NON-review legs
+        # until each recorded challenge is adjudicated
+        # (record_context(kind='challenge_adjudication')). Raw text only —
+        # findings are PROPOSALS for adjudication, never steering (d76).
+        if m.target_kind == "plan" and getattr(res, "ok", False):
+            # ToolOk.data is a plain dict (the contracts layer dumps the
+            # payload model); read it as one.
+            payload = (res.data if isinstance(res.data, dict)
+                       else res.data.model_dump())
+            if payload.get("ok"):
+                _append_challenge(self.ctx.plans.root, m.target_id, {
+                    "challenge_id": str(uuid.uuid4()),
+                    "lens": m.lens,
+                    "at": _now().isoformat(),
+                    "findings_raw": (payload.get("content")
+                                     or "")[:_CHALLENGE_FINDINGS_CAP],
+                })
+        return res
 
 
 # ── reflex (v7 WS7, SHADOW.md §4) — the agent's window into its shadow ──────
@@ -8603,6 +9055,103 @@ class TestLineageReport(_ClaudeTool):
 
 
 # ── budget status (v7 WS3 §2.6c) — planned vs actual, pure code ─────────────
+def _delegate_actuals(home: Path) -> dict:
+    """Delegate spend summed from EVERY bridge audit sidecar
+    (.bridge/audit-*.jsonl under the agent home). Shared by BudgetStatus
+    (the read surface) and the WP2 G-BUDGET spawn gate — one aggregation,
+    never two divergent ones."""
+    agg = {"calls": 0, "tokens_in": 0, "tokens_out": 0,
+           "cost_usd": 0.0, "failures": 0}
+    try:
+        for f in sorted((home / ".bridge").glob("audit-*.jsonl")):
+            for line in f.read_text(encoding="utf-8").splitlines():
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                agg["calls"] += 1
+                agg["tokens_in"] += int(row.get("tokens_in", 0))
+                agg["tokens_out"] += int(row.get("tokens_out", 0))
+                agg["cost_usd"] += float(row.get("cost_usd", 0.0))
+                if not row.get("ok", True):
+                    agg["failures"] += 1
+    except OSError:
+        pass
+    agg["cost_usd"] = round(agg["cost_usd"], 4)
+    return agg
+
+
+# WP2 G-BUDGET: the warn threshold — >=80% of either measurable bound.
+_BUDGET_WARN_FRACTION = 0.8
+
+
+def _budget_check(ctx, recipe_id: str) -> dict:
+    """WP2 G-BUDGET — {level: 'ok'|'warn'|'exceeded', detail} for a recipe's
+    MEASURABLE budget bounds: delegate USD (vs the .bridge audit sums —
+    BudgetStatus's own aggregation) and wall-clock hours (vs created_at→now).
+    claude_tokens is deliberately NOT judged here — it is unmeasured without
+    the telemetry backend, and a gate on a number nobody measured would be a
+    lie (the BudgetStatus honesty-field doctrine). No budget on the recipe →
+    'ok' (legacy). Deterministic; code only."""
+    try:
+        if not (recipe_id and ctx.recipes.exists(recipe_id)):
+            return {"level": "ok", "detail": ""}
+        r = ctx.recipes.load(recipe_id)
+    except Exception:  # noqa: BLE001 — an unreadable recipe is not a gate
+        return {"level": "ok", "detail": ""}
+    budget = r.budget or {}
+    used: list[tuple[str, float, float]] = []   # (name, spent, bound)
+    try:
+        usd_cap = float(budget.get("delegate_usd") or 0)
+    except (TypeError, ValueError):
+        usd_cap = 0.0
+    if usd_cap > 0:
+        actuals = _delegate_actuals(ctx.recipes.root.parent)
+        used.append(("delegate_usd", float(actuals["cost_usd"]), usd_cap))
+    try:
+        hours_cap = float(budget.get("wall_clock_hours") or 0)
+    except (TypeError, ValueError):
+        hours_cap = 0.0
+    if hours_cap > 0:
+        created = r.created_at
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        elapsed_h = max(0.0, (_now() - created).total_seconds() / 3600.0)
+        used.append(("wall_clock_hours", elapsed_h, hours_cap))
+    level = "ok"
+    lines: list[str] = []
+    for name, spent, bound in used:
+        frac = spent / bound
+        lines.append(f"{name}: {spent:.2f} of {bound:.2f} ({frac:.0%})")
+        if frac >= 1.0:
+            level = "exceeded"
+        elif frac >= _BUDGET_WARN_FRACTION and level != "exceeded":
+            level = "warn"
+    return {"level": level, "detail": "; ".join(lines)}
+
+
+class _SpawnAdvised(BaseModel):
+    """WP2 — a successful spawn payload CARRYING ADVISORIES (budget warn /
+    inline-action note). extra='allow' preserves every field of the pool's
+    own success payload (handle, session ids, …) verbatim; only `advisories`
+    is added. Used only when there is something to advise — an advisory-free
+    spawn returns the pool's payload untouched (byte-compat)."""
+    model_config = {"extra": "allow"}
+    advisories: list[dict] = []
+
+
+def _with_spawn_advisories(res, advisories: list[dict]):
+    """Attach advisories to a SUCCESSFUL spawn result (the spawn payload has
+    no native advisories field — the _Ver.advisories idiom is authoring-verb
+    only). Failure results pass through untouched."""
+    if not advisories or not getattr(res, "ok", False):
+        return res
+    data = res.data if isinstance(res.data, dict) else (
+        res.data.model_dump() if hasattr(res.data, "model_dump") else {})
+    data = {k: v for k, v in data.items() if k != "advisories"}
+    return Tool.ok(_SpawnAdvised(**data, advisories=advisories))
+
+
 class _BudgetStatusIn(BaseModel):
     recipe_id: str
 
@@ -8643,24 +9192,9 @@ class BudgetStatus(_ClaudeTool):
             return _precondition(f"unknown recipe {m.recipe_id!r}")
         r = self.ctx.recipes.load(m.recipe_id)
         home = self.ctx.recipes.root.parent
-        agg = {"calls": 0, "tokens_in": 0, "tokens_out": 0,
-               "cost_usd": 0.0, "failures": 0}
-        try:
-            for f in sorted((home / ".bridge").glob("audit-*.jsonl")):
-                for line in f.read_text(encoding="utf-8").splitlines():
-                    try:
-                        row = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    agg["calls"] += 1
-                    agg["tokens_in"] += int(row.get("tokens_in", 0))
-                    agg["tokens_out"] += int(row.get("tokens_out", 0))
-                    agg["cost_usd"] += float(row.get("cost_usd", 0.0))
-                    if not row.get("ok", True):
-                        agg["failures"] += 1
-        except OSError:
-            pass
-        agg["cost_usd"] = round(agg["cost_usd"], 4)
+        # WP2: the aggregation is the shared module function — the SAME sums
+        # the G-BUDGET spawn gate judges (one source of truth).
+        agg = _delegate_actuals(home)
         telemetry_on = os.environ.get(
             "CLAUDE_CODE_ENABLE_TELEMETRY", "").strip() == "1"
         return Tool.ok(_BudgetStatusOut(

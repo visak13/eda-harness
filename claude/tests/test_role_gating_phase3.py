@@ -127,7 +127,7 @@ def test_effective_leg_kind_resolution():
 async def test_declared_build_unreserves_review_name(env):
     rid = _ok(await env.call("start_recipe", goal="g", domain="api"))["recipe_id"]
     sid = _ok(await env.call("add_step", recipe_id=rid, description="build",
-                             execution="spawn_planner"))["step_id"]
+                             execution="spawn_planner", estimate={"hours": 1}))["step_id"]
     pid = _ok(await env.call("create_plan", recipe_id=rid, step_id=sid,
                              shape="poc-iterate-build", goal="g"))["plan_id"]
     # an action named r1 but DECLARED a build leg dispatches as a worker

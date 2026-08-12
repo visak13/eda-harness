@@ -52,7 +52,7 @@ def _seed_lb(env, rid, n, size=400, prefix="seed"):
 
 async def _plan_with_action(env, rid, action_id="a1", concerns=None):
     sid = _ok(await env.call("add_step", recipe_id=rid, description="build",
-                             execution="spawn_planner"))["step_id"]
+                             execution="spawn_planner", estimate={"hours": 1}))["step_id"]
     pid = _ok(await env.call("create_plan", recipe_id=rid, step_id=sid,
                              shape="poc-iterate-build", goal="g"))["plan_id"]
     kw = {"concerns": concerns} if concerns else {}
@@ -189,7 +189,7 @@ async def test_planner_spawn_refused_past_fold_ceiling(env, monkeypatch):
     monkeypatch.setenv("EDP_DECISION_FOLD_THRESHOLD", "2")
     rid = _ok(await env.call("start_recipe", goal="g", domain="api"))["recipe_id"]
     sid = _ok(await env.call("add_step", recipe_id=rid, description="build",
-                             execution="spawn_planner"))["step_id"]
+                             execution="spawn_planner", estimate={"hours": 1}))["step_id"]
     _seed_active_plain(env, rid, 5)                       # 5 > 2x2
     res = await env.call("pool_spawn_planner", recipe_id=rid, step_id=sid)
     _refused(res, "fold ceiling", "fold_decisions")

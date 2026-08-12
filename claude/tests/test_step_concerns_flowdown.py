@@ -36,7 +36,7 @@ async def _recipe_with_step(env, concerns=None, sketch=None):
     if sketch:
         kw["acceptance_sketch"] = sketch
     sid = _ok(await env.call("add_step", recipe_id=rid, description="build",
-                             execution="spawn_planner", **kw))["step_id"]
+                             execution="spawn_planner", estimate={"hours": 1}, **kw))["step_id"]
     return rid, sid
 
 

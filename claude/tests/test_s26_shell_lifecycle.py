@@ -64,7 +64,7 @@ async def _plan_with_action(env, action_id="a1", *, goal="g", step="build"):
     """Minimal recipe → step → plan → one generic action (passes Guard B)."""
     rid = _ok(await env.call("start_recipe", goal=goal, domain="api"))["recipe_id"]
     sid = _ok(await env.call("add_step", recipe_id=rid, description=step,
-                             execution="spawn_planner"))["step_id"]
+                             execution="spawn_planner", estimate={"hours": 1}))["step_id"]
     pid = _ok(await env.call("create_plan", recipe_id=rid, step_id=sid,
                              shape="poc-iterate-build", goal=goal))["plan_id"]
     _ok(await env.call("add_action", plan_id=pid, action_id=action_id,
@@ -460,7 +460,7 @@ async def _two_plans(env):
     pids = []
     for n in ("first", "second"):
         sid = _ok(await env.call("add_step", recipe_id=rid, description=n,
-                                 execution="spawn_planner"))["step_id"]
+                                 execution="spawn_planner", estimate={"hours": 1}))["step_id"]
         pid = _ok(await env.call("create_plan", recipe_id=rid, step_id=sid,
                                  shape="poc-iterate-build", goal=n))["plan_id"]
         _ok(await env.call("add_action", plan_id=pid, action_id="a4",

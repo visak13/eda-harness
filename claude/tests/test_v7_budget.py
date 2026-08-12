@@ -64,7 +64,7 @@ async def test_worklog_rolls_like_events(env, monkeypatch):
     res = await env.call("start_recipe", goal="worklog roll", domain="test")
     rid = res.data["recipe_id"]
     await env.call("add_step", recipe_id=rid, description="s",
-                   execution="spawn_planner")
+                   execution="spawn_planner", estimate={"hours": 1})
     pres = await env.call("create_plan", recipe_id=rid, step_id="s1",
                           goal="g", shape="linear-build")
     pid = pres.data["plan_id"]

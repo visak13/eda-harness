@@ -232,6 +232,7 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5" },
     { name = "reactivex", specifier = ">=4.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
+    { name = "tiktoken", marker = "extra == 'dev'", specifier = ">=0.7" },
 ]
 provides-extras = ["dev"]
 

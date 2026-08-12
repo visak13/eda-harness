@@ -54,7 +54,7 @@ async def test_reviewing_reopens_when_pending_step_added(env):
     # neuron adds s2 (deferred until s1's output was known)
     _ok(await env.call("add_step", recipe_id=rid,
                        description="implement the endpoint",
-                       execution="spawn_planner"))
+                       execution="spawn_planner", estimate={"hours": 1}))
     # next_action must REOPEN and dispatch s2, not emit done
     d = (await env.call("next_action", handle=rid,
                         handle_type="recipe")).data

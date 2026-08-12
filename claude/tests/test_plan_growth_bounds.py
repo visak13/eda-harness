@@ -27,7 +27,7 @@ def _refused(res, *needles):
 async def _plan(env):
     rid = _ok(await env.call("start_recipe", goal="g", domain="api"))["recipe_id"]
     sid = _ok(await env.call("add_step", recipe_id=rid, description="build",
-                             execution="spawn_planner"))["step_id"]
+                             execution="spawn_planner", estimate={"hours": 1}))["step_id"]
     pid = _ok(await env.call("create_plan", recipe_id=rid, step_id=sid,
                              shape="poc-iterate-build", goal="g"))["plan_id"]
     return rid, pid
@@ -47,7 +47,7 @@ async def test_step_description_write_cap(env):
     rid = _ok(await env.call("start_recipe", goal="g", domain="api"))["recipe_id"]
     _refused(await env.call("add_step", recipe_id=rid,
                             description="x" * 2000,
-                            execution="spawn_planner"),
+                            execution="spawn_planner", estimate={"hours": 1}),
              "write cap")
 
 
@@ -88,9 +88,9 @@ async def test_step_count_meter(env, monkeypatch):
     monkeypatch.setenv("EDP_RECIPE_STEP_SOFT", "2")
     rid = _ok(await env.call("start_recipe", goal="g", domain="api"))["recipe_id"]
     _ok(await env.call("add_step", recipe_id=rid, description="one",
-                       execution="spawn_planner"))
+                       execution="spawn_planner", estimate={"hours": 1}))
     _ok(await env.call("add_step", recipe_id=rid, description="two",
-                       execution="spawn_planner"))
+                       execution="spawn_planner", estimate={"hours": 1}))
     d = _ok(await env.call("add_step", recipe_id=rid, description="three",
-                           execution="spawn_planner"))
+                           execution="spawn_planner", estimate={"hours": 1}))
     assert any("map_growth_cost" in a for a in (d.get("advisories") or [])), d

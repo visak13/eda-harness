@@ -32,7 +32,7 @@ async def _scaffold(env, goal="g"):
     rid = _ok(await env.call("start_recipe", goal=goal,
                              domain="api"))["recipe_id"]
     sid = _ok(await env.call("add_step", recipe_id=rid, description="build",
-                             execution="spawn_planner"))["step_id"]
+                             execution="spawn_planner", estimate={"hours": 1}))["step_id"]
     pid = _ok(await env.call("create_plan", recipe_id=rid, step_id=sid,
                              shape="poc-iterate-build", goal="g"))["plan_id"]
     _ok(await env.call("add_action", plan_id=pid, action_id="a1",
@@ -79,7 +79,7 @@ async def test_plan_scoped_and_unscoped_in_other_plans_traffic_out(
     rid, sid, pid = await _scaffold(env)
     # a sibling plan under a second step — its unshared events are noise here
     sid2 = _ok(await env.call("add_step", recipe_id=rid, description="other",
-                              execution="spawn_planner"))["step_id"]
+                              execution="spawn_planner", estimate={"hours": 1}))["step_id"]
     pid2 = _ok(await env.call("create_plan", recipe_id=rid, step_id=sid2,
                               shape="poc-iterate-build", goal="g2"))["plan_id"]
     _ok(await env.call("add_action", plan_id=pid2, action_id="b1",
@@ -145,14 +145,20 @@ async def test_redispatch_with_unchanged_events_does_not_churn_plan(env):
     p1 = env.ctx.plans.load(pid)
     assert p1.actions[0].injected_context_ids.get("briefing")
 
-    # unchanged events → identical content-hash ids → no save, no churn
+    # unchanged events → identical content-hash ids → the INJECTION does not
+    # churn: pointer and by-id map are byte-identical on the re-dispatch.
+    # (WP2 G-REWORK: the re-dispatch itself now legitimately trues up
+    # `attempt` from the pool's session history — a REAL state change, so
+    # the raw version is no longer a churn proxy; the briefing invariant is
+    # pinned on the injection content instead.)
     await env.call("pool_spawn_worker", plan_id=pid, action_id="a1",
                    force=True)
     p2 = env.ctx.plans.load(pid)
-    assert p2.version == p1.version, (
-        "re-dispatch over unchanged events must not churn the plan version")
+    assert p2.injected_context == p1.injected_context, (
+        "re-dispatch over unchanged events must not churn the injection map")
     assert p2.actions[0].injected_context_ids == \
         p1.actions[0].injected_context_ids
+    assert p2.actions[0].attempt == 1   # the G-REWORK history floor, not churn
 
     # a NEW event does change the stamp on the next dispatch
     _ok(await env.call("emit_recipe_event", recipe_id=rid, kind="learning",

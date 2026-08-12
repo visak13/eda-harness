@@ -148,7 +148,7 @@ async def _plan(env):
     rid = _ok(await env.call("start_recipe", goal="build an api",
                              domain="api"))["recipe_id"]
     sid = _ok(await env.call("add_step", recipe_id=rid, description="build",
-                             execution="spawn_planner"))["step_id"]
+                             execution="spawn_planner", estimate={"hours": 1}))["step_id"]
     pid = _ok(await env.call("create_plan", recipe_id=rid, step_id=sid,
                              shape="linear-build", goal="build it"))["plan_id"]
     return pid

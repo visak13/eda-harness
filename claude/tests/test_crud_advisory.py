@@ -28,7 +28,7 @@ async def _recipe_with_steps(env, n=2):
     for i in range(n):
         sids.append(_ok(await env.call(
             "add_step", recipe_id=rid, description=f"step {i}",
-            execution="spawn_planner"))["step_id"])
+            execution="spawn_planner", estimate={"hours": 1}))["step_id"])
     return rid, sids
 
 
@@ -268,7 +268,7 @@ async def test_declaring_steps_up_front_is_frictionless(env):
     must stay silent — a warning on every step is a warning on none."""
     rid, _ = await _recipe_with_steps(env, n=2)
     out = _ok(await env.call("add_step", recipe_id=rid, description="third",
-                             execution="spawn_planner"))
+                             execution="spawn_planner", estimate={"hours": 1}))
     assert out.get("advisories") in (None, []), out
     assert "MID-FLIGHT" not in (out.get("note") or "")
 
@@ -285,7 +285,7 @@ async def test_mid_flight_step_warns_with_the_cheaper_alternatives(env):
 
     out = _ok(await env.call("add_step", recipe_id=rid,
                              description="a gap found mid-flight",
-                             execution="spawn_planner"))
+                             execution="spawn_planner", estimate={"hours": 1}))
     adv = " ".join(out.get("advisories") or [])
     assert "UNJUSTIFIED" in adv, out
     # the cheaper escalation order must travel WITH the warning
@@ -303,7 +303,7 @@ async def test_mid_flight_step_with_justification_records_it(env):
 
     out = _ok(await env.call(
         "add_step", recipe_id=rid, description="a real new capability",
-        execution="spawn_planner",
+        execution="spawn_planner", estimate={"hours": 1},
         justification="distinct user-visible feature; no step can own it"))
     adv = " ".join(out.get("advisories") or [])
     assert "UNJUSTIFIED" not in adv, adv
@@ -320,7 +320,7 @@ async def test_mid_flight_step_depending_on_another_gets_THE_TELL(env):
     env.ctx.recipes.save(r)
 
     out = _ok(await env.call("add_step", recipe_id=rid, description="join",
-                             execution="spawn_planner", depends_on=[s1],
+                             execution="spawn_planner", estimate={"hours": 1}, depends_on=[s1],
                              justification="needs the thing s1 builds"))
     adv = " ".join(out.get("advisories") or [])
     assert "THE TELL" in adv and s1 in adv, adv

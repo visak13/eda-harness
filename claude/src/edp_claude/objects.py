@@ -1079,9 +1079,28 @@ async def update_object(ctx, obj_type: str, ids: dict | None = None,
                 recipe_id=ids["recipe_id"],
                 user_quote=patch.get("signoff_quote", patch.get("user_quote",
                                                                 "")))
+        if "workspace" in patch:
+            # WP2: set/clear the recipe's target-repo workspace later than
+            # start_recipe. Same record-time validation as the start path
+            # (absolute + exists + contains .git) — mirrors how the WP1
+            # outcome_waivers thread through this route to their gate owner.
+            # Function-level import: _tools imports advise() from this module.
+            from .tools._tools import _workspace_refusal
+            bad = _workspace_refusal(patch["workspace"])
+            if bad:
+                raise ObjectError(bad)
+            if not ctx.recipes.exists(ids["recipe_id"]):
+                raise ObjectError(f"no recipe {ids['recipe_id']!r}")
+            r = ctx.recipes.load(ids["recipe_id"])
+            r.workspace = patch["workspace"]
+            ctx.recipes.save(r)
+            return {"ok": True, "recipe_id": ids["recipe_id"],
+                    "updated": ["workspace"]}
         raise ObjectError(
-            "recipe update supports {final_outcome} (close) or "
-            "{user_signoff, signoff_quote} (comprehension sign-off)")
+            "recipe update supports {final_outcome} (close), "
+            "{user_signoff, signoff_quote} (comprehension sign-off) or "
+            "{workspace} (the target repo root — absolute, exists, "
+            "contains .git)")
 
     if obj_type == "neuron":
         _need(ids, "neuron_id")

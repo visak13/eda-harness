@@ -113,7 +113,7 @@ async def _recipe_with_plan(env, goal="make the CSV totals line up"):
     rid = _ok(await env.call("start_recipe", goal=goal,
                              domain="framework"))["recipe_id"]
     sid = _ok(await env.call("add_step", recipe_id=rid, description="build",
-                             execution="spawn_planner"))["step_id"]
+                             execution="spawn_planner", estimate={"hours": 1}))["step_id"]
     pid = _ok(await env.call("create_plan", recipe_id=rid, step_id=sid,
                              shape="linear", goal="build it"))["plan_id"]
     _ok(await env.call("add_action", plan_id=pid, action_id="a1",
@@ -252,7 +252,7 @@ def test_t6a_one_failed_cycle_through_BOTH_seams_counts_once_and_is_silent():
 async def _one_action_plan(env, action_id="a1"):
     rid = _ok(await env.call("start_recipe", goal="g", domain="api"))["recipe_id"]
     sid = _ok(await env.call("add_step", recipe_id=rid, description="build",
-                             execution="spawn_planner"))["step_id"]
+                             execution="spawn_planner", estimate={"hours": 1}))["step_id"]
     pid = _ok(await env.call("create_plan", recipe_id=rid, step_id=sid,
                              shape="poc-iterate-build", goal="g"))["plan_id"]
     _ok(await env.call("add_action", plan_id=pid, action_id=action_id,

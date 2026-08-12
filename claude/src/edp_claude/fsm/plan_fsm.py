@@ -18,6 +18,23 @@ SKILL_ACCEPTANCE = "acceptance-review"
 STUCK_ATTEMPT_THRESHOLD = 2
 STUCK_VERIFY_FAILURES_THRESHOLD = 2
 
+# ── WP2 G-REWORK: the HARD re-dispatch cap ─────────────────────────────────
+# At 2 the escalation ladder above ADVISES (a consult question, latched, the
+# plan proceeds). At 4 the FSM stops re-dispatching the action entirely: a
+# fifth mint of the same shell for the same failing work is grind, not
+# progress. A frozen action is excluded from the ready frontier (single
+# dispatch, wave, and batch absorption — all via the shared predicates), and
+# the WAIT rationale names it FROZEN pending ask_above. Pure data judgment —
+# no IO; unfreezing is a human/parent decision (reset the counters via the
+# tool surface after ask_above), never the FSM's.
+STUCK_HARD_CAP = 4
+
+
+def _frozen(a) -> bool:
+    """WP2 G-REWORK — is action `a` past the hard re-dispatch cap? PURE."""
+    return (getattr(a, "attempt", 0) >= STUCK_HARD_CAP
+            or getattr(a, "verify_failures", 0) >= STUCK_HARD_CAP)
+
 # (The W10b consult-tier lookup — CONSULT_ROLE + `_consult_model`, which read
 # roles.MODEL_TIERS — was deleted in the 2026-08-12 dead-surface retirement
 # along with the tier table itself and the consult shell role. The escalation
@@ -50,9 +67,13 @@ def _ready_actions(p: Plan, live_action_ids: frozenset[str] = frozenset()):
     known to be live", which is the pre-s27 behaviour every existing caller
     relied on."""
     done = {a.action_id for a in p.actions if a.status in ("done", "skipped")}
+    # WP2 G-REWORK: a frozen action (past STUCK_HARD_CAP) leaves the ready
+    # frontier — both dispatch surfaces inherit the exclusion from this one
+    # predicate, exactly like the liveness rule above.
     return [a for a in p.actions
             if a.status == "pending" and set(a.depends_on) <= done
-            and a.action_id not in live_action_ids]
+            and a.action_id not in live_action_ids
+            and not _frozen(a)]
 
 
 def _first_ready_action(p: Plan, live_action_ids: frozenset[str] = frozenset()):
@@ -105,7 +126,9 @@ def _batch_members(p: Plan, head,
         if a.action_id == head.action_id:
             continue
         if (a.batch_group != head.batch_group or a.status != "pending"
-                or a.action_id in live_action_ids):
+                or a.action_id in live_action_ids or _frozen(a)):
+            # WP2 G-REWORK: a frozen member is never absorbed into a unit —
+            # the batch would re-execute exactly the work the cap froze.
             continue
         if set(a.depends_on) <= done | in_unit:
             members.append(a)
@@ -549,6 +572,20 @@ def plan_next_action(p: Plan,
                 rationale += (
                     f"; {len(suppressed)} not dispatched because a LIVE "
                     f"worker already holds them: {suppressed}"
+                )
+            # WP2 G-REWORK: name the frozen actions so the WAIT reads as
+            # "held by policy", never as an unexplained stall. A frozen
+            # action will NOT be re-dispatched by the FSM; unfreezing is an
+            # ask_above decision.
+            frozen = [a.action_id for a in p.actions
+                      if a.status == "pending" and _frozen(a)]
+            if frozen:
+                rationale += (
+                    f"; {len(frozen)} FROZEN pending ask_above "
+                    f"(G-REWORK: attempt/verify_failures >= "
+                    f"{STUCK_HARD_CAP}): {frozen} — the FSM will not "
+                    "re-dispatch them; raise ask_above for a human/parent "
+                    "decision (rework differently, split, or abandon)"
                 )
             return Instruction(
                 kind=K.WAIT, args={}, rationale=rationale,

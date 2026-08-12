@@ -93,7 +93,8 @@ async def test_seam_swap_drives_recipe_over_http(env):
     d = (await env("next_action", handle=rid, handle_type="recipe")).data
     assert d["kind"] == "declare_step"
     sid = (await env("add_step", recipe_id=rid, description="do it",
-                     execution="spawn_planner")).data["step_id"]
+                     execution="spawn_planner",
+                     estimate={"hours": 1})).data["step_id"]
 
     d = (await env("next_action", handle=rid, handle_type="recipe")).data
     assert d["kind"] == "spawn_planner"
@@ -126,7 +127,11 @@ async def test_seam_swap_drives_recipe_over_http(env):
     assert nxt["kind"] in ("run_inline", "done")
 
 
-async def test_pool_capacity_error_verbatim_over_http(env):
+async def test_pool_capacity_error_verbatim_over_http(env, monkeypatch):
+    # Hermetic cap: this test used to depend on EDP_MAX_WORKERS=3 leaking
+    # from a start-stack shell (clean environments default to 6, so the
+    # refusal never fired). Pin it (2026-08-12).
+    monkeypatch.setenv("EDP_MAX_WORKERS", "3")
     for i in range(3):
         assert isinstance(
             await env("pool_spawn_worker", plan_id="p", action_id=f"a{i}"),

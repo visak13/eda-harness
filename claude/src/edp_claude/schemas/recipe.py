@@ -540,6 +540,13 @@ class Recipe(BaseModel):
     # come from the bridge audit sidecars. None (every legacy recipe) = no
     # budget declared, no gate. Emission-gated below.
     budget: dict | None = None
+    # WP2 (2026-08-12) — the TARGET REPO ROOT this recipe's work lands in.
+    # Validated at record time (StartRecipe / the update_object recipe patch):
+    # an absolute path that exists and contains a `.git` directory — so the
+    # reviewer git-diff brief and the G-COMMIT close gate can trust it without
+    # re-validating. None (every legacy recipe) = no workspace, no gate.
+    # Emission-gated below.
+    workspace: str | None = None
     version: int = Field(ge=1, default=1)
     created_at: datetime
     updated_at: datetime
@@ -573,6 +580,9 @@ class Recipe(BaseModel):
         # legacy round-trip).
         if not data.get("budget"):
             data.pop("budget", None)
+        # WP2 emission gate: no recorded workspace → no key (same discipline).
+        if data.get("workspace") is None:
+            data.pop("workspace", None)
         return data
 
     @model_validator(mode="after")

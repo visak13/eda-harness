@@ -41,6 +41,12 @@ class Acceptance(BaseModel):
     # record_action_status APPENDS here; emission-gated below (omitted when
     # empty) so a legacy acceptance round-trips byte-identically.
     runs: list[dict] = Field(default_factory=list)
+    # WP2 G-COMMIT (2026-08-12): the git commit hash the worker/reviewer
+    # states the deliverable landed as (record_action_status `commit` /
+    # record_branch_verdict `commit`). DATA, never derived by the tool; the
+    # CloseRecipe G-COMMIT gate independently checks the workspace tree.
+    # Emission-gated below (omitted when None) — legacy byte-identity.
+    commit: str | None = None
 
     @model_serializer(mode="wrap")
     def _ser_tiering_gate(self, handler):
@@ -52,6 +58,9 @@ class Acceptance(BaseModel):
         # WP1 emission gate: omit `runs` when empty (legacy byte-identity).
         if not data.get("runs"):
             data.pop("runs", None)
+        # WP2 emission gate: omit `commit` when None (legacy byte-identity).
+        if data.get("commit") is None:
+            data.pop("commit", None)
         return data
 
 
@@ -232,6 +241,17 @@ class Action(BaseModel):
     # acceptance.runs entry (real command + exit code). Emission-gated in
     # _ser_legacy_shape (omitted when False) — legacy byte-identity.
     gate: bool = False
+    # WP2 inline execution (2026-08-12): HOW this action is executed —
+    # "spawn" (the default: a pool worker shell is dispatched for it) or
+    # "inline" (the PLANNER executes it itself in its own shell and records
+    # status directly; spawning a worker for it wastes a pool slot, which
+    # pool_spawn_worker surfaces as an ADVISORY, never a refusal). Kept a
+    # plain str (values validated at the add_action write path) so a legacy
+    # plan carrying an unexpected value still loads. Emission-gated in
+    # _ser_legacy_shape (omitted at the "spawn" default) — legacy
+    # byte-identity. NOT the same field as `executor_mode` (an older
+    # inline/subagent distinction consumed by other surfaces).
+    execution: str = "spawn"
 
     @model_validator(mode="before")
     @classmethod
@@ -336,6 +356,11 @@ class Action(BaseModel):
                 # schema (a pre-restart extra='forbid' reader never sees it).
                 if value:
                     out["gate"] = value
+            elif key == "execution":
+                # WP2 emission gate: omit at the "spawn" default so a legacy
+                # (non-inline) action serializes byte-shape-identical.
+                if value and value != "spawn":
+                    out["execution"] = value
             elif key in ("verify_failures", "verify_failure_counted"):
                 # W10b emission gate (o6): omit at the 0/False default so every
                 # legacy action — and every action that never failed acceptance

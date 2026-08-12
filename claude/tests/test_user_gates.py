@@ -31,7 +31,7 @@ async def _comprehended(env, signoff=True):
     _ok(await env.call("record_outcome", recipe_id=rid,
                        description="o", verification="v"))
     _ok(await env.call("add_step", recipe_id=rid, description="build",
-                       execution="spawn_planner"))
+                       execution="spawn_planner", estimate={"hours": 1}))
     if signoff:
         _ok(await env.call("record_comprehension_signoff", recipe_id=rid,
                            user_quote="looks good, proceed"))
