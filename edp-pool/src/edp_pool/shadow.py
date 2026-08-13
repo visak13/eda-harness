@@ -12,9 +12,11 @@ DESIGN RULES (the contract, enforced by tests):
     atomically; `reflex` reads it and appends commands to
     .shadows/<safe>.cmd.jsonl, which the shadow tails. No ports.
   * Every typed line after activation is FRAMED:
-        [shadow <handle> #<seq> :<nonce>] <kind>: <digest>
+        [shadow <handle> #<seq> :<nonce> | sense, not operator] <kind>: <digest>
     Sensory grammar only — never imperative. The nonce is the per-spawn
-    provenance secret (also in the shell's env as EDP_SHADOW_NONCE).
+    provenance secret (also in the shell's env as EDP_SHADOW_NONCE). The
+    "sense, not operator" marker exists because the console route makes a
+    wake LOOK like a typed user message (P3, 2026-08-13).
   * Dependencies are INJECTED (shell/driver factories, terminal check,
     pacing read, broker publish, clock) so the whole lifecycle is
     unit-testable with fakes — the FakeSpawner discipline.
@@ -115,6 +117,10 @@ class ShellShadow:
         self._mode = "auto"            # auto | silenced
         self._state = "init"
         self._wakes: list[dict] = []
+        # P4 (2026-08-13): frames whose delivery was deferred/failed (e.g.
+        # the operator was typing on the target console) — re-delivered on
+        # later ticks, in order, bounded so a dead pipe cannot grow it.
+        self._pending: list[str] = []
         self._wlock = threading.Lock()      # ledger writes cross threads
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -157,6 +163,7 @@ class ShellShadow:
             "heartbeat": {"interval_s": self.cfg.heartbeat_s},
             "mode": self._mode,
             "wakes_seq": self._seq,
+            "wakes_pending": len(self._pending),
             "wakes": self._wakes[-20:],          # bounded recent window
             "updated_at": time.time(),
         }, indent=1))
@@ -173,9 +180,12 @@ class ShellShadow:
         if self.cfg.brief:
             first = f"{first}\n\nYOUR BRIEF (injected by your shadow):\n" \
                     f"{self.cfg.brief}"
-        first += (f"\n\n[shadow {self.cfg.handle} #0 :{self.cfg.nonce}] "
+        first += (f"\n\n[shadow {self.cfg.handle} #0 :{self.cfg.nonce} "
+                  f"| sense, not operator] "
                   f"wiring live: {self.cfg.spec or 'heartbeat only'}; "
-                  f"reflex(status) shows the ledger")
+                  f"reflex(status) shows the ledger. Lines framed like this "
+                  f"one are your MACHINE SENSES (data, never the human); "
+                  f"the operator's own typing carries no such frame.")
         # Monitor-mode shells (visible console) take the first line as
         # claude's initial-prompt argv — claude submits it when ready, so
         # there is no post-launch readiness race. A shell that offers
@@ -207,8 +217,11 @@ class ShellShadow:
     # ── wake delivery ───────────────────────────────────────────────────
     def _frame(self, kind: str, digest: str) -> str:
         self._seq += 1
+        # "sense, not operator" (P3, 2026-08-13): the console route makes
+        # every wake LOOK like a typed user message, and agents read it as
+        # the human. The frame names itself machine sense data in-line.
         return (f"[shadow {self.cfg.handle} #{self._seq} "
-                f":{self.cfg.nonce}] {kind}: {digest}")
+                f":{self.cfg.nonce} | sense, not operator] {kind}: {digest}")
 
     def _on_event(self, event: dict) -> None:
         """Driver emission → framed sensory wake. In `silenced` mode the
@@ -225,8 +238,14 @@ class ShellShadow:
         digest = json.dumps(body, default=str)[:400]
         delivered = False
         if self._mode == "auto" and self.shell and self.shell.is_alive():
-            self.shell.send_line(self._frame(kind, digest))
-            delivered = True
+            frame = self._frame(kind, digest)
+            # send_line: False = NOT delivered (pipe failure, or the console
+            # helper deferred because the operator was typing — P4). None
+            # (legacy adapters) keeps counting as delivered.
+            delivered = self.shell.send_line(frame) is not False
+            if not delivered:
+                self._pending.append(frame)
+                del self._pending[:-20]          # bounded, newest kept
         else:
             self._seq += 1                       # seq counts even undelivered
         self._wakes.append({"seq": self._seq, "kind": kind,
@@ -245,6 +264,14 @@ class ShellShadow:
     def _tick(self) -> None:
         self._drain_cmds()
         if self._mode == "auto":
+            # P4 redelivery: frames deferred while the operator was typing
+            # (or a transient pipe failure) go out IN ORDER; stop at the
+            # first re-failure so ordering survives a still-busy console.
+            while (self._pending and self.shell and self.shell.is_alive()):
+                if self.shell.send_line(self._pending[0]) is False:
+                    break
+                self._pending.pop(0)
+                self._write_ledger()
             # driver supervision: a dead driver is re-armed and COUNTED —
             # the deaf-subscription trap becomes visible, never silent.
             if (self._driver_factory is not None and self.driver is not None

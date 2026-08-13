@@ -97,8 +97,9 @@ class _PtyShellAdapter:
     def wait_ready(self) -> bool:
         return self.launch.wait_ready()
 
-    def send_line(self, line: str) -> None:
+    def send_line(self, line: str) -> bool:
         self.launch.send_activation(line)
+        return True
 
     def is_alive(self) -> bool:
         return self.launch.is_alive()
@@ -144,12 +145,15 @@ class _ConsoleShellAdapter:
     def wait_ready(self) -> bool:
         return True
 
-    def send_line(self, line: str) -> None:
+    def send_line(self, line: str) -> bool:
         from .console_input import inject_line
 
         pid = getattr(self.launch, "pid", None)
-        if pid:
-            inject_line(pid, line)
+        if not pid:
+            return False
+        # False covers delivery failure AND the operator-typing defer
+        # (helper exit 4) — the shadow re-queues the frame either way.
+        return inject_line(pid, line)
 
     def is_alive(self) -> bool:
         return bool(self.launch and self.launch.is_alive())

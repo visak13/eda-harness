@@ -43,6 +43,18 @@ _SUBMIT_DELAY_ENV = "EDP_SUBMIT_DELAY_MS"
 _SUBMIT_DELAY_DEFAULT_MS = 150.0
 _HELPER_TIMEOUT_S = 20.0
 
+# ── operator-typing defer (P4, 2026-08-13 hardening run) ──────────────────
+# WriteConsoleInputW splices into whatever the operator is mid-typing on
+# that console: a live steer was truncated mid-word TWICE by wake lines
+# firing into the same input stream ("planner needs to d…i"). Before
+# injecting, the helper waits while the operator is plausibly typing INTO
+# the target console (it is the FOREGROUND window and physical input landed
+# within _DEFER_IDLE_MS); past _DEFER_MAX_S it gives up with exit 4 and the
+# shadow re-delivers on its next tick instead of corrupting human input.
+_DEFER_MAX_ENV = "EDP_WAKE_DEFER_MAX_S"
+_DEFER_MAX_DEFAULT_S = 10.0
+_DEFER_IDLE_MS = 4000.0
+
 
 if sys.platform == "win32":
     import ctypes.wintypes as _wt
@@ -84,6 +96,35 @@ def _write_records(handle, records: list) -> None:
         raise OSError(ctypes.get_last_error(), "WriteConsoleInputW failed")
 
 
+def _operator_active_on_console() -> bool:
+    """Runs INSIDE the helper, already attached to the target console.
+    True when the operator is plausibly typing into THAT console: it is the
+    foreground window AND system-wide physical input landed within the last
+    _DEFER_IDLE_MS. Fail-open: any API failure reads as 'not active' — a
+    broken heuristic must degrade to the old always-inject behavior, never
+    to lost wakes."""
+    if sys.platform != "win32":
+        return False
+    try:
+        k32 = ctypes.windll.kernel32
+        u32 = ctypes.windll.user32
+        hwnd = k32.GetConsoleWindow()
+        if not hwnd or hwnd != u32.GetForegroundWindow():
+            return False
+
+        class _LASTINPUTINFO(ctypes.Structure):
+            _fields_ = [("cbSize", _wt.UINT), ("dwTime", _wt.DWORD)]
+
+        li = _LASTINPUTINFO()
+        li.cbSize = ctypes.sizeof(li)
+        if not u32.GetLastInputInfo(ctypes.byref(li)):
+            return False
+        idle_ms = (k32.GetTickCount() - li.dwTime) & 0xFFFFFFFF
+        return idle_ms < _DEFER_IDLE_MS
+    except Exception:  # noqa: BLE001 — heuristic only, never block delivery
+        return False
+
+
 def _inject_into_attached_console(text: str, submit_delay_ms: float) -> None:
     """Runs INSIDE the helper, already attached to the target console:
     open CONIN$, type the text, wait the submit delay, press Enter."""
@@ -108,7 +149,9 @@ def _inject_into_attached_console(text: str, submit_delay_ms: float) -> None:
 
 def _helper_main(argv: list[str]) -> int:
     """`python -m edp_pool.console_input <pid>` — text on stdin. Exit 0 on
-    delivery, 2 on attach failure (target console gone), 3 otherwise."""
+    delivery, 2 on attach failure (target console gone), 3 otherwise, 4
+    deferred (operator actively typing on the target console — nothing was
+    injected; the caller re-delivers later)."""
     if sys.platform != "win32":
         return 3
     try:
@@ -126,6 +169,16 @@ def _helper_main(argv: list[str]) -> int:
     if not k32.AttachConsole(pid):
         return 2
     try:
+        try:
+            defer_max = float(os.environ.get(_DEFER_MAX_ENV,
+                                             _DEFER_MAX_DEFAULT_S))
+        except ValueError:
+            defer_max = _DEFER_MAX_DEFAULT_S
+        deadline = time.monotonic() + max(0.0, defer_max)
+        while _operator_active_on_console():
+            if time.monotonic() >= deadline:
+                return 4       # deferred, nothing injected
+            time.sleep(0.5)
         _inject_into_attached_console(text, delay)
     except OSError:
         return 3
@@ -136,9 +189,11 @@ def _helper_main(argv: list[str]) -> int:
 
 def inject_line(pid: int, text: str) -> bool:
     """Pool-side entry: deliver one line + Enter into the console owned by
-    `pid`, via the detached helper. True on delivery. Never raises — a
-    failed wake is logged by the caller's ledger, not fatal to the shadow
-    (fail-open supervision)."""
+    `pid`, via the detached helper. True on delivery; False on failure OR
+    when the helper deferred because the operator was typing on that console
+    (exit 4) — the shadow keeps the frame and re-delivers on a later tick.
+    Never raises — a failed wake is logged by the caller's ledger, not fatal
+    to the shadow (fail-open supervision)."""
     if sys.platform != "win32" or not pid:
         return False
     # single-line contract: a stray newline would submit mid-wake.

@@ -141,7 +141,7 @@ def test_monitor_launch_builds_console_shadow(sp, tmp_path, monkeypatch):
     first = captured["argv"][-1]
     assert first.startswith("/worker")
     assert "build the CSV export" in first
-    assert f":{sh.cfg.nonce}]" in first
+    assert f":{sh.cfg.nonce} " in first
     assert injected == []          # no injection at spawn time
     # a later wake IS injected into the console by pid
     sh._on_event({"kind": "mail", "body": {"x": 1}})
@@ -210,7 +210,7 @@ def test_headless_launch_builds_shadow_with_nonced_env(
     first = sh.shell.launch.sent[0]
     assert first.startswith("/worker")
     assert "build the CSV export" in first          # brief injected
-    assert f":{sh.cfg.nonce}]" in first             # provenance frame
+    assert f":{sh.cfg.nonce} " in first             # provenance frame
     # Spawner surface truthful
     assert sp.alive("worker:abc") and sp.knows("worker:abc")
     assert sp.pid("worker:abc") == 4242

@@ -76,7 +76,7 @@ def test_spawn_types_activation_brief_and_nonced_wiring_line(tmp_path):
     first = shell.lines[0]
     assert first.startswith("/worker")
     assert "YOUR BRIEF" in first and "do action a3" in first
-    assert f":{sh.cfg.nonce}]" in first and "wiring live" in first
+    assert f":{sh.cfg.nonce} " in first and "wiring live" in first
     assert ("ready", {"handle": "plan-x:a3", "inbox": "plan-x:a3"}) in published
     ledger = json.loads(
         (tmp_path / ".shadows" / f"{safe_name('plan-x:a3')}.json")
@@ -96,13 +96,77 @@ def test_wakes_are_framed_sequenced_and_sensory_only(tmp_path):
     drivers[0].emit({"kind": "made-up-kind", "body": {}})   # unknown → mail
     sh.stop()
     w1, w2, w3 = shell.lines[1], shell.lines[2], shell.lines[3]
-    assert w1.startswith(f"[shadow plan-x:a3 #1 :{sh.cfg.nonce}] mail:")
-    assert w2.startswith(f"[shadow plan-x:a3 #2 :{sh.cfg.nonce}] steer:")
-    assert w3.startswith(f"[shadow plan-x:a3 #3 :{sh.cfg.nonce}] mail:")
+    # P3 (2026-08-13): the frame names itself machine sense data — console
+    # wakes render exactly like typed user messages otherwise.
+    mark = "| sense, not operator]"
+    assert w1.startswith(f"[shadow plan-x:a3 #1 :{sh.cfg.nonce} {mark} mail:")
+    assert w2.startswith(f"[shadow plan-x:a3 #2 :{sh.cfg.nonce} {mark} steer:")
+    assert w3.startswith(f"[shadow plan-x:a3 #3 :{sh.cfg.nonce} {mark} mail:")
     ledger = json.loads(
         (sh.cfg.ledger_dir / f"{safe_name('plan-x:a3')}.json").read_text())
     assert ledger["wakes_seq"] == 3
     assert all(w["delivered"] for w in ledger["wakes"])
+
+
+class DeferringShell(FakeShell):
+    """send_line returns False (delivery deferred/failed) until unblocked —
+    the console adapter's behavior while the operator is typing (P4)."""
+
+    def __init__(self):
+        super().__init__()
+        self.blocked = True
+
+    def send_line(self, line):
+        if self.blocked:
+            return False
+        self.lines.append(line)
+        return True
+
+
+def test_deferred_wake_is_requeued_and_redelivered_on_tick(tmp_path):
+    """P4 (2026-08-13 live repro): wake lines spliced INTO the operator's
+    half-typed steer, truncating it mid-word. The console helper now defers
+    while the operator types; the shadow must (1) record the wake as NOT
+    delivered, (2) keep the frame, (3) re-deliver in order on a later tick
+    once the console is free — never silently drop mail."""
+    cfg = ShadowConfig(handle="plan-x:a3", role="worker",
+                       ledger_dir=tmp_path / ".shadows",
+                       spec="rx.broker(me)", brief="do action a3",
+                       activation="/worker", heartbeat_s=9999)
+    shell = DeferringShell()
+    shell.blocked = False          # activation line goes through
+    drivers = []
+
+    def driver_factory(on_event):
+        d = FakeDriver(on_event)
+        drivers.append(d)
+        return d
+
+    sh = ShellShadow(cfg, shell_factory=lambda: shell,
+                     driver_factory=driver_factory,
+                     terminal_check=lambda: False)
+    sh.start(run_loop=False)
+    shell.blocked = True           # operator starts typing
+    drivers[0].emit({"kind": "mail", "body": {"n": 1}})
+    drivers[0].emit({"kind": "steer", "body": {"n": 2}})
+    ledger = json.loads(
+        (cfg.ledger_dir / f"{safe_name('plan-x:a3')}.json").read_text())
+    assert [w["delivered"] for w in ledger["wakes"]] == [False, False]
+    assert ledger["wakes_pending"] == 2
+    assert len(shell.lines) == 1   # nothing spliced into the operator's input
+
+    sh._tick()                     # console still busy → still queued
+    assert len(shell.lines) == 1
+
+    shell.blocked = False          # operator done
+    sh._tick()
+    sh.stop()
+    assert [ln for ln in shell.lines[1:] if "#1 " in ln], shell.lines
+    assert "mail:" in shell.lines[1] and "steer:" in shell.lines[2], (
+        "redelivery must preserve order")
+    ledger = json.loads(
+        (cfg.ledger_dir / f"{safe_name('plan-x:a3')}.json").read_text())
+    assert ledger["wakes_pending"] == 0
 
 
 def test_broker_done_event_survives_the_unwrap_with_its_kind(tmp_path):
@@ -205,7 +269,7 @@ def test_reattach_continues_seq_and_keeps_nonce(tmp_path):
     assert sh2.cfg.nonce == nonce      # provenance survives rebirth
     sh2.start(run_loop=False)
     d2[0].emit({"kind": "mail", "body": {}})
-    assert f"#2 :{nonce}]" in shell2.lines[-1]   # seq continued, not reset
+    assert f"#2 :{nonce} " in shell2.lines[-1]   # seq continued, not reset
     sh2.stop()
 
 
