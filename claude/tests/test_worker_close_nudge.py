@@ -29,7 +29,7 @@ def test_reads_edp_handle_with_spawn_fallback():
         < src.index('os.environ.get("EDP_SPAWN_HANDLE")')
 
 
-def test_action_is_terminal_reads_toplevel_plan_json(tmp_path):
+def test_assignment_state_reads_toplevel_plan_json(tmp_path):
     mod = _load()
     # re-anchor the hook's repo root to tmp: root = parents[2] of __file__
     fake = tmp_path / "claude" / ".claude" / "hooks" / "worker-close-nudge.py"
@@ -44,12 +44,50 @@ def test_action_is_terminal_reads_toplevel_plan_json(tmp_path):
                     {"action_id": "a2", "status": "in_progress"}],
     }), encoding="utf-8")
 
-    assert mod._action_is_terminal("recipe-x-s1:a1") is True
-    assert mod._action_is_terminal("recipe-x-s1:a2") is False
+    assert mod._assignment_state("recipe-x-s1:a1") == (True, [])
+    assert mod._assignment_state("recipe-x-s1:a2") == (False, [])
     # unknown plan/action stays None — and None must never pass the guard
-    assert mod._action_is_terminal("recipe-x-s1:zz") is None
-    assert mod._action_is_terminal("nope:a1") is None
-    assert mod._action_is_terminal("") is None
+    assert mod._assignment_state("recipe-x-s1:zz") == (None, [])
+    assert mod._assignment_state("nope:a1") == (None, [])
+    assert mod._assignment_state("") == (None, [])
+
+
+def test_assignment_state_judges_the_whole_batch(tmp_path):
+    """2026-08-13 live repro (recipe 2270d3 s1, twice): a batch worker
+    recorded its handle's action done, the armed hook judged terminal=True
+    on that ONE action, and its close nudge instructed the shell to exit —
+    stranding the remaining members. Terminal must mean the whole group."""
+    mod = _load()
+    fake = tmp_path / "claude" / ".claude" / "hooks" / "worker-close-nudge.py"
+    fake.parent.mkdir(parents=True)
+    mod.__file__ = str(fake)
+
+    plans = tmp_path / "claude" / ".plans"
+    plans.mkdir(parents=True)
+    (plans / "p1.json").write_text(json.dumps({
+        "plan_id": "p1",
+        "actions": [
+            {"action_id": "a1", "status": "done", "batch_group": "g"},
+            {"action_id": "a2", "status": "in_progress", "batch_group": "g"},
+            {"action_id": "a3", "status": "pending", "batch_group": "g"},
+            {"action_id": "b1", "status": "done"},
+        ],
+    }), encoding="utf-8")
+
+    # head recorded done, members open → NOT terminal; remaining named
+    assert mod._assignment_state("p1:a1") == (False, ["a2", "a3"])
+    # ungrouped action unaffected by the batch rule
+    assert mod._assignment_state("p1:b1") == (True, [])
+
+    # whole group terminal → close nudge territory again
+    (plans / "p2.json").write_text(json.dumps({
+        "plan_id": "p2",
+        "actions": [
+            {"action_id": "a1", "status": "done", "batch_group": "g"},
+            {"action_id": "a2", "status": "failed", "batch_group": "g"},
+        ],
+    }), encoding="utf-8")
+    assert mod._assignment_state("p2:a1") == (True, [])
 
 
 def test_guard_requires_all_clauses(tmp_path):
@@ -67,7 +105,7 @@ def test_guard_requires_all_clauses(tmp_path):
         encoding="utf-8")
 
     def guard(role, handle, blocks):
-        terminal = mod._action_is_terminal(handle)
+        terminal, _ = mod._assignment_state(handle)
         return (role == "worker" and bool(handle) and terminal is True
                 and blocks < mod.MAX_BLOCKS)
 

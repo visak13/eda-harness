@@ -102,14 +102,26 @@ def _bump(session_id: str) -> None:
         pass
 
 
-def _action_is_terminal(handle: str) -> bool | None:
-    """Is the action this shell OWNS recorded terminal?
+_TERMINAL = ("done", "failed", "skipped")
 
-    `handle` is `<plan_id>:<action_id>`. Returns None when it cannot be
-    determined — and None must be treated as "do not act", never as "yes".
+
+def _assignment_state(handle: str) -> tuple[bool | None, list[str]]:
+    """(terminal, remaining_batch_members) for the work this shell OWNS.
+
+    `handle` is `<plan_id>:<action_id>`. A batch shell is registered under
+    ONE member's handle but owns the WHOLE batch_group — judging only the
+    handle's action told a mid-batch worker its work was done, and the
+    armed nudge then instructed it to CLOSE, stranding the remaining
+    members (live repro x2 on recipe 2270d3 s1: [a1,a2,a3] closed after
+    a1; the re-dispatched [a2,a3] closed after a2). Terminal now means
+    EVERY member of the group is terminal; `remaining` names the members
+    still open so the nudge can say "continue", not "close".
+
+    Returns (None, []) when it cannot be determined — and None must be
+    treated as "do not act", never as "yes".
     """
     if not handle or ":" not in handle:
-        return None
+        return None, []
     plan_id, _, action_id = handle.rpartition(":")
     plans_root = Path(__file__).resolve().parent.parent.parent / ".plans"
     # Phase 6 fix (2026-07-30): plans live at .plans/<plan_id>.json — the
@@ -124,10 +136,19 @@ def _action_is_terminal(handle: str) -> bool | None:
             plan = json.loads(candidate.read_text(encoding="utf-8"))
         except Exception:
             continue
-        for a in plan.get("actions", []):
-            if a.get("action_id") == action_id:
-                return a.get("status") in ("done", "failed", "skipped")
-    return None
+        actions = [a for a in plan.get("actions", []) if isinstance(a, dict)]
+        own = next((a for a in actions
+                    if a.get("action_id") == action_id), None)
+        if own is None:
+            continue
+        grp = own.get("batch_group")
+        if not grp:
+            return own.get("status") in _TERMINAL, []
+        remaining = [str(a.get("action_id")) for a in actions
+                     if a.get("batch_group") == grp
+                     and a.get("status") not in _TERMINAL]
+        return not remaining, remaining
+    return None, []
 
 
 def main() -> int:
@@ -167,7 +188,7 @@ def main() -> int:
     armed = (os.environ.get("EDP_WORKER_CLOSE_NUDGE") or "").lower() in (
         "1", "true", "yes", "on")
 
-    terminal = _action_is_terminal(handle)
+    terminal, remaining = _assignment_state(handle)
     blocks = _blocks_for(session_id)
 
     record = {
@@ -183,6 +204,7 @@ def main() -> int:
         "edp_spawn_handle": handle or None,
         "edp_spawn_session_id": spawn_sid or None,
         "action_terminal": terminal,
+        "batch_remaining": remaining or None,
         "prior_blocks": blocks,
         "armed": armed,
         "parse_error": parse_error,
@@ -200,7 +222,7 @@ def main() -> int:
     # ── the guard. EVERY clause must pass. ────────────────────────────────
     # role is exactly "worker"      — scope is a clean WORKER close only
     # the shell owns a handle       — otherwise we cannot check its work
-    # its action IS terminal        — None (unknown) does NOT pass
+    # its ASSIGNMENT is terminal    — every batch member; None does NOT pass
     # under the block cap           — loop protection, no built-in exists
     should_nudge = (
         role == "worker"
@@ -208,7 +230,18 @@ def main() -> int:
         and terminal is True
         and blocks < MAX_BLOCKS
     )
+    # 2026-08-13: the CONTINUE nudge — a batch worker stopping with group
+    # members still open is abandoning recorded work. Same mechanism, same
+    # cap, opposite instruction: do the next member, do not close.
+    should_continue = (
+        role == "worker"
+        and bool(handle)
+        and terminal is False
+        and bool(remaining)
+        and blocks < MAX_BLOCKS
+    )
     record["should_nudge"] = should_nudge
+    record["should_continue"] = should_continue
     if role == "worker" and terminal is True and blocks >= MAX_BLOCKS:
         record["note"] = ("block cap reached — allowing the stop; this shell "
                           "ignored the nudge and is a different problem")
@@ -222,6 +255,27 @@ def main() -> int:
             "hookSpecificOutput": {
                 "hookEventName": "Stop",
                 "additionalContext": NUDGE,
+            },
+        }, sys.stdout)
+        return 0
+
+    if armed and should_continue:
+        _bump(session_id)
+        json.dump({
+            "decision": "block",
+            "reason": "batch members are still open; the shell owns them",
+            "hookSpecificOutput": {
+                "hookEventName": "Stop",
+                "additionalContext": (
+                    "YOUR BATCH IS NOT FINISHED. This shell owns batch "
+                    f"members that are still open: {', '.join(remaining)}. "
+                    "Stopping now abandons recorded work — the planner "
+                    "would have to detect the stall and re-dispatch, "
+                    "burning a shell for work you already hold. Execute "
+                    "the remaining members IN DECLARED ORDER now, record "
+                    "each via record_action_status, and only then run "
+                    "your close sequence."
+                ),
             },
         }, sys.stdout)
         return 0
