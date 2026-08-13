@@ -208,12 +208,65 @@ async def test_plan_evidence_tiered_and_hydrated(env, tier_on):
     raw = json.loads((env.ctx.plans.root / f"{pid}.json").read_text(
         encoding="utf-8"))
     acc = raw["actions"][0]["acceptance"]
-    assert acc["actual_ref"] == "evidence/a1-actual.md"
-    assert "full text in evidence/a1-actual.md" in acc["actual"]
-    assert (pdir / "evidence" / "a1-actual.md").read_text(
+    assert acc["actual_ref"] == "evidence/a1-actual-record.md"
+    assert "full text in evidence/a1-actual-record.md" in acc["actual"]
+    assert (pdir / "evidence" / "a1-actual-record.md").read_text(
         encoding="utf-8") == EVIDENCE
     p = env.ctx.plans.load(pid)
     assert p.actions[0].acceptance.actual == EVIDENCE
+
+
+async def test_worker_evidence_file_never_clobbered(env, tier_on):
+    """2026-08-13 hardening run (s3 live evidence loss): the fleet convention
+    has workers write full raw transcripts at evidence/<aid>-actual.md; the
+    record's tier sidecar must NOT adopt that path — it used to, and every
+    plan save then overwrote the transcripts with the capped `actual`
+    string (s3 a2: 7810 B → 1759 B)."""
+    _mk_recipe(env)
+    pid = _mk_plan(env, actual=EVIDENCE)
+    pdir = env.ctx.plans.root / pid
+    worker_file = pdir / "evidence" / "a1-actual.md"
+    worker_file.parent.mkdir(parents=True, exist_ok=True)
+    transcripts = "RAW TRANSCRIPTS " * 500
+    worker_file.write_text(transcripts, encoding="utf-8")
+    p = env.ctx.plans.load(pid)
+    env.ctx.plans.save(p)          # re-dehydrates acceptance.actual
+    assert worker_file.read_text(encoding="utf-8") == transcripts, (
+        "plan save clobbered the worker's evidence file")
+    assert (pdir / "evidence" / "a1-actual-record.md").read_text(
+        encoding="utf-8") == EVIDENCE
+
+
+async def test_legacy_collided_actual_ref_migrates_off_worker_path(env,
+                                                                   tier_on):
+    """A plan whose actual_ref already points at the worker-evidence path
+    (written by the pre-fix code) re-points to -actual-record.md on next
+    save and stops overwriting the worker's file."""
+    _mk_recipe(env)
+    pid = _mk_plan(env, actual=EVIDENCE)
+    pdir = env.ctx.plans.root / pid
+    raw_path = env.ctx.plans.root / f"{pid}.json"
+    raw = json.loads(raw_path.read_text(encoding="utf-8"))
+    acc = raw["actions"][0]["acceptance"]
+    # simulate the pre-fix on-disk state: ref collided with the worker path
+    acc["actual_ref"] = "evidence/a1-actual.md"
+    acc["actual"] = f"digest … [x bytes; full text in evidence/a1-actual.md]"
+    (pdir / "evidence" / "a1-actual.md").write_text(EVIDENCE,
+                                                    encoding="utf-8")
+    raw_path.write_text(json.dumps(raw), encoding="utf-8")
+    p = env.ctx.plans.load(pid)
+    assert p.actions[0].acceptance.actual == EVIDENCE  # hydrated via old ref
+    worker_text = "WORKER TRANSCRIPTS SURVIVE " * 200
+    (pdir / "evidence" / "a1-actual.md").write_text(worker_text,
+                                                    encoding="utf-8")
+    env.ctx.plans.save(p)
+    raw2 = json.loads(raw_path.read_text(encoding="utf-8"))
+    assert (raw2["actions"][0]["acceptance"]["actual_ref"]
+            == "evidence/a1-actual-record.md")
+    assert (pdir / "evidence" / "a1-actual.md").read_text(
+        encoding="utf-8") == worker_text
+    assert (pdir / "evidence" / "a1-actual-record.md").read_text(
+        encoding="utf-8") == EVIDENCE
 
 
 async def test_injected_context_markers_and_grounding_identity(env, tier_on):
@@ -355,7 +408,8 @@ async def test_plan_injected_context_unchanged_save_writes_no_sidecar(
     _mk_recipe(env)
     sidecar_writes.clear()                      # ignore the recipe's own writes
     pid = _mk_plan(env, actual=EVIDENCE, injected={"d2": BIG_DECISION})
-    assert sorted(sidecar_writes) == ["a1-actual.md", "d2.md"], sidecar_writes
+    assert sorted(sidecar_writes) == ["a1-actual-record.md",
+                                      "d2.md"], sidecar_writes
     sidecar_writes.clear()
 
     env.ctx.plans.save(env.ctx.plans.load(pid))

@@ -199,9 +199,30 @@ def dehydrate_plan_payload(payload: dict, plan_dir: Path) -> dict:
             f"context/action-{a.get('action_id', 'unknown')}.md", plan_dir)
         acc = a.get("acceptance")
         if isinstance(acc, dict):
+            # EVIDENCE CLOBBER (2026-08-13 hardening run, s3 live loss):
+            # this sidecar used to adopt `evidence/<action_id>-actual.md` —
+            # the SAME path the fleet's evidence convention has workers
+            # write their full raw transcripts to. Because an already-reffed
+            # field is ALWAYS re-dehydrated, every plan save then overwrote
+            # the worker's 5-8KB transcript with the ~1200-char capped
+            # `actual` string (s3 a2: 7810 B → 1759 B, verbatim SSE
+            # transcripts destroyed). The record's tier file now lives at
+            # `-actual-record.md`; the worker's evidence path is never
+            # written by the store. Legacy refs already pointing at the
+            # collided path migrate on next save: the ref is re-pointed and
+            # the worker's file left alone.
+            aid = a.get('action_id', 'unknown')
+            legacy = f"evidence/{aid}-actual.md"
+            inline = acc.get("actual") or ""
+            # Skip migration on a degraded load (inline text IS the old
+            # digest line) — re-pointing there would tier the digest line
+            # itself as the record's full text.
+            if (acc.get("actual_ref") == legacy
+                    and f"full text in {legacy}" not in inline):
+                acc["actual_ref"] = f"evidence/{aid}-actual-record.md"
             _dehydrate_field(
                 acc, "actual", "actual_ref",
-                f"evidence/{a.get('action_id', 'unknown')}-actual.md",
+                f"evidence/{aid}-actual-record.md",
                 plan_dir)
     inj = payload.get("injected_context")
     if isinstance(inj, dict):
