@@ -34,6 +34,15 @@ for %%P in (9300 9301) do (
     )
 )
 
+rem (2b) sweep orphaned rx-driver sidecars (cmdline-scoped to THIS repo's
+rem      driver module - never a name-wide python kill)
+for /f "usebackq delims=" %%i in (`powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter \"Name like 'python%%'\" | Where-Object { $_.CommandLine -match 'edp_claude\.reactive\.driver' -and $_.CommandLine -match 'eda-base3' }).ProcessId"`) do (
+    taskkill /F /T /PID %%i >nul 2>nul && (
+        echo   killed orphan rx driver pid %%i
+        set "KILLED=1"
+    )
+)
+
 rem (3) verify
 set "STILL="
 for %%P in (9300 9301) do (
