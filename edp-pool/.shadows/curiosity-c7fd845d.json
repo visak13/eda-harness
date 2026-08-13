@@ -1,0 +1,40 @@
+{
+ "handle": "curiosity-c7fd845d",
+ "role": "curiosity",
+ "nonce": "c1e07d",
+ "shell": {
+  "state": "crashed",
+  "alive": false
+ },
+ "driver": {
+  "spec": "rx.broker(me)",
+  "alive": true,
+  "restarts": 1
+ },
+ "heartbeat": {
+  "interval_s": 300.0
+ },
+ "mode": "auto",
+ "wakes_seq": 3,
+ "wakes": [
+  {
+   "seq": 1,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786585508.8534517
+  },
+  {
+   "seq": 2,
+   "kind": "tick",
+   "delivered": true,
+   "ts": 1786585810.617065
+  },
+  {
+   "seq": 3,
+   "kind": "tick",
+   "delivered": false,
+   "ts": 1786586111.8840117
+  }
+ ],
+ "updated_at": 1786586111.8840191
+}

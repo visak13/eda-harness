@@ -1962,7 +1962,8 @@ def run_recipe_ctl(verb: str, recipe_id: str, timeout_s: float = 300) -> dict:
             ["uv", "run", "--project", str(claude_dir), "python",
              str(claude_dir / "scripts" / "recipe_ctl.py"), verb, recipe_id],
             capture_output=True, text=True, encoding="utf-8",
-            timeout=timeout_s)
+            timeout=timeout_s,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": f"recipe_ctl {verb} timed out after "
                                       f"{timeout_s:.0f}s"}

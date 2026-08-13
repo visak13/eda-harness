@@ -33,7 +33,8 @@ class ConsoleLaunch:
             cwd=self.cwd,
             env=self.env,
             # A real, visible, separate console window — claude's TUI
-            # renders natively there.
+            # renders natively there. (2026-08-13 user ruling: Claude Code
+            # shells SHOW UP, full stop — only sidecar processes are hidden.)
             creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
         )
 

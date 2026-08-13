@@ -137,15 +137,23 @@ def _wmi_launch(cmdline: str, cwd: str) -> int:
     Raises on any failure — `arm` turns that into a refusal to suspend.
     """
     ps = (
+        # ShowWindow=0 (SW_HIDE): without ProcessStartupInformation the
+        # WMI-created console-subsystem child gets a fresh VISIBLE console
+        # window parented to WmiPrvSE — the "sidecar shell popping out of
+        # nowhere" the operator reported (2026-08-13). The watchdog is a
+        # sidecar; it must never own a window.
+        "$si = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly "
+        "-Property @{ShowWindow=[uint16]0}; "
         "$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create "
         f"-Arguments @{{CommandLine='{_ps_quote(cmdline)}'; "
-        f"CurrentDirectory='{_ps_quote(cwd)}'}}; "
+        f"CurrentDirectory='{_ps_quote(cwd)}'; ProcessStartupInformation=$si}}; "
         "if ($r.ReturnValue -ne 0) { Write-Error \"Create returned "
         "$($r.ReturnValue)\"; exit 2 }; Write-Output $r.ProcessId"
     )
     out = subprocess.run(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
         capture_output=True, text=True, timeout=60, check=True,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     return int(out.stdout.strip().splitlines()[-1])
 
