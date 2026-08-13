@@ -14,14 +14,17 @@ rem  live shell is exactly how the install breaks).
 rem ============================================================
 
 rem (1) refuse while the stack is up
-netstat -ano | findstr /r ":9300 .*LISTENING" >nul 2>nul
-if not errorlevel 1 (
-    echo [ERROR] edp-broker is listening on :9300 - stop the stack first.
+rem (PowerShell probe, not findstr: an unquoted space in a findstr /r
+rem  pattern means OR, so ":9300 .*LISTENING" matched EVERY listening
+rem  socket on the machine - false refusals on a clean box.)
+powershell -NoProfile -Command "exit [int](@(Get-NetTCPConnection -LocalPort 9300 -State Listen -ErrorAction SilentlyContinue).Count -gt 0)"
+if errorlevel 1 (
+    echo [ERROR] edp-broker is listening on :9300 - run stop-stack-claude.bat first.
     goto :die
 )
-netstat -ano | findstr /r ":9301 .*LISTENING" >nul 2>nul
-if not errorlevel 1 (
-    echo [ERROR] edp-pool is listening on :9301 - stop the stack first.
+powershell -NoProfile -Command "exit [int](@(Get-NetTCPConnection -LocalPort 9301 -State Listen -ErrorAction SilentlyContinue).Count -gt 0)"
+if errorlevel 1 (
+    echo [ERROR] edp-pool is listening on :9301 - run stop-stack-claude.bat first.
     goto :die
 )
 
