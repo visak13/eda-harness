@@ -24,7 +24,17 @@ def _clear_leaked_shell_env(monkeypatch):
                 # from a spawned shell would leak the LIVE models.json into
                 # hermetic tiering tests. Same d7 discipline: tests that
                 # need a registry pin their own env.
-                "EDP_AGENT_HOME", "EDP_MODELS_CONFIG"):
+                "EDP_AGENT_HOME", "EDP_MODELS_CONFIG",
+                # 2026-08-13: build_env stamps this into EVERY spawned
+                # shell (and eda.bat into the neuron's), so a suite run
+                # from inside the fleet inherits it and the staged serves-
+                # lineage gate flips ON under tests written for the
+                # gate-off default (9 spurious reds). Gate tests pin it.
+                "EDP_V7_WRITE_GATES",
+                # 2026-08-13: same leak via the launcher's telemetry flag —
+                # budget_status's honesty note flips on it and the test
+                # asserting the "unmeasured" wording false-fails.
+                "CLAUDE_CODE_ENABLE_TELEMETRY"):
         monkeypatch.delenv(var, raising=False)
 
 
