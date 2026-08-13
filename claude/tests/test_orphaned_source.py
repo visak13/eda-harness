@@ -118,8 +118,10 @@ def test_batch_member_orphaned_when_head_shell_is_gone(tmp_path, fake_locks):
     out = _first_emission(src._src_orphaned(plan_id="p1", grace_secs=0))
     assert out and len(out) == 1
     assert out[0]["action_id"] == "a2"
-    assert out[0]["backing_handle"] == "p1:a1"     # resolved to the HEAD
-    assert "head" in out[0]["reason"]
+    # 2026-08-13: backing is now the full candidate set — own handle plus
+    # every group member's (any live member backs the batch).
+    assert out[0]["backing_handle"] == ["p1:a1", "p1:a2"]
+    assert "group" in out[0]["reason"]
 
 
 def test_re_dispatched_member_with_its_OWN_shell_is_NOT_orphaned(
@@ -232,3 +234,23 @@ def test_registered_as_rate_limitable_not_critical():
     )
     assert "orphaned" in RATE_LIMITABLE_SOURCES
     assert "orphaned" not in CRITICAL_SOURCES
+
+
+def test_batch_redispatched_under_LATER_head_member_not_orphaned(
+        tmp_path, fake_locks):
+    """2026-08-13 live s1 case: [a1,a2,a3] batch, shell exited after a1, the
+    planner re-dispatched the REMAINDER under a2's handle. a3 is a member
+    with no own session whose statically-first head (a1) is dead — the old
+    static-head resolution probed only p1:a1 and false-fired every poll.
+    Any live GROUP MEMBER's shell backs the whole batch."""
+    _write_plan(tmp_path, "p1", [
+        {"action_id": "a1", "status": "done", "batch_group": "g"},
+        {"action_id": "a2", "status": "in_progress", "batch_group": "g"},
+        {"action_id": "a3", "status": "in_progress", "batch_group": "g"},
+    ])
+    fake_locks["rows"] = [{"handle": "p1:a2", "liveness": "alive"}]
+
+    src = RealSources(RealConfig(repo_root=tmp_path, poll_ms=50))
+    out = _first_emission(src._src_orphaned(plan_id="p1", grace_secs=0),
+                          timeout=1.5)
+    assert out is None, f"a2's live shell must back a3, got {out}"

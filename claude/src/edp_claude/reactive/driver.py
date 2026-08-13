@@ -566,24 +566,24 @@ class RealSources:
                 first_unbacked.pop(gone, None)
             return sorted(orphans, key=lambda o: o["step_id"])
 
-        def _batch_heads(actions: list[dict]) -> dict[str, str]:
-            """action_id -> the action_id whose handle actually backs it.
+        def _group_members(actions: list[dict]) -> dict[str, list[str]]:
+            """batch_group -> every member action_id in declared order.
 
-            For a batched action that is its group's head (first in declared
-            order); for everything else, itself."""
-            heads: dict[str, str] = {}
-            group_head: dict[str, str] = {}
+            2026-08-13 (live s1 observation): the previous head resolution
+            was STATIC — first-in-declared-order. A batch re-dispatched
+            under a LATER member after its original head exited (head a1
+            dies mid-batch, planner re-spawns under a2) left the remaining
+            members probing the dead a1 forever: a 60s false-orphan flood
+            with no planner move that stops it. The truthful rule: ONE
+            shell runs a batch under SOME member's handle, so a member is
+            backed iff ANY member of its group holds a live session."""
+            members: dict[str, list[str]] = {}
             for a in actions:
                 aid = a.get("action_id")
                 grp = a.get("batch_group")
-                if not aid:
-                    continue
-                if grp:
-                    group_head.setdefault(grp, aid)
-                    heads[aid] = group_head[grp]
-                else:
-                    heads[aid] = aid
-            return heads
+                if aid and grp:
+                    members.setdefault(grp, []).append(str(aid))
+            return members
 
         def fetch_plan():
             if not plan_path.exists():
@@ -591,7 +591,7 @@ class RealSources:
             data = json.loads(plan_path.read_text(encoding="utf-8"))
             actions = [a for a in data.get("actions", [])
                        if isinstance(a, dict)]
-            heads = _batch_heads(actions)
+            members = _group_members(actions)
 
             # Only a DISPATCHED action needs a worker behind it. Terminal
             # statuses need nothing, and `pending` has not been handed out yet.
@@ -606,30 +606,28 @@ class RealSources:
             orphans, seen = [], set()
             for a in dispatched:
                 aid = str(a.get("action_id"))
-                head = heads.get(aid, aid)
-                # An action's OWN live session is better evidence than its
-                # recorded `batch_group`. A member re-dispatched standalone
-                # after its head exited KEEPS that grouping field — it is
-                # immutable post-authoring — so resolving to the head alone
-                # reports a healthy worker as orphaned, and keeps reporting it
-                # every poll, forever, with no move available to the planner
-                # that fixes it. Consult the action's own handle FIRST; fall
-                # back to the batch head only when it has no session of its own
-                # (the ordinary in-flight batch, where members genuinely have
-                # no handle and the head's shell covers them).
-                own = f"{plan_id}:{aid}"
-                backing = own if own in alive else f"{plan_id}:{head}"
-                age = _aged(aid, backing, now, seen, alive)
+                grp = a.get("batch_group")
+                # An action's OWN handle always counts; a batched action is
+                # ALSO backed by any group member's live shell — one shell
+                # runs the batch under SOME member's handle, and which member
+                # that is changes when the batch is re-dispatched after a
+                # partial exit (see _group_members). Probing a static head
+                # false-fired every poll for a healthy batch.
+                candidates = {f"{plan_id}:{aid}"}
+                if grp:
+                    candidates |= {f"{plan_id}:{m}"
+                                   for m in members.get(grp, [])}
+                age = _aged(aid, candidates, now, seen, alive)
                 if age is None:
                     continue
                 orphans.append({
                     "action_id": aid,
                     "status": a.get("status"),
-                    "backing_handle": backing,
-                    "batch_group": a.get("batch_group"),
+                    "backing_handle": sorted(candidates),
+                    "batch_group": grp,
                     "unbacked_secs": age,
-                    "reason": ("batch member whose head shell is gone"
-                               if head != aid
+                    "reason": ("batch member with no live shell in its group"
+                               if grp
                                else "dispatched with no live worker"),
                 })
             for gone in set(first_unbacked) - seen:
