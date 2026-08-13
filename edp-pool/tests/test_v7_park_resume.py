@@ -220,6 +220,28 @@ def test_double_resume_no_ops(svc, monkeypatch):
     assert len(svc.spawner.launched) == launches_before + 1
 
 
+def test_resume_of_a_dead_but_active_row_fork_resumes(svc, monkeypatch):
+    """2026-08-13 hardening run, live repro: the pool died and restarted;
+    session rows loaded back as "active" while every process had died with
+    the old pool. resume() no-opped on the stale row FOREVER ("session is
+    already active"), and the operator had to reap + fresh-spawn by hand.
+    A probed-DEAD active session is a crash — fork-resume it."""
+    sid = svc.spawn("planner", "rec-x:s1", None, claude_session="base-uuid-1")
+    svc._kill_session(sid)
+    assert svc.spawner.alive(sid) is not True
+    assert svc.sessions[sid]["state"] == "active"       # the stale row
+    out = svc.resume("rec-x:s1")
+    assert out["resumed"] is True and out["via"] == "fork-resume", (
+        "an active row whose process is provably dead must resume, not "
+        f"no-op: {out}")
+    rec = svc.spawner.launched[-1]
+    assert rec["session_id"] == sid                     # same row, same lock
+    assert rec["resume_session"] == "base-uuid-1"       # forks the base
+    assert svc.sessions[sid]["state"] == "active"
+    assert svc.locks["rec-x:s1"] == sid
+    assert svc.liveness("rec-x:s1") == "alive"
+
+
 def test_resume_of_a_mid_resume_session_no_ops(svc, monkeypatch):
     _parked_planner(svc, monkeypatch)
     sid = svc.locks["rec-x:s1"]

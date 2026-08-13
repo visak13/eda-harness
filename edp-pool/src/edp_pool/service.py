@@ -1396,12 +1396,29 @@ class PoolService(Microservice):
                 return {"resumed": False, "handle": handle,
                         "reason": f"lock holder {sid} has no session row"}
             state = s.get("state")
+            dead_active = False
             if state in ("resuming", "active"):
-                # the double-caller (watchdog + backstop) no-op, by design
-                return {"resumed": False, "handle": handle, "no_op": True,
-                        "state": state,
-                        "reason": f"session is already {state} — no-op"}
-            if state != "parked":
+                # 2026-08-13 (hardening run, live repro): a pool restart
+                # loads session rows as "active" while their processes died
+                # WITH the old pool — the blanket no-op here made resume
+                # PERMANENTLY refuse the very shell it exists to bring back
+                # (callers had to reap + fresh-spawn by hand). The row is
+                # trusted only when the process is alive or unknowable
+                # (None keeps the double-spawn guard fail-safe); a probed-
+                # DEAD "active" session is a crash and falls through to
+                # fork-resume.
+                if state == "active" and self._session_alive(sid) is False:
+                    dead_active = True
+                    _log.warning("resume_active_row_dead_process", handle,
+                                 handle=handle, sid=sid,
+                                 note="active row, dead process — treating "
+                                      "as crash and fork-resuming")
+                else:
+                    # the double-caller (watchdog + backstop) no-op, by design
+                    return {"resumed": False, "handle": handle, "no_op": True,
+                            "state": state,
+                            "reason": f"session is already {state} — no-op"}
+            if not dead_active and state != "parked":
                 return {"resumed": False, "handle": handle,
                         "reason": f"session is {state!r}, not parked"}
             # OPERATOR RULING 2026-07-25 — A PARKED SHELL IS NOW LEFT ALIVE
