@@ -29,5 +29,13 @@ def _no_operator_spawn_defaults(tmp_path):
     mp = pytest.MonkeyPatch()
     mp.setenv(
         "EDP_SPAWN_DEFAULTS", str(tmp_path / "absent-spawn-defaults.json"))
+    # 2026-08-13: fleet shells are launched WITH these stamps in their own
+    # env (build_env setdefault lets a pre-set win), so a suite run from
+    # inside any spawned/neuron shell inherits them and the spawn-env
+    # stamp assertions false-fail. Same d7 rule as above: a test must not
+    # read the host shell's config.
+    for var in ("CLAUDE_CODE_AUTO_COMPACT_WINDOW",
+                "CLAUDE_CODE_MAX_OUTPUT_TOKENS"):
+        mp.delenv(var, raising=False)
     yield
     mp.undo()
