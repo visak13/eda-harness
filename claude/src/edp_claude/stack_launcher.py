@@ -288,12 +288,27 @@ class StackLauncher:
     def shutdown(self) -> None:
         """Idempotent full teardown: stop, terminate EVERY tracked service by its
         own PID (graceful → hard) in REVERSE start order (supervisor first, so it
-        reaps its drivers before its broker/pool go away), clear the pidfile."""
+        reaps its drivers before its broker/pool go away), clear the pidfile.
+
+        Ctrl-C-PROOF (operator finding 2026-08-13): the broker is torn down
+        LAST, and a second Ctrl-C during the supervisor/pool legs used to
+        KeyboardInterrupt this loop mid-way — pool dead, broker orphaned
+        holding :9300 ("the broker doesn't shut down like the others").
+        Each leg now retries through interrupts; a truly stuck teardown is
+        escaped by a third interrupt AFTER the loop has had its chance."""
         self._stop.set()
         for name in reversed(list(self._procs.keys())):
             proc = self._procs.get(name)
-            if proc is not None:
-                self._terminate_one(name, proc)
+            if proc is None:
+                continue
+            for _attempt in (1, 2, 3):
+                try:
+                    self._terminate_one(name, proc)
+                    break
+                except KeyboardInterrupt:
+                    self.log("service_teardown_interrupted", service=name,
+                             attempt=_attempt)
+                    continue
         self._procs.clear()
         self._clear_pidfile()
 
