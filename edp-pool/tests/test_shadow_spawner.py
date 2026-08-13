@@ -219,3 +219,26 @@ def test_headless_launch_builds_shadow_with_nonced_env(
     assert ledger["role"] == "worker" and ledger["shell"]["state"] == "ready"
     sp.kill("worker:abc")
     assert not sp.alive("worker:abc")
+
+
+def test_brief_resolves_rp_a_id_pointers(sp, tmp_path):
+    """2026-08-13 whole-tray fix: RP-A moved decision text off the action
+    into the plan-level injected_context map (actions carry id pointers).
+    Reading only the raw action silently dropped every load-bearing
+    decision from the argv brief."""
+    (tmp_path / ".plans").mkdir(exist_ok=True)
+    (tmp_path / ".plans" / "plan-y-s1.json").write_text(json.dumps({
+        "plan_id": "plan-y-s1",
+        "injected_context": {"d5": "d5 — standing mandate: report friction",
+                             "d1": "d1 — never block on operator"},
+        "actions": [{"action_id": "a1", "status": "in_progress",
+                     "description": "capture ground truth",
+                     "acceptance": {"expected": "table lands"},
+                     "injected_context_ids": {
+                         "load_bearing_decisions": ["d5", "d1", "d-missing"]},
+                     }],
+    }), encoding="utf-8")
+    brief = sp._compose_brief("worker", "plan-y-s1:a1")
+    assert "standing mandate" in brief
+    assert "never block" in brief
+    assert "d-missing" not in brief   # unresolvable ids dropped, not crashed

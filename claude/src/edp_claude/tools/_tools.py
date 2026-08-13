@@ -3471,6 +3471,16 @@ class AddAction(_ClaudeTool):
         # commitment to measured review.
         if m.leg_kind == "review" and (p.review_policy or None):
             justify = (p.review_policy.get("justify") or {})
+            # 2026-08-13 (live s1 crash): a planner that authored `justify`
+            # as a plain string crashed this gate with "'str' object has no
+            # attribute 'get'" — a refusal that teaches beats a traceback.
+            if not isinstance(justify, dict):
+                return _precondition(
+                    "add_action(leg_kind=review): review_policy.justify "
+                    f"must be a mapping {{action_id: reason}}, got "
+                    f"{type(justify).__name__} — rewrite the plan's "
+                    "review_policy via update_object so each review leg "
+                    "has its own justification entry.")
             if not str(justify.get(m.action_id, "")).strip():
                 triggers = p.review_policy.get("triggers") or [
                     "spec-required surface", "protected surface",

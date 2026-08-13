@@ -129,3 +129,25 @@ async def test_lineage_layers_counted(env):
                    layer="e2e")
     rep = await env.call("test_lineage_report")
     assert rep.data["layer_counts"] == {"unit": 1, "e2e": 1}
+
+
+async def test_review_policy_string_justify_refuses_not_crashes(env):
+    """2026-08-13 live s1 crash: a planner authored review_policy.justify as
+    a plain STRING and the gate died with "'str' object has no attribute
+    'get'". Malformed authoring must get a teaching refusal, not a
+    traceback."""
+    rid = await _mk_recipe_with_outcome(env)
+    await env.call("add_step", recipe_id=rid, description="step",
+                   execution="spawn_planner", estimate={"hours": 1},
+                   serves=["o1"])
+    res = await env.call("create_plan", recipe_id=rid, step_id="s1",
+                         goal="do it", shape="linear-build",
+                         review_policy={"triggers": ["protected surface"],
+                                        "justify": "everything is risky"})
+    pid = res.data["plan_id"]
+    bad = await env.call("add_action", plan_id=pid, action_id="r1",
+                         description="review the build", serves=["o1"],
+                         leg_kind="review")
+    assert not bad.ok
+    assert "must be a mapping" in bad.message
+    assert "str" in bad.message

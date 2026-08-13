@@ -262,25 +262,25 @@ class ShadowSpawner(Spawner):
         home = self.legacy.cwd or "."
         return str(Path(home) / ".venv" / "Scripts" / "python.exe")
 
-    def _plan_action(self, handle: str) -> dict | None:
-        """Read the shell's OWN action record from the plan JSON —
-        read-only, the worker-close-nudge precedent. None = unknown."""
+    def _plan_action(self, handle: str) -> tuple[dict | None, dict]:
+        """(the shell's OWN action record, the whole plan dict) — read-only,
+        the worker-close-nudge precedent. (None, {}) = unknown."""
         plan_id, _, action_id = handle.rpartition(":")
         if not plan_id:
-            return None
+            return None, {}
         path = Path(self.legacy.cwd or ".") / ".plans" / f"{plan_id}.json"
         try:
             plan = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
-            return None
+            return None, {}
         for a in plan.get("actions", []):
             if a.get("action_id") == action_id:
-                return a
-        return None
+                return a, plan
+        return None, plan
 
     def _compose_brief(self, role: str, handle: str) -> str:
         if role in ("worker", "reviewer"):
-            a = self._plan_action(handle)
+            a, plan = self._plan_action(handle)
             if not a:
                 return ""
             parts = [f"action {handle}: {a.get('description', '')}"]
@@ -291,6 +291,24 @@ class ShadowSpawner(Spawner):
             if inj:
                 parts.append("grounding: "
                              + json.dumps(inj, default=str)[:4000])
+            else:
+                # RP-A (s17): decisions live ONCE in the plan-level
+                # injected_context map; the action carries id POINTERS.
+                # Reading only the raw action (pre-RP-A shape) silently
+                # dropped every load-bearing decision from the argv brief
+                # — the whole-tray delivery gap (2026-08-13). Resolve the
+                # ids here exactly like read_object does.
+                ids = a.get("injected_context_ids") or {}
+                texts = plan.get("injected_context") or {}
+                resolved = {
+                    bucket: [texts[i] for i in ref_ids if i in texts]
+                    for bucket, ref_ids in ids.items()
+                    if isinstance(ref_ids, list)
+                }
+                resolved = {k: v for k, v in resolved.items() if v}
+                if resolved:
+                    parts.append("grounding: "
+                                 + json.dumps(resolved, default=str)[:4000])
             if a.get("serves"):
                 parts.append(f"serves: {a['serves']}")
             if a.get("concerns"):
@@ -301,7 +319,7 @@ class ShadowSpawner(Spawner):
     def _terminal_check(self, role: str, handle: str):
         if role in ("worker", "reviewer"):
             def check() -> bool:
-                a = self._plan_action(handle)
+                a, _ = self._plan_action(handle)
                 return bool(a) and a.get("status") in (
                     "done", "failed", "skipped")
             return check

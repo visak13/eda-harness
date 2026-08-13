@@ -13,7 +13,7 @@ the one you authored is a plan that LEARNED, not one that failed.
 - **Add discovered work:** `add_action(plan_id=..., action_id=...,
   description=..., depends_on=[...], acceptance_kind=...,
   verify={...})` — same authoring discipline as planner-phase-author
-  (real deps, a real `verify`, `task_class`, `leg_kind`, review
+  (real deps, a real `verify`, `leg_kind`, review
   coverage). A discovered action is not exempt from the standards the
   authored ones met.
 - **Rewire dependencies / heal briefs:** `update_object(type="action",

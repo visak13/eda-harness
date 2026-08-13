@@ -60,7 +60,7 @@ Use the intent tools (small per-call schemas — no schema fights):
 2. `add_action(plan_id=..., action_id=..., description=...,
    depends_on=[...], leg_kind="build"|"review"|"verify",
    acceptance_kind=..., acceptance_expected=..., verify={...},
-   specialization=..., concerns=[...], task_class=...,
+   specialization=..., concerns=[...],
    batch_group=...)` — one call per action.
    - `description` = WHAT to do. The specialist need goes in
      `specialization` ONLY (e.g. "Java Spring Boot REST API") — never
@@ -93,17 +93,11 @@ records status per member; the reviewer leg still reviews members
 individually. Never batch across specs or batch independent actions —
 those belong in the ready-wave, in parallel.
 
-**Stamp a `task_class` per action at authoring time** (dispatch
-resolves the model tier from it): `"coding"` — bounded,
-fully-specified coding with an objectively checkable gate; `"narrow"`
-— bounded single-file work, no open-ended judgment or irreversible
-side-effects (candidate tier — degrades to the default without the
-opt-in flag); `"verify"` — verify-only leg, re-run recorded commands
-and judge nothing (same candidate rule); omit — anything with real
-judgment. Never guess a class DOWN to chase cost: an unknown/wrong
-class degrades to the safe default, and the reviewer leg (never
-tiered) is what makes cheaper workers safe at all. (`record_plan`
-still exists for replans; prefer `create_plan` + `add_action`.)
+(`task_class` model tiering is RETIRED — 2026-08-12, with the W10b
+tier table: `claude/models.json` seats are the only role→model
+binding. `add_action`/`record_plan` accept no `task_class` field;
+do not author one. `record_plan` still exists for replans; prefer
+`create_plan` + `add_action`.)
 
 ## Step 3 — resolve specializations UP FRONT
 
@@ -152,7 +146,7 @@ evidence string + review.
    (`record_branch_verdict`) is reviewer-only (enforced).
 3. **When a verdict returns `fixed_inline=true`**, the FSM latches a
    `DISPATCH_VERIFY_LEG` advisory naming the action: author ONE small
-   `leg_kind="verify"`, `task_class="verify"` action whose description
+   `leg_kind="verify"` action whose description
    lists the fixed action's `acceptance.verify` commands verbatim and
    instructs `get_guide("verify-only")`; dispatch it as a normal
    worker. Judgment-free — the reviewer-reviews-reviewer regress stops
