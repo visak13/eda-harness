@@ -3200,8 +3200,28 @@ class CreatePlan(_ClaudeTool):
     async def _run(self, m: _CreatePlanIn):
         if not self.ctx.recipes.exists(m.recipe_id):
             return _precondition(f"no recipe {m.recipe_id!r}")
+        # 2026-08-13 (hardening run, s3 friction): a string `justify` was
+        # ACCEPTED here, then every leg_kind="review" add_action was refused
+        # against it — and that refusal's remedy (update_object) refuses
+        # type=plan, leaving no working exit but a full record_plan resend.
+        # Validate the policy's shape at the door it enters.
+        if m.review_policy is not None:
+            justify = m.review_policy.get("justify")
+            if justify is not None and not isinstance(justify, dict):
+                return _precondition(
+                    "create_plan: review_policy.justify must be a mapping "
+                    "{action_id: one-line reason}, got "
+                    f"{type(justify).__name__}. Refused at authoring so "
+                    "add_action's review-leg gate never meets a shape the "
+                    "plan itself accepted.")
+            triggers = m.review_policy.get("triggers")
+            if triggers is not None and not isinstance(triggers, list):
+                return _precondition(
+                    "create_plan: review_policy.triggers must be a list of "
+                    f"named risk triggers, got {type(triggers).__name__}.")
         recipe = self.ctx.recipes.load(m.recipe_id)
         pid = f"{m.recipe_id}-{m.step_id}"
+        existing_actions: list = []
         if self.ctx.plans.exists(pid):
             existing = self.ctx.plans.load(pid)
             if existing.state != PlanState.DRAFTED:
@@ -3210,6 +3230,14 @@ class CreatePlan(_ClaudeTool):
                     f"{existing.state!r}; cannot re-create a non-drafted "
                     "plan (use add_action / replan instead)."
                 )
+            # 2026-08-13 (s3 friction): re-creating a DRAFTED plan is the
+            # documented repair path for plan-level fields (review_policy,
+            # shape, goal) because update_object refuses type=plan — so it
+            # must PRESERVE the authored actions, not wipe them. Before this,
+            # the only non-destructive exit from a bad review_policy was a
+            # full record_plan resend.
+            existing_actions = [a.model_dump(mode="json")
+                                for a in existing.actions]
         plan = Plan.model_validate({
             "plan_id": pid,
             "recipe_id": m.recipe_id,
@@ -3218,7 +3246,7 @@ class CreatePlan(_ClaudeTool):
             "shape": m.shape,
             "goal": m.goal,
             "state": "drafted",
-            "actions": [],
+            "actions": existing_actions,
             # DESIGN-v7 1.5.6: grounding provenance, stamped AT AUTHORING —
             # the snapshot moment the staleness delta measures sibling work
             # against. The fingerprint field stays unset here (Phase 8's
@@ -3475,12 +3503,17 @@ class AddAction(_ClaudeTool):
             # as a plain string crashed this gate with "'str' object has no
             # attribute 'get'" — a refusal that teaches beats a traceback.
             if not isinstance(justify, dict):
+                # REMEDY MUST BE A DOOR THAT OPENS (2026-08-13 s3 friction):
+                # this refusal used to say "via update_object", but
+                # update_object refuses type=plan — a dead-end instruction.
+                # While drafted, create_plan re-creates in place; otherwise
+                # record_plan resends the whole plan.
                 return _precondition(
                     "add_action(leg_kind=review): review_policy.justify "
                     f"must be a mapping {{action_id: reason}}, got "
-                    f"{type(justify).__name__} — rewrite the plan's "
-                    "review_policy via update_object so each review leg "
-                    "has its own justification entry.")
+                    f"{type(justify).__name__} — re-issue create_plan with "
+                    "a corrected review_policy (allowed while the plan is "
+                    "drafted) or resend the plan via record_plan.")
             if not str(justify.get(m.action_id, "")).strip():
                 triggers = p.review_policy.get("triggers") or [
                     "spec-required surface", "protected surface",
@@ -3490,8 +3523,10 @@ class AddAction(_ClaudeTool):
                     f"add_action(leg_kind=review): this plan stamped a "
                     f"review_policy, so review leg {m.action_id!r} must be "
                     f"justified — add review_policy.justify[{m.action_id!r}] "
-                    f"= '<which trigger and why>' (triggers: {triggers}) via "
-                    f"update_object first, or close the action on worker "
+                    f"= '<which trigger and why>' (triggers: {triggers}) by "
+                    f"re-issuing create_plan with the corrected review_policy "
+                    f"(allowed while drafted; update_object refuses "
+                    f"type=plan), or close the action on worker "
                     f"self-verification with evidence. A review leg is not "
                     f"free; blanket per-action review is the refusal class.")
         # WP1 G-SKIP/G-RUNS gate derivation: an action that SERVES a declared
@@ -5630,7 +5665,7 @@ class RecordActionStatus(_ClaudeTool):
                 })
                 self.ctx.plans.save(p)
                 # s26 item 1: the write is DURABLE above; only now do we arm.
-                await self._arm_close(m.plan_id, m.action_id, "done")
+                await self._arm_close(p, m.plan_id, m.action_id, "done")
                 return Tool.ok(_ActStatusOut(status="done"))
             # non-done statuses (failed / skipped / in_progress / …).
             prev = a.status
@@ -5714,12 +5749,12 @@ class RecordActionStatus(_ClaudeTool):
                 })
             self.ctx.plans.save(p)
             # s26 item 1: the write is DURABLE above; only now do we arm.
-            await self._arm_close(m.plan_id, m.action_id, m.status)
+            await self._arm_close(p, m.plan_id, m.action_id, m.status)
             return Tool.ok(_ActStatusOut(status=m.status))
         return _precondition(f"no action {m.action_id!r} in plan")
 
     async def _arm_close(
-        self, plan_id: str, action_id: str, status: str,
+        self, p, plan_id: str, action_id: str, status: str,
     ) -> None:
         """s26 item 1 — STRUCTURAL FIX for the leaked worker shell.
 
@@ -5784,7 +5819,37 @@ class RecordActionStatus(_ClaudeTool):
         sid = os.environ.get("EDP_SPAWN_SESSION_ID")
         if not sid:
             return
-        if not _caller_owns_action(plan_id, action_id):
+        # BATCH-AWARE OWNERSHIP + COMPLETION (2026-08-13 hardening run — the
+        # close-event blindness, pool side). A batch unit's ONE shell carries
+        # the HEAD member's handle, so judging bare `plan_id:action_id`
+        # against it failed BOTH ways:
+        #   * the HEAD's terminal status (recorded FIRST, declared order)
+        #     passed ownership and armed the reap while later members were
+        #     still pending — a worker reasoning between members emits no PTY
+        #     output, reads idle to `_close_when_idle`, and is released
+        #     MID-BATCH (the pool-side twin of the f4f0d1c hook bug);
+        #   * the LAST member's terminal status FAILED ownership (the handle
+        #     names the head, not this member), so a cleanly finished batch
+        #     shell was never armed at all — the s26 leak, reintroduced for
+        #     every successful batch.
+        # Ownership: the caller's handle names this action OR any member of
+        # its batch_group. Arming: every member terminal — or this write is a
+        # `failed` (DESIGN-v7 1.4 stop-at-first-failure: the tail was just
+        # reset to pending for RE-DISPATCH; this shell's unit is over).
+        a = next((x for x in p.actions if x.action_id == action_id), None)
+        grp = getattr(a, "batch_group", None) if a is not None else None
+        owned = _caller_owns_action(plan_id, action_id)
+        if not owned and grp:
+            owned = any(
+                sib.batch_group == grp
+                and _caller_owns_action(plan_id, sib.action_id)
+                for sib in p.actions)
+        if not owned:
+            return
+        if grp and status != "failed" and any(
+                sib.batch_group == grp
+                and sib.status not in _TERMINAL_ACTION_STATUSES
+                for sib in p.actions):
             return
         try:
             await self.ctx.pool.close_when_idle(

@@ -132,22 +132,63 @@ async def test_lineage_layers_counted(env):
 
 
 async def test_review_policy_string_justify_refuses_not_crashes(env):
-    """2026-08-13 live s1 crash: a planner authored review_policy.justify as
-    a plain STRING and the gate died with "'str' object has no attribute
-    'get'". Malformed authoring must get a teaching refusal, not a
-    traceback."""
+    """2026-08-13 live s1 crash + s3 friction. First a planner authored
+    review_policy.justify as a plain STRING and the review-leg gate died
+    with "'str' object has no attribute 'get'"; then the teaching refusal
+    still left a trap — create_plan ACCEPTED the string, so every review
+    leg was unauthorable with no working remedy (the refusal's update_object
+    pointer refuses type=plan). Now refused at BOTH doors: create_plan (the
+    root) and add_action (defense in depth for legacy plans on disk)."""
     rid = await _mk_recipe_with_outcome(env)
     await env.call("add_step", recipe_id=rid, description="step",
                    execution="spawn_planner", estimate={"hours": 1},
                    serves=["o1"])
+    # door 1 — authoring: the malformed shape never enters the record
     res = await env.call("create_plan", recipe_id=rid, step_id="s1",
                          goal="do it", shape="linear-build",
                          review_policy={"triggers": ["protected surface"],
                                         "justify": "everything is risky"})
-    pid = res.data["plan_id"]
+    assert not res.ok
+    assert "must be a mapping" in res.message
+    assert "str" in res.message
+    # door 2 — a legacy plan already on disk with the bad shape still gets
+    # the teaching refusal, not a traceback
+    ok = await env.call("create_plan", recipe_id=rid, step_id="s1",
+                        goal="do it", shape="linear-build")
+    pid = ok.data["plan_id"]
+    p = env.ctx.plans.load(pid)
+    p.review_policy = {"triggers": ["protected surface"],
+                       "justify": "everything is risky"}
+    env.ctx.plans.save(p)
     bad = await env.call("add_action", plan_id=pid, action_id="r1",
                          description="review the build", serves=["o1"],
                          leg_kind="review")
     assert not bad.ok
     assert "must be a mapping" in bad.message
     assert "str" in bad.message
+
+
+async def test_recreate_drafted_plan_preserves_authored_actions(env):
+    """2026-08-13 s3 friction: re-creating a DRAFTED plan is the documented
+    repair path for plan-level fields (update_object refuses type=plan) —
+    so it must preserve authored actions, not wipe them."""
+    rid = await _mk_recipe_with_outcome(env)
+    await env.call("add_step", recipe_id=rid, description="step",
+                   execution="spawn_planner", estimate={"hours": 1},
+                   serves=["o1"])
+    res = await env.call("create_plan", recipe_id=rid, step_id="s1",
+                         goal="do it", shape="linear-build")
+    pid = res.data["plan_id"]
+    assert (await env.call("add_action", plan_id=pid, action_id="a1",
+                           description="build the thing", serves=["o1"])).ok
+    # repair: re-create with a corrected review_policy
+    fixed = await env.call("create_plan", recipe_id=rid, step_id="s1",
+                           goal="do it", shape="linear-build",
+                           review_policy={"triggers": ["protected surface"],
+                                          "justify": {"r1": "auth surface"}})
+    assert fixed.ok
+    p = env.ctx.plans.load(pid)
+    assert [a.action_id for a in p.actions] == ["a1"], (
+        "re-creating a drafted plan wiped its authored actions — the repair "
+        "path destroyed the work it exists to save")
+    assert p.review_policy["justify"] == {"r1": "auth surface"}

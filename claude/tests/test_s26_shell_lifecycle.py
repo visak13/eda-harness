@@ -233,6 +233,79 @@ async def test_a_shell_with_no_pool_session_is_never_armed(env, monkeypatch):
     assert env.ctx.pool.armed_closes == []
 
 
+async def _plan_with_batch(env, members=("a1", "a2"), grp="g"):
+    """Recipe → step → plan → a serial batch chain under one batch_group."""
+    rid = _ok(await env.call("start_recipe", goal="g", domain="api"))["recipe_id"]
+    sid = _ok(await env.call("add_step", recipe_id=rid, description="build",
+                             execution="spawn_planner",
+                             estimate={"hours": 1}))["step_id"]
+    pid = _ok(await env.call("create_plan", recipe_id=rid, step_id=sid,
+                             shape="poc-iterate-build", goal="g"))["plan_id"]
+    prev = None
+    for aid in members:
+        _ok(await env.call("add_action", plan_id=pid, action_id=aid,
+                           description="do generic work",
+                           depends_on=[prev] if prev else [],
+                           batch_group=grp))
+        prev = aid
+    return rid, pid
+
+
+async def test_batch_head_terminal_does_not_arm_but_last_member_does(
+        env, monkeypatch):
+    """2026-08-13 hardening run — the close-event blindness, pool side.
+
+    A batch unit's ONE shell carries the HEAD member's handle, and the old
+    bare `plan_id:action_id` ownership check failed BOTH directions:
+      * the head's `done` (recorded FIRST, declared order) armed the reap
+        while later members were still pending — a worker reasoning between
+        members emits no PTY output and was released MID-BATCH;
+      * the LAST member's `done` failed ownership (the handle names the
+        head), so a cleanly finished batch shell was NEVER armed — the s26
+        leak, reintroduced for every successful batch.
+    """
+    _rid, pid = await _plan_with_batch(env, members=("a1", "a2"))
+    _be_the_shell_for(monkeypatch, pid, "a1", session="sess-batch")
+    for aid in ("a1", "a2"):
+        _post_grounding_echo(env, pid, aid)
+
+    _ok(await env.call("record_action_status", plan_id=pid, action_id="a1",
+                       status="done", evidence="member 1 done; suite green"))
+    assert env.ctx.pool.armed_closes == [], (
+        "the HEAD member's terminal status armed the reap while a batch "
+        "member was still open — an idle-looking worker is released mid-batch")
+
+    _ok(await env.call("record_action_status", plan_id=pid, action_id="a2",
+                       status="done", evidence="member 2 done; suite green"))
+    armed = env.ctx.pool.armed_closes
+    assert len(armed) == 1, (
+        "the LAST member's terminal status did not arm the reap — the batch "
+        f"shell leaks exactly as before s26 item 1. {armed}")
+    assert armed[0]["session_id"] == "sess-batch"
+
+
+async def test_batch_failed_member_arms_despite_open_tail(env, monkeypatch):
+    """DESIGN-v7 1.4 stop-at-first-failure: a failed member ends the UNIT —
+    the tail is reset to pending for RE-DISPATCH by the planner, so the
+    failing shell's reap must arm even though group members remain open."""
+    _rid, pid = await _plan_with_batch(env, members=("a1", "a2", "a3"))
+    _be_the_shell_for(monkeypatch, pid, "a1", session="sess-batch-fail")
+    for aid in ("a1", "a2"):
+        _post_grounding_echo(env, pid, aid)
+
+    _ok(await env.call("record_action_status", plan_id=pid, action_id="a1",
+                       status="done", evidence="member 1 done; suite green"))
+    assert env.ctx.pool.armed_closes == []
+
+    _ok(await env.call("record_action_status", plan_id=pid, action_id="a2",
+                       status="failed", evidence="member 2 verify failed"))
+    armed = env.ctx.pool.armed_closes
+    assert len(armed) == 1, (
+        "a mid-batch failure ended the unit but nothing armed the reap — "
+        f"the failing shell idles at a prompt forever. {armed}")
+    assert armed[0]["session_id"] == "sess-batch-fail"
+
+
 async def test_a_worker_that_does_close_itself_still_closes_cleanly(
         env, monkeypatch):
     """The path a1/a2/a3 took must not regress: record terminal status, then run

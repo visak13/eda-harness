@@ -144,9 +144,17 @@ def _assignment_state(handle: str) -> tuple[bool | None, list[str]]:
         grp = own.get("batch_group")
         if not grp:
             return own.get("status") in _TERMINAL, []
-        remaining = [str(a.get("action_id")) for a in actions
-                     if a.get("batch_group") == grp
-                     and a.get("status") not in _TERMINAL]
+        members = [a for a in actions if a.get("batch_group") == grp]
+        # DESIGN-v7 1.4 stop-at-first-failure: a `failed` member ENDS the
+        # unit for this shell — record_action_status resets the tail to
+        # pending for RE-DISPATCH by the planner, not for this worker to
+        # push past its own failure. Without this clause the continue-nudge
+        # read those reset members as "remaining" and instructed the failing
+        # shell to execute work whose dependency just failed.
+        if any(a.get("status") == "failed" for a in members):
+            return True, []
+        remaining = [str(a.get("action_id")) for a in members
+                     if a.get("status") not in _TERMINAL]
         return not remaining, remaining
     return None, []
 

@@ -89,6 +89,20 @@ def test_assignment_state_judges_the_whole_batch(tmp_path):
     }), encoding="utf-8")
     assert mod._assignment_state("p2:a1") == (True, [])
 
+    # DESIGN-v7 1.4 stop-at-first-failure: a failed member ends the UNIT even
+    # though record_action_status just reset the tail to pending for
+    # re-dispatch. Reading that tail as "remaining" made the continue-nudge
+    # instruct a failing shell to execute members whose dependency failed.
+    (plans / "p3.json").write_text(json.dumps({
+        "plan_id": "p3",
+        "actions": [
+            {"action_id": "a1", "status": "done", "batch_group": "g"},
+            {"action_id": "a2", "status": "failed", "batch_group": "g"},
+            {"action_id": "a3", "status": "pending", "batch_group": "g"},
+        ],
+    }), encoding="utf-8")
+    assert mod._assignment_state("p3:a1") == (True, [])
+
 
 def test_guard_requires_all_clauses(tmp_path):
     """The should_nudge conjunction: worker + handle + terminal + under cap.

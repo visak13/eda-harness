@@ -384,7 +384,12 @@ def describe_objects(name: str | None = None) -> str:
 def _need(ids: dict, *keys) -> None:
     missing = [k for k in keys if not ids.get(k)]
     if missing:
-        raise ObjectError(f"this object needs id(s): {missing}")
+        # 2026-08-13 (s3 friction P2): "needs id(s): ['plan_id']" never named
+        # WHERE the ids go, so callers retried with top-level params. Show the
+        # call shape, not just the missing keys.
+        raise ObjectError(
+            f"this object needs id(s): {missing} — pass them in the `ids` "
+            f"mapping, e.g. ids={{{', '.join(f'{k!r}: <{k}>' for k in keys)}}}")
 
 
 def _resolve_action_injected(d: dict, plan) -> dict:
