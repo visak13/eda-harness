@@ -399,3 +399,23 @@ def test_subprocess_spawner_last_output_ts_reads_log_mtime(tmp_path):
     assert sp.last_output_ts("gone") is None
     # session this instance never launched (post-restart) → None
     assert sp.last_output_ts("unknown-sid") is None
+
+
+def test_wp2_provenance_resolves_from_spawner_pin(tmp_path, monkeypatch):
+    """WP2 fix (2026-08-13): the deployed pool never inherits EDP_AGENT_HOME
+    (main.py self-locates and pins the agent home on the spawner's cwd), so
+    the ledger's seat resolution must read the spawner's pin — env-only
+    resolution recorded model=None for every real session row while
+    monkeypatched tests stayed green."""
+    import json
+
+    monkeypatch.delenv("EDP_AGENT_HOME", raising=False)
+    (tmp_path / "models.json").write_text(json.dumps({
+        "seats": {"advisor": {"model": "claude-fable-5"}},
+        "roles": {"curiosity": "advisor"},
+    }), encoding="utf-8")
+    sp = FakeSpawner()
+    sp.cwd = str(tmp_path)  # the main.py self-located pin
+    svc = PoolService(sp)
+    sid = svc.spawn("curiosity", "curiosity-x1", None)
+    assert svc.sessions[sid]["model"] == "claude-fable-5"

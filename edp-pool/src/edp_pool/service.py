@@ -880,6 +880,17 @@ class PoolService(Microservice):
     def active_workers(self) -> int:
         return self._active_count("worker")
 
+    def _spawner_agent_home(self) -> str | None:
+        """The agent home the spawner will actually launch against —
+        SubprocessSpawner pins it as `cwd`; ShadowSpawner exposes it via
+        `legacy`. Provenance must resolve seats from the SAME pin the
+        launch uses, or the ledger lies about the model."""
+        for obj in (self.spawner, getattr(self.spawner, "legacy", None)):
+            cwd = getattr(obj, "cwd", None)
+            if cwd:
+                return str(cwd)
+        return None
+
     def spawn(
         self, role: str, handle: str, parent: str | None,
         # VISIBLE BY DEFAULT (user ruling 2026-07-12): an invisible shell
@@ -980,9 +991,14 @@ class PoolService(Microservice):
         # carried no model at all (resolution happened below this seam, in
         # the spawner), so which model wrote each artifact was unrecoverable.
         # The spawner's own seat lookup remains as a no-op fallback.
+        # 2026-08-13: resolve from the spawner's pinned agent home FIRST —
+        # the deployed pool self-locates (main.py) and deliberately does NOT
+        # inherit EDP_AGENT_HOME, so env-only resolution left every real
+        # session row model=None while monkeypatched tests stayed green.
         from .spawner import seat_model_for
         resolved_model = model or seat_model_for(
-            role, os.environ.get("EDP_AGENT_HOME"))
+            role, self._spawner_agent_home()
+            or os.environ.get("EDP_AGENT_HOME"))
         # STEP log AROUND the launch — it's the blocking part (PTY spawn
         # + wait_ready); a slow/hung launch now shows launch_start with no
         # launch_done in edp-pool.log.
