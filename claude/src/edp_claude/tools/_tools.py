@@ -3362,6 +3362,13 @@ class _AddActionIn(BaseModel):
     # "inline" (the PLANNER does it itself and records status directly; a
     # worker spawn for it draws an advisory). None = "spawn" (byte-compat).
     execution: str | None = None
+    # ONE-SHOT AUTHORING (2026-08-13 s3 friction, operator steer): the step
+    # acceptance_sketch lines THIS action's acceptance proves. The tool folds
+    # them into Plan.sketch_covered_by at append time — before this, the
+    # mapping was only writable by a full record_plan resend, so a correct
+    # structure could not land in one authoring pass. Exact-match lines from
+    # the owning step; unknown lines refuse with the step's actual list.
+    sketch_covers: list[str] = []
 
 
 def _v7_gates_on() -> bool:
@@ -3546,6 +3553,33 @@ class AddAction(_ClaudeTool):
                 f"add_action: execution must be 'spawn' (a pool worker "
                 f"shell) or 'inline' (the planner does it itself and "
                 f"records status directly) — got {m.execution!r}.")
+        # ONE-SHOT AUTHORING (2026-08-13 s3 friction, operator steer):
+        # validate sketch_covers against the owning step BEFORE the append so
+        # a typo'd line refuses with the step's actual sketch — the flow-down
+        # gate keys on exact-match lines, and a silent near-miss here would
+        # resurface later as an "unmapped line" refusal at record_plan.
+        if m.sketch_covers:
+            step_sketch: list[str] = []
+            try:
+                if p.recipe_id and self.ctx.recipes.exists(p.recipe_id):
+                    r = self.ctx.recipes.load(p.recipe_id)
+                    step = next(
+                        (s for s in getattr(r, "steps", [])
+                         if s.step_id == getattr(p, "recipe_step_id", None)),
+                        None)
+                    step_sketch = list(
+                        getattr(step, "acceptance_sketch", []) or [])
+            except Exception:  # noqa: BLE001 — coverage must never brick authoring
+                step_sketch = []
+            unknown = [ln for ln in m.sketch_covers
+                       if ln not in step_sketch]
+            if unknown:
+                return _precondition(
+                    f"add_action: sketch_covers names line(s) not in the "
+                    f"owning step's acceptance_sketch: {unknown!r} — the "
+                    f"step declares {step_sketch!r}. Cover those lines "
+                    "verbatim (exact match is what makes the flow-down "
+                    "gate testable).")
         p.actions.append(Action(
             action_id=m.action_id,
             description=m.description,
@@ -3568,6 +3602,16 @@ class AddAction(_ClaudeTool):
             leg_kind=m.leg_kind,
             serves=m.serves,
         ))
+        # Fold declared sketch coverage into the plan mapping (the one-shot
+        # path — record_plan's sketch_covered_by stays the whole-plan form).
+        if m.sketch_covers:
+            mapping = dict(getattr(p, "sketch_covered_by", None) or {})
+            for ln in m.sketch_covers:
+                ids_ = list(mapping.get(ln) or [])
+                if m.action_id not in ids_:
+                    ids_.append(m.action_id)
+                mapping[ln] = ids_
+            p.sketch_covered_by = mapping
         v = self.ctx.plans.save(p)
         # Soft meter: past the soft floor every append carries the running
         # shell-cost line — the planner sees the price at the exact moment
@@ -7467,11 +7511,17 @@ def _step_flowdown_gaps(recipe, plan) -> list[str]:
             aids = [a for a in (mapping.get(line) or [])]
             unknown = [a for a in aids if a not in known]
             if not aids:
+                # REMEDY MUST BE A DOOR THAT OPENS (2026-08-13 s3 friction):
+                # this used to prescribe update_object, which refuses
+                # type=plan. The working doors: declare coverage AT AUTHORING
+                # via add_action(sketch_covers=[...]) — the one-shot path —
+                # or resend the plan with sketch_covered_by via record_plan.
                 gaps.append(
                     f"acceptance sketch line {line!r} is mapped to no "
-                    "action — declare sketch_covered_by={<line>: "
-                    "[action_ids]} on the plan (update_object) naming the "
-                    "action(s) whose acceptance proves it")
+                    "action — declare it at authoring: add_action(..., "
+                    f"sketch_covers=[{line!r}]) on the action whose "
+                    "acceptance proves it, or record_plan with "
+                    "sketch_covered_by={<line>: [action_ids]}")
             elif unknown:
                 gaps.append(
                     f"acceptance sketch line {line!r} maps to unknown "
@@ -10102,6 +10152,13 @@ class _NotifyAboveIn(BaseModel):
     kind: Literal[
         "progress", "observation", "alert", "fyi",
         "grounding", "ground_delta", "review_comments",
+        # 2026-08-13 (s3 friction P6): the seat law + planner card prescribe
+        # notify_above(kind="steer_ack") and the broker subscription sets
+        # already registered it (reactive/runtime.py) — only this Literal
+        # was missing it, so every ack per the guide bounced to a schema
+        # error and steer-watch (unacked_steers) read acks sent as
+        # 'observation' as silence.
+        "steer_ack",
     ]
     body: dict = {}
 
@@ -10109,7 +10166,8 @@ class _NotifyAboveIn(BaseModel):
 class NotifyAbove(_ClaudeTool):
     """Push a one-way note up to your parent (auto-addressed via EDP_HANDLE;
     no answer expected). kind is a CLOSED set: progress | observation | alert
-    | fyi | grounding | ground_delta | review_comments. Lifecycle kinds
+    | fyi | grounding | ground_delta | review_comments | steer_ack (the
+    restate-before-acting ack the seat law demands). Lifecycle kinds
     (done, crashed, ready, plan_closed…) are emitted by the engine — never
     send them by hand. For a question that needs an answer use ask_above;
     for learnings/discoveries use emit_recipe_event."""

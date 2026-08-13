@@ -192,3 +192,47 @@ async def test_recreate_drafted_plan_preserves_authored_actions(env):
         "re-creating a drafted plan wiped its authored actions — the repair "
         "path destroyed the work it exists to save")
     assert p.review_policy["justify"] == {"r1": "auth surface"}
+
+
+async def _mk_plan_with_sketch_step(env):
+    """Recipe → step carrying an acceptance_sketch → drafted plan."""
+    rid = await _mk_recipe_with_outcome(env)
+    await env.call("add_step", recipe_id=rid, description="step",
+                   execution="spawn_planner", estimate={"hours": 1},
+                   serves=["o1"],
+                   acceptance_sketch=["tests pass", "docs updated"])
+    res = await env.call("create_plan", recipe_id=rid, step_id="s1",
+                         goal="do it", shape="linear-build")
+    return rid, res.data["plan_id"]
+
+
+async def test_add_action_sketch_covers_folds_into_plan_mapping(env):
+    """2026-08-13 s3 friction (operator steer): one-shot authoring —
+    coverage declared per action at add_action must land in
+    Plan.sketch_covered_by without a record_plan resend."""
+    rid, pid = await _mk_plan_with_sketch_step(env)
+    assert (await env.call("add_action", plan_id=pid, action_id="a1",
+                           description="build + test", serves=["o1"],
+                           sketch_covers=["tests pass"])).ok
+    assert (await env.call("add_action", plan_id=pid, action_id="a2",
+                           description="write the docs", serves=["o1"],
+                           sketch_covers=["docs updated"])).ok
+    p = env.ctx.plans.load(pid)
+    assert p.sketch_covered_by == {"tests pass": ["a1"],
+                                   "docs updated": ["a2"]}
+    # and the flow-down gate now passes without any explicit plan-level map
+    from edp_claude.tools._tools import _step_flowdown_gaps
+    r = env.ctx.recipes.load(rid)
+    assert _step_flowdown_gaps(r, p) == []
+
+
+async def test_add_action_sketch_covers_refuses_unknown_line(env):
+    """A typo'd sketch line refuses AT AUTHORING with the step's actual
+    list — not later as an 'unmapped line' record_plan refusal."""
+    _, pid = await _mk_plan_with_sketch_step(env)
+    res = await env.call("add_action", plan_id=pid, action_id="a1",
+                         description="build + test", serves=["o1"],
+                         sketch_covers=["test pass"])  # typo: missing 's'
+    assert not res.ok
+    assert "not in the owning step's acceptance_sketch" in res.message
+    assert "tests pass" in res.message  # the door that opens: real lines shown
