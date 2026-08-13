@@ -148,7 +148,16 @@ def inject_line(pid: int, text: str) -> bool:
             [sys.executable, "-m", "edp_pool.console_input", str(pid)],
             input=text, text=True, encoding="utf-8",
             timeout=_HELPER_TIMEOUT_S, capture_output=True,
-            creationflags=getattr(subprocess, "DETACHED_PROCESS", 0),
+            # CREATE_NO_WINDOW, NOT DETACHED_PROCESS (watcher-caught
+            # 2026-08-13, live fleet): sys.executable here is the VENV
+            # python.exe, which is a RELAUNCHER stub — it CreateProcess's
+            # the real interpreter as a child. DETACHED_PROCESS detached
+            # only the stub; the relaunched child, born console-less with
+            # no flags, made Windows ALLOCATE A FRESH VISIBLE CONSOLE —
+            # one popup per wake (the "shadow popups"). CREATE_NO_WINDOW
+            # gives the stub a hidden console the child INHERITS; the
+            # helper's FreeConsole()/AttachConsole(pid) dance is unchanged.
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except (OSError, subprocess.TimeoutExpired):
         return False
