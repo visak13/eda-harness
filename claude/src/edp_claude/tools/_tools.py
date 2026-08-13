@@ -2028,6 +2028,52 @@ def _reap_terminal_subscriptions(ctx, root: Path) -> list[str]:
     return reaped
 
 
+async def _capture_curiosity_clear(ctx, r: "Recipe") -> bool:
+    """The comprehension gate's auto-capture: if a curiosity reply
+    with clear/done has arrived on the broker, converge the gate.
+
+    Non-consuming on purpose — it does NOT touch `inbox_cursor` /
+    `_INBOX_CURSORS`, so the very same curiosity message is still
+    delivered to the agent via rx push / check_inbox. The flag is set
+    ONLY by a real curiosity verdict (the neuron can't fake it; a
+    TERMINATED curiosity never sets it). Returns True if it changed
+    anything (so the caller persists).
+
+    P6 (2026-06-10): a curiosity clear is also a RE-GROUNDING moment —
+    a clear that arrives AFTER the last recorded re-grounding refreshes
+    the recheck baseline (clearing the scope-change / load-bearing-
+    drift nag), even when curiosity_cleared latched long ago.
+
+    2026-08-13: module-level so record_outcome can run the SAME capture
+    before refusing — a delivered clear used to latch only on the next
+    reconcile tick, and the gate's refusal misdirected the neuron to
+    re-spawn a curiosity that had already cleared."""
+    msgs = await ctx.broker.poll(r.recipe_id)  # all, non-consuming
+    clears = [
+        mm for mm in msgs
+        if str(getattr(mm, "from_", "")).startswith("curiosity")
+        and ((mm.body or {}).get("clear") is True
+             or (mm.body or {}).get("status") == "done")
+    ]
+    if not clears:
+        return False
+    changed = False
+    if not r.comprehension.curiosity_cleared:
+        r.comprehension.curiosity_cleared = True
+        changed = True
+    # v7: the clear ends the interrogation — release the one-open-
+    # curiosity latch so a FUTURE recheck cycle may spawn fresh.
+    if getattr(r.comprehension, "curiosity_open_id", None):
+        r.comprehension.curiosity_open_id = None
+        changed = True
+    newest = max(mm.ts for mm in clears).isoformat()
+    last = r.comprehension.last_recheck_at
+    if last is None or newest > last:
+        refresh_comprehension_baseline(r, at=newest)
+        changed = True
+    return changed
+
+
 class Reconcile(_ClaudeTool):
     """Sync the recipe/plan RECORD to external reality: poll the broker /
     pool / plan file and make the DETERMINISTIC record update (mark a step
@@ -2249,44 +2295,7 @@ class Reconcile(_ClaudeTool):
                 "it landed.")
 
     async def _refresh_comprehension(self, r: Recipe) -> bool:
-        """The comprehension gate's auto-capture: if a curiosity reply
-        with clear/done has arrived on the broker, converge the gate.
-
-        Non-consuming on purpose — it does NOT touch `inbox_cursor` /
-        `_INBOX_CURSORS`, so the very same curiosity message is still
-        delivered to the agent via rx push / check_inbox. The flag is set
-        ONLY by a real curiosity verdict (the neuron can't fake it; a
-        TERMINATED curiosity never sets it). Returns True if it changed
-        anything (so the caller persists).
-
-        P6 (2026-06-10): a curiosity clear is also a RE-GROUNDING moment —
-        a clear that arrives AFTER the last recorded re-grounding refreshes
-        the recheck baseline (clearing the scope-change / load-bearing-
-        drift nag), even when curiosity_cleared latched long ago."""
-        msgs = await self.ctx.broker.poll(r.recipe_id)  # all, non-consuming
-        clears = [
-            mm for mm in msgs
-            if str(getattr(mm, "from_", "")).startswith("curiosity")
-            and ((mm.body or {}).get("clear") is True
-                 or (mm.body or {}).get("status") == "done")
-        ]
-        if not clears:
-            return False
-        changed = False
-        if not r.comprehension.curiosity_cleared:
-            r.comprehension.curiosity_cleared = True
-            changed = True
-        # v7: the clear ends the interrogation — release the one-open-
-        # curiosity latch so a FUTURE recheck cycle may spawn fresh.
-        if getattr(r.comprehension, "curiosity_open_id", None):
-            r.comprehension.curiosity_open_id = None
-            changed = True
-        newest = max(mm.ts for mm in clears).isoformat()
-        last = r.comprehension.last_recheck_at
-        if last is None or newest > last:
-            refresh_comprehension_baseline(r, at=newest)
-            changed = True
-        return changed
+        return await _capture_curiosity_clear(self.ctx, r)
 
     async def _drain_consults(self, r: Recipe) -> bool:
         """W5 (DESIGN-v6 §W5) — the POLL BACKSTOP for the consult channel.
@@ -3813,16 +3822,28 @@ class RecordOutcome(_ClaudeTool):
         # (the new-trends 2026-05-28 failure).
         c = r.comprehension
         if not (c.curiosity_cleared or c.user_signoff):
+            # 2026-08-13 last-chance capture: a clear that landed on the
+            # broker between reconcile ticks used to hit the refusal below
+            # even though curiosity HAD converged — and the message then
+            # misdirected the neuron to re-consult. Run the same capture
+            # reconcile runs; refuse only if there is genuinely no clear.
+            try:
+                if await _capture_curiosity_clear(self.ctx, r):
+                    self.ctx.recipes.save(r)
+            except Exception:  # noqa: BLE001 — broker down ≠ new failure mode
+                pass
+        if not (c.curiosity_cleared or c.user_signoff):
             return _precondition(
                 "comprehension is NOT converged — cannot declare outcomes "
-                "yet. curiosity has not returned clear/done for this recipe "
-                "(a terminated or crashed curiosity does NOT count as "
-                "clear), and there is no user sign-off. Either: (a) consult "
-                "curiosity through to convergence — it sets this flag "
-                "automatically when it replies clear/done (re-spawn a fresh "
-                "two-way curiosity if you disrupted the prior one); or (b) "
-                "if the user EXPLICITLY told you to proceed without full "
-                "comprehension, call record_comprehension_signoff(recipe_id="
+                "yet. No curiosity clear/done has arrived on the broker for "
+                "this recipe (checked just now; a terminated or crashed "
+                "curiosity does NOT count as clear), and there is no user "
+                "sign-off. Either: (a) consult curiosity through to "
+                "convergence — its clear/done reply converges this gate "
+                "(re-spawn a fresh two-way curiosity if you disrupted the "
+                "prior one); or (b) if the user EXPLICITLY told you to "
+                "proceed without full comprehension, call "
+                "record_comprehension_signoff(recipe_id="
                 f"{m.recipe_id!r}, user_quote='<their verbatim words>') "
                 "first. Do not infer 'clear' from 'all my questions were "
                 "answered'."

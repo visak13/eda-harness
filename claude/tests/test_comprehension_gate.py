@@ -132,3 +132,20 @@ def test_phase_b_documents_the_gate():
     assert "terminated" in g and "not" in g          # terminated != clear
     assert "record_comprehension_signoff" in g
     assert "never infer" in g or "do not infer" in g
+
+
+# ── last-chance capture: a clear waiting on the broker converges the gate ───
+async def test_record_outcome_captures_pending_clear_without_reconcile(env):
+    """2026-08-13 live-drill fix: a curiosity clear that landed BETWEEN
+    reconcile ticks used to hit the refusal anyway — and the refusal then
+    misdirected the neuron to re-spawn a curiosity that had already
+    converged. record_outcome now runs the same non-consuming capture
+    reconcile runs before refusing."""
+    rid = _recipe(env, "r-gate-lastchance")
+    await _send_curiosity(env, rid, {"clear": True, "status": "done",
+                                     "questions": []})
+    # NO reconcile tick between the clear and the declaration
+    _ok(await _record(env, rid))
+    r = env.ctx.recipes.load(rid)
+    assert r.comprehension.curiosity_cleared is True
+    assert len(r.comprehension.expected_outcomes) == 1
