@@ -252,6 +252,47 @@ async def test_successful_plan_challenge_persists_to_sidecar(env,
     assert len(T._read_challenges(env.ctx.plans.root, pid)) == 1
 
 
+async def test_artifact_challenge_persists_to_callers_plan(env, monkeypatch):
+    """A non-plan target (artifact/spec_decision/assumption) attaches to the
+    CALLING planner's plan sidecar — before this, only target_kind='plan'
+    persisted, so an artifact challenge left G-ADJ with nothing to hold and
+    the fix-the-findings dispatch sailed through unadjudicated."""
+    from edp_contracts import Tool
+
+    from edp_claude.tools import _tools as T
+
+    _recipe(env)
+    pid = _plan(env, RID, "s1", actions=[_action("a1")])
+
+    async def fake_bridge(kind, kind_class, override, *, task,
+                          context="", acceptance=""):
+        return Tool.ok(T._BridgeOut(ok=True, delegate="sol", model="m",
+                                    content="FINDING: the artifact lies"))
+
+    monkeypatch.setattr(T, "_bridge_call", fake_bridge)
+    monkeypatch.setenv("EDP_HANDLE", f"{RID}:s1")
+    res = _ok(await env.call("adversarial_challenge", target_kind="artifact",
+                             target_id="delivered-app-abc123",
+                             content="the artifact body", lens="break-it"))
+    entries = T._read_challenges(env.ctx.plans.root, pid)
+    assert len(entries) == 1
+    assert entries[0]["target_kind"] == "artifact"
+    assert entries[0]["target_id"] == "delivered-app-abc123"
+    # the caller gets the sidecar id back to adjudicate against
+    returned_cid = (res["challenge_id"] if isinstance(res, dict)
+                    else res.challenge_id)
+    assert returned_cid == entries[0]["challenge_id"]
+    # and the open challenge now gates the plan's non-review dispatch
+    msg = _err(await env.call("pool_spawn_worker", plan_id=pid,
+                              action_id="a1"))
+    assert "G-ADJ" in msg and entries[0]["challenge_id"] in msg
+    # a caller with no plan (e.g. the neuron) persists nowhere, still ok
+    monkeypatch.setenv("EDP_HANDLE", "no-such-plan")
+    _ok(await env.call("adversarial_challenge", target_kind="artifact",
+                       target_id="x", content="y", lens="l"))
+    assert len(T._read_challenges(env.ctx.plans.root, pid)) == 1
+
+
 async def test_open_challenge_gates_non_review_dispatch_only(env):
     from edp_claude.tools import _tools as T
 

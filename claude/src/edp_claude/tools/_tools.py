@@ -8787,6 +8787,10 @@ class _BridgeOut(BaseModel):
     # the contract parses to [] while `content` keeps the raw text, so a noisy
     # lens is measurable in the audit sidecar rather than silently trusted.
     findings: list[dict] = []
+    # kind=challenge only: the sidecar line's id when the challenge persisted
+    # — the caller adjudicates against THIS id instead of fishing it out of a
+    # refusal message.
+    challenge_id: str | None = None
     tokens_in: int = 0
     tokens_out: int = 0
     cost_usd: float = 0.0
@@ -8980,24 +8984,50 @@ class AdversarialChallenge(_ClaudeTool):
                  f"in, an acceptance that can be satisfied while the goal "
                  f"fails, a hidden coupling, a missing concern.",
             context=m.content)
-        # WP2 G-ADJ: a SUCCESSFUL plan challenge persists to the plan's
-        # challenges sidecar; the dispatch gate then holds NON-review legs
-        # until each recorded challenge is adjudicated
+        # WP2 G-ADJ: a SUCCESSFUL challenge persists to a plan's challenges
+        # sidecar; the dispatch gate then holds NON-review legs until each
+        # recorded challenge is adjudicated
         # (record_context(kind='challenge_adjudication')). Raw text only —
         # findings are PROPOSALS for adjudication, never steering (d76).
-        if m.target_kind == "plan" and getattr(res, "ok", False):
+        # target_kind='plan' attaches to the challenged plan itself; every
+        # other target kind attaches to the CALLING shell's plan (derived
+        # from EDP_HANDLE) — an artifact/spec_decision/assumption challenge
+        # that persisted nowhere left G-ADJ with nothing to hold, so the
+        # fix-the-findings dispatch sailed through unadjudicated.
+        if getattr(res, "ok", False):
             # ToolOk.data is a plain dict (the contracts layer dumps the
             # payload model); read it as one.
             payload = (res.data if isinstance(res.data, dict)
                        else res.data.model_dump())
             if payload.get("ok"):
-                _append_challenge(self.ctx.plans.root, m.target_id, {
-                    "challenge_id": str(uuid.uuid4()),
-                    "lens": m.lens,
-                    "at": _now().isoformat(),
-                    "findings_raw": (payload.get("content")
-                                     or "")[:_CHALLENGE_FINDINGS_CAP],
-                })
+                if m.target_kind == "plan":
+                    plan_id = m.target_id
+                else:
+                    # planner handle is `<recipe>:<step>`; its plan_id is the
+                    # dash form (channels.member_channels seeds the same map)
+                    handle = os.environ.get("EDP_HANDLE", "").strip()
+                    if ":" in handle:
+                        recipe, step = handle.rsplit(":", 1)
+                        plan_id = f"{recipe}-{step}"
+                    else:
+                        plan_id = handle or None
+                    if plan_id and not self.ctx.plans.exists(plan_id):
+                        plan_id = None
+                if plan_id is not None:
+                    challenge_id = str(uuid.uuid4())
+                    _append_challenge(self.ctx.plans.root, plan_id, {
+                        "challenge_id": challenge_id,
+                        "lens": m.lens,
+                        "target_kind": m.target_kind,
+                        "target_id": m.target_id,
+                        "at": _now().isoformat(),
+                        "findings_raw": (payload.get("content")
+                                         or "")[:_CHALLENGE_FINDINGS_CAP],
+                    })
+                    if isinstance(res.data, dict):
+                        res.data["challenge_id"] = challenge_id
+                    else:
+                        res.data.challenge_id = challenge_id
         return res
 
 
