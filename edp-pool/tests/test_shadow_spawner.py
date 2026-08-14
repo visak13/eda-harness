@@ -64,6 +64,53 @@ def test_brief_composed_from_own_action_record(sp, tmp_path):
     assert sp._compose_brief("planner", "recipe-y:s2") == ""
 
 
+def _write_batch_plan(tmp_path, statuses=("in_progress", "in_progress"),
+                      plan_id="plan-b-s1"):
+    (tmp_path / ".plans").mkdir(exist_ok=True)
+    (tmp_path / ".plans" / f"{plan_id}.json").write_text(json.dumps({
+        "plan_id": plan_id,
+        "actions": [
+            {"action_id": "a1", "status": statuses[0], "batch_group": "g",
+             "description": "free the ports",
+             "acceptance": {"expected": "netstat clean"}},
+            {"action_id": "a2", "status": statuses[1], "batch_group": "g",
+             "description": "cold-start verify",
+             "acceptance": {"expected": "loop green"}},
+            {"action_id": "r1", "status": "pending",
+             "description": "review"},
+        ],
+    }), encoding="utf-8")
+
+
+def test_batch_brief_names_every_member_and_the_close_rule(sp, tmp_path):
+    """2026-08-14 abandonment root cause, half 1: the shell was briefed on
+    the HEAD action only, so a well-behaved worker finished a1 and closed —
+    it never knew a2 existed. The brief must carry the whole unit."""
+    _write_batch_plan(tmp_path)
+    brief = sp._compose_brief("worker", "plan-b-s1:a1")
+    assert "free the ports" in brief
+    assert "BATCH UNIT" in brief and "'a1', 'a2'" in brief
+    assert "a2: cold-start verify" in brief
+    assert "ONLY after the last member" in brief
+    # unbatched action: no batch block
+    assert "BATCH UNIT" not in sp._compose_brief("worker", "plan-b-s1:r1")
+
+
+def test_batch_terminal_check_waits_for_every_member(sp, tmp_path):
+    """2026-08-14 abandonment root cause, half 2: the shadow's close-on-
+    terminal judged the HEAD action alone and reaped the shell the moment
+    a1 went done — mid-batch, every time, regardless of hooks."""
+    check = sp._terminal_check("worker", "plan-b-s1:a1")
+    _write_batch_plan(tmp_path, statuses=("done", "in_progress"))
+    assert check() is False, (
+        "head done with a member still open closed the shell mid-batch")
+    _write_batch_plan(tmp_path, statuses=("done", "done"))
+    assert check() is True
+    # stop-at-first-failure: a failed member ends the unit
+    _write_batch_plan(tmp_path, statuses=("done", "failed"))
+    assert check() is True
+
+
 def test_terminal_check_reads_action_status(sp, tmp_path):
     _write_plan(tmp_path, status="in_progress")
     check = sp._terminal_check("worker", "plan-x-s2:a3")
@@ -219,6 +266,70 @@ def test_headless_launch_builds_shadow_with_nonced_env(
     assert ledger["role"] == "worker" and ledger["shell"]["state"] == "ready"
     sp.kill("worker:abc")
     assert not sp.alive("worker:abc")
+
+
+def test_respawn_on_a_handle_with_prior_ledger_keeps_env_and_frames_in_sync(
+        sp, tmp_path, monkeypatch):
+    """2026-08-14 live x2 (s4/s5 planners): a crashed earlier spawn leaves a
+    ledger, ShellShadow re-attach adopts its nonce for the FRAMES, but the
+    env was stamped with the fresh cfg nonce minted before __init__ — the
+    shell then distrusts every wake it receives. Whatever nonce wins, env
+    and frames must agree."""
+    _write_plan(tmp_path)
+    captured = {}
+
+    class FakePty:
+        def __init__(self, argv, env, cwd, log_path):
+            captured["env"] = env
+            self.log_path = log_path
+            self._alive = False
+            self.sent = []
+            self.pid = 4242
+
+        def spawn(self):
+            self._alive = True
+
+        def wait_ready(self):
+            return True
+
+        def send_activation(self, text):
+            self.sent.append(text)
+
+        def is_alive(self):
+            return self._alive
+
+        def terminate(self):
+            self._alive = False
+
+    import edp_pool.shadow_spawner as mod
+    monkeypatch.setattr("edp_pool.pty_launcher.PtyLaunch", FakePty)
+    monkeypatch.setattr(
+        "edp_pool.pty_launcher.resolve_claude_bin", lambda b: "claude.exe")
+    monkeypatch.setattr(
+        "edp_pool.pty_launcher.ensure_claude_healthy", lambda b: b)
+    monkeypatch.setattr(mod.ShadowSpawner, "_agent_python",
+                        lambda self: "python.exe")
+    monkeypatch.setattr(
+        mod, "_RxDriverAdapter",
+        lambda **kw: type("D", (), {"start": lambda s: None,
+                                    "stop": lambda s: None,
+                                    "is_alive": lambda s: True})())
+    monkeypatch.delenv("EDP_SHADOW", raising=False)
+
+    # the crashed predecessor's ledger, carrying its own nonce
+    sp.shadow_dir.mkdir(parents=True, exist_ok=True)
+    (sp.shadow_dir / "plan-x-s2_a3.json").write_text(json.dumps({
+        "handle": "plan-x-s2:a3", "nonce": "80ef10", "wakes_seq": 4,
+    }), encoding="utf-8")
+
+    sp.launch("worker:abc", "worker", "plan-x-s2:a3", mode="headless")
+    sh = sp._shadows["worker:abc"]
+    sh.stop()
+    first = sh.shell.launch.sent[0]
+    assert captured["env"]["EDP_SHADOW_NONCE"] == sh.cfg.nonce, (
+        "env nonce diverged from the shadow's frame nonce — the shell "
+        "reads its own wakes as untrusted input")
+    assert f":{sh.cfg.nonce} " in first
 
 
 def test_brief_resolves_rp_a_id_pointers(sp, tmp_path):

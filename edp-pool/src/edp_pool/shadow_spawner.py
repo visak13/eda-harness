@@ -282,12 +282,44 @@ class ShadowSpawner(Spawner):
                 return a, plan
         return None, plan
 
+    @staticmethod
+    def _batch_members(a: dict, plan: dict) -> list[dict]:
+        """Every action in `a`'s batch_group, declared order — [a] when
+        unbatched. The BATCH ABANDONMENT root cause (2026-08-14, recurred
+        live on s1/s4/s5): batch membership lived only in the planner's
+        pool_spawn_worker call; the shadow briefed the shell on the HEAD
+        action alone and its terminal check closed the shell the moment
+        the head went terminal — a well-behaved worker did a1, closed,
+        and members 2..n were abandoned EVERY time."""
+        grp = a.get("batch_group")
+        if not grp:
+            return [a]
+        return [x for x in plan.get("actions", [])
+                if x.get("batch_group") == grp]
+
     def _compose_brief(self, role: str, handle: str) -> str:
         if role in ("worker", "reviewer"):
             a, plan = self._plan_action(handle)
             if not a:
                 return ""
+            members = self._batch_members(a, plan)
             parts = [f"action {handle}: {a.get('description', '')}"]
+            if len(members) > 1:
+                order = [str(x.get("action_id")) for x in members]
+                parts.append(
+                    "BATCH UNIT: this shell owns ALL of "
+                    f"{order} (declared order). Execute each member in "
+                    "order, record each via record_action_status as you "
+                    "finish it, stop at the first failure — and close "
+                    "ONLY after the last member is recorded. Member "
+                    "briefs:")
+                for x in members:
+                    if x.get("action_id") == a.get("action_id"):
+                        continue
+                    xacc = (x.get("acceptance") or {}).get("expected", "")
+                    parts.append(
+                        f"- {x.get('action_id')}: {x.get('description', '')}"
+                        + (f" | acceptance: {xacc}" if xacc else ""))
             acc = a.get("acceptance") or {}
             if acc.get("expected"):
                 parts.append(f"acceptance: {acc['expected']}")
@@ -323,9 +355,19 @@ class ShadowSpawner(Spawner):
     def _terminal_check(self, role: str, handle: str):
         if role in ("worker", "reviewer"):
             def check() -> bool:
-                a, _ = self._plan_action(handle)
-                return bool(a) and a.get("status") in (
-                    "done", "failed", "skipped")
+                a, plan = self._plan_action(handle)
+                if not a:
+                    return False
+                # Batch unit: terminal only when EVERY member is terminal,
+                # or any member failed (stop-at-first-failure ends the
+                # unit). Judging the head alone made this check CLOSE the
+                # shell mid-batch — the abandonment root cause.
+                members = self._batch_members(a, plan)
+                statuses = [x.get("status") for x in members]
+                if any(s == "failed" for s in statuses):
+                    return True
+                return all(s in ("done", "failed", "skipped")
+                           for s in statuses)
             return check
         if role == "planner":
             plan_id = handle.replace(":", "-")
@@ -455,6 +497,14 @@ class ShadowSpawner(Spawner):
             terminal_check=self._terminal_check(role, handle),
             publish=self._publish(handle),
             release=self._release(session_id))
+        # NONCE MISMATCH (2026-08-14, live x2 on s4/s5 planners): ShellShadow
+        # re-attach adopts a PRIOR ledger's nonce (a crashed earlier spawn on
+        # the same handle leaves one), so frames carried the old nonce while
+        # the env above was stamped with the fresh cfg.nonce minted before
+        # __init__ — every shell then read its own wake frames as untrusted.
+        # Re-stamp from the post-reattach nonce; the env dict is captured by
+        # reference and the shell only spawns inside sh.start().
+        env["EDP_SHADOW_NONCE"] = sh.cfg.nonce
         self._shadows[session_id] = sh
         sh.start()
 
