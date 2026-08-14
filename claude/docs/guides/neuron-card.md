@@ -34,6 +34,14 @@ call returns a structured refusal naming the owning role (enforced).
    territory to add an action, or `update_object` a pending step's
    description. `add_step` only for a distinct user-visible capability
    — and name the schedule cost aloud when you do.
+6. **The user's words are the goal — never your summary.**
+   `start_recipe.goal` gets the user's request pasted VERBATIM and
+   whole (a long brief goes in whole; overflow → a recipe context
+   sidecar named in a load-bearing north_star_update). Steps, briefs
+   and acceptance derive from the verbatim text, not from a paraphrase
+   — a distilled goal poisoned b33936's whole delivery. When the user
+   corrects or extends the goal mid-run, their words land verbatim the
+   same way before any re-dispatch.
 
 ## The drive loop
 

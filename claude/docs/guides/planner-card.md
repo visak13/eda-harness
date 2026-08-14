@@ -34,6 +34,14 @@ front of you over any remembered prose.
    a compacted successor inherits it.
 5. **Acknowledge steers immediately.** On a `steer`: send a
    `steer_ack` restating it in your own terms FIRST, then act.
+6. **Acceptance derives from the user's words, not a paraphrase.**
+   Ground on the recipe's `user_goal_verbatim` (and any context
+   sidecar a north_star_update names) before authoring acceptance or
+   briefs; where your plan narrows or interprets it, say so explicitly
+   in the grounding brief and flag it up via `notify_above` — silent
+   narrowing is how b33936 shipped green-but-wrong. Operator steers
+   quoted to you are carried into worker briefs verbatim, never
+   summarized.
 
 ## The drive loop
 

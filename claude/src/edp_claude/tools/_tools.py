@@ -20,7 +20,7 @@ from typing import Any, Literal
 
 from edp_contracts import BrokerMessage, Tool
 from edp_contracts.errors import ErrorCode
-from pydantic import BaseModel, model_serializer
+from pydantic import BaseModel, Field, model_serializer
 
 # Shared bounds primitives promoted to ONE place (coding-standard #16).
 # approx_tokens/_BUDGET are re-exported under their old local names so the
@@ -3662,7 +3662,18 @@ def _workspace_refusal(workspace: str | None) -> str | None:
 
 
 class _StartIn(BaseModel):
-    goal: str
+    # 2026-08-14 operator ruling ("not interpretations but actual goal in the
+    # recipe"): `goal` is the USER'S WORDS, pasted whole. A neuron-authored
+    # summary here poisons every downstream brief, acceptance bar and audit —
+    # the b33936/2270d3 parity failure traced to exactly this substitution.
+    goal: str = Field(
+        min_length=1,
+        description=(
+            "The user's request VERBATIM — paste their words in full, "
+            "multi-line welcome, typos and all. NEVER a distillation, "
+            "summary or restatement: user_goal_verbatim is immutable and "
+            "every brief, acceptance bar and audit downstream is built from "
+            "it. If the user gave you a document, paste the document."))
     domain: str
     # v7 WS3 (§2.6c) — the recipe budget, declared UP FRONT with the goal:
     # any subset of {claude_tokens: int, delegate_usd: float,

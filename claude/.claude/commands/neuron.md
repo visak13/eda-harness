@@ -55,7 +55,12 @@ neuron to the user rather than burying them.
 3. `ensure_universal()` — idempotent spec-universal floor.
 4. **Declare the budget with the goal** when the user gave one:
    `start_recipe(goal=…, domain=…, budget={claude_tokens?,
-   delegate_usd?, wall_clock_hours?})`.
+   delegate_usd?, wall_clock_hours?})`. `goal` is the user's request
+   pasted VERBATIM and whole — never your distillation. A long brief
+   goes in whole; overflow goes to a recipe context sidecar named in a
+   load-bearing `north_star_update`. Mid-run goal corrections from the
+   user land the same way, verbatim, before any re-dispatch (the
+   b33936 parity failure traced to a summarized goal).
 
 ## Laws
 

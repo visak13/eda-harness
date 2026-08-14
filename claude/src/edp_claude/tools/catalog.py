@@ -15,7 +15,7 @@ placeholder.
 TOOL_ONE_LINERS: dict[str, str] = {
     # ── identity / lifecycle ────────────────────────────────────────────
     "whoami": "Report this shell's role, self/parent address and lineage (reads env; enforces nothing).",
-    "start_recipe": "Create a new recipe from goal+domain; returns recipe_id. Check resolve_recipe first — creating blindly orphans open work.",
+    "start_recipe": "Create a new recipe from goal+domain; returns recipe_id. `goal` = the user's words VERBATIM (paste in full, never summarize — it is immutable and feeds every brief). Check resolve_recipe first — creating blindly orphans open work.",
     "resolve_recipe": "Match a typed goal against open recipes: resume / confirm / create decision, never silent creation.",
     "resume_recipe": "Reopen a suspended recipe: manifest + digest + rewire hand-back for the resuming shell.",
     "suspend_recipe": "Park a recipe: reap shells, write the suspension manifest with the resume command.",
