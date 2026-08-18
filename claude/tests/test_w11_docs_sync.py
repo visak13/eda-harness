@@ -152,6 +152,11 @@ NON_ROLE_COMMAND_FILES: dict[str, str] = {
     # ocak.md — the DESIGN-v5 P1 retirement tombstone — was deleted outright in
     # the 2026-08-12 dead-surface sweep (the comprehension flow it pointed at is
     # tool-forced; the run_ocak_audit / record_audit_verdict TOOLS are live).
+    "pain.md": (
+        "role-agnostic skill (owner request 2026-08-18): any seat files a "
+        "structured framework pain point to docs/pain-points.jsonl and "
+        "continues; it binds to no role toolset by design."
+    ),
 }
 
 

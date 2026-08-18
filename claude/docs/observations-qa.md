@@ -418,3 +418,37 @@ Suite after fixes: 1516 passed, 5 skipped; only test_phoenix_reachable fails
 curiosity 1691/1700). One contract test updated (test_activators_env_brief
 close-ordering → first-record < last-close; the boot early exit legitimately
 closes without a status).
+
+## F34 — Adversarial campaign Round 2 (memory & state layer), 2026-08-18
+13 findings (raw: claude/.sol_review_out-r2.txt); OWNER RULING: "all worth
+fixing". All 13 addressed:
+
+| # | Finding (short) | Fix |
+|---|---|---|
+| 1 | Unlocked load-modify-save loses concurrent updates | store/ipc_lock.py (msvcrt/fcntl, reentrant) + optimistic version check in Recipe/PlanStore.save — stale save raises StoreConflict ("re-read and re-apply"); fresh objects (version==1) adopt the disk version |
+| 2 | Rollup races appenders; crash double-archives | rollup + append+rollup pairs run under the object lock; a re-run whose head tail-matches the last segment resumes the crash instead of re-archiving |
+| 3 | Sidecars overwritten before main JSON (crash split-brain) | content-addressed sidecar names (context/d1-<sha10>.md): changed content publishes NEW bytes; old refs never overwritten; missing sidecar recreates at the same ref (fail-safe, byte-identity preserved) |
+| 4 | Snapshots reference mutable sidecars (rollback lies) | same CAS fix — old snapshots keep hydrating old bytes; gc_sidecars sweep in compact_recipe_store deletes only files no live JSON or snapshot references |
+| 5 | Gate evidence rolls out of the hot events tail | GATE_PINNED_KINDS (acceptance_verdict/dispatched, user_gate_answer, step_forced_done, progress_review) + grounding echoes carried into the rewritten tail (newest 200) |
+| 6 | Cursors on sender timestamps hide late/equal-ts mail | broker append stamps per-inbox monotonic ts (max(sender, prev+1µs)), cache seeded from file on restart. RESIDUAL: cursor persists before the tool result returns — process death in that window skips mail; check_inbox(replay=true) is the recovery |
+| 7 | plan:a1 / plan_a1 share one inbox file | read() filters by the message's resolved destination. RESIDUAL: mail addressed via an alias deleted later becomes invisible on replay (alias map is the resolver) |
+| 8 | Rollup truncation makes rx followers deaf | _tail_jsonl detects size<pos, re-reads from 0, dedupes by record ts (equal-ts records within the same µs may dedupe — heartbeat is the catch-up) |
+| 9 | search_context serves superseded decisions as active | returned decision rows cross-checked against canonical recipe (≤1 bounded load per decision-bearing search) + sidecar repaired in passing; w15 zero-load contract narrowed accordingly |
+| 10 | Promoted spec amendments never drain on recompile | write_doc appends status="compiled" markers for the promoted set — the overlay drains exactly as the design note always claimed |
+| 11 | One torn JSONL line poisons broker/spec reads | tolerant per-line parse (skip, never abort) in InboxStore.read/query/get_message + read_learnings |
+| 12 | No fsync — acknowledged saves can un-happen | write_atomic fsyncs by default (EDP_FSYNC=0 opt-out; conftest opts the suite out); appends opt-in via EDP_FSYNC_APPEND=1 (trails are advisory; object state is the durable tier) |
+| 13 | Neuron lifecycle/counters race (archived resurrection) | set_status conditional in SQL (archived is terminal; force=true un-archives), touch/flag increment in SQL |
+
+Also this round (owner request): the /pain skill — role-agnostic framework
+pain-point flight recorder. Any seat appends ONE structured JSON line to
+docs/pain-points.jsonl (ts/role/handle/severity/area/symptom/expected/
+evidence/workaround/cost) when the framework fights it (refusal vs card,
+phantom verb, dead wake, improvising around a tool), then continues.
+Trigger law compiled into every role card via seat-law + neuron/curiosity
+sources; hand cards (acceptor/specialist) updated; budgets worker 2600,
+curiosity 1800.
+
+Suite: 1532+10 new pass across claude (only Phoenix env-fail) + 14 broker
+tests (4 new). Tiering tests updated to the CAS naming contract; w15
+steady-state contract narrowed (≤1 load on decision rows, 0 otherwise);
+agentic-plan line backstop 230→250 (token budgets remain the gate).

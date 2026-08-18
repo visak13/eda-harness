@@ -132,6 +132,18 @@ class SpecStore:
         write_atomic(path, content)
         append_jsonl(self._dir(spec_id) / "worklog.jsonl",
                      {"kind": "doc_compiled", "bytes": len(content)})
+        # F34 R2 #10 (2026-08-18): a recompile DRAINS the overlay. The
+        # design always said "a post-recompile marker supersedes and
+        # drains the learning" — but nothing ever wrote that marker, so
+        # every promoted learning stayed overlaid forever: workers read
+        # the rule once in the recompiled base and again as an amendment,
+        # and an `overrides` match could stamp the NEW base text
+        # SUPERSEDED. The SME recompiles against the promoted set by
+        # contract (specialist card step 4), so compiling IS the fold.
+        for rec in self.accepted_pending_learnings(spec_id):
+            marker = dict(rec)
+            marker["status"] = "compiled"
+            self.append_learning(spec_id, marker)
         return path
 
     def read_doc(self, spec_id: str, *, with_overlay: bool = False) -> str | None:
@@ -212,7 +224,10 @@ class SpecStore:
             line = line.strip()
             if not line:
                 continue
-            rec = json.loads(line)
+            try:  # F34 R2 #11 — a torn line never poisons the overlay read
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
             lid = rec.get("learning_id")
             if lid is None:
                 loose.append(rec)

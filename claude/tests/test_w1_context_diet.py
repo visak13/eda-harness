@@ -435,8 +435,11 @@ def test_tiered_over_1200_char_text_rehydrates_and_validates(
         (tmp_path / ".recipes" / "r-big" / "recipe.json").read_text(
             encoding="utf-8"))
     d1 = on_disk["context"]["decisions"][0]
-    assert d1["text_ref"] == "context/d1.md"
-    assert "full text in context/d1.md" in d1["text"]
+    # F34 R2 #3/#4: adoption publishes under a content-addressed name.
+    from edp_claude.store.tiering import _cas_name
+    ref = _cas_name("context/d1.md", big)
+    assert d1["text_ref"] == ref
+    assert f"full text in {ref}" in d1["text"]
     # hydrated load re-validates and returns the full >1200-char text
     r = store.load("r-big")
     assert r.context.decisions[0].text == big

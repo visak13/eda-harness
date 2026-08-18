@@ -175,8 +175,22 @@ async def test_steady_state_search_does_not_load_recipe(env, monkeypatch):
     got = _ok(await env.call("search_context", recipe_id=rid,
                              query="gemma serialization", top_k=3))
 
-    assert calls["n"] == 0, "steady-state search must not load recipe.json"
+    # F34 R2 #9 (2026-08-18): the contract narrowed — the INDEX read stays
+    # sidecar-only (no load for scoring/backfill on an indexed recipe), but
+    # returned DECISION rows are cross-checked against the canonical recipe
+    # (one bounded load) so a stale sidecar can never serve a superseded
+    # decision as active. This search returns a decision → exactly one load.
+    assert calls["n"] <= 1, (
+        "steady-state search must load recipe.json at most once "
+        "(the decision-row canonical cross-check)")
     assert any(m["id"] == "d1" for m in got["matches"]), got
+
+    # a search returning NO decision rows keeps the zero-load guarantee.
+    calls["n"] = 0
+    _ok(await env.call("search_context", recipe_id=rid,
+                       query="zzz nothing matches this",
+                       kinds=["assumption"], top_k=3))
+    assert calls["n"] == 0, "non-decision search must not load recipe.json"
 
 
 # ── (7) legacy recipe (no sidecar) is backfilled on first search ───────────

@@ -7,12 +7,29 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+def _fsync_on() -> bool:
+    """F34 R2 #12: object saves force data to stable storage before the
+    rename publishes them, so an acknowledged save survives power loss.
+    EDP_FSYNC=0 opts out (the test suite does — thousands of tiny saves)."""
+    return os.environ.get("EDP_FSYNC", "1").strip() not in ("0", "false")
+
+
+def _fsync_append_on() -> bool:
+    """Appends fsync only when EDP_FSYNC_APPEND=1 — trails are advisory
+    working memory and per-append fsync is a real latency tax; the
+    durable object state lives in the fsynced JSON above."""
+    return os.environ.get("EDP_FSYNC_APPEND", "0").strip() in ("1", "true")
+
+
 def write_atomic(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(text)
+            if _fsync_on():
+                f.flush()
+                os.fsync(f.fileno())
         os.replace(tmp, path)  # atomic on same filesystem
     finally:
         if os.path.exists(tmp):
@@ -53,6 +70,9 @@ def append_jsonl(path: Path, record: dict) -> None:
     record = {"ts": datetime.now(timezone.utc).isoformat(), **record}
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(record, default=str) + "\n")
+        if _fsync_append_on():
+            f.flush()
+            os.fsync(f.fileno())
 
 
 def read_jsonl(path: Path) -> list[dict]:

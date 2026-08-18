@@ -158,8 +158,25 @@ class NeuronStore:
         self._conn.commit()
         return self.get(neuron_id)
 
-    def set_status(self, neuron_id: str, status: str) -> NeuronRecord | None:
-        return self._set(neuron_id, status=status)
+    def set_status(self, neuron_id: str, status: str,
+                   force: bool = False) -> NeuronRecord | None:
+        """F34 R2 #13 (2026-08-18): the transition is CONDITIONAL in SQL.
+        `archived` is terminal — a shell holding a stale pre-archive read
+        used to write its old status back afterward and silently resurrect
+        the neuron. The WHERE clause makes that a no-op (the fresh record
+        is returned either way; callers see the archive held). `force=True`
+        is the explicit un-archive escape."""
+        if not self.exists(neuron_id):
+            return None
+        if force or status == "archived":
+            return self._set(neuron_id, status=status)
+        self._conn.execute(
+            "UPDATE neurons SET status=?, updated_at=? "
+            "WHERE neuron_id=? AND status != 'archived'",
+            (status, _now().isoformat(), neuron_id),
+        )
+        self._conn.commit()
+        return self.get(neuron_id)
 
     def set_base_session(
         self, neuron_id: str, session_id: str
@@ -174,19 +191,30 @@ class NeuronStore:
         return self._set(neuron_id, spec_id=spec_id)
 
     def touch(self, neuron_id: str) -> NeuronRecord | None:
-        rec = self.get(neuron_id)
-        if rec is None:
+        # F34 R2 #13: increment IN SQL — two concurrent read-then-write
+        # touches both wrote count+1 and lost one use, skewing the decay
+        # flag-rate against healthy specialists.
+        if not self.exists(neuron_id):
             return None
-        return self._set(
-            neuron_id, use_count=rec.use_count + 1,
-            last_used_at=_now().isoformat(),
+        now = _now().isoformat()
+        self._conn.execute(
+            "UPDATE neurons SET use_count = use_count + 1, "
+            "last_used_at=?, updated_at=? WHERE neuron_id=?",
+            (now, now, neuron_id),
         )
+        self._conn.commit()
+        return self.get(neuron_id)
 
     def flag(self, neuron_id: str) -> NeuronRecord | None:
-        rec = self.get(neuron_id)
-        if rec is None:
+        if not self.exists(neuron_id):
             return None
-        return self._set(neuron_id, flag_count=rec.flag_count + 1)
+        self._conn.execute(
+            "UPDATE neurons SET flag_count = flag_count + 1, updated_at=? "
+            "WHERE neuron_id=?",
+            (_now().isoformat(), neuron_id),
+        )
+        self._conn.commit()
+        return self.get(neuron_id)
 
     def search(
         self, query_vec: list[float], top_k: int = 5,

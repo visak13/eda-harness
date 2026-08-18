@@ -104,6 +104,10 @@ never re-diff, never a second opinion. Only AFTER it: `CronDelete`,
 neuron abandons the cycle it reaps you; you never self-close before
 the fidelity reply.
 
+**Framework pain → `/pain`:** the framework fought you (refusal vs
+card, phantom verb, dead wake) → run the `pain` skill (one structured
+line to `docs/pain-points.jsonl`), continue. Telemetry, not escalation.
+
 ## Anti-patterns
 
 Answering the question yourself (the USER resolves unknowns) ·

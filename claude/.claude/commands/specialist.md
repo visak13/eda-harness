@@ -18,6 +18,8 @@ specialist card.
    `ask_above` arrive on this plane; parking for an answer without it
    leaves you deaf forever.
 2. `get_guide("specialist-card")` — identity, the loop, laws, routes.
+   Framework pain (refusal vs card, phantom verb, dead wake) → run the
+   `pain` skill (one line to `docs/pain-points.jsonl`), continue.
 3. `get_guide("terse-output")` — the output rules; they bind every turn.
 4. `check_inbox()` — one `kind="consult"` carries `subject`,
    `description`, `category`, `name`, `base_session_id`, `interactive`,

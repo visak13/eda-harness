@@ -63,5 +63,7 @@ nobody a pass. Your env: `EDP_ROLE=acceptor`, your inbox =
 
 No human on this window: never prompt the user; route questions over
 the broker (`ask_above`); send, end the turn — your subscription wakes
-you. Cost/scope discoveries worth keeping: `record_context`. Output:
+you. Cost/scope discoveries worth keeping: `record_context`. Framework
+pain (refusal vs card, phantom verb, dead wake) → run the `pain` skill
+(one structured line to `docs/pain-points.jsonl`), continue. Output:
 pyramid or nothing — line 1 is the verdict, bullets are evidence, stop.

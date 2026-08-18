@@ -118,3 +118,59 @@ def test_channel_registry_roundtrip(tmp_path):
     assert cs.get("team-rec-s3") is None
     with pytest.raises(BadRecipient):
         cs.put("bad name!", ["x"])
+
+
+# ── F34 R2 (2026-08-18) — broker store hardening ──────────────────────────
+
+def test_f34_torn_line_does_not_poison_read(tmp_path):
+    s = InboxStore(tmp_path)
+    s.append(_msg())
+    # simulate a torn append: half a JSON object, then a valid message
+    p = s._file("neuron:r1")
+    with open(p, "a", encoding="utf-8") as f:
+        f.write('{"msg_id": "torn", "ts": "2026-')
+        f.write("\n")
+    m2 = _msg()
+    m2.msg_id = "m2"
+    s.append(m2)
+    got = s.read("neuron:r1")
+    assert [m.msg_id for m in got] == ["m1", "m2"]
+
+
+def test_f34_colon_underscore_collision_filtered(tmp_path):
+    s = InboxStore(tmp_path)
+    a = _msg(to="plan:a1")
+    b = _msg(to="plan_a1")
+    b.msg_id = "mb"
+    s.append(a)
+    s.append(b)
+    # both land in plan_a1.jsonl, but each recipient sees only its own mail
+    assert [m.msg_id for m in s.read("plan:a1")] == ["m1"]
+    assert [m.msg_id for m in s.read("plan_a1")] == ["mb"]
+
+
+def test_f34_append_stamps_monotonic_ts(tmp_path):
+    s = InboxStore(tmp_path)
+    now = datetime.now(timezone.utc)
+    first = _msg(ts=now)
+    s.append(first)
+    # a second message whose sender clock is BEHIND the first must not be
+    # hidden behind a ts>cursor read — the broker stamps it forward.
+    late = _msg(ts=now - timedelta(seconds=5))
+    late.msg_id = "late"
+    s.append(late)
+    got = s.read("neuron:r1", since=now - timedelta(microseconds=1))
+    assert {m.msg_id for m in got} == {"m1", "late"}
+    assert got[-1].ts > first.ts
+
+
+def test_f34_monotonic_survives_process_restart(tmp_path):
+    now = datetime.now(timezone.utc)
+    s1 = InboxStore(tmp_path)
+    s1.append(_msg(ts=now))
+    s2 = InboxStore(tmp_path)          # fresh process: cache seeded from file
+    late = _msg(ts=now - timedelta(seconds=5))
+    late.msg_id = "late"
+    s2.append(late)
+    got = s2.read("neuron:r1")
+    assert got[0].ts < got[1].ts

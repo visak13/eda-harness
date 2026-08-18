@@ -106,6 +106,12 @@ Epoch discipline: echo the epoch from your last context push on
 interactive turns; on cron ticks `check_inbox(ack_epoch=<it>)` — a
 stale echo hands back a `reground` block; execute it VERBATIM.
 
+**Framework pain → `/pain`.** When the FRAMEWORK fights you (a refusal
+contradicting your card, a phantom verb, a dead wake, improvising
+around a tool), run the `pain` skill: it appends ONE structured line to
+`docs/pain-points.jsonl`, then you continue working. Telemetry, not
+escalation — a blocker still routes `ask_above`.
+
 **Everything you arm, you disarm — the close mirrors the open.**
 Before `pool_close_self`: `CronDelete` every cron you created,
 `TaskStop` every Monitor you armed. One resource, one owner, one close.

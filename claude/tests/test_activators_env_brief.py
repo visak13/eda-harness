@@ -301,7 +301,9 @@ def test_planner_dispatcher_stays_thin_and_phases_one_at_a_time():
     # monolith backstop.
     line_count = len((_CMD / "agentic-plan.md").read_text(
         encoding="utf-8").splitlines())
-    assert line_count < 230, f"dispatcher grew to {line_count} lines"
+    # 2026-08-18: 230→250 — the /pain law (seat-law shared module) added a
+    # few lines; token thinness stays enforced by test_v7_bootdocs budgets.
+    assert line_count < 250, f"dispatcher grew to {line_count} lines"
 
 
 # --- Phase 4: shape pipelines for planner ---------------------------------

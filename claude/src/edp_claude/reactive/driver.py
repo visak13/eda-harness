@@ -212,6 +212,7 @@ def _tail_jsonl(path: Path, observer, stop: threading.Event,
     via read_worklog / the heartbeat, not a wake storm. `replay=True`
     opts back into full history (the reconnect-replay use)."""
     pos: int | None = None
+    last_ts: str = ""              # newest delivered record ts (dedupe key)
     while not stop.is_set():
         if path.exists():
             with path.open("r", encoding="utf-8") as f:
@@ -221,14 +222,33 @@ def _tail_jsonl(path: Path, observer, stop: threading.Event,
                     else:
                         f.seek(0, 2)        # EOF — follow-only
                         pos = f.tell()
+                # F34 R2 #8 (2026-08-18): rollup REWRITES the hot file to
+                # a short tail. A byte offset from the pre-rollup file
+                # seeks past EOF in the new one and reads NOTHING until
+                # the file regrows past the stale offset — the subscriber
+                # is silently deaf (the exact stuck-shell failure class).
+                # Detect truncation (size < pos) and re-read from 0,
+                # deduping replays by record ts so only genuinely new
+                # entries wake the subscriber.
+                f.seek(0, 2)
+                size = f.tell()
+                if size < pos:
+                    pos = 0
                 f.seek(pos)
                 for line in f:
                     line = line.strip()
-                    if line:
-                        try:
-                            observer.on_next(json.loads(line))
-                        except json.JSONDecodeError:
-                            pass
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    ts = str(rec.get("ts", ""))
+                    if ts and ts <= last_ts:
+                        continue        # replayed tail record — already sent
+                    if ts:
+                        last_ts = ts
+                    observer.on_next(rec)
                 pos = f.tell()
         stop.wait(poll_ms / 1000.0)
 

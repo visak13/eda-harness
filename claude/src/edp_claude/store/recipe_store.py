@@ -15,6 +15,7 @@ Store maintenance (DESIGN-v6 W1 items 3 & 4) lives here too:
 
 import json
 import os
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -27,6 +28,7 @@ from .atomic import (
     write_atomic,
     write_snapshot,
 )
+from .ipc_lock import StoreConflict, object_lock  # noqa: F401 (re-export)
 from .tiering import dehydrate_recipe_payload, hydrate_recipe_payload
 from .vault_mirror import mirror_recipe
 
@@ -159,6 +161,32 @@ def _dump_records(records: list[dict]) -> str:
     return "".join(json.dumps(r, default=str) + "\n" for r in records)
 
 
+# F34 R2 #5 (2026-08-18) — GATE-LOAD-BEARING KINDS ARE NEVER ARCHIVED OUT
+# of the hot file. Gates do exact-identity lookups against the hot tail
+# only (read_events_tail / read_worklog read events.jsonl, never the
+# archived segments), so letting these kinds roll out CHANGED GATE
+# OUTCOMES: an archived acceptance_verdict=pass re-demanded the pass, an
+# archived user_gate_answer un-authorized a recorded override, an
+# archived step_forced_done re-flagged a step as laundered, an archived
+# grounding echo re-refused a worker's terminal record. Pinned records
+# are copied into the rewritten hot tail (newest PIN_KEEP per file keep
+# it bounded); the archive segment still holds the full history.
+GATE_PINNED_KINDS: frozenset[str] = frozenset({
+    "acceptance_verdict", "acceptance_dispatched", "user_gate_answer",
+    "step_forced_done", "progress_review",
+})
+PIN_KEEP = 200
+
+
+def _pinned(rec: dict) -> bool:
+    if rec.get("kind") in GATE_PINNED_KINDS:
+        return True
+    # the worker grounding echo lives in plan worklogs as
+    # message_sent/msg_kind=grounding — the G-grounding gate scans for it.
+    return (rec.get("kind") == "message_sent"
+            and rec.get("msg_kind") == "grounding")
+
+
 def rollup_events(rdir: Path,
                   threshold: int | None = None,
                   tail_keep: int | None = None,
@@ -195,19 +223,46 @@ def rollup_events(rdir: Path,
         return None
     if _line_count(events) < threshold:
         return None
-    records = read_jsonl(events)
-    if len(records) < threshold:      # blank/corrupt lines inflated the count
-        return None
-    head = records[:-tail_keep] if tail_keep else records
-    tail = records[-tail_keep:] if tail_keep else []
-    seg_index = _next_segment_index(rdir, stem)
-    seg_path = rdir / f"{stem}.{seg_index:04d}.jsonl"
-    write_atomic(seg_path, _dump_records(head))
-    write_atomic(rdir / f"{stem}.{seg_index:04d}.digest.md",
-                 _build_segment_digest(head, seg_index, stem))
-    write_atomic(events, _dump_records(tail))   # same format, bounded length
-    return {"segment": seg_index, "archived": len(head),
-            "kept_tail": len(tail), "segment_path": str(seg_path)}
+    # F34 R2 #2: the read→rewrite must be a critical section. Every shell
+    # runs its own MCP process, so without the lock an append landing
+    # between this read and the write_atomic below was ERASED by the
+    # stale tail. append_jsonl itself is O_APPEND (atomic per line), so
+    # only the rollup needs the lock against other ROLLUPS + the re-read
+    # narrows the append race to zero for LOCKED writers; store append
+    # paths take the same lock.
+    from .ipc_lock import object_lock
+    with object_lock(rdir):
+        records = read_jsonl(events)
+        if len(records) < threshold:  # blank/corrupt lines inflated the count
+            return None
+        head = records[:-tail_keep] if tail_keep else records
+        tail = records[-tail_keep:] if tail_keep else []
+        # F34 R2 #5: gate-load-bearing records never leave the hot file —
+        # carry the newest PIN_KEEP pinned head-records into the tail (the
+        # segment still archives the full head, so nothing is lost).
+        pinned_head = [r for r in head if _pinned(r)][-PIN_KEEP:]
+        tail = pinned_head + tail
+        seg_index = _next_segment_index(rdir, stem)
+        # F34 R2 #2 (crash idempotence): a crash after the segment write
+        # but before the hot-file rewrite must not re-archive the same
+        # head into a SECOND segment on the next call. The previous
+        # segment's last record equalling our head's last record is that
+        # exact signature — reuse the segment, just finish the rewrite.
+        if seg_index > 1:
+            prev = read_jsonl(rdir / f"{stem}.{seg_index - 1:04d}.jsonl")
+            if prev and head and prev[-1] == head[-1]:
+                write_atomic(events, _dump_records(tail))
+                return {"segment": seg_index - 1, "archived": 0,
+                        "kept_tail": len(tail), "resumed_crash": True,
+                        "segment_path":
+                            str(rdir / f"{stem}.{seg_index - 1:04d}.jsonl")}
+        seg_path = rdir / f"{stem}.{seg_index:04d}.jsonl"
+        write_atomic(seg_path, _dump_records(head))
+        write_atomic(rdir / f"{stem}.{seg_index:04d}.digest.md",
+                     _build_segment_digest(head, seg_index, stem))
+        write_atomic(events, _dump_records(tail))  # same format, bounded
+        return {"segment": seg_index, "archived": len(head),
+                "kept_tail": len(tail), "segment_path": str(seg_path)}
 
 
 def compact_recipe_store(recipe_id: str,
@@ -221,11 +276,48 @@ def compact_recipe_store(recipe_id: str,
     rdir = base / recipe_id
     deleted = gc_snapshots(rdir / "snapshots")
     rolled = rollup_events(rdir)
+    sidecars = gc_sidecars(rdir)
     return {
         "recipe_id": recipe_id,
         "snapshots_deleted": deleted,
         "events_rolled_up": rolled,
+        "sidecars_deleted": sidecars,
     }
+
+
+# F34 R2 #3/#4 (2026-08-18): content-addressed sidecars are never
+# overwritten, so superseded content accumulates. This explicit sweep
+# (compact_recipe_store only — never the save path) deletes context/*.md
+# files referenced by NEITHER the live recipe.json NOR any retained
+# snapshot. Retention-first: run gc_snapshots before this so refs held
+# only by pruned snapshots release their files in the same pass.
+_SIDECAR_REF_RE = re.compile(r"context/[A-Za-z0-9._\-]+\.md")
+
+
+def gc_sidecars(rdir: Path) -> int:
+    ctx_dir = rdir / "context"
+    if not ctx_dir.exists():
+        return 0
+    referenced: set[str] = set()
+    sources = [rdir / "recipe.json"]
+    snap_dir = rdir / "snapshots"
+    if snap_dir.exists():
+        sources += sorted(snap_dir.glob("*.json"))
+    for p in sources:
+        try:
+            referenced |= set(
+                _SIDECAR_REF_RE.findall(p.read_text(encoding="utf-8")))
+        except OSError:
+            continue
+    removed = 0
+    for f in ctx_dir.glob("*.md"):
+        if f"context/{f.name}" not in referenced:
+            try:
+                f.unlink()
+                removed += 1
+            except OSError:
+                continue
+    return removed
 
 
 class RecipeStore:
@@ -270,7 +362,40 @@ class RecipeStore:
 
     def save(self, recipe: Recipe) -> int:
         """Validate (model already validated), bump version, atomic write,
-        snapshot, append an events entry. Returns new version."""
+        snapshot, append an events entry. Returns new version.
+
+        F34 R2 #1 (2026-08-18): the write is a LOCKED critical section
+        with an optimistic version check. Every shell runs its own MCP
+        process, so two shells saving the same recipe used to be a silent
+        last-writer-wins — the slower save erased the faster one's
+        mutation while both worklog lines claimed success. Now: under the
+        object lock, a model whose version does not match the disk raises
+        StoreConflict (re-read and re-apply — the caller's mutation is
+        NOT lost, it was never written). A freshly CONSTRUCTED object
+        (version==1, the schema floor) adopts the disk version — the
+        deliberate whole-object overwrite paths (record_recipe, tests)
+        keep working."""
+        rdir = self._dir(recipe.recipe_id)
+        with object_lock(rdir):
+            f = self._file(recipe.recipe_id)
+            if f.exists():
+                try:
+                    disk_v = json.loads(
+                        f.read_text(encoding="utf-8")).get("version", 1)
+                except (OSError, json.JSONDecodeError):
+                    disk_v = recipe.version
+                if recipe.version == 1 and disk_v != 1:
+                    recipe.version = disk_v          # fresh-object overwrite
+                elif recipe.version != disk_v:
+                    raise StoreConflict(
+                        f"recipe {recipe.recipe_id!r} changed on disk "
+                        f"(disk v{disk_v}, yours v{recipe.version}) — "
+                        "another shell saved after your load. Nothing was "
+                        "written; re-read the recipe and re-apply your "
+                        "change.")
+            return self._save_locked(recipe)
+
+    def _save_locked(self, recipe: Recipe) -> int:
         recipe.version += 1
         payload = recipe.model_dump(mode="json")
         # P2 tiering: long texts move to sidecars; live file AND snapshot
@@ -383,7 +508,11 @@ class RecipeStore:
     def append_worklog(self, recipe_id: str, record: dict) -> None:
         """Append an arbitrary recipe-level worklog entry (crash
         recovery judgments, etc.). Lands in events.jsonl alongside the
-        recipe_saved trail. `ts` added by append_jsonl."""
+        recipe_saved trail. `ts` added by append_jsonl. F34 R2 #2: the
+        append+rollup pair runs under the object lock so a concurrent
+        rollup can never rewrite the file between this append and its
+        own stale read."""
         rdir = self._dir(recipe_id)
-        append_jsonl(rdir / "events.jsonl", record)
-        rollup_events(rdir)   # same trail grows here — keep it bounded too.
+        with object_lock(rdir):
+            append_jsonl(rdir / "events.jsonl", record)
+            rollup_events(rdir)  # same trail grows here — keep it bounded.

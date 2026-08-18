@@ -43,6 +43,10 @@ def _clear_leaked_shell_env(monkeypatch):
     # explicitly (tests/test_f21_f22_gates.py).
     monkeypatch.setenv("EDP_ACCEPT_GATE", "0")
     monkeypatch.setenv("EDP_CHALLENGE_GATE_MIN_ACTIONS", "0")
+    # F34 R2 #12 (2026-08-18): saves fsync by default in production so an
+    # acknowledged write survives power loss. The suite does thousands of
+    # tiny saves where per-save fsync is pure latency — opt out here.
+    monkeypatch.setenv("EDP_FSYNC", "0")
 
 
 @pytest.fixture

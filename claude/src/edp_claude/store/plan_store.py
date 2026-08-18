@@ -13,6 +13,7 @@ from .atomic import (
     write_atomic,
     write_snapshot,
 )
+from .ipc_lock import StoreConflict, object_lock
 from .tiering import dehydrate_plan_payload, hydrate_plan_payload
 from .vault_mirror import mirror_plan
 
@@ -120,6 +121,29 @@ class PlanStore:
         return Plan.model_validate(data)
 
     def save(self, plan: Plan) -> int:
+        # F34 R2 #1 — same locked optimistic-version discipline as
+        # RecipeStore.save (see the doc there): concurrent shells saving
+        # the same plan must conflict loudly, never last-writer-wins.
+        pdir = self._dir(plan.plan_id)
+        with object_lock(pdir):
+            f = self._file(plan.plan_id)
+            if f.exists():
+                try:
+                    disk_v = json.loads(
+                        f.read_text(encoding="utf-8")).get("version", 1)
+                except (OSError, json.JSONDecodeError):
+                    disk_v = plan.version
+                if plan.version == 1 and disk_v != 1:
+                    plan.version = disk_v            # fresh-object overwrite
+                elif plan.version != disk_v:
+                    raise StoreConflict(
+                        f"plan {plan.plan_id!r} changed on disk (disk "
+                        f"v{disk_v}, yours v{plan.version}) — another shell "
+                        "saved after your load. Nothing was written; "
+                        "re-read the plan and re-apply your change.")
+            return self._save_locked(plan)
+
+    def _save_locked(self, plan: Plan) -> int:
         plan.version += 1
         payload = plan.model_dump(mode="json")
         # P2 tiering: evidence blobs + injected-context texts move to
@@ -163,12 +187,13 @@ class PlanStore:
         worklog on plan …39fd30-s11. Best-effort — a rollup failure never
         fails the append."""
         pdir = self._dir(plan_id)
-        append_jsonl(pdir / "worklog.jsonl", record)
-        try:
-            from .recipe_store import rollup_events
-            rollup_events(pdir, filename="worklog.jsonl")
-        except Exception:  # noqa: BLE001 — maintenance never blocks the write
-            pass
+        with object_lock(pdir):
+            append_jsonl(pdir / "worklog.jsonl", record)
+            try:
+                from .recipe_store import rollup_events
+                rollup_events(pdir, filename="worklog.jsonl")
+            except Exception:  # noqa: BLE001 — maintenance never blocks it
+                pass
 
     def read_worklog(
         self,

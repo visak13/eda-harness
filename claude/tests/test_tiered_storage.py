@@ -22,6 +22,13 @@ BIG = "DECISION BODY LINE. " * 200          # ~4KB
 EVIDENCE = "evidence paragraph " * 300      # ~5.7KB
 
 
+def cas(base_ref: str, text: str) -> str:
+    """F34 R2 #3/#4: sidecars are content-addressed — the ref carries a
+    content hash so old bytes are never overwritten in place."""
+    from edp_claude.store.tiering import _cas_name
+    return _cas_name(base_ref, text)
+
+
 def _ok(res):
     assert isinstance(res, ToolOk), res
     return res.data
@@ -112,17 +119,18 @@ async def test_recipe_roundtrip_byte_identity(env, tier_on):
     rdir = env.ctx.recipes.root / rid
     raw = json.loads((rdir / "recipe.json").read_text(encoding="utf-8"))
     decs = {d["id"]: d for d in raw["context"]["decisions"]}
-    # big decision tiered: digest inline + ref + sidecar holds full text
-    assert decs["d2"]["text_ref"] == "context/d2.md"
-    assert "full text in context/d2.md" in decs["d2"]["text"]
-    assert (rdir / "context" / "d2.md").read_text(
+    # big decision tiered: digest inline + CAS ref + sidecar holds full text
+    d2_ref = cas("context/d2.md", BIG_DECISION)
+    assert decs["d2"]["text_ref"] == d2_ref
+    assert f"full text in {d2_ref}" in decs["d2"]["text"]
+    assert (rdir / d2_ref).read_text(
         encoding="utf-8") == "BIG DECISION HEADLINE. " + BIG
     # small decision untouched, no new keys on disk
     assert decs["d1"]["text"] == "SHORT DECISION."
     assert "text_ref" not in decs["d1"] and "status" not in decs["d1"]
     # big step description tiered too
     steps = {s["step_id"]: s for s in raw["steps"]}
-    assert steps["s2"]["description_ref"] == "context/step-s2.md"
+    assert steps["s2"]["description_ref"] == cas("context/step-s2.md", BIG)
     assert "description_ref" not in steps["s1"]
     # HYDRATED load returns full text byte-equal
     r = env.ctx.recipes.load(rid)
@@ -143,7 +151,7 @@ async def test_snapshot_is_dehydrated(env, tier_on):
     snap = json.loads((env.ctx.recipes.root / rid / "snapshots" /
                        f"v{v}.json").read_text(encoding="utf-8"))
     d2 = next(d for d in snap["context"]["decisions"] if d["id"] == "d2")
-    assert "full text in context/d2.md" in d2["text"]
+    assert f"full text in {cas('context/d2.md', BIG_DECISION)}" in d2["text"]
     assert len(json.dumps(snap)) < len(BIG) * 2  # snapshot stays small
 
 
@@ -170,9 +178,10 @@ async def test_legacy_recipe_passthrough_no_new_keys(env, monkeypatch):
 async def test_missing_sidecar_degrades_not_crashes(env, tier_on):
     rid = _mk_recipe(env)
     rdir = env.ctx.recipes.root / rid
-    (rdir / "context" / "d2.md").unlink()
+    d2_ref = cas("context/d2.md", BIG_DECISION)
+    (rdir / d2_ref).unlink()
     r = env.ctx.recipes.load(rid)          # must not raise
-    assert "full text in context/d2.md" in r.context.decisions[1].text
+    assert f"full text in {d2_ref}" in r.context.decisions[1].text
     events = (rdir / "events.jsonl").read_text(encoding="utf-8")
     assert "tiering_degraded" in events
 
@@ -196,7 +205,8 @@ async def test_golden_geoguessr_recipe_loads_and_tiers(env, tier_on):
     assert after < before * 0.55, (before, after)
     r2 = env.ctx.recipes.load(rid)
     assert {d.id: d.text for d in r2.context.decisions} == originals
-    assert (rdir / "context" / "d4.md").exists()
+    assert list((rdir / "context").glob("d4-*.md")), (
+        "d4's CAS sidecar missing")
 
 
 # ── plan round-trip + worker grounding ──────────────────────────────────────
@@ -208,10 +218,10 @@ async def test_plan_evidence_tiered_and_hydrated(env, tier_on):
     raw = json.loads((env.ctx.plans.root / f"{pid}.json").read_text(
         encoding="utf-8"))
     acc = raw["actions"][0]["acceptance"]
-    assert acc["actual_ref"] == "evidence/a1-actual-record.md"
-    assert "full text in evidence/a1-actual-record.md" in acc["actual"]
-    assert (pdir / "evidence" / "a1-actual-record.md").read_text(
-        encoding="utf-8") == EVIDENCE
+    rec_ref = cas("evidence/a1-actual-record.md", EVIDENCE)
+    assert acc["actual_ref"] == rec_ref
+    assert f"full text in {rec_ref}" in acc["actual"]
+    assert (pdir / rec_ref).read_text(encoding="utf-8") == EVIDENCE
     p = env.ctx.plans.load(pid)
     assert p.actions[0].acceptance.actual == EVIDENCE
 
@@ -233,7 +243,7 @@ async def test_worker_evidence_file_never_clobbered(env, tier_on):
     env.ctx.plans.save(p)          # re-dehydrates acceptance.actual
     assert worker_file.read_text(encoding="utf-8") == transcripts, (
         "plan save clobbered the worker's evidence file")
-    assert (pdir / "evidence" / "a1-actual-record.md").read_text(
+    assert (pdir / cas("evidence/a1-actual-record.md", EVIDENCE)).read_text(
         encoding="utf-8") == EVIDENCE
 
 
@@ -261,12 +271,14 @@ async def test_legacy_collided_actual_ref_migrates_off_worker_path(env,
                                                     encoding="utf-8")
     env.ctx.plans.save(p)
     raw2 = json.loads(raw_path.read_text(encoding="utf-8"))
-    assert (raw2["actions"][0]["acceptance"]["actual_ref"]
-            == "evidence/a1-actual-record.md")
+    # the migration re-points to the record path; the sidecar is missing
+    # there, so the fail-safe recreates AT that ref (no CAS rename needed —
+    # nothing is being overwritten).
+    rec_ref = "evidence/a1-actual-record.md"
+    assert raw2["actions"][0]["acceptance"]["actual_ref"] == rec_ref
     assert (pdir / "evidence" / "a1-actual.md").read_text(
         encoding="utf-8") == worker_text
-    assert (pdir / "evidence" / "a1-actual-record.md").read_text(
-        encoding="utf-8") == EVIDENCE
+    assert (pdir / rec_ref).read_text(encoding="utf-8") == EVIDENCE
 
 
 async def test_injected_context_markers_and_grounding_identity(env, tier_on):
@@ -278,8 +290,9 @@ async def test_injected_context_markers_and_grounding_identity(env, tier_on):
     pid = _mk_plan(env, injected={"d2": big_text})
     raw = json.loads((env.ctx.plans.root / f"{pid}.json").read_text(
         encoding="utf-8"))
-    assert raw["injected_context"]["d2"].startswith("@file:context/d2.md")
-    assert (env.ctx.plans.root / pid / "context" / "d2.md").read_text(
+    d2_ref = cas("context/d2.md", big_text)
+    assert raw["injected_context"]["d2"].startswith(f"@file:{d2_ref}")
+    assert (env.ctx.plans.root / pid / d2_ref).read_text(
         encoding="utf-8") == big_text
     # stamp the pointer on the action, then read like a worker would
     p = env.ctx.plans.load(pid)
@@ -323,7 +336,9 @@ async def test_unchanged_text_save_writes_no_sidecar(env, tier_on,
     """(1) A save whose tiered text is UNCHANGED performs ZERO sidecar writes."""
     rid = _mk_recipe(env)
     # the adoption save tiers both long fields — that write MUST happen.
-    assert sorted(sidecar_writes) == ["d2.md", "step-s2.md"], sidecar_writes
+    expected = sorted([Path(cas("context/d2.md", BIG_DECISION)).name,
+                       Path(cas("context/step-s2.md", BIG)).name])
+    assert sorted(sidecar_writes) == expected, sidecar_writes
     sidecar_writes.clear()
 
     env.ctx.recipes.save(env.ctx.recipes.load(rid))   # nothing changed
@@ -332,7 +347,7 @@ async def test_unchanged_text_save_writes_no_sidecar(env, tier_on,
 
     # the invariant still holds: sidecar content == live text, digest inline.
     rdir = env.ctx.recipes.root / rid
-    assert (rdir / "context" / "d2.md").read_text(
+    assert (rdir / cas("context/d2.md", BIG_DECISION)).read_text(
         encoding="utf-8") == BIG_DECISION
     assert env.ctx.recipes.load(rid).context.decisions[1].text == BIG_DECISION
 
@@ -350,10 +365,15 @@ async def test_changed_text_save_writes_exactly_once(env, tier_on,
     env.ctx.recipes.save(r)
 
     # exactly one write, and it is the changed field — the untouched step
-    # description sidecar is NOT rewritten alongside it.
-    assert sidecar_writes == ["d2.md"], sidecar_writes
+    # description sidecar is NOT rewritten alongside it. CAS: the new
+    # content publishes under a NEW name; the old file is untouched.
+    assert sidecar_writes == [Path(cas("context/d2.md", edited)).name], \
+        sidecar_writes
     rdir = env.ctx.recipes.root / rid
-    assert (rdir / "context" / "d2.md").read_text(encoding="utf-8") == edited
+    assert (rdir / cas("context/d2.md", edited)).read_text(
+        encoding="utf-8") == edited
+    assert (rdir / cas("context/d2.md", BIG_DECISION)).read_text(
+        encoding="utf-8") == BIG_DECISION, "old CAS bytes must survive"
     assert env.ctx.recipes.load(rid).context.decisions[1].text == edited
 
 
@@ -369,8 +389,9 @@ async def test_digest_line_written_inline_whether_or_not_sidecar_is(
     env.ctx.recipes.save(env.ctx.recipes.load(rid))
     assert sidecar_writes == []
     d2 = _decision(_raw_recipe(env, rid), "d2")
-    assert d2["text_ref"] == "context/d2.md"
-    assert "full text in context/d2.md" in d2["text"]
+    ref0 = cas("context/d2.md", BIG_DECISION)
+    assert d2["text_ref"] == ref0
+    assert f"full text in {ref0}" in d2["text"]
     assert BIG not in d2["text"], "full text leaked inline on a skipped write"
 
     # (b) changed save — one sidecar write, digest refreshed to the new text.
@@ -378,10 +399,11 @@ async def test_digest_line_written_inline_whether_or_not_sidecar_is(
     r = env.ctx.recipes.load(rid)
     r.context.decisions[1].text = edited
     env.ctx.recipes.save(r)
-    assert sidecar_writes == ["d2.md"], sidecar_writes
+    ref1 = cas("context/d2.md", edited)
+    assert sidecar_writes == [Path(ref1).name], sidecar_writes
     d2 = _decision(_raw_recipe(env, rid), "d2")
     assert d2["text"].startswith("EDITED HEADLINE.")
-    assert "full text in context/d2.md" in d2["text"]
+    assert f"full text in {ref1}" in d2["text"]
     assert BIG not in d2["text"], "full text leaked inline on a real write"
 
 
@@ -392,13 +414,14 @@ async def test_missing_sidecar_is_rewritten_not_skipped(env, tier_on,
     rid = _mk_recipe(env)
     rdir = env.ctx.recipes.root / rid
     r = env.ctx.recipes.load(rid)             # full text in memory
-    (rdir / "context" / "d2.md").unlink()
+    d2_ref = cas("context/d2.md", BIG_DECISION)
+    (rdir / d2_ref).unlink()
     sidecar_writes.clear()
 
     env.ctx.recipes.save(r)
-    assert "d2.md" in sidecar_writes, "a missing sidecar MUST be rewritten"
-    assert (rdir / "context" / "d2.md").read_text(
-        encoding="utf-8") == BIG_DECISION
+    assert Path(d2_ref).name in sidecar_writes, \
+        "a missing sidecar MUST be rewritten"
+    assert (rdir / d2_ref).read_text(encoding="utf-8") == BIG_DECISION
 
 
 async def test_plan_injected_context_unchanged_save_writes_no_sidecar(
@@ -408,8 +431,10 @@ async def test_plan_injected_context_unchanged_save_writes_no_sidecar(
     _mk_recipe(env)
     sidecar_writes.clear()                      # ignore the recipe's own writes
     pid = _mk_plan(env, actual=EVIDENCE, injected={"d2": BIG_DECISION})
-    assert sorted(sidecar_writes) == ["a1-actual-record.md",
-                                      "d2.md"], sidecar_writes
+    expected = sorted(
+        [Path(cas("evidence/a1-actual-record.md", EVIDENCE)).name,
+         Path(cas("context/d2.md", BIG_DECISION)).name])
+    assert sorted(sidecar_writes) == expected, sidecar_writes
     sidecar_writes.clear()
 
     env.ctx.plans.save(env.ctx.plans.load(pid))

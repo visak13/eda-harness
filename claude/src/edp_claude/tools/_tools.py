@@ -7707,6 +7707,35 @@ class SearchContext(_ClaudeTool):
             # provenance: this row's canonical home in recipe context memory.
             "provenance": f"recipe:{recipe_id}/context/{e['kind']}:{e['id']}",
         } for score, e in scored[:top_k]]
+        # F34 R2 #9 (2026-08-18): the sidecar's status stamp is a CACHE and
+        # it can lag — fold/supersede commit recipe.json FIRST and restamp
+        # the sidecar best-effort after, so a crash between the two leaves
+        # a superseded decision looking ACTIVE here (and a fresh worker
+        # following a folded direction). The rows being handed to a caller
+        # are cross-checked against the canonical recipe and the sidecar is
+        # repaired in passing. One recipe load per decision-bearing search
+        # — correctness beats the read-free steady state on the rows a
+        # caller will act on.
+        dec_rows = [x for x in matches if x["kind"] == "decision"]
+        if dec_rows:
+            try:
+                r = self.ctx.recipes.load(recipe_id)
+                canon = {d.id: getattr(d, "status", None)
+                         for d in r.context.decisions}
+                repairs = []
+                for x in dec_rows:
+                    c = canon.get(x["id"])
+                    if c is not None and x.get("status") != c:
+                        x["status"] = c
+                        e = index.get(f"decision:{x['id']}")
+                        if e:
+                            repaired = dict(e)
+                            repaired["status"] = c
+                            repairs.append(repaired)
+                if repairs:
+                    _append_context_index(self.ctx, recipe_id, repairs)
+            except Exception:  # noqa: BLE001 — the search still serves
+                pass
         return Tool.ok(_SearchContextOut(
             matches=matches, mode=mode, recipe_id=recipe_id,
             count=len(entries)))

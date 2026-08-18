@@ -176,3 +176,8 @@ recipe leaks nothing). Index + narrative:
 `get_guide("orchestrator-launch")`. Wiring reference:
 `get_guide("loop-and-heartbeat")`. Vocabulary depth:
 `get_guide("architecture-vocabulary")`.
+
+**Framework pain → `/pain`.** When the framework itself fights you (a
+refusal contradicting a card/guide, a phantom verb, a dead wake), run
+the `pain` skill — one structured line to `docs/pain-points.jsonl`,
+then continue. Telemetry, not escalation.

@@ -27,11 +27,32 @@ ROLLOUT RULES:
   attached for the trail) — it never crashes a load.
 """
 
+import hashlib
 import json
 import os
 from pathlib import Path
 
 from .atomic import write_atomic
+
+
+def _cas_name(base_ref: str, text: str) -> str:
+    """F34 R2 #3/#4 (2026-08-18) — CONTENT-ADDRESSED sidecar names.
+
+    Sidecars used to be overwritten IN PLACE at a name derived from the
+    logical id (context/d1.md). That made every snapshot a liar: v5's
+    payload referenced context/d1.md, v6 overwrote it, and 'restoring'
+    v5 hydrated v6's text. It also opened a crash split-brain: sidecar
+    written, process dies before recipe.json replaces — the old JSON now
+    hydrates the NEW text. With content-addressing, new content gets a
+    NEW file (context/d1-<sha10>.md) and the old file stays for every
+    snapshot that references it; a crash leaves the old JSON pointing at
+    the old, untouched bytes. Legacy plain refs remain readable and
+    migrate to CAS names on the next content change."""
+    h = hashlib.sha256(text.encode("utf-8")).hexdigest()[:10]
+    if "." in base_ref.rsplit("/", 1)[-1]:
+        stem, ext = base_ref.rsplit(".", 1)
+        return f"{stem}-{h}.{ext}"
+    return f"{base_ref}-{h}"
 
 #: minimum utf-8 byte length before a text is tiered out to a sidecar.
 TIER_THRESHOLD_DEFAULT = 600
@@ -116,11 +137,25 @@ def _dehydrate_field(obj: dict, field: str, ref_field: str, ref: str,
             return
         if len(text.encode("utf-8")) <= _threshold():
             return
-        obj[ref_field] = ref
-    # The write is content-guarded; the digest substitution is NOT — gating it
-    # on the write would leave full text inline and silently untier the field.
-    _write_sidecar(root, obj[ref_field], text)
-    obj[field] = _digest_line(text, obj[ref_field])
+    # F34 R2 #3/#4 — the overwrite rule:
+    # - content UNCHANGED → keep the existing ref (legacy or CAS), zero IO.
+    # - sidecar MISSING   → recreate at the existing ref (fail-safe; nothing
+    #   is overwritten, and the payload shape stays byte-identical).
+    # - content CHANGED   → publish under a NEW content-addressed name; the
+    #   old file is never overwritten, so every snapshot referencing it
+    #   stays truthful and a crash before the main JSON replace leaves the
+    #   old object pointing at old bytes.
+    cur = obj.get(ref_field)
+    if cur:
+        on_disk = _read_sidecar(root, cur)
+        if on_disk == text or on_disk is None:
+            _write_sidecar(root, cur, text)   # no-op when equal
+            obj[field] = _digest_line(text, cur)
+            return
+    cas = _cas_name(ref, text)
+    _write_sidecar(root, cas, text)
+    obj[ref_field] = cas
+    obj[field] = _digest_line(text, cas)
 
 
 def _hydrate_field(obj: dict, field: str, ref_field: str, root: Path,
@@ -235,12 +270,16 @@ def dehydrate_plan_payload(payload: dict, plan_dir: Path) -> dict:
                 # marker here means this payload was never hydrated.
                 continue
             ref = f"context/{cid}.md"
-            already = (plan_dir / ref).exists()
+            already = ((plan_dir / ref).exists()
+                       or bool(list(plan_dir.glob(f"context/{cid}-*.md"))))
             if not already and (not tier_write_enabled()
                                 or len(text.encode("utf-8")) <= _threshold()):
                 continue
-            _write_sidecar(plan_dir, ref, text)
-            inj[cid] = f"{FILE_MARKER}{ref}\n{_digest_line(text, ref)}"
+            # F34 R2 #3/#4 — content-addressed name; old bytes never
+            # overwritten (see _cas_name).
+            cas = _cas_name(ref, text)
+            _write_sidecar(plan_dir, cas, text)
+            inj[cid] = f"{FILE_MARKER}{cas}\n{_digest_line(text, cas)}"
     return payload
 
 

@@ -4,7 +4,7 @@ import json
 import os
 import re
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from edp_contracts import BrokerMessage
@@ -138,9 +138,30 @@ class InboxStore:
         self.data = Path(data)
         self.aliases = AliasStore(self.data)
         self.channels = ChannelStore(self.data)
+        # F34 R2 #6: per-inbox high-water ts cache (single broker process —
+        # appends are serialized on the event loop). Seeded lazily from the
+        # file's last line.
+        self._last_ts: dict[Path, datetime] = {}
 
     def _file(self, recipient: str) -> Path:
         return self.data / f"{_safe(recipient)}.jsonl"
+
+    def _tail_ts(self, p: Path) -> datetime | None:
+        if p in self._last_ts:
+            return self._last_ts[p]
+        if not p.exists():
+            return None
+        last = None
+        for line in p.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                last = BrokerMessage.model_validate_json(line).ts
+            except Exception:  # noqa: BLE001 — torn line, keep scanning
+                continue
+        if last is not None:
+            self._last_ts[p] = last
+        return last
 
     def append(self, msg: BrokerMessage) -> None:
         target = self.aliases.resolve(msg.to)
@@ -148,6 +169,16 @@ class InboxStore:
             raise BadRecipient(f"unresolved relative ref {msg.to!r}")
         p = self._file(target)
         p.parent.mkdir(parents=True, exist_ok=True)
+        # F34 R2 #6 (2026-08-18): cursors are `ts > last_seen`, so a message
+        # whose SENDER-stamped ts is <= an already-delivered one would be
+        # hidden FOREVER (in-flight overlap, equal microseconds, a slow
+        # sender). Stamp the ts forward at append so every inbox file is
+        # strictly monotonic — the ts becomes "when the broker accepted it",
+        # which is the order readers actually need.
+        prev = self._tail_ts(p)
+        if prev is not None and msg.ts <= prev:
+            msg.ts = prev + timedelta(microseconds=1)
+        self._last_ts[p] = msg.ts
         with open(p, "a", encoding="utf-8") as f:
             f.write(msg.model_dump_json(by_alias=True) + "\n")
 
@@ -165,7 +196,20 @@ class InboxStore:
         for line in p.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
-            m = BrokerMessage.model_validate_json(line)
+            # F34 R2 #11 (2026-08-18): a torn/corrupt line must not poison
+            # the whole inbox — one half-written append used to make every
+            # later valid message unreadable. Skip it; the valid mail flows.
+            try:
+                m = BrokerMessage.model_validate_json(line)
+            except Exception:  # noqa: BLE001 — malformed line, not fatal
+                continue
+            # F34 R2 #7: colon→underscore sanitization is not injective
+            # ('plan:a1' and 'plan_a1' share a file), so filter by the
+            # message's RESOLVED destination — cross-delivery would let one
+            # shell act on another's steer/answer.
+            dest = self.aliases.resolve(m.to) or m.to
+            if dest != recipient:
+                continue
             if since is None or m.ts > since:
                 out.append(m)
         return out
@@ -198,7 +242,10 @@ class InboxStore:
             for line in p.read_text(encoding="utf-8").splitlines():
                 if not line.strip():
                     continue
-                m = BrokerMessage.model_validate_json(line)
+                try:  # F34 R2 #11 — torn line never poisons the query
+                    m = BrokerMessage.model_validate_json(line)
+                except Exception:  # noqa: BLE001
+                    continue
                 if from_ is not None and m.from_ != from_:
                     continue
                 if kind is not None and m.kind != kind:
@@ -224,7 +271,10 @@ class InboxStore:
             for line in p.read_text(encoding="utf-8").splitlines():
                 if not line.strip() or msg_id not in line:
                     continue
-                m = BrokerMessage.model_validate_json(line)
+                try:  # F34 R2 #11 — torn line never poisons the lookup
+                    m = BrokerMessage.model_validate_json(line)
+                except Exception:  # noqa: BLE001
+                    continue
                 if m.msg_id == msg_id:
                     return m
         return None
