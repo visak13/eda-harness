@@ -25,5 +25,13 @@ rem neuron launches HERE. console exporter -> metrics land in this window's
 rem scrollback and /usage stays authoritative; no collector needed.
 if not defined CLAUDE_CODE_ENABLE_TELEMETRY set "CLAUDE_CODE_ENABLE_TELEMETRY=1"
 if not defined OTEL_METRICS_EXPORTER set "OTEL_METRICS_EXPORTER=console"
+rem F1 (2026-08-17): the base shell is the NEURON seat. Stamp the role so the
+rem MCP server registers the neuron toolset (enforce mode), pin the judgment
+rem model (models.json binds pool spawns only — the base shell must self-pin),
+rem and skip permission prompts (the foreground neuron drives autonomously).
+rem A pre-set EDP_ROLE wins (e.g. for a diagnostic role-less shell, set it "").
+if not defined EDP_ROLE set "EDP_ROLE=neuron"
+rem Override with `set EDA_MODEL=claude-fable-5` (etc.) before launching.
+if not defined EDA_MODEL set "EDA_MODEL=claude-opus-4-8"
 cd /d "C:\Projects\Learning\eda-base3\claude"
-claude %*
+claude --dangerously-skip-permissions --model %EDA_MODEL% %*

@@ -120,6 +120,17 @@ def sids_for_handle(reactive_root: Path, handle: str) -> list[str]:
     return list(_load(reactive_root).get(handle, []))
 
 
+def all_indexed_sids(reactive_root: Path) -> set[str]:
+    """Every sid ANY handle owns (2026-08-17) — the observe GC's do-not-sweep
+    set: an indexed subscription belongs to a shell that may be parked or
+    idle past the TTL, and sweeping it emptied the resume rewire hand-back
+    (the s4 planner incident)."""
+    out: set[str] = set()
+    for sids in _load(reactive_root).values():
+        out.update(sids)
+    return out
+
+
 def _read_subscription(reactive_root: Path, sid: str) -> dict[str, Any] | None:
     """Read one persisted subscription's artifacts back into a dict
     `{sid, spec, bindings, effect}`. Returns None when the `.spec` artifact is

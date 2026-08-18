@@ -53,7 +53,8 @@ def test_item6_dead_only_filters_and_suppresses_alive_churn(monkeypatch):
     out = _drive(monkeypatch, snaps, scope="r", states=["dead"])
     # exactly the crash surfaced; the alive spawn-wave + reorder were suppressed
     assert out, "dead-only sub never emitted the crash"
-    flat = [row for snap in out for row in snap]
+    # F3b: emissions are {snapshot, changed} envelopes
+    flat = [row for e in out for row in e["snapshot"]]
     assert flat and all(r["liveness"] == "dead" for r in flat), out
     assert any(r["handle"] == "r:s1" for r in flat), out
 

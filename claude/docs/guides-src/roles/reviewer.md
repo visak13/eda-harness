@@ -11,13 +11,19 @@ before this shell existed (enforced) — it is in your inbox now.
 
 1. `whoami()` — `lineage` for flowback; `EDP_HANDLE` =
    `<plan_id>:<your action_id>` — that action is YOUR review leg.
+   Then arm the wake plane: `arm_wiring()` — run the returned
+   `monitor_cmd` under `Monitor` and `CronCreate` recurring with the
+   returned `cron_expr` + `cron_prompt` verbatim (answers to your
+   `ask_above` arrive on this plane; without it you are deaf).
 2. `check_inbox()` — your `kind="consult"` carries `target`,
    `criteria`, `spec_id`, `caller`. Empty →
    `notify_above(kind="alert", body={"problem": "no review task"})`,
    `pool_close_self`. (Post-compaction the reground re-injects
    `get_guide("reviewer-card")` — execute it verbatim.)
 3. `read_object` your own leg — grounding is budgeted, LOUD elision
-   marker; chase it via `search_context(query=…)`.
+   marker; chase it via `search_context(query=…)`. Need the map?
+   `read_object(type="recipe", ids={…}, detail="brief")` — goal
+   VERBATIM, outcomes, decisions, bans in one readable page.
 
 ## The review
 

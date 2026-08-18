@@ -13,9 +13,6 @@ import inspect
 import os
 from pathlib import Path
 
-from edp_contracts import Tool
-from edp_contracts.errors import ErrorCode
-
 from .server import make_context, make_http_context
 from .tools import build_registry
 from .tools.roles import toolset_for_role
@@ -134,22 +131,20 @@ def build_mcp(root: Path | None = None):
                 "than silently drop tools a role expects."
             )
         if scope_mode == "enforce":
-            # Context-diet Phase 3c — REFUSAL STUBS instead of silent absence
-            # (closes enforce-readiness blocker #2: an off-scope tool used to
-            # be simply missing — no log, no explanation, and the shell's
-            # only signal was an unknown-tool error it could not interpret).
-            # The stub grants NOTHING: it registers under the real name with
-            # a one-word description and refuses every call with a structured
-            # precondition naming the owning role(s) and the broker route.
-            refusal_stubs = [t for t in tools if t.name not in allowed]
+            # F1 (owner ruling 2026-08-17): off-role tools are ABSENT — no
+            # refusal stubs. The Phase-3c stubs kept every off-scope tool
+            # visible in the listing ("(not available to role=…)"), which
+            # re-bloated the system prompt with ~60 schemas and tempted
+            # shells toward verbs they could never use. A mis-scoped call
+            # now surfaces as the harness's own unknown-tool error; the
+            # role's card names its surface, and the broker route
+            # (ask_above/notify_above) remains the answer to "I need a verb
+            # another role owns".
             tools = [t for t in tools if t.name in allowed]
         else:
             # warn: keep the full surface; the off-set tools get a shim that
             # logs a role_scope_violation on call, then proceeds.
             off_scope_names = registered - allowed
-            refusal_stubs = []
-    else:
-        refusal_stubs = []
 
     # Lazy import (like the rest of this seam): the worklog-writing helper
     # lives with the tools it also guards. Used only by warn-mode off-set shims.
@@ -214,50 +209,21 @@ def build_mcp(root: Path | None = None):
             description=_describe(tool),
         )
 
-    # Phase 3c — register the enforce-mode refusal stubs. Same real name +
-    # real InputModel signature (so a mis-scoped call parses and reaches the
-    # refusal instead of dying as a schema error), one-word description (the
-    # catalog stays scannable), structured refusal on every call.
-    def _make_refusal_stub(bound_tool):
-        owners = sorted(r for r, ts in ROLE_TOOLSETS.items()
-                        if bound_tool.name in ts)
-        fields = bound_tool.InputModel.model_fields
+    # (Phase 3c's enforce-mode refusal stubs were REMOVED here — F1, owner
+    # ruling 2026-08-17. Off-role tools are absent from the listing entirely;
+    # see the enforce branch above for the rationale.)
 
-        async def stub(**kwargs) -> dict:
-            record_role_scope_violation(ctx, bound_tool.name)
-            res = Tool.propagate(
-                source="tool", code=ErrorCode.TOOL_PRECONDITION,
-                message=(
-                    f"tool '{bound_tool.name}' is scoped to role(s) "
-                    f"{owners or ['(no role — retired/authoring surface)']}; "
-                    f"you are '{role}'. This is a role boundary, not an "
-                    "outage: route the need to the owning role over the "
-                    "broker (ask_above / notify_above / reply), or record "
-                    "it as flowback for your parent to act on."))
-            return res.model_dump(mode="json")
+    # F15 (2026-08-17) — object schemas as MCP RESOURCES: read ONCE at boot,
+    # referenced by symbol thereafter (cards say "your objects:
+    # edp://schema/<object>"). This replaces the withdrawn idea of repeating
+    # schema in tool descriptions (paid per-request forever); a resource read
+    # pays once and sits in stable early context. `edp://schema/index` is
+    # the catalog.
+    @mcp.resource("edp://schema/{name}")
+    def _object_schema(name: str) -> str:
+        from .objects import describe_objects
+        return describe_objects(None if name == "index" else name)
 
-        params = []
-        annotations: dict = {}
-        for fname, f in fields.items():
-            required = f.is_required()
-            default = (inspect.Parameter.empty if required
-                       else f.get_default(call_default_factory=True))
-            params.append(inspect.Parameter(
-                fname, inspect.Parameter.KEYWORD_ONLY,
-                default=default, annotation=f.annotation))
-            annotations[fname] = f.annotation
-        annotations["return"] = dict
-        stub.__signature__ = inspect.Signature(params)
-        stub.__annotations__ = annotations
-        stub.__name__ = bound_tool.name
-        return stub
-
-    for tool in refusal_stubs:
-        mcp.add_tool(
-            _make_refusal_stub(tool),
-            name=tool.name,
-            description=f"(not available to role={role})",
-        )
     return mcp
 
 

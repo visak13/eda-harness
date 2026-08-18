@@ -555,8 +555,10 @@ async def read_object(ctx, obj_type: str, detail: str = "full", **ids) -> Any:
 
     detail='full' (default) returns today's complete object, byte-identical
     to the pre-P1 behavior. detail='digest' returns a trimmed projection for
-    recipe/plan/action (long texts become one-line rows + indicators); other
-    types ignore it. Digests self-label with `_detail`/`_full`."""
+    recipe/plan/action (long texts become one-line rows + indicators);
+    detail='brief' (recipe only, F2) returns the compiled markdown brief —
+    the one-read legible view. Other types ignore it. Digests self-label
+    with `_detail`/`_full`."""
     if obj_type not in _CATALOG:
         raise ObjectError(
             f"unknown object {obj_type!r}; known: {sorted(_CATALOG)}")
@@ -567,6 +569,16 @@ async def read_object(ctx, obj_type: str, detail: str = "full", **ids) -> Any:
         _need(ids, "recipe_id")
         if not ctx.recipes.exists(ids["recipe_id"]):
             return None
+        # F2 (2026-08-17): detail='brief' — the compiled markdown brief, the
+        # ONE-read human/agent-legible view (goal verbatim → outcomes →
+        # decisions → bans → steps). Rendered live from the record, so it can
+        # never be stale even if the on-disk brief.md write was skipped.
+        if detail == "brief":
+            from .store.recipe_brief import render_recipe_brief
+            return {"recipe_id": ids["recipe_id"],
+                    "brief_md": render_recipe_brief(
+                        ctx.recipes.load(ids["recipe_id"])),
+                    "_detail": "brief"}
         d = ctx.recipes.load(ids["recipe_id"]).model_dump(mode="json")
         if digest:
             return _digest_recipe(d)

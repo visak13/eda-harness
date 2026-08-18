@@ -679,6 +679,68 @@ def _enrich_wait(instr, handle: str, handle_type: str,
     return instr
 
 
+# F19 (2026-08-17) — a WAIT carries its own EVIDENCE. Observed live: a worker
+# crashed, the FSM said wait, and the parent sat obedient for 30 minutes —
+# because validating the WAIT would have cost it thousands of tokens it
+# rightly refused to spend. Validation therefore moves INTO the instruction:
+# at WAIT-build time we probe pool liveness for every handle the wait is
+# actually on and stamp the result into args. A dead child can never again
+# produce a bare "wait" — the instruction itself says so, for the price of a
+# few in-code liveness calls and zero agent tokens.
+_AWAIT_PROBE_CAP = 8
+
+
+async def _stamp_wait_evidence(ctx, instr, handle: str,
+                               handle_type: str) -> None:
+    """Mutates a WAIT instruction in place: args['awaiting'] =
+    [{handle, what, status, liveness}] for the children this wait is on
+    (recipe → its in-flight spawn_planner steps; plan → its
+    in_progress/verify actions), and a LOUD rationale line when any probe
+    says dead. Best-effort: probe failures degrade to liveness='unknown'
+    and never fail the tick."""
+    kind = getattr(instr.kind, "value", instr.kind)
+    if str(kind).lower() != "wait":
+        return
+    targets: list[tuple[str, str, str]] = []   # (child_handle, what, status)
+    try:
+        if handle_type == "recipe" and ctx.recipes.exists(handle):
+            r = ctx.recipes.load(handle)
+            for s in r.steps:
+                if s.status == "in_progress" \
+                        and s.execution == "spawn_planner":
+                    targets.append((f"{handle}:{s.step_id}",
+                                    f"step {s.step_id}", s.status))
+        elif handle_type == "plan" and ctx.plans.exists(handle):
+            p = ctx.plans.load(handle)
+            for a in p.actions:
+                if a.status in ("in_progress", "verify"):
+                    targets.append((f"{handle}:{a.action_id}",
+                                    f"action {a.action_id}", a.status))
+    except Exception:  # noqa: BLE001 — evidence must never break the tick
+        return
+    if not targets:
+        return
+    rows: list[dict] = []
+    dead: list[str] = []
+    for child, what, status in targets[:_AWAIT_PROBE_CAP]:
+        try:
+            live = (await ctx.pool.liveness(child))["state"]
+        except Exception:  # noqa: BLE001
+            live = "unknown"
+        rows.append({"handle": child, "what": what, "status": status,
+                     "liveness": live})
+        if live == "dead":
+            dead.append(child)
+    instr.args = {**instr.args, "awaiting": rows}
+    if dead:
+        instr.rationale = (
+            (instr.rationale or "")
+            + f" EVIDENCE: {', '.join(dead)} is DEAD (pool liveness) — do "
+            "NOT wait on it. Run `reconcile` NOW: the crash ladder resets "
+            "and re-dispatches; if it does not, surface upward immediately."
+        ).strip()
+
+
 # ── W7 item 1: computed pacing (wait_hint minutes + wait_reason) ────────────
 # The PACING policy TABLE + the pacing-state CLASSIFIERS are pure data/logic in
 # the FSM package (state_machines.PACING / recipe_fsm.recipe_pacing_state /
@@ -838,7 +900,9 @@ def _lean_tick_context(ctx_full: dict) -> dict:
     the W7 short-circuit still collapses genuinely idle ticks to one line."""
     keep = ("grounding_epoch", "phase", "recap", "progress_rollup",
             "pending_spec_learnings", "pending_assumptions",
-            "fold_obligation", "staleness_delta", "comprehension_recheck")
+            "fold_obligation", "staleness_delta", "comprehension_recheck",
+            # F12/F13 (2026-08-17): tick-to-tick obligations survive the diet.
+            "review_due", "open_challenges")
     lean = {k: ctx_full[k] for k in keep
             if ctx_full.get(k) not in (None, [], {})}
     ad = ctx_full.get("active_decisions")
@@ -987,10 +1051,24 @@ def _rewire_block(ctx, handle: str) -> dict:
     except Exception:  # noqa: BLE001 — a registry read must never break rewire
         durable_rules = []
 
+    # 2026-08-17 (s4 planner incident): an EMPTY hand-back left the shell
+    # hand-composing its wiring, wrongly. When no persisted subscription
+    # survives (GC'd pre-fix, or a genuinely fresh handle), the block now
+    # names the one-call repair instead of handing back silence.
+    rewire_note = None
+    if not observe_specs:
+        rewire_note = (
+            "NO persisted subscriptions survive for this handle — do NOT "
+            "hand-compose a spec or a monitor command. Call arm_wiring() "
+            "(neuron: arm_wiring(handle=<recipe_id>)) and run the returned "
+            "monitor_cmd + cron verbatim; it re-arms your role's default "
+            "wake plane in one call, idempotently.")
+
     return {
         "handle": handle,
         # (a)
         "observe_specs": observe_specs,
+        **({"empty_wiring_note": rewire_note} if rewire_note else {}),
         # (b)
         "heartbeat": {
             "cron_prompt": RECONCILE_LOOP_CRON_PROMPT,
@@ -1645,6 +1723,16 @@ class NextAction(_ClaudeTool):
             _fold_ob = _fold_obligation(r)
             if _fold_ob:
                 instr.context["fold_obligation"] = _fold_ob
+            # F12 (2026-08-17) — the SCHEDULED plan-vs-actual review (the
+            # "scrum"): every EDP_REVIEW_EVERY_STEPS step closes (default
+            # 2) the neuron owes a recorded progress review — budget vs
+            # estimates, outcome coverage, open risks, one line to the
+            # user — recorded via emit_recipe_event(kind='progress_review',
+            # body={steps_done, budget, risks}). Deterministic: compares
+            # done-step count against the last recorded review's count.
+            _rev_due = _progress_review_due(self.ctx, r)
+            if _rev_due:
+                instr.context["review_due"] = _rev_due
             if mode in ("stale", "reground"):
                 instr.context["reground"] = await _reground_payload(
                     self.ctx, r, epoch, mode, m.handle)
@@ -1653,8 +1741,12 @@ class NextAction(_ClaudeTool):
                 # working keys only, not the whole context again.
                 instr.context = _lean_tick_context(instr.context)
             _attach_pacing(instr, state)
-            return Tool.ok(_enrich_wait(instr, m.handle, m.handle_type, tick,
-                                        pacing_state=state))
+            instr = _enrich_wait(instr, m.handle, m.handle_type, tick,
+                                 pacing_state=state)
+            # F19: a WAIT names what it waits on, with pool liveness stamped.
+            await _stamp_wait_evidence(self.ctx, instr, m.handle,
+                                       m.handle_type)
+            return Tool.ok(instr)
 
         if not self.ctx.plans.exists(m.handle):
             return _precondition(
@@ -1862,9 +1954,29 @@ class NextAction(_ClaudeTool):
         # revalidate=true) — the dispatch gate above holds until then.
         if staleness_delta:
             instr.context["staleness_delta"] = staleness_delta
+        # F13 (2026-08-17): open adversarial challenges ride EVERY plan tick
+        # — the planner used to discover them only as spawn refusals. The
+        # instruction plane says ADJUDICATE; the G-ADJ dispatch gate stays
+        # the enforcement (this is the advisory that keeps it from firing).
+        _open_ch = _open_challenges(self.ctx.plans.root, m.handle)
+        if _open_ch:
+            instr.context["open_challenges"] = _open_ch
+            instr.rationale = (
+                (instr.rationale or "")
+                + f" ADJUDICATE FIRST: {len(_open_ch)} adversarial "
+                f"challenge(s) {_open_ch} are unruled — non-review dispatch "
+                "is gated (G-ADJ). For each: record_context(kind="
+                "'challenge_adjudication', plan_id=<this plan>, "
+                "challenge_id=<id>, disposition=<accepted_fixed|"
+                "accepted_wontfix|rejected|duplicate>, text=<rationale>). "
+                "Findings live in the plan's challenges sidecar."
+            ).strip()
         _attach_pacing(instr, state)
-        return Tool.ok(_enrich_wait(instr, m.handle, m.handle_type, tick,
-                                    pacing_state=state))
+        instr = _enrich_wait(instr, m.handle, m.handle_type, tick,
+                             pacing_state=state)
+        # F19: a WAIT names what it waits on, with pool liveness stamped.
+        await _stamp_wait_evidence(self.ctx, instr, m.handle, m.handle_type)
+        return Tool.ok(instr)
 
 
 def _instr_alert(instr) -> dict | None:
@@ -3185,6 +3297,15 @@ class _CreatePlanIn(BaseModel):
     # Both optional: omitting keeps full legacy behavior.
     review_policy: dict | None = None
     test_budget: dict | None = None
+    # F25 (2026-08-17, s4 wedge): REOPEN a TERMINAL plan for its reopened
+    # step. A step edited for new work (o5 continuity fix) while its plan sat
+    # terminal-succeeded had NO legal author surface — the plan_id is
+    # deterministic (<recipe>-<step>), so a fresh plan cannot be minted and
+    # a terminal plan refused re-create. reopen=true resets the terminal
+    # plan to DISPATCHING, clears terminal_status, bumps attempt, PRESERVES
+    # every done action (history stays honest), and worklogs the reopen —
+    # the planner then add_action's the new work (a8…).
+    reopen: bool = False
 
 
 class CreatePlan(_ClaudeTool):
@@ -3224,11 +3345,53 @@ class CreatePlan(_ClaudeTool):
         existing_actions: list = []
         if self.ctx.plans.exists(pid):
             existing = self.ctx.plans.load(pid)
+            # F25 — the REOPEN path: a TERMINAL plan whose step was reopened
+            # for new work gets its author surface back in place. Done
+            # actions are preserved verbatim; state resets to dispatching;
+            # the reopen is worklogged. Refused when the step itself is
+            # already done (reopen the STEP first — the plan follows it).
+            if m.reopen:
+                if existing.state != PlanState.TERMINAL:
+                    return _precondition(
+                        f"create_plan(reopen=true): plan {pid} is "
+                        f"{existing.state!r}, not terminal — a live plan "
+                        "needs no reopen; author into it directly.")
+                step = next((s for s in recipe.steps
+                             if s.step_id == m.step_id), None)
+                if step is not None and step.status == "done":
+                    return _precondition(
+                        f"create_plan(reopen=true): step {m.step_id!r} is "
+                        "still 'done' — reopen the STEP first (the neuron: "
+                        "update_object type='step', patch={'status': "
+                        "'in_progress'} with the new scope), then reopen "
+                        "its plan.")
+                _prior_terminal = existing.terminal_status
+                existing.state = PlanState.DISPATCHING
+                existing.terminal_status = None
+                existing.shape = m.shape or existing.shape
+                existing.goal = m.goal or existing.goal
+                existing.grounded_at = _now().isoformat()
+                if m.review_policy is not None:
+                    existing.review_policy = m.review_policy
+                if m.test_budget is not None:
+                    existing.test_budget = m.test_budget
+                v = self.ctx.plans.save(existing)
+                self.ctx.plans.append_worklog(pid, {
+                    "kind": "plan_reopened",
+                    "goal": m.goal,
+                    "prior_terminal_status": _prior_terminal,
+                    "actions_preserved": len(existing.actions),
+                })
+                return Tool.ok(_CreatePlanOut(
+                    plan_id=pid, domain=recipe.domain, version=v))
             if existing.state != PlanState.DRAFTED:
                 return _precondition(
                     f"plan {pid} already exists in state "
                     f"{existing.state!r}; cannot re-create a non-drafted "
-                    "plan (use add_action / replan instead)."
+                    "plan. A LIVE plan: use add_action / replan. A TERMINAL "
+                    "plan whose step was reopened for new work: "
+                    "create_plan(..., reopen=true) resets it to dispatching "
+                    "with every done action preserved."
                 )
             # 2026-08-13 (s3 friction): re-creating a DRAFTED plan is the
             # documented repair path for plan-level fields (review_policy,
@@ -3640,8 +3803,9 @@ def _workspace_refusal(workspace: str | None) -> str | None:
     the update_object recipe patch): it must be the target repo root — an
     absolute path that exists and contains a `.git` directory. Returns the
     teaching refusal string, or None when valid (or unset). Validated at
-    record time so the reviewer git-diff brief and the G-COMMIT close gate
-    can trust the path without re-validating."""
+    record time so the reviewer brief can name a trustworthy path (the
+    reviewer runs git ITSELF, in its own shell — no MCP tool runs git,
+    owner ruling 2026-08-17)."""
     if workspace is None:
         return None
     try:
@@ -3654,10 +3818,10 @@ def _workspace_refusal(workspace: str | None) -> str | None:
     return (
         f"workspace {workspace!r} must be the TARGET REPO ROOT: an ABSOLUTE "
         "path that exists and contains a `.git` directory. The reviewer "
-        "git-diff brief and the G-COMMIT close gate run git against this "
-        "path, so it is validated at record time — fix the path (git init "
-        "the repo first if it is genuinely new), or omit `workspace` for "
-        "work that lands in no repo."
+        "brief names this path for the reviewer's own git verification, so "
+        "it is validated at record time — fix the path (git init the repo "
+        "first if it is genuinely new), or omit `workspace` for work that "
+        "lands in no repo."
     )
 
 
@@ -4279,6 +4443,17 @@ class _CloseRecipeIn(BaseModel):
     # against "G-COMMIT:<recipe_id>" — required to close succeeded over a
     # DIRTY workspace tree. Ignored when the recipe has no workspace.
     commit_waiver_ref: str | None = None
+    # F20 (2026-08-17) G-SPEC: recorded user_gate_answer ref validating
+    # against "G-SPEC:<recipe_id>" — required to close succeeded while a
+    # spec this recipe consults has no compiled doc or its neuron sits in
+    # pending_review (the training-flow gap: a recipe used to close while
+    # its own specialist never compiled).
+    spec_gate_waiver_ref: str | None = None
+    # F21 (2026-08-17) G-ACCEPT: recorded user_gate_answer ref validating
+    # against "G-ACCEPT:<recipe_id>" — required to close succeeded without
+    # a recorded goal-vs-delivery acceptance verdict (emit_recipe_event
+    # kind='acceptance_verdict', body.verdict='pass').
+    acceptance_waiver_ref: str | None = None
 
 
 class CloseRecipe(_ClaudeTool):
@@ -4364,10 +4539,23 @@ class CloseRecipe(_ClaudeTool):
             refusal = self._apply_outcome_waivers(r, m, status)
             if refusal is not None:
                 return refusal
-            # WP2 G-COMMIT: a succeeded close over a recipe with a recorded
-            # workspace requires the tree COMMITTED (or a recorded user
-            # waiver); a clean tree records head_commit into final_outcome.
-            refusal = self._check_commit_gate(r, m, status)
+            # (WP2 G-COMMIT — RETIRED, owner ruling 2026-08-17: MCP tools
+            # run no external programs. The committed-tree evidence is now
+            # the reviewer's own in-shell git re-run + the worker's stated
+            # landed_commit; the G-ACCEPT pass judges the delivery.
+            # `commit_waiver_ref` stays accepted-and-ignored for caller
+            # compatibility.)
+            # F20 G-SPEC: every spec this recipe consults must have a
+            # compiled doc and a triaged (non-pending_review) neuron — the
+            # training flow had no close gate at all, so recipes closed
+            # while their own specialist never compiled.
+            refusal = self._check_spec_compile_gate(r, m, status)
+            if refusal is not None:
+                return refusal
+            # F21 G-ACCEPT: success requires a recorded GOAL-vs-DELIVERY
+            # acceptance verdict — outcomes are neuron-authored, so meeting
+            # them all can still under-deliver the user's verbatim ask.
+            refusal = self._check_acceptance_gate(r, m, status)
             if refusal is not None:
                 return refusal
         elif (status == "partial" and r.steps
@@ -4399,53 +4587,104 @@ class CloseRecipe(_ClaudeTool):
         self.ctx.recipes.save(r)
         return Tool.ok(_Ok())
 
-    def _check_commit_gate(self, r, m: _CloseRecipeIn, status: str):
-        """WP2 G-COMMIT — a succeeded/done close over a recipe with a
-        recorded `workspace` must leave the tree COMMITTED: a dirty
-        `git status --porcelain` refuses unless `commit_waiver_ref` is a
-        recorded user answer for "G-COMMIT:<recipe_id>"; a clean tree
-        records `rev-parse HEAD` into final_outcome["head_commit"]. No
-        workspace → no gate (legacy). Returns a refusal or None."""
-        ws = getattr(r, "workspace", None)
-        if not ws:
+    # (_check_commit_gate DELETED — owner ruling 2026-08-17: MCP tool calls
+    # launch no external programs. History at git tag/log for WP2.)
+
+    def _check_spec_compile_gate(self, r, m: _CloseRecipeIn, status: str):
+        """F20 G-SPEC — a succeeded close requires every spec this recipe
+        CONSULTS (stamped on its plans' actions, or reached via its
+        specialist consults) to have a compiled doc, and its neuron out of
+        pending_review. Returns a refusal or None. USER waiver:
+        spec_gate_waiver_ref against "G-SPEC:<recipe_id>"."""
+        consulted = _recipe_consulted_spec_ids(self.ctx, r)
+        if not consulted:
             return None
-        gate_target = f"G-COMMIT:{r.recipe_id}"
-        waived = _gate_override_ok(self.ctx, r.recipe_id,
-                                   m.commit_waiver_ref, gate_target)
+        uncompiled = [sid for sid in consulted
+                      if self.ctx.specs.exists(sid)
+                      and not self.ctx.specs.has_doc(sid)]
+        consulted_set = set(consulted)
+        pending: list[str] = []
         try:
-            dirty = _git_capture(ws, "status", "--porcelain")
-        except Exception as e:  # noqa: BLE001 — unverifiable ≠ clean
-            dirty = None
-            if not waived:
-                return _precondition(
-                    f"G-COMMIT: cannot verify the workspace tree at {ws!r} "
-                    f"({e}) — refusing to close {status!r} over an "
-                    "unverifiable tree. Fix the workspace (it validated as "
-                    "a git repo when recorded), or the USER waives the "
-                    "commit gate. " + _gate_override_howto(gate_target))
-        if dirty:
-            if not waived:
-                return _precondition(
-                    f"G-COMMIT: the workspace {ws!r} has UNCOMMITTED "
-                    f"changes:\n{dirty[:800]}\nA succeeded close means the "
-                    "deliverable LANDED — commit (and push where the plan "
-                    "says so) first, or the USER waives the commit gate. "
-                    + _gate_override_howto(gate_target))
-        if waived and (dirty or dirty is None):
+            for n in self.ctx.neurons.list(status="pending_review"):
+                if getattr(n, "spec_id", None) in consulted_set:
+                    pending.append(n.neuron_id)
+        except Exception:  # noqa: BLE001 — an unreadable registry ≠ a gate
+            pass
+        if not uncompiled and not pending:
+            return None
+        gate_target = f"G-SPEC:{r.recipe_id}"
+        if _gate_override_ok(self.ctx, r.recipe_id,
+                             m.spec_gate_waiver_ref, gate_target):
             self.ctx.recipes.append_worklog(r.recipe_id, {
-                "kind": "commit_gate_waived",
-                "override_ref": m.commit_waiver_ref,
+                "kind": "spec_gate_waived",
+                "override_ref": m.spec_gate_waiver_ref,
+                "gate_target": gate_target,
+                "uncompiled": uncompiled, "pending_review": pending,
+            })
+            return None
+        problems = []
+        if uncompiled:
+            problems.append(
+                f"spec(s) {uncompiled} have NO compiled doc — the "
+                "specialist training this recipe relied on never finished "
+                "(write_specialist_doc)")
+        if pending:
+            problems.append(
+                f"neuron(s) {pending} sit in pending_review untriaged — "
+                "the HITL approval gate was never run "
+                "(neuron_set_status)")
+        return _precondition(
+            f"G-SPEC: cannot close {status!r} — " + "; ".join(problems)
+            + ". Finish the specialist lifecycle first, or the USER waives "
+              "the gate. " + _gate_override_howto(gate_target))
+
+    def _check_acceptance_gate(self, r, m: _CloseRecipeIn, status: str):
+        """F21 G-ACCEPT — a succeeded close requires a recorded
+        goal-vs-delivery verdict: an `acceptance_verdict` recipe event whose
+        latest body.verdict == 'pass'. The verdict is produced by an
+        INDEPENDENT pass (a reviewer leg, delegate_review, or
+        consult_external) fed the VERBATIM goal + outcomes + evidence +
+        workspace diff — never by the neuron's own say-so. USER waiver:
+        acceptance_waiver_ref against "G-ACCEPT:<recipe_id>".
+        EDP_ACCEPT_GATE=0 is the operator kill-switch (tests default it
+        off; production leaves it on)."""
+        if (os.environ.get("EDP_ACCEPT_GATE", "1").strip().lower()
+                in ("0", "false", "no", "off")):
+            return None
+        gate_target = f"G-ACCEPT:{r.recipe_id}"
+        if _gate_override_ok(self.ctx, r.recipe_id,
+                             m.acceptance_waiver_ref, gate_target):
+            self.ctx.recipes.append_worklog(r.recipe_id, {
+                "kind": "acceptance_gate_waived",
+                "override_ref": m.acceptance_waiver_ref,
                 "gate_target": gate_target,
             })
             return None
-        # Clean tree — record the honest landing point.
-        try:
-            head = _git_capture(ws, "rev-parse", "HEAD")
-        except Exception:  # noqa: BLE001 — a repo with no HEAD stays honest
-            head = ""
-        if head:
-            m.final_outcome["head_commit"] = head
-        return None
+        verdicts = self.ctx.recipes.read_events_tail(
+            r.recipe_id, kinds=["acceptance_verdict"])
+        latest = verdicts[-1] if verdicts else None
+        v = ((latest or {}).get("body") or {}).get("verdict")
+        if v == "pass":
+            return None
+        if latest is None:
+            why = "no goal-vs-delivery acceptance verdict is recorded"
+        else:
+            why = (f"the latest acceptance verdict is {v!r}, not 'pass' — "
+                   "its gaps are unresolved")
+        return _precondition(
+            f"G-ACCEPT: cannot close {status!r} — {why}. Run the FINAL "
+            "acceptance pass: give an INDEPENDENT checker (a reviewer leg, "
+            "delegate_review, or consult_external) the recipe's "
+            "user_goal_verbatim + ANY artifact the goal NAMES (a skill/"
+            "spec/doc it says to build from — its own measurable bars are "
+            "requirements) + expected outcomes + met evidence + the "
+            "workspace diff, and ask ONE question: did the delivery match "
+            "what the user literally asked for? Record its verdict via "
+            "emit_recipe_event(kind='acceptance_verdict', body={'verdict': "
+            "'pass'|'gaps', 'gaps': [...], 'evidence': ..., 'by': <who "
+            "judged>}). 'gaps' blocks close — fix them or descope "
+            "honestly (partial). USER waiver: "
+            + _gate_override_howto(gate_target))
 
     def _laundered_steps(self, r) -> list[str]:
         """WP1 G-STEP close check: done spawn_planner steps whose plan is
@@ -5392,6 +5631,51 @@ class RecordStepResult(_ClaudeTool):
                     self.ctx, m.recipe_id, s, m.override_ref)
                 if refusal:
                     return _precondition(refusal)
+                # F6 (2026-08-17) — the flow-down gate's ENFORCEMENT point
+                # (dispatch only advises now). A step cannot close while its
+                # declared concerns are covered by no action or its
+                # acceptance_sketch lines map to none. A user-forced G-STEP
+                # override (_forced) waives this too — the user's explicit
+                # ruling outranks the mechanical gate.
+                if not _forced:
+                    try:
+                        plan = self.ctx.plans.find_by_step(
+                            m.recipe_id, m.step_id)
+                    except Exception:  # noqa: BLE001
+                        plan = None
+                    if plan is not None:
+                        _gaps = _step_flowdown_gaps(r, plan)
+                        if _gaps:
+                            return _precondition(
+                                "record_step_result: the step's declared "
+                                "obligations are not covered by its plan "
+                                "(flow-down gate, enforced at close):\n- "
+                                + "\n- ".join(_gaps)
+                                + "\nCover them (tag actions / map sketch "
+                                "lines), or close with a recorded user "
+                                "override (G-STEP override_ref).")
+                        # F22 G-CHALLENGE (revised 2026-08-17): the
+                        # adversarial pass is enforced HERE, not at first
+                        # dispatch — dispatch only advises, so workers run
+                        # while the plan is still being authored/challenged.
+                        _min = _challenge_gate_min_actions()
+                        if (_min > 0 and len(plan.actions) >= _min
+                                and not _challenge_satisfied(
+                                    self.ctx.plans.root, plan.plan_id)):
+                            return _precondition(
+                                "record_step_result: G-CHALLENGE — plan "
+                                f"{plan.plan_id!r} has {len(plan.actions)} "
+                                "actions and NO adversarial challenge or "
+                                "waiver on record; a step does not close "
+                                "un-adversaried. Run adversarial_challenge("
+                                "target_kind='plan', target_id="
+                                f"{plan.plan_id!r}, content=<the DAG + "
+                                "acceptance>, lens='break-the-acceptance') "
+                                "and adjudicate each finding, or record a "
+                                "conscious waiver: record_context(kind="
+                                "'challenge_waiver', plan_id="
+                                f"{plan.plan_id!r}, text=<why not "
+                                "warranted>). Then close the step.")
                 s.status = "done"
                 s.outputs = list(m.result.get("outputs", []))
                 if r.state == RecipeState.EXECUTING:
@@ -6665,6 +6949,11 @@ class _RecordContextIn(BaseModel):
     kind: Literal[
         "decision", "assumption", "rejected_option", "fact",
         "north_star_update", "note", "challenge_adjudication",
+        # F22 (2026-08-17): the recorded WAIVER that satisfies the
+        # G-CHALLENGE dispatch gate when a plan is genuinely too simple to
+        # warrant an adversarial pass. plan_id + text (the rationale)
+        # required; planner/specialist work like adjudication.
+        "challenge_waiver",
     ]
     # _CtxIn fields (decision / assumption / rejected_option)
     recipe_id: str | None = None
@@ -6738,6 +7027,8 @@ class RecordContext(_ClaudeTool):
     async def _run(self, m: _RecordContextIn):
         if m.kind == "challenge_adjudication":
             return await self._adjudicate_challenge(m)
+        if m.kind == "challenge_waiver":
+            return self._waive_challenge(m)
         if m.kind in ("decision", "assumption", "rejected_option"):
             if not m.recipe_id:
                 return _precondition(
@@ -6946,6 +7237,34 @@ class RecordContext(_ClaudeTool):
             self.ctx.north_star.save(ns, active)
         except NorthStarImmutable as e:
             return _precondition(str(e))
+        return Tool.ok(_Ok())
+
+    def _waive_challenge(self, m: _RecordContextIn):
+        """F22 — record a challenge WAIVER on the plan's challenges sidecar.
+        Satisfies the G-CHALLENGE first-dispatch gate without a codex call
+        when the plan is genuinely trivial; the rationale is the audit."""
+        role = os.environ.get("EDP_ROLE", "").strip()
+        if role and role not in ("planner", "specialist"):
+            return _precondition(
+                "record_context(kind=challenge_waiver) is planner/"
+                f"specialist work — the {role!r} role does not waive the "
+                "adversarial pass.")
+        if not m.plan_id:
+            return _precondition(
+                "record_context(kind=challenge_waiver) requires plan_id — "
+                "the plan whose adversarial pass you are waiving.")
+        if not (m.text or "").strip():
+            return _precondition(
+                "record_context(kind=challenge_waiver) requires text — WHY "
+                "this plan does not warrant an adversarial challenge (the "
+                "waiver is an audited judgment, not a checkbox).")
+        if not self.ctx.plans.exists(m.plan_id):
+            return _precondition(f"unknown plan {m.plan_id!r}")
+        from ..store.attribution import actor
+        _append_challenge(self.ctx.plans.root, m.plan_id, {
+            "waiver": {"rationale": m.text, "by": actor(),
+                       "at": _now().isoformat()},
+        })
         return Tool.ok(_Ok())
 
     async def _adjudicate_challenge(self, m: _RecordContextIn):
@@ -7540,6 +7859,45 @@ def _step_flowdown_gaps(recipe, plan) -> list[str]:
     return gaps
 
 
+def _progress_review_due(ctx, r) -> dict | None:
+    """F12 — the scheduled plan-vs-actual review obligation. None while under
+    cadence. Deterministic (principle 6): due when the count of done steps
+    exceeds the last recorded progress_review's `steps_done` by >=
+    EDP_REVIEW_EVERY_STEPS (default 2). 0 disables."""
+    try:
+        every = int(os.environ.get("EDP_REVIEW_EVERY_STEPS", "2"))
+    except ValueError:
+        every = 2
+    if every <= 0:
+        return None
+    done = sum(1 for s in r.steps if s.status == "done")
+    if done == 0:
+        return None
+    reviews = ctx.recipes.read_events_tail(
+        r.recipe_id, kinds=["progress_review"])
+    last = 0
+    for e in reviews:
+        try:
+            last = max(last, int((e.get("body") or {}).get("steps_done", 0)))
+        except (TypeError, ValueError):
+            continue
+    if done - last < every:
+        return None
+    return {
+        "steps_done": done,
+        "last_reviewed_at_steps": last,
+        "obligation": (
+            f"PROGRESS REVIEW DUE: {done - last} step(s) closed since the "
+            "last recorded review. Run budget_status(recipe_id=…) (planned "
+            "vs estimates vs delegate spend), check outcome coverage and "
+            "open risks against the brief, surface ONE line to the user if "
+            "a threshold or risk crossed, then record it: emit_recipe_event("
+            f"kind='progress_review', body={{'steps_done': {done}, "
+            "'budget': <numbers>, 'risks': [...]}}). Do not restate this "
+            "obligation; execute it."),
+    }
+
+
 def _fold_obligation(r) -> str | None:
     """Context-diet Phase 1c — the fold advisory, escalated onto the neuron's
     instruction plane. None under the threshold. Deterministic (principle 6):
@@ -7814,49 +8172,30 @@ def _briefing_delta(ctx, recipe, plan, action) -> list[tuple[str, str]]:
 
 
 # ── WP2 — bounded git reads for the reviewer brief + G-COMMIT gate ─────────
-_GIT_BRIEF_CAP = 2000       # per-field cap in the reviewer brief's git block
-_GIT_TIMEOUT_SECS = 10
-
-
-def _git_capture(workspace: str, *args: str) -> str:
-    """Run ONE bounded git command against a recipe workspace and return its
-    stripped stdout (capped). Bounded by construction: 10s timeout, no
-    window, output captured — never a shell. Raises on any failure (non-zero
-    exit, timeout, missing git) so callers represent unavailability honestly
-    instead of treating an error message as repo state."""
-    import subprocess
-    res = subprocess.run(
-        ["git", "-C", workspace, *args],
-        capture_output=True, text=True, timeout=_GIT_TIMEOUT_SECS,
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    if res.returncode != 0:
-        tail = (res.stderr or res.stdout or "").strip()[:200]
-        raise RuntimeError(
-            f"git {' '.join(args)} exited {res.returncode}: {tail}")
-    return (res.stdout or "").strip()[:_GIT_BRIEF_CAP]
-
-
-def _reviewer_git_block(ctx, recipe_id: str) -> dict:
-    """WP2 — the reviewer brief's `git` block: the workspace's actual state
-    (status / diff --stat / recent commits), each capped, read via the
-    recipe's validated `workspace`. When the workspace is unset or any git
-    read fails, the block carries an honest `note` telling the reviewer to
-    locate and diff the repo itself — never a silently absent key."""
-    why = "recipe has no workspace recorded"
+# ── _git_capture / _reviewer_git_block: DELETED (owner ruling 2026-08-17,
+# "remove that piece of garbage"). MCP tool calls run NO external programs
+# against workspaces anymore. The verification moves to the shells that own
+# it: the REVIEWER runs git in its OWN Bash (visible, interruptible) per the
+# instruction now carried in its brief's `git` note; the close gate no
+# longer runs git at all (G-COMMIT retired with it — the reviewer's re-run
+# + the worker's stated landed_commit remain the committed-tree evidence).
+def _reviewer_git_note(ctx, recipe_id: str) -> dict:
+    """The reviewer brief's `git` entry: an INSTRUCTION, never an execution.
+    Names the workspace when recorded so the reviewer runs the commands
+    itself in its own shell."""
+    ws = None
     try:
         if recipe_id and ctx.recipes.exists(recipe_id):
             ws = getattr(ctx.recipes.load(recipe_id), "workspace", None)
-            if ws:
-                return {
-                    "status": _git_capture(ws, "status", "--porcelain"),
-                    "diff_stat": _git_capture(ws, "diff", "--stat", "HEAD"),
-                    "recent_commits": _git_capture(
-                        ws, "log", "--oneline", "-5"),
-                }
-    except Exception as e:  # noqa: BLE001 — unavailability is representable
-        why = f"git read failed ({e})"
-    return {"note": f"{why} — locate and diff the target repo yourself "
-                    "before judging"}
+    except Exception:  # noqa: BLE001 — the note degrades, never fails
+        ws = None
+    where = f"the recipe workspace at {ws!r}" if ws else \
+        "the target repo (locate it from the deliverable paths)"
+    return {"note": (
+        f"run `git status --porcelain`, `git diff --stat HEAD` and "
+        f"`git log --oneline -5` YOURSELF in {where} before judging — "
+        "verify the deliverable is committed and record the hash in your "
+        "verdict. The dispatcher no longer reads git for you.")}
 
 
 class PoolSpawnWorker(_ClaudeTool):
@@ -7965,22 +8304,24 @@ class PoolSpawnWorker(_ClaudeTool):
                             "assumption_gate_refused_pre_launch",
                             member_ids=member_ids)
                         return _assumption_gate_refusal(rg, blk)
-                # Context-diet Phase 2 — dispatch-time BACKSTOP of the
-                # step->plan flow-down gate (the incremental create_plan/
-                # add_action path never passes record_plan, so submission-
-                # time gating alone would miss it). Refused pre-launch, so
-                # the FSM pre-stamp is rolled back like every other guard.
+                # F6 (2026-08-17) — the flow-down gate is ADVISORY at
+                # dispatch, ENFORCED at step close. The hard refusal here
+                # forced the whole plan to exist before the FIRST worker
+                # could spawn (every step concern covered, every sketch line
+                # mapped), which contradicted the card's "author+dispatch
+                # interleaved" and made planners slow to first spawn. The
+                # obligation cannot be laundered: record_step_result refuses
+                # to flip the step done while gaps remain.
                 _gaps = _step_flowdown_gaps(rg, p)
                 if _gaps:
-                    _rollback_failed_dispatch(
-                        self.ctx, m.plan_id, m.action_id,
-                        "step_flowdown_gate_refused_pre_launch",
-                        member_ids=member_ids)
-                    return _precondition(
-                        "pool_spawn_worker: the owning step declared "
-                        "cross-cutting obligations this plan does not "
-                        "cover:\n- " + "\n- ".join(_gaps)
-                        + "\nCover them on the plan, then re-dispatch.")
+                    _spawn_advisories.append({
+                        "kind": "flowdown_gaps",
+                        "detail": (
+                            "the owning step declares obligations this plan "
+                            "does not YET cover (dispatch proceeds; the "
+                            "STEP CLOSE will refuse until covered): "
+                            + " | ".join(_gaps)),
+                    })
                 # WP2 G-BUDGET: same code-judged gate as the planner spawn —
                 # warn advises on success; exceeded refuses (pre-launch, so
                 # the FSM pre-stamp rolls back) unless the USER answered the
@@ -8075,6 +8416,34 @@ class PoolSpawnWorker(_ClaudeTool):
                 # (legacy plans).
                 if (m.role != "reviewer"
                         and _effective_leg_kind(a, m.action_id) != "review"):
+                    # F22 G-CHALLENGE — ADVISORY at dispatch, ENFORCED at
+                    # step close (revised 2026-08-17, owner: "a worker could
+                    # have been working while other actions were authored —
+                    # we just lose time"). The first-dispatch refusal forced
+                    # the whole DAG + a challenge round BEFORE worker #1,
+                    # re-serializing exactly what F6 freed. Now: dispatch
+                    # proceeds with a challenge_missing advisory; the STEP
+                    # CLOSE refuses until a challenge or waiver is recorded
+                    # (record_step_result) — the adversary cannot be
+                    # skipped, it just runs alongside the build.
+                    _min = _challenge_gate_min_actions()
+                    if (_min > 0
+                            and len(p.actions) >= _min
+                            and not _challenge_satisfied(
+                                self.ctx.plans.root, p.plan_id)):
+                        _spawn_advisories.append({
+                            "kind": "challenge_missing",
+                            "detail": (
+                                f"plan has {len(p.actions)} actions and no "
+                                "adversarial challenge or waiver on record "
+                                "— dispatch proceeds, but the STEP CLOSE "
+                                "will refuse until you run "
+                                "adversarial_challenge(target_kind='plan', "
+                                "…) and adjudicate, or record_context(kind="
+                                "'challenge_waiver', …). Challenge as soon "
+                                "as your DAG is drawn — findings are "
+                                "cheapest before the work lands."),
+                        })
                     _open = _open_challenges(self.ctx.plans.root, p.plan_id)
                     if _open:
                         _rollback_failed_dispatch(
@@ -8576,10 +8945,10 @@ class PoolSpawnWorker(_ClaudeTool):
                         "Re-run the recorded acceptance runs verbatim; "
                         "verify deliverables are committed and record the "
                         "hash in your verdict."),
-                    # WP2: the workspace's ACTUAL git state (or an honest
-                    # note when unavailable) — the reviewer judges the repo,
-                    # not the worker's prose about it.
-                    "git": _reviewer_git_block(self.ctx, p.recipe_id),
+                    # 2026-08-17 (owner ruling): the dispatcher runs NO git.
+                    # The entry is an instruction — the reviewer executes the
+                    # commands in its own shell, where they are visible.
+                    "git": _reviewer_git_note(self.ctx, p.recipe_id),
                     "spec_ids": specs,
                     "spec_id": specs[0] if specs else None,
                     "grounding_brief":
@@ -8953,6 +9322,28 @@ def _append_challenge(root: Path, plan_id: str, entry: dict) -> None:
 def _read_challenges(root: Path, plan_id: str) -> list[dict]:
     from ..store.atomic import read_jsonl
     return read_jsonl(_challenges_path(root, plan_id))
+
+
+def _challenge_satisfied(root: Path, plan_id: str) -> bool:
+    """F22 — True when the plan's challenges sidecar records ANY adversarial
+    challenge line OR a waiver line. False = the pre-ratification adversary
+    never ran and nobody consciously waived it (the discipline that never
+    fired: owner observation 2026-08-17, 'my codex usage before and after a
+    recipe never changes')."""
+    for e in _read_challenges(root, plan_id):
+        if e.get("challenge_id") or e.get("waiver"):
+            return True
+    return False
+
+
+def _challenge_gate_min_actions() -> int:
+    """Plans below this action count are exempt from G-CHALLENGE (small
+    enough to inspect at a glance; the adversary exists for the plans whose
+    failure modes hide in the weave). Env-tunable; 0 disables the gate."""
+    try:
+        return int(os.environ.get("EDP_CHALLENGE_GATE_MIN_ACTIONS", "3"))
+    except ValueError:
+        return 3
 
 
 def _open_challenges(root: Path, plan_id: str) -> list[str]:
@@ -9801,6 +10192,40 @@ class _SendIn(BaseModel):
     from_: str = "neuron"
 
 
+async def _unknown_recipient_warning(ctx, to: str) -> str | None:
+    """F7 (2026-08-17) — dead-letter detection, surfaced to the SENDER.
+
+    The broker is a dumb pipe: a send to an inbox nobody owns succeeds
+    silently and the message rots (the 2026-05-24 literal-"neuron"
+    dead-letter class). The sender is the one shell guaranteed alive and
+    contextful at send time, so the warning rides its send RESULT. Known =
+    a topic, a recipe, a plan (dash or colon head), or a handle the pool
+    holds a session for. Fail-open: any probe error → no warning (an
+    unreachable pool must never block or spam a send)."""
+    try:
+        if not to or to.startswith("topic:"):
+            return None
+        head = to.split(":", 1)[0]
+        if ctx.recipes.exists(to) or ctx.recipes.exists(head):
+            return None
+        if ctx.plans.exists(to) or ctx.plans.exists(head):
+            return None
+        live = (await ctx.pool.liveness(to))["state"]
+        if live in ("alive", "parked"):
+            return None
+        for row in await ctx.pool.sessions():
+            if row.get("handle") == to:
+                return None
+    except Exception:  # noqa: BLE001 — detection must never break a send
+        return None
+    return (
+        f"recipient {to!r} matches NO known inbox (not a recipe, plan, "
+        "topic, or pool-held handle) — the message was accepted by the "
+        "broker but may DEAD-LETTER. Check the address: use whoami()/"
+        "lineage values (planner inbox = DASH plan_id; worker = "
+        "<plan_id>:<action_id>; neuron = recipe_id), then re-send.")
+
+
 class BrokerSend(_ClaudeTool):
     """Send a RAW broker message — you supply from/to/kind/body yourself.
     This is the low-level escape hatch; prefer the routed tools, which
@@ -9830,6 +10255,10 @@ class BrokerSend(_ClaudeTool):
             kind=m.kind,
             body=m.body,
         )
+        # F7: probe the recipient BEFORE the send so the warning can ride
+        # the send result — the sender is the only party positioned to fix
+        # a bad address at zero cost.
+        _dead_letter = await _unknown_recipient_warning(self.ctx, m.to)
         res = await self.ctx.broker.send(msg)
         # v7 P3.2 — a steer is VERIFIED, not assumed. Record the send
         # durably (msg_id + recipient) where the sender's own reconcile can
@@ -9859,6 +10288,86 @@ class BrokerSend(_ClaudeTool):
                             "to": m.to, "summary": str(m.body)[:300],
                         })
             except Exception as e:
+                _log.warning("steer_send_record_failed",
+                             "steer-send record failed", error=str(e))
+        # F7: the dead-letter warning rides the SUCCESSFUL send result —
+        # the broker accepted the message, but the sender is told, now,
+        # that nobody is known to own that inbox.
+        if _dead_letter and getattr(res, "ok", False):
+            res = _with_spawn_advisories(res, [{
+                "kind": "unknown_recipient", "detail": _dead_letter}])
+        return res
+
+
+class _SteerWorkerIn(BaseModel):
+    action_id: str          # the live worker's action in YOUR plan
+    body: dict = {}         # the correction — what changed and why
+    plan_id: str | None = None   # defaults from the caller's lineage
+
+
+class SteerWorker(_ClaudeTool):
+    """F5 (2026-08-17) — the planner's CORRECTION verb. Sends a
+    `kind="steer"` to the live worker holding `<plan_id>:<action_id>`,
+    resolving the address from YOUR plan (never hand-built). The worker
+    must `steer_ack` (restate) before acting — the send is recorded in the
+    plan worklog so reconcile's steer-watch can correlate the ack. Refuses
+    when the action has no live shell (a steer to a dead worker is a
+    dead letter — re-dispatch instead) or when the action is not yours."""
+
+    name = "steer_worker"
+    InputModel = _SteerWorkerIn
+    OutputModel = BaseModel
+
+    async def _run(self, m: _SteerWorkerIn):
+        _me, parent = _self_and_parent_addresses()
+        role = os.environ.get("EDP_ROLE", "").strip()
+        plan_id = m.plan_id
+        if not plan_id:
+            if role == "planner":
+                plan_id = _me                 # dash plan_id
+            elif not role:
+                return _precondition(
+                    "steer_worker: pass plan_id explicitly — no planner "
+                    "lineage resolves from this shell.")
+        if not plan_id or not self.ctx.plans.exists(plan_id):
+            return _precondition(f"unknown plan {plan_id!r}")
+        p = self.ctx.plans.load(plan_id)
+        a = next((x for x in p.actions if x.action_id == m.action_id), None)
+        if a is None:
+            return _precondition(
+                f"no action {m.action_id!r} in plan {plan_id!r} — steer an "
+                "action you authored (query_objects shows them).")
+        handle = f"{plan_id}:{m.action_id}"
+        live = (await self.ctx.pool.liveness(handle))["state"]
+        if live != "alive":
+            return _precondition(
+                f"worker {handle!r} is {live!r}, not alive — a steer would "
+                "dead-letter. If the shell crashed, reconcile re-dispatches "
+                "(or pool_reap + re-dispatch); fold the correction into the "
+                "action's grounding instead (update_object the action / "
+                "record_context scoped to this plan).")
+        if not m.body:
+            return _precondition(
+                "steer_worker: body is empty — say what changed and why "
+                "(the worker restates it in its steer_ack).")
+        msg = BrokerMessage(
+            msg_id=str(uuid.uuid4()), ts=_now(),
+            **{"from": _me or plan_id}, to=handle,
+            kind="steer", body=m.body)
+        res = await self.ctx.broker.send(msg)
+        if getattr(res, "ok", False):
+            # Same durable send record BrokerSend writes for steers — the
+            # steer-watch (unacked_steers) correlates acks against it.
+            try:
+                self.ctx.plans.append_worklog(plan_id, {
+                    "kind": "message_sent", "msg_kind": "steer",
+                    "msg_id": msg.msg_id, "to": handle,
+                    "agent_role": role or "unknown",
+                    "from_handle":
+                        os.environ.get("EDP_HANDLE", "").strip() or None,
+                    "summary": str(m.body)[:300],
+                })
+            except Exception as e:  # noqa: BLE001 — never fail the send
                 _log.warning("steer_send_record_failed",
                              "steer-send record failed", error=str(e))
         return res
@@ -10320,7 +10829,14 @@ def _resolve_fact_write_scope(ctx, *, scope, recipe_id, domain):
 
 _RECIPE_EVENT_KINDS = ("learning", "discovery", "progress", "blocker",
                        "status_ping", "spec_learning_proposed",
-                       "review_finding")
+                       "review_finding",
+                       # F21 (2026-08-17): the recorded goal-vs-delivery
+                       # verdict the G-ACCEPT close gate requires.
+                       "acceptance_verdict",
+                       # F12 (2026-08-17): the neuron's recorded periodic
+                       # plan-vs-actual review (the "scrum" artifact the
+                       # review_due advisory asks for).
+                       "progress_review")
 
 
 def _emit_recipe_event(ctx, kind: str, body: dict,
@@ -10461,7 +10977,8 @@ def _pending_spec_learnings(ctx, r) -> dict[str, int]:
 
 class _EmitRecipeEventIn(BaseModel):
     kind: Literal["learning", "discovery", "progress", "blocker",
-                  "status_ping", "spec_learning_proposed", "review_finding"]
+                  "status_ping", "spec_learning_proposed", "review_finding",
+                  "acceptance_verdict", "progress_review"]
     body: dict = {}
     # Usually omitted — resolved from YOUR lineage (worker → its plan's
     # recipe; planner → its recipe). The neuron (no EDP_HANDLE) passes it.
@@ -13352,9 +13869,20 @@ def _gc_stale_subscriptions(root: Path, *, keep: str, ttl_secs: int,
         candidates = list(root.glob("sub-*.spec"))
     except OSError:
         return 0
+    # 2026-08-17 (live incident, s4 planner resume): NEVER sweep a
+    # subscription the handle index still points at. The sweep used to take
+    # any >TTL spec — including a parked/idle shell's — and specs_for_handle
+    # then SKIPPED the swept sid, so the resume rewire handed back an EMPTY
+    # wiring block and the shell hand-composed its monitor (wrongly). Only
+    # anonymous/unindexed artifacts age out.
+    try:
+        from ..reactive.handle_index import all_indexed_sids
+        indexed = all_indexed_sids(root)
+    except Exception:  # noqa: BLE001 — an unreadable index must not stop GC
+        indexed = set()
     for spec_path in candidates:
         sid = spec_path.name[:-len(".spec")]
-        if sid == keep:
+        if sid == keep or sid in indexed:
             continue
         try:
             if now_ts - spec_path.stat().st_mtime <= ttl_secs:
@@ -13579,6 +14107,162 @@ class ObserveStream(_ClaudeTool):
             monitor_cmd=cmd,
             has_effect=has_effect,
             reused=reused,
+        ))
+
+
+# ── arm_wiring (F3, 2026-08-17) — one-call wake-plane composition ──────────
+# The shadow is retired (owner ruling): wiring returns to agent-owned
+# monitor + cron for EVERY role, and this tool is what keeps that cheap. The
+# agent does not learn the rx DSL, does not compose a spec, does not guess a
+# heartbeat: it calls arm_wiring() once at boot, gets back the EXACT
+# monitor_cmd to run under the harness Monitor tool and the EXACT CronCreate
+# arguments (expr + prompt, numbers resolved server-side), and runs them
+# verbatim. Idempotent: the subscription id derives from the handle, so a
+# re-arm after compaction/restart returns reused=True with the same command.
+#
+# rx.orphaned is DELIBERATELY absent from every composed spec: the orphan
+# detector's dash/colon handle mismatch false-floods "no live planner" for
+# live planners (known defect, memory 2026-08). Crash flowback instead rides
+# the POOL's sweep_crashed → ResumeWatchdog `crashed` publish to the parent
+# inbox, which rx.broker(me) below already delivers.
+_WIRING_SPECS: dict[str, str] = {
+    "worker": "rx.broker(me)",
+    "reviewer": "rx.broker(me)",
+    "curiosity": "rx.broker(me)",
+    "specialist": "rx.broker(me)",
+    "planner": ("rx.merge(rx.broker(me), rx.worklog(plan_id), "
+                "rx.pool(scope=plan_id), rx.recipe_events(recipe_id))"),
+    "neuron": ("rx.merge(rx.broker(me), rx.pool(scope=me), "
+               "rx.recipe_events(me, kinds=['learning','discovery',"
+               "'blocker','spec_learning_proposed','review_finding'], "
+               "exclude_from=me))"),
+}
+
+# check_inbox reflex prompts for the roles that do NOT run the reconcile
+# loop (cadence.py's role-scoping invariant: neuron+planner get the
+# canonical RECONCILE_LOOP_CRON_PROMPT; everyone else keeps a short
+# check_inbox reflex).
+_WIRING_REFLEX_PROMPTS: dict[str, str] = {
+    "worker": (
+        "call check_inbox() and if there is an answer or steer, continue "
+        "your action using it; otherwise, if mid-task, emit_recipe_event("
+        "kind=\"status_ping\", body={\"phase\": \"<what you are doing>\"}), "
+        "then end the turn and wait."),
+    "reviewer": (
+        "call check_inbox() and if there is an answer or steer, act on it; "
+        "otherwise end the turn and wait."),
+    "curiosity": (
+        "call check_inbox() and if there is a NEW consult, process it; "
+        "otherwise end your turn and wait."),
+    "specialist": (
+        "call check_inbox() and if there is an answer or update task, act "
+        "on it; otherwise end the turn and wait."),
+}
+
+
+def _wiring_heartbeat_minutes(role: str) -> int:
+    from ..cadence import heartbeat_secs
+    if role in ("neuron", "planner"):
+        return max(1, heartbeat_secs() // 60)
+    if role in ("worker", "reviewer"):
+        try:
+            return max(1, int(os.environ.get("EDP_WORKER_HEARTBEAT_MIN", "5")))
+        except ValueError:
+            return 5
+    if role == "specialist":
+        return 10
+    return 5    # curiosity
+
+
+class _ArmWiringIn(BaseModel):
+    # Only the NEURON (no EDP_HANDLE) must pass this: its recipe_id. Every
+    # spawned role resolves everything from env.
+    handle: str | None = None
+
+
+class _ArmWiringOut(BaseModel):
+    subscription_id: str
+    spec: str
+    monitor_cmd: str        # run THIS under the harness Monitor tool, once
+    cron_expr: str          # arm CronCreate with exactly this expr…
+    cron_prompt: str        # …and exactly this prompt
+    reused: bool            # True → identical wiring already armed: do NOT
+                            # start a second Monitor; re-arm the cron only if
+                            # you know yours is gone
+    note: str
+
+
+class ArmWiring(_ClaudeTool):
+    """ONE call arms your whole wake plane. Composes your role's default
+    reactive subscription server-side (no rx DSL to learn), persists it, and
+    returns verbatim: the `monitor_cmd` to run under the harness Monitor
+    tool (your push wake — events arrive as TOOL output) and the CronCreate
+    `cron_expr` + `cron_prompt` for your heartbeat backstop (numbers
+    resolved, nothing to substitute). Run both, then boot on. Idempotent:
+    re-arming returns reused=True with the same command — one logical
+    subscription, one Monitor. Neuron: pass handle=<recipe_id>; spawned
+    roles pass nothing."""
+
+    name = "arm_wiring"
+    InputModel = _ArmWiringIn
+    OutputModel = _ArmWiringOut
+
+    async def _run(self, m: _ArmWiringIn):
+        from ..cadence import RECONCILE_LOOP_CRON_PROMPT
+        role = os.environ.get("EDP_ROLE", "").strip()
+        me, _parent = _self_and_parent_addresses()
+        if not me:
+            me = (m.handle or "").strip()
+        if not role:
+            # A role-less shell arming wiring is the neuron's foreground seat.
+            role = "neuron"
+        if role not in _WIRING_SPECS:
+            return _precondition(
+                f"arm_wiring: no wiring profile for role {role!r} — known "
+                f"roles: {sorted(_WIRING_SPECS)}.")
+        if not me:
+            return _precondition(
+                "arm_wiring: no handle resolves — the neuron's foreground "
+                "seat must pass handle=<recipe_id>; spawned shells need "
+                "EDP_HANDLE set (report a spawn-env defect upward if it "
+                "is not).")
+
+        bindings: dict = {"me": me}
+        if role == "planner":
+            handle = os.environ.get("EDP_HANDLE", "").strip() or me
+            recipe_id = handle.rsplit(":", 1)[0] if ":" in handle else handle
+            bindings.update({"plan_id": me, "recipe_id": recipe_id})
+
+        spec = _WIRING_SPECS[role]
+        sid = "sub-wiring-" + re.sub(r"[^A-Za-z0-9._-]", "_", me)[:60]
+        res = await ObserveStream(self.ctx)._run(_ObserveIn(
+            spec=spec, bindings=bindings, subscription_id=sid, owner=me))
+        if not getattr(res, "ok", False):
+            return res
+        obs = res.data if isinstance(res.data, dict) else \
+            res.data.model_dump()
+
+        minutes = _wiring_heartbeat_minutes(role)
+        cron_expr = f"*/{minutes} * * * *" if minutes < 60 else "0 * * * *"
+        cron_prompt = (RECONCILE_LOOP_CRON_PROMPT
+                       if role in ("neuron", "planner")
+                       else _WIRING_REFLEX_PROMPTS[role])
+        reused = bool(obs.get("reused"))
+        return Tool.ok(_ArmWiringOut(
+            subscription_id=obs.get("subscription_id", sid),
+            spec=spec,
+            monitor_cmd=obs.get("monitor_cmd", ""),
+            cron_expr=cron_expr,
+            cron_prompt=cron_prompt,
+            reused=reused,
+            note=(
+                "wiring already armed — do NOT start a second Monitor; "
+                "re-run CronCreate only if you know your cron is gone."
+                if reused else
+                "run monitor_cmd under the Monitor tool (once), then "
+                "CronCreate(recurring, cron=cron_expr, prompt=cron_prompt). "
+                "Events arrive as Monitor TOOL output; the cron is the "
+                "backstop, never the primary wake."),
         ))
 
 
@@ -14210,6 +14894,7 @@ ALL_TOOL_CLASSES = [
     InspectWorker,
     StatusPing,
     BrokerSend,
+    SteerWorker,        # F5 (2026-08-17) — planner's routed correction verb
     AskAbove,
     NotifyAbove,
     EmitRecipeEvent,
@@ -14266,6 +14951,7 @@ ALL_TOOL_CLASSES = [
     UpdateObject,
     DeleteObject,
     ObserveStream,
+    ArmWiring,          # F3 (2026-08-17) — one-call role wiring (post-shadow)
     ListSubscriptions,
     Unobserve,
     RegisterRule,

@@ -6,18 +6,24 @@ One object graph — `recipe ─owns→ step ─spawns→ plan ─owns→ action
 - **CRUD = what is true now.** `describe_objects` / `read_object` /
   `query_objects` (read) · `create_object` / `update_object` (write);
   invariants live inside each object — you never re-implement a rule.
+  Read the schema of the objects you operate ONCE at boot
+  (`describe_objects(<object>)` or the `edp://schema/<object>` MCP
+  resource) and reference it thereafter — refusals always name the
+  legal values, so guessing is never cheaper than reading once.
+  `read_object(type="recipe", detail="brief")` is the READABLE
+  one-call map (goal verbatim → outcomes → decisions → bans → steps).
   **NEVER read or write recipe/plan/action/step/outcome/worklog via a
   raw file path** — the on-disk shape is an implementation detail, and
   an unreachable MCP is a BLOCKED state to surface, never a cue to
   reach for files.
-- **rx = what just changed.** `observe(spec="rx.broker(me, …)", …)` and
-  run the returned `monitor_cmd` under the `Monitor` tool — one Monitor
-  per observe, armed ONCE (not consumed on fire). Subscribe FIRST; the
-  cron heartbeat is the backstop, never the primary wake. Two paid-for
-  traps: a spec with no live driver is DEAF (verify after arming and
-  after any restart/compaction), and a kind-filter on `rx.broker(me)`
-  silently drops every directed message you did not list — filter only
-  broadcast planes.
+- **rx = what just changed.** `arm_wiring()` composes your role's
+  subscription server-side — run the returned `monitor_cmd` under the
+  `Monitor` tool (one Monitor, armed ONCE, not consumed on fire) and
+  the returned cron as backstop; wakes arrive as Monitor TOOL output
+  naming what changed. Subscribe FIRST; the cron heartbeat is the
+  backstop, never the primary wake. A spec with no live driver is DEAF
+  — verify after arming and after any restart/compaction
+  (`list_subscriptions`, re-arm is idempotent).
 - **flow = the next legal move.** `reconcile` syncs the record to
   broker/pool/disk reality; `next_action` is a pure pacer. The loop:
   react (rx) → `reconcile` → `next_action` → obey `wait_hint`.

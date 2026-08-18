@@ -77,8 +77,12 @@ def _first_emission(obs, timeout=6.0):
     the healthy-path tests below assert silence, not `[]`.
     """
     got, seen = [], threading.Event()
+    # F3b: snapshot planes emit {snapshot, changed} — unwrap to the raw
+    # snapshot these assertions were written against.
+    def _unwrap(v):
+        return v.get("snapshot", v) if isinstance(v, dict) else v
     sub = obs.subscribe(
-        on_next=lambda v: (got.append(v), seen.set()))
+        on_next=lambda v: (got.append(_unwrap(v)), seen.set()))
     try:
         seen.wait(timeout)
     finally:

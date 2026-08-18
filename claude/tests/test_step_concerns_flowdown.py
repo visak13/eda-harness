@@ -85,15 +85,21 @@ async def _drafted_plan(env, rid, sid, action_concerns=None):
     return pid
 
 
-async def test_dispatch_refused_when_step_concern_uncovered(env):
+async def test_dispatch_advises_when_step_concern_uncovered(env):
+    # F6 (2026-08-17): the dispatch-time gate is ADVISORY now — the hard
+    # refusal serialized authoring (whole plan before the first worker).
+    # The obligation is enforced at STEP CLOSE (record_step_result).
     rid, sid = await _recipe_with_step(env, concerns=["security"])
     pid = await _drafted_plan(env, rid, sid)         # no action carries it
     res = await env.call("pool_spawn_worker", plan_id=pid, action_id="a1")
-    _refused(res, "step concern 'security'", "assemble_ruleset")
-    # the pre-stamp rollback held: the action is not stranded in_progress
-    a = next(x for x in env.ctx.plans.load(pid).actions
-             if x.action_id == "a1")
-    assert a.status != "in_progress"
+    if isinstance(res, ToolError):
+        # spawn may fail on the fake pool — never on the flow-down gate
+        assert "step concern" not in res.message, res.message
+    else:
+        advisories = (res.data.get("advisories")
+                      if isinstance(res.data, dict) else
+                      getattr(res.data, "advisories", [])) or []
+        assert any(a.get("kind") == "flowdown_gaps" for a in advisories)
 
 
 async def test_dispatch_passes_when_concern_covered(env):
@@ -105,30 +111,39 @@ async def test_dispatch_passes_when_concern_covered(env):
         assert "step concern" not in res.message, res.message
 
 
-async def test_dispatch_refused_when_sketch_unmapped(env):
+async def test_unmapped_sketch_advises_at_dispatch_and_gaps_are_named(env):
+    # F6: unmapped sketch lines advise at dispatch; the step close is the
+    # enforcement point (see test_f6_flowdown_close_gate.py).
     rid, sid = await _recipe_with_step(
         env, sketch=["exports a valid CSV", "handles empty input"])
     pid = await _drafted_plan(env, rid, sid)
     res = await env.call("pool_spawn_worker", plan_id=pid, action_id="a1")
-    _refused(res, "exports a valid CSV", "sketch_covered_by")
-    # planner maps the lines explicitly -> gate passes
+    if isinstance(res, ToolError):
+        assert "sketch" not in res.message, res.message
+    # the gap detector itself still names the unmapped lines
+    from edp_claude.tools._tools import _step_flowdown_gaps
+    gaps = _step_flowdown_gaps(env.ctx.recipes.load(rid),
+                               env.ctx.plans.load(pid))
+    assert any("exports a valid CSV" in g for g in gaps)
+    # planner maps the lines explicitly -> gaps clear
     p = env.ctx.plans.load(pid)
     p.sketch_covered_by = {"exports a valid CSV": ["a1"],
                            "handles empty input": ["a1"]}
     env.ctx.plans.save(p)
-    res2 = await env.call("pool_spawn_worker", plan_id=pid, action_id="a1")
-    if isinstance(res2, ToolError):
-        assert "sketch" not in res2.message, res2.message
+    assert _step_flowdown_gaps(env.ctx.recipes.load(rid),
+                               env.ctx.plans.load(pid)) == []
 
 
-async def test_sketch_mapping_to_unknown_action_refused(env):
+async def test_sketch_mapping_to_unknown_action_is_a_named_gap(env):
     rid, sid = await _recipe_with_step(env, sketch=["works end to end"])
     pid = await _drafted_plan(env, rid, sid)
     p = env.ctx.plans.load(pid)
     p.sketch_covered_by = {"works end to end": ["a99"]}
     env.ctx.plans.save(p)
-    res = await env.call("pool_spawn_worker", plan_id=pid, action_id="a1")
-    _refused(res, "unknown", "a99")
+    from edp_claude.tools._tools import _step_flowdown_gaps
+    gaps = _step_flowdown_gaps(env.ctx.recipes.load(rid),
+                               env.ctx.plans.load(pid))
+    assert any("a99" in g and "unknown" in g for g in gaps)
 
 
 # ── flow-down gate at record_plan (submission path) ────────────────────────

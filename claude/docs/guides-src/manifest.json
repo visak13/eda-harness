@@ -5,7 +5,7 @@
     "agentic-plan": 4000,
     "worker": 2500,
     "reviewer": 2000,
-    "curiosity": 1500
+    "curiosity": 1700
   },
   "commands": {
     "neuron": [

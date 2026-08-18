@@ -392,15 +392,16 @@ def test_sender_filter_is_opt_in_so_the_wiring_matters():
 
 
 def _neuron_rx_spec() -> str:
-    """The neuron guide's ACTUAL rx.merge(...) call form, whitespace-collapsed.
+    """The neuron's ACTUAL wiring spec, whitespace-collapsed.
 
-    Deliberately not a substring search over the whole file: the guide also
-    EXPLAINS `exclude_from=me` in prose, so `"exclude_from=me" in md` stays true
-    even after the call itself loses it — a test that guards a sentence instead
-    of the wiring. Mutation 12e caught exactly that."""
-    md = Path(".claude/commands/neuron.md").read_text(encoding="utf-8")
-    spec = md.split("`rx.merge(")[1].split(")`")[0]
-    return " ".join(spec.split())
+    F3 (2026-08-17): the spec MOVED from the card's prose into code —
+    arm_wiring composes it from tools._tools._WIRING_SPECS, so the card can
+    no longer drift from the wiring (the card just says arm_wiring()). The
+    invariants these tests guard (sender filter present, no kind filter on
+    the directed inbox) now bind the CODE TABLE — strictly stronger than
+    guarding a sentence (the mutation-12e lesson, completed)."""
+    from edp_claude.tools._tools import _WIRING_SPECS
+    return " ".join(_WIRING_SPECS["neuron"].split())
 
 
 def test_neuron_guide_wires_the_sender_filter():

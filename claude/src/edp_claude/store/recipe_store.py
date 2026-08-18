@@ -305,6 +305,11 @@ class RecipeStore:
         # Sol-harness vault projection (2026-07-19): re-render the Obsidian
         # note on every save — best-effort, never fails the durable write.
         mirror_recipe(recipe, self.root)
+        # F2 (2026-08-17): the compiled recipe BRIEF — a deterministic
+        # markdown rendering of the record, regenerated on every save so it
+        # can never lag. Best-effort like the mirror above.
+        from .recipe_brief import write_recipe_brief
+        write_recipe_brief(recipe, self._dir(recipe.recipe_id))
         # W1 maintenance: bound the events trail (active, threshold-gated) and
         # prune snapshots when GC is opted in. Both are no-ops in the common
         # case — under threshold / flag unset — so current behavior is intact.

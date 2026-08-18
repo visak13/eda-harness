@@ -10,17 +10,12 @@ environment" and stop.
 1. `whoami()` — `self_address` is your canonical inbox; `lineage`
    names your planner and neuron. (Post-compaction the reground
    re-injects `get_guide("worker-card")` — execute it verbatim.)
-2. Arm the wake plane once, before any work (CLASSIC shells only — shadowed shells skip: it is already armed):
-   - Cron heartbeat: `CronCreate` recurring, cron =
-     `*/${EDP_WORKER_HEARTBEAT_MIN:-5} * * * *`, prompt = `call
-     check_inbox() and if there is an answer, continue your action
-     using it; otherwise, if mid-task, emit_recipe_event(
-     kind="status_ping", body={"phase": "<what you are doing>"}), then
-     end the turn and wait.` Keep the job id for close.
-   - Push: `observe(spec="rx.broker(me, kinds=['answer','steer'])",
-     bindings={"me": "<self_address>"})`, run the returned
-     `monitor_cmd` under `Monitor`.
-   - Then `notify_above(kind="ready", body={"inbox": "<self_address>"})`.
+2. Arm the wake plane once, before any work: `arm_wiring()` — run the
+   returned `monitor_cmd` under `Monitor` (once; your push wake —
+   events arrive as tool output) and `CronCreate` recurring with the
+   returned `cron_expr` + `cron_prompt` verbatim (the backstop). Keep
+   both ids for close. Then `notify_above(kind="ready",
+   body={"inbox": "<self_address>"})`.
 3. `check_inbox()`, then `read_object("action", ids={"plan_id": …,
    "action_id": …})` — description, injected grounding (budgeted, LOUD
    elision marker — chase with `search_context(query=…)`), `concerns`
@@ -63,8 +58,10 @@ environment" and stop.
 - **Visual/3D/image assets** go through `delegate_generate(task_class=
   "asset", …)` when a route exists — the draft returns as text/files
   you integrate; render, capture, and verify the pixels yourself.
-- **Ambiguous action?** `read_object("recipe", …)` → expected outcomes
-  + decisions — serve the outcome, not your reading of one string.
+- **Ambiguous action / need the map?** `read_object("recipe", ids={…},
+  detail="brief")` — the compiled brief: goal VERBATIM, outcomes,
+  decisions, bans, your step. Serve the outcome, not your reading of
+  one string; your `serves` ids name which outcomes you exist for.
 - **Batch** (`batch_group` set): enumerate members via `query_objects`,
   execute `in_progress` members in declared order, one
   `record_action_status` per member; a failed member stops the loop.
@@ -84,10 +81,8 @@ environment" and stop.
    auto-propose to your action's spec — pass `spec_id`).
 5. Close in ONE turn — the final check before you close: one last
    `check_inbox()`; if a message arrived, do NOT close — handle it
-   first. Then (classic shells) `CronDelete` the heartbeat, `TaskStop`
-   the Monitor, `pool_close_self`; a SHADOWED shell just ends its turn
-   — the shadow observes your terminal status and closes you. (A Stop
-   hook backstops a forgotten classic close.)
+   first. Then `CronDelete` the heartbeat, `TaskStop` the Monitor,
+   `pool_close_self`. (A Stop hook backstops a forgotten close.)
 
 On-demand depth: `get_guide("coding-standards")` ·
 `get_guide("verification-craft")` · `get_guide("architecture-vocabulary")`

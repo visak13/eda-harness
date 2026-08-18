@@ -187,12 +187,13 @@ async def test_reviewer_brief_carries_git_block_and_runs(env, tmp_path):
     inbox = env.ctx.broker.inboxes[f"{pid}:r1"]
     assert len(inbox) == 1
     body = inbox[0].body
-    # the git block is the repo's ACTUAL state, each field capped text
+    # 2026-08-17 (owner ruling): the dispatcher runs NO git — the brief's
+    # git entry is an INSTRUCTION naming the workspace; the reviewer runs
+    # the commands itself in its own shell.
     git = body["git"]
-    assert "note" not in git
-    assert "f.txt" in git["status"]                 # the dirty file
-    assert "init" in git["recent_commits"]
-    assert "f.txt" in git["diff_stat"]
+    assert "status" not in git and "diff_stat" not in git
+    assert repr(str(repo)) in git["note"]   # the note carries the path (repr)
+    assert "YOURSELF" in git["note"]
     # the reviewed target forwards the recorded runs verbatim
     assert body["target"][0]["action_id"] == "a1"
     assert body["target"][0]["runs"] == [_RUN]
@@ -211,7 +212,7 @@ async def test_reviewer_brief_git_note_when_no_workspace(env):
     _ok(await env.call("pool_spawn_worker", plan_id=pid, action_id="r1",
                        role="reviewer"))
     body = env.ctx.broker.inboxes[f"{pid}:r1"][0].body
-    assert "locate and diff the target repo yourself" in body["git"]["note"]
+    assert "locate it from the deliverable paths" in body["git"]["note"]
     assert body["target"][0]["runs"] == []          # none recorded → empty
 
 
@@ -516,57 +517,36 @@ async def test_spawn_floors_attempt_at_pool_session_history(env):
     assert env.ctx.plans.load(pid).actions[0].attempt == 1
 
 
-# ═══════════════════════════ 7. G-COMMIT ══════════════════════════════════
+# ══════════════════ 7. G-COMMIT — RETIRED (owner ruling 2026-08-17) ═══════
+# MCP tool calls launch NO external programs: the in-server git run hung
+# >1800s on a clean Windows repo (live incident) and its sync form starved
+# the event loop. The commit evidence is now the reviewer's own in-shell git
+# re-run + the worker's stated landed commit; close_recipe runs no git.
 def _closable(env, workspace):
     _recipe(env, steps=[_step("s1", "done")], outcomes=[_outcome()],
             state="reviewing", workspace=workspace)
     _plan(env, RID, "s1", state="terminal", terminal_status="succeeded")
 
 
-async def test_dirty_tree_refuses_succeeded_close(env, tmp_path):
+async def test_close_runs_no_git_even_with_workspace_and_dirty_tree(
+        env, tmp_path):
     repo = _make_repo(tmp_path, dirty=True)
     _closable(env, str(repo))
-    res = await env.call("close_recipe", recipe_id=RID,
-                         final_outcome={"status": "succeeded",
-                                        "summary": "x"})
-    msg = _err(res)
-    assert "G-COMMIT" in msg and "UNCOMMITTED" in msg
-    assert f"G-COMMIT:{RID}" in msg
-    assert env.ctx.recipes.load(RID).state != "closed"
-
-
-async def test_dirty_tree_waived_close_passes(env, tmp_path):
-    repo = _make_repo(tmp_path, dirty=True)
-    _closable(env, str(repo))
-    ref = await _gate_answer(env, RID, f"G-COMMIT:{RID}")
     _ok(await env.call("close_recipe", recipe_id=RID,
-                       final_outcome={"status": "succeeded", "summary": "x"},
-                       commit_waiver_ref=ref))
+                       final_outcome={"status": "succeeded",
+                                      "summary": "x"}))
     r = env.ctx.recipes.load(RID)
     assert r.state == "closed"
     assert "head_commit" not in (r.final_outcome or {})
-    evs = env.ctx.recipes.read_events_tail(
-        RID, kinds=["commit_gate_waived"], limit=0)
-    assert evs and evs[-1]["override_ref"] == ref
 
 
-async def test_clean_tree_records_head_commit(env, tmp_path):
-    repo = _make_repo(tmp_path)
+async def test_commit_waiver_ref_is_accepted_and_ignored(env, tmp_path):
+    repo = _make_repo(tmp_path, dirty=True)
     _closable(env, str(repo))
     _ok(await env.call("close_recipe", recipe_id=RID,
-                       final_outcome={"status": "succeeded",
-                                      "summary": "x"}))
-    r = env.ctx.recipes.load(RID)
-    assert r.state == "closed"
-    assert r.final_outcome["head_commit"] == _head(repo)
-
-
-async def test_no_workspace_close_carries_no_gate(env):
-    _closable(env, None)
-    _ok(await env.call("close_recipe", recipe_id=RID,
-                       final_outcome={"status": "succeeded",
-                                      "summary": "x"}))
-    assert "head_commit" not in env.ctx.recipes.load(RID).final_outcome
+                       final_outcome={"status": "succeeded", "summary": "x"},
+                       commit_waiver_ref="any-legacy-ref"))
+    assert env.ctx.recipes.load(RID).state == "closed"
 
 
 async def test_commit_recorded_on_status_and_verdict(env):

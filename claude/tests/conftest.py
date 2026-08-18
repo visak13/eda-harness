@@ -36,6 +36,13 @@ def _clear_leaked_shell_env(monkeypatch):
                 # asserting the "unmeasured" wording false-fails.
                 "CLAUDE_CODE_ENABLE_TELEMETRY"):
         monkeypatch.delenv(var, raising=False)
+    # F21/F22 (2026-08-17): the new close-time acceptance gate and the
+    # first-dispatch challenge gate default ON in production but OFF for the
+    # legacy suite — hundreds of pre-existing tests exercise close/dispatch
+    # paths without the new artifacts. The gates' OWN tests re-enable them
+    # explicitly (tests/test_f21_f22_gates.py).
+    monkeypatch.setenv("EDP_ACCEPT_GATE", "0")
+    monkeypatch.setenv("EDP_CHALLENGE_GATE_MIN_ACTIONS", "0")
 
 
 @pytest.fixture

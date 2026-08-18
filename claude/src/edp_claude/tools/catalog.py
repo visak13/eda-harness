@@ -15,7 +15,7 @@ placeholder.
 TOOL_ONE_LINERS: dict[str, str] = {
     # ── identity / lifecycle ────────────────────────────────────────────
     "whoami": "Report this shell's role, self/parent address and lineage (reads env; enforces nothing).",
-    "start_recipe": "Create a new recipe from goal+domain; returns recipe_id. `goal` = the user's words VERBATIM (paste in full, never summarize — it is immutable and feeds every brief). Check resolve_recipe first — creating blindly orphans open work.",
+    "start_recipe": "Create a recipe; returns recipe_id. `goal` = the user's words VERBATIM (paste in full, never summarize — immutable, feeds every brief). Check resolve_recipe first — creating blindly orphans open work.",
     "resolve_recipe": "Match a typed goal against open recipes: resume / confirm / create decision, never silent creation.",
     "resume_recipe": "Reopen a suspended recipe: manifest + digest + rewire hand-back for the resuming shell.",
     "suspend_recipe": "Park a recipe: reap shells, write the suspension manifest with the resume command.",
@@ -46,7 +46,7 @@ TOOL_ONE_LINERS: dict[str, str] = {
     "search_context": "Semantic search over the recipe's decisions/assumptions/bans — the targeted re-ground; use it before pulling full objects.",
     # ── grounding reads ─────────────────────────────────────────────────
     "get_recipe_digest": "The <10k-token code-assembled re-ground packet: north star, recap, outcomes, decisions index, open steps, events. Ground from THIS, not raw recipe.json.",
-    "read_object": "Read ONE object (recipe/plan/action/step/...); detail='digest' to orient cheaply; oversize recipe reads degrade to the digest unless confirm_oversize.",
+    "read_object": "Read ONE object (recipe/plan/action/step/...); detail='digest' orients cheaply, detail='brief' (recipe) is the readable compiled brief.",
     "query_objects": "Filtered, count-first windowed list of objects; page with offset=cursor.",
     "describe_objects": "Schema/required-ids catalog for the readable object types.",
     "read_worklog": "Tail/since window over a plan's worklog events.",
@@ -56,6 +56,8 @@ TOOL_ONE_LINERS: dict[str, str] = {
     "next_action": "Pure phase pacer: next legal move + wait_hint; pass reconcile_changed to collapse an idle tick to a one-line no_change payload — then END the turn with zero prose.",
     "reconcile": "Sync the record to broker/pool/disk reality; returns {changed,...}+wait_hint. Feed changed into next_action.",
     "observe": "Arm one reactive subscription (RUN the returned monitor_cmd — a spec with no live driver is deaf).",
+    "arm_wiring": "ONE call arms your role's whole wake plane — run the returned monitor_cmd + CronCreate args verbatim.",
+    "steer_worker": "Steer YOUR live worker (address resolved from your plan; the worker must steer_ack before acting).",
     "unobserve": "Remove one persisted subscription spec.",
     "list_subscriptions": "List this handle's persisted subscription specs.",
     "emit_recipe_event": "Append a typed event (learning/review_finding/discovery/...) to the recipe trail; kind=learning auto-proposes to the spec sidecar.",

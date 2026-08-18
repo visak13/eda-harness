@@ -179,7 +179,7 @@ RECORD_CONTEXT = "record_context"
 # superseded by the route-gated delegate_generate the worker already holds;
 # see roles.py _BRIDGE_SUPERSEDED). The consult surface was deleted whole with
 # its role. The ceiling IS the floor.
-CEILINGS = {"worker": 26, "reviewer": 23, "planner": 41, "neuron": 62}  # +reflex (v7 WS7 — shadow sovereignty seam; inert in unshadowed shells)  # +budget_status (planner/neuron, v7 §2.6c — read-only planned-vs-actual)  # +1 each for the v7 WS3 test-lineage verbs (record_test_lineage worker / test_lineage_report reviewer+planner, 2026-08-05 — graph-sidecar only, no object reach); before that +1 each for the v7 WS1 bridge verbs (delegate_generate / delegate_review / adversarial_challenge — route-gated in .bridge.json, so the verb grants nothing until a human routes it); before that +list_subscriptions +unobserve (2026-07-20 monitor CRUD)
+CEILINGS = {"worker": 27, "reviewer": 24, "planner": 43, "neuron": 63}  # F1/F3/F5 (2026-08-17): +arm_wiring on every role (post-shadow one-call wiring); planner also +steer_worker (the routed correction verb its own card law prescribes)  # +reflex (v7 WS7 — shadow sovereignty seam; inert in unshadowed shells)  # +budget_status (planner/neuron, v7 §2.6c — read-only planned-vs-actual)  # +1 each for the v7 WS3 test-lineage verbs (record_test_lineage worker / test_lineage_report reviewer+planner, 2026-08-05 — graph-sidecar only, no object reach); before that +1 each for the v7 WS1 bridge verbs (delegate_generate / delegate_review / adversarial_challenge — route-gated in .bridge.json, so the verb grants nothing until a human routes it); before that +list_subscriptions +unobserve (2026-07-20 monitor CRUD)
 
 
 # ── helpers (mirror tests/test_scoped_facts.py so patterns stay uniform) ────

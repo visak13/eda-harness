@@ -368,5 +368,9 @@ def test_real_plan_emits_only_on_status_change(tmp_path):
         time.sleep(0.03)
     sub.dispose()
     # deduped: one emit for the initial state, one for the change — NOT
-    # dozens of identical "in_progress" snapshots.
-    assert [d["a1"] for d in got] == ["in_progress", "done"]
+    # dozens of identical "in_progress" snapshots. F3b: each emission is
+    # {snapshot, changed} so the wake NAMES the transition.
+    assert [d["snapshot"]["a1"] for d in got] == ["in_progress", "done"]
+    assert got[0]["changed"] == {}          # baseline — nothing to diff yet
+    assert got[1]["changed"] == {
+        "a1": {"from": "in_progress", "to": "done"}}

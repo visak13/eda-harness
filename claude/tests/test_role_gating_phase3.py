@@ -62,7 +62,9 @@ def test_neuron_is_positive_and_delegates():
         assert cut not in n, f"{cut} crept back onto the neuron surface"
 
 
-# ── 3c: refusal stubs under enforce ────────────────────────────────────────
+# ── 3c → F1 (2026-08-17): enforce mode registers ONLY the role surface ─────
+# The Phase-3c refusal stubs are GONE (owner ruling): an off-role tool is
+# absent from the listing entirely — no schema, no "(not available)" row.
 
 def _tools_by_name(tmp_path):
     from edp_claude.mcp_server import build_mcp
@@ -70,37 +72,29 @@ def _tools_by_name(tmp_path):
     return {t.name: t for t in mcp._tool_manager.list_tools()}
 
 
-async def test_enforce_registers_refusal_stub_not_silence(tmp_path,
-                                                          monkeypatch):
+async def test_enforce_registers_only_role_surface_no_stubs(tmp_path,
+                                                            monkeypatch):
     monkeypatch.setenv("EDP_MCP_BACKEND", "stub")
     monkeypatch.delenv("EDP_HANDLE", raising=False)
     monkeypatch.setenv("EDP_ROLE", "worker")
     monkeypatch.setenv("EDP_ROLE_SCOPE", "enforce")
     tools = _tools_by_name(tmp_path)
 
-    # the full catalog registers: real tools + stubs — nothing is invisible
-    assert "pool_spawn_planner" in tools, (
-        "off-scope tool vanished — the silent-absence blocker is back")
-    stub = tools["pool_spawn_planner"]
-    assert stub.description == "(not available to role=worker)"
-
-    # a real on-scope tool keeps its real description
-    assert not tools["record_action_status"].description.startswith(
-        "(not available")
-
-    # calling the stub returns the structured refusal, not an execution
-    out = await stub.run({"recipe_id": "r", "step_id": "s1"})
-    blob = json.dumps(out if isinstance(out, (dict, list)) else out.__dict__,
-                      default=str)
-    assert "scoped to role(s)" in blob and "planner" in blob
-    assert "broker" in blob
+    from edp_claude.tools.roles import ROLE_TOOLSETS
+    assert set(tools) == set(ROLE_TOOLSETS["worker"])
+    # the off-role planner verb is ABSENT — not stubbed, not described
+    assert "pool_spawn_planner" not in tools
+    # an on-scope tool keeps its real role-tagged description
+    assert tools["record_action_status"].description.startswith("[")
 
 
-async def test_unset_role_gets_no_stubs(tmp_path, monkeypatch):
+async def test_unset_role_gets_full_surface_no_stubs(tmp_path, monkeypatch):
     monkeypatch.setenv("EDP_MCP_BACKEND", "stub")
     for var in ("EDP_ROLE", "EDP_HANDLE", "EDP_ROLE_SCOPE"):
         monkeypatch.delenv(var, raising=False)
     tools = _tools_by_name(tmp_path)
+    from edp_claude.tools._tools import ALL_TOOL_CLASSES
+    assert len(tools) == len(ALL_TOOL_CLASSES)
     assert not any((t.description or "").startswith("(not available")
                    for t in tools.values())
 

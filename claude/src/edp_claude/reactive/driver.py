@@ -233,6 +233,33 @@ def _tail_jsonl(path: Path, observer, stop: threading.Event,
         stop.wait(poll_ms / 1000.0)
 
 
+def _snapshot_diff(prev: Any, cur: Any) -> dict:
+    """F3b (2026-08-17) — WHAT changed between two snapshots, keyed.
+
+    A snapshot wake used to deliver only the new state; the subscriber then
+    paid a reconcile round to learn WHICH transition woke it. Supports the
+    two shapes the snapshot planes emit: a dict ({action_id: status} — the
+    plan source) and a list of dicts keyed by 'handle' ({handle, liveness}
+    — the pool source). Returns {key: {'from': old, 'to': new}} for every
+    key that appeared, vanished, or changed. Anything else → {} (no diff,
+    honest absence)."""
+    def _as_map(v):
+        if isinstance(v, dict):
+            return v
+        if isinstance(v, list) and all(
+                isinstance(x, dict) and "handle" in x for x in v):
+            return {x["handle"]: x.get("liveness") for x in v}
+        return None
+    p, c = _as_map(prev), _as_map(cur)
+    if p is None or c is None:
+        return {}
+    out = {}
+    for k in set(p) | set(c):
+        if p.get(k) != c.get(k):
+            out[str(k)] = {"from": p.get(k), "to": c.get(k)}
+    return out
+
+
 def _poll_changes(fetch: Callable[[], Any], observer,
                   stop: threading.Event, poll_ms: int) -> None:
     """Poll `fetch()` each tick but emit ONLY when the value changed.
@@ -242,8 +269,14 @@ def _poll_changes(fetch: Callable[[], Any], observer,
     into control-plane signals — a pool emit is a real liveness change
     (a crash!), a plan emit is a real action-status transition. `fetch`
     returns `_SKIP` to mean 'nothing to read this tick' (e.g. plan file
-    not written yet); any exception is treated as `_SKIP`."""
+    not written yet); any exception is treated as `_SKIP`.
+
+    F3b (2026-08-17): the emission names the TRANSITION, not just the new
+    state — {'snapshot': <val>, 'changed': {key: {from, to}}} — so a wake
+    says 'a4: in_progress→failed' without a reconcile round. The first
+    (baseline) emission carries changed={} honestly."""
     last = _UNSET
+    prev_val: Any = None
     while not stop.is_set():
         try:
             val = fetch()
@@ -256,9 +289,13 @@ def _poll_changes(fetch: Callable[[], Any], observer,
                 # tick ([]/{}) differs from _UNSET and would emit one spurious
                 # wake per fresh subscription; record it without emitting.
                 first_empty = last is _UNSET and not val
+                changed = ({} if last is _UNSET
+                           else _snapshot_diff(prev_val, val))
                 last = key
+                prev_val = val
                 if not first_empty:
-                    observer.on_next(val)
+                    observer.on_next(
+                        {"snapshot": val, "changed": changed})
         stop.wait(poll_ms / 1000.0)
 
 

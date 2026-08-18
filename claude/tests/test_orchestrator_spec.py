@@ -126,13 +126,16 @@ def test_every_interactive_shell_mandates_message_subscription():
     # heartbeat polling. Every interactive shell brief must now set up at
     # least a message subscription (observe rx.broker) and point at the
     # operator guide.
+    # F3 (2026-08-17): wiring is one arm_wiring() call — the rx spec lives
+    # in code (_WIRING_SPECS), so the cards mandate arm_wiring + Monitor
+    # instead of spelling observe(rx.broker...). Either form satisfies the
+    # invariant "every interactive shell arms a push subscription".
     for name in ("neuron.md", "agentic-plan.md", "worker.md",
                  "curiosity.md"):
         b = (_CMD / name).read_text(encoding="utf-8").lower()
-        assert "observe(" in b, name
-        assert "rx.broker" in b, name
+        assert ("arm_wiring(" in b
+                or ("observe(" in b and "rx.broker" in b)), name
         assert "monitor" in b, name
-        assert "reactive-streams" in b, name      # the operator guide
 
 
 def test_neuron_planner_frame_heartbeat_as_backstop():

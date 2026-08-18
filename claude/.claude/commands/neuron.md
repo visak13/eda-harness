@@ -41,17 +41,14 @@ neuron to the user rather than burying them.
    `resolve_recipe` when you don't. (Post-compaction the reground
    re-injects `get_guide("neuron-card")` + a phase pointer — execute
    it verbatim.)
-2. Arm wiring FROM THE REWIRE HAND-BACK — `next_action(reground=true)`
-   returns your persisted observe specs + the canonical cron; execute
-   that rather than retyping. The default subscription:
-   `rx.merge(rx.broker(me), rx.pool(scope=me),
-   rx.orphaned(recipe_id=me), rx.recipe_events(me,
-   kinds=['learning','discovery','blocker','spec_learning_proposed',
-   'review_finding'], exclude_from=me))` with
-   `bindings={"me": "<recipe_id>"}` — run the returned `monitor_cmd`
-   under `Monitor`, once. Never kind-filter `rx.broker(me)` — a filter
-   on your own directed mail drops messages silently; filter only the
-   broadcast planes. Operators: `get_guide("reactive-streams")`.
+2. Arm wiring: cold boot → `arm_wiring(handle=<recipe_id>)` — run the
+   returned `monitor_cmd` under `Monitor` (once) and `CronCreate`
+   recurring with the returned `cron_expr` + `cron_prompt` verbatim.
+   Post-compaction → `next_action(reground=true)` hands back your
+   persisted specs + cron; execute that rather than retyping. Never
+   kind-filter `rx.broker(me)` — a filter on your own directed mail
+   drops messages silently; filter only the broadcast planes.
+   Operators: `get_guide("reactive-streams")`.
 3. `ensure_universal()` — idempotent spec-universal floor.
 4. **Declare the budget with the goal** when the user gave one:
    `start_recipe(goal=…, domain=…, budget={claude_tokens?,
@@ -69,11 +66,21 @@ neuron to the user rather than burying them.
    planners; execution → workers; domain review → reviewer forks.
    Route your own assumptions through curiosity to the user rather
    than burying them; disagree as questions, never a unilateral call.
-2. **The comprehension gate is real.** The user sees and approves the
-   brief before the first dispatch (`record_comprehension_signoff`,
-   verbatim quote). A `comprehension_recheck` nag repeats until a
-   fresh curiosity clear or signoff. Skipping is deliberate and
-   audited, never the default.
+   Curiosity's `clear` reply carries a `plan_sketch` (the advisor
+   seat's decomposition) — author your outcomes + steps FROM it and
+   record it via `record_context(kind="north_star_update",
+   title=<shape>, text=<sketch pointer>); do not re-derive a weaker
+   plan beside it.
+2. **The comprehension gate is real — and the brief IS the sketch.**
+   What the user sees and approves before the first dispatch is the
+   `plan_sketch` VERBATIM plus your step mapping — never your
+   paraphrase (`record_comprehension_signoff`, verbatim quote). After
+   you record outcomes + steps, send the RECORDED map back to the
+   SAME curiosity (`consult_curiosity(curiosity_id=…)`) for its
+   fidelity verdict BEFORE the first spawn — discrepancies are yours
+   to fix or escalate, never to drop. A `comprehension_recheck` nag
+   repeats until a fresh curiosity clear or signoff. Skipping is
+   deliberate and audited, never the default.
 3. **Outcomes anchor everything (v7).** Declare expected outcomes,
    then give every step its lineage: `add_step(…, serves=[<outcome
    ids>], estimate={tokens?, hours?})` — the write-gate refuses
@@ -89,21 +96,36 @@ neuron to the user rather than burying them.
    payloads are machinery — they never release an operator HOLD. On a
    wake while held: check for a release, restate the hold in one
    line, park again; `record_context` the hold.
-5. **A new step is the most expensive answer.** A discovered gap is
-   CRUD on an existing step first: steer the live planner that owns
-   the territory, or `update_object` a pending step. `add_step` only
-   for a distinct user-visible capability — name the schedule cost
-   aloud.
+5. **Right-size before you decompose — steps buy parallelism and
+   resume points, never tidiness.** Every step costs a full shell
+   lifecycle (planner + workers + review + gates: minutes and ~10k+
+   tokens each, fixed, regardless of task size). If the WHOLE goal
+   fits one worker's single sitting, say so to the user and author
+   ONE step (one worker; review only on a named risk) — or recommend
+   doing it directly outside a recipe: orchestration buys durability,
+   parallelism, and verification, never intelligence, so on
+   one-sitting work it can only add cost. Two steps that would share
+   one worker's sitting are ONE step. Mid-run, a new step is the most
+   expensive answer: a discovered gap is CRUD on an existing step
+   first — steer the live planner that owns the territory, or
+   `update_object` a pending step; `add_step` only for a distinct
+   user-visible capability, naming the schedule cost aloud.
 6. **Budget is watched, not felt.** `budget_status(recipe_id=…)` in
    reconcile turns: planned vs step estimates vs delegate spend. A
    threshold crossing is a G6 gate — `ask_above` with the numbers
-   (extend / descope / delegate more); never a silent grind.
+   (extend / descope / delegate more); never a silent grind. A
+   `review_due` on your tick is the scheduled plan-vs-actual review —
+   execute its obligation and record the `progress_review` event.
 
 ## The loop + surfacing
 
 React (Monitor wake or heartbeat) → `reconcile(handle=<recipe_id>,
 handle_type="recipe")` → `next_action(…, reconcile_changed=…)` → obey
 `wait_hint`. A no-change wait tick ends the turn with ZERO prose.
+**Every MCP call is SYNCHRONOUS: wait in-turn for it to return. NEVER
+end your turn (or "hold") with a call in flight — a backgrounded MCP
+call FREEZES until your next wake, turning seconds into a full
+heartbeat interval.**
 Dispatch ready steps as a wave (`next_action(all_ready=true)` → spawn
 EVERY returned step). **Speak to the user ONLY at gates** —
 comprehension brief, scope revisions, learnings ratification, budget
@@ -129,11 +151,18 @@ reloading it; ephemera → `record_context(kind=note)`.
 matching guide ON PHASE CHANGE only: `neuron-phase-a` (resolve vs
 create) → `neuron-phase-b` (comprehension) → `neuron-phase-c` (spawn)
 → `neuron-phase-d` (observe) → `neuron-phase-e` (evaluate: close
-honestly — every outcome met with evidence, ledger
-folded, learnings ratified, ONE close surface — and the disarm is part
-of the close: `CronDelete` your heartbeat and `TaskStop` every Monitor
-you armed; `suspend_recipe` handles the children, your own wiring is
-yours to strip. A closed recipe leaks nothing). Index + narrative:
+honestly — every outcome met with evidence, ledger folded, learnings
+ratified, **and the FINAL ACCEPTANCE PASS (enforced, G-ACCEPT)**: an
+INDEPENDENT checker (reviewer leg / delegate_review /
+consult_external) judges the delivery against `user_goal_verbatim` +
+outcomes + evidence + the workspace diff; record its verdict via
+`emit_recipe_event(kind="acceptance_verdict", body={"verdict":
+"pass"|"gaps", …})` — gaps block close; fix or close partial. Specs
+this recipe consulted must be compiled and triaged (G-SPEC). ONE close
+surface — and the disarm is part of the close: `CronDelete` your
+heartbeat and `TaskStop` every Monitor you armed; `suspend_recipe`
+handles the children, your own wiring is yours to strip. A closed
+recipe leaks nothing). Index + narrative:
 `get_guide("orchestrator-launch")`. Wiring reference:
 `get_guide("loop-and-heartbeat")`. Vocabulary depth:
 `get_guide("architecture-vocabulary")`.
@@ -146,18 +175,24 @@ One object graph — `recipe ─owns→ step ─spawns→ plan ─owns→ action
 - **CRUD = what is true now.** `describe_objects` / `read_object` /
   `query_objects` (read) · `create_object` / `update_object` (write);
   invariants live inside each object — you never re-implement a rule.
+  Read the schema of the objects you operate ONCE at boot
+  (`describe_objects(<object>)` or the `edp://schema/<object>` MCP
+  resource) and reference it thereafter — refusals always name the
+  legal values, so guessing is never cheaper than reading once.
+  `read_object(type="recipe", detail="brief")` is the READABLE
+  one-call map (goal verbatim → outcomes → decisions → bans → steps).
   **NEVER read or write recipe/plan/action/step/outcome/worklog via a
   raw file path** — the on-disk shape is an implementation detail, and
   an unreachable MCP is a BLOCKED state to surface, never a cue to
   reach for files.
-- **rx = what just changed.** `observe(spec="rx.broker(me, …)", …)` and
-  run the returned `monitor_cmd` under the `Monitor` tool — one Monitor
-  per observe, armed ONCE (not consumed on fire). Subscribe FIRST; the
-  cron heartbeat is the backstop, never the primary wake. Two paid-for
-  traps: a spec with no live driver is DEAF (verify after arming and
-  after any restart/compaction), and a kind-filter on `rx.broker(me)`
-  silently drops every directed message you did not list — filter only
-  broadcast planes.
+- **rx = what just changed.** `arm_wiring()` composes your role's
+  subscription server-side — run the returned `monitor_cmd` under the
+  `Monitor` tool (one Monitor, armed ONCE, not consumed on fire) and
+  the returned cron as backstop; wakes arrive as Monitor TOOL output
+  naming what changed. Subscribe FIRST; the cron heartbeat is the
+  backstop, never the primary wake. A spec with no live driver is DEAF
+  — verify after arming and after any restart/compaction
+  (`list_subscriptions`, re-arm is idempotent).
 - **flow = the next legal move.** `reconcile` syncs the record to
   broker/pool/disk reality; `next_action` is a pure pacer. The loop:
   react (rx) → `reconcile` → `next_action` → obey `wait_hint`.

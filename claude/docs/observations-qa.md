@@ -1,0 +1,328 @@
+# Observations — Q&A rounds, 2026-08-17
+
+Working list of changes from the Q&A rounds. **STATUS (end of implementation
+pass, same day): 1497 tests pass; 1 pre-existing environment failure
+(Phoenix :6006 liveness check — stack down; fails on HEAD too).**
+
+| Item | Status |
+|---|---|
+| F1 role-scoped registration + drift test + eda.bat | DONE |
+| F2 compiled recipe brief (renderer / save hook / detail='brief' / drift test) | DONE (Layer 1; Layer-2 advisor distillation deferred) |
+| F3 shadow OFF by default + arm_wiring + cards rewired | DONE (files kept for EDP_SHADOW=1 diagnostic; delete after stability) |
+| F3b snapshot planes emit {snapshot, changed} | DONE |
+| F4 shadow brief silent cut | RETIRED with F3 |
+| F5 steer_worker verb + planner grant + card | DONE |
+| F6 flow-down gate: advisory at dispatch, enforced at step close | DONE |
+| F7 dead-letter warning to sender on broker_send | DONE |
+| F8 worker cron literal | RETIRED by arm_wiring (numbers resolve server-side) |
+| F9 classic reviewer deafness | DONE (reviewer card boots arm_wiring) |
+| F10 where-you-stand / brief pointers in cards | DONE |
+| F11 advisor drafts the decomposition (plan_sketch on clear) | DONE (card-level) |
+| F12 scheduled progress review (review_due + progress_review event) | DONE |
+| F13 ADJUDICATE rides every plan tick | DONE |
+| F15 schemas as MCP resources + read-once discipline | DONE (edp://schema/{name}) |
+| F16 neuron identity (eda.bat EDP_ROLE=neuron) | DONE |
+| F17 worked examples restored selectively | PARTIAL (planner sketch/concern example; sweep the other laws next) |
+| F19 evidence-carrying WAIT; pool-side crash publish verified pre-existing | DONE |
+| F20 G-SPEC close gate | DONE |
+| F21 G-ACCEPT final acceptance pass | DONE (EDP_ACCEPT_GATE kill-switch; conftest defaults gates off for the legacy suite) |
+| F22 G-CHALLENGE + challenge_waiver | DONE — REVISED same day (owner: "a worker could have been working — we just lose time"): advisory at dispatch, ENFORCED at step close; workers build while the plan is challenged |
+| F23 seats verified; EDA_MODEL override in eda.bat | DONE |
+
+## F24 — NEW (live incident, 2026-08-17 3pm): in-flight MCP calls freeze across turn boundaries
+- Measured: a4 reviewer `pool_spawn_worker` dur_ms=1,656,256 (27.6 min) with ZERO
+  MCP-server log activity 09:10:43→09:38:16, then full execution in ~3 s at the
+  planner's next heartbeat tick. Workers spawned in 1.5-2 s because their calls
+  returned mid-turn. Mechanism: the planner ended its turn with the dispatch in
+  flight; the harness backgrounded it (task k31hrfdlr) and the stdio MCP session
+  suspended until the next wake (= the 1800 s heartbeat, exactly the observed gap).
+- Fixes applied: planner card drive-loop law "NEVER end your turn with a spawn in
+  flight"; `_reviewer_git_block` moved off the event loop (asyncio.to_thread +
+  15 s budget) so the sync git subprocess can no longer push a dispatch across a
+  turn boundary on a big workspace.
+
+## F25 — NEW (live incident #2, s4 planner wedge + dead wiring)
+- Three failures in one transcript:
+  1. **Terminal-plan wedge** — step reopened (o5 fix) while its plan sat
+     terminal-succeeded; plan_id is deterministic so no fresh plan; terminal
+     refused re-create → no author surface. FIX: `create_plan(reopen=true)`
+     resets terminal → dispatching, preserves done actions, worklogs the
+     reopen; refusals on the old paths now name it.
+  2. **Empty rewire after GC** — the observe TTL sweep took an idle shell's
+     indexed spec artifacts; specs_for_handle skipped them; the resume rewire
+     handed back EMPTY wiring and the shell hand-composed a wrong monitor
+     (FileNotFound exit 1). FIX: GC never sweeps indexed sids
+     (all_indexed_sids); an empty hand-back carries empty_wiring_note naming
+     arm_wiring().
+  3. **Monitor "exit 15, no stderr"** — no code path in driver/pool exits 15;
+     signature of harness-side task termination. UNRESOLVED — watch whether
+     it recurs post-restart with arm_wiring-composed specs; the planner's
+     "driver refuses terminal plans" theory is wrong (the driver doesn't
+     read plan state).
+
+## F26 — NEW (live incident #3, close_recipe backgrounded + froze)
+- "Close failed on a transient G-COMMIT timeout (git status >10s)" then the
+  retry backgrounded again — the F24 pattern at a second call site: the
+  commit gate ran `git status`/`rev-parse` as SYNC subprocesses on the MCP
+  event loop; a slow workspace pushed the call past the harness's background
+  threshold; the neuron "held" with the call in flight → frozen until the
+  next tick.
+- FIX (superseded same day by owner ruling — "remove that piece of
+  garbage"): `_git_capture` is DELETED outright. MCP tool calls launch NO
+  external programs. The reviewer brief's `git` entry is now an INSTRUCTION
+  (run status/diff/log YOURSELF in the named workspace); the G-COMMIT close
+  gate is RETIRED (`commit_waiver_ref` accepted-and-ignored for caller
+  compat); committed-tree evidence = the reviewer's own in-shell git re-run
+  + the worker's stated landed commit + the G-ACCEPT pass. A concurrent
+  live memory confirmed the in-server git check hung >1800 s on a clean
+  Windows repo. The neuron card keeps the in-flight law from F24.
+- HOST ADVICE (not code): on big workspaces run
+  `git config core.fsmonitor true` + `git config core.untrackedCache true`
+  — `git status` drops from ~10 s to sub-second, which removes this entire
+  class at the source.
+
+## F27 — NEW (jobsearch post-mortem): named artifacts are requirement sources
+- FULL TRACE of the "poor results" recipe: F11 WAS live — Fable (curiosity)
+  authored the plan_sketch; the neuron transcribed it near-verbatim into
+  o1-o5/s1-s5; the planner + worker implemented it faithfully. Fable
+  ground-truthed the skill DIR (file list) and its overrides/contract but
+  never carried the skill's own bars ("20-30 validated results, >=40
+  inspected, multiple source families") into any outcome — zero grep hits
+  anywhere in the record. The "ONE test run" narrowing that produced 4 rows
+  is literally the sketch's risk-note line, propagated with perfect
+  fidelity through neuron→planner→worker. Also found: the a2 worker relaxed
+  the user's recorded "Keep strict (require disclosed pay)" answer
+  unilaterally (documented in the run log, never escalated).
+- FIX (applied): curiosity card — "A named artifact IS a requirement
+  source": read it, carry its measurable bars into outcomes verbatim;
+  narrowing a bar is a SCOPE decision to ASK the user, never a risk note.
+  G-ACCEPT judge instruction now includes "ANY artifact the goal NAMES".
+- Open: worker-side guard for "recorded user answer overridden by caveat"
+  (the disclosed-pay relaxation should have been an ask_above).
+
+## F28 — NEW: right-sizing at authoring (the "5 steps vs one ChatGPT response" question)
+- Root economics: orchestration buys durability/parallelism/verification,
+  never intelligence — its per-step fixed cost (planner+workers+review+
+  gates, minutes + ~10k+ tokens each) cannot amortize on one-sitting work,
+  so on small goals the fleet is mathematically incapable of beating one
+  direct pass. Nothing in the framework asked "should this decompose at
+  all?" — the cards celebrated decomposition, so a one-hour job became 5
+  serial steps × full ceremony.
+- FIX (applied): neuron Law 5 rewritten — "Right-size before you decompose:
+  steps buy parallelism and resume points, never tidiness; a one-sitting
+  goal is ONE step (or done directly outside a recipe); two steps that
+  share one worker's sitting are one step." Curiosity sketch rule — line 1
+  of every plan_sketch states whether the goal fits one worker's sitting.
+
+## F29 — NEW: the sketch→map seam gets eyes (curiosity survives to verify)
+- Hole: curiosity self-closed the moment it delivered plan_sketch; the
+  neuron's transcription into outcomes/steps was reviewed by nobody, and
+  the user's comprehension signoff showed a paraphrase brief, not the
+  sketch. (The neuron's "EnterPlanMode" analog existed — AWAIT_USER — but
+  approved a summary of a copy of the plan.)
+- FIX (applied, card-level): (1) the comprehension brief shown to the user
+  IS the plan_sketch verbatim + step mapping; (2) clear=true no longer
+  closes curiosity — Step 4: the neuron sends the RECORDED outcomes+steps
+  back to the same shell, which diffs them against its own sketch and
+  replies fidelity ok/discrepancies; it closes only after that reply (or
+  reap on abandonment). Advisory-weight by design (no new hard gate —
+  the G-CHALLENGE serialization lesson).
+
+Open threads: delete shadow.py/shadow_spawner.py once stable; F2 Layer-2
+(advisor-distilled narrative, epoch-stamped); F17 full example sweep;
+steer-ack ledger nested-ack fix; rx.orphaned dash/colon fix (excluded from
+composed wiring specs meanwhile).
+
+Original findings follow (historical record of the Q&A).
+
+**Doc-wide principle (owner ruling, round 2):** every agent-visible write is strategic —
+short, imperative, one worked example, one paragraph of big-picture. No 20-30k-token
+guides; agents treat unexplained bulk as optional. Validation moves INTO code (evidence
+pushed into instructions) instead of expecting agents to burn tokens validating.
+
+## F1 — Per-role tool registration (revised, round 2)
+- `.mcp.json` pins `EDP_ROLE_SCOPE=warn`; all ~87 tools visible everywhere.
+- Fix:
+  1. MCP server registers ONLY `toolset_for_role(EDP_ROLE)` at startup.
+  2. REVISE `ROLE_TOOLSETS` and add a drift test: every registered tool class must
+     appear in >=1 role set or an explicit `_UNSCOPED`/retired list — so new tools
+     can never silently fall outside the role map.
+  3. BASE SHELL (spawned by `eda.bat`, not the pool): stamp `EDP_ROLE=neuron`,
+     pass `--dangerously-skip-permissions`, and pin `--model claude-opus-4-8`
+     (models.json binds pool spawns only; the base shell must self-pin).
+
+## F2 — Compiled recipe/plan brief (revised: idempotency + coverage, round 2)
+- Recipe is bookkeeping-shaped; only readable narrative is state-synthesis.md
+  (step-close only, opt-in). Specs' compiled.md proves the readable form works.
+- Fix: a PURE renderer `render_recipe_brief(recipe) -> markdown` (goal verbatim →
+  outcomes+met → active decisions as prose → constraints/bans → open steps with
+  concerns + acceptance_sketch → pending). Same for plans.
+  - **Idempotency guarantee:** the renderer is a deterministic pure function of the
+    stored JSON — same state, byte-identical brief. Regeneration hooks into
+    `RecipeStore.save()`/`PlanStore.save()` (every mutation path already funnels
+    there), so the brief can never lag the record.
+  - **New-field coverage:** a CI drift test walks the Pydantic schema and asserts
+    every field is either rendered or named in an explicit EXCLUDED list — a new
+    recipe/plan field fails CI until the renderer accounts for it.
+  - **Concerns visibility:** concerns get a dedicated brief section AND repeat on
+    each step/action row; worker/reviewer grounding PREPENDS the brief (or its
+    scoped slice) so a subagent cannot miss cross-cutting obligations.
+  - **Quality (round 3):** code guarantees structure/completeness/currency, NOT
+    prose quality. Two layers: Layer 1 = deterministic skeleton (idempotent, the
+    contract). Layer 2 = advisor-seat distilled narrative (compiled.md pipeline
+    shape: LLM distills, gate reviews), regenerated at step close / on demand,
+    STAMPED with the grounding epoch it distilled at (LLM output can't be
+    idempotent — staleness must be readable instead). Source quality: write gates
+    + strategic-writing rule apply to agents authoring decisions too.
+
+## F3 — REMOVE THE SHADOW (owner ruling, round 2: "I just want it gone")
+Replaces the earlier Monitor-tail proposal. The shadow hijacks the console, delivers
+machine events as user-role text, and killed agent-owned wiring. Restore monitor+cron
+for EVERY role (the neuron pattern), with the token cost solved at the tool layer:
+- New MCP tool **`arm_wiring()`** (the "form you tick"): reads role+handle from env,
+  composes the role's default rx spec server-side (the same table shadow_spawner's
+  ROLE_SPECS held), creates the subscription, and returns pre-filled, verbatim:
+  `monitor_cmd` (run under Monitor) + CronCreate args (canonical prompt, resolved
+  heartbeat number). Optional flags for extras (e.g. `watch_plan=true`). Boot wiring
+  becomes 3 calls total (arm_wiring → Monitor → CronCreate); no rx-DSL learning, no
+  guide reading, no guessing.
+- Worker/reviewer brief delivery returns to the classic boot (check_inbox +
+  read_object) — 2 tool calls, correct attribution, full untruncated grounding
+  (also retires F4's silent [:4000] cut, which dies with the shadow).
+- What the shadow also did and its replacements:
+  - crashed-shell flowback → MOVES POOL-SIDE (round 3): the pool is the OS parent
+    of every shell; on process exit without recorded terminal status the POOL
+    publishes `crashed` to the parent inbox. Crash detection must never depend on
+    the crashed party emitting anything.
+  - close-on-terminal → agent-owned close (cards) + Stop-hook backstop +
+    pool close_when_idle (exist).
+  - driver supervision (deaf-subscription re-arm) → `arm_wiring` re-issue is
+    idempotent (reused=true); add a liveness line to reconcile output: "your driver
+    for sub-X emitted last at T" so deafness is visible in the loop the agent
+    already runs.
+- Default `EDP_SHADOW=0`, then delete shadow.py/shadow_spawner.py once stable.
+
+## F3b — Classic Monitor must output WHAT CHANGED (round 2)
+- Driver already emits full event dicts for event planes (broker/worklog/events).
+  Snapshot planes (rx.pool/rx.plan) emit the changed snapshot, not the delta.
+- Fix: for snapshot planes, emit `{"event": {...}, "changed": {<key>: {from, to}}}`
+  so a wake names the transition (e.g. a4: in_progress→failed) without a reconcile
+  round.
+
+## F4 — Shadow brief `[:4000]` silent cut — RETIRED BY F3 (shadow removal).
+
+## F5 — Planner steer path
+- Card says "send a steer over the broker"; planner toolset likely lacks broker_send
+  (memory: only reply() on worker-opened threads works).
+- Fix: routed `steer_worker(action_id, body)` verb — resolves address from the plan,
+  enforces steer_ack correlation. Verify ROLE_TOOLSETS while doing F1.
+
+## F6 — Flow-down gate serializes authoring; first worker spawns late
+- `_step_flowdown_gaps` refuses ANY dispatch until every concern/sketch line is
+  covered → full plan before first spawn, contradicting "author+dispatch interleaved".
+- Fix: gate per dispatched action; full-coverage check moves to plan ratification.
+
+## F7 — Broker dead letters (revised: WHO ACTS, round 2)
+- Send to a nonexistent/never-polled inbox succeeds silently.
+- Fix: surface to the SENDER, synchronously — the send result carries
+  `delivered_to_known_inbox: false` + the known-alias suggestions; the sender is the
+  one shell guaranteed alive and contextful at that moment. Backstop: reconcile
+  advisory to the neuron listing aged undelivered mail. Nothing async-only.
+
+## F8 — worker.md literal `${EDP_WORKER_HEARTBEAT_MIN:-5}` in cron
+- Fix: bake the resolved number at bootdocs compile time. (Matters more post-F3:
+  every role arms classic cron again — via arm_wiring, which resolves it server-side.)
+
+## F9 — Classic reviewer deafness
+- reviewer.md arms no wiring. Post-F3 fix: reviewer card boot = arm_wiring like
+  every other role.
+
+## F10 — "WHERE YOU STAND" header in every brief/card
+- Goal verbatim (1 line) → your step → your action → what accepting it unblocks →
+  one paragraph of WHY (FSM anti-drift purpose). Strategic-writing rule applies.
+
+## F11 — Advisor seat should PLAN, not just interrogate
+- Curiosity (Fable) only asks questions; never drafts decomposition, never reads code.
+- Fix direction: comprehension produces a plan-quality readable artifact (advisor
+  drafts goal decomposition/workstreams as markdown, repo access allowed); recipe
+  becomes the durable state of that plan via F2's brief. Keep the user-question loop;
+  drop the ceremony that doesn't serve it.
+
+## F12 — Scheduled plan-vs-actual review ("scrum")
+- Every N step closes or M hours, next_action emits a REVIEW instruction:
+  budget_status + outcome coverage + open risks → one gate surface to the user.
+
+## F13 — Plan FSM never says ADJUDICATE
+- Open challenges surface only as spawn refusals. Fix: plan next_action emits
+  ADJUDICATE_CHALLENGES when the sidecar has open ids.
+
+## F14 — superseded by F21 (final acceptance pass covers close-time adversary).
+
+## F15 — Schema: read once, reference by symbol (revised again, round 3)
+- Round-2 "schema in tool descriptions" WITHDRAWN as spoon-feeding (owner ruling).
+- Three-tier rule:
+  1. Refusals name legal values (error messages doing their job — kept).
+  2. NO incident lore in agent-visible text ("X failed once → always Y" is banned);
+     incidents live in code gates + tests only. Guides stay generic + agentic.
+  3. Canonical object schema is READ ONCE at boot and referenced thereafter —
+    expose recipe/plan/action/step as MCP RESOURCES with stable URIs
+    (harness supports ReadMcpResource); cards say "your objects: edp://recipe,
+    edp://plan — read once at boot" and never restate a field. Cache-friendly
+    (stable early context, pays once vs per-request description bloat).
+    Compaction risk handled by the existing reground path (re-read one resource).
+
+## F16 — Neuron identity
+- Fold into F1 item 3: eda.bat stamps EDP_ROLE=neuron; whoami resolves neuron inbox
+  from open-recipe state, not a prose note.
+
+## F17 — Restore worked examples, not length
+- Baseline cards (474/530/209 lines) worked because of examples. Keep the diet;
+  add one 2-3-line example per authoring-law line (acceptance_sketch,
+  sketch_covered_by, concerns). Strategic-writing rule applies.
+
+## F18 — Wave/pool coupling — subsumed by F19 (evidence-carrying instructions).
+
+## F19 — NEW: WAIT instructions must carry evidence (the FSM-trust fix)
+- Observed: worker crashes, FSM says wait, neuron sits 30 min. Agents either trust
+  the FSM blindly or would burn 3-10k tokens validating it.
+- Fix: validation moves into code. `_enrich_wait` already names awaited actions —
+  now ALSO probe pool liveness for each awaited handle and stamp it into the WAIT
+  payload: `awaiting: [{handle, liveness, last_worklog_ts}]`. A dead/phantom handle
+  makes the instruction itself say "a4 is DEAD — reconcile will re-dispatch; do not
+  wait". Cheap agent-side check when doubt remains: `status_ping` (~1 liveness call
+  + 1 worklog line, few hundred tokens) — name it in the card as THE sanctioned
+  doubt-check.
+- Round 3 — "what if the crash produces no event?": detection never depends on
+  events from the child. Layer 1: pool-side exit→publish (see F3 — OS-level,
+  guaranteed). Layer 2: the liveness stamp here is a PULL executed when the WAIT
+  is built; the cron heartbeat guarantees a tick, so worst-case detection latency
+  = one heartbeat interval, bounded and known.
+
+## F20 — NEW: recipe closed while specialist never compiled
+- Root cause: Guard B fires only at worker spawn when an action carries spec_ids.
+  The TRAINING flow (train_specialist → write_specialist_doc → pending_review) has
+  no close gate; and specs are GLOBAL, so planners can stamp old recipes' specs —
+  a recipe can look spec-healthy while its own training died.
+- Fix: close_recipe gate — refuse while (a) this recipe spawned specialist sessions
+  whose spec has no compiled doc, or (b) neurons this recipe created sit in
+  pending_review untriaged. Reconcile advisory when a training shell dies.
+
+## F21 — NEW: final goal-vs-delivery acceptance pass (the "did I get what I asked" gate)
+- Today close = outcomes met with evidence + G-OUTCOME waivers + reviewer legs.
+  NOTHING re-reads user_goal_verbatim against the delivered artifact end-to-end.
+- Fix: close_recipe gains a terminal gate: an independent acceptance verdict —
+  a checker/advisor-seat pass fed (user_goal_verbatim + outcomes + evidence +
+  workspace diff) producing pass/gaps, recorded as an artifact; gaps block close;
+  the USER's signoff is the final override. Enforced by the close gate, not by
+  discipline.
+
+## F22 — NEW: adversarial challenge is never called — enforce it
+- Owner observation: codex usage never changes around a recipe; no agent calls it.
+- Fix: extend G-ADJ — a plan's FIRST non-review dispatch requires either >=1
+  recorded challenge for the plan or an explicit recorded waiver
+  (record_context kind='challenge_waiver', rationale). Plus F13's instruction.
+
+## F23 — Seats verified (round 2)
+- models.json is correct post-investigation: judgment/builder/checker=claude-opus-4-8,
+  advisor=claude-fable-5 (curiosity only). No Fable residue in the registry; the
+  Fable-for-all run left no config. Remaining: eda.bat model pin (F1 item 3).

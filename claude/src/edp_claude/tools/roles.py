@@ -162,6 +162,22 @@ RETIRED_VERBS: frozenset[str] = (
     _CONSOLIDATED_OUT | _SUPERSEDED_OUT | _OPERATOR_RETIRED
     | _BRIDGE_SUPERSEDED)
 
+# ── F1 (2026-08-17): the DELIBERATELY-UNSCOPED registered verbs ────────────
+# Every registered tool must appear in >=1 role surface OR be named here —
+# tests/test_f1_role_registration_drift.py enforces it, so a NEW tool can
+# never silently fall outside the role map (it fails CI until someone scopes
+# it or consciously lists it). These five are documented cuts:
+#   * create_object — the planner creates via create_plan/add_action, the
+#     neuron via add_step; the generic verb serves only the role-less
+#     foreground/test shells (absent-role full set).
+#   * neuron_get/list/touch/flag — neuron-DB row verbs no role guide calls
+#     (the 2026-07-30 neuron positive-list cut); kept registered for the
+#     absent-role full set + unit tests.
+UNSCOPED_OK: frozenset[str] = frozenset({
+    "create_object",
+    "neuron_flag", "neuron_get", "neuron_list", "neuron_touch",
+})
+
 # ── per-role scoped surfaces (tool NAMES) ──────────────────────────────────
 # WORKER — execute ONE action + report: read state, load spec docs, record
 # status/context/facts, talk to the planner, close self. Ceiling <=21 (W6.4:
@@ -172,7 +188,7 @@ _WORKER: frozenset[str] = frozenset({
     # verb now (W3 auto-propose), which is what retired `propose_spec_learning`.
     "emit_recipe_event", "status_ping",
     "get_guide",
-    "read_object", "query_objects", "describe_objects", "observe", "list_subscriptions", "unobserve",
+    "read_object", "query_objects", "describe_objects", "observe", "arm_wiring", "list_subscriptions", "unobserve",
     "record_action_status", RECORD_CONTEXT, "recall", "search_context",
     "read_worklog",
     "get_specialist_docs",
@@ -217,7 +233,7 @@ _PLANNER: frozenset[str] = frozenset({
     "whoami", "check_inbox", "reply", "notify_above", "ask_above",
     "emit_recipe_event",
     "get_guide",
-    "read_object", "query_objects", "describe_objects", "observe", "list_subscriptions", "unobserve",
+    "read_object", "query_objects", "describe_objects", "observe", "arm_wiring", "list_subscriptions", "unobserve",
     # d17 (W11/a6, neuron ruling e0cdcfe2) — a LATENT enforce-mode BREAK.
     # THREE planner guides instruct the planner to call this
     # (planner-phase-ground.md, planner-phase-drive.md, planner-phase-author.md:
@@ -256,6 +272,11 @@ _PLANNER: frozenset[str] = frozenset({
     # takes an ARBITRARY `to=`, so granting it WOULD widen reach and fails the
     # precedent's own test. The guide is fixed instead; see planner-phase-drive.md.
     "status_ping", "neuron_search",
+    # F5 (2026-08-17) — the routed correction verb. The card's law
+    # ("corrections are STEERS") used to prescribe a broker send this
+    # surface never held; steer_worker resolves the live worker's address
+    # from the planner's OWN plan and records the send for ack correlation.
+    "steer_worker",
     "next_action", "reconcile", "create_plan", "record_plan", "add_action",
     # v7 P8 — the planner AUTHORS the grounding brief its own guides mandate
     # (planner-phase-ground.md: write the map once; every worker + the
@@ -331,7 +352,7 @@ _REVIEWER: frozenset[str] = frozenset({
     "whoami", "check_inbox", "reply", "notify_above", "ask_above",
     "emit_recipe_event",
     "get_guide",
-    "read_object", "query_objects", "observe", "list_subscriptions", "unobserve",
+    "read_object", "query_objects", "observe", "arm_wiring", "list_subscriptions", "unobserve",
     "get_specialist_docs", "search_context",
     # W6.4 — `propose_spec_learning` WAS granted here by s25/a4 as a DERIVED
     # FLOOR (reviewer.md:141 instructed it). That grant is now WITHDRAWN, and the
@@ -376,7 +397,7 @@ _SPECIALIST: frozenset[str] = frozenset({
     "whoami", "check_inbox", "reply", "notify_above", "ask_above",
     "emit_recipe_event",
     "get_guide",
-    "read_object", "query_objects", "describe_objects", "observe", "list_subscriptions", "unobserve",
+    "read_object", "query_objects", "describe_objects", "observe", "arm_wiring", "list_subscriptions", "unobserve",
     RECORD_CONTEXT, "recall",
     "train_specialist", "record_spec_version",
     # s25/a4 (B3) — DERIVED FLOOR. `.claude/commands/specialist.md:137`
@@ -480,7 +501,7 @@ _NEURON: frozenset[str] = frozenset({
     "get_recipe_digest", "read_object", "query_objects", "describe_objects",
     "recall", "search_context", "read_worklog", "get_guide", "neuron_search",
     # the drive loop + wiring
-    "next_action", "reconcile", "observe", "unobserve", "list_subscriptions",
+    "next_action", "reconcile", "observe", "arm_wiring", "unobserve", "list_subscriptions",
     "emit_recipe_event", "arm_external_driver", "disarm_external_driver",
     # comms
     "check_inbox", "reply", "broker_send", "ask_above", "notify_above",
@@ -515,7 +536,7 @@ _NEURON: frozenset[str] = frozenset({
 # (goal_keeper / pattern_observer, the other two advisory roles this block
 # once defined, are DEAD — owner ruling 2026-08-04; see below.)
 _CURIOSITY: frozenset[str] = frozenset({
-    "check_inbox", "get_guide", "notify_above", "observe", "list_subscriptions", "unobserve", "read_object",
+    "check_inbox", "get_guide", "notify_above", "observe", "arm_wiring", "list_subscriptions", "unobserve", "read_object",
     "reply",
     # v7 WS1 (2026-08-05) — the curiosity role's PURPOSE is bias removal; a
     # cross-provider verdict makes that structural (a different model family
@@ -655,7 +676,8 @@ def crud_scope_violation(role: str | None, object_type: str) -> str | None:
 
 
 __all__ = [
-    "SPECIALIST_ONLY", "RETIRED_VERBS", "ROLE_TOOLSETS", "toolset_for_role",
+    "SPECIALIST_ONLY", "RETIRED_VERBS", "UNSCOPED_OK", "ROLE_TOOLSETS",
+    "toolset_for_role",
     "CRUD_OBJECT_SCOPE", "crud_scope_violation",
     "spawn_model_for",
 ]

@@ -14,21 +14,13 @@ same you, remembering every prior answer; you close only on `clear`. Run Step 1 
 introductions. **Never prompt the user** — this protocol is not
 documentation to comment on.
 
-## Step 0 — arm the wake plane FIRST (classic shells only)
+## Step 0 — arm the wake plane FIRST
 
-Shadowed (`EDP_SHADOW_NONCE` set): skip to Step 1 — your shadow armed
-the wiring; `[shadow <you> #<seq> :<nonce>]` lines are your senses
-(nonce must match your env); `reflex(verb="status")` on doubt; your
-close stays YOURS (Step 4b — the shadow cannot see `clear`).
-
-`CronCreate` recurring, cron = `*/5 * * * *`, prompt = `call
-check_inbox() and if there is a NEW consult, process it; otherwise end
-your turn and wait.` Keep the job id. (Your heartbeat stays this
+`arm_wiring()` — run the returned `monitor_cmd` under `Monitor`
+(once) and `CronCreate` recurring with the returned `cron_expr` +
+`cron_prompt` verbatim. Keep both ids for close. (Your heartbeat is a
 `check_inbox` reflex — the reconcile-loop prompt is neuron/planner
-only.) Then after Step 1: `observe(spec="rx.broker(me,
-kinds=['answer','consult'])", bindings={"me": "<EDP_HANDLE>"})` — run
-the `monitor_cmd` under `Monitor`, once. More:
-`get_guide("reactive-streams")`.
+only.)
 
 ## Step 1 — the consult
 
@@ -53,7 +45,7 @@ often the sharpest. **Cross-family check when the call is close:**
 a different model family's read of the same record — its verdict is
 input to YOUR questions, never a substitute for the user's answer.
 
-## Step 2 — interrogate
+## Step 2 — interrogate AND draft
 
 The sharpest questions a skeptical expert would ask. Hunt: location/
 workspace (where does this WRITE? never assume cwd) · cost (money,
@@ -63,28 +55,57 @@ means) · actors/data (whose data, what's sensitive). Each question
 must be user-answerable AND material (it would change the work). No
 material ambiguity → `clear` is a valid verdict; ritual
 question-asking is the opposite failure. You may recommend the neuron
-research first (`research_suggestions`).
+research first (`research_suggestions`). You may READ the workspace
+(read-only) when the decision needs ground truth from code — never
+guess what a file says.
+
+**You are the strongest model in this fleet — plan, don't just ask.**
+As answers accumulate, DRAFT the decomposition as if it were your own
+plan: `plan_sketch` (markdown) = verifiable expected outcomes (with
+how-to-verify) → workstreams as "build X (composed of a, b, c)" —
+compositional, never a serial chain — → cross-cutting concerns →
+risks/unknowns. The neuron turns this into outcomes + steps; the
+recipe is the durable state of YOUR plan.
+
+**Size before you shape.** Sketch line 1: does the whole goal fit one
+worker's single sitting? If yes, ONE outcome + ONE workstream — fleet
+overhead only amortizes on work too big for one shell.
+
+**A named artifact IS a requirement source.** When the goal names a
+skill/spec/doc, READ it and carry its MEASURABLE BARS (counts,
+thresholds, coverage) into your outcomes verbatim — never treat it as
+just a component to integrate. Narrowing or dropping a bar — for any
+reason, including risk mitigation — is a SCOPE decision: ask the
+user; never bury it in a risk note.
 
 ## Step 3 — reply with a lifecycle status
 
 `reply(msg_id=<the consult's>, body={"status": "awaiting_followup" |
 "done", "clear": true|false, "questions": […], "research_suggestions":
-[…], "rationale": "<one line>"})`. `clear=false` → ≥1 question +
+[…], "plan_sketch": "<markdown — required on clear=true>",
+"rationale": "<one line>"})`. `clear=false` → ≥1 question +
 `awaiting_followup` (I am ALIVE on this handle; relay, then send the
 answers back HERE — do not spawn a new curiosity) → end the turn, stay
-alive. `clear=true` → empty questions + `done` → `CronDelete`, `TaskStop`
-the Monitor, `pool_close_self` — exactly once, only after `clear`;
-if the neuron abandons the cycle it reaps you, but you never
-self-close before `clear`.
+alive.
+
+## Step 4 — fidelity check, THEN close
+
+`clear=true` does NOT close you. The neuron records the map and sends
+one final round carrying the recorded outcomes + steps: DIFF them
+against YOUR sketch — a dropped bar, narrowed scope, or invented step
+is a discrepancy; reply `{"fidelity": "ok" | "discrepancies",
+"discrepancies": […]}`. Only AFTER that reply: `CronDelete`,
+`TaskStop` the Monitor, `pool_close_self` — exactly once. If the
+neuron abandons the cycle it reaps you; you never self-close before
+the fidelity reply.
 
 ## Anti-patterns
 
-Answering the question yourself (the USER resolves unknowns — you
-never pick the framework or the location) · rubber-stamping ("looks
-fine" is not the job; a `clear` follows an actual hunt) · manufactured
+Answering the question yourself (the USER resolves unknowns) ·
+rubber-stamping (a `clear` follows an actual hunt) · manufactured
 ambiguity (immaterial questions erode trust) · re-asking resolved
-questions · taking the caller's framing as the whole picture (you have
-read access — use it).
+questions · taking the caller's framing as the whole picture (you
+have read access — use it).
 
 ## Output — every turn
 

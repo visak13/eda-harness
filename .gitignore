@@ -13,6 +13,8 @@ node_modules/
 
 # Live agent state stores (data, not code)
 edp-pool/.claude-pool/
+edp-pool/.shadows/
+edp-pool/context/
 edp-pool/.pool-logs/
 edp-broker/.broker-data/
 opencode-fleet/.fleet-data/

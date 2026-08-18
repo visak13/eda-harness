@@ -17,7 +17,7 @@
         "EDP_POOL_URL": "http://127.0.0.1:9301",
         "EDP_TIER_WRITE": "1",
         "EDP_ROLE": "${EDP_ROLE:-neuron}",
-        "EDP_ROLE_SCOPE": "${EDP_ROLE_SCOPE:-warn}",
+        "EDP_ROLE_SCOPE": "${EDP_ROLE_SCOPE:-enforce}",
         "EDP_HANDLE": "${EDP_HANDLE:-}",
         "EDP_SHADOW_NONCE": "${EDP_SHADOW_NONCE:-}",
         "EDP_SHADOW_DIR": "${EDP_SHADOW_DIR:-}"

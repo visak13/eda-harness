@@ -72,8 +72,13 @@ ROLE_HEARTBEAT_S: dict[str, float] = {
 
 
 def shadow_enabled() -> bool:
-    return os.environ.get("EDP_SHADOW", "1").strip().lower() not in (
-        "0", "false", "no", "off")
+    # F3 (owner ruling 2026-08-17): the shadow is RETIRED — default OFF.
+    # Console-typed wakes arrived as user-role text and read as operator
+    # commands; wiring returns to agent-owned monitor+cron for every role
+    # (the arm_wiring tool composes it server-side). EDP_SHADOW=1 remains
+    # a temporary diagnostic opt-in until the files are deleted.
+    return os.environ.get("EDP_SHADOW", "0").strip().lower() in (
+        "1", "true", "yes", "on")
 
 
 def parent_of(handle: str) -> str:
