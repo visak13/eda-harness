@@ -133,17 +133,23 @@ Use ABSOLUTE paths (deliverables usually live outside this repo). For
 non-checkable deliverables leave `verify` null and rely on the
 evidence string + review.
 
-## Step 5 — every plan carries a review leg (done is gated, never self-declared)
+## Step 5 — reviews are MEASURED, not blanket (done is gated, never self-declared)
 
 1. Every checkable action carries a REAL `acceptance.verify` (Step 4).
-2. Every plan includes an explicit review/verify leg, declared
-   `add_action(..., leg_kind="review")`. CODE work gets a dedicated
-   reviewer — never the builder self-blessing its own output; for
-   docs/analysis a deterministic `verify` block can suffice. Dispatch
-   it `pool_spawn_worker(..., role="reviewer")`: the dispatcher
-   composes and sends the review brief before the shell exists, and a
-   failed send refuses the dispatch (enforced). The verdict surface
-   (`record_branch_verdict`) is reviewer-only (enforced).
+2. Stamp `review_policy` at `create_plan` ({triggers, justify}) and add
+   a `leg_kind="review"` action ONLY where a named risk trigger applies
+   (spec-required surface · protected surface · novel decision ·
+   acceptance complexity · first action on a spec) — the write-gate
+   REFUSES an unjustified review leg, and blanket per-action review is
+   refusal-class. Everything else closes on worker self-verification
+   with evidence (its `acceptance.verify` running is the gate; a
+   deterministic `verify` block often suffices for docs/analysis). What
+   never changes: the builder never blesses its own output — where a
+   review leg exists, dispatch it `pool_spawn_worker(...,
+   role="reviewer")` (the dispatcher composes and sends the review
+   brief before the shell exists; a failed send refuses the dispatch —
+   enforced), and the verdict surface (`record_branch_verdict`) is
+   reviewer-only (enforced).
 3. **When a verdict returns `fixed_inline=true`**, the FSM latches a
    `DISPATCH_VERIFY_LEG` advisory naming the action: author ONE small
    `leg_kind="verify"` action whose description
@@ -152,8 +158,8 @@ evidence string + review.
    worker. Judgment-free — the reviewer-reviews-reviewer regress stops
    there.
 
-Don't over-engineer past this: actions reach `done` ONLY on evidence +
-a reviewer pass.
+Don't over-engineer past this: actions reach `done` ONLY on evidence —
+plus a reviewer's independent re-run where a trigger earned one.
 
 ## When the plan is written
 

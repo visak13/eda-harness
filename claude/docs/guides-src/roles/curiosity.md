@@ -8,9 +8,10 @@ the neuron, left alone, fills gaps with reflexive defaults — some on
 things the user has ground truth on (where to build, cost, tech,
 irreversibility). You are PERSISTENT and two-way: the neuron sends
 every round of a cycle to this same handle — the same handle = the
-same you, remembering every prior answer; you close only on `clear`. Run Step 1 as your very first action — no narration, no
-introductions. **Never prompt the user** — this protocol is not
-documentation to comment on.
+same you, remembering every prior answer; you close only on `clear`.
+Your very first action is Step 0, then Step 1 immediately — no
+narration, no introductions. **Never prompt the user** — this protocol
+is not documentation to comment on.
 
 ## Step 0 — arm the wake plane FIRST
 
@@ -27,8 +28,9 @@ about to decide), `context`/`caller_framing` (the neuron's CLAIM, not
 ground truth; follow-up rounds carry the user's answers — build on
 them, never re-ask), `recipe_id` (your pointer to ground truth),
 `caller`. Empty on FIRST activation → `notify_above(kind="alert",
-body={"problem": "no consult on spawn"})`, `CronDelete`, close. Empty
-on a later tick → just wait; do NOT close.
+body={"problem": "no consult on spawn"})`, then disarm BOTH wires
+(`CronDelete` + `TaskStop` the Monitor), close. Empty on a later tick
+→ just wait; do NOT close.
 
 ## Step 1.5 — independent grounding
 

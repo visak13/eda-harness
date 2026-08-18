@@ -11288,6 +11288,13 @@ class _DispatchAcceptanceIn(BaseModel):
     # acceptance_verdict event with body.interim=true, so a later FINAL
     # 'pass' supersedes it at the close gate (latest-verdict-wins).
     interim: bool = False
+    # R1 F#8 (2026-08-18): the dispatch is IDEMPOTENT while a pass is in
+    # flight — a dispatched acceptor with no verdict yet is returned as-is
+    # instead of spawning a rival (the FSM re-emits DISPATCH_ACCEPTANCE
+    # every wake until a pass lands, so without this latch each heartbeat
+    # minted a fresh acceptor). force=true is the manual escape: respawn
+    # after you have CONFIRMED the in-flight acceptor is dead.
+    force: bool = False
 
 
 class _DispatchAcceptanceOut(BaseModel):
@@ -11319,6 +11326,30 @@ class DispatchAcceptance(_ClaudeTool):
         if not self.ctx.recipes.exists(m.recipe_id):
             return _precondition(f"unknown recipe {m.recipe_id!r}")
         r = self.ctx.recipes.load(m.recipe_id)
+        # R1 F#8 — in-flight latch: an acceptance_dispatched with no
+        # acceptance_verdict after it means a live pass; return it
+        # idempotently rather than spawning a rival.
+        if not m.force:
+            trail = self.ctx.recipes.read_events_tail(
+                m.recipe_id,
+                kinds=["acceptance_dispatched", "acceptance_verdict"])
+            last_d = next((e for e in reversed(trail)
+                           if e.get("kind") == "acceptance_dispatched"),
+                          None)
+            if last_d is not None and not any(
+                    e.get("kind") == "acceptance_verdict"
+                    and (e.get("ts") or "") >= (last_d.get("ts") or "")
+                    for e in trail):
+                return Tool.ok(_DispatchAcceptanceOut(
+                    acceptor_id=last_d.get("acceptor_id", "unknown"),
+                    interim=bool(last_d.get("interim", False)),
+                    note=("ALREADY IN FLIGHT: this recipe dispatched "
+                          f"{last_d.get('acceptor_id')!r} and no verdict "
+                          "has landed yet — no new acceptor was spawned. "
+                          "Wait for its acceptance_verdict on your "
+                          "flowback subscription. Only if you have "
+                          "CONFIRMED that shell is dead (inspect_worker/"
+                          "pool), re-call with force=true.")))
         acceptor_id = f"acceptor-{uuid.uuid4().hex[:8]}"
         brief = {
             "task": ("interim-review" if m.interim

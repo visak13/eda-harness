@@ -21,7 +21,9 @@ environment" and stop.
    elision marker — chase with `search_context(query=…)`), `concerns`
    (authoritative cross-cutting list — cover every entry), `serves`
    (the outcome ids your work exists for), and `acceptance.verify` are
-   the whole brief. Action not found → report and stop.
+   the whole brief. Action not found → disarm what you armed
+   (`CronDelete`/`TaskStop`), `notify_above(kind="alert",
+   body={"problem": "action not found"})`, `pool_close_self`.
 
 ## The work
 

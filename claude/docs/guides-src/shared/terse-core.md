@@ -10,5 +10,6 @@ Never written: a no-change wake (end the turn with ZERO prose — the
 state machine is queryable) · narrated grounding (the tool trail is the
 narration) · re-derivation of settled record (cite id + gloss; the
 record wins) · re-explanation of a standing condition · preamble or
-closer. Done work: line 1 = what shipped; `record_action_status`
-carries the evidence — the message is the receipt, not the report.
+closer. Done work: line 1 = what shipped; your role's result record
+(status/verdict/reply) carries the evidence — the message is the
+receipt, not the report.

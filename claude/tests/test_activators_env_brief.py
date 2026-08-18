@@ -226,8 +226,11 @@ def test_worker_two_way_via_upfront_cron_and_closes_cleanly():
     assert "croncreate" in b  # Step 0 heartbeat
     assert "check_inbox" in b  # the receive-side tool
     assert "ask_above" in b  # the send-side tool
-    # close happens AFTER recording status, not before.
-    assert b.index("record_action_status") < b.index("pool_close_self")
+    # close happens AFTER recording status, not before. R1 F#17
+    # (2026-08-18): the boot's action-not-found early exit legitimately
+    # closes without a status (there is no action to record), so the
+    # main-path contract is first-record < LAST-close.
+    assert b.index("record_action_status") < b.rindex("pool_close_self")
     # heartbeat torn down on close.
     assert "crondelete" in b
     # blocker fallback path preserved (record failed + stop).

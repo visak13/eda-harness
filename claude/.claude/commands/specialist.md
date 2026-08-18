@@ -11,12 +11,18 @@ specialist card.
 ## Boot
 
 1. `whoami()` — your `EDP_HANDLE` is your inbox
-   (`specialist-<slug>-<uuid>`).
+   (`specialist-<slug>-<uuid>`). Then arm the wake plane:
+   `arm_wiring()` — run the returned `monitor_cmd` under `Monitor` and
+   `CronCreate` recurring with the returned `cron_expr` +
+   `cron_prompt` verbatim. Keep both ids for close — answers to your
+   `ask_above` arrive on this plane; parking for an answer without it
+   leaves you deaf forever.
 2. `get_guide("specialist-card")` — identity, the loop, laws, routes.
 3. `get_guide("terse-output")` — the output rules; they bind every turn.
 4. `check_inbox()` — one `kind="consult"` carries `subject`,
    `description`, `category`, `name`, `base_session_id`, `interactive`,
-   `caller`. Empty inbox → `notify_above(kind="alert",
+   `caller`. Empty inbox → disarm what you armed (`CronDelete`,
+   `TaskStop`), `notify_above(kind="alert",
    body={"problem": "no training task on spawn"})` then
    `pool_close_self`.
 
@@ -78,6 +84,7 @@ reply(msg_id=<the consult's msg_id>, body={
   "event": "training_complete", "neuron_id": …, "spec_id": …,
   "subject": …, "status": "<stable | pending_review>",
   "summary": "<2-3 sentences>"})
+# disarm what you armed: CronDelete + TaskStop, then
 pool_close_self
 ```
 

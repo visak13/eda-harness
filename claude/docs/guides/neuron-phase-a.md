@@ -10,14 +10,21 @@ the recipe object.
 `resolve_recipe(goal=<user's exact text>)`. Act on `decision`:
 
 - `resume` — open recipe exists for this goal.
-  **Do not author a new recipe.**
-  Use the returned `recipe_id` as your handle. Go to Phase B.
+  **Do not author a new recipe.** `resolve_recipe` only SELECTS — it
+  changes nothing. To actually resume, call
+  `resume_recipe(recipe_id=<it>)`: that clears any suspension,
+  reconciles recorded state against broker/pool reality, respawns dead
+  planners, and returns the rewire block (monitor + cron) for this
+  shell — execute the rewire verbatim. Then go to Phase B with the
+  `recipe_id` as your handle. Skipping `resume_recipe` resumes nothing:
+  a suspended recipe stays suspended and dead planner shells stay dead.
 - `confirm` — open recipe(s) exist but the typed text didn't exactly
   match. The result carries `open_recipes` (id + goal, most-recent
   first). **If the user's input was a RESUME intent** ("resume",
   "continue", "keep going", "resume working") **rather than a fresh
   goal**, this IS the resume path: if there's one open recipe, resume
-  it (use its `recipe_id`, go to Phase B); if several, surface the
+  it (`resume_recipe(recipe_id=<it>)`, execute the returned rewire,
+  go to Phase B); if several, surface the
   `open_recipes` list and ask which to resume. Otherwise (the input
   looks like a new goal) surface: *"You have N open recipe(s) — e.g.
   `<recipe_id>` for `<matched_goal>`. Resume one, or start fresh?"* —

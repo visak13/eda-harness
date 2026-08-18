@@ -590,6 +590,41 @@ def plan_next_action(p: Plan,
             return Instruction(
                 kind=K.WAIT, args={}, rationale=rationale,
             )
+        # R1 F#1 (2026-08-18): a recorded FAIL verdict blocks success. An
+        # action whose CURRENT review_verdict says passed=False is not
+        # resolved by its own `done` status — the reviewer closes its leg
+        # `done` after stamping fail (reviewer card), so all-terminal is
+        # reachable over a known defect. At the success boundary the FSM
+        # reopens those actions to `pending`: the normal frontier re-
+        # dispatches them, a rework verdict overwrites the stamp, and
+        # G-REWORK's hard cap (verify_failures was already bumped at
+        # record time) freezes a grind into an ask_above. The verdict
+        # TOOL still never flips status (d30) — this is the FSM's own
+        # legal transition, like stamping in_progress at dispatch.
+        failed_verdicts = [
+            a for a in p.actions
+            if a.status == "done"
+            and (a.review_verdict or {}).get("passed") is False
+        ]
+        if failed_verdicts:
+            for a in failed_verdicts:
+                a.status = "pending"
+                # Count the cycle even when no worker/reviewer seam did —
+                # rework that never clears the stamp must walk into the
+                # G-REWORK hard cap (frozen → ask_above), not loop forever.
+                bump_verify_failure(a)
+            ids = [a.action_id for a in failed_verdicts]
+            return Instruction(
+                kind=K.WAIT, args={"reopened_action_ids": ids},
+                rationale=(
+                    f"G-VERDICT: reopened {ids} to pending — each carries "
+                    "a reviewer verdict with passed=false, and a plan "
+                    "cannot close succeeded over a recorded FAIL. Rework "
+                    "will be re-dispatched on the next tick; a passing "
+                    "re-review overwrites the stamp. If the verdict is "
+                    "wrong or the rework path is unclear, raise ask_above."
+                ),
+            )
         p.state = PlanState.ACCEPTANCE_REVIEW
         return plan_next_action(p, live_action_ids, parked_action_ids,
                                 worklog_tails)

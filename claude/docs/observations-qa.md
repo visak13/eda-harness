@@ -385,3 +385,36 @@ for EVERY role (the neuron pattern), with the token cost solved at the tool laye
 - models.json is correct post-investigation: judgment/builder/checker=claude-opus-4-8,
   advisor=claude-fable-5 (curiosity only). No Fable residue in the registry; the
   Fable-for-all run left no config. Remaining: eda.bat model pin (F1 item 3).
+
+## F33 — Adversarial campaign Round 1 (prompts & cards lens), 2026-08-18
+Full-framework Codex review, R1 per docs/adversarial-campaign.md. 20 findings;
+raw output claude/.sol_review_out-r1.txt (gitignored). Verdicts + dispositions:
+
+| # | Finding (short) | Verdict | Disposition |
+|---|---|---|---|
+| 1 | Fail review verdict never blocks plan success | CONFIRM | G-VERDICT: plan FSM reopens fail-verdicted done actions at the success boundary + bumps verify_failures (G-REWORK cap is the loop escape); reviewer cards now require passed= on every verdict |
+| 2 | verify-only guide converts red checks into done | CONFIRM | verify-only.md: exit codes decide status — any non-zero/unexecutable → status=failed with verbatim output |
+| 3 | Review brief is multi-target; reviewer card taught singular | CONFIRM | reviewer card (src+deep guide): target is a LIST, one verdict PER target, own leg closes only after every target verdicted |
+| 4 | neuron-phase-b contradicts F29 awaiting_fidelity | CONFIRM | Phase B rewritten around awaiting_fidelity → record map → fidelity round → done |
+| 5 | neuron-phase-e says direct close_recipe, omits acceptor | CONFIRM | Phase E rewritten: dispatch_acceptance → verdict pass → close; partial closes owe no pass |
+| 6 | Specialist parks for answers with no wake plane taught | CONFIRM | specialist.md card: arm_wiring at boot + disarm at close; specialist-card guide: park-only-if-armed law |
+| 7 | verify-only omits the enforced grounding echo | CONFIRM | folded into the verify-only.md rewrite (echo + teardown + close order) |
+| 8 | dispatch_acceptance spawns unlimited rival acceptors | CONFIRM | in-flight latch: acceptance_dispatched with no later verdict returns the same acceptor idempotently; force=true is the confirmed-dead escape |
+| 9 | Phase A resume path skips resume_recipe | CONFIRM | Phase A: resolve_recipe SELECTS only; resume branch calls resume_recipe + executes the rewire |
+| 10 | Phase C add_step example refused by G-EST | CONFIRM | example now carries serves + estimate |
+| 11 | Planner guides mandate blanket review legs the gate refuses | CONFIRM | planner-card.md + planner-phase-author.md: measured review policy (named risk triggers), matching the compiled card + write-gate |
+| 12 | Phase C phase-label decomposition defeats F28 right-sizing | CONFIRM | Phase C: right-size before decomposing; one-worker goal = one step; phase-label split is now the named anti-pattern |
+| 13 | Shared modules teach verbs the role cannot see | CONFIRM | vocabulary-core: map-not-toolset preamble + executor-seat loop note; terse-core: role-neutral evidence line |
+| 14 | Phase D instructs nonexistent append_revision | CONFIRM | replaced with record_context(kind="north_star_update") |
+| 15 | consult_curiosity catalog entry describes wrong schema | CONFIRM | catalog rewritten from the live schema (decision+context, context IS delivered) |
+| 16 | seed_comprehension_specialists catalog promises dead roles/spawns | CONFIRM | catalog rewritten: registers records only, spawns no shells |
+| 17 | Early-exit paths leak monitors/crons/seats | CONFIRM | disarm-before-close added to every early exit (reviewer, curiosity, worker, acceptor, specialist) |
+| 18 | recipe FSM rationale advises removed /critic | CONFIRM | rationale routes to adversarial_challenge / interim dispatch_acceptance |
+| 19 | Non-gate done satisfiable by bare assertion | REJECT (by design) | the gate flag IS the tier: G-RUNS execution proof protects outcome-bearing checks; requiring structured runs on every action re-serializes all work (the G-CHALLENGE lesson) |
+| 20 | Curiosity card: two mutually exclusive first actions | CONFIRM | boot line now reads Step 0 then Step 1 |
+
+Suite after fixes: 1516 passed, 5 skipped; only test_phoenix_reachable fails
+(environment, :6006 down). Cards recompiled within budget (worker 2456/2500,
+curiosity 1691/1700). One contract test updated (test_activators_env_brief
+close-ordering → first-record < last-close; the boot early exit legitimately
+closes without a status).

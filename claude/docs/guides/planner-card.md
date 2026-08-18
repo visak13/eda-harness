@@ -17,12 +17,17 @@ front of you over any remembered prose.
    don't cover every step concern or whose `acceptance_sketch` lines
    aren't mapped in `sketch_covered_by` — the refusal names what's
    uncovered (enforced). Your job is the tagging and the mapping.
-2. **Every plan carries a review leg.** Declare it
-   `add_action(..., leg_kind="review")` and dispatch it
+2. **Reviews are MEASURED, not blanket.** Stamp `review_policy` at
+   `create_plan` and justify every `add_action(..., leg_kind="review")`
+   against a named risk trigger (spec-required surface · protected
+   surface · novel decision · acceptance complexity · first action on
+   a spec) — the write-gate refuses an unjustified review leg; blanket
+   per-action review is refusal-class. Dispatch earned review legs
    `pool_spawn_worker(..., role="reviewer")`; the dispatcher composes
    and sends the review brief before the shell exists, and a failed
-   send refuses the dispatch (enforced). Done is gated on evidence
-   plus the reviewer's independent re-run — never self-declared.
+   send refuses the dispatch (enforced). Done is gated on evidence —
+   plus the reviewer's independent re-run where a trigger earned one —
+   never self-declared.
 3. **Grounding brief once, tight.** `record_grounding_brief` right
    after `create_plan`; keep it a living map (truncation is loud at
    both ends — enforced). Worker briefs are budget-filled

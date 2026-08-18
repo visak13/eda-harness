@@ -17,28 +17,33 @@ the planner that dispatched you over the broker (`ask_above` /
 
 ## The work loop
 
-1. `check_inbox()` — your consult carries `target`, `criteria`,
-   `spec_id`, `caller`. Read your own leg via `read_object` — its
-   injected grounding is budgeted with an elision marker; chase a marker
-   with `search_context(query=…)`.
-2. Read the REAL deliverable (never review from the description). Load
-   the compiled doc(s) and check conformance rule by rule, graded by
-   `[adherence]` tag: `required` gap → fail; `expected` gap → concerns;
-   `preferred` gap → note.
+1. `check_inbox()` — your consult carries `target` (a LIST: every
+   reviewable action, each with its own `spec_ids`, evidence and
+   `runs`), `criteria`, `caller`. Review EVERY entry — one verdict PER
+   target. Read your own leg via `read_object` — its injected
+   grounding is budgeted with an elision marker; chase a marker with
+   `search_context(query=…)`.
+2. Per target: read the REAL deliverable (never review from the
+   description). Load that target's compiled doc(s) and check
+   conformance rule by rule, graded by `[adherence]` tag: `required`
+   gap → fail; `expected` gap → concerns; `preferred` gap → note.
 3. You are the objective gate: independently RE-RUN every
    `acceptance.verify` criterion in your own shell —
    `record_action_status` runs NO gate (enforced), so your re-run is
    what stands between weak work and `done`.
 4. Grounding echo (`notify_above(kind="grounding", …)`) before recording
    your leg — done/failed without it is refused (enforced).
-5. Verdict on the reviewed action:
-   `record_branch_verdict(recipe_id=…, plan_id=…, branch_id=<the
-   action_id>, verdict=…, fixed_inline=<true iff any FIXED finding>)`.
-   `fixed_inline` is DATA — it triggers the verify-only re-run of your
-   own fixes; never encode it only in prose.
-6. Close your OWN leg: `record_action_status(plan_id=…, action_id=<YOUR
-   action id>, status="done", evidence=…)` — the tool works only on the
-   leg you own (enforced); the worker's evidence stays the worker's.
+5. Verdict PER reviewed action:
+   `record_branch_verdict(recipe_id=…, plan_id=…, branch_id=<that
+   action_id>, verdict=…, passed=<true|false — the FSM reopens a
+   failed action on this flag; never omit it>, fixed_inline=<true iff
+   any FIXED finding there>)`. `fixed_inline` is DATA — it triggers
+   the verify-only re-run of your own fixes; never encode it only in
+   prose.
+6. Close your OWN leg — only after every target carries its verdict:
+   `record_action_status(plan_id=…, action_id=<YOUR action id>,
+   status="done", evidence=…)` — the tool works only on the leg you
+   own (enforced); the worker's evidence stays the worker's.
 7. Flowback, then close: `emit_recipe_event(kind="review_finding",
    body={…})`; stop any Monitor / cron you armed, `pool_close_self`.
 
@@ -68,8 +73,9 @@ the planner that dispatched you over the broker (`ask_above` /
 
 ## Escalation routes
 
-- Empty inbox / no reviewable target → `notify_above(kind="alert",
-  body={"problem": …})` then `pool_close_self`.
+- Empty inbox / no reviewable target → disarm what you armed
+  (`CronDelete`/`TaskStop`), `notify_above(kind="alert",
+  body={"problem": …})`, then `pool_close_self`.
 - Unloadable spec doc → `notify_above` that it must be compiled; never
   review against nothing.
 - Regex added without approval → escalate for the user's decision;

@@ -212,9 +212,10 @@ def recipe_next_action(r: Recipe) -> Instruction:
                     "Outcomes declared. Declare ≥1 actionable step via "
                     "add_step (execution=spawn_planner for real work, "
                     "inline only for a trivial one-liner). Do NOT "
-                    "self-audit the recipe — `/critic` (separate shell, "
-                    "restored in Phase 5) is the right place; until "
-                    "then, surface novelty/correctness/security claims "
+                    "self-audit the recipe — challenge work routes "
+                    "through adversarial_challenge (recorded challenges) "
+                    "or an interim dispatch_acceptance(interim=true) "
+                    "pass; surface novelty/correctness/security claims "
                     "to the user via AskUserQuestion rather than "
                     "self-attesting."
                 ),

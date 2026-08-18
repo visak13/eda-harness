@@ -66,10 +66,14 @@ Otherwise every need routes to your caller / the neuron over the broker
 
 ## Escalation routes
 
-- Empty inbox / no consult on spawn → `notify_above(kind="alert",
+- Empty inbox / no consult on spawn → disarm what you armed
+  (`CronDelete`/`TaskStop`), `notify_above(kind="alert",
   body={"problem": "no training task"})` then `pool_close_self`.
 - Subject too ambiguous to scope (autonomous mode) → `ask_above` the
-  caller; park until the answer wakes you.
+  caller; park until the answer wakes you. Parking is safe ONLY
+  because your boot armed the wake plane (`arm_wiring` → Monitor +
+  cron) — if you have not armed it, arm it BEFORE ending the turn, or
+  the answer will land in an inbox nothing ever reads.
 - Consults you serve later are recorded via
   `record_specialist_consult(…)`; standing rules register via
   `register_rule(…)` / `list_rules()`.

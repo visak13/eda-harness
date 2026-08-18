@@ -18,20 +18,31 @@ add_step(
   execution="spawn_planner",   # for real work
   # execution="inline",        # ONLY for trivial one-liners you'd
                                # be embarrassed to spawn a planner for
+  serves=["o1"],               # the outcome id(s) this step exists for
+                               # (unknown ids refuse; orphan steps are
+                               # refused under the v7 write gates)
+  estimate={"tokens": 60000, "hours": 1.5},
+  # G-EST (enforced): a spawn_planner step REFUSES without an estimate
+  # — at least one of tokens/hours. Inline steps are exempt.
 )
 ```
 
-**Sizing a step.** A step is what one planner shell can hold in one
-context window of focus. Roughly: scaffold ≠ implement ≠ test ≠
-polish — those are different steps. A single 20-line config edit is
-not a step; that's `execution="inline"` (rare). Keep step descriptions
+**Sizing a step — right-size before you decompose.** A step is what one
+planner shell can hold in one context window of focus, and every
+additional step buys durability/parallelism at a real price (a planner
+spawn + N shells ≈ 10k+ orchestration tokens). **A goal that fits one
+worker is ONE step** — decompose only when the work genuinely exceeds
+one shell's focus, when parts must run in parallel, or when a boundary
+carries its own risk/review need. Never split by phase label (scaffold /
+implement / test / polish) — phases of one coherent build belong to ONE
+planner, which sequences them as actions. Keep step descriptions
 **specific and bounded**:
 
-- ✅ "Scaffold the monorepo: client/server/shared dirs, package.json
-   workspaces, tsconfig base, gitignore."
-- ✅ "Implement the core single-round game loop: round controller,
-   scoring, client/server wiring."
+- ✅ "Build the single-round game: scaffold, round controller, scoring,
+   client/server wiring, tests." (one worker's worth → one step)
 - ❌ "Build the app." (too broad — the planner can't shape this)
+- ❌ Scaffold / implement / test / polish as four steps of one small
+   build. (phase-label split — orchestration cost, no isolation gain)
 - ❌ "Rename one variable." (too small — inline it)
 
 ## Optional: drift check before dispatch
@@ -52,9 +63,10 @@ A step with no `depends_on` is claiming "I can start now, alongside
 anything else"; only a genuinely sequential step names its
 predecessor(s). Each step's planner runs in its own shell.
 
-A 5-step recipe gets 5 planner shells over its lifetime — each
-focused. This is the surgeon's specialist pattern: one specialist
-per body part.
+Every step gets its own planner shell over the recipe's lifetime —
+so the step count IS the orchestration bill. Multiple steps earn their
+cost only when the boundaries are real (parallelism, distinct risk,
+genuinely more than one shell's focus).
 
 ## Dispatching — the step-frontier WAVE is the default (DESIGN-v7 1.5.1)
 
@@ -109,8 +121,11 @@ guard exists to kill; the neuron does not fix the environment.
 
 ## Anti-patterns
 
-- **Lumping the whole goal into one step.** A 4-hour-long planner is
-  a planner that lost its way mid-context. Decompose.
+- **Lumping a genuinely multi-shell goal into one step.** A 4-hour
+  planner is a planner that lost its way mid-context. Decompose when
+  the work truly exceeds one shell's focus — but remember the inverse
+  is the commoner failure: a one-worker goal split into phase-labelled
+  steps multiplies cost without adding isolation.
 - **`execution="inline"` for substantive work.** Inline runs in YOUR
   context. If the step is more than ~5 minutes' work, it belongs in
   a planner.

@@ -14,8 +14,9 @@ nobody a pass. Your env: `EDP_ROLE=acceptor`, your inbox =
 2. `check_inbox()` — your `kind="consult"` brief carries
    `user_goal_verbatim` (THE LAW), `outcomes` + met evidence,
    `workspace`, `consulted_specs`, `interim`, `recipe_id`. Empty →
-   `notify_above(kind="alert", body={"problem": "no acceptance
-   brief"})`, `pool_close_self`.
+   disarm what you armed (`CronDelete`, `TaskStop`), `notify_above(
+   kind="alert", body={"problem": "no acceptance brief"})`,
+   `pool_close_self`.
 
 ## The pass — fetch your OWN evidence, trust nothing handed to you
 

@@ -182,7 +182,11 @@ recipe leaks nothing). Index + narrative:
 ## The system in one page
 
 One object graph — `recipe ─owns→ step ─spawns→ plan ─owns→ action
-─spawns→ worker` — operated through three planes:
+─spawns→ worker` — operated through three planes. This page is the
+shared MAP, not your toolset: your role registry exposes only your
+seat's verbs, and a verb named here that your registry lacks is
+ANOTHER seat's move — never a blocked state to report and never a
+reason to improvise around it.
 
 - **CRUD = what is true now.** `describe_objects` / `read_object` /
   `query_objects` (read) · `create_object` / `update_object` (write);
@@ -206,8 +210,11 @@ One object graph — `recipe ─owns→ step ─spawns→ plan ─owns→ action
   — verify after arming and after any restart/compaction
   (`list_subscriptions`, re-arm is idempotent).
 - **flow = the next legal move.** `reconcile` syncs the record to
-  broker/pool/disk reality; `next_action` is a pure pacer. The loop:
-  react (rx) → `reconcile` → `next_action` → obey `wait_hint`.
+  broker/pool/disk reality; `next_action` is a pure pacer. The
+  neuron/planner loop: react (rx) → `reconcile` → `next_action` → obey
+  `wait_hint`. (Spawned executor seats — worker/reviewer/curiosity —
+  don't drive flow: their loop is `check_inbox` → do the one job →
+  record the result.)
 
 Action `status` enum: `pending | in_progress | verify | done | failed |
 skipped | needs_review` — no `cancelled` (an invalid status wedges every
@@ -231,5 +238,6 @@ Never written: a no-change wake (end the turn with ZERO prose — the
 state machine is queryable) · narrated grounding (the tool trail is the
 narration) · re-derivation of settled record (cite id + gloss; the
 record wins) · re-explanation of a standing condition · preamble or
-closer. Done work: line 1 = what shipped; `record_action_status`
-carries the evidence — the message is the receipt, not the report.
+closer. Done work: line 1 = what shipped; your role's result record
+(status/verdict/reply) carries the evidence — the message is the
+receipt, not the report.

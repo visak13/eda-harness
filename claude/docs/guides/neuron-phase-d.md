@@ -89,8 +89,8 @@ Each message in `args.messages` carries `msg_id`, `from`, `kind`,
 |---|---|
 | `question` | The planner is stuck and needs a decision. **Do not self-evaluate.** If it's a *decision/ambiguity* (which approach, scope, cost, location), route it through the curiosity neuron / surface to the user — don't decide alone. If it's a *domain-correctness* question, reply telling the planner to route it through its own reviewer leg (a `role="reviewer"` dispatch against the specialist's compiled doc) — the neuron convenes no reviewer of its own (owner ruling 2026-08-04). Otherwise answer directly with `reply(msg_id=<msg_id>, body={"answer": "..."})`. |
 | `question` — **"no specialist for X — train one?"** | The SPECIAL case (it hung a plan once). **(1) Ask the USER** via `AskUserQuestion` — train vs proceed-without; never decide training yourself. **(2) If train:** call `train_specialist(handle=<recipe_id>)` **in this same turn** — deciding "train" does nothing until you invoke the tool. **(3) Reply to the planner** only `"hold — I'm training the specialist; I'll signal when it's stable"`. **NEVER reply "train it"** — the planner CANNOT call `train_specialist`; that reply is the deadlock that hangs the plan forever. When the SME reports stable, signal the planner to proceed. |
-| `progress` | One-way notification. No response required. Read it — if it reframes the goal, `append_revision` to the recipe. Otherwise absorb the signal. |
-| `observation` | The planner surfaced a discovery (new tech, prior approach, side-finding). Read it — if KG-worthy, `record_context(kind="fact", …)` it; if it reframes the goal, `append_revision`. Otherwise absorb. |
+| `progress` | One-way notification. No response required. Read it — if it reframes the goal, record the reframe (see "A reframed goal" below). Otherwise absorb the signal. |
+| `observation` | The planner surfaced a discovery (new tech, prior approach, side-finding). Read it — if KG-worthy, `record_context(kind="fact", …)` it; if it reframes the goal, record the reframe (below). Otherwise absorb. |
 | `alert` | The planner saw something unexpected and wants attention. Decide: does it need the user? `AskUserQuestion`. Does it need a pivot? Reply with a steering decision. Does it just need acknowledgement? Reply with "noted, continue." |
 | `answer` | (Rare — the planner replying to a `question` *you* asked.) Update your understanding; continue. |
 
@@ -119,7 +119,10 @@ Each message in `args.messages` carries `msg_id`, `from`, `kind`,
 The recipe IS the journey. If the planner's messages reveal:
 
 - A new tech / framework discovered → `record_context(kind="fact", fact={...}, domain=...)`
-- A reframed goal → `append_revision` (or update outcomes)
+- A reframed goal → `record_context(kind="north_star_update",
+  recipe_id=<rid>, text="<the reframe + why>")` — the append-only
+  north-star evolution log (neuron-only); update outcomes to match.
+  `user_goal_verbatim` itself never changes.
 - A new specialist gap → load the matching specialist guide via
   `consult_specialist` (yes, even mid-execution — recipe-level
   comprehension stays alive across the recipe's lifetime).

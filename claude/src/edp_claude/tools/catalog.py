@@ -28,8 +28,8 @@ TOOL_ONE_LINERS: dict[str, str] = {
     "mark_outcome_met": "Flip one outcome to met with evidence; the honest close needs every outcome met.",
     "record_audit_verdict": "Record the OCAK audit verdict on the recipe trail.",
     "run_ocak_audit": "Run the OCAK framework audit over the recipe and return findings.",
-    "seed_comprehension_specialists": "Spawn the comprehension advisor set (curiosity/goal-keeper/pattern-observer) for a fresh recipe.",
-    "consult_curiosity": "Ask the persistent comprehension curiosity; put FACTS in `question` — context/framing fields are not delivered.",
+    "seed_comprehension_specialists": "Register the stable comprehension-specialist RECORDS (feasibility, role-clarity, estimation, ...) so consult_specialist can load them; registers records only — spawns NO shells.",
+    "consult_curiosity": "Interrogate a `decision` via the persistent curiosity shell; `context` IS delivered with the consult — pass everything known (goal, prior answers); reuse `curiosity_id` every round.",
     # consult_goal_keeper / consult_pattern_observer — DELETED with their dead
     # roles (owner ruling 2026-08-04).
     "consult_specialist": "Read a compiled specialist doc inline for one question — consult, never author.",

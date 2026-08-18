@@ -45,9 +45,21 @@ it remembers the prior rounds. The protocol:
                        handle="<your recipe_id>",
                        curiosity_id="<the SAME id from step 1>")
      ```
-   - `status="done"` (with `clear=true`) → curiosity has CLOSED itself.
-     The dialogue is over. Proceed to declare outcomes. Do NOT consult
-     it again (it's gone; a follow-up would be refused as not-alive).
+   - `status="awaiting_fidelity"` (with `clear=true`) → curiosity found
+     no remaining ambiguity and sent its `plan_sketch` — but it is
+     STILL ALIVE (F29). The cycle is NOT over: (1) record the map
+     (outcomes via `record_outcome`, steps via `add_step`) from the
+     sketch; (2) send the RECORDED outcomes+steps back to the SAME
+     curiosity as one more follow-up (`curiosity_id=<same id>`) — it
+     diffs your transcription against its sketch (the fidelity round);
+     (3) only its fidelity reply carries `status="done"`, after which
+     it closes itself. If a fidelity follow-up fails mid-way, re-send
+     the same follow-up — the protocol is idempotent on the curiosity
+     side.
+   - `status="done"` → the fidelity round confirmed your recorded map.
+     The dialogue is over; surface the VERIFIED sketch to the user for
+     signoff. Do NOT consult it again (it's gone; a follow-up would be
+     refused as not-alive).
 3. Loop step 2 — same `curiosity_id` each round — until `status="done"`.
 4. If a reply carries `research_suggestions`, consult the matching
    specialist (below) before the next follow-up, so the next questions
@@ -59,9 +71,11 @@ Spawning fresh per round (the old failure) loses its memory and leaves
 you guessing which handle is live. Spawn a *new* curiosity only for a
 genuinely *different* decision later in the recipe.
 
-You only declare outcomes after `status="done"`. A reflexive default you
-never surfaced is exactly the ".gitignore got clobbered" failure —
-curiosity exists to catch it *before* the work, not after.
+You declare outcomes when `status="awaiting_fidelity"` lands (that is
+what the fidelity round checks), and treat comprehension as converged
+only at `status="done"`. A reflexive default you never surfaced is
+exactly the ".gitignore got clobbered" failure — curiosity exists to
+catch it *before* the work, not after.
 
 ## Specialist consultation (discover, don't hardcode)
 
@@ -102,10 +116,12 @@ waste and ritual-not-comprehension. Use judgement.
 `record_outcome` will **refuse** until comprehension is converged. Two
 ways the gate opens:
 
-1. **Curiosity returned clear/done** — set AUTOMATICALLY when curiosity's
-   `status="done"`/`clear=true` reply lands (you don't record it; the
-   system captures it). This is the normal path: loop the persistent
-   two-way curiosity until it converges.
+1. **Curiosity returned clear** — set AUTOMATICALLY when curiosity's
+   `clear=true` reply (`status="awaiting_fidelity"`) lands (you don't
+   record it; the system captures it). This opens outcome declaration —
+   which is exactly what the fidelity round then verifies before
+   `status="done"` closes the cycle. This is the normal path: loop the
+   persistent two-way curiosity until it converges.
 2. **Explicit user sign-off** — if the user *explicitly* tells you to
    proceed without full convergence (e.g. they killed curiosity and said
    "just go"), call `record_comprehension_signoff(recipe_id, user_quote=

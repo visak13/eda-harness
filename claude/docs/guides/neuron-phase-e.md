@@ -1,23 +1,35 @@
 # Neuron — Phase E (evaluate goal completion)
 
-The plan closed; the recipe is in `reviewing`. The FSM emits
-`done` with rationale signalling either `SUCCEEDED` or a PARTIAL
-condition. Your job: close the recipe honestly.
+The plan closed; the recipe is in `reviewing`. Your job: drive the
+FINAL ACCEPTANCE PASS, then close the recipe honestly.
 
 ## The decision
 
-Read the `done` instruction's `rationale`. The FSM produces one of:
+Read the instruction the FSM emits in `reviewing`:
 
-- `SUCCEEDED — all expected_outcomes met` → `final_outcome.status =
-  "succeeded"`
-- `PARTIAL — spine drove no work; deliverable NOT produced/verified
-  by the spine (F4.c guard)` → `final_outcome.status = "partial"`
-- `PARTIAL — work driven but no expected_outcomes declared;
-  unverified (OCAK must declare outcomes)` → `final_outcome.status =
-  "partial"`
-- `PARTIAL — work driven; outcomes not yet verified
-  (outcome-verification is a flagged TODO, not a failure)` →
-  `final_outcome.status = "partial"`
+- `dispatch_acceptance` — all expected_outcomes are met. This is NOT
+  "done": obey it with `dispatch_acceptance(recipe_id=<rid>)` — it
+  posts the acceptance brief (verbatim goal, outcomes + evidence,
+  workspace) and spawns the ACCEPTOR (advisor seat, own shell), which
+  fetches its own evidence and records
+  `emit_recipe_event(kind="acceptance_verdict")`. The dispatch is
+  idempotent while a pass is in flight — re-obeying the instruction on
+  a later wake returns the same acceptor, never a rival. Then WAIT via
+  the heartbeat; the verdict wakes you on your flowback subscription.
+  - verdict `pass` → the FSM's next instruction downgrades to `done`
+    (`SUCCEEDED`); proceed to Closing.
+  - verdict `gaps` → resolve each gap (fix step, or descope HONESTLY
+    with the user), then re-run the pass. `close_recipe(succeeded)`
+    REFUSES until the latest verdict is `pass` (G-ACCEPT).
+- `done` with a PARTIAL rationale (`spine drove no work` / `no
+  expected_outcomes declared` / `outcomes not yet verified`) →
+  `final_outcome.status = "partial"`. No acceptance pass is owed for a
+  partial close — the pass exists to certify success, not to bless a
+  shortfall.
+- Before closing, verify the workspace tree in YOUR OWN shell (`git
+  status --porcelain` from Bash) — deliverables uncommitted at close is
+  a finding to resolve, and no MCP tool will run git for you (owner
+  ruling: tools launch no external programs).
 
 **Never report a PARTIAL close to the user as success.** Say plainly
 what was and wasn't proven. The user values an honest "we built it
