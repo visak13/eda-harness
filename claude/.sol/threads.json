@@ -208,5 +208,137 @@
     "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
     "created_at": "2026-08-11T16:01:01Z",
     "last_used": "2026-08-11T16:01:01Z"
+  },
+  "recipe-upgrade-the-frontend-of-c-projects-docs-b33936:s1|sol": {
+    "thread_id": "019ff949-6181-7ff3-9693-290b0995872c",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-13T04:03:26Z",
+    "last_used": "2026-08-13T04:03:26Z"
+  },
+  "recipe-upgrade-the-frontend-of-c-projects-docs-b33936:s2|sol": {
+    "thread_id": "019ff966-f73a-79f0-a9b2-4cf067cc1bfb",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-13T04:35:30Z",
+    "last_used": "2026-08-13T04:35:30Z"
+  },
+  "recipe-upgrade-the-frontend-of-c-projects-docs-b33936:s3|sol": {
+    "thread_id": "019ff97d-c6d4-7d73-8ca3-7fde55b41420",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-13T05:00:50Z",
+    "last_used": "2026-08-13T05:00:50Z"
+  },
+  "recipe-upgrade-the-frontend-of-c-projects-docs-b33936:s6|sol": {
+    "thread_id": "019ff9b7-f344-7982-8773-c144b3a440ef",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-13T06:05:43Z",
+    "last_used": "2026-08-13T06:05:43Z"
+  },
+  "recipe-upgrade-the-frontend-of-c-projects-docs-b33936:s4|sol": {
+    "thread_id": "019ff9cd-a06e-7302-ae96-55017a7f3f4a",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-13T06:28:06Z",
+    "last_used": "2026-08-13T06:28:06Z"
+  },
+  "recipe-upgrade-the-frontend-of-c-projects-docs-b33936:s5|sol": {
+    "thread_id": "019ff9f5-379a-77c2-945b-0a3c02ccb4c4",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-13T07:11:19Z",
+    "last_used": "2026-08-13T07:11:19Z"
+  },
+  "recipe-upgrade-the-frontend-of-c-projects-docs-b33936-s5:a1|sol": {
+    "thread_id": "019ff9f6-55d0-7510-a1d7-8220776a634b",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-13T07:12:40Z",
+    "last_used": "2026-08-13T07:13:43Z"
+  },
+  "recipe-upgrade-the-frontend-of-c-projects-docs-b33936-s5:a2|sol": {
+    "thread_id": "019ffa00-5df2-7132-b092-80cc7e8d4cb8",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-13T07:23:26Z",
+    "last_used": "2026-08-13T07:23:26Z"
+  },
+  "recipe-upgrade-the-frontend-of-c-projects-docs-b33936-s5:a4|sol": {
+    "thread_id": "019ffa01-2a84-74b3-b6fd-d940a463bd1a",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-13T07:24:00Z",
+    "last_used": "2026-08-13T07:25:24Z"
+  },
+  "recipe-upgrade-the-frontend-of-c-projects-docs-b33936-s5:a3|sol": {
+    "thread_id": "019ffa00-a33b-7e60-b478-d221662b651c",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-13T07:24:11Z",
+    "last_used": "2026-08-13T07:24:11Z"
+  },
+  "recipe-hardening-run-wrapping-closed-recipe-b33-2270d3:s1|sol": {
+    "thread_id": "019ffad6-dfe5-7521-9909-3d38ca09dcc2",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-13T11:17:43Z",
+    "last_used": "2026-08-13T11:17:43Z"
+  },
+  "recipe-hardening-run-wrapping-closed-recipe-b33-2270d3:s2|sol": {
+    "thread_id": "019ffb5e-3f91-7640-9244-e63662b64161",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-13T13:45:26Z",
+    "last_used": "2026-08-13T13:45:26Z"
+  },
+  "recipe-hardening-run-wrapping-closed-recipe-b33-2270d3:s3|sol": {
+    "thread_id": "019ffbfc-88b0-7152-b440-f63fede8fbaf",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-13T16:38:33Z",
+    "last_used": "2026-08-13T16:38:33Z"
+  },
+  "recipe-hardening-run-wrapping-closed-recipe-b33-2270d3:s4|sol": {
+    "thread_id": "019ffc77-fc75-7710-918f-abd6b15e381d",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-13T18:53:20Z",
+    "last_used": "2026-08-13T18:53:20Z"
+  },
+  "recipe-hardening-run-wrapping-closed-recipe-b33-2270d3:s5|sol": {
+    "thread_id": "019ffe55-9420-7270-9d3d-920641976900",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-14T03:34:56Z",
+    "last_used": "2026-08-14T03:34:56Z"
+  },
+  "recipe-hardening-run-wrapping-closed-recipe-b33-2270d3:s6|sol": {
+    "thread_id": "019ffe87-b5f2-70b2-8dcb-94be6d72f42c",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-14T04:31:57Z",
+    "last_used": "2026-08-14T04:31:57Z"
+  },
+  "recipe-hardening-run-wrapping-closed-recipe-b33-2270d3:s8|sol": {
+    "thread_id": "019fff42-56b2-7990-9dce-1d382b8ea9f1",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-14T07:53:13Z",
+    "last_used": "2026-08-14T07:53:13Z"
+  },
+  "recipe-hardening-run-wrapping-closed-recipe-b33-2270d3:s9|sol": {
+    "thread_id": "019fff99-2898-7c22-a152-ce3c2772b2fd",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-14T09:28:34Z",
+    "last_used": "2026-08-14T09:28:34Z"
+  },
+  "recipe-hardening-run-wrapping-closed-recipe-b33-2270d3:s10|sol": {
+    "thread_id": "019fffef-3bcc-7333-a0e5-e73f71db13aa",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-14T11:02:28Z",
+    "last_used": "2026-08-14T11:02:28Z"
+  },
+  "recipe-in-c-projects-jobsearch-i-want-to-create-7b4485:s3|sol": {
+    "thread_id": "01a00ec5-97a3-7d73-bf52-1a30703ef505",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-17T08:11:06Z",
+    "last_used": "2026-08-17T08:11:06Z"
+  },
+  "recipe-in-c-projects-jobsearch-i-want-to-create-7b4485:s4|sol": {
+    "thread_id": "01a00ef1-2d51-7073-abb1-b0b224245588",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-17T08:58:52Z",
+    "last_used": "2026-08-17T08:58:52Z"
+  },
+  "base-shell-adversarial-review|sol": {
+    "thread_id": "01a012e2-2700-7dc2-a0a9-d8e7a4300744",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-18T03:22:06Z",
+    "last_used": "2026-08-18T03:22:06Z"
   }
 }

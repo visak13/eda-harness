@@ -351,6 +351,8 @@ _ROLE_ACTIVATOR = {
     "curiosity": "/curiosity",
     # v2.4 (2026-05-22): recipe-end domain reviewer fork (replaces critic).
     "reviewer": "/reviewer",
+    # F31 (2026-08-18): the final-acceptance shell (advisor seat).
+    "acceptor": "/acceptor",
 }
 
 

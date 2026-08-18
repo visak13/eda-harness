@@ -652,6 +652,8 @@ ROLE_COMMAND_FILE = {
     "specialist": "specialist.md",
     "neuron": "neuron.md",
     "curiosity": "curiosity.md",
+    # F31 (2026-08-18): the final-acceptance shell (advisor seat).
+    "acceptor": "acceptor.md",
     # goal_keeper / pattern_observer rows deleted with their DEAD roles
     # (owner ruling 2026-08-04); consult.md deleted with the retired consult
     # shell role (2026-08-12 dead-surface sweep).

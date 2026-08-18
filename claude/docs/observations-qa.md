@@ -149,6 +149,41 @@ pass, same day): 1497 tests pass; 1 pre-existing environment failure
   protocol. Accepted-by-design: #3 (fidelity advisory weight), #16 (waiver
   is an audited sentence), #10/#12/#17 (inherent scope statements).
 
+## F31 — the ACCEPTOR role (owner ruling 2026-08-18): Fable's final pass in
+## its own shell, FSM-explicit
+- New role "acceptor" (advisor seat, /acceptor card, own toolset, read-only
+  CRUD): fetches its OWN evidence — the checker is never fed by the party
+  it judges (closes Sol #2). Verifies against the VERBATIM goal + named
+  artifacts; fixes small verifiable defects in-shell; records
+  acceptance_verdict.
+- FSM-explicit: InstructionKind.DISPATCH_ACCEPTANCE emitted at
+  all-outcomes-met (pure FSM); the tool layer downgrades to DONE on a
+  recorded 'pass' (or gate off). Neuron obeys with dispatch_acceptance
+  (consult-before-spawn). Interim passes mid-recipe:
+  dispatch_acceptance(interim=true) — wired into the F12 review_due
+  obligation ("a spawn in between steps to do a plain review").
+- Subagent quality rule (card): Fable may fan out Sonnet/Haiku subagents to
+  GATHER; their reports are untrusted drafts — it spot-verifies every
+  load-bearing claim; the verdict is its alone.
+
+## F32 — remaining Sol findings taken up (owner: "the rest are valid")
+- Adversary charter (#indep): adversarial_challenge now carries a
+  PREDEFINED charter — independent framing, never codes, suggested_fix per
+  finding, priority hunt list.
+- #9: G-CHALLENGE keys on RISK, not action count — required when actions >=
+  min OR the step estimate is big (EDP_CHALLENGE_GATE_MIN_HOURS=2 /
+  _MIN_TOKENS=50000), so batching cannot duck the adversary.
+- #7: indexed subscriptions age out at a LONG TTL (7d,
+  EDP_REACTIVE_INDEXED_TTL_SECS) and are unregistered on sweep — no more
+  immortal ghosts.
+- #11: create_plan(reopen=true) returns a stale-done warning naming the
+  preserved actions to revalidate (status='verify' / supersede).
+- #14: G-SPEC also refuses on DECAYED consulted specialists (stable but
+  trained past EDP_SPEC_DECAY_TTL_DAYS=90).
+- #15: fidelity retry protocol — neuron resends the SAME round once after a
+  silent heartbeat; curiosity replies idempotently (same verdict, never a
+  re-diff).
+
 Open threads: delete shadow.py/shadow_spawner.py once stable; F2 Layer-2
 (advisor-distilled narrative, epoch-stamped); F17 full example sweep;
 steer-ack ledger nested-ack fix; rx.orphaned dash/colon fix (excluded from

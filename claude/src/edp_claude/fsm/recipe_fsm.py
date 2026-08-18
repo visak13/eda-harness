@@ -317,11 +317,21 @@ def recipe_next_action(r: Recipe) -> Instruction:
                 "declared; unverified (OCAK must declare outcomes)",
             )
         if all(o.met for o in outcomes):
-            # TODO(critic-audit): pre-close adversarial review belongs
-            # here (cluster component, later) — not faked now.
+            # F31 (2026-08-18): the FINAL ACCEPTANCE PASS is FSM-explicit.
+            # The FSM is pure over the Recipe and cannot read the events
+            # trail, so it ALWAYS emits DISPATCH_ACCEPTANCE here; the tool
+            # layer (NextAction) downgrades it to DONE when a 'pass'
+            # acceptance_verdict is already recorded (or the gate is off).
             return Instruction(
-                kind=K.DONE, args={},
-                rationale="SUCCEEDED — all expected_outcomes met",
+                kind=K.DISPATCH_ACCEPTANCE, args={},
+                rationale=(
+                    "all expected_outcomes met — run the FINAL ACCEPTANCE "
+                    "PASS before close: dispatch_acceptance(recipe_id=…) "
+                    "spawns the advisor-seat ACCEPTOR in its own shell; it "
+                    "verifies the delivery against the VERBATIM goal + any "
+                    "artifact the goal names, fixes what it safely can, "
+                    "and records acceptance_verdict. DONE follows a "
+                    "recorded 'pass'."),
             )
         # TODO(outcome-verify): nothing marks outcome.met yet, so a real
         # run honestly lands here — deliverable IS produced by the

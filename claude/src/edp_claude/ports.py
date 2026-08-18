@@ -69,6 +69,17 @@ class PoolPort(ABC):
         neuron does not decide alone."""
 
     @abstractmethod
+    async def spawn_acceptor(
+        self, parent_id: str, acceptor_id: str, model: str | None = None
+    ) -> ToolResult:
+        """F31 (2026-08-18, owner ruling): the FINAL ACCEPTANCE shell — the
+        advisor seat (Fable) verifying the whole delivery against the
+        VERBATIM goal + named artifacts in ITS OWN shell, fixing what it
+        safely can, and recording acceptance_verdict. Same
+        consult-before-spawn pattern as curiosity: the neuron posts the
+        acceptance brief to the acceptor inbox FIRST, then spawns."""
+
+    @abstractmethod
     async def spawn_specialist(
         self, parent_id: str, specialist_id: str,
         claude_session: str | None = None,

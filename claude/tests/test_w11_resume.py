@@ -835,7 +835,7 @@ SUSPENSION_VERBS = ("suspend_recipe", "resume_recipe")
 # retirement of the consult shell role took seven to SIX. The pin's job is
 # unchanged: the suspension verbs must stay neuron-only across EVERY surface
 # that exists.
-ALL_ROLES = ("worker", "planner", "reviewer", "specialist", "neuron",
+ALL_ROLES = ("worker", "planner", "reviewer", "specialist", "neuron", "acceptor",
              "curiosity")
 
 

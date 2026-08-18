@@ -150,9 +150,11 @@ def test_t4_no_new_role_exists_in_role_toolsets():
     deleted goal_keeper and pattern_observer as dead roles."""
     # ("consult" left the set 2026-08-12 — the convened-consult shell role is
     # retired; its only spawn verb went 2026-07-25.)
+    # ("acceptor" joined 2026-08-18 — F31 owner ruling: the final
+    # goal-vs-delivery acceptance shell on the advisor seat.)
     assert set(ROLE_TOOLSETS) == {
         "worker", "planner", "reviewer", "specialist", "neuron",
-        "curiosity",
+        "curiosity", "acceptor",
     }
     assert "direction_reviewer" not in ROLE_TOOLSETS
     assert not any("direction" in role for role in ROLE_TOOLSETS)

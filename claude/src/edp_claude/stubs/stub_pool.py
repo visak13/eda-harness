@@ -140,6 +140,15 @@ class StubPool(PoolPort):
         )
         return Tool.ok(_Spawned(handle=curiosity_id))
 
+    async def spawn_acceptor(
+        self, parent_id: str, acceptor_id: str, model: str | None = None
+    ) -> ToolResult:
+        self._record(
+            {"role": "acceptor", "handle": acceptor_id,
+             "parent": parent_id, "model": model}
+        )
+        return Tool.ok(_Spawned(handle=acceptor_id))
+
     async def spawn_specialist(
         self, parent_id: str, specialist_id: str,
         claude_session: str | None = None,

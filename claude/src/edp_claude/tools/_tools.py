@@ -1670,6 +1670,30 @@ class NextAction(_ClaudeTool):
             changed_sig = _recipe_sig(r) != before
             if changed_sig:
                 self.ctx.recipes.save(r)
+            # F31 — the FSM is pure and always emits DISPATCH_ACCEPTANCE at
+            # all-outcomes-met; THIS layer (which can read the events trail)
+            # downgrades it to DONE when the latest acceptance_verdict is
+            # 'pass', or when the gate is switched off.
+            if instr.kind == InstructionKind.DISPATCH_ACCEPTANCE:
+                _gate_on = (os.environ.get("EDP_ACCEPT_GATE", "1")
+                            .strip().lower() not in ("0", "false", "no",
+                                                     "off"))
+                _verdicts = self.ctx.recipes.read_events_tail(
+                    r.recipe_id, kinds=["acceptance_verdict"])
+                _latest = ((_verdicts[-1].get("body") or {}).get("verdict")
+                           if _verdicts else None)
+                if not _gate_on or _latest == "pass":
+                    instr = Instruction(
+                        kind=InstructionKind.DONE, args={},
+                        rationale=("SUCCEEDED — all expected_outcomes met"
+                                   + ("; acceptance_verdict=pass recorded"
+                                      if _latest == "pass" else
+                                      " (acceptance gate off)")))
+                elif _latest == "gaps":
+                    instr.rationale = (
+                        (instr.rationale or "")
+                        + " The LATEST verdict is 'gaps' — resolve them "
+                        "(fix, or descope honestly) and re-run the pass.")
             # W7 item 1: computed pacing hint. next_action does ZERO external
             # IO (staleness needs a worklog/pool read reconcile/status_ping do),
             # so output_stale stays False here — the optimistic heads-down band;
@@ -3222,6 +3246,8 @@ class _CreatePlanOut(BaseModel):
     plan_id: str       # 2026-05-28 friction #2: echo it, don't make the
     domain: str        # planner infer "<recipe_id>-<step_id>"
     version: int
+    # F32 (Sol-review #11): populated on reopen — the stale-done warning.
+    note: str = ""
 
 
 class RecordRecipe(_ClaudeTool):
@@ -3382,8 +3408,18 @@ class CreatePlan(_ClaudeTool):
                     "prior_terminal_status": _prior_terminal,
                     "actions_preserved": len(existing.actions),
                 })
+                _stale_done = [a.action_id for a in existing.actions
+                               if a.status == "done"]
                 return Tool.ok(_CreatePlanOut(
-                    plan_id=pid, domain=recipe.domain, version=v))
+                    plan_id=pid, domain=recipe.domain, version=v,
+                    note=(
+                        f"REOPENED. {len(_stale_done)} preserved done "
+                        f"action(s) {_stale_done} were verified against the "
+                        "OLD goal — for each whose acceptance the NEW goal "
+                        "changes, update_object it to status='verify' (a "
+                        "verify leg re-runs it) or supersede it with a new "
+                        "action; stale done evidence must not satisfy the "
+                        "new bar." if _stale_done else "REOPENED.")))
             if existing.state != PlanState.DRAFTED:
                 return _precondition(
                     f"plan {pid} already exists in state "
@@ -4604,13 +4640,25 @@ class CloseRecipe(_ClaudeTool):
                       and not self.ctx.specs.has_doc(sid)]
         consulted_set = set(consulted)
         pending: list[str] = []
+        stale: list[str] = []
         try:
             for n in self.ctx.neurons.list(status="pending_review"):
                 if getattr(n, "spec_id", None) in consulted_set:
                     pending.append(n.neuron_id)
+            # F32 (Sol-review #14): a consulted GLOBAL spec from a past
+            # recipe can be decayed — stable but trained past the TTL. The
+            # same staleness check_specialist_decay reports, applied to the
+            # specs THIS recipe leaned on.
+            _ttl_days = int(os.environ.get("EDP_SPEC_DECAY_TTL_DAYS", "90"))
+            for n in self.ctx.neurons.list(status="stable"):
+                if getattr(n, "spec_id", None) not in consulted_set:
+                    continue
+                if n.trained_at is not None and \
+                        (_now() - n.trained_at).days > _ttl_days:
+                    stale.append(n.neuron_id)
         except Exception:  # noqa: BLE001 — an unreadable registry ≠ a gate
             pass
-        if not uncompiled and not pending:
+        if not uncompiled and not pending and not stale:
             return None
         gate_target = f"G-SPEC:{r.recipe_id}"
         if _gate_override_ok(self.ctx, r.recipe_id,
@@ -4633,6 +4681,12 @@ class CloseRecipe(_ClaudeTool):
                 f"neuron(s) {pending} sit in pending_review untriaged — "
                 "the HITL approval gate was never run "
                 "(neuron_set_status)")
+        if stale:
+            problems.append(
+                f"consulted specialist(s) {stale} are DECAYED (stable but "
+                "trained past the TTL) — this recipe leaned on expertise "
+                "nobody has revalidated (update_specialist to retrain, or "
+                "neuron_set_status pending_review to triage)")
         return _precondition(
             f"G-SPEC: cannot close {status!r} — " + "; ".join(problems)
             + ". Finish the specialist lifecycle first, or the USER waives "
@@ -5658,8 +5712,7 @@ class RecordStepResult(_ClaudeTool):
                         # adversarial pass is enforced HERE, not at first
                         # dispatch — dispatch only advises, so workers run
                         # while the plan is still being authored/challenged.
-                        _min = _challenge_gate_min_actions()
-                        if (_min > 0 and len(plan.actions) >= _min
+                        if (_challenge_required(plan, s)
                                 and not _challenge_satisfied(
                                     self.ctx.plans.root, plan.plan_id)):
                             return _precondition(
@@ -7893,8 +7946,12 @@ def _progress_review_due(ctx, r) -> dict | None:
             "open risks against the brief, surface ONE line to the user if "
             "a threshold or risk crossed, then record it: emit_recipe_event("
             f"kind='progress_review', body={{'steps_done': {done}, "
-            "'budget': <numbers>, 'risks': [...]}}). Do not restate this "
-            "obligation; execute it."),
+            "'budget': <numbers>, 'risks': [...]}}). When the delivered "
+            "work is substantial or drifting, ALSO dispatch an interim "
+            "acceptance pass: dispatch_acceptance(recipe_id=…, "
+            "interim=true) — the advisor seat reviews the real delivery "
+            "mid-flight, while course-correction is still cheap. Do not "
+            "restate this obligation; execute it."),
     }
 
 
@@ -8426,9 +8483,13 @@ class PoolSpawnWorker(_ClaudeTool):
                     # CLOSE refuses until a challenge or waiver is recorded
                     # (record_step_result) — the adversary cannot be
                     # skipped, it just runs alongside the build.
-                    _min = _challenge_gate_min_actions()
-                    if (_min > 0
-                            and len(p.actions) >= _min
+                    _step_for_gate = None
+                    if self.ctx.recipes.exists(p.recipe_id):
+                        _step_for_gate = next(
+                            (s for s in self.ctx.recipes.load(
+                                p.recipe_id).steps
+                             if s.step_id == p.recipe_step_id), None)
+                    if (_challenge_required(p, _step_for_gate)
                             and not _challenge_satisfied(
                                 self.ctx.plans.root, p.plan_id)):
                         _spawn_advisories.append({
@@ -9346,6 +9407,33 @@ def _challenge_gate_min_actions() -> int:
         return 3
 
 
+def _challenge_required(plan, step=None) -> bool:
+    """F32 (Sol-review #9) — G-CHALLENGE keys on RISK, not just action
+    count: batching work into one action to obey right-sizing (F28) must
+    not duck the adversary. Required when EITHER:
+      * the plan has >= EDP_CHALLENGE_GATE_MIN_ACTIONS actions, OR
+      * the owning step's declared estimate says the work is big —
+        hours >= EDP_CHALLENGE_GATE_MIN_HOURS (default 2) or tokens >=
+        EDP_CHALLENGE_GATE_MIN_TOKENS (default 50000).
+    Min-actions 0 disables the whole gate (the test-suite default)."""
+    _min = _challenge_gate_min_actions()
+    if _min <= 0:
+        return False
+    if len(plan.actions) >= _min:
+        return True
+    est = dict(getattr(step, "estimate", None) or {}) if step else {}
+    try:
+        min_hours = float(os.environ.get(
+            "EDP_CHALLENGE_GATE_MIN_HOURS", "2"))
+        min_tokens = int(os.environ.get(
+            "EDP_CHALLENGE_GATE_MIN_TOKENS", "50000"))
+        hours = float(est.get("hours") or 0)
+        tokens = int(est.get("tokens") or 0)
+    except (TypeError, ValueError):
+        return False
+    return hours >= min_hours or tokens >= min_tokens
+
+
 def _open_challenges(root: Path, plan_id: str) -> list[str]:
     """Challenge ids with NO adjudication line yet, in append order. [] when
     the sidecar is absent (legacy plans carry no gate)."""
@@ -9379,12 +9467,35 @@ class AdversarialChallenge(_ClaudeTool):
             return _precondition(
                 f"target_kind must be plan|spec_decision|artifact|assumption, "
                 f"got {m.target_kind!r}")
+        # F32 (2026-08-18, owner ruling): the adversary gets a PREDEFINED
+        # CHARTER so it acts independently instead of inheriting the
+        # caller's framing — and it proposes, never codes.
+        charter = (
+            "YOU ARE THE INDEPENDENT ADVERSARY of a multi-agent build "
+            "system. You did not write this plan, you owe its author "
+            "nothing, and you must NOT adopt its framing — re-derive what "
+            "the work should look like from the stated goal, then attack "
+            "the gap. You NEVER write or edit code: findings and suggested "
+            "changes only; the plan's owner adjudicates each one.\n\n"
+            f"TARGET: this {m.target_kind} ({m.target_id}). "
+            f"LENS: {m.lens}.\n"
+            "HUNT, in priority order: (1) an acceptance bar satisfiable "
+            "while the user's goal fails (Goodhart); (2) a wrong option "
+            "baked in where a recorded alternative wins; (3) a requirement "
+            "from the goal or a named artifact that appears NOWHERE in the "
+            "plan; (4) hidden coupling between actions that the DAG treats "
+            "as independent; (5) a missing cross-cutting concern "
+            "(security, privacy, data loss, irreversibility); (6) scope "
+            "silently narrowed relative to the goal.\n"
+            "OUTPUT: a JSON array of findings, most severe first, each "
+            "{finding, evidence, severity: high|medium|low, target: <the "
+            "action/step/line it names>, suggested_fix: <the concrete "
+            "change you would make — as a proposal, not a patch>}. "
+            "No praise, no summary, findings only; an empty array means "
+            "you genuinely found nothing after a real hunt.")
         res = await _bridge_call(
             "challenge", "challenge", "",
-            task=f"Attack this {m.target_kind} ({m.target_id}) through the "
-                 f"lens: {m.lens}. Find what is WRONG — a wrong option baked "
-                 f"in, an acceptance that can be satisfied while the goal "
-                 f"fails, a hidden coupling, a missing concern.",
+            task=charter,
             context=m.content)
         # WP2 G-ADJ: a SUCCESSFUL challenge persists to a plan's challenges
         # sidecar; the dispatch gate then holds NON-review legs until each
@@ -11168,6 +11279,82 @@ class ConveneConsult(_ClaudeTool):
             consult_id=consult_id, model=model, mode=m.mode,
             answers_to=asker,
         ))
+
+
+class _DispatchAcceptanceIn(BaseModel):
+    recipe_id: str
+    # interim=true — the mid-recipe review pass (owner F31: "a spawn in
+    # between steps to do a plain review"); its verdict rides the same
+    # acceptance_verdict event with body.interim=true, so a later FINAL
+    # 'pass' supersedes it at the close gate (latest-verdict-wins).
+    interim: bool = False
+
+
+class _DispatchAcceptanceOut(BaseModel):
+    acceptor_id: str
+    interim: bool
+    note: str = (
+        "acceptor spawned (advisor seat, own shell); it fetches its own "
+        "evidence, verifies against the VERBATIM goal + named artifacts, "
+        "fixes what it safely can, and records emit_recipe_event(kind="
+        "'acceptance_verdict'). Its verdict arrives on your flowback "
+        "subscription; close is gated on the latest verdict being 'pass'.")
+
+
+class DispatchAcceptance(_ClaudeTool):
+    """F31 — spawn the FINAL (or interim) ACCEPTANCE PASS: the advisor-seat
+    ACCEPTOR in its own shell. Consult-before-spawn: the acceptance brief
+    (verbatim goal, outcomes + met evidence, workspace, consulted specs) is
+    posted to the acceptor's inbox FIRST, so it can never boot into
+    silence. The acceptor fetches its OWN evidence — the dispatcher never
+    curates what the judge sees (that was the Sol-review #2 hole). The
+    neuron obeys the FSM's DISPATCH_ACCEPTANCE instruction with this verb;
+    interim=true runs the same pass mid-recipe as a plain review."""
+
+    name = "dispatch_acceptance"
+    InputModel = _DispatchAcceptanceIn
+    OutputModel = _DispatchAcceptanceOut
+
+    async def _run(self, m: _DispatchAcceptanceIn):
+        if not self.ctx.recipes.exists(m.recipe_id):
+            return _precondition(f"unknown recipe {m.recipe_id!r}")
+        r = self.ctx.recipes.load(m.recipe_id)
+        acceptor_id = f"acceptor-{uuid.uuid4().hex[:8]}"
+        brief = {
+            "task": ("interim-review" if m.interim
+                     else "final-acceptance"),
+            "interim": m.interim,
+            "recipe_id": m.recipe_id,
+            # the LAW: the user's words, whole — the acceptor judges
+            # against THESE plus any artifact they name (which it reads
+            # itself, in full).
+            "user_goal_verbatim": r.user_goal_verbatim,
+            "workspace": getattr(r, "workspace", None),
+            "outcomes": [
+                {"id": o.id, "description": o.description,
+                 "verification": o.verification, "met": o.met,
+                 "met_evidence": o.met_evidence}
+                for o in r.comprehension.expected_outcomes],
+            "consulted_specs": _recipe_consulted_spec_ids(self.ctx, r),
+            "caller": m.recipe_id,
+        }
+        send_res = await self.ctx.broker.send(BrokerMessage(
+            msg_id=str(uuid.uuid4()), ts=_now(),
+            **{"from": m.recipe_id}, to=acceptor_id,
+            kind="consult", body=brief))
+        if not getattr(send_res, "ok", False):
+            return send_res
+        spawn_res = await self.ctx.pool.spawn_acceptor(
+            m.recipe_id, acceptor_id,
+            model=_spawn_model_for("acceptor"))
+        if not getattr(spawn_res, "ok", False):
+            return spawn_res
+        self.ctx.recipes.append_worklog(m.recipe_id, {
+            "kind": "acceptance_dispatched",
+            "acceptor_id": acceptor_id, "interim": m.interim,
+        })
+        return Tool.ok(_DispatchAcceptanceOut(
+            acceptor_id=acceptor_id, interim=m.interim))
 
 
 class _ConsultCuriosityIn(BaseModel):
@@ -13874,21 +14061,44 @@ def _gc_stale_subscriptions(root: Path, *, keep: str, ttl_secs: int,
         candidates = list(root.glob("sub-*.spec"))
     except OSError:
         return 0
-    # 2026-08-17 (live incident, s4 planner resume): NEVER sweep a
-    # subscription the handle index still points at. The sweep used to take
-    # any >TTL spec — including a parked/idle shell's — and specs_for_handle
-    # then SKIPPED the swept sid, so the resume rewire handed back an EMPTY
-    # wiring block and the shell hand-composed its monitor (wrongly). Only
-    # anonymous/unindexed artifacts age out.
+    # 2026-08-17 (live incident, s4 planner resume): a subscription the
+    # handle index points at is NOT swept at the ordinary TTL — the sweep
+    # used to take a parked shell's spec and the resume rewire then handed
+    # back EMPTY wiring. F32 refinement (Sol-review #7): "never" became an
+    # immortality bug of its own (an orphaned indexed sid from a dead shell
+    # lived forever) — indexed sids now age out at a LONG ttl
+    # (EDP_REACTIVE_INDEXED_TTL_SECS, default 7 days) and are UNREGISTERED
+    # from the index on sweep, so a later rewire honestly says "no wiring —
+    # arm_wiring()" instead of pointing at a ghost.
     try:
         from ..reactive.handle_index import all_indexed_sids
         indexed = all_indexed_sids(root)
     except Exception:  # noqa: BLE001 — an unreadable index must not stop GC
         indexed = set()
+    try:
+        indexed_ttl = int(os.environ.get(
+            "EDP_REACTIVE_INDEXED_TTL_SECS", str(7 * 24 * 3600)))
+    except ValueError:
+        indexed_ttl = 7 * 24 * 3600
     for spec_path in candidates:
         sid = spec_path.name[:-len(".spec")]
-        if sid == keep or sid in indexed:
+        if sid == keep:
             continue
+        if sid in indexed:
+            try:
+                if now_ts - spec_path.stat().st_mtime <= indexed_ttl:
+                    continue
+            except OSError:
+                continue
+            # aged past even the long TTL — drop the index entry too.
+            try:
+                from ..reactive.handle_index import (
+                    _load as _hi_load, unregister_subscription)
+                for h, sids in _hi_load(root).items():
+                    if sid in sids:
+                        unregister_subscription(root, h, sid)
+            except Exception:  # noqa: BLE001 — best-effort
+                pass
         try:
             if now_ts - spec_path.stat().st_mtime <= ttl_secs:
                 continue
@@ -14915,6 +15125,7 @@ ALL_TOOL_CLASSES = [
     # this verb now also means restoring those (see roles.py, the retired
     # _CONSULT note).
     ConsultCuriosity,
+    DispatchAcceptance,     # F31 — the final/interim acceptance pass (neuron)
     # ConsultGoalKeeper / ConsultPatternObserver — DELETED with their roles,
     # owner ruling 2026-08-04 (classes in git history at 18cac3f).
     CheckInbox,

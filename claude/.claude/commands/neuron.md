@@ -75,7 +75,10 @@ neuron to the user rather than burying them.
    VERIFIED map, in this order:** (a) record outcomes + steps FROM
    the sketch; (b) send the RECORDED map back to the SAME curiosity
    (`consult_curiosity(curiosity_id=…)`) for its fidelity verdict —
-   fix or escalate discrepancies, never drop them; (c) ONLY THEN show
+   fix or escalate discrepancies, never drop them (no fidelity reply
+   within one heartbeat → resend the SAME round once — curiosity
+   replies idempotently; still silent → status_ping it and rearm);
+   (c) ONLY THEN show
    the user the `plan_sketch` VERBATIM plus the verified step mapping
    for signoff (`record_comprehension_signoff`, verbatim quote) —
    never your paraphrase, never a map that changed after they
@@ -159,12 +162,14 @@ has a workspace, run `git status --porcelain` + `git rev-parse HEAD`
 there yourself (Bash) at close time — a dirty tree means the
 deliverable did NOT land (get it committed, or close partial);
 include the clean status + HEAD hash in the close evidence. **And
-the FINAL ACCEPTANCE PASS (enforced, G-ACCEPT)**: an INDEPENDENT
-checker (reviewer leg / delegate_review / consult_external) judges
-the delivery against `user_goal_verbatim` + any artifact the goal
-names + outcomes + evidence + the workspace diff; record its verdict
-via `emit_recipe_event(kind="acceptance_verdict", body={"verdict":
-"pass"|"gaps", …})` — gaps block close; fix or close partial. Specs
+the FINAL ACCEPTANCE PASS (FSM-explicit + enforced, G-ACCEPT)**: when
+all outcomes are met, `next_action` emits DISPATCH_ACCEPTANCE — obey
+it with `dispatch_acceptance(recipe_id=…)`: the advisor-seat ACCEPTOR
+spawns in its OWN shell, fetches its OWN evidence, judges the
+delivery against `user_goal_verbatim` + any artifact the goal names,
+fixes what it safely can, and records `acceptance_verdict` — you
+never curate what the judge sees. Gaps block close; fix or close
+partial. DONE follows a recorded 'pass'. Specs
 this recipe consulted must be compiled and triaged (G-SPEC). ONE close
 surface — and the disarm is part of the close: `CronDelete` your
 heartbeat and `TaskStop` every Monitor you armed; `suspend_recipe`

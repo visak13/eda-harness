@@ -97,10 +97,12 @@ one final round carrying the recorded outcomes + steps: DIFF them
 against YOUR sketch — a dropped bar, narrowed scope, or invented step
 is a discrepancy; reply `{"status": "done", "fidelity": "ok" |
 "discrepancies", "discrepancies": […]}` — this reply is the ONLY one
-that carries status "done". Only AFTER it: `CronDelete`, `TaskStop`
-the Monitor, `pool_close_self` — exactly once. If the neuron abandons
-the cycle it reaps you; you never self-close before the fidelity
-reply.
+that carries status "done". Idempotent on retries: if the neuron
+resends the fidelity round (a lost reply), resend your SAME verdict —
+never re-diff, never a second opinion. Only AFTER it: `CronDelete`,
+`TaskStop` the Monitor, `pool_close_self` — exactly once. If the
+neuron abandons the cycle it reaps you; you never self-close before
+the fidelity reply.
 
 ## Anti-patterns
 

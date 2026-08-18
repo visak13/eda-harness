@@ -1,0 +1,60 @@
+commit 44c9754f569bea3f6f4160c58913186c00b74dc3
+Author: Vishal Oulkar <8471111+visak13@users.noreply.github.com>
+Date:   Tue Aug 18 08:09:15 2026 +0530
+
+    Framework overhaul from the 2026-08-17 Q&A rounds + live incidents (F1-F29)
+    
+    Role surface & wiring:
+    - F1: enforce-mode role registration (off-role tools absent, no stubs);
+      drift test; eda.bat stamps neuron role + skip-permissions + model pin
+    - F3: shadow retired (EDP_SHADOW default off) — arm_wiring() composes each
+      role's wake plane server-side; cards rewired to agent-owned monitor+cron;
+      F3b: snapshot planes emit {snapshot, changed}; F8/F9 fixed by the same
+    - F5: steer_worker — the planner's routed correction verb
+    - F25: GC never sweeps indexed subscriptions; empty rewire names arm_wiring;
+      create_plan(reopen=true) unwedges a reopened step's terminal plan
+    
+    Latency & the freeze class (F24/F26, measured live):
+    - WAIT instructions carry pool-liveness evidence (F19)
+    - all in-tool git execution DELETED (owner ruling): reviewer brief carries a
+      run-it-yourself instruction; G-COMMIT retired; no MCP tool launches
+      external programs against workspaces
+    - both driving cards: never end a turn with an MCP call in flight
+    
+    Gates & quality:
+    - F2: compiled recipe brief (pure renderer, save-hook, detail='brief',
+      schema-coverage test)
+    - F6: flow-down gate advisory at dispatch, enforced at step close
+    - F20 G-SPEC, F21 G-ACCEPT (goal-vs-delivery acceptance pass),
+      F22 G-CHALLENGE (enforced at step close after same-day revision),
+      F13 adjudication rides every plan tick, F12 scheduled progress review
+    - F7: dead-letter warning to the sender on broker_send
+    
+    Comprehension seam (jobsearch post-mortem):
+    - F11: curiosity (advisor seat) drafts the plan_sketch; neuron authors from it
+    - F27: named artifacts are requirement sources — bars carried verbatim
+    - F28: right-size before decomposing, at every level (curiosity/neuron/planner)
+    - F29: curiosity survives clear to verify sketch-to-map fidelity; the user
+      signs off the sketch verbatim, not a paraphrase
+    
+    Full trail: claude/docs/observations-qa.md. 1500+ tests green.
+    
+    Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
+ .gitignore                                       |   2 +
+ claude/.claude/commands/agentic-plan.md          | 104 +--
+ claude/.claude/commands/curiosity.md             |  71 +-
+ claude/.claude/commands/neuron.md                | 105 ++-
+ claude/.claude/commands/reviewer.md              |  16 +-
+ claude/.claude/commands/worker.md                |  59 +-
+ claude/.mcp.json                                 |   2 +-
+ claude/docs/guides-src/manifest.json             |   2 +-
+ claude/docs/guides-src/roles/curiosity.md        |  71 +-
+ claude/docs/guides-src/roles/neuron.md           |  83 +-
+ claude/docs/guides-src/roles/planner.md          |  74 +-
+ claude/docs/guides-src/roles/reviewer.md         |   8 +-
+ claude/docs/guides-src/roles/worker.md           |  29 +-
+ claude/docs/guides-src/shared/seat-law.md        |   8 -
+ claude/docs/guides-src/shared/vocabulary-core.md |  22 +-
+ claude/docs/observations-qa.md                   | 328 ++++++++
+ claude/src/edp_claude/mcp_server.py              |  80 +-

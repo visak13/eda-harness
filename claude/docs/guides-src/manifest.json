@@ -36,6 +36,7 @@
     ]
   },
   "uncompiled": {
+    "acceptor": "hand-maintained command (F31) \u2014 final-acceptance shell, advisor seat; compile when it next changes materially",
     "consult": "hand-maintained command \u2014 advisory seat, low churn; compile when it next changes materially",
     "specialist": "hand-maintained command \u2014 SME training protocol, low churn; compile when it next changes materially",
     "ocak": "RETIRED stub (DESIGN-v5 P1) \u2014 never compiled"

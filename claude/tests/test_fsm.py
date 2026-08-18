@@ -154,12 +154,16 @@ def test_reviewing_work_but_no_outcomes_is_partial():
     assert "no expected_outcomes" in i.rationale
 
 
-def test_reviewing_outcomes_met_is_succeeded():
+def test_reviewing_outcomes_met_emits_dispatch_acceptance():
+    # F31 (2026-08-18): all-outcomes-met no longer goes straight to DONE —
+    # the PURE FSM always emits DISPATCH_ACCEPTANCE (it cannot read the
+    # events trail); the TOOL layer downgrades to DONE when the latest
+    # acceptance_verdict is 'pass' or the gate is off.
     o = [{"id": "o1", "description": "d", "verification": "v", "met": True}]
     i = recipe_next_action(_rev(o, "done"))
-    assert i.kind == "done"
-    assert i.args.get("partial") is None  # clean succeed
-    assert "SUCCEEDED" in i.rationale
+    assert i.kind == "dispatch_acceptance"
+    assert "dispatch_acceptance" in i.rationale
+    assert "pass" in i.rationale
 
 
 def test_reviewing_outcomes_unmet_is_partial():

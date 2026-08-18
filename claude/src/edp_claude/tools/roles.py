@@ -515,6 +515,8 @@ _NEURON: frozenset[str] = frozenset({
     # -consult_goal_keeper / -consult_pattern_observer — DEAD roles (owner
     # ruling 2026-08-04); their tool classes are deleted with them.
     "consult_curiosity",
+    # F31 — the FSM's DISPATCH_ACCEPTANCE instruction is obeyed with this.
+    "dispatch_acceptance",
     "consult_specialist", "record_specialist_consult", "train_specialist",
     "list_spec_learnings", "resolve_spec_learnings",
     # v7 WS3 (§2.6c) — planned-vs-actual budget, code-assembled (star budget
@@ -556,6 +558,31 @@ _CURIOSITY: frozenset[str] = frozenset({
 # (history at 18cac3f). `test_every_pool_spawned_role_has_a_toolset` derives
 # its keys from http_pool.py, whose spawn methods went with them.
 
+# ── F31 (2026-08-18, owner ruling): the ACCEPTOR — the final goal-vs-
+# delivery pass, run by the advisor seat (Fable) in ITS OWN shell. It
+# verifies the whole delivery against the VERBATIM goal + any artifact the
+# goal names, fixes what it safely can (file edits ride the harness tools,
+# not MCP verbs), and records the verdict via emit_recipe_event(kind=
+# 'acceptance_verdict') — the artifact G-ACCEPT gates close on. This closes
+# the Sol-review #2 hole: the checker fetches its OWN evidence instead of
+# grading what the neuron hands it. Read-only over the object graph; its
+# only "writes" are the verdict event, context notes, and test lineage for
+# tests it adds while fixing.
+_ACCEPTOR: frozenset[str] = frozenset({
+    "whoami", "check_inbox", "reply", "notify_above", "ask_above",
+    "emit_recipe_event",
+    "get_guide",
+    "read_object", "query_objects", "describe_objects",
+    "observe", "arm_wiring", "list_subscriptions", "unobserve",
+    RECORD_CONTEXT, "recall", "search_context", "read_worklog",
+    "get_recipe_digest", "get_specialist_docs", "assemble_ruleset",
+    "test_lineage_report", "record_test_lineage",
+    # cross-family second opinion on a close call — never the verdict itself
+    "consult_external", "delegate_review",
+    "status_ping", "reflex",
+    "pool_close_self",
+})
+
 ROLE_TOOLSETS: dict[str, frozenset[str]] = {
     "worker": _WORKER,
     "planner": _PLANNER,
@@ -563,6 +590,7 @@ ROLE_TOOLSETS: dict[str, frozenset[str]] = {
     "specialist": _SPECIALIST,
     "neuron": _NEURON,
     "curiosity": _CURIOSITY,
+    "acceptor": _ACCEPTOR,
 }
 
 
@@ -648,6 +676,9 @@ CRUD_OBJECT_SCOPE: dict[str, frozenset[str]] = {
     # role returns None = UNCONSTRAINED full CRUD). goal_keeper /
     # pattern_observer rows deleted with their roles (owner ruling 2026-08-04).
     "curiosity": frozenset(),
+    # F31: the acceptor judges and fixes FILES (harness tools), never the
+    # object graph — read-only over the generic CRUD verbs.
+    "acceptor": frozenset(),
 }
 
 

@@ -39,6 +39,12 @@ class InstructionKind(StrEnum):
     # deregistered RecordStep tool class. Unlike INVOKE_SKILL above, nothing
     # ever constructed an Instruction of that kind.)
     SPAWN_PLANNER = "spawn_planner"
+    # F31 (2026-08-18, owner ruling): the FINAL ACCEPTANCE PASS is explicit
+    # in the FSM — emitted when every outcome is met but no 'pass'
+    # acceptance_verdict is recorded yet. The neuron obeys it with
+    # dispatch_acceptance(recipe_id=…), which spawns the advisor-seat
+    # ACCEPTOR in its own shell; DONE follows a recorded 'pass'.
+    DISPATCH_ACCEPTANCE = "dispatch_acceptance"
     RUN_INLINE = "run_inline"
     DISPATCH_ACTION = "dispatch_action"
     RECORD_RESULT = "record_result"

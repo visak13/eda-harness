@@ -124,6 +124,8 @@ ROLE_COMMAND_FILES: dict[str, str] = {
     # NOT by the hyphenated activator/filename. goal_keeper / pattern_observer
     # rows deleted with their DEAD roles (owner ruling 2026-08-04).
     "curiosity": ".claude/commands/curiosity.md",
+    # F31 (2026-08-18): the final-acceptance shell (advisor seat).
+    "acceptor": ".claude/commands/acceptor.md",
 }
 
 # ── command files that are NOT keyed by ROLE_TOOLSETS (a9 review finding) ───

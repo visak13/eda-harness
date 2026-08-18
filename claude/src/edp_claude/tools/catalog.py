@@ -58,6 +58,7 @@ TOOL_ONE_LINERS: dict[str, str] = {
     "observe": "Arm one reactive subscription (RUN the returned monitor_cmd — a spec with no live driver is deaf).",
     "arm_wiring": "ONE call arms your role's whole wake plane — run the returned monitor_cmd + CronCreate args verbatim.",
     "steer_worker": "Steer YOUR live worker (address resolved from your plan; the worker must steer_ack before acting).",
+    "dispatch_acceptance": "Spawn the advisor-seat ACCEPTOR (own shell): final/interim goal-vs-delivery pass; records acceptance_verdict.",
     "unobserve": "Remove one persisted subscription spec.",
     "list_subscriptions": "List this handle's persisted subscription specs.",
     "emit_recipe_event": "Append a typed event (learning/review_finding/discovery/...) to the recipe trail; kind=learning auto-proposes to the spec sidecar.",

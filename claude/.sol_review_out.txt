@@ -1,0 +1,106 @@
+ok: True | model: gpt-5.6 | error: None
+======================================================================
+[
+  {
+    "finding": "Deleting the close-time git capture removes the only enforced proof that reviewed work is committed, clean, and on the intended tree.",
+    "evidence": "A reviewer can inspect commit A, after which a worker modifies tracked or untracked files, switches branches, or never lands the claimed commit; the worker's statement and earlier reviewer rerun remain true enough to record, and G-ACCEPT can still pass without any atomic close-time comparison.",
+    "severity": "high",
+    "target": "F26"
+  },
+  {
+    "finding": "G-ACCEPT gates the presence of a recorded pass verdict rather than independently establishing the delivered state it purports to protect.",
+    "evidence": "The neuron is instructed to emit acceptance_verdict after consulting a checker, so it can give the checker incomplete evidence or omit the real workspace diff and then record pass; close sees the required event even when a named artifact, untracked file, or user requirement is absent.",
+    "severity": "high",
+    "target": "F21/G-ACCEPT"
+  },
+  {
+    "finding": "The F29 fidelity review is advisory despite being ordered before first spawn, so the exact transcription defect it targets remains mechanically skippable.",
+    "evidence": "If curiosity is slow, dead, or reports discrepancies, the neuron can dispatch anyway because no gate binds spawn to a fidelity-ok reply; auditing or prose cannot prevent work from proceeding against a narrowed map.",
+    "severity": "high",
+    "target": "F29"
+  },
+  {
+    "finding": "Curiosity reports status done at clear=true while F29 requires that same shell to remain live for a later fidelity round.",
+    "evidence": "Pool terminal-status handling or close_when_idle can treat the done reply as completion and reap the shell before the neuron records and returns the map, leaving the final consult addressed to a dead inbox.",
+    "severity": "high",
+    "target": "F29 Step 3/Step 4"
+  },
+  {
+    "finding": "F29 lets the user approve before fidelity corrections and does not require renewed signoff after the recorded map changes.",
+    "evidence": "The user approves the sketch plus an initial mapping, curiosity later finds a dropped bar, and the neuron edits outcomes or steps to resolve it; execution then follows a map the user never saw or approved.",
+    "severity": "high",
+    "target": "F29/F2 comprehension signoff"
+  },
+  {
+    "finding": "The neuron cold-boot sequence requires arm_wiring with a recipe_id before a new recipe has been created.",
+    "evidence": "On /neuron <goal>, resolve_recipe may return no existing id, yet boot step 2 says to arm handle=<recipe_id> and start_recipe occurs only at step 4, so wiring is empty or bound to the wrong handle and early consult or lifecycle events can be missed.",
+    "severity": "high",
+    "target": "F3 arm_wiring / compiled neuron card Boot"
+  },
+  {
+    "finding": "arm_wiring is not an atomic lifecycle operation even though the design treats its three separate calls as one.",
+    "evidence": "If the shell dies after the subscription is indexed but before Monitor or CronCreate succeeds, F25 prevents GC from removing that indexed sid, reissue may return reused=true for the orphan, and there is neither a live driver nor a heartbeat to expose the deaf subscription.",
+    "severity": "high",
+    "target": "F3/F25 arm_wiring"
+  },
+  {
+    "finding": "Idempotency covers subscription creation but not Monitor and cron creation, allowing rewire retries to multiply wake sources.",
+    "evidence": "After a lost response or compaction, executing the returned block again can start another Monitor and CronCreate for the reused subscription; duplicated ticks race reconcile calls, while agent-memory-based disarm can leave unremembered tasks running after close.",
+    "severity": "high",
+    "target": "F3 arm_wiring lifecycle"
+  },
+  {
+    "finding": "F28's action consolidation creates a direct bypass of G-CHALLENGE's three-action threshold.",
+    "evidence": "A planner can place a large, risky serial implementation into one action or batch_group to obey right-sizing, and the step then needs neither a challenge nor waiver because the gate counts action records rather than underlying work or risk.",
+    "severity": "high",
+    "target": "F28 versus F22/G-CHALLENGE"
+  },
+  {
+    "finding": "The one-sitting rule cannot deliver its claimed economics because even a one-step, one-worker recipe still mandates curiosity, a planner lifecycle, comprehension signoff, close gates, and an independent acceptance pass.",
+    "evidence": "A task that one worker could finish directly still incurs multiple cold shells and verification ceremonies, so authoring one step does not remove the fixed overhead F28 identifies as the reason orchestration is uneconomic.",
+    "severity": "high",
+    "target": "F28 versus F21/F29 and recipe lifecycle"
+  },
+  {
+    "finding": "Reopening a terminal plan preserves done actions without requiring them to be invalidated or reverified against the changed reason for reopening.",
+    "evidence": "If an outcome or acceptance bar changes after success, create_plan(reopen=true) retains old done evidence, allowing the reopened step to close again while stale actions still satisfy lineage and coverage metadata.",
+    "severity": "high",
+    "target": "F25 create_plan(reopen=true)"
+  },
+  {
+    "finding": "The flow-down gate can be satisfied by metadata assertions without proving that concerns or acceptance-sketch obligations were implemented.",
+    "evidence": "A planner can tag one action with every concern and copy every acceptance line into sketch_covers while giving it a verify command that checks only a happy path; the step-close coverage gate passes although security or error-handling behavior is absent.",
+    "severity": "high",
+    "target": "F6 flow-down gate"
+  },
+  {
+    "finding": "The design contradicts itself about when full flow-down coverage is enforced.",
+    "evidence": "F6 says full coverage moves to plan ratification, while the status record and planner card say it is enforced only at step close; under the implemented latter rule all workers can finish before a missing concern is discovered, forcing late corrective work and extra shells.",
+    "severity": "medium",
+    "target": "F6"
+  },
+  {
+    "finding": "G-SPEC does not close the global-spec provenance hole that motivated it.",
+    "evidence": "The gate checks specialist sessions created by this recipe and specs recorded as consulted, so a planner can attach an old global spec without registering a new session or consultation and close despite that spec being stale, uncompiled for the current requirements, or pending review elsewhere.",
+    "severity": "medium",
+    "target": "F20/G-SPEC"
+  },
+  {
+    "finding": "F29 has no durable correlation or retry protocol for the final fidelity exchange.",
+    "evidence": "If the neuron retries after a lost reply, curiosity may process two final rounds, send competing verdicts, and attempt exactly-once disarm twice; if it closes after the first reply before delivery is observed, the retry becomes a dead letter with no authoritative completion state.",
+    "severity": "medium",
+    "target": "F29 curiosity lifecycle"
+  },
+  {
+    "finding": "The challenge waiver makes G-CHALLENGE satisfiable by an unvalidated sentence regardless of plan risk.",
+    "evidence": "A planner can record challenge_waiver with text such as not warranted for every three-action plan, satisfying the close gate without an adversarial pass because neither the rationale nor its risk basis is independently checked.",
+    "severity": "medium",
+    "target": "F22/G-CHALLENGE"
+  },
+  {
+    "finding": "The role-toolset drift test proves only that a tool is assigned somewhere, not that it is assigned to every role that needs it or withheld from roles that must not have it.",
+    "evidence": "A newly added close or mutation tool placed only in the worker set passes the >=1-role assertion while the neuron lacks a required capability or the worker gains an unsafe one.",
+    "severity": "medium",
+    "target": "F1 ROLE_TOOLSETS drift test"
+  }
+]

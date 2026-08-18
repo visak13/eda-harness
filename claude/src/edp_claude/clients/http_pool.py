@@ -167,6 +167,15 @@ class HttpPool(PoolPort):
             "curiosity", curiosity_id, parent_session=parent_id, **extra
         )
 
+    async def spawn_acceptor(
+        self, parent_id: str, acceptor_id: str, model: str | None = None
+    ) -> ToolResult:
+        # F31: the final-acceptance shell (advisor seat).
+        extra = {"model": model} if model else {}
+        return await self._spawn(
+            "acceptor", acceptor_id, parent_session=parent_id, **extra
+        )
+
     async def spawn_specialist(
         self, parent_id: str, specialist_id: str,
         claude_session: str | None = None,
