@@ -72,3 +72,7 @@ Desktop.ini
 # v7 derived/runtime (rebuildable)
 claude/.graph/
 claude/.bridge/
+
+# session scratch
+claude/.f_diffstat.txt
+claude/.sol_review_out.txt
