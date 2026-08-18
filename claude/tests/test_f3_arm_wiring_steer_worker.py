@@ -66,11 +66,25 @@ async def test_arm_wiring_worker_returns_runnable_parts(tmp_path, monkeypatch):
     assert "check_inbox" in out["cron_prompt"]
     assert out["reused"] is False
 
-    # idempotent: the second arm reuses the same subscription
+    # F36 R4#5: reuse is HONEST — files alone are not a live Monitor. With
+    # no driver heartbeat, the re-arm says reused=False (start the cmd).
     res2 = await ArmWiring(ctx)._run(_ArmWiringIn())
     out2 = res2.data if isinstance(res2.data, dict) else res2.data.model_dump()
-    assert res2.ok and out2["reused"] is True
+    assert res2.ok and out2["reused"] is False
     assert out2["subscription_id"] == out["subscription_id"]
+
+    # a FRESH heartbeat (a live driver) makes the re-arm reused=True.
+    import json as _json
+    from datetime import datetime, timezone
+    hb = (tmp_path / ".reactive"
+          / f"{out['subscription_id']}.spec.hb")
+    hb.write_text(_json.dumps(
+        {"pid": 1234, "ts": datetime.now(timezone.utc).isoformat()}),
+        encoding="utf-8")
+    res3 = await ArmWiring(ctx)._run(_ArmWiringIn())
+    out3 = res3.data if isinstance(res3.data, dict) else res3.data.model_dump()
+    assert res3.ok and out3["reused"] is True
+    assert out3["subscription_id"] == out["subscription_id"]
 
 
 async def test_arm_wiring_planner_spec_merges_without_orphaned(

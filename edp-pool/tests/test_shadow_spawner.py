@@ -21,7 +21,11 @@ def test_parent_addressing():
 
 
 def test_shadow_flag(monkeypatch):
+    # F3 (2026-08-17, owner ruling): the shadow is OFF by default —
+    # EDP_SHADOW=1 is the explicit diagnostic opt-in.
     monkeypatch.delenv("EDP_SHADOW", raising=False)
+    assert not shadow_enabled()
+    monkeypatch.setenv("EDP_SHADOW", "1")
     assert shadow_enabled()
     monkeypatch.setenv("EDP_SHADOW", "0")
     assert not shadow_enabled()
@@ -176,7 +180,7 @@ def test_monitor_launch_builds_console_shadow(sp, tmp_path, monkeypatch):
         lambda **kw: type("D", (), {"start": lambda s: None,
                                     "stop": lambda s: None,
                                     "is_alive": lambda s: True})())
-    monkeypatch.delenv("EDP_SHADOW", raising=False)
+    monkeypatch.setenv("EDP_SHADOW", "1")  # F3: opt-in (default off)
 
     sp.launch("worker:mon", "worker", "plan-x-s2:a3", mode="monitor")
 
@@ -245,7 +249,7 @@ def test_headless_launch_builds_shadow_with_nonced_env(
         lambda **kw: type("D", (), {"start": lambda s: None,
                                     "stop": lambda s: None,
                                     "is_alive": lambda s: True})())
-    monkeypatch.delenv("EDP_SHADOW", raising=False)
+    monkeypatch.setenv("EDP_SHADOW", "1")  # F3: opt-in (default off)
 
     sp.launch("worker:abc", "worker", "plan-x-s2:a3", mode="headless")
 
@@ -314,7 +318,7 @@ def test_respawn_on_a_handle_with_prior_ledger_keeps_env_and_frames_in_sync(
         lambda **kw: type("D", (), {"start": lambda s: None,
                                     "stop": lambda s: None,
                                     "is_alive": lambda s: True})())
-    monkeypatch.delenv("EDP_SHADOW", raising=False)
+    monkeypatch.setenv("EDP_SHADOW", "1")  # F3: opt-in (default off)
 
     # the crashed predecessor's ledger, carrying its own nonce
     sp.shadow_dir.mkdir(parents=True, exist_ok=True)

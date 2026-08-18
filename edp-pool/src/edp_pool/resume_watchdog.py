@@ -414,7 +414,16 @@ class ResumeWatchdog:
                 except OSError:
                     continue
                 key = (_sid, str(path))
-                base = self._file_baselines.setdefault(key, size)
+                # F36 R4#15: seed the baseline from the PARK-TIME capture
+                # when the park recorded one — first-tick adoption hid any
+                # event that landed in the park→first-tick gap forever.
+                if key not in self._file_baselines:
+                    _park_bases = ((s.get("parked") or {})
+                                   .get("file_baselines") or {})
+                    _seed = _park_bases.get(str(path))
+                    self._file_baselines[key] = (
+                        int(_seed) if _seed is not None else size)
+                base = self._file_baselines[key]
                 if size <= base:
                     continue
                 fire = kinds is None

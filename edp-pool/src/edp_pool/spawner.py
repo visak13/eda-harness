@@ -276,31 +276,51 @@ class SubprocessSpawner(Spawner):
                 log_path=log_path,
             )
             launch.spawn()
-            if not launch.wait_ready():
-                # DESIGN-v7 fix C (verified live): a ready-timeout used to be
-                # SILENT — activation was typed into a shell that may never
-                # have booted. Log the failure loudly, name the drain log,
-                # and say whether the drain shows the Bypass Permissions
-                # acceptance dialog (a FRESH config dir shows it before the
-                # TUI; the pool deliberately does NOT auto-accept it — that
-                # is the operator's one-time manual act). Then proceed
-                # fail-open: the widened ready markers make a false timeout
-                # rare, and killing a slow-but-healthy shell is worse.
-                bypass = (" The drain log shows the Bypass Permissions "
-                          "acceptance dialog — this CLAUDE_CONFIG_DIR needs "
-                          "a one-time manual accept; the pool will not "
-                          "auto-accept it."
-                          if launch.bypass_dialog_seen else "")
-                logging.getLogger(__name__).error(
-                    "ready-timeout for %s (%s): no ready marker within %ss; "
-                    "drain log: %s.%s Sending the activation anyway "
-                    "(fail-open).",
-                    session_id, handle, launch.ready_timeout,
-                    log_path, bypass,
-                )
-            launch.send_activation(activation_line)
+            # F36 R4#12 (2026-08-18): REGISTER the process the moment it
+            # exists. Readiness/activation below can raise (e.g. a bad
+            # EDP_SUBMIT_DELAY_MS), and an unregistered live process was a
+            # true orphan — invisible to kill/alive/reap. Registered first,
+            # a failed activation is terminated instead of leaked.
+            self._launches[session_id] = launch
+            try:
+                self._activate_pty(launch, session_id, handle,
+                                   activation_line, log_path)
+            except BaseException:
+                try:
+                    launch.kill()
+                except Exception:  # noqa: BLE001 — best-effort teardown
+                    pass
+                self._launches.pop(session_id, None)
+                raise
+            return
 
         self._launches[session_id] = launch
+
+    def _activate_pty(self, launch, session_id: str, handle: str,
+                      activation_line: str, log_path) -> None:
+        if not launch.wait_ready():
+            # DESIGN-v7 fix C (verified live): a ready-timeout used to be
+            # SILENT — activation was typed into a shell that may never
+            # have booted. Log the failure loudly, name the drain log,
+            # and say whether the drain shows the Bypass Permissions
+            # acceptance dialog (a FRESH config dir shows it before the
+            # TUI; the pool deliberately does NOT auto-accept it — that
+            # is the operator's one-time manual act). Then proceed
+            # fail-open: the widened ready markers make a false timeout
+            # rare, and killing a slow-but-healthy shell is worse.
+            bypass = (" The drain log shows the Bypass Permissions "
+                      "acceptance dialog — this CLAUDE_CONFIG_DIR needs "
+                      "a one-time manual accept; the pool will not "
+                      "auto-accept it."
+                      if launch.bypass_dialog_seen else "")
+            logging.getLogger(__name__).error(
+                "ready-timeout for %s (%s): no ready marker within %ss; "
+                "drain log: %s.%s Sending the activation anyway "
+                "(fail-open).",
+                session_id, handle, launch.ready_timeout,
+                log_path, bypass,
+            )
+        launch.send_activation(activation_line)
 
     def alive(self, session_id: str) -> bool:
         lp = self._launches.get(session_id)

@@ -12,11 +12,13 @@ mutation (that stays in the object/CRUD surface).
 """
 
 import json
+import os
 import sys
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, TextIO
 
@@ -202,54 +204,94 @@ _UNSET = object()
 _SKIP = object()
 
 
+def _wiring_lookback_iso() -> str:
+    """F36 R4#3 — the ARM-GAP CURSOR. A follow-only source that starts at
+    'now' (EOF / connect-time) drops every event landing between
+    arm_wiring returning and this driver's first poll — the residual root
+    of 'the reply landed but nothing woke me'. Follow-only sources
+    therefore start a small bounded window BACK from process start; the
+    per-source ts-dedupe absorbs the (rare, restart-only) duplicates.
+    Missed wakes are unrecoverable until a heartbeat; duplicates are one
+    redundant check_inbox — the trade is deliberate."""
+    import os as _os
+    try:
+        secs = float(_os.environ.get("EDP_WIRING_LOOKBACK_SECS", "120"))
+    except ValueError:
+        secs = 120.0
+    return (datetime.now(timezone.utc)
+            - timedelta(seconds=secs)).isoformat()
+
+
 def _tail_jsonl(path: Path, observer, stop: threading.Event,
-                poll_ms: int, replay: bool = False) -> None:
+                poll_ms: int, replay: bool = False,
+                since: str | None = None) -> None:
     """Follow appends (tail -F). `replay=False` (default) seeks to EOF
     first → only NEW entries wake the subscriber; the historical entries
     (e.g. the plan-authoring `plan_saved` lines) are NOT replayed as
     wakes — that was pure noise on every fresh subscription (the s6
     planner's 'historical plan_saved replays'). Catch-up after a gap is
     via read_worklog / the heartbeat, not a wake storm. `replay=True`
-    opts back into full history (the reconnect-replay use)."""
+    opts back into full history (the reconnect-replay use).
+
+    F36 R4#3 — `since=<ISO ts>`: the ARM-TIME CURSOR. arm_wiring stamps
+    the arming instant into the spec; the follower then starts from the
+    file HEAD and delivers records with ts > since — so an event landing
+    between arm_wiring returning and this process's first poll is caught
+    instead of hidden behind an EOF seek. The hot files are rollup-
+    bounded, so the one head read is cheap.
+
+    F36 R4#4 — PARTIAL-LINE SAFETY. Reads are binary and the committed
+    offset advances only past newline-TERMINATED records: a record read
+    mid-append used to be half-consumed (parse fail → offset advanced →
+    the completed record never re-read → the wake silently lost).
+    Truncation (rollup rewrite, F34 R2#8) still resets to head with
+    ts-dedupe."""
     pos: int | None = None
-    last_ts: str = ""              # newest delivered record ts (dedupe key)
+    last_ts: str = str(since or "")  # newest delivered ts (dedupe cursor)
+    # scan_pass: re-reading pre-existing content (the since-cursored head
+    # read, or a post-truncation re-scan) — ts-filtered so history is not
+    # replayed. Off it, freshly APPENDED records deliver regardless of ts.
+    scan_pass = bool(since) and not replay
     while not stop.is_set():
         if path.exists():
-            with path.open("r", encoding="utf-8") as f:
-                if pos is None:
-                    if replay:
-                        pos = 0
-                    else:
-                        f.seek(0, 2)        # EOF — follow-only
-                        pos = f.tell()
-                # F34 R2 #8 (2026-08-18): rollup REWRITES the hot file to
-                # a short tail. A byte offset from the pre-rollup file
-                # seeks past EOF in the new one and reads NOTHING until
-                # the file regrows past the stale offset — the subscriber
-                # is silently deaf (the exact stuck-shell failure class).
-                # Detect truncation (size < pos) and re-read from 0,
-                # deduping replays by record ts so only genuinely new
-                # entries wake the subscriber.
-                f.seek(0, 2)
-                size = f.tell()
-                if size < pos:
-                    pos = 0
-                f.seek(pos)
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        rec = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    ts = str(rec.get("ts", ""))
-                    if ts and ts <= last_ts:
-                        continue        # replayed tail record — already sent
-                    if ts:
-                        last_ts = ts
-                    observer.on_next(rec)
-                pos = f.tell()
+            try:
+                size = path.stat().st_size
+            except OSError:
+                size = 0
+            if pos is None:
+                pos = 0 if (replay or since) else size
+            if size < pos:
+                pos = 0                     # truncation/rollup — re-scan
+                scan_pass = not replay
+            if size > pos:
+                try:
+                    with path.open("rb") as f:
+                        f.seek(pos)
+                        chunk = f.read(size - pos)
+                except OSError:
+                    chunk = b""
+                nl = chunk.rfind(b"\n")
+                if nl >= 0:
+                    complete, pos = chunk[:nl + 1], pos + nl + 1
+                    for raw in complete.splitlines():
+                        s = raw.decode("utf-8", errors="replace").strip()
+                        if not s:
+                            continue
+                        try:
+                            rec = json.loads(s)
+                        except json.JSONDecodeError:
+                            continue
+                        ts = str(rec.get("ts", ""))
+                        if scan_pass and (not ts or ts <= last_ts):
+                            continue    # history older than the cursor
+                        if ts and last_ts and ts <= last_ts:
+                            continue    # already delivered
+                        if ts:
+                            last_ts = ts
+                        observer.on_next(rec)
+                    scan_pass = False
+                # nl < 0: a partial trailing record — leave pos where it
+                # is and retry once the writer finishes the line.
         stop.wait(poll_ms / 1000.0)
 
 
@@ -398,7 +440,9 @@ class RealSources:
         elif since is not None:
             effective_since = since          # explicit catch-up point
         else:
-            effective_since = datetime.now(timezone.utc).isoformat()  # now
+            # F36 R4#3: bounded lookback instead of connect-time 'now' —
+            # closes the arm→Monitor-start gap (see _wiring_lookback_iso).
+            effective_since = _wiring_lookback_iso()
         cutoff = None if replay else _parse_ts(effective_since)
 
         def producer(observer, stop):
@@ -425,20 +469,28 @@ class RealSources:
 
     def _src_worklog(self, plan_id: str | None = None,
                      recipe_id: str | None = None,
-                     replay: bool = False) -> Observable:
+                     replay: bool = False,
+                     since: str | None = None) -> Observable:
         if plan_id:
             path = self.cfg.repo_root / ".plans" / plan_id / "worklog.jsonl"
         elif recipe_id:
             path = self.cfg.repo_root / ".recipes" / recipe_id / "events.jsonl"
         else:
             raise ValueError("worklog source needs plan_id or recipe_id")
+        eff_since = since
+        if not replay and eff_since is None:
+            # F36 R4#3: same bounded-lookback discipline as rx.broker.
+            eff_since = _wiring_lookback_iso()
         return _threaded(
             lambda obs, stop: _tail_jsonl(
-                path, obs, stop, self.cfg.poll_ms, replay=replay))
+                path, obs, stop, self.cfg.poll_ms, replay=replay,
+                since=eff_since))
 
     def _src_recipe(self, recipe_id: str,
-                    replay: bool = False) -> Observable:
-        return self._src_worklog(recipe_id=recipe_id, replay=replay)
+                    replay: bool = False,
+                    since: str | None = None) -> Observable:
+        return self._src_worklog(recipe_id=recipe_id, replay=replay,
+                                 since=since)
 
     def _src_plan(self, plan_id: str) -> Observable:
         # data-plane: re-reads the whole plan each tick → emit ONLY when an
@@ -815,6 +867,38 @@ def main(argv: list[str] | None = None) -> int:
             audit_sink=make_file_audit_sink(audit_path),
             liveness_probe=_make_liveness_probe(cfg),
             phase=2)  # Tier-2 stays dark until Phase 3
+
+    # F36 R4#5 (2026-08-18) — the driver PROVES it is alive and DIES when
+    # unobserved. (a) HEARTBEAT: `<spec>.hb` is rewritten every tick with
+    # {pid, ts}; arm_wiring's reuse check reads it — subscription METADATA
+    # alone stopped counting as a live Monitor (a dead driver's files used
+    # to answer "reused=true, don't start another" and leave the shell
+    # deaf). (b) SPEC-DELETION WATCH: unobserve deletes the spec files;
+    # this thread notices within a tick and exits the process, so a
+    # replaced/retired subscription cannot keep generating wakes (the
+    # duplicate-delivery half of the same finding).
+    _spec_path = Path(args.spec_file)
+    _hb_path = _spec_path.with_suffix(_spec_path.suffix + ".hb")
+
+    def _lifecycle_watch() -> None:
+        while True:
+            if not _spec_path.exists():
+                sys.stdout.write(json.dumps(
+                    {"completed": True,
+                     "reason": "spec deleted (unobserve) — driver exit"})
+                    + "\n")
+                sys.stdout.flush()
+                os._exit(0)
+            try:
+                _hb_path.write_text(json.dumps({
+                    "pid": os.getpid(),
+                    "ts": datetime.now(timezone.utc).isoformat()}),
+                    encoding="utf-8")
+            except OSError:
+                pass
+            time.sleep(max(cfg.poll_ms / 1000.0, 1.0))
+
+    threading.Thread(target=_lifecycle_watch, daemon=True).start()
 
     run(observable, dispatcher=dispatcher, owner=args.owner)
     return 0

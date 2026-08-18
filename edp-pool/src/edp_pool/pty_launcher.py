@@ -689,9 +689,15 @@ class PtyLaunch:
         CR (claude's Enter)."""
         assert self._proc is not None
         self._proc.write(text)
-        delay_ms = float(
-            os.environ.get(_SUBMIT_DELAY_ENV, _SUBMIT_DELAY_DEFAULT_MS)
-        )
+        # F36 R4#12: a NON-NUMERIC env value used to raise HERE — after the
+        # process existed but before the spawner registered it, leaving a
+        # true orphan. Tolerate junk (default), never raise mid-activation.
+        try:
+            delay_ms = float(
+                os.environ.get(_SUBMIT_DELAY_ENV, _SUBMIT_DELAY_DEFAULT_MS)
+            )
+        except (TypeError, ValueError):
+            delay_ms = float(_SUBMIT_DELAY_DEFAULT_MS)
         time.sleep(delay_ms / 1000)
         self._proc.write("\r")  # claude's Enter — submits the activation
 

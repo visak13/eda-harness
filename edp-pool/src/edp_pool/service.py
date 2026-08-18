@@ -603,6 +603,18 @@ class PoolService(Microservice):
         return int(self.limit_overrides.get(
             "max_total_shells", _max_total_shells()))
 
+    def max_live_shells(self) -> int:
+        """F36 R4#9 — the HARD live-process ceiling: active + starting +
+        parked + resuming. Parked shells left the throughput caps (their
+        purpose) but are still real Claude/MCP/Monitor process trees;
+        without this, park-N/spawn-N cycles grew them without bound.
+        Default: 2x the total-shells throughput cap."""
+        try:
+            return int(os.environ.get(
+                "EDP_MAX_LIVE_SHELLS", str(self.max_total_shells() * 2)))
+        except ValueError:
+            return self.max_total_shells() * 2
+
     def set_limits(self, updates: dict) -> dict:
         """Apply {max_workers|max_planners|max_total_shells: int|None};
         None clears an override back to the env/default. Values are clamped
@@ -868,7 +880,15 @@ class PoolService(Microservice):
         self.reconcile_sessions()
         n = 0
         for sid, s in self.sessions.items():
-            if s.get("state") != "active":
+            st = s.get("state")
+            # F36 R4#1: a RESERVED ('starting') row holds its slot — that
+            # is what makes admission atomic; it has no pid yet, so it
+            # counts unconditionally (short-lived by construction).
+            if st == "starting":
+                if role is None or s.get("role") == role:
+                    n += 1
+                continue
+            if st != "active":
                 continue
             if role is not None and s.get("role") != role:
                 continue
@@ -908,36 +928,92 @@ class PoolService(Microservice):
         # exempt from the per-role caps ON PURPOSE (a reviewer must never
         # block a builder slot) and is counted under the total only. Every
         # refusal NAMES its env knob — the operator's fix is one env var.
-        if role == "worker":
-            active = self.active_workers()  # liveness-reconciled count
-            cap = self.max_workers()
-            if active >= cap:
+        #
+        # F36 R4#1 (2026-08-18): admission is a CRITICAL SECTION. The
+        # check-then-launch race let two concurrent spawns both observe the
+        # last free slot (and both take the same handle). The whole
+        # check + reservation now runs under _transition_lock; the slow
+        # launch happens OUTSIDE it against a reserved 'starting' row that
+        # counts toward every cap, and rolls back on failure.
+        with self._transition_lock:
+            if role == "worker":
+                active = self.active_workers()  # liveness-reconciled count
+                cap = self.max_workers()
+                if active >= cap:
+                    return Tool.propagate(
+                        source="edp-pool",
+                        code=ErrorCode.POOL_CAPACITY_EXCEEDED,
+                        message=f"max workers = {cap} (EDP_MAX_WORKERS / "
+                        f"panel limits); {active} alive; cannot spawn "
+                        "another",
+                    )
+            elif role == "planner":
+                active = self._active_count("planner")
+                cap = self.max_planners()
+                if active >= cap:
+                    return Tool.propagate(
+                        source="edp-pool",
+                        code=ErrorCode.POOL_CAPACITY_EXCEEDED,
+                        message=f"max planners = {cap} (EDP_MAX_PLANNERS / "
+                        f"panel limits); {active} alive; cannot spawn "
+                        "another",
+                    )
+            total = self._active_count()
+            total_cap = self.max_total_shells()
+            if total >= total_cap:
                 return Tool.propagate(
                     source="edp-pool",
                     code=ErrorCode.POOL_CAPACITY_EXCEEDED,
-                    message=f"max workers = {cap} (EDP_MAX_WORKERS / panel "
-                    f"limits); {active} alive; cannot spawn another",
+                    message=f"max total shells = {total_cap} "
+                    f"(EDP_MAX_TOTAL_SHELLS); {total} alive across all "
+                    "roles; cannot spawn another",
                 )
-        elif role == "planner":
-            active = self._active_count("planner")
-            cap = self.max_planners()
-            if active >= cap:
+            # F36 R4#9: parked shells are LIVE PROCESSES. They leave the
+            # throughput caps (that is the point of parking) but count
+            # against a HARD live-process ceiling — park ten, spawn ten,
+            # repeat used to grow process trees without bound under a
+            # "cap".
+            live_states = ("active", "starting", "parked", "resuming")
+            live_total = sum(
+                1 for s in self.sessions.values()
+                if s.get("state") in live_states)
+            live_cap = self.max_live_shells()
+            if live_total >= live_cap:
                 return Tool.propagate(
                     source="edp-pool",
                     code=ErrorCode.POOL_CAPACITY_EXCEEDED,
-                    message=f"max planners = {cap} (EDP_MAX_PLANNERS / panel "
-                    f"limits); {active} alive; cannot spawn another",
+                    message=f"max LIVE shells = {live_cap} "
+                    f"(EDP_MAX_LIVE_SHELLS; parked processes count — they "
+                    f"are alive); {live_total} live incl. parked. Resume+"
+                    "close or pool_reap parked sessions before spawning "
+                    "more.",
                 )
-        total = self._active_count()
-        total_cap = self.max_total_shells()
-        if total >= total_cap:
-            return Tool.propagate(
-                source="edp-pool",
-                code=ErrorCode.POOL_CAPACITY_EXCEEDED,
-                message=f"max total shells = {total_cap} "
-                f"(EDP_MAX_TOTAL_SHELLS); {total} alive across all roles; "
-                "cannot spawn another",
-            )
+            admitted = self._admit_handle_locked(handle)
+            if admitted is not None:
+                return admitted
+            # RESERVE before launching: a 'starting' row + the handle lock,
+            # so a concurrent admission sees this slot taken (F36 R4#1/#2).
+            sid = f"{role}:{uuid.uuid4()}"
+            now0 = _utc_now_iso()
+            self.sessions[sid] = {
+                "session_id": sid, "role": role, "handle": handle,
+                "parent": parent, "state": "starting",
+                "proc": None, "claude_session_id": claude_session,
+                "recipe_id": self._recipe_id_for(role, handle),
+                "spawned_at": now0, "last_seen": now0, "mode": mode,
+                "model": None,
+            }
+            self.locks[handle] = sid
+            self._persist()
+        return self._launch_reserved(
+            sid, role, handle, mode,
+            claude_session=claude_session, resume_session=resume_session,
+            model=model)
+
+    def _admit_handle_locked(self, handle: str):
+        """Handle-lock admission (runs under _transition_lock). Returns a
+        refusal envelope, or None when the handle is free (possibly after
+        reaping a dead holder's phantom lock)."""
         if handle in self.locks:
             holder = self.locks[handle]
             # DESIGN-v7 park/resume: a PARKED (or mid-resume) holder is
@@ -985,7 +1061,19 @@ class PoolService(Microservice):
             if stale is not None:
                 stale["state"] = "done"
             del self.locks[handle]
-        sid = f"{role}:{uuid.uuid4()}"
+        return None
+
+    def _launch_reserved(
+        self, sid: str, role: str, handle: str, mode: str, *,
+        claude_session: str | None, resume_session: str | None,
+        model: str | None,
+    ):
+        """F36 R4#1/#2 — launch against an already-RESERVED 'starting' row.
+        The reservation (session row + handle lock) was committed under the
+        transition lock, so concurrent admissions count this slot; a failed
+        launch rolls the reservation back; a release() that raced the
+        launch (the fast shell that pool_close_self'd before registration)
+        is honored right after."""
         # WP2 provenance (2026-08-12): resolve the seat model HERE, before
         # the ledger write — the df971d post-mortem found all 63 session rows
         # carried no model at all (resolution happened below this seam, in
@@ -1005,40 +1093,61 @@ class PoolService(Microservice):
         _log.info("launch_start", handle, role=role, handle=handle,
                   sid=sid, mode=mode, resume=bool(resume_session),
                   model=resolved_model)
-        self.spawner.launch(
-            sid, role, handle, mode,
-            claude_session=claude_session, resume_session=resume_session,
-            model=resolved_model,
-        )
+        try:
+            self.spawner.launch(
+                sid, role, handle, mode,
+                claude_session=claude_session,
+                resume_session=resume_session,
+                model=resolved_model,
+            )
+        except BaseException:
+            # F36 R4#1: ROLLBACK the reservation — a failed launch must not
+            # leak the slot or the handle lock.
+            with self._transition_lock:
+                self.sessions.pop(sid, None)
+                if self.locks.get(handle) == sid:
+                    del self.locks[handle]
+                self._persist()
+            raise
         _log.info("launch_done", handle, role=role, handle=handle, sid=sid)
         self._register_channel_membership(role, handle)
-        now = _utc_now_iso()
-        self.sessions[sid] = {
-            "session_id": sid, "role": role, "handle": handle,
-            "parent": parent, "state": "active",
-            # process fingerprint → survives a pool restart so liveness can
-            # be re-established for a still-running shell (2026-05-31).
-            "proc": _proc_fingerprint(self.spawner.pid(sid)),
-            # W11 fork-resume: what a later resume needs to re-launch a
-            # suspended recipe's planners. `claude_session_id` is the id the
-            # shell was launched WITH — `resume_session` is a different arg
-            # (resume an existing base) and is deliberately not folded in.
-            "claude_session_id": claude_session,
-            "recipe_id": self._recipe_id_for(role, handle),
-            "spawned_at": now,
-            "last_seen": now,   # starts == spawned_at; refreshed by _touch
-            # W12: the spawn mode is recorded so the panel can EXPLAIN a
-            # missing `last_output_ts` instead of rendering a plausible
-            # substitute — a monitor-mode shell has no PTY drain log at all.
-            # Rows written by an older pool have no `mode` key; every reader
-            # uses `.get`, so a legacy row degrades to "reason unknown".
-            "mode": mode,
-            # WP2 provenance: the RESOLVED model this shell actually launched
-            # with (None only when no seat registry resolves — host default).
-            "model": resolved_model,
-        }
-        self.locks[handle] = sid  # lock-by-spawn-lifetime
-        self._persist()
+        with self._transition_lock:
+            s = self.sessions.get(sid)
+            release_requested = bool(s and s.get("_release_requested"))
+            now = _utc_now_iso()
+            self.sessions[sid] = {
+                "session_id": sid, "role": role, "handle": handle,
+                "parent": (s or {}).get("parent"), "state": "active",
+                # process fingerprint → survives a pool restart so liveness
+                # can be re-established for a still-running shell.
+                "proc": _proc_fingerprint(self.spawner.pid(sid)),
+                # W11 fork-resume: what a later resume needs to re-launch a
+                # suspended recipe's planners. `claude_session_id` is the id
+                # the shell was launched WITH — `resume_session` is a
+                # different arg and is deliberately not folded in.
+                "claude_session_id": claude_session,
+                "recipe_id": self._recipe_id_for(role, handle),
+                # last_seen starts == spawned_at (the registry invariant);
+                # both come from the reservation instant.
+                "spawned_at": (s or {}).get("spawned_at") or now,
+                "last_seen": (s or {}).get("spawned_at") or now,
+                # W12: the spawn mode is recorded so the panel can EXPLAIN a
+                # missing `last_output_ts` instead of rendering a plausible
+                # substitute — a monitor-mode shell has no PTY drain log.
+                "mode": mode,
+                # WP2 provenance: the RESOLVED model this shell actually
+                # launched with.
+                "model": resolved_model,
+            }
+            self.locks[handle] = sid  # lock-by-spawn-lifetime
+            self._persist()
+        if release_requested:
+            # F36 R4#2: the shell closed itself before registration
+            # completed — honor it now instead of leaving a phantom
+            # 'active' row for the watchdogs to chase.
+            _log.info("release_after_registration", sid, sid=sid,
+                      handle=handle)
+            self.release(sid)
         return sid
 
     def release(self, sid: str, park: bool = False) -> None:
@@ -1048,6 +1157,13 @@ class PoolService(Microservice):
             self.park_session(sid)
             return
         s = self.sessions.get(sid)
+        # F36 R4#2: a release against a STARTING row (the shell closed
+        # itself faster than the spawn thread registered it) is recorded —
+        # _launch_reserved honors it right after registration.
+        if s and s.get("state") == "starting":
+            s["_release_requested"] = True
+            self._persist()
+            return
         if not s or s["state"] != "active":
             return  # idempotent
         _log.info("release", sid, sid=sid, handle=s.get("handle"))
@@ -1343,11 +1459,26 @@ class PoolService(Microservice):
             # (2) The row: parked beside active/done; resume token kept.
             # `inbox_watermark` stays as the spawn-handle mark (back-compat);
             # `watermarks` carries every consumed handle (planner: + plan).
+            # F36 R4#15: capture rx FILE baselines AT PARK TIME. The
+            # watchdog used to adopt each file's size on its own FIRST
+            # tick — an event appended in the park→first-tick gap enlarged
+            # the file before the baseline existed and never fired resume.
+            file_baselines: dict[str, int] = {}
+            try:
+                from .resume_watchdog import _rx_file_sources
+                for _p, _k in _rx_file_sources(set(watch)):
+                    try:
+                        file_baselines[str(_p)] = _p.stat().st_size
+                    except OSError:
+                        continue
+            except Exception:  # noqa: BLE001 — baselines are best-effort
+                pass
             s["state"] = "parked"
             s["parked"] = {
                 "parked_at": _utc_now_iso(),
                 "inbox_watermark": watermark,
                 "watermarks": watermarks,
+                "file_baselines": file_baselines,
             }
             # (3) THE SHELL IS NOT KILLED — operator ruling 2026-07-25, see
             # the docstring. There was a flush-before-kill here followed by
@@ -1629,6 +1760,7 @@ class PoolService(Microservice):
         act is `park_session` — this is the shell-callable park path (a
         planner arms it, ends its turn, and the pool parks it once quiet).
         The park's flush-wait + kill are blocking, so they run off the loop."""
+        unknown_streak = 0
         for _ in range(max(1, max_checks)):
             await asyncio.sleep(idle_secs)
             s = self.sessions.get(sid)
@@ -1638,7 +1770,24 @@ class PoolService(Microservice):
                 return
             last = self.spawner.last_output_ts(sid)
             if last is not None and (time.time() - last) < idle_secs:
+                unknown_streak = 0
                 continue   # still emitting → busy, not leaked. Re-check.
+            # F36 R4#8 (2026-08-18): NO instrumentation is not PROOF of
+            # idleness. A monitor-mode shell (the default) has no drain
+            # log, so `last is None` used to read as "idle since forever"
+            # and the very first check could kill it mid-final-write. An
+            # unknown reading now needs TWO consecutive quiet checks
+            # (double the grace) before the reap proceeds — the leaked-
+            # shell cleanup this timer exists for still happens, just
+            # never on a single blind sample.
+            if last is None:
+                unknown_streak += 1
+                if unknown_streak < 2:
+                    _log.info("close_when_idle_unknown_activity", sid,
+                              sid=sid,
+                              note="no output instrumentation — deferring "
+                                   "one extra check before assuming idle")
+                    continue
             _log.info("close_when_idle_reap", sid, sid=sid, reason=reason,
                       park=park)
             if park:

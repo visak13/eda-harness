@@ -109,7 +109,11 @@ def create_app(data_dir: Path):
             _log.warning("publish_invalid", str(exc)[:200])
             return _err(ErrorCode.BROKER_UNREGISTERED_KIND, str(exc))
         try:
-            store.append(msg)
+            # F36 R4#10 (2026-08-18): store IO runs OFF the event loop — a
+            # large-inbox scan or slow disk on the loop stalled every
+            # publish, poll, and SSE subscriber at once (fleet-wide
+            # deafness). Same discipline on every endpoint below.
+            await asyncio.to_thread(store.append, msg)
         except BadRecipient as exc:
             # the dead-letter case — a message to an unroutable recipient
             # (the bug class where replies vanished). Log it loudly.
@@ -129,7 +133,8 @@ def create_app(data_dir: Path):
     @app.get("/v1/inbox/{recipient}")
     async def inbox(recipient: str, since_ts: str | None = None):
         try:
-            msgs = store.read(recipient, _parse_since(since_ts))
+            msgs = await asyncio.to_thread(
+                store.read, recipient, _parse_since(since_ts))
         except BadRecipient as exc:
             _log.warning("inbox_no_route", str(exc)[:200], to=recipient)
             return _err(ErrorCode.BROKER_NO_ROUTE, str(exc))
@@ -184,8 +189,9 @@ def create_app(data_dir: Path):
         """GET-only cross-inbox inspection (OBJECT-MODEL.md increment 3).
         Powers query_objects('message', where={to?, from?, kind?, since?}).
         All filters optional — no `to` means scan every inbox."""
-        msgs = store.query(to=to, from_=from_, kind=kind,
-                           since=_parse_since(since_ts))
+        msgs = await asyncio.to_thread(
+            store.query, to=to, from_=from_, kind=kind,
+            since=_parse_since(since_ts))
         # same volume discipline as /v1/inbox: empty result → debug.
         if msgs:
             _log.info("messages", to or "*", to=to, sender=from_,
@@ -199,7 +205,7 @@ def create_app(data_dir: Path):
     async def message(msg_id: str):
         """Team-architecture Phase 2 (2026-05-21) — supports the
         `reply()` MCP tool which routes answers by msg_id."""
-        m = store.get_message(msg_id)
+        m = await asyncio.to_thread(store.get_message, msg_id)
         if m is None:
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail=f"no msg {msg_id!r}")
@@ -222,7 +228,8 @@ def create_app(data_dir: Path):
         envelope BEFORE streaming starts (never a path escape / 500)."""
         since = _parse_since(since_ts)
         try:
-            store.read(recipient, since)  # validates recipient name
+            await asyncio.to_thread(
+                store.read, recipient, since)  # validates recipient name
         except BadRecipient as exc:
             _log.warning("events_no_route", str(exc)[:200], to=recipient)
             return _err(ErrorCode.BROKER_NO_ROUTE, str(exc))
@@ -231,7 +238,8 @@ def create_app(data_dir: Path):
             start = time.monotonic()
             cursor = since
             while True:
-                for m in store.read(recipient, cursor):
+                for m in await asyncio.to_thread(
+                        store.read, recipient, cursor):
                     yield f"data: {m.model_dump_json(by_alias=True)}\n\n"
                     cursor = m.ts
                 if (max_seconds is not None

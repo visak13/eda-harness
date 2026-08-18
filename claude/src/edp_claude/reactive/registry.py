@@ -290,6 +290,12 @@ class SupervisorConfig:
     max_child_restarts: int = field(
         default_factory=lambda: int(
             os.environ.get("EDP_SUP_MAX_CHILD_RESTARTS", "5")))
+    # F36 R4#13: sustained healthy uptime REFUNDS the restart budget —
+    # without this the lifetime counter turned isolated crashes days apart
+    # into a permanently driverless enabled rule.
+    restart_reset_secs: float = field(
+        default_factory=lambda: float(
+            os.environ.get("EDP_SUP_RESTART_RESET_SECS", "600")))
     monitor_poll_s: float = 1.0
 
 
@@ -308,6 +314,7 @@ class RuleSupervisor:
         self.cfg = cfg or SupervisorConfig()
         self._children: dict[str, subprocess.Popen] = {}
         self._restarts: dict[str, int] = {}
+        self._child_started: dict[str, float] = {}   # monotonic start ts
         self._stop = threading.Event()
         self._lock = threading.Lock()
         self._active_dir = self.registry.root / "_active"
@@ -452,6 +459,8 @@ class RuleSupervisor:
             err_f.close()
         self.log("rule_subscribed", rule=rule.name, pid=proc.pid,
                  has_effect=("effect" in files), owner=rule.owner)
+        import time as _time
+        self._child_started[rule.name] = _time.monotonic()  # F36 R4#13
         return proc
 
     # ---- public lifecycle ----
@@ -497,9 +506,23 @@ class RuleSupervisor:
             self.shutdown()
 
     def _reap_and_restart(self) -> None:
+        import time as _time
         with self._lock:
             for name, proc in list(self._children.items()):
                 if proc.poll() is None:
+                    # F36 R4#13: sustained HEALTHY uptime refunds the
+                    # restart budget. The counter was lifetime-cumulative,
+                    # so isolated crashes days apart eventually exhausted
+                    # it and left an enabled rule permanently driverless.
+                    started = self._child_started.get(name)
+                    if (started is not None
+                            and self._restarts.get(name, 0) > 0
+                            and _time.monotonic() - started
+                            >= self.cfg.restart_reset_secs):
+                        self.log("rule_restart_budget_reset", rule=name,
+                                 healthy_secs=int(
+                                     _time.monotonic() - started))
+                        self._restarts[name] = 0
                     continue  # still alive
                 rc = proc.returncode
                 # was this rule disabled meanwhile? then leave it down.

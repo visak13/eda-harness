@@ -211,3 +211,55 @@ def test_the_endpoint_arms(client_and_spawner=None):
         assert r.status_code == 200
         assert r.json()["armed"] is True
         assert r.json()["session_id"] == sid
+
+
+# ── F36 R4 (2026-08-18) — spawn admission + live-cap + starting rows ───────
+
+async def test_failed_launch_rolls_back_reservation(svc, monkeypatch):
+    """R4#1: a launch that raises must free the reserved slot AND the
+    handle lock — a leaked reservation is a phantom that blocks the
+    handle forever."""
+    def boom(*a, **k):
+        raise RuntimeError("launch failed")
+    monkeypatch.setattr(svc.spawner, "launch", boom)
+    import pytest as _pytest
+    with _pytest.raises(RuntimeError):
+        svc.spawn("worker", "p:a9", None)
+    assert "p:a9" not in svc.locks
+    assert not [s for s in svc.sessions.values()
+                if s.get("handle") == "p:a9"]
+    # the slot is genuinely free: a healthy spawn on the handle works
+    monkeypatch.undo()
+    sid = svc.spawn("worker", "p:a9", None)
+    assert isinstance(sid, str)
+
+
+async def test_release_before_registration_is_honored(svc, monkeypatch):
+    """R4#2: a shell that pool_close_self's faster than the spawn thread
+    registers it must not linger as a phantom 'active' row."""
+    orig = svc.spawner.launch
+
+    def racing_launch(sid, *a, **k):
+        # the shell closes itself DURING the launch window
+        svc.release(sid)
+        return orig(sid, *a, **k)
+
+    monkeypatch.setattr(svc.spawner, "launch", racing_launch)
+    sid = svc.spawn("worker", "p:a8", None)
+    assert svc.sessions[sid]["state"] == "done", (
+        "a pre-registration self-close left a phantom active row")
+    assert "p:a8" not in svc.locks
+
+
+async def test_parked_shells_count_against_live_cap(svc, monkeypatch):
+    """R4#9: parked shells are live processes — the hard live cap counts
+    them, so park-N/spawn-N can no longer grow processes unboundedly."""
+    monkeypatch.setenv("EDP_MAX_LIVE_SHELLS", "2")
+    s1 = svc.spawn("worker", "p:c1", None)
+    s2 = svc.spawn("worker", "p:c2", None)
+    svc.park_session(s1)
+    svc.park_session(s2)
+    res = svc.spawn("worker", "p:c3", None)
+    assert not isinstance(res, str), (
+        "two parked + one new exceeded EDP_MAX_LIVE_SHELLS=2 but spawned")
+    assert "LIVE" in getattr(res, "message", "")

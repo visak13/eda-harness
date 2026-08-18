@@ -508,3 +508,49 @@ test_wp1 (gate downgrade needs override), test_s26/test_reviewer_restoration
 kept for batch heads; flow-down stays declaration-level beyond the
 delivered-action check; R3b#2 user-channel authentication is a trust
 boundary, not a gate.
+
+## F36 — Adversarial campaign Round 4 (spawn/wiring/lifecycle), 2026-08-18
+15 findings (raw: .sol_review_out-r4.txt); owner: "OK go" on all three
+groups. All 15 addressed.
+
+Wake plane (the deaf-Monitor class): the follower is PARTIAL-LINE SAFE
+(binary reads; offset advances only past newline-terminated records — a
+mid-append read can no longer half-consume a wake) · follow-only sources
+start from a bounded ARM-GAP LOOKBACK (EDP_WIRING_LOOKBACK_SECS, 120)
+instead of EOF/connect-time, closing the arm→Monitor-start drop window
+(ts-dedupe absorbs restart duplicates; ts-less history stays unreplayed) ·
+the driver writes a heartbeat sidecar (<spec>.hb) every tick and EXITS
+when its spec is deleted (unobserve now actually stops a live driver) ·
+arm_wiring reuse is honest: reused=true only with a fresh heartbeat, else
+"start the monitor_cmd" · SIDs carry a sha8 of the full handle (collision
+overwrites dead) · the supervisor restart budget REFUNDS after healthy
+uptime (EDP_SUP_RESTART_RESET_SECS, 600).
+
+Pool honesty: spawn admission is atomic under the transition lock with a
+'starting' reservation row that counts against every cap; failed launches
+roll back; a release racing registration is honored right after (no
+phantom active rows) · parked shells count against a HARD live-process
+cap (EDP_MAX_LIVE_SHELLS, default 2x total) · close_when_idle treats
+missing output instrumentation as UNKNOWN (two consecutive quiet checks
+before a reap — never one blind sample; leaked-shell cleanup preserved) ·
+status_ping keeps the pool byte-timestamp, judges staleness on the
+freshest evidence, and calls an alive shell with NO evidence UNKNOWN
+progress (probe band) — absence of evidence stopped counting as progress ·
+PTY activation registers the process FIRST and terminates on activation
+failure (no orphans; junk EDP_SUBMIT_DELAY_MS tolerated) · park captures
+rx-file baselines into the manifest; the resume watchdog seeds from them
+(events in the park→first-tick gap now fire resume).
+
+Loop hygiene (the freeze class): the broker's store IO runs off its
+asyncio loop (to_thread on publish/inbox/query/message/SSE reads) · the
+three hottest locked store writes in the MCP tools (next_action recipe+
+plan saves, record_action_status) run via asyncio.to_thread. RESIDUAL
+(recorded): remaining store writes stay sync on the loop — short critical
+sections; full async-store migration is a follow-up if contention shows.
+
+Also: shadow tests updated to the F3 default-off contract (were
+pre-existing reds — the pool suite had not run since F3).
+
+Suites: claude 1548 (+3), edp-pool 303 (+3), edp-broker 29 — all green
+(Phoenix env-fail only). NOTE: pool/broker changes need the STACK RESTART
+to take effect in the live fleet.

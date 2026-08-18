@@ -1677,7 +1677,12 @@ class NextAction(_ClaudeTool):
             instr = recipe_next_action(r)
             changed_sig = _recipe_sig(r) != before
             if changed_sig:
-                self.ctx.recipes.save(r)
+                # F36 R4#9: the locked save runs OFF the event loop — a
+                # peer shell holding the object lock used to freeze every
+                # concurrent tool call on this MCP server for up to the
+                # lock timeout. Same discipline on the plan tick + the
+                # action-status seam (the three hottest locked writers).
+                await asyncio.to_thread(self.ctx.recipes.save, r)
             # F31 — the FSM is pure and always emits DISPATCH_ACCEPTANCE at
             # all-outcomes-met; THIS layer (which can read the events trail)
             # downgrades it to DONE when the latest acceptance_verdict is
@@ -1941,7 +1946,7 @@ class NextAction(_ClaudeTool):
                     "agent_role":
                         os.environ.get("EDP_ROLE", "").strip() or "unknown",
                 })
-            self.ctx.plans.save(p)
+            await asyncio.to_thread(self.ctx.plans.save, p)  # F36 R4#9
         # W7 item 1: computed pacing hint. output_stale stays False here for the
         # same reason as the recipe branch above — next_action does not read the
         # worklog clock (reconcile/status_ping own the probe band). s27/C7 added
@@ -6424,7 +6429,7 @@ class RecordActionStatus(_ClaudeTool):
                     "detail": m.evidence or "reset for re-dispatch "
                     "(crash recovery)",
                 })
-            self.ctx.plans.save(p)
+            await asyncio.to_thread(self.ctx.plans.save, p)  # F36 R4#9
             # s26 item 1: the write is DURABLE above; only now do we arm.
             await self._arm_close(p, m.plan_id, m.action_id, m.status)
             return Tool.ok(_ActStatusOut(status=m.status))
@@ -10600,6 +10605,10 @@ class _StatusPingOut(BaseModel):
     action_status: str | None      # when the handle is a worker's
     last_worklog_ts: str | None
     last_worklog_kind: str | None
+    # F36 R4#7: the POOL's byte-level output timestamp — the one evidence
+    # source that caught the 3.5h stall when liveness and self-reports
+    # both lied. None = the launcher has no output instrumentation.
+    last_output_ts: str | None = None
     # W7 item 1: wait_hint upgraded from qualitative prose to MINUTES (int) +
     # wait_reason, both from the shared PACING table. The prior liveness prose
     # (still operationally useful — a reasoning block can run 20-40 min with no
@@ -10629,7 +10638,20 @@ class StatusPing(_ClaudeTool):
     OutputModel = _StatusPingOut
 
     async def _run(self, m: _StatusPingIn):
-        live = (await self.ctx.pool.liveness(m.handle))["state"]  # W7 dict
+        _lv = await self.ctx.pool.liveness(m.handle)              # W7 dict
+        live = _lv["state"]
+        # F36 R4#7: KEEP the pool's output timestamp instead of discarding
+        # it — bytes written are the primary progress evidence (the
+        # 3.5h-stall lesson: liveness and status self-reports both lied;
+        # only output bytes told the truth).
+        pool_out = _lv.get("last_output_ts")
+        pool_out_iso: str | None = None
+        if pool_out is not None:
+            try:
+                pool_out_iso = datetime.fromtimestamp(
+                    float(pool_out), tz=timezone.utc).isoformat()
+            except (TypeError, ValueError, OSError):
+                pool_out_iso = str(pool_out) or None
         prefix, _, tail_part = m.handle.rpartition(":")
         action_status = None
         plan_id = None
@@ -10649,7 +10671,21 @@ class StatusPing(_ClaudeTool):
             if recent:
                 last_ts = str(recent[-1].get("ts"))
                 last_kind = str(recent[-1].get("kind"))
-        if live == "alive":
+        # F36 R4#7: the freshest of pool BYTES and worklog writes is the
+        # progress evidence; a live process with NEITHER is UNKNOWN
+        # progress, never "working" (absence of evidence stopped counting
+        # as evidence of progress).
+        _evidence_ts = max(
+            (t for t in (pool_out_iso, last_ts) if t), default=None)
+        if live == "alive" and _evidence_ts is None:
+            note = ("alive with NO output evidence (no pool byte "
+                    "timestamp, no worklog write) — progress is UNKNOWN, "
+                    "not assumed. A reasoning block can run 20-40 min "
+                    "quiet, so do NOT force-fail yet; but bound the "
+                    "patience: if the silence outlasts the work's nature, "
+                    "inspect_worker, then pool_reap on real evidence of a "
+                    "stall (bytes written are the arbiter).")
+        elif live == "alive":
             note = ("alive — working. A reasoning block can run 20-40 min "
                     "writing nothing; do NOT force-fail. inspect_worker "
                     "only if silence outlasts the work's nature.")
@@ -10675,7 +10711,12 @@ class StatusPing(_ClaudeTool):
         # plan FSM (handle_pacing_state); this surface just derives staleness
         # and looks up the (minutes, reason).
         pstate = handle_pacing_state(
-            live, action_status, output_stale=_output_stale(last_ts))
+            live, action_status,
+            # F36 R4#7: staleness judges the FRESHEST evidence (pool bytes
+            # OR worklog); an alive shell with NO evidence at all reads
+            # stale — the probe band, not the heads-down band.
+            output_stale=(_output_stale(_evidence_ts)
+                          or (live == "alive" and _evidence_ts is None)))
         # v7 P5.3: the epoch/rewire seam — the CALLER's own grounding (its
         # own handle from env, not the pinged child's), only when echoed.
         epoch = reground = None
@@ -10691,6 +10732,7 @@ class StatusPing(_ClaudeTool):
         return Tool.ok(_StatusPingOut(
             handle=m.handle, liveness=live, action_status=action_status,
             last_worklog_ts=last_ts, last_worklog_kind=last_kind,
+            last_output_ts=pool_out_iso,
             liveness_note=note, grounding_epoch=epoch, reground=reground,
             **_pacing_fields(pstate)))
 
@@ -15011,13 +15053,40 @@ class ArmWiring(_ClaudeTool):
             bindings.update({"plan_id": me, "recipe_id": recipe_id})
 
         spec = _WIRING_SPECS[role]
-        sid = "sub-wiring-" + re.sub(r"[^A-Za-z0-9._-]", "_", me)[:60]
+        # F36 R4#11: the sanitize+truncate SID was not injective — `a:b` vs
+        # `a_b`, or two long handles sharing a 60-char prefix, collided and
+        # overwrote/deleted each other's wiring. A hash of the FULL handle
+        # makes the identity collision-resistant; the readable prefix stays.
+        import hashlib as _hl
+        sid = ("sub-wiring-" + re.sub(r"[^A-Za-z0-9._-]", "_", me)[:48]
+               + "-" + _hl.sha256(me.encode("utf-8")).hexdigest()[:8])
         res = await ObserveStream(self.ctx)._run(_ObserveIn(
             spec=spec, bindings=bindings, subscription_id=sid, owner=me))
         if not getattr(res, "ok", False):
             return res
         obs = res.data if isinstance(res.data, dict) else \
             res.data.model_dump()
+        # F36 R4#5: subscription FILES are not a live Monitor. reused=True
+        # is honest only while the driver's heartbeat sidecar is fresh — a
+        # dead Monitor's leftovers used to answer "don't start another" and
+        # leave the shell deaf. Stale/absent heartbeat → tell the caller to
+        # START the returned monitor_cmd (the files are reused; the process
+        # is not).
+        reused = bool(obs.get("reused"))
+        if reused:
+            _root = self.ctx.recipes.root.parent / ".reactive"
+            _hb = _root / f"{sid}.spec.hb"
+            _fresh = False
+            try:
+                _hb_rec = json.loads(_hb.read_text(encoding="utf-8"))
+                _age = (_now() - datetime.fromisoformat(
+                    str(_hb_rec.get("ts")))).total_seconds()
+                _fresh = _age < 90
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                _fresh = False
+            if not _fresh:
+                reused = False
+                obs["reused"] = False
 
         minutes = _wiring_heartbeat_minutes(role)
         cron_expr = f"*/{minutes} * * * *" if minutes < 60 else "0 * * * *"
