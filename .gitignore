@@ -76,3 +76,4 @@ claude/.bridge/
 # session scratch
 claude/.f_diffstat.txt
 claude/.sol_review_out.txt
+claude/.sol_review_out-*.txt
