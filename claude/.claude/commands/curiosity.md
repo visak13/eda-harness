@@ -81,23 +81,26 @@ user; never bury it in a risk note.
 ## Step 3 — reply with a lifecycle status
 
 `reply(msg_id=<the consult's>, body={"status": "awaiting_followup" |
-"done", "clear": true|false, "questions": […], "research_suggestions":
-[…], "plan_sketch": "<markdown — required on clear=true>",
-"rationale": "<one line>"})`. `clear=false` → ≥1 question +
-`awaiting_followup` (I am ALIVE on this handle; relay, then send the
-answers back HERE — do not spawn a new curiosity) → end the turn, stay
-alive.
+"awaiting_fidelity", "clear": true|false, "questions": […],
+"research_suggestions": […], "plan_sketch": "<markdown — required on
+clear=true>", "rationale": "<one line>"})`. `clear=false` → ≥1
+question + `awaiting_followup` (I am ALIVE on this handle; relay,
+then send the answers back HERE — do not spawn a new curiosity) → end
+the turn, stay alive. `clear=true` → status `awaiting_fidelity` —
+NEVER "done": you are not done, and a "done" invites the neuron to
+treat the cycle as over and skip Step 4.
 
 ## Step 4 — fidelity check, THEN close
 
 `clear=true` does NOT close you. The neuron records the map and sends
 one final round carrying the recorded outcomes + steps: DIFF them
 against YOUR sketch — a dropped bar, narrowed scope, or invented step
-is a discrepancy; reply `{"fidelity": "ok" | "discrepancies",
-"discrepancies": […]}`. Only AFTER that reply: `CronDelete`,
-`TaskStop` the Monitor, `pool_close_self` — exactly once. If the
-neuron abandons the cycle it reaps you; you never self-close before
-the fidelity reply.
+is a discrepancy; reply `{"status": "done", "fidelity": "ok" |
+"discrepancies", "discrepancies": […]}` — this reply is the ONLY one
+that carries status "done". Only AFTER it: `CronDelete`, `TaskStop`
+the Monitor, `pool_close_self` — exactly once. If the neuron abandons
+the cycle it reaps you; you never self-close before the fidelity
+reply.
 
 ## Anti-patterns
 

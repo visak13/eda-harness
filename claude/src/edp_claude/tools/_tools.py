@@ -11190,11 +11190,13 @@ class _ConsultCuriosityOut(BaseModel):
     curiosity_id: str
     mode: str = "spawned"      # "spawned" (first) | "followup" (same shell)
     note: str = (
-        "curiosity spawned; its questions (or 'clear') arrive via "
-        "handle_messages. Relay questions to the user, then send the "
-        "answers as a FOLLOW-UP with curiosity_id=<this id> (do NOT "
-        "spawn a new one) — loop until its reply carries status='done' "
-        "(clear), at which point it has closed itself."
+        "curiosity spawned; its questions (or 'clear'+plan_sketch) arrive "
+        "via handle_messages. Relay questions to the user, then send the "
+        "answers as a FOLLOW-UP with curiosity_id=<this id> (do NOT spawn "
+        "a new one). clear=true arrives as status='awaiting_fidelity' — "
+        "the shell is STILL ALIVE: record the map, then send it the "
+        "recorded outcomes+steps as one more follow-up; only its fidelity "
+        "reply carries status='done', after which it closes itself."
     )
 
 
@@ -11205,8 +11207,10 @@ class ConsultCuriosity(_ClaudeTool):
     (or `clear`). PERSISTENT TWO-WAY: the FIRST call (omit `curiosity_id`)
     spawns ONE curiosity shell and returns its `curiosity_id`; relay its
     questions, collect answers, then call AGAIN with that `curiosity_id`
-    (the same still-alive shell, which remembers every round) until the
-    reply's `status="done"`. **NEVER omit curiosity_id mid-cycle** — that
+    (the same still-alive shell, which remembers every round). clear=true
+    arrives as status='awaiting_fidelity' (F29): record the map, send it
+    back for the fidelity diff; only THAT reply is `status="done"`.
+    **NEVER omit curiosity_id mid-cycle** — that
     spawns a second shell and loses memory. **Pass `handle`** (your
     recipe_id) or the reply dead-letters; it replies ASYNCHRONOUSLY via
     next_action, so never run the curiosity skill yourself to drive it."""
@@ -11310,7 +11314,8 @@ class ConsultCuriosity(_ClaudeTool):
                 curiosity_id=curiosity_id, mode="followup",
                 note="follow-up delivered to the existing curiosity; its "
                      "next reply arrives via handle_messages. Keep using "
-                     "this curiosity_id until status='done'.",
+                     "this curiosity_id until its FIDELITY reply "
+                     "(status='done').",
             ))
         spawn_res = await self.ctx.pool.spawn_curiosity(
             caller_id, curiosity_id

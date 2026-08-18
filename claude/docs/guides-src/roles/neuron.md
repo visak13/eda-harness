@@ -39,23 +39,23 @@ neuron to the user rather than burying them.
    `resolve_recipe` when you don't. (Post-compaction the reground
    re-injects `get_guide("neuron-card")` + a phase pointer — execute
    it verbatim.)
-2. Arm wiring: cold boot → `arm_wiring(handle=<recipe_id>)` — run the
-   returned `monitor_cmd` under `Monitor` (once) and `CronCreate`
-   recurring with the returned `cron_expr` + `cron_prompt` verbatim.
+2. `ensure_universal()` — idempotent spec-universal floor.
+3. **Have a recipe_id FIRST, then arm wiring.** Resume → you hold the
+   id. New goal → `start_recipe(goal=…, domain=…,
+   budget={claude_tokens?, delegate_usd?, wall_clock_hours?})`.
+   `goal` is the user's request pasted VERBATIM and whole — never
+   your distillation. A long brief goes in whole; overflow goes to a
+   recipe context sidecar named in a load-bearing
+   `north_star_update`. Mid-run goal corrections from the user land
+   the same way, verbatim, before any re-dispatch.
+4. Arm wiring: `arm_wiring(handle=<recipe_id>)` — run the returned
+   `monitor_cmd` under `Monitor` (once) and `CronCreate` recurring
+   with the returned `cron_expr` + `cron_prompt` verbatim.
    Post-compaction → `next_action(reground=true)` hands back your
    persisted specs + cron; execute that rather than retyping. Never
    kind-filter `rx.broker(me)` — a filter on your own directed mail
    drops messages silently; filter only the broadcast planes.
    Operators: `get_guide("reactive-streams")`.
-3. `ensure_universal()` — idempotent spec-universal floor.
-4. **Declare the budget with the goal** when the user gave one:
-   `start_recipe(goal=…, domain=…, budget={claude_tokens?,
-   delegate_usd?, wall_clock_hours?})`. `goal` is the user's request
-   pasted VERBATIM and whole — never your distillation. A long brief
-   goes in whole; overflow goes to a recipe context sidecar named in a
-   load-bearing `north_star_update`. Mid-run goal corrections from the
-   user land the same way, verbatim, before any re-dispatch (the
-   b33936 parity failure traced to a summarized goal).
 
 ## Laws
 
@@ -69,14 +69,16 @@ neuron to the user rather than burying them.
    record it via `record_context(kind="north_star_update",
    title=<shape>, text=<sketch pointer>); do not re-derive a weaker
    plan beside it.
-2. **The comprehension gate is real — and the brief IS the sketch.**
-   What the user sees and approves before the first dispatch is the
-   `plan_sketch` VERBATIM plus your step mapping — never your
-   paraphrase (`record_comprehension_signoff`, verbatim quote). After
-   you record outcomes + steps, send the RECORDED map back to the
-   SAME curiosity (`consult_curiosity(curiosity_id=…)`) for its
-   fidelity verdict BEFORE the first spawn — discrepancies are yours
-   to fix or escalate, never to drop. A `comprehension_recheck` nag
+2. **The comprehension gate is real — and the user approves the
+   VERIFIED map, in this order:** (a) record outcomes + steps FROM
+   the sketch; (b) send the RECORDED map back to the SAME curiosity
+   (`consult_curiosity(curiosity_id=…)`) for its fidelity verdict —
+   fix or escalate discrepancies, never drop them; (c) ONLY THEN show
+   the user the `plan_sketch` VERBATIM plus the verified step mapping
+   for signoff (`record_comprehension_signoff`, verbatim quote) —
+   never your paraphrase, never a map that changed after they
+   approved it (any post-signoff map edit = re-signoff). First
+   dispatch comes after (c). A `comprehension_recheck` nag
    repeats until a fresh curiosity clear or signoff. Skipping is
    deliberate and audited, never the default.
 3. **Outcomes anchor everything (v7).** Declare expected outcomes,
@@ -150,11 +152,16 @@ matching guide ON PHASE CHANGE only: `neuron-phase-a` (resolve vs
 create) → `neuron-phase-b` (comprehension) → `neuron-phase-c` (spawn)
 → `neuron-phase-d` (observe) → `neuron-phase-e` (evaluate: close
 honestly — every outcome met with evidence, ledger folded, learnings
-ratified, **and the FINAL ACCEPTANCE PASS (enforced, G-ACCEPT)**: an
-INDEPENDENT checker (reviewer leg / delegate_review /
-consult_external) judges the delivery against `user_goal_verbatim` +
-outcomes + evidence + the workspace diff; record its verdict via
-`emit_recipe_event(kind="acceptance_verdict", body={"verdict":
+ratified, **the tree verified in YOUR OWN shell**: when the recipe
+has a workspace, run `git status --porcelain` + `git rev-parse HEAD`
+there yourself (Bash) at close time — a dirty tree means the
+deliverable did NOT land (get it committed, or close partial);
+include the clean status + HEAD hash in the close evidence. **And
+the FINAL ACCEPTANCE PASS (enforced, G-ACCEPT)**: an INDEPENDENT
+checker (reviewer leg / delegate_review / consult_external) judges
+the delivery against `user_goal_verbatim` + any artifact the goal
+names + outcomes + evidence + the workspace diff; record its verdict
+via `emit_recipe_event(kind="acceptance_verdict", body={"verdict":
 "pass"|"gaps", …})` — gaps block close; fix or close partial. Specs
 this recipe consulted must be compiled and triaged (G-SPEC). ONE close
 surface — and the disarm is part of the close: `CronDelete` your

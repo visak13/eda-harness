@@ -128,6 +128,27 @@ pass, same day): 1497 tests pass; 1 pre-existing environment failure
   reap on abandonment). Advisory-weight by design (no new hard gate —
   the G-CHALLENGE serialization lesson).
 
+## F30 — Codex-bridge adversarial review of F1-F29 (2026-08-18) + fixes
+- Ran gpt-5.6 (fresh thread, findings-only) over the design record + three
+  compiled cards. 17 findings; raw output in claude/.sol_review_out.txt.
+- FIXED same day: (#4) curiosity clear now replies status='awaiting_fidelity'
+  — only the fidelity reply is 'done' (card + tool notes); (#5) order is now
+  record map → fidelity diff → THEN user signoff on the verified map (post-
+  signoff map edits force re-signoff); (#6) neuron boot reordered — recipe_id
+  exists before arm_wiring; (#13) this doc's F6 line corrected to match the
+  implementation (enforced at step close); (#1 middle path, owner-approved)
+  the neuron verifies the tree in ITS OWN shell at close (git status +
+  rev-parse in Bash, output in close evidence) — no MCP tool runs git.
+- OPEN design calls (adjudicated real, awaiting owner ruling): (#2) G-ACCEPT
+  checker is neuron-fed — strongest cure is an independent reviewer-leg
+  acceptance shell; (#9) G-CHALLENGE keys on action COUNT, so batching ducks
+  it — should key on step estimate/risk; (#7/#8) arm_wiring lifecycle not
+  atomic (orphaned indexed sids GC-protected forever; re-run can double
+  Monitors); (#11) reopen keeps stale done evidence when the bar changed;
+  (#14) G-SPEC misses stale GLOBAL specs; (#15) fidelity round has no retry
+  protocol. Accepted-by-design: #3 (fidelity advisory weight), #16 (waiver
+  is an audited sentence), #10/#12/#17 (inherent scope statements).
+
 Open threads: delete shadow.py/shadow_spawner.py once stable; F2 Layer-2
 (advisor-distilled narrative, epoch-stamped); F17 full example sweep;
 steer-ack ledger nested-ack fix; rx.orphaned dash/colon fix (excluded from
@@ -220,7 +241,10 @@ for EVERY role (the neuron pattern), with the token cost solved at the tool laye
 ## F6 — Flow-down gate serializes authoring; first worker spawns late
 - `_step_flowdown_gaps` refuses ANY dispatch until every concern/sketch line is
   covered → full plan before first spawn, contradicting "author+dispatch interleaved".
-- Fix: gate per dispatched action; full-coverage check moves to plan ratification.
+- Fix: dispatch carries an advisory only; the full-coverage check is ENFORCED
+  at STEP CLOSE (record_step_result). (Corrected 2026-08-18 — this line
+  previously said "plan ratification", contradicting the implementation;
+  Sol adversarial-review finding #13.)
 
 ## F7 — Broker dead letters (revised: WHO ACTS, round 2)
 - Send to a nonexistent/never-polled inbox succeeds silently.
