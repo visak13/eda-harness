@@ -44,6 +44,16 @@ def test_parse_config_roundtrip():
     assert routes["worker:codegen"] == "flash"
 
 
+def test_parse_config_timeout_secs_per_delegate():
+    # F34-h (campaign R3): a deep delegate's longer wall clock is a CONFIG
+    # decision — parsed per delegate, default None (sol_bridge's 900s).
+    cfg = _cfg()
+    cfg["delegates"]["sol"]["timeout_secs"] = 1800
+    delegates, _ = parse_config(cfg)
+    assert delegates["sol"].timeout_secs == 1800.0
+    assert delegates["flash"].timeout_secs is None
+
+
 def test_parse_config_rejects_bad_backend():
     with pytest.raises(BridgeError, match="backend"):
         parse_config({"delegates": {"x": {"backend": "grpc", "model": "m"}}})

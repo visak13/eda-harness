@@ -1642,6 +1642,14 @@ class NextAction(_ClaudeTool):
                 # double-dispatch nor strand a step. A pure no-op wave skips
                 # the save (no spurious version bump).
                 self.ctx.recipes.save(r)
+            # F35 R3a#3/R3b#6 — dispatch-intent stamp per wave slot (see the
+            # single-dispatch twin below): reconcile's unacked-dispatch
+            # recovery clocks from these.
+            for _wi in instrs:
+                _wsid = (_wi.args or {}).get("step_id")
+                if _wsid:
+                    self.ctx.recipes.append_worklog(r.recipe_id, {
+                        "kind": "step_dispatch_emitted", "step_id": _wsid})
             actions = [i.model_dump(mode="json") for i in instrs]
             # Same annotations as the plan wave (DESIGN-v7 1.1): dispatch
             # order + the pool's CURRENT planner headroom, so a neuron facing
@@ -1678,22 +1686,34 @@ class NextAction(_ClaudeTool):
                 _gate_on = (os.environ.get("EDP_ACCEPT_GATE", "1")
                             .strip().lower() not in ("0", "false", "no",
                                                      "off"))
-                _verdicts = self.ctx.recipes.read_events_tail(
-                    r.recipe_id, kinds=["acceptance_verdict"])
-                _latest = ((_verdicts[-1].get("body") or {}).get("verdict")
-                           if _verdicts else None)
-                if not _gate_on or _latest == "pass":
+                # F35 R3a#1/R3b#1: only a FINAL pass whose fingerprint
+                # still matches the current recipe downgrades to DONE —
+                # an interim pass, or a pass recorded before the map
+                # grew, keeps the instruction (with the reason).
+                _ok, _why = _acceptance_pass_current(self.ctx, r)
+                if not _gate_on or _ok:
                     instr = Instruction(
                         kind=InstructionKind.DONE, args={},
                         rationale=("SUCCEEDED — all expected_outcomes met"
-                                   + ("; acceptance_verdict=pass recorded"
-                                      if _latest == "pass" else
+                                   + ("; final acceptance_verdict=pass "
+                                      "recorded (fingerprint current)"
+                                      if _ok else
                                       " (acceptance gate off)")))
-                elif _latest == "gaps":
+                else:
                     instr.rationale = (
-                        (instr.rationale or "")
-                        + " The LATEST verdict is 'gaps' — resolve them "
-                        "(fix, or descope honestly) and re-run the pass.")
+                        (instr.rationale or "") + f" [{_why}]")
+            # F35 R3a#3/R3b#6 — DISPATCH-INTENT stamp. The FSM persists
+            # in_progress BEFORE the caller obeys with pool_spawn_planner;
+            # a crash in between left the step stranded with liveness
+            # 'unknown' forever. Recording WHEN each dispatch instruction
+            # was emitted gives reconcile a clock: unknown + no plan + past
+            # the ack grace ⇒ the spawn never happened ⇒ reset.
+            if instr.kind == InstructionKind.SPAWN_PLANNER:
+                _sid_d = (instr.args or {}).get("step_id")
+                if _sid_d:
+                    self.ctx.recipes.append_worklog(r.recipe_id, {
+                        "kind": "step_dispatch_emitted",
+                        "step_id": _sid_d})
             # W7 item 1: computed pacing hint. next_action does ZERO external
             # IO (staleness needs a worklog/pool read reconcile/status_ping do),
             # so output_stale stays False here — the optimistic heads-down band;
@@ -2695,19 +2715,52 @@ class Reconcile(_ClaudeTool):
         #    plan_closed prematurely marked s2..s12 done; the neuron
         #    caught "FSM jumped to done=2 while s2 still version(1)".)
         msgs = await self.ctx.broker.poll(r.recipe_id)
-        if any(
-            m.kind == _KIND_PLAN_CLOSED
-            and m.body.get("plan_id") == expected_pid
-            for m in msgs
-        ):
-            step.status = "done"
-            r.state = RecipeState.PLANNING
-            return None
+        _closed = [m for m in msgs
+                   if m.kind == _KIND_PLAN_CLOSED
+                   and m.body.get("plan_id") == expected_pid]
+        _closed_msg = bool(_closed)
         # 2. Disk backstop: this step's plan is terminal on disk.
-        if p is not None and p.state == PlanState.TERMINAL:
-            step.status = "done"
-            r.state = RecipeState.PLANNING
-            return None
+        if _closed_msg or (p is not None and p.state == PlanState.TERMINAL):
+            # F35 R3a#7 (2026-08-18): TERMINAL is not SUCCESS. This seam
+            # used to mark the step done for ANY terminal plan — a partial
+            # (failed-action) plan silently completed its step and released
+            # dependents onto a failed prerequisite. Only 'succeeded'
+            # auto-completes; anything else parks the step on a LOUD
+            # decision instruction (replan via create_plan(reopen=true),
+            # skip with authority, or close honestly partial).
+            _ts = p.terminal_status if p is not None else None
+            if _ts is None and self.ctx.plans.exists(expected_pid):
+                _p2 = self.ctx.plans.load(expected_pid)
+                if _p2.state == PlanState.TERMINAL:
+                    _ts = _p2.terminal_status
+            if _ts is None and _closed_msg:
+                # message-only close (no disk plan visible from here):
+                # honor an explicit terminal_status in the body; a legacy
+                # message without one keeps the old trusted contract.
+                _ts = _closed[-1].body.get("terminal_status", "succeeded")
+            if _ts == "succeeded":
+                step.status = "done"
+                r.state = RecipeState.PLANNING
+                return None
+            self.ctx.recipes.append_worklog(r.recipe_id, {
+                "kind": "step_plan_not_succeeded",
+                "step_id": step.step_id, "plan_id": expected_pid,
+                "terminal_status": _ts,
+            })
+            return Instruction(
+                kind=InstructionKind.AWAIT_USER,
+                args={"step_id": step.step_id, "plan_id": expected_pid,
+                      "terminal_status": _ts},
+                rationale=(
+                    f"Step '{step.step_id}' has a TERMINAL plan whose "
+                    f"result is {_ts!r}, not 'succeeded' — the step is NOT "
+                    "done and its dependents stay held. Decide: rework "
+                    "(create_plan(reopen=true) with the corrected goal), "
+                    "descope (user-authorized skip), or close the recipe "
+                    "honestly partial. Surface to the user if the call "
+                    "is theirs."
+                ),
+            )
         # 3. Crash recovery: the planner is neither done nor terminal.
         #    Is it still alive? Only "dead" (tracked-but-exited) counts;
         #    "unknown" (e.g. after a pool restart) stays conservative.
@@ -2728,8 +2781,43 @@ class Reconcile(_ClaudeTool):
             return None
         planner_handle = _planner_handle(r.recipe_id, step.step_id)
         # W7: liveness returns {state, last_output_ts}; only state gates here.
-        if (await self.ctx.pool.liveness(planner_handle))["state"] != "dead":
-            return None  # alive or unknown → keep waiting
+        _lv = (await self.ctx.pool.liveness(planner_handle))["state"]
+        if _lv == "unknown":
+            # F35 R3a#3/R3b#6 — UNACKED-DISPATCH recovery. 'unknown' used
+            # to wait forever, which is right for a pool restart but wrong
+            # for the crash-between-stamp-and-spawn case: there, NO session
+            # was ever created and NO plan exists. When the dispatch-intent
+            # stamp is older than the ack grace and the step's plan never
+            # appeared, the spawn provably never happened — reset to
+            # pending so the FSM re-emits it.
+            if not self.ctx.plans.exists(expected_pid):
+                _emits = self.ctx.recipes.read_events_tail(
+                    r.recipe_id, kinds=["step_dispatch_emitted"])
+                _mine = [e for e in _emits
+                         if e.get("step_id") == step.step_id]
+                try:
+                    _grace = float(os.environ.get(
+                        "EDP_DISPATCH_ACK_GRACE_SECS", "300"))
+                    _age = ((_now() - datetime.fromisoformat(
+                        str(_mine[-1].get("ts")))).total_seconds()
+                        if _mine else None)
+                except (TypeError, ValueError):
+                    _age = None
+                if _age is not None and _age > _grace:
+                    step.status = "pending"
+                    r.state = RecipeState.PLANNING
+                    self.ctx.recipes.append_worklog(r.recipe_id, {
+                        "kind": "dispatch_unacked_reset",
+                        "step_id": step.step_id,
+                        "age_secs": int(_age),
+                        "detail": ("dispatch instruction emitted but no "
+                                   "session or plan ever appeared — the "
+                                   "obeying shell died before the spawn; "
+                                   "step reset for re-dispatch"),
+                    })
+            return None
+        if _lv != "dead":
+            return None  # alive → keep waiting
         # Confirmed crash. Option C: first crash auto-re-dispatches;
         # second surfaces.
         if step.attempt < _MAX_REDISPATCH:
@@ -3392,6 +3480,7 @@ class CreatePlan(_ClaudeTool):
                         "'in_progress'} with the new scope), then reopen "
                         "its plan.")
                 _prior_terminal = existing.terminal_status
+                _goal_changed = bool(m.goal) and m.goal != existing.goal
                 existing.state = PlanState.DISPATCHING
                 existing.terminal_status = None
                 existing.shape = m.shape or existing.shape
@@ -3401,25 +3490,51 @@ class CreatePlan(_ClaudeTool):
                     existing.review_policy = m.review_policy
                 if m.test_budget is not None:
                     existing.test_budget = m.test_budget
+                # F35 R3a#5 (2026-08-18): a CHANGED goal invalidates old
+                # proof. Preserved done actions were verified against the
+                # OLD bar — the advisory note alone let stale evidence
+                # satisfy the new goal (all-done → succeeded with no
+                # re-review). Now they flip to `verify` (non-terminal: the
+                # cheap verify-only re-run — or the planner's explicit
+                # carry-forward via update_object back to done, an audited
+                # per-action decision). Same-goal reopens keep done work.
+                _flipped: list[str] = []
+                if _goal_changed:
+                    for a in existing.actions:
+                        if a.status == "done":
+                            a.status = "verify"
+                            _flipped.append(a.action_id)
                 v = self.ctx.plans.save(existing)
+                _reopen_n = len(self.ctx.plans.read_worklog(
+                    pid, tail=50, kinds=["plan_reopened"])) + 1
                 self.ctx.plans.append_worklog(pid, {
                     "kind": "plan_reopened",
                     "goal": m.goal,
                     "prior_terminal_status": _prior_terminal,
                     "actions_preserved": len(existing.actions),
+                    "goal_changed": _goal_changed,
+                    "done_flipped_to_verify": _flipped,
+                    "reopen_count": _reopen_n,
                 })
-                _stale_done = [a.action_id for a in existing.actions
-                               if a.status == "done"]
+                _churn = ("" if _reopen_n < 3 else
+                          f" CAUTION: reopen #{_reopen_n} of this plan — "
+                          "repeated terminal→reopen cycles are churn; "
+                          "raise ask_above before another.")
+                if _goal_changed and _flipped:
+                    _note = (
+                        f"REOPENED with a CHANGED goal. {len(_flipped)} "
+                        f"preserved done action(s) {_flipped} flipped to "
+                        "'verify' — their evidence proved the OLD bar. "
+                        "Re-prove each (a verify leg re-runs its "
+                        "acceptance), or explicitly carry one forward "
+                        "(update_object status='done' with a rationale) "
+                        "where the goal change provably doesn't touch it."
+                        + _churn)
+                else:
+                    _note = "REOPENED." + _churn
                 return Tool.ok(_CreatePlanOut(
                     plan_id=pid, domain=recipe.domain, version=v,
-                    note=(
-                        f"REOPENED. {len(_stale_done)} preserved done "
-                        f"action(s) {_stale_done} were verified against the "
-                        "OLD goal — for each whose acceptance the NEW goal "
-                        "changes, update_object it to status='verify' (a "
-                        "verify leg re-runs it) or supersede it with a new "
-                        "action; stale done evidence must not satisfy the "
-                        "new bar." if _stale_done else "REOPENED.")))
+                    note=_note))
             if existing.state != PlanState.DRAFTED:
                 return _precondition(
                     f"plan {pid} already exists in state "
@@ -3554,9 +3669,11 @@ class _AddActionIn(BaseModel):
     serves: list[str] = []
     # WP1 G-SKIP/G-RUNS: explicit gate declaration. None (default) = DERIVE:
     # gate=True when `serves` is non-empty AND `verify` carries an executable
-    # check ({"check": ...}). An explicit True/False from the planner wins
-    # over the derivation.
+    # check ({"check": ...}). Upgrading (True on a non-derived action) is
+    # free; F35 R3b#8: DOWNGRADING a derived gate (False) needs a recorded
+    # user answer against G-GATE:<plan>:<action> (override_ref below).
     gate: bool | None = None
+    override_ref: str | None = None
     # WP2 inline execution: "spawn" (default — a pool worker shell) or
     # "inline" (the PLANNER does it itself and records status directly; a
     # worker spawn for it draws an advisory). None = "spawn" (byte-compat).
@@ -3742,9 +3859,25 @@ class AddAction(_ClaudeTool):
         # recorded user answer, and its `done` requires >=1 real run
         # (command + exit_code) in acceptance.runs. An explicit `gate` input
         # from the planner wins over the derivation.
-        gate_val = (m.gate if m.gate is not None
-                    else bool(m.serves) and bool(
-                        m.verify and m.verify.get("check")))
+        _derived_gate = bool(m.serves) and bool(
+            m.verify and m.verify.get("check"))
+        # F35 R3b#8: the planner cannot silently DOWNGRADE a derived gate —
+        # an outcome-protecting executable check opted out with gate=false
+        # made G-SKIP and G-RUNS elective. Upgrading (gate=true on a
+        # non-derived action) stays free; downgrading needs the user.
+        if m.gate is False and _derived_gate:
+            gate_target = f"G-GATE:{m.plan_id}:{m.action_id}"
+            if not _gate_override_ok(self.ctx, p.recipe_id, m.override_ref,
+                                     gate_target):
+                return _precondition(
+                    f"add_action: {m.action_id!r} DERIVES as a GATE action "
+                    "(it serves a declared outcome AND carries an "
+                    "executable acceptance check) — gate=false would make "
+                    "its skip/run-proof protections elective, which is the "
+                    "planner waiving the user's gate. Drop gate=false, or "
+                    "the USER downgrades it: "
+                    + _gate_override_howto(gate_target))
+        gate_val = (m.gate if m.gate is not None else _derived_gate)
         # WP2 inline execution: validated HERE (the schema field is a plain
         # str so legacy plan JSON always loads) — write-path values only.
         if m.execution not in (None, "spawn", "inline"):
@@ -4059,6 +4192,17 @@ class RecordBranchVerdict(_ClaudeTool):
                 "re-ran, what you observed, and why it passes or fails "
                 "(≥40 chars, concrete). Do not rubber-stamp."
             )
+        # F35 R3b#9: `passed` is the flag the plan FSM's success boundary
+        # keys on (G-VERDICT). A prose fail with the flag omitted fell
+        # straight through to `succeeded` — the exact silent path the
+        # reopen exists to close. Explicit true/false, always.
+        if m.passed is None:
+            return _precondition(
+                f"action '{m.branch_id}' verdict requires passed=true|false "
+                "— the plan's success boundary keys on this flag "
+                "(G-VERDICT reopens a failed action; prose alone decides "
+                "nothing). State the gate result explicitly and re-record."
+            )
         me, _parent = _self_and_parent_addresses()
         a.review_verdict = {
             "verdict": v,
@@ -4210,6 +4354,9 @@ class RecordComprehensionSignoff(_ClaudeTool):
         else:
             r.comprehension.user_signoff = True
             r.comprehension.signoff_quote = m.user_quote.strip()
+        # F35 R3a#6: a fresh signoff (or recorded skip) covers the grown
+        # map — clear the staleness marker the reviewing add_step stamped.
+        r.comprehension.signoff_stale = False
         # P6: either form is a re-grounding moment for the recheck nags.
         refresh_comprehension_baseline(r, at=_now().isoformat())
         self.ctx.recipes.save(r)
@@ -4341,6 +4488,17 @@ class AddStep(_ClaudeTool):
         from ..schemas import RecipeStep
 
         r = self.ctx.recipes.load(m.recipe_id)
+        # F35 R3a#10 (2026-08-18): CLOSED is terminal with no FSM exit —
+        # a step added here is permanently unreachable (and update/delete
+        # already refuse terminal recipes; add matched neither). Refuse,
+        # matching its siblings.
+        if r.state == RecipeState.CLOSED:
+            return _precondition(
+                f"recipe {m.recipe_id!r} is CLOSED (terminal) — a step "
+                "added now can never run (CLOSED has no FSM exit, and "
+                "terminal recipes are immutable to update/delete too). "
+                "Re-running this goal correctly starts a FRESH recipe "
+                "(start_recipe).")
         # Plan-growth bounds (2026-08-01): the step description carries the
         # STEP's scope, not an essay — same write cap as decisions/actions.
         if len(m.description) > _ACTION_DESC_MAX:
@@ -4363,14 +4521,34 @@ class AddStep(_ClaudeTool):
         # its own shell). PM discipline: estimate, don't vibe.
         if m.execution == "spawn_planner":
             est = m.estimate or {}
-            if not any(est.get(k) is not None for k in ("tokens", "hours")):
+            # F35 R3b#13: the values must be REAL numbers > 0 — {'hours':
+            # 'large'} used to satisfy G-EST and then silently EXEMPT the
+            # step from risk-triggered G-CHALLENGE (the parser swallowed
+            # the ValueError as "low risk").
+            _ok_est = False
+            for _k, _cast in (("tokens", int), ("hours", float)):
+                _v = est.get(_k)
+                if _v is None or isinstance(_v, bool):
+                    continue
+                try:
+                    if _cast(_v) > 0 and float(_v) == float(_v):  # no NaN
+                        _ok_est = True
+                    else:
+                        return _precondition(
+                            f"G-EST: estimate.{_k}={_v!r} must be a "
+                            "positive number.")
+                except (TypeError, ValueError):
+                    return _precondition(
+                        f"G-EST: estimate.{_k}={_v!r} is not a number — "
+                        "pass a positive int (tokens) / float (hours).")
+            if not _ok_est:
                 return _precondition(
                     "G-EST: a spawn_planner step requires an estimate — "
                     "pass estimate={'tokens': <int>?, 'hours': <float>?} "
-                    "(at least one key). budget_status compares each step's "
-                    "declared estimate against actuals; an unestimated step "
-                    "makes the recipe budget unenforceable. Inline steps "
-                    "are exempt. Add the estimate and resend.")
+                    "(at least one positive number). budget_status compares "
+                    "each step's declared estimate against actuals; an "
+                    "unestimated step makes the recipe budget "
+                    "unenforceable. Inline steps are exempt.")
         known = {s.step_id for s in r.steps}
         missing = [d for d in m.depends_on if d not in known]
         if missing:
@@ -4389,7 +4567,8 @@ class AddStep(_ClaudeTool):
         # this compared against "comprehension" and "drafted", neither of
         # which is a recipe state at all ("drafted" is a PLAN state), so it
         # fired on every fresh recipe and stayed silent on none.
-        from ..schemas.instruction import RecipeState
+        # (F35: RecipeState now comes from the module-level import — the
+        # local import here used to shadow it for the whole function.)
         declared = getattr(r, "state", None) in (
             RecipeState.EXECUTING, RecipeState.REVIEWING,
             RecipeState.EXECUTING.value, RecipeState.REVIEWING.value)
@@ -4401,12 +4580,29 @@ class AddStep(_ClaudeTool):
             step_id=sid, kind="work", description=m.description,
             status="pending", depends_on=list(m.depends_on),
             execution=m.execution,
+            # F35 R3b#3: the ORIGIN execution is immutable history — the
+            # G-STEP laundering scan keys on it, so flipping a
+            # spawn_planner step to inline can no longer duck the gate.
+            execution_origin=m.execution,
             concerns=[c.strip() for c in m.concerns if c and c.strip()],
             acceptance_sketch=[s.strip() for s in m.acceptance_sketch
                                if s and s.strip()],
             serves=list(m.serves),
             estimate=m.estimate,
         ))
+        # F35 R3a#6: a step added AFTER the user's signoff (reviewing =
+        # the reviewed map grew) STALES that signoff — the FSM's
+        # reviewing-reopen AWAIT_USERs until the delta is re-signed
+        # (record_comprehension_signoff clears the marker). Recipes that
+        # never carried a signoff (recorded skip flows) are untouched.
+        if (getattr(r, "state", None) in (RecipeState.REVIEWING,
+                                          RecipeState.REVIEWING.value)
+                and r.comprehension.user_signoff):
+            r.comprehension.signoff_stale = True
+            self.ctx.recipes.append_worklog(m.recipe_id, {
+                "kind": "signoff_invalidated", "step_id": sid,
+                "detail": "map grew after user signoff (add_step in "
+                          "reviewing)"})
         self.ctx.recipes.save(r)
 
         # ADVISORY, NOT A REFUSAL. This framework's guards WARN and leave the
@@ -4638,6 +4834,11 @@ class CloseRecipe(_ClaudeTool):
         uncompiled = [sid for sid in consulted
                       if self.ctx.specs.exists(sid)
                       and not self.ctx.specs.has_doc(sid)]
+        # F35 R3b#10: a spec id the recipe CONSULTS that does not exist at
+        # all is worse than uncompiled — the old check silently classified
+        # it healthy (exists() gated the scan).
+        missing = [sid for sid in consulted
+                   if not self.ctx.specs.exists(sid)]
         consulted_set = set(consulted)
         pending: list[str] = []
         stale: list[str] = []
@@ -4656,11 +4857,24 @@ class CloseRecipe(_ClaudeTool):
                 if n.trained_at is not None and \
                         (_now() - n.trained_at).days > _ttl_days:
                     stale.append(n.neuron_id)
-        except Exception:  # noqa: BLE001 — an unreadable registry ≠ a gate
-            pass
-        if not uncompiled and not pending and not stale:
+        except Exception:  # noqa: BLE001
+            # F35 R3b#10: FAIL CLOSED — an unreadable registry is a named
+            # gate error, not an empty healthy result.
+            return _precondition(
+                "G-SPEC: the neuron registry could not be read while "
+                "verifying this recipe's consulted specs — the gate "
+                "cannot certify them. Fix the registry (python -m "
+                "edp_pool.doctor covers the stores) and retry the close.")
+        if not uncompiled and not pending and not stale and not missing:
             return None
-        gate_target = f"G-SPEC:{r.recipe_id}"
+        # F35 R3b#2: the gate TARGET carries the offending set, so a
+        # recorded waiver is scoped to THIS demand — an old G-SPEC waiver
+        # no longer auto-waives specs that went unhealthy later.
+        import hashlib as _hl
+        _demand = _hl.sha256(",".join(
+            sorted(uncompiled + missing + pending + stale)
+        ).encode("utf-8")).hexdigest()[:8]
+        gate_target = f"G-SPEC:{r.recipe_id}:{_demand}"
         if _gate_override_ok(self.ctx, r.recipe_id,
                              m.spec_gate_waiver_ref, gate_target):
             self.ctx.recipes.append_worklog(r.recipe_id, {
@@ -4671,6 +4885,11 @@ class CloseRecipe(_ClaudeTool):
             })
             return None
         problems = []
+        if missing:
+            problems.append(
+                f"spec(s) {missing} are CONSULTED but do not exist in the "
+                "spec store at all — a recorded dependency on nothing "
+                "(re-point the actions' spec_ids, or train the spec)")
         if uncompiled:
             problems.append(
                 f"spec(s) {uncompiled} have NO compiled doc — the "
@@ -4714,30 +4933,20 @@ class CloseRecipe(_ClaudeTool):
                 "gate_target": gate_target,
             })
             return None
-        verdicts = self.ctx.recipes.read_events_tail(
-            r.recipe_id, kinds=["acceptance_verdict"])
-        latest = verdicts[-1] if verdicts else None
-        v = ((latest or {}).get("body") or {}).get("verdict")
-        if v == "pass":
+        # F35 R3a#1/R3b#1: the pass must be FINAL (not interim) and must
+        # match the recipe's CURRENT fingerprint — a pass recorded before
+        # the map grew judged a different delivery.
+        _ok, why = _acceptance_pass_current(self.ctx, r)
+        if _ok:
             return None
-        if latest is None:
-            why = "no goal-vs-delivery acceptance verdict is recorded"
-        else:
-            why = (f"the latest acceptance verdict is {v!r}, not 'pass' — "
-                   "its gaps are unresolved")
         return _precondition(
             f"G-ACCEPT: cannot close {status!r} — {why}. Run the FINAL "
-            "acceptance pass: give an INDEPENDENT checker (a reviewer leg, "
-            "delegate_review, or consult_external) the recipe's "
-            "user_goal_verbatim + ANY artifact the goal NAMES (a skill/"
-            "spec/doc it says to build from — its own measurable bars are "
-            "requirements) + expected outcomes + met evidence + the "
-            "workspace diff, and ask ONE question: did the delivery match "
-            "what the user literally asked for? Record its verdict via "
-            "emit_recipe_event(kind='acceptance_verdict', body={'verdict': "
-            "'pass'|'gaps', 'gaps': [...], 'evidence': ..., 'by': <who "
-            "judged>}). 'gaps' blocks close — fix them or descope "
-            "honestly (partial). USER waiver: "
+            "acceptance pass: dispatch_acceptance(recipe_id=…) spawns the "
+            "advisor-seat ACCEPTOR in its own shell; it judges the "
+            "delivery against user_goal_verbatim + ANY artifact the goal "
+            "NAMES and records emit_recipe_event(kind='acceptance_"
+            "verdict') (acceptor-only, enforced). 'gaps' blocks close — "
+            "fix them or descope honestly (partial). USER waiver: "
             + _gate_override_howto(gate_target))
 
     def _laundered_steps(self, r) -> list[str]:
@@ -4751,7 +4960,10 @@ class CloseRecipe(_ClaudeTool):
         }
         out: list[str] = []
         for s in r.steps:
-            if s.execution != "spawn_planner" or s.status != "done":
+            # F35 R3b#3: key on the immutable ORIGIN (legacy fallback:
+            # live execution) — an execution flip no longer launders.
+            _exec0 = getattr(s, "execution_origin", None) or s.execution
+            if _exec0 != "spawn_planner" or s.status != "done":
                 continue
             if s.step_id in forced:
                 continue
@@ -5552,6 +5764,22 @@ class ResumeRecipe(_ClaudeTool):
                 # read as one we did.
                 "resume_session": base if res else None,
             })
+            if not res:
+                # F35 R3a#9: a failed respawn must leave a MACHINE-
+                # ACTIONABLE state, not an in_progress step with no
+                # planner (liveness 'unknown' waits forever). Reset to
+                # pending: the normal FSM dispatch retries it on the
+                # next tick — no undocumented double-resume needed.
+                for s in r.steps:
+                    if s.step_id == step_id and s.status == "in_progress":
+                        s.status = "pending"
+                        self.ctx.recipes.append_worklog(r.recipe_id, {
+                            "kind": "resume_respawn_failed_reset",
+                            "step_id": step_id,
+                            "detail": ("planner respawn failed at resume; "
+                                       "step reset to pending for normal "
+                                       "re-dispatch"),
+                        })
         return out, orphaned
 
     def _warn_orphaned_planner_rows(self, r: Recipe, snapshot: list[dict],
@@ -5698,7 +5926,7 @@ class RecordStepResult(_ClaudeTool):
                     except Exception:  # noqa: BLE001
                         plan = None
                     if plan is not None:
-                        _gaps = _step_flowdown_gaps(r, plan)
+                        _gaps = _step_flowdown_gaps(r, plan, at_close=True)
                         if _gaps:
                             return _precondition(
                                 "record_step_result: the step's declared "
@@ -5729,6 +5957,23 @@ class RecordStepResult(_ClaudeTool):
                                 "'challenge_waiver', plan_id="
                                 f"{plan.plan_id!r}, text=<why not "
                                 "warranted>). Then close the step.")
+                        # F35 R3b#4: a challenge whose findings were never
+                        # ADJUDICATED satisfied the letter while defeating
+                        # the intent — the step close now also requires an
+                        # empty open-challenge set.
+                        _open_ch = _open_challenges(
+                            self.ctx.plans.root, plan.plan_id)
+                        if _challenge_required(plan, s) and _open_ch:
+                            return _precondition(
+                                "record_step_result: G-CHALLENGE — "
+                                f"challenge(s) {_open_ch} on plan "
+                                f"{plan.plan_id!r} have findings with NO "
+                                "adjudication. Running the adversary is "
+                                "half the gate; judging its findings is "
+                                "the other half. record_context(kind="
+                                "'challenge_adjudication', plan_id=…, "
+                                "challenge_id=…, disposition=…, "
+                                "rationale=…) per challenge, then close.")
                 s.status = "done"
                 s.outputs = list(m.result.get("outputs", []))
                 if r.state == RecipeState.EXECUTING:
@@ -5999,6 +6244,40 @@ class RecordActionStatus(_ClaudeTool):
                         "in your shell, then re-record with runs=[...]. "
                         "Nothing was recorded."
                     )
+                # F35 R3b#8: the runs must PROVE the gate, not merely
+                # exist — `done` on a gate action needs at least one run
+                # that (a) EXITED 0 and (b) matches the declared verify
+                # command when one is declared. runs=[{'command': 'echo
+                # never-tested', 'exit_code': 99}] used to satisfy G-RUNS.
+                if getattr(a, "gate", False) and valid_runs:
+                    _declared = ""
+                    _verify = getattr(a.acceptance, "verify", None)
+                    if isinstance(_verify, dict):
+                        _declared = str(_verify.get("command") or "").strip()
+
+                    def _cmd_matches(run_cmd: str) -> bool:
+                        if not _declared:
+                            return True
+                        rc = " ".join(str(run_cmd).split()).lower()
+                        dc = " ".join(_declared.split()).lower()
+                        return dc in rc or rc in dc
+
+                    _proving = [
+                        rr for rr in valid_runs
+                        if int(rr.get("exit_code", 1)) == 0
+                        and _cmd_matches(rr.get("command", ""))]
+                    if not _proving:
+                        return _precondition(
+                            f"G-RUNS: action {m.action_id!r} is a GATE "
+                            "action and none of the recorded runs PROVES "
+                            "the gate: `done` needs >=1 run with "
+                            "exit_code=0"
+                            + (f" whose command matches the declared "
+                               f"verify command ({_declared!r})"
+                               if _declared else "")
+                            + ". A red/unrelated run is evidence of a "
+                            "FAILURE — record status='failed' with it "
+                            "instead. Nothing was recorded.")
                 # W2 leg 3 (fail-closed constraint guard, DESIGN-v6 §W2):
                 # a completion whose text matches an ACTIVE
                 # applies_to=["action_result"] constraint is REFUSED at the
@@ -6116,6 +6395,12 @@ class RecordActionStatus(_ClaudeTool):
                                    f"{a.batch_group!r} failed, so this member "
                                    "was never started"),
                     })
+            # F35 R3a#4: a terminal status ends the batch shell's claim on
+            # this member — clear the ownership stamp so a later reopen
+            # dispatches freely once the head is gone.
+            if (m.status in _TERMINAL_ACTION_STATUSES
+                    and getattr(a, "batch_owner", None)):
+                a.batch_owner = None
             # Legibility (principle-6): same uniform action_status_changed
             # line for failed / needs_review / skipped / … . This is
             # ADDITIVE to the action_reset line below — a crash-recovery
@@ -6305,8 +6590,11 @@ def _check_g_step(ctx, recipe_id: str, step, override_ref: str | None):
     `forced=True` means the override validated and a `step_forced_done`
     event was appended to the recipe trail (CloseRecipe's laundering check
     reads it)."""
-    if getattr(step, "execution", None) != "spawn_planner" \
-            or step.status == "done":
+    # F35 R3b#3: key on the immutable ORIGIN (legacy fallback: live
+    # execution) — patching execution to 'inline' no longer exempts.
+    _exec0 = (getattr(step, "execution_origin", None)
+              or getattr(step, "execution", None))
+    if _exec0 != "spawn_planner" or step.status == "done":
         return None, False
     plan = ctx.plans.find_by_step(recipe_id, step.step_id)
     if (plan is not None
@@ -7885,7 +8173,7 @@ def _effective_leg_kind(action, action_id: str) -> str:
     return "build"
 
 
-def _step_flowdown_gaps(recipe, plan) -> list[str]:
+def _step_flowdown_gaps(recipe, plan, at_close: bool = False) -> list[str]:
     """Context-diet Phase 2 — the step->plan flow-down check, pure and
     deterministic (principle 6). Returns the list of uncovered obligations
     for `plan` against its owning step; empty = pass.
@@ -7896,6 +8184,10 @@ def _step_flowdown_gaps(recipe, plan) -> list[str]:
       `Plan.sketch_covered_by` to >=1 existing action id. Explicit mapping
       is what makes this testable; fuzzy text-matching would manufacture
       coverage.
+    * F35 R3b#12, `at_close=True` (the step-close enforcement) only: a
+      mapped action must have actually DELIVERED — status done (or a
+      verified verify), not skipped/failed/pending. Authoring-time calls
+      keep the declaration-level check (the actions haven't run yet).
 
     Legacy steps (no concerns, no sketch) yield no gaps — the gate is purely
     additive and no existing plan is refused."""
@@ -7938,6 +8230,17 @@ def _step_flowdown_gaps(recipe, plan) -> list[str]:
                 gaps.append(
                     f"acceptance sketch line {line!r} maps to unknown "
                     f"action id(s) {unknown!r}")
+            elif at_close:
+                _by_id = {a.action_id: a for a in plan.actions}
+                undelivered = [
+                    aid for aid in aids
+                    if getattr(_by_id.get(aid), "status", None) != "done"]
+                if undelivered:
+                    gaps.append(
+                        f"acceptance sketch line {line!r} maps to "
+                        f"action(s) {undelivered!r} that did not deliver "
+                        "(not status='done') — a skipped/failed mapping "
+                        "is declared coverage, not proof")
     return gaps
 
 
@@ -8130,6 +8433,9 @@ class _SpawnWorkerIn(BaseModel):
     # the table — it is the planner's explicit, per-action decision.
     task_class: str = "*"
     allow_candidate_tier: bool = False
+    # F35 R3b#5 — G-REWORK: a FROZEN action refuses this spawn too; the
+    # user's recorded answer against G-REWORK:<plan>:<action> unfreezes.
+    rework_override_ref: str | None = None
     # WP2 G-BUDGET: recorded user_gate_answer ref (answer_id) validating
     # against "G-BUDGET:<recipe_id>" — required to spawn once the recipe's
     # measurable budget bounds are exceeded.
@@ -8622,6 +8928,50 @@ class PoolSpawnWorker(_ClaudeTool):
                 # a batch would be exactly the double-dispatch C7 closed.
                 # Unbatched (member_ids == [head]) this is one probe,
                 # byte-identical to pre-v7.
+                # F35 R3b#5 — G-REWORK is enforced AT THE SPAWN, not only in
+                # the FSM frontier: a frozen action (past the hard cap)
+                # refuses a direct pool_spawn_worker too, or the cap was
+                # advisory theater. The user unfreezes via a recorded
+                # answer against G-REWORK:<plan>:<action>.
+                from ..fsm.plan_fsm import STUCK_HARD_CAP
+                from ..fsm.plan_fsm import _frozen as _rework_frozen
+                for mem in members:
+                    if _rework_frozen(mem):
+                        gate_target = (
+                            f"G-REWORK:{m.plan_id}:{mem.action_id}")
+                        if not _gate_override_ok(
+                                self.ctx, p.recipe_id,
+                                getattr(m, "rework_override_ref", None),
+                                gate_target):
+                            _rollback_failed_dispatch(
+                                self.ctx, m.plan_id, m.action_id,
+                                "g_rework_frozen_pre_launch",
+                                member_ids=rollback_ids)
+                            return _precondition(
+                                f"G-REWORK: action {mem.action_id!r} is "
+                                f"FROZEN (attempt/verify_failures >= "
+                                f"{STUCK_HARD_CAP}) — another shell for "
+                                "the same failing work is grind, not "
+                                "progress. Raise ask_above (rework "
+                                "differently, split, or abandon); the "
+                                "USER unfreezes: "
+                                + _gate_override_howto(gate_target))
+                # F35 R3a#4 — a member owned by a LIVE batch head is not
+                # dispatchable on its own handle (the head executes it).
+                if not m.force:
+                    for mem in members:
+                        _owner = getattr(mem, "batch_owner", None)
+                        if _owner and _owner != mem.action_id and \
+                                await _session_is_live(
+                                    self.ctx.pool,
+                                    f"{m.plan_id}:{_owner}"):
+                            return _precondition(
+                                f"action {mem.action_id!r} belongs to a "
+                                f"batch whose head {_owner!r} has a LIVE "
+                                "shell — that shell owns this member "
+                                "(reopens included). Wait for the head to "
+                                "close, or pool_reap it first; force=true "
+                                "overrides deliberately.")
                 if not m.force:
                     for mem in members:
                         if await _session_is_live(
@@ -9000,6 +9350,22 @@ class PoolSpawnWorker(_ClaudeTool):
                 "with leg_kind='build' (or 'verify' for a re-run-only "
                 "leg) — declaration beats the name convention."
             )
+        # F35 R3b#4 — the INVERSE guard: role='reviewer' may dispatch only
+        # a declared review/verify leg. Without this, an open-challenge
+        # G-ADJ hold on non-review dispatch was duckable by spawning the
+        # next BUILD action as role='reviewer'.
+        if m.role == "reviewer" and _effective_leg_kind(
+                _head_for_kind, m.action_id) not in ("review", "verify"):
+            _rollback_failed_dispatch(
+                self.ctx, m.plan_id, m.action_id,
+                "build_leg_as_reviewer_refused",
+                member_ids=rollback_ids)
+            return _precondition(
+                f"action {m.action_id!r} is not a declared review/verify "
+                "leg — role='reviewer' dispatches judgment legs only "
+                "(build work as 'reviewer' would duck the non-review "
+                "dispatch gates). Dispatch it role='worker', or declare "
+                "leg_kind='review' if it truly is one.")
         if m.role == "reviewer" and self.ctx.plans.exists(m.plan_id):
             _reviewed = [x for x in p.actions
                          if x.action_id not in {mem.action_id
@@ -9456,10 +9822,15 @@ def _challenge_required(plan, step=None) -> bool:
             "EDP_CHALLENGE_GATE_MIN_HOURS", "2"))
         min_tokens = int(os.environ.get(
             "EDP_CHALLENGE_GATE_MIN_TOKENS", "50000"))
+    except (TypeError, ValueError):
+        min_hours, min_tokens = 2.0, 50000
+    try:
         hours = float(est.get("hours") or 0)
         tokens = int(est.get("tokens") or 0)
     except (TypeError, ValueError):
-        return False
+        # F35 R3b#13: a MALFORMED persisted estimate fails CLOSED — junk
+        # sizing used to read as "low risk" and exempt the adversary.
+        return True
     return hours >= min_hours or tokens >= min_tokens
 
 
@@ -9522,10 +9893,30 @@ class AdversarialChallenge(_ClaudeTool):
             "change you would make — as a proposal, not a patch>}. "
             "No praise, no summary, findings only; an empty array means "
             "you genuinely found nothing after a real hunt.")
+        # F35 R3b#4: for a PLAN target the adversary attacks the STORED
+        # plan, assembled server-side — caller-supplied content alone let
+        # a flattering summary stand in for the real DAG. The caller's
+        # text still rides along as notes (it may carry context the store
+        # lacks); it can no longer be the whole picture.
+        _content = m.content
+        if m.target_kind == "plan" and self.ctx.plans.exists(m.target_id):
+            _pl = self.ctx.plans.load(m.target_id)
+            _rows = [
+                f"- {a.action_id} [{a.status}] deps={list(a.depends_on)} "
+                f"leg={getattr(a, 'leg_kind', None) or 'build'}: "
+                f"{(a.description or '')[:300]} | acceptance="
+                f"{getattr(a.acceptance, 'kind', None)}:"
+                f"{(getattr(a.acceptance, 'expected', '') or '')[:200]}"
+                for a in _pl.actions]
+            _content = (
+                f"PLAN {_pl.plan_id} (server-assembled from the stored "
+                f"record)\nGOAL: {_pl.goal}\nSHAPE: {_pl.shape}\n"
+                "ACTIONS:\n" + "\n".join(_rows)
+                + ("\n\nCALLER NOTES:\n" + m.content if m.content else ""))
         res = await _bridge_call(
             "challenge", "challenge", "",
             task=charter,
-            context=m.content)
+            context=_content)
         # WP2 G-ADJ: a SUCCESSFUL challenge persists to a plan's challenges
         # sidecar; the dispatch gate then holds NON-review legs until each
         # recorded challenge is adjudicated
@@ -10873,6 +11264,17 @@ class NotifyAbove(_ClaudeTool):
                 "no parent to notify — EDP_HANDLE is empty (neuron has "
                 "no parent in-system; surface to user instead)."
             )
+        # F35 R3b#11: the grounding echo is a RESTATEMENT, not a ping —
+        # an empty body satisfied the terminal-status gate while proving
+        # nothing was understood.
+        if m.kind == "grounding" and not str(
+                (m.body or {}).get("restatement", "")).strip():
+            return _precondition(
+                "kind='grounding' requires body.restatement — the echo "
+                "exists to prove you understood THIS dispatch: "
+                "{'restatement': <the task in your own words>, "
+                "'will_verify_by': <the acceptance in your own words>, "
+                "'assumptions': [...]}. An empty echo grounds nothing.")
         msg = BrokerMessage(
             msg_id=str(uuid.uuid4()),
             ts=_now(),
@@ -11156,6 +11558,37 @@ class EmitRecipeEvent(_ClaudeTool):
     OutputModel = _EmitRecipeEventOut
 
     async def _run(self, m: _EmitRecipeEventIn):
+        # F35 R3b#1 (2026-08-18): the acceptance verdict is the ACCEPTOR's
+        # artifact — G-ACCEPT closes on it, so letting any seat mint one
+        # (for ANY recipe_id) made the whole gate self-serviceable. A shell
+        # with a role that is not `acceptor` is refused; a role-less shell
+        # (the operator's base console, tests) stays able to record one.
+        if m.kind == "acceptance_verdict":
+            _role = os.environ.get("EDP_ROLE", "").strip()
+            if _role and _role != "acceptor":
+                return _precondition(
+                    "acceptance_verdict is the ACCEPTOR's artifact — "
+                    f"role {_role!r} cannot record one (G-ACCEPT closes on "
+                    "it; a self-issued pass is the gate judging itself). "
+                    "If the delivery is ready for judgment, the neuron "
+                    "runs dispatch_acceptance instead.")
+            _v = str(m.body.get("verdict", "")).strip()
+            if _v not in ("pass", "gaps"):
+                return _precondition(
+                    "acceptance_verdict.body.verdict must be 'pass' or "
+                    f"'gaps' (got {_v!r}) — the close gate reads exactly "
+                    "these.")
+            # F35 R3a#1: bind the verdict to WHAT WAS JUDGED — the server
+            # stamps the recipe's current fingerprint (goal + outcomes +
+            # step set). The success boundary and G-ACCEPT honor a 'pass'
+            # only while the fingerprint still matches, so a recipe that
+            # grew after the pass must be re-judged.
+            rid_probe = m.recipe_id
+            if rid_probe is None:
+                rid_probe = _resolve_recipe_lineage(self.ctx)[0]
+            if rid_probe and self.ctx.recipes.exists(rid_probe):
+                m.body["fingerprint"] = _acceptance_fingerprint(
+                    self.ctx.recipes.load(rid_probe))
         # W2 leg 3: warn-only constraint stamp on the body — NEVER blocks.
         _warn_comms_constraints(self.ctx, m.body, "emit_recipe_event",
                                 recipe_id=m.recipe_id)
@@ -11310,6 +11743,46 @@ class ConveneConsult(_ClaudeTool):
         ))
 
 
+def _acceptance_fingerprint(r) -> str:
+    """F35 R3a#1 — WHAT an acceptance verdict judged, as a short stable
+    hash: the verbatim goal, each outcome's (id, met), and the step-id
+    set. A 'pass' is honored only while this still matches — any material
+    growth of the map after the pass demands a fresh judgment. PURE."""
+    import hashlib as _hashlib
+    basis = json.dumps({
+        "goal": r.user_goal_verbatim,
+        "outcomes": sorted(
+            (o.id, bool(o.met)) for o in r.comprehension.expected_outcomes),
+        "steps": sorted(s.step_id for s in r.steps),
+    }, default=str, sort_keys=True)
+    return _hashlib.sha256(basis.encode("utf-8")).hexdigest()[:12]
+
+
+def _acceptance_pass_current(ctx, r) -> tuple[bool, str]:
+    """F35 R3a#1/R3b#1 — is the LATEST acceptance_verdict a FINAL 'pass'
+    that still matches the recipe's current fingerprint? Returns (ok,
+    reason-when-not). Shared by the NextAction downgrade and G-ACCEPT."""
+    verdicts = ctx.recipes.read_events_tail(
+        r.recipe_id, kinds=["acceptance_verdict"])
+    if not verdicts:
+        return False, "no acceptance_verdict recorded"
+    body = (verdicts[-1].get("body") or {})
+    v = body.get("verdict")
+    if v != "pass":
+        return False, f"latest verdict is {v!r}"
+    if body.get("interim"):
+        return False, ("latest 'pass' is INTERIM — the final pass is a "
+                       "separate dispatch_acceptance() (interim never "
+                       "satisfies final)")
+    fp = body.get("fingerprint")
+    if fp and fp != _acceptance_fingerprint(r):
+        return False, ("the recorded 'pass' predates a material change to "
+                       "the recipe (goal/outcomes/steps changed since) — "
+                       "re-run dispatch_acceptance for the CURRENT "
+                       "delivery")
+    return True, ""
+
+
 class _DispatchAcceptanceIn(BaseModel):
     recipe_id: str
     # interim=true — the mid-recipe review pass (owner F31: "a spawn in
@@ -11365,10 +11838,35 @@ class DispatchAcceptance(_ClaudeTool):
             last_d = next((e for e in reversed(trail)
                            if e.get("kind") == "acceptance_dispatched"),
                           None)
-            if last_d is not None and not any(
-                    e.get("kind") == "acceptance_verdict"
-                    and (e.get("ts") or "") >= (last_d.get("ts") or "")
-                    for e in trail):
+            _in_flight = last_d is not None and not any(
+                e.get("kind") == "acceptance_verdict"
+                and (e.get("ts") or "") >= (last_d.get("ts") or "")
+                for e in trail)
+            # F35 R3b#7: an INTERIM pass in flight never suppresses a
+            # requested FINAL pass — the latch matches mode.
+            if (_in_flight and bool(last_d.get("interim", False))
+                    and not m.interim):
+                _in_flight = False
+            # F35 R3b#7: the latch EXPIRES. An acceptor that died between
+            # dispatch and verdict used to hold the latch forever with
+            # force=true as the only (undiscoverable) escape. Past the
+            # TTL a re-dispatch proceeds, loudly.
+            if _in_flight:
+                try:
+                    _ttl = float(os.environ.get(
+                        "EDP_ACCEPT_LATCH_TTL_SECS", "3600"))
+                    _age = (_now() - datetime.fromisoformat(
+                        str(last_d.get("ts")))).total_seconds()
+                except (TypeError, ValueError):
+                    _ttl, _age = 3600.0, 0.0
+                if _age > _ttl:
+                    self.ctx.recipes.append_worklog(m.recipe_id, {
+                        "kind": "acceptance_latch_expired",
+                        "acceptor_id": last_d.get("acceptor_id"),
+                        "age_secs": int(_age),
+                    })
+                    _in_flight = False
+            if _in_flight:
                 return Tool.ok(_DispatchAcceptanceOut(
                     acceptor_id=last_d.get("acceptor_id", "unknown"),
                     interim=bool(last_d.get("interim", False)),
@@ -11376,9 +11874,11 @@ class DispatchAcceptance(_ClaudeTool):
                           f"{last_d.get('acceptor_id')!r} and no verdict "
                           "has landed yet — no new acceptor was spawned. "
                           "Wait for its acceptance_verdict on your "
-                          "flowback subscription. Only if you have "
-                          "CONFIRMED that shell is dead (inspect_worker/"
-                          "pool), re-call with force=true.")))
+                          "flowback subscription. If you have CONFIRMED "
+                          "that shell is dead (inspect_worker/pool), "
+                          "re-call with force=true; the latch also "
+                          "expires on its own after "
+                          "EDP_ACCEPT_LATCH_TTL_SECS (default 3600s).")))
         acceptor_id = f"acceptor-{uuid.uuid4().hex[:8]}"
         brief = {
             "task": ("interim-review" if m.interim
@@ -11412,6 +11912,8 @@ class DispatchAcceptance(_ClaudeTool):
         self.ctx.recipes.append_worklog(m.recipe_id, {
             "kind": "acceptance_dispatched",
             "acceptor_id": acceptor_id, "interim": m.interim,
+            # F35 R3a#1: what this pass was asked to judge.
+            "fingerprint": _acceptance_fingerprint(r),
         })
         return Tool.ok(_DispatchAcceptanceOut(
             acceptor_id=acceptor_id, interim=m.interim))

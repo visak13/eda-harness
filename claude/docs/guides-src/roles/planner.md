@@ -97,7 +97,10 @@ drawn, one at most. Never pre-load the next phase.
    waiver (`record_context(kind="challenge_waiver", plan_id=…,
    text=<why not warranted>)`, audited); open findings still gate
    non-review dispatch (G-ADJ). Findings are cheapest before the work
-   lands — challenge early, not at close.
+   lands — challenge early, not at close. Right-size the brief: ONE
+   artifact per challenge turn (a delegate turn has a hard wall clock);
+   a hunt too big for one turn is several challenges, never one
+   mega-brief.
 
 **Corrections are STEERS, not new actions.** When in-flight work needs
 a change, `steer_worker(action_id=…, body={…})` — it resolves the live

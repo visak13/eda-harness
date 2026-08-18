@@ -452,3 +452,59 @@ Suite: 1532+10 new pass across claude (only Phoenix env-fail) + 14 broker
 tests (4 new). Tiering tests updated to the CAS naming contract; w15
 steady-state contract narrowed (≤1 load on decision rows, 0 otherwise);
 agentic-plan line backstop 230→250 (token budgets remain the gate).
+
+## F35 — Adversarial campaign Round 3 (FSM & gates, split R3a+R3b), 2026-08-18
+R3 burst the sol 900s turn cap twice → split into R3a (state machines, 10
+findings) + R3b (gates, 13 findings); raw: .sol_review_out-r3a/-r3b.txt.
+Owner ruling: fix all per recommendation. Also hardened from the incident:
+per-delegate timeout_secs in .bridge.json (config decision) + planner-card
+right-size-the-challenge law. 22 CONFIRM fixed, 1 PARTIAL (R3b#2 replay half
+fixed, neuron-as-user-channel trust boundary accepted), 1 minimal (R3b#12).
+
+Acceptance integrity (R3a#1+R3b#1+R3b#7, one package): acceptance_verdict is
+acceptor-only (role-less shells exempt) with verdict enum enforced; the
+server stamps a recipe fingerprint (goal+outcomes+steps) on every verdict;
+DONE/G-ACCEPT honor only a FINAL pass whose fingerprint is current; the
+dispatch latch is mode-matched (interim never suppresses final) and expires
+(EDP_ACCEPT_LATCH_TTL_SECS, 3600) instead of wedging on a dead acceptor.
+
+Plan FSM: G-DEPS (failed action blocking a pending dependent reopens with a
+counted cycle — deadlock → bounded rework → G-REWORK freeze; lone failures
+keep partial semantics) · G-VERDICT covers skipped actions · batch members
+carry batch_owner (live head suppresses member re-dispatch in readiness AND
+pool_spawn_worker; cleared at terminal) · record_branch_verdict requires
+passed=true|false on action verdicts.
+
+Recipe plane: reconcile completes a step only on terminal_status=succeeded
+(partial/failed park the step on a LOUD await_user decision; legacy
+plan_closed messages without terminal_status stay trusted) · unacked
+dispatches recover (step_dispatch_emitted stamps + EDP_DISPATCH_ACK_GRACE_
+SECS; unknown liveness + no plan + past grace = reset to pending) ·
+create_plan(reopen) with a CHANGED goal flips preserved done actions to
+verify (same-goal reopens keep them) + reopen churn counter ≥3 warns ·
+add_step refuses CLOSED recipes; add_step in REVIEWING stamps
+comprehension.signoff_stale and the FSM reopen AWAIT_USERs until a fresh
+signoff clears it · resume_recipe resets failed-respawn steps to pending.
+
+Gate hardenings: G-STEP keys on immutable execution_origin (flip-to-inline
+laundering dead) · G-CHALLENGE step close also requires zero OPEN
+challenges; role=reviewer dispatches only declared review/verify legs; plan
+challenges assemble content server-side · G-REWORK enforced at
+pool_spawn_worker (frozen refuses; G-REWORK:<plan>:<action> user answer
+unfreezes; spawn opens a verify cycle) · G-RUNS: done needs a run with
+exit_code=0 matching the declared verify command; planner cannot downgrade
+a derived gate without a user answer (G-GATE target) · G-SPEC: missing
+specs block close, registry read failure fails closed, waiver target
+carries a demand hash (replay-scoped) · grounding echo requires a non-empty
+restatement · flow-down at close requires mapped actions to have delivered
+· G-EST validates positive finite numbers and a malformed estimate fails
+G-CHALLENGE closed.
+
+Suite: 1545 passed (+15 new in test_f35_round3.py; Phoenix env-fail only).
+Updated to new contracts: test_f25 (verify-flip + same-goal counterpart),
+test_wp1 (gate downgrade needs override), test_s26/test_reviewer_restoration
+(passed= + declared review legs), test_fsm/test_recipe_map_integrity
+(signoff_stale). RESIDUALS (recorded): grounding echo cross-action tolerance
+kept for batch heads; flow-down stays declaration-level beyond the
+delivered-action check; R3b#2 user-channel authentication is a trust
+boundary, not a gate.

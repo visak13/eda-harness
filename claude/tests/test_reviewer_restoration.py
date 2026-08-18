@@ -34,8 +34,10 @@ async def _plan_with_done_work(env):
                              shape="poc-iterate-build", goal="g"))["plan_id"]
     _ok(await env.call("add_action", plan_id=pid, action_id="a1",
                        description="build the widget"))
+    # F35 R3b#4: reviewer-role dispatch requires a DECLARED review leg.
     _ok(await env.call("add_action", plan_id=pid, action_id="a9",
-                       description="review a1", depends_on=["a1"]))
+                       description="review a1", depends_on=["a1"],
+                       leg_kind="review"))
     # a1 carries recorded work for the reviewer to review.
     p = env.ctx.plans.load(pid)
     a1 = next(x for x in p.actions if x.action_id == "a1")
@@ -65,9 +67,13 @@ async def test_reviewer_spawn_sends_the_review_brief_first(env):
 
 async def test_worker_spawn_sends_no_review_brief(env):
     _rid, pid = await _plan_with_done_work(env)
-    _ok(await env.call("pool_spawn_worker", plan_id=pid, action_id="a9",
+    # a9 is now a DECLARED review leg (F35 R3b#4) and refuses role=worker;
+    # a plain BUILD action is the byte-identical no-brief path under test.
+    _ok(await env.call("add_action", plan_id=pid, action_id="a2",
+                       description="more build work"))
+    _ok(await env.call("pool_spawn_worker", plan_id=pid, action_id="a2",
                        role="worker"))
-    inbox = await env.ctx.broker.poll(f"{pid}:a9")
+    inbox = await env.ctx.broker.poll(f"{pid}:a2")
     assert not [m for m in inbox if m.kind == "consult"], (
         "a plain worker dispatch must stay byte-identical — no brief")
 

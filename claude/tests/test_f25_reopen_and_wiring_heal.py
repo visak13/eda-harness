@@ -64,11 +64,29 @@ async def test_reopen_resets_terminal_plan_preserving_actions(tmp_path):
     assert p.terminal_status is None
     assert p.goal == "o5 continuity fix"
     assert [a.action_id for a in p.actions] == ["a1"]      # history kept
-    assert p.actions[0].status == "done"
+    # F35 R3a#5: the goal CHANGED, so the preserved done action's evidence
+    # proved the OLD bar — it flips to `verify` (the cheap re-run leg or an
+    # explicit audited carry-forward re-proves it against the new goal).
+    assert p.actions[0].status == "verify"
     log = ctx.plans.read_worklog("recipe-f25-s1", tail=5)
     assert any(e.get("kind") == "plan_reopened"
                and e.get("prior_terminal_status") == "succeeded"
+               and e.get("goal_changed") is True
+               and e.get("done_flipped_to_verify") == ["a1"]
                for e in log)
+
+
+async def test_reopen_same_goal_keeps_done_actions(tmp_path):
+    # F35 R3a#5 counterpart: a reopen that does NOT change the goal (a
+    # crash-recovery reopen) keeps delivered work delivered.
+    ctx = make_context(tmp_path)
+    _setup(ctx)
+    res = await CreatePlan(ctx)._run(_CreatePlanIn(
+        recipe_id="recipe-f25", step_id="s1", shape="diagnose-fix-verify",
+        goal="old o4 build", reopen=True))
+    assert res.ok, res
+    p = ctx.plans.load("recipe-f25-s1")
+    assert p.actions[0].status == "done"
 
 
 async def test_reopen_refused_on_live_plan_and_done_step(tmp_path):

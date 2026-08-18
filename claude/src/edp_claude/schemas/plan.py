@@ -209,6 +209,15 @@ class Action(BaseModel):
     # (omitted when None) so a legacy plan JSON and a pre-restart
     # extra='forbid' reader are untouched — the o6 standing bar.
     batch_group: str | None = None
+    # F35 R3a#4 (2026-08-18) — BATCH DISPATCH OWNERSHIP. The whole batch
+    # unit runs under the HEAD's handle (<plan_id>:<head_action_id>), but
+    # live-dispatch suppression probes each MEMBER's own handle — so a
+    # member reopened to pending while its head shell was still live
+    # double-executed. Stamped (= head action_id) on every member at batch
+    # dispatch; readiness and pool_spawn_worker suppress a pending action
+    # whose recorded owner is live; cleared at terminal status and at the
+    # failure-tail release. None = unowned (unbatched / legacy).
+    batch_owner: str | None = None
     # v7 WS3 (2026-08-05) — OUTCOME LINEAGE (§2.5/§2.6): the star
     # expected-outcome ids this action's acceptance descends from (usually
     # inherited from its step's `serves` at authoring). Gives every action an
@@ -333,6 +342,10 @@ class Action(BaseModel):
                 # sees the new key). Emit only when the planner batched it.
                 if value:
                     out["batch_group"] = value
+            elif key == "batch_owner":
+                # F35 R3a#4 emission gate: same o6 discipline.
+                if value:
+                    out["batch_owner"] = value
             elif key == "serves":
                 # v7 WS3 emission gate: omit when empty so an unlinked
                 # (legacy) action serializes byte-shape-identical.

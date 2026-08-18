@@ -297,6 +297,24 @@ def recipe_next_action(r: Recipe) -> Instruction:
         # map is the single source of truth; the neuron never routes
         # around it.
         if _first_ready_step(r) is not None:
+            # F35 R3a#6 (2026-08-18): the reopen must not outrun the USER.
+            # Signoff is checked only in COMPREHENDING, so a step added
+            # here used to dispatch immediately — expanding scope one step
+            # at a time without the user ever seeing it (add_step in
+            # `reviewing` stamps signoff_stale for exactly this check;
+            # record_comprehension_signoff clears it).
+            if getattr(r.comprehension, "signoff_stale", False):
+                return Instruction(
+                    kind=K.AWAIT_USER, args={},
+                    rationale=(
+                        "The map GREW after the user's signoff (a step was "
+                        "added post-review). Surface the scope delta — the "
+                        "new step(s), what they cost, why now — and record "
+                        "record_comprehension_signoff before this "
+                        "dispatches. The user approved a smaller recipe "
+                        "than the one about to run."
+                    ),
+                )
             r.state = RecipeState.PLANNING
             return recipe_next_action(r)
         # F4.c guard: `succeeded` is reachable ONLY with declared + met

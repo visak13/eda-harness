@@ -365,8 +365,9 @@ async def test_reviewer_can_stamp_an_action_level_verdict(env, monkeypatch):
     monkeypatch.setenv("EDP_HANDLE", f"{pid}:a9")   # the REVIEWER's own action
     monkeypatch.setenv("EDP_ROLE", "reviewer")
 
+    # F35 R3b#9: action verdicts carry an explicit passed flag (enforced).
     _ok(await env.call("record_branch_verdict", recipe_id=rid, plan_id=pid,
-                       branch_id="a1", verdict=_SUBSTANTIVE))
+                       branch_id="a1", verdict=_SUBSTANTIVE, passed=True))
 
     a = next(x for x in env.ctx.plans.load(pid).actions if x.action_id == "a1")
     assert a.review_verdict is not None, "the verdict had nowhere to land"
@@ -422,7 +423,7 @@ async def test_a_verdict_never_touches_status_or_acceptance(
 
     monkeypatch.setenv("EDP_HANDLE", f"{pid}:a9")
     _ok(await env.call("record_branch_verdict", recipe_id=rid, plan_id=pid,
-                       branch_id="a1", verdict=_SUBSTANTIVE))
+                       branch_id="a1", verdict=_SUBSTANTIVE, passed=True))
 
     a = next(x for x in env.ctx.plans.load(pid).actions if x.action_id == "a1")
     assert a.status == worker_status, (
@@ -492,7 +493,12 @@ async def test_spawn_worker_can_dispatch_a_reviewer_role_leg(env):
     EDP_ROLE=worker, so a planner-authored reviewer leg ran as a worker and
     never loaded reviewer.md."""
     _rid, pid = await _plan_with_action(env)
-    await env.call("pool_spawn_worker", plan_id=pid, action_id="a1",
+    # F35 R3b#4: role='reviewer' dispatches only DECLARED review legs —
+    # dispatching build work as a reviewer would duck the non-review
+    # dispatch gates.
+    _ok(await env.call("add_action", plan_id=pid, action_id="r1",
+                       description="review a1", leg_kind="review"))
+    await env.call("pool_spawn_worker", plan_id=pid, action_id="r1",
                    role="reviewer")
     assert env.ctx.pool.spawns[-1]["role"] == "reviewer"
 

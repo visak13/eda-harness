@@ -336,10 +336,19 @@ class RecipeStep(BaseModel):
     # PM discipline: estimate, don't vibe): {tokens?: int, hours?: float}.
     # budget_status compares planned vs actual per step. Emission-gated.
     estimate: dict | None = None
+    # F35 R3b#3 (2026-08-18) — IMMUTABLE execution ORIGIN. G-STEP's
+    # laundering scan keyed on the CURRENT execution, so flipping a
+    # spawn_planner step to inline before marking it done exempted it
+    # from both checks. Stamped once at add_step; the object CRUD layer
+    # refuses patches to it. None = legacy (scan falls back to the live
+    # execution). Emission-gated.
+    execution_origin: str | None = None
 
     @model_serializer(mode="wrap")
     def _ser_tiering_gate(self, handler):
         data = handler(self)
+        if data.get("execution_origin") is None:
+            data.pop("execution_origin", None)
         if data.get("description_ref") is None:
             data.pop("description_ref", None)
         if not data.get("concerns"):
@@ -378,6 +387,11 @@ class Comprehension(BaseModel):
     # Emission-gated below.
     signoff_skipped: bool = False
     skip_reason: str = ""
+    # F35 R3a#6 (2026-08-18): the map GREW after the user's signoff (a step
+    # was added while the recipe was in REVIEWING). The FSM's reviewing-
+    # reopen AWAIT_USERs while this is set; record_comprehension_signoff
+    # clears it. Emission-gated below.
+    signoff_stale: bool = False
     # P6 recheck bookkeeping: ISO ts of the last re-grounding moment (a
     # curiosity clear or a fresh signoff). The load-bearing-drift recheck
     # nag clears when the baseline is refreshed at one of those moments.
@@ -410,6 +424,8 @@ class Comprehension(BaseModel):
             data.pop("baseline", None)
         if not data.get("signoff_skipped"):
             data.pop("signoff_skipped", None)
+        if not data.get("signoff_stale"):
+            data.pop("signoff_stale", None)
         if not data.get("skip_reason"):
             data.pop("skip_reason", None)
         if data.get("last_recheck_at") is None:

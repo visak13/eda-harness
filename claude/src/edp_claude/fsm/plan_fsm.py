@@ -73,6 +73,12 @@ def _ready_actions(p: Plan, live_action_ids: frozenset[str] = frozenset()):
     return [a for a in p.actions
             if a.status == "pending" and set(a.depends_on) <= done
             and a.action_id not in live_action_ids
+            # F35 R3a#4: a member whose BATCH HEAD shell is live is owned
+            # work — the head executes it (or legally re-executes after a
+            # reopen); dispatching a rival onto the member handle would
+            # double-run it.
+            and (getattr(a, "batch_owner", None) not in live_action_ids
+                 or not getattr(a, "batch_owner", None))
             and not _frozen(a)]
 
 
@@ -544,7 +550,43 @@ def plan_next_action(p: Plan,
             for mem in members:
                 mem.status = "in_progress"
                 _begin_verify_cycle(mem)  # W10b: dispatch IS the cycle boundary
+                # F35 R3a#4: every member records WHOSE shell owns it (the
+                # head's) so suppression can see through the head handle.
+                if len(members) > 1:
+                    mem.batch_owner = nxt.action_id
             return _dispatch_instruction(nxt, members)
+        # F35 R3a#2 (2026-08-18): a FAILED action with a pending dependent
+        # was a stable deadlock — failed is never re-selected, the
+        # dependent never becomes ready, and the plan WAITed forever on
+        # "actions in flight". At the point where nothing is dispatchable,
+        # reopen the failed blockers to pending with a counted cycle: the
+        # frontier re-dispatches rework, and G-REWORK's hard cap turns a
+        # grind into a FROZEN + ask_above escalation instead of silence.
+        # A failed action with NO pending dependent keeps the old honest
+        # semantics (the plan terminates partial).
+        _failed_ids = {a.action_id for a in p.actions
+                       if a.status == "failed"}
+        blocking_failed = sorted({
+            d for a in p.actions if a.status == "pending"
+            for d in a.depends_on if d in _failed_ids
+        })
+        if blocking_failed:
+            for a in p.actions:
+                if a.action_id in blocking_failed:
+                    a.status = "pending"
+                    bump_verify_failure(a)
+            return Instruction(
+                kind=K.WAIT, args={"reopened_action_ids": blocking_failed},
+                rationale=(
+                    f"G-DEPS: reopened failed {blocking_failed} to pending "
+                    "— each blocks a pending dependent, and a failed "
+                    "prerequisite never re-dispatches on its own. Rework "
+                    "dispatches on the next tick; a repeat grind freezes "
+                    "at the G-REWORK cap into an ask_above. To abandon "
+                    "the line instead, skip the dependents (G-SKIP rules "
+                    "apply) or close the plan honestly partial."
+                ),
+            )
         # `verify` is non-terminal (2026-05-28): an action parked in
         # verify is NOT done — the plan must keep waiting on it (the gate
         # hasn't confirmed), not advance to acceptance-review as if it
@@ -601,9 +643,15 @@ def plan_next_action(p: Plan,
         # record time) freezes a grind into an ask_above. The verdict
         # TOOL still never flips status (d30) — this is the FSM's own
         # legal transition, like stamping in_progress at dispatch.
+        # F35 R3b#9 note: `skipped` counts too — the domain success rules
+        # treat done/skipped alike, so a fail-verdicted skipped action was
+        # the remaining hole in the R1 fix. (A user-authorized G-SKIP records its
+        # own worklog override; re-skipping after the reopen goes through
+        # that same user gate again, so the user's word still outranks the
+        # reviewer's — but never silently.)
         failed_verdicts = [
             a for a in p.actions
-            if a.status == "done"
+            if a.status in ("done", "skipped")
             and (a.review_verdict or {}).get("passed") is False
         ]
         if failed_verdicts:

@@ -297,11 +297,24 @@ async def test_add_action_gate_derivation(env):
     _ok(await env.call("add_action", plan_id=pid, action_id="g3",
                        description="tidy up",
                        verify={"check": "file_exists", "path": "x"}))
-    # explicit gate input wins over the derivation, both ways
+    # F35 R3b#8: UPGRADING stays free; DOWNGRADING a derived gate is the
+    # planner waiving the user's gate — refused without a recorded user
+    # answer against G-GATE:<plan>:<action>.
+    res = await env.call("add_action", plan_id=pid, action_id="g4",
+                         description="explicit off", serves=["o1"],
+                         verify={"check": "command", "cmd": "pytest -q"},
+                         gate=False)
+    msg = _err(res)
+    assert "G-GATE" in msg and f"G-GATE:{pid}:g4" in msg
+    ans = _ok(await env.call(
+        "record_user_answer", recipe_id=RID,
+        gate_target=f"G-GATE:{pid}:g4",
+        question="downgrade g4 from gate?",
+        answer="yes — the user says this check is advisory here"))
     _ok(await env.call("add_action", plan_id=pid, action_id="g4",
                        description="explicit off", serves=["o1"],
                        verify={"check": "command", "cmd": "pytest -q"},
-                       gate=False))
+                       gate=False, override_ref=ans["answer_id"]))
     _ok(await env.call("add_action", plan_id=pid, action_id="g5",
                        description="explicit on", gate=True))
     gates = {a.action_id: a.gate for a in env.ctx.plans.load(pid).actions}

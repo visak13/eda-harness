@@ -88,6 +88,14 @@ class Delegate:
     max_output_tokens: int = 16_000
     price_in_per_mtok: float = 0.0     # 0.0 = subscription/plan quota (cli)
     price_out_per_mtok: float = 0.0
+    # F34-h (2026-08-18, campaign R3 lesson): per-delegate wall-clock ceiling
+    # for one CLI turn. None → sol_bridge's default (EDP_SOL_TIMEOUT_SECS,
+    # 900s). A deliberately DEEP delegate (a repo-scale adversary) gets its
+    # longer leash HERE, in config — a timeout is a config decision, never an
+    # agent's whim. The right-sizing law still applies first: one artifact
+    # per turn; a hunt that needs more than one turn is a multi-turn thread,
+    # not a mega-turn.
+    timeout_secs: float | None = None
 
 
 def parse_config(raw: dict) -> tuple[dict[str, Delegate], dict[str, str]]:
@@ -120,6 +128,8 @@ def parse_config(raw: dict) -> tuple[dict[str, Delegate], dict[str, str]]:
             max_output_tokens=int(row.get("max_output_tokens", 16_000)),
             price_in_per_mtok=float(row.get("price_in_per_mtok", 0.0)),
             price_out_per_mtok=float(row.get("price_out_per_mtok", 0.0)),
+            timeout_secs=(float(row["timeout_secs"])
+                          if row.get("timeout_secs") else None),
         )
 
     routes: dict[str, str] = {}
@@ -399,7 +409,8 @@ def _run_cli(delegate: Delegate, work_order: str, caller: str,
         run = sol_bridge.run_sol(
             prompt=work_order, workdir=workdir, sandbox="read-only",
             caller=caller, advisor=delegate.name, effort=delegate.effort,
-            new_thread=(kind == "challenge"))
+            new_thread=(kind == "challenge"),
+            timeout_secs=delegate.timeout_secs)
         content = run.last_message or "\n".join(run.agent_messages)
         return content, 0, 0, (None if run.ok else run.error)
     finally:
