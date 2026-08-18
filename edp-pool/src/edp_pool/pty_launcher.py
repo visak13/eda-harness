@@ -435,6 +435,34 @@ def _shell_otel_env(role: str, handle: str, base: dict) -> dict:
     return out
 
 
+# F37#8 (2026-08-18) — secret hygiene at the spawn boundary. The pool's env
+# was copied WHOLE into every shell, so any provider key the operator had
+# exported (for the bridge, for unrelated tooling) reached every worker.
+# We strip vars whose NAMES look like credentials, keeping the families the
+# stack itself needs (EDP_* config, ANTHROPIC_*/CLAUDE_* for the harness).
+# EDP_SPAWN_ENV_KEEP=NAME1,NAME2 is the operator's explicit pass-through
+# for a secret a shell genuinely needs. A name-pattern DENYLIST (not a
+# full allowlist) because a Windows shell needs dozens of ambient vars
+# (PATH/SystemRoot/APPDATA/…) an allowlist would inevitably miss.
+_SECRET_NAME_MARKERS = ("API_KEY", "APIKEY", "SECRET", "TOKEN", "PASSWORD",
+                        "CREDENTIAL", "PRIVATE_KEY")
+_SECRET_KEEP_PREFIXES = ("EDP_", "ANTHROPIC_", "CLAUDE_")
+
+
+def _strip_foreign_secrets(env: dict) -> dict:
+    keep = {n.strip().upper() for n in
+            os.environ.get("EDP_SPAWN_ENV_KEEP", "").split(",") if n.strip()}
+    out = {}
+    for name, value in env.items():
+        upper = name.upper()
+        if (any(m in upper for m in _SECRET_NAME_MARKERS)
+                and not upper.startswith(_SECRET_KEEP_PREFIXES)
+                and upper not in keep):
+            continue
+        out[name] = value
+    return out
+
+
 def build_env(session_id: str, role: str, handle: str,
               broker_url: str | None, *,
               pool_url: str | None = None,
@@ -460,7 +488,7 @@ def build_env(session_id: str, role: str, handle: str,
     `spawn_defaults.BANNED_KEYS`."""
     from .spawn_defaults import load_spawn_defaults
     d = load_spawn_defaults() if defaults is None else defaults
-    env = os.environ.copy()
+    env = _strip_foreign_secrets(os.environ.copy())
     env["EDP_SPAWN_SESSION_ID"] = session_id  # correlation (kept from old)
     env["EDP_ROLE"] = role
     env["EDP_HANDLE"] = handle

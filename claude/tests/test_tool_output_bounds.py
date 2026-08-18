@@ -427,8 +427,11 @@ async def test_content_tools_carry_nontruncating_guard(env):
     # (v7 P0 deleted the singular get_specialist_doc; the plural below is
     # the one live doc-delivery surface and carries the same guard.)
     docs = _data(await env.call("get_specialist_docs", spec_ids=[sid]))
-    assert docs["grounding"] == doc                       # N==1 verbatim, full
-    assert docs["approx_tokens"] == approx_tokens(doc)
+    # F37#6: the provenance banner frames the grounding; the doc itself
+    # still rides in full, never truncated.
+    assert docs["grounding"].startswith("<!-- SPECIALIST GROUNDING")
+    assert docs["grounding"].endswith(doc)
+    assert docs["approx_tokens"] == approx_tokens(docs["grounding"])
 
     spec = _data(await env.call("get_specialization", spec_id=sid))
     assert spec["spec"] is not None and spec["approx_tokens"] is not None
@@ -453,5 +456,5 @@ async def test_oversize_content_is_flagged_but_never_truncated(env):
     assert wrote["bytes"] == len(huge)
 
     docs = _data(await env.call("get_specialist_docs", spec_ids=[sid]))
-    assert docs["grounding"] == huge                       # bundler: full too
+    assert docs["grounding"].endswith(huge)               # bundler: full too
     assert docs["oversize"] is True

@@ -31,7 +31,9 @@ async def test_write_then_get_specialist_doc_round_trips(env):
     assert out["bytes"] == len(_DOC)
     assert out["path"].endswith("compiled.md")
     got = _ok(await env.call("get_specialist_docs", spec_ids=[sid]))
-    assert got["grounding"] == _DOC
+    # F37#6: the provenance banner frames the grounding; doc rides verbatim
+    assert got["grounding"].startswith("<!-- SPECIALIST GROUNDING")
+    assert got["grounding"].endswith(_DOC)
     # lands next to the JSON + snapshots
     assert (env.ctx.specs.doc_path(sid)).exists()
 
@@ -67,4 +69,4 @@ async def test_recompile_overwrites(env):
     v2 = "# v2\nnew content\n"
     _ok(await env.call("write_specialist_doc", spec_id=sid, content=v2))
     got = _ok(await env.call("get_specialist_docs", spec_ids=[sid]))
-    assert got["grounding"] == v2
+    assert got["grounding"].endswith(v2)

@@ -390,16 +390,19 @@ def test_seam_unset_role_registers_full_registry(tmp_path, monkeypatch):
     assert set(names) == _all_names()
 
 
-def test_seam_unknown_role_fails_open_to_full_set(tmp_path, monkeypatch):
-    # a role NOT in the table must fail OPEN (register everything) — a shell
-    # is never silently starved of tools.
+def test_seam_unknown_role_fails_closed(tmp_path, monkeypatch):
+    # F37#5 flipped this seam: an unknown EDP_ROLE value (typo, stale
+    # spawner) must REFUSE to build — the old fail-open registered the full
+    # surface for an unrecognised identity, the one real escalation path.
+    import pytest
+
     monkeypatch.setenv("EDP_MCP_BACKEND", "stub")
     monkeypatch.delenv("EDP_HANDLE", raising=False)
     monkeypatch.setenv("EDP_ROLE", "totally-unknown-role")
 
     assert toolset_for_role("totally-unknown-role") is None
-    names = _build_mcp_names(tmp_path)
-    assert len(names) == len(ALL_TOOL_CLASSES)
+    with pytest.raises(RuntimeError, match="not a known role"):
+        _build_mcp_names(tmp_path)
 
 
 def test_filter_logic_directly_worker_and_none(monkeypatch):

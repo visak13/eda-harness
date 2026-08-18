@@ -340,5 +340,11 @@
     "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
     "created_at": "2026-08-18T03:22:06Z",
     "last_used": "2026-08-18T03:22:06Z"
+  },
+  "base-shell-campaign|sol": {
+    "thread_id": "01a01452-3fde-7263-950f-1c2755ee5ada",
+    "workdir": "C:\\Projects\\Learning\\eda-base3",
+    "created_at": "2026-08-18T05:16:27Z",
+    "last_used": "2026-08-18T10:12:56Z"
   }
 }

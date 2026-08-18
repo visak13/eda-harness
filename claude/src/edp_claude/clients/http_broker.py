@@ -6,6 +6,7 @@ Upstream errors are re-wrapped via Tool.from_upstream — verbatim, and it
 raises EnvelopeViolation loudly if the broker ever breaks the envelope.
 """
 
+import os
 from datetime import datetime
 
 import httpx
@@ -30,9 +31,21 @@ class HttpBroker(BrokerPort):
         self.client = client
 
     async def send(self, msg: BrokerMessage) -> ToolResult:
+        payload = msg.model_dump(mode="json", by_alias=True)
+        # F37#4 (2026-08-18) — provenance metadata, stamped at the ONE seam
+        # every outbound message crosses, from the server-process env (never
+        # a caller argument, so a model cannot spoof it). The broker itself
+        # stays unauthenticated (single-operator ruling); this gives the
+        # READER honest origin data next to the untrusted body.
+        body = payload.get("body")
+        if isinstance(body, dict) and "_sender" not in body:
+            role = os.environ.get("EDP_ROLE", "").strip() or None
+            handle = os.environ.get("EDP_HANDLE", "").strip() or None
+            if role or handle:
+                body["_sender"] = {"role": role, "handle": handle}
         r = await self.client.post(
             f"{self.base}/v1/publish",
-            json=msg.model_dump(mode="json", by_alias=True),
+            json=payload,
         )
         if r.status_code // 100 == 2:
             return Tool.ok(_Sent(msg_id=r.json()["msg_id"]))

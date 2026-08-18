@@ -1,5 +1,11 @@
 # Adversarial campaign — Round 5 continuation doc
 
+**STATUS: RESOLVED 2026-08-18 — F37 shipped.** Owner rulings landed: keep
+the acceptor's EDIT capability (current design), REJECT pool/broker auth
+as out-of-scope for the single-operator fleet. All 7 confirmed items + the
+cheap halves of #4/#8 are implemented and green; see `observations-qa.md`
+F37 for the verdict table. Next: Round 6.
+
 **Purpose:** hand off Round 5 (role surfaces & trust) to a new session. R5
 findings are adjudicated below but NOT yet implemented — they need an owner
 ruling first (see "Pending owner decisions"). Everything through Round 4 is

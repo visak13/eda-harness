@@ -596,8 +596,9 @@ ROLE_TOOLSETS: dict[str, frozenset[str]] = {
 
 def toolset_for_role(role: str | None) -> frozenset[str] | None:
     """The scoped tool-name surface for `role`, or None when the role is
-    absent/unknown — in which case the seam registers the FULL registry
-    (fail-open: a shell is never silently starved of tools)."""
+    absent/unknown. F37#5: the seam (mcp_server.build_mcp) now fails CLOSED
+    on None — full registry only for a role-less NON-spawned operator
+    console; unknown role or spawned-without-role refuses to build."""
     if not role:
         return None
     return ROLE_TOOLSETS.get(role)

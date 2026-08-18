@@ -15,6 +15,7 @@ from pathlib import Path
 
 from .server import make_context, make_http_context
 from .tools import build_registry
+from .store.attribution import is_spawned
 from .tools.roles import toolset_for_role
 
 
@@ -95,10 +96,13 @@ def build_mcp(root: Path | None = None):
     # DESIGN-v7 P0, user ruling 2026-07-12: the derived floors were audited
     # all through v6, the last known enforce-break (the reviewer-leg
     # role="worker" default, d67/d100) is closed by P4.1, so warn-mode is now
-    # the opt-OUT, not the milestone). `toolset_for_role` returns None for
-    # an absent/unknown role -> register the FULL registry unchanged (fail-open:
-    # this neuron and any legacy/human foreground shell keep every tool, no
-    # behaviour change when EDP_ROLE is unset).
+    # the opt-OUT, not the milestone). F37#5 (2026-08-18) — identity fails
+    # CLOSED: `toolset_for_role` returns None only for an ABSENT role, and
+    # the full registry registers only for a NON-SPAWNED shell (no
+    # EDP_HANDLE — the operator console / tests). A SPAWNED shell with a
+    # missing role, or ANY shell with an unknown EDP_ROLE value, refuses to
+    # build: both are spawn-env bugs that used to silently grant the full
+    # surface.
     #
     #   warn (opt-out, EDP_ROLE_SCOPE=warn): ALL tools register — NO
     #     filtering. A call to a tool OUTSIDE the role's scoped set is
@@ -113,10 +117,33 @@ def build_mcp(root: Path | None = None):
     # we refuse to build a mis-scoped server rather than silently drop a tool a
     # role expects, or pass a name that no longer resolves (a hardcoded
     # carve-out would be the exact fail-open o7 forbids).
-    role = os.environ.get("EDP_ROLE")
+    role = (os.environ.get("EDP_ROLE") or "").strip() or None
     allowed = toolset_for_role(role)
+    if role is not None and allowed is None:
+        # F37#5: an UNKNOWN role value (typo, stale spawner) must never
+        # silently register the full surface.
+        raise RuntimeError(
+            f"edp-claude: EDP_ROLE={role!r} is not a known role "
+            "(tools/roles.py ROLE_TOOLSETS) — refusing to build a "
+            "full-surface server for an unrecognised identity. Fix the "
+            "spawn env, or unset EDP_ROLE for an operator console.")
+    if role is None and is_spawned():
+        raise RuntimeError(
+            "edp-claude: this shell carries EDP_HANDLE (pool-spawned) but "
+            "no EDP_ROLE — a spawned shell without its role would "
+            "otherwise inherit the operator's full tool surface (F37#5). "
+            "Fix the spawn env; only a non-spawned operator console may "
+            "run role-less.")
     scope_mode = (os.environ.get("EDP_ROLE_SCOPE", "enforce").strip()
                   or "enforce")
+    if scope_mode not in ("warn", "enforce"):
+        # F37#12: EDP_ROLE_SCOPE is a strict enum. Every unknown value used
+        # to fall through to warn behaviour — a typo ('enfroce') silently
+        # registered the full surface in observe-only mode.
+        raise RuntimeError(
+            f"edp-claude: EDP_ROLE_SCOPE={scope_mode!r} is not a known "
+            "mode — use 'enforce' (default) or 'warn'. Refusing to guess: "
+            "an unknown value must never silently open the surface.")
     off_scope_names: set[str] = set()
     if allowed is not None:
         registered = {t.name for t in tools}

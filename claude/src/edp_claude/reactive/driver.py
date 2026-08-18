@@ -858,6 +858,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.effect_file:
         raw = json.loads(Path(args.effect_file).read_text(encoding="utf-8"))
         effect_spec = EffectSpec.compile(raw)   # allowlist + opt-in at compile
+        # F37#10 (belt-and-braces; primary gate is observe()/register_rule):
+        # an effect fires with the INITIATING shell's authority — a
+        # role-scoped driver refuses an action its own role does not hold
+        # (e.g. a worker composing broker_send).
+        from ..tools.roles import toolset_for_role
+        _role = os.environ.get("EDP_ROLE", "").strip() or None
+        _allowed = toolset_for_role(_role)
+        if _allowed is not None and effect_spec.action not in _allowed:
+            raise SystemExit(
+                f"edp-claude reactive driver: effect action "
+                f"{effect_spec.action!r} is outside role {_role!r}'s tool "
+                "surface — refusing to arm the effect (F37#10).")
         audit_path = (cfg.repo_root / ".reactive" / "effect_audit"
                       / f"{effect_spec.rule_id}.jsonl")
         dispatcher = EffectDispatcher(

@@ -295,6 +295,14 @@ def audit(scope: str, row: dict) -> None:
 
 
 # ── the impure entrypoints ───────────────────────────────────────────────────
+def _redact_secret(text: str, secret: str) -> str:
+    """F37#8 — provider error bodies / response echoes return to the agent
+    AND land in the audit sidecar; strip the bearer key before either."""
+    if secret and secret in text:
+        return text.replace(secret, "«redacted-api-key»")
+    return text
+
+
 def _run_http(delegate: Delegate, work_order: str) -> tuple[str, int, int, str | None]:
     """One chat-completions call. Returns (content, tokens_in, tokens_out,
     error). No retries — a provider failure is the caller's signal, not ours to
@@ -321,16 +329,18 @@ def _run_http(delegate: Delegate, work_order: str) -> tuple[str, int, int, str |
             detail = e.read().decode("utf-8", errors="replace")[:500]
         except OSError:
             pass
+        detail = _redact_secret(detail, key)  # F37#8
         return "", 0, 0, (f"HTTP {e.code} from {delegate.name}: {detail or e.reason}. "
                           f"First-class blocker — surface upward, do NOT retry-loop.")
     except (urllib.error.URLError, TimeoutError, OSError) as e:
-        return "", 0, 0, (f"could not reach {delegate.name} ({e}). First-class "
+        return "", 0, 0, (f"could not reach {delegate.name} "
+                          f"({_redact_secret(str(e), key)}). First-class "
                           f"blocker — surface upward, do NOT retry-loop.")
     try:
         content = data["choices"][0]["message"]["content"] or ""
     except (KeyError, IndexError, TypeError):
         return "", 0, 0, (f"{delegate.name} returned an unrecognized response "
-                          f"shape: {str(data)[:300]}")
+                          f"shape: {_redact_secret(str(data)[:300], key)}")
     usage = data.get("usage") or {}
     return (content, int(usage.get("prompt_tokens", 0)),
             int(usage.get("completion_tokens", 0)), None)

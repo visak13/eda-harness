@@ -119,9 +119,13 @@ def test_compose_zero_docs_is_empty():
     assert compose_specialist_docs([("spec-x", None)]) == ""
 
 
-def test_compose_one_doc_is_identical_bytes():
-    # backward-compat guarantee: single spec returns the doc VERBATIM
-    assert compose_specialist_docs([("spec-java", _JAVA)]) == _JAVA
+def test_compose_one_doc_is_banner_plus_verbatim_doc():
+    # F37#6: the provenance banner frames every composed grounding (the old
+    # single-spec bit-for-bit pass-through predates the framing envelope);
+    # the doc itself still rides verbatim after the banner.
+    out = compose_specialist_docs([("spec-java", _JAVA)])
+    assert out.startswith("<!-- SPECIALIST GROUNDING")
+    assert out.endswith(_JAVA)
 
 
 def test_compose_two_docs_concatenated_with_headers_universal_repeats():
@@ -278,8 +282,9 @@ async def test_get_specialist_docs_single_is_byte_identical(env):
     j = await _make_spec(env, "Spring", "spring")
     one = _ok(await env.call("get_specialist_docs", spec_ids=[j]))
     direct = env.ctx.specs.read_doc(j, with_overlay=True)
-    # N=1 path is a bit-for-bit pass-through of the single-spec doc
-    assert one["grounding"] == direct
+    # F37#6: N=1 path = provenance banner + the single-spec doc verbatim
+    assert one["grounding"].startswith("<!-- SPECIALIST GROUNDING")
+    assert one["grounding"].endswith(direct)
 
 
 async def test_get_specialist_docs_reports_missing(env):

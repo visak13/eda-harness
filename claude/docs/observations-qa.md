@@ -554,3 +554,52 @@ pre-existing reds — the pool suite had not run since F3).
 Suites: claude 1548 (+3), edp-pool 303 (+3), edp-broker 29 — all green
 (Phoenix env-fail only). NOTE: pool/broker changes need the STACK RESTART
 to take effect in the live fleet.
+
+## F37 — Adversarial campaign Round 5 (role surfaces & trust), 2026-08-18
+12 findings (raw: .sol_review_out-r5.txt). Threat-model ruling (owner,
+2026-08-18): single-operator local fleet — the adversary is a confused or
+prompt-injected AGENT, never a hostile local process. CONFIRMED 7 + the
+cheap halves of 2; REJECTED the multi-tenant auth infrastructure.
+
+| # | Finding | Verdict |
+|---|---------|---------|
+| 5 | unset/unknown EDP_ROLE fails open to full registry | CONFIRM — fixed |
+| 12 | EDP_ROLE_SCOPE typo falls to warn-mode | CONFIRM — fixed |
+| 9 | worker mutates actions in a foreign plan | CONFIRM — fixed |
+| 11 | planner CRUD checks type, not ownership | CONFIRM — fixed |
+| 10 | worker composes broker_send via observe(effect=) | CONFIRM — fixed |
+| 1 | role-less shell can mint acceptance_verdict | PARTIAL — spawned-role-less refused; operator console kept |
+| 6 | agent-authored text framed as instructions | CONFIRM — envelopes shipped |
+| 4 | broker unauthenticated | provenance-metadata half TAKEN; auth half REJECTED (single-operator) |
+| 8 | secrets inherited into every shell | env-hygiene half TAKEN (strip + redact); isolated bridge service DEFERRED until a keyed HTTP delegate exists |
+| 2 | pool control-plane unauthenticated | REJECT — out of scope for a single-operator localhost fleet (revisit if ever exposed) |
+| 3+7 | headless --dangerously-skip-permissions / acceptor write reach | OWNER RULING: keep acceptor EDIT (fix-what-it-safely-can); headless-skip is what headless means here |
+
+Identity fails CLOSED: attribution.is_spawned()/trusted_as() are the one
+trust pivot (EDP_HANDLE = pool-stamped); build_mcp REFUSES an unknown
+EDP_ROLE and a spawned shell with no role; EDP_ROLE_SCOPE is a strict
+enum (unknown aborts; in-tool guard treats non-'warn' as enforce) · the
+neuron-only guards (north_star_update, global facts) and the acceptor
+verdict guard use trusted_as, so an absent role on a spawned shell is
+untrusted, not exempt. Ownership: record_action_status refuses a worker
+writing outside its handle's plan (grounding echo now unskippable);
+update/delete_object bind a planner to its OWN plan's objects. Effects:
+observe/register_rule refuse an effect action outside the initiating
+role's toolset (driver re-checks at arm). Framing (#6): specialist
+groundings carry a provenance banner (single-doc bit-for-bit superseded);
+recipe briefs open with a rendered-data framing line; check_inbox returns
+a `framing` field on every delivery; shadow briefs framed as dispatcher
+claims; worker card gains the framing law; acceptor card marks its brief
+sender-authored. Provenance (#4 half): HttpBroker.send stamps
+body._sender {role, handle} from the server env at the one outbound seam.
+Secret hygiene (#8 half): pool build_env strips credential-shaped names
+(EDP_/ANTHROPIC_/CLAUDE_ kept; EDP_SPAWN_ENV_KEEP passthrough); bridge
+redacts the API key from provider error text before agent/audit.
+
+Suites: claude 1564 (+16 new in test_f37_round5.py), edp-pool 306 (+3 in
+test_f37_spawn_secret_hygiene.py), edp-broker 29 — all green (Phoenix
+env-fail only). Updated to new contracts:
+test_w4_roles (unknown role fails CLOSED), test_multi_spec_selection /
+test_specialist_compiled_doc / test_tool_output_bounds (banner-framed
+groundings). NOTE: pool changes need the STACK RESTART to reach the live
+fleet.
