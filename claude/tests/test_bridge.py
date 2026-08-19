@@ -154,7 +154,13 @@ def test_parse_findings_happy_path_and_severity_default():
     assert got[1]["severity"] == "medium"          # bad/missing → medium
 
 
-def test_parse_findings_garbage_yields_empty_never_raises():
-    assert parse_findings("I refuse to answer in JSON") == []
-    assert parse_findings("[not json") == []
-    assert parse_findings("") == []
+def test_parse_findings_contract_break_is_none_never_raises():
+    # F38#6: garbage is a CONTRACT BREAK (None), distinct from a valid
+    # empty findings array ([]) — the old collapse let injected prose
+    # satisfy G-CHALLENGE as a clean pass.
+    assert parse_findings("I refuse to answer in JSON") is None
+    assert parse_findings("[not json") is None
+    assert parse_findings("") is None
+    assert parse_findings('{"finding": "not an array"}') is None
+    assert parse_findings("[]") == []
+    assert parse_findings('prose then [] after') == []

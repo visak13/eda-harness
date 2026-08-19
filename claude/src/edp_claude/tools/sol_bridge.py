@@ -260,7 +260,15 @@ def save_thread(caller: str, advisor: str, thread_id: str, workdir: str) -> None
         "created_at": prior.get("created_at") or _now_iso(),
         "last_used": _now_iso(),
     }
-    tmp = f.with_suffix(f.suffix + ".tmp")
+    # F38#8: a UNIQUE temp name per writer — the old shared `.json.tmp`
+    # meant two concurrent finishers raced the same file (one replace wins,
+    # the other loses its key or hits FileNotFoundError AFTER a paid,
+    # successful provider turn). Last-writer-wins per whole-file stays the
+    # accepted model (keys are per-caller, collisions rare); losing a
+    # last_used refresh is harmless, losing the RESULT is not — callers
+    # additionally wrap this in try/except (run_sol) so persistence can
+    # never fail the turn.
+    tmp = f.with_suffix(f".{os.getpid()}.{time.time_ns()}.tmp")
     tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
     os.replace(tmp, f)
 
@@ -283,6 +291,7 @@ def build_argv(
     images: list[str] | None = None,
     resume_thread: str | None = None,
     effort: str | None = None,
+    model: str | None = None,
 ) -> list[str]:
     """The complete, landmine-safe argv for one Sol turn. PURE — no IO.
 
@@ -304,6 +313,11 @@ def build_argv(
     argv = [codex, "exec", "--skip-git-repo-check",
             "-C", workdir, "-s", sandbox, "--json", "--color", "never",
             "-o", last_message_file]
+    # F38#1: the registry's model pin actually reaches the CLI. Without -m
+    # the CLI runs its own default while the bridge reports the pinned id —
+    # every audit row and cost comparison then lies about the model.
+    if model:
+        argv += ["-m", model]
     if effort:
         argv += ["-c", f"model_reasoning_effort={effort}"]
 
@@ -417,6 +431,7 @@ def run_sol(
     effort: str | None = None,
     new_thread: bool = False,
     timeout_secs: float | None = None,
+    model: str | None = None,
 ) -> SolRun:
     """Run ONE Sol turn and return a structured SolRun. Resumes the sticky thread
     for (caller, advisor) when one exists (unless `new_thread`), else starts a
@@ -449,12 +464,30 @@ def run_sol(
 
     work = Path(workdir)
     work.mkdir(parents=True, exist_ok=True)
-    last_msg = work / ".sol-last-message.txt"
+    # F38#3: PER-INVOCATION output files. The old fixed `.sol-last-message
+    # .txt` was shared by every call in the same delegate workdir, so a
+    # concurrent (or stale prior) turn's answer could be read back as THIS
+    # call's result — the worst kind of wrong (a plausible answer to a
+    # different question). Unique names isolate the read; stale files also
+    # can't survive because the destination never pre-exists.
+    run_tag = f"{os.getpid()}-{time.time_ns()}"
+    last_msg = work / f".sol-last-message-{run_tag}.txt"
+    last_msg.unlink(missing_ok=True)
+    # bound the per-run artifact accumulation: sweep run files older than
+    # 7 days (best-effort; the raw stream is evidence, not a store).
+    _cutoff = time.time() - 7 * 24 * 3600
+    for pat in (".sol-last-message-*.txt", ".sol-run-*.jsonl"):
+        for old in work.glob(pat):
+            try:
+                if old.stat().st_mtime < _cutoff:
+                    old.unlink()
+            except OSError:
+                pass
 
     argv = build_argv(
         codex, prompt=prompt, workdir=str(work), sandbox=sandbox,
         last_message_file=str(last_msg), images=images,
-        resume_thread=resume_thread, effort=effort)
+        resume_thread=resume_thread, effort=effort, model=model)
 
     timeout = timeout_secs or float(os.environ.get(_TIMEOUT_ENV, _TIMEOUT_DEFAULT))
     raw = ""
@@ -476,8 +509,9 @@ def run_sol(
         return SolRun(ok=False, exit_code=-1, thread_id=resume_thread, argv=argv,
                       error=f"could not launch codex ({e}).")
 
-    # persist the raw stream as evidence (stdout+stderr merged)
-    raw_path = work / ".sol-run.jsonl"
+    # persist the raw stream as evidence (stdout+stderr merged; per-run
+    # name — F38#3, same isolation as the last-message file)
+    raw_path = work / f".sol-run-{run_tag}.jsonl"
     try:
         raw_path.write_text(raw, encoding="utf-8")
     except OSError:
@@ -515,10 +549,14 @@ def run_sol(
                    f"NOT retry-loop, grind, or silently shrink the request. "
                    f"Last message: {last_message[:400]!r}"))
 
-    if tid and not resume_thread:              # first turn on a fresh thread
-        save_thread(caller, advisor, tid, str(work))
-    elif tid:
-        save_thread(caller, advisor, tid, str(work))  # refresh last_used
+    if tid:
+        # F38#8: stickiness persistence is best-effort — a filesystem race
+        # here must NEVER turn a paid, successful provider turn into an
+        # exception. Worst case the next call starts a fresh thread.
+        try:
+            save_thread(caller, advisor, tid, str(work))
+        except OSError:
+            pass
 
     return SolRun(
         ok=True, exit_code=0, thread_id=tid, argv=argv,

@@ -360,12 +360,15 @@ async def test_adjudication_refusals(env, monkeypatch):
 
 
 # ═══════════════════════════ 4. G-BUDGET ══════════════════════════════════
-def _write_audit(env, cost_usd):
+def _write_audit(env, cost_usd, caller=None):
+    # F38#5: rows carry caller lineage; the gate charges a recipe only its
+    # own attributed rows, so the seeded row must belong to RID's lineage.
     d = env.ctx.recipes.root.parent / ".bridge"
     d.mkdir(parents=True, exist_ok=True)
     (d / "audit-test.jsonl").write_text(
         '{"ok": true, "tokens_in": 10, "tokens_out": 10, '
-        f'"cost_usd": {cost_usd}}}\n', encoding="utf-8")
+        f'"cost_usd": {cost_usd}, "caller": "{caller or RID + "-s1:a1"}"}}\n',
+        encoding="utf-8")
 
 
 async def test_budget_check_levels(env):

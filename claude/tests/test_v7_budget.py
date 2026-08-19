@@ -20,15 +20,23 @@ async def test_budget_declared_at_start_and_reported(env):
     await env.call("add_step", recipe_id=rid, description="step one",
                    execution="inline", estimate={"tokens": 80_000,
                                                  "hours": 2.0})
-    # a fake delegate audit sidecar — budget_status sums every audit file
+    # a fake delegate audit sidecar. F38#5: rows carry caller LINEAGE and
+    # budget_status charges only THIS recipe's attributed rows; a row from
+    # another recipe is excluded and a caller-less legacy row lands in
+    # unattributed_cost_usd, never in this recipe's total.
     home = env.ctx.recipes.root.parent
     bdir = home / ".bridge"
     bdir.mkdir(exist_ok=True)
     rows = [
         {"kind": "generate", "tokens_in": 1000, "tokens_out": 4000,
-         "cost_usd": 0.012, "ok": True},
+         "cost_usd": 0.012, "ok": True, "caller": f"{rid}-s1:a1"},
         {"kind": "challenge", "tokens_in": 500, "tokens_out": 100,
-         "cost_usd": 0.0, "ok": False, "error": "HTTP 429"},
+         "cost_usd": 0.0, "ok": False, "error": "HTTP 429",
+         "caller": f"{rid}-s1:a2"},
+        {"kind": "generate", "tokens_in": 9, "tokens_out": 9,
+         "cost_usd": 9.99, "ok": True, "caller": "other-recipe-s1:a1"},
+        {"kind": "generate", "tokens_in": 9, "tokens_out": 9,
+         "cost_usd": 0.5, "ok": True},          # legacy: no caller stamp
     ]
     (bdir / "audit-plan-x-a1.jsonl").write_text(
         "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
@@ -41,7 +49,8 @@ async def test_budget_declared_at_start_and_reported(env):
                                                   "hours": 2.0}
     assert d["delegate_actuals"] == {"calls": 2, "tokens_in": 1500,
                                      "tokens_out": 4100, "cost_usd": 0.012,
-                                     "failures": 1}
+                                     "failures": 1, "audit_errors": 0,
+                                     "unattributed_cost_usd": 0.5}
     assert d["steps_done"] == 0 and d["steps_total"] == 1
     assert "unmeasured" in d["claude_tokens_note"]
 
@@ -89,7 +98,8 @@ async def test_g6_budget_advisory_in_reconcile(env):
     home = env.ctx.recipes.root.parent
     (home / ".bridge").mkdir(exist_ok=True)
     (home / ".bridge" / "audit-x.jsonl").write_text(
-        _json.dumps({"cost_usd": 0.05, "ok": True}) + "\n", encoding="utf-8")
+        _json.dumps({"cost_usd": 0.05, "ok": True,
+                     "caller": f"{rid}-s1:a1"}) + "\n", encoding="utf-8")
     rec = await env.call("reconcile", handle=rid, handle_type="recipe")
     assert rec.ok
     assert rec.data["budget_advisory"] and "G6 BUDGET GATE" in rec.data["budget_advisory"]

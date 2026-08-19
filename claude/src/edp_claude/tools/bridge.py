@@ -205,6 +205,19 @@ def build_work_order(*, task: str, context: str = "",
 def check_budget(delegate: Delegate, work_order: str) -> None:
     """Refuse an order that cannot fit the delegate's window — loudly, before
     any spend. Silent truncation is forbidden (CONTENT-payload doctrine)."""
+    # F38#11: a CLI delegate ALSO has the 30KB argv cap (Windows command
+    # line) — far tighter than any token window. Refuse here, in the
+    # documented BridgeError shape, before a slot is taken or spend risked.
+    if delegate.backend == "cli":
+        from . import sol_bridge as _sb
+        nbytes = len(work_order.encode("utf-8"))
+        if nbytes > _sb._PROMPT_MAX_BYTES:
+            raise BridgeError(
+                f"work order is {nbytes} bytes; a CLI delegate passes it as "
+                f"one argv element and Windows caps the command line near "
+                f"32KB — keep it under {_sb._PROMPT_MAX_BYTES} bytes "
+                f"(tighter context, or reference files the delegate can "
+                f"read from its workspace).")
     need = approx_tokens(work_order) + delegate.max_output_tokens
     if need > delegate.max_context_tokens:
         raise BridgeError(
@@ -251,18 +264,27 @@ class BridgeRun:
     error: str | None = None
 
 
-def parse_findings(content: str) -> list[dict]:
-    """PURE, defensive. Extract the findings array from a challenge reply; a
-    reply that ignores the contract yields [] — the audit row still records the
-    raw content, so a noisy lens is measurable, never silently trusted."""
+def parse_findings(content: str) -> list[dict] | None:
+    """PURE, defensive. Extract the findings array from a challenge reply.
+
+    F38#6 — the return now DISTINGUISHES the two zero-findings cases:
+    * [] — the delegate returned a VALID (possibly empty) findings array:
+      a real hunt found nothing. Legal, satisfies the contract.
+    * None — the reply broke the contract (no parseable JSON array). The
+      caller must treat this as a FAILED challenge, never a clean pass:
+      arbitrary/prompt-injected prose used to read as findings=[] and
+      satisfy G-CHALLENGE.
+    """
     text = content.strip()
     start, end = text.find("["), text.rfind("]")
     if start == -1 or end <= start:
-        return []
+        return None
     try:
         arr = json.loads(text[start:end + 1])
     except json.JSONDecodeError:
-        return []
+        return None
+    if not isinstance(arr, list):
+        return None
     out = []
     for f in arr if isinstance(arr, list) else []:
         if isinstance(f, dict) and isinstance(f.get("finding"), str):
@@ -322,7 +344,17 @@ def _run_http(delegate: Delegate, work_order: str) -> tuple[str, int, int, str |
     timeout = float(os.environ.get(_HTTP_TIMEOUT_ENV, _HTTP_TIMEOUT_DEFAULT))
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8", errors="replace"))
+            body_text = resp.read().decode("utf-8", errors="replace")
+        try:
+            data = json.loads(body_text)
+        except json.JSONDecodeError:
+            # F38#12: HTTP 200 with a non-JSON body (proxy error page,
+            # truncated stream) is a PROVIDER failure — the documented
+            # ok=false path, never an uncaught exception that skips audit.
+            return "", 0, 0, (
+                f"{delegate.name} returned HTTP 200 with a non-JSON body: "
+                f"{_redact_secret(body_text[:300], key)!r}. First-class "
+                f"blocker — surface upward, do NOT retry-loop.")
     except urllib.error.HTTPError as e:
         detail = ""
         try:
@@ -342,8 +374,12 @@ def _run_http(delegate: Delegate, work_order: str) -> tuple[str, int, int, str |
         return "", 0, 0, (f"{delegate.name} returned an unrecognized response "
                           f"shape: {_redact_secret(str(data)[:300], key)}")
     usage = data.get("usage") or {}
-    return (content, int(usage.get("prompt_tokens", 0)),
-            int(usage.get("completion_tokens", 0)), None)
+    try:
+        tin = int(usage.get("prompt_tokens", 0) or 0)
+        tout = int(usage.get("completion_tokens", 0) or 0)
+    except (TypeError, ValueError):
+        tin = tout = 0     # malformed usage: report unknown, never raise
+    return content, tin, tout, None
 
 
 #: ToS-safety concurrency cap for subscription-CLI delegates (user ruling
@@ -354,10 +390,50 @@ def _run_http(delegate: Delegate, work_order: str) -> tuple[str, int, int, str |
 #: concurrent codex turns fleet-wide; EDP_BRIDGE_CLI_MAX=1 serializes.
 _CLI_MAX_ENV = "EDP_BRIDGE_CLI_MAX"
 _CLI_SLOT_WAIT_S = 900.0            # matches sol_bridge's turn ceiling
-_CLI_SLOT_STALE_S = 1200.0          # reap a slot from a crashed process
+# F38#4: staleness must EXCEED every legal delegate timeout (per-delegate
+# timeout_secs goes to 1800), or the reaper steals a slot from a live
+# long-running turn and the concurrency cap collapses. 2400 = 1800 + margin.
+_CLI_SLOT_STALE_S = 2400.0          # reap a slot from a crashed process
 
 
-def _cli_slot_acquire() -> Path | None:
+def _pid_alive(pid: int) -> bool:
+    """Best-effort cross-platform liveness probe; unknown reads as ALIVE
+    (never steal a slot we cannot prove is dead). NOTE: os.kill(pid, 0) is a
+    POSIX idiom — on Windows signal 0 is CTRL_C_EVENT, not a probe — so
+    Windows takes a ctypes OpenProcess path (F38#4)."""
+    if pid <= 0:
+        return False
+    import sys
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+        ERROR_INVALID_PARAMETER = 87
+        k32 = ctypes.windll.kernel32
+        handle = k32.OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            # invalid-parameter = no such process → dead; anything else
+            # (e.g. access-denied) is unprovable → treat as alive.
+            return k32.GetLastError() != ERROR_INVALID_PARAMETER
+        try:
+            code = wintypes.DWORD()
+            if k32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return code.value == STILL_ACTIVE
+            return True
+        finally:
+            k32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True     # exists but not ours to signal
+
+
+def _cli_slot_acquire() -> tuple[Path, str] | None:
     home = Path(os.environ.get("EDP_AGENT_HOME") or os.getcwd())
     slots_dir = home / ".bridge" / "cli-slots"
     slots_dir.mkdir(parents=True, exist_ok=True)
@@ -365,32 +441,54 @@ def _cli_slot_acquire() -> Path | None:
         n = max(1, int(os.environ.get(_CLI_MAX_ENV, "2")))
     except ValueError:
         n = 2
+    nonce = f"{os.getpid()}-{time.time_ns()}"
     deadline = time.time() + _CLI_SLOT_WAIT_S
     while time.time() < deadline:
+        reaped = False
         for i in range(n):
             slot = slots_dir / f"slot-{i}.lock"
             try:
                 slot.mkdir()                     # atomic acquire
                 (slot / "pid").write_text(str(os.getpid()))
-                return slot
+                # F38#4: ownership nonce — release only removes a slot it
+                # still owns, so a reaped-and-reacquired slot cannot be
+                # deleted by its previous holder's finally block.
+                (slot / "nonce").write_text(nonce)
+                return slot, nonce
             except FileExistsError:
-                # reap a stale slot left by a crashed process
+                # reap ONLY a slot that is both aged AND provably dead —
+                # age alone stole slots from live long-running turns.
                 try:
                     age = time.time() - slot.stat().st_mtime
-                    if age > _CLI_SLOT_STALE_S:
-                        (slot / "pid").unlink(missing_ok=True)
-                        slot.rmdir()
+                    if age <= _CLI_SLOT_STALE_S:
+                        continue
+                    pid_raw = (slot / "pid").read_text().strip()
+                    if pid_raw.isdigit() and _pid_alive(int(pid_raw)):
+                        continue
+                    (slot / "pid").unlink(missing_ok=True)
+                    (slot / "nonce").unlink(missing_ok=True)
+                    slot.rmdir()
+                    reaped = True                # retry acquisition at once
                 except OSError:
                     pass
+        if reaped:
+            continue                             # skip the wait — a slot freed
         time.sleep(2.0)
     return None
 
 
-def _cli_slot_release(slot: Path | None) -> None:
+def _cli_slot_release(slot: Path | None, nonce: str | None = None) -> None:
     if slot is None:
         return
     try:
+        if nonce is not None:
+            try:
+                if (slot / "nonce").read_text().strip() != nonce:
+                    return      # no longer ours (reaped + reacquired)
+            except OSError:
+                pass            # nonce unreadable — fall through, best effort
         (slot / "pid").unlink(missing_ok=True)
+        (slot / "nonce").unlink(missing_ok=True)
         slot.rmdir()
     except OSError:
         pass
@@ -405,13 +503,14 @@ def _run_cli(delegate: Delegate, work_order: str, caller: str,
     Fleet-wide concurrency is slot-capped (see _CLI_MAX_ENV above): a shell
     that cannot get a slot within the wait window gets a BLOCKER, never a
     pile-on."""
-    slot = _cli_slot_acquire()
-    if slot is None:
+    acquired = _cli_slot_acquire()
+    if acquired is None:
         return "", 0, 0, (
             f"no codex slot free within {_CLI_SLOT_WAIT_S:.0f}s "
             f"({_CLI_MAX_ENV} caps fleet-wide concurrent sol turns to "
             f"protect the ChatGPT plan) — surface upward and continue other "
             f"work; do NOT retry-loop.")
+    slot, nonce = acquired
     try:
         import tempfile
         workdir = str(Path(tempfile.gettempdir()) / "edp-bridge"
@@ -420,11 +519,19 @@ def _run_cli(delegate: Delegate, work_order: str, caller: str,
             prompt=work_order, workdir=workdir, sandbox="read-only",
             caller=caller, advisor=delegate.name, effort=delegate.effort,
             new_thread=(kind == "challenge"),
-            timeout_secs=delegate.timeout_secs)
+            timeout_secs=delegate.timeout_secs,
+            # F38#1: the registry's pin reaches the CLI (-m) instead of the
+            # CLI default running while the audit claims the pinned model.
+            model=delegate.model)
         content = run.last_message or "\n".join(run.agent_messages)
         return content, 0, 0, (None if run.ok else run.error)
+    except sol_bridge.SolBridgeError as e:
+        # F38#11: a CLI precondition (oversized argv, missing binary) must
+        # cross the tool boundary as the documented BridgeError shape, not
+        # an uncaught exception that skips the audit row.
+        raise BridgeError(str(e)) from e
     finally:
-        _cli_slot_release(slot)
+        _cli_slot_release(slot, nonce)
 
 
 def delegate_call(*, kind: str, delegate_name: str, task: str,
@@ -446,22 +553,44 @@ def delegate_call(*, kind: str, delegate_name: str, task: str,
         content, tin, tout, err = _run_http(d, order)
     else:
         content, tin, tout, err = _run_cli(d, order, caller, kind)
-    tin = tin or approx_tokens(order)          # cli reports no usage; estimate
-    tout = tout or approx_tokens(content)
-    cost = estimate_cost(d, tin, tout)
+    # F38#13: usage is estimated (and cost computed) only for a call the
+    # provider actually served — a connection-refused attempt used to be
+    # audited as full estimated spend and eat the budget for money never
+    # spent. A failed call records zeros; billing truth stays with `ok`.
+    if err is None:
+        tin = tin or approx_tokens(order)      # cli reports no usage; estimate
+        tout = tout or approx_tokens(content)
+        cost = estimate_cost(d, tin, tout)
+    else:
+        tin = tout = 0
+        cost = 0.0
 
     run = BridgeRun(ok=err is None, delegate=d.name, model=d.model, kind=kind,
                     content=content, tokens_in=tin, tokens_out=tout,
                     cost_usd=round(cost, 6), error=err)
     if kind == "challenge" and run.ok:
-        run.findings = parse_findings(content)
+        parsed = parse_findings(content)
+        if parsed is None:
+            # F38#6: a reply that broke the findings contract is a FAILED
+            # challenge — ok=false, raw text quarantined in content for
+            # diagnostics, never returned as a satisfied adversarial pass.
+            run.ok = False
+            run.error = (
+                "challenge reply broke the findings contract (no JSON "
+                "array) — the adversarial pass did NOT happen. Re-run the "
+                "challenge; do not treat the raw text as findings.")
+        else:
+            run.findings = parsed
 
     audit(caller, {
         "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "kind": kind, "delegate": d.name, "model": d.model,
+        # F38#5: lineage for budget attribution — the caller handle rides
+        # on every row so spend can be scoped to its recipe.
+        "caller": caller,
         "order_bytes": len(order.encode("utf-8")),
         "tokens_in": tin, "tokens_out": tout, "cost_usd": run.cost_usd,
-        "ok": run.ok, "error": (err or "")[:300],
+        "ok": run.ok, "error": (run.error or "")[:300],
         "findings": len(run.findings), "secs": round(time.time() - t0, 1),
     })
     return run

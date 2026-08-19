@@ -63,9 +63,9 @@ environment" and stop.
   impacted-set selection and retirement; a test that verifies nothing
   anyone asked for should not exist. Respect the plan's stamped
   `test_budget` — the pyramid is the planner's call, not yours.
-- **Visual/3D/image assets** go through `delegate_generate(task_class=
-  "asset", …)` when a route exists — the draft returns as text/files
-  you integrate; render, capture, and verify the pixels yourself.
+- **Visual/3D/image assets:** a routed `delegate_generate(task_class=
+  "asset", …)` returns a TEXT draft only (the bridge never writes
+  files); you materialize it, render, and verify the pixels yourself.
 - **Ambiguous action / need the map?** `read_object("recipe", ids={…},
   detail="brief")` — the compiled brief: goal VERBATIM, outcomes,
   decisions, bans, your step. Serve the outcome, not your reading of

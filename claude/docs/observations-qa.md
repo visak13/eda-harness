@@ -603,3 +603,36 @@ test_w4_roles (unknown role fails CLOSED), test_multi_spec_selection /
 test_specialist_compiled_doc / test_tool_output_bounds (banner-framed
 groundings). NOTE: pool changes need the STACK RESTART to reach the live
 fleet.
+
+## F38 — Adversarial campaign Round 6 (delegation bridge & external seams), 2026-08-19
+15 findings (raw: .sol_review_out-r6.txt). Same threat model as F37
+(single-operator local fleet; the adversary is a confused/prompt-injected
+AGENT + plain bugs). All 15 CONFIRMED and fixed — no rejects this round.
+
+| # | Finding | Fix |
+|---|---------|-----|
+| 1 | CLI model pin never passed to Codex; audit reports it anyway | build_argv/run_sol thread `-m <model>`; bridge passes delegate.model |
+| 2 | delegate override bypasses route authorization | _bridge_delegate_for consults routes FIRST; an override must be routed for the caller's role (role-less console exempt) |
+| 3 | concurrent CLI calls share one output file → cross-answer bleed | per-invocation `.sol-last-message-<pid>-<ns>.txt` + `.sol-run-*.jsonl`; destination pre-deleted; 7-day sweep |
+| 4 | slot reaper steals a live long turn; owner deletes replacement's lock | staleness 2400 (> max 1800 timeout); reap only aged AND provably dead (cross-platform _pid_alive); ownership nonce gates release |
+| 5 | recipe budget charges fleet-wide delegate spend | audit rows stamp `caller`; _delegate_actuals filters by recipe; unattributed legacy rows reported separately, never charged to all |
+| 6 | contract-broken challenge counts as a clean pass | parse_findings returns None on a broken contract (vs [] for a valid empty hunt); delegate_call fails the run; G-CHALLENGE never satisfied by prose |
+| 7 | audit read errors silently ignored while totals called complete | _delegate_actuals counts audit_errors; budget note says INCOMPLETE when any sidecar unreadable |
+| 8 | threads.json unlocked RMW + shared tmp loses mappings after paid turn | unique per-writer tmp name; save_thread wrapped so a persist race never fails a paid successful turn |
+| 9 | planner-stamped arbitrary per-action model overrides the registry | model override must be a model the seat registry (models.json) pins; else pre-launch refuse + rollback |
+| 10 | server-assembled challenge silently truncates the fields under review | LOUD elision markers (…[+N chars elided]) on description/acceptance clips |
+| 11 | CLI byte-cap escapes as uncaught SolBridgeError past budget check | check_budget preflights the 30KB argv cap for cli delegates as BridgeError; _run_cli translates SolBridgeError→BridgeError |
+| 12 | malformed HTTP 200 body bypasses the provider-failure path + audit | JSON decode + usage int-conversion errors → structured ok=false, audited |
+| 13 | failed HTTP attempts recorded as billable token/cost | a failed call records zero usage/zero cost; billing truth follows `ok` |
+| 14 | acceptor model claim contradicts registry + card | card says "designated acceptance seat (models.json binds it)", not "strongest model" |
+| 15 | worker card promises file-producing asset delegation the bridge can't do | card says a routed asset delegation returns a TEXT draft only; you materialize it |
+
+Also portability: _pid_alive gained a Windows ctypes OpenProcess path
+(os.kill(pid,0) is POSIX-only — on Windows signal 0 is CTRL_C_EVENT); the
+slot reaper retries acquisition immediately after freeing a dead slot.
+
+Suites: claude 1576, edp-pool 306, edp-broker 29 — all green (Phoenix
+env-fail only). New: tests/test_f38_round6.py. Updated to new contracts:
+test_bridge (findings-contract None vs []), test_v7_budget + test_wp2_gates
+(caller-scoped audit rows). NOTE: none of these change pool/broker code, so
+no stack restart is required for F38.

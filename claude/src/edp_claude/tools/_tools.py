@@ -9061,7 +9061,25 @@ class PoolSpawnWorker(_ClaudeTool):
                 # over the W10b table — the planner authored the action and knows
                 # its shape. Absent (the default), the table's resolution above
                 # stands, which for an un-opted-in spawn is the Opus default.
+                # F38#9: the override must be a model the SEAT REGISTRY pins
+                # (models.json is the truth) — plan data is agent-authored,
+                # so an arbitrary string here let a planner spawn any model
+                # and silently change the fleet's quality/spend policy.
                 if a.model:
+                    _allowed_models = _registry_models()
+                    if (_allowed_models is not None
+                            and a.model not in _allowed_models):
+                        _rollback_failed_dispatch(
+                            self.ctx, m.plan_id, m.action_id,
+                            "unregistered_model_override_pre_launch",
+                            member_ids=rollback_ids)
+                        return _precondition(
+                            f"action {a.action_id!r} stamps model="
+                            f"{a.model!r}, which no seat in models.json "
+                            f"pins (registry models: "
+                            f"{sorted(_allowed_models)}). The seat registry "
+                            "is the one authority on fleet models — clear "
+                            "the override or change models.json.")
                     model_override = a.model
                 # DESIGN-v7 1.4: Guard B runs over EVERY unit member — the ONE
                 # shell executes them all, so it needs every member's compiled
@@ -9612,15 +9630,50 @@ def _sol_caller() -> str:
 # deliberate config decision, never an agent's whim. Sol-through-codex bills the
 # ChatGPT plan; the no-retry blocker discipline is inherited from sol_bridge.
 
+def _registry_models() -> frozenset[str] | None:
+    """The exact model ids the v7 seat registry (models.json at
+    EDP_AGENT_HOME) pins, or None when no registry is configured (legacy /
+    hermetic tests — no allowlist to enforce). F38#9's one authority."""
+    _home = os.environ.get("EDP_AGENT_HOME", "").strip()
+    if not _home:
+        return None
+    try:
+        from edp_contracts.seats import load as _seats_load
+    except ImportError:
+        return None
+    loaded = _seats_load(_home)
+    if loaded is None:
+        return None
+    seats, _roles = loaded
+    return frozenset(s.model for s in seats.values())
+
+
 def _bridge_delegate_for(kind_class: str, override: str) -> str:
-    """Resolve the delegate deterministically: explicit override (still must
-    exist in the registry) else the .bridge.json route for (role, kind_class).
+    """Resolve the delegate deterministically: the .bridge.json route for
+    (role, kind_class); an explicit override is honored ONLY when a route for
+    this role already authorizes that delegate (F38#2 — the override used to
+    return before route_for was consulted, so any shell could name any
+    registered delegate and bypass the whole role+route governance the docs
+    promise). A role-less operator console stays unconstrained.
     Raises bridge.BridgeError with the fix when unrouted."""
     from . import bridge as _bridge
-    if override.strip():
-        return override.strip()
     role = os.environ.get("EDP_ROLE", "").strip() or "anon"
     _delegates, routes = _bridge.load_config()
+    if override.strip():
+        name = override.strip()
+        if name not in _delegates:
+            raise _bridge.BridgeError(
+                f"unknown delegate {name!r} (known: {sorted(_delegates)})")
+        if role != "anon":
+            authorized = {t for k, t in routes.items()
+                          if k.split(":", 1)[0] == role}
+            if name not in authorized:
+                raise _bridge.BridgeError(
+                    f"delegate override {name!r} is not routed for role "
+                    f"{role!r} — delegation is a .bridge.json config "
+                    f"decision, never an agent decision. Routed for you: "
+                    f"{sorted(authorized) or 'none'}.")
+        return name
     target = _bridge.route_for(role, kind_class, routes)
     if not target:
         raise _bridge.BridgeError(
@@ -9918,12 +9971,23 @@ class AdversarialChallenge(_ClaudeTool):
         _content = m.content
         if m.target_kind == "plan" and self.ctx.plans.exists(m.target_id):
             _pl = self.ctx.plans.load(m.target_id)
+
+            def _clip(text: str, cap: int) -> str:
+                # F38#10: LOUD elision — a silent clip hid exactly the tail
+                # clauses (security/data-loss acceptance) the adversary
+                # exists to inspect, while the wrapper claimed the context
+                # was complete.
+                t = text or ""
+                if len(t) <= cap:
+                    return t
+                return f"{t[:cap]} …[+{len(t) - cap} chars elided]"
+
             _rows = [
                 f"- {a.action_id} [{a.status}] deps={list(a.depends_on)} "
                 f"leg={getattr(a, 'leg_kind', None) or 'build'}: "
-                f"{(a.description or '')[:300]} | acceptance="
+                f"{_clip(a.description, 300)} | acceptance="
                 f"{getattr(a.acceptance, 'kind', None)}:"
-                f"{(getattr(a.acceptance, 'expected', '') or '')[:200]}"
+                f"{_clip(getattr(a.acceptance, 'expected', ''), 200)}"
                 for a in _pl.actions]
             _content = (
                 f"PLAN {_pl.plan_id} (server-assembled from the stored "
@@ -10181,29 +10245,64 @@ class TestLineageReport(_ClaudeTool):
 
 
 # ── budget status (v7 WS3 §2.6c) — planned vs actual, pure code ─────────────
-def _delegate_actuals(home: Path) -> dict:
-    """Delegate spend summed from EVERY bridge audit sidecar
+def _caller_recipe(caller: str) -> str | None:
+    """Derive the recipe a bridge caller handle belongs to: worker
+    `<recipe>-<step>:<action>` / planner `<recipe>:<step>` → the recipe id.
+    None for a role-name/anon caller (unattributable)."""
+    head = (caller or "").split(":", 1)[0].strip()
+    if not head:
+        return None
+    rid = re.sub(r"-s\d+$", "", head)
+    return rid or None
+
+
+def _delegate_actuals(home: Path, recipe_id: str | None = None) -> dict:
+    """Delegate spend summed from the bridge audit sidecars
     (.bridge/audit-*.jsonl under the agent home). Shared by BudgetStatus
     (the read surface) and the WP2 G-BUDGET spawn gate — one aggregation,
-    never two divergent ones."""
+    never two divergent ones.
+
+    F38#5 — recipe attribution: with `recipe_id`, only rows whose stamped
+    `caller` resolves to that recipe are charged; rows with NO caller stamp
+    (legacy) are reported separately as `unattributed_cost_usd`, never
+    charged to every recipe (the old fleet-global sum let recipe A's spend
+    refuse recipe B's spawns). F38#7 — `audit_errors` counts unreadable
+    sidecars so no caller can call the total complete after a read error."""
     agg = {"calls": 0, "tokens_in": 0, "tokens_out": 0,
-           "cost_usd": 0.0, "failures": 0}
+           "cost_usd": 0.0, "failures": 0, "audit_errors": 0,
+           "unattributed_cost_usd": 0.0}
     try:
-        for f in sorted((home / ".bridge").glob("audit-*.jsonl")):
-            for line in f.read_text(encoding="utf-8").splitlines():
-                try:
-                    row = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                agg["calls"] += 1
-                agg["tokens_in"] += int(row.get("tokens_in", 0))
-                agg["tokens_out"] += int(row.get("tokens_out", 0))
-                agg["cost_usd"] += float(row.get("cost_usd", 0.0))
-                if not row.get("ok", True):
-                    agg["failures"] += 1
+        files = sorted((home / ".bridge").glob("audit-*.jsonl"))
     except OSError:
-        pass
+        agg["audit_errors"] += 1
+        files = []
+    for f in files:
+        try:
+            lines = f.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            agg["audit_errors"] += 1
+            continue
+        for line in lines:
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            row_recipe = _caller_recipe(str(row.get("caller") or ""))
+            if recipe_id is not None:
+                if row_recipe is None:
+                    agg["unattributed_cost_usd"] += float(
+                        row.get("cost_usd", 0.0))
+                    continue
+                if row_recipe != recipe_id:
+                    continue
+            agg["calls"] += 1
+            agg["tokens_in"] += int(row.get("tokens_in", 0))
+            agg["tokens_out"] += int(row.get("tokens_out", 0))
+            agg["cost_usd"] += float(row.get("cost_usd", 0.0))
+            if not row.get("ok", True):
+                agg["failures"] += 1
     agg["cost_usd"] = round(agg["cost_usd"], 4)
+    agg["unattributed_cost_usd"] = round(agg["unattributed_cost_usd"], 4)
     return agg
 
 
@@ -10232,7 +10331,9 @@ def _budget_check(ctx, recipe_id: str) -> dict:
     except (TypeError, ValueError):
         usd_cap = 0.0
     if usd_cap > 0:
-        actuals = _delegate_actuals(ctx.recipes.root.parent)
+        # F38#5: charge THIS recipe's attributed spend only.
+        actuals = _delegate_actuals(ctx.recipes.root.parent,
+                                    recipe_id=recipe_id)
         used.append(("delegate_usd", float(actuals["cost_usd"]), usd_cap))
     try:
         hours_cap = float(budget.get("wall_clock_hours") or 0)
@@ -10319,8 +10420,9 @@ class BudgetStatus(_ClaudeTool):
         r = self.ctx.recipes.load(m.recipe_id)
         home = self.ctx.recipes.root.parent
         # WP2: the aggregation is the shared module function — the SAME sums
-        # the G-BUDGET spawn gate judges (one source of truth).
-        agg = _delegate_actuals(home)
+        # the G-BUDGET spawn gate judges (one source of truth). F38#5: scoped
+        # to THIS recipe's attributed rows, exactly like the gate.
+        agg = _delegate_actuals(home, recipe_id=m.recipe_id)
         telemetry_on = os.environ.get(
             "CLAUDE_CODE_ENABLE_TELEMETRY", "").strip() == "1"
         return Tool.ok(_BudgetStatusOut(
@@ -10337,8 +10439,11 @@ class BudgetStatus(_ClaudeTool):
                 "for per-session Claude token actuals" if telemetry_on else
                 "Claude-side token actuals unavailable: telemetry backend "
                 "not configured (CLAUDE_CODE_ENABLE_TELEMETRY unset) — "
-                "delegate actuals above are complete; Claude spend is not "
-                "zero, it is unmeasured"),
+                + ("delegate actuals above are complete"
+                   if not agg.get("audit_errors") else
+                   f"delegate actuals may be INCOMPLETE "
+                   f"({agg['audit_errors']} audit sidecar(s) unreadable)")
+                + "; Claude spend is not zero, it is unmeasured"),
         ))
 
 
