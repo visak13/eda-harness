@@ -30,6 +30,7 @@ ROLLOUT RULES:
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 
 from .atomic import write_atomic
@@ -268,6 +269,17 @@ def dehydrate_plan_payload(payload: dict, plan_dir: Path) -> dict:
                 # already tiered: keep marker, but refresh nothing — the
                 # hydrated load would have replaced it with full text, so a
                 # marker here means this payload was never hydrated.
+                continue
+            # F41#8 — a DEGRADED hydration (sidecar missing) serves the bare
+            # digest line; saving that as a plain value dropped the ref, so
+            # a later sidecar restore had nothing to hydrate from. A value
+            # that IS a digest line gets its marker re-attached (pointer
+            # preserved, retryable) instead of being tiered/persisted as
+            # apparently-complete inline text — mirroring how *_ref fields
+            # keep their ref through a degraded round-trip.
+            _m = re.search(r"\[\d+ bytes; full text in ([^\]]+)\]", text)
+            if _m and "\n" not in text.strip():
+                inj[cid] = f"{FILE_MARKER}{_m.group(1)}\n{text}"
                 continue
             ref = f"context/{cid}.md"
             already = ((plan_dir / ref).exists()

@@ -688,3 +688,30 @@ env-fail only). New: tests/test_f40_round7.py (8) + 2 pool EDP_PARENT
 tests; test_s26 lifecycle updated to own-plan handles (the reap-arm gate
 it pins is unchanged). NOTE: the EDP_PARENT stamp is POOL code — the
 live fleet needs a STACK RESTART for #13/#7.
+
+## F41 — Adversarial campaign Round 8 (second convergence pass), 2026-08-20
+9 findings (raw: .sol_review_out-r8.txt); lens = twin-hunt on F40's own
+fixes + the memory/state layer. 7 CONFIRMED (2 with scoped fixes), 1
+REJECT. The round again yielded the twin class: sidecar mutators missed
+the F40 ownership guard, SpecStore missed the F34 locking, write_doc's
+drain checked nothing, the dispatch-intent stamp missed the F34 pin.
+
+| # | Finding | Verdict |
+|---|---------|---------|
+| 1 | SpecStore last-writer-wins saves (twin of F34 R2 #1) | CONFIRM — locked optimistic-version save; add_entry + resolve_spec_learnings RMW under the object lock |
+| 2 | plan-sidecar mutators skip planner ownership (twin of F40#2) | CONFIRM — _planner_foreign_plan_refusal wired into record_grounding_brief, adversarial_challenge(plan target, pre-paid-call), challenge_waiver, challenge_adjudication |
+| 3 | no budget check at the paid bridge seam; degraded latch fail-open | PARTIAL — _bridge_call(ctx,…) enforces the caller recipe's delegate_usd cap before every paid call (refusal names the detail + honesty notes); fail-closed-on-degraded REJECTED (intelligence-over-guardrails: a torn audit line must not deadlock the fleet — it stays a loud named note) |
+| 4 | batch head terminally records unreached later siblings (granularity twin of F40#3) | PARTIAL — terminal claim on a sibling requires every batch member declared before it to be terminal (declared-order member loop; post-failure skips stay legal); full ACTION_TRANSITIONS validation deferred (blast radius on planner heal paths) |
+| 5 | write_doc drains accepted learnings without proof of folding | CONFIRM — content-checked drain (whitespace/case-folded substring); unmatched learnings stay overlaid (fail-safe duplicate, never a lost rule), named in worklog + kept_overlay_ids |
+| 6 | rollup archives step_dispatch_emitted; stranded step waits forever | CONFIRM — pinned into GATE_PINNED_KINDS |
+| 7 | grounding-brief clip is prose-only, no author-time gate | REJECT — already loud at BOTH ends (worker banner + the write-time note at RecordGroundingBrief); ack-gated delivery is the rejected guardrail class |
+| 8 | degraded injected_context hydration loses its recovery pointer | CONFIRM — dehydrate re-attaches the @file marker to a digest-shaped value (ref parsed from the digest line), mirroring *_ref degraded round-trips |
+| 9 | _INBOX_FRAMING sells client-stamped _sender as server provenance | CONFIRM (scoped) — framing reworded to "transport-stamped claim of origin, not verified provenance"; broker-side restamp needs auth = rejected class |
+
+Twin sweep: north_star save is immutable-goal-guarded and neuron-only —
+LWW residual accepted (single writer per recipe). Tests: +8 in
+test_f41_round8.py; test_wp2_gates fakes updated to the ctx-first
+_bridge_call. Suites: claude 1594 (Phoenix env-fail only), edp-pool 308,
+edp-broker 29 — green. NOT converged: 8 of 9 landed. Round 9 = third
+convergence pass (F41's own fixes + a surface no round has re-visited);
+two near-empty rounds still gate the closing polish sweep.

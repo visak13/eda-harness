@@ -174,6 +174,10 @@ def _dump_records(records: list[dict]) -> str:
 GATE_PINNED_KINDS: frozenset[str] = frozenset({
     "acceptance_verdict", "acceptance_dispatched", "user_gate_answer",
     "step_forced_done", "progress_review",
+    # F41#6: reconcile's unacked-dispatch recovery does an exact-identity
+    # hot-tail lookup for the step's dispatch-intent stamp; archiving it
+    # left a stamped-but-never-spawned step waiting forever.
+    "step_dispatch_emitted",
 })
 PIN_KEEP = 200
 

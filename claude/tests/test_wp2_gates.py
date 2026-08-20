@@ -226,7 +226,8 @@ async def test_successful_plan_challenge_persists_to_sidecar(env,
     _recipe(env)
     pid = _plan(env, RID, "s1", actions=[_action("a1")])
 
-    async def fake_bridge(kind, kind_class, override, *, task,
+    # F41#3: _bridge_call now takes ctx first (the budget seam)
+    async def fake_bridge(ctx, kind, kind_class, override, *, task,
                           context="", acceptance=""):
         assert kind == "challenge"
         return Tool.ok(T._BridgeOut(ok=True, delegate="sol", model="m",
@@ -244,7 +245,7 @@ async def test_successful_plan_challenge_persists_to_sidecar(env,
     assert "FINDING" in entries[0]["findings_raw"]
     assert entries[0]["at"]
     # a FAILED bridge call persists nothing
-    async def failed_bridge(*a, **kw):
+    async def failed_bridge(ctx, *a, **kw):
         return Tool.ok(T._BridgeOut(ok=False, delegate="sol", model="m",
                                     content="", blocker="window"))
     monkeypatch.setattr(T, "_bridge_call", failed_bridge)
@@ -265,7 +266,7 @@ async def test_artifact_challenge_persists_to_callers_plan(env, monkeypatch):
     _recipe(env)
     pid = _plan(env, RID, "s1", actions=[_action("a1")])
 
-    async def fake_bridge(kind, kind_class, override, *, task,
+    async def fake_bridge(ctx, kind, kind_class, override, *, task,
                           context="", acceptance=""):
         return Tool.ok(T._BridgeOut(ok=True, delegate="sol", model="m",
                                     content="FINDING: the artifact lies"))

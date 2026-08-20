@@ -12,6 +12,7 @@ from pathlib import Path
 from ..schemas import Specialization, SpecEntry
 from .atomic import append_jsonl, write_atomic, write_snapshot
 from .attribution import actor
+from .ipc_lock import StoreConflict, object_lock
 
 # W3 (DESIGN-v6) — the amendment tag vocabulary the read-path overlay renders,
 # and its bidirectional map to the SpecEntry `adherence` weight. A structured
@@ -32,6 +33,12 @@ def _tag_for(adherence: str | None) -> str:
 
 def _adherence_for(tag: str | None) -> str:
     return _ADHERENCE_BY_TAG.get(tag or "[expected]", "expected")
+
+
+def _norm_text(text: str | None) -> str:
+    """Whitespace/case-folded form for the F41#5 content-checked drain —
+    tolerant of reflowed lines, never of a missing rule."""
+    return " ".join((text or "").split()).casefold()
 
 
 def _amendment_view(rec: dict) -> tuple[str, str, str | None]:
@@ -75,21 +82,42 @@ class SpecStore:
         return Specialization.model_validate(data)
 
     def save(self, spec: Specialization) -> int:
-        spec.version += 1
-        payload = spec.model_dump(mode="json")
-        write_atomic(self._file(spec.spec_id), json.dumps(payload, indent=2))
-        write_snapshot(
-            self._dir(spec.spec_id) / "snapshots", spec.version, payload
-        )
-        append_jsonl(
-            self._dir(spec.spec_id) / "worklog.jsonl",
-            # W15: stamp actor attribution (by:{role,handle}) resolved
-            # IN CODE from the environment (attribution.actor(), principle-6)
-            # so every spec_saved record carries who performed the write.
-            {"kind": "spec_saved", "version": spec.version,
-             "entries": len(spec.entries), "by": actor()},
-        )
-        return spec.version
+        # F41#1 — same locked optimistic-version discipline as
+        # PlanStore.save / RecipeStore.save (F34 R2 #1): concurrent shells
+        # saving the same spec must conflict loudly, never last-writer-wins
+        # (two amenders both saving v9 silently erased one's entry AND its
+        # snapshot).
+        sdir = self._dir(spec.spec_id)
+        with object_lock(sdir):
+            f = self._file(spec.spec_id)
+            if f.exists():
+                try:
+                    disk_v = json.loads(
+                        f.read_text(encoding="utf-8")).get("version", 1)
+                except (OSError, json.JSONDecodeError):
+                    disk_v = spec.version
+                if spec.version == 1 and disk_v != 1:
+                    spec.version = disk_v        # fresh-object overwrite
+                elif spec.version != disk_v:
+                    raise StoreConflict(
+                        f"spec {spec.spec_id!r} changed on disk (disk "
+                        f"v{disk_v}, yours v{spec.version}) — another shell "
+                        "saved after your load. Nothing was written; "
+                        "re-read the spec and re-apply your change.")
+            spec.version += 1
+            payload = spec.model_dump(mode="json")
+            write_atomic(f, json.dumps(payload, indent=2))
+            write_snapshot(sdir / "snapshots", spec.version, payload)
+            append_jsonl(
+                sdir / "worklog.jsonl",
+                # W15: stamp actor attribution (by:{role,handle}) resolved
+                # IN CODE from the environment (attribution.actor(),
+                # principle-6) so every spec_saved record carries who
+                # performed the write.
+                {"kind": "spec_saved", "version": spec.version,
+                 "entries": len(spec.entries), "by": actor()},
+            )
+            return spec.version
 
     def add_entry(
         self, spec_id: str, entry: SpecEntry, *, unlock: bool = False
@@ -101,21 +129,25 @@ class SpecStore:
         is checked at WRITE time (d24). An ordinary (unprotected) spec is
         unguarded and uncapped. Returns the new version. Raises
         ProtectedSpecError on refusal (the tool maps it to a precondition)."""
-        spec = self.load(spec_id)
-        if spec.protected:
-            if not unlock:
-                raise ProtectedSpecError(
-                    f"{spec_id!r} is a protected spec — pass unlock=true to "
-                    f"amend it (the write is actor-attributed)."
-                )
-            if len(spec.entries) >= PROTECTED_ENTRY_CAP:
-                raise ProtectedSpecError(
-                    f"{spec_id!r} is at its growth budget of "
-                    f"{PROTECTED_ENTRY_CAP} entries — consolidate first "
-                    f"before adding more."
-                )
-        spec.entries.append(entry)
-        return self.save(spec)
+        # F41#1 — the whole read-modify-write runs under the object lock
+        # (reentrant with save()'s), so a concurrent amender conflicts on
+        # the version check instead of racing the load.
+        with object_lock(self._dir(spec_id)):
+            spec = self.load(spec_id)
+            if spec.protected:
+                if not unlock:
+                    raise ProtectedSpecError(
+                        f"{spec_id!r} is a protected spec — pass unlock=true "
+                        f"to amend it (the write is actor-attributed)."
+                    )
+                if len(spec.entries) >= PROTECTED_ENTRY_CAP:
+                    raise ProtectedSpecError(
+                        f"{spec_id!r} is at its growth budget of "
+                        f"{PROTECTED_ENTRY_CAP} entries — consolidate first "
+                        f"before adding more."
+                    )
+            spec.entries.append(entry)
+            return self.save(spec)
 
     def append_worklog(self, spec_id: str, record: dict) -> None:
         append_jsonl(self._dir(spec_id) / "worklog.jsonl", record)
@@ -140,10 +172,31 @@ class SpecStore:
         # and an `overrides` match could stamp the NEW base text
         # SUPERSEDED. The SME recompiles against the promoted set by
         # contract (specialist card step 4), so compiling IS the fold.
+        #
+        # F41#5: the drain is CONTENT-CHECKED, not blind — a non-empty doc
+        # that omitted an accepted rule used to drain it anyway, so the
+        # rule vanished from both the base AND the overlay. A learning is
+        # drained only when its rule text demonstrably appears in the
+        # submitted doc (whitespace/case-folded substring); an unmatched
+        # learning STAYS overlaid (fail-safe: worst case is a duplicate
+        # delivery, never a lost accepted rule) and is named in the
+        # worklog so the SME can fold or reword it.
+        doc_norm = _norm_text(content)
+        kept: list[str] = []
         for rec in self.accepted_pending_learnings(spec_id):
-            marker = dict(rec)
-            marker["status"] = "compiled"
-            self.append_learning(spec_id, marker)
+            _, rule_text, _ = _amendment_view(rec)
+            if _norm_text(rule_text) and _norm_text(rule_text) in doc_norm:
+                marker = dict(rec)
+                marker["status"] = "compiled"
+                self.append_learning(spec_id, marker)
+            else:
+                kept.append(rec.get("learning_id") or "?")
+        if kept:
+            append_jsonl(self._dir(spec_id) / "worklog.jsonl",
+                         {"kind": "doc_compile_kept_overlay",
+                          "learning_ids": kept,
+                          "detail": "accepted rules NOT found in the "
+                                    "compiled doc — overlay retained"})
         return path
 
     def read_doc(self, spec_id: str, *, with_overlay: bool = False) -> str | None:
@@ -339,32 +392,36 @@ class SpecStore:
             })
             rejected.append(lid)
 
-        spec = self.load(spec_id)
-        accepted: list[str] = []
-        for lid in accept:
-            rec = by_id.get(lid)
-            if rec is None:
-                continue
-            tag, rule_text, overrides = _amendment_view(rec)
-            if not rule_text.strip():
-                continue
-            self.append_learning(spec_id, {
-                "learning_id": lid,
-                "status": "promoted",
-                "rule_text": rule_text,
-                "tag": tag,
-                "overrides": overrides,
-                "source": rec.get("source"),
-                "note": note,
-            })
-            spec.entries.append(SpecEntry(
-                kind=rec.get("kind") or "checklist",
-                text=rule_text,
-                adherence=_adherence_for(tag),
-            ))
-            accepted.append(lid)
+        # F41#1 — accept-side entry-append + save is a read-modify-write:
+        # run it under the object lock so a concurrent amender conflicts
+        # loudly instead of one promotion erasing the other.
+        with object_lock(self._dir(spec_id)):
+            spec = self.load(spec_id)
+            accepted: list[str] = []
+            for lid in accept:
+                rec = by_id.get(lid)
+                if rec is None:
+                    continue
+                tag, rule_text, overrides = _amendment_view(rec)
+                if not rule_text.strip():
+                    continue
+                self.append_learning(spec_id, {
+                    "learning_id": lid,
+                    "status": "promoted",
+                    "rule_text": rule_text,
+                    "tag": tag,
+                    "overrides": overrides,
+                    "source": rec.get("source"),
+                    "note": note,
+                })
+                spec.entries.append(SpecEntry(
+                    kind=rec.get("kind") or "checklist",
+                    text=rule_text,
+                    adherence=_adherence_for(tag),
+                ))
+                accepted.append(lid)
 
-        version = self.save(spec) if accepted else spec.version
+            version = self.save(spec) if accepted else spec.version
         return {
             "spec_id": spec_id,
             "accepted": accepted,
