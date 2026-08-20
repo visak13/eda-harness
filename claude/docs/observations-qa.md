@@ -715,3 +715,33 @@ _bridge_call. Suites: claude 1594 (Phoenix env-fail only), edp-pool 308,
 edp-broker 29 — green. NOT converged: 8 of 9 landed. Round 9 = third
 convergence pass (F41's own fixes + a surface no round has re-visited);
 two near-empty rounds still gate the closing polish sweep.
+
+## F42 — Adversarial campaign Round 9 (wake plane + F41 convergence), 2026-08-20
+13 findings (raw: .sol_review_out-r9.txt); lens = twin-hunt on F41's own
+fixes + the reactive wake plane (first re-visit since R4). 11 CONFIRMED,
+2 scoped. Part B carried the round: the wake plane held four defects of
+its own — the ownership class had never been applied to wiring CRUD at
+all, and the supervisor never re-read its registry.
+
+| # | Finding | Verdict |
+|---|---------|---------|
+| 1 | monitor CRUD trusts caller-supplied handles/sids | CONFIRM — _foreign_wiring_refusal on list_subscriptions/unobserve/observe(owner) + foreign-indexed-sid overwrite refusal (identity set = EDP_HANDLE + derived inbox address; foreground seat exempt) |
+| 2 | RuleSupervisor never reconciles with the registry | CONFIRM — per-tick reconcile: spawns rules registered/enabled by other processes, retires live children of disabled/removed rules, re-spawns exhausted rules after a restart_reset_secs cool-down with a fresh budget |
+| 3 | incomplete subscription identity + in-place re-spec leaves the old driver live | CONFIRM — owner/rate persisted as {sid}.runtime.json and included in reuse identity; the driver's lifecycle watcher now exits on spec/runtime CONTENT change, not only deletion |
+| 4 | durable effects double-fire after driver restart (replay window + process-local dedup) | CONFIRM — EffectDispatcher seeds _seen from the rule's own effect-audit trail (seen_seed; driver reads the tail at launch) |
+| 5 | GC heartbeat lease protects only indexed sids | CONFIRM — fresh-heartbeat check before the ordinary-TTL sweep too; stale .spec.hb collected with its triplet |
+| 6 | spawn accepts a non-head batch identity; duplicate action ids ambiguous | PARTIAL — Plan schema refuses duplicate action_ids; pool_spawn_worker refuses a head that is not the group's first declared member (rolls stamped members back); full member-set equality deferred |
+| 7 | record_context(kind=note) writes foreign plan worklogs | CONFIRM — planner + worker ownership legs (twin of F41#2) |
+| 8 | learning resolution not idempotent (stale read outside lock, no status re-check) | CONFIRM — states read under the object lock; only latest-status 'proposed' transitions; retries are no-ops |
+| 9 | substring drain fooled by negated/superseded mentions | CONFIRM — unit-anchored match (whole bullet/line, wraps folded) replaces substring |
+| 10 | digest inference from resembling content (false @file markers, stale resurrection) | CONFIRM — anchored _DIGEST_RX full-match, exact-ref equality in _dehydrate_field, context/-scoped re-markers |
+| 11 | grounding brief sidecar published before the optimistic save | CONFIRM — load+sidecar+save one critical section under the plan object lock |
+| 12 | unacked steers roll out of the hot tail | PARTIAL — steer_sent pinned in GATE_PINNED_KINDS; message_sent/msg_kind=steer pinned in plan worklogs; a durable outstanding-steer ledger deferred (open thread: nested-ack fix) |
+| 13 | ack ledger unlocked whole-file RMW | CONFIRM — RMW under the recipe object lock |
+
+Tests: +14 in test_f42_round9.py; test_observe_tool artifact count updated
+(.runtime.json). Suites: claude 1608 (Phoenix env-fail only), edp-pool
+308, edp-broker 29 — green. NOT converged: Part A (F41's own fixes)
+yielded mostly refinements, but Part B proved un-re-visited surfaces
+still hold whole defect classes. Round 10 = the remaining un-re-visited
+surfaces (FSM/gates since R3, prompts/cards since R1) + F42's own fixes.

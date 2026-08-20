@@ -110,7 +110,8 @@ async def test_observe_same_subscription_id_is_idempotent(env):
     assert second["subscription_id"] == "sub-idem"
     assert second["monitor_cmd"] == first["monitor_cmd"]
     assert list(root.glob("sub-idem.spec")) == [root / "sub-idem.spec"]
-    assert len(list(root.glob("sub-idem*"))) == 2   # .spec + .bindings.json
+    # F42#3: .spec + .bindings.json + .runtime.json (owner/rate identity)
+    assert len(list(root.glob("sub-idem*"))) == 3
 
 
 async def test_observe_same_sid_different_spec_is_respec_not_reuse(env):

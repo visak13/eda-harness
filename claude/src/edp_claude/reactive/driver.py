@@ -872,13 +872,29 @@ def main(argv: list[str] | None = None) -> int:
                 "surface — refusing to arm the effect (F37#10).")
         audit_path = (cfg.repo_root / ".reactive" / "effect_audit"
                       / f"{effect_spec.rule_id}.jsonl")
+        # F42#4 — seed the dedup set from this rule's own audit trail so a
+        # restarted driver's replay window (default 120s lookback) cannot
+        # re-execute an effect the previous process already decided on.
+        _seed: list[str] = []
+        try:
+            for _ln in audit_path.read_text(
+                    encoding="utf-8").splitlines()[-4096:]:
+                try:
+                    _k = json.loads(_ln).get("idem_key")
+                except (json.JSONDecodeError, AttributeError):
+                    continue
+                if _k:
+                    _seed.append(str(_k))
+        except OSError:
+            pass                       # no audit yet → nothing to seed
         dispatcher = EffectDispatcher(
             effect_spec, owner=args.owner,
             executor=make_broker_executor(cfg.broker_url, parent=args.owner,
                                           repo_root=cfg.repo_root),
             audit_sink=make_file_audit_sink(audit_path),
             liveness_probe=_make_liveness_probe(cfg),
-            phase=2)  # Tier-2 stays dark until Phase 3
+            phase=2,  # Tier-2 stays dark until Phase 3
+            seen_seed=_seed)
 
     # F36 R4#5 (2026-08-18) — the driver PROVES it is alive and DIES when
     # unobserved. (a) HEARTBEAT: `<spec>.hb` is rewritten every tick with
@@ -891,6 +907,22 @@ def main(argv: list[str] | None = None) -> int:
     # duplicate-delivery half of the same finding).
     _spec_path = Path(args.spec_file)
     _hb_path = _spec_path.with_suffix(_spec_path.suffix + ".hb")
+    # F42#3 — RETIRE ON RE-SPEC, not only on delete: observe() overwrites
+    # the spec/runtime files in place for a genuine re-spec, and the old
+    # driver kept executing its STARTUP-compiled pipeline (two drivers,
+    # double wakes; or an owner/rate change that never took effect). The
+    # watcher snapshots the content it was launched from and exits when
+    # the on-disk generation differs.
+    _spec_at_start = spec
+    _rt_path = _spec_path.with_name(_spec_path.stem + ".runtime.json")
+
+    def _rt_read() -> str | None:
+        try:
+            return _rt_path.read_text(encoding="utf-8")
+        except OSError:
+            return None
+
+    _rt_at_start = _rt_read()
 
     def _lifecycle_watch() -> None:
         while True:
@@ -899,6 +931,21 @@ def main(argv: list[str] | None = None) -> int:
                     {"completed": True,
                      "reason": "spec deleted (unobserve) — driver exit"})
                     + "\n")
+                sys.stdout.flush()
+                os._exit(0)
+            try:
+                _changed = (_spec_path.read_text(encoding="utf-8")
+                            != _spec_at_start)
+            except OSError:
+                _changed = False        # transient read error ≠ a re-spec
+            _rt_now = _rt_read()
+            if not _changed and _rt_at_start is not None:
+                _changed = _rt_now is not None and _rt_now != _rt_at_start
+            if _changed:
+                sys.stdout.write(json.dumps(
+                    {"completed": True,
+                     "reason": "spec/runtime re-specced (observe overwrite) "
+                               "— stale driver exit"}) + "\n")
                 sys.stdout.flush()
                 os._exit(0)
             try:

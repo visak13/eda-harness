@@ -87,6 +87,23 @@ def _digest_line(text: str, ref: str, limit: int = 120) -> str:
     return f"{first} … [{n} bytes; full text in {ref}]"
 
 
+# F42#10 — ANCHORED digest recognition. Substring checks ("full text in
+# <ref>" anywhere) mistook legitimate prose MENTIONING a ref for the digest
+# itself: an edited description was then skipped by dehydration and
+# silently replaced with stale sidecar bytes on the next hydrate. A digest
+# is only a digest when the WHOLE (single-line) value matches the exact
+# shape _digest_line emits, ellipsis separator and terminal bracket
+# included.
+_DIGEST_RX = re.compile(
+    r"\A[^\n]*? … \[\d+ bytes; full text in ([^\]\n]+)\]\Z")
+
+
+def _digest_ref(text: str | None) -> str | None:
+    """The ref a value points at IFF the value IS a digest line; else None."""
+    m = _DIGEST_RX.match(text or "")
+    return m.group(1) if m else None
+
+
 def _read_sidecar(root: Path, ref: str) -> str | None:
     p = root / ref
     try:
@@ -130,7 +147,10 @@ def _dehydrate_field(obj: dict, field: str, ref_field: str, ref: str,
     if text.startswith(FILE_MARKER):
         return  # already a marker (defensive; fields use refs, not markers)
     has_ref = bool(obj.get(ref_field))
-    is_digest = obj.get(ref_field) and f"full text in {obj[ref_field]}" in text
+    # F42#10 — anchored: the value must BE the digest for THIS ref, not
+    # merely mention it, or an edit naming the ref would be dropped and
+    # later replaced by stale sidecar content.
+    is_digest = has_ref and _digest_ref(text) == obj[ref_field]
     if is_digest:
         return  # already dehydrated (e.g. degraded load re-saved)
     if not has_ref:
@@ -277,9 +297,13 @@ def dehydrate_plan_payload(payload: dict, plan_dir: Path) -> dict:
             # preserved, retryable) instead of being tiered/persisted as
             # apparently-complete inline text — mirroring how *_ref fields
             # keep their ref through a degraded round-trip.
-            _m = re.search(r"\[\d+ bytes; full text in ([^\]]+)\]", text)
-            if _m and "\n" not in text.strip():
-                inj[cid] = f"{FILE_MARKER}{_m.group(1)}\n{text}"
+            # F42#10 refinement: the whole value must MATCH the digest
+            # shape AND point into this plan's context/ sidecars — a
+            # legitimate one-liner that merely resembles a digest never
+            # gains a bogus @file pointer.
+            _ref = _digest_ref(text.strip())
+            if _ref and _ref.startswith("context/"):
+                inj[cid] = f"{FILE_MARKER}{_ref}\n{text}"
                 continue
             ref = f"context/{cid}.md"
             already = ((plan_dir / ref).exists()

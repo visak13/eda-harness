@@ -315,6 +315,9 @@ class RuleSupervisor:
         self._children: dict[str, subprocess.Popen] = {}
         self._restarts: dict[str, int] = {}
         self._child_started: dict[str, float] = {}   # monotonic start ts
+        # F42#2 — when a rule exhausted its restart budget (monotonic ts);
+        # the registry reconcile re-spawns it after restart_reset_secs.
+        self._exhausted_at: dict[str, float] = {}
         self._stop = threading.Event()
         self._lock = threading.Lock()
         self._active_dir = self.registry.root / "_active"
@@ -539,10 +542,45 @@ class RuleSupervisor:
                     self.log("rule_restart_exhausted", rule=name,
                              attempts=n, returncode=rc)
                     self._children.pop(name, None)
+                    # F42#2 — exhaustion is a COOL-DOWN, not a life
+                    # sentence: the registry reconcile below re-spawns
+                    # after restart_reset_secs with a fresh budget (the
+                    # broker-outage-then-recovery case).
+                    self._exhausted_at[name] = _time.monotonic()
                     continue
                 self._restarts[name] = n + 1
                 self.log("rule_child_died_restarting", rule=name,
                          returncode=rc, attempt=n + 1)
+                self._children[name] = self._spawn(rule)
+            # F42#2 — RECONCILE the child set against the REGISTRY each
+            # tick. start() read enabled rules exactly once, so a rule
+            # registered or enabled by ANOTHER process (register_rule runs
+            # in the MCP shells, not in this supervisor) was never
+            # discovered, and a disabled/removed rule's live child kept
+            # running until it happened to die.
+            try:
+                enabled = {r.name: r for r in self.registry.enabled_rules()}
+            except Exception as e:  # noqa: BLE001 — a torn registry read
+                self.log("registry_reconcile_skip",  # must not kill the tick
+                         error=f"{type(e).__name__}: {e}")
+                return
+            for name in list(self._children):
+                if name not in enabled:
+                    proc = self._children.pop(name)
+                    self.log("rule_retired_by_registry", rule=name,
+                             pid=proc.pid)
+                    self._terminate(name, proc)
+            for name, rule in enabled.items():
+                if name in self._children:
+                    continue
+                cooled = self._exhausted_at.get(name)
+                if (cooled is not None
+                        and _time.monotonic() - cooled
+                        < self.cfg.restart_reset_secs):
+                    continue            # still cooling down after exhaustion
+                self._exhausted_at.pop(name, None)
+                self._restarts[name] = 0
+                self.log("rule_discovered_by_reconcile", rule=name)
                 self._children[name] = self._spawn(rule)
 
     # ---- live enable/disable ----

@@ -33,7 +33,7 @@ import hashlib
 import json
 import time
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -431,7 +431,8 @@ class EffectDispatcher:
                  phase: int = 2,
                  seen_cap: int = 4096,
                  now: Callable[[], float] | None = None,
-                 on_intent: AuditSink | None = None):
+                 on_intent: AuditSink | None = None,
+                 seen_seed: Iterable[str] = ()):
         self.spec = spec
         self.owner = owner
         self._exec = executor
@@ -441,6 +442,14 @@ class EffectDispatcher:
         self._now = now or time.monotonic
         self._seen: OrderedDict[str, None] = OrderedDict()
         self._seen_cap = seen_cap
+        # F42#4 — cross-restart dedup: a replacement driver replays a
+        # lookback window (default 120s) with what used to be an EMPTY
+        # process-local set, so a durable effect executed just before the
+        # crash fired AGAIN on replay. The driver seeds this from the
+        # rule's own audit trail (the keys it already decided on).
+        for k in seen_seed:
+            if k:
+                self._seen_add(str(k))
         self._bucket = _TokenBucket(
             spec.rate["capacity"], spec.rate["refill_per_min"], self._now)
         # crash-mid-execute visibility: intent goes to the live stream (NOT the

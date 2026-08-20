@@ -6984,13 +6984,21 @@ class RecordGroundingBrief(_ClaudeTool):
                 "an empty grounding brief grounds nobody — write the map "
                 "(files in play, key symbols, invariants, landmines, test "
                 "entry points).")
-        p = self.ctx.plans.load(m.plan_id)
-        rel = self.ctx.plans.write_grounding_brief(m.plan_id, m.content)
-        p.grounding_brief_path = rel
-        fp = list(p.grounding_fingerprint or [])
-        fp.extend(x for x in m.paths if x and x not in fp)
-        p.grounding_fingerprint = fp or None
-        self.ctx.plans.save(p)
+        # F42#11 — load, sidecar write, and versioned save are ONE critical
+        # section under the plan's (reentrant) object lock: the fixed-name
+        # grounding-brief.md used to be overwritten BEFORE the optimistic
+        # save, so a save conflict left workers reading the new brief while
+        # plan JSON kept the old grounding_fingerprint (staleness gate armed
+        # against the wrong paths).
+        from ..store.ipc_lock import object_lock as _olock
+        with _olock(self.ctx.plans.root / m.plan_id):
+            p = self.ctx.plans.load(m.plan_id)
+            rel = self.ctx.plans.write_grounding_brief(m.plan_id, m.content)
+            p.grounding_brief_path = rel
+            fp = list(p.grounding_fingerprint or [])
+            fp.extend(x for x in m.paths if x and x not in fp)
+            p.grounding_fingerprint = fp or None
+            self.ctx.plans.save(p)
         # CHANNELS (2026-07-21): the brief IS the team channel's pinned
         # topic — visible in the panel header, updated on revalidation.
         # Best-effort: registry down never fails the brief write.
@@ -7616,6 +7624,23 @@ class RecordContext(_ClaudeTool):
             if plan_id:
                 if not self.ctx.plans.exists(plan_id):
                     return _precondition(f"unknown plan {plan_id!r}")
+                # F42#7 — a note lands in the CALLER'S plan worklog only:
+                # an explicit foreign plan_id wakes/misleads that plan's
+                # planner (worklog is a wake source). Same ownership rule
+                # as the F41 sidecar mutators, both planner and worker legs.
+                _own = _planner_foreign_plan_refusal(
+                    plan_id, "record_context(kind=note)")
+                if _own is not None:
+                    return _own
+                _role = os.environ.get("EDP_ROLE", "").strip()
+                _h = os.environ.get("EDP_HANDLE", "").strip()
+                if (_role == "worker" and _h
+                        and _h.split(":", 1)[0] != plan_id):
+                    return _precondition(
+                        f"record_context(kind=note) refused: plan "
+                        f"{plan_id!r} is not your plan — a worker's notes "
+                        "land in its own plan's worklog. Tell your planner "
+                        "(notify_above) instead. Nothing was recorded.")
                 self.ctx.plans.append_worklog(plan_id, record)
                 return Tool.ok(_Ok())
             recipe_id = m.recipe_id or lin_recipe
@@ -8869,6 +8894,24 @@ class PoolSpawnWorker(_ClaudeTool):
                     x.action_id for x in p.actions
                     if x.batch_group == a.batch_group
                     and x.action_id not in rollback_ids]
+                # F42#6 — the HEAD is canonical, derived from PLAN STATE:
+                # the first declared member of the group. Spawning under a
+                # later member's handle made that member the shell's "own
+                # action", which skipped the declared-order guard on the
+                # skipped-ahead siblings (F41#4's own-action blind spot).
+                _canon = [x.action_id for x in p.actions
+                          if x.batch_group == a.batch_group]
+                if _canon and m.action_id != _canon[0]:
+                    _rollback_failed_dispatch(
+                        self.ctx, m.plan_id, m.action_id,
+                        "non_canonical_batch_head_pre_launch",
+                        member_ids=rollback_ids)
+                    return _precondition(
+                        f"action {m.action_id!r} is not the head of batch "
+                        f"group {a.batch_group!r} — the head is the first "
+                        f"declared member ({_canon[0]!r}), and the shell "
+                        "handle must be <plan_id>:<head>. Re-dispatch under "
+                        "the canonical head.")
             missing_members = [i for i in member_ids if i not in by_id]
             if a is not None and missing_members:
                 _rollback_failed_dispatch(
@@ -14785,6 +14828,29 @@ def _planner_foreign_plan_refusal(plan_id: str, verb: str):
     return None
 
 
+def _foreign_wiring_refusal(target_handle: str | None, verb: str):
+    """F42#1 — monitor-CRUD ownership, the wiring twin of the plan
+    ownership guards: a SPAWNED shell (EDP_HANDLE is pool-stamped) reads,
+    overwrites, and deletes ITS OWN wiring only. Its identity set is the
+    raw handle plus the derived inbox address (a planner observes under
+    its plan's dash form). The handle-less foreground seat (the neuron's
+    console) passes through — it is the operator's own shell. Returns a
+    _precondition ToolResult to refuse, or None to proceed."""
+    own = os.environ.get("EDP_HANDLE", "").strip()
+    if not own:
+        return None
+    me, _parent = _self_and_parent_addresses()
+    allowed = {own, me} - {None, ""}
+    if target_handle and target_handle not in allowed:
+        return _precondition(
+            f"{verb} refused: {target_handle!r} is not your wiring — your "
+            f"addresses are {sorted(allowed)!r}, and a shell inspects, "
+            "overwrites, or deletes its OWN subscriptions only. If another "
+            "shell's wiring is wrong, tell your parent (notify_above). "
+            "Nothing was changed.")
+    return None
+
+
 def _effect_role_violation(effect: dict | None) -> str | None:
     """F37#10 — an EffectSpec executes with the INITIATING shell's authority.
 
@@ -14987,7 +15053,8 @@ _REACTIVE_SPEC_TTL_SECS = int(
 
 
 def _subscription_matches(root: Path, sid: str, spec: str,
-                          bindings: dict, effect: dict | None) -> bool:
+                          bindings: dict, effect: dict | None,
+                          runtime: dict | None = None) -> bool:
     """True iff a persisted subscription `sid` is byte-identical to the
     (spec, bindings, effect) being requested now. Used to make observe()
     IDEMPOTENT: re-arming the SAME subscription returns the existing one
@@ -15022,7 +15089,18 @@ def _subscription_matches(root: Path, sid: str, spec: str,
                 return False
         elif e_path.exists():
             return False
-    except OSError:
+        # F42#3 — owner + rate SHAPE the driver command but were omitted
+        # from identity, so changing only them answered reused=True and
+        # left the old settings live. A legacy sub (no runtime sidecar)
+        # matches only a default-runtime request.
+        if runtime is not None:
+            r_path = root / f"{sid}.runtime.json"
+            persisted = {"owner": "", "min_interval_ms": 0}
+            if r_path.exists():
+                persisted = json.loads(r_path.read_text(encoding="utf-8"))
+            if persisted != runtime:
+                return False
+    except (OSError, json.JSONDecodeError):
         return False
     return True
 
@@ -15099,7 +15177,23 @@ def _gc_stale_subscriptions(root: Path, *, keep: str, ttl_secs: int,
         try:
             if now_ts - spec_path.stat().st_mtime <= ttl_secs:
                 continue
-            for suffix in (".spec", ".bindings.json", ".effect.json"):
+            # F42#5 — the heartbeat lease protects EVERY candidate, not
+            # only indexed ones: an unindexed sub (no owner/me binding)
+            # with a live driver refreshes <sid>.spec.hb each tick, and
+            # sweeping its spec kills that healthy driver. Liveness is
+            # proven by the heartbeat; indexing is rediscovery metadata.
+            try:
+                _hb = json.loads((root / f"{sid}.spec.hb").read_text(
+                    encoding="utf-8"))
+                _hb_age = now_ts - datetime.fromisoformat(
+                    str(_hb.get("ts"))).timestamp()
+                if _hb_age < 900:
+                    continue
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                pass                    # no/stale heartbeat → sweepable
+            # F42#5 — the stale heartbeat file retires with its spec.
+            for suffix in (".spec", ".bindings.json", ".effect.json",
+                           ".spec.hb", ".runtime.json"):
                 p = root / f"{sid}{suffix}"
                 if p.exists():
                     p.unlink()
@@ -15173,9 +15267,50 @@ class ObserveStream(_ClaudeTool):
         # WITHOUT rewriting the artifacts, so the caller knows NOT to start a
         # second Monitor (one logical subscription = one live driver). A
         # differing spec under the same sid is a genuine re-spec → overwrite.
+        # F42#3 — the runtime shape (owner/rate) is part of subscription
+        # identity: it changes the monitor_cmd, so a change means the OLD
+        # driver no longer matches what the caller is arming.
+        _runtime = {
+            "owner": ((m.owner or str(m.bindings.get("me", "")))
+                      if m.effect is not None else ""),
+            "min_interval_ms": int(m.min_interval_ms or 0),
+        }
         reused = bool(
             m.subscription_id
-            and _subscription_matches(root, sid, m.spec, m.bindings, m.effect))
+            and _subscription_matches(root, sid, m.spec, m.bindings, m.effect,
+                                      runtime=_runtime))
+
+        # F42#1 — a differing spec under an EXISTING sid is an overwrite of
+        # live wiring: a spawned shell may re-spec only a subscription that
+        # is unindexed or indexed to one of ITS OWN addresses. (Deleting is
+        # unobserve's job and carries the same guard.)
+        if (m.subscription_id and not reused
+                and (root / f"{sid}.spec").exists()
+                and os.environ.get("EDP_HANDLE", "").strip()):
+            try:
+                from ..reactive.handle_index import _load as _hi_load
+                _owners = {h for h, sids in _hi_load(root).items()
+                           if sid in sids}
+            except Exception:  # noqa: BLE001 — unreadable index blocks nothing
+                _owners = set()
+            _me, _ = _self_and_parent_addresses()
+            _mine = {os.environ.get("EDP_HANDLE", "").strip(), _me} - {None, ""}
+            if _owners and not (_owners & _mine):
+                return _precondition(
+                    f"observe refused: subscription {sid!r} is indexed to "
+                    f"{sorted(_owners)!r}, not to you ({sorted(_mine)!r}) — "
+                    "overwriting another shell's live wiring re-specs its "
+                    "driver. Use your own subscription_id. Nothing was "
+                    "written.")
+        # F42#1 — a spawned shell indexes wiring under its OWN addresses
+        # only (a foreign owner would both pollute that handle's rewire
+        # hand-back and route the effect's provenance elsewhere). Checked
+        # BEFORE any artifact write so a refusal leaves nothing behind.
+        _own = _foreign_wiring_refusal(
+            (m.owner or str(m.bindings.get("me", ""))) or None,
+            "observe(owner)")
+        if _own is not None:
+            return _own
 
         # (s17 FA2-F2 / RC2) bound the .reactive/sub-*.spec leak: sweep
         # abandoned artifact triplets older than the TTL on every arm. The
@@ -15192,6 +15327,12 @@ class ObserveStream(_ClaudeTool):
         spec_path = root / f"{sid}.spec"
         if not reused:
             spec_path.write_text(m.spec, encoding="utf-8")
+            # F42#3 — persist the runtime shape next to the triplet so the
+            # reuse identity above can compare it on the next arm. The old
+            # driver (if any) notices the spec rewrite and exits — its
+            # lifecycle watcher compares content, not just existence.
+            (root / f"{sid}.runtime.json").write_text(
+                _json.dumps(_runtime), encoding="utf-8")
         else:
             # F40#12: reuse RENEWS the lease. The reuse path deliberately
             # avoids rewriting identical artifacts, but GC ages on the
@@ -16044,6 +16185,9 @@ class ListSubscriptions(_ClaudeTool):
             return _precondition(
                 "no handle: pass `handle` explicitly (EDP_HANDLE is unset "
                 "in this shell — e.g. the neuron's main seat).")
+        _own = _foreign_wiring_refusal(handle, "list_subscriptions")
+        if _own is not None:
+            return _own
         root = self.ctx.recipes.root.parent / ".reactive"
         subs = [{"subscription_id": s["sid"], "spec": s["spec"],
                  "bindings": s.get("bindings") or {},
@@ -16082,6 +16226,9 @@ class Unobserve(_ClaudeTool):
             return _precondition(
                 "no handle: pass `handle` explicitly (EDP_HANDLE is unset "
                 "in this shell).")
+        _own = _foreign_wiring_refusal(handle, "unobserve")
+        if _own is not None:
+            return _own
         root = self.ctx.recipes.root.parent / ".reactive"
         sid = m.subscription_id.strip()
         if sid not in sids_for_handle(root, handle):
@@ -16091,7 +16238,8 @@ class Unobserve(_ClaudeTool):
                 "another handle's wiring is not yours to delete.")
         unregister_subscription(root, handle, sid)
         removed = []
-        for suffix in (".spec", ".bindings.json", ".effect.json"):
+        for suffix in (".spec", ".bindings.json", ".effect.json",
+                       ".spec.hb", ".runtime.json"):
             p = root / f"{sid}{suffix}"
             try:
                 if p.exists():

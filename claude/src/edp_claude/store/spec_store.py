@@ -6,6 +6,7 @@ dir IS the rollback anchor for the flow-back base (decision #2).
 """
 
 import json
+import re as _re
 import uuid
 from pathlib import Path
 
@@ -39,6 +40,26 @@ def _norm_text(text: str | None) -> str:
     """Whitespace/case-folded form for the F41#5 content-checked drain —
     tolerant of reflowed lines, never of a missing rule."""
     return " ".join((text or "").split()).casefold()
+
+
+_BULLET_RX = _re.compile(r"^\s*(?:[-*+]|\d+[.)]|>)\s+")
+
+
+def _doc_units(content: str) -> list[str]:
+    """Split a compiled doc into LOGICAL UNITS for the F42#9 anchored drain:
+    each bullet/numbered/quoted item (with its indented wrap lines) or bare
+    line is one unit. A rule folds only when a whole unit EQUALS it — a
+    substring match let 'Superseded rule: <rule text>; now do the opposite'
+    drain the very rule it contradicted."""
+    units: list[str] = []
+    for raw in content.splitlines():
+        if not raw.strip():
+            continue
+        if _BULLET_RX.match(raw) or not raw[:1].isspace() or not units:
+            units.append(_BULLET_RX.sub("", raw, count=1))
+        else:                       # indented continuation of the last unit
+            units[-1] += " " + raw.strip()
+    return units
 
 
 def _amendment_view(rec: dict) -> tuple[str, str, str | None]:
@@ -181,11 +202,14 @@ class SpecStore:
         # learning STAYS overlaid (fail-safe: worst case is a duplicate
         # delivery, never a lost accepted rule) and is named in the
         # worklog so the SME can fold or reword it.
-        doc_norm = _norm_text(content)
+        # F42#9 — ANCHORED, not substring: the rule must BE a whole unit
+        # (bullet/line, wraps folded) of the doc, so a mention inside a
+        # negating or "superseded" sentence can never drain the rule.
+        doc_units = {_norm_text(u) for u in _doc_units(content)}
         kept: list[str] = []
         for rec in self.accepted_pending_learnings(spec_id):
             _, rule_text, _ = _amendment_view(rec)
-            if _norm_text(rule_text) and _norm_text(rule_text) in doc_norm:
+            if _norm_text(rule_text) and _norm_text(rule_text) in doc_units:
                 marker = dict(rec)
                 marker["status"] = "compiled"
                 self.append_learning(spec_id, marker)
@@ -379,29 +403,37 @@ class SpecStore:
         ``version`` is bumped only if anything was accepted."""
         accept = list(accept or [])
         reject = list(reject or [])
-        by_id = {
-            r.get("learning_id"): r
-            for r in self.read_learnings(spec_id)
-            if r.get("learning_id") is not None
-        }
-
-        rejected: list[str] = []
-        for lid in reject:
-            self.append_learning(spec_id, {
-                "learning_id": lid, "status": "rejected", "note": note,
-            })
-            rejected.append(lid)
 
         # F41#1 — accept-side entry-append + save is a read-modify-write:
         # run it under the object lock so a concurrent amender conflicts
         # loudly instead of one promotion erasing the other.
+        # F42#8 — the learning states are ALSO read under that lock, and
+        # only a record whose LATEST status is 'proposed' transitions: a
+        # retry or a concurrent duplicate accept of an already-resolved id
+        # is an idempotent no-op, never a second appended rule.
         with object_lock(self._dir(spec_id)):
+            by_id = {
+                r.get("learning_id"): r
+                for r in self.read_learnings(spec_id)
+                if r.get("learning_id") is not None
+            }
+
+            rejected: list[str] = []
+            for lid in reject:
+                rec = by_id.get(lid)
+                if rec is not None and rec.get("status") != "proposed":
+                    continue            # already resolved — idempotent no-op
+                self.append_learning(spec_id, {
+                    "learning_id": lid, "status": "rejected", "note": note,
+                })
+                rejected.append(lid)
+
             spec = self.load(spec_id)
             accepted: list[str] = []
             for lid in accept:
                 rec = by_id.get(lid)
-                if rec is None:
-                    continue
+                if rec is None or rec.get("status") != "proposed":
+                    continue            # unknown or already resolved
                 tag, rule_text, overrides = _amendment_view(rec)
                 if not rule_text.strip():
                     continue

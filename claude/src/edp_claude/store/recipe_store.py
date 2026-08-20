@@ -178,6 +178,10 @@ GATE_PINNED_KINDS: frozenset[str] = frozenset({
     # hot-tail lookup for the step's dispatch-intent stamp; archiving it
     # left a stamped-but-never-spawned step waiting forever.
     "step_dispatch_emitted",
+    # F42#12: unacked-steer detection scans the hot tail for the send
+    # record; rolling it out made an IGNORED directive disappear from
+    # reconciliation (the parent silently stopped enforcing it).
+    "steer_sent",
 })
 PIN_KEEP = 200
 
@@ -187,8 +191,10 @@ def _pinned(rec: dict) -> bool:
         return True
     # the worker grounding echo lives in plan worklogs as
     # message_sent/msg_kind=grounding — the G-grounding gate scans for it.
+    # F42#12: plan-level steers ride the same record shape; the planner's
+    # unacked-steer scan needs them in the hot tail too.
     return (rec.get("kind") == "message_sent"
-            and rec.get("msg_kind") == "grounding")
+            and rec.get("msg_kind") in ("grounding", "steer"))
 
 
 def rollup_events(rdir: Path,
@@ -492,11 +498,17 @@ class RecipeStore:
 
     def write_ack_entry(self, recipe_id: str, handle: str,
                         entry: dict) -> None:
+        # F42#13 — the whole-file read-modify-write runs under the recipe's
+        # object lock: two shells acknowledging concurrently used to erase
+        # each other's baselines (each forcing the other's next wake into
+        # an unnecessary full reground).
         try:
-            led = self.read_ack_ledger(recipe_id)
-            led[handle] = entry
-            write_atomic(self._dir(recipe_id) / "ack_ledger.json",
-                         json.dumps(led, indent=2))
+            from .ipc_lock import object_lock
+            with object_lock(self._dir(recipe_id)):
+                led = self.read_ack_ledger(recipe_id)
+                led[handle] = entry
+                write_atomic(self._dir(recipe_id) / "ack_ledger.json",
+                             json.dumps(led, indent=2))
         except OSError:
             pass   # a failed ledger write costs a wider reground, never a tick
 

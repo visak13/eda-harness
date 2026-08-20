@@ -420,6 +420,23 @@ class Plan(BaseModel):
     goal: str = Field(min_length=1)
     state: PlanState
     actions: list[Action] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _unique_action_ids(self):
+        """F42#6 — duplicate action_ids made every by-id lookup ambiguous
+        (next(...) found the first, dict comprehensions kept the last), so
+        batch membership, rollback, and status writes could each resolve a
+        DIFFERENT action. Refused at validation, the one seam every load
+        and save passes through."""
+        seen: set[str] = set()
+        dupes: set[str] = set()
+        for a in self.actions:
+            (dupes if a.action_id in seen else seen).add(a.action_id)
+        if dupes:
+            raise ValueError(
+                f"duplicate action_id(s) {sorted(dupes)!r} — action ids "
+                "must be unique within a plan.")
+        return self
     context: dict = Field(default_factory=dict)
     # Post-HITL sweep 2026-05-20: per-plan OCAK audit (scope="plan"),
     # captured after actions are authored, before dispatch. Mirrors the
