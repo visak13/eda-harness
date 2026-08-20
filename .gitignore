@@ -23,6 +23,8 @@ claude/.playwright-mcp/
 claude/.shot_tmp/
 claude/scratch/
 *.png
+# Exception: README visual assets are tracked
+!docs/assets/**
 claude/.recipes/
 claude/.plans/
 claude/.specs/
