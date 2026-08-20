@@ -79,5 +79,5 @@ claude/.bridge/
 claude/.f_diffstat.txt
 claude/.sol_review_out.txt
 claude/.sol_review_out-*.txt
-.sol-last-message.txt
-.sol-run.jsonl
+.sol-last-message*.txt
+.sol-run*.jsonl
