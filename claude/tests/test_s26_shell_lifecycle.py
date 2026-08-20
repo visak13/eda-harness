@@ -208,7 +208,11 @@ async def test_a_planner_reporting_a_dead_workers_action_never_reaps_itself(
     """
     _rid, pid = await _plan_with_action(env)
     # The planner's handle is <recipe_id>:<step_id> — never <plan_id>:<action_id>.
-    monkeypatch.setenv("EDP_HANDLE", "some-recipe:s1")
+    # F40#2: it must be THIS plan's planner (own-plan ownership is enforced
+    # now); the reap-arm gate under test is unchanged — the planner still
+    # records a WORKER's action, so its own session must never arm.
+    monkeypatch.setenv("EDP_HANDLE", pid.rsplit("-", 1)[0] + ":"
+                       + pid.rsplit("-", 1)[1])
     monkeypatch.setenv("EDP_SPAWN_SESSION_ID", "the-planners-own-session")
     monkeypatch.setenv("EDP_ROLE", "planner")
 

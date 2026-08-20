@@ -44,3 +44,20 @@ def test_build_env_applies_the_strip(monkeypatch):
                     log_dir=None, defaults={})
     assert "SOME_VENDOR_API_KEY" not in env
     assert env["EDP_ROLE"] == "worker"          # stack stamps intact
+
+
+# ── F40#13 — EDP_PARENT lineage stamp for bare-handle seats ────────────────
+def test_build_env_stamps_parent_when_given(monkeypatch):
+    monkeypatch.delenv("EDP_PARENT", raising=False)
+    env = build_env(role="acceptor", handle="acceptor-ab12", session_id="s",
+                    broker_url=None, pool_url=None, agent_home=None,
+                    log_dir=None, defaults={}, parent="r9")
+    assert env["EDP_PARENT"] == "r9"
+
+
+def test_build_env_never_inherits_a_foreign_parent(monkeypatch):
+    monkeypatch.setenv("EDP_PARENT", "someone-elses-recipe")
+    env = build_env(role="worker", handle="p1:a1", session_id="s",
+                    broker_url=None, pool_url=None, agent_home=None,
+                    log_dir=None, defaults={}, parent=None)
+    assert "EDP_PARENT" not in env

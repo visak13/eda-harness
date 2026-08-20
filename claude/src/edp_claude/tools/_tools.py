@@ -3380,6 +3380,9 @@ class RecordPlan(_ClaudeTool):
             return _precondition(instruction_error(e, Plan))
         except Exception as e:
             return _precondition(f"plan invalid: {e}")
+        _own = _planner_foreign_plan_refusal(plan.plan_id, "record_plan")
+        if _own is not None:
+            return _own
         # Context-diet Phase 2 — the flow-down gate at plan SUBMISSION (the
         # earliest feedback moment; pool_spawn_worker holds the dispatch-time
         # backstop for the incremental create_plan/add_action path).
@@ -3439,6 +3442,10 @@ class CreatePlan(_ClaudeTool):
     OutputModel = _CreatePlanOut
 
     async def _run(self, m: _CreatePlanIn):
+        _own = _planner_foreign_plan_refusal(
+            f"{m.recipe_id}-{m.step_id}", "create_plan")
+        if _own is not None:
+            return _own
         if not self.ctx.recipes.exists(m.recipe_id):
             return _precondition(f"no recipe {m.recipe_id!r}")
         # 2026-08-13 (hardening run, s3 friction): a string `justify` was
@@ -3742,6 +3749,9 @@ class AddAction(_ClaudeTool):
     async def _run(self, m: _AddActionIn):
         from ..schemas import Acceptance, Action
 
+        _own = _planner_foreign_plan_refusal(m.plan_id, "add_action")
+        if _own is not None:
+            return _own
         if not self.ctx.plans.exists(m.plan_id):
             return _precondition(
                 f"no plan {m.plan_id!r}; call create_plan first"
@@ -5909,6 +5919,10 @@ class RecordStepResult(_ClaudeTool):
     OutputModel = _Ok
 
     async def _run(self, m: _StepResIn):
+        _own = _planner_foreign_plan_refusal(
+            f"{m.recipe_id}-{m.step_id}", "record_step_result")
+        if _own is not None:
+            return _own
         r = self.ctx.recipes.load(m.recipe_id)
         for s in r.steps:
             if s.step_id == m.step_id:
@@ -6189,6 +6203,12 @@ class RecordActionStatus(_ClaudeTool):
                 "your plan — a worker reports only its own dispatched "
                 "action. If another plan's state is wrong, tell your "
                 "planner (notify_above) instead. Nothing was recorded.")
+        # F40#2 — the planner leg of the same ownership rule: crash-recovery
+        # resets and status heals apply to the planner's OWN plan only.
+        _own = _planner_foreign_plan_refusal(m.plan_id,
+                                             "record_action_status")
+        if _own is not None:
+            return _own
         # v7 P3.1 — the grounding echo is the price of a result. A worker
         # reporting a terminal claim for its own dispatch must have restated
         # the directive first (notify_above kind='grounding'); a surface that
@@ -6214,6 +6234,33 @@ class RecordActionStatus(_ClaudeTool):
                     "— then re-record. Nothing was recorded."
                 )
         p = self.ctx.plans.load(m.plan_id)
+        # F40#3 — ACTION-granularity ownership for workers: plan-level alone
+        # let worker plan:a1 mark unrelated same-plan a2 skipped and advance
+        # the FSM past work nobody did. A worker records its OWN dispatched
+        # action, or a sibling of the SAME batch_group (the one-shell batch
+        # unit executes every member and records each — worker.md's member
+        # loop).
+        if role == "worker":
+            own_action = handle.rsplit(":", 1)[1] if ":" in handle else ""
+            if own_action and m.action_id != own_action:
+                _mine = next((x for x in p.actions
+                              if x.action_id == own_action), None)
+                _tgt = next((x for x in p.actions
+                             if x.action_id == m.action_id), None)
+                same_batch = (
+                    _mine is not None and _tgt is not None
+                    and getattr(_mine, "batch_group", None)
+                    and getattr(_mine, "batch_group", None)
+                    == getattr(_tgt, "batch_group", None))
+                if not same_batch:
+                    return _precondition(
+                        f"record_action_status refused: your dispatch is "
+                        f"action {own_action!r}; {m.action_id!r} is a "
+                        "different action outside your batch unit — only "
+                        "the shell dispatched for an action (or its batch "
+                        "head) reports its status. If it is wrong, tell "
+                        "your planner (notify_above). Nothing was "
+                        "recorded.")
         for a in p.actions:
             if a.action_id != m.action_id:
                 continue
@@ -9614,9 +9661,19 @@ def _sol_caller() -> str:
     """The stickiness identity of the calling shell: its EDP_HANDLE (worker
     `<plan>:<action>`, planner `<recipe>:<step>`), or its role when it has none
     (the neuron). The agent never derives this — the tool reads it, exactly as
-    _self_and_parent_addresses does."""
-    return (os.environ.get("EDP_HANDLE", "").strip()
-            or os.environ.get("EDP_ROLE", "").strip() or "anon")
+    _self_and_parent_addresses does.
+
+    F40#7: a BARE handle (acceptor-<hex>/curiosity-<hex>) is prefixed with
+    its pool-stamped EDP_PARENT (`<recipe>:<handle>`) so the audit row's
+    caller carries lineage shape and _caller_recipe can bill the spend to
+    the recipe it was incurred for — instead of the unattributed bucket a
+    capped recipe never sees."""
+    handle = os.environ.get("EDP_HANDLE", "").strip()
+    if handle and ":" not in handle:
+        parent = os.environ.get("EDP_PARENT", "").strip()
+        if parent:
+            return f"{parent}:{handle}"
+    return handle or os.environ.get("EDP_ROLE", "").strip() or "anon"
 
 
 # ── provider-bridge tools (v7 WS1, 2026-08-05) ───────────────────────────────
@@ -9665,14 +9722,19 @@ def _bridge_delegate_for(kind_class: str, override: str) -> str:
             raise _bridge.BridgeError(
                 f"unknown delegate {name!r} (known: {sorted(_delegates)})")
         if role != "anon":
-            authorized = {t for k, t in routes.items()
-                          if k.split(":", 1)[0] == role}
-            if name not in authorized:
+            # F40#10: the override must equal the delegate the route table
+            # RESOLVES for this (role, task_class) — role-wide membership
+            # let a worker pay the codegen-priced delegate for a tests-
+            # class task just because both routes existed under `worker:`.
+            resolved = _bridge.route_for(role, kind_class, routes)
+            if name != resolved:
                 raise _bridge.BridgeError(
-                    f"delegate override {name!r} is not routed for role "
-                    f"{role!r} — delegation is a .bridge.json config "
-                    f"decision, never an agent decision. Routed for you: "
-                    f"{sorted(authorized) or 'none'}.")
+                    f"delegate override {name!r} is not the routed "
+                    f"delegate for role={role!r} "
+                    f"task_class={kind_class!r} "
+                    f"(routed: {resolved or 'none'}) — delegation is a "
+                    ".bridge.json config decision, never an agent "
+                    "decision. Drop the override, or fix the route.")
         return name
     target = _bridge.route_for(role, kind_class, routes)
     if not target:
@@ -10278,6 +10340,12 @@ def _delegate_actuals(home: Path, recipe_id: str | None = None) -> dict:
     agg = {"calls": 0, "tokens_in": 0, "tokens_out": 0,
            "cost_usd": 0.0, "failures": 0, "audit_errors": 0,
            "unattributed_cost_usd": 0.0}
+    # F40#6: a latched audit-degraded marker (a paid call whose row could
+    # not be written) makes the totals permanently non-complete until the
+    # operator clears it — lost spend must never read as zero spend.
+    from .bridge import _AUDIT_DEGRADED_MARKER
+    if (home / ".bridge" / _AUDIT_DEGRADED_MARKER).exists():
+        agg["audit_errors"] += 1
     try:
         files = sorted((home / ".bridge").glob("audit-*.jsonl"))
     except OSError:
@@ -10337,11 +10405,26 @@ def _budget_check(ctx, recipe_id: str) -> dict:
         usd_cap = float(budget.get("delegate_usd") or 0)
     except (TypeError, ValueError):
         usd_cap = 0.0
+    honesty: list[str] = []
     if usd_cap > 0:
         # F38#5: charge THIS recipe's attributed spend only.
         actuals = _delegate_actuals(ctx.recipes.root.parent,
                                     recipe_id=recipe_id)
         used.append(("delegate_usd", float(actuals["cost_usd"]), usd_cap))
+        # F40#7: fleet spend that could NOT be attributed to any recipe is
+        # named next to the judged number, never silently absent — a capped
+        # recipe showing $0 while an acceptor spent $10 is the lie this
+        # line prevents.
+        if actuals.get("unattributed_cost_usd"):
+            honesty.append(
+                f"NOTE: ${actuals['unattributed_cost_usd']:.2f} fleet "
+                "delegate spend is unattributed to any recipe (not "
+                "counted above)")
+        if actuals.get("audit_errors"):
+            honesty.append(
+                "NOTE: audit accounting is DEGRADED "
+                f"({actuals['audit_errors']} error(s)) — the judged spend "
+                "may be an undercount")
     try:
         hours_cap = float(budget.get("wall_clock_hours") or 0)
     except (TypeError, ValueError):
@@ -10361,7 +10444,7 @@ def _budget_check(ctx, recipe_id: str) -> dict:
             level = "exceeded"
         elif frac >= _BUDGET_WARN_FRACTION and level != "exceeded":
             level = "warn"
-    return {"level": level, "detail": "; ".join(lines)}
+    return {"level": level, "detail": "; ".join(lines + honesty)}
 
 
 class _SpawnAdvised(BaseModel):
@@ -11157,7 +11240,12 @@ def _self_and_parent_addresses() -> tuple[str | None, str | None]:
         return None, None
     idx = handle.rfind(":")
     if idx < 0:
-        return handle, None
+        # F40#13: a BARE handle (acceptor-<hex> / curiosity-<hex>) encodes
+        # no parent — the pool now stamps EDP_PARENT (the spawn's
+        # parent_session, e.g. the recipe id) so ask_above/notify_above
+        # have somewhere to route instead of refusing "no parent".
+        parent = os.environ.get("EDP_PARENT", "").strip() or None
+        return handle, parent
     parent = handle[:idx]
     tail = handle[idx + 1:]
     if role == "planner":
@@ -14598,6 +14686,26 @@ def record_role_scope_violation(ctx, tool_name: str,
     return mode
 
 
+def _planner_foreign_plan_refusal(plan_id: str, verb: str):
+    """F40#2 — the OWNERSHIP twin the generic-CRUD guard got in F37 but the
+    NATIVE planner mutators (create_plan / record_plan / add_action /
+    record_action_status / record_step_result) never did: a planner's write
+    surface is ITS OWN plan (`<recipe>-<step>` from its handle). Returns a
+    _precondition ToolResult to refuse, or None to proceed (non-planner
+    roles and the unconstrained operator console pass through — their own
+    guards/trust rules apply)."""
+    if os.environ.get("EDP_ROLE", "").strip() != "planner":
+        return None
+    own_plan, _parent = _self_and_parent_addresses()
+    if own_plan and plan_id and plan_id != own_plan:
+        return _precondition(
+            f"{verb} refused: you are the planner of plan {own_plan!r} and "
+            f"{plan_id!r} is not your plan — a planner authors and mutates "
+            "its OWN plan only. If another plan's state is wrong, tell the "
+            "neuron (notify_above). Nothing was recorded.")
+    return None
+
+
 def _effect_role_violation(effect: dict | None) -> str | None:
     """F37#10 — an EffectSpec executes with the INITIATING shell's authority.
 
@@ -14822,9 +14930,16 @@ def _subscription_matches(root: Path, sid: str, spec: str,
         elif b_path.exists():
             return False
         # effect: file present iff an effect was wired; content must match.
+        # F40#11: EXISTENCE alone let a re-arm with a CHANGED effect report
+        # reused=True while the driver kept executing the old one — the
+        # exact "corrected effect silently ignored" failure.
         e_path = root / f"{sid}.effect.json"
         if effect is not None:
             if not e_path.exists():
+                return False
+            expected = {**effect}
+            expected.setdefault("rule_id", sid)   # mirror the write path
+            if e_path.read_text(encoding="utf-8") != json.dumps(expected):
                 return False
         elif e_path.exists():
             return False
@@ -14880,6 +14995,19 @@ def _gc_stale_subscriptions(root: Path, *, keep: str, ttl_secs: int,
                     continue
             except OSError:
                 continue
+            # F40#12: an aged spec whose DRIVER heartbeat is fresh is a
+            # live subscription, not an orphan — sweeping it kills the
+            # driver (it exits on spec deletion) and deafens a healthy
+            # long-lived shell. Only proven-inactive wiring is collected.
+            try:
+                _hb = json.loads((root / f"{sid}.spec.hb").read_text(
+                    encoding="utf-8"))
+                _hb_age = now_ts - datetime.fromisoformat(
+                    str(_hb.get("ts"))).timestamp()
+                if _hb_age < 900:          # a tick landed in the last 15min
+                    continue
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                pass                        # no/stale heartbeat → sweepable
             # aged past even the long TTL — drop the index entry too.
             try:
                 from ..reactive.handle_index import (
@@ -14985,6 +15113,16 @@ class ObserveStream(_ClaudeTool):
         spec_path = root / f"{sid}.spec"
         if not reused:
             spec_path.write_text(m.spec, encoding="utf-8")
+        else:
+            # F40#12: reuse RENEWS the lease. The reuse path deliberately
+            # avoids rewriting identical artifacts, but GC ages on the
+            # spec's mtime — a healthy long-lived subscription re-armed by
+            # reuse alone could age past the TTL and be swept under its
+            # live driver. Touch, don't rewrite.
+            try:
+                os.utime(spec_path, None)
+            except OSError:
+                pass
         # monitor_cmd runs under the harness `Monitor` (a bash shell), so:
         #  1. pin the interpreter to THIS MCP server's venv (`sys.executable`)
         #     — bare `python` under bash resolved to the wrong venv

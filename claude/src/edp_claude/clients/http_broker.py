@@ -38,7 +38,12 @@ class HttpBroker(BrokerPort):
         # stays unauthenticated (single-operator ruling); this gives the
         # READER honest origin data next to the untrusted body.
         body = payload.get("body")
-        if isinstance(body, dict) and "_sender" not in body:
+        if isinstance(body, dict):
+            # F40#9 — UNCONDITIONAL: the old `if "_sender" not in body`
+            # let a caller pre-fill the field and ride the "server-stamped"
+            # trust the inbox framing promises. A caller-supplied _sender
+            # is dropped; the env stamp (or nothing) is the only truth.
+            body.pop("_sender", None)
             role = os.environ.get("EDP_ROLE", "").strip() or None
             handle = os.environ.get("EDP_HANDLE", "").strip() or None
             if role or handle:

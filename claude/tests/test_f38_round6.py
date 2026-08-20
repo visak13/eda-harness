@@ -50,9 +50,14 @@ def _fake_config(monkeypatch):
 def test_override_refused_when_not_routed_for_role(monkeypatch):
     _fake_config(monkeypatch)
     monkeypatch.setenv("EDP_ROLE", "worker")
-    with pytest.raises(B.BridgeError, match="not routed for role"):
+    # F40#10 tightened: the override must equal the delegate the routes
+    # RESOLVE for this exact (role, task_class) — role-wide membership let
+    # a worker pay another task-class's delegate.
+    with pytest.raises(B.BridgeError, match="not the routed delegate"):
         _bridge_delegate_for("generate", "costly")
-    # a routed delegate may be named explicitly
+    with pytest.raises(B.BridgeError, match="not the routed delegate"):
+        _bridge_delegate_for("tests", "sol")     # routed, but not for tests
+    # the exactly-routed delegate may be named explicitly
     assert _bridge_delegate_for("generate", "sol") == "sol"
     # the role-less operator console stays unconstrained
     monkeypatch.delenv("EDP_ROLE", raising=False)

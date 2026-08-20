@@ -27,6 +27,7 @@ class Spawner(ABC):
         resume_session: str | None = None,
         model: str | None = None,
         activation: str | None = None,
+        parent: str | None = None,
     ) -> None:
         """`activation` (DESIGN-v7 1.5.4): the one line typed into the ready
         shell. None (the default, every normal spawn) means the role's slash
@@ -100,11 +101,13 @@ class FakeSpawner(Spawner):
         resume_session: str | None = None,
         model: str | None = None,
         activation: str | None = None,
+        parent: str | None = None,
     ) -> None:
         self._alive.add(session_id)
         self._known.add(session_id)
         self.launched.append({
             "session_id": session_id, "role": role, "handle": handle,
+            "parent": parent,
             "claude_session": claude_session,
             "resume_session": resume_session,
             # s17 FA3: per-spawn model tier (None → host default / Opus).
@@ -194,6 +197,7 @@ class SubprocessSpawner(Spawner):
         resume_session: str | None = None,
         model: str | None = None,
         activation: str | None = None,
+        parent: str | None = None,
     ) -> None:
         if sys.platform != "win32":
             raise RuntimeError(
@@ -226,6 +230,7 @@ class SubprocessSpawner(Spawner):
             pool_url=self.pool_url,
             agent_home=self.cwd,
             log_dir=self.shell_log_dir,
+            parent=parent,       # F40#13: lineage stamp for bare handles
         )
         # phase 5: snapshot/branch flags (pin id / resume+fork a base).
         sargs = build_session_args(claude_session, resume_session)

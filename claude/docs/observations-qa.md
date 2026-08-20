@@ -660,3 +660,31 @@ request). Two confirmed, both fixed:
 
 Suites: claude 1580, edp-pool 306, edp-broker 29 — green (Phoenix
 env-fail only). Claude-side only; no stack restart needed.
+
+## F40 — Adversarial campaign Round 7 (convergence re-attack), 2026-08-20
+14 findings against the F35/F37/F38/F39 fixes themselves (raw:
+.sol_review_out-r7.txt). NOT converged: 12 CONFIRMED (mostly unfixed
+TWINS of patched seams), 2 REJECTED.
+
+| # | Finding | Verdict / fix |
+|---|---------|---------------|
+| 2 | planner NATIVE mutators (create_plan/record_plan/add_action/record_action_status/record_step_result) skip the own-plan rule the generic CRUD got | CONFIRM — one _planner_foreign_plan_refusal helper wired into all five |
+| 3 | worker ownership plan-granular only; a1's shell could skip unrelated a2 | CONFIRM — action-granular: own action or same batch_group sibling |
+| 4 | array of all-invalid findings filtered to [] = clean pass | CONFIRM (half) — non-empty array with zero valid entries → contract break; prose-wrapped valid arrays stay accepted (pragmatic) |
+| 5 | secret markers missed ACCESS_KEY/_PAT/AUTH_CONFIG/PASSWD/… | CONFIRM — marker set widened; denylist architecture stands (F37 ruling) |
+| 6 | audit append failure silently lost paid spend | CONFIRM (cheap) — audit-degraded marker latched; totals report audit_errors until cleared |
+| 7 | bare-handle (acceptor/curiosity) spend invisible to every recipe cap | CONFIRM — EDP_PARENT lineage (see #13) makes their caller `<recipe>:<handle>` → attributed; residual unattributed spend NAMED in the gate detail |
+| 9 | caller-supplied _sender rode the "server-stamped" trust | CONFIRM — stamp is unconditional; a supplied _sender is dropped |
+| 10 | delegate override authorized role-wide, not per task-class | CONFIRM — override must equal the resolved route for (role, task_class) |
+| 11 | subscription reuse compared effect EXISTENCE, not content | CONFIRM — content compared; a changed effect is a re-spec, never reused |
+| 12 | 7-day GC could sweep a LIVE >7-day subscription (reuse never renewed mtime; heartbeat ignored) | CONFIRM — reuse touches the spec (lease renewal); GC spares a fresh (<15min) driver heartbeat |
+| 13 | acceptor's ask_above had no derivable parent (bare handle) | CONFIRM — pool stamps EDP_PARENT (parent_session) at spawn+resume; _self_and_parent_addresses and _sol_caller consume it |
+| 14 | slot crash between mkdir and pid write = immortal orphan | CONFIRM — missing/junk pid past the stale age reaps |
+| 1 | policy files (.bridge.json/models.json) agent-writable; wants signing | REJECT — hostile-local-actor class (R5 ruling); any shell-holding agent can equally edit source; recorded |
+| 8 | threads.json unlocked RMW can lose a mapping | REJECT — accepted residual (F38): worst case is one fresh thread, never a lost result |
+
+Suites: claude 1586, edp-pool 308, edp-broker 29 — green (Phoenix
+env-fail only). New: tests/test_f40_round7.py (8) + 2 pool EDP_PARENT
+tests; test_s26 lifecycle updated to own-plan handles (the reap-arm gate
+it pins is unchanged). NOTE: the EDP_PARENT stamp is POOL code — the
+live fleet needs a STACK RESTART for #13/#7.

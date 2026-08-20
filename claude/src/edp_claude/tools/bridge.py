@@ -286,7 +286,7 @@ def parse_findings(content: str) -> list[dict] | None:
     if not isinstance(arr, list):
         return None
     out = []
-    for f in arr if isinstance(arr, list) else []:
+    for f in arr:
         if isinstance(f, dict) and isinstance(f.get("finding"), str):
             out.append({
                 "finding": f["finding"],
@@ -295,6 +295,11 @@ def parse_findings(content: str) -> list[dict] | None:
                             ("low", "medium", "high") else "medium",
                 "target": str(f.get("target", "")),
             })
+    if arr and not out:
+        # F40#4: a NON-empty array in which no element conforms is a
+        # contract break, not a clean hunt — the old filter turned
+        # [{"finding": 123}] into [] and satisfied the gate.
+        return None
     return out
 
 
@@ -305,15 +310,31 @@ def _audit_file(scope: str) -> Path:
     return Path(home) / ".bridge" / f"audit-{safe}.jsonl"
 
 
+# F40#6 — audit-degradation latch. An audit append failure still never
+# blocks the RESULT (the provider was already paid), but it must not
+# vanish either: the failure is latched to a marker file the budget
+# aggregation reads, so "actuals complete" can never be claimed after a
+# lost row. File-based because every shell's MCP server is its own
+# process — an in-process counter would hide fleet-wide loss.
+_AUDIT_DEGRADED_MARKER = "audit-degraded"
+
+
 def audit(scope: str, row: dict) -> None:
-    """Append-only, best-effort — an audit failure never blocks a result."""
+    """Append-only, best-effort — an audit failure never blocks a result,
+    but it LATCHES the degradation marker (F40#6)."""
+    home = Path(os.environ.get("EDP_AGENT_HOME") or os.getcwd())
     try:
         f = _audit_file(scope)
         f.parent.mkdir(parents=True, exist_ok=True)
         with f.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
     except OSError:
-        pass
+        try:
+            (home / ".bridge" / _AUDIT_DEGRADED_MARKER).write_text(
+                time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                encoding="utf-8")
+        except OSError:
+            pass    # disk truly gone — nothing durable left to say it with
 
 
 # ── the impure entrypoints ───────────────────────────────────────────────────
@@ -473,7 +494,15 @@ def _cli_slot_acquire() -> tuple[Path, str] | None:
                     age = time.time() - slot.stat().st_mtime
                     if age <= _CLI_SLOT_STALE_S:
                         continue
-                    pid_raw = (slot / "pid").read_text().strip()
+                    # F40#14: a crash between mkdir and the pid write left a
+                    # slot with NO pid file — the old read raised OSError
+                    # into the blanket `pass` and the orphan lived forever
+                    # (a permanent one-slot leak). Missing/junk pid after
+                    # the stale age = dead, reapable.
+                    try:
+                        pid_raw = (slot / "pid").read_text().strip()
+                    except OSError:
+                        pid_raw = ""
                     if pid_raw.isdigit() and _pid_alive(int(pid_raw)):
                         continue
                     (slot / "pid").unlink(missing_ok=True)

@@ -1008,7 +1008,7 @@ class PoolService(Microservice):
         return self._launch_reserved(
             sid, role, handle, mode,
             claude_session=claude_session, resume_session=resume_session,
-            model=model)
+            model=model, parent=parent)
 
     def _admit_handle_locked(self, handle: str):
         """Handle-lock admission (runs under _transition_lock). Returns a
@@ -1067,6 +1067,7 @@ class PoolService(Microservice):
         self, sid: str, role: str, handle: str, mode: str, *,
         claude_session: str | None, resume_session: str | None,
         model: str | None,
+        parent: str | None = None,      # F40#13: EDP_PARENT lineage stamp
     ):
         """F36 R4#1/#2 — launch against an already-RESERVED 'starting' row.
         The reservation (session row + handle lock) was committed under the
@@ -1099,6 +1100,7 @@ class PoolService(Microservice):
                 claude_session=claude_session,
                 resume_session=resume_session,
                 model=resolved_model,
+                parent=parent,       # F40#13: EDP_PARENT lineage stamp
             )
         except BaseException:
             # F36 R4#1: ROLLBACK the reservation — a failed launch must not
@@ -1605,6 +1607,7 @@ class PoolService(Microservice):
                 sid, role, handle, mode,
                 claude_session=fork, resume_session=base,
                 activation=self.PARK_RESUME_ACTIVATION,
+                parent=s.get("parent"),   # F40#13: lineage survives resume
             )
             # opencode `--continue` keeps the SAME session id (the spawner
             # seam returns it); claude fork-resume mints `fork`. Store the
@@ -1632,7 +1635,8 @@ class PoolService(Microservice):
                         "task context FIRST: check_inbox(replay=true) "
                         "re-delivers the retained inbox including "
                         "anything your predecessor consumed. Then follow "
-                        "your role protocol file IN FULL from Step 1."))
+                        "your role protocol file IN FULL from Step 1."),
+                    parent=s.get("parent"))   # F40#13
                 new_claude_session = fresh
                 resumed_via = "fresh-fallback"
             except Exception as exc2:  # noqa: BLE001

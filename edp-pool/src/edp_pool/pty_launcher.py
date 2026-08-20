@@ -444,8 +444,12 @@ def _shell_otel_env(role: str, handle: str, base: dict) -> dict:
 # for a secret a shell genuinely needs. A name-pattern DENYLIST (not a
 # full allowlist) because a Windows shell needs dozens of ambient vars
 # (PATH/SystemRoot/APPDATA/…) an allowlist would inevitably miss.
+# F40#5 widened: the first cut missed common credential shapes
+# (AWS_ACCESS_KEY_ID, GITHUB_PAT, DOCKER_AUTH_CONFIG, PASSWD).
 _SECRET_NAME_MARKERS = ("API_KEY", "APIKEY", "SECRET", "TOKEN", "PASSWORD",
-                        "CREDENTIAL", "PRIVATE_KEY")
+                        "PASSWD", "CREDENTIAL", "PRIVATE_KEY", "ACCESS_KEY",
+                        "_PAT", "AUTH_CONFIG", "CLIENT_ID", "CLIENT_SECRET",
+                        "SESSION_KEY", "SIGNING_KEY")
 _SECRET_KEEP_PREFIXES = ("EDP_", "ANTHROPIC_", "CLAUDE_")
 
 
@@ -468,7 +472,8 @@ def build_env(session_id: str, role: str, handle: str,
               pool_url: str | None = None,
               agent_home: str | None = None,
               log_dir: str | None = None,
-              defaults: dict | None = None) -> dict:
+              defaults: dict | None = None,
+              parent: str | None = None) -> dict:
     """Our env contract (NOT the old protocol). The activator reads these
     and drives itself via the edp-broker MCP tools.
 
@@ -492,6 +497,15 @@ def build_env(session_id: str, role: str, handle: str,
     env["EDP_SPAWN_SESSION_ID"] = session_id  # correlation (kept from old)
     env["EDP_ROLE"] = role
     env["EDP_HANDLE"] = handle
+    # F40#13 (2026-08-20): LINEAGE for bare-handle seats. A worker/planner
+    # handle ENCODES its parent (plan/recipe prefix), but acceptor-<hex> /
+    # curiosity-<hex> encode nothing — ask_above had no parent to route to
+    # and bridge spend had no recipe to bill. The pool KNOWS the parent at
+    # spawn (parent_session); stamp it so the MCP server can derive both.
+    if parent:
+        env["EDP_PARENT"] = parent
+    else:
+        env.pop("EDP_PARENT", None)   # never inherit another shell's parent
     # 2026-07-21: which HARNESS this shell runs under. Behaviour that is an
     # affordance of one harness and a defect in the other keys off this
     # rather than sniffing claude-only env keys. build_env is the CLAUDE
