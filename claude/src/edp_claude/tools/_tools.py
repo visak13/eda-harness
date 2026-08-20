@@ -2942,7 +2942,23 @@ class Reconcile(_ClaudeTool):
             # path, so a healthy plan pays nothing new.
             if getattr(a, "batch_group", None):
                 unit_live = False
+                # F44#6 — probe the RECORDED OWNER's handle first,
+                # regardless of the owner ACTION's status: a head that has
+                # already recorded its own member done is excluded from the
+                # in_progress sibling scan below, yet its shell is the one
+                # live process still executing THIS member — resetting it
+                # here double-dispatched work in flight.
+                _owner = getattr(a, "batch_owner", None)
+                if _owner and _owner != a.action_id:
+                    _oh = f"{p.plan_id}:{_owner}"
+                    if ((await self.ctx.pool.liveness(_oh))["state"]
+                            == "alive"
+                            or await _handle_backed_by_pool(
+                                self.ctx.pool, _oh)):
+                        unit_live = True
                 for sib in p.actions:
+                    if unit_live:
+                        break
                     if (sib.action_id == a.action_id
                             or sib.batch_group != a.batch_group
                             or sib.status != "in_progress"):
@@ -3374,6 +3390,11 @@ class RecordRecipe(_ClaudeTool):
             return _precondition(instruction_error(e, Recipe))
         except Exception as e:
             return _precondition(f"recipe invalid: {e}")
+        _stale = _whole_object_replacement_refusal(
+            "record_recipe", recipe.version,
+            self.ctx.recipes, recipe.recipe_id)
+        if _stale is not None:
+            return _stale
         v = self.ctx.recipes.save(recipe)
         return Tool.ok(_Ver(version=v))
 
@@ -3399,6 +3420,10 @@ class RecordPlan(_ClaudeTool):
         _own = _planner_foreign_plan_refusal(plan.plan_id, "record_plan")
         if _own is not None:
             return _own
+        _stale = _whole_object_replacement_refusal(
+            "record_plan", plan.version, self.ctx.plans, plan.plan_id)
+        if _stale is not None:
+            return _stale
         # Context-diet Phase 2 — the flow-down gate at plan SUBMISSION (the
         # earliest feedback moment; pool_spawn_worker holds the dispatch-time
         # backstop for the incremental create_plan/add_action path).
@@ -4196,6 +4221,19 @@ class RecordBranchVerdict(_ClaudeTool):
         if not self.ctx.plans.exists(m.plan_id or ""):
             return _precondition(f"no plan {m.plan_id!r}")
         p = self.ctx.plans.load(m.plan_id or "")
+        # F44#3 — a TERMINAL plan's verdicts are settled history: mutating
+        # one after the fact could contradict a recorded acceptance pass
+        # while the terminal FSM never re-runs G-VERDICT. A late failing
+        # correction goes through reopen (create_plan(reopen=true)), which
+        # resets the delivery the fingerprint judges.
+        if p.state == PlanState.TERMINAL:
+            return _precondition(
+                f"plan {m.plan_id!r} is TERMINAL — its verdicts are "
+                "settled. If this correction is real, reopen the plan "
+                "(create_plan(reopen=true)) so the failure re-enters the "
+                "FSM and any acceptance pass is re-judged; a verdict edit "
+                "on a closed plan changes nothing downstream. Nothing was "
+                "recorded.")
         a = next((x for x in p.actions if x.action_id == m.branch_id), None)
         if a is None:
             return _precondition(
@@ -6379,8 +6417,20 @@ class RecordActionStatus(_ClaudeTool):
                         # bidirectional substring accepted a run that was a
                         # FRAGMENT of the declared command. A run that only
                         # prints (echo/printf/cat/type) proves nothing.
-                        if rc_toks and rc_toks[0] in (
-                                "echo", "printf", "print", "cat", "type"):
+                        # F44#9 — the print verb is sought PAST shell
+                        # wrappers and flags (`cmd /c echo pytest -q`
+                        # bypassed a first-token-only check).
+                        _wrap = {"cmd", "cmd.exe", "powershell",
+                                 "powershell.exe", "pwsh", "sh", "bash",
+                                 "zsh", "env", "uv", "run", "npx", "time"}
+                        i = 0
+                        while i < len(rc_toks) and (
+                                rc_toks[i] in _wrap
+                                or rc_toks[i].startswith(("-", "/"))):
+                            i += 1
+                        if i < len(rc_toks) and rc_toks[i] in (
+                                "echo", "printf", "print", "cat", "type",
+                                "write-host", "write-output"):
                             return False
                         for i in range(len(rc_toks) - len(dc_toks) + 1):
                             if rc_toks[i:i + len(dc_toks)] == dc_toks:
@@ -8942,10 +8992,18 @@ class PoolSpawnWorker(_ClaudeTool):
                 # that member the shell's "own action" and skip the
                 # declared-order guard (F41#4's own-action blind spot).
                 _terminal_s = ("done", "failed", "skipped")
+                # F44#8 — mirror the FSM's readiness rule: a nonterminal
+                # member whose depends_on are NOT yet done/skipped is
+                # blocked, not the head (the FSM legitimately stamps a
+                # later ready member; demanding the blocked one deadlocked
+                # the plan).
+                _done_ids = {x.action_id for x in p.actions
+                             if x.status in ("done", "skipped")}
                 _canon = [x.action_id for x in p.actions
                           if x.batch_group == a.batch_group
-                          and (x.status not in _terminal_s
-                               or x.action_id == m.action_id)]
+                          and (x.action_id == m.action_id
+                               or (x.status not in _terminal_s
+                                   and set(x.depends_on) <= _done_ids))]
                 if _canon and m.action_id != _canon[0]:
                     _rollback_failed_dispatch(
                         self.ctx, m.plan_id, m.action_id,
@@ -11991,16 +12049,21 @@ class EmitRecipeEvent(_ClaudeTool):
                     "acceptance_verdict.body.verdict must be 'pass' or "
                     f"'gaps' (got {_v!r}) — the close gate reads exactly "
                     "these.")
-            # F35 R3a#1: bind the verdict to WHAT WAS JUDGED — the server
-            # stamps the recipe's current fingerprint (goal + outcomes +
-            # step set). The success boundary and G-ACCEPT honor a 'pass'
-            # only while the fingerprint still matches, so a recipe that
-            # grew after the pass must be re-judged.
+            # F35 R3a#1: bind the verdict to WHAT WAS JUDGED. F44#1: that
+            # is the fingerprint the DISPATCH recorded — recomputing the
+            # CURRENT one here re-bound a stale review to whatever the
+            # delivery had mutated into mid-review, so a pass on delivery A
+            # closed delivery B. No recorded dispatch (a manual reviewer-leg
+            # verdict) falls back to the current fingerprint.
             rid_probe = m.recipe_id
             if rid_probe is None:
                 rid_probe = _resolve_recipe_lineage(self.ctx)[0]
             if rid_probe and self.ctx.recipes.exists(rid_probe):
-                m.body["fingerprint"] = _acceptance_fingerprint(
+                _disp = self.ctx.recipes.read_events_tail(
+                    rid_probe, kinds=["acceptance_dispatched"])
+                _disp_fp = (_disp[-1].get("fingerprint")
+                            if _disp else None)
+                m.body["fingerprint"] = _disp_fp or _acceptance_fingerprint(
                     self.ctx.recipes.load(rid_probe), ctx=self.ctx)
         # W2 leg 3: warn-only constraint stamp on the body — NEVER blocks.
         _warn_comms_constraints(self.ctx, m.body, "emit_recipe_event",
@@ -12191,7 +12254,11 @@ def _acceptance_fingerprint(r, ctx=None) -> str:
                 [a.action_id, a.status,
                  _hashlib.sha256(
                      (a.acceptance.actual or "").encode("utf-8")
-                 ).hexdigest()[:8]]
+                 ).hexdigest()[:8],
+                 # F44#3 — the review verdict is part of the judged
+                 # delivery: a passed=false correction must invalidate a
+                 # recorded acceptance pass.
+                 bool((a.review_verdict or {}).get("passed", True))]
                 for a in p.actions)
             delivery.append(
                 [s.step_id, s.status, p.terminal_status, acts])
@@ -12283,13 +12350,19 @@ class DispatchAcceptance(_ClaudeTool):
         if not m.force:
             trail = self.ctx.recipes.read_events_tail(
                 m.recipe_id,
-                kinds=["acceptance_dispatched", "acceptance_verdict"])
+                kinds=["acceptance_dispatched", "acceptance_verdict",
+                       "acceptance_dispatch_aborted"])
             last_d = next((e for e in reversed(trail)
                            if e.get("kind") == "acceptance_dispatched"),
                           None)
+            # F44#1 — a verdict OR an abort record (failed launch) settles
+            # the attempt; the abort is matched by acceptor_id, the verdict
+            # by trail order.
             _in_flight = last_d is not None and not any(
-                e.get("kind") == "acceptance_verdict"
-                and (e.get("ts") or "") >= (last_d.get("ts") or "")
+                (e.get("kind") == "acceptance_verdict"
+                 and (e.get("ts") or "") >= (last_d.get("ts") or ""))
+                or (e.get("kind") == "acceptance_dispatch_aborted"
+                    and e.get("acceptor_id") == last_d.get("acceptor_id"))
                 for e in trail)
             # F35 R3b#7: an INTERIM pass in flight never suppresses a
             # requested FINAL pass — the latch matches mode.
@@ -12329,6 +12402,19 @@ class DispatchAcceptance(_ClaudeTool):
                           "expires on its own after "
                           "EDP_ACCEPT_LATCH_TTL_SECS (default 3600s).")))
         acceptor_id = f"acceptor-{uuid.uuid4().hex[:8]}"
+        # F44#1 — the DISPATCH fingerprint is the attempt's identity: it is
+        # recorded BEFORE the brief/spawn (a fast verdict can no longer
+        # outrun the dispatch record and wedge the in-flight latch), it
+        # rides in the brief, and the verdict emitted for this attempt is
+        # stamped with IT — never recomputed at verdict time, so a delivery
+        # mutated mid-review can never grandfather the stale judgment.
+        _dispatch_fp = _acceptance_fingerprint(r, ctx=self.ctx)
+        self.ctx.recipes.append_worklog(m.recipe_id, {
+            "kind": "acceptance_dispatched",
+            "acceptor_id": acceptor_id, "interim": m.interim,
+            # F35 R3a#1: what this pass was asked to judge.
+            "fingerprint": _dispatch_fp,
+        })
         brief = {
             "task": ("interim-review" if m.interim
                      else "final-acceptance"),
@@ -12346,26 +12432,33 @@ class DispatchAcceptance(_ClaudeTool):
                 for o in r.comprehension.expected_outcomes],
             "consulted_specs": _recipe_consulted_spec_ids(self.ctx, r),
             "caller": m.recipe_id,
+            "fingerprint": _dispatch_fp,   # F44#1 — the attempt identity
         }
         send_res = await self.ctx.broker.send(BrokerMessage(
             msg_id=str(uuid.uuid4()), ts=_now(),
             **{"from": m.recipe_id}, to=acceptor_id,
             kind="consult", body=brief))
         if not getattr(send_res, "ok", False):
+            self._abort_dispatch(m.recipe_id, acceptor_id, "brief_send")
             return send_res
         spawn_res = await self.ctx.pool.spawn_acceptor(
             m.recipe_id, acceptor_id,
             model=_spawn_model_for("acceptor"))
         if not getattr(spawn_res, "ok", False):
+            self._abort_dispatch(m.recipe_id, acceptor_id, "spawn")
             return spawn_res
-        self.ctx.recipes.append_worklog(m.recipe_id, {
-            "kind": "acceptance_dispatched",
-            "acceptor_id": acceptor_id, "interim": m.interim,
-            # F35 R3a#1: what this pass was asked to judge.
-            "fingerprint": _acceptance_fingerprint(r, ctx=self.ctx),
-        })
         return Tool.ok(_DispatchAcceptanceOut(
             acceptor_id=acceptor_id, interim=m.interim))
+
+    def _abort_dispatch(self, recipe_id: str, acceptor_id: str,
+                        stage: str) -> None:
+        """F44#1 — the dispatch record is written BEFORE the launch, so a
+        failed launch must release the in-flight latch explicitly (else it
+        wedges dispatch_acceptance for the full latch TTL)."""
+        self.ctx.recipes.append_worklog(recipe_id, {
+            "kind": "acceptance_dispatch_aborted",
+            "acceptor_id": acceptor_id, "stage": stage,
+        })
 
 
 class _ConsultCuriosityIn(BaseModel):
@@ -14909,6 +15002,34 @@ def _planner_foreign_plan_refusal(plan_id: str, verb: str):
     return None
 
 
+def _whole_object_replacement_refusal(verb: str, incoming_version: int,
+                                      store, obj_id: str):
+    """F44#2 — the RAW whole-object tools (record_recipe / record_plan)
+    replace the entire stored object, and the stores' fresh-object
+    adoption (version 1 -> adopt disk version) let a post-compaction
+    RECONSTRUCTION silently erase newer state — delivered actions,
+    evidence, a running shell's ownership — with no conflict. Replacing an
+    EXISTING object now requires carrying its current version (read it,
+    apply your change, resend); genuinely-new objects (nothing on disk)
+    pass through. Returns a _precondition refusal or None."""
+    try:
+        if incoming_version != 1 or not store.exists(obj_id):
+            return None                 # versioned replace → optimistic
+        disk_v = store.load(obj_id).version   # check in save(); new → free
+    except Exception:  # noqa: BLE001 — an unreadable object blocks nothing
+        return None
+    if disk_v == 1:
+        return None
+    return _precondition(
+        f"{verb} refused: {obj_id!r} already exists at version {disk_v} "
+        "and your payload carries no version (defaulted to 1) — a "
+        "whole-object replace from a reconstruction would erase newer "
+        "state (delivered actions, evidence, live ownership). Read the "
+        f"current object (read_object), apply your change to IT, and "
+        f"resend with version={disk_v}; or use the incremental verbs. "
+        "Nothing was written.")
+
+
 def _foreign_wiring_refusal(target_handle: str | None, verb: str):
     """F42#1 — monitor-CRUD ownership, the wiring twin of the plan
     ownership guards: a SPAWNED shell (EDP_HANDLE is pool-stamped) reads,
@@ -15393,6 +15514,23 @@ class ObserveStream(_ClaudeTool):
         if _own is not None:
             return _own
 
+        # F44#7 — VALIDATE THE WHOLE REQUESTED CONFIG before any artifact
+        # write: the effect used to be validated AFTER the spec/runtime
+        # overwrite, so a changed spec + invalid effect retired the old
+        # driver (content watch) and then errored without a replacement —
+        # a deaf owner. A refusal here leaves the live wiring untouched.
+        _eff_prepared = None
+        if m.effect is not None:
+            _eff_msg = _effect_role_violation(m.effect)  # F37#10
+            if _eff_msg is not None:
+                return _precondition(_eff_msg)
+            _eff_prepared = {**m.effect}
+            _eff_prepared.setdefault("rule_id", sid)
+            try:
+                EffectSpec.compile(_eff_prepared)
+            except EffectError as exc:
+                return _precondition(f"invalid effect: {exc}")
+
         # (s17 FA2-F2 / RC2) bound the .reactive/sub-*.spec leak: sweep
         # abandoned artifact triplets older than the TTL on every arm. The
         # subscription we're arming right now (sid) is never swept, and the
@@ -15414,6 +15552,16 @@ class ObserveStream(_ClaudeTool):
             # lifecycle watcher compares content, not just existence.
             (root / f"{sid}.runtime.json").write_text(
                 _json.dumps(_runtime), encoding="utf-8")
+            # F44#7 — a re-spec REPLACES the whole configuration: sidecars
+            # absent from the new generation are REMOVED, or the old
+            # bindings/effect kept steering whichever driver survived.
+            for _absent, _sfx in ((not m.bindings, ".bindings.json"),
+                                  (m.effect is None, ".effect.json")):
+                if _absent:
+                    try:
+                        (root / f"{sid}{_sfx}").unlink(missing_ok=True)
+                    except OSError:
+                        pass
         else:
             # F40#12: reuse RENEWS the lease. The reuse path deliberately
             # avoids rewriting identical artifacts, but GC ages on the
@@ -15470,16 +15618,10 @@ class ObserveStream(_ClaudeTool):
         # driver subprocess wires it at phase=2 via --effect-file (Tier-2 DARK,
         # advisory-by-default). owner = provenance/echo-filter inbox.
         has_effect = False
-        if m.effect is not None:
-            _eff_msg = _effect_role_violation(m.effect)  # F37#10
-            if _eff_msg is not None:
-                return _precondition(_eff_msg)
-            eff = {**m.effect}
-            eff.setdefault("rule_id", sid)
-            try:
-                EffectSpec.compile(eff)   # allowlist + opt-in + arg contract
-            except EffectError as exc:
-                return _precondition(f"invalid effect: {exc}")
+        if _eff_prepared is not None:
+            # F44#7 — validated UP FRONT (before any artifact write); this
+            # block only persists + wires the already-compiled effect.
+            eff = _eff_prepared
             eff_path = root / f"{sid}.effect.json"
             if not reused:
                 eff_path.write_text(_json.dumps(eff), encoding="utf-8")

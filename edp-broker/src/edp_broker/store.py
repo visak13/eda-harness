@@ -138,10 +138,15 @@ class InboxStore:
         self.data = Path(data)
         self.aliases = AliasStore(self.data)
         self.channels = ChannelStore(self.data)
-        # F34 R2 #6: per-inbox high-water ts cache (single broker process —
-        # appends are serialized on the event loop). Seeded lazily from the
-        # file's last line.
+        # F34 R2 #6: per-inbox high-water ts cache, seeded lazily from the
+        # file's last line. F44#4: appends are NO LONGER serialized on the
+        # event loop (F36 moved store IO to worker threads), so the whole
+        # tail-read/stamp/cache/append transaction takes this lock — two
+        # concurrent publishes could both read tail T, both stamp T+1µs,
+        # and the strict `ts > cursor` reader would hide one forever.
         self._last_ts: dict[Path, datetime] = {}
+        import threading
+        self._append_lock = threading.Lock()
 
     def _file(self, recipient: str) -> Path:
         return self.data / f"{_safe(recipient)}.jsonl"
@@ -175,12 +180,13 @@ class InboxStore:
         # sender). Stamp the ts forward at append so every inbox file is
         # strictly monotonic — the ts becomes "when the broker accepted it",
         # which is the order readers actually need.
-        prev = self._tail_ts(p)
-        if prev is not None and msg.ts <= prev:
-            msg.ts = prev + timedelta(microseconds=1)
-        self._last_ts[p] = msg.ts
-        with open(p, "a", encoding="utf-8") as f:
-            f.write(msg.model_dump_json(by_alias=True) + "\n")
+        with self._append_lock:
+            prev = self._tail_ts(p)
+            if prev is not None and msg.ts <= prev:
+                msg.ts = prev + timedelta(microseconds=1)
+            self._last_ts[p] = msg.ts
+            with open(p, "a", encoding="utf-8") as f:
+                f.write(msg.model_dump_json(by_alias=True) + "\n")
 
     def read(
         self, recipient: str, since: datetime | None = None

@@ -945,10 +945,16 @@ def main(argv: list[str] | None = None) -> int:
             _changed = False
             for pth, start in zip(_watched, _at_start):
                 now_txt = _sidecar_read(pth)
-                # transient read error / deletion of a non-spec sidecar is
-                # not a re-spec; a DIFFERENT present value (incl. one that
-                # newly appeared) is.
+                # a DIFFERENT present value (incl. newly appeared) is a
+                # re-spec. F44#7: so is present-to-ABSENT for a non-spec
+                # sidecar — observe now deletes sidecars dropped from the
+                # new generation (distinguished from a transient read
+                # error via exists()).
                 if now_txt is not None and now_txt != start:
+                    _changed = True
+                    break
+                if (now_txt is None and start is not None
+                        and pth != _spec_path and not pth.exists()):
                     _changed = True
                     break
             if _changed:

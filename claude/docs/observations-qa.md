@@ -771,3 +771,33 @@ claude 1616 (Phoenix env-fail only), edp-pool 308, edp-broker 29 — green.
 NOT converged, but close: every surface has now had a post-churn re-visit.
 Round 11 = full-framework convergence sweep; if near-empty, one more
 confirming round, then the closing compact-framework polish sweep.
+
+## F44 — Adversarial campaign Round 11 (full-framework convergence sweep), 2026-08-20
+9 findings (raw: .sol_review_out-r11.txt); lens = whole framework, fresh
+eyes, empty-array-means-converged. All 9 CONFIRMED (several scoped). NOT
+an empty round — but the character shifted: three genuinely NEW
+cross-subsystem races that no single-lens round could see (the broker
+append thread race, the pool starting-reservation steal, the acceptance
+attempt binding), plus twins/edges of the freshest fixes.
+
+| # | Finding | Verdict |
+|---|---------|---------|
+| 1 | verdicts re-stamped with the CURRENT fingerprint at emission; dispatch recorded after spawn (fast verdict wedges the latch) | CONFIRM — dispatch fingerprint recorded BEFORE the brief/spawn, rides the brief, and the verdict is stamped with the DISPATCHED fp (never recomputed); failed launches append acceptance_dispatch_aborted, which releases the latch |
+| 2 | version-1 reconstructions bypass optimistic concurrency (record_plan/record_recipe replace-and-erase) | CONFIRM — _whole_object_replacement_refusal: replacing an existing object requires carrying its current version; the fresh-object adoption no longer fires through the raw tools |
+| 3 | fingerprint omits review verdicts; verdicts mutable on terminal plans | CONFIRM — record_branch_verdict refuses TERMINAL plans (reopen is the correction path); review_verdict.passed joins the delivery fingerprint |
+| 4 | broker append thread race breaks per-inbox monotonicity (message hidden forever) | CONFIRM — InboxStore.append runs the tail-read/stamp/cache/write under a process lock; concurrency regression pins uniqueness + lossless cursor walk |
+| 5 | concurrent same-handle spawn steals a starting reservation (double shell) | CONFIRM — a `starting` holder is occupied; only a reservation aged past EDP_STARTING_REAP_GRACE_SECS (180s) is recoverable; unreadable age = occupied |
+| 6 | batch recovery ignores the recorded owner once the head action is terminal (resets work in flight) | CONFIRM — ready-wave dispatch now stamps batch_owner (twin of the single-dispatch stamp); phantom recovery probes the OWNER handle regardless of the owner action's status |
+| 7 | observe re-spec non-atomic: validate-after-write, obsolete sidecars survive, present-to-absent invisible | CONFIRM — full config validated before ANY write; re-spec deletes sidecars absent from the new generation; driver watcher treats present-to-absent (non-spec) as a re-spec |
+| 8 | F43 canonical head ignores dependency readiness (blocked first member deadlocks the plan) | CONFIRM — canonical = first nonterminal member whose depends_on are done/skipped (mirrors _ready_actions) |
+| 9 | print-only G-RUNS bypass via shell wrappers (cmd /c echo …) | CONFIRM — the print verb is sought past wrapper/flag tokens (cmd/powershell/sh/bash/uv/env/npx…) |
+
+Tests: +9 claude (test_f44_round11.py), +3 edp-pool
+(test_f44_starting_reservation.py), +1 edp-broker
+(test_f44_append_lock.py). Suites: claude 1625 (Phoenix env-fail only),
+edp-pool 311, edp-broker 30 — green. Convergence read: the single-lens
+seams are exhausted (R10 8 → R11 9, but R11's yield is concentrated in
+cross-subsystem protocol/concurrency, a class the charter only now aimed
+at). Round 12 = a SECOND full-framework sweep with the same
+empty-is-valid charter + the F44 residuals recorded; an empty or
+noise-only R12 declares convergence → the closing polish sweep.

@@ -1010,6 +1010,21 @@ class PoolService(Microservice):
             claude_session=claude_session, resume_session=resume_session,
             model=model, parent=parent)
 
+    @staticmethod
+    def _age_secs(iso_ts) -> float | None:
+        """Seconds since an ISO timestamp; None when absent/unparsable
+        (F44#5 — an unreadable reservation age falls back to 'occupied')."""
+        if not iso_ts:
+            return None
+        try:
+            from datetime import datetime, timezone
+            t = datetime.fromisoformat(str(iso_ts))
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=timezone.utc)
+            return (datetime.now(timezone.utc) - t).total_seconds()
+        except (TypeError, ValueError):
+            return None
+
     def _admit_handle_locked(self, handle: str):
         """Handle-lock admission (runs under _transition_lock). Returns a
         refusal envelope, or None when the handle is free (possibly after
@@ -1030,6 +1045,25 @@ class PoolService(Microservice):
                     message=f"handle {handle!r} is {holder_state}; call "
                     f"POST /v1/resume/{handle} instead of spawning cold",
                 )
+            # F44#5 — a STARTING holder is an in-flight reservation, not a
+            # corpse: its row has no pid yet, so _session_alive below reads
+            # it dead and a concurrent same-handle spawn stole the lock and
+            # double-dispatched the work. Occupied unless the reservation is
+            # provably abandoned (older than the grace — the launcher either
+            # installed a pid or rolled back long before that).
+            if holder_state == "starting":
+                _row = self.sessions.get(holder) or {}
+                _age = self._age_secs(_row.get("spawned_at"))
+                _grace = float(os.environ.get(
+                    "EDP_STARTING_REAP_GRACE_SECS", "180"))
+                if _age is None or _age <= _grace:
+                    return Tool.propagate(
+                        source="edp-pool",
+                        code=ErrorCode.POOL_UNKNOWN_HANDLE,
+                        message=f"handle {handle!r} has a spawn in flight "
+                        f"(reservation {int(_age or 0)}s old); wait for it "
+                        "or reap it after the grace window",
+                    )
             # Read the SHARED resolver, not `spawner.alive`. The spawner
             # answers False for every session it did not itself launch, so a
             # shell orphaned across a pool restart but STILL RUNNING read

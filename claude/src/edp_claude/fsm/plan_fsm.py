@@ -223,6 +223,11 @@ def plan_ready_wave(p: Plan,
         for mem in members:
             mem.status = "in_progress"  # tool-forced stamp, mirrors single dispatch
             _begin_verify_cycle(mem)    # W10b: the dispatch IS the cycle boundary
+            # F44#6 — mirror the single-dispatch stamp (F35 R3a#4): every
+            # member records the owning head so liveness recovery can probe
+            # the head shell even after the head action itself is terminal.
+            if len(members) > 1:
+                mem.batch_owner = a.action_id
             dispatched.add(mem.action_id)
         instrs.append(_dispatch_instruction(a, members))
     return instrs
