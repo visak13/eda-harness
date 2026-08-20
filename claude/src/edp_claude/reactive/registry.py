@@ -113,6 +113,18 @@ class RuleExists(RegistryError):
 
 
 # ── the durable rule record ────────────────────────────────────────────────
+def _rule_generation(rule: "RegisteredRule") -> str:
+    """F43#6 — a rule's CONTENT generation: the hash of everything a child
+    is materialized from. replace=True under the same name changes this,
+    which is what tells the supervisor to rematerialize the live child."""
+    import hashlib as _hashlib
+    basis = json.dumps({
+        "spec": rule.spec, "bindings": rule.bindings,
+        "effect": rule.effect, "owner": rule.owner,
+    }, sort_keys=True, default=str)
+    return _hashlib.sha256(basis.encode("utf-8")).hexdigest()[:12]
+
+
 @dataclass(frozen=True)
 class RegisteredRule:
     """A named, persistent reactive rule. `spec`/`bindings` compile to the
@@ -318,6 +330,10 @@ class RuleSupervisor:
         # F42#2 — when a rule exhausted its restart budget (monotonic ts);
         # the registry reconcile re-spawns it after restart_reset_secs.
         self._exhausted_at: dict[str, float] = {}
+        # F43#6 — the content generation each child was spawned FROM, so a
+        # replace=True re-registration under the same name rematerializes
+        # the live child instead of being invisible to the name-keyed map.
+        self._child_gen: dict[str, str] = {}
         self._stop = threading.Event()
         self._lock = threading.Lock()
         self._active_dir = self.registry.root / "_active"
@@ -464,6 +480,7 @@ class RuleSupervisor:
                  has_effect=("effect" in files), owner=rule.owner)
         import time as _time
         self._child_started[rule.name] = _time.monotonic()  # F36 R4#13
+        self._child_gen[rule.name] = _rule_generation(rule)  # F43#6
         return proc
 
     # ---- public lifecycle ----
@@ -570,6 +587,20 @@ class RuleSupervisor:
                     self.log("rule_retired_by_registry", rule=name,
                              pid=proc.pid)
                     self._terminate(name, proc)
+                    continue
+                # F43#6 — replace=True changed the rule's CONTENT under
+                # the same name: the live child still runs the old
+                # generation's materialized files. Rematerialize with a
+                # fresh lifecycle budget (a corrected rule is a new rule).
+                gen = _rule_generation(enabled[name])
+                if self._child_gen.get(name, gen) != gen:
+                    proc = self._children.pop(name)
+                    self.log("rule_replaced_by_registry", rule=name,
+                             pid=proc.pid)
+                    self._terminate(name, proc)
+                    self._exhausted_at.pop(name, None)
+                    self._restarts[name] = 0
+                    self._children[name] = self._spawn(enabled[name])
             for name, rule in enabled.items():
                 if name in self._children:
                     continue
@@ -577,7 +608,11 @@ class RuleSupervisor:
                 if (cooled is not None
                         and _time.monotonic() - cooled
                         < self.cfg.restart_reset_secs):
-                    continue            # still cooling down after exhaustion
+                    # F43#6 — a CORRECTED rule never serves the old
+                    # generation's cool-down: content changed → fresh
+                    # budget immediately.
+                    if self._child_gen.get(name) == _rule_generation(rule):
+                        continue        # same content, still cooling down
                 self._exhausted_at.pop(name, None)
                 self._restarts[name] = 0
                 self.log("rule_discovered_by_reconcile", rule=name)

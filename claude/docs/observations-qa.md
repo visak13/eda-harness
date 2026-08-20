@@ -745,3 +745,29 @@ Tests: +14 in test_f42_round9.py; test_observe_tool artifact count updated
 yielded mostly refinements, but Part B proved un-re-visited surfaces
 still hold whole defect classes. Round 10 = the remaining un-re-visited
 surfaces (FSM/gates since R3, prompts/cards since R1) + F42's own fixes.
+
+## F43 — Adversarial campaign Round 10 (FSM/gates + prompts/cards re-visit), 2026-08-20
+8 findings (raw: .sol_review_out-r10.txt); lens = FSM/gates (last pass R3),
+prompts/cards (last pass R1), + F42's own fixes. 7 CONFIRMED, 1 scoped.
+Yield keeps declining (13 -> 8); two findings were defects in the
+freshest fixes (F42's canonical head, F42's driver watcher scope) — the
+convergence loop is now mostly eating its own tail.
+
+| # | Finding | Verdict |
+|---|---------|---------|
+| 1 | G-RUNS reads `command` but authors declare `cmd`; empty declared matches all; bidirectional substring accepts `echo pytest -q` | CONFIRM — reads `cmd` (legacy `command` fallback); one-directional token-contiguous match; echo/printf/cat/print/type first-token runs prove nothing |
+| 2 | G-ACCEPT fingerprints map shape only; unfingerprinted pass grandfathered | PARTIAL — fingerprint now carries DELIVERY SUBSTANCE (per-step status, plan terminal_status, per-action evidence digests) when ctx-fed; a verdict with no fingerprint is never honored; full artifact hashing deferred |
+| 3 | F42 canonical head deadlocks a batch whose earlier members are terminal | CONFIRM — canonical = first NON-terminal member in declared order (matches the FSM dispatch unit) |
+| 4 | reconcile recovers only ip[0]; a live s1 shadows s2's recovery forever | CONFIRM — _advance_executing sweeps EVERY in-flight planner step (single broker poll, per-step _advance_one_planner_step, first instruction returned) |
+| 5 | driver watcher misses bindings/effect changes + absent-to-present runtime | CONFIRM — watcher snapshots all four sidecars; a different or newly-present value retires the driver |
+| 6 | supervisor reconcile keyed by name; replace=True invisible to a live child; stale cooldown outlives a correction | CONFIRM — _rule_generation (spec+bindings+effect+owner hash) tracked per child; changed generation terminates + rematerializes with a fresh budget and clears the cooldown |
+| 7 | every worker card says record_action_status "runs NO gate" and omits `runs` | CONFIRM — guides-src/roles/worker.md, compiled card, and worker-card.md now document the runs ledger + declared-cmd match; recompiled at 2599/2600 |
+| 8 | multi-bullet accepted rule can never drain (units split nested bullets) | CONFIRM — parent+nested-children composites added to _doc_units; the rule's own bullets normalize away; whole-unit negation guard preserved |
+
+Contract updates: test_wp1_gates _RUN matches the declared cmd;
+f21/f31/f35 verdicts now stamp the ctx-fed fingerprint (unfingerprinted
+passes are refused by design). Tests: +8 in test_f43_round10.py. Suites:
+claude 1616 (Phoenix env-fail only), edp-pool 308, edp-broker 29 — green.
+NOT converged, but close: every surface has now had a post-churn re-visit.
+Round 11 = full-framework convergence sweep; if near-empty, one more
+confirming round, then the closing compact-framework polish sweep.

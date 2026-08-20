@@ -2707,7 +2707,24 @@ class Reconcile(_ClaudeTool):
         ]
         if not ip:
             return None
-        step = ip[0]
+        # F43#4 — sweep EVERY in-flight planner step, not ip[0] alone: in a
+        # parallel wave, a live s1 used to shadow s2's recovery ladder
+        # (dead-child reset, unacked-dispatch reset) indefinitely. The
+        # broker is polled ONCE (poll consumes the cursor — a per-step poll
+        # would eat a later step's plan_closed); every step's state repairs
+        # run, and the FIRST instruction produced is returned.
+        msgs = await self.ctx.broker.poll(r.recipe_id)
+        first_instruction = None
+        for step in ip:
+            res = await self._advance_one_planner_step(r, step, msgs)
+            if res is not None and first_instruction is None:
+                first_instruction = res
+        return first_instruction
+
+    async def _advance_one_planner_step(self, r: Recipe, step, msgs):
+        """The per-step body of _advance_executing (F43#4 hoisted it out of
+        the ip[0]-only path). Mutates r/step; returns an Instruction or
+        None."""
         # Identify THIS step's plan (convention-first, then scan).
         p = self.ctx.plans.find_by_step(r.recipe_id, step.step_id)
         expected_pid = (
@@ -2720,7 +2737,6 @@ class Reconcile(_ClaudeTool):
         #    complete this one. (2026-05-22 fitness HITL: s1's
         #    plan_closed prematurely marked s2..s12 done; the neuron
         #    caught "FSM jumped to done=2 while s2 still version(1)".)
-        msgs = await self.ctx.broker.poll(r.recipe_id)
         _closed = [m for m in msgs
                    if m.kind == _KIND_PLAN_CLOSED
                    and m.body.get("plan_id") == expected_pid]
@@ -6340,14 +6356,36 @@ class RecordActionStatus(_ClaudeTool):
                     _declared = ""
                     _verify = getattr(a.acceptance, "verify", None)
                     if isinstance(_verify, dict):
-                        _declared = str(_verify.get("command") or "").strip()
+                        # F43#1 — the AUTHORED key is `cmd` (see
+                        # _reject_producer_verify + planner-phase-author);
+                        # this gate read `command`, so every properly
+                        # authored verify left _declared EMPTY and any
+                        # exit-0 run "proved" the gate. `command` kept as
+                        # a legacy fallback.
+                        _declared = str(_verify.get("cmd")
+                                        or _verify.get("command")
+                                        or "").strip()
 
                     def _cmd_matches(run_cmd: str) -> bool:
                         if not _declared:
                             return True
-                        rc = " ".join(str(run_cmd).split()).lower()
-                        dc = " ".join(_declared.split()).lower()
-                        return dc in rc or rc in dc
+                        rc_toks = str(run_cmd).lower().split()
+                        dc_toks = _declared.lower().split()
+                        if not dc_toks:
+                            return True
+                        # F43#1 — ONE-directional, token-contiguous: the
+                        # declared command must appear whole in the run
+                        # (wrapper prefixes like `uv run` allowed); the old
+                        # bidirectional substring accepted a run that was a
+                        # FRAGMENT of the declared command. A run that only
+                        # prints (echo/printf/cat/type) proves nothing.
+                        if rc_toks and rc_toks[0] in (
+                                "echo", "printf", "print", "cat", "type"):
+                            return False
+                        for i in range(len(rc_toks) - len(dc_toks) + 1):
+                            if rc_toks[i:i + len(dc_toks)] == dc_toks:
+                                return True
+                        return False
 
                     _proving = [
                         rr for rr in valid_runs
@@ -8894,13 +8932,20 @@ class PoolSpawnWorker(_ClaudeTool):
                     x.action_id for x in p.actions
                     if x.batch_group == a.batch_group
                     and x.action_id not in rollback_ids]
-                # F42#6 — the HEAD is canonical, derived from PLAN STATE:
-                # the first declared member of the group. Spawning under a
-                # later member's handle made that member the shell's "own
-                # action", which skipped the declared-order guard on the
-                # skipped-ahead siblings (F41#4's own-action blind spot).
+                # F42#6 — the HEAD is canonical, derived from PLAN STATE.
+                # F43#3: canonical = the first NON-TERMINAL member in
+                # declared order, matching plan_next_action's dispatch
+                # unit — the first-EVER member deadlocked a resumed batch
+                # whose earlier members were already done (the FSM stamped
+                # a2, this guard demanded a1, every tick refused + rolled
+                # back). Spawning under a later member's handle would make
+                # that member the shell's "own action" and skip the
+                # declared-order guard (F41#4's own-action blind spot).
+                _terminal_s = ("done", "failed", "skipped")
                 _canon = [x.action_id for x in p.actions
-                          if x.batch_group == a.batch_group]
+                          if x.batch_group == a.batch_group
+                          and (x.status not in _terminal_s
+                               or x.action_id == m.action_id)]
                 if _canon and m.action_id != _canon[0]:
                     _rollback_failed_dispatch(
                         self.ctx, m.plan_id, m.action_id,
@@ -11956,7 +12001,7 @@ class EmitRecipeEvent(_ClaudeTool):
                 rid_probe = _resolve_recipe_lineage(self.ctx)[0]
             if rid_probe and self.ctx.recipes.exists(rid_probe):
                 m.body["fingerprint"] = _acceptance_fingerprint(
-                    self.ctx.recipes.load(rid_probe))
+                    self.ctx.recipes.load(rid_probe), ctx=self.ctx)
         # W2 leg 3: warn-only constraint stamp on the body — NEVER blocks.
         _warn_comms_constraints(self.ctx, m.body, "emit_recipe_event",
                                 recipe_id=m.recipe_id)
@@ -12111,18 +12156,47 @@ class ConveneConsult(_ClaudeTool):
         ))
 
 
-def _acceptance_fingerprint(r) -> str:
+def _acceptance_fingerprint(r, ctx=None) -> str:
     """F35 R3a#1 — WHAT an acceptance verdict judged, as a short stable
     hash: the verbatim goal, each outcome's (id, met), and the step-id
     set. A 'pass' is honored only while this still matches — any material
-    growth of the map after the pass demands a fresh judgment. PURE."""
+    growth of the map after the pass demands a fresh judgment.
+
+    F43#2 — the MAP SHAPE alone grandfathered a reopened delivery: a step
+    reworked under the SAME ids (reopen=true replaces the plan's actions
+    and evidence) left goal/outcomes/steps identical, so the old pass kept
+    closing the new work. With `ctx` the basis also carries the DELIVERY
+    SUBSTANCE — per step, its status, its plan's terminal_status, and each
+    action's (id, status, evidence digest) — so mutating the result
+    invalidates the pass. Without ctx it degrades to the shape hash
+    (legacy callers)."""
     import hashlib as _hashlib
-    basis = json.dumps({
+    basis_d: dict = {
         "goal": r.user_goal_verbatim,
         "outcomes": sorted(
             (o.id, bool(o.met)) for o in r.comprehension.expected_outcomes),
         "steps": sorted(s.step_id for s in r.steps),
-    }, default=str, sort_keys=True)
+    }
+    if ctx is not None:
+        delivery = []
+        for s in r.steps:
+            try:
+                p = ctx.plans.find_by_step(r.recipe_id, s.step_id)
+            except Exception:  # noqa: BLE001 — an unreadable plan ≠ no hash
+                p = None
+            if p is None:
+                delivery.append([s.step_id, s.status, None, []])
+                continue
+            acts = sorted(
+                [a.action_id, a.status,
+                 _hashlib.sha256(
+                     (a.acceptance.actual or "").encode("utf-8")
+                 ).hexdigest()[:8]]
+                for a in p.actions)
+            delivery.append(
+                [s.step_id, s.status, p.terminal_status, acts])
+        basis_d["delivery"] = delivery
+    basis = json.dumps(basis_d, default=str, sort_keys=True)
     return _hashlib.sha256(basis.encode("utf-8")).hexdigest()[:12]
 
 
@@ -12143,11 +12217,18 @@ def _acceptance_pass_current(ctx, r) -> tuple[bool, str]:
                        "separate dispatch_acceptance() (interim never "
                        "satisfies final)")
     fp = body.get("fingerprint")
-    if fp and fp != _acceptance_fingerprint(r):
+    # F43#2 — a verdict with NO fingerprint is never grandfathered: there
+    # is no way to know what it judged, so it cannot vouch for the current
+    # delivery.
+    if not fp:
+        return False, ("the recorded 'pass' carries no fingerprint (it "
+                       "predates fingerprinted verdicts) — re-run "
+                       "dispatch_acceptance for the CURRENT delivery")
+    if fp != _acceptance_fingerprint(r, ctx=ctx):
         return False, ("the recorded 'pass' predates a material change to "
-                       "the recipe (goal/outcomes/steps changed since) — "
-                       "re-run dispatch_acceptance for the CURRENT "
-                       "delivery")
+                       "the recipe or its delivered work (goal/outcomes/"
+                       "steps/evidence changed since) — re-run "
+                       "dispatch_acceptance for the CURRENT delivery")
     return True, ""
 
 
@@ -12281,7 +12362,7 @@ class DispatchAcceptance(_ClaudeTool):
             "kind": "acceptance_dispatched",
             "acceptor_id": acceptor_id, "interim": m.interim,
             # F35 R3a#1: what this pass was asked to judge.
-            "fingerprint": _acceptance_fingerprint(r),
+            "fingerprint": _acceptance_fingerprint(r, ctx=self.ctx),
         })
         return Tool.ok(_DispatchAcceptanceOut(
             acceptor_id=acceptor_id, interim=m.interim))

@@ -913,16 +913,25 @@ def main(argv: list[str] | None = None) -> int:
     # double wakes; or an owner/rate change that never took effect). The
     # watcher snapshots the content it was launched from and exits when
     # the on-disk generation differs.
-    _spec_at_start = spec
-    _rt_path = _spec_path.with_name(_spec_path.stem + ".runtime.json")
+    # F43#5 — the watcher snapshots EVERY consumed sidecar (spec, bindings,
+    # effect, runtime), and absent-to-present counts as a change: a re-spec
+    # that only corrected bindings or effect args (same spec text) used to
+    # leave the old driver running its startup-compiled versions, and a
+    # legacy no-runtime driver ignored a newly written runtime sidecar.
+    _watched = [
+        _spec_path,
+        _spec_path.with_name(_spec_path.stem + ".bindings.json"),
+        _spec_path.with_name(_spec_path.stem + ".effect.json"),
+        _spec_path.with_name(_spec_path.stem + ".runtime.json"),
+    ]
 
-    def _rt_read() -> str | None:
+    def _sidecar_read(path: Path) -> str | None:
         try:
-            return _rt_path.read_text(encoding="utf-8")
+            return path.read_text(encoding="utf-8")
         except OSError:
             return None
 
-    _rt_at_start = _rt_read()
+    _at_start = [_sidecar_read(pth) for pth in _watched]
 
     def _lifecycle_watch() -> None:
         while True:
@@ -933,18 +942,19 @@ def main(argv: list[str] | None = None) -> int:
                     + "\n")
                 sys.stdout.flush()
                 os._exit(0)
-            try:
-                _changed = (_spec_path.read_text(encoding="utf-8")
-                            != _spec_at_start)
-            except OSError:
-                _changed = False        # transient read error ≠ a re-spec
-            _rt_now = _rt_read()
-            if not _changed and _rt_at_start is not None:
-                _changed = _rt_now is not None and _rt_now != _rt_at_start
+            _changed = False
+            for pth, start in zip(_watched, _at_start):
+                now_txt = _sidecar_read(pth)
+                # transient read error / deletion of a non-spec sidecar is
+                # not a re-spec; a DIFFERENT present value (incl. one that
+                # newly appeared) is.
+                if now_txt is not None and now_txt != start:
+                    _changed = True
+                    break
             if _changed:
                 sys.stdout.write(json.dumps(
                     {"completed": True,
-                     "reason": "spec/runtime re-specced (observe overwrite) "
+                     "reason": "subscription re-specced (observe overwrite) "
                                "— stale driver exit"}) + "\n")
                 sys.stdout.flush()
                 os._exit(0)

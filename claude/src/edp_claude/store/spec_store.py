@@ -50,16 +50,37 @@ def _doc_units(content: str) -> list[str]:
     each bullet/numbered/quoted item (with its indented wrap lines) or bare
     line is one unit. A rule folds only when a whole unit EQUALS it — a
     substring match let 'Superseded rule: <rule text>; now do the opposite'
-    drain the very rule it contradicted."""
+    drain the very rule it contradicted.
+
+    F43#8 — COMPOSITE units: a parent bullet plus its MORE-INDENTED child
+    bullets is also one unit, so a multi-bullet accepted rule ('Deploy
+    safely: - back up - test rollback') folds when the doc reproduces it as
+    a nested list. Match the rule through _doc_units too (its own bullet
+    markers normalize away); the whole-unit requirement stays, so negating
+    prose still never matches."""
     units: list[str] = []
+    indents: list[int] = []
     for raw in content.splitlines():
         if not raw.strip():
             continue
         if _BULLET_RX.match(raw) or not raw[:1].isspace() or not units:
             units.append(_BULLET_RX.sub("", raw, count=1))
-        else:                       # indented continuation of the last unit
+            indents.append(len(raw) - len(raw.lstrip()))
+        else:                       # indented wrap line of the last unit
             units[-1] += " " + raw.strip()
-    return units
+    # composites: each unit joined with the run of strictly-deeper units
+    # that immediately follows it (its nested children).
+    composites: list[str] = []
+    for i, base_indent in enumerate(indents):
+        parts = [units[i]]
+        for j in range(i + 1, len(units)):
+            if indents[j] > base_indent:
+                parts.append(units[j])
+            else:
+                break
+        if len(parts) > 1:
+            composites.append(" ".join(parts))
+    return units + composites
 
 
 def _amendment_view(rec: dict) -> tuple[str, str, str | None]:
@@ -209,7 +230,13 @@ class SpecStore:
         kept: list[str] = []
         for rec in self.accepted_pending_learnings(spec_id):
             _, rule_text, _ = _amendment_view(rec)
-            if _norm_text(rule_text) and _norm_text(rule_text) in doc_units:
+            # F43#8 — normalize the RULE's own bullet markers away so a
+            # multi-bullet rule matches the doc's nested-list composite.
+            rule_norm = _norm_text(" ".join(
+                _BULLET_RX.sub("", ln, count=1)
+                for ln in (rule_text or "").splitlines() if ln.strip()))
+            if rule_norm and (rule_norm in doc_units
+                              or _norm_text(rule_text) in doc_units):
                 marker = dict(rec)
                 marker["status"] = "compiled"
                 self.append_learning(spec_id, marker)

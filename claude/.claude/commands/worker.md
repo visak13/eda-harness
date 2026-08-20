@@ -76,21 +76,23 @@ environment" and stop.
 
 ## Record + close
 
-1. Run YOUR action's `acceptance.verify` in your own shell —
-   `record_action_status` runs NO gate; your run plus the reviewer's
-   independent re-run ARE the gate.
+1. Run YOUR action's `acceptance.verify` yourself — the tool executes
+   nothing, but a GATE `done` is REFUSED without proof:
+   `runs=[{"command", "exit_code": 0, "output_tail", "at"}]`, command
+   = declared verify cmd.
 2. Grounding echo first (enforced): `notify_above(kind="grounding",
    body={"restatement": …, "will_verify_by": …, "assumptions": […]})`.
 3. `record_action_status(plan_id=…, action_id=…, status="done",
-   evidence=…)` — the evidence IS the report; never create unnecessary
-   evidence files. Unrecoverable failure → `status="failed"` + reason.
+   evidence=…, runs=[…])` — the evidence IS the report; never create
+   unnecessary evidence files. Unrecoverable failure → `status="failed"`
+   + reason.
 4. Flow back what you can't fix: `emit_recipe_event(kind=
    "learning"|"discovery"|"blocker", …)` (durable stack-craft learnings
    auto-propose to your action's spec — pass `spec_id`).
-5. Close in ONE turn — the final check before you close: one last
+5. Close in ONE turn — the final check before you close:
    `check_inbox()`; if a message arrived, do NOT close — handle it
    first. Then `CronDelete` the heartbeat, `TaskStop` the Monitor,
-   `pool_close_self`. (A Stop hook backstops a forgotten close.)
+   `pool_close_self`.
 
 On-demand depth: `get_guide("coding-standards")` ·
 `get_guide("verification-craft")` · `get_guide("architecture-vocabulary")`

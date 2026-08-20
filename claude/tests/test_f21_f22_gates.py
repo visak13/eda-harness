@@ -81,10 +81,15 @@ async def test_succeeded_close_requires_acceptance_verdict(
         final_outcome={"status": "succeeded", "summary": "done"}))
     assert not refused2.ok and "'gaps'" in refused2.message
 
-    # a later 'pass' verdict clears the gate
+    # a later 'pass' verdict clears the gate (F43#2: it must carry the
+    # CURRENT delivery fingerprint — an unfingerprinted pass is never
+    # grandfathered)
+    from edp_claude.tools._tools import _acceptance_fingerprint
     ctx.recipes.append_worklog("recipe-f21", {
         "kind": "acceptance_verdict",
-        "body": {"verdict": "pass", "by": "reviewer-leg"}})
+        "body": {"verdict": "pass", "by": "reviewer-leg",
+                 "fingerprint": _acceptance_fingerprint(
+                     ctx.recipes.load("recipe-f21"), ctx=ctx)}})
     ok = await CloseRecipe(ctx)._run(_CloseRecipeIn(
         recipe_id="recipe-f21",
         final_outcome={"status": "succeeded", "summary": "done"}))

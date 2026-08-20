@@ -91,7 +91,9 @@ async def _gate_answer(env, rid, target,
     return _ok(res)["answer_id"]
 
 
-_RUN = {"command": "pytest tests -q", "exit_code": 0,
+# F43#1: the run must MATCH the declared verify cmd ("pytest -q") — the
+# gate now reads the authored `cmd` key and matches token-contiguously.
+_RUN = {"command": "uv run pytest -q", "exit_code": 0,
         "output_tail": "1 passed", "at": "2026-08-12T00:00:00+00:00"}
 
 

@@ -83,8 +83,8 @@ async def test_stale_fingerprint_pass_does_not_downgrade(
     d = res.data if isinstance(res.data, dict) else res.data.model_dump()
     assert d["kind"] == "dispatch_acceptance"
     assert "predates" in d["rationale"]
-    # matching fingerprint → DONE
-    fp = _acceptance_fingerprint(ctx.recipes.load("recipe-f35"))
+    # matching fingerprint → DONE (F43#2: delivery-substance hash, ctx-fed)
+    fp = _acceptance_fingerprint(ctx.recipes.load("recipe-f35"), ctx=ctx)
     ctx.recipes.append_worklog("recipe-f35", {
         "kind": "acceptance_verdict",
         "body": {"verdict": "pass", "fingerprint": fp}})

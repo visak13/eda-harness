@@ -58,9 +58,14 @@ async def test_all_met_emits_dispatch_acceptance_then_done_on_pass(
     assert d2["kind"] == "dispatch_acceptance"
     assert "'gaps'" in d2["rationale"]
 
-    # a later 'pass' downgrades to DONE
+    # a later 'pass' downgrades to DONE (F43#2: stamped with the current
+    # delivery fingerprint — an unfingerprinted pass never grandfathers)
+    from edp_claude.tools._tools import _acceptance_fingerprint
     ctx.recipes.append_worklog("recipe-f31", {
-        "kind": "acceptance_verdict", "body": {"verdict": "pass"}})
+        "kind": "acceptance_verdict",
+        "body": {"verdict": "pass",
+                 "fingerprint": _acceptance_fingerprint(
+                     ctx.recipes.load("recipe-f31"), ctx=ctx)}})
     res3 = await NextAction(ctx)._run(_NA_In(
         handle="recipe-f31", handle_type="recipe"))
     d3 = res3.data if isinstance(res3.data, dict) else res3.data.model_dump()

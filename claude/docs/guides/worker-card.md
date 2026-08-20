@@ -26,15 +26,20 @@ wakes you.
 2. Do the work. The action's `concerns` list is the authoritative
    cross-cutting list (flow-down gate, enforced) — cover every entry.
 3. Run YOUR action's `acceptance.verify` criteria in your own shell.
-   `record_action_status` runs NO gate (pure write); your in-shell run
-   plus the reviewer's independent re-run ARE the gate.
+   The tool executes nothing itself, but a GATE action's `done` is
+   REFUSED without execution proof: at least one `runs` entry
+   `{"command": <the exact command you ran>, "exit_code": 0,
+   "output_tail": …, "at": …}` whose command matches the declared
+   verify `cmd`. Your run plus the reviewer's independent re-run ARE
+   the gate.
 4. Grounding echo: `notify_above(kind="grounding", body={"restatement":
    …, "will_verify_by": …, "assumptions": […]})` — recording done/failed
    without it is refused (enforced). Proceed immediately; a `steer` is
    the planner's objection, and it gets a `steer_ack` before you act.
 5. `record_action_status(plan_id=…, action_id=…, status="done",
-   evidence=…)` — the evidence IS the report. On unrecoverable failure:
-   `status="failed"` with the reason.
+   evidence=…, runs=[…])` — the evidence IS the report. On
+   unrecoverable failure: `status="failed"` with the reason (runs
+   persist on any status; a failed run is honest history).
 6. Close in ONE turn: final `check_inbox()`, stop your Monitor, delete
    your cron, `pool_close_self`. (A Stop hook backstops a forgotten
    close — enforced — but the clean one-turn close is yours.)
