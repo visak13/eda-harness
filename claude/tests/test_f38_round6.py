@@ -97,7 +97,10 @@ def test_slot_reap_spares_aged_but_alive_owner(tmp_path, monkeypatch):
 def test_caller_recipe_derivation():
     assert _caller_recipe("r9-s1:a1") == "r9"       # worker handle
     assert _caller_recipe("r9:s1") == "r9"          # planner handle
-    assert _caller_recipe("neuron") == "neuron"     # role-name caller
+    # F38 review: NO lineage shape → unattributable, never a phantom recipe
+    assert _caller_recipe("neuron") is None          # role-name caller
+    assert _caller_recipe("acceptor-369ca226") is None
+    assert _caller_recipe("curiosity-ab12cd34") is None
     assert _caller_recipe("") is None
 
 

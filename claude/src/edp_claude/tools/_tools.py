@@ -10248,8 +10248,15 @@ class TestLineageReport(_ClaudeTool):
 def _caller_recipe(caller: str) -> str | None:
     """Derive the recipe a bridge caller handle belongs to: worker
     `<recipe>-<step>:<action>` / planner `<recipe>:<step>` → the recipe id.
-    None for a role-name/anon caller (unattributable)."""
-    head = (caller or "").split(":", 1)[0].strip()
+    None for anything WITHOUT lineage shape (F38 review): a role-name
+    caller (`neuron`) or a lineage-less spawned seat (`acceptor-<hex>`,
+    `curiosity-<hex>`) carries no recipe in its handle — deriving one from
+    the bare string mis-billed their spend to a phantom recipe id instead
+    of the honest unattributed bucket."""
+    caller = (caller or "").strip()
+    if ":" not in caller:
+        return None
+    head = caller.split(":", 1)[0].strip()
     if not head:
         return None
     rid = re.sub(r"-s\d+$", "", head)
@@ -15131,6 +15138,11 @@ _WIRING_SPECS: dict[str, str] = {
     "reviewer": "rx.broker(me)",
     "curiosity": "rx.broker(me)",
     "specialist": "rx.broker(me)",
+    # F39 (live pain report 2026-08-19, acceptor-369ca226): the /acceptor
+    # card mandates arm_wiring at boot, but this table never learned the
+    # role — the whole acceptance pass ran DEAF (ask_above answers could
+    # never wake it). Same inbox-only profile as the other spawned seats.
+    "acceptor": "rx.broker(me)",
     "planner": ("rx.merge(rx.broker(me), rx.worklog(plan_id), "
                 "rx.pool(scope=plan_id), rx.recipe_events(recipe_id))"),
     "neuron": ("rx.merge(rx.broker(me), rx.pool(scope=me), "
@@ -15158,6 +15170,10 @@ _WIRING_REFLEX_PROMPTS: dict[str, str] = {
     "specialist": (
         "call check_inbox() and if there is an answer or update task, act "
         "on it; otherwise end the turn and wait."),
+    "acceptor": (
+        "call check_inbox() and if there is an answer to your ask_above, "
+        "resume the acceptance pass with it; otherwise end the turn and "
+        "wait."),
 }
 
 
@@ -15172,7 +15188,7 @@ def _wiring_heartbeat_minutes(role: str) -> int:
             return 5
     if role == "specialist":
         return 10
-    return 5    # curiosity
+    return 5    # curiosity / acceptor
 
 
 class _ArmWiringIn(BaseModel):

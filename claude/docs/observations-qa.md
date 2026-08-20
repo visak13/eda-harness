@@ -636,3 +636,27 @@ env-fail only). New: tests/test_f38_round6.py. Updated to new contracts:
 test_bridge (findings-contract None vs []), test_v7_budget + test_wp2_gates
 (caller-scoped audit rows). NOTE: none of these change pool/broker code, so
 no stack restart is required for F38.
+
+## F39 — live pain report + F38 post-review fixes, 2026-08-20
+Source 1: the /pain skill's FIRST live catch (docs/pain-points.jsonl,
+acceptor-369ca226, 2026-08-19) — arm_wiring had no wiring profile for role
+`acceptor`, so the card-mandated boot wiring refused and the whole
+acceptance pass ran DEAF (ask_above answers could never wake it). FIX:
+acceptor added to _WIRING_SPECS (rx.broker(me)), _WIRING_REFLEX_PROMPTS,
+heartbeat table; NEW drift gate (test_f39_acceptor_wiring.py) — every role
+whose toolset grants arm_wiring must have a wiring spec + reflex prompt.
+
+Source 2: independent post-review of the Opus-4.8 F38 commit (operator
+request). Two confirmed, both fixed:
+- _caller_recipe treated ANY colon-less caller (`neuron`,
+  `acceptor-<hex>`, `curiosity-<hex>`) as a recipe id — their spend was
+  billed to a phantom recipe instead of the honest unattributed bucket.
+  Now: no lineage shape (no `:`) → unattributed.
+- _pid_alive (Windows): windll GetLastError() reads stale error state and
+  the default c_int restype truncates a 64-bit HANDLE → could misread
+  dead-vs-alive at the slot reaper. Now WinDLL(use_last_error=True) +
+  get_last_error() + explicit restype/argtypes; live-verified against a
+  real and a nonexistent pid.
+
+Suites: claude 1580, edp-pool 306, edp-broker 29 — green (Phoenix
+env-fail only). Claude-side only; no stack restart needed.

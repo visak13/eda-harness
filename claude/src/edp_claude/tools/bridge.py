@@ -410,13 +410,24 @@ def _pid_alive(pid: int) -> bool:
         PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
         STILL_ACTIVE = 259
         ERROR_INVALID_PARAMETER = 87
-        k32 = ctypes.windll.kernel32
+        # use_last_error=True + get_last_error(): the raw
+        # windll.kernel32.GetLastError() reads whatever the interpreter's
+        # own intervening Win32 calls left behind — a stale value here
+        # would misclassify dead-vs-alive. restype=HANDLE: the default
+        # c_int restype truncates a 64-bit HANDLE.
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.OpenProcess.restype = wintypes.HANDLE
+        k32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL,
+                                    wintypes.DWORD)
+        k32.GetExitCodeProcess.argtypes = (wintypes.HANDLE,
+                                           ctypes.POINTER(wintypes.DWORD))
+        k32.CloseHandle.argtypes = (wintypes.HANDLE,)
         handle = k32.OpenProcess(
             PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
         if not handle:
             # invalid-parameter = no such process → dead; anything else
             # (e.g. access-denied) is unprovable → treat as alive.
-            return k32.GetLastError() != ERROR_INVALID_PARAMETER
+            return ctypes.get_last_error() != ERROR_INVALID_PARAMETER
         try:
             code = wintypes.DWORD()
             if k32.GetExitCodeProcess(handle, ctypes.byref(code)):
