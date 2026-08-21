@@ -34,6 +34,15 @@ import os
 from pathlib import Path
 from typing import Any
 
+# F45#8 — the index RMW is serialized across MCP-server processes with the
+# same advisory file lock the object stores use: every spawned shell runs
+# its own server, so two concurrent observe() calls could both load the
+# same index and the last atomic replace silently dropped the other
+# shell's mapping (its subscription became un-handbackable after compact).
+# StoreLockTimeout subclasses TimeoutError (an OSError), so the observe
+# layer's existing except-OSError degradation path covers a held lock.
+from ..store.ipc_lock import object_lock
+
 # The index file lives directly under the `.reactive` root, a sibling of the
 # `sub-*.spec` artifacts + the `registry/` and `effect_audit/` subdirs.
 INDEX_NAME = "handle_index.json"
@@ -70,7 +79,9 @@ def _atomic_write(reactive_root: Path, data: dict[str, list[str]]) -> None:
     root = Path(reactive_root)
     root.mkdir(parents=True, exist_ok=True)
     path = index_path(root)
-    tmp = path.with_suffix(".json.tmp")
+    # F45#8 — pid-unique temp: a shared `.tmp` name let two processes
+    # clobber each other's half-written temp before their os.replace.
+    tmp = path.with_suffix(f".json.{os.getpid()}.tmp")
     tmp.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
     os.replace(tmp, path)
 
@@ -86,11 +97,12 @@ def register_subscription(reactive_root: Path, handle: str, sid: str) -> None:
     (indexing failure must never fail the observe() call itself)."""
     if not handle or not sid:
         return
-    data = _load(reactive_root)
-    sids = data.setdefault(handle, [])
-    if sid not in sids:
-        sids.append(sid)
-        _atomic_write(reactive_root, data)
+    with object_lock(Path(reactive_root)):
+        data = _load(reactive_root)
+        sids = data.setdefault(handle, [])
+        if sid not in sids:
+            sids.append(sid)
+            _atomic_write(reactive_root, data)
 
 
 def unregister_subscription(reactive_root: Path, handle: str,
@@ -102,14 +114,15 @@ def unregister_subscription(reactive_root: Path, handle: str,
     register_subscription."""
     if not handle or not sid:
         return False
-    data = _load(reactive_root)
-    sids = data.get(handle, [])
-    if sid not in sids:
-        return False
-    sids.remove(sid)
-    if not sids:
-        data.pop(handle, None)
-    _atomic_write(reactive_root, data)
+    with object_lock(Path(reactive_root)):
+        data = _load(reactive_root)
+        sids = data.get(handle, [])
+        if sid not in sids:
+            return False
+        sids.remove(sid)
+        if not sids:
+            data.pop(handle, None)
+        _atomic_write(reactive_root, data)
     return True
 
 

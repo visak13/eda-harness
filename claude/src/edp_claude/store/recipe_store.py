@@ -178,6 +178,11 @@ GATE_PINNED_KINDS: frozenset[str] = frozenset({
     # hot-tail lookup for the step's dispatch-intent stamp; archiving it
     # left a stamped-but-never-spawned step waiting forever.
     "step_dispatch_emitted",
+    # F45#4: the in-flight acceptance latch releases only when the abort
+    # that settled a failed dispatch is visible in the hot tail — rolling
+    # the abort out while its dispatch stayed pinned RESURRECTED the
+    # latch and wedged dispatch_acceptance for the full TTL.
+    "acceptance_dispatch_aborted",
     # F42#12: unacked-steer detection scans the hot tail for the send
     # record; rolling it out made an IGNORED directive disappear from
     # reconciliation (the parent silently stopped enforcing it).

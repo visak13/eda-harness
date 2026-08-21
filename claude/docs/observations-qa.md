@@ -801,3 +801,33 @@ cross-subsystem protocol/concurrency, a class the charter only now aimed
 at). Round 12 = a SECOND full-framework sweep with the same
 empty-is-valid charter + the F44 residuals recorded; an empty or
 noise-only R12 declares convergence → the closing polish sweep.
+
+## F45 — Adversarial campaign Round 12 (second convergence sweep), 2026-08-21
+8 findings (raw: .sol_review_out-r12.txt); lens = whole framework again,
+F44's own fixes named as the prime target, empty-array-means-converged.
+All 8 CONFIRMED. NOT converged — but the round validated the charter's
+aim: three highs attack seams the freshest fixes (F44#1, F43#1) had just
+reshaped, and the mediums are the remaining caller-side RMW protocols of
+the exact class R11 opened (channel registry GET→PUT, starting-row
+release, spawn-seam readiness).
+
+| # | Finding | Verdict |
+|---|---------|---------|
+| 1 | verdicts bind to the recipe-global LAST dispatch, not the emitting acceptor's own; caller-supplied recipe_id trusted (stale/foreign acceptor mints a pass for work it never judged) | CONFIRM — a spawned acceptor's verdict now requires an acceptance_dispatched record naming ITS handle (uses that record's fingerprint, never a rival's) and refuses a recipe_id conflicting with its spawn lineage |
+| 2 | G-RUNS containment accepts an unknown no-op prefix (`true pytest -q`, `command echo pytest -q`) — declared tokens present as mere argv | CONFIRM — ANCHORED match: the declared sequence must begin within the recognized wrapper prefix or exactly at the executable position; python/py join the wrapper set |
+| 3 | record_branch_verdict lets a reviewer record/overwrite verdicts on an unrelated plan (reopen or bless work it never reviewed) | CONFIRM — plan-scope twin of F37#9/F40#2: a spawned shell whose handle names an existing plan stamps only THAT plan; planners route through _planner_foreign_plan_refusal |
+| 4 | acceptance_dispatch_aborted is not gate-pinned — rollup archives the abort while the dispatch stays pinned, resurrecting the in-flight latch for the TTL | CONFIRM — abort joins GATE_PINNED_KINDS |
+| 5 | pool_spawn_worker admits the requested action unconditionally (F44#8's own-inclusion) with no dependency check — a confused planner launches work before its prerequisites | CONFIRM — the spawn seam re-validates readiness: every unit member's depends_on must be done/skipped or an EARLIER member of the admitted unit; refusal rolls the pre-stamps back |
+| 6 | release() reads/flags a `starting` row without _transition_lock — registration can replace the row and drop the release flag (closed shell stays active) | CONFIRM — the starting-latch and the active-close state flip run under _transition_lock; kill/viewport stay outside it |
+| 7 | channel membership is caller-side stale GET→PUT (pool spawn registration ×2, grounding-topic update) — concurrent spawns erase each other's registration and @all wakes miss the dropped member | CONFIRM — broker-side atomic merge (PATCH /v1/channels/{name}, ChannelStore.merge under a lock); pool + tools callers send deltas, GET→PUT survives only as the pre-F45-broker fallback |
+| 8 | handle_index RMW is unlocked with a SHARED temp filename; observe swallows the OSError and reports success (subscription silently un-handbackable) | CONFIRM — index RMW under the stores' interprocess object_lock + pid-unique temp; observe returns a loud index_degraded note telling the owner to re-observe after compact/restart |
+
+Tests: +14 claude (test_f45_round12.py), +2 edp-pool
+(test_f45_release_lock.py), +3 edp-broker (test_f45_channel_merge.py).
+Suites: claude 1639 (Phoenix env-fail only), edp-pool 313, edp-broker 33
+— green. Convergence read: yield is flat (9 → 8) but narrowing in KIND —
+no new defect class this round; everything is either a twin of a shipped
+guard or the same unlocked-RMW/protocol class R11 named. Round 13 = third
+convergence sweep (F45's fixes as the prime target + any remaining
+caller-side RMW); empty or noise-only declares convergence → the closing
+compact-framework polish sweep.

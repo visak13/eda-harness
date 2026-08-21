@@ -163,6 +163,28 @@ def create_app(data_dir: Path):
                   members=len(row["members"]))
         return row
 
+    @app.patch("/v1/channels/{name}")
+    async def channel_merge(name: str, request: Request):
+        """F45#7 — atomic delta: {"add": [...], "remove": [...],
+        "topic": "..."} merged against the CURRENT row inside the store's
+        critical section. Callers must prefer this over GET→PUT (which
+        races: two concurrent spawns each replaying a stale member list
+        erased each other's registration)."""
+        body = await request.json()
+        try:
+            row = store.channels.merge(
+                name,
+                add=list(body.get("add", [])),
+                remove=list(body.get("remove", [])),
+                topic=(str(body["topic"])
+                       if "topic" in body and body["topic"] is not None
+                       else None))
+        except BadRecipient as exc:
+            return _err(ErrorCode.BROKER_NO_ROUTE, str(exc))
+        _log.info("channel_merge", name, channel=name,
+                  members=len(row["members"]))
+        return row
+
     @app.get("/v1/channels/{name}")
     async def channel_get(name: str):
         row = store.channels.get(name)

@@ -4,6 +4,7 @@ import json
 import os
 import re
 import tempfile
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -93,6 +94,11 @@ class ChannelStore:
 
     def __init__(self, data: Path):
         self.path = Path(data) / "channels.json"
+        # F45#7 — merge mutations serialize here so a member-add can never
+        # be built from a stale row (the caller-side GET→PUT protocol let
+        # two concurrent spawns erase each other's registration, and the
+        # resume watchdog trusts this registry for @all wakes).
+        self._merge_lock = threading.Lock()
 
     def _load(self) -> dict:
         if not self.path.exists():
@@ -112,6 +118,28 @@ class ChannelStore:
         d[name] = row
         _write_atomic(self.path, json.dumps(d, indent=2))
         return {"channel": name, **row}
+
+    def merge(self, name: str, add: list[str] | None = None,
+              remove: list[str] | None = None,
+              topic: str | None = None) -> dict:
+        """F45#7 — atomic member/topic delta against the CURRENT row.
+        Callers send what changed, never a whole membership list read
+        moments ago (the stale GET→PUT protocol dropped concurrent
+        registrations). Creates the channel when absent, like put."""
+        if not _RECIPIENT_RE.match(name or ""):
+            raise BadRecipient(f"invalid channel name {name!r}")
+        with self._merge_lock:
+            d = self._load()
+            row = d.get(name) or {"members": [], "topic": ""}
+            members = set(row.get("members", []))
+            members |= {m for m in (add or []) if m}
+            members -= set(remove or [])
+            new_row = {"members": sorted(members),
+                       "topic": (topic if topic is not None
+                                 else row.get("topic", ""))}
+            d[name] = new_row
+            _write_atomic(self.path, json.dumps(d, indent=2))
+        return {"channel": name, **new_row}
 
     def get(self, name: str) -> dict | None:
         row = self._load().get(name)
@@ -145,7 +173,6 @@ class InboxStore:
         # concurrent publishes could both read tail T, both stamp T+1µs,
         # and the strict `ts > cursor` reader would hide one forever.
         self._last_ts: dict[Path, datetime] = {}
-        import threading
         self._append_lock = threading.Lock()
 
     def _file(self, recipient: str) -> Path:

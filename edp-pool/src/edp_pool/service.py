@@ -1192,18 +1192,28 @@ class PoolService(Microservice):
         if park:
             self.park_session(sid)
             return
-        s = self.sessions.get(sid)
-        # F36 R4#2: a release against a STARTING row (the shell closed
-        # itself faster than the spawn thread registered it) is recorded —
-        # _launch_reserved honors it right after registration.
-        if s and s.get("state") == "starting":
-            s["_release_requested"] = True
+        # F45#6 — the starting-row latch and the starting→active
+        # registration are ONE lock-protected transition: an unlocked
+        # release could set _release_requested on the old row AFTER
+        # registration (holding the lock) had read it as false but BEFORE
+        # it replaced the row — the flag vanished with the replacement and
+        # a successfully-closed shell stayed 'active'. The kill/viewport
+        # work stays OUTSIDE the lock (it can block).
+        with self._transition_lock:
+            s = self.sessions.get(sid)
+            # F36 R4#2: a release against a STARTING row (the shell closed
+            # itself faster than the spawn thread registered it) is
+            # recorded — _launch_reserved honors it right after
+            # registration.
+            if s and s.get("state") == "starting":
+                s["_release_requested"] = True
+                self._persist()
+                return
+            if not s or s["state"] != "active":
+                return  # idempotent
+            _log.info("release", sid, sid=sid, handle=s.get("handle"))
+            s["state"] = "done"
             self._persist()
-            return
-        if not s or s["state"] != "active":
-            return  # idempotent
-        _log.info("release", sid, sid=sid, handle=s.get("handle"))
-        s["state"] = "done"
         # fingerprint-gated: also closes a shell orphaned across a pool restart
         self._kill_session(sid)
         # TERMINAL close ends the shell's VIEWPORT too (2026-07-20,
@@ -1212,9 +1222,10 @@ class PoolService(Microservice):
         # terminal release means this shell will never speak again, so
         # its window closing IS the truthful signal.
         getattr(self.spawner, "close_viewport", lambda _s: None)(sid)
-        if self.locks.get(s["handle"]) == sid:
-            del self.locks[s["handle"]]
-        self._persist()
+        with self._transition_lock:
+            if self.locks.get(s["handle"]) == sid:
+                del self.locks[s["handle"]]
+            self._persist()
 
     # ── DESIGN-v7 1.5.2-1.5.4: park / resume ──────────────────────────────
     #
@@ -1244,8 +1255,19 @@ class PoolService(Microservice):
     )
 
     def _ensure_channel(self, name: str, members: list[str]) -> None:
-        """Merge-create a channel row (existing members/topic kept)."""
+        """Merge-create a channel row (existing members/topic kept).
+
+        F45#7 — the merge happens IN the broker (atomic PATCH): the old
+        GET→PUT replayed a member list read moments earlier, so two
+        concurrent spawns erased each other's registration and the resume
+        watchdog (which trusts this registry for @all wakes) never woke
+        the dropped member. GET→PUT survives only as the fallback for a
+        pre-F45 broker (405)."""
         try:
+            r = httpx.patch(f"{self.broker_url}/v1/channels/{name}",
+                            json={"add": members}, timeout=5.0)
+            if r.status_code != 405:
+                return
             cur = httpx.get(f"{self.broker_url}/v1/channels/{name}",
                             timeout=5.0)
             existing = (cur.json().get("members", [])
@@ -1277,18 +1299,8 @@ class PoolService(Microservice):
         elif role in ("specialist", "consult"):
             chans = ["experts"]
         for ch in chans:
-            try:
-                cur = httpx.get(f"{self.broker_url}/v1/channels/{ch}",
-                                timeout=5.0)
-                members = (cur.json().get("members", [])
-                           if cur.status_code == 200 else [])
-                if handle in members:
-                    continue
-                httpx.put(f"{self.broker_url}/v1/channels/{ch}",
-                          json={"members": members + [handle]},
-                          timeout=5.0)
-            except Exception:  # noqa: BLE001
-                return
+            # F45#7 — same atomic-merge protocol as _ensure_channel.
+            self._ensure_channel(ch, [handle])
 
     def sweep_crashed(self) -> list[str]:
         """CRASH FLOWBACK (2026-07-19, operator finding: "if the child

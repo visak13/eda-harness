@@ -4238,6 +4238,26 @@ class RecordBranchVerdict(_ClaudeTool):
         if a is None:
             return _precondition(
                 f"no action {m.branch_id!r} in plan {m.plan_id!r}")
+        # F45#3 — plan-scope the verdict writer the way record_action_status
+        # scopes its writers (F37#9/F40#2/#3): a spawned shell stamps
+        # verdicts only on the plan its own handle names. The own-action
+        # guard below covers d30; without THIS guard a prompt-injected
+        # review leg of plan P1 could reopen or bless any action in P2.
+        _own = _planner_foreign_plan_refusal(m.plan_id or "",
+                                             "record_branch_verdict")
+        if _own is not None:
+            return _own
+        _me0, _par0 = _self_and_parent_addresses()
+        _my_plan = _me0.split(":", 1)[0] if _me0 and ":" in _me0 else ""
+        if (_my_plan and _my_plan != (m.plan_id or "")
+                and self.ctx.plans.exists(_my_plan)):
+            return _precondition(
+                f"record_branch_verdict refused: your handle belongs to "
+                f"plan {_my_plan!r} and {m.plan_id!r} is not it — a "
+                "reviewer stamps verdicts only on actions of ITS OWN "
+                "plan (the ones its dispatch brief names). If another "
+                "plan's state is wrong, tell your planner (notify_above). "
+                "Nothing was recorded.")
         # d30: a shell may not bless the action it itself executed.
         if _caller_owns_action(m.plan_id or "", m.branch_id):
             return _precondition(
@@ -6422,7 +6442,8 @@ class RecordActionStatus(_ClaudeTool):
                         # bypassed a first-token-only check).
                         _wrap = {"cmd", "cmd.exe", "powershell",
                                  "powershell.exe", "pwsh", "sh", "bash",
-                                 "zsh", "env", "uv", "run", "npx", "time"}
+                                 "zsh", "env", "uv", "run", "npx", "time",
+                                 "python", "python.exe", "python3", "py"}
                         i = 0
                         while i < len(rc_toks) and (
                                 rc_toks[i] in _wrap
@@ -6432,8 +6453,14 @@ class RecordActionStatus(_ClaudeTool):
                                 "echo", "printf", "print", "cat", "type",
                                 "write-host", "write-output"):
                             return False
-                        for i in range(len(rc_toks) - len(dc_toks) + 1):
-                            if rc_toks[i:i + len(dc_toks)] == dc_toks:
+                        # F45#2 — ANCHORED: the declared sequence must
+                        # begin within the recognized wrapper prefix or
+                        # exactly at the executable position. Containment
+                        # anywhere let an unknown no-op prefix carry the
+                        # declared tokens as mere argv (`true pytest -q`,
+                        # `command echo pytest -q`) without running them.
+                        for j in range(min(i, len(rc_toks)) + 1):
+                            if rc_toks[j:j + len(dc_toks)] == dc_toks:
                                 return True
                         return False
 
@@ -7094,14 +7121,22 @@ class RecordGroundingBrief(_ClaudeTool):
             import httpx as _hx
             _burl = os.environ.get("EDP_BROKER_URL", "").strip()
             if _burl:
-                cur = _hx.get(f"{_burl}/v1/channels/{m.plan_id}",
-                              timeout=5.0)
-                members = (cur.json().get("members", [])
-                           if cur.status_code == 200 else [])
-                _hx.put(f"{_burl}/v1/channels/{m.plan_id}",
-                        json={"members": members,
-                              "topic": m.content.strip()[:300]},
-                        timeout=5.0)
+                # F45#7 — topic-only PATCH: the broker merges atomically,
+                # so this no longer round-trips a stale member list that
+                # could erase a concurrently-registered spawn. Fallback to
+                # the old GET/PUT only for a pre-F45 broker (405/404).
+                _r = _hx.patch(f"{_burl}/v1/channels/{m.plan_id}",
+                               json={"topic": m.content.strip()[:300]},
+                               timeout=5.0)
+                if _r.status_code in (404, 405):
+                    cur = _hx.get(f"{_burl}/v1/channels/{m.plan_id}",
+                                  timeout=5.0)
+                    members = (cur.json().get("members", [])
+                               if cur.status_code == 200 else [])
+                    _hx.put(f"{_burl}/v1/channels/{m.plan_id}",
+                            json={"members": members,
+                                  "topic": m.content.strip()[:300]},
+                            timeout=5.0)
         except Exception:  # noqa: BLE001
             pass
         # TELL THE PLANNER NOW, NOT NEVER. The store keeps the brief whole,
@@ -9290,6 +9325,38 @@ class PoolSpawnWorker(_ClaudeTool):
                             "dispatch instruction, or dispatch the live "
                             "members individually."
                         )
+                # F45#5 — the spawn seam re-validates READINESS. This verb is
+                # callable directly (stamp and spawn are independent both
+                # ways), so a confused planner could launch a pending head
+                # whose depends_on are unmet — the FSM's ready-wave rule
+                # (plan_fsm._ready_actions) never saw it. A dependency is
+                # satisfied by a done/skipped action or by an EARLIER member
+                # of this admitted unit (the one-shell batch executes its
+                # members in declared order).
+                _dep_done = {x.action_id for x in p.actions
+                             if x.status in ("done", "skipped")}
+                _unit_seen: set[str] = set()
+                _dep_blocked: dict[str, list[str]] = {}
+                for mem in members:
+                    _missing_deps = [
+                        d for d in (getattr(mem, "depends_on", None) or [])
+                        if d not in _dep_done and d not in _unit_seen]
+                    if _missing_deps:
+                        _dep_blocked[mem.action_id] = _missing_deps
+                    _unit_seen.add(mem.action_id)
+                if _dep_blocked:
+                    _rollback_failed_dispatch(
+                        self.ctx, m.plan_id, m.action_id,
+                        "unmet_dependencies_pre_launch",
+                        member_ids=rollback_ids)
+                    return _precondition(
+                        f"dispatch refused: unmet dependencies "
+                        f"{_dep_blocked!r} — every member's depends_on "
+                        "must already be done/skipped (or an earlier "
+                        "member of this same unit) before its shell "
+                        "launches. Finish or skip the blocking actions "
+                        "first; the FSM's next_action offers only ready "
+                        "work. Nothing was launched.")
                 # s17 FA3: an EXPLICIT per-action tier the planner stamped WINS
                 # over the W10b table — the planner authored the action and knows
                 # its shape. Absent (the default), the table's resolution above
@@ -12055,14 +12122,49 @@ class EmitRecipeEvent(_ClaudeTool):
             # delivery had mutated into mid-review, so a pass on delivery A
             # closed delivery B. No recorded dispatch (a manual reviewer-leg
             # verdict) falls back to the current fingerprint.
+            # F45#1 — a SPAWNED acceptor judges the recipe it was DISPATCHED
+            # under, and its verdict binds to ITS OWN dispatch record. The
+            # old shape trusted a caller-supplied recipe_id and stamped the
+            # recipe-global LAST dispatch's fingerprint, so a stale acceptor
+            # could mint a pass carrying a rival attempt's identity (its
+            # review of delivery A closed delivery B), or pass an unrelated
+            # recipe outright.
             rid_probe = m.recipe_id
+            _lineage_rid = _resolve_recipe_lineage(self.ctx)[0]
             if rid_probe is None:
-                rid_probe = _resolve_recipe_lineage(self.ctx)[0]
+                rid_probe = _lineage_rid
+            _me_h = os.environ.get("EDP_HANDLE", "").strip()
+            _spawned_acceptor = bool(_me_h) and _role == "acceptor"
+            if _spawned_acceptor and _lineage_rid:
+                if m.recipe_id and m.recipe_id != _lineage_rid:
+                    return _precondition(
+                        f"acceptance_verdict refused: you were dispatched "
+                        f"under recipe {_lineage_rid!r} and recipe_id="
+                        f"{m.recipe_id!r} is not it — an acceptor judges "
+                        "the recipe it was spawned for, never another. "
+                        "Nothing was recorded.")
+                rid_probe = _lineage_rid
             if rid_probe and self.ctx.recipes.exists(rid_probe):
                 _disp = self.ctx.recipes.read_events_tail(
                     rid_probe, kinds=["acceptance_dispatched"])
-                _disp_fp = (_disp[-1].get("fingerprint")
-                            if _disp else None)
+                if _spawned_acceptor:
+                    _mine = [e for e in _disp
+                             if e.get("acceptor_id") == _me_h]
+                    if not _mine:
+                        return _precondition(
+                            "acceptance_verdict refused: no "
+                            "acceptance_dispatched record on recipe "
+                            f"{rid_probe!r} names your handle {_me_h!r} — "
+                            "your dispatch was aborted, superseded, or "
+                            "never recorded, so this verdict cannot be "
+                            "bound to the attempt you were launched for. "
+                            "Notify the neuron (notify_above) instead of "
+                            "recording; it re-dispatches acceptance. "
+                            "Nothing was recorded.")
+                    _disp_fp = _mine[-1].get("fingerprint")
+                else:
+                    _disp_fp = (_disp[-1].get("fingerprint")
+                                if _disp else None)
                 m.body["fingerprint"] = _disp_fp or _acceptance_fingerprint(
                     self.ctx.recipes.load(rid_probe), ctx=self.ctx)
         # W2 leg 3: warn-only constraint stamp on the body — NEVER blocks.
@@ -15242,6 +15344,10 @@ class _ObserveOut(BaseModel):
                                            # already exists; DO NOT start a
                                            # second Monitor (idempotent reuse,
                                            # s17 FA2-F2 / RC2)
+    # F45#8 — non-empty when the handle->sid index write failed: the wiring
+    # RUNS but cannot be handed back after a compact/restart; the owner must
+    # re-observe then. Loud in the result, not only the server log.
+    index_degraded: str = ""
 
 
 # Default lifetime after which an idle .reactive/sub-*.spec artifact triplet
@@ -15659,10 +15765,20 @@ class ObserveStream(_ClaudeTool):
         # index entry). Best-effort: an index write must NEVER fail the observe.
         from ..reactive.handle_index import register_subscription
         owner_handle = m.owner or str(m.bindings.get("me", ""))
+        _index_degraded = ""
         if owner_handle:
             try:
                 register_subscription(root, owner_handle, sid)
             except OSError as exc:
+                # F45#8 — say it in the RESULT, not only the server log: the
+                # subscription works but cannot be handed back after a
+                # compact/restart, and the caller is the one who must
+                # re-observe then.
+                _index_degraded = (
+                    f"could not index {sid} -> {owner_handle} ({exc}); "
+                    "this wiring will NOT be handed back by "
+                    "reground/rewire — re-run this observe() after any "
+                    "compact or restart.")
                 _log.warning("observe_index_skip",
                              f"could not index {sid} -> {owner_handle}: {exc}",
                              sid=sid)
@@ -15696,6 +15812,7 @@ class ObserveStream(_ClaudeTool):
             monitor_cmd=cmd,
             has_effect=has_effect,
             reused=reused,
+            index_degraded=_index_degraded,
         ))
 
 
