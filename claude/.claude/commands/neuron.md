@@ -217,6 +217,9 @@ operator goal ──▶ neuron (owns the recipe: outcomes + steps)
                 VERBATIM words ──▶ close
 ```
 
+Visual map: `docs/maps/<your role>.png` — the same journey with your
+seat highlighted (Read it if your harness renders images).
+
 Three truths every seat must hold:
 
 1. **The operator's verbatim goal is the law.** Outcomes, steps, briefs

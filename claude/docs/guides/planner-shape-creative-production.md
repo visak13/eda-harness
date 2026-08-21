@@ -6,10 +6,14 @@
 
 **When this shape applies:** generative media goals — video, image,
 audio, 3D models, music, mods, plugins. Anything that extends or
-wraps something that already exists. The agent doesn't have local
-tooling for these mediums, and pretending otherwise leads to the
-worst failure mode: looking like progress all the way until the
-final render step has nowhere to render.
+wraps something that already exists. The fleet's ONE in-house
+generative route is the Sol bridge: a WORKER's `delegate_generate`
+with task_class "asset" and an out_dir has the visual authority WRITE
+image files directly (and task_class "visual_critique" judges the
+look) — plan image work onto workers knowing that route exists. Every
+OTHER medium still has no local tooling, and pretending otherwise
+leads to the worst failure mode: looking like progress all the way
+until the final render step has nowhere to render.
 
 ## Mandatory pre-steps
 

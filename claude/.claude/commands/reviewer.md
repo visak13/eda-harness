@@ -47,8 +47,9 @@ before this shell existed (enforced) — it is in your inbox now.
 - **Pre-screen when the review_policy asks:** `delegate_review(
   artifact=…, acceptance=…)` — a cross-family defect list whose
   verdict never decides; YOU adjudicate against the acceptance.
-- **Visual deliverables (action `deliverable` = interactive_ui/image/
-  3d_asset): green numbers never accept the LOOK.** Exercise the
+- **Run/see/hear deliverables (action `deliverable` = interactive_ui/
+  runnable_app/image/audio/video/3d_asset): green numbers never accept
+  the LOOK (or the sound, or the cold start).** Exercise the
   artifact yourself (run it, open it, screenshot it) and get Sol's
   read — `delegate_review(artifact=<what it is + where>,
   task_class="visual_critique", images=[<render/screenshot>,
@@ -116,6 +117,9 @@ operator goal ──▶ neuron (owns the recipe: outcomes + steps)
                 acceptor judges the WHOLE against the operator's
                 VERBATIM words ──▶ close
 ```
+
+Visual map: `docs/maps/<your role>.png` — the same journey with your
+seat highlighted (Read it if your harness renders images).
 
 Three truths every seat must hold:
 

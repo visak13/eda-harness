@@ -138,15 +138,40 @@ Phase 5), F23 (challenge retarget — Phase 4).
 ## Final disposition — post-change re-drill (2026-08-21, R1–R4)
 
 The SAME mock recipe was re-driven end-to-end through the real tool
-layer with the updated guides: **28/28 checks PASS** (verbatim goal into
+layer with the updated guides: **28/28 SELECTED re-drill checks PASS**
+— one web-app drill, not corpus-wide proof; representative drills for
+research / pipeline / non-image creative are a next-campaign item
+(Sol review #9). Covered: verbatim goal into
 the curiosity consult; batch `record_outcome`/`add_action`; teaching
 refusals naming legal ids; operator hold blocking wave+spawn and
 clearing; `text=`/`recipe_step_id=` aliases; position block on the
 action read; structured-text boundary; small-recipe exemption from
 G-CHALLENGE and from the low-level-strategy advisory; empty waves
 explaining themselves; plan → terminal → step close; acceptor consult
-carrying goal + deliverable + user_path). Tool-output audit: 106
+carrying goal + deliverable + user_path. Tool-output audit: 106
 rendered results across all 93 registered tools, zero JSON dumps.
+
+## Sol second review — adjudication (2026-08-21)
+
+GPT Sol reviewed the whole overhaul against "is this framework generic
+and does it cover all my pain points" (10 findings; verdict: generic in
+architecture, not yet all pain points). Adjudication:
+- ACCEPTED+FIXED: #3 operator hold now also refuses pool_spawn_worker
+  (was porous at the seam where work happens); #6 runnable_app (+audio/
+  video) added to the producer-verify stand-down; #7 low-level-strategy
+  advisory reworded domain-neutral + verify legs exempt; #8 audio/video
+  deliverable forms + reviewer card covers run/see/hear; the stale
+  no-tooling claim in creative-production corrected for the Sol image
+  route; #1 (partial) missing form/user_path draws a loud authoring
+  advisory and both fields are now patchable via update_object;
+  #5 worker card gains the milestone progress pulse; #9 the re-drill is
+  labeled selected-checks, corpus drills queued; #10 depth-cap renders
+  a labeled summary, never raw JSON.
+- DEFERRED: #1 (hard gate on form — owner doctrine: intelligence over
+  guardrails; advisory shipped instead), #2/F10 (mechanical fidelity
+  bind — protocol shipped, mechanism next campaign), #4/F1 (whoami —
+  harness defect tracked separately), #8 (full form/capability
+  registry refactor — next campaign).
 
 Fixed since the wave-1 disposition: F2 (writes carry next-move notes),
 F5 (recipe `workspace`, validated, nudged, in the acceptor consult),

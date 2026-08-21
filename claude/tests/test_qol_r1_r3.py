@@ -167,6 +167,66 @@ async def test_small_recipe_skips_strategy_advisory(tmp_path):
     assert "no_low_level_strategy" not in kinds
 
 
+async def test_dispatch_hold_blocks_worker_spawn(tmp_path):
+    # Sol review #3: the hold used to stop waves + planner spawns but not
+    # a live planner's worker spawns — porous where the work happens.
+    from edp_claude.objects import update_object
+    from edp_claude.tools._tools import PoolSpawnWorker, _SpawnWorkerIn
+    ctx, t = _mk(tmp_path)
+    await _to_plan(t)
+    await t["add_action"].run({
+        "plan_id": "r-qolr-s1", "action_id": "a1", "description": "build",
+        "serves": ["o1"]})
+    out = await update_object(ctx, "recipe", {"recipe_id": "r-qolr"},
+                              {"dispatch_hold": "wait for my go"})
+    assert out.get("ok"), out
+    res = await PoolSpawnWorker(ctx)._run(
+        _SpawnWorkerIn(plan_id="r-qolr-s1", action_id="a1"))
+    assert not res.ok
+    assert "OPERATOR HOLD" in res.message
+    # pre-stamp rolled back — no phantom in_progress
+    assert ctx.plans.load("r-qolr-s1").actions[0].status == "pending"
+    out = await update_object(ctx, "recipe", {"recipe_id": "r-qolr"},
+                              {"dispatch_hold": None})
+    assert out.get("ok"), out
+    res = await PoolSpawnWorker(ctx)._run(
+        _SpawnWorkerIn(plan_id="r-qolr-s1", action_id="a1"))
+    assert res.ok, res
+
+
+def test_producer_verify_stands_down_for_runnable_app():
+    # Sol review #6: the walking-skeleton guide demands STARTING a
+    # runnable_app; the guard must not refuse the start command.
+    from edp_claude.tools._tools import _reject_producer_verify
+    verify = {"check": "command", "cmd": "npm start"}
+    assert _reject_producer_verify(verify, deliverable="runnable_app") \
+        is None
+    assert _reject_producer_verify(verify, deliverable=None) is not None
+
+
+async def test_outcome_form_patchable_and_advised(tmp_path):
+    # Sol review #1: a formless outcome draws a loud authoring advisory,
+    # and deliverable/user_path are patchable after the fact.
+    from edp_claude.objects import update_object
+    ctx, t = _mk(tmp_path)
+    res = await t["record_outcome"].run({
+        "recipe_id": "r-qolr", "description": "d", "verification": "v"})
+    assert "ADVISORY" in _d(res)["note"]
+    out = await update_object(
+        ctx, "outcome", {"recipe_id": "r-qolr", "outcome_id": "o1"},
+        {"deliverable": "runnable_app", "user_path": "run it cold"})
+    assert out.get("ok"), out
+    o = ctx.recipes.load("r-qolr").comprehension.expected_outcomes[0]
+    assert o.deliverable == "runnable_app" and o.user_path == "run it cold"
+
+
+def test_render_depth_cap_never_emits_json():
+    from edp_claude.tools.render_text import render_payload
+    deep = {"a": {"b": {"c": {"d": {"e": {"f": {"g": 1}}}}}}}
+    text = render_payload(deep)
+    assert "{" not in text and "depth cap" in text
+
+
 async def test_curiosity_consult_carries_verbatim_goal(tmp_path):
     ctx, t = _mk(tmp_path)
     res = await t["consult_curiosity"].run({

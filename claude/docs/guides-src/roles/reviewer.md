@@ -45,8 +45,9 @@ before this shell existed (enforced) — it is in your inbox now.
 - **Pre-screen when the review_policy asks:** `delegate_review(
   artifact=…, acceptance=…)` — a cross-family defect list whose
   verdict never decides; YOU adjudicate against the acceptance.
-- **Visual deliverables (action `deliverable` = interactive_ui/image/
-  3d_asset): green numbers never accept the LOOK.** Exercise the
+- **Run/see/hear deliverables (action `deliverable` = interactive_ui/
+  runnable_app/image/audio/video/3d_asset): green numbers never accept
+  the LOOK (or the sound, or the cold start).** Exercise the
   artifact yourself (run it, open it, screenshot it) and get Sol's
   read — `delegate_review(artifact=<what it is + where>,
   task_class="visual_critique", images=[<render/screenshot>,

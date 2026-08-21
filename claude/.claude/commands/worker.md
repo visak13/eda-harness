@@ -50,6 +50,11 @@ environment" and stop.
   "tag": "challenge"})` and continue the compliant path unless BLOCKED.
   The specialist adjudicates the flip; deviation with a recorded
   exception is lawful only for `expected`-adherence entries.
+- **Long work is not silent work:** an action spanning a long sitting
+  sends `notify_above(kind="progress", body={"done": <what landed>,
+  "next": <milestone>, "risk": <if any>})` at MEANINGFUL milestones —
+  an artifact produced, a risk found, a phase closed; never time-tick
+  spam. The operator's complaint is silence, not brevity.
 - **Delegation:** when your task_class is routed,
   `delegate_generate(task=…, context=<everything needed — the delegate
   has no tools and no follow-ups>, acceptance=…)` drafts the bulk
@@ -128,6 +133,9 @@ operator goal ──▶ neuron (owns the recipe: outcomes + steps)
                 acceptor judges the WHOLE against the operator's
                 VERBATIM words ──▶ close
 ```
+
+Visual map: `docs/maps/<your role>.png` — the same journey with your
+seat highlighted (Read it if your harness renders images).
 
 Three truths every seat must hold:
 

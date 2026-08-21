@@ -11,13 +11,11 @@ Rules that keep the output lean:
 - `None` values and empty strings/lists/dicts are DROPPED — a payload
   full of nulls used to bury the three fields that mattered.
 - Multiline / long strings render as an indented block under their key.
-- Depth is bounded; anything deeper falls back to compact JSON so no
-  information is ever lost, only de-emphasised.
+- Depth is bounded; a container past the cap renders as a labeled
+  summary with a retrieval pointer (never raw JSON).
 """
 
 from __future__ import annotations
-
-import json
 
 _MAX_DEPTH = 5
 _INLINE_STR = 96          # strings longer than this render as a block
@@ -39,7 +37,19 @@ def _render_value(key: str, v: object, depth: int, out: list[str]) -> None:
     if _is_empty(v):
         return
     if depth >= _MAX_DEPTH:
-        out.append(f"{pad}{key}: {json.dumps(v, default=str)}")
+        # Sol review 2026-08-21 #10: no raw JSON even at the depth cap —
+        # containers get a labeled summary + retrieval pointer; scalars
+        # render normally.
+        if isinstance(v, dict):
+            out.append(f"{pad}{key}: <nested map, keys: "
+                       f"{', '.join(str(k) for k in v)}> "
+                       "(depth cap — read_object the parent for the full "
+                       "value)")
+        elif isinstance(v, list):
+            out.append(f"{pad}{key}: <list of {len(v)}> (depth cap — "
+                       "read_object the parent for the full value)")
+        else:
+            out.append(f"{pad}{key}: {_scalar(v)}")
         return
     if isinstance(v, dict):
         out.append(f"{pad}{key}:")

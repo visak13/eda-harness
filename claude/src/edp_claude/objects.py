@@ -1141,7 +1141,28 @@ async def update_object(ctx, obj_type: str, ids: dict | None = None,
                 ctx, "MarkOutcomeMet", recipe_id=ids["recipe_id"],
                 outcome_id=ids["outcome_id"],
                 evidence=patch.get("evidence", ""))
-        raise ObjectError("outcome update supports {met, evidence}")
+        # Sol review 2026-08-21 #1: the form fields are the wrong-product
+        # safeguard — an outcome authored without them must be patchable
+        # (the advisory that asks for them would otherwise point at a
+        # dead door).
+        if set(patch) <= {"deliverable", "user_path"}:
+            if not ctx.recipes.exists(ids["recipe_id"]):
+                raise ObjectError(f"unknown recipe {ids['recipe_id']!r}")
+            r = ctx.recipes.load(ids["recipe_id"])
+            o = next((x for x in r.comprehension.expected_outcomes
+                      if x.id == ids["outcome_id"]), None)
+            if o is None:
+                raise ObjectError(
+                    f"unknown outcome {ids['outcome_id']!r} on "
+                    f"{ids['recipe_id']!r}")
+            for k, v in patch.items():
+                setattr(o, k, v)
+            ctx.recipes.save(r)
+            return {"ok": True, "outcome_id": o.id,
+                    "updated": sorted(patch)}
+        raise ObjectError(
+            "outcome update supports {met, evidence} or "
+            "{deliverable, user_path}")
 
     if obj_type == "recipe":
         _need(ids, "recipe_id")

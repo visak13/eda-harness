@@ -3804,7 +3804,7 @@ class _ActionItem(BaseModel):
     # UI" shipped as an essay; name the form and the acceptor/reviewer
     # judge against it.
     deliverable: Literal["code", "interactive_ui", "runnable_app",
-                         "pipeline", "document", "image",
+                         "pipeline", "document", "image", "audio", "video",
                          "3d_asset", "data", "service", "mixed"] | None = None
 
 
@@ -4467,7 +4467,7 @@ class _OutcomeItem(BaseModel):
     # UI" shipped as an essay; name the form and the acceptor/reviewer
     # judge against it.
     deliverable: Literal["code", "interactive_ui", "runnable_app",
-                         "pipeline", "document", "image",
+                         "pipeline", "document", "image", "audio", "video",
                          "3d_asset", "data", "service", "mixed"] | None = None
     # Corpus audit 2026-08-21 — the REAL failure axis: every green-but-
     # wrong close cited tests/commits while the OPERATOR'S OWN PATH was
@@ -4571,7 +4571,21 @@ class RecordOutcome(_ClaudeTool):
             )
             ids.append(f"o{n}")
         self.ctx.recipes.save(r)
-        return Tool.ok(_OutOut(outcome_id=ids[0], outcome_ids=ids))
+        # Sol review 2026-08-21 #1: the form/user_path fields are opt-in,
+        # and unset is exactly how green-but-wrong recurs. Loud ADVISORY
+        # at the moment of authoring (never a gate).
+        note = _OutOut.model_fields["note"].default
+        unformed = [oid for oid, it in zip(ids, items)
+                    if not (it.deliverable or it.user_path)]
+        if unformed:
+            note += (
+                " | ADVISORY: outcome(s) " + ", ".join(unformed) +
+                " declare neither a `deliverable` form nor a `user_path` — "
+                "if the user will run/see/use the result, set both so the "
+                "acceptor judges by WALKING it in its form, not by green "
+                "suites. Patch via update_object(type='outcome', …).")
+        return Tool.ok(_OutOut(outcome_id=ids[0], outcome_ids=ids,
+                               note=note))
 
 
 class _SignoffIn(BaseModel):
@@ -4733,7 +4747,7 @@ class _AddStepIn(BaseModel):
     # UI" shipped as an essay; name the form and the acceptor/reviewer
     # judge against it.
     deliverable: Literal["code", "interactive_ui", "runnable_app",
-                         "pipeline", "document", "image",
+                         "pipeline", "document", "image", "audio", "video",
                          "3d_asset", "data", "service", "mixed"] | None = None
 
 
@@ -6352,7 +6366,12 @@ def _reject_producer_verify(verify: dict | None,
     exact opposite holds — a file-stat check is how an essay named
     ui.html passed as a UI. Those forms may EXERCISE the artifact
     (run/serve/screenshot), so the producer guard stands down."""
-    if deliverable in ("interactive_ui", "image", "3d_asset", "service"):
+    # Sol review 2026-08-21 #6: runnable_app was missing here while the
+    # walking-skeleton guide (and the user_path law) demand STARTING it —
+    # the guard contradicted the doctrine. Exercising is the verification
+    # for every run/see/hear form.
+    if deliverable in ("interactive_ui", "image", "3d_asset", "service",
+                       "runnable_app", "audio", "video"):
         return None
     if not verify or verify.get("check") != "command":
         return None
@@ -9398,8 +9417,8 @@ class PoolSpawnWorker(_ClaudeTool):
                 # Rolling back is also what reconcile would do on resume, so
                 # this only reaches that state sooner.
                 if self.ctx.recipes.exists(p.recipe_id):
-                    parked = _suspension_refusal(
-                        self.ctx.recipes.load(p.recipe_id))
+                    _rg_gate = self.ctx.recipes.load(p.recipe_id)
+                    parked = _suspension_refusal(_rg_gate)
                     if parked:
                         # 1.4: the rollback covers every unit member.
                         _rollback_failed_dispatch(
@@ -9407,6 +9426,26 @@ class PoolSpawnWorker(_ClaudeTool):
                             "recipe_suspended_pre_launch",
                             member_ids=rollback_ids)
                         return parked
+                    # Sol review 2026-08-21 #3 — the OPERATOR HOLD used to
+                    # stop the recipe wave and planner spawns but NOT a
+                    # live planner's worker/reviewer spawns, so a hold set
+                    # mid-step was porous exactly where the work happens.
+                    # Same pre-launch rollback discipline as the sibling
+                    # refusals.
+                    if getattr(_rg_gate, "dispatch_hold", None):
+                        _rollback_failed_dispatch(
+                            self.ctx, m.plan_id, m.action_id,
+                            "operator_hold_pre_launch",
+                            member_ids=rollback_ids)
+                        return _precondition(
+                            f"OPERATOR HOLD — dispatch paused: "
+                            f"{_rg_gate.dispatch_hold!r}. The user's stated "
+                            "way of working outranks the ready wave; no "
+                            "worker or reviewer spawns while the hold "
+                            "stands. The NEURON clears it (update_object("
+                            "type='recipe', ids={…}, "
+                            "patch={'dispatch_hold': None})), then "
+                            "re-dispatch.")
                 # WP2 G-ADJ: recorded adversarial challenges are PROPOSALS
                 # that must be ADJUDICATED before the plan builds on the
                 # challenged ground — a finding nobody ruled on is neither
@@ -9491,24 +9530,30 @@ class PoolSpawnWorker(_ClaudeTool):
                 # inconsistent results in the recipe corpus. Review legs and
                 # small recipes are exempt; the spawn always proceeds.
                 if (m.role != "reviewer"
-                        and _effective_leg_kind(a, m.action_id) != "review"
+                        and _effective_leg_kind(a, m.action_id)
+                        not in ("review", "verify")
                         and not (getattr(a, "spec_ids", None) or [])
                         and self.ctx.recipes.exists(p.recipe_id)):
                     _n_steps = len(self.ctx.recipes.load(p.recipe_id).steps)
                     if _n_steps >= 3:
+                        # Sol review 2026-08-21 #7: domain-neutral wording —
+                        # research/gather/creative legs cross here too, and
+                        # "who taught this worker the house style" presumed
+                        # software. The question stands for ANY craft.
                         _spawn_advisories.append({
                             "kind": "no_low_level_strategy",
                             "detail": (
-                                f"action {m.action_id!r} dispatches build "
-                                f"work on a {_n_steps}-step recipe with NO "
-                                "spec_ids stamped — who taught this worker "
-                                "the house style? Stamp the low-level "
-                                "strategy doc(s) it should build against "
-                                "(train_specialist / consult_specialist, "
-                                "then update_object the resolved spec_ids "
-                                "onto the action) so the worker grounds on "
-                                "a compiled ruleset, not improvisation. "
-                                "Dispatch proceeds."),
+                                f"action {m.action_id!r} dispatches on a "
+                                f"{_n_steps}-step recipe with NO spec_ids "
+                                "stamped — no low-level strategy doc "
+                                "grounds this worker. If a craft standard "
+                                "applies to this work (code, research "
+                                "method, visual language, data handling), "
+                                "stamp it (train_specialist / "
+                                "consult_specialist, then update_object "
+                                "the resolved spec_ids onto the action); "
+                                "if genuinely none applies, proceed — "
+                                "dispatch is not blocked either way."),
                         })
                 # WP2 G-REWORK: true up `attempt` from the pool's OWN
                 # session history — the registry keeps every row ever
