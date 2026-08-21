@@ -176,6 +176,7 @@ def build_mcp(root: Path | None = None):
     # Lazy import (like the rest of this seam): the worklog-writing helper
     # lives with the tools it also guards. Used only by warn-mode off-set shims.
     from .tools._tools import record_role_scope_violation
+    from .tools.render_text import render_result
 
     mcp = FastMCP("edp-claude")
 
@@ -195,7 +196,7 @@ def build_mcp(root: Path | None = None):
         fields = bound_tool.InputModel.model_fields
         off_scope = bound_tool.name in off_scope_names
 
-        async def shim(**kwargs) -> dict:
+        async def shim(**kwargs) -> str:
             # warn mode: this tool is outside the role's scoped set, so record
             # the off-set CALL (role + tool name) then PROCEED — observe-only,
             # never block (d15). On-set tools and enforce/absent-role builds
@@ -203,7 +204,10 @@ def build_mcp(root: Path | None = None):
             if off_scope:
                 record_role_scope_violation(ctx, bound_tool.name)
             res = await bound_tool.run(kwargs)
-            return res.model_dump(mode="json")
+            # QoL F19 (operator ruling 2026-08-21): the MCP boundary emits
+            # STRUCTURED TEXT, never a JSON dump — the payload is for an
+            # LLM to read, not a program to parse.
+            return render_result(bound_tool.name, res)
 
         params = []
         annotations: dict = {}
@@ -223,7 +227,7 @@ def build_mcp(root: Path | None = None):
                 )
             )
             annotations[fname] = f.annotation
-        annotations["return"] = dict
+        annotations["return"] = str
         shim.__signature__ = inspect.Signature(params)
         shim.__annotations__ = annotations
         shim.__name__ = bound_tool.name

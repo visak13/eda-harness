@@ -38,7 +38,9 @@ async def test_consult_curiosity_posts_then_spawns(env):
     c = msgs[0]
     assert c.kind == "consult"
     assert "where should I build" in c.body["decision"]
-    assert "live repo" in c.body["context"]
+    # QoL F18: the framing rides ONCE, under the protocol's name.
+    assert "live repo" in c.body["caller_framing"]
+    assert "context" not in c.body
     # 2026-05-24 fix: from = the recipe handle (so the reply routes back
     # to where the neuron polls), NOT the literal "neuron".
     assert c.from_ == "recipe-x"

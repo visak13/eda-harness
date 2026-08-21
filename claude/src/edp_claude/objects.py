@@ -454,7 +454,8 @@ def _digest_recipe(d: dict) -> dict:
     ctxd = d.get("context") or {}
     out = {
         k: v for k, v in d.items()
-        if k in ("recipe_id", "user_goal_distilled", "domain", "state",
+        if k in ("recipe_id", "user_goal_verbatim", "user_goal_distilled",
+                 "domain", "state",
                  "final_outcome", "version", "created_at", "updated_at")
     }
     comp = d.get("comprehension") or {}
@@ -649,7 +650,15 @@ async def read_object(ctx, obj_type: str, detail: str = "full", **ids) -> Any:
                 rid = getattr(plan, "recipe_id", None)
                 if rid and ctx.recipes.exists(rid):
                     from .fsm.recipe_fsm import grounding_epoch
-                    d["grounding_epoch"] = grounding_epoch(ctx.recipes.load(rid))
+                    r = ctx.recipes.load(rid)
+                    d["grounding_epoch"] = grounding_epoch(r)
+                    # QoL F3 (2026-08-21): the seat that BUILDS the
+                    # deliverable had the least visibility in the fleet —
+                    # no goal, no position, no journey. Every action read
+                    # now carries WHERE this work sits and WHY it exists.
+                    d["position"] = _position_block(
+                        r, getattr(plan, "recipe_step_id", None),
+                        a.action_id)
                 return d
         return None
 
@@ -987,6 +996,44 @@ async def _run_intent(ctx, tool_cls_name: str, **kwargs) -> dict:
     return {"ok": True}
 
 
+def _position_block(r, step_id: str | None, action_id: str) -> dict:
+    """QoL F3 — the 'you are here' packet for a spawned seat: the
+    operator's verbatim goal (the law), this step's place on the journey
+    (N of M, what came before, what follows), and why the step exists.
+    Pure store-derived, best-effort: a malformed recipe yields a smaller
+    block, never a broken read."""
+    out: dict = {"user_goal_verbatim": r.user_goal_verbatim}
+    try:
+        steps = list(r.steps)
+        idx = next((i for i, s in enumerate(steps)
+                    if s.step_id == step_id), None)
+        if idx is None:
+            return out
+        s = steps[idx]
+        done = sum(1 for x in steps if x.status in ("done", "skipped"))
+        out["step"] = (f"{s.step_id} — {idx + 1} of {len(steps)} "
+                       f"({done} done)")
+        out["this_step"] = (s.description or "")[:200]
+        why = getattr(s, "rationale_for_next", None)
+        if why:
+            out["why_this_step"] = str(why)[:200]
+        if idx > 0:
+            p = steps[idx - 1]
+            out["previous"] = (f"{p.step_id} ({p.status}): "
+                               f"{(p.description or '')[:120]}")
+        if idx + 1 < len(steps):
+            n = steps[idx + 1]
+            out["next"] = (f"{n.step_id} ({n.status}): "
+                           f"{(n.description or '')[:120]}")
+        out["serves_outcomes"] = [
+            f"{o.id}: {(o.description or '')[:100]}"
+            for o in r.comprehension.expected_outcomes
+            if o.id in (getattr(s, "serves", None) or [])]
+    except Exception:  # noqa: BLE001 — orientation must never break a read
+        pass
+    return out
+
+
 async def create_object(ctx, obj_type: str, fields: dict | None = None) -> dict:
     """Create a domain object. Delegates to the intent tool that owns the
     object's creation invariants. Refused for inspect-only objects."""
@@ -1003,7 +1050,20 @@ async def create_object(ctx, obj_type: str, fields: dict | None = None) -> dict:
     if obj_type == "plan":
         return await _run_intent(ctx, "CreatePlan", **fields)
     if obj_type == "action":
-        return await _run_intent(ctx, "AddAction", **fields)
+        # QoL (2026-08-21): callers pass a nested acceptance dict here, but
+        # AddAction takes flat acceptance_kind / acceptance_expected /
+        # verify — the nested form was SILENTLY DROPPED before _AddActionIn
+        # forbade extras (the caller's acceptance never landed). Translate
+        # instead of dropping; explicit flat keys win over the nested form.
+        f = dict(fields)
+        acc = f.pop("acceptance", None)
+        if isinstance(acc, dict):
+            f.setdefault("acceptance_kind", acc.get("kind", "manual_review"))
+            if acc.get("expected") is not None:
+                f.setdefault("acceptance_expected", acc["expected"])
+            if acc.get("verify") is not None:
+                f.setdefault("verify", acc["verify"])
+        return await _run_intent(ctx, "AddAction", **f)
     if obj_type == "step":
         return await _run_intent(ctx, "AddStep", **fields)
     if obj_type == "outcome":
@@ -1175,7 +1235,7 @@ async def _update_action_fields(ctx, plan_id: str, action_id: str,
     allowed = {"verify", "description", "depends_on", "concerns",
                "spec_ids", "specializations", "spec_id", "specialization",
                "model", "acceptance_kind", "acceptance_expected",
-               "executor_mode"}
+               "executor_mode", "sketch_covers"}
     bad = set(patch) - allowed
     if bad:
         raise ObjectError(
@@ -1220,6 +1280,32 @@ async def _update_action_fields(ctx, plan_id: str, action_id: str,
     # clears it back to the host default (Opus). Other roles never carry one.
     if "model" in patch:
         target.model = patch["model"] or None
+    # QoL pains #3/#5 (2026-08-21): post-authoring sketch coverage had NO
+    # working incremental setter — add_action(sketch_covered_by=) silently
+    # dropped, this verb refused, and record_plan demanded the whole plan.
+    # Same fold as add_action's one-shot path: exact-match lines from the
+    # owning step, appended into Plan.sketch_covered_by.
+    if "sketch_covers" in patch:
+        lines = list(patch["sketch_covers"] or [])
+        try:
+            r = ctx.recipes.load(p.recipe_id)
+            step = next((s for s in r.steps
+                         if s.step_id == p.recipe_step_id), None)
+            legal = list(getattr(step, "acceptance_sketch", []) or [])
+        except Exception:
+            legal = []
+        unknown = [ln for ln in lines if legal and ln not in legal]
+        if unknown:
+            raise ObjectError(
+                f"sketch_covers: unknown sketch line(s) {unknown} — the "
+                f"owning step declares {legal}. Exact match required.")
+        mapping = dict(getattr(p, "sketch_covered_by", None) or {})
+        for ln in lines:
+            ids_ = list(mapping.get(ln) or [])
+            if action_id not in ids_:
+                ids_.append(action_id)
+            mapping[ln] = ids_
+        p.sketch_covered_by = mapping
     ctx.plans.save(p)
     ctx.plans.append_worklog(plan_id, {
         "kind": "action_field_update", "agent_role": "planner",

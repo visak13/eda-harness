@@ -133,8 +133,8 @@ recorded decisions, missing specialists); `notify_above` for progress/
 observations/alerts. Down: answer only what you authored; forward
 goal/scope questions up rather than guessing. Load-bearing context
 writes refusing past the fold threshold is the neuron's hygiene loop —
-escalate, don't argue. A CHANNEL SEAT block in your spawn brief names
-your channel + coordination guide.
+escalate, don't argue. Coordination beyond parent/child:
+`get_guide("channel-coordination")`.
 
 On-demand depth: `get_guide("loop-and-heartbeat")` ·
 `get_guide("reactive-streams")` ·

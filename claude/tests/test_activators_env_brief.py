@@ -303,7 +303,10 @@ def test_planner_dispatcher_stays_thin_and_phases_one_at_a_time():
         encoding="utf-8").splitlines())
     # 2026-08-18: 230→250 — the /pain law (seat-law shared module) added a
     # few lines; token thinness stays enforced by test_v7_bootdocs budgets.
-    assert line_count < 250, f"dispatcher grew to {line_count} lines"
+    # 2026-08-21: 250→300 — QoL Phase 2 (operator mandate): the shared
+    # why-and-where orientation module (~45 lines) now compiles into every
+    # card; budgets in the manifest were raised deliberately with it.
+    assert line_count < 300, f"dispatcher grew to {line_count} lines"
 
 
 # --- Phase 4: shape pipelines for planner ---------------------------------

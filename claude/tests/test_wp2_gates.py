@@ -577,7 +577,11 @@ async def test_add_action_execution_validated_and_persisted(env):
     pid = _plan(env, RID, "s1")
     res = await env.call("add_action", plan_id=pid, action_id="a1",
                          description="d", execution="subagent")
-    assert "inline" in _err(res)          # bad value refused, teaching both
+    # QoL F13: the refusal now comes from the INPUT SCHEMA (Literal), so
+    # the value set is taught before the first call, not after it.
+    assert isinstance(res, ToolError)
+    assert res.code == "tool_input_invalid"
+    assert "inline" in res.message and "spawn" in res.message
     _ok(await env.call("add_action", plan_id=pid, action_id="a1",
                        description="d", execution="inline"))
     _ok(await env.call("add_action", plan_id=pid, action_id="a2",

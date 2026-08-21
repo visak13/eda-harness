@@ -17,10 +17,10 @@ Legend: [P1]…[P5] = the overhaul phase that owns the fix ·
       nothing says "you are the neuron; your parent is the user".
 - [ ] F2 [P1] `start_recipe` (and most writes) return bare ids/`ok:true`
       with no next-move pointer; a cold seat must know the card by heart.
-- [ ] F3 [P2] Worker's `injected_context` carries ONLY the grounding brief:
+- [x] F3 [P2] Worker's `injected_context` carries ONLY the grounding brief:
       no goal, no decisions, no bans, no position ("step N of M"), nothing
       about prev/next. The builder has the least visibility in the fleet.
-- [ ] F4 [P2] Planner digest clips its own step description mid-sentence;
+- [x] F4 [P2] Planner digest clips its own step description mid-sentence;
       `recent_events` is 8× `recipe_saved` with empty summaries (noise).
 - [ ] F5 [P3] `workspace` is captured NOWHERE: `start_recipe` has no param,
       the acceptor consult ships `workspace: null` while its card orders
@@ -28,7 +28,7 @@ Legend: [P1]…[P5] = the overhaul phase that owns the fix ·
 
 ## Intent fidelity
 
-- [ ] F6 [P2] `read_object(recipe, detail="digest")` serves ONLY
+- [x] F6 [P2] `read_object(recipe, detail="digest")` serves ONLY
       `user_goal_distilled`; curiosity's card-mandated diff vs
       `user_goal_verbatim` is unexecutable — and distilled is silently a
       copy, so the gap is invisible.
@@ -47,34 +47,34 @@ Legend: [P1]…[P5] = the overhaul phase that owns the fix ·
 
 ## Tool ergonomics (the "hit or miss" class)
 
-- [ ] F12 [P1] Param vocabulary drifts per verb for the SAME concept:
+- [x] F12 [P1] Param vocabulary drifts per verb for the SAME concept:
       `consult_curiosity(handle=)` vs siblings' `recipe_id=`; signoff's
       `user_quote=` vs guessed `quote=`; `create_plan(step_id=)` vs the
       schema field `recipe_step_id`; `record_grounding_brief(content=)` vs
       `record_context(text=)`.
-- [ ] F13 [P1] Serial-refusal discovery: `add_step` = 3 calls (enum guess →
+- [x] F13 [P1] Serial-refusal discovery: `add_step` = 3 calls (enum guess →
       G-EST → ok); `create_plan` = 4 calls (param name → justify shape →
       ok). Schemas must state ALL requirements upfront (enums + required
       sets + nested shapes).
-- [ ] F14 [P1] `record_step_result` refusal names `result (dict)` but not
+- [x] F14 [P1] `record_step_result` refusal names `result (dict)` but not
       the dict's shape.
-- [ ] F15 [P1] `record_branch_verdict` demands `recipe_id` + `branch_id`
+- [x] F15 [P1] `record_branch_verdict` demands `recipe_id` + `branch_id`
       from a reviewer whose env lineage already determines both.
-- [ ] F16 [P1] Writes don't echo created ids (`record_outcome` → `ok:true`)
+- [x] F16 [P1] Writes don't echo created ids (`record_outcome` → `ok:true`)
       → forced read-backs to wire lineage.
-- [ ] F17 [P1] `create_plan.review_policy.justify` is keyed by action_id
+- [x] F17 [P1] `create_plan.review_policy.justify` is keyed by action_id
       BEFORE any action exists — an ordering the planner cannot satisfy
       honestly.
-- [ ] F18 [P1] `consult_curiosity` body duplicates `context` as
+- [x] F18 [P1] `consult_curiosity` body duplicates `context` as
       `caller_framing` verbatim.
-- [ ] F19 [P1] Every payload is raw JSON (operator ruling: structured text).
+- [x] F19 [P1] Every payload is raw JSON (operator ruling: structured text).
 - [ ] F20 [P5] Inconsistent seat gating: `record_context(north_star_update)`
       refused a handle-carrying role-less seat while `record_outcome` /
       `add_step` accepted the identical seat.
 
 ## FSM & pacing
 
-- [ ] F21 [P5] REPRODUCED from live: `next_action(all_ready=true)` on a
+- [x] F21 [P5] REPRODUCED from live: `next_action(all_ready=true)` on a
       ready recipe returns `dispatch_wave count=0` with ZERO explanation;
       plain `next_action` then instructs `spawn_planner s1`. Two pacer
       surfaces, different answers, no cross-reference.
@@ -103,3 +103,34 @@ Legend: [P1]…[P5] = the overhaul phase that owns the fix ·
 
 Drill artifacts: scenes + driver in the session scratchpad (`drill/`),
 stores under `drill/home/`, the shipped page under `drill/workspace/`.
+
+## Phase 1+2 wave-1 disposition (2026-08-21)
+
+Fixed this wave: F3 (position block on every action read), F4 (digest
+noise + `why` on open steps), F6 (digest carries verbatim goal), F12
+(param aliases via `_ClaudeTool.param_aliases`), F13 (execution enum at
+the schema; refusals now carry field descriptions), F14 (`result` shape
+documented in-field), F15 (action-path verdict derives ids), F16
+(record_outcome echoes its id), F17 (justify-forward-ids documented),
+F18 (caller_framing dedup), F19 (structured-text MCP boundary,
+`tools/render_text.py`), F21 (empty waves explain themselves + name the
+next call). Also: hop-11 (proposed bans filtered from briefs, labeled in
+brief), silent-kwarg drops now refuse (`extra="forbid"` on authoring
+models; create_object translates nested acceptance), orientation module
+`shared/why-and-where.md` compiled into every card (budgets raised),
+spawned-shell settings parity (`eda.bat` env, `.claude-pool` outputStyle
++ model 4-6→4-8 + edp-terse style file).
+
+Deviations from the approved plan, with reasons:
+- shadow.py/shadow_spawner.py NOT deleted — they are a LIVE default-on
+  feature (every spawn is shadow-wrapped; EDP_SHADOW=0 disables). The
+  "dead code" note in the old backlog was stale.
+- worker/reviewer NOT granted get_recipe_digest — a standing derived-
+  floor ruling excludes it, and the position block + recipe brief now
+  serve the same need through reads they already have.
+
+Still open: F1/F2 (richer next-move pointers), F5 (workspace field —
+Phase 3), F7 (brief cap delivery — Phase 3), F8 (deliverable-form gate —
+Phase 3), F9 (advisor fabric — Phase 4), F10/F20 (protocol/gating
+consistency — Phase 5), F11 (OCAK — Phase 3), F22 (FSM follows reality —
+Phase 5), F23 (challenge retarget — Phase 4).

@@ -20,7 +20,8 @@ from typing import Any, Literal
 
 from edp_contracts import BrokerMessage, Tool
 from edp_contracts.errors import ErrorCode
-from pydantic import BaseModel, Field, model_serializer
+from pydantic import (BaseModel, ConfigDict, Field,
+                      model_serializer)
 
 # Shared bounds primitives promoted to ONE place (coding-standard #16).
 # approx_tokens/_BUDGET are re-exported under their old local names so the
@@ -1553,6 +1554,10 @@ class _WaveOut(BaseModel):
     actions: list[dict]
     capacity: int | None = None
     approx_tokens: int = 0
+    # QoL F21 (2026-08-21 drill): an EMPTY wave used to carry zero
+    # explanation — the caller burned a wake guessing why. When count==0
+    # this names the state and the concrete next call.
+    note: str = ""
     oversize: bool = False
 
 
@@ -1661,12 +1666,26 @@ class NextAction(_ClaudeTool):
             capacity = (await _pool_planner_capacity(self.ctx.pool)
                         if actions else None)
             approx_tokens = sum(len(json.dumps(a)) for a in actions) // 4
+            _note = ""
+            if not actions:
+                _rs = str(getattr(r.state, "value", r.state))
+                _open = [s.step_id for s in r.steps
+                         if s.status == "pending"]
+                _note = (
+                    f"empty wave — recipe state={_rs!r}, pending steps="
+                    f"{_open or 'none'}, live-owned={sorted(live_steps) or 'none'}. "
+                    "The step wave only dispatches READY spawn_planner "
+                    "steps from PLANNING/EXECUTING; anything else (a phase "
+                    "advance, a gate, acceptance, close) comes from plain "
+                    "next_action(handle, handle_type='recipe') WITHOUT "
+                    "all_ready — call that now instead of retrying this.")
             return Tool.ok(_WaveOut(
                 count=len(actions),
                 actions=actions,
                 capacity=capacity,
                 approx_tokens=approx_tokens,
                 oversize=approx_tokens > _WAVE_OVERSIZE_TOKENS,
+                note=_note,
             ))
         if m.handle_type == "recipe":
             if not self.ctx.recipes.exists(m.handle):
@@ -1892,12 +1911,25 @@ class NextAction(_ClaudeTool):
             capacity = (await _pool_worker_capacity(self.ctx.pool)
                         if actions else None)
             approx_tokens = sum(len(json.dumps(a)) for a in actions) // 4
+            _note = ""
+            if not actions:
+                _pending = [a.action_id for a in p.actions
+                            if str(a.status) == "pending"]
+                _note = (
+                    f"empty wave — plan state="
+                    f"{getattr(p.state, 'value', p.state)!r}, pending "
+                    f"actions={_pending or 'none'}. Nothing is READY right "
+                    "now (deps unmet, in flight, or the plan needs a phase "
+                    "move) — call plain next_action(handle, "
+                    "handle_type='plan') WITHOUT all_ready for the FSM's "
+                    "instruction instead of retrying this.")
             return Tool.ok(_WaveOut(
                 count=len(actions),
                 actions=actions,
                 capacity=capacity,
                 approx_tokens=approx_tokens,
                 oversize=approx_tokens > _WAVE_OVERSIZE_TOKENS,
+                note=_note,
             ))
         # plan_next_action stamps an action in_progress at dispatch WITHOUT
         # changing p.state, so persist on any state/action-status/terminal
@@ -3448,6 +3480,10 @@ class RecordPlan(_ClaudeTool):
 #    create_plan + add_action give the plan the same treatment: small,
 #    obvious per-call schemas; the tool fills scaffolding. ────────────────
 class _CreatePlanIn(BaseModel):
+    # QoL (2026-08-21): unknown kwargs used to be DROPPED SILENTLY
+    # (the "add_action(acceptance=...) stores nothing" pain class).
+    # Refuse them loudly instead.
+    model_config = ConfigDict(extra="forbid")
     recipe_id: str
     step_id: str
     shape: str
@@ -3459,8 +3495,14 @@ class _CreatePlanIn(BaseModel):
     # test_budget: {unit: <scope>, integration: [seams], e2e_max: N} — the
     #   stamped pyramid; test_lineage_report counts layers against it.
     # Both optional: omitting keeps full legacy behavior.
-    review_policy: dict | None = None
-    test_budget: dict | None = None
+    review_policy: dict | None = Field(default=None, description=(
+        "{triggers: [named risk triggers], justify: {action_id: one-line "
+        "reason}} — justify keys may name action ids you are ABOUT to "
+        "author (add_action comes after create_plan); every "
+        "leg_kind='review' action must have an entry"))
+    test_budget: dict | None = Field(default=None, description=(
+        "{unit: <scope>, integration_seams: [seams], e2e_max: N} — the "
+        "stamped test pyramid"))
     # F25 (2026-08-17, s4 wedge): REOPEN a TERMINAL plan for its reopened
     # step. A step edited for new work (o5 continuity fix) while its plan sat
     # terminal-succeeded had NO legal author surface — the plan_id is
@@ -3481,6 +3523,7 @@ class CreatePlan(_ClaudeTool):
     name = "create_plan"
     InputModel = _CreatePlanIn
     OutputModel = _CreatePlanOut
+    param_aliases = {"recipe_step_id": "step_id"}
 
     async def _run(self, m: _CreatePlanIn):
         _own = _planner_foreign_plan_refusal(
@@ -3671,12 +3714,20 @@ def _shell_cost_advisory(n_actions: int) -> str:
 
 
 class _AddActionIn(BaseModel):
+    # QoL (2026-08-21): unknown kwargs used to be DROPPED SILENTLY
+    # (the "add_action(acceptance=...) stores nothing" pain class).
+    # Refuse them loudly instead.
+    model_config = ConfigDict(extra="forbid")
     plan_id: str
     action_id: str
     description: str
     depends_on: list[str] = []
     executor_mode: Literal["inline", "subagent"] = "subagent"
-    acceptance_kind: str = "manual_review"
+    acceptance_kind: str = Field(
+        default="manual_review", description=(
+        "known kinds: tests_pass | integration_test_pass | "
+        "manual_review (free string; pick one of these unless "
+        "the step declares another)"))
     acceptance_expected: str = ""
     # outcome-verify block (deterministic gate): e.g.
     # {"check": "file_exists", "path": "<abs>"}. Author it for every
@@ -3731,7 +3782,7 @@ class _AddActionIn(BaseModel):
     # WP2 inline execution: "spawn" (default — a pool worker shell) or
     # "inline" (the PLANNER does it itself and records status directly; a
     # worker spawn for it draws an advisory). None = "spawn" (byte-compat).
-    execution: str | None = None
+    execution: Literal["spawn", "inline"] | None = None
     # ONE-SHOT AUTHORING (2026-08-13 s3 friction, operator steer): the step
     # acceptance_sketch lines THIS action's acceptance proves. The tool folds
     # them into Plan.sketch_covered_by at append time — before this, the
@@ -3935,13 +3986,9 @@ class AddAction(_ClaudeTool):
                     "the USER downgrades it: "
                     + _gate_override_howto(gate_target))
         gate_val = (m.gate if m.gate is not None else _derived_gate)
-        # WP2 inline execution: validated HERE (the schema field is a plain
-        # str so legacy plan JSON always loads) — write-path values only.
-        if m.execution not in (None, "spawn", "inline"):
-            return _precondition(
-                f"add_action: execution must be 'spawn' (a pool worker "
-                f"shell) or 'inline' (the planner does it itself and "
-                f"records status directly) — got {m.execution!r}.")
+        # WP2 inline execution: now a Literal on the INPUT model (QoL F13 —
+        # the schema teaches the values before the first call; legacy plan
+        # JSON still loads because the Action schema field stays a str).
         # ONE-SHOT AUTHORING (2026-08-13 s3 friction, operator steer):
         # validate sketch_covers against the owning step BEFORE the append so
         # a typo'd line refuses with the step's actual sketch — the flow-down
@@ -4108,7 +4155,14 @@ class StartRecipe(_ClaudeTool):
 
 
 class _BVIn(BaseModel):
-    recipe_id: str
+    # QoL (2026-08-21): unknown kwargs used to be DROPPED SILENTLY
+    # (the "add_action(acceptance=...) stores nothing" pain class).
+    # Refuse them loudly instead.
+    model_config = ConfigDict(extra="forbid")
+    # QoL F15: on the ACTION path (plan_id set) recipe_id is derivable
+    # from the plan and may be omitted; the comprehension-branch path
+    # still requires it.
+    recipe_id: str = ""
     branch_id: str
     verdict: str = ""
     needs_user: bool = False
@@ -4186,10 +4240,17 @@ class RecordBranchVerdict(_ClaudeTool):
     name = "record_branch_verdict"
     InputModel = _BVIn
     OutputModel = _Ok
+    param_aliases = {"action_id": "branch_id"}
 
     async def _run(self, m: _BVIn):
         if m.plan_id:
             return await self._action_verdict(m)
+        if not m.recipe_id:
+            return _precondition(
+                "record_branch_verdict: pass plan_id=<the plan> for an "
+                "ACTION verdict (branch_id/action_id = the action), or "
+                "recipe_id=<the recipe> for a comprehension-branch "
+                "verdict.")
         r = self.ctx.recipes.load(m.recipe_id)
         for b in r.comprehension.branches:
             if b.id != m.branch_id:
@@ -4330,15 +4391,27 @@ class RecordBranchVerdict(_ClaudeTool):
 
 
 class _OutIn(BaseModel):
+    # QoL (2026-08-21): unknown kwargs used to be DROPPED SILENTLY
+    # (the "add_action(acceptance=...) stores nothing" pain class).
+    # Refuse them loudly instead.
+    model_config = ConfigDict(extra="forbid")
     recipe_id: str
     description: str
     verification: str
 
 
+class _OutOut(BaseModel):
+    # QoL F16: a write that answers bare `ok` forces a read-back to learn
+    # the id it just minted (the drill's "outcomes recorded, now fetch
+    # their ids" ceremony). Echo the id at the moment of creation.
+    outcome_id: str
+    note: str = "outcome declared; cite this id in add_step(serves=[…])"
+
+
 class RecordOutcome(_ClaudeTool):
     name = "record_outcome"
     InputModel = _OutIn
-    OutputModel = _Ok
+    OutputModel = _OutOut
 
     async def _run(self, m: _OutIn):
         from ..schemas import Outcome
@@ -4388,10 +4461,14 @@ class RecordOutcome(_ClaudeTool):
                     verification=m.verification)
         )
         self.ctx.recipes.save(r)
-        return Tool.ok(_Ok())
+        return Tool.ok(_OutOut(outcome_id=f"o{n}"))
 
 
 class _SignoffIn(BaseModel):
+    # QoL (2026-08-21): unknown kwargs used to be DROPPED SILENTLY
+    # (the "add_action(acceptance=...) stores nothing" pain class).
+    # Refuse them loudly instead.
+    model_config = ConfigDict(extra="forbid")
     recipe_id: str
     # the user's VERBATIM instruction to proceed — recorded for audit.
     # Required unless skipped=true.
@@ -4423,6 +4500,7 @@ class RecordComprehensionSignoff(_ClaudeTool):
     name = "record_comprehension_signoff"
     InputModel = _SignoffIn
     OutputModel = _Ok
+    param_aliases = {"quote": "user_quote"}
 
     async def _run(self, m: _SignoffIn):
         if m.skipped:
@@ -4502,6 +4580,10 @@ class MarkOutcomeMet(_ClaudeTool):
 
 
 class _AddStepIn(BaseModel):
+    # QoL (2026-08-21): unknown kwargs used to be DROPPED SILENTLY
+    # (the "add_action(acceptance=...) stores nothing" pain class).
+    # Refuse them loudly instead.
+    model_config = ConfigDict(extra="forbid")
     recipe_id: str
     description: str
     execution: Literal["inline", "spawn_planner"]
@@ -4532,9 +4614,11 @@ class _AddStepIn(BaseModel):
     # step exists to serve. Unknown ids always refuse; empty refuses under
     # EDP_V7_WRITE_GATES=1 (staged until the boot docs teach it, WS4).
     serves: list[str] = []
-    # v7 WS3 (§2.6c) — the step estimate, authored at declaration:
-    # {tokens?: int, hours?: float}. budget_status compares it to actuals.
-    estimate: dict | None = None
+    # v7 WS3 (§2.6c) — the step estimate, authored at declaration.
+    estimate: dict | None = Field(default=None, description=(
+        "REQUIRED when execution='spawn_planner' (G-EST): {tokens?: int, "
+        "hours?: float}, at least one positive number — budget_status "
+        "compares it to actuals. Inline steps may omit it."))
 
 
 class _StepId(BaseModel):
@@ -5954,9 +6038,16 @@ class ResumeRecipe(_ClaudeTool):
 # guarded successors are add_step / update_object("step", …) /
 # record_step_result below.)
 class _StepResIn(BaseModel):
+    # QoL (2026-08-21): unknown kwargs used to be DROPPED SILENTLY
+    # (the "add_action(acceptance=...) stores nothing" pain class).
+    # Refuse them loudly instead.
+    model_config = ConfigDict(extra="forbid")
     recipe_id: str
     step_id: str
-    result: dict
+    result: dict = Field(description=(
+        "the step's outcome as prose: {summary: str, evidence: str, "
+        "outputs?: [str]} — summary = what shipped, evidence = the "
+        "artifacts/verdicts that prove it, outputs = paths produced"))
     # WP1 G-STEP: recorded user_gate_answer ref (answer_id) validating
     # against gate_target "G-STEP:<recipe_id>:<step_id>" — the ONLY way to
     # flip a spawn_planner step done while its plan is not terminal-succeeded.
@@ -6016,6 +6107,7 @@ class RecordStepResult(_ClaudeTool):
     name = "record_step_result"
     InputModel = _StepResIn
     OutputModel = _Ok
+    param_aliases = {"recipe_step_id": "step_id"}
 
     async def _run(self, m: _StepResIn):
         _own = _planner_foreign_plan_refusal(
@@ -7126,6 +7218,10 @@ _GROUNDING_BRIEF_INJECT_CAP = 6000
 
 
 class _GroundingBriefIn(BaseModel):
+    # QoL (2026-08-21): unknown kwargs used to be DROPPED SILENTLY
+    # (the "add_action(acceptance=...) stores nothing" pain class).
+    # Refuse them loudly instead.
+    model_config = ConfigDict(extra="forbid")
     plan_id: str
     content: str                 # the brief markdown (see planner-phase-ground)
     # file paths in play, stated as DATA (never sniffed out of the prose) —
@@ -7155,6 +7251,7 @@ class RecordGroundingBrief(_ClaudeTool):
     name = "record_grounding_brief"
     InputModel = _GroundingBriefIn
     OutputModel = _GroundingBriefOut
+    param_aliases = {"text": "content"}
 
     async def _run(self, m: _GroundingBriefIn):
         if not self.ctx.plans.exists(m.plan_id):
@@ -8547,8 +8644,9 @@ def _step_flowdown_gaps(recipe, plan, at_close: bool = False) -> list[str]:
                     f"acceptance sketch line {line!r} is mapped to no "
                     "action — declare it at authoring: add_action(..., "
                     f"sketch_covers=[{line!r}]) on the action whose "
-                    "acceptance proves it, or record_plan with "
-                    "sketch_covered_by={<line>: [action_ids]}")
+                    "acceptance proves it, or patch it after the fact: "
+                    "update_object('action', ids={...}, "
+                    f"patch={{'sketch_covers': [{line!r}]}})")
             elif unknown:
                 gaps.append(
                     f"acceptance sketch line {line!r} maps to unknown "
@@ -9573,8 +9671,13 @@ class PoolSpawnWorker(_ClaudeTool):
                               and getattr(d, "status", "active") == "active"
                               and _decision_in_scope(d, p.plan_id)]
                     brief_budget = _worker_brief_budget()
+                    # QoL hop-11 fix (2026-08-21): mirror
+                    # guards.check_constraints — a "proposed" ban carries
+                    # no teeth yet and must not ride worker briefs as if
+                    # the user had confirmed it.
                     banned, banned_elided = budget_fill(
-                        [(x.id, x.text) for x in rr.context.rejected_options],
+                        [(x.id, x.text) for x in rr.context.rejected_options
+                         if getattr(x, "status", "active") == "active"],
                         brief_budget)
                     lb_budget = max(
                         0, brief_budget - _approx_tokens(
@@ -12719,6 +12822,10 @@ class DispatchAcceptance(_ClaudeTool):
 
 
 class _ConsultCuriosityIn(BaseModel):
+    # QoL (2026-08-21): unknown kwargs used to be DROPPED SILENTLY
+    # (the "add_action(acceptance=...) stores nothing" pain class).
+    # Refuse them loudly instead.
+    model_config = ConfigDict(extra="forbid")
     decision: str          # the decision the neuron is about to make
     context: str = ""      # what's known so far (incl. prior answers)
     # the handle YOU poll next_action on (the neuron's recipe_id). The
@@ -12766,6 +12873,7 @@ class ConsultCuriosity(_ClaudeTool):
     name = "consult_curiosity"
     InputModel = _ConsultCuriosityIn
     OutputModel = _ConsultCuriosityOut
+    param_aliases = {"recipe_id": "handle"}
 
     async def _run(self, m: _ConsultCuriosityIn):
         me, _ = _self_and_parent_addresses()
@@ -12836,9 +12944,9 @@ class ConsultCuriosity(_ClaudeTool):
                     )
         body = {
             "decision": m.decision,
-            # kept under its historical key for running shells; the
-            # curiosity protocol now reads it as `caller_framing`.
-            "context": m.context,
+            # QoL F18 (2026-08-21): this rode under BOTH `context` and
+            # `caller_framing` — the same text twice in every consult. One
+            # key, the protocol's name.
             "caller_framing": m.context,
             "caller": caller_id,
         }
@@ -14695,6 +14803,16 @@ class ConfirmDirectionConstraints(_ClaudeTool):
                 out.discarded.append(rid)
         if out.activated or out.discarded:
             self.ctx.recipes.save(r)
+            # QoL (2026-08-21): this verb used to publish NOTHING — a
+            # confirmation changed no downstream surface. The worklog event
+            # rides the briefing delta into subsequent spawns.
+            try:
+                self.ctx.recipes.append_worklog(m.recipe_id, {
+                    "kind": "constraints_confirmed",
+                    "activated": out.activated,
+                    "discarded": out.discarded})
+            except Exception:  # noqa: BLE001 — telemetry, never a refusal
+                pass
         return Tool.ok(out)
 
 
@@ -16503,7 +16621,11 @@ class GetRecipeDigest(_ClaudeTool):
              **({"concerns": s.concerns}
                 if getattr(s, "concerns", None) else {}),
              **({"acceptance_sketch": s.acceptance_sketch}
-                if getattr(s, "acceptance_sketch", None) else {})}
+                if getattr(s, "acceptance_sketch", None) else {}),
+             # QoL F4/F3: the WHY travels with the step (this field
+             # existed on the schema and was rendered by NO projection).
+             **({"why": str(s.rationale_for_next)[:200]}
+                if getattr(s, "rationale_for_next", None) else {})}
             for s in r.steps if s.status in ("pending", "in_progress")
         ]
 
@@ -16566,12 +16688,18 @@ class GetRecipeDigest(_ClaudeTool):
             "live_tail": len(tail_events),
             "counts_by_kind": dict(
                 sorted(kind_counts.items(), key=lambda kv: -kv[1])),
+            # QoL F4 (2026-08-21): bare `recipe_saved` rows with empty
+            # summaries were the WHOLE recent list on a young recipe —
+            # pure noise; counts_by_kind still carries their tally.
             "recent": [
                 {"ts": e.get("ts"), "kind": e.get("kind"),
                  "summary": _digest_trim(
                      e.get("summary") or e.get("detail")
                      or e.get("body") or "", 160)}
-                for e in tail_events[-8:]
+                for e in [x for x in tail_events
+                          if not (str(x.get("kind")) == "recipe_saved"
+                                  and not (x.get("summary")
+                                           or x.get("detail")))][-8:]
             ],
             # W2 grounding epoch — the STATELESS fingerprint recomputed from
             # the live recipe (recipe IS the state; no stored field — d13), so

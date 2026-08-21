@@ -1,37 +1,42 @@
 {
   "_doc": "v7 boot-doc compiler manifest (\u00a72.3). Each command's body is COMPILED from these source modules by `python -m edp_claude.bootdocs` into .claude/commands/<name>.md \u2014 one read at boot, budget-enforced (approx tokens, chars/4), drift-gated in CI (compiled output must match the checked-in command). Every module must be used by a command or listed in `uncompiled`/`notes` \u2014 the orphan gate is how 'no value lost' stays checkable.",
   "budgets": {
-    "neuron": 4000,
-    "agentic-plan": 4000,
-    "worker": 2600,
-    "reviewer": 2000,
-    "curiosity": 1800
+    "neuron": 4600,
+    "agentic-plan": 4600,
+    "worker": 3200,
+    "reviewer": 2600,
+    "curiosity": 2400
   },
   "commands": {
     "neuron": [
       "roles/neuron.md",
+      "shared/why-and-where.md",
       "shared/vocabulary-core.md",
       "shared/terse-core.md"
     ],
     "agentic-plan": [
       "roles/planner.md",
+      "shared/why-and-where.md",
       "shared/seat-law.md",
       "shared/vocabulary-core.md",
       "shared/terse-core.md"
     ],
     "worker": [
       "roles/worker.md",
+      "shared/why-and-where.md",
       "shared/seat-law.md",
       "shared/vocabulary-core.md",
       "shared/terse-core.md"
     ],
     "reviewer": [
       "roles/reviewer.md",
+      "shared/why-and-where.md",
       "shared/seat-law.md",
       "shared/terse-core.md"
     ],
     "curiosity": [
       "roles/curiosity.md",
+      "shared/why-and-where.md",
       "shared/terse-core.md"
     ]
   },

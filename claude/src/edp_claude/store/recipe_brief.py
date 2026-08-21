@@ -128,6 +128,11 @@ def render_recipe_brief(recipe) -> str:
             teeth = (" **[enforced constraint]**"
                      if getattr(b, "constraint", None)
                      and getattr(b, "status", "") == "active" else "")
+            # QoL hop-11 twin (2026-08-21): an unconfirmed proposal must
+            # never read as a settled ban.
+            if getattr(b, "status", "active") == "proposed":
+                teeth = (" _[PROPOSED — awaiting "
+                         "confirm_direction_constraints; no teeth yet]_")
             add(f"- **{b.id}** {_line(b.text)}{teeth}")
         add("")
 

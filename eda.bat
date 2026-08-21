@@ -33,5 +33,14 @@ rem A pre-set EDP_ROLE wins (e.g. for a diagnostic role-less shell, set it "").
 if not defined EDP_ROLE set "EDP_ROLE=neuron"
 rem Override with `set EDA_MODEL=claude-fable-5` (etc.) before launching.
 if not defined EDA_MODEL set "EDA_MODEL=claude-opus-4-8"
+rem QoL Phase 1 (2026-08-21, operator ruling): spawned-shell env parity.
+rem pty_launcher.build_env stamps these on every pool spawn; the foreground
+rem neuron launches HERE and used to run without them, so main-vs-spawned
+rem behavior silently diverged (harness detection, broker/pool reach, logs).
+if not defined EDP_HARNESS set "EDP_HARNESS=claude"
+if not defined EDP_AGENT_HOME set "EDP_AGENT_HOME=C:/Projects/Learning/eda-base3/claude"
+if not defined EDP_BROKER_URL set "EDP_BROKER_URL=http://127.0.0.1:9300"
+if not defined EDP_POOL_URL set "EDP_POOL_URL=http://127.0.0.1:9301"
+if not defined EDP_LOG_DIR set "EDP_LOG_DIR=C:/Projects/Learning/eda-base3/claude/.logs"
 cd /d "C:\Projects\Learning\eda-base3\claude"
 claude --dangerously-skip-permissions --model %EDA_MODEL% %*

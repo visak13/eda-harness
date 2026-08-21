@@ -58,11 +58,20 @@ def instruction_error(exc: ValidationError, model: type[BaseModel]) -> str:
         if t == "missing":
             fld = e["loc"][-1] if e["loc"] else loc
             ann = ""
+            desc = ""
             try:
-                ann = repr(model.model_fields[str(fld)].annotation)
+                f = model.model_fields[str(fld)]
+                ann = repr(f.annotation)
+                # QoL F13/F14: a missing-field refusal that names only the
+                # TYPE sends the caller into serial guessing (dict — of what
+                # shape?). Ship the field's own description with the refusal
+                # so the requirement travels with the error.
+                if f.description:
+                    d = " ".join(f.description.split())
+                    desc = f" — {d[:220]}"
             except Exception:
                 ann = "?"
-            missing.append(f"{loc} ({ann})")
+            missing.append(f"{loc} ({ann}){desc}")
         elif "enum" in t or t == "literal_error":
             allowed = e.get("ctx", {}).get("expected", "?")
             bad_enum.append(f"{loc}: got {e.get('input')!r}; allowed {allowed}")
@@ -83,6 +92,14 @@ def instruction_error(exc: ValidationError, model: type[BaseModel]) -> str:
 class _ClaudeTool(Tool):
     backing = "python"
     idempotent = False
+    # QoL F12 (2026-08-21 baseline drill): the SAME concept carried a
+    # different parameter name per verb (recipe_id vs handle, text vs
+    # content, quote vs user_quote, action_id vs branch_id) and every
+    # mismatch cost a refusal round-trip. Each tool may declare accepted
+    # alternate spellings here: {alias: canonical}. An alias is applied
+    # only when the canonical key is absent, so explicit canonical input
+    # always wins and nothing is silently overwritten.
+    param_aliases: dict[str, str] = {}
 
     def __init__(self, ctx: Ctx) -> None:
         self.ctx = ctx
@@ -90,6 +107,10 @@ class _ClaudeTool(Tool):
     async def run(self, inp: BaseModel):
         name = getattr(self, "name", type(self).__name__)
         raw = inp if isinstance(inp, dict) else inp.model_dump()
+        if self.param_aliases and isinstance(raw, dict):
+            for alias, canonical in self.param_aliases.items():
+                if alias in raw and canonical not in raw:
+                    raw[canonical] = raw.pop(alias)
         # logged to DISK before the body runs → a hang shows as a
         # tool_start with no tool_done.
         _log.info("tool_start", name, tool=name, args=_short(raw))

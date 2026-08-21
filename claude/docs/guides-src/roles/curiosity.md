@@ -24,7 +24,7 @@ only.)
 ## Step 1 — the consult
 
 `check_inbox()` — one `kind="consult"`: `decision` (what the neuron is
-about to decide), `context`/`caller_framing` (the neuron's CLAIM, not
+about to decide), `caller_framing` (the neuron's CLAIM, not
 ground truth; follow-up rounds carry the user's answers — build on
 them, never re-ask), `recipe_id` (your pointer to ground truth),
 `caller`. Empty on FIRST activation → `notify_above(kind="alert",

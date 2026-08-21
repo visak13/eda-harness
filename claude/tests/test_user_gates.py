@@ -155,7 +155,9 @@ async def test_consult_carries_recipe_id_and_framing(env):
     [consult] = [x for x in msgs if x.kind == "consult"]
     assert consult.body["recipe_id"] == rid
     assert consult.body["caller_framing"] == "my framing of the situation"
-    assert consult.body["context"] == "my framing of the situation"  # compat
+    # QoL F18: the framing rides ONCE (the old duplicate `context` key is
+    # gone — every consult carried the same text twice).
+    assert "context" not in consult.body
     assert consult.body["caller"] == rid
 
 

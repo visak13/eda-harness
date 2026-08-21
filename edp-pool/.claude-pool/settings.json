@@ -1,0 +1,48 @@
+{
+  "model": "claude-opus-4-8",
+  "outputStyle": "edp-terse",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR}/.venv/Scripts/python.exe\" \"${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-destructive.py\""
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR}/.venv/Scripts/python.exe\" \"${CLAUDE_PROJECT_DIR}/.claude/hooks/rtk-pretooluse.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR}/.venv/Scripts/python.exe\" \"${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-destructive.py\""
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "permission_prompt|agent_needs_input|idle_prompt|elicitation_dialog",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR}/.venv/Scripts/python.exe\" \"${CLAUDE_PROJECT_DIR}/.claude/hooks/notify-user.py\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  },
+  "effortLevel": "medium",
+  "tui": "fullscreen",
+  "skipDangerousModePermissionPrompt": true,
+  "theme": "dark",
+  "agentPushNotifEnabled": false,
+  "inputNeededNotifEnabled": true
+}
