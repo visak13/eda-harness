@@ -127,11 +127,15 @@ async def test_describe_states_honest_ops(env):
     # 2026-05-30: the catalog advertised plan/step as full CRUD but they
     # error on query/update. describe_objects must now surface the REAL
     # ops + the gotcha note so the agent never guesses.
+    # 2026-08-21 tool-doc overhaul: plan-LEVEL fields became patchable
+    # (shape/goal/review_policy/test_budget) — ops honestly says update
+    # now, and the note teaches the patchable set. Query stays absent.
     idx = _ok(await env.call("describe_objects"))["doc"]
-    assert "[read, create]" in idx               # plan: no query/update
+    assert "[read, create, update]" in idx       # plan: still no query
     plan = _ok(await env.call("describe_objects", name="plan"))["doc"]
-    assert "read, create" in plan
-    assert "action" in plan.lower()              # note: change via actions
+    assert "read, create, update" in plan
+    assert "review_policy" in plan               # the patchable set taught
+    assert "action" in plan.lower()              # action fields via 'action'
     step = _ok(await env.call("describe_objects", name="step"))["doc"]
     assert "append-only" in step.lower()
 

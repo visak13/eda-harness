@@ -67,7 +67,12 @@ def _build_context(root: Path):
 # long docstrings ("verbose tool descriptions demonstrably regress the
 # planner tool catalog"); what changed is that EVERY tool now advertises its
 # owning role(s) + purpose instead of a generated name+backing placeholder.
+from typing import Annotated
+
+from pydantic import Field as PField
+
 from .tools.catalog import TOOL_ONE_LINERS
+from .tools.field_docs import field_doc
 from .tools.roles import ROLE_TOOLSETS
 
 
@@ -218,15 +223,24 @@ def build_mcp(root: Path | None = None):
                 if required
                 else f.get_default(call_default_factory=True)
             )
+            # Tool-doc overhaul (2026-08-21): a field's teaching description
+            # used to surface only AFTER a refusal (instruction_error) — the
+            # agent's first call was always a guess. Annotated[...] carries it
+            # into the JSON schema FastMCP emits, so what each tool NEEDS is
+            # documented at the point of use, before the first call.
+            ann = f.annotation
+            _doc = field_doc(bound_tool.name, fname, f.description)
+            if _doc:
+                ann = Annotated[f.annotation, PField(description=_doc)]
             params.append(
                 inspect.Parameter(
                     fname,
                     inspect.Parameter.KEYWORD_ONLY,
                     default=default,
-                    annotation=f.annotation,
+                    annotation=ann,
                 )
             )
-            annotations[fname] = f.annotation
+            annotations[fname] = ann
         annotations["return"] = str
         shim.__signature__ = inspect.Signature(params)
         shim.__annotations__ = annotations

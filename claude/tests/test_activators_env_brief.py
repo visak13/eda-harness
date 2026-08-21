@@ -306,7 +306,11 @@ def test_planner_dispatcher_stays_thin_and_phases_one_at_a_time():
     # 2026-08-21: 250→300 — QoL Phase 2 (operator mandate): the shared
     # why-and-where orientation module (~45 lines) now compiles into every
     # card; budgets in the manifest were raised deliberately with it.
-    assert line_count < 300, f"dispatcher grew to {line_count} lines"
+    # 2026-08-21b: 300→340 — tool-doc overhaul (operator mandate): the shared
+    # decision-rights module (~35 lines) compiles into every card; token
+    # budgets (test_v7_bootdocs) stay the real thinness gate and were NOT
+    # raised for it — the role cards were dieted to fit instead.
+    assert line_count < 340, f"dispatcher grew to {line_count} lines"
 
 
 # --- Phase 4: shape pipelines for planner ---------------------------------

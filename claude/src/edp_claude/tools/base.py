@@ -44,7 +44,8 @@ class Ctx:
     north_star: NorthStarStore
 
 
-def instruction_error(exc: ValidationError, model: type[BaseModel]) -> str:
+def instruction_error(exc: ValidationError, model: type[BaseModel],
+                      tool_name: str | None = None) -> str:
     """v5 P4: never raw pydantic. Emit a single first-try-actionable
     instruction — required fields (with type), bad enums (with the
     allowed set), and extras to drop. One precise retry, not a guessing
@@ -65,9 +66,12 @@ def instruction_error(exc: ValidationError, model: type[BaseModel]) -> str:
                 # QoL F13/F14: a missing-field refusal that names only the
                 # TYPE sends the caller into serial guessing (dict — of what
                 # shape?). Ship the field's own description with the refusal
-                # so the requirement travels with the error.
-                if f.description:
-                    d = " ".join(f.description.split())
+                # so the requirement travels with the error. Falls back to
+                # the central FIELD_DOCS table (tools/field_docs.py).
+                from .field_docs import field_doc
+                _d = field_doc(tool_name or "", str(fld), f.description)
+                if _d:
+                    d = " ".join(_d.split())
                     desc = f" — {d[:220]}"
             except Exception:
                 ann = "?"
@@ -125,7 +129,7 @@ class _ClaudeTool(Tool):
             return Tool.propagate(
                 source="tool",
                 code=ErrorCode.TOOL_INPUT_INVALID,
-                message=instruction_error(e, self.InputModel),
+                message=instruction_error(e, self.InputModel, self.name),
             )
         try:
             res = await self._run(model)

@@ -49,10 +49,14 @@ _CATALOG: dict[str, dict] = {
     },
     "plan": {
         "cls": "mutate",
-        "ops": "read, create",
-        "note": "NO cross-plan query and NO direct patch — change a plan "
-                "through its `action`s (update_object('action', ...)). To "
-                "list a recipe's plans, query its `step`s.",
+        "ops": "read, create, update",
+        "note": "Plan-LEVEL fields are patchable: update_object('plan', "
+                "ids={plan_id}, patch={shape|goal|review_policy|"
+                "test_budget}) — fix a review_policy entry in place, never "
+                "re-issue create_plan for one field. Action-level fields go "
+                "through update_object('action', ...). NO cross-plan query "
+                "— to list a recipe's plans, query its `step`s. A terminal "
+                "plan is immutable (reopen via create_plan reopen=true).",
         "what": "one recipe step's plan (actions + dep graph).",
         "fields": "plan_id, recipe_id, recipe_step_id, state, shape, goal, "
                   "actions[], terminal_status, version",
@@ -76,7 +80,14 @@ _CATALOG: dict[str, dict] = {
                   "specializations[] (MULTI-SPEC: an action may carry N "
                   "specs; legacy scalar spec_id/specialization still accepted "
                   "and folded to a 1-element list), concerns[], attempt, "
-                  "result_ref",
+                  "result_ref, serves[], leg_kind, deliverable",
+        "note": "Patchable fields: verify, description, depends_on, "
+                "concerns, spec_ids/specializations, model, "
+                "acceptance_kind/expected, executor_mode, sketch_covers, "
+                "serves, leg_kind, deliverable — fix a wrong stamp in "
+                "place, never re-author the action. Status changes go "
+                "through patch={'status': ...} (routed to "
+                "record_action_status).",
         "read": "read_object('action', plan_id=..., action_id=...)",
         "query": "query_objects('action', plan_id=..., "
                  "where={'status': 'needs_review'})",
@@ -99,7 +110,8 @@ _CATALOG: dict[str, dict] = {
         "note": "EDITABLE + DELETABLE in any non-closed recipe state (P3 "
                 "advisory FSM): update_object('step', ids={recipe_id, "
                 "step_id}, patch={description|kind|depends_on|execution|"
-                "status|...}) and delete_object('step', ids=..., reason=...) "
+                "status|serves|estimate|acceptance_sketch|concerns|"
+                "deliverable|...}) and delete_object('step', ids=..., reason=...) "
                 "PROCEED with `advisories` (warning + audit-trail record) "
                 "instead of refusing — edit the map in place rather than "
                 "recording a replacement step. Hard blocks only: a closed "
@@ -116,7 +128,11 @@ _CATALOG: dict[str, dict] = {
         "cls": "mutate",
         "ops": "read, query, create, update",
         "what": "an expected outcome the recipe must meet.",
-        "fields": "id, description, verification, met, met_evidence",
+        "note": "Patchable: {met, evidence} (marks it met) or "
+                "{deliverable, user_path} (the form + the user's own cold "
+                "walk — set them late if authoring missed them).",
+        "fields": "id, description, verification, met, met_evidence, "
+                  "deliverable, user_path",
         "read": "read_object('outcome', recipe_id=..., outcome_id=...)",
         "query": "query_objects('outcome', recipe_id=..., "
                  "where={'met': False})",
@@ -1219,6 +1235,53 @@ async def update_object(ctx, obj_type: str, ids: dict | None = None,
             "contains .git) or {dispatch_hold} (operator pacing rule; "
             "set text to hold dispatch, None to clear)")
 
+    if obj_type == "plan":
+        # Tool-doc overhaul (2026-08-21, operator: "agents keep re-authoring
+        # objects because no tool layer for update"): the plan-level fields
+        # authorable at create_plan are now PATCHABLE — the old dead-end
+        # ("re-issue create_plan") forced a full re-author to fix one
+        # review_policy entry. Terminal plans stay immutable history.
+        _need(ids, "plan_id")
+        allowed = {"shape", "goal", "review_policy", "test_budget"}
+        bad = set(patch) - allowed
+        if bad:
+            raise ObjectError(
+                f"plan field-update allows {sorted(allowed)}; got extra "
+                f"{sorted(bad)}. Action-level fields go through "
+                "update_object('action', …); status is driven by the FSM.")
+        if not ctx.plans.exists(ids["plan_id"]):
+            raise ObjectError(f"no plan {ids['plan_id']!r}")
+        p = ctx.plans.load(ids["plan_id"])
+        state = getattr(p.state, "value", str(p.state))
+        if state == "terminal":
+            raise ObjectError(
+                f"plan {ids['plan_id']!r} is terminal — immutable history. "
+                "Reopen it first (create_plan reopen=true) if its step "
+                "genuinely has new work.")
+        if "review_policy" in patch:
+            rp = patch["review_policy"]
+            if rp is not None and not isinstance(rp, dict):
+                raise ObjectError(
+                    "review_policy must be a mapping {triggers: […], "
+                    "justify: {action_id: reason}} or None")
+        for k, v in patch.items():
+            setattr(p, k, v)
+        ctx.plans.save(p)
+        ctx.plans.append_worklog(ids["plan_id"], {
+            "kind": "plan_field_update", "agent_role": _actor(),
+            "detail": f"updated {sorted(patch)} (in {state})"})
+        out = {"ok": True, "plan_id": ids["plan_id"],
+               "updated": sorted(patch)}
+        if state == "dispatching" and ({"shape", "goal"} & set(patch)):
+            out["advisories"] = advise(
+                ctx, op="update_plan", target=ids["plan_id"],
+                plan_id=ids["plan_id"],
+                warnings=[("edit_in_flight",
+                           "shape/goal edited while the plan is "
+                           "dispatching — in-flight workers were briefed "
+                           "against the previous text.")])
+        return out
+
     if obj_type == "neuron":
         _need(ids, "neuron_id")
         if "status" in patch:
@@ -1275,7 +1338,11 @@ async def _update_action_fields(ctx, plan_id: str, action_id: str,
     allowed = {"verify", "description", "depends_on", "concerns",
                "spec_ids", "specializations", "spec_id", "specialization",
                "model", "acceptance_kind", "acceptance_expected",
-               "executor_mode", "sketch_covers"}
+               "executor_mode", "sketch_covers",
+               # Tool-doc overhaul (2026-08-21): every field authorable at
+               # add_action is patchable — a wrong lineage/leg/form stamp
+               # must not force a re-author.
+               "serves", "leg_kind", "deliverable"}
     bad = set(patch) - allowed
     if bad:
         raise ObjectError(
@@ -1314,6 +1381,21 @@ async def _update_action_fields(ctx, plan_id: str, action_id: str,
         target.acceptance.expected = patch["acceptance_expected"]
     if "executor_mode" in patch:
         target.executor_mode = patch["executor_mode"]
+    if "serves" in patch:
+        from .tools._tools import _check_serves
+        bad_serves = _check_serves(ctx, p.recipe_id,
+                                   list(patch["serves"] or []),
+                                   f"action:{action_id}")
+        if bad_serves:
+            raise ObjectError(bad_serves)
+        target.serves = list(patch["serves"] or [])
+    if "leg_kind" in patch:
+        if patch["leg_kind"] not in (None, "build", "review", "verify"):
+            raise ObjectError(
+                "leg_kind must be build | review | verify (or None)")
+        target.leg_kind = patch["leg_kind"]
+    if "deliverable" in patch:
+        target.deliverable = patch["deliverable"] or None
     # s17 FA3 model-tiering: the planner stamps a per-action model tier here
     # at dispatch (it authored the action), ONLY for a genuinely NARROW worker
     # (Sonnet 4.6 MEASURED-safe — see Action.model). patch={'model': None}
@@ -1400,7 +1482,11 @@ def advise(ctx, *, op: str, target: str, warnings: list[tuple[str, str]],
 
 
 _STEP_PATCHABLE = {"description", "kind", "depends_on", "execution",
-                   "rationale_for_next", "status", "outputs", "plan_ref"}
+                   "rationale_for_next", "status", "outputs", "plan_ref",
+                   # Tool-doc overhaul (2026-08-21): every field authorable
+                   # at add_step is patchable — no re-author to fix one.
+                   "serves", "estimate", "acceptance_sketch", "concerns",
+                   "deliverable"}
 _STEP_STATUSES = {"pending", "in_progress", "done", "skipped"}
 
 
@@ -1432,6 +1518,18 @@ async def _update_step_fields(ctx, recipe_id: str, step_id: str,
     if "status" in patch and patch["status"] not in _STEP_STATUSES:
         raise ObjectError(
             f"step status must be one of {sorted(_STEP_STATUSES)}")
+    if "serves" in patch:
+        from .tools._tools import _check_serves
+        bad_serves = _check_serves(ctx, recipe_id,
+                                   list(patch["serves"] or []),
+                                   f"step:{step_id}")
+        if bad_serves:
+            raise ObjectError(bad_serves)
+        patch = {**patch, "serves": list(patch["serves"] or [])}
+    if "estimate" in patch and patch["estimate"] is not None \
+            and not isinstance(patch["estimate"], dict):
+        raise ObjectError(
+            "estimate must be a mapping like {'hours': N} / {'tokens': N}")
     # WP1 G-STEP: a spawn_planner step cannot be patched to done unless its
     # plan is terminal-succeeded, or the call carries a recorded user
     # override (validated + audit-trailed by _check_g_step).

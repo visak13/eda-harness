@@ -24,7 +24,7 @@ TOOL_ONE_LINERS: dict[str, str] = {
     # ── comprehension / outcomes ────────────────────────────────────────
     "record_comprehension_signoff": "Record the user's proceed-signoff (or an explicit skipped+reason) — the gate out of COMPREHENDING.",
     "record_user_answer": "Record the user's verbatim answer to an open question; diff it against active decisions before writing.",
-    "record_outcome": "Declare one expected outcome; refused until curiosity cleared or the user signed off.",
+    "record_outcome": "Declare expected outcome(s) — one, or a batch via outcomes=[...]; give each a deliverable form + user_path; refused until curiosity cleared or the user signed off.",
     "mark_outcome_met": "Flip one outcome to met with evidence; the honest close needs every outcome met.",
     "record_audit_verdict": "Record the OCAK audit verdict on the recipe trail.",
     "run_ocak_audit": "Run the OCAK framework audit over the recipe and return findings.",
@@ -83,10 +83,10 @@ TOOL_ONE_LINERS: dict[str, str] = {
     "record_branch_verdict": "Record a reviewer's verdict on a branch or plan action — judgement, never status.",
     # ── plan authoring (planner) ────────────────────────────────────────
     "create_plan": "Create an empty drafted plan for a step (tool fills plan_id/domain); then add_action per action.",
-    "add_action": "Append one action (acceptance, verify, concerns, leg_kind, batch_group). description = the WHAT, HARD CAP 1200 chars (how -> grounding brief); past the ceiling only batched appends land — an action costs a shell.",
+    "add_action": "Append action(s) — one, or several in one call via actions=[...]. description = the WHAT, HARD CAP 1200 chars (how -> grounding brief); past the ceiling only batched appends land — an action costs a shell.",
     "record_plan": "Validate+save a whole Plan; refuses when step concerns/acceptance_sketch are uncovered (flow-down gate).",
     "record_grounding_brief": "Write the plan's grounding brief sidecar (injected into every worker, capped at delivery — keep it tight).",
-    "update_object": "Patch fields on your OWN objects (role-scoped by object type); read back what you wrote.",
+    "update_object": "Patch fields IN PLACE on recipe/plan/step/action/outcome — fix one field, never re-author the object; describe_objects lists each type's patchable set.",
     "delete_object": "Delete an object you own (role-scoped by object type).",
     "create_object": "Generic object create (escape hatch; prefer the intent verbs).",
     # ── specialists ─────────────────────────────────────────────────────
