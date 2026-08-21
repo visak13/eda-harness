@@ -1,4 +1,4 @@
-# QoL baseline — Phase-0 drill friction log (2026-08-21)
+﻿# QoL baseline — Phase-0 drill friction log (2026-08-21)
 
 A mock recipe ("browser habit tracker, design-first, Sol critiques the
 look") was driven END TO END through the real tool layer (stub broker/pool,
@@ -15,14 +15,14 @@ Legend: [P1]…[P5] = the overhaul phase that owns the fix ·
 
 - [ ] F1 [P2] `whoami` on the main seat: all-null identity + rx jargon;
       nothing says "you are the neuron; your parent is the user".
-- [ ] F2 [P1] `start_recipe` (and most writes) return bare ids/`ok:true`
+- [x] F2 [P1] `start_recipe` (and most writes) return bare ids/`ok:true`
       with no next-move pointer; a cold seat must know the card by heart.
 - [x] F3 [P2] Worker's `injected_context` carries ONLY the grounding brief:
       no goal, no decisions, no bans, no position ("step N of M"), nothing
       about prev/next. The builder has the least visibility in the fleet.
 - [x] F4 [P2] Planner digest clips its own step description mid-sentence;
       `recent_events` is 8× `recipe_saved` with empty summaries (noise).
-- [ ] F5 [P3] `workspace` is captured NOWHERE: `start_recipe` has no param,
+- [x] F5 [P3] `workspace` is captured NOWHERE: `start_recipe` has no param,
       the acceptor consult ships `workspace: null` while its card orders
       "go to the workspace and look"; G-COMMIT silently no-ops.
 
@@ -32,13 +32,13 @@ Legend: [P1]…[P5] = the overhaul phase that owns the fix ·
       `user_goal_distilled`; curiosity's card-mandated diff vs
       `user_goal_verbatim` is unexecutable — and distilled is silently a
       copy, so the gap is invisible.
-- [ ] F7 [P3] Grounding brief: stored whole, injected first-6000-chars; the
+- [x] F7 [P3] Grounding brief: stored whole, injected first-6000-chars; the
       3 LOAD-BEARING corrections in the tail never arrive; recovery costs a
       full broker round-trip. (Truncation marker is loud — keep that.)
-- [ ] F8 [P3] `record_action_status(done)` accepted evidence that ADMITS the
+- [x] F8 [P3] `record_action_status(done)` accepted evidence that ADMITS the
       signed-off design-first order was skipped — `manual_review` acceptance
       runs no check; self-accept-on-green reproduced live.
-- [ ] F9 [P4] Sol never entered the loop: no route fires, no card demands a
+- [x] F9 [P4] Sol never entered the loop: no route fires, no card demands a
       visual critique; only the (mock) brief text carried it.
 - [ ] F10 [P5] Curiosity fidelity protocol is honor-system: a `done` reply
       to a stale msg_id passes with no fidelity round ever delivered.
@@ -82,7 +82,7 @@ Legend: [P1]…[P5] = the overhaul phase that owns the fix ·
       the FSM does not follow reality; the planner must manually pump
       `next_action` to make the record admit finished work ("laggy",
       mechanized).
-- [ ] F23 [P4] Challenge-threshold contradiction: planner card says 3+
+- [x] F23 [P4] Challenge-threshold contradiction: planner card says 3+
       actions require a challenge; the spawn advisory threatens step-close
       refusal at 2. (Phase 4 retargets the challenge at generated code
       anyway.)
@@ -134,3 +134,39 @@ Phase 3), F7 (brief cap delivery — Phase 3), F8 (deliverable-form gate —
 Phase 3), F9 (advisor fabric — Phase 4), F10/F20 (protocol/gating
 consistency — Phase 5), F11 (OCAK — Phase 3), F22 (FSM follows reality —
 Phase 5), F23 (challenge retarget — Phase 4).
+
+## Final disposition — post-change re-drill (2026-08-21, R1–R4)
+
+The SAME mock recipe was re-driven end-to-end through the real tool
+layer with the updated guides: **28/28 checks PASS** (verbatim goal into
+the curiosity consult; batch `record_outcome`/`add_action`; teaching
+refusals naming legal ids; operator hold blocking wave+spawn and
+clearing; `text=`/`recipe_step_id=` aliases; position block on the
+action read; structured-text boundary; small-recipe exemption from
+G-CHALLENGE and from the low-level-strategy advisory; empty waves
+explaining themselves; plan → terminal → step close; acceptor consult
+carrying goal + deliverable + user_path). Tool-output audit: 106
+rendered results across all 93 registered tools, zero JSON dumps.
+
+Fixed since the wave-1 disposition: F2 (writes carry next-move notes),
+F5 (recipe `workspace`, validated, nudged, in the acceptor consult),
+F7 (brief delivered WHOLE — 20k ceiling, 6000 lean-advisory), F8
+(deliverable form + `user_path` + producer-verify stand-down + the
+acceptor's walk law), F9 (Sol fabric: routes, write-capable asset
+delegate, images threading, visual-authority card doctrine), F23
+(challenge retargeted: big recipes only, `EDP_CHALLENGE_GATE_MIN_STEPS`).
+
+Deferred, with reasons:
+- F1 (whoami identity block) — separate harness defect, tracked
+  independently; the position block + orientation module now carry the
+  "you are here" load.
+- F10 (fidelity honor-system) — the `awaiting_user_iteration` protocol
+  narrows it culturally (done only on a sign-off round); a mechanical
+  stale-msg_id guard was judged not cheap and stays open.
+- F20 (seat-gating asymmetry) — DELIBERATE: goal-patching
+  (north_star_update) stays neuron-only per the F37 hardening;
+  authoring verbs stay open. Asymmetry documented, not a bug.
+- F11 (OCAK unused) — untouched this campaign; candidate for the next.
+- F22 (FSM follows reality) — the pump is still manual; empty waves now
+  explain themselves and name the next call, which removes the mystery
+  but not the ceremony. Candidate for the next campaign.

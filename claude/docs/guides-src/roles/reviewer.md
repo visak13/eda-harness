@@ -32,7 +32,7 @@ before this shell existed (enforced) — it is in your inbox now.
 
 - Per target: read the REAL deliverable (never review from the
   description). Load `get_specialist_docs(spec_ids=<that target's
-  spec_ids>)` — the doc defines the bar — and check conformance rule
+  spec_ids>)` — the LOW-LEVEL STRATEGY doc defines the bar — and check conformance rule
   by rule by `[adherence]` tag:
   `required` gap → fail · `expected` gap → concerns (fixed if clear) ·
   `preferred` gap → note. Null doc → `notify_above` that it must be

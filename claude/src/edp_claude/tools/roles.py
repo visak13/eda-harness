@@ -419,6 +419,11 @@ _SPECIALIST: frozenset[str] = frozenset({
     "get_specialist_docs", "get_specialization",
     "list_spec_learnings", "resolve_spec_learnings",
     "check_specialist_decay",
+    # R2 dedup rule (2026-08-21) — specialist.md instructs a spec-store
+    # search BEFORE creating (`neuron_search(query=<subject>)`): a
+    # near-match spec is extended, never forked into a near-duplicate
+    # with a different bar. Read-only lookup, no new reach.
+    "neuron_search",
     # s25/a4 — RE-ADDED EXPLICITLY. It used to arrive via the
     # `| SPECIALIST_ONLY` union below; now that it has (correctly) left that
     # set, the specialist would SILENTLY LOSE the verb its own

@@ -3723,12 +3723,12 @@ def _shell_cost_advisory(n_actions: int) -> str:
         "action via update_object. Review/verify legs count too.")
 
 
-class _AddActionIn(BaseModel):
-    # QoL (2026-08-21): unknown kwargs used to be DROPPED SILENTLY
-    # (the "add_action(acceptance=...) stores nothing" pain class).
-    # Refuse them loudly instead.
+class _ActionItem(BaseModel):
+    # One action's authoring payload — the per-action half of _AddActionIn,
+    # split out (R3 2026-08-21) so `actions=[…]` can batch several appends
+    # into ONE call (the serial authoring ceremony was a measured latency
+    # pain). Same fields, same defaults, same gates per item.
     model_config = ConfigDict(extra="forbid")
-    plan_id: str
     action_id: str
     description: str
     depends_on: list[str] = []
@@ -3808,6 +3808,22 @@ class _AddActionIn(BaseModel):
                          "3d_asset", "data", "service", "mixed"] | None = None
 
 
+class _AddActionIn(_ActionItem):
+    # QoL (2026-08-21): unknown kwargs used to be DROPPED SILENTLY
+    # (the "add_action(acceptance=...) stores nothing" pain class).
+    # Refuse them loudly instead.
+    model_config = ConfigDict(extra="forbid")
+    plan_id: str
+    # R3 batch authoring (2026-08-21): pass `actions=[{…}, …]` to append
+    # SEVERAL actions in one call — each item carries the same fields and
+    # passes the same gates as a single append; any refusal aborts the
+    # whole batch before anything is saved (atomic). With `actions` set,
+    # the top-level action_id/description are ignored and may be omitted.
+    action_id: str = ""
+    description: str = ""
+    actions: list[_ActionItem] | None = None
+
+
 def _v7_gates_on() -> bool:
     return os.environ.get("EDP_V7_WRITE_GATES", "").strip() == "1"
 
@@ -3855,8 +3871,6 @@ class AddAction(_ClaudeTool):
     OutputModel = _Ver
 
     async def _run(self, m: _AddActionIn):
-        from ..schemas import Acceptance, Action
-
         _own = _planner_foreign_plan_refusal(m.plan_id, "add_action")
         if _own is not None:
             return _own
@@ -3864,6 +3878,19 @@ class AddAction(_ClaudeTool):
             return _precondition(
                 f"no plan {m.plan_id!r}; call create_plan first"
             )
+        # R3 batch authoring: `actions=[…]` appends several in ONE call —
+        # every item passes the same per-action gates; the FIRST refusal
+        # aborts the whole call BEFORE the single save (atomic, nothing
+        # half-landed). A single append is a one-item batch of `m` itself.
+        items: list[_ActionItem] = list(m.actions or [])
+        if not items:
+            if not m.action_id.strip():
+                return _precondition(
+                    "add_action needs either action_id+description (single "
+                    "append) or actions=[{action_id, description, …}, …] "
+                    "(batch append in one call)."
+                )
+            items = [m]
         p = self.ctx.plans.load(m.plan_id)
         # s12 item (b): an action may be appended both while DRAFTED
         # (initial authoring) and while DISPATCHING (incremental append to
@@ -3887,23 +3914,44 @@ class AddAction(_ClaudeTool):
             from ..objects import advise
             p.state = PlanState.DISPATCHING
             advisories = advise(
-                self.ctx, op="add_action", target=m.action_id,
+                self.ctx, op="add_action", target=items[0].action_id,
                 plan_id=m.plan_id,
                 warnings=[(
                     "plan_reopened",
                     f"plan {m.plan_id} was in acceptance_review; appending "
-                    f"{m.action_id} REOPENED it to dispatching — drive the "
-                    "new action to terminal so the plan can close again."
+                    f"{items[0].action_id} REOPENED it to dispatching — "
+                    "drive the new action to terminal so the plan can "
+                    "close again."
                 )])
+        for it in items:
+            refusal = self._check_and_append(p, it)
+            if refusal is not None:
+                return _precondition(refusal)
+        v = self.ctx.plans.save(p)
+        # Soft meter: past the soft floor every append carries the running
+        # shell-cost line — the planner sees the price at the exact moment
+        # it authors action #13, not in a guide it read at boot.
+        if len(p.actions) > _plan_action_soft():
+            advisories = list(advisories or [])
+            advisories.append({
+                "kind": "plan_growth_cost",
+                "detail": _shell_cost_advisory(len(p.actions)),
+            })
+        return Tool.ok(_Ver(version=v, advisories=advisories))
+
+    def _check_and_append(self, p, m: _ActionItem) -> str | None:
+        """Run every per-action gate on ONE item and append it to the
+        IN-MEMORY plan. Returns a refusal string (the caller aborts the
+        whole batch before saving — atomic) or None on success."""
+        from ..schemas import Acceptance, Action
+
         if any(a.action_id == m.action_id for a in p.actions):
-            return _precondition(
-                f"action {m.action_id!r} already in plan {m.plan_id}"
-            )
+            return f"action {m.action_id!r} already in plan {p.plan_id}"
         # Plan-growth bounds (2026-08-01): description write cap + shell
         # ceiling. Tool-path only — legacy plans with essay descriptions
         # still load unchanged (the RecordContext/_CONTEXT_TEXT_MAX pattern).
         if len(m.description) > _ACTION_DESC_MAX:
-            return _precondition(
+            return (
                 f"add_action: description is {len(m.description)} chars, "
                 f"exceeds the {_ACTION_DESC_MAX}-char write cap. The "
                 "description states WHAT the action does and its bounds; "
@@ -3913,8 +3961,8 @@ class AddAction(_ClaudeTool):
                 "history in the worklog — never re-narrated per action. "
                 "Tighten and resend.")
         if len(p.actions) >= _plan_action_ceiling() and not m.batch_group:
-            return _precondition(
-                f"add_action: plan {m.plan_id} already has "
+            return (
+                f"add_action: plan {p.plan_id} already has "
                 f"{len(p.actions)} actions — at/past the ceiling "
                 f"({_plan_action_ceiling()}), new actions are accepted "
                 "BATCHED ONLY (set batch_group — one shell executes the "
@@ -3927,18 +3975,18 @@ class AddAction(_ClaudeTool):
         # artifact check at authoring time.
         bad = _reject_producer_verify(m.verify, deliverable=m.deliverable)
         if bad:
-            return _precondition(bad)
+            return bad
         # Guard A (2026-06-01): refuse specialist-intent expressed as prose
         # in the description (set the `specialization` field instead).
         prose = _reject_dispatch_prose(m.description)
         if prose:
-            return _precondition(prose)
+            return prose
         # v7 WS3 — outcome lineage (unknown ids always refuse; empty refuses
         # under EDP_V7_WRITE_GATES=1).
         bad_serves = _check_serves(self.ctx, p.recipe_id, m.serves,
                                    f"action:{m.action_id}")
         if bad_serves:
-            return _precondition(bad_serves)
+            return bad_serves
         # v7 WS3 (§2.4b) — MEASURED REVIEW: once the plan stamped a
         # review_policy, every review leg must be justified against it.
         # A plan with no policy keeps full legacy behavior (staged opt-in,
@@ -3955,7 +4003,7 @@ class AddAction(_ClaudeTool):
                 # update_object refuses type=plan — a dead-end instruction.
                 # While drafted, create_plan re-creates in place; otherwise
                 # record_plan resends the whole plan.
-                return _precondition(
+                return (
                     "add_action(leg_kind=review): review_policy.justify "
                     f"must be a mapping {{action_id: reason}}, got "
                     f"{type(justify).__name__} — re-issue create_plan with "
@@ -3966,7 +4014,7 @@ class AddAction(_ClaudeTool):
                     "spec-required surface", "protected surface",
                     "novel decision", "acceptance complexity",
                     "first action on spec"]
-                return _precondition(
+                return (
                     f"add_action(leg_kind=review): this plan stamped a "
                     f"review_policy, so review leg {m.action_id!r} must be "
                     f"justified — add review_policy.justify[{m.action_id!r}] "
@@ -3990,10 +4038,10 @@ class AddAction(_ClaudeTool):
         # made G-SKIP and G-RUNS elective. Upgrading (gate=true on a
         # non-derived action) stays free; downgrading needs the user.
         if m.gate is False and _derived_gate:
-            gate_target = f"G-GATE:{m.plan_id}:{m.action_id}"
+            gate_target = f"G-GATE:{p.plan_id}:{m.action_id}"
             if not _gate_override_ok(self.ctx, p.recipe_id, m.override_ref,
                                      gate_target):
-                return _precondition(
+                return (
                     f"add_action: {m.action_id!r} DERIVES as a GATE action "
                     "(it serves a declared outcome AND carries an "
                     "executable acceptance check) — gate=false would make "
@@ -4026,7 +4074,7 @@ class AddAction(_ClaudeTool):
             unknown = [ln for ln in m.sketch_covers
                        if ln not in step_sketch]
             if unknown:
-                return _precondition(
+                return (
                     f"add_action: sketch_covers names line(s) not in the "
                     f"owning step's acceptance_sketch: {unknown!r} — the "
                     f"step declares {step_sketch!r}. Cover those lines "
@@ -4065,17 +4113,7 @@ class AddAction(_ClaudeTool):
                     ids_.append(m.action_id)
                 mapping[ln] = ids_
             p.sketch_covered_by = mapping
-        v = self.ctx.plans.save(p)
-        # Soft meter: past the soft floor every append carries the running
-        # shell-cost line — the planner sees the price at the exact moment
-        # it authors action #13, not in a guide it read at boot.
-        if len(p.actions) > _plan_action_soft():
-            advisories = list(advisories or [])
-            advisories.append({
-                "kind": "plan_growth_cost",
-                "detail": _shell_cost_advisory(len(p.actions)),
-            })
-        return Tool.ok(_Ver(version=v, advisories=advisories))
+        return None
 
 
 # ── v5 P4 intent-level tools (the tool fills scaffolding; the LLM only
@@ -4419,12 +4457,10 @@ class RecordBranchVerdict(_ClaudeTool):
         return Tool.ok(_Ok())
 
 
-class _OutIn(BaseModel):
-    # QoL (2026-08-21): unknown kwargs used to be DROPPED SILENTLY
-    # (the "add_action(acceptance=...) stores nothing" pain class).
-    # Refuse them loudly instead.
+class _OutcomeItem(BaseModel):
+    # One outcome's payload — the per-outcome half of _OutIn, split out
+    # (R3 2026-08-21) so `outcomes=[…]` can declare several in ONE call.
     model_config = ConfigDict(extra="forbid")
-    recipe_id: str
     description: str
     verification: str
     # QoL Phase 3 — the deliverable FORM. Prose alone is how "interactive
@@ -4442,11 +4478,28 @@ class _OutIn(BaseModel):
     user_path: str | None = None
 
 
+class _OutIn(_OutcomeItem):
+    # QoL (2026-08-21): unknown kwargs used to be DROPPED SILENTLY
+    # (the "add_action(acceptance=...) stores nothing" pain class).
+    # Refuse them loudly instead.
+    model_config = ConfigDict(extra="forbid")
+    recipe_id: str
+    # R3 batch authoring (2026-08-21): pass `outcomes=[{description,
+    # verification, deliverable?, user_path?}, …]` to declare several
+    # outcomes in ONE call. With `outcomes` set, the top-level
+    # description/verification are ignored and may be omitted.
+    description: str = ""
+    verification: str = ""
+    outcomes: list[_OutcomeItem] | None = None
+
+
 class _OutOut(BaseModel):
     # QoL F16: a write that answers bare `ok` forces a read-back to learn
     # the id it just minted (the drill's "outcomes recorded, now fetch
     # their ids" ceremony). Echo the id at the moment of creation.
     outcome_id: str
+    # R3: every id minted by this call (== [outcome_id] for a single).
+    outcome_ids: list[str] = []
     note: str = "outcome declared; cite this id in add_step(serves=[…])"
 
 
@@ -4497,15 +4550,28 @@ class RecordOutcome(_ClaudeTool):
                 "first. Do not infer 'clear' from 'all my questions were "
                 "answered'."
             )
-        n = len(c.expected_outcomes) + 1
-        c.expected_outcomes.append(
-            Outcome(id=f"o{n}", description=m.description,
-                    verification=m.verification,
-                    deliverable=m.deliverable,
-                    user_path=m.user_path)
-        )
+        # R3 batch authoring: several outcomes in one call; a single call
+        # is a one-item batch of `m` itself.
+        items: list[_OutcomeItem] = list(m.outcomes or [])
+        if not items:
+            if not (m.description.strip() and m.verification.strip()):
+                return _precondition(
+                    "record_outcome needs description+verification (single "
+                    "outcome) or outcomes=[{description, verification, …}, "
+                    "…] (batch declare in one call).")
+            items = [m]
+        ids: list[str] = []
+        for it in items:
+            n = len(c.expected_outcomes) + 1
+            c.expected_outcomes.append(
+                Outcome(id=f"o{n}", description=it.description,
+                        verification=it.verification,
+                        deliverable=it.deliverable,
+                        user_path=it.user_path)
+            )
+            ids.append(f"o{n}")
         self.ctx.recipes.save(r)
-        return Tool.ok(_OutOut(outcome_id=f"o{n}"))
+        return Tool.ok(_OutOut(outcome_id=ids[0], outcome_ids=ids))
 
 
 class _SignoffIn(BaseModel):
@@ -9418,6 +9484,32 @@ class PoolSpawnWorker(_ClaudeTool):
                             "itself and records status directly; spawning "
                             "a worker for it wastes a pool slot."),
                     })
+                # R1 low-level strategy engagement (2026-08-21): ADVISORY,
+                # never a gate. A BUILD action on a multi-step recipe that
+                # carries no spec_ids dispatches a worker with no compiled
+                # low-level strategy doc — the first-order cause of
+                # inconsistent results in the recipe corpus. Review legs and
+                # small recipes are exempt; the spawn always proceeds.
+                if (m.role != "reviewer"
+                        and _effective_leg_kind(a, m.action_id) != "review"
+                        and not (getattr(a, "spec_ids", None) or [])
+                        and self.ctx.recipes.exists(p.recipe_id)):
+                    _n_steps = len(self.ctx.recipes.load(p.recipe_id).steps)
+                    if _n_steps >= 3:
+                        _spawn_advisories.append({
+                            "kind": "no_low_level_strategy",
+                            "detail": (
+                                f"action {m.action_id!r} dispatches build "
+                                f"work on a {_n_steps}-step recipe with NO "
+                                "spec_ids stamped — who taught this worker "
+                                "the house style? Stamp the low-level "
+                                "strategy doc(s) it should build against "
+                                "(train_specialist / consult_specialist, "
+                                "then update_object the resolved spec_ids "
+                                "onto the action) so the worker grounds on "
+                                "a compiled ruleset, not improvisation. "
+                                "Dispatch proceeds."),
+                        })
                 # WP2 G-REWORK: true up `attempt` from the pool's OWN
                 # session history — the registry keeps every row ever
                 # spawned for a handle (terminal ones included, see the
@@ -13015,8 +13107,11 @@ class _ConsultCuriosityOut(BaseModel):
         "answers as a FOLLOW-UP with curiosity_id=<this id> (do NOT spawn "
         "a new one). clear=true arrives as status='awaiting_fidelity' — "
         "the shell is STILL ALIVE: record the map, then send it the "
-        "recorded outcomes+steps as one more follow-up; only its fidelity "
-        "reply carries status='done', after which it closes itself."
+        "recorded outcomes+steps as one more follow-up. Its fidelity "
+        "reply is status='awaiting_user_iteration' until a round carries "
+        "the user's sign-off — relay the user's iterations on the sketch "
+        "back to it; only the sign-off round draws status='done', after "
+        "which it closes itself."
     )
 
 
@@ -13117,6 +13212,16 @@ class ConsultCuriosity(_ClaudeTool):
         }
         if recipe_id:
             body["recipe_id"] = recipe_id
+            # R3 (2026-08-21): curiosity interrogates on the OPERATOR'S OWN
+            # WORDS, not the neuron's paraphrase — carry the verbatim goal
+            # in the consult body so the interrogation grounds on the law,
+            # with `caller_framing` demoted to the claim it always was.
+            try:
+                _goal = self.ctx.recipes.load(recipe_id).user_goal_verbatim
+                if _goal:
+                    body["user_goal_verbatim"] = _goal
+            except Exception:  # noqa: BLE001
+                pass
         consult_msg = BrokerMessage(
             msg_id=str(uuid.uuid4()),
             ts=_now(),

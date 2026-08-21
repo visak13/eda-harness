@@ -71,7 +71,31 @@ the session; the essentials):
   google-pwa specs with different bars; project specs never carry coding
   standards.
 
-## REMAINING WORK (in order)
+## STATUS UPDATE (2026-08-21, post-compact run) — R1–R4 EXECUTED
+
+R1 DONE: `planner-strategy-walking-skeleton.md` +
+`planner-strategy-acceptance-repair-chain.md` shipped;
+`strategy-library.md` is now the goal-kind selection index; vocabulary
+swept in planner/worker/reviewer cards (shape = high-level strategy
+skill, spec docs = low-level strategy skills; field/guide names kept as
+aliases); `no_low_level_strategy` dispatch ADVISORY live in
+pool_spawn_worker (build leg + ≥3-step recipe + no spec_ids).
+R2 DONE: `.specs/spec-universal/compiled.md` authored (MIT 6.102 triad,
+GoF/Fowler/Pragmatic/McConnell/12-factor, mapped to the v5 entries);
+specialist.md gained cut-it-LOUDLY (+`cut` in the close body), the
+dedup rule (`neuron_search` granted to _SPECIALIST), and the mandatory
+visual/UX-bar section; acceptor.md gained the user_path walk law.
+R3 DONE: curiosity consult carries `user_goal_verbatim`;
+`awaiting_user_iteration` protocol in curiosity+neuron cards (done only
+on a sign-off round); batch verbs `record_outcome(outcomes=[…])` and
+`add_action(actions=[…])` (atomic, single save); role-map images via
+the Sol write path (docs/maps/). F10/F20 deferred with reasons — see
+qol-baseline.md final disposition.
+R4: re-drill 28/28 PASS; tool audit 106 results / 93 tools, zero JSON;
+suites green (broker 33, pool 319, claude full); Sol second review run
+and adjudicated. Regressions: tests/test_qol_r1_r3.py (8).
+
+## REMAINING WORK (in order) — [historical; executed above]
 
 ### R1 — Strategy-skill layer (the operator's "not a framework" charge)
 - High-level strategies (rename: shape = high-level strategy skill for

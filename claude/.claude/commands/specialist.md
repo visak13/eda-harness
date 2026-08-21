@@ -45,7 +45,16 @@ specialist card.
 - You will be forked/branched for many future uses — learn the subject
   generally and deeply, and keep it PROJECT-AGNOSTIC (the card's first
   law): before recording any rule ask
-  *"would every project on this stack need this?"* — if not, cut it.
+  *"would every project on this stack need this?"* — if not, cut it
+  **LOUDLY**: every goal directive you scope out goes in your
+  training-complete report (`"cut": [<directive> — <why>, …]`), never
+  silently. The caller decides where a cut directive lives (a project
+  addendum, the brief); a directive that vanishes without a flag is
+  how the user's stated bar dies on the way down.
+- **Dedup before you create:** search the existing spec store first
+  (`neuron_search(query=<subject>)`); a near-match spec is EXTENDED
+  (`update_specialist` on it) — never forked into a near-duplicate
+  with a different bar.
 
 ## Author + compile (the sequence — each call small and flat)
 
@@ -70,6 +79,12 @@ specialist card.
    decisive. Ship the shortest doc that removes the guesswork (~15–30
    high-signal lines) — this compiled doc is what the user reviews
    before `stable`.
+   **MANDATORY for any spec whose scope touches a human-visible
+   surface (UI, site, image, 3D, chart):** a Visual/UX bar section —
+   what the worker must LOOK AT before done (render it, screenshot
+   it, walk the screen) and what "looks right" means, concretely. A
+   green gate does not discharge looking; a spec that lets a visual
+   deliverable close on tests alone is incomplete.
 5. `record_spec_version(spec_id, summary=…)` then
    `neuron_set_status(neuron_id, status="pending_review")`.
    - Interactive: show the entries + adherence levels and ask
@@ -85,7 +100,9 @@ specialist card.
 reply(msg_id=<the consult's msg_id>, body={
   "event": "training_complete", "neuron_id": …, "spec_id": …,
   "subject": …, "status": "<stable | pending_review>",
-  "summary": "<2-3 sentences>"})
+  "summary": "<2-3 sentences>",
+  "cut": [<every goal directive you scoped out, with why — [] only
+          when nothing was cut>]})
 # disarm what you armed: CronDelete + TaskStop, then
 pool_close_self
 ```

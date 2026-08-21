@@ -18,12 +18,16 @@ checklist, never a menu you must pick from.**
    and sharing `spec_ids` get a common `batch_group` (Step 2).
 5. **Place the review legs** so every strand of work is gated (Step 5).
 
-**THEN — and only then — glance at the shape shelf.** If the DAG you
-drew matches a known pattern, load that ONE shape guide as a checklist
-of pitfalls others already paid for:
+**THEN — and only then — glance at the strategy shelf** (your
+HIGH-LEVEL STRATEGY skills; "shape" is the legacy field name). If the
+DAG you drew matches a known pattern, load that ONE guide as a
+checklist of pitfalls others already paid for
+(`get_guide("strategy-library")` indexes them by GOAL KIND):
 
-| Shape | Your drawn DAG looks like | Guide |
+| Strategy (shape) | Your drawn DAG looks like | Guide |
 |---|---|---|
+| `walking-skeleton` | multi-component build, nothing wired end-to-end yet | `get_guide("planner-strategy-walking-skeleton")` |
+| `acceptance-repair-chain` | repairing a REJECTED close (walk → diagnose → repair → re-walk) | `get_guide("planner-strategy-acceptance-repair-chain")` |
 | `linear-build` | short chain for a routine, well-understood build | `get_guide("planner-shape-linear-build")` |
 | `modular-build` | config-driven modules; obvious axes of variation | `get_guide("planner-shape-modular-build")` |
 | `poc-iterate-build` | Stage A POC + gate + Stage B build for novel/uncertain coding | `get_guide("planner-shape-poc-iterate-build")` |

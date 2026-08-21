@@ -82,7 +82,12 @@ neuron to the user rather than burying them.
    the user the `plan_sketch` VERBATIM plus the verified step mapping
    for signoff (`record_comprehension_signoff`, verbatim quote) —
    never your paraphrase, never a map that changed after they
-   approved it (any post-signoff map edit = re-signoff). First
+   approved it (any post-signoff map edit = re-signoff). Curiosity
+   answers the fidelity round with `awaiting_user_iteration` and
+   STAYS OPEN: relay every user tweak from (c) back to it as another
+   round and re-record what changes; its "done" comes only on a round
+   carrying the user's sign-off — the user iterates WITH the advisor
+   seat in the room, never against a closed one. First
    dispatch comes after (c). A `comprehension_recheck` nag
    repeats until a fresh curiosity clear or signoff. Skipping is
    deliberate and audited, never the default.

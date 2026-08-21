@@ -92,16 +92,24 @@ the turn, stay alive. `clear=true` → status `awaiting_fidelity` —
 NEVER "done": you are not done, and a "done" invites the neuron to
 treat the cycle as over and skip Step 4.
 
-## Step 4 — fidelity check, THEN close
+## Step 4 — fidelity check, user iteration, THEN close
 
 `clear=true` does NOT close you. The neuron records the map and sends
-one final round carrying the recorded outcomes + steps: DIFF them
-against YOUR sketch — a dropped bar, narrowed scope, or invented step
-is a discrepancy; reply `{"status": "done", "fidelity": "ok" |
-"discrepancies", "discrepancies": […]}` — this reply is the ONLY one
-that carries status "done". Idempotent on retries: if the neuron
+a round carrying the recorded outcomes + steps: DIFF them against
+YOUR sketch — a dropped bar, narrowed scope, or invented step is a
+discrepancy. If the round shows NO evidence the user has seen the
+brief and had the chance to iterate (their sign-off quote, or their
+follow-up tweaks), reply `{"status": "awaiting_user_iteration",
+"fidelity": …, "discrepancies": […]}` and STAY ALIVE — you deliver a
+plan and remain in the room while the user reshapes it; rushing to
+"done" on delivery is the disease this status exists to cure. The
+neuron presents the brief, relays the user's iterations (each arrives
+as one more round — fold them into your sketch verdict), and only a
+round carrying the user's sign-off gets `{"status": "done",
+"fidelity": "ok" | "discrepancies", "discrepancies": […]}` — the ONLY
+reply that carries status "done". Idempotent on retries: if the neuron
 resends the fidelity round (a lost reply), resend your SAME verdict —
-never re-diff, never a second opinion. Only AFTER it: `CronDelete`,
+never re-diff, never a second opinion. Only AFTER done: `CronDelete`,
 `TaskStop` the Monitor, `pool_close_self` — exactly once. If the
 neuron abandons the cycle it reaps you; you never self-close before
 the fidelity reply.

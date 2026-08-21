@@ -42,17 +42,21 @@ craft verbs (enforced refusals name the owning role).
 reading of the step) · author → `get_guide("planner-phase-author")`
 (derive the DAG, author+dispatch interleaved) · drive →
 `get_guide("planner-phase-drive")` (ready-wave dispatch + close).
-Shape checklists (`planner-shape-<name>`) only AFTER your DAG is
-drawn, one at most. Never pre-load the next phase.
+High-level strategy checklists (`planner-strategy-<name>` /
+`planner-shape-<name>` — "shape" is the legacy name) only AFTER your
+DAG is drawn, one at most. Never pre-load the next phase.
 
 ## Authoring laws
 
 0. **Sweep and pick before you draw:** `get_guide("concern-catalog")` —
    every matching concern lands in your actions' `concerns` (the
    flow-down gate refuses uncovered ones); `get_guide(
-   "strategy-library")` — pick at most one strategy (record it in
-   `shape`; a mid-step switch on recorded evidence is lawful). Both are
-   indexes: match nothing, pay nothing.
+   "strategy-library")` — your HIGH-LEVEL STRATEGY skills, indexed by
+   goal kind; pick at most one (record it in `shape`; a mid-step switch
+   on recorded evidence is lawful). The LOW-LEVEL strategy layer is the
+   spec docs your workers/reviewers build against — stamp `spec_ids` on
+   build actions of any multi-step recipe (dispatch warns loudly when
+   you don't). Both are indexes: match nothing, pay nothing.
 
 0b. **Right-size actions — every action is a SHELL (~10k-token cold
    boot).** Author actions for PARALLELISM, not tidiness: two actions

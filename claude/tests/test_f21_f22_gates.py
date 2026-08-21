@@ -121,6 +121,9 @@ async def test_build_dispatch_proceeds_with_challenge_advisory(
     # to the adversary — a worker builds while the plan is challenged. The
     # dispatch carries the advisory; the STEP CLOSE enforces.
     monkeypatch.setenv("EDP_CHALLENGE_GATE_MIN_ACTIONS", "3")
+    # QoL Phase 4: single-step fixture recipes are exempt from the gate by
+    # default — pin the recipe-size floor to 1 to exercise the plan gate.
+    monkeypatch.setenv("EDP_CHALLENGE_GATE_MIN_STEPS", "1")
     ctx = make_context(tmp_path)
     _closed_ready_recipe(ctx, "recipe-f22")
     _plan(ctx, "recipe-f22-s1", n_actions=3)
@@ -135,6 +138,7 @@ async def test_step_close_refused_without_challenge_or_waiver(
         tmp_path, monkeypatch):
     from edp_claude.tools._tools import RecordStepResult, _StepResIn
     monkeypatch.setenv("EDP_CHALLENGE_GATE_MIN_ACTIONS", "3")
+    monkeypatch.setenv("EDP_CHALLENGE_GATE_MIN_STEPS", "1")
     ctx = make_context(tmp_path)
     _closed_ready_recipe(ctx, "recipe-f22")
     # step must be closable: recipe helper marks s1 done — flip to
