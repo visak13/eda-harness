@@ -416,6 +416,9 @@ class PoolService(Microservice):
         # whose parked predecessor is still being torn down; resume holds it
         # only for the parked→resuming CAS, never across the ~30s spawn.
         self._transition_lock = threading.Lock()
+        # F46#4 — serializes the neuron-driver lifecycle (arm/disarm/
+        # respawn); the transition lock stays session-row-only.
+        self._driver_lock = threading.Lock()
         # started by startup() (the uvicorn/mount lifecycle), never by tests
         # that construct the service directly — see _start_resume_watchdog.
         self._resume_watchdog = None
@@ -453,19 +456,25 @@ class PoolService(Microservice):
                           heartbeat_secs: float = 1800) -> dict:
         if not recipe_id or not cmd:
             return {"ok": False, "refused": "recipe_id and cmd are required"}
-        self.disarm_neuron_driver(recipe_id)   # idempotent re-arm
-        pid = spawn_neuron_driver(recipe_id, cmd, heartbeat_secs,
-                                  self.broker_url)
-        if pid is None:
-            return {"ok": False,
-                    "refused": "driver process failed to launch — see pool "
-                               "log; cadence NOT armed"}
-        self.neuron_drivers[recipe_id] = {
-            "recipe_id": recipe_id, "cmd": cmd,
-            "heartbeat_secs": heartbeat_secs,
-            "pid": pid, "armed_at": _utc_now_iso(),
-        }
-        self._persist()
+        # F46#4 — arm/disarm run in worker threads (HTTP routes), so the
+        # whole disarm-spawn-register sequence is one critical section:
+        # two concurrent arms each observed "no driver", each spawned a
+        # process, and the dict kept only one PID — the other driver fired
+        # untracked forever (duplicate turns, ongoing spend).
+        with self._driver_lock:
+            self._disarm_neuron_driver_locked(recipe_id)  # idempotent re-arm
+            pid = spawn_neuron_driver(recipe_id, cmd, heartbeat_secs,
+                                      self.broker_url)
+            if pid is None:
+                return {"ok": False,
+                        "refused": "driver process failed to launch — see "
+                                   "pool log; cadence NOT armed"}
+            self.neuron_drivers[recipe_id] = {
+                "recipe_id": recipe_id, "cmd": cmd,
+                "heartbeat_secs": heartbeat_secs,
+                "pid": pid, "armed_at": _utc_now_iso(),
+            }
+            self._persist()
         return {"ok": True, "recipe_id": recipe_id, "pid": pid,
                 "note": (f"pool-owned driver armed: one neuron turn every "
                          f"{heartbeat_secs:.0f}s + instantly on broker "
@@ -475,6 +484,10 @@ class PoolService(Microservice):
                          "/v1/neuron-driver/{recipe_id}.")}
 
     def disarm_neuron_driver(self, recipe_id: str) -> dict:
+        with self._driver_lock:
+            return self._disarm_neuron_driver_locked(recipe_id)
+
+    def _disarm_neuron_driver_locked(self, recipe_id: str) -> dict:
         row = self.neuron_drivers.pop(recipe_id, None)
         self._persist()
         if row is None:
@@ -494,6 +507,12 @@ class PoolService(Microservice):
         """Pool startup: re-arm every persisted registration whose process
         did not survive (it never does — drivers die with the pool's host
         session). Best-effort per row."""
+        # F46#4 — startup respawn holds the same lifecycle lock as
+        # arm/disarm so an early HTTP arm cannot interleave with it.
+        with self._driver_lock:
+            self._respawn_neuron_drivers_locked()
+
+    def _respawn_neuron_drivers_locked(self) -> None:
         for rid, row in list(self.neuron_drivers.items()):
             # DUPLICATE-DRIVER GUARD (2026-07-21, observed live: FOUR
             # drivers firing for two recipes — survivors of an older pool
@@ -1149,7 +1168,12 @@ class PoolService(Microservice):
         self._register_channel_membership(role, handle)
         with self._transition_lock:
             s = self.sessions.get(sid)
-            release_requested = bool(s and s.get("_release_requested"))
+            # F46#3 — a row someone terminally settled (or removed) while
+            # the launch was in flight must NOT resurrect as active: the
+            # registration lands, then releases immediately.
+            release_requested = bool(
+                (s and s.get("_release_requested"))
+                or s is None or (s or {}).get("state") == "done")
             now = _utc_now_iso()
             self.sessions[sid] = {
                 "session_id": sid, "role": role, "handle": handle,
@@ -2097,16 +2121,35 @@ class PoolService(Microservice):
         refusal ("orphan NOT signalled: …"): the lock is always released, but
         a caller must be able to see that the shell may still be running
         rather than read a released lock as proof of a dead process."""
-        sid = self.locks.get(handle)
-        if sid is None:
-            return {"reaped": None, "note": f"no lock held for {handle!r}"}
+        # F46#3 — reap joins the same transition protocol as release: the
+        # unlocked read/mutate raced the spawn thread's registration, which
+        # could overwrite the reaped row as 'active' and re-take the handle
+        # lock (a resurrected shell the reap claimed to have killed).
+        with self._transition_lock:
+            sid = self.locks.get(handle)
+            if sid is None:
+                return {"reaped": None,
+                        "note": f"no lock held for {handle!r}"}
+            s = self.sessions.get(sid)
+            if s is not None and s.get("state") == "starting":
+                # mid-registration: flag the row (the locked registration
+                # honors the flag and releases right after it lands) rather
+                # than mutating state the launch thread will replace.
+                s["_release_requested"] = True
+                self._persist()
+                return {"reaped": sid,
+                        "note": (f"{sid} is still REGISTERING — reap "
+                                 "deferred: the launch will be released "
+                                 "the moment registration completes. The "
+                                 f"lock on {handle!r} is kept until then "
+                                 "(a fresh spawn would race the closing "
+                                 "shell).")}
+            if s is not None:
+                s["state"] = "done"
+            if self.locks.get(handle) == sid:
+                del self.locks[handle]
+            self._persist()
         killed = self._kill_session(sid)
-        s = self.sessions.get(sid)
-        if s is not None:
-            s["state"] = "done"
-        if self.locks.get(handle) == sid:
-            del self.locks[handle]
-        self._persist()
         return {"reaped": sid,
                 "note": f"{sid}: {killed}; released {handle!r}"}
 

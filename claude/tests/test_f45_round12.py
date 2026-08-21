@@ -98,14 +98,17 @@ async def test_acceptor_verdict_carries_own_not_rival_fingerprint(
     monkeypatch.setenv("EDP_PARENT", "r45b")
     ctx = make_context(tmp_path)
     _save_recipe(ctx, "r45b")
-    ctx.recipes.append_worklog("r45b", {
-        "kind": "acceptance_dispatched", "acceptor_id": "acceptor-mine03",
-        "fingerprint": "my-fp"})
-    # a LATER rival dispatch (force=true / latch expiry) — the recipe-global
-    # last record, which the old shape stamped onto this shell's verdict
+    # an EARLIER rival attempt left its record; this shell's own dispatch is
+    # the live one. (F46#1: a rival dispatched AFTER this shell would make
+    # it SUPERSEDED and the verdict refused outright — that path is pinned
+    # in test_f46_round13.py.) The old shape stamped whatever fingerprint
+    # the recipe-global last record carried, not the emitter's own.
     ctx.recipes.append_worklog("r45b", {
         "kind": "acceptance_dispatched", "acceptor_id": "acceptor-rival04",
         "fingerprint": "rival-fp"})
+    ctx.recipes.append_worklog("r45b", {
+        "kind": "acceptance_dispatched", "acceptor_id": "acceptor-mine03",
+        "fingerprint": "my-fp"})
     t = _tools(ctx)
     ok = await t["emit_recipe_event"].run({
         "kind": "acceptance_verdict",

@@ -198,10 +198,21 @@ class RuleRegistry:
     # ---- durable IO (atomic) ----
     def _write(self, rule: RegisteredRule) -> None:
         path = self._path(rule.name)
-        tmp = path.with_suffix(".json.tmp")
+        # F46#5 — pid-unique temp: every agent's MCP process builds its own
+        # RuleRegistry, and a shared `.tmp` name let one writer replace the
+        # other's half-written bytes.
+        tmp = path.with_suffix(f".json.{os.getpid()}.tmp")
         tmp.write_text(json.dumps(rule.to_json(), indent=2, default=str),
                        encoding="utf-8")
         os.replace(tmp, path)  # atomic on Windows + POSIX
+
+    def _lock(self):
+        """F46#5 — one interprocess lock over the registry root serializes
+        every read-check-write transaction (register/enable/disable/remove):
+        concurrent agents otherwise raced exists-check vs write and each
+        reported success for a rule the OTHER actually persisted."""
+        from ..store.ipc_lock import object_lock
+        return object_lock(self.root)
 
     # ---- CRUD ----
     def register_rule(self, name: str, spec: str,
@@ -214,9 +225,6 @@ class RuleRegistry:
         (allowlist + opt-in, at compile time) BEFORE anything is persisted, so
         an invalid rule never reaches disk. The effect's `rule_id` is forced to
         the rule NAME so the audit trail is keyed by rule identity."""
-        if self._path(name).exists() and not replace:
-            raise RuleExists(
-                f"rule {name!r} already exists (use replace=True to overwrite)")
         # 1. observe spec must compile to an Observable (composition only).
         validate_spec(spec, bindings)
         # 2. effect (if any) must pass the governed allowlist/opt-in at COMPILE
@@ -226,13 +234,20 @@ class RuleRegistry:
             eff = {**effect, "rule_id": name}
             EffectSpec.compile(eff)  # raises EffectError on a bad/un-opted effect
         now = _utc()
-        existing = self.get(name) if self._path(name).exists() else None
-        rule = RegisteredRule(
-            name=name, spec=spec, owner=owner, bindings=bindings or {},
-            effect=eff, enabled=enabled,
-            created_ts=(existing.created_ts if existing else now),
-            updated_ts=now)
-        self._write(rule)
+        # F46#5 — exists-check, created_ts carry-over, and write are ONE
+        # transaction under the registry lock.
+        with self._lock():
+            if self._path(name).exists() and not replace:
+                raise RuleExists(
+                    f"rule {name!r} already exists "
+                    "(use replace=True to overwrite)")
+            existing = self.get(name) if self._path(name).exists() else None
+            rule = RegisteredRule(
+                name=name, spec=spec, owner=owner, bindings=bindings or {},
+                effect=eff, enabled=enabled,
+                created_ts=(existing.created_ts if existing else now),
+                updated_ts=now)
+            self._write(rule)
         return rule
 
     def get(self, name: str) -> RegisteredRule:
@@ -256,12 +271,13 @@ class RuleRegistry:
         return [r for r in self.list_rules() if r.enabled]
 
     def set_enabled(self, name: str, enabled: bool) -> RegisteredRule:
-        rule = self.get(name)
-        updated = RegisteredRule(
-            name=rule.name, spec=rule.spec, owner=rule.owner,
-            bindings=rule.bindings, effect=rule.effect, enabled=enabled,
-            created_ts=rule.created_ts, updated_ts=_utc())
-        self._write(updated)
+        with self._lock():                       # F46#5 — locked RMW
+            rule = self.get(name)
+            updated = RegisteredRule(
+                name=rule.name, spec=rule.spec, owner=rule.owner,
+                bindings=rule.bindings, effect=rule.effect, enabled=enabled,
+                created_ts=rule.created_ts, updated_ts=_utc())
+            self._write(updated)
         return updated
 
     def enable(self, name: str) -> RegisteredRule:
@@ -272,9 +288,10 @@ class RuleRegistry:
 
     def remove(self, name: str) -> bool:
         path = self._path(name)
-        if path.exists():
-            path.unlink()
-            return True
+        with self._lock():                       # F46#5 — locked RMW
+            if path.exists():
+                path.unlink()
+                return True
         return False
 
 

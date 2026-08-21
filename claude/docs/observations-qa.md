@@ -831,3 +831,30 @@ guard or the same unlocked-RMW/protocol class R11 named. Round 13 = third
 convergence sweep (F45's fixes as the prime target + any remaining
 caller-side RMW); empty or noise-only declares convergence → the closing
 compact-framework polish sweep.
+
+## F46 — Adversarial campaign Round 13 (third convergence sweep), 2026-08-21
+5 findings (raw: .sol_review_out-r13.txt); lens = whole framework, F45's
+fixes as the prime target, empty-array-means-converged. All 5 CONFIRMED.
+Yield 9 → 8 → 5 and still no new defect class: one deep twin of the
+attempt-binding arc, one wrapper-grammar edge of the G-RUNS anchor, and
+three members of the same unlocked-RMW family (reap, driver lifecycle,
+rule registry) that F44–F45 had been draining.
+
+| # | Finding | Verdict |
+|---|---------|---------|
+| 1 | verdicts are delivery-bound but not ATTEMPT-bound — an unchanged delivery keeps its fingerprint across attempts, so a superseded acceptor's late `pass` outvotes the live attempt's `gaps` at the close gate, and its verdict settles the live attempt's latch | CONFIRM — verdicts now carry acceptor_id; a superseded acceptor (a newer non-aborted dispatch exists) is refused at EMISSION; _acceptance_pass_current refuses a pass whose acceptor is not the latest live attempt; the in-flight latch only settles on the latched attempt's own verdict |
+| 2 | F45 put python in the generic wrapper set — `python pytest -q` executes a local FILE named pytest, not the pytest CLI; `python -c …` runs inline code | CONFIRM — python/py anchor the declared command ONLY as `python [flags] -m <declared…>`; bare-script and -c forms no longer anchor |
+| 3 | pool reap() mutates rows without _transition_lock — reaping a `starting` reservation races the spawn thread's registration, which resurrects the row as active and re-takes the handle lock | CONFIRM — reap runs under the transition lock; a starting row is FLAGGED (_release_requested, honored right after registration) instead of mutated; registration treats a vanished/done row as release-requested (no resurrection) |
+| 4 | arm/disarm_neuron_driver race in worker threads — two concurrent arms each spawn a driver, the dict keeps one PID, the other fires untracked forever (duplicate turns, ongoing spend) | CONFIRM — a dedicated _driver_lock serializes arm/disarm/startup-respawn as one critical section |
+| 5 | RuleRegistry same-rule writes are unlocked cross-process with a shared temp filename — concurrent register_rule(replace=true) can persist one spec while reporting the other's success | CONFIRM — register/enable/disable/remove run their read-check-write under the stores' interprocess object_lock; pid-unique temp files |
+
+Contract update: F45's rival-fingerprint test now stages its rival BEFORE
+the emitter (a rival dispatched after is refused as superseded — the F46
+pin). Tests: +10 claude (test_f46_round13.py), +4 edp-pool
+(test_f46_reap_and_driver_lock.py). Suites: claude 1649 (Phoenix
+env-fail only), edp-pool 317, edp-broker untouched (33 @ F45) — green.
+Convergence read: three straight whole-framework sweeps, yield 9 → 8 → 5,
+zero new classes for two rounds; what remains is the reviewer eating the
+tail of its own fix arcs. Round 14 = fourth sweep (F46's fixes as prime
+target); empty or noise-only declares convergence → the closing
+compact-framework polish sweep.

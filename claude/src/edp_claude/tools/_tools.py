@@ -6442,13 +6442,31 @@ class RecordActionStatus(_ClaudeTool):
                         # bypassed a first-token-only check).
                         _wrap = {"cmd", "cmd.exe", "powershell",
                                  "powershell.exe", "pwsh", "sh", "bash",
-                                 "zsh", "env", "uv", "run", "npx", "time",
-                                 "python", "python.exe", "python3", "py"}
+                                 "zsh", "env", "uv", "run", "npx", "time"}
+                        # F46#2 — python is a wrapper ONLY as
+                        # `python [flags] -m <declared…>`: `python pytest`
+                        # executes a local FILE named pytest (not the CLI)
+                        # and `python -c …` runs arbitrary inline code, so
+                        # neither anchors the declared command.
+                        _py = {"python", "python.exe", "python3", "py"}
                         i = 0
-                        while i < len(rc_toks) and (
-                                rc_toks[i] in _wrap
-                                or rc_toks[i].startswith(("-", "/"))):
-                            i += 1
+                        while i < len(rc_toks):
+                            tok = rc_toks[i]
+                            if tok in _py:
+                                j = i + 1
+                                while (j < len(rc_toks)
+                                       and rc_toks[j].startswith("-")
+                                       and rc_toks[j] not in ("-m", "-c")):
+                                    j += 1
+                                if (j < len(rc_toks)
+                                        and rc_toks[j] == "-m"):
+                                    i = j + 1
+                                    continue
+                                break
+                            if tok in _wrap or tok.startswith(("-", "/")):
+                                i += 1
+                                continue
+                            break
                         if i < len(rc_toks) and rc_toks[i] in (
                                 "echo", "printf", "print", "cat", "type",
                                 "write-host", "write-output"):
@@ -12145,8 +12163,14 @@ class EmitRecipeEvent(_ClaudeTool):
                         "Nothing was recorded.")
                 rid_probe = _lineage_rid
             if rid_probe and self.ctx.recipes.exists(rid_probe):
-                _disp = self.ctx.recipes.read_events_tail(
-                    rid_probe, kinds=["acceptance_dispatched"])
+                _trail = self.ctx.recipes.read_events_tail(
+                    rid_probe, kinds=["acceptance_dispatched",
+                                      "acceptance_dispatch_aborted"])
+                _aborted_ids = {
+                    e.get("acceptor_id") for e in _trail
+                    if e.get("kind") == "acceptance_dispatch_aborted"}
+                _disp = [e for e in _trail
+                         if e.get("kind") == "acceptance_dispatched"]
                 if _spawned_acceptor:
                     _mine = [e for e in _disp
                              if e.get("acceptor_id") == _me_h]
@@ -12161,7 +12185,26 @@ class EmitRecipeEvent(_ClaudeTool):
                             "Notify the neuron (notify_above) instead of "
                             "recording; it re-dispatches acceptance. "
                             "Nothing was recorded.")
+                    # F46#1 — SUPERSEDED attempts do not settle anything: a
+                    # rival dispatched after this shell (latch expiry /
+                    # force=true says the fleet presumed it dead) owns the
+                    # live attempt, and a late verdict from THIS shell
+                    # would read as the latest and decide the close.
+                    _live = [e for e in _disp
+                             if e.get("acceptor_id") not in _aborted_ids]
+                    if _live and _live[-1].get("acceptor_id") != _me_h:
+                        return _precondition(
+                            "acceptance_verdict refused: your attempt was "
+                            "SUPERSEDED — acceptance was re-dispatched to "
+                            f"{_live[-1].get('acceptor_id')!r} after your "
+                            "dispatch (latch expiry or force). The live "
+                            "attempt owns the verdict; record nothing and "
+                            "close your shell (pool_close_self).")
                     _disp_fp = _mine[-1].get("fingerprint")
+                    # F46#1 — the verdict carries WHO judged, so the close
+                    # gate and the in-flight latch can bind it to the
+                    # attempt (never settle a rival's).
+                    m.body["acceptor_id"] = _me_h
                 else:
                     _disp_fp = (_disp[-1].get("fingerprint")
                                 if _disp else None)
@@ -12398,6 +12441,28 @@ def _acceptance_pass_current(ctx, r) -> tuple[bool, str]:
                        "the recipe or its delivered work (goal/outcomes/"
                        "steps/evidence changed since) — re-run "
                        "dispatch_acceptance for the CURRENT delivery")
+    # F46#1 — ATTEMPT binding, not just delivery binding: when the pass
+    # names its acceptor, it must be the LATEST non-aborted dispatch's —
+    # an unchanged delivery keeps the same fingerprint across attempts, so
+    # a superseded acceptor's late pass would otherwise outvote the live
+    # attempt's 'gaps'. (A verdict with no acceptor_id predates F46 or is
+    # the operator's own — trusted as before.)
+    va = body.get("acceptor_id")
+    if va:
+        _trail = ctx.recipes.read_events_tail(
+            r.recipe_id, kinds=["acceptance_dispatched",
+                                "acceptance_dispatch_aborted"])
+        _aborted = {e.get("acceptor_id") for e in _trail
+                    if e.get("kind") == "acceptance_dispatch_aborted"}
+        _live = [e for e in _trail
+                 if e.get("kind") == "acceptance_dispatched"
+                 and e.get("acceptor_id") not in _aborted]
+        if _live and _live[-1].get("acceptor_id") != va:
+            return False, (
+                f"the recorded 'pass' belongs to {va!r}, a SUPERSEDED "
+                "acceptance attempt — the live attempt is "
+                f"{_live[-1].get('acceptor_id')!r}. Wait for its verdict "
+                "or re-run dispatch_acceptance.")
     return True, ""
 
 
@@ -12460,9 +12525,15 @@ class DispatchAcceptance(_ClaudeTool):
             # F44#1 — a verdict OR an abort record (failed launch) settles
             # the attempt; the abort is matched by acceptor_id, the verdict
             # by trail order.
+            # F46#1 — a verdict settles the latch only when it is the
+            # LATCHED attempt's own (or a legacy verdict with no
+            # acceptor_id); a superseded acceptor's late verdict must not
+            # mark the live attempt as settled and let a rival spawn.
             _in_flight = last_d is not None and not any(
                 (e.get("kind") == "acceptance_verdict"
-                 and (e.get("ts") or "") >= (last_d.get("ts") or ""))
+                 and (e.get("ts") or "") >= (last_d.get("ts") or "")
+                 and (e.get("body") or {}).get("acceptor_id")
+                 in (None, last_d.get("acceptor_id")))
                 or (e.get("kind") == "acceptance_dispatch_aborted"
                     and e.get("acceptor_id") == last_d.get("acceptor_id"))
                 for e in trail)
