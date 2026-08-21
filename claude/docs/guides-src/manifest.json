@@ -3,7 +3,7 @@
   "budgets": {
     "neuron": 4600,
     "agentic-plan": 4600,
-    "worker": 3200,
+    "worker": 3400,
     "reviewer": 2600,
     "curiosity": 2400
   },

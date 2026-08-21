@@ -40,6 +40,18 @@ class Outcome(BaseModel):
     # round-trips byte-identically.
     waived: bool = False
     waiver_ref: str | None = None
+    # QoL Phase 3 (2026-08-21, F8-class): the FORM the outcome must take.
+    # Before this, artifact form lived ONLY in prose, which is how an
+    # "interactive UI" ask shipped as an essay ABOUT the UI. Optional +
+    # emission-gated so every legacy outcome round-trips byte-identically.
+    # Vocabulary (kept open as str for forward-compat; the INPUT model
+    # enums it): code | interactive_ui | document | image | 3d_asset |
+    # data | service | mixed | runnable_app | pipeline.
+    deliverable: str | None = None
+    # Corpus audit 2026-08-21: the operator's OWN acceptance path, cold and
+    # end to end — the axis every green-but-wrong close failed on. The
+    # acceptor walks it before any pass. Optional + emission-gated.
+    user_path: str | None = None
 
     @model_serializer(mode="wrap")
     def _ser_waiver_gate(self, handler):
@@ -51,6 +63,10 @@ class Outcome(BaseModel):
             data.pop("waived", None)
         if data.get("waiver_ref") is None:
             data.pop("waiver_ref", None)
+        if data.get("deliverable") is None:
+            data.pop("deliverable", None)
+        if data.get("user_path") is None:
+            data.pop("user_path", None)
         return data
 
 
@@ -343,6 +359,8 @@ class RecipeStep(BaseModel):
     # refuses patches to it. None = legacy (scan falls back to the live
     # execution). Emission-gated.
     execution_origin: str | None = None
+    # QoL Phase 3 — the step's deliverable FORM (see Outcome.deliverable).
+    deliverable: str | None = None
 
     @model_serializer(mode="wrap")
     def _ser_tiering_gate(self, handler):
@@ -361,6 +379,8 @@ class RecipeStep(BaseModel):
             data.pop("serves", None)
         if not data.get("estimate"):
             data.pop("estimate", None)
+        if data.get("deliverable") is None:
+            data.pop("deliverable", None)
         return data
 
 
@@ -563,6 +583,13 @@ class Recipe(BaseModel):
     # re-validating. None (every legacy recipe) = no workspace, no gate.
     # Emission-gated below.
     workspace: str | None = None
+    # QoL Phase 3 (2026-08-21) — OPERATOR HOLD: a user process rule
+    # ("train ALL specialists before dispatch", "show me the design
+    # first") recorded as a MACHINE constraint, not prose. While set, the
+    # step wave and planner spawns refuse, naming this text. The neuron
+    # sets/clears it via update_object('recipe', patch={'dispatch_hold':
+    # ...}); None (legacy) = no hold, emission-gated.
+    dispatch_hold: str | None = None
     version: int = Field(ge=1, default=1)
     created_at: datetime
     updated_at: datetime
@@ -599,6 +626,8 @@ class Recipe(BaseModel):
         # WP2 emission gate: no recorded workspace → no key (same discipline).
         if data.get("workspace") is None:
             data.pop("workspace", None)
+        if data.get("dispatch_hold") is None:
+            data.pop("dispatch_hold", None)
         return data
 
     @model_validator(mode="after")

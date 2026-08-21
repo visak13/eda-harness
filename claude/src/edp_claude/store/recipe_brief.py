@@ -27,6 +27,7 @@ RENDERED_FIELDS: frozenset[str] = frozenset({
     "recipe_id", "user_goal_verbatim", "domain", "state",
     "comprehension", "steps", "context", "budget", "workspace",
     "suspended_at", "final_outcome", "created_at", "updated_at",
+    "dispatch_hold",
 })
 
 # Top-level Recipe fields the brief consciously OMITS, with why:
@@ -78,6 +79,8 @@ def render_recipe_brief(recipe) -> str:
             "no dispatch while parked.")
     if getattr(r, "workspace", None):
         add(f"Workspace: `{r.workspace}`")
+    if getattr(r, "dispatch_hold", None):
+        add(f"**OPERATOR HOLD (dispatch paused): {_line(r.dispatch_hold)}**")
     add("")
 
     add("## Goal (the user's words, verbatim — this is the law)")

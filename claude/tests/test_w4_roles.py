@@ -778,11 +778,9 @@ KNOWN_GUIDE_TOOLSET_GAPS: dict[tuple[str, str], str] = {}
 # a role's corpus, so it gains toolset-gap checking it never had (it was already
 # read by the s26 unregistered-tool gate, which reads every guide regardless).
 UNSCANNED_GUIDES: dict[str, str] = {
-    "provider-bridge": (
-        "v7 WS1 (2026-08-05): OPERATOR-facing configuration note — how to add "
-        ".bridge.json delegates (http backends, key env vars, routes). No role "
-        "is instructed to read it; the bridge VERBS are governed by the owning "
-        "roles' own guides and the tool docstrings."),
+    # provider-bridge left this set 2026-08-21 (QoL Phase 4): the worker
+    # card now points at it as the role-facing "how to use GPT Sol" guide,
+    # so it is scanned + role-attributed like any other referenced guide.
     "framework-ocak": (
         "OCAK is a RETIRED role — its tombstone card ocak.md was deleted "
         "2026-08-12; the audit questions live on for run_ocak_audit."),

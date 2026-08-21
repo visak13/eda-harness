@@ -1633,6 +1633,16 @@ class NextAction(_ClaudeTool):
             suspended = _suspension_refusal(r)
             if suspended is not None:
                 return suspended
+            # QoL Phase 3 — OPERATOR HOLD: the user's pacing rule outranks
+            # the pacer's offer. Nothing dispatches while it stands.
+            if getattr(r, "dispatch_hold", None):
+                return Tool.ok(_WaveOut(
+                    count=0, actions=[],
+                    note=(f"OPERATOR HOLD — dispatch paused: "
+                          f"{r.dispatch_hold!r}. Nothing spawns until the "
+                          "neuron clears it: update_object('recipe', "
+                          "ids={...}, patch={'dispatch_hold': None}) once "
+                          "the stated condition is met.")))
             # Pool-truth liveness for the frontier (mirrors _live_action_ids,
             # s27/C7/d78): a step already OWNED by a live — or 1.5.2 PARKED/
             # resuming — planner shell is never re-dispatched. Fail-open per
@@ -3790,6 +3800,12 @@ class _AddActionIn(BaseModel):
     # structure could not land in one authoring pass. Exact-match lines from
     # the owning step; unknown lines refuse with the step's actual list.
     sketch_covers: list[str] = []
+    # QoL Phase 3 — the deliverable FORM. Prose alone is how "interactive
+    # UI" shipped as an essay; name the form and the acceptor/reviewer
+    # judge against it.
+    deliverable: Literal["code", "interactive_ui", "runnable_app",
+                         "pipeline", "document", "image",
+                         "3d_asset", "data", "service", "mixed"] | None = None
 
 
 def _v7_gates_on() -> bool:
@@ -3909,7 +3925,7 @@ class AddAction(_ClaudeTool):
         # Bug B (2026-05-26): refuse a producer command as a verify — it
         # re-runs the build on every record and hangs the gate. Force an
         # artifact check at authoring time.
-        bad = _reject_producer_verify(m.verify)
+        bad = _reject_producer_verify(m.verify, deliverable=m.deliverable)
         if bad:
             return _precondition(bad)
         # Guard A (2026-06-01): refuse specialist-intent expressed as prose
@@ -4037,6 +4053,7 @@ class AddAction(_ClaudeTool):
             batch_group=m.batch_group,
             leg_kind=m.leg_kind,
             serves=m.serves,
+            deliverable=m.deliverable,
         ))
         # Fold declared sketch coverage into the plan mapping (the one-shot
         # path — record_plan's sketch_covered_by stays the whole-plan form).
@@ -4124,6 +4141,10 @@ class _StartIn(BaseModel):
 
 class _Rid(BaseModel):
     recipe_id: str
+    # QoL F2/F5 (2026-08-21): a bare id left a cold neuron guessing its
+    # next move, and a goal naming a build location shipped workspace=null
+    # all the way to the acceptor.
+    note: str = ""
 
 
 class StartRecipe(_ClaudeTool):
@@ -4151,7 +4172,15 @@ class StartRecipe(_ClaudeTool):
             updated_at=_now(),
         )
         self.ctx.recipes.save(recipe)
-        return Tool.ok(_Rid(recipe_id=rid))
+        _note = ("recipe created. Next: arm_wiring(handle=<recipe_id>), "
+                 "then open comprehension (consult_curiosity).")
+        if not m.workspace:
+            _note += (" NO WORKSPACE recorded — if the goal names a place "
+                      "the work lands (a folder/repo), record it now: "
+                      "update_object('recipe', ids={...}, "
+                      "patch={'workspace': '<abs repo root>'}); the "
+                      "acceptor and the close commit-gate judge there.")
+        return Tool.ok(_Rid(recipe_id=rid, note=_note))
 
 
 class _BVIn(BaseModel):
@@ -4398,6 +4427,19 @@ class _OutIn(BaseModel):
     recipe_id: str
     description: str
     verification: str
+    # QoL Phase 3 — the deliverable FORM. Prose alone is how "interactive
+    # UI" shipped as an essay; name the form and the acceptor/reviewer
+    # judge against it.
+    deliverable: Literal["code", "interactive_ui", "runnable_app",
+                         "pipeline", "document", "image",
+                         "3d_asset", "data", "service", "mixed"] | None = None
+    # Corpus audit 2026-08-21 — the REAL failure axis: every green-but-
+    # wrong close cited tests/commits while the OPERATOR'S OWN PATH was
+    # never walked (b33936: six outcomes met, app never started). State
+    # that path here, cold and end-to-end ("open the published site,
+    # attach a file in the CHAT control, ask, see the answer"); the
+    # acceptor WALKS it before any pass.
+    user_path: str | None = None
 
 
 class _OutOut(BaseModel):
@@ -4458,7 +4500,9 @@ class RecordOutcome(_ClaudeTool):
         n = len(c.expected_outcomes) + 1
         c.expected_outcomes.append(
             Outcome(id=f"o{n}", description=m.description,
-                    verification=m.verification)
+                    verification=m.verification,
+                    deliverable=m.deliverable,
+                    user_path=m.user_path)
         )
         self.ctx.recipes.save(r)
         return Tool.ok(_OutOut(outcome_id=f"o{n}"))
@@ -4619,6 +4663,12 @@ class _AddStepIn(BaseModel):
         "REQUIRED when execution='spawn_planner' (G-EST): {tokens?: int, "
         "hours?: float}, at least one positive number — budget_status "
         "compares it to actuals. Inline steps may omit it."))
+    # QoL Phase 3 — the deliverable FORM. Prose alone is how "interactive
+    # UI" shipped as an essay; name the form and the acceptor/reviewer
+    # judge against it.
+    deliverable: Literal["code", "interactive_ui", "runnable_app",
+                         "pipeline", "document", "image",
+                         "3d_asset", "data", "service", "mixed"] | None = None
 
 
 class _StepId(BaseModel):
@@ -4754,6 +4804,7 @@ class AddStep(_ClaudeTool):
             step_id=sid, kind="work", description=m.description,
             status="pending", depends_on=list(m.depends_on),
             execution=m.execution,
+            deliverable=m.deliverable,
             # F35 R3b#3: the ORIGIN execution is immutable history — the
             # G-STEP laundering scan keys on it, so flipping a
             # spawn_planner step to inline can no longer duck the gate.
@@ -6151,7 +6202,7 @@ class RecordStepResult(_ClaudeTool):
                         # adversarial pass is enforced HERE, not at first
                         # dispatch — dispatch only advises, so workers run
                         # while the plan is still being authored/challenged.
-                        if (_challenge_required(plan, s)
+                        if (_challenge_required(plan, s, recipe=r)
                                 and not _challenge_satisfied(
                                     self.ctx.plans.root, plan.plan_id)):
                             return _precondition(
@@ -6174,7 +6225,7 @@ class RecordStepResult(_ClaudeTool):
                         # empty open-challenge set.
                         _open_ch = _open_challenges(
                             self.ctx.plans.root, plan.plan_id)
-                        if _challenge_required(plan, s) and _open_ch:
+                        if _challenge_required(plan, s, recipe=r)                                 and _open_ch:
                             return _precondition(
                                 "record_step_result: G-CHALLENGE — "
                                 f"challenge(s) {_open_ch} on plan "
@@ -6225,10 +6276,18 @@ _PRODUCER_VERIFY_RE = re.compile(
 )
 
 
-def _reject_producer_verify(verify: dict | None) -> str | None:
+def _reject_producer_verify(verify: dict | None,
+                            deliverable: str | None = None) -> str | None:
     """Return an error string if `verify` is a producer command (reject
     it), else None (allow). Enforces 'verify the artifact, not the build'
-    in code so the landmine can't enter a plan at all."""
+    in code so the landmine can't enter a plan at all.
+
+    QoL Phase 3 (2026-08-21): for INTERACTIVE/VISUAL deliverables the
+    exact opposite holds — a file-stat check is how an essay named
+    ui.html passed as a UI. Those forms may EXERCISE the artifact
+    (run/serve/screenshot), so the producer guard stands down."""
+    if deliverable in ("interactive_ui", "image", "3d_asset", "service"):
+        return None
     if not verify or verify.get("check") != "command":
         return None
     cmd = str(verify.get("cmd") or "")
@@ -7214,7 +7273,17 @@ class RecordDecision(_ClaudeTool):
 # sprawling brief really can blow a worker's grounding), but it is now LOUD at
 # both ends — the worker is told its brief was cut and how to get the rest,
 # and the planner is told at WRITE time, before it ever dispatches.
-_GROUNDING_BRIEF_INJECT_CAP = 6000
+#
+# QoL Phase 3 / F7 (2026-08-21, baseline drill): the 6000 cut landed on the
+# TAIL — where planners append their CORRECTIONS — and the drill measured
+# three load-bearing rules dying in the cut, recoverable only by a full
+# broker round-trip. 6000 is now the ADVISE threshold (the planner is still
+# nudged to keep briefs lean, and the record-time banner still fires); the
+# actual injection delivers the brief WHOLE up to a 20k hard ceiling that
+# only a pathological brief hits. Env-tunable escape hatch kept.
+_GROUNDING_BRIEF_ADVISE_CAP = 6000
+_GROUNDING_BRIEF_INJECT_CAP = int(
+    os.environ.get("EDP_GROUNDING_BRIEF_INJECT_CAP", "20000"))
 
 
 class _GroundingBriefIn(BaseModel):
@@ -7331,6 +7400,16 @@ class RecordGroundingBrief(_ClaudeTool):
                 "map. Then re-record. If you keep it as is, send the tail "
                 "over the broker yourself and CONFIRM the worker restates it."
             )
+        elif n > _GROUNDING_BRIEF_ADVISE_CAP:
+            # QoL F7: delivered WHOLE now (within the raised hard ceiling),
+            # but a sprawling brief still dilutes a worker's grounding —
+            # keep the lean-brief pressure as advice, not a cut.
+            note = (f"brief stored + stamped and delivered WHOLE ({n} "
+                    f"chars; hard ceiling {_GROUNDING_BRIEF_INJECT_CAP}). "
+                    f"It is over the {_GROUNDING_BRIEF_ADVISE_CAP}-char "
+                    "lean mark — a long brief dilutes a worker's grounding; "
+                    "consider moving per-action detail into the action "
+                    "descriptions. Nothing was cut.")
         else:
             note = ("brief stored + stamped; every subsequent worker dispatch "
                     "injects it (read_object('action') → grounding_brief), and "
@@ -8506,6 +8585,16 @@ class PoolSpawnPlanner(_ClaudeTool):
             parked = _suspension_refusal(rg)
             if parked:
                 return parked
+            # QoL Phase 3 — OPERATOR HOLD: the user's recorded pacing rule
+            # outranks any dispatch instruction, including the pacer's own.
+            if getattr(rg, "dispatch_hold", None):
+                return _precondition(
+                    f"OPERATOR HOLD — dispatch paused: "
+                    f"{rg.dispatch_hold!r}. The user's stated way of "
+                    "working outranks the pacer's offer. When the stated "
+                    "condition is met, clear it: update_object('recipe', "
+                    f"ids={{'recipe_id': {m.recipe_id!r}}}, "
+                    "patch={'dispatch_hold': None}), then re-dispatch.")
             # W8 fail-closed assumption gate (principle 6 / d13): same
             # deterministic unacked-assumption refusal as the worker spawn,
             # scoped to this step.
@@ -9278,7 +9367,11 @@ class PoolSpawnWorker(_ClaudeTool):
                             (s for s in self.ctx.recipes.load(
                                 p.recipe_id).steps
                              if s.step_id == p.recipe_step_id), None)
-                    if (_challenge_required(p, _step_for_gate)
+                    _rec_for_gate = (self.ctx.recipes.load(p.recipe_id)
+                                     if self.ctx.recipes.exists(p.recipe_id)
+                                     else None)
+                    if (_challenge_required(p, _step_for_gate,
+                                            recipe=_rec_for_gate)
                             and not _challenge_satisfied(
                                 self.ctx.plans.root, p.plan_id)):
                         _spawn_advisories.append({
@@ -10202,7 +10295,9 @@ def _bridge_out(run) -> "_BridgeOut":
 
 
 async def _bridge_call(ctx, kind: str, kind_class: str, override: str, *,
-                       task: str, context: str = "", acceptance: str = ""):
+                       task: str, context: str = "", acceptance: str = "",
+                       out_dir: str | None = None,
+                       images: list[str] | None = None):
     from . import bridge as _bridge
     # F41#3 — enforce the recipe's declared delegate budget AT THE PAID SEAM,
     # not only at spawn time: a shell spawned under the cap could previously
@@ -10224,7 +10319,8 @@ async def _bridge_call(ctx, kind: str, kind_class: str, override: str, *,
         name = _bridge_delegate_for(kind_class, override)
         run = await asyncio.to_thread(
             _bridge.delegate_call, kind=kind, delegate_name=name, task=task,
-            context=context, acceptance=acceptance, caller=caller)
+            context=context, acceptance=acceptance, caller=caller,
+            out_dir=out_dir, images=images)
     except _bridge.BridgeError as e:
         return _precondition(str(e))
     return Tool.ok(_bridge_out(run))
@@ -10243,6 +10339,16 @@ class _DelegateGenerateIn(BaseModel):
     # unless the plan stamped one.
     task_class: str = "*"
     delegate: str = ""                  # explicit registry name; rarely needed
+    # QoL Phase 4 (operator ruling 2026-08-21) — ASSET turns only: the
+    # ABSOLUTE directory Sol writes generated image/asset FILES into (the
+    # one write-capable delegate turn; everything else stays read-only
+    # text). Required when task_class="asset"; refused otherwise.
+    out_dir: str | None = None
+    # QoL Phase 4 — VISUAL input: absolute image paths Sol should LOOK at
+    # (renders to critique, reference photos to match). Rides -i into the
+    # multimodal CLI. Use with task_class="visual_critique" (judge these
+    # images against the bar in `acceptance`) or "asset" (references).
+    images: list[str] = []
 
 
 class DelegateGenerate(_ClaudeTool):
@@ -10260,9 +10366,35 @@ class DelegateGenerate(_ClaudeTool):
     OutputModel = _BridgeOut
 
     async def _run(self, m: _DelegateGenerateIn):
+        if m.task_class == "asset":
+            if not m.out_dir:
+                return _precondition(
+                    "delegate_generate(task_class='asset') needs out_dir="
+                    "<ABSOLUTE dir the generated files land in> — Sol "
+                    "WRITES the assets there (the one write-capable "
+                    "delegate turn); tell it filenames/format in `task`.")
+            _od = Path(m.out_dir)
+            if not _od.is_absolute():
+                return _precondition(
+                    f"out_dir {m.out_dir!r} must be ABSOLUTE.")
+            _od.mkdir(parents=True, exist_ok=True)
+            _task = (m.task + "\n\nWRITE the generated asset FILES into "
+                     "the current working directory (your sandbox allows "
+                     "it). Reply with a manifest: one line per file "
+                     "written (name — what it is). Do NOT inline file "
+                     "bytes in the reply.")
+            return await _bridge_call(
+                self.ctx, "generate", m.task_class, m.delegate,
+                task=_task, context=m.context, acceptance=m.acceptance,
+                out_dir=str(_od), images=m.images or None)
+        if m.out_dir:
+            return _precondition(
+                "out_dir is for task_class='asset' only — every other "
+                "delegate turn is read-only text by design.")
         return await _bridge_call(self.ctx, "generate", m.task_class,
                                   m.delegate, task=m.task, context=m.context,
-                                  acceptance=m.acceptance)
+                                  acceptance=m.acceptance,
+                                  images=m.images or None)
 
 
 class _DelegateReviewIn(BaseModel):
@@ -10271,6 +10403,11 @@ class _DelegateReviewIn(BaseModel):
     context: str = ""                   # surrounding code/spec the review needs
     task_class: str = "review"
     delegate: str = ""
+    # QoL Phase 4 — VISUAL pre-screen: absolute image paths Sol LOOKS at
+    # (the render/screenshot under review + reference images). Use with
+    # task_class="visual_critique"; `artifact` then describes what the
+    # images are and `acceptance` is the look bar.
+    images: list[str] = []
 
 
 class DelegateReview(_ClaudeTool):
@@ -10289,9 +10426,13 @@ class DelegateReview(_ClaudeTool):
         return await _bridge_call(
             self.ctx, "review", m.task_class, m.delegate,
             task="Review the artifact in the context section against the "
-                 "acceptance criteria.",
+                 "acceptance criteria."
+                 + (" The attached images ARE the artifact under review — "
+                    "judge what you SEE against the bar."
+                    if m.images else ""),
             context=f"ARTIFACT UNDER REVIEW:\n{m.artifact}\n\n{m.context}",
-            acceptance=m.acceptance)
+            acceptance=m.acceptance,
+            images=m.images or None)
 
 
 class _ConsultExternalIn(BaseModel):
@@ -10378,7 +10519,7 @@ def _challenge_gate_min_actions() -> int:
         return 3
 
 
-def _challenge_required(plan, step=None) -> bool:
+def _challenge_required(plan, step=None, recipe=None) -> bool:
     """F32 (Sol-review #9) — G-CHALLENGE keys on RISK, not just action
     count: batching work into one action to obey right-sizing (F28) must
     not duck the adversary. Required when EITHER:
@@ -10386,7 +10527,22 @@ def _challenge_required(plan, step=None) -> bool:
       * the owning step's declared estimate says the work is big —
         hours >= EDP_CHALLENGE_GATE_MIN_HOURS (default 2) or tokens >=
         EDP_CHALLENGE_GATE_MIN_TOKENS (default 50000).
-    Min-actions 0 disables the whole gate (the test-suite default)."""
+    Min-actions 0 disables the whole gate (the test-suite default).
+
+    QoL Phase 4 (operator ruling 2026-08-21): the adversary reviews the
+    GENERATED DELIVERABLE, and only on BIG recipes — "we don't want it in
+    each step; we need it when we are working on a big recipe." A recipe
+    with fewer than EDP_CHALLENGE_GATE_MIN_STEPS steps (default 3) is
+    exempt entirely; pass `recipe` to apply the exemption (absent =
+    legacy per-plan behavior)."""
+    if recipe is not None:
+        try:
+            _min_steps = int(os.environ.get(
+                "EDP_CHALLENGE_GATE_MIN_STEPS", "3"))
+        except (TypeError, ValueError):
+            _min_steps = 3
+        if len(getattr(recipe, "steps", []) or []) < _min_steps:
+            return False
     _min = _challenge_gate_min_actions()
     if _min <= 0:
         return False
@@ -12788,7 +12944,16 @@ class DispatchAcceptance(_ClaudeTool):
             "outcomes": [
                 {"id": o.id, "description": o.description,
                  "verification": o.verification, "met": o.met,
-                 "met_evidence": o.met_evidence}
+                 "met_evidence": o.met_evidence,
+                 # QoL Phase 3: the declared FORM — judge an interactive_ui
+                 # by RUNNING it, an image by LOOKING at it; met_evidence
+                 # that never exercised the declared form is not evidence.
+                 **({"deliverable": o.deliverable}
+                    if getattr(o, "deliverable", None) else {}),
+                 # the operator's own path — WALK it before any pass;
+                 # met_evidence citing only tests/commits is not walking.
+                 **({"user_path": o.user_path}
+                    if getattr(o, "user_path", None) else {})}
                 for o in r.comprehension.expected_outcomes],
             "consulted_specs": _recipe_consulted_spec_ids(self.ctx, r),
             "caller": m.recipe_id,

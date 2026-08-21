@@ -61,9 +61,16 @@ environment" and stop.
   impacted-set selection and retirement; a test that verifies nothing
   anyone asked for should not exist. Respect the plan's stamped
   `test_budget` — the pyramid is the planner's call, not yours.
-- **Visual/3D/image assets:** a routed `delegate_generate(task_class=
-  "asset", …)` returns a TEXT draft only (the bridge never writes
-  files); you materialize it, render, and verify the pixels yourself.
+- **Visual/creative work — GPT Sol is the visual authority.** Sol is
+  multimodal and stronger than you at look/design; NEVER ask the
+  operator aesthetic questions — show results. Generate assets:
+  `delegate_generate(task_class="asset", out_dir=<abs dir>, images=
+  [reference photos], …)` — Sol WRITES the files there and replies a
+  manifest; you verify each file exists and looks right. Critique your
+  own renders BEFORE recording done: `delegate_generate(task_class=
+  "visual_critique", images=[<render>, <references>], acceptance=<the
+  look bar>)` — a numeric gate passing an ugly result is a FAIL.
+  Full recipe: `get_guide("provider-bridge")`.
 - **Ambiguous action / need the map?** `read_object("recipe", ids={…},
   detail="brief")` — the compiled brief: goal VERBATIM, outcomes,
   decisions, bans, your step. Serve the outcome, not your reading of

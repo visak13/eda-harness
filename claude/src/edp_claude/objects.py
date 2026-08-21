@@ -1014,6 +1014,8 @@ def _position_block(r, step_id: str | None, action_id: str) -> dict:
         out["step"] = (f"{s.step_id} — {idx + 1} of {len(steps)} "
                        f"({done} done)")
         out["this_step"] = (s.description or "")[:200]
+        if getattr(s, "deliverable", None):
+            out["deliverable_form"] = s.deliverable
         why = getattr(s, "rationale_for_next", None)
         if why:
             out["why_this_step"] = str(why)[:200]
@@ -1173,11 +1175,28 @@ async def update_object(ctx, obj_type: str, ids: dict | None = None,
             ctx.recipes.save(r)
             return {"ok": True, "recipe_id": ids["recipe_id"],
                     "updated": ["workspace"]}
+        if "dispatch_hold" in patch:
+            # QoL Phase 3: the operator's pacing rule as a machine
+            # constraint. Set = the step wave/planner spawns refuse,
+            # naming this text; None/"" clears it.
+            if not ctx.recipes.exists(ids["recipe_id"]):
+                raise ObjectError(f"no recipe {ids['recipe_id']!r}")
+            r = ctx.recipes.load(ids["recipe_id"])
+            r.dispatch_hold = patch["dispatch_hold"] or None
+            ctx.recipes.save(r)
+            ctx.recipes.append_worklog(ids["recipe_id"], {
+                "kind": "dispatch_hold_set" if r.dispatch_hold
+                else "dispatch_hold_cleared",
+                "detail": r.dispatch_hold or ""})
+            return {"ok": True, "recipe_id": ids["recipe_id"],
+                    "updated": ["dispatch_hold"],
+                    "dispatch_hold": r.dispatch_hold}
         raise ObjectError(
             "recipe update supports {final_outcome} (close), "
-            "{user_signoff, signoff_quote} (comprehension sign-off) or "
+            "{user_signoff, signoff_quote} (comprehension sign-off), "
             "{workspace} (the target repo root — absolute, exists, "
-            "contains .git)")
+            "contains .git) or {dispatch_hold} (operator pacing rule; "
+            "set text to hold dispatch, None to clear)")
 
     if obj_type == "neuron":
         _need(ids, "neuron_id")

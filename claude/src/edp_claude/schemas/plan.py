@@ -281,6 +281,12 @@ class Action(BaseModel):
                 data["specializations"] = [legacy_spz]
         return data
 
+    # QoL Phase 3 (2026-08-21) — the FORM this action's deliverable must
+    # take (see Outcome.deliverable). Optional, emission-gated: legacy
+    # actions round-trip byte-identically. The producer-verify guard keys
+    # on it (interactive/visual forms may exercise the artifact).
+    deliverable: str | None = None
+
     @model_serializer(mode="wrap")
     def _ser_legacy_shape(self, handler):
         """SERIALIZATION-HAZARD guard (amendment A1 + rollout safety). The
@@ -335,6 +341,10 @@ class Action(BaseModel):
                 # (legacy) action serializes byte-shape-identical.
                 if value:
                     out["leg_kind"] = value
+            elif key == "deliverable":
+                # QoL Phase 3 emission gate: same discipline.
+                if value:
+                    out["deliverable"] = value
             elif key == "batch_group":
                 # DESIGN-v7 1.4 emission gate (o6): omit when None so an
                 # unbatched action serializes byte-shape-identical to the

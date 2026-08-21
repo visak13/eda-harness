@@ -15,9 +15,13 @@
     "worker:tests": "sol",
     "worker:docs": "sol",
     "worker:refactor": "sol",
+    "worker:asset": "sol",
+    "worker:visual_critique": "sol",
     "reviewer:review": "sol",
+    "reviewer:visual_critique": "sol",
     "curiosity:consult": "sol",
     "planner:challenge": "sol",
+    "planner:visual_critique": "sol",
     "specialist:challenge": "sol"
   }
 }

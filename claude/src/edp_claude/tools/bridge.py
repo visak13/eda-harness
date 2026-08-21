@@ -535,7 +535,10 @@ def _cli_slot_release(slot: Path | None, nonce: str | None = None) -> None:
 
 
 def _run_cli(delegate: Delegate, work_order: str, caller: str,
-             kind: str) -> tuple[str, int, int, str | None]:
+             kind: str,
+             out_dir: str | None = None,
+             images: list[str] | None = None
+             ) -> tuple[str, int, int, str | None]:
     """One Codex-CLI turn via sol_bridge — ALWAYS read-only sandbox: bridge
     delegates return text, they never write. Thread stickiness per
     (caller, delegate) via sol_bridge's own store; a challenge always starts a
@@ -555,8 +558,19 @@ def _run_cli(delegate: Delegate, work_order: str, caller: str,
         import tempfile
         workdir = str(Path(tempfile.gettempdir()) / "edp-bridge"
                       / delegate.name)
+        sandbox = "read-only"
+        if out_dir:
+            # QoL Phase 4 (operator ruling 2026-08-21): ASSET GENERATION is
+            # the ONE write-capable delegate turn — "just use the bridge and
+            # tell it to generate image files in a dir". The sandbox opens
+            # to workspace-write scoped at out_dir (the CLI's own sandbox
+            # keeps writes inside the workdir); every other delegate stays
+            # read-only text.
+            workdir = out_dir
+            sandbox = "workspace-write"
         run = sol_bridge.run_sol(
-            prompt=work_order, workdir=workdir, sandbox="read-only",
+            prompt=work_order, workdir=workdir, sandbox=sandbox,
+            images=images,
             caller=caller, advisor=delegate.name, effort=delegate.effort,
             new_thread=(kind == "challenge"),
             timeout_secs=delegate.timeout_secs,
@@ -576,7 +590,9 @@ def _run_cli(delegate: Delegate, work_order: str, caller: str,
 
 def delegate_call(*, kind: str, delegate_name: str, task: str,
                   context: str = "", acceptance: str = "",
-                  caller: str = "anon") -> BridgeRun:
+                  caller: str = "anon",
+                  out_dir: str | None = None,
+                  images: list[str] | None = None) -> BridgeRun:
     """Run ONE delegated turn. Preconditions raise BridgeError; provider
     failures return BridgeRun(ok=False). Every call is audit-logged."""
     delegates, _routes = load_config()
@@ -592,7 +608,8 @@ def delegate_call(*, kind: str, delegate_name: str, task: str,
     if d.backend == "http":
         content, tin, tout, err = _run_http(d, order)
     else:
-        content, tin, tout, err = _run_cli(d, order, caller, kind)
+        content, tin, tout, err = _run_cli(d, order, caller, kind,
+                                           out_dir=out_dir, images=images)
     # F38#13: usage is estimated (and cost computed) only for a call the
     # provider actually served — a connection-refused attempt used to be
     # audited as full estimated spend and eat the budget for money never

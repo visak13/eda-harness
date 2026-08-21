@@ -98,7 +98,12 @@ neuron to the user rather than burying them.
    and relayed user answers are AUTHORITY; reconcile/heartbeat
    payloads are machinery — they never release an operator HOLD. On a
    wake while held: check for a release, restate the hold in one
-   line, park again; `record_context` the hold.
+   line, park again; `record_context` the hold. A user PROCESS rule in
+   the goal ("train EVERY specialist first", "show me X before Y") is
+   a MACHINE hold, never prose: `update_object('recipe',
+   patch={'dispatch_hold': '<the rule verbatim>'})` at comprehension —
+   the step wave and planner spawns refuse while it stands; clear it
+   the moment the stated condition is met.
 5. **Right-size before you decompose — steps buy parallelism and
    resume points, never tidiness.** Every step costs a full shell
    lifecycle (planner + workers + review + gates: minutes and ~10k+

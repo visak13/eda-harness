@@ -77,10 +77,13 @@ TAIL = "LANDMINE: never index on a boolean, it is not a valid key"
 
 
 def _oversized() -> str:
-    """A brief past the cap whose LAST line is the load-bearing one."""
+    """A brief past the cap whose LAST line is the load-bearing one.
+    (QoL F7 2026-08-21: the cap moved from 6000 to a 20k hard ceiling —
+    scale the filler off the live cap so this fixture keeps exceeding it.)"""
     from edp_claude.tools._tools import _GROUNDING_BRIEF_INJECT_CAP as CAP
-    return ("# map\n" + ("filler line that is pure orientation\n" * 400)
-            )[:CAP + 500] + "\n" + TAIL + "\n"
+    line = "filler line that is pure orientation\n"
+    reps = (CAP + 600) // len(line) + 1
+    return ("# map\n" + line * reps)[:CAP + 500] + "\n" + TAIL + "\n"
 
 
 async def test_planner_is_TOLD_at_write_time_when_the_brief_will_be_cut(env):
