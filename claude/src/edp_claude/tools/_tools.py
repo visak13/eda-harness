@@ -4803,7 +4803,23 @@ class CloseRecipe(_ClaudeTool):
                 "succeeded | partial | failed | abandoned, alongside a "
                 "'summary' string: final_outcome={'status': ..., "
                 "'summary': ...}.")
+        # F47#3 — gate evaluation and the terminal save are ONE transaction
+        # under the recipe's object lock (dispatch_acceptance reserves under
+        # the SAME lock): the unlocked shape validated attempt A, then a
+        # concurrent force-dispatch appended attempt B before the save —
+        # the recipe closed succeeded while B was live and could still
+        # record gaps.
+        from ..store.ipc_lock import object_lock as _olock
+        with _olock(self.ctx.recipes._dir(m.recipe_id)):
+            return self._close_locked(m)
+
+    def _close_locked(self, m: _CloseRecipeIn):
         r = self.ctx.recipes.load(m.recipe_id)
+        # F47#6 — waiver EVENTS are deferred to the commit point: an
+        # applied-waiver event appended before a later gate refusal left
+        # the durable trail claiming a waiver the recipe object never
+        # carried (the retry was then refused against the trail's word).
+        _deferred_events: list[dict] = []
         # v2.1: reconcile steps whose plan is already terminal-succeeded
         # (the map catches up to reality), THEN guard. A `succeeded`
         # close is FORBIDDEN while any step is still pending/in_progress
@@ -4858,7 +4874,8 @@ class CloseRecipe(_ClaudeTool):
             # reviewer-fork verdict + user confirm). WP1 G-OUTCOME: an
             # unmet outcome may instead be USER-waived via a recorded
             # user_gate_answer ref in `outcome_waivers`.
-            refusal = self._apply_outcome_waivers(r, m, status)
+            refusal = self._apply_outcome_waivers(r, m, status,
+                                                  _deferred_events)
             if refusal is not None:
                 return refusal
             # (WP2 G-COMMIT — RETIRED, owner ruling 2026-08-17: MCP tools
@@ -4888,7 +4905,8 @@ class CloseRecipe(_ClaudeTool):
             # while nothing was verified. Same rule as success: each unmet
             # outcome must be met or USER-waived. A plain partial/failed/
             # abandoned close over genuinely unfinished steps stays free.
-            refusal = self._apply_outcome_waivers(r, m, status)
+            refusal = self._apply_outcome_waivers(r, m, status,
+                                                  _deferred_events)
             if refusal is not None:
                 return refusal
         # W3 (DESIGN-v6 §W3): WARN — never block — when the recipe closes with
@@ -4904,6 +4922,10 @@ class CloseRecipe(_ClaudeTool):
                 "note": ("triage via resolve_spec_learnings(spec_id, accept, "
                          "reject) — accepted rules overlay live immediately."),
             }, recipe_id=r.recipe_id)
+        # F47#6 — every gate passed: NOW the waiver events are durable,
+        # alongside the recipe state that carries them.
+        for _ev in _deferred_events:
+            self.ctx.recipes.append_worklog(r.recipe_id, _ev)
         r.state = RecipeState.CLOSED
         r.final_outcome = m.final_outcome
         self.ctx.recipes.save(r)
@@ -5065,12 +5087,15 @@ class CloseRecipe(_ClaudeTool):
             out.append(s.step_id)
         return out
 
-    def _apply_outcome_waivers(self, r, m: _CloseRecipeIn, status: str):
+    def _apply_outcome_waivers(self, r, m: _CloseRecipeIn, status: str,
+                               deferred_events: list[dict]):
         """WP1 G-OUTCOME: each unmet outcome must be met, already waived, or
         waived NOW via a validating `outcome_waivers` ref. Stamps
-        waived/waiver_ref + appends an `outcome_waived` event per waiver.
-        Returns a refusal (ToolError) or None (all outcomes accounted for).
-        The caller saves the recipe on the successful close path."""
+        waived/waiver_ref in memory and QUEUES an `outcome_waived` event
+        per waiver into `deferred_events` (F47#6 — the caller appends them
+        only at the commit point, so a later gate refusal leaves neither
+        object state nor trail claiming the waiver). Returns a refusal
+        (ToolError) or None (all outcomes accounted for)."""
         still_unmet: list[str] = []
         for o in r.comprehension.expected_outcomes:
             if o.met or o.waived:
@@ -5081,7 +5106,7 @@ class CloseRecipe(_ClaudeTool):
                                          gate_target):
                 o.waived = True
                 o.waiver_ref = ref
-                self.ctx.recipes.append_worklog(r.recipe_id, {
+                deferred_events.append({
                     "kind": "outcome_waived", "outcome_id": o.id,
                     "override_ref": ref, "gate_target": gate_target,
                 })
@@ -6441,17 +6466,45 @@ class RecordActionStatus(_ClaudeTool):
                         # wrappers and flags (`cmd /c echo pytest -q`
                         # bypassed a first-token-only check).
                         _wrap = {"cmd", "cmd.exe", "powershell",
-                                 "powershell.exe", "pwsh", "sh", "bash",
-                                 "zsh", "env", "uv", "run", "npx", "time"}
+                                 "powershell.exe", "pwsh", "env", "uv",
+                                 "run", "npx", "time"}
                         # F46#2 — python is a wrapper ONLY as
                         # `python [flags] -m <declared…>`: `python pytest`
                         # executes a local FILE named pytest (not the CLI)
                         # and `python -c …` runs arbitrary inline code, so
                         # neither anchors the declared command.
                         _py = {"python", "python.exe", "python3", "py"}
+                        # F47#1 — POSIX shells are NOT transparent: `-c`
+                        # executes ONLY its next argument (later tokens are
+                        # positional parameters the shell never runs), so
+                        # the declared command must live INSIDE the quoted
+                        # -c string — matched by recursing on that ONE
+                        # argument from a real lexer. `sh script.sh`
+                        # anchors nothing.
+                        _posix_sh = {"sh", "bash", "zsh"}
                         i = 0
                         while i < len(rc_toks):
                             tok = rc_toks[i]
+                            if tok in _posix_sh:
+                                import shlex
+                                try:
+                                    lex = shlex.split(str(run_cmd))
+                                except ValueError:
+                                    return False
+                                k = next(
+                                    (x for x, t in enumerate(lex)
+                                     if t.lower() in _posix_sh), None)
+                                if k is None:
+                                    return False
+                                j = k + 1
+                                while (j < len(lex)
+                                       and lex[j].startswith("-")
+                                       and lex[j].lower() != "-c"):
+                                    j += 1
+                                if (j + 1 < len(lex)
+                                        and lex[j].lower() == "-c"):
+                                    return _cmd_matches(lex[j + 1])
+                                return False
                             if tok in _py:
                                 j = i + 1
                                 while (j < len(rc_toks)
@@ -12510,7 +12563,34 @@ class DispatchAcceptance(_ClaudeTool):
     async def _run(self, m: _DispatchAcceptanceIn):
         if not self.ctx.recipes.exists(m.recipe_id):
             return _precondition(f"unknown recipe {m.recipe_id!r}")
+        # F47#5 — the latch check and the dispatch reservation are ONE
+        # transaction under the recipe's object lock: two concurrent
+        # dispatch calls both read an empty trail and both spawned an
+        # acceptor (the first immediately superseded — a wasted seat).
+        # F47#3's close_recipe holds the SAME lock, so a dispatch can no
+        # longer slip between the close gates and the terminal save.
+        from ..store.ipc_lock import object_lock as _olock
+        with _olock(self.ctx.recipes._dir(m.recipe_id)):
+            reserved = self._reserve_attempt(m)
+        if not isinstance(reserved, tuple):
+            return reserved      # refusal, or the in-flight idempotent OK
+        r, acceptor_id, _dispatch_fp = reserved
+        return await self._launch_reserved_attempt(
+            m, r, acceptor_id, _dispatch_fp)
+
+    def _reserve_attempt(self, m: _DispatchAcceptanceIn):
+        """The LOCKED half: latch check + dispatch reservation, no I/O.
+        Returns (recipe, acceptor_id, fingerprint) on a fresh reservation,
+        else the ToolResult to surface. The slow broker/pool launch runs
+        AFTER the lock releases; a failed launch appends the abort record
+        exactly as before."""
         r = self.ctx.recipes.load(m.recipe_id)
+        # F47#3 — a TERMINAL recipe accepts no new acceptance pass.
+        if str(getattr(r.state, "value", r.state)) == "closed":
+            return _precondition(
+                f"recipe {m.recipe_id!r} is CLOSED — its acceptance is "
+                "settled history. Reopen/resume the recipe before "
+                "dispatching another pass.")
         # R1 F#8 — in-flight latch: an acceptance_dispatched with no
         # acceptance_verdict after it means a live pass; return it
         # idempotently rather than spawning a rival.
@@ -12588,6 +12668,10 @@ class DispatchAcceptance(_ClaudeTool):
             # F35 R3a#1: what this pass was asked to judge.
             "fingerprint": _dispatch_fp,
         })
+        return r, acceptor_id, _dispatch_fp
+
+    async def _launch_reserved_attempt(self, m: _DispatchAcceptanceIn, r,
+                                       acceptor_id: str, _dispatch_fp: str):
         brief = {
             "task": ("interim-review" if m.interim
                      else "final-acceptance"),

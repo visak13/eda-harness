@@ -372,28 +372,50 @@ class RuleSupervisor:
 
     # ---- single instance ----
     def _acquire_singleton(self) -> None:
-        if self._lockfile.exists():
+        # F47#4 — the OS lock IS the exclusion primitive, held for the
+        # supervisor's whole lifetime. The old exists/read/probe/write
+        # sequence was a TOCTOU: two concurrent `registry supervise`
+        # starts both passed exists(), both wrote their PID, and both
+        # supervised every rule (duplicate wakes + duplicate spend). The
+        # file's PID content is informational only now.
+        # (NOTE kept: never `os.kill(old, 0)` on Windows — that is a
+        # CTRL_C broadcast to old's console group, not a probe.)
+        from ..store.ipc_lock import StoreLockTimeout, _acquire
+        fd = os.open(str(self._lockfile), os.O_CREAT | os.O_RDWR)
+        try:
+            _acquire(fd, 0.25, self._lockfile)
+        except StoreLockTimeout:
             try:
-                old = int(self._lockfile.read_text(encoding="utf-8").strip() or "0")
+                old = int(self._lockfile.read_text(
+                    encoding="utf-8").strip() or "0")
             except Exception:  # noqa: BLE001
                 old = 0
-            # NOTE: never `os.kill(old, 0)` here — on Windows that is a
-            # CTRL_C broadcast to old's console group, not a probe (it took
-            # down the whole test console). _pid_alive is the safe probe.
-            alive = _pid_alive(old)
-            if alive:
-                raise RuntimeError(
-                    f"another rule supervisor is already running (pid {old}); "
-                    "single-instance refused")
-        self._lockfile.write_text(str(os.getpid()), encoding="utf-8")
+            os.close(fd)
+            raise RuntimeError(
+                f"another rule supervisor is already running (pid {old}); "
+                "single-instance refused") from None
+        self._lock_fd = fd
+        try:
+            os.ftruncate(fd, 0)
+            os.lseek(fd, 0, os.SEEK_SET)
+            os.write(fd, str(os.getpid()).encode("utf-8"))
+        except OSError:
+            pass                      # PID stamp is informational only
 
     def _release_singleton(self) -> None:
+        # release the held lock; the file itself stays (deleting a lock
+        # file a peer holds open is the classic unlock race — ipc_lock
+        # doctrine).
+        fd = getattr(self, "_lock_fd", None)
+        if fd is None:
+            return
+        from ..store.ipc_lock import _release
         try:
-            if (self._lockfile.exists() and self._lockfile.read_text(
-                    encoding="utf-8").strip() == str(os.getpid())):
-                self._lockfile.unlink()
-        except Exception:  # noqa: BLE001
+            _release(fd)
+            os.close(fd)
+        except OSError:
             pass
+        self._lock_fd = None
 
     # ---- at-least-once replay guard: advance the broker `since` cursor ----
     def _advance_bindings(self, rule: RegisteredRule) -> dict[str, Any]:

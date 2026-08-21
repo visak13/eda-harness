@@ -858,3 +858,33 @@ zero new classes for two rounds; what remains is the reviewer eating the
 tail of its own fix arcs. Round 14 = fourth sweep (F46's fixes as prime
 target); empty or noise-only declares convergence → the closing
 compact-framework polish sweep.
+
+## F47 — Adversarial campaign Round 14 (fourth convergence sweep), 2026-08-21
+6 findings (raw: .sol_review_out-r14.txt); lens = whole framework, F46's
+fixes as the prime target. All 6 CONFIRMED. Yield 9 → 8 → 5 → 6 — count
+flat, KIND narrowed again: every finding is a TOCTOU/transactionality gap
+in guards that already check the right thing. The reviewer has moved from
+"the gate is wrong" (R1-R10) through "two components race" (R11-R12) to
+"your correct check isn't atomic" — the campaign's quality curve, stated
+as a defect class.
+
+| # | Finding | Verdict |
+|---|---------|---------|
+| 1 | G-RUNS treats POSIX shells as transparent — `sh -c python -m pytest -q` executes only `python` (the rest are positional params) yet anchored | CONFIRM — sh/bash/zsh are wrappers ONLY via `-c`, matched by RECURSING on that one lexed argument (shlex); `sh script.sh` anchors nothing |
+| 2 | pool _persist builds+replaces snapshots under different domain locks — a slow writer can replace a newer snapshot with a stale one (disarmed driver durably resurrected on restart) | CONFIRM — snapshot-build and file-replace are one critical section under a dedicated innermost _persist_lock |
+| 3 | close_recipe is check-then-act: acceptance events can change between gate validation and the terminal save (dispatch B slips in; recipe closes succeeded while B later records gaps) | CONFIRM — gate evaluation + terminal save run under the recipe object lock; dispatch_acceptance reserves under the SAME lock and refuses a CLOSED recipe |
+| 4 | RuleSupervisor singleton is exists/read/probe/write — two concurrent starts both become supervisors (duplicate wakes + spend) | CONFIRM — the OS lock (ipc_lock primitives) held for the supervisor's lifetime IS the exclusion; the pid file is informational; lockfile no longer deleted (unlock-race doctrine) |
+| 5 | dispatch_acceptance's in-flight latch is unlocked read-then-reserve — concurrent calls spawn rival acceptors (the first instantly superseded, a wasted seat) | CONFIRM — latch check + dispatch reservation are one locked transaction (_reserve_attempt); the slow broker/pool launch runs after the lock releases, abort-on-failure unchanged |
+| 6 | outcome-waiver events append BEFORE later close gates can refuse — a refused close leaves the trail claiming a waiver the recipe object never carried | CONFIRM — waiver events are QUEUED and appended only at the commit point, atomically with the closed state |
+
+Contract update: test_registry's teardown pin asserts lock RELEASE
+(successor acquires) instead of lockfile deletion. Tests: +7 claude
+(test_f47_round14.py), +2 edp-pool (test_f47_persist_lock.py). Suites:
+claude 1656 (Phoenix env-fail only), edp-pool 319 — green. Convergence
+read: four whole-framework sweeps, 9 → 8 → 5 → 6, no new class for THREE
+rounds — the residual vein is the TOCTOU tail of a file-based
+multi-process system, now locked at every seam the fleet actually
+crosses. Round 15 criterion (owner-visible): if it yields ONLY
+fix-of-fix/transactional findings with no everyday-operation trigger,
+declare convergence BY CLASS (record the TOCTOU tail as an accepted
+residual) → the closing compact-framework polish sweep.

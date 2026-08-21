@@ -419,6 +419,8 @@ class PoolService(Microservice):
         # F46#4 — serializes the neuron-driver lifecycle (arm/disarm/
         # respawn); the transition lock stays session-row-only.
         self._driver_lock = threading.Lock()
+        # F47#2 — serializes every state-file snapshot (see _persist).
+        self._persist_lock = threading.Lock()
         # started by startup() (the uvicorn/mount lifecycle), never by tests
         # that construct the service directly — see _start_resume_watchdog.
         self._resume_watchdog = None
@@ -662,21 +664,28 @@ class PoolService(Microservice):
     def _persist(self) -> None:
         if not self.state_path:
             return
-        self.state_path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(
-            dir=str(self.state_path.parent), suffix=".tmp"
-        )
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(
-                    {"sessions": self.sessions, "locks": self.locks,
-                     "neuron_drivers": self.neuron_drivers,
-                     "limit_overrides": self.limit_overrides}, f
-                )
-            os.replace(tmp, self.state_path)
-        finally:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
+        # F47#2 — snapshot-build and file-replace are ONE critical section:
+        # callers persist under DIFFERENT domain locks (_transition_lock,
+        # _driver_lock) or none, so a slow writer could serialize a stale
+        # snapshot and replace a newer one AFTER it landed — durably
+        # resurrecting, e.g., a successfully-disarmed neuron driver on the
+        # next pool restart. Innermost lock; never held around process I/O.
+        with self._persist_lock:
+            self.state_path.parent.mkdir(parents=True, exist_ok=True)
+            fd, tmp = tempfile.mkstemp(
+                dir=str(self.state_path.parent), suffix=".tmp"
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(
+                        {"sessions": self.sessions, "locks": self.locks,
+                         "neuron_drivers": self.neuron_drivers,
+                         "limit_overrides": self.limit_overrides}, f
+                    )
+                os.replace(tmp, self.state_path)
+            finally:
+                if os.path.exists(tmp):
+                    os.unlink(tmp)
 
     async def startup(self) -> None:
         # DESIGN-v7 1.5.3: the resume watchdog is part of the SERVICE

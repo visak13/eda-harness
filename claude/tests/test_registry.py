@@ -207,7 +207,12 @@ def test_supervisor_teardown_terminates_tracked_children(tmp_path, fake_popen):
     sup.shutdown()
     assert child.terminated is True       # graceful terminate, tracked PID only
     assert sup.tracked_pids() == {}       # nothing left tracked
-    assert not sup._lockfile.exists()     # singleton released
+    # F47#4: the singleton is a HELD OS lock; the file stays on disk
+    # (never deleted — the ipc_lock unlock-race doctrine) but the lock is
+    # RELEASED: a successor supervisor can acquire immediately.
+    successor = RuleSupervisor(reg, _cfg(tmp_path))
+    successor._acquire_singleton()        # would raise were it still held
+    successor._release_singleton()
 
 
 def test_supervisor_live_enable_disable(tmp_path, fake_popen):
