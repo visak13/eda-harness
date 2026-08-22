@@ -342,9 +342,51 @@
     "last_used": "2026-08-18T03:22:06Z"
   },
   "base-shell-campaign|sol": {
-    "thread_id": "01a01452-3fde-7263-950f-1c2755ee5ada",
+    "thread_id": "01a0227c-420e-78a0-9701-be4f40b3f34e",
     "workdir": "C:\\Projects\\Learning\\eda-base3",
     "created_at": "2026-08-18T05:16:27Z",
-    "last_used": "2026-08-18T10:12:56Z"
+    "last_used": "2026-08-21T04:12:20Z"
+  },
+  "verify|sol": {
+    "thread_id": "01a02317-1d50-7d71-8368-dbdce3c6345b",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-21T06:52:00Z",
+    "last_used": "2026-08-21T06:52:00Z"
+  },
+  "recipe-i-have-been-building-a-3d-open-world-gam-118687:s1|sol": {
+    "thread_id": "01a02318-03f1-7852-8830-d4f49dae5c19",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-21T06:53:48Z",
+    "last_used": "2026-08-21T06:53:48Z"
+  },
+  "recipe-i-have-been-building-a-3d-open-world-gam-118687:s2|sol": {
+    "thread_id": "01a0233e-8ba2-7b11-8079-80b6c55194bc",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-21T07:35:55Z",
+    "last_used": "2026-08-21T07:35:55Z"
+  },
+  "recipe-i-have-been-building-a-3d-open-world-gam-118687-s2:r_needle|sol": {
+    "thread_id": "01a02391-b098-74f3-989e-3ba8d8b60a2d",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-21T09:07:21Z",
+    "last_used": "2026-08-21T09:07:21Z"
+  },
+  "qol-maps|sol": {
+    "thread_id": "01a0247e-7b1e-7500-bfd2-971266ef3c77",
+    "workdir": "C:\\Projects\\Learning\\eda-base3\\claude",
+    "created_at": "2026-08-21T13:37:18Z",
+    "last_used": "2026-08-21T13:37:18Z"
+  },
+  "qol-overhaul|sol": {
+    "thread_id": "01a02488-2baf-7691-b4ce-9f58fcf0b7da",
+    "workdir": "C:\\Projects\\Learning\\eda-base3",
+    "created_at": "2026-08-21T13:40:58Z",
+    "last_used": "2026-08-21T13:42:41Z"
+  },
+  "recipe-i-have-been-building-a-3d-open-world-gam-118687:curiosity-7e078049|sol": {
+    "thread_id": "01a024b6-e14e-7bc3-bbe1-550adc140a91",
+    "workdir": "C:\\Users\\aksou\\AppData\\Local\\Temp\\edp-bridge\\sol",
+    "created_at": "2026-08-21T14:27:00Z",
+    "last_used": "2026-08-21T14:27:00Z"
   }
 }
