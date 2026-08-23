@@ -1,0 +1,6 @@
+.sandbox/
+.data/
+.sol/
+.pain/
+.venv/
+__pycache__/

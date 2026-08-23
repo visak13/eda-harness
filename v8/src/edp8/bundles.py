@@ -529,13 +529,13 @@ POOL_TOOLS = [
 
 
 class FindArgs(BaseModel):
-    q: str
+    query: str = Field(description="search text (BM25 + vectors over docs, tickets, threads)")
     k: int = 10
     types: str | None = Field(default=None, description="comma-separated object types to restrict to")
 
 
 def _find(a: FindArgs) -> dict[str, Any]:
-    return get_client().find(a.q, k=a.k, types=a.types)
+    return get_client().find(a.query, k=a.k, types=a.types)
 
 
 SEARCH_TOOLS = [
@@ -642,23 +642,25 @@ _IDENTITY = ["whoami", "subscribe", "context", "describe", "get_guide"]
 _TICKET_RW = ["ticket_create", "ticket_read", "ticket_query", "ticket_update", "criterion_create",
               "criterion_query", "criterion_update"]
 _TICKET_RO = ["ticket_read", "ticket_query", "ticket_update"]  # owner: sign-off only, guarded by the board
+_TICKET_COORD = ["ticket_create", "ticket_read", "ticket_query", "ticket_update", "criterion_query"]  # epic+status only
+_CHECK = ["criterion_query", "criterion_update"]  # checkers record verdicts (board guards who may)
 _DOC_RW = ["doc_create", "doc_read", "doc_query", "doc_update", "link_create", "link_query", "link_delete"]
 _DOC_RO = ["doc_read", "doc_query"]
 _THREAD = ["message_send", "message_query", "gate_open", "gate_answer", "gates"]
 _BOARD = ["board", "events_query", "participants"]
 
 ROLE_BUNDLES: dict[str, list[str]] = {
-    Role.owner.value: _IDENTITY + _THREAD + _BOARD + _DOC_RO + _TICKET_RO + ["find"],
-    Role.coordinator.value: _IDENTITY + _TICKET_RW + _THREAD + _BOARD
+    Role.owner.value: _IDENTITY + _THREAD + _BOARD + _DOC_RO + _TICKET_RO + _CHECK + ["find"],
+    Role.coordinator.value: _IDENTITY + _TICKET_COORD + _THREAD + _BOARD
         + ["spawn", "resume", "park", "reap", "session_query", "find", "close"],
     Role.architect.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD + _BOARD
         + ["find", "consult", "artifact_create", "artifact_read"],
     Role.sme.value: _IDENTITY + _TICKET_RO + _DOC_RW + _THREAD + ["find", "artifact_create", "artifact_read"],
     Role.engineer.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD
         + ["find", "consult", "artifact_create", "artifact_read", "spawn"],
-    Role.reviewer.value: _IDENTITY + _TICKET_RO + _DOC_RW + _THREAD
+    Role.reviewer.value: _IDENTITY + _TICKET_RO + _CHECK + _DOC_RW + _THREAD
         + ["find", "consult", "artifact_create", "artifact_read"],
-    Role.qa.value: _IDENTITY + _TICKET_RO + _DOC_RW + _THREAD + _BOARD
+    Role.qa.value: _IDENTITY + _TICKET_RO + _CHECK + _DOC_RW + _THREAD + _BOARD
         + ["find", "consult", "artifact_create", "artifact_read"],
 }
 
