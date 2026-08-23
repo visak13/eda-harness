@@ -65,7 +65,7 @@ class BoardClient:
     # ------------------------------------------------------------------ registry
     def participant_create(self, type: str, role: str, handle: str, location: str | None = None,
                            model: str | None = None, id: str | None = None) -> dict[str, Any]:
-        return self._request("POST", "/v1/participants", admin=True,
+        return self._request("POST", "/v1/participants", admin=bool(self.admin_token),
                              json={"type": type, "role": role, "handle": handle, "location": location,
                                    "model": model, "id": id})
 

@@ -207,8 +207,20 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         return ok(board.context(a, ticket_id))
 
     # registry (admin) -----------------------------------------------------------
-    @app.post("/v1/participants", dependencies=[Depends(admin)])
-    def participant_create(b: ParticipantIn):
+    @app.post("/v1/participants")
+    def participant_create(b: ParticipantIn, x_admin: str | None = Header(default=None),
+                           x_participant: str | None = Header(default=None)):
+        # admin registers anyone; a spawner role (coordinator/engineer/architect) registers AGENT participants
+        # for the tickets it spawns shells on — the scope a per-ticket spawn needs, nothing more.
+        if x_admin != admin_token:
+            if not x_participant:
+                raise HTTPException(403, "X-Admin token invalid (or sign as a spawner role with X-Participant)")
+            try:
+                a = board.participant(x_participant)
+            except BoardError as e:
+                raise HTTPException(401, e.message)
+            if a.role not in (Role.coordinator, Role.engineer, Role.architect) or b.type != "agent":
+                raise HTTPException(403, "only admin, or a spawner role registering an agent participant")
         p = board.participant_create(b.type, b.role, b.handle, location=b.location, model=b.model, id_=b.id)
         return ok(_dump(p))
 
