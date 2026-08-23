@@ -51,6 +51,7 @@ from .schemas import (
 from .store import Store, new_id
 
 HUMAN_GATE_ANSWERERS = {Role.owner}
+_TERMINAL = (TicketStatus.done, TicketStatus.partial, TicketStatus.dropped)
 
 
 class BoardError(Exception):
@@ -462,6 +463,11 @@ class Board:
         """Tickets a participant works on: assigned; for checkers (reviewer/qa/owner) also tickets in_review
         whose criteria are checked by their role, and for qa epics with an open acceptance gate; else created-by."""
         mine: list[Ticket] = list(self.store.query("ticket", {"assignee": p.id}))  # type: ignore[arg-type]
+        if p.role == Role.coordinator:
+            for t in self.store.query("ticket", {"kind": TicketKind.epic}):
+                if t.status not in _TERMINAL and all(x.id != t.id for x in mine):
+                    mine.append(t)  # type: ignore[arg-type]
+            mine = [t for t in mine if not (t.kind == TicketKind.epic and t.status in _TERMINAL)]
         if p.role in CRITERION_CHECKERS:
             for t in self.store.query("ticket", {"status": TicketStatus.in_review}):
                 if any(c.checked_by == p.role.value for c in self.criteria(t.id)) and all(x.id != t.id for x in mine):
