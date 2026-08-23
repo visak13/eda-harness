@@ -383,6 +383,12 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     app.include_router(ui_router(board))
 
+    if os.environ.get("EDP8_PLANE_URL"):
+        from .plane_adapter import start_mirror_thread, webhook_router
+
+        app.include_router(webhook_router(board))
+        start_mirror_thread(board)
+
     @app.get("/healthz")
     def healthz():
         return {"ok": True}
