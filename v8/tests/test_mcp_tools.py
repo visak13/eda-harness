@@ -193,10 +193,48 @@ def test_pool_unavailable_when_adapter_missing(raw_client):
     assert resp["error"]["code"] == "unavailable"
 
 
-def test_consult_unavailable(raw_client):
+def test_consult_unavailable(raw_client, monkeypatch):
+    import edp8.consult as consult_mod
+
+    def fake_consult(purpose, question, context="", files=None, timeout_s=600):
+        return {"ok": False, "error": {"code": "unavailable", "message": "could not launch 'codex': not found"},
+                "hint": "check EDP8_CODEX_BIN and that `codex` is on PATH"}
+
+    monkeypatch.setattr(consult_mod, "consult", fake_consult)
+
     owner_id = register(raw_client, "owner", "owner4")
     set_client(make_client(raw_client, owner_id))
     resp = ALL_TOOLS["consult"].handler(
-        ALL_TOOLS["consult"].args_model(ticket_id="t-1", question="thoughts?"))
+        ALL_TOOLS["consult"].args_model(question="thoughts?"))
     assert resp["ok"] is False
     assert resp["error"]["code"] == "unavailable"
+
+
+def test_consult_posts_answer_to_thread(raw_client, monkeypatch):
+    import edp8.consult as consult_mod
+
+    def fake_consult(purpose, question, context="", files=None, timeout_s=600):
+        return {"ok": True,
+                "value": {"answer": "looks solid, one gap: no timeout test", "model": "gpt-5.6-sol",
+                          "elapsed_s": 1.23, "run_id": "fake-run", "log": "C:/tmp/fake-run.jsonl"},
+                "hint": ""}
+
+    monkeypatch.setattr(consult_mod, "consult", fake_consult)
+
+    owner_id = register(raw_client, "owner", "owner5")
+    client = make_client(raw_client, owner_id)
+    set_client(client)
+    resp = ALL_TOOLS["ticket_create"].handler(
+        ALL_TOOLS["ticket_create"].args_model(kind="epic", work_type="feature", title="Consult target"))
+    assert resp["ok"], resp
+    ticket_id = resp["value"]["id"]
+
+    consult_resp = ALL_TOOLS["consult"].handler(
+        ALL_TOOLS["consult"].args_model(question="thoughts?", purpose="adversary", ticket_id=ticket_id))
+    assert consult_resp["ok"], consult_resp
+    assert consult_resp["value"]["answer"] == "looks solid, one gap: no timeout test"
+
+    thread = client.message_query(ticket_id=ticket_id)
+    assert thread["ok"], thread
+    texts = [m["text"] for m in thread["value"]]
+    assert any("consultant[adversary]:" in t and "looks solid" in t for t in texts)

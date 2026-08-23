@@ -32,7 +32,8 @@ _state_path = Path(
 # Layout: <root>/{claude, edp-pool, edp-broker, ...}; this file is at
 # <root>/edp-pool/src/edp_pool/main.py → parents[3] == <root>.
 _root = Path(__file__).resolve().parents[3]
-_agent_home = str(_root / "claude")          # spawned shells' cwd + skills
+# EDP_POOL_AGENT_HOME: explicit opt-in (the v8 stack runs spawned shells from <root>/v8).
+_agent_home = os.environ.get("EDP_POOL_AGENT_HOME") or str(_root / "claude")  # spawned shells' cwd + skills
 _shell_log_dir = str(_root / ".logs")        # spawned shells' EDP_LOG_DIR
 # The pool's OWN url, from its own port config — so spawned shells'
 # pool_close_self / liveness hit THIS pool, not an inherited EDP_POOL_URL.

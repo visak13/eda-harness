@@ -34,3 +34,7 @@ Each phase ends with its tests green and a commit. Status log below.
 
 ## Status
 - 2026-08-23 plan written; starting A1–A3.
+- 2026-08-23 Phase A committed (0d4f70e): board/service/search/MCP bundles/cards/skills/guides, 85 tests.
+- 2026-08-23 Phase B in progress: consult bridge (Sol PONG live OK, codex resolved under ~/.codex/plugins/.plugin-appserver),
+  pool pinned to v8 via EDP_POOL_AGENT_HOME (edp-pool/main.py, one-line opt-in), v8 trust entry in .claude-pool/.claude.json,
+  scripts start/stop-board + start/stop-pool, feed driver verified live, MCP stdio verified per role.

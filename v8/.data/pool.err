@@ -1,0 +1,37 @@
+{"ts": "2026-08-23T17:02:32.316529+00:00", "svc": "edp-pool", "level": "info", "kind": "spawner_stack_pinned", "detail": "edp-pool spawner stack pinned", "agent_home": "C:\\Projects\\Learning\\eda-base3\\v8", "pool_url": "http://127.0.0.1:9301", "broker_url": "http://127.0.0.1:9300", "shell_log_dir": "C:\\Projects\\Learning\\eda-base3\\.logs"}
+{"ts": "2026-08-23T17:02:32.356323+00:00", "svc": "edp-pool", "level": "info", "kind": "startup", "detail": "edp-pool listening on http://127.0.0.1:9301", "host": "127.0.0.1", "port": 9301, "broker_url": "http://127.0.0.1:9300", "log_dir": "C:\\Projects\\Learning\\eda-base3\\v8\\.data\\pool-logs", "access_log": false}
+INFO:     Started server process [38020]
+INFO:     Waiting for application startup.
+{"ts": "2026-08-23T17:02:32.397685+00:00", "svc": "edp-pool", "level": "info", "kind": "resume_watchdog_started", "detail": "", "interval_secs": 5.0}
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:9301 (Press CTRL+C to quit)
+{"ts": "2026-08-23T17:02:32.880794+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "GET /v1/doctor", "path": "/v1/doctor", "method": "GET"}
+{"ts": "2026-08-23T17:02:35.023330+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "GET /v1/health", "path": "/v1/health", "method": "GET"}
+{"ts": "2026-08-23T17:02:35.026531+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "GET /v1/health -> 200", "path": "/v1/health", "status": 200}
+{"ts": "2026-08-23T17:02:39.136224+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "GET /v1/doctor -> 200", "path": "/v1/doctor", "status": 200}
+{"ts": "2026-08-23T17:02:39.203094+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "GET /v1/doctor", "path": "/v1/doctor", "method": "GET"}
+{"ts": "2026-08-23T17:02:41.286087+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "GET /v1/health", "path": "/v1/health", "method": "GET"}
+{"ts": "2026-08-23T17:02:41.288978+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "GET /v1/health -> 200", "path": "/v1/health", "status": 200}
+{"ts": "2026-08-23T17:02:45.419048+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "GET /v1/doctor -> 200", "path": "/v1/doctor", "status": 200}
+{"ts": "2026-08-23T17:03:02.655693+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "POST /v1/spawn", "path": "/v1/spawn", "method": "POST"}
+{"ts": "2026-08-23T17:03:02.666260+00:00", "svc": "edp-pool", "level": "info", "kind": "POST /v1/spawn", "detail": "engineer", "role": "engineer", "handle": "engineer", "parent": null}
+{"ts": "2026-08-23T17:03:02.683522+00:00", "svc": "edp-pool", "level": "info", "kind": "launch_start", "detail": "engineer", "role": "engineer", "handle": "engineer", "sid": "engineer:5603b304-1dd6-4a46-92c4-13dc04ac861b", "mode": "monitor", "resume": false, "model": null}
+{"ts": "2026-08-23T17:03:02.725173+00:00", "svc": "edp-pool", "level": "info", "kind": "launch_done", "detail": "engineer", "role": "engineer", "handle": "engineer", "sid": "engineer:5603b304-1dd6-4a46-92c4-13dc04ac861b"}
+{"ts": "2026-08-23T17:03:02.732468+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "POST /v1/spawn -> 200", "path": "/v1/spawn", "status": 200}
+{"ts": "2026-08-23T17:03:16.425186+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "POST /v1/spawn", "path": "/v1/spawn", "method": "POST"}
+{"ts": "2026-08-23T17:03:16.435307+00:00", "svc": "edp-pool", "level": "info", "kind": "POST /v1/spawn", "detail": "engineer", "role": "engineer", "handle": "engineer", "parent": null}
+{"ts": "2026-08-23T17:03:16.437434+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "POST /v1/spawn -> 409", "path": "/v1/spawn", "status": 409}
+{"ts": "2026-08-23T17:03:36.959728+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "GET /v1/sessions", "path": "/v1/sessions", "method": "GET"}
+{"ts": "2026-08-23T17:03:36.963451+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "GET /v1/sessions -> 200", "path": "/v1/sessions", "status": 200}
+{"ts": "2026-08-23T17:03:36.975931+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "GET /v1/liveness/engineer", "path": "/v1/liveness/engineer", "method": "GET"}
+{"ts": "2026-08-23T17:03:36.977201+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "GET /v1/liveness/engineer -> 200", "path": "/v1/liveness/engineer", "status": 200}
+{"ts": "2026-08-23T17:03:58.529844+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "GET /v1/doctor", "path": "/v1/doctor", "method": "GET"}
+{"ts": "2026-08-23T17:04:00.612038+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "GET /v1/health", "path": "/v1/health", "method": "GET"}
+{"ts": "2026-08-23T17:04:00.614748+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "GET /v1/health -> 200", "path": "/v1/health", "status": 200}
+{"ts": "2026-08-23T17:04:04.681310+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "GET /v1/doctor -> 200", "path": "/v1/doctor", "status": 200}
+{"ts": "2026-08-23T17:04:32.255890+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "GET /v1/doctor", "path": "/v1/doctor", "method": "GET"}
+{"ts": "2026-08-23T17:04:34.341941+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "GET /v1/health", "path": "/v1/health", "method": "GET"}
+{"ts": "2026-08-23T17:04:34.343855+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "GET /v1/health -> 200", "path": "/v1/health", "status": 200}
+{"ts": "2026-08-23T17:04:38.446784+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "GET /v1/doctor -> 200", "path": "/v1/doctor", "status": 200}
+{"ts": "2026-08-23T17:05:09.645734+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "GET /v1/liveness/engineer", "path": "/v1/liveness/engineer", "method": "GET"}
+{"ts": "2026-08-23T17:05:09.646680+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "GET /v1/liveness/engineer -> 200", "path": "/v1/liveness/engineer", "status": 200}

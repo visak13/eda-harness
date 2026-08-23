@@ -547,18 +547,31 @@ SEARCH_TOOLS = [
 
 
 class ConsultArgs(BaseModel):
-    ticket_id: str
     question: str = Field(description="what you want a second, independent read on")
-    kind: str = Field(default="review", description="review|creative|adversarial")
+    purpose: str = Field(default="second_opinion",
+                          description="adversary|creative|visual|second_opinion — selects the consultant's brief")
+    context: str = ""
+    files: list[str] | None = None
+    ticket_id: str | None = Field(default=None, description="if set, post the answer to this ticket's thread")
+    timeout_s: int = 600
 
 
-def _consult(_: ConsultArgs) -> dict[str, Any]:
-    return unavailable("consultant bridge not configured in phase A", "consultant bridge not configured in phase A")
+def _consult(a: ConsultArgs) -> dict[str, Any]:
+    from . import consult as consult_mod
+
+    resp = consult_mod.consult(a.purpose, a.question, context=a.context,
+                                files=a.files, timeout_s=a.timeout_s)
+    if resp.get("ok") and a.ticket_id:
+        answer = resp["value"]["answer"]
+        get_client().message_send(ticket_id=a.ticket_id, kind="note",
+                                  text=f"consultant[{a.purpose}]: {answer}", to=None)
+    return resp
 
 
 CONSULT_TOOLS = [
-    ToolDef("consult", "Ask the consultant for a second, independent read (creative/UI work, or a hostile review). "
-            "Returns its answer, or unavailable in phase A.",
+    ToolDef("consult", "Ask the consultant (GPT Sol) for a second, independent read — adversarial review, "
+            "creative/visual judgment, or a plain second opinion. If ticket_id is given, the answer is also "
+            "posted as a note to that ticket's thread. Returns the answer, or unavailable/timeout/exit on failure.",
             ConsultArgs, _consult, "consult"),
 ]
 
