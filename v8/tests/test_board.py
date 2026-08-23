@@ -513,6 +513,123 @@ def test_session_upsert_dead_emits_shell_dead_once(board, rig):
 
 # ------------------------------------------------------------------ doc versioning
 
+# ------------------------------------------------------------------ review-type criteria checker
+
+def test_review_story_criterion_refuses_checked_by_reviewer(board, rig):
+    epic = make_epic(board, rig)
+    review_story = board.ticket_create(rig["architect"], kind=TicketKind.story, work_type=WorkType.review,
+                                        title="review the slice", parent_id=epic.id)
+    with pytest.raises(BoardError) as ei:
+        board.criterion_create(rig["architect"], ticket_id=review_story.id, text="reviewed",
+                                check=Check.verdict, checked_by="reviewer")
+    assert ei.value.code == "schema"
+    assert "qa" in ei.value.hint
+
+    crit = board.criterion_create(rig["architect"], ticket_id=review_story.id, text="reviewed",
+                                   check=Check.verdict, checked_by="qa")
+    assert crit.checked_by == "qa"
+
+
+# ------------------------------------------------------------------ implicit blockers on review stories
+
+def drive_to_done(board, rig, ticket, checked_by_key="qa"):
+    """Drive a signed_off (or ready) ticket through in_progress -> evidence -> in_review -> verdict -> done."""
+    t = board.ticket(ticket.id)
+    if t.status == TicketStatus.signed_off:
+        board.ticket_update(rig["coordinator"], t.id, status=TicketStatus.ready)
+    board.ticket_update(rig["coordinator"], t.id, assignee=rig["engineer"].id)
+    board.ticket_update(rig["engineer"], t.id, status=TicketStatus.in_progress)
+    for crit in board.criteria(t.id):
+        ev = board.doc_create(rig["engineer"], doc_type=DocType.report, title="evidence", body_md="ok",
+                               scope=t.id)
+        board.criterion_update(rig["engineer"], crit.id, evidence_ref=ev.id)
+    board.ticket_update(rig["engineer"], t.id, status=TicketStatus.in_review)
+    for crit in board.criteria(t.id):
+        board.criterion_update(rig[checked_by_key], crit.id, verdict=Verdict.passed)
+    return board.ticket_update(rig[checked_by_key], t.id, status=TicketStatus.done)
+
+
+def test_implicit_blocker_review_story_waits_on_sibling_then_auto_promotes(board, rig):
+    epic = make_epic(board, rig)
+    story_a = board.ticket_create(rig["architect"], kind=TicketKind.story, work_type=WorkType.feature,
+                                   title="deliver the slice", parent_id=epic.id)
+    story_r = board.ticket_create(rig["architect"], kind=TicketKind.story, work_type=WorkType.review,
+                                   title="review the slice", parent_id=epic.id)
+
+    blockers = board.blockers(story_r.id)
+    assert any(b.id == story_a.id for b in blockers)
+
+    ad = design_doc(board, rig, epic.id)
+    advance_to_designed(board, rig, story_a, ad, checked_by="qa")
+    rd = design_doc(board, rig, epic.id)
+    advance_to_designed(board, rig, story_r, rd, checked_by="qa")
+
+    # signing off the review story does not auto-promote to ready while A is not done
+    board.ticket_update(rig["owner"], story_r.id, status=TicketStatus.signed_off)
+    story_r = board.ticket(story_r.id)
+    assert story_r.status == TicketStatus.signed_off
+
+    # drive A to done
+    board.ticket_update(rig["owner"], story_a.id, status=TicketStatus.signed_off)
+    drive_to_done(board, rig, story_a)
+
+    story_r = board.ticket(story_r.id)
+    assert story_r.status == TicketStatus.ready
+    evs = board.store.query("event", {"subject_id": story_r.id, "kind": EventKind.status_changed})
+    promo = [e for e in evs if e.data.get("to") == "ready"]
+    assert promo and promo[-1].data["by"] == "board"
+
+
+# ------------------------------------------------------------------ my_tickets / context() for checkers
+
+def test_my_tickets_and_context_for_checker_roles(board, rig):
+    epic = make_epic(board, rig)
+    story = make_story(board, rig, epic)
+    d = design_doc(board, rig, epic.id)
+    board.ticket_update(rig["architect"], story.id, design_ref=d.id)
+    crit = board.criterion_create(rig["architect"], ticket_id=story.id, text="reviewed", check=Check.verdict,
+                                  checked_by="reviewer")
+    board.ticket_update(rig["architect"], story.id, status=TicketStatus.designed)
+    board.ticket_update(rig["owner"], story.id, status=TicketStatus.signed_off)
+    board.ticket_update(rig["coordinator"], story.id, status=TicketStatus.ready)
+    board.ticket_update(rig["coordinator"], story.id, assignee=rig["engineer"].id)
+    board.ticket_update(rig["engineer"], story.id, status=TicketStatus.in_progress)
+    ev = board.doc_create(rig["engineer"], doc_type=DocType.report, title="evidence", body_md="ok",
+                          scope=epic.id)
+    board.criterion_update(rig["engineer"], crit.id, evidence_ref=ev.id)
+    board.ticket_update(rig["engineer"], story.id, status=TicketStatus.in_review)
+
+    # reviewer is not the assignee, but sees the story because it checks a criterion on it
+    reviewer_mine = board.my_tickets(rig["reviewer"])
+    assert any(t.id == story.id for t in reviewer_mine)
+    reviewer_ctx = board.context(rig["reviewer"])
+    assert any(node["ticket"]["id"] == story.id for node in reviewer_ctx["tickets"])
+
+    # qa acceptance-gate visibility, exercised on a second epic driven fully to done
+    other_epic = make_epic(board, rig)
+    other_story = board.ticket_create(rig["architect"], kind=TicketKind.story, work_type=WorkType.feature,
+                                      title="another slice", parent_id=other_epic.id)
+    od = design_doc(board, rig, other_epic.id)
+    advance_to_designed(board, rig, other_story, od, checked_by="qa")
+    advance_to_signed_off(board, rig, other_story)
+    aed = design_doc(board, rig, other_epic.id)
+    advance_to_designed(board, rig, other_epic, aed, checked_by="qa")
+    advance_to_signed_off(board, rig, other_epic)
+    drive_to_done(board, rig, other_story, checked_by_key="qa")
+
+    qa_mine = board.my_tickets(rig["qa"])
+    assert any(t.id == other_epic.id for t in qa_mine)
+    assert board.gate_open(other_epic.id, Gate.acceptance) is not None
+    assert board.open_gates(other_epic.id, Gate.acceptance)
+
+    # a second, unassigned/uninvolved engineer sees neither the reviewer-checked story nor the
+    # qa acceptance-gated epic: an engineer has no checker-role visibility rule at all
+    other_engineer = board.participant_create("agent", Role.engineer, "eng2")
+    other_engineer_mine_ids = {t.id for t in board.my_tickets(other_engineer)}
+    assert story.id not in other_engineer_mine_ids
+    assert other_epic.id not in other_engineer_mine_ids
+
+
 def test_doc_update_bumps_version_old_readable(board, rig):
     d = board.doc_create(rig["architect"], doc_type=DocType.design, title="v1", body_md="body v1",
                           scope="global")

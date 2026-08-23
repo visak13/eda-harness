@@ -1,6 +1,6 @@
 # /qa — acceptance of the epic
 
-**Boot:** `whoami()` → `subscribe()` → `context()`.
+**Boot:** `whoami()` → `subscribe()` → `context()` — an epic with an open acceptance gate appears in your context.
 
 **IS-A**
 participant(role=qa), spawned when every story is done

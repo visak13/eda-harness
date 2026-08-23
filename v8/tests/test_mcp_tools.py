@@ -211,6 +211,57 @@ def test_consult_unavailable(raw_client, monkeypatch):
     assert resp["error"]["code"] == "unavailable"
 
 
+def test_spawn_with_ticket_id_registers_and_assigns(raw_client, monkeypatch):
+    import edp8.bundles as bundles_mod
+
+    def fake_pool_call(fn_name, kwargs):
+        assert fn_name == "spawn"
+        return {"ok": True, "value": {"session_id": "sess-1"}}
+
+    monkeypatch.setattr(bundles_mod, "_pool_call", fake_pool_call)
+
+    coordinator_id = register(raw_client, "coordinator", "coord-spawn")
+    architect_id = register(raw_client, "architect", "arch-spawn")
+
+    coordinator_client = make_client(raw_client, coordinator_id)
+    architect_client = make_client(raw_client, architect_id)
+
+    set_client(coordinator_client)
+    epic_resp = ALL_TOOLS["ticket_create"].handler(
+        ALL_TOOLS["ticket_create"].args_model(kind="epic", work_type="feature", title="Spawn target epic"))
+    assert epic_resp["ok"], epic_resp
+    epic_id = epic_resp["value"]["id"]
+
+    set_client(architect_client)
+    story_resp = ALL_TOOLS["ticket_create"].handler(
+        ALL_TOOLS["ticket_create"].args_model(kind="story", work_type="feature", title="Spawn target story",
+                                              parent_id=epic_id))
+    assert story_resp["ok"], story_resp
+    story_id = story_resp["value"]["id"]
+
+    set_client(coordinator_client)
+    spawn_resp = ALL_TOOLS["spawn"].handler(
+        ALL_TOOLS["spawn"].args_model(role="engineer", ticket_id=story_id))
+    assert spawn_resp["ok"], spawn_resp
+    expected_pid = f"engineer.{story_id}"
+    assert spawn_resp["value"]["participant_id"] == expected_pid
+
+    got = coordinator_client.participant_get(expected_pid)
+    assert got["ok"], got
+
+    ticket_after = coordinator_client.ticket_read(story_id)
+    assert ticket_after["ok"], ticket_after
+    assert ticket_after["value"]["assignee"] == expected_pid
+
+
+def test_spawn_without_ticket_or_participant_id_is_schema_error(raw_client):
+    coordinator_id = register(raw_client, "coordinator", "coord-spawn2")
+    set_client(make_client(raw_client, coordinator_id))
+    resp = ALL_TOOLS["spawn"].handler(ALL_TOOLS["spawn"].args_model(role="engineer"))
+    assert resp["ok"] is False
+    assert resp["error"]["code"] == "schema"
+
+
 def test_consult_posts_answer_to_thread(raw_client, monkeypatch):
     import edp8.consult as consult_mod
 

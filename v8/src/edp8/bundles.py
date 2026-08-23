@@ -456,7 +456,10 @@ BOARD_TOOLS = [
 
 class SpawnArgs(BaseModel):
     role: Role = Field(description="role the new shell will run as (/<role>)")
-    participant_id: str = Field(description="the participant id to spawn a shell for (used as the pool handle)")
+    ticket_id: str | None = Field(default=None, description="ticket the shell works on: a participant "
+                                  "'<role>.<ticket_id>' is registered (if missing) and assigned to it")
+    participant_id: str | None = Field(default=None, description="explicit participant id (pool handle); "
+                                       "omit when ticket_id is given")
     parent_session: str | None = Field(default=None, description="session id spawning this one, for fan-out")
     model: str | None = None
     mode: str | None = None
@@ -492,7 +495,28 @@ def _pool_call(fn_name: str, kwargs: dict[str, Any]) -> dict[str, Any]:
 
 
 def _spawn(a: SpawnArgs) -> dict[str, Any]:
-    return _pool_call("spawn", a.model_dump())
+    args = a.model_dump()
+    ticket_id = args.pop("ticket_id", None)
+    pid = args.pop("participant_id", None)
+    if not pid and not ticket_id:
+        return {"ok": False, "error": {"code": "schema", "message": "spawn needs ticket_id or participant_id"},
+                "hint": "spawn(role=engineer, ticket_id=<story>) registers engineer.<story> and assigns it"}
+    c = get_client()
+    if ticket_id and not pid:
+        pid = f"{a.role.value}.{ticket_id}"
+        got = c.participant_get(pid)
+        if not got.get("ok"):
+            made = c.participant_create("agent", a.role.value, pid, id=pid)
+            if not made.get("ok"):
+                return made
+        assigned = c.ticket_update(ticket_id, assignee=pid)
+        if not assigned.get("ok"):
+            return assigned
+    args["participant_id"] = pid
+    out = _pool_call("spawn", args)
+    if out.get("ok") and isinstance(out.get("value"), dict):
+        out["value"]["participant_id"] = pid
+    return out
 
 
 def _resume(a: ResumeArgs) -> dict[str, Any]:

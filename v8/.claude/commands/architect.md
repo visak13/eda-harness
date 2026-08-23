@@ -19,7 +19,8 @@ needed domains, fidelity verdicts on re-comprehension
 **PROTOCOL**
 Read the words and the code first (plan mode is fine while a human sits in this shell). Classify the work_type. Draft the design; audit it with /ocak; ask the owner here, one
 question per message, until no gap remains; write answers on the epic thread. Size honestly
-(one story when it fits one sitting). The last story is the adversarial review. Name the
+(one story when it fits one sitting). The last story is the adversarial review (work_type=review): its doer is an engineer or
+reviewer, its criteria are checked by qa, and it waits on every sibling story by itself. Name the
 knowledge domains. When the design is complete, record it (`doc_create` design, `ticket_update`
 design_ref + designed, criteria, stories) and open the `design_signoff` gate: the owner answers
 here if present, otherwise from their own shell; record the sign-off quote on the epic thread and

@@ -154,8 +154,16 @@ class Board:
         return self.store.query("criterion", {"ticket_id": ticket_id})  # type: ignore[return-value]
 
     def blockers(self, ticket_id: str) -> list[Ticket]:
+        """Explicit `blocks` links plus the implicit rule: a review story waits on every sibling
+        non-review story (the adversarial pass reviews the delivery, so it cannot start before it)."""
         links = self.store.query("link", {"to_id": ticket_id, "relation": Relation.blocks})
-        return [self._get("ticket", lk.from_id) for lk in links]  # type: ignore[attr-defined]
+        out: list[Ticket] = [self._get("ticket", lk.from_id) for lk in links]  # type: ignore[attr-defined]
+        t = self.store.get("ticket", ticket_id)
+        if t is not None and t.kind == TicketKind.story and t.work_type == WorkType.review and t.parent_id:
+            for sib in self.children(t.parent_id):
+                if sib.id != t.id and sib.work_type != WorkType.review and all(b.id != sib.id for b in out):
+                    out.append(sib)
+        return out
 
     def ticket_update(self, actor: Participant, id_: str, *, status: TicketStatus | None = None,
                       assignee: str | None = None, design_ref: str | None = None) -> Ticket:
@@ -246,8 +254,11 @@ class Board:
     def _after_status(self, t: Ticket) -> None:
         # readiness: any sibling/dependent waiting on this ticket becomes ready when unblocked
         if t.status == TicketStatus.done:
-            for lk in self.store.query("link", {"from_id": t.id, "relation": Relation.blocks}):
-                dep = self.store.get("ticket", lk.to_id)  # type: ignore[attr-defined]
+            deps = [self.store.get("ticket", lk.to_id)  # type: ignore[attr-defined]
+                    for lk in self.store.query("link", {"from_id": t.id, "relation": Relation.blocks})]
+            if t.kind == TicketKind.story and t.parent_id:
+                deps += [k for k in self.children(t.parent_id) if k.work_type == WorkType.review and k.id != t.id]
+            for dep in deps:
                 if dep and dep.status == TicketStatus.signed_off:
                     if all(b.status == TicketStatus.done for b in self.blockers(dep.id)):
                         dep.status = TicketStatus.ready
@@ -289,6 +300,9 @@ class Board:
             raise BoardError("transition", f"criteria cannot be added to a {t.status} ticket")
         if t.assignee == actor.id and t.kind != TicketKind.task:
             raise BoardError("scope", "the doer of a ticket does not write its criteria")
+        if t.work_type == WorkType.review and checked_by == "reviewer":
+            raise BoardError("schema", "a review-type ticket is checked by qa (or owner), not by reviewer",
+                             "the reviewer is the usual doer of a review story; set checked_by=qa")
         c = Criterion(id=new_id("c"), ticket_id=ticket_id, text=text, check=check,
                       checked_by=checked_by, created_by=actor.id)  # type: ignore[arg-type]
         return self.store.put("criterion", c)
@@ -445,10 +459,20 @@ class Board:
 
     # ------------------------------------------------------------------ context / board / feed
     def my_tickets(self, p: Participant) -> list[Ticket]:
-        mine = self.store.query("ticket", {"assignee": p.id})
+        """Tickets a participant works on: assigned; for checkers (reviewer/qa/owner) also tickets in_review
+        whose criteria are checked by their role, and for qa epics with an open acceptance gate; else created-by."""
+        mine: list[Ticket] = list(self.store.query("ticket", {"assignee": p.id}))  # type: ignore[arg-type]
+        if p.role in CRITERION_CHECKERS:
+            for t in self.store.query("ticket", {"status": TicketStatus.in_review}):
+                if any(c.checked_by == p.role.value for c in self.criteria(t.id)) and all(x.id != t.id for x in mine):
+                    mine.append(t)  # type: ignore[arg-type]
+            if p.role == Role.qa:
+                for t in self.store.query("ticket", {"kind": TicketKind.epic}):
+                    if self.open_gates(t.id, Gate.acceptance) and all(x.id != t.id for x in mine):
+                        mine.append(t)  # type: ignore[arg-type]
         if not mine:
-            mine = [t for t in self.store.query("ticket", {}) if t.created_by == p.id]
-        return mine  # type: ignore[return-value]
+            mine = [t for t in self.store.query("ticket", {}) if t.created_by == p.id]  # type: ignore[misc]
+        return mine
 
     def _doc_summary(self, d: Doc, n: int = 300) -> dict[str, Any]:
         return {"id": d.id, "doc_type": d.doc_type, "title": d.title, "version": d.version, "scope": d.scope,
