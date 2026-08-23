@@ -1,0 +1,43 @@
+{
+  "_doc": "v7 seat registry (edp_contracts/seats.py). ONE file remixes the fleet: seats bind EXACT model ids (never aliases); roles bind seats. Claude effort is capped at medium fleet-wide (validator-enforced). auto_compact sits below the window so compaction is planned, never mid-work. Edit + pass doctor; no code changes.",
+  "_model_note": "2026-08-13 user direction (supersedes 2026-08-12/2026-08-06): Claude seats move to claude-opus-4-8 \u2014 the operator's only configuration that historically produced thoroughly-tested, reviewed work was 4.8-at-all-levels; 4.8 also supports Claude Code fast mode (orchestrating shells live in the drive loop, so output speed is felt directly); and the old 4.6-economics rationale lived in the deleted MODEL_TIERS comments with no current data behind it. Per-session model provenance is now recorded, so this fleet can be evaluated honestly against the 4.6 era. Still NO Sonnet and NO Opus 5 anywhere; claude-fable-5 stays the ADVISOR (curiosity) seat only.",
+  "seats": {
+    "judgment": {
+      "model": "claude-opus-4-8",
+      "effort": "medium",
+      "context_window": 1000000,
+      "auto_compact": 350000
+    },
+    "advisor": {
+      "model": "claude-fable-5",
+      "effort": "medium",
+      "context_window": 1000000,
+      "auto_compact": 350000,
+      "max_output": 8000
+    },
+    "builder": {
+      "model": "claude-opus-4-8",
+      "effort": "medium",
+      "context_window": 1000000,
+      "auto_compact": 350000,
+      "max_output": 16000
+    },
+    "checker": {
+      "model": "claude-opus-4-8",
+      "effort": "medium",
+      "context_window": 1000000,
+      "auto_compact": 350000,
+      "max_output": 12000
+    }
+  },
+  "roles": {
+    "neuron": "judgment",
+    "planner": "judgment",
+    "specialist": "judgment",
+    "worker": "builder",
+    "reviewer": "checker",
+    "curiosity": "advisor",
+    "acceptor": "advisor"
+  },
+  "_window_note": "2026-08-06 user ruling: auto_compact is 350k on EVERY seat \u2014 one number, no per-seat window tuning. The rule stands: compaction must land at turn boundaries; a role that ROUTINELY nears its window is a scoping defect to split."
+}

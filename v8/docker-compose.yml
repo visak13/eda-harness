@@ -1,0 +1,17 @@
+# edp8 central services (phase A: the board). Plane CE + adapter land in phase B.
+services:
+  board:
+    build: .
+    image: edp8-board
+    environment:
+      EDP8_HOST: 0.0.0.0
+      EDP8_PORT: "9400"
+      EDP8_DB: /data/edp8.db
+      EDP8_ADMIN_TOKEN: ${EDP8_ADMIN_TOKEN:-dev}
+      EDP8_EMBEDDER: ${EDP8_EMBEDDER:-none}
+    volumes:
+      - edp8-data:/data
+    ports:
+      - "9400:9400"
+volumes:
+  edp8-data:

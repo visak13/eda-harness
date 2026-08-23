@@ -1,0 +1,13 @@
+{
+  "effortLevel": "medium",
+  "permissions": {
+    "allow": [
+      "mcp__edp8__whoami", "mcp__edp8__subscribe", "mcp__edp8__context", "mcp__edp8__describe", "mcp__edp8__get_guide",
+      "mcp__edp8__ticket_read", "mcp__edp8__ticket_query", "mcp__edp8__criterion_query",
+      "mcp__edp8__doc_read", "mcp__edp8__doc_query", "mcp__edp8__link_query",
+      "mcp__edp8__message_send", "mcp__edp8__message_query", "mcp__edp8__gates", "mcp__edp8__board",
+      "mcp__edp8__events_query", "mcp__edp8__find", "mcp__edp8__session_query",
+      "Monitor", "TaskStop", "CronCreate", "CronList", "CronDelete"
+    ]
+  }
+}
