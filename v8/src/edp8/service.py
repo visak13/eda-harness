@@ -379,6 +379,10 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
         return StreamingResponse(gen(), media_type="text/event-stream")
 
+    from .ui import router as ui_router
+
+    app.include_router(ui_router(board))
+
     @app.get("/healthz")
     def healthz():
         return {"ok": True}
