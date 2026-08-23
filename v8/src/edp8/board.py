@@ -14,6 +14,7 @@ violation raises BoardError(code, message, hint) with the legal values.
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 from collections.abc import Iterable
 from typing import Any
@@ -50,6 +51,7 @@ from .schemas import (
 )
 from .store import Store, new_id
 
+_log = logging.getLogger("edp8.board")
 HUMAN_GATE_ANSWERERS = {Role.owner}
 _TERMINAL = (TicketStatus.done, TicketStatus.partial, TicketStatus.dropped)
 
@@ -87,8 +89,8 @@ class Board:
         if self.index is not None:
             try:
                 self.index.upsert(type_, id_, text)
-            except Exception:  # search is never on the write path's critical line
-                pass
+            except Exception as e:  # search is never on the write path's critical line — but never silent
+                _log.warning("search index update failed for %s %s: %s", type_, id_, e)
 
     # ------------------------------------------------------------------ participants
     def participant_create(self, type_: str, role: Role, handle: str, *, location: str | None = None,
@@ -626,8 +628,8 @@ class Board:
             for q in queues:
                 try:
                     q.put_nowait(ev)
-                except Exception:
-                    pass
+                except Exception as e:  # a full/closed feed queue: the subscriber will replay by seq
+                    _log.warning("feed queue for %s dropped %s: %s", pid, ev.id, e)
 
     def replay(self, p: Participant, since_seq: int) -> list[tuple[int, Event]]:
         return [(s, e) for s, e in self.store.events_since(since_seq) if self.relevant(e, p)]

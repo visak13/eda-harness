@@ -497,3 +497,10 @@ teammate needs only a token: Plane portal + `/owner`-style shell, or just the po
   stack/practice) + global strategy_hl library; created only when missing/stale; docs are
   intent+why+example; delivered by Link via context() as summaries+ids (full on doc.read) under
   a size budget — never pasted into cards.
+
+### 2.1 Rule: tools never execute on the agent's behalf (owner ruling 2026-08-24)
+A tool validates, stores, routes and signals. When something must be run (a check, a build, a
+command), the tool tells the agent what to run; the agent runs it in its own shell and records the
+evidence. No tool takes code or a command and executes it internally, and no tool swallows a failure —
+every error travels back in the envelope. The one subprocess in the system is the consultant bridge,
+which surfaces the real exit code and error line. Enforced by `tests/test_no_code_execution_in_tools.py`.

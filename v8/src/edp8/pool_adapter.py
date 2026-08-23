@@ -120,6 +120,7 @@ def sync_sessions(board_url: str | None = None, admin_token: str | None = None) 
         return got
     rows = got["value"] if isinstance(got["value"], list) else got["value"].get("sessions", [])
     n = 0
+    failed: list[str] = []
     for s in rows:
         handle = s.get("handle")
         if not handle:
@@ -131,6 +132,7 @@ def sync_sessions(board_url: str | None = None, admin_token: str | None = None) 
                       json={"participant_id": handle, "ticket_id": None, "pool_id": POOL_ID, "state": state.value},
                       headers={"X-Admin": admin_token}, timeout=10.0)
             n += 1
-        except httpx.HTTPError:
-            continue
-    return _envelope(True, value={"mirrored": n})
+        except httpx.HTTPError as e:
+            failed.append(f"{handle}: {e}")
+    return _envelope(True, value={"mirrored": n, "failed": failed},
+                     hint="" if not failed else "some sessions could not be mirrored; see failed")

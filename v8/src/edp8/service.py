@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -161,8 +162,8 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         if index is not None:
             try:
                 index.rebuild(store.all_text_units())
-            except Exception:
-                pass
+            except Exception as e:  # search degrades to nothing; the board keeps running, loudly
+                logging.getLogger("edp8.service").warning("search index rebuild failed: %s", e)
     admin_token = admin_token or os.environ.get("EDP8_ADMIN_TOKEN", "dev")
     app = FastAPI(title="edp8 board", version="0.8.0")
     app.state.board = board

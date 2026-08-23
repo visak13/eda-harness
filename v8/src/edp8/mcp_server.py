@@ -12,6 +12,7 @@ from __future__ import annotations
 import inspect
 import json
 import os
+import sys
 from typing import Annotated, Any
 
 from mcp.server.mcpserver import MCPServer
@@ -47,8 +48,8 @@ def _resolve_role(client: BoardClient) -> str:
         resp = client.whoami()
         if resp.get("ok"):
             role = resp["value"]["participant"]["role"]
-    except Exception:
-        pass
+    except Exception as e:  # board unreachable at start: fall back to the env role, say so on stderr
+        sys.stderr.write(f"edp8-mcp: whoami failed at start ({e}); using role from env\n")
     return role or "owner"
 
 
