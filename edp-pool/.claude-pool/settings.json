@@ -44,5 +44,6 @@
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark",
   "agentPushNotifEnabled": false,
-  "inputNeededNotifEnabled": true
+  "inputNeededNotifEnabled": true,
+  "enableAllProjectMcpServers": true
 }

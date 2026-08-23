@@ -184,7 +184,8 @@ def test_error_envelope_passes_through(raw_client):
     assert "hint" in resp
 
 
-def test_pool_unavailable_when_adapter_missing(raw_client):
+def test_pool_unavailable_when_adapter_missing(raw_client, monkeypatch):
+    monkeypatch.setenv("EDP_POOL_URL", "http://127.0.0.1:1")  # nothing listens here
     owner_id = register(raw_client, "owner", "owner3")
     set_client(make_client(raw_client, owner_id))
     resp = ALL_TOOLS["spawn"].handler(

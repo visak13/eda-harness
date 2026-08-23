@@ -2,12 +2,19 @@
   "mcpServers": {
     "edp8": {
       "command": "uv",
-      "args": ["run", "--directory", "C:\Projects\Learning\eda-base3\v8", "python", "-m", "edp8.mcp_server"],
+      "args": [
+        "run",
+        "--directory",
+        "C:/Projects/Learning/eda-base3/v8",
+        "python",
+        "-m",
+        "edp8.mcp_server"
+      ],
       "env": {
         "EDP8_BOARD_URL": "${EDP8_BOARD_URL:-http://127.0.0.1:9400}",
-        "EDP8_PARTICIPANT": "${EDP8_PARTICIPANT:-${EDP_HANDLE:-owner}}",
-        "EDP8_ROLE": "${EDP8_ROLE:-${EDP_ROLE:-owner}}",
-        "EDP8_HOME": "C:\Projects\Learning\eda-base3\v8",
+        "EDP8_PARTICIPANT": "${EDP_HANDLE:-owner}",
+        "EDP8_ROLE": "${EDP_ROLE:-owner}",
+        "EDP8_HOME": "C:/Projects/Learning/eda-base3/v8",
         "EDP_POOL_URL": "${EDP_POOL_URL:-http://127.0.0.1:9301}"
       }
     }

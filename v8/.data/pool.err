@@ -35,3 +35,46 @@ INFO:     Uvicorn running on http://127.0.0.1:9301 (Press CTRL+C to quit)
 {"ts": "2026-08-23T17:04:38.446784+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "GET /v1/doctor -> 200", "path": "/v1/doctor", "status": 200}
 {"ts": "2026-08-23T17:05:09.645734+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "GET /v1/liveness/engineer", "path": "/v1/liveness/engineer", "method": "GET"}
 {"ts": "2026-08-23T17:05:09.646680+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "GET /v1/liveness/engineer -> 200", "path": "/v1/liveness/engineer", "status": 200}
+{"ts": "2026-08-23T17:05:54.960378+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "POST /v1/reap/engineer", "path": "/v1/reap/engineer", "method": "POST"}
+{"ts": "2026-08-23T17:05:54.964433+00:00", "svc": "edp-pool", "level": "info", "kind": "POST /v1/reap", "detail": "engineer", "handle": "engineer"}
+{"ts": "2026-08-23T17:05:55.028828+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "POST /v1/reap/engineer -> 200", "path": "/v1/reap/engineer", "status": 200}
+{"ts": "2026-08-23T17:05:58.042641+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "POST /v1/spawn", "path": "/v1/spawn", "method": "POST"}
+{"ts": "2026-08-23T17:05:58.045445+00:00", "svc": "edp-pool", "level": "info", "kind": "POST /v1/spawn", "detail": "engineer", "role": "engineer", "handle": "engineer", "parent": null}
+{"ts": "2026-08-23T17:05:58.055023+00:00", "svc": "edp-pool", "level": "info", "kind": "launch_start", "detail": "engineer", "role": "engineer", "handle": "engineer", "sid": "engineer:904f1a2b-63d8-4d43-8a49-9ed2bf4d52e3", "mode": "monitor", "resume": false, "model": null}
+{"ts": "2026-08-23T17:05:58.082868+00:00", "svc": "edp-pool", "level": "info", "kind": "launch_done", "detail": "engineer", "role": "engineer", "handle": "engineer", "sid": "engineer:904f1a2b-63d8-4d43-8a49-9ed2bf4d52e3"}
+{"ts": "2026-08-23T17:05:58.091183+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "POST /v1/spawn -> 200", "path": "/v1/spawn", "status": 200}
+{"ts": "2026-08-23T17:06:18.512947+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "POST /v1/spawn", "path": "/v1/spawn", "method": "POST"}
+{"ts": "2026-08-23T17:06:18.513944+00:00", "svc": "edp-pool", "level": "info", "kind": "POST /v1/spawn", "detail": "eng-x", "role": "engineer", "handle": "eng-x", "parent": null}
+{"ts": "2026-08-23T17:06:18.520474+00:00", "svc": "edp-pool", "level": "info", "kind": "launch_start", "detail": "eng-x", "role": "engineer", "handle": "eng-x", "sid": "engineer:7dc53961-2328-4fbb-8784-90c81ac3c116", "mode": "monitor", "resume": false, "model": null}
+{"ts": "2026-08-23T17:06:18.540226+00:00", "svc": "edp-pool", "level": "info", "kind": "launch_done", "detail": "eng-x", "role": "engineer", "handle": "eng-x", "sid": "engineer:7dc53961-2328-4fbb-8784-90c81ac3c116"}
+{"ts": "2026-08-23T17:06:18.555401+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "POST /v1/spawn -> 200", "path": "/v1/spawn", "status": 200}
+{"ts": "2026-08-23T17:06:38.557724+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "POST /v1/spawn", "path": "/v1/spawn", "method": "POST"}
+{"ts": "2026-08-23T17:06:38.558504+00:00", "svc": "edp-pool", "level": "info", "kind": "POST /v1/spawn", "detail": "eng-x", "role": "engineer", "handle": "eng-x", "parent": null}
+{"ts": "2026-08-23T17:06:38.559302+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "POST /v1/spawn -> 409", "path": "/v1/spawn", "status": 409}
+{"ts": "2026-08-23T17:07:04.160173+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "GET /v1/doctor", "path": "/v1/doctor", "method": "GET"}
+{"ts": "2026-08-23T17:07:06.247498+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "GET /v1/health", "path": "/v1/health", "method": "GET"}
+{"ts": "2026-08-23T17:07:06.248073+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "GET /v1/health -> 200", "path": "/v1/health", "status": 200}
+{"ts": "2026-08-23T17:07:10.316390+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "GET /v1/doctor -> 200", "path": "/v1/doctor", "status": 200}
+{"ts": "2026-08-23T17:07:39.843832+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "GET /v1/liveness/engineer", "path": "/v1/liveness/engineer", "method": "GET"}
+{"ts": "2026-08-23T17:07:39.844534+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "GET /v1/liveness/engineer -> 200", "path": "/v1/liveness/engineer", "status": 200}
+{"ts": "2026-08-23T17:09:43.938283+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "POST /v1/reap/engineer", "path": "/v1/reap/engineer", "method": "POST"}
+{"ts": "2026-08-23T17:09:43.942484+00:00", "svc": "edp-pool", "level": "info", "kind": "POST /v1/reap", "detail": "engineer", "handle": "engineer"}
+{"ts": "2026-08-23T17:09:43.991909+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "POST /v1/reap/engineer -> 200", "path": "/v1/reap/engineer", "status": 200}
+{"ts": "2026-08-23T17:09:47.010988+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "POST /v1/spawn", "path": "/v1/spawn", "method": "POST"}
+{"ts": "2026-08-23T17:09:47.013864+00:00", "svc": "edp-pool", "level": "info", "kind": "POST /v1/spawn", "detail": "engineer", "role": "engineer", "handle": "engineer", "parent": null}
+{"ts": "2026-08-23T17:09:47.022020+00:00", "svc": "edp-pool", "level": "info", "kind": "launch_start", "detail": "engineer", "role": "engineer", "handle": "engineer", "sid": "engineer:47d1dc19-f34b-4972-b72c-1a04c65df1cc", "mode": "monitor", "resume": false, "model": null}
+{"ts": "2026-08-23T17:09:47.048830+00:00", "svc": "edp-pool", "level": "info", "kind": "launch_done", "detail": "engineer", "role": "engineer", "handle": "engineer", "sid": "engineer:47d1dc19-f34b-4972-b72c-1a04c65df1cc"}
+{"ts": "2026-08-23T17:09:47.057749+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "POST /v1/spawn -> 200", "path": "/v1/spawn", "status": 200}
+{"ts": "2026-08-23T17:10:08.767896+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "POST /v1/reap/engineer", "path": "/v1/reap/engineer", "method": "POST"}
+{"ts": "2026-08-23T17:10:08.768454+00:00", "svc": "edp-pool", "level": "info", "kind": "POST /v1/reap", "detail": "engineer", "handle": "engineer"}
+{"ts": "2026-08-23T17:10:09.034591+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "POST /v1/reap/engineer -> 200", "path": "/v1/reap/engineer", "status": 200}
+{"ts": "2026-08-23T17:10:12.059007+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "POST /v1/spawn", "path": "/v1/spawn", "method": "POST"}
+{"ts": "2026-08-23T17:10:12.061825+00:00", "svc": "edp-pool", "level": "info", "kind": "POST /v1/spawn", "detail": "engineer", "role": "engineer", "handle": "engineer", "parent": null}
+{"ts": "2026-08-23T17:10:12.069561+00:00", "svc": "edp-pool", "level": "info", "kind": "launch_start", "detail": "engineer", "role": "engineer", "handle": "engineer", "sid": "engineer:b0a33ddb-518c-4110-8676-5639c2b09b17", "mode": "monitor", "resume": false, "model": null}
+{"ts": "2026-08-23T17:10:12.096290+00:00", "svc": "edp-pool", "level": "info", "kind": "launch_done", "detail": "engineer", "role": "engineer", "handle": "engineer", "sid": "engineer:b0a33ddb-518c-4110-8676-5639c2b09b17"}
+{"ts": "2026-08-23T17:10:12.101637+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "POST /v1/spawn -> 200", "path": "/v1/spawn", "status": 200}
+{"ts": "2026-08-23T17:11:34.919464+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "GET /v1/liveness/engineer", "path": "/v1/liveness/engineer", "method": "GET"}
+{"ts": "2026-08-23T17:11:34.920619+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "GET /v1/liveness/engineer -> 200", "path": "/v1/liveness/engineer", "status": 200}
+{"ts": "2026-08-23T17:12:24.635622+00:00", "svc": "edp-pool", "level": "info", "kind": "request_in", "detail": "POST /v1/reap/engineer", "path": "/v1/reap/engineer", "method": "POST"}
+{"ts": "2026-08-23T17:12:24.638305+00:00", "svc": "edp-pool", "level": "info", "kind": "POST /v1/reap", "detail": "engineer", "handle": "engineer"}
+{"ts": "2026-08-23T17:12:24.701086+00:00", "svc": "edp-pool", "level": "info", "kind": "request_out", "detail": "POST /v1/reap/engineer -> 200", "path": "/v1/reap/engineer", "status": 200}

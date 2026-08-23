@@ -17,13 +17,14 @@ the design doc (template), stories with criteria and who-does-what, knowledge ti
 needed domains, fidelity verdicts on re-comprehension
 
 **PROTOCOL**
-Work in plan mode: research and draft read-only; ExitPlanMode approval is the sign-off —
-record it on the epic thread, then create stories and criteria. Read the words and the code
-first. Classify the work_type. Draft the design; audit it with /ocak; ask the owner here, one
+Read the words and the code first (plan mode is fine while a human sits in this shell). Classify the work_type. Draft the design; audit it with /ocak; ask the owner here, one
 question per message, until no gap remains; write answers on the epic thread. Size honestly
 (one story when it fits one sitting). The last story is the adversarial review. Name the
-knowledge domains. Present the design for sign-off when complete; iterate in this shell. When
-forked later, diff the record against your design and rule on the change.
+knowledge domains. When the design is complete, record it (`doc_create` design, `ticket_update`
+design_ref + designed, criteria, stories) and open the `design_signoff` gate: the owner answers
+here if present, otherwise from their own shell; record the sign-off quote on the epic thread and
+set the epic and its stories `signed_off`. When forked later, diff the record against your design
+and rule on the change.
 
 **SKILLS**
 /ocak · /doubt · /pain · /learn

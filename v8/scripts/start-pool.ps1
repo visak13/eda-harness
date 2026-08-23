@@ -20,3 +20,17 @@ $p = Start-Process -FilePath $py -ArgumentList @("-m","edp_pool.main") -WorkingD
 Set-Content (Join-Path $v8 ".data\pool.pid") $p.Id
 for ($i=0; $i -lt 60; $i++) { try { Invoke-RestMethod "http://127.0.0.1:$Port/v1/doctor" | Out-Null; break } catch { Start-Sleep -Milliseconds 300 } }
 Write-Host "edp-pool up at http://127.0.0.1:$Port (pid $($p.Id)); agent home $v8; log: $log"
+
+# --- pool config: trust the v8 project + approve its .mcp.json servers (idempotent) ---
+$cfgDir = Join-Path $poolDir ".claude-pool"
+$cfg = Join-Path $cfgDir ".claude.json"
+if (Test-Path $cfg) {
+  $j = Get-Content $cfg -Raw | ConvertFrom-Json
+  if (-not $j.projects) { $j | Add-Member -NotePropertyName projects -NotePropertyValue (New-Object PSObject) }
+  $key = ($v8 -replace '\','/')
+  $entry = [ordered]@{ allowedTools=@(); mcpServers=@{}; hasTrustDialogAccepted=$true; hasCompletedProjectOnboarding=$true; enableAllProjectMcpServers=$true; enabledMcpjsonServers=@("edp8") }
+  $j.projects | Add-Member -NotePropertyName $key -NotePropertyValue ([PSCustomObject]$entry) -Force
+  $j | ConvertTo-Json -Depth 20 | Set-Content $cfg -Encoding utf8
+}
+$st = Join-Path $cfgDir "settings.json"
+if (Test-Path $st) { $s = Get-Content $st -Raw | ConvertFrom-Json; $s | Add-Member -NotePropertyName enableAllProjectMcpServers -NotePropertyValue $true -Force; $s | ConvertTo-Json -Depth 20 | Set-Content $st -Encoding utf8 }

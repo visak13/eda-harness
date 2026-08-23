@@ -23,7 +23,7 @@ class BoardClient:
     def __init__(self, base_url: str | None = None, participant: str | None = None,
                  admin_token: str | None = None, client: httpx.Client | None = None):
         self.base_url = (base_url or os.environ.get("EDP8_BOARD_URL", "http://127.0.0.1:9400")).rstrip("/")
-        self.participant = participant or os.environ.get("EDP8_PARTICIPANT")
+        self.participant = participant or os.environ.get("EDP8_PARTICIPANT") or os.environ.get("EDP_HANDLE")
         self.admin_token = admin_token if admin_token is not None else os.environ.get("EDP8_ADMIN_TOKEN")
         self._client = client
 

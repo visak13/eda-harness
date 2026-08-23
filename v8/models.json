@@ -31,13 +31,14 @@
     }
   },
   "roles": {
-    "neuron": "judgment",
-    "planner": "judgment",
-    "specialist": "judgment",
-    "worker": "builder",
+    "owner": "judgment",
+    "coordinator": "judgment",
+    "architect": "advisor",
+    "sme": "judgment",
+    "engineer": "builder",
     "reviewer": "checker",
-    "curiosity": "advisor",
-    "acceptor": "advisor"
+    "qa": "advisor"
   },
-  "_window_note": "2026-08-06 user ruling: auto_compact is 350k on EVERY seat \u2014 one number, no per-seat window tuning. The rule stands: compaction must land at turn boundaries; a role that ROUTINELY nears its window is a scoping defect to split."
+  "_window_note": "2026-08-06 user ruling: auto_compact is 350k on EVERY seat \u2014 one number, no per-seat window tuning. The rule stands: compaction must land at turn boundaries; a role that ROUTINELY nears its window is a scoping defect to split.",
+  "_v8_note": "2026-08-23 v8 role names: coordinator/architect/sme/engineer/reviewer/qa; architect + qa on the advisor (Fable) seat; engineer builder; others judgment."
 }

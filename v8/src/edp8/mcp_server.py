@@ -42,7 +42,7 @@ def _wrap(tool: ToolDef):
 
 
 def _resolve_role(client: BoardClient) -> str:
-    role = os.environ.get("EDP8_ROLE")
+    role = os.environ.get("EDP8_ROLE") or os.environ.get("EDP_ROLE")
     try:
         resp = client.whoami()
         if resp.get("ok"):
@@ -53,7 +53,7 @@ def _resolve_role(client: BoardClient) -> str:
 
 
 def build_server() -> MCPServer:
-    participant = os.environ.get("EDP8_PARTICIPANT")
+    participant = os.environ.get("EDP8_PARTICIPANT") or os.environ.get("EDP_HANDLE")
     board_url = os.environ.get("EDP8_BOARD_URL", "http://127.0.0.1:9400")
     admin_token = os.environ.get("EDP8_ADMIN_TOKEN")
     client = BoardClient(base_url=board_url, participant=participant, admin_token=admin_token)
