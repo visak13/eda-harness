@@ -38,3 +38,30 @@ Each phase ends with its tests green and a commit. Status log below.
 - 2026-08-23 Phase B in progress: consult bridge (Sol PONG live OK, codex resolved under ~/.codex/plugins/.plugin-appserver),
   pool pinned to v8 via EDP_POOL_AGENT_HOME (edp-pool/main.py, one-line opt-in), v8 trust entry in .claude-pool/.claude.json,
   scripts start/stop-board + start/stop-pool, feed driver verified live, MCP stdio verified per role.
+
+## C1 live run — findings (2026-08-23/24, epic-f1b4f138e9 "hello CLI")
+Worked end-to-end with real shells: coordinator → architect (design doc, /ocak, 2 stories, 8 criteria,
+design_signoff gate, caught a `\v` artefact in the words and asked) → engineer (built+tested+committed in ~1 min,
+evidence per criterion) → reviewer (independent re-run, verdicts, done) → adversarial pass → qa. Guards held every
+time someone tried a shortcut (doer verdict, coordinator stamping verdicts). Coordinator escalated to owner via
+/doubt instead of hacking. Architect filed a /learn to sme about the review-story rule.
+
+Fixed during the run (commit 5432b19): `find(query)` arg name; reviewer/qa/owner bundles lacked `criterion_update`;
+coordinator had criteria writes.
+
+To fix next (design/tooling):
+1. Review-type story: doer and `checked_by` role must differ — template rule (architect's /learn) + board guard at
+   criterion_create (refuse checked_by == story's intended doer role) or default checked_by=qa for work_type=review.
+2. One participant per role → parallelism and "who owns what" ambiguity (reviewer assigned S2 while reviewing S1;
+   coordinator parked the reviewer thinking S2 blocked it). Spawn per-ticket participants (`engineer@s-xxx`) or
+   let `spawn` create a participant bound to the ticket.
+3. `blocks` links: the architect must create them at design time; board should refuse `ready` for work_type=review
+   without a blocker, or derive "review story blocks on all sibling stories".
+4. `context()` for qa/reviewer: include tickets with open gates/criteria checked_by my role, not only assignee.
+5. Epic `assignee` is overloaded ("who is waiting") — drop it for epics or define it as "current owner of the gate".
+6. Owner feed: also surface `kind=finding` and `status` notes from the coordinator (it did), but the coordinator
+   should post one status line per state change of the board (it did well).
+7. MCP server loads its registry at start: a bundle fix needs a shell recycle — document in coordinator card.
+8. Shell/MCP observability: tail `%LOCALAPPDATA%\claude-cli-nodejs\Cache\<project>\mcp-logs-edp8` (done ad hoc);
+   consider a board `events` entry per tool call for human watching (cheap).
+- 2026-08-24 C1 DONE: epic-f1b4f138e9 closed (qa ACCEPT 4/4, owner answered acceptance gate). Shells reaped; board (:9400) + pool (:9301) left running (scripts/stop-board.ps1, stop-pool.ps1).
