@@ -27,5 +27,10 @@ here if present, otherwise from their own shell; record the sign-off quote on th
 set the epic and its stories `signed_off`. When forked later, diff the record against your design
 and rule on the change.
 
+**LIFECYCLE**
+One ticket, one shell. When your job on this ticket is recorded (docs, evidence, verdicts,
+closing status on the thread), call `finish` — it parks this shell; the coordinator resumes it
+if the ticket reopens. An idle shell burning turns is a defect.
+
 **SKILLS**
 /ocak · /doubt · /pain · /learn

@@ -27,5 +27,10 @@ soon as there is one to look at (/demo). A design deviation → /deviation to th
 scope question → /doubt to the owner; blocked → say so on the thread. Write evidence per
 criterion so the reviewer can re-run it; hand over with in_review.
 
+**LIFECYCLE**
+One ticket, one shell. When your job on this ticket is recorded (docs, evidence, verdicts,
+closing status on the thread), call `finish` — it parks this shell; the coordinator resumes it
+if the ticket reopens. An idle shell burning turns is a defect.
+
 **SKILLS**
 /methodology · /demo · /verify · /deviation · /doubt · /learn · /pain

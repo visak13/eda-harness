@@ -469,6 +469,10 @@ class ResumeArgs(BaseModel):
     participant_id: str
 
 
+class FinishArgs(BaseModel):
+    note: str = Field(default="", description="one line: what you finished (post it on your ticket thread first)")
+
+
 class ParkArgs(BaseModel):
     participant_id: str
 
@@ -519,6 +523,15 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
     return out
 
 
+def _finish(a: FinishArgs) -> dict[str, Any]:
+    """Stand down: park this shell's own session once the job on its ticket is recorded."""
+    me = os.environ.get("EDP8_PARTICIPANT") or os.environ.get("EDP_HANDLE")
+    if not me:
+        return {"ok": False, "error": {"code": "identity", "message": "no participant identity in env"},
+                "hint": "EDP8_PARTICIPANT/EDP_HANDLE unset; ask the coordinator to park you"}
+    return _pool_call("park", {"participant_id": me})
+
+
 def _resume(a: ResumeArgs) -> dict[str, Any]:
     return _pool_call("resume", a.model_dump())
 
@@ -536,6 +549,9 @@ def _session_query(a: SessionQueryArgs) -> dict[str, Any]:
 
 
 POOL_TOOLS = [
+    ToolDef("finish", "Stand down when your job on the ticket is recorded: parks this shell's own "
+            "session (the coordinator can resume it). Post your closing status on the thread first. "
+            "Returns the pool's park result.", FinishArgs, _finish, "pool"),
     ToolDef("spawn", "Start a new session for a role on a ticket (fan-out). "
             "Returns the session, or unavailable if the pool adapter is not configured.",
             SpawnArgs, _spawn, "pool"),
@@ -678,14 +694,14 @@ ROLE_BUNDLES: dict[str, list[str]] = {
     Role.coordinator.value: _IDENTITY + _TICKET_COORD + _THREAD + _BOARD
         + ["spawn", "resume", "park", "reap", "session_query", "find", "close"],
     Role.architect.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD + _BOARD
-        + ["find", "consult", "artifact_create", "artifact_read"],
-    Role.sme.value: _IDENTITY + _TICKET_RO + _DOC_RW + _THREAD + ["find", "artifact_create", "artifact_read"],
+        + ["find", "consult", "artifact_create", "artifact_read", "finish"],
+    Role.sme.value: _IDENTITY + _TICKET_RO + _DOC_RW + _THREAD + ["find", "artifact_create", "artifact_read", "finish"],
     Role.engineer.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD
-        + ["find", "consult", "artifact_create", "artifact_read", "spawn"],
+        + ["find", "consult", "artifact_create", "artifact_read", "spawn", "finish"],
     Role.reviewer.value: _IDENTITY + _TICKET_RO + _CHECK + _DOC_RW + _THREAD
-        + ["find", "consult", "artifact_create", "artifact_read"],
+        + ["find", "consult", "artifact_create", "artifact_read", "finish"],
     Role.qa.value: _IDENTITY + _TICKET_RO + _CHECK + _DOC_RW + _THREAD + _BOARD
-        + ["find", "consult", "artifact_create", "artifact_read"],
+        + ["find", "consult", "artifact_create", "artifact_read", "finish"],
 }
 
 

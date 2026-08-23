@@ -128,8 +128,9 @@ def sync_sessions(board_url: str | None = None, admin_token: str | None = None) 
         live = liveness(handle)
         state = _STATE_MAP.get((live.get("value") or {}).get("state", s.get("state", "alive")), SessionState.alive)
         try:
+            ticket_id = handle.split(".", 1)[1] if "." in handle else None
             httpx.put(f"{board_url}/v1/sessions/{s.get('session_id')}",
-                      json={"participant_id": handle, "ticket_id": None, "pool_id": POOL_ID, "state": state.value},
+                      json={"participant_id": handle, "ticket_id": ticket_id, "pool_id": POOL_ID, "state": state.value},
                       headers={"X-Admin": admin_token}, timeout=10.0)
             n += 1
         except httpx.HTTPError as e:

@@ -65,3 +65,4 @@ To fix next (design/tooling):
 8. Shell/MCP observability: tail `%LOCALAPPDATA%\claude-cli-nodejs\Cache\<project>\mcp-logs-edp8` (done ad hoc);
    consider a board `events` entry per tool call for human watching (cheap).
 - 2026-08-24 C1 DONE: epic-f1b4f138e9 closed (qa ACCEPT 4/4, owner answered acceptance gate). Shells reaped; board (:9400) + pool (:9301) left running (scripts/stop-board.ps1, stop-pool.ps1).
+- 2026-08-24 C2-bug DONE: epic-b4a241e44f (blank-name fix d07e885) closed qa 3/3 + adversarial clean. Landed mid-run: per-ticket participants, implicit review blocker, coordinator open-epics context, spawner registration, never-reassign-to-checker card rule. LIFECYCLE added: finish self-park tool, coordinator park/reap duties, board pool-watcher (shell_dead/stalled now emitted). Dedupe of double ready-event pending.

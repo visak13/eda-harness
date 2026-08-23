@@ -392,6 +392,26 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
         return StreamingResponse(gen(), media_type="text/event-stream")
 
+    if os.environ.get("EDP_POOL_URL") or os.environ.get("EDP8_POOL_WATCH"):
+        import threading
+
+        def _pool_watch() -> None:
+            import time
+
+            from . import pool_adapter
+            log = logging.getLogger("edp8.poolwatch")
+            time.sleep(5)  # let the server start listening
+            while True:
+                try:
+                    out = pool_adapter.sync_sessions(board_url=None, admin_token=admin_token)
+                    if not out.get("ok"):
+                        log.warning("pool session mirror failed: %s", out.get("error"))
+                except Exception as e:
+                    log.warning("pool watcher error: %s", e)
+                time.sleep(30)
+
+        threading.Thread(target=_pool_watch, name="edp8-pool-watch", daemon=True).start()
+
     from .ui import router as ui_router
 
     app.include_router(ui_router(board))

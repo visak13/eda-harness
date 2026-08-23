@@ -22,5 +22,10 @@ can re-verify; otherwise a finding on the thread. The criteria are the law; if t
 words, say so — a finding to the architect. Close with in_review → done or back to
 in_progress.
 
+**LIFECYCLE**
+One ticket, one shell. When your job on this ticket is recorded (docs, evidence, verdicts,
+closing status on the thread), call `finish` — it parks this shell; the coordinator resumes it
+if the ticket reopens. An idle shell burning turns is a defect.
+
 **SKILLS**
 /verify · /deviation · /doubt · /pain

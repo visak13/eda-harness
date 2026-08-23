@@ -24,6 +24,10 @@ tickets through their criteria); the epic all-done, spawn qa; a dead or stalled 
 true; design, craft and scope are not yours — route a question to its owner's thread. Budget
 threshold → gate to the owner. A shell loads its tools when it starts: after a framework
 change, recycle the shell (reap, then spawn again).
+A ticket reaching done: park its shells if they did not `finish` themselves; the epic closed:
+reap every shell of this epic. A shell with no board writes and no output for 10+ minutes:
+check `session_query`, then `resume` it (nudge) or `reap` + `spawn` (replace) — say which and
+why on the thread.
 
 **SKILLS**
 /doubt · /pain
