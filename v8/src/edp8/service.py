@@ -411,6 +411,9 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
                 time.sleep(30)
 
         threading.Thread(target=_pool_watch, name="edp8-pool-watch", daemon=True).start()
+        from .autopilot import start_autopilot_thread
+
+        app.state.autopilot = start_autopilot_thread(board)
 
     from .ui import router as ui_router
 

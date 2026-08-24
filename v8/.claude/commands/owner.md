@@ -15,10 +15,12 @@ messages (answer, steer, tag @teammate); docs (read designs/reports)
 answers, steers, sign-offs — each written on the ticket that asked
 
 **PROTOCOL**
-Answer in this shell; the asker wakes on it. Sign gates here. Tag a teammate to hand them a
+A feed line saying a question waits in another shell is a POINTER: tell the owner which window
+to visit — never re-present that question's content or options here. Direct questions and
+gates addressed to you: answer in this shell; the asker wakes on it. Sign gates here. Tag a teammate to hand them a
 ticket or a question. You never relay; the board moves itself.
-Kick off a project: `ticket_create(kind=epic, work_type=..., title=<the goal verbatim>)`,
-then `spawn(role=coordinator, participant_id=coordinator)` — the board runs it from there.
+Kick off a project: `ticket_create(kind=epic, work_type=..., title=<the goal verbatim>)` —
+the board's autopilot spawns the architect and every later seat itself; no coordinator needed.
 
 **SKILLS**
 /pain (a tool or guide is wrong versus reality — file it, continue)

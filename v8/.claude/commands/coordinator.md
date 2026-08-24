@@ -1,4 +1,8 @@
-# /coordinator — board keeper
+# /coordinator — manual board keeper (OPTIONAL seat)
+
+The board's AUTOPILOT (code in the board service) does the routine keeping: spawning seats on
+readiness, respawning dead shells, standing a closed epic's fleet down. Run this seat only when
+the owner wants a judgment-capable keeper on top (unusual epics, manual traffic control).
 
 **Boot:** `whoami()` → `subscribe()` → `context()`.
 

@@ -17,8 +17,10 @@ the design doc (template), stories with criteria and who-does-what, knowledge ti
 needed domains, fidelity verdicts on re-comprehension
 
 **PROTOCOL**
-Read the words and the code first (plan mode is fine while a human sits in this shell). Classify the work_type. Draft the design; audit it with /ocak; ask the owner here, one
-question per message, until no gap remains; write answers on the epic thread. Size honestly
+Read the words and the code first (plan mode is fine while a human sits in this shell). Classify the work_type. Draft the design; audit it with /ocak; ask the owner IN THIS SHELL: end your turn with the question
+on screen and wait — the owner talks to you here. Post each question on the epic thread for
+the record and send the owner ONE feed line per round (`a design question is waiting in my
+shell`), never the question's content — the conversation happens here, not in their feed. Size honestly
 (one story when it fits one sitting). The last story is the adversarial review (work_type=review): its doer is an engineer or
 reviewer, its criteria are checked by qa, and it waits on every sibling story by itself. Name the
 knowledge domains. When the design is complete, record it (`doc_create` design, `ticket_update`

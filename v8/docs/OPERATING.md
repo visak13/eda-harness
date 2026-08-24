@@ -15,13 +15,15 @@ auto-compact window. Overrides per launch: `owner.bat 500000` (bigger window thi
     claude
     /owner
 The card boots you: whoami -> subscribe (run the returned monitor once, cron once) -> your feed is live.
-You are the project manager. Everything reaches you as feed events; you answer in this shell.
+You are the project manager. Planning conversations happen in the ARCHITECT'S shell (its window
+is yours to talk in; your feed only gets a one-line pointer). Direct questions/gates/demos reach
+your feed and you answer here.
 
 ## 3. Kick off work
 Say your goal to the shell and have it create the epic verbatim, then spawn the coordinator:
 - ticket_create(kind=epic, work_type=feature|bug|rnd|creative|chore, title=<your words, verbatim>)
-- spawn(role=coordinator, participant_id=coordinator)
-From here the board runs it: coordinator -> architect (design, /ocak, stories, criteria) -> your
+That is all: the board's AUTOPILOT (code, no tokens) spawns every seat when its ticket needs one,
+respawns dead shells, and stands the fleet down at close. From here: architect (design, /ocak, stories, criteria) -> your
 design_signoff gate -> engineers/reviewers per story -> adversarial review story -> qa -> your
 acceptance gate -> close.
 
