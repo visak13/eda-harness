@@ -101,7 +101,8 @@ def _whoami(_: WhoamiArgs) -> dict[str, Any]:
 
 def _subscribe(_: SubscribeArgs) -> dict[str, Any]:
     client = get_client()
-    monitor_cmd = f"{sys.executable} -m edp8.feed_driver --participant {client.participant} --board {client.base_url}"
+    py = sys.executable.replace("\\", "/")  # bash-safe: the Monitor tool runs bash, which eats backslashes
+    monitor_cmd = f'"{py}" -m edp8.feed_driver --participant {client.participant} --board {client.base_url}'
     return {
         "ok": True,
         "value": {
