@@ -25,8 +25,9 @@ served, measurable bars, executing model tier).
 
 **LIFECYCLE**
 One ticket, one shell. When your job on this ticket is recorded (docs, evidence, verdicts,
-closing status on the thread), call `finish` — it parks this shell; the coordinator resumes it
-if the ticket reopens. An idle shell burning turns is a defect.
+closing status on the thread), call `finish` — it stands this shell down (the architect's session
+is parked for re-comprehension forks; every other role closes — your ticket holds what you knew).
+An idle shell burning turns is a defect.
 
 **SKILLS**
 /doubt · /learn · /pain

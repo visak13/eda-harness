@@ -133,7 +133,7 @@ def test_doc_updated_design_doc_comments_with_link(board, mirror, fake_plane):
         mirror.on_event(ev)
 
     comments = [r for r in fake_plane.requests if r[0] == "POST" and "/comments/" in r[1]]
-    assert any(f"doc {doc.id} v1" in c[2]["comment_html"] for c in comments)
+    assert any(f"[edp8:doc] {doc.id} v1" in c[2]["comment_html"] for c in comments)
 
 
 def test_mirror_is_best_effort_on_http_error(board, mirror, fake_plane):
@@ -185,7 +185,7 @@ def test_webhook_ignores_our_own_mirrored_comment(board, mirror, fake_plane):
     payload = {
         "event": "issue_comment",
         "action": "created",
-        "data": {"issue": "issue-1", "comment_html": "[note] from arch: mirrored text"},
+        "data": {"issue": "issue-1", "comment_html": "<p>[edp8:note] from arch: mirrored text</p>"},
     }
     tc.post("/v1/plane/webhook", json=payload)
 

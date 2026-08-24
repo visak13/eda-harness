@@ -90,9 +90,11 @@ def reap(participant_id: str) -> dict[str, Any]:
     return _post(f"/v1/reap/{participant_id}")
 
 
-def finish_self(participant_id: str, idle_secs: float = 20.0) -> dict[str, Any]:
-    """Deferred self-park: a shell cannot be parked mid-turn, so this arms the pool's
-    close_when_idle(park=True) on the shell's own session — the pool parks it once it quiesces."""
+def finish_self(participant_id: str, idle_secs: float = 20.0, park: bool | None = None) -> dict[str, Any]:
+    """Deferred self-stand-down: a shell cannot stop itself mid-turn, so this arms the pool's
+    close_when_idle on its own session. The architect PARKS (its session is the one context worth
+    resuming for re-comprehension forks); every other role CLOSES — its ticket holds everything
+    it knew, and a fresh spawn re-grounds from the record."""
     got = sessions()
     if not got["ok"]:
         return got
@@ -102,10 +104,13 @@ def finish_self(participant_id: str, idle_secs: float = 20.0) -> dict[str, Any]:
     if not sid:
         return _envelope(False, error=f"no active session for {participant_id!r}", code="not_found",
                          hint="already parked or reaped; nothing to do")
-    out = _post(f"/v1/close_when_idle/{sid}", {"park": True, "idle_secs": idle_secs,
+    if park is None:
+        park = participant_id.startswith("architect")
+    out = _post(f"/v1/close_when_idle/{sid}", {"park": bool(park), "idle_secs": idle_secs,
                                                "reason": "finish: job recorded"})
     if out["ok"]:
-        out["hint"] = (f"park armed: the pool parks this shell after {int(idle_secs)}s of quiet — "
+        word = "parks" if park else "closes"
+        out["hint"] = (f"stand-down armed: the pool {word} this shell after {int(idle_secs)}s of quiet — "
                        "end your turn now and stop calling tools")
     return out
 

@@ -13,9 +13,13 @@ Nothing else flows back — Plane never drives status, assignment, or docs.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import html as html_mod
 import json
 import logging
 import os
+import re
 import threading
 import time
 from typing import Any
@@ -169,7 +173,7 @@ class PlaneMirror:
         issue_id = self._map_get(event.subject_id)
         if issue_id:
             kind, frm, text = event.data.get("kind", "note"), event.data.get("from", ""), event.data.get("text", "")
-            self.client.add_comment(issue_id, f"<p>[{kind}] from {frm}: {text}</p>")
+            self.client.add_comment(issue_id, f"<p>[edp8:{kind}] from {html_mod.escape(frm)}: {html_mod.escape(text)}</p>")
 
     def _on_doc_updated(self, event: Event) -> None:
         doc = self.board.store.get("doc", event.subject_id)
@@ -177,12 +181,12 @@ class PlaneMirror:
             return
         issue_id = self._map_get(doc.scope)
         if issue_id:
-            self.client.add_comment(issue_id, f"<p>doc {doc.id} v{doc.version}</p>")
+            self.client.add_comment(issue_id, f"<p>[edp8:doc] {doc.id} v{doc.version}</p>")
 
     def _on_assigned(self, event: Event) -> None:
         issue_id = self._map_get(event.subject_id)
         if issue_id:
-            self.client.add_comment(issue_id, f"<p>assigned to {event.data.get('assignee')}</p>")
+            self.client.add_comment(issue_id, f"<p>[edp8:assigned] {html_mod.escape(str(event.data.get('assignee')))}</p>")
 
     def _map_get(self, ticket_id: str | None) -> str | None:
         return _map_get(self.board, ticket_id)
@@ -253,8 +257,15 @@ def webhook_router(board: Board) -> APIRouter:
 
     @r.post("/v1/plane/webhook")
     async def plane_webhook(req: Request):
-        payload = await req.json()
-        _handle_webhook(board, payload)
+        raw = await req.body()
+        secret = os.environ.get("EDP8_PLANE_WEBHOOK_SECRET", "")
+        if secret:
+            sig = req.headers.get("X-Plane-Signature", "")
+            want = hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(sig, want):
+                return {"ok": False, "error": {"code": "auth", "message": "webhook signature mismatch"},
+                        "hint": "EDP8_PLANE_WEBHOOK_SECRET must match the secret configured on the Plane webhook"}
+        _handle_webhook(board, json.loads(raw or b"{}"))
         return {"ok": True}
 
     return r
@@ -266,8 +277,9 @@ def _handle_webhook(board: Board, payload: dict[str, Any]) -> None:
     if "comment" not in event_type.lower():
         return
     comment_html = data.get("comment_html") or data.get("comment_stripped") or ""
-    if not comment_html or comment_html.strip().startswith("["):
-        return  # empty, or our own mirrored comment ("[kind] from ...")
+    stripped = re.sub(r"<[^>]+>", "", comment_html).strip()
+    if not stripped or stripped.startswith("[edp8:"):
+        return  # empty, or our own mirrored comment — never echo it back as a note
     issue_id = data.get("issue") or data.get("issue_id")
     if not issue_id:
         return
