@@ -27,7 +27,7 @@ $cfg = Join-Path $cfgDir ".claude.json"
 if (Test-Path $cfg) {
   $j = Get-Content $cfg -Raw | ConvertFrom-Json
   if (-not $j.projects) { $j | Add-Member -NotePropertyName projects -NotePropertyValue (New-Object PSObject) }
-  $key = ($v8 -replace '\','/')
+  $key = $v8.Replace('\', '/')
   $entry = [ordered]@{ allowedTools=@(); mcpServers=@{}; hasTrustDialogAccepted=$true; hasCompletedProjectOnboarding=$true; enableAllProjectMcpServers=$true; enabledMcpjsonServers=@("edp8") }
   $j.projects | Add-Member -NotePropertyName $key -NotePropertyValue ([PSCustomObject]$entry) -Force
   $j | ConvertTo-Json -Depth 20 | Set-Content $cfg -Encoding utf8
