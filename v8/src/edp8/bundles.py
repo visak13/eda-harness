@@ -513,9 +513,12 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
             made = c.participant_create("agent", a.role.value, pid, id=pid)
             if not made.get("ok"):
                 return made
-        assigned = c.ticket_update(ticket_id, assignee=pid)
-        if not assigned.get("ok"):
-            return assigned
+        if a.role.value not in ("reviewer", "qa"):
+            # checkers are never the assignee of what they verdict; they find their
+            # tickets through checked_by criteria and open gates, not by assignment
+            assigned = c.ticket_update(ticket_id, assignee=pid)
+            if not assigned.get("ok"):
+                return assigned
     args["participant_id"] = pid
     out = _pool_call("spawn", args)
     if out.get("ok") and isinstance(out.get("value"), dict):
