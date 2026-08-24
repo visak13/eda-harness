@@ -506,13 +506,14 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
         return {"ok": False, "error": {"code": "schema", "message": "spawn needs ticket_id or participant_id"},
                 "hint": "spawn(role=engineer, ticket_id=<story>) registers engineer.<story> and assigns it"}
     c = get_client()
-    if ticket_id and not pid:
+    if not pid:
         pid = f"{a.role.value}.{ticket_id}"
-        got = c.participant_get(pid)
-        if not got.get("ok"):
-            made = c.participant_create("agent", a.role.value, pid, id=pid)
-            if not made.get("ok"):
-                return made
+    got = c.participant_get(pid)
+    if not got.get("ok"):
+        made = c.participant_create("agent", a.role.value, pid, id=pid)
+        if not made.get("ok"):
+            return made
+    if ticket_id:
         if a.role.value not in ("reviewer", "qa"):
             # checkers are never the assignee of what they verdict; they find their
             # tickets through checked_by criteria and open gates, not by assignment
