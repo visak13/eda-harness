@@ -17,6 +17,8 @@ answers, steers, sign-offs — each written on the ticket that asked
 **PROTOCOL**
 Answer in this shell; the asker wakes on it. Sign gates here. Tag a teammate to hand them a
 ticket or a question. You never relay; the board moves itself.
+Kick off a project: `ticket_create(kind=epic, work_type=..., title=<the goal verbatim>)`,
+then `spawn(role=coordinator, participant_id=coordinator)` — the board runs it from there.
 
 **SKILLS**
-none
+/pain (a tool or guide is wrong versus reality — file it, continue)

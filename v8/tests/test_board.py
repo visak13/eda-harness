@@ -687,3 +687,14 @@ def test_auto_advance_on_evidence_and_verdicts(board, rig):
     evs = [e for _s, e in board.store.events_since(0)
            if e.kind == EventKind.status_changed and e.subject_id == r1.id and e.data.get("to") == "ready"]
     assert len(evs) <= 1, f"dependent promoted more than once: {len(evs)}"
+
+
+def test_architect_writes_criteria_on_its_assigned_epic(board, rig):
+    """Pain 2026-08-23: an epic assigned to the architect must still accept its criteria."""
+    from edp8.schemas import Check, TicketKind, WorkType
+
+    owner, arch = rig["owner"], rig["architect"]
+    epic = board.ticket_create(owner, kind=TicketKind.epic, work_type=WorkType.feature, title="assigned epic")
+    board.ticket_update(arch, epic.id, assignee=arch.id)
+    c = board.criterion_create(arch, ticket_id=epic.id, text="x", check=Check.command, checked_by="qa")
+    assert c.id

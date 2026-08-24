@@ -290,3 +290,9 @@ def test_consult_posts_answer_to_thread(raw_client, monkeypatch):
     assert thread["ok"], thread
     texts = [m["text"] for m in thread["value"]]
     assert any("consultant[adversary]:" in t and "looks solid" in t for t in texts)
+
+
+def test_owner_bundle_can_kick_off():
+    from edp8.bundles import ROLE_BUNDLES
+    assert "ticket_create" in ROLE_BUNDLES["owner"], "owner must originate epics (pain 2026-08-24)"
+    assert "spawn" in ROLE_BUNDLES["owner"], "owner must be able to start the coordinator"

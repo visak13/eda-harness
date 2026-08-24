@@ -303,7 +303,10 @@ class Board:
             raise BoardError("scope", "an engineer writes criteria for its tasks only")
         if t.status in (TicketStatus.in_review, TicketStatus.done, TicketStatus.partial, TicketStatus.dropped):
             raise BoardError("transition", f"criteria cannot be added to a {t.status} ticket")
-        if t.assignee == actor.id and t.kind != TicketKind.task:
+        if (t.assignee == actor.id and t.kind != TicketKind.task
+                and not (actor.role == Role.architect and t.kind == TicketKind.epic)):
+            # the architect IS the designer of epics/stories — assignment bookkeeping must not
+            # deadlock criteria authoring (pain 2026-08-23 architect epic deadlock)
             raise BoardError("scope", "the doer of a ticket does not write its criteria")
         if t.work_type == WorkType.review and checked_by == "reviewer":
             raise BoardError("schema", "a review-type ticket is checked by qa (or owner), not by reviewer",

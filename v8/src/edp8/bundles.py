@@ -700,7 +700,8 @@ _THREAD = ["message_send", "message_query", "gate_open", "gate_answer", "gates"]
 _BOARD = ["board", "events_query", "participants"]
 
 ROLE_BUNDLES: dict[str, list[str]] = {
-    Role.owner.value: _IDENTITY + _THREAD + _BOARD + _DOC_RO + _TICKET_RO + _CHECK + ["find"],
+    Role.owner.value: _IDENTITY + _THREAD + _BOARD + _DOC_RO + _TICKET_RO + _CHECK
+        + ["find", "ticket_create", "spawn"],
     Role.coordinator.value: _IDENTITY + _TICKET_COORD + _THREAD + _BOARD
         + ["spawn", "resume", "park", "reap", "session_query", "find", "close"],
     Role.architect.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD + _BOARD
