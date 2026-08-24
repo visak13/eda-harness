@@ -257,10 +257,12 @@ class Board:
     def _after_status(self, t: Ticket) -> None:
         # readiness: any sibling/dependent waiting on this ticket becomes ready when unblocked
         if t.status == TicketStatus.done:
-            deps = [self.store.get("ticket", lk.to_id)  # type: ignore[attr-defined]
-                    for lk in self.store.query("link", {"from_id": t.id, "relation": Relation.blocks})]
+            deps_raw = [self.store.get("ticket", lk.to_id)  # type: ignore[attr-defined]
+                        for lk in self.store.query("link", {"from_id": t.id, "relation": Relation.blocks})]
             if t.kind == TicketKind.story and t.parent_id:
-                deps += [k for k in self.children(t.parent_id) if k.work_type == WorkType.review and k.id != t.id]
+                deps_raw += [k for k in self.children(t.parent_id) if k.work_type == WorkType.review and k.id != t.id]
+            seen: set[str] = set()
+            deps = [d for d in deps_raw if d is not None and not (d.id in seen or seen.add(d.id))]
             for dep in deps:
                 if dep and dep.status == TicketStatus.signed_off:
                     if all(b.status == TicketStatus.done for b in self.blockers(dep.id)):
@@ -332,7 +334,31 @@ class Board:
         self.store.put("criterion", c)
         pending = [x.id for x in self.criteria(t.id) if x.verdict != Verdict.passed]
         self._emit(t.id, EventKind.doc_updated, {"criterion": c.id, "verdict": c.verdict, "pending": pending, "by": actor.id})
+        self._auto_advance(self.ticket(t.id))
         return c
+
+    def _auto_advance(self, t: Ticket) -> None:
+        """The board walks a ticket whose facts are already in: evidence on every criterion
+        advances ready/in_progress -> in_review; every verdict passed advances in_review -> done
+        (the substantive done-guards still apply). Removes the doer/coordinator status-walk
+        handshake — a finish before the flip no longer strands the ticket."""
+        crits = self.criteria(t.id)
+        if not crits:
+            return
+        if t.status in (TicketStatus.ready, TicketStatus.in_progress) and all(c.evidence_ref for c in crits):
+            frm = t.status
+            t.status = TicketStatus.in_review
+            self.store.put("ticket", t)
+            self._emit(t.id, EventKind.status_changed, {"from": frm, "to": "in_review", "by": "board",
+                                                        "note": "auto: evidence complete"})
+        if t.status == TicketStatus.in_review and all(c.verdict == Verdict.passed for c in crits):
+            if t.kind == TicketKind.epic and not any(c.checked_by == "qa" for c in crits):
+                return
+            t.status = TicketStatus.done
+            self.store.put("ticket", t)
+            self._emit(t.id, EventKind.status_changed, {"from": "in_review", "to": "done", "by": "board",
+                                                        "note": "auto: all verdicts passed"})
+            self._after_status(t)
 
     # ------------------------------------------------------------------ docs / links
     def doc_create(self, actor: Participant, *, doc_type: DocType, title: str, body_md: str, scope: str) -> Doc:

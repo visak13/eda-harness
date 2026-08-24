@@ -658,3 +658,32 @@ def test_gate_answered_reaches_the_gate_opener(board, rig):
     assert board.relevant(ev, arch), "the story-creating architect must receive the gate answer"
     thread_note = [e for s, e in board.store.events_since(0) if e.kind == EventKind.message_sent][-1]
     assert board.relevant(thread_note, arch), "thread notes on the epic reach subtree participants"
+
+
+def test_auto_advance_on_evidence_and_verdicts(board, rig):
+    """Evidence on every criterion walks ready/in_progress -> in_review by the board; the last
+    passing verdict walks in_review -> done and releases dependents exactly once."""
+    from edp8.schemas import Check, DocType, EventKind, TicketKind, TicketStatus, WorkType
+
+    owner, arch, eng, rev = rig["owner"], rig["architect"], rig["engineer"], rig["reviewer"]
+    epic = board.ticket_create(owner, kind=TicketKind.epic, work_type=WorkType.feature, title="auto adv epic")
+    s1 = board.ticket_create(arch, kind=TicketKind.story, work_type=WorkType.feature, title="s1", parent_id=epic.id)
+    r1 = board.ticket_create(arch, kind=TicketKind.story, work_type=WorkType.review, title="rev", parent_id=epic.id)
+    c1 = board.criterion_create(arch, ticket_id=s1.id, text="x", check=Check.command, checked_by="reviewer")
+    board.criterion_create(arch, ticket_id=r1.id, text="y", check=Check.verdict, checked_by="qa")
+    board.ticket_update(arch, s1.id, assignee=eng.id)
+    # walk sign-off legally
+    d = board.doc_create(arch, doc_type=DocType.design, title="d", body_md="b", scope=epic.id)
+    board.ticket_update(arch, s1.id, design_ref=d.id)
+    board.ticket_update(arch, s1.id, status=TicketStatus.designed)
+    board.ticket_update(owner, s1.id, status=TicketStatus.signed_off)  # auto-promotes to ready
+    assert board.ticket(s1.id).status == TicketStatus.ready
+    rep = board.doc_create(rig["engineer"], doc_type=DocType.report, title="ev", body_md="ran", scope=epic.id)
+    board.criterion_update(eng, c1.id, evidence_ref=rep.id)
+    assert board.ticket(s1.id).status == TicketStatus.in_review, "evidence complete must auto-advance to in_review"
+    board.criterion_update(rev, c1.id, verdict="pass")
+    assert board.ticket(s1.id).status == TicketStatus.done, "all verdicts passed must auto-advance to done"
+    # dependent review story released exactly once
+    evs = [e for _s, e in board.store.events_since(0)
+           if e.kind == EventKind.status_changed and e.subject_id == r1.id and e.data.get("to") == "ready"]
+    assert len(evs) <= 1, f"dependent promoted more than once: {len(evs)}"

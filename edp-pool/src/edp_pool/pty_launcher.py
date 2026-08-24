@@ -518,6 +518,10 @@ def build_env(session_id: str, role: str, handle: str,
     # on resume). Updates then happen only when the USER updates their own
     # foreground install; the pre-spawn health check catches any residue.
     env["DISABLE_AUTOUPDATER"] = "1"
+    # 2026-08-24 (v8): spawned conhost windows rendered monochrome — force ANSI color so a
+    # pool shell looks like a normal Claude Code shell. Pre-set overrides win.
+    env.setdefault("FORCE_COLOR", "1")
+    env.setdefault("CLICOLOR_FORCE", "1")
     # W15 (DESIGN-v6): config-dir pin. Claude Code reads/writes its whole
     # user store (skills, memory, settings) from CLAUDE_CONFIG_DIR,
     # defaulting to ~/.claude. Left inherited, a headless pool spawn would
