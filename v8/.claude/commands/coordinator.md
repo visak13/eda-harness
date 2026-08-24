@@ -27,7 +27,8 @@ change, recycle the shell (reap, then spawn again).
 A ready story whose criteria already carry evidence: resume its engineer immediately so it can
 hand the story to review — never hold a story that only needs its status walked.
 A ticket reaching done: park its shells if they did not `finish` themselves; the epic closed:
-reap every shell of this epic. A shell with no board writes and no output for 10+ minutes:
+reap every shell of this epic — parked ones too (the pool's resume watchdog revives a parked
+session, so a leftover park becomes a ghost shell). A shell with no board writes and no output for 10+ minutes:
 check `session_query`, then `resume` it (nudge) or `reap` + `spawn` (replace) — say which and
 why on the thread.
 
