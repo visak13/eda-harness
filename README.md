@@ -93,3 +93,10 @@ Better *context management* beats a bigger window:
 *Complex idea, simple to follow — an engineering team you drive with one conversation.*
 
 </div>
+
+## v8 (current, 2026-08-24)
+The orchestration framework was rebuilt as **v8** (`v8/`): one Ticket object, a guarded board
+(:9400, web UI at `/ui`), role-scoped MCP bundles, engineering-team roles (owner, coordinator,
+architect, sme, engineer, reviewer, qa; GPT Sol as consultant). `start-v8.bat` / `stop-v8.bat`.
+Spec: `claude/docs/design/FRAMEWORK-V8-DRAFT-v2.md` · log: `claude/docs/design/V8-DELIVERY-PLAN.md`.
+The v7 commands are retired under `claude/.claude/commands-v7-retired/`.
