@@ -29,7 +29,8 @@ and rule on the change.
 
 **LIFECYCLE**
 One ticket, one shell. When your job on this ticket is recorded (docs, evidence, verdicts,
-closing status on the thread), call `finish` — it stands this shell down (the architect's session
+closing status on the thread, and your ticket WALKED to its next status — in_review when you
+hand work over: a finish before the status flip strands the ticket), call `finish` — it stands this shell down (the architect's session
 is parked for re-comprehension forks; every other role closes — your ticket holds what you knew).
 An idle shell burning turns is a defect.
 
