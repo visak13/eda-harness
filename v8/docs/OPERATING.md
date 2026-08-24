@@ -5,6 +5,9 @@
 - `stop-v8.bat` — tears both down. Docker is NOT required for local use.
 
 ## 2. Your entrypoint: the owner shell
+
+One command does everything: **`owner.bat`** (repo root) — starts board + pool if needed and
+drops you into your owner shell. The manual steps below are what it does:
     cd v8
     set EDP_HANDLE=owner
     claude
