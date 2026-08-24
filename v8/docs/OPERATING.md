@@ -7,7 +7,9 @@
 ## 2. Your entrypoint: the owner shell
 
 One command does everything: **`owner.bat`** (repo root) — starts board + pool if needed and
-drops you into your owner shell. The manual steps below are what it does:
+drops you into your owner shell pinned to the fleet standard: model claude-opus-4-8, 350k
+auto-compact window. Overrides per launch: `owner.bat 500000` (bigger window this session),
+`owner.bat 350000 <model-id>` (model too); env EDP8_ACW / EDP8_OWNER_MODEL also work. The manual steps below are what it does:
     cd v8
     set EDP_HANDLE=owner
     claude
