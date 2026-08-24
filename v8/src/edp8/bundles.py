@@ -514,9 +514,15 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
         if not made.get("ok"):
             return made
     if ticket_id:
-        if a.role.value not in ("reviewer", "qa"):
-            # checkers are never the assignee of what they verdict; they find their
-            # tickets through checked_by criteria and open gates, not by assignment
+        # A checker is never assigned a ticket whose criteria it checks (the doer guard would
+        # block its verdicts). But a checker CAN be the doer of a ticket checked by someone
+        # else — e.g. a reviewer doing a review-type story whose criteria are checked by qa.
+        assign = True
+        if a.role.value in ("reviewer", "qa"):
+            crits = c.criterion_query(ticket_id)
+            rows = crits.get("value") or []
+            assign = bool(rows) and all(x.get("checked_by") != a.role.value for x in rows)
+        if assign:
             assigned = c.ticket_update(ticket_id, assignee=pid)
             if not assigned.get("ok"):
                 return assigned
