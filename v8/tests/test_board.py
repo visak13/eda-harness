@@ -642,3 +642,19 @@ def test_doc_update_bumps_version_old_readable(board, rig):
     old = board.doc(d.id, version=1)
     assert old.body_md == "body v1"
     assert old.title == "v1"
+
+
+def test_gate_answered_reaches_the_gate_opener(board, participants):
+    """The architect creates stories under an epic it neither owns nor is assigned to; when the
+    owner answers the design_signoff gate, the architect must be woken (C2-rnd regression)."""
+    from edp8.schemas import EventKind, Gate, TicketKind, WorkType
+
+    owner, arch = participants["owner"], participants["architect"]
+    epic = board.ticket_create(owner, kind=TicketKind.epic, work_type=WorkType.feature, title="gate wake epic")
+    board.ticket_create(arch, kind=TicketKind.story, work_type=WorkType.feature, title="s", parent_id=epic.id)
+    board.gate_open(epic.id, Gate.design_signoff, by=arch.id)
+    ev = board.gate_answer(owner, epic.id, Gate.design_signoff, "signed")
+    assert ev.kind == EventKind.gate_answered
+    assert board.relevant(ev, arch), "the story-creating architect must receive the gate answer"
+    thread_note = [e for s, e in board.store.events_since(0) if e.kind == EventKind.message_sent][-1]
+    assert board.relevant(thread_note, arch), "thread notes on the epic reach subtree participants"

@@ -578,12 +578,12 @@ class Board:
             if to in (p.id, p.role.value):
                 return True
             if to is None:
-                return self._on_ticket(p, ev.subject_id)
+                return self._in_subtree(p, ev.subject_id)
             return False
         if ev.kind == EventKind.gate_opened:
-            return p.role in HUMAN_GATE_ANSWERERS or self._on_ticket(p, ev.subject_id)
+            return p.role in HUMAN_GATE_ANSWERERS or self._in_subtree(p, ev.subject_id)
         if ev.kind == EventKind.gate_answered:
-            return self._on_ticket(p, ev.subject_id)
+            return d.get("by") == p.id or self._in_subtree(p, ev.subject_id)
         if ev.kind in (EventKind.shell_dead, EventKind.shell_stalled):
             return p.role == Role.coordinator or self._on_ticket(p, ev.subject_id, parents=True)
         if ev.kind in (EventKind.status_changed, EventKind.ticket_created, EventKind.assigned):
@@ -594,6 +594,19 @@ class Board:
             return self._on_ticket(p, ev.subject_id, parents=True)
         if ev.kind == EventKind.doc_updated:
             return self._on_ticket(p, ev.subject_id, parents=True) if self.store.get("ticket", ev.subject_id) else False
+        return False
+
+    def _in_subtree(self, p: Participant, ticket_id: str) -> bool:
+        """Involved anywhere in this ticket's epic tree: assignee or creator of the ticket, any
+        ancestor, or any ticket in the same epic's subtree. Gate/thread events reach everyone
+        who worked the epic — a gate answer must wake the seat that opened the gate."""
+        t = self.store.get("ticket", ticket_id)
+        if t is None:
+            return False
+        epic = self.epic_of(t)  # type: ignore[arg-type]
+        for x in (epic, *self._descendants(epic.id)):
+            if x.assignee == p.id or x.created_by == p.id:
+                return True
         return False
 
     def _on_ticket(self, p: Participant, ticket_id: str, parents: bool = False) -> bool:
