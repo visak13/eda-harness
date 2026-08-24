@@ -90,6 +90,26 @@ def reap(participant_id: str) -> dict[str, Any]:
     return _post(f"/v1/reap/{participant_id}")
 
 
+def finish_self(participant_id: str, idle_secs: float = 20.0) -> dict[str, Any]:
+    """Deferred self-park: a shell cannot be parked mid-turn, so this arms the pool's
+    close_when_idle(park=True) on the shell's own session — the pool parks it once it quiesces."""
+    got = sessions()
+    if not got["ok"]:
+        return got
+    rows = got["value"] if isinstance(got["value"], list) else got["value"].get("sessions", [])
+    sid = next((s.get("session_id") for s in rows
+                if s.get("handle") == participant_id and s.get("state") in ("active", "alive")), None)
+    if not sid:
+        return _envelope(False, error=f"no active session for {participant_id!r}", code="not_found",
+                         hint="already parked or reaped; nothing to do")
+    out = _post(f"/v1/close_when_idle/{sid}", {"park": True, "idle_secs": idle_secs,
+                                               "reason": "finish: job recorded"})
+    if out["ok"]:
+        out["hint"] = (f"park armed: the pool parks this shell after {int(idle_secs)}s of quiet — "
+                       "end your turn now and stop calling tools")
+    return out
+
+
 def sessions() -> dict[str, Any]:
     """All pool sessions: [{session_id, role, handle, parent, state}]."""
     return _get("/v1/sessions")

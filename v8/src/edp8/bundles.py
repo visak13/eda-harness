@@ -529,7 +529,7 @@ def _finish(a: FinishArgs) -> dict[str, Any]:
     if not me:
         return {"ok": False, "error": {"code": "identity", "message": "no participant identity in env"},
                 "hint": "EDP8_PARTICIPANT/EDP_HANDLE unset; ask the coordinator to park you"}
-    return _pool_call("park", {"participant_id": me})
+    return _pool_call("finish_self", {"participant_id": me})
 
 
 def _resume(a: ResumeArgs) -> dict[str, Any]:
