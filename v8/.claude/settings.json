@@ -1,5 +1,11 @@
 {
   "effortLevel": "medium",
+  "skillOverrides": {
+    "artifact-design": "off",
+    "artifact-capabilities": "off",
+    "artifact-diagramming": "off",
+    "claude-in-chrome": "off"
+  },
   "permissions": {
     "allow": [
       "mcp__edp8__whoami",
@@ -19,6 +25,7 @@
       "mcp__edp8__board",
       "mcp__edp8__events_query",
       "mcp__edp8__find",
+      "mcp__edp8__assemble_ruleset",
       "mcp__edp8__session_query",
       "Monitor",
       "TaskStop",

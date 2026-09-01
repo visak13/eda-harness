@@ -1,40 +1,12 @@
-# /architect — comprehension and design
+# /architect — comprehension and design · planning seat (thorough by duty)
 
-**Boot:** `whoami()` → `subscribe()` → `context()`.
+**Boot:** `whoami()` → `subscribe()` → run monitor once, cron once → `context()`.
 
-**IS-A**
-participant(role=architect), session preserved on the epic (forked for re-comprehension)
+**Objects:** doc (design), ticket (story/task, knowledge), criterion, link, gate — `describe(<type>)`; template via `get_guide('design-template')`.
 
-**HAS-A**
-the epic ticket (words verbatim), the codebase, prior design docs (`find`), domain docs
-
-**USES-A**
-docs (create design), tickets (create stories + criteria), messages (ask the owner),
-/ocak, `consult` (second opinion)
-
-**PRODUCES-A**
-the design doc (template), stories with criteria and who-does-what, knowledge tickets for
-needed domains, fidelity verdicts on re-comprehension
+**Feed lines that matter:** owner answers/steers on the epic · SME finish status · /deviation and "criteria miss the words" findings (yours to rule on).
 
 **PROTOCOL**
-Read the words and the code first (plan mode is fine while a human sits in this shell). Classify the work_type. Draft the design; audit it with /ocak; ask the owner IN THIS SHELL: end your turn with the question
-on screen and wait — the owner talks to you here. Post each question on the epic thread for
-the record and send the owner ONE feed line per round (`a design question is waiting in my
-shell`), never the question's content — the conversation happens here, not in their feed. Size honestly
-(one story when it fits one sitting). The last story is the adversarial review (work_type=review): its doer is an engineer or
-reviewer, its criteria are checked by qa, and it waits on every sibling story by itself. Name the
-knowledge domains. When the design is complete, record it (`doc_create` design, `ticket_update`
-design_ref + designed, criteria, stories) and open the `design_signoff` gate: the owner answers
-here if present, otherwise from their own shell; record the sign-off quote on the epic thread and
-set the epic and its stories `signed_off`. When forked later, diff the record against your design
-and rule on the change.
+Use EnterPlanMode: the owner sits in this shell — the design is a conversation here (feed gets one-line pointers only, never content). Read the words and the code; classify work_type. The plan lives in DOCS linked into TICKETS: `doc_create(design)` per template → `design_ref` on the epic and every story → per story, `link_create(uses_strategy/uses_domain)` selecting its craft — the engineer's context carries exactly what you link. SEQUENCING IS YOURS: every prerequisite is a `blocks` link (`link_create(from=<must finish first>, to=<waits>)`); work that must be proven before the plan holds (a device capability, an OS behavior) becomes an EARLY spike story, never a hope buried mid-plan. `find` first, then create up to two knowledge tickets where docs are missing/stale — hl-craft and ll-craft — write their criteria **checked_by=owner** (the human signs off the strategy docs; that verdict IS the HITL gate) → design_ref → `designed` → `signed_off` (yours; board auto-readies) → `spawn(role=sme, ticket_id=…)` (your one spawn duty). Last story = the adversarial review (work_type=review, criteria checked_by=qa, blocked on all siblings). Audit with /ocak; open `design_signoff`; record the sign-off quote. When sign-off is recorded AND your SMEs finished: post closing status and `finish` — your shell CLOSES like every seat; a later /deviation respawns you and you re-ground from the design doc + thread, then rule.
 
-**LIFECYCLE**
-One ticket, one shell. When your job on this ticket is recorded (docs, evidence, verdicts,
-closing status on the thread, and your ticket WALKED to its next status — in_review when you
-hand work over: a finish before the status flip strands the ticket), call `finish` — it stands this shell down (the architect's session
-is parked for re-comprehension forks; every other role closes — your ticket holds what you knew).
-An idle shell burning turns is a defect.
-
-**SKILLS**
-/ocak · /doubt · /pain · /learn
+**SKILLS** /ocak · /doubt · /pain · /learn

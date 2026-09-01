@@ -9,7 +9,7 @@
       "auto_compact": 350000
     },
     "advisor": {
-      "model": "claude-fable-5",
+      "model": "claude-fable-5-1",
       "effort": "medium",
       "context_window": 1000000,
       "auto_compact": 350000,
@@ -32,13 +32,13 @@
   },
   "roles": {
     "owner": "judgment",
-    "coordinator": "judgment",
     "architect": "advisor",
     "sme": "judgment",
     "engineer": "builder",
     "reviewer": "checker",
+    "adversary": "checker",
     "qa": "advisor"
   },
   "_window_note": "2026-08-06 user ruling: auto_compact is 350k on EVERY seat \u2014 one number, no per-seat window tuning. The rule stands: compaction must land at turn boundaries; a role that ROUTINELY nears its window is a scoping defect to split.",
-  "_v8_note": "2026-08-23 v8 role names: coordinator/architect/sme/engineer/reviewer/qa; architect + qa on the advisor (Fable) seat; engineer builder; others judgment."
+  "_v8_note": "2026-08-27 v8 role names: architect/sme/engineer/reviewer/adversary/qa (coordinator retired — the owner shell orchestrates); architect + qa on the advisor (Fable) seat; engineer builder; reviewer + adversary checker; others judgment."
 }
