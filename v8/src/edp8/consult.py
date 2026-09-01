@@ -47,10 +47,12 @@ _PREAMBLES: dict[str, str] = {
     "second_opinion": "give an independent read; disagree where warranted.",
     "build": (
         "you are a senior implementation agent working directly in the "
-        "workspace: make the requested changes in place, keep the code style "
-        "of the files you touch, and do not break existing behavior. End your "
-        "reply with the list of every file you created or edited and one line "
-        "on why."
+        "workspace, and you OWN THE OUTCOME, not just the checklist: the "
+        "stated constraints are the floor — the quality bar is your own, and "
+        "'technically satisfies the instructions' is a failure if the result "
+        "is lifeless. Keep the code style of the files you touch and do not "
+        "break existing behavior. End your reply with the list of every file "
+        "you created or edited and one line on why."
     ),
 }
 
@@ -59,7 +61,11 @@ _MODEL_ENV = "EDP8_SOL_MODEL"
 _LOG_DIR_ENV = "EDP8_SOL_LOG_DIR"
 _DEFAULT_BIN = "codex"
 _DEFAULT_MODEL = "gpt-5.6-sol"  # matches claude/.bridge.json's "sol" delegate
-_DEFAULT_EFFORT = "medium"
+# Reasoning effort by purpose (owner finding 2026-09-02: creative/build work at medium
+# effort came out flat — screenshots pasted where the human's own high-effort prompts
+# had produced crafted, animated work. Advice stays medium; CRAFT runs high.)
+_EFFORT_BY_PURPOSE = {"adversary": "medium", "second_opinion": "medium",
+                      "creative": "high", "visual": "high", "build": "high"}
 
 
 def _log_dir() -> Path:
@@ -158,7 +164,8 @@ def consult(purpose: Purpose, question: str, context: str = "",
     last_msg = log_dir / f".last-message-{run_id}.txt"
 
     argv = _build_argv(codex, prompt=prompt, workdir=write_dir or os.getcwd(),
-                        last_message_file=str(last_msg), model=model, effort=_DEFAULT_EFFORT,
+                        last_message_file=str(last_msg), model=model,
+                        effort=_EFFORT_BY_PURPOSE.get(purpose, "medium"),
                         sandbox="workspace-write" if write_dir else "read-only")
 
     start = time.monotonic()

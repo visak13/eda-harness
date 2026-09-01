@@ -749,9 +749,13 @@ CONSULT_TOOLS = [
             "opinion, or (with write_dir) actual DELIVERY: Sol writes assets into the directory or edits files "
             "in place. Sol cannot return images inline — hand it a write_dir instead. For substantial creative "
             "or build work, consult TWICE: round 1 without write_dir to agree a plan, round 2 passing that plan "
-            "back with write_dir to build it — never one-shot a large build. If ticket_id is given, the answer "
-            "is also posted as a note to that ticket's thread. Returns the answer (with run log), or "
-            "unavailable/timeout/exit on failure.",
+            "back with write_dir to build it — never one-shot a large build. HOW TO BRIEF SOL (this determines "
+            "output quality): state the GOAL, the audience, the quality bar, and reference work to match — then "
+            "stop. Do NOT script its steps or bury it in mechanical constraints; a checklist-shaped brief gets a "
+            "checklist-shaped (janky) result, while goal+references+ownership gets craft. Put unavoidable "
+            "mechanics (paths, forbidden commands) in a short final CONSTRAINTS block, never as the body. "
+            "If ticket_id is given, the answer is also posted as a note to that ticket's thread. Returns the "
+            "answer (with run log), or unavailable/timeout/exit on failure.",
             ConsultArgs, _consult, "consult"),
 ]
 
