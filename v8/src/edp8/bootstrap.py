@@ -9,11 +9,11 @@ import httpx
 
 DEFAULTS = [
     ("owner", "owner", "human"),
-    ("coordinator", "coordinator", "agent"),
     ("architect", "architect", "agent"),
     ("sme", "sme", "agent"),
     ("engineer", "engineer", "agent"),
     ("reviewer", "reviewer", "agent"),
+    ("adversary", "adversary", "agent"),
     ("qa", "qa", "agent"),
 ]
 

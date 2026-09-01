@@ -23,7 +23,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Literal
 
-Purpose = Literal["adversary", "creative", "visual", "second_opinion"]
+Purpose = Literal["adversary", "creative", "visual", "second_opinion", "build"]
 
 #: Short system preambles selected by purpose (user directive, this task).
 _PREAMBLES: dict[str, str] = {
@@ -34,13 +34,24 @@ _PREAMBLES: dict[str, str] = {
     ),
     "creative": (
         "you are the visual/creative authority: judge or specify look against "
-        "the references; give measurable bars."
+        "the references; give measurable bars. When a writable workspace is "
+        "given, deliver files (SVG/CSS/code) directly into it — never describe "
+        "an asset you could produce."
     ),
     "visual": (
         "you are the visual/creative authority: judge or specify look against "
-        "the references; give measurable bars."
+        "the references; give measurable bars. When a writable workspace is "
+        "given, deliver files (SVG/CSS/code) directly into it — never describe "
+        "an asset you could produce."
     ),
     "second_opinion": "give an independent read; disagree where warranted.",
+    "build": (
+        "you are a senior implementation agent working directly in the "
+        "workspace: make the requested changes in place, keep the code style "
+        "of the files you touch, and do not break existing behavior. End your "
+        "reply with the list of every file you created or edited and one line "
+        "on why."
+    ),
 }
 
 _BIN_ENV = "EDP8_CODEX_BIN"
@@ -82,12 +93,13 @@ def _resolve_bin() -> str:
 
 
 def _build_argv(codex: str, *, prompt: str, workdir: str, last_message_file: str,
-                 model: str, effort: str) -> list[str]:
+                 model: str, effort: str, sandbox: str = "read-only") -> list[str]:
     """`codex exec <globals> -- <prompt>`. Globals precede the subcommand; the
     prompt is the LAST positional behind `--` so a leading '-' is never parsed
-    as a flag. Sandbox is always read-only — consult() never authors files."""
+    as a flag. Sandbox: read-only for advice; workspace-write when the caller
+    hands Sol a directory to deliver into or edit in place."""
     argv = [codex, "exec", "--skip-git-repo-check",
-            "-C", workdir, "-s", "read-only", "--json", "--color", "never",
+            "-C", workdir, "-s", sandbox, "--json", "--color", "never",
             "-o", last_message_file]
     if model:
         argv += ["-m", model]
@@ -106,14 +118,24 @@ def _last_nonempty_line(text: str) -> str:
 
 
 def consult(purpose: Purpose, question: str, context: str = "",
-            files: list[str] | None = None, timeout_s: int = 600) -> dict[str, Any]:
+            files: list[str] | None = None, timeout_s: int = 600,
+            write_dir: str | None = None) -> dict[str, Any]:
     """Ask Sol one question and return the standard envelope. Never retries,
     never glosses a failure as a quota cap — `error.message` is always the
-    real last output line from the codex process."""
+    real last output line from the codex process.
+
+    `write_dir` unlocks delivery: Sol runs sandboxed to that directory with
+    write access and can create assets or edit files in place. The proven
+    shape for substantial work is TWO rounds: first no write_dir (get a plan),
+    then pass the agreed plan back WITH write_dir (let Sol build it)."""
     if purpose not in _PREAMBLES:
         return {"ok": False,
                 "error": {"code": "exit", "message": f"unknown purpose {purpose!r}"},
                 "hint": f"purpose must be one of {sorted(_PREAMBLES)}"}
+    if write_dir and not Path(write_dir).is_dir():
+        return {"ok": False,
+                "error": {"code": "exit", "message": f"write_dir {write_dir!r} is not a directory"},
+                "hint": "create it first, or pass the directory that holds the files to edit"}
 
     parts = [_PREAMBLES[purpose], "", (question or "").strip()]
     if context.strip():
@@ -121,6 +143,9 @@ def consult(purpose: Purpose, question: str, context: str = "",
     if files:
         parts += ["", "Relevant files (read them from the working tree):"]
         parts += [f"- {f}" for f in files]
+    if write_dir:
+        parts += ["", f"You have WRITE access to {write_dir} (and only there): deliver files "
+                      f"into it or edit in place as asked."]
     prompt = "\n".join(parts)
 
     codex = _resolve_bin()
@@ -132,8 +157,9 @@ def consult(purpose: Purpose, question: str, context: str = "",
     log_path = log_dir / f"{run_id}.jsonl"
     last_msg = log_dir / f".last-message-{run_id}.txt"
 
-    argv = _build_argv(codex, prompt=prompt, workdir=os.getcwd(),
-                        last_message_file=str(last_msg), model=model, effort=_DEFAULT_EFFORT)
+    argv = _build_argv(codex, prompt=prompt, workdir=write_dir or os.getcwd(),
+                        last_message_file=str(last_msg), model=model, effort=_DEFAULT_EFFORT,
+                        sandbox="workspace-write" if write_dir else "read-only")
 
     start = time.monotonic()
     try:

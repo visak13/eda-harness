@@ -32,6 +32,9 @@ class BoardClient:
         h: dict[str, str] = {}
         if self.participant:
             h["X-Participant"] = self.participant
+        token = os.environ.get("EDP8_TOKEN")
+        if token:  # human identities on a board with tokens.json need their secret
+            h["X-Token"] = token
         if admin and self.admin_token:
             h["X-Admin"] = self.admin_token
         return h
@@ -105,8 +108,9 @@ class BoardClient:
         return self._request("GET", "/v1/criteria", params={"ticket_id": ticket_id})
 
     def criterion_update(self, id_: str, evidence_ref: str | None = None,
-                         verdict: str | None = None) -> dict[str, Any]:
-        return self._request("PATCH", f"/v1/criteria/{id_}", json={"evidence_ref": evidence_ref, "verdict": verdict})
+                         verdict: str | None = None, text: str | None = None) -> dict[str, Any]:
+        return self._request("PATCH", f"/v1/criteria/{id_}",
+                             json={"evidence_ref": evidence_ref, "verdict": verdict, "text": text})
 
     # ------------------------------------------------------------------ docs / links / artifacts
     def doc_create(self, doc_type: str, title: str, body_md: str, scope: str) -> dict[str, Any]:
@@ -174,10 +178,10 @@ class BoardClient:
 
     # ------------------------------------------------------------------ sessions (pool, admin)
     def session_upsert(self, id_: str, participant_id: str, pool_id: str, state: str,
-                       ticket_id: str | None = None, resume_token: str = "") -> dict[str, Any]:
+                       ticket_id: str | None = None, resume_token: str = "", reason: str = "") -> dict[str, Any]:
         return self._request("PUT", f"/v1/sessions/{id_}", admin=True,
                              json={"participant_id": participant_id, "ticket_id": ticket_id, "pool_id": pool_id,
-                                   "state": state, "resume_token": resume_token})
+                                   "state": state, "resume_token": resume_token, "reason": reason})
 
     def session_query(self, participant_id: str | None = None, ticket_id: str | None = None,
                       state: str | None = None) -> dict[str, Any]:

@@ -18,11 +18,12 @@ from pydantic import BaseModel, Field
 
 class Role(StrEnum):
     owner = "owner"
-    coordinator = "coordinator"
+    coordinator = "coordinator"  # retired seat (kept for old records); the owner shell orchestrates
     architect = "architect"
     sme = "sme"
     engineer = "engineer"
     reviewer = "reviewer"
+    adversary = "adversary"
     qa = "qa"
     consultant = "consultant"
 
@@ -85,6 +86,7 @@ class Relation(StrEnum):
     evidence_for = "evidence_for"
     blocks = "blocks"
     produced = "produced"
+    extends = "extends"  # doc -> doc layering: assemble_ruleset composes the chain universal-first
 
 
 class MessageKind(StrEnum):
@@ -218,6 +220,7 @@ class Session(Obj):
     state: SessionState = SessionState.alive
     resume_token: str = ""
     last_output_at: datetime | None = None
+    reason: str = ""  # why the shell ended (finish/reaped/clean exit/process gone) — "" while alive
 
 
 OBJECT_TYPES: dict[str, type[Obj]] = {
@@ -270,7 +273,7 @@ DOC_AUTHORS: dict[DocType, set[Role]] = {
     DocType.strategy_hl: {Role.sme},
     DocType.strategy_ll: {Role.sme},
     DocType.domain: {Role.sme},
-    DocType.report: {Role.engineer, Role.reviewer, Role.qa},
+    DocType.report: {Role.engineer, Role.reviewer, Role.adversary, Role.qa},
     DocType.note: set(Role),
 }
 

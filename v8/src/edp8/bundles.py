@@ -103,6 +103,9 @@ def _subscribe(_: SubscribeArgs) -> dict[str, Any]:
     client = get_client()
     py = sys.executable.replace("\\", "/")  # bash-safe: the Monitor tool runs bash, which eats backslashes
     monitor_cmd = f'"{py}" -m edp8.feed_driver --participant {client.participant} --board {client.base_url}'
+    broker = os.environ.get("EDP_BROKER_URL")
+    if broker:
+        monitor_cmd += f" --broker {broker}"
     return {
         "ok": True,
         "value": {
@@ -112,7 +115,8 @@ def _subscribe(_: SubscribeArgs) -> dict[str, Any]:
                 "prompt": "edp8 heartbeat: call context() and act only if something is new; if nothing, end the turn silently",
             },
         },
-        "hint": "run monitor_cmd under the Monitor tool once; CronCreate the cron once",
+        "hint": "run monitor_cmd under the Monitor tool once (your event+message wake plane); "
+                "CronCreate the cron once (the fallback if a wake is missed)",
     }
 
 
@@ -196,9 +200,11 @@ class CriterionQueryArgs(BaseModel):
 
 
 class CriterionUpdateArgs(BaseModel):
+    model_config = {"extra": "forbid"}  # an unknown kwarg is an ERROR, never a silent drop
     id: str = Field(description="criterion id")
     evidence_ref: str | None = Field(default=None, description="doc id (a report) proving the check")
     verdict: str | None = Field(default=None, description="pending|pass|fail — set after evidence_ref")
+    text: str | None = Field(default=None, description="reword the criterion (authors only, while verdict pending)")
 
 
 def _ticket_create(a: TicketCreateArgs) -> dict[str, Any]:
@@ -228,7 +234,7 @@ def _criterion_query(a: CriterionQueryArgs) -> dict[str, Any]:
 
 
 def _criterion_update(a: CriterionUpdateArgs) -> dict[str, Any]:
-    return get_client().criterion_update(a.id, evidence_ref=a.evidence_ref, verdict=a.verdict)
+    return get_client().criterion_update(a.id, evidence_ref=a.evidence_ref, verdict=a.verdict, text=a.text)
 
 
 TICKET_TOOLS = [
@@ -282,9 +288,11 @@ class DocUpdateArgs(BaseModel):
 
 
 class LinkCreateArgs(BaseModel):
-    from_id: str = Field(description="ticket or doc id")
-    to_id: str = Field(description="doc, artifact or ticket id")
-    relation: Relation = Field(description="designed_by|uses_strategy|uses_domain|evidence_for|blocks|produced")
+    from_id: str = Field(description="ticket or doc id — the SUBJECT: from_id <relation> to_id "
+                         "(blocks: from_id must finish before to_id may start; "
+                         "extends: from_id is the more specific layer, to_id its parent)")
+    to_id: str = Field(description="doc, artifact or ticket id — the OBJECT of the relation")
+    relation: Relation = Field(description="designed_by|uses_strategy|uses_domain|evidence_for|blocks|produced|extends")
 
 
 class LinkQueryArgs(BaseModel):
@@ -528,18 +536,43 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
             if not assigned.get("ok"):
                 return assigned
     args["participant_id"] = pid
+    if not args.get("parent_session"):  # lineage: the pool records who spawned this shell
+        args["parent_session"] = os.environ.get("EDP_SPAWN_SESSION_ID") or None
     out = _pool_call("spawn", args)
+    if not out.get("ok") and "lock" in str(out.get("error", "")).lower():
+        # board said dead, pool lock says staffed (pain 2026-09-01 11:19) — resolve with the
+        # pool's own liveness: a dead holder is reaped and the spawn retried ONCE; a live one
+        # means the seat is genuinely staffed and the caller gets the truth.
+        live = _pool_call("liveness", {"participant_id": pid})
+        state = (live.get("value") or {}).get("state") if live.get("ok") else None
+        if state == "dead":
+            _pool_call("reap", {"participant_id": pid})
+            out = _pool_call("spawn", args)
+        elif state in ("alive", "parked"):
+            return {"ok": False, "error": {"code": "conflict",
+                                           "message": f"{pid} is already staffed (shell {state})"},
+                    "hint": "message the seat instead of spawning; reap it first if it is truly stuck"}
     if out.get("ok") and isinstance(out.get("value"), dict):
         out["value"]["participant_id"] = pid
     return out
 
 
 def _finish(a: FinishArgs) -> dict[str, Any]:
-    """Stand down: park this shell's own session once the job on its ticket is recorded."""
+    """Stand down: ack pending comms first, then close this shell's own session."""
     me = os.environ.get("EDP8_PARTICIPANT") or os.environ.get("EDP_HANDLE")
     if not me:
         return {"ok": False, "error": {"code": "identity", "message": "no participant identity in env"},
-                "hint": "EDP8_PARTICIPANT/EDP_HANDLE unset; ask the coordinator to park you"}
+                "hint": "EDP8_PARTICIPANT/EDP_HANDLE unset; ask the owner to close you"}
+    ctx = get_client().context()
+    if ctx.get("ok"):
+        pending = [(m.get("id"), m.get("kind"), (m.get("text") or "")[:80])
+                   for m in (ctx["value"].get("asks_for_me") or [])]
+        if pending:
+            listing = "; ".join(f"{i} ({k}): {t}" for i, k, t in pending)
+            return {"ok": False,
+                    "error": {"code": "precondition",
+                              "message": f"{len(pending)} message(s) still await your answer: {listing}"},
+                    "hint": "answer or explicitly acknowledge each (message_send kind=answer), then finish"}
     return _pool_call("finish_self", {"participant_id": me})
 
 
@@ -560,9 +593,11 @@ def _session_query(a: SessionQueryArgs) -> dict[str, Any]:
 
 
 POOL_TOOLS = [
-    ToolDef("finish", "Stand down when your job on the ticket is recorded: parks this shell's own "
-            "session (the coordinator can resume it). Post your closing status on the thread first. "
-            "Returns the pool's park result.", FinishArgs, _finish, "pool"),
+    ToolDef("finish", "Stand down when your job on the ticket is recorded. Refuses while messages "
+            "addressed to you are unanswered (ack them first — the transparency rule). On success the "
+            "pool CLOSES this shell after 120s of quiet; disarm your cron (CronDelete) and monitor "
+            "(TaskStop) before ending the turn. Post your closing status on the thread first. "
+            "Returns the arm result, or the pending-comms list.", FinishArgs, _finish, "pool"),
     ToolDef("spawn", "Start a new session for a role on a ticket (fan-out). "
             "Returns the session, or unavailable if the pool adapter is not configured.",
             SpawnArgs, _spawn, "pool"),
@@ -594,24 +629,114 @@ SEARCH_TOOLS = [
             FindArgs, _find, "search"),
 ]
 
+# ============================================================================= ruleset
+
+
+class AssembleRulesetArgs(BaseModel):
+    ticket_id: str | None = Field(default=None, description="assemble from the strategy/domain docs linked to this "
+                                  "ticket (uses_strategy/uses_domain), inherited up the parent chain")
+    doc_ids: list[str] | None = Field(default=None, description="explicit leaf doc ids to assemble instead")
+
+
+def _ruleset_leaves_for_ticket(c: BoardClient, ticket_id: str) -> list[str]:
+    """Strategy/domain docs linked to the ticket, walking UP the parent chain
+    (epic-level strategies serve every story) — epic-first so the general
+    layers land before the story-specific ones."""
+    chain: list[str] = []
+    tid: str | None = ticket_id
+    while tid:
+        chain.append(tid)
+        got = c.ticket_read(tid)
+        tid = (got.get("value") or {}).get("parent_id") if got.get("ok") else None
+    leaves: list[str] = []
+    for t in reversed(chain):  # epic first
+        for rel in (Relation.uses_strategy.value, Relation.uses_domain.value):
+            links = c.link_query(from_id=t, relation=rel)
+            for lk in links.get("value") or []:
+                if lk["to_id"] not in leaves:
+                    leaves.append(lk["to_id"])
+    return leaves
+
+
+def _assemble_ruleset(a: AssembleRulesetArgs) -> dict[str, Any]:
+    from .ruleset import AssembleError, LayerDoc, assemble_ruleset
+
+    c = get_client()
+    leaves = list(a.doc_ids or [])
+    if not leaves and a.ticket_id:
+        leaves = _ruleset_leaves_for_ticket(c, a.ticket_id)
+    if not leaves:
+        return {"ok": False, "error": {"code": "not_found", "message": "no strategy/domain docs to assemble"},
+                "hint": "link docs to the ticket (relation=uses_strategy|uses_domain) or pass doc_ids"}
+
+    skipped: list[str] = []
+
+    def load(doc_id: str) -> LayerDoc | None:
+        got = c.doc_read(doc_id)
+        if not got.get("ok"):
+            return None
+        v = got["value"]
+        return LayerDoc(id=v["id"], title=v["title"], doc_type=v["doc_type"], body_md=v["body_md"])
+
+    def extends_of(doc_id: str) -> list[str]:
+        links = c.link_query(from_id=doc_id, relation=Relation.extends.value)
+        out: list[str] = []
+        for lk in links.get("value") or []:
+            # a dangling/non-doc layer (legacy extends pointing at a ticket) is SKIPPED
+            # loudly, never a hard failure that strips the checker of its whole brief
+            if c.doc_read(lk["to_id"]).get("ok"):
+                out.append(lk["to_id"])
+            else:
+                skipped.append(lk["to_id"])
+        return out
+
+    leaves2 = [x for x in leaves if c.doc_read(x).get("ok")]
+    skipped += [x for x in leaves if x not in leaves2]
+    if not leaves2:
+        return {"ok": False, "error": {"code": "not_found", "message": f"no readable leaf docs (skipped: {skipped})"},
+                "hint": "re-link the ticket's uses_strategy/uses_domain to existing docs"}
+    try:
+        out = assemble_ruleset(load, extends_of, leaves2)
+    except AssembleError as e:
+        return {"ok": False, "error": {"code": "precondition", "message": e.instruction}, "hint": ""}
+    hint = "apply constructive in full while building; enforced is the adherence view a checker verifies"
+    if out.oversize:
+        hint = f"OVERSIZE (~{out.approx_tokens} tokens): the layering is a scoping defect — split it, don't truncate"
+    value = out.model_dump()
+    if skipped:
+        value["skipped_layers"] = skipped
+        hint += f"; NOTE: {len(skipped)} dangling layer(s) skipped: {skipped}"
+    return {"ok": True, "value": value, "hint": hint}
+
+
+RULESET_TOOLS = [
+    ToolDef("assemble_ruleset", "Compose the layered ruleset for a ticket (or explicit docs): walks doc "
+            "`extends` chains universal-first / most-specific-last, dedupes, and splits into the constructive "
+            "view (how to build) and the enforced view (what a checker verifies). Returns the ordered layers "
+            "and both views, or a precondition error on a cycle/missing layer.",
+            AssembleRulesetArgs, _assemble_ruleset, "ruleset"),
+]
+
 # ============================================================================= consult
 
 
 class ConsultArgs(BaseModel):
-    question: str = Field(description="what you want a second, independent read on")
+    question: str = Field(description="what you want a second, independent read on — or the build/delivery brief")
     purpose: str = Field(default="second_opinion",
-                          description="adversary|creative|visual|second_opinion — selects the consultant's brief")
+                          description="adversary|creative|visual|second_opinion|build — selects the consultant's brief")
     context: str = ""
     files: list[str] | None = None
     ticket_id: str | None = Field(default=None, description="if set, post the answer to this ticket's thread")
     timeout_s: int = 600
+    write_dir: str | None = Field(default=None, description="a directory Sol may WRITE (assets delivered there, "
+                                  "or files edited in place). Without it Sol is read-only and can only advise")
 
 
 def _consult(a: ConsultArgs) -> dict[str, Any]:
     from . import consult as consult_mod
 
     resp = consult_mod.consult(a.purpose, a.question, context=a.context,
-                                files=a.files, timeout_s=a.timeout_s)
+                                files=a.files, timeout_s=a.timeout_s, write_dir=a.write_dir)
     if resp.get("ok") and a.ticket_id:
         answer = resp["value"]["answer"]
         get_client().message_send(ticket_id=a.ticket_id, kind="note",
@@ -620,9 +745,13 @@ def _consult(a: ConsultArgs) -> dict[str, Any]:
 
 
 CONSULT_TOOLS = [
-    ToolDef("consult", "Ask the consultant (GPT Sol) for a second, independent read — adversarial review, "
-            "creative/visual judgment, or a plain second opinion. If ticket_id is given, the answer is also "
-            "posted as a note to that ticket's thread. Returns the answer, or unavailable/timeout/exit on failure.",
+    ToolDef("consult", "Ask the consultant (GPT Sol) — adversarial review, creative/visual judgment, a second "
+            "opinion, or (with write_dir) actual DELIVERY: Sol writes assets into the directory or edits files "
+            "in place. Sol cannot return images inline — hand it a write_dir instead. For substantial creative "
+            "or build work, consult TWICE: round 1 without write_dir to agree a plan, round 2 passing that plan "
+            "back with write_dir to build it — never one-shot a large build. If ticket_id is given, the answer "
+            "is also posted as a note to that ticket's thread. Returns the answer (with run log), or "
+            "unavailable/timeout/exit on failure.",
             ConsultArgs, _consult, "consult"),
 ]
 
@@ -685,7 +814,7 @@ CLOSE_TOOLS = [
 ALL_TOOLS: dict[str, ToolDef] = {
     t.name: t for t in (
         IDENTITY_TOOLS + TICKET_TOOLS + DOC_TOOLS + THREAD_TOOLS + BOARD_TOOLS + POOL_TOOLS
-        + SEARCH_TOOLS + CONSULT_TOOLS + ARTIFACT_TOOLS + CLOSE_TOOLS
+        + SEARCH_TOOLS + RULESET_TOOLS + CONSULT_TOOLS + ARTIFACT_TOOLS + CLOSE_TOOLS
     )
 }
 
@@ -693,7 +822,6 @@ _IDENTITY = ["whoami", "subscribe", "context", "describe", "get_guide"]
 _TICKET_RW = ["ticket_create", "ticket_read", "ticket_query", "ticket_update", "criterion_create",
               "criterion_query", "criterion_update"]
 _TICKET_RO = ["ticket_read", "ticket_query", "ticket_update"]  # owner: sign-off only, guarded by the board
-_TICKET_COORD = ["ticket_create", "ticket_read", "ticket_query", "ticket_update", "criterion_query"]  # epic+status only
 _CHECK = ["criterion_query", "criterion_update"]  # checkers record verdicts (board guards who may)
 _DOC_RW = ["doc_create", "doc_read", "doc_query", "doc_update", "link_create", "link_query", "link_delete"]
 _DOC_RO = ["doc_read", "doc_query"]
@@ -701,19 +829,23 @@ _THREAD = ["message_send", "message_query", "gate_open", "gate_answer", "gates"]
 _BOARD = ["board", "events_query", "participants"]
 
 ROLE_BUNDLES: dict[str, list[str]] = {
+    # The owner shell is the orchestrator: it spawns every seat (except SMEs —
+    # the architect spawns those) and recovers dead ones. No coordinator seat.
     Role.owner.value: _IDENTITY + _THREAD + _BOARD + _DOC_RO + _TICKET_RO + _CHECK
-        + ["find", "ticket_create", "spawn"],
-    Role.coordinator.value: _IDENTITY + _TICKET_COORD + _THREAD + _BOARD
-        + ["spawn", "resume", "park", "reap", "session_query", "find", "close"],
+        + ["find", "ticket_create", "spawn", "resume", "reap", "session_query", "close"],
     Role.architect.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD + _BOARD
-        + ["find", "consult", "artifact_create", "artifact_read", "finish"],
-    Role.sme.value: _IDENTITY + _TICKET_RO + _DOC_RW + _THREAD + ["find", "artifact_create", "artifact_read", "finish"],
-    Role.engineer.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD
         + ["find", "consult", "artifact_create", "artifact_read", "spawn", "finish"],
+    Role.sme.value: _IDENTITY + _TICKET_RO + _DOC_RW + _THREAD
+        + ["find", "assemble_ruleset", "criterion_query", "criterion_update",
+           "artifact_create", "artifact_read", "finish"],
+    Role.engineer.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD
+        + ["find", "assemble_ruleset", "consult", "artifact_create", "artifact_read", "finish"],
     Role.reviewer.value: _IDENTITY + _TICKET_RO + _CHECK + _DOC_RW + _THREAD
-        + ["find", "consult", "artifact_create", "artifact_read", "finish"],
+        + ["find", "assemble_ruleset", "consult", "artifact_create", "artifact_read", "finish"],
+    Role.adversary.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD
+        + ["find", "assemble_ruleset", "consult", "artifact_create", "artifact_read", "finish"],
     Role.qa.value: _IDENTITY + _TICKET_RO + _CHECK + _DOC_RW + _THREAD + _BOARD
-        + ["find", "consult", "artifact_create", "artifact_read", "finish"],
+        + ["find", "assemble_ruleset", "consult", "artifact_create", "artifact_read", "finish"],
 }
 
 

@@ -15,9 +15,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import threading
 from collections.abc import Iterable
 from typing import Any
+
+_MENTION_RX = re.compile(r"@([A-Za-z0-9][A-Za-z0-9_.\-]*)")
 
 from .schemas import (
     CRITERION_AUTHORS,
@@ -316,9 +319,15 @@ class Board:
         return self.store.put("criterion", c)
 
     def criterion_update(self, actor: Participant, id_: str, *, evidence_ref: str | None = None,
-                         verdict: Verdict | None = None) -> Criterion:
+                         verdict: Verdict | None = None, text: str | None = None) -> Criterion:
         c: Criterion = self._get("criterion", id_, "criterion")
         t = self.ticket(c.ticket_id)
+        if text is not None:
+            if actor.role not in CRITERION_AUTHORS:
+                raise BoardError("scope", "criterion text is edited by its authors (architect/engineer)")
+            if c.verdict != Verdict.pending:
+                raise BoardError("transition", "a verdicted criterion's text is frozen — add a new criterion instead")
+            c.text = text
         if evidence_ref is not None:
             self._get("doc", evidence_ref, "evidence doc")
             if actor.id != t.assignee and actor.role not in CRITERION_CHECKERS and actor.role != Role.engineer:
@@ -402,6 +411,11 @@ class Board:
         for x in (from_id, to_id):
             if not any(self.store.get(t, x) for t in ("ticket", "doc", "artifact")):
                 raise BoardError("not_found", f"{x!r} is not a ticket, doc or artifact")
+        if relation == Relation.extends:  # layering is doc->doc; a dangling layer breaks assemble_ruleset
+            for x in (from_id, to_id):
+                if self.store.get("doc", x) is None:
+                    raise BoardError("scope", f"extends links DOCS only; {x!r} is not a doc",
+                                     "layer docs with extends; tie docs to tickets via uses_strategy/uses_domain")
         dup = [lk for lk in self.store.query("link", {"from_id": from_id, "to_id": to_id, "relation": relation})]
         if dup:
             return dup[0]  # type: ignore[return-value]
@@ -429,6 +443,30 @@ class Board:
         return a
 
     # ------------------------------------------------------------------ messages / gates
+    def mentions(self, text: str, *, exclude: set[str] | None = None) -> list[str]:
+        """Participant ids @mentioned in text (unresolvable handles are just prose)."""
+        out: list[str] = []
+        for h in _MENTION_RX.findall(text or ""):
+            try:
+                pid = self.participant(f"@{h}").id
+            except BoardError:
+                continue
+            if pid not in out and pid not in (exclude or set()):
+                out.append(pid)
+        return out
+
+    def epic_owner(self, ticket_id: str) -> str:
+        """The human who owns a ticket's epic (its creator when that is an owner-role
+        participant); falls back to the 'owner' handle for legacy/agent-created epics."""
+        try:
+            epic = self.epic_of(self.ticket(ticket_id))
+        except BoardError:
+            return "owner"
+        creator = self.store.get("participant", epic.created_by)
+        if creator is not None and creator.role == Role.owner:  # type: ignore[union-attr]
+            return epic.created_by
+        return "owner"
+
     def message_send(self, actor: Participant, *, ticket_id: str, to: str | None, kind: MessageKind,
                      text: str, reply_to: str | None = None) -> Message:
         t = self.ticket(ticket_id)
@@ -442,8 +480,9 @@ class Board:
                     created_by=actor.id)
         self.store.put("message", m)
         self._index("message", m.id, text)
+        mentioned = self.mentions(text, exclude={actor.id, to} if to else {actor.id})
         self._emit(t.id, EventKind.message_sent, {"message": m.id, "to": to, "kind": kind, "from": actor.id,
-                                                  "text": text[:280]})
+                                                  "text": text[:280], "mentions": mentioned})
         if kind == MessageKind.steer and actor.role == Role.owner and t.kind != TicketKind.task:
             pass  # a steer is data on the thread; widening is the asker's call via /doubt → architect
         return m
@@ -478,15 +517,17 @@ class Board:
 
     # ------------------------------------------------------------------ sessions (pool-owned)
     def session_upsert(self, *, id_: str, participant_id: str, ticket_id: str | None, pool_id: str,
-                       state: SessionState, resume_token: str = "") -> Session:
+                       state: SessionState, resume_token: str = "", reason: str = "") -> Session:
         prev = self.store.get("session", id_)
         s = Session(id=id_, participant_id=participant_id, ticket_id=ticket_id, pool_id=pool_id, state=state,
                     resume_token=resume_token or (prev.resume_token if prev else ""), last_output_at=now(),
-                    created_by="pool")
+                    reason=reason or (prev.reason if prev else ""), created_by="pool")
         self.store.put("session", s)
         if ticket_id and state in (SessionState.dead, SessionState.stalled) and (prev is None or prev.state != state):
             kind = EventKind.shell_dead if state == SessionState.dead else EventKind.shell_stalled
-            self._emit(ticket_id, kind, {"session": id_, "participant": participant_id})
+            clean = any(k in (reason or "").lower() for k in ("finish", "reaped", "clean exit"))
+            self._emit(ticket_id, kind, {"session": id_, "participant": participant_id,
+                                         "reason": reason or "no reason recorded", "clean": clean})
         return s
 
     # ------------------------------------------------------------------ context / board / feed
@@ -494,6 +535,14 @@ class Board:
         """Tickets a participant works on: assigned; for checkers (reviewer/qa/owner) also tickets in_review
         whose criteria are checked by their role, and for qa epics with an open acceptance gate; else created-by."""
         mine: list[Ticket] = list(self.store.query("ticket", {"assignee": p.id}))  # type: ignore[arg-type]
+        # a per-seat participant is NAMED for its ticket (role.<ticket_id>): surface that ticket
+        # even when unassigned (checkers are deliberately not assigned — pain 2026-09-01: a
+        # spawned reviewer booted with an empty plate while its story was still in_progress)
+        if "." in p.id:
+            tid = p.id.split(".", 1)[1]
+            tk = self.store.get("ticket", tid)
+            if tk is not None and all(x.id != tk.id for x in mine):
+                mine.append(tk)  # type: ignore[arg-type]
         if p.role == Role.coordinator:
             for t in self.store.query("ticket", {"kind": TicketKind.epic}):
                 if t.status not in _TERMINAL and all(x.id != t.id for x in mine):
@@ -537,20 +586,40 @@ class Board:
                 ed = self.store.get("doc", epic.design_ref)
                 if ed and all(d.id != ed.id for d in docs):
                     docs.insert(0, ed)  # type: ignore[arg-type]
+            strategy_links = any(
+                self.links(from_id=x, relation=rel)
+                for x in {t.id, epic.id}
+                for rel in (Relation.uses_strategy, Relation.uses_domain)
+            )
             out["tickets"].append({
                 "ticket": t.model_dump(mode="json"),
                 "words": epic.title,
                 "chain": chain,
                 "criteria": [c.model_dump(mode="json") for c in self.criteria(t.id)],
                 "docs": [self._doc_summary(d) for d in docs],
+                "strategy_links": strategy_links,
                 "blockers": [{"id": b.id, "status": b.status} for b in self.blockers(t.id)],
                 "open_gates": [e.data.get("gate") for e in self.open_gates(t.id)],
                 "thread": [m.model_dump(mode="json") for m in self.thread(t.id, limit=20)],
             })
-        asks = [m for m in self.store.query("message", {"kind": MessageKind.question}, limit=200)
+            if strategy_links and not out["hint"]:
+                out["hint"] = (f"strategy/domain docs are linked: run assemble_ruleset(ticket_id={t.id!r}) "
+                               "for your working brief (docs above are summaries; doc_read fetches full text)")
+        # questions AND steers: a directed steer to a booting seat must survive the
+        # whoami->subscribe race (pain 2026-09-01 — steered assignments silently vanished)
+        asks = [m for m in self.store.query("message", {"kind": [MessageKind.question, MessageKind.steer]},
+                                            limit=200)
                 if m.to in (p.id, p.role.value)]  # type: ignore[attr-defined]
         answered = {m.reply_to for m in self.store.query("message", {"kind": MessageKind.answer}, limit=500)}  # type: ignore[attr-defined]
-        out["asks_for_me"] = [m.model_dump(mode="json") for m in asks if m.id not in answered]
+
+        def _ask_live(m: Message) -> bool:
+            """A question on a closed/dropped ticket (or its closed epic) waits on nobody."""
+            tk = self.store.get("ticket", m.ticket_id)
+            if tk is None or tk.status in _TERMINAL:  # type: ignore[union-attr]
+                return False
+            return self.epic_of(tk).status not in _TERMINAL  # type: ignore[arg-type]
+
+        out["asks_for_me"] = [m.model_dump(mode="json") for m in asks if m.id not in answered and _ask_live(m)]
         if not tickets:
             out["hint"] = "no ticket assigned or created by you yet"
         return out
@@ -588,17 +657,35 @@ class Board:
         return out
 
     # feed -------------------------------------------------------------
+    def _owner_scope(self, p: Participant, subject_id: str) -> bool:
+        """Does this owner own the epic this event belongs to? Cross-functional teams:
+        each owner-human sees their own epics; legacy/agent-created epics reach every owner."""
+        tk = self.store.get("ticket", subject_id)
+        if tk is None:
+            return True
+        o = self.epic_owner(tk.id)
+        return o == p.id or o == "owner"  # "owner" = fallback: no specific human owns it
+
     def relevant(self, ev: Event, p: Participant) -> bool:
         d = ev.data
+        if p.id in (d.get("mentions") or []):  # an @mention reaches its person, any role
+            return True
         if p.role == Role.owner:
             if ev.kind in (EventKind.gate_opened, EventKind.gate_answered):
-                return True
+                return self._owner_scope(p, ev.subject_id)
             if ev.kind == EventKind.message_sent and d.get("from") != p.id:
                 to = d.get("to")
                 if to in (p.id, p.role.value):
                     return True
                 return to is None and d.get("kind") in (MessageKind.status, MessageKind.finding,
                                                          MessageKind.deviation)
+            # the owner is the orchestrator + recovery seat (no coordinator): it must see
+            # dying shells and the phase boundaries its card spawns on — for ITS epics
+            if ev.kind in (EventKind.shell_dead, EventKind.shell_stalled):
+                return self._owner_scope(p, ev.subject_id)
+            if ev.kind == EventKind.status_changed:
+                return d.get("to") in ("ready", "in_review", "done", "blocked", "partial") \
+                    and self._owner_scope(p, ev.subject_id)
             return False
         if ev.kind == EventKind.message_sent:
             to = d.get("to")
@@ -674,7 +761,18 @@ class Board:
                     _log.warning("feed queue for %s dropped %s: %s", pid, ev.id, e)
 
     def replay(self, p: Participant, since_seq: int) -> list[tuple[int, Event]]:
-        return [(s, e) for s, e in self.store.events_since(since_seq) if self.relevant(e, p)]
+        """All relevant events after since_seq — paged through in full: a monitor that
+        reconnects far behind must never silently skip the gap (events_since caps one page)."""
+        out: list[tuple[int, Event]] = []
+        cur = since_seq
+        while True:
+            batch = self.store.events_since(cur, limit=500)
+            if not batch:
+                return out
+            for s, e in batch:
+                cur = s
+                if self.relevant(e, p):
+                    out.append((s, e))
 
     def find(self, query: str, *, k: int = 10, types: Iterable[str] | None = None) -> list[dict[str, Any]]:
         if self.index is None:

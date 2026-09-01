@@ -197,7 +197,7 @@ def test_pool_unavailable_when_adapter_missing(raw_client, monkeypatch):
 def test_consult_unavailable(raw_client, monkeypatch):
     import edp8.consult as consult_mod
 
-    def fake_consult(purpose, question, context="", files=None, timeout_s=600):
+    def fake_consult(purpose, question, context="", files=None, timeout_s=600, write_dir=None):
         return {"ok": False, "error": {"code": "unavailable", "message": "could not launch 'codex': not found"},
                 "hint": "check EDP8_CODEX_BIN and that `codex` is on PATH"}
 
@@ -265,7 +265,7 @@ def test_spawn_without_ticket_or_participant_id_is_schema_error(raw_client):
 def test_consult_posts_answer_to_thread(raw_client, monkeypatch):
     import edp8.consult as consult_mod
 
-    def fake_consult(purpose, question, context="", files=None, timeout_s=600):
+    def fake_consult(purpose, question, context="", files=None, timeout_s=600, write_dir=None):
         return {"ok": True,
                 "value": {"answer": "looks solid, one gap: no timeout test", "model": "gpt-5.6-sol",
                           "elapsed_s": 1.23, "run_id": "fake-run", "log": "C:/tmp/fake-run.jsonl"},

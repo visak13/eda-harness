@@ -90,11 +90,12 @@ def reap(participant_id: str) -> dict[str, Any]:
     return _post(f"/v1/reap/{participant_id}")
 
 
-def finish_self(participant_id: str, idle_secs: float = 20.0, park: bool | None = None) -> dict[str, Any]:
+def finish_self(participant_id: str, idle_secs: float = 120.0, park: bool | None = None) -> dict[str, Any]:
     """Deferred self-stand-down: a shell cannot stop itself mid-turn, so this arms the pool's
-    close_when_idle on its own session. The architect PARKS (its session is the one context worth
-    resuming for re-comprehension forks); every other role CLOSES — its ticket holds everything
-    it knew, and a fresh spawn re-grounds from the record."""
+    close_when_idle on its own session. EVERY role CLOSES (owner ruling 2026-09-02 — no parks:
+    the ticket holds everything it knew, a fresh spawn re-grounds from the record, and a parked
+    console kept burning tokens). The shell's own hooks ping the pool per tool call, so a busy
+    shell is never mistaken for a quiet one."""
     got = sessions()
     if not got["ok"]:
         return got
@@ -103,15 +104,13 @@ def finish_self(participant_id: str, idle_secs: float = 20.0, park: bool | None 
                 if s.get("handle") == participant_id and s.get("state") in ("active", "alive")), None)
     if not sid:
         return _envelope(False, error=f"no active session for {participant_id!r}", code="not_found",
-                         hint="already parked or reaped; nothing to do")
-    if park is None:
-        park = participant_id.startswith("architect")
-    out = _post(f"/v1/close_when_idle/{sid}", {"park": bool(park), "idle_secs": idle_secs,
-                                               "reason": "finish: job recorded"})
+                         hint="already closed or reaped; nothing to do")
+    out = _post(f"/v1/close_when_idle/{sid}", {"park": False, "idle_secs": idle_secs,
+                                               "reason": "job recorded"})
     if out["ok"]:
-        word = "parks" if park else "closes"
-        out["hint"] = (f"stand-down armed: the pool {word} this shell after {int(idle_secs)}s of quiet — "
-                       "end your turn now and stop calling tools")
+        out["hint"] = (f"stand-down armed: the pool closes this shell after {int(idle_secs)}s of quiet. "
+                       "Disarm your wiring NOW (CronDelete your heartbeat, TaskStop your monitor), "
+                       "then end your turn and stop calling tools")
     return out
 
 
@@ -151,11 +150,14 @@ def sync_sessions(board_url: str | None = None, admin_token: str | None = None) 
         if not handle:
             continue
         live = liveness(handle)
-        state = _STATE_MAP.get((live.get("value") or {}).get("state", s.get("state", "alive")), SessionState.alive)
+        # unknown/legacy pool states (done, released, …) map to DEAD: "your answer is saved
+        # for the next shell" is the safe claim; "this wakes it" must never be a lie
+        state = _STATE_MAP.get((live.get("value") or {}).get("state", s.get("state", "dead")), SessionState.dead)
         try:
             ticket_id = handle.split(".", 1)[1] if "." in handle else None
             httpx.put(f"{board_url}/v1/sessions/{s.get('session_id')}",
-                      json={"participant_id": handle, "ticket_id": ticket_id, "pool_id": POOL_ID, "state": state.value},
+                      json={"participant_id": handle, "ticket_id": ticket_id, "pool_id": POOL_ID,
+                            "state": state.value, "reason": s.get("dead_reason") or ""},
                       headers={"X-Admin": admin_token}, timeout=10.0)
             n += 1
         except httpx.HTTPError as e:

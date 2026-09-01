@@ -90,8 +90,10 @@ class CriterionIn(BaseModel):
 
 
 class CriterionPatch(BaseModel):
+    model_config = {"extra": "forbid"}  # unknown kwargs error out — never a silent drop
     evidence_ref: str | None = None
     verdict: Verdict | None = None
+    text: str | None = None
 
 
 class DocIn(BaseModel):
@@ -141,6 +143,7 @@ class SessionIn(BaseModel):
     pool_id: str
     state: SessionState
     resume_token: str = ""
+    reason: str = ""
 
 
 # ----------------------------------------------------------------------------- app
@@ -168,13 +171,48 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     app = FastAPI(title="edp8 board", version="0.8.0")
     app.state.board = board
 
-    def actor(x_participant: str | None = Header(default=None)) -> Participant:
+    def _tokens() -> dict[str, str]:
+        """handle -> secret for HUMAN participants (tokens.json at the agent home, or
+        EDP8_TOKENS). Absent file = trusted single-machine mode (header-only identity)."""
+        f = Path(os.environ.get("EDP8_TOKENS", str(Path(os.environ.get("EDP8_HOME", ".")) / "tokens.json")))
+        try:
+            mtime = f.stat().st_mtime
+        except OSError:
+            return {}
+        cache = getattr(_tokens, "_cache", None)
+        if cache and cache[0] == (str(f), mtime):
+            return cache[1]
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            data = {str(k).lstrip("@"): str(v) for k, v in data.items()}
+        except (OSError, ValueError):
+            data = {}
+        _tokens._cache = ((str(f), mtime), data)  # type: ignore[attr-defined]
+        return data
+
+    def actor(x_participant: str | None = Header(default=None),
+              x_token: str | None = Header(default=None)) -> Participant:
         if not x_participant:
             raise HTTPException(401, "X-Participant header missing (participant id or @handle)")
         try:
-            return board.participant(x_participant)
+            p = board.participant(x_participant)
         except BoardError as e:
             raise HTTPException(401, e.message)
+        secret = _tokens().get(p.handle.lstrip("@"))
+        if p.type == "human" and secret is not None and x_token != secret:
+            raise HTTPException(401, f"X-Token required for human participant {p.handle!r}")
+        return p
+
+    def human_verify(handle: str, token: str | None) -> Participant:
+        """The /ui/me forms authenticate through the same gate as the API."""
+        try:
+            p = board.participant(handle)
+        except BoardError as e:
+            raise HTTPException(401, e.message)
+        secret = _tokens().get(p.handle.lstrip("@"))
+        if p.type == "human" and secret is not None and token != secret:
+            raise HTTPException(401, f"token required for {p.handle!r}")
+        return p
 
     def admin(x_admin: str | None = Header(default=None)) -> None:
         if x_admin != admin_token:
@@ -219,7 +257,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
                 a = board.participant(x_participant)
             except BoardError as e:
                 raise HTTPException(401, e.message)
-            if a.role not in (Role.coordinator, Role.engineer, Role.architect) or b.type != "agent":
+            if a.role not in (Role.owner, Role.coordinator, Role.engineer, Role.architect) or b.type != "agent":
                 raise HTTPException(403, "only admin, or a spawner role registering an agent participant")
         p = board.participant_create(b.type, b.role, b.handle, location=b.location, model=b.model, id_=b.id)
         return ok(_dump(p))
@@ -237,8 +275,13 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     def ticket_create(b: TicketIn, a: Participant = Depends(actor)):
         t = board.ticket_create(a, kind=b.kind, work_type=b.work_type, title=b.title,
                                 parent_id=b.parent_id, assignee=b.assignee)
-        hint = ("epic created; an architect designs it (doc_create design, criteria, stories)"
-                if t.kind == TicketKind.epic else "add criteria before it becomes ready")
+        if t.kind == TicketKind.epic:
+            hint = "epic created; an architect designs it (doc_create design, criteria, stories)"
+        elif t.kind == TicketKind.task:
+            hint = ("task created under its story — work it with the low-level craft; "
+                    "evidence lands on the story's criteria")
+        else:
+            hint = "add criteria before it becomes ready"
         return ok(_dump(t), hint)
 
     @app.get("/v1/tickets/{id_}")
@@ -258,7 +301,11 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     @app.patch("/v1/tickets/{id_}")
     def ticket_update(id_: str, b: TicketPatch, a: Participant = Depends(actor)):
         t = board.ticket_update(a, id_, status=b.status, assignee=b.assignee, design_ref=b.design_ref)
-        return ok(_dump(t))
+        hint = ""
+        if b.status == TicketStatus.in_progress and t.kind == TicketKind.story:
+            hint = ("bigger than one sitting? split it into task tickets NOW (ticket_create kind=task) — "
+                    "a compaction/respawn resumes from the task list, not from lost context")
+        return ok(_dump(t), hint)
 
     # criteria -----------------------------------------------------------------
     @app.post("/v1/criteria")
@@ -272,7 +319,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     @app.patch("/v1/criteria/{id_}")
     def criterion_update(id_: str, b: CriterionPatch, a: Participant = Depends(actor)):
-        c = board.criterion_update(a, id_, evidence_ref=b.evidence_ref, verdict=b.verdict)
+        c = board.criterion_update(a, id_, evidence_ref=b.evidence_ref, verdict=b.verdict, text=b.text)
         pending = [x.id for x in board.criteria(c.ticket_id) if x.verdict != Verdict.passed]
         return ok(_dump(c), f"{len(pending)} criteria not yet passed on {c.ticket_id}" if pending else
                   "all criteria passed; the ticket can be marked done by its checker")
@@ -280,9 +327,14 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     # docs / links / artifacts ---------------------------------------------------
     @app.post("/v1/docs")
     def doc_create(b: DocIn, a: Participant = Depends(actor)):
-        return ok(_dump(board.doc_create(a, doc_type=b.doc_type, title=b.title, body_md=b.body_md, scope=b.scope)),
-                  "link it: link_create(from_id=<ticket>, to_id=<doc>, "
-                  "relation=designed_by|uses_strategy|uses_domain|evidence_for)")
+        d = board.doc_create(a, doc_type=b.doc_type, title=b.title, body_md=b.body_md, scope=b.scope)
+        if b.doc_type in (DocType.strategy_hl, DocType.strategy_ll):
+            hint = ("link it: extends -> its parent layer (doc), uses_strategy -> the epic; "
+                    "assemble_ruleset composes the chain at read time")
+        else:
+            hint = ("link it: link_create(from_id=<ticket>, to_id=<doc>, "
+                    "relation=designed_by|uses_strategy|uses_domain|evidence_for)")
+        return ok(_dump(d), hint)
 
     @app.get("/v1/docs/{id_}")
     def doc_get(id_: str, version: int | None = None, a: Participant = Depends(actor)):
@@ -321,9 +373,15 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         return ok(_dump(board._get("artifact", id_)))
 
     # messages / gates -----------------------------------------------------------
+    # Addressed traffic and @mentions are mirrored into edp-broker inboxes
+    # (best-effort): the broker is the wake plane — the pool resumes a parked
+    # shell when its inbox grows, and every shell's feed monitor tails its inbox.
+    from . import broker_adapter, delivery
+
     @app.post("/v1/messages")
     def message_send(b: MessageIn, a: Participant = Depends(actor)):
         m = board.message_send(a, ticket_id=b.ticket_id, to=b.to, kind=b.kind, text=b.text, reply_to=b.reply_to)
+        delivery.after_message(board, a.id, m)
         return ok(_dump(m), "delivered to the recipient's feed; end your turn if you are waiting for an answer")
 
     @app.get("/v1/messages")
@@ -333,11 +391,15 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     @app.post("/v1/gates/{ticket_id}/{gate}/open")
     def gate_open(ticket_id: str, gate: Gate, b: GateOpenIn, a: Participant = Depends(actor)):
-        return ok(_dump(board.gate_open(ticket_id, gate, by=a.id, note=b.note)), "the owner is notified")
+        ev = board.gate_open(ticket_id, gate, by=a.id, note=b.note)
+        delivery.after_gate_open(board, a.id, ticket_id, gate.value, b.note)
+        return ok(_dump(ev), "the epic's owner is notified")
 
     @app.post("/v1/gates/{ticket_id}/{gate}/answer")
     def gate_answer(ticket_id: str, gate: Gate, b: GateAnswerIn, a: Participant = Depends(actor)):
-        return ok(_dump(board.gate_answer(a, ticket_id, gate, b.answer)))
+        ev = board.gate_answer(a, ticket_id, gate, b.answer)
+        delivery.after_gate_answer(board, a.id, ticket_id, gate.value, b.answer)
+        return ok(_dump(ev))
 
     @app.get("/v1/gates/{ticket_id}")
     def gates(ticket_id: str, a: Participant = Depends(actor)):
@@ -361,8 +423,22 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     # sessions (pool, admin) -----------------------------------------------------
     @app.put("/v1/sessions/{id_}", dependencies=[Depends(admin)])
     def session_upsert(id_: str, b: SessionIn):
-        return ok(_dump(board.session_upsert(id_=id_, participant_id=b.participant_id, ticket_id=b.ticket_id,
-                                             pool_id=b.pool_id, state=b.state, resume_token=b.resume_token)))
+        prev = board.store.get("session", id_)
+        s = board.session_upsert(id_=id_, participant_id=b.participant_id, ticket_id=b.ticket_id,
+                                 pool_id=b.pool_id, state=b.state, resume_token=b.resume_token,
+                                 reason=b.reason)
+        # a death/stall TRANSITION is crucial: besides the shell_dead feed event, drop a durable
+        # crashed notice in the owner's broker inbox (the recovery seat wakes even if its feed
+        # stream happened to be down at that moment). Clean closes (finish/reap/clean exit)
+        # carry their reason and are marked clean so nobody treats them as failures.
+        if (b.state in (SessionState.dead, SessionState.stalled)
+                and (prev is None or prev.state != b.state)):
+            clean = any(k in (b.reason or "").lower() for k in ("finish", "reaped", "clean exit"))
+            broker_adapter.publish("pool", "owner", "fyi" if clean else "crashed",
+                                   {"participant": b.participant_id, "ticket_id": b.ticket_id,
+                                    "session_id": id_, "state": b.state.value,
+                                    "reason": b.reason, "clean": clean})
+        return ok(_dump(s))
 
     @app.get("/v1/sessions")
     def sessions(participant_id: str | None = None, ticket_id: str | None = None, state: SessionState | None = None,
@@ -408,16 +484,13 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
                         log.warning("pool session mirror failed: %s", out.get("error"))
                 except Exception as e:
                     log.warning("pool watcher error: %s", e)
-                time.sleep(30)
+                time.sleep(10)  # death-detection latency rides this cadence
 
         threading.Thread(target=_pool_watch, name="edp8-pool-watch", daemon=True).start()
-        from .autopilot import start_autopilot_thread
-
-        app.state.autopilot = start_autopilot_thread(board)
 
     from .ui import router as ui_router
 
-    app.include_router(ui_router(board))
+    app.include_router(ui_router(board, verify=human_verify))
 
     if os.environ.get("EDP8_PLANE_URL"):
         from .plane_adapter import start_mirror_thread, webhook_router
