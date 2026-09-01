@@ -1,0 +1,7 @@
+{
+  "board_url": "http://REPLACE-WITH-YOUR-TAILNET-IP:9400",
+  "webhook_url": "https://hooks.slack.com/services/REPLACE/WITH/YOURS",
+  "people": {
+    "x": { "slack_id": "U_REPLACE_ME", "quiet": [22, 7] }
+  }
+}

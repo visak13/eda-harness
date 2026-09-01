@@ -1,8 +1,13 @@
 # Operating v8 — the owner's guide
 
 ## 1. Start / stop
-- `start-v8.bat` (repo root) — board on :9400 (web UI at /ui) + pool on :9301, participants registered.
-- `stop-v8.bat` — tears both down. Docker is NOT required for local use.
+- `start-v8.bat` (repo root) — broker on :9300 (inboxes, the wake plane) + board on :9400
+  (web UI at /ui, the state-transfer record) + pool on :9301 (shells), participants registered.
+- `stop-v8.bat` — tears all three down. Docker is NOT required for local use.
+- The planes: the BOARD holds state (tickets, criteria, docs, gates); the BROKER delivers —
+  every addressed message/gate is mirrored to the recipient's inbox, the pool's watchdog
+  resumes a parked shell when its inbox grows; each shell's Monitor tails board feed + broker
+  inbox (event-driven), with a 30-min cron heartbeat as the only fallback.
 
 ## 2. Your entrypoint: the owner shell
 
@@ -19,13 +24,17 @@ You are the project manager. Planning conversations happen in the ARCHITECT'S sh
 is yours to talk in; your feed only gets a one-line pointer). Direct questions/gates/demos reach
 your feed and you answer here.
 
-## 3. Kick off work
-Say your goal to the shell and have it create the epic verbatim, then spawn the coordinator:
+## 3. Kick off work — the owner shell spawns every seat (only SMEs come from the architect)
+Say your goal to the shell; it creates the epic verbatim and spawns the architect:
 - ticket_create(kind=epic, work_type=feature|bug|rnd|creative|chore, title=<your words, verbatim>)
-That is all: the board's AUTOPILOT (code, no tokens) spawns every seat when its ticket needs one,
-respawns dead shells, and stands the fleet down at close. From here: architect (design, /ocak, stories, criteria) -> your
-design_signoff gate -> engineers/reviewers per story -> adversarial review story -> qa -> your
-acceptance gate -> close.
+- spawn(role=architect, ticket_id=<epic>) — the pool opens the architect's window with /architect.
+Then go talk in the ARCHITECT'S window (it plans in plan mode): it designs, spawns SMEs for the
+high- and low-level strategy docs (assemble_ruleset composes them), writes stories + criteria,
+and opens your design_signoff gate. SMEs closed + plan signed = architect stands down.
+From there your shell spawns each phase as the feed announces it:
+engineer per ready story -> reviewer on in_review -> adversary on the adversarial review story
+(codex consult; you pick the findings to take up; iterate till you close the gate) -> qa when
+the acceptance gate opens -> your acceptance answer -> close.
 
 ## 4. What you actually do (the five touchpoints)
 1. design_signoff — the architect presents the design; answer the gate (or ask questions first).
@@ -44,14 +53,21 @@ small = redirect in place; big = the architect is forked to re-comprehend and yo
 
 ## 6. When something looks stuck
 - Board truth first: /ui/epic/<id> — who owns the open gate? whose criteria are pending?
-- The coordinator recovers dead/stalled shells itself; you can steer it ("resume X", "replace Y").
+- Your shell recovers: a shell_dead feed line on a live ticket -> resume(<participant>) or
+  spawn the seat again; reap only what is truly stuck. A parked shell wakes by itself when a
+  message lands in its broker inbox; the cron heartbeat is the last-resort nudge.
 - Framework fights an agent -> it files /pain (v8/.pain/pain-points.jsonl) and continues; read it.
 
 ## 7. Knowledge that persists
 - Domain + strategy docs (sme-authored) persist across epics; learnings are folded in at close.
 - Every epic's design, reports, thread and verdicts stay on the board — the record IS the docs.
 
-## 8. Optional
+## 8. Co-working with humans
+Teammates join with a browser, zero tokens: docs/TEAM.md — Tailscale connect, register +
+token, `/ui/me` inbox (questions, gates, reply forms), @mentions, per-owner epic scoping,
+optional Slack doorbell (`slack_map.json` + start-bridge.ps1).
+
+## 9. Optional
 - Plane portal: v8/docs/PLANE.md (their installer + API key + EDP8_PLANE_* env + webhook).
 - Docker board: `docker compose up -d board` in v8/ (compose file included).
 - Teammates: register a participant for them (any role); their shell = EDP_HANDLE=<their id>.

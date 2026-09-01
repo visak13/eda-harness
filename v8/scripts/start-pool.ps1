@@ -12,9 +12,11 @@ $env:EDP_POOL_HOST = "127.0.0.1"; $env:EDP_POOL_PORT = "$Port"
 $env:EDP_POOL_LOG_DIR = Join-Path $v8 ".data\pool-logs"
 $env:EDP_POOL_STATE = Join-Path $v8 ".data\pool-logs\pool-state.json"
 $env:EDP_SPAWN_MODE = "monitor"; $env:EDP_SKIP_PERMISSIONS = "1"
+$env:CLAUDE_CODE_FORCE_SESSION_PERSISTENCE = "1"  # spawned shells keep transcripts (child-session marker otherwise disables saving)
 $env:EDP_MAX_WORKERS = "4"; $env:EDP_MAX_PLANNERS = "4"; $env:EDP_MAX_TOTAL_SHELLS = "10"
 $env:EDP8_BOARD_URL = $BoardUrl; $env:EDP8_HOME = $v8
 $env:EDP_POOL_URL = "http://127.0.0.1:$Port"
+$env:EDP_BROKER_URL = "http://127.0.0.1:9300"  # wake plane: watchdog inbox checks + inherited by every spawned shell
 $log = Join-Path $v8 ".data\pool.log"
 $p = Start-Process -FilePath $py -ArgumentList @("-m","edp_pool.main") -WorkingDirectory $poolDir -WindowStyle Hidden -PassThru -RedirectStandardOutput $log -RedirectStandardError (Join-Path $v8 ".data\pool.err")
 Set-Content (Join-Path $v8 ".data\pool.pid") $p.Id

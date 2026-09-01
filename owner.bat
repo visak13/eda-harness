@@ -22,6 +22,15 @@ set "MODEL=%EDP8_OWNER_MODEL%"
 if not "%~2"=="" set "MODEL=%~2"
 if "%MODEL%"=="" set "MODEL=claude-opus-4-8"
 
+rem --- broker (skip if already answering) -------------------------------------
+powershell -NoProfile -Command "try { Invoke-RestMethod http://127.0.0.1:9300/v1/health -TimeoutSec 2 | Out-Null } catch { exit 1 }" >nul 2>&1
+if errorlevel 1 (
+  echo [owner.bat] starting broker...
+  powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%v8\scripts\start-broker.ps1"
+) else (
+  echo [owner.bat] broker already up.
+)
+
 rem --- board (skip if already answering) --------------------------------------
 powershell -NoProfile -Command "try { (Invoke-RestMethod http://127.0.0.1:9400/healthz -TimeoutSec 2).ok } catch { exit 1 }" >nul 2>&1
 if errorlevel 1 (
@@ -53,6 +62,8 @@ cd /d "%ROOT%v8"
 set "EDP_HANDLE=owner"
 set "EDP_ROLE=owner"
 set "EDP8_BOARD_URL=http://127.0.0.1:9400"
+set "EDP_BROKER_URL=http://127.0.0.1:9300"
+set "EDP_POOL_URL=http://127.0.0.1:9301"
 set "CLAUDE_CODE_AUTO_COMPACT_WINDOW=%ACW%"
 set "FORCE_COLOR=1"
 claude --model %MODEL%
