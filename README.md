@@ -1,102 +1,164 @@
-<div align="center">
+# EDA Harness
 
-# EDA · Claude Harness
+## One board. A real team. Humans included.
 
-### Stay in the conversation. Let the system keep moving.
+Bring a goal in your own words. EDA assembles the right specialist for each decision, keeps every handoff on a shared Board, and returns to the human whenever judgment—not automation—is required.
 
-**An autonomous coding harness that runs like an engineering team — not a lone AI engineer.**
-One conversation with a lead. A team of specialists working in parallel behind it.
-A shared, durable source of truth so the work stays coherent — and stays *good* — even when you change your mind mid-build.
+Agents get small, focused contexts. Humans get a browser. The project keeps the durable record: the original goal, design rulings, tickets, conversations, evidence, verdicts, and every reason a working session closed.
 
-**▶ [Open the live visual walkthrough →](https://visak13.github.io/Harness-presentation/)**
+[Watch the 60-second presentation](https://visak13.github.io/Harness-presentation/) · Run it yourself: `owner.bat` (Windows, see `v8/docs/OPERATING.md`)
 
-</div>
+## The 60-second visual tour
+
+### 1. The shared place
+
+![The epic, human inbox, and ticket room meeting on one shared Board](docs/assets/series/01-shared-place.png)
+
+Your goal, decisions, work, and proof live on one board.
+
+### 2. The team assembles by phase
+
+![Seven seats arranged around the lifecycle, with only the active phase illuminated](docs/assets/series/02-team-by-phase.png)
+
+A fresh specialist appears when its judgment is needed.
+
+### 3. Strategy before execution
+
+![Two design layers converging on the human sign-off card in My inbox](docs/assets/series/03-strategy-before-execution.png)
+
+Humans approve the strategy; builders inherit it.
+
+### 4. Promotion, not compilation
+
+![One signed design promoted into constructive and enforced views](docs/assets/series/04-promotion-not-compilation.png)
+
+One source becomes guidance for builders and obligations for checkers.
+
+### 5. Independent proof
+
+![A single relay from engineer through reviewer, Sol, the human, and QA](docs/assets/series/05-independent-proof.png)
+
+Different judgments stay genuinely separate.
+
+### 6. Humans are seats too
+
+![A durable browser inbox connecting teammates in two timezones](docs/assets/series/06-humans-are-seats.png)
+
+Teammates collaborate for $0, without waiting in the same room.
+
+### 7. Why it wins
+
+![Small role contexts around a restart-proof Board compared with one overloaded context](docs/assets/series/07-focused-contexts-win.png)
+
+Focused contexts change; shared truth remains.
+
+## Meet the seats
+
+EDA separates kinds of judgment so a builder does not quietly become its own designer, reviewer, and final judge.
+
+| Seat | Role | Judgment |
+|---|---|---|
+| Owner | Human-facing project seat | Direction and gates |
+| Architect · Fable 5.1 | Designs with the human | Structure |
+| SME | Researches and authors two strategy layers | Expertise |
+| Engineer · Opus 4.8 | Plans tickets and builds | Execution |
+| Reviewer · Opus 4.8 | Re-runs and enforces | Adherence |
+| Adversary · GPT Sol | Runs one bounded hostile round | Failure discovery |
+| QA · Fable 5.1 | Checks cold against the verbatim goal | Acceptance |
+
+Seats are responsibilities, not permanent chat windows. A fresh shell can take a seat, read the relevant Board record, do bounded work, leave a result, and close. If it reopens later, it re-grounds from the same durable truth.
+
+## How work moves
+
+1. **Bring a goal.** The Owner records the human's words as the epic and opens the Architect seat.
+2. **Design together.** The Architect works with the human; SMEs research and author the high-level strategy and low-level craft.
+3. **Sign once.** Both documents render in **My inbox** with **Approve** and **Needs work**. This is the one human design gate.
+4. **Build from the record.** The Engineer turns stories into task tickets and works from the constructive view of the signed design.
+5. **Check with different eyes.** The Reviewer enforces the design; Sol gets one bounded hostile pass; the human decides which findings matter.
+6. **Accept cold.** QA re-runs acceptance against the human's verbatim epic, independent of the build narrative.
+7. **Keep continuity.** Broker wakes addressed seats, Pool records session state, and the Board keeps messages, close reasons, evidence, and verdicts.
+
+The result is a visible chain of custody from request to proof. A ticket can move, but its reason for moving stays inspectable.
+
+## The one human sign-off
+
+EDA deliberately puts one clear human gate between design and execution.
+
+The Architect and SMEs produce two layers:
+
+- **High-level strategy** captures the intended outcomes, boundaries, risks, and major decisions.
+- **Low-level craft** captures the implementation rules, interfaces, constraints, and required proof.
+
+The Board renders both documents in `/ui/me`, not as opaque attachments but as readable markdown beside **Approve** and **Needs work**. Approval promotes the same signed source into two role-specific views:
+
+- the **constructive view** tells builders what to make and which constraints must remain close;
+- the **enforced view** tells reviewers and QA what must be demonstrated before the work can pass.
+
+This is promotion, not compilation: the human-approved source remains the source of truth.
+
+## Collaborate with humans for $0
+
+Human teammates are first-class seats. They do not need an agent runtime, a paid model, or a synchronized meeting — just a browser bookmark to their own inbox on the Board.
+
+**How a message actually travels** — the same path no matter who sends it:
+
+1. **Anyone writes** — a teammate typing in their browser inbox, an agent calling a tool, you steering mid-build. The message lands on the ticket's conversation, permanently. Mentioning `@handle` addresses it; several mentions notify several people.
+2. **The event fans out.** The Board emits the event to everyone it concerns, and every addressed recipient gets a durable copy in their personal inbox — a mailbox file that never expires.
+3. **Whoever it reaches, wakes.** A *running* agent shell is watching its own feed and reacts within seconds. A *closed* seat loses nothing — the next shell that opens on that ticket reads the thread first thing. A *human* gets a Slack ping (quiet-hours aware) with a one-click link to the exact conversation.
+4. **The answer rides the same rails back.** Reply from the browser at 9am your time; the asking shell — twelve timezones away, long since closed — is respawned, re-grounds from the record, and continues as if the conversation never paused.
+
+The addressing is fully symmetric: **any shell can address any teammate, and any teammate can address any seat** — same `@handle`, same inbox, same guarantees. Agents even refuse to close while a question addressed to them is unanswered, so a human's message is never silently dropped.
+
+The notification can be ephemeral. The question and answer are durable.
+
+## Why this beats one long-context agent
+
+A single ever-growing context mixes goals, design, implementation details, review history, corrections, and operational noise. The longer it runs, the harder it becomes to know which instruction is current, which judgment was independent, and what another person can safely resume.
+
+EDA takes the opposite shape:
+
+- **Small contexts** keep each seat focused on one bounded responsibility.
+- **Fresh eyes** preserve the difference between building, reviewing, attacking, choosing, and accepting.
+- **Verbatim goals** prevent the final check from drifting toward an agent-authored summary.
+- **Recorded handoffs** make decisions and evidence inspectable by both people and agents.
+- **Restart-proof continuity** lets a new shell recover from Board truth instead of reconstructing a lost chat.
+
+The workers may change. The project memory does not.
+
+## Three services, plainly
+
+| Service | Plain question | What it owns |
+|---|---|---|
+| **Board** | What is true? | Epics, documents, gates, tickets, messages, evidence, verdicts, activity, and close reasons |
+| **Broker** | Who needs to know? | Addressed delivery, mentions, wake signals, and the human notification bridge |
+| **Pool** | Who is working? | Shell startup, capacity, and busy/idle/closed session state |
+
+The Board is the center. Broker and Pool help work move; neither replaces the durable record.
+
+## Run it
+
+From the repository root, install the package and start the Board service:
+
+```bash
+python -m pip install -e .
+python -m edp8.service
+```
+
+In another terminal, register the default seats on a fresh Board:
+
+```bash
+python -m edp8.bootstrap
+```
+
+Then open:
+
+- [My inbox](http://127.0.0.1:9400/ui/me?as=owner) — questions, human gates, and people you can reach
+- [Projects](http://127.0.0.1:9400/ui) — the workspace list
+- [Activity](http://127.0.0.1:9400/ui/activity?as=owner) — wake, close, recovery, and decision history
+- [Interactive presentation](https://visak13.github.io/Harness-presentation/) — the one-minute story
+
+The default service binds to `127.0.0.1:9400`. Set `EDP8_HOST` or `EDP8_PORT` before startup to change it.
 
 ---
 
-![One conversation, one lead](docs/assets/series/01-conversation.png)
-
-You talk to **one** shell — the lead (`/neuron`). It owns the goal, routes the work, and comes back to you only at the moments that matter (the *gates*). Everything else happens as a coordinated background team.
-
-## The 60-second tour
-
-The whole framework, in six frames. (Or watch it interactively in the **[live presentation](https://visak13.github.io/Harness-presentation/)**.)
-
-### 1 · One conversation, one lead
-The `/neuron` shell is the only seat that talks to you, and only at gates. It never does the craft itself — it holds direction and routes.
-
-### 2 · The lead assembles a team
-![The lead assembles a team](docs/assets/series/02-team.png)
-
-Each role is its own focused Claude Code shell, spawned and retired by the **Pool**:
-
-| Role | Command | Job | Model |
-|---|---|---|---|
-| Curiosity | `/curiosity` | Turns every papered-over ambiguity into a question you can answer | Fable 5 |
-| Planner | `/agentic-plan` | The per-step team lead — authors a plan (a DAG of actions), drives its workers | Opus 4.8 |
-| Worker | `/worker` | Executes one action, then closes | Opus 4.8 |
-| Reviewer | `/reviewer` | Fresh eyes; re-checks the deliverable against the compiled standard | Opus 4.8 |
-| Acceptor | `/acceptor` | Final sign-off — judges the delivery against your verbatim goal, fetching its own evidence | Fable 5 |
-| Specialist | `/specialist` | The only seat that authors standards; learns a subject and compiles it | Opus 4.8 |
-| Challenge | *(adversary)* | Tries to break the acceptance — an adversarial lens over the plan | Sol · GPT‑5.6 |
-
-### 3 · Everyone builds off one shared board
-![Everyone builds off one shared board](docs/assets/series/03-board.png)
-
-Coordination isn't in a chat log — it's in a durable, **event‑sourced** record (`recipe.json` + `events.jsonl` + `snapshots`). Every step **serves** an outcome (work that serves no outcome is refused at the door). Every decision records what it **affects**. The **FSM** moves the plan forward one legal step at a time (`reconcile → next_action`). This shared board is *how* many agents stay coherent.
-
-### 4 · How the team stays consistently good
-![How the team stays consistently good](docs/assets/series/04-standards.png)
-
-Quality isn't hoped for — it's composed from three layers:
-
-- **Shapes** — the *high‑level strategy*: how to attack a step (`walking-skeleton`, `tracer-bullet`, `diagnose-fix-verify`, `modular-build`, …).
-- **Specializations** — the *craft*: each role's compiled playbook, with adherence tiers `required` / `expected` / `preferred`.
-- **Specs** — *consistency*: the ruleset every build is held to, split into a coder view and a reviewer view. Learnings flow back (`proposed → promoted`) and recompile the standard, so the team gets better over time.
-
-### 5 · Change your mind mid‑build — same guarantee
-![Change your mind mid-build](docs/assets/series/05-midplan.png)
-
-Steer at any point. Your change becomes a scoped **decision**; a **`ground_delta`** ripples through the **Broker** to *only the shells it affects* — the rest keep working, undisturbed. And the guarantees still hold, because they're gates in the machine, not good intentions: **comprehension → review → acceptance**.
-
-### 6 · Why a team beats a lone genius
-![Why a team beats a lone genius](docs/assets/series/06-scale.png)
-
-A single long‑context agent carries the entire goal, every decision, and all the rules in one window — and that window degrades as a whole. This harness keeps every shell's context *small and topical* (a scoped brief + a compiled spec + a shape checklist), refreshes only the shells a change actually touches, recalls durable truth semantically instead of re‑reading it, and releases context when a shell parks. **Small focused context per member + enforced coordination scales where one giant window degrades.**
-
-## Why this is an upgrade over a single agent — or a traditional harness
-
-- **A team, not a soloist.** Planning, building, reviewing, and accepting are *different seats with different standards* (and even different models — judgment on Opus 4.8, advisory on Fable 5, an adversarial lens on Sol/GPT‑5.6). No single window has to be good at everything at once.
-- **Guarantees are enforced, not suggested.** Grounding, review, and acceptance are **record operations with write‑gates** — a step that serves no outcome is refused, a `done` without evidence is refused, acceptance fetches its *own* evidence from disk. A traditional prompt‑only harness relies on the model not drifting; here the machine won't let it.
-- **You stay in control mid‑flight.** A steer becomes a scoped decision that reaches only affected work — you don't restart the run to change your mind, and you don't lose the guarantee by doing so.
-- **It's durable.** The whole run is event‑sourced and snapshotted; it survives restarts, parks and resumes, and leaves an auditable trail.
-
-## How it scales on a smaller context window
-
-Better *context management* beats a bigger window:
-
-- **Scoped grounding, not a mega‑prompt.** Each shell boots with only its leg — its action, a budgeted grounding brief, its concerns, and the outcome it serves. Domain knowledge arrives as a compiled ~15–30‑line spec doc, not raw rules.
-- **Diff‑based re‑grounding.** A changed decision publishes one compact `ground_delta` digest to *only* the shells in its impact closure; everyone else keeps their context — and their prompt cache — intact.
-- **Semantic recall instead of reloading.** Agents *ask* the record (`search_context`, embedding‑ranked) rather than reloading it; steady‑state shells never re‑read the whole recipe.
-- **Disposable, right‑sized shells.** A shell runs one job and closes or parks (freeing context); steps are sized for parallelism and durable resume points, so the fixed boot cost is spent only where it buys something.
-
-## The guarantees (gates)
-
-`comprehension` (you approve the plan) · `adversarial challenge` · `outcome met + evidence` · `spec learnings triaged` · `clean tree` · `acceptance` (judged against your verbatim goal). Only after these does a recipe close `succeeded`.
-
----
-
-<div align="center">
-
-**[▶ Explore the interactive presentation](https://visak13.github.io/Harness-presentation/)** · a visual index of the architecture
-
-*Complex idea, simple to follow — an engineering team you drive with one conversation.*
-
-</div>
-
-## v8 (current, 2026-08-24)
-The orchestration framework was rebuilt as **v8** (`v8/`): one Ticket object, a guarded board
-(:9400, web UI at `/ui`), role-scoped MCP bundles, engineering-team roles (owner, coordinator,
-architect, sme, engineer, reviewer, qa; GPT Sol as consultant). `start-v8.bat` / `stop-v8.bat`.
-Spec: `claude/docs/design/FRAMEWORK-V8-DRAFT-v2.md` · log: `claude/docs/design/V8-DELIVERY-PLAN.md`.
-The v7 commands are retired under `claude/.claude/commands-v7-retired/`.
+EDA is designed around a simple operating promise: **focused contexts change; shared truth remains.**
