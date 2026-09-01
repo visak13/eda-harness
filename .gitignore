@@ -11,6 +11,13 @@ node_modules/
 .logs/
 *.log
 
+# v8 runtime state + local secrets (never committed)
+v8/.data/
+v8/.sol/
+v8/slack_map.json
+v8/tokens.json
+v8/ui-avatars.json
+
 # Live agent state stores (data, not code)
 edp-pool/.claude-pool/
 edp-pool/.shadows/
@@ -81,3 +88,4 @@ claude/.sol_review_out.txt
 claude/.sol_review_out-*.txt
 .sol-last-message*.txt
 .sol-run*.jsonl
+v8/.test-tmp/
