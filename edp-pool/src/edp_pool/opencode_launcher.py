@@ -90,9 +90,11 @@ def monitor_roles() -> set[str]:
 
 
 def fleet_workspace() -> str:
+    # default: <repo root>/opencode-fleet, derived from this package's location
+    # so a clone anywhere (or a rename of the repo folder) keeps working
     return os.environ.get(
         "EDP_OPENCODE_WORKSPACE",
-        r"C:\Projects\Learning\eda-base3\opencode-fleet")
+        str(Path(__file__).resolve().parents[3] / "opencode-fleet"))
 
 
 def fleet_data_home() -> str:

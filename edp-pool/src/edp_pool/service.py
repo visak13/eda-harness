@@ -879,6 +879,7 @@ class PoolService(Microservice):
             if self._session_alive(sid) is not False:
                 continue
             s["state"] = "done"  # phantom — reconcile
+            s["dead_reason"] = "process gone (reconcile sweep) — died without closing itself"
             if self.locks.get(s.get("handle")) == sid:
                 del self.locks[s["handle"]]
             changed += 1
@@ -1219,9 +1220,11 @@ class PoolService(Microservice):
             self.release(sid)
         return sid
 
-    def release(self, sid: str, park: bool = False) -> None:
+    def release(self, sid: str, park: bool = False, reason: str = "") -> None:
         # DESIGN-v7 1.5.2: `park=True` turns the close into a park — the
         # shell dies but the row stays resumable and the lock stays held.
+        # `reason` lands in dead_reason so every terminal close names itself
+        # (v8 owner ruling 2026-09-02: a close without a why is a defect).
         if park:
             self.park_session(sid)
             return
@@ -1246,6 +1249,7 @@ class PoolService(Microservice):
                 return  # idempotent
             _log.info("release", sid, sid=sid, handle=s.get("handle"))
             s["state"] = "done"
+            s["dead_reason"] = reason or "released (no reason given)"
             self._persist()
         # fingerprint-gated: also closes a shell orphaned across a pool restart
         self._kill_session(sid)
@@ -1855,6 +1859,14 @@ class PoolService(Microservice):
             if last is not None and (time.time() - last) < idle_secs:
                 unknown_streak = 0
                 continue   # still emitting → busy, not leaked. Re-check.
+            # v8 2026-09-02: monitor shells have no drain log, but their
+            # Claude Code hooks POST /v1/turn_ping on every tool call and
+            # turn boundary — a recent ping is PROOF of busy, and this is
+            # what stops the blind 2-sample kill of a mid-work shell.
+            ping = s.get("last_turn_ts")
+            if ping is not None and (time.time() - float(ping)) < idle_secs:
+                unknown_streak = 0
+                continue
             # F36 R4#8 (2026-08-18): NO instrumentation is not PROOF of
             # idleness. A monitor-mode shell (the default) has no drain
             # log, so `last is None` used to read as "idle since forever"
@@ -1883,7 +1895,7 @@ class PoolService(Microservice):
                     _log.warning("park_FAILED_after_arm", sid, sid=sid,
                                  reason=out.get("reason"))
             else:
-                self.release(sid)
+                self.release(sid, reason=f"finish: {reason or 'job recorded'} (closed after idle)")
             return
         _log.info("close_when_idle_gave_up", sid, sid=sid,
                   checks=max_checks)
@@ -2155,6 +2167,7 @@ class PoolService(Microservice):
                                  "shell).")}
             if s is not None:
                 s["state"] = "done"
+                s["dead_reason"] = "reaped on request (deliberate stop)"
             if self.locks.get(handle) == sid:
                 del self.locks[handle]
             self._persist()
@@ -2375,7 +2388,32 @@ def create_app(
         # no flag is the unchanged legacy close.
         if body and body.get("park"):
             return await asyncio.to_thread(svc.park_session, session_id)
-        svc.release(session_id)
+        svc.release(session_id, reason=str((body or {}).get("reason", "")) or "released via API")
+        return {"ok": True}
+
+    @app.post("/v1/turn_ping/{session_id}")
+    async def turn_ping(session_id: str):
+        """Liveness heartbeat from a shell's own Claude Code hooks (PostToolUse +
+        Stop): a monitor-mode console has no drain log, so this ping is the only
+        busy signal close_when_idle can see. In-memory only — no persist churn."""
+        s = svc.sessions.get(session_id)
+        if s is None:
+            return {"ok": False, "note": "unknown session"}
+        s["last_turn_ts"] = time.time()
+        return {"ok": True}
+
+    @app.post("/v1/session_end/{session_id}")
+    async def session_end(session_id: str, body: dict | None = None):
+        """A shell's SessionEnd hook reporting its own exit — the honest
+        dead_reason for clean exits the pool would otherwise record blindly."""
+        why = str((body or {}).get("reason", "")) or "session ended (SessionEnd hook)"
+        s = svc.sessions.get(session_id)
+        if s is None:
+            return {"ok": False, "note": "unknown session"}
+        if s.get("state") == "active":
+            svc.release(session_id, reason=f"clean exit: {why}")
+        else:
+            s["dead_reason"] = s.get("dead_reason") or f"clean exit: {why}"
         return {"ok": True}
 
     @app.post("/v1/close_when_idle/{session_id}")
