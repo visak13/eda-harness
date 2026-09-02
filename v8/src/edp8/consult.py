@@ -99,11 +99,19 @@ def _resolve_bin() -> str:
 
 
 def _build_argv(codex: str, *, prompt: str, workdir: str, last_message_file: str,
-                 model: str, effort: str, sandbox: str = "read-only") -> list[str]:
-    """`codex exec <globals> -- <prompt>`. Globals precede the subcommand; the
-    prompt is the LAST positional behind `--` so a leading '-' is never parsed
-    as a flag. Sandbox: read-only for advice; workspace-write when the caller
-    hands Sol a directory to deliver into or edit in place."""
+                 model: str, effort: str, sandbox: str = "read-only",
+                 images: list[str] | None = None,
+                 resume_thread: str | None = None) -> list[str]:
+    """Fresh turn:  `codex exec <globals> [-i img...] -- <prompt>`
+    Resume turn: `codex exec <globals> resume [-i img]* -- <thread_id> <prompt>`
+
+    Globals precede the subcommand; the prompt is the LAST positional behind
+    `--` so a leading '-' is never parsed as a flag. On a FRESH turn `-i` is
+    variadic and must be terminated by `--`; on RESUME `-i` is per-flag and
+    sits AFTER the `resume` subcommand (it attaches to the follow-up prompt).
+    Sandbox: read-only for advice; workspace-write when the caller hands Sol a
+    directory to deliver into or edit in place. PURE — no IO."""
+    imgs = [i for i in (images or []) if i]
     argv = [codex, "exec", "--skip-git-repo-check",
             "-C", workdir, "-s", sandbox, "--json", "--color", "never",
             "-o", last_message_file]
@@ -111,8 +119,37 @@ def _build_argv(codex: str, *, prompt: str, workdir: str, last_message_file: str
         argv += ["-m", model]
     if effort:
         argv += ["-c", f"model_reasoning_effort={effort}"]
-    argv += ["--", prompt]
+    if resume_thread:
+        argv.append("resume")
+        for img in imgs:
+            argv += ["-i", img]
+        argv += ["--", resume_thread, prompt]
+    else:
+        if imgs:
+            argv.append("-i")
+            argv += imgs
+        argv += ["--", prompt]
     return argv
+
+
+def parse_thread_id(jsonl_text: str) -> str | None:
+    """Pull the Codex thread id out of the `--json` event stream — the
+    `{"type":"thread.started","thread_id":"…"}` event (first line normally).
+    Defensive: never raises on lines that are not JSON or not that event."""
+    import json
+    for line in jsonl_text.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(ev, dict) and ev.get("type") == "thread.started":
+            tid = ev.get("thread_id") or ev.get("session_id")
+            if isinstance(tid, str) and tid:
+                return tid
+    return None
 
 
 def _last_nonempty_line(text: str) -> str:
@@ -125,7 +162,8 @@ def _last_nonempty_line(text: str) -> str:
 
 def consult(purpose: Purpose, question: str, context: str = "",
             files: list[str] | None = None, timeout_s: int = 600,
-            write_dir: str | None = None) -> dict[str, Any]:
+            write_dir: str | None = None, images: list[str] | None = None,
+            thread_id: str | None = None) -> dict[str, Any]:
     """Ask Sol one question and return the standard envelope. Never retries,
     never glosses a failure as a quota cap — `error.message` is always the
     real last output line from the codex process.
@@ -133,7 +171,15 @@ def consult(purpose: Purpose, question: str, context: str = "",
     `write_dir` unlocks delivery: Sol runs sandboxed to that directory with
     write access and can create assets or edit files in place. The proven
     shape for substantial work is TWO rounds: first no write_dir (get a plan),
-    then pass the agreed plan back WITH write_dir (let Sol build it)."""
+    then pass the agreed plan back WITH write_dir (let Sol build it).
+
+    `thread_id` STEERS: pass the `thread_id` returned by an earlier call and
+    this turn resumes that Sol session (`codex exec resume`) with full memory
+    of what it said and did — the follow-up, correction, or "here is the
+    screenshot of what you told me to build". Omit it for a cold start.
+
+    `images` are attached with `-i` — the ONLY way a picture reaches Sol
+    (citing a path in the prompt is a no-op). Screenshots, renders, mockups."""
     if purpose not in _PREAMBLES:
         return {"ok": False,
                 "error": {"code": "exit", "message": f"unknown purpose {purpose!r}"},
@@ -142,6 +188,13 @@ def consult(purpose: Purpose, question: str, context: str = "",
         return {"ok": False,
                 "error": {"code": "exit", "message": f"write_dir {write_dir!r} is not a directory"},
                 "hint": "create it first, or pass the directory that holds the files to edit"}
+    images = [i for i in (images or []) if i]
+    for img in images:
+        if not Path(img).is_file():
+            return {"ok": False,
+                    "error": {"code": "exit", "message": f"image {img!r} does not exist"},
+                    "hint": "attach existing files (png/jpg); attaching is the only way an image reaches Sol"}
+    thread_id = (thread_id or "").strip() or None
 
     parts = [_PREAMBLES[purpose], "", (question or "").strip()]
     if context.strip():
@@ -166,7 +219,8 @@ def consult(purpose: Purpose, question: str, context: str = "",
     argv = _build_argv(codex, prompt=prompt, workdir=write_dir or os.getcwd(),
                         last_message_file=str(last_msg), model=model,
                         effort=_EFFORT_BY_PURPOSE.get(purpose, "medium"),
-                        sandbox="workspace-write" if write_dir else "read-only")
+                        sandbox="workspace-write" if write_dir else "read-only",
+                        images=images, resume_thread=thread_id)
 
     start = time.monotonic()
     try:
@@ -212,10 +266,13 @@ def consult(purpose: Purpose, question: str, context: str = "",
     if not answer:
         answer = _last_nonempty_line(raw)
 
+    out_thread = parse_thread_id(raw) or thread_id
     return {"ok": True,
             "value": {"answer": answer, "model": model, "elapsed_s": round(elapsed, 3),
-                      "run_id": run_id, "log": str(log_path)},
-            "hint": ""}
+                      "run_id": run_id, "log": str(log_path), "thread_id": out_thread,
+                      "images_attached": len(images)},
+            "hint": ("pass thread_id back on the next consult to STEER this same Sol session"
+                     if out_thread else "")}
 
 
 def _write_log(log_path: Path, raw: str) -> None:

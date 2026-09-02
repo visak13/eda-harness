@@ -730,13 +730,20 @@ class ConsultArgs(BaseModel):
     timeout_s: int = 600
     write_dir: str | None = Field(default=None, description="a directory Sol may WRITE (assets delivered there, "
                                   "or files edited in place). Without it Sol is read-only and can only advise")
+    thread_id: str | None = Field(default=None, description="STEER: the thread_id returned by an earlier consult — "
+                                  "resumes that same Sol session (it remembers what it said and did). Omit for a "
+                                  "cold start")
+    images: list[str] | None = Field(default=None, description="image files (png/jpg) to attach — screenshots, "
+                                     "renders, mockups. Attaching is the ONLY way a picture reaches Sol; a path "
+                                     "in the prompt is a no-op")
 
 
 def _consult(a: ConsultArgs) -> dict[str, Any]:
     from . import consult as consult_mod
 
     resp = consult_mod.consult(a.purpose, a.question, context=a.context,
-                                files=a.files, timeout_s=a.timeout_s, write_dir=a.write_dir)
+                                files=a.files, timeout_s=a.timeout_s, write_dir=a.write_dir,
+                                images=a.images, thread_id=a.thread_id)
     if resp.get("ok") and a.ticket_id:
         answer = resp["value"]["answer"]
         get_client().message_send(ticket_id=a.ticket_id, kind="note",
@@ -747,7 +754,11 @@ def _consult(a: ConsultArgs) -> dict[str, Any]:
 CONSULT_TOOLS = [
     ToolDef("consult", "Ask the consultant (GPT Sol) — adversarial review, creative/visual judgment, a second "
             "opinion, or (with write_dir) actual DELIVERY: Sol writes assets into the directory or edits files "
-            "in place. Sol cannot return images inline — hand it a write_dir instead. For substantial creative "
+            "in place. STEER: every answer carries a thread_id — pass it back to continue THAT Sol session "
+            "(follow-up, correction, 'here is what you told me to build'); omit it to start cold. SHOW: attach "
+            "screenshots/renders via images (the only way a picture reaches Sol) for visual critique and "
+            "debugging. IMAGE GEN: Sol has a built-in image generator; give a write_dir and say 'save the PNGs "
+            "into <write_dir>' — Sol cannot return images inline. For substantial creative "
             "or build work, consult TWICE: round 1 without write_dir to agree a plan, round 2 passing that plan "
             "back with write_dir to build it — never one-shot a large build. HOW TO BRIEF SOL (this determines "
             "output quality): state the GOAL, the audience, the quality bar, and reference work to match — then "
