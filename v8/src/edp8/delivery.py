@@ -20,8 +20,20 @@ def _is_participant(board: Board, pid: str) -> bool:
         return False
 
 
+def _seat_alive(board: Board, pid: str) -> bool | None:
+    """Latest session state for a participant; None when it never had a shell."""
+    rows = sorted(board.store.query("session", {"participant_id": pid}), key=lambda s: s.created_at)
+    if not rows:
+        return None
+    return rows[-1].state.value in ("alive", "parked")
+
+
 def after_message(board: Board, actor_id: str, m: Message) -> None:
-    """Mirror an addressed message + every @mention into broker inboxes."""
+    """Mirror an addressed message + every @mention into broker inboxes.
+
+    Blind-spot guard: a message addressed to an AGENT seat with no live shell would
+    otherwise wait silently — the epic's owning human gets an fyi naming the closed
+    seat so the recovery decision (respawn / let it wait) is theirs, immediately."""
     targets: list[str] = []
     if m.to and _is_participant(board, m.to):
         targets.append(m.to)
@@ -30,6 +42,19 @@ def after_message(board: Board, actor_id: str, m: Message) -> None:
     for to in targets:
         broker_adapter.publish(actor_id, to, m.kind.value,
                                {"ticket_id": m.ticket_id, "text": m.text, "board_msg_id": m.id})
+        try:
+            p = board.participant(to)
+        except BoardError:
+            continue
+        if p.type == "agent" and _seat_alive(board, to) is not True:
+            owner_pid = board.epic_owner(m.ticket_id)
+            if owner_pid not in (to, actor_id):
+                broker_adapter.publish("board", owner_pid, "fyi",
+                                       {"ticket_id": m.ticket_id,
+                                        "text": f"{m.kind.value} from {actor_id} awaits CLOSED seat {to} "
+                                                f"on {m.ticket_id} — respawn it to answer, or let it wait "
+                                                f"for the next shell",
+                                        "board_msg_id": m.id, "closed_seat": to})
 
 
 def after_gate_open(board: Board, actor_id: str, ticket_id: str, gate: str, note: str) -> None:

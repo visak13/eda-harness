@@ -96,7 +96,38 @@ def _whoami(_: WhoamiArgs) -> dict[str, Any]:
         role = resp["value"]["participant"]["role"]
         resp["value"]["role"] = role
         resp["value"]["bundles_available"] = ROLE_BUNDLES.get(role, [])
+        resp["value"]["lineage"] = _lineage(resp["value"]["participant"].get("id") or "")
     return resp
+
+
+def _lineage(me: str) -> dict[str, Any]:
+    """Who spawned me, what I spawned, who else is live on my epic — every shell
+    knows its team and which inboxes exist. Best-effort: pool down = empty."""
+    out: dict[str, Any] = {"my_handle": me, "spawned_by": None, "children": [], "epic_team": []}
+    try:
+        from . import pool_adapter
+        got = pool_adapter.sessions()
+        if not got.get("ok"):
+            return out
+        rows = got["value"] if isinstance(got["value"], list) else got["value"].get("sessions", [])
+        by_sid = {s.get("session_id"): s for s in rows}
+        mine = next((s for s in rows if s.get("handle") == me and s.get("state") in ("active", "alive", "starting")), None) \
+            or next((s for s in rows if s.get("handle") == me), None)
+        if mine:
+            parent = by_sid.get(mine.get("parent"))
+            out["spawned_by"] = parent.get("handle") if parent else (mine.get("parent") or None)
+            out["children"] = sorted({s.get("handle") for s in rows
+                                      if s.get("parent") == mine.get("session_id") and s.get("handle")})
+        epic = me.split(".", 1)[1] if "." in me else None
+        if epic:
+            epic_root = epic.split(".", 1)[0]
+            out["epic_team"] = sorted({f"{s.get('handle')} ({s.get('state')})" for s in rows
+                                       if s.get("handle") and s.get("handle") != me
+                                       and epic_root in s.get("handle", "")
+                                       and s.get("state") in ("active", "alive", "parked")})
+    except Exception as e:  # pool down = no lineage, but never silently: name it in the payload
+        out["note"] = f"lineage unavailable (pool unreachable: {type(e).__name__})"
+    return out
 
 
 def _subscribe(_: SubscribeArgs) -> dict[str, Any]:
@@ -446,7 +477,26 @@ def _events_query(a: EventsQueryArgs) -> dict[str, Any]:
 
 
 def _participants(a: ParticipantsArgs) -> dict[str, Any]:
-    return get_client().participants(role=a.role)
+    resp = get_client().participants(role=a.role)
+    if not resp.get("ok"):
+        return resp
+    c = get_client()
+    rows = resp.get("value") or []
+    for row in rows:
+        if row.get("handle", "").startswith(("__", "wt-")):
+            row["reach"] = "test fixture"
+            continue
+        if row.get("type") == "human":
+            row["reach"] = "person — message_send(to='@'+handle) reaches their inbox + Slack doorbell"
+            continue
+        sq = c.session_query(participant_id=row.get("id"))
+        states = [s.get("state") for s in (sq.get("value") or [])] if sq.get("ok") else []
+        row["reach"] = ("live seat — a message wakes it now" if any(s in ("alive", "parked") for s in states)
+                        else "closed seat — post on its ticket thread; the next shell reads it at boot")
+    resp["hint"] = ("need a HUMAN review? pick the closest role match among type=human rows and "
+                    "message_send(to='@'+handle, kind=question) — their Slack fires with a deep link. "
+                    "A named person works the same: to='@name'")
+    return resp
 
 
 BOARD_TOOLS = [
@@ -456,7 +506,10 @@ BOARD_TOOLS = [
     ToolDef("events_query", "Read the audit/feed log, by subject or since a sequence number. "
             "Returns matching events.",
             EventsQueryArgs, _events_query, "board"),
-    ToolDef("participants", "List registered participants, optionally by role. Returns participant records.",
+    ToolDef("participants", "List the whole team — humans and agent seats — optionally by role. Each row "
+            "carries type, @handle, role, and reach (person / live seat / closed seat). THE way to find a "
+            "collaborator: match the role you need (exact or closest judgment call), then "
+            "message_send(to='@'+handle) — humans get their Slack doorbell automatically. Returns the roster.",
             ParticipantsArgs, _participants, "board"),
 ]
 
@@ -851,14 +904,14 @@ ROLE_BUNDLES: dict[str, list[str]] = {
     Role.architect.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD + _BOARD
         + ["find", "consult", "artifact_create", "artifact_read", "spawn", "finish"],
     Role.sme.value: _IDENTITY + _TICKET_RO + _DOC_RW + _THREAD
-        + ["find", "assemble_ruleset", "criterion_query", "criterion_update",
+        + ["find", "participants", "assemble_ruleset", "criterion_query", "criterion_update",
            "artifact_create", "artifact_read", "finish"],
     Role.engineer.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD
-        + ["find", "assemble_ruleset", "consult", "artifact_create", "artifact_read", "finish"],
+        + ["find", "participants", "assemble_ruleset", "consult", "artifact_create", "artifact_read", "finish"],
     Role.reviewer.value: _IDENTITY + _TICKET_RO + _CHECK + _DOC_RW + _THREAD
-        + ["find", "assemble_ruleset", "consult", "artifact_create", "artifact_read", "finish"],
+        + ["find", "participants", "assemble_ruleset", "consult", "artifact_create", "artifact_read", "finish"],
     Role.adversary.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD
-        + ["find", "assemble_ruleset", "consult", "artifact_create", "artifact_read", "finish"],
+        + ["find", "participants", "assemble_ruleset", "consult", "artifact_create", "artifact_read", "finish"],
     Role.qa.value: _IDENTITY + _TICKET_RO + _CHECK + _DOC_RW + _THREAD + _BOARD
         + ["find", "assemble_ruleset", "consult", "artifact_create", "artifact_read", "finish"],
 }

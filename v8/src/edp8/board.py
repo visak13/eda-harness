@@ -330,8 +330,10 @@ class Board:
             c.text = text
         if evidence_ref is not None:
             self._get("doc", evidence_ref, "evidence doc")
-            if actor.id != t.assignee and actor.role not in CRITERION_CHECKERS and actor.role != Role.engineer:
-                raise BoardError("scope", "evidence is recorded by the ticket's assignee or its checker")
+            if actor.id != t.assignee and actor.role not in CRITERION_CHECKERS \
+                    and actor.role not in (Role.engineer, Role.sme, Role.adversary):
+                raise BoardError("scope", "evidence is recorded by the ticket's doer (engineer/sme/adversary), "
+                                          "its assignee, or its checker")
             c.evidence_ref = evidence_ref
         if verdict is not None:
             if actor.role not in CRITERION_CHECKERS:
@@ -345,7 +347,13 @@ class Board:
             c.verdict = verdict
         self.store.put("criterion", c)
         pending = [x.id for x in self.criteria(t.id) if x.verdict != Verdict.passed]
-        self._emit(t.id, EventKind.doc_updated, {"criterion": c.id, "verdict": c.verdict, "pending": pending, "by": actor.id})
+        if verdict is not None:  # a verdict is a first-class WHO/WHAT event, not a doc edit
+            self._emit(t.id, EventKind.criterion_checked,
+                       {"criterion": c.id, "verdict": c.verdict, "by": actor.id, "by_type": actor.type,
+                        "evidence": c.evidence_ref, "ticket": t.id, "pending": pending})
+        else:
+            self._emit(t.id, EventKind.doc_updated,
+                       {"criterion": c.id, "verdict": c.verdict, "pending": pending, "by": actor.id})
         self._auto_advance(self.ticket(t.id))
         return c
 
@@ -482,6 +490,7 @@ class Board:
         self._index("message", m.id, text)
         mentioned = self.mentions(text, exclude={actor.id, to} if to else {actor.id})
         self._emit(t.id, EventKind.message_sent, {"message": m.id, "to": to, "kind": kind, "from": actor.id,
+                                                  "from_type": actor.type, "from_role": actor.role.value,
                                                   "text": text[:280], "mentions": mentioned})
         if kind == MessageKind.steer and actor.role == Role.owner and t.kind != TicketKind.task:
             pass  # a steer is data on the thread; widening is the asker's call via /doubt → architect
@@ -606,20 +615,33 @@ class Board:
                 out["hint"] = (f"strategy/domain docs are linked: run assemble_ruleset(ticket_id={t.id!r}) "
                                "for your working brief (docs above are summaries; doc_read fetches full text)")
         # questions AND steers: a directed steer to a booting seat must survive the
-        # whoami->subscribe race (pain 2026-09-01 — steered assignments silently vanished)
-        asks = [m for m in self.store.query("message", {"kind": [MessageKind.question, MessageKind.steer]},
-                                            limit=200)
-                if m.to in (p.id, p.role.value)]  # type: ignore[attr-defined]
-        answered = {m.reply_to for m in self.store.query("message", {"kind": MessageKind.answer}, limit=500)}  # type: ignore[attr-defined]
+        # whoami->subscribe race. Queried BY RECIPIENT (indexed) — a global scan capped at
+        # 200 rows silently dropped every recent ask once the board grew (drill 2026-09-03).
+        asks = list(self.store.query("message", {"to": p.id,
+                                                 "kind": [MessageKind.question, MessageKind.steer]}, limit=100))
+        if p.role.value != p.id:
+            asks += list(self.store.query("message", {"to": p.role.value,
+                                                      "kind": [MessageKind.question, MessageKind.steer]}, limit=100))
+
+        def _is_answered(ask_id: str) -> bool:
+            return bool(self.store.query("message", {"reply_to": ask_id, "kind": MessageKind.answer}, limit=1))
 
         def _ask_live(m: Message) -> bool:
-            """A question on a closed/dropped ticket (or its closed epic) waits on nobody."""
+            """An ask dies with its EPIC (or a dropped ticket) — but a DONE ticket in a live
+            epic still takes questions (post-hoc reviews are real; drill 2026-09-03)."""
             tk = self.store.get("ticket", m.ticket_id)
-            if tk is None or tk.status in _TERMINAL:  # type: ignore[union-attr]
+            if tk is None or tk.status == TicketStatus.dropped:  # type: ignore[union-attr]
                 return False
             return self.epic_of(tk).status not in _TERMINAL  # type: ignore[arg-type]
 
-        out["asks_for_me"] = [m.model_dump(mode="json") for m in asks if m.id not in answered and _ask_live(m)]
+        def _ask_row(m: Message) -> dict[str, Any]:
+            row = m.model_dump(mode="json")
+            sender = self.store.get("participant", m.created_by)
+            row["from_type"] = getattr(sender, "type", "agent") if sender else "agent"
+            row["from_role"] = getattr(getattr(sender, "role", None), "value", "unknown") if sender else "unknown"
+            return row
+
+        out["asks_for_me"] = [_ask_row(m) for m in asks if not _is_answered(m.id) and _ask_live(m)]
         if not tickets:
             out["hint"] = "no ticket assigned or created by you yet"
         return out
@@ -686,6 +708,8 @@ class Board:
             if ev.kind == EventKind.status_changed:
                 return d.get("to") in ("ready", "in_review", "done", "blocked", "partial") \
                     and self._owner_scope(p, ev.subject_id)
+            if ev.kind == EventKind.criterion_checked:
+                return d.get("by") != p.id and self._owner_scope(p, ev.subject_id)
             return False
         if ev.kind == EventKind.message_sent:
             to = d.get("to")
@@ -702,7 +726,8 @@ class Board:
             return d.get("by") == p.id or self._in_subtree(p, ev.subject_id)
         if ev.kind in (EventKind.shell_dead, EventKind.shell_stalled):
             return p.role == Role.coordinator or self._on_ticket(p, ev.subject_id, parents=True)
-        if ev.kind in (EventKind.status_changed, EventKind.ticket_created, EventKind.assigned):
+        if ev.kind in (EventKind.status_changed, EventKind.ticket_created, EventKind.assigned,
+                       EventKind.criterion_checked):
             if p.role == Role.coordinator:
                 return True
             if d.get("assignee") == p.id:

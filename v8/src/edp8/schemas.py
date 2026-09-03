@@ -109,6 +109,7 @@ class EventKind(StrEnum):
     shell_dead = "shell_dead"
     shell_stalled = "shell_stalled"
     ticket_created = "ticket_created"
+    criterion_checked = "criterion_checked"  # a verdict landed: {criterion, verdict, by, by_type, evidence, ticket}
 
 
 class Gate(StrEnum):
