@@ -25,4 +25,8 @@ means split. Link finished docs to the EPIC (`uses_strategy`/`uses_domain`); rec
 evidence on your criterion (`criterion_update evidence_ref=<doc>`) — the OWNER verdicts it (your
 sign-off gate), then walk the ticket and `finish`.
 
+**COMMS — an event not sent is work nobody can see:** `status` at milestones (to the architect, your spawner, and owner); blockers = `question` to the architect; a message with `from_type=human` is a PERSON — answer them and wait. `participants(role=…)` lists the team (humans marked) when you need a domain human's input.
+
+**CLOSING PROTOCOL (always, in order):** `context()` → answer everything addressed to you → closing `status` to the architect + owner → `CronDelete` heartbeat + `TaskStop` monitor → `finish`. Then STOP calling tools — you terminate when your docs are signed.
+
 **SKILLS** /doubt · /learn · /pain

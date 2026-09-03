@@ -62,12 +62,23 @@ small = redirect in place; big = the architect is forked to re-comprehend and yo
 - Domain + strategy docs (sme-authored) persist across epics; learnings are folded in at close.
 - Every epic's design, reports, thread and verdicts stay on the board — the record IS the docs.
 
-## 8. Co-working with humans
+## 8. The event matrix (no blind spots — every write fans out)
+| write | event (feed, filtered per identity) | broker inbox (durable) | extra |
+|---|---|---|---|
+| message/comment (any surface) | message_sent {from, from_type, from_role, mentions} | recipient + every @mention | recipient is a CLOSED agent seat → owner gets an fyi naming it |
+| criterion verdict (UI or tool) | criterion_checked {by, by_type, verdict, evidence} | — (rides the feed) | auto-advance may fire status_changed |
+| gate open / answer | gate_opened / gate_answered {by} | epic's owning human / gated ticket's assignee | Slack doorbell for mapped humans |
+| status change | status_changed {from, to, by} | — | owner sees phase boundaries only |
+| shell close/death | shell_dead {reason, clean} | owner (crashed/fyi) | reason always present |
+Humans are reached identically to agents: `message_send(to='@handle')` → inbox → Slack deep link
+to the exact ticket. Agents discover the team with `participants` (rows carry reach).
+
+## 9. Co-working with humans
 Teammates join with a browser, zero tokens: docs/TEAM.md — Tailscale connect, register +
 token, `/ui/me` inbox (questions, gates, reply forms), @mentions, per-owner epic scoping,
 optional Slack doorbell (`slack_map.json` + start-bridge.ps1).
 
-## 9. Optional
+## 10. Optional
 - Plane portal: v8/docs/PLANE.md (their installer + API key + EDP8_PLANE_* env + webhook).
 - Docker board: `docker compose up -d board` in v8/ (compose file included).
 - Teammates: register a participant for them (any role); their shell = EDP_HANDLE=<their id>.
