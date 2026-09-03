@@ -20,8 +20,12 @@ def test_line_renders_deep_link_and_body():
     msg = {"from": "architect.epic-1", "kind": "question",
            "body": {"ticket_id": "epic-1", "text": "your call on X?"}}
     line = slack_bridge._line(cfg, "x", msg)
-    assert "your call on X?" in line and "epic-1" in line
-    assert "http://100.1.2.3:9400/ui/me?as=x" in line
+    assert "your call on X?" in line
+    # a ticketed ping deep-links the exact conversation with identity attached
+    assert "http://100.1.2.3:9400/ui/ticket/epic-1?as=x" in line
+    # no ticket -> fall back to the inbox
+    bare = slack_bridge._line(cfg, "x", {"from": "pool", "kind": "crashed", "body": {}})
+    assert "http://100.1.2.3:9400/ui/me?as=x" in bare
 
 
 def test_post_prefers_dm_then_webhook(monkeypatch):

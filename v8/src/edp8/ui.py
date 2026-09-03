@@ -50,6 +50,13 @@ form{margin:0}input,select{border:1px solid var(--border);background:var(--app);
 /* Document reader */
 .version-control{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 20px}.version-control a{min-height:34px;display:flex;align-items:center;gap:5px;padding:4px 12px;background:var(--raised);border:1px solid var(--border);border-radius:99px;font-size:13px}.version-control a.active{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:700}.version-control a.active:hover{text-decoration:none}
 .composer-slim{display:grid;grid-template-columns:minmax(150px,230px) 120px minmax(0,1fr) auto;gap:8px;align-items:center;padding:8px}
+.msg-card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:8px 12px;min-width:0}.message.grouped .msg-card{border-top-left-radius:3px}
+.order-toggle{display:inline-block;font-size:12px;color:var(--secondary);margin:0 0 10px;border:1px solid var(--border);border-radius:99px;padding:3px 10px}.order-toggle:hover{background:var(--hover);text-decoration:none}
+.doc-row{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px;min-width:0}.doc-row a{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ticket-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}.ticket-table th,.ticket-table td{border-bottom:1px solid var(--border);padding:6px 8px;text-align:left}.ticket-table th{color:var(--secondary);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+details.fold{border:1px solid var(--border);border-radius:10px;background:var(--panel);padding:10px 14px;margin:14px 0}details.fold>summary{cursor:pointer;font-weight:650;min-height:32px;display:flex;align-items:center}
+.to-top{position:fixed;right:22px;bottom:22px;z-index:6;background:var(--raised);border:1px solid var(--border);border-radius:99px;padding:9px 14px;font-size:13px}.to-top:hover{background:var(--hover);text-decoration:none}
+.doc-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:14px 0;background:var(--raised);border:1px solid var(--border);border-radius:10px;padding:10px}.doc-actions input[name=text]{flex:1;min-width:230px}
 .document-reader{max-width:860px;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:28px}.document-reader pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;max-width:76ch;font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 .doc-md{font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.doc-md h1,.doc-md h2,.doc-md h3{margin:20px 0 8px;line-height:1.3}.doc-md h1{font-size:20px}.doc-md h2{font-size:17px}.doc-md h3{font-size:15px}.doc-md p,.doc-md ul,.doc-md ol{margin:8px 0;max-width:76ch}.doc-md li{margin:3px 0}.doc-md code{background:var(--app);border:1px solid var(--border);border-radius:4px;padding:1px 5px;font:12.5px/1.5 ui-monospace,Consolas,monospace}.doc-md pre{background:var(--app);border:1px solid var(--border);border-radius:8px;padding:12px;overflow-x:auto}.doc-md pre code{border:0;background:none;padding:0}.doc-md table{border-collapse:collapse;margin:10px 0;display:block;overflow-x:auto}.doc-md th,.doc-md td{border:1px solid var(--border);padding:6px 10px;text-align:left}.doc-md blockquote{border-left:3px solid var(--brand);margin:10px 0;padding:4px 14px;color:var(--secondary)}.doc-md a{color:var(--link)}
 .kanban{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:10px;overflow-x:auto;padding-bottom:6px}.kanban-col{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:8px;min-height:90px}.kanban-head{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--secondary);padding:2px 4px 8px;display:flex;align-items:center;gap:6px}.kanban-card{display:block;background:var(--raised);border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px;color:var(--text)}.kanban-card:hover{background:var(--hover);text-decoration:none}.kanban-top{display:flex;justify-content:space-between;align-items:center;gap:6px}.kanban-title{font-size:13px;margin:5px 0 3px;line-height:1.35}.kanban-meta{font-size:11px;color:var(--muted);display:flex;gap:6px;flex-wrap:wrap}.kanban-empty{border:1px dashed var(--border);border-radius:8px;min-height:40px}
@@ -91,11 +98,12 @@ def _format_time(value: datetime, include_date: bool = False) -> str:
 def _hidden_identity_fields(participant: Participant, token: str | None) -> str:
     return f"<input type='hidden' name='as_' value='{_e(participant.id)}'><input type='hidden' name='token' value='{_e(token or '')}'>"
 
-def _page(title: str, body: str, *, refresh: int | None = None, active_nav: str | None = None, sidebar: str = "", context: str = "", composer: str = "", identity: str = "") -> str:
+def _page(title: str, body: str, *, refresh: int | None = None, active_nav: str | None = None, sidebar: str = "", context: str = "", composer: str = "", identity: str = "", qs: str = "") -> str:
     meta = f"<meta http-equiv='refresh' content='{refresh}'>" if refresh else ""
-    nav = (f"<nav class='nav-list'><a class='nav-link{' active' if active_nav=='me' else ''}' href='/ui/me'>{_icon('inbox')} My inbox</a>"
-           f"<a class='nav-link{' active' if active_nav=='epics' else ''}' href='/ui'>{_icon('epic')} Projects</a>"
-           f"<a class='nav-link{' active' if active_nav=='activity' else ''}' href='/ui/activity'>{_icon('thread')} Activity</a></nav>"
+    q = f"?{qs}" if qs else ""
+    nav = (f"<nav class='nav-list'><a class='nav-link{' active' if active_nav=='me' else ''}' href='/ui/me{q}'>{_icon('inbox')} My inbox</a>"
+           f"<a class='nav-link{' active' if active_nav=='epics' else ''}' href='/ui{q}'>{_icon('epic')} Projects</a>"
+           f"<a class='nav-link{' active' if active_nav=='activity' else ''}' href='/ui/activity{q}'>{_icon('thread')} Activity</a></nav>"
            f"<a class='utility-link' href='/docs'>API reference</a>")
     right = f"<aside class='context-panel'>{context}</aside>" if context else ""
     return f"<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{_e(title)} · edp8</title>{meta}<style>{_CSS}</style></head><body><div class='app-shell'><aside class='sidebar'><div class='sidebar-brand'>edp8 board</div><div class='sidebar-body'>{nav}<div class='sidebar-local'>{sidebar}</div></div></aside><main class='main-pane'><header class='channel-header'><div><h1>{_e(title)}</h1><p>Project-persistent board workspace</p></div></header><div class='page-grid{' with-context' if context else ''}'><section class='content{' has-composer' if composer else ''}'><div class='content-inner'><div class='page-body'>{body}</div>{composer}</div></section>{right}</div></main></div></body></html>"
@@ -119,13 +127,25 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
         avatar = "<span class='avatar-placeholder'></span>" if grouped else _avatar_for(m.created_by)
         head = "" if grouped else f"<div class='message-head'><strong>{_e(_participant_label(p))}</strong><span class='message-meta'>{_e(getattr(p,'role','system'))} · {_format_time(m.created_at)}</span></div>"
         target = f"<span class='message-target'>to {_e(m.to)}</span>" if m.to else ""
-        return f"<article class='message{' grouped' if grouped else ''}'>{avatar}<div>{head}<div class='message-text'>{_e(m.text)}{target}</div></div></article>"
-    def _message_group_html(messages: Iterable[Any], *, viewer_id: str | None = None) -> str:
+        return f"<article class='message{' grouped' if grouped else ''}'>{avatar}<div class='msg-card'>{head}<div class='message-text'>{_e(m.text)}{target}</div></div></article>"
+    def _message_group_html(messages: Iterable[Any], *, viewer_id: str | None = None, newest_first: bool = True) -> str:
         ordered = sorted(messages, key=lambda m:m.created_at)
         if not ordered: return _empty_state("thread","No messages yet","This thread is ready for its first update.")
         out=[]; previous=None
         for m in ordered: out.append(_message_html(m,viewer_id=viewer_id,previous=previous)); previous=m
+        if newest_first: out.reverse()
         return "<div class='conversation'>"+"".join(out)+"</div>"
+    def _order_toggle(base_url: str, qs: str, newest_first: bool) -> str:
+        nxt = "oldest" if newest_first else "newest"
+        sep = "&" if qs else ""
+        return (f"<a class='order-toggle' href='{base_url}?{qs}{sep}order={nxt}' "
+                f"title='flip the conversation ordering'>showing {'newest' if newest_first else 'oldest'} first — "
+                f"switch to {nxt} first</a>")
+    def _doc_row(d: Any, relation: str | None = None) -> str:
+        rel = f" · <span class='muted'>{_e(str(relation).replace('_',' '))}</span>" if relation else ""
+        return (f"<div class='doc-row'><span class='badge s-{_e(d.doc_type)}'>{_e(d.doc_type)}</span>"
+                f"<a href='/ui/doc/{quote(d.id,safe='')}' title='{_e(d.title)}'>{_e(d.title[:60])}</a>"
+                f"<span class='muted'>v{d.version}{rel}</span></div>")
     def _feed_line(e: Any) -> str:
         d=e.data
         if e.kind=="message_sent": return f"{d.get('from')} → {d.get('to') or 'thread'}: {d.get('text','')}"
@@ -136,6 +156,9 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
             verb = "closed" if d.get("clean") else ("stalled" if str(e.kind).endswith("stalled") else "died")
             return f"{d.get('participant')}'s shell {verb} — {d.get('reason') or 'no reason recorded'}"
         if e.kind=="assigned": return f"assigned to {d.get('assignee')}"
+        if e.kind=="criterion_checked":
+            who=f"{d.get('by')} ({'human' if d.get('by_type')=='human' else 'agent'})"
+            return f"criterion {d.get('criterion')} verdict {d.get('verdict')} by {who}"
         return str({k:v for k,v in d.items() if k!="mentions"})[:200]
     def _event_html(e: Any) -> str: return f"<div class='system-event'>{system_avatar_svg(24)}<div>{_e(_feed_line(e)[:220])} {_ticket_chip(e.subject_id)}<span class='event-time'>{_format_time(e.created_at,True)}</span></div></div>"
     def _gate_card_html(ticket_id: str, gate: Any, opened_by: Any, note: Any, hidden: str="", actionable: bool=False) -> str:
@@ -292,7 +315,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
                      f"everyone you @mentioned has it in their inbox.</div>")
         signoff_block=f"{_section_header('Docs awaiting your sign-off',len(signoff_rows))}{signoffs}" if signoff_rows else ""
         body=f"{banner}<div class='identity'>{identity}<div class='identity-copy'><strong>{_e(p.handle)}</strong><span>{_e(p.role)} · {_e(p.type)} participant</span></div></div><p class='secondary'>Messages are pinned to the project. Active shells wake immediately; closed shells read them when they reopen.</p>{signoff_block}{_section_header('Waiting on you',len(ask_rows))}<div class='conversation'>{asks}</div>"
-        return _page(f"{p.handle} · My inbox",body,refresh=30,active_nav="me",sidebar=sidebar,context=right,composer=composer,identity=identity)
+        return _page(f"{p.handle} · My inbox",body,refresh=30,active_nav="me",sidebar=sidebar,context=right,composer=composer,identity=identity,qs=qs)
 
     @r.post("/ui/me/message")
     def me_message(as_: str=Form(...),token: str=Form(default=""),ticket_id: str=Form(...),to: str=Form(default=""),kind: str=Form(default="note"),text: str=Form(...),reply_to: str=Form(default="")):
@@ -320,12 +343,14 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
             f"{_section_header(day,len(evs))}"+ "".join(_event_html(e) for e in evs)
             for day,evs in by_day.items()) or _empty_state("thread","Quiet","Project activity will appear here.")
         body=f"<p class='secondary'>Everything relevant to you, newest first. Your inbox stays for things that need YOU; this page is the pulse.</p>{sections}"
-        return _page("Activity",body,refresh=30,active_nav="activity")
+        return _page("Activity",body,refresh=30,active_nav="activity",qs=_qs(p,token))
 
     @r.post("/ui/me/verdict")
     def me_verdict(as_: str=Form(...),token: str=Form(default=""),criterion_id: str=Form(...),
-                   ticket_id: str=Form(default=""),verdict: str=Form(...),note: str=Form(default="")):
+                   ticket_id: str=Form(default=""),verdict: str=Form(...),note: str=Form(default=""),
+                   back: str=Form(default="")):
         p=_me(as_,token or None)
+        done_url=back if back.startswith("/ui/") else f"/ui/me?{_qs(p,token or None)}"
         try:
             from .schemas import Verdict as _V
             board.criterion_update(p,criterion_id.strip(),verdict=_V(verdict))
@@ -336,8 +361,9 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
                                      text=f"[sign-off {verdict}] {note.strip()}")
                 delivery.after_message(board,p.id,m)
         except (BoardError,ValueError) as e:
-            return RedirectResponse(f"/ui/me?{_qs(p,token or None)}&err={quote(str(e))}",status_code=303)
-        return RedirectResponse(f"/ui/me?{_qs(p,token or None)}",status_code=303)
+            sep="&" if "?" in done_url else "?"
+            return RedirectResponse(f"{done_url}{sep}err={quote(str(e))}",status_code=303)
+        return RedirectResponse(done_url,status_code=303)
 
     @r.post("/ui/me/avatar")
     def me_avatar(as_: str=Form(...),token: str=Form(default=""),avatar: str=Form(...)):
@@ -348,18 +374,34 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
         return RedirectResponse(f"/ui/me?{_qs(p,token or None)}",status_code=303)
 
     @r.get("/ui",response_class=HTMLResponse)
-    def epics():
+    def epics(as_: str|None=Query(default=None,alias="as"),token: str|None=Query(default=None)):
+        qs=""
+        if as_:
+            try: qs=_qs(_me(as_,token),token)
+            except Exception: qs=""
+        link_q=f"?{qs}" if qs else ""
         rows=[]; epic_rows=board.store.query("ticket",{"kind":TicketKind.epic},limit=200)
         for t in epic_rows:
             crits=board.criteria(t.id); passed=sum(c.verdict==Verdict.passed for c in crits); percent=int(100*passed/len(crits)) if crits else 0
-            rows.append(f"<a class='epic-row' href='/ui/epic/{quote(t.id,safe='')}'><div class='epic-title'><span class='object-id'>{_e(t.id)}</span>{_e(t.title[:160])}</div><div class='epic-meta'>{passed} / {len(crits)} passed<div class='progress'><span style='width:{percent}%'></span></div></div><div class='epic-meta'>{_e(t.created_at.strftime('%Y-%m-%d'))}</div>{_badge(t.status)}<span class='chevron'>›</span></a>")
+            rows.append(f"<a class='epic-row' href='/ui/epic/{quote(t.id,safe='')}{link_q}'><div class='epic-title'><span class='object-id'>{_e(t.id)}</span>{_e(t.title[:160])}</div><div class='epic-meta'>{passed} / {len(crits)} passed<div class='progress'><span style='width:{percent}%'></span></div></div><div class='epic-meta'>{_e(t.created_at.strftime('%Y-%m-%d'))}</div>{_badge(t.status)}<span class='chevron'>›</span></a>")
         body=f"<p class='reader-lead'>{len(epic_rows)} workspaces in progress</p><div class='epic-list'>{''.join(rows) if rows else _empty_state('epic','No epics yet','Created epics will appear here.')}</div>"
-        return _page("Epics",body,active_nav="epics")
+        return _page("Epics",body,active_nav="epics",qs=qs)
 
     @r.get("/ui/epic/{epic_id}",response_class=HTMLResponse)
-    def epic(epic_id: str,as_: str=Query(default="owner",alias="as")):
-        bd=board.board(epic_id); thread=board.thread(epic_id,limit=60); docs=board.store.query("doc",{"scope":epic_id},limit=100); gates=bd["open_gates"]
+    def epic(epic_id: str,as_: str=Query(default="owner",alias="as"),token: str|None=Query(default=None),
+             order: str=Query(default="newest")):
+        bd=board.board(epic_id); thread=board.thread(epic_id,limit=100); docs=board.store.query("doc",{"scope":epic_id},limit=100); gates=bd["open_gates"]
         counts=" ".join(f"{_badge(k)} {v}" for k,v in bd["counts"].items())
+        # identity: anyone on the team comments AS THEMSELVES from this page
+        composer=""; identity=""; qs=""
+        try:
+            p=_me(as_,token); qs=_qs(p,token); hidden=_hidden_identity_fields(p,token)
+            selected=avatar_id_for(p,preferences); identity=human_avatar_svg(selected,36) if p.type=="human" else _avatar_for(p.id)
+            composer=(f"<div class='composer'><form class='composer-card composer-slim' style='grid-template-columns:minmax(0,1fr) auto' method='post' action='/ui/ticket/{quote(epic_id,safe='')}/say'>{hidden}"
+                      f"<input name='text' placeholder='Comment on this epic as @{_e(p.handle.lstrip('@'))} — @mention anyone' required "
+                      f"title='posts to the epic thread; every @mention gets it in their inbox + Slack'>"
+                      f"<button>Send</button></form></div>")
+        except Exception: pass
         # JIRA-style board: the epic's child tickets in status columns, drag-free but scannable
         _COLS=[("Backlog",("drafted","designed","signed_off","blocked")),("Ready",("ready",)),
                ("In progress",("in_progress",)),("In review",("in_review",)),("Done",("done","partial"))]
@@ -367,7 +409,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
         col_html=""
         for label,states in _COLS:
             cards="".join(
-                f"<a class='kanban-card' href='/ui/ticket/{quote(k.id,safe='')}?as={quote(as_)}' title='{_e(k.title[:140])}'>"
+                f"<a class='kanban-card' href='/ui/ticket/{quote(k.id,safe='')}?{qs or 'as='+quote(as_)}' title='{_e(k.title[:140])}'>"
                 f"<div class='kanban-top'><span class='object-id'>{_e(k.id)}</span>"
                 f"{_avatar_for(k.assignee,20) if k.assignee else ''}</div>"
                 f"<div class='kanban-title'>{_e(k.title[:70])}</div>"
@@ -376,16 +418,31 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
                 for k in kids if k.status.value in states)
             n=sum(1 for k in kids if k.status.value in states)
             col_html+=f"<div class='kanban-col'><div class='kanban-head'>{_e(label)} <span class='count'>{n}</span></div>{cards or '<div class=kanban-empty></div>'}</div>"
+        # all tickets: a collapsed TABLE below the board (the old side tree, made scannable)
+        rows="".join(
+            f"<tr><td><a href='/ui/ticket/{quote(k.id,safe='')}?{qs or 'as='+quote(as_)}' class='object-id'>{_e(k.id)}</a></td>"
+            f"<td>{_e(k.kind)}/{_e(k.work_type)}</td><td>{_badge(k.status)}</td>"
+            f"<td>{_e(k.assignee or '—')}</td>"
+            f"<td>{sum(1 for c in board.criteria(k.id) if c.verdict==Verdict.passed)}/{len(board.criteria(k.id))}</td>"
+            f"<td>{_e(', '.join(b.id for b in board.blockers(k.id) if b.status.value!='done') or '—')}</td></tr>"
+            for k in kids)
+        table=(f"<details class='fold'><summary>All tickets ({len(kids)}) — expand</summary>"
+               f"<table class='ticket-table'><tr><th>id</th><th>kind</th><th>status</th><th>assignee</th>"
+               f"<th>criteria</th><th>blocked by</th></tr>{rows}</table></details>")
+        newest = order != "oldest"
         body=(f"<p class='reader-lead'>{_e(bd['words'])}</p><div>{counts}</div>"
-              f"{_section_header('Board',len(kids))}<div class='kanban'>{col_html}</div>"
-              f"{_section_header('Epic thread',len(thread))}{_message_group_html(thread)}")
-        tree=f"<ul class='ticket-tree'>{_node_html(bd['epic'])}</ul>"; gate_html="".join(_gate_card_html(t,g,"board","Open decision") for t,g in gates) or _empty_state("gate","No open gates","This epic has no pending decisions.")
-        doc_html="".join(f"<div><a href='/ui/doc/{quote(d.id,safe='')}'>{_e(d.title)}</a> <span class='muted'>{_e(d.doc_type)} v{d.version}</span></div>" for d in docs) or _empty_state("doc","No documents","Linked epic documents will appear here.")
-        right=f"{_section_header('Ticket tree')}{tree}{_section_header('Open gates',len(gates))}{gate_html}{_section_header('Documents',len(docs))}{doc_html}"
-        return _page(f"Epic {epic_id}",body,refresh=10,active_nav="epics",context=right)
+              f"{_section_header('Board',len(kids))}<div class='kanban'>{col_html}</div>{table}"
+              f"{_section_header('Epic thread',len(thread))}"
+              f"{_order_toggle(f'/ui/epic/{quote(epic_id,safe='')}', qs, newest)}"
+              f"{_message_group_html(thread,newest_first=newest)}")
+        gate_html="".join(_gate_card_html(t,g,"board","Open decision") for t,g in gates) or _empty_state("gate","No open gates","This epic has no pending decisions.")
+        doc_html="".join(_doc_row(d) for d in docs) or _empty_state("doc","No documents","Linked epic documents will appear here.")
+        right=f"{_section_header('Open gates',len(gates))}{gate_html}{_section_header('Documents',len(docs))}{doc_html}"
+        return _page(f"Epic {epic_id}",body,refresh=10,active_nav="epics",context=right,composer=composer,identity=identity,qs=qs)
 
     @r.get("/ui/ticket/{ticket_id}",response_class=HTMLResponse)
-    def ticket(ticket_id: str,as_: str|None=Query(default=None,alias="as"),token: str|None=Query(default=None)):
+    def ticket(ticket_id: str,as_: str|None=Query(default=None,alias="as"),token: str|None=Query(default=None),
+               order: str=Query(default="newest")):
         t=board.ticket(ticket_id); crits=board.criteria(ticket_id); docs=board.linked_docs(ticket_id); thread=board.thread(ticket_id,limit=100); epic_id=board.epic_of(t).id; assignee=_participant(t.assignee)
         # the ticket page IS the chat room: arriving with an identity docks a composer
         composer=""; identity=""
@@ -400,30 +457,90 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
                           f"<div class='composer-footer'><span class='muted'>as @{_e(p.handle.lstrip('@'))}</span><button>Send</button></div></form></div>")
             except Exception:
                 composer=""
-        body=f"<p><a href='/ui/epic/{quote(epic_id,safe='')}'>← Epic {_e(epic_id)}</a></p><p class='reader-lead'>{_e(t.title)}</p><div class='identity'>{_avatar_for(t.assignee)}<div class='identity-copy'><strong>{_e(_participant_label(assignee))}</strong><span>{_e(t.kind)} / {_e(t.work_type)} · {_badge(t.status)}</span></div></div>{_section_header('Conversation',len(thread))}{_message_group_html(thread)}"
-        criteria_html="".join(_criterion_html(c) for c in crits) or _empty_state("ticket","No criteria","Acceptance criteria have not been added."); docs_html="".join(f"<div><a href='/ui/doc/{quote(d.id,safe='')}'>{_e(d.title)}</a> <span class='muted'>v{d.version}</span></div>" for d in docs) or _empty_state("doc","No linked documents","Documents linked to this ticket will appear here.")
+        _qs_str=""
+        if as_:
+            try: _qs_str=_qs(_me(as_,token),token)
+            except Exception: _qs_str=""
+        newest = order != "oldest"
+        body=(f"<p><a href='/ui/epic/{quote(epic_id,safe='')}{'?'+_qs_str if _qs_str else ''}'>← Epic {_e(epic_id)}</a></p>"
+              f"<p class='reader-lead'>{_e(t.title)}</p><div class='identity'>{_avatar_for(t.assignee)}<div class='identity-copy'><strong>{_e(_participant_label(assignee))}</strong><span>{_e(t.kind)} / {_e(t.work_type)} · {_badge(t.status)}</span></div></div>"
+              f"{_section_header('Conversation',len(thread))}"
+              f"{_order_toggle(f'/ui/ticket/{quote(ticket_id,safe='')}', _qs_str, newest)}"
+              f"{_message_group_html(thread,newest_first=newest)}")
+        rel_by_doc={lk.to_id: lk.relation.value for lk in board.links(from_id=ticket_id)}
+        criteria_html="".join(_criterion_html(c) for c in crits) or _empty_state("ticket","No criteria","Acceptance criteria have not been added."); docs_html="".join(_doc_row(d, rel_by_doc.get(d.id)) for d in docs) or _empty_state("doc","No linked documents","Documents linked to this ticket will appear here.")
         design=f"<a href='/ui/doc/{quote(t.design_ref,safe='')}'>{_e(t.design_ref)}</a>" if t.design_ref else "Not linked"
         right=f"{_section_header('Acceptance criteria',len(crits))}{criteria_html}{_section_header('Linked documents',len(docs))}{docs_html}{_section_header('Ticket metadata')}<div class='meta-row'><span>Design</span><span>{design}</span></div><div class='meta-row'><span>Kind</span><span>{_e(t.kind)}</span></div><div class='meta-row'><span>Work type</span><span>{_e(t.work_type)}</span></div>"
-        return _page(f"Ticket {ticket_id}",body,refresh=15,active_nav="epics",context=right,composer=composer,identity=identity)
+        return _page(f"Ticket {ticket_id}",body,refresh=15,active_nav="epics",context=right,composer=composer,identity=identity,qs=_qs_str)
 
     @r.post("/ui/ticket/{ticket_id}/say")
     def ticket_say(ticket_id: str,as_: str=Form(...),token: str=Form(default=""),text: str=Form(...)):
         p=_me(as_,token or None)
+        page_of=f"/ui/ticket/{quote(ticket_id,safe='')}"
         try:
+            t=board.ticket(ticket_id)
+            if t.kind.value=="epic": page_of=f"/ui/epic/{quote(ticket_id,safe='')}"
             m=board.message_send(p,ticket_id=ticket_id,to=None,kind=MessageKind.note,text=text)
             delivery.after_message(board,p.id,m)
         except (BoardError,ValueError) as e:
-            return RedirectResponse(f"/ui/ticket/{quote(ticket_id,safe='')}?{_qs(p,token or None)}&err={quote(str(e))}",status_code=303)
-        return RedirectResponse(f"/ui/ticket/{quote(ticket_id,safe='')}?{_qs(p,token or None)}",status_code=303)
+            return RedirectResponse(f"{page_of}?{_qs(p,token or None)}&err={quote(str(e))}",status_code=303)
+        return RedirectResponse(f"{page_of}?{_qs(p,token or None)}",status_code=303)
 
     @r.get("/ui/doc/{doc_id}",response_class=HTMLResponse)
-    def doc(doc_id: str,version: int|None=None):
+    def doc(doc_id: str,version: int|None=None,as_: str|None=Query(default=None,alias="as"),
+            token: str|None=Query(default=None),err: str|None=Query(default=None)):
         d=board.doc(doc_id,version); all_versions=board.store.doc_versions(doc_id); latest=max(all_versions) if all_versions else d.version
+        qs=""; identity=""; actions=""
+        scope_is_epic=board.store.get("ticket",d.scope) is not None
+        if as_:
+            try:
+                p=_me(as_,token); qs=_qs(p,token); hidden=_hidden_identity_fields(p,token)
+                selected=avatar_id_for(p,preferences); identity=human_avatar_svg(selected,36) if p.type=="human" else _avatar_for(p.id)
+                # approve/needs-work: a pending owner-checked criterion holding THIS doc as evidence
+                approve=""
+                if p.type=="human" and p.role==Role.owner:
+                    from .schemas import Verdict as _V
+                    for c in board.store.query("criterion",{"verdict":_V.pending},limit=300):
+                        if c.checked_by!="owner" or c.evidence_ref!=d.id: continue
+                        tk=board.store.get("ticket",c.ticket_id)
+                        if tk is None or tk.status in _TERMINAL: continue
+                        approve=(f"<form method='post' action='/ui/me/verdict' style='display:flex;gap:8px;align-items:center'>{hidden}"
+                                 f"<input type='hidden' name='criterion_id' value='{_e(c.id)}'>"
+                                 f"<input type='hidden' name='ticket_id' value='{_e(c.ticket_id)}'>"
+                                 f"<input type='hidden' name='back' value='/ui/doc/{quote(doc_id,safe='')}?{qs}'>"
+                                 f"<button name='verdict' value='pass' title='sign this doc off — {_e(c.ticket_id)} can proceed'>Approve</button>"
+                                 f"<button name='verdict' value='fail' class='btn-fail' title='send back — add a comment saying what is missing'>Needs work</button></form>")
+                        break
+                comment=(f"<form method='post' action='/ui/doc/{quote(doc_id,safe='')}/comment' style='display:flex;gap:8px;flex:1'>{hidden}"
+                         f"<input name='text' placeholder='Comment on this doc as @{_e(p.handle.lstrip('@'))} — @mention a reviewer to request review' required "
+                         f"title='posts [doc {_e(doc_id)} v{d.version}] + your comment to the epic thread; @mentions get inbox + Slack'>"
+                         f"<button>Comment</button></form>") if scope_is_epic else ""
+                actions=f"<div class='doc-actions'>{approve}{comment}</div>" if (approve or comment) else ""
+            except Exception: pass
         versions="".join(
-            f"<a class='{'active' if v==d.version else ''}' href='/ui/doc/{quote(doc_id,safe='')}?version={v}' "
+            f"<a class='{'active' if v==d.version else ''}' href='/ui/doc/{quote(doc_id,safe='')}?version={v}{'&'+qs if qs else ''}' "
             f"title='{'you are reading this version' if v==d.version else 'open version '+str(v)}'>v{v}"
             f"{' · latest' if v==latest else ''}{' · viewing' if v==d.version and v!=latest else ''}</a>"
             for v in all_versions)
-        body=f"<p class='secondary'>{_e(d.doc_type)} · owner {_e(d.owner_role)} · scope {_e(d.scope)} · version {d.version}</p><div class='version-control'>{versions}</div><article class='document-reader doc-md'>{_md(d.body_md)}</article>"
-        return _page(d.title,body,active_nav="epics")
+        back=f"<p><a href='/ui/epic/{quote(d.scope,safe='')}{'?'+qs if qs else ''}'>← Epic {_e(d.scope)}</a></p>" if scope_is_epic else \
+             f"<p><a href='/ui{'?'+qs if qs else ''}'>← Projects</a></p>"
+        banner=f"<div class='alert' role='alert'>⚠ {_e(err)}</div>" if err else ""
+        body=(f"<span id='top'></span>{back}{banner}<p class='secondary'>{_e(d.doc_type)} · owner {_e(d.owner_role)} · scope {_e(d.scope)} · version {d.version}</p>"
+              f"<div class='version-control'>{versions}</div>{actions}"
+              f"<article class='document-reader doc-md'>{_md(d.body_md)}</article>"
+              f"<a class='to-top' href='#top' title='back to the top of the doc'>↑ top</a>")
+        return _page(d.title,body,active_nav="epics",identity=identity,qs=qs)
+
+    @r.post("/ui/doc/{doc_id}/comment")
+    def doc_comment(doc_id: str,as_: str=Form(...),token: str=Form(default=""),text: str=Form(...)):
+        p=_me(as_,token or None)
+        back=f"/ui/doc/{quote(doc_id,safe='')}?{_qs(p,token or None)}"
+        try:
+            d=board.doc(doc_id)
+            m=board.message_send(p,ticket_id=d.scope,to=None,kind=MessageKind.note,
+                                 text=f"[doc {doc_id} v{d.version}] {text}")
+            delivery.after_message(board,p.id,m)
+        except (BoardError,ValueError) as e:
+            return RedirectResponse(f"{back}&err={quote(str(e))}",status_code=303)
+        return RedirectResponse(back,status_code=303)
     return r

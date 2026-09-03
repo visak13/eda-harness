@@ -76,7 +76,9 @@ def _line(cfg: dict, handle: str, msg: dict) -> str:
     ticket = body.get("ticket_id") or ""
     text = (body.get("text") or body.get("note") or body.get("answer")
             or json.dumps(body)[:120])
-    link = f"{cfg.get('board_url', 'http://127.0.0.1:9400')}/ui/me?as={handle}"
+    base = cfg.get("board_url", "http://127.0.0.1:9400")
+    # deep-link the exact conversation, identity attached — one click and they can reply
+    link = f"{base}/ui/ticket/{ticket}?as={handle}" if ticket else f"{base}/ui/me?as={handle}"
     return (f"*{handle}* ← {msg.get('from')} ({msg.get('kind')})"
             + (f" on `{ticket}`" if ticket else "") + f": {str(text)[:140]}\n→ {link}")
 
