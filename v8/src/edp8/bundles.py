@@ -789,6 +789,9 @@ class ConsultArgs(BaseModel):
     images: list[str] | None = Field(default=None, description="image files (png/jpg) to attach — screenshots, "
                                      "renders, mockups. Attaching is the ONLY way a picture reaches Sol; a path "
                                      "in the prompt is a no-op")
+    model: str | None = Field(default=None, description="consultant model for this call: gpt-6-astra (default; "
+                              "3D/visual craft, image critique) or gpt-5.6-sol (independent second voice, "
+                              "cheaper adversary/second_opinion rounds). Omit for the default")
 
 
 def _consult(a: ConsultArgs) -> dict[str, Any]:
@@ -796,7 +799,7 @@ def _consult(a: ConsultArgs) -> dict[str, Any]:
 
     resp = consult_mod.consult(a.purpose, a.question, context=a.context,
                                 files=a.files, timeout_s=a.timeout_s, write_dir=a.write_dir,
-                                images=a.images, thread_id=a.thread_id)
+                                images=a.images, thread_id=a.thread_id, model=a.model)
     if resp.get("ok") and a.ticket_id:
         answer = resp["value"]["answer"]
         get_client().message_send(ticket_id=a.ticket_id, kind="note",

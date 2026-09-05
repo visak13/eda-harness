@@ -3,7 +3,7 @@
   "delegates": {
     "sol": {
       "backend": "cli",
-      "model": "gpt-5.6-sol",
+      "model": "gpt-6-astra",
       "effort": "medium",
       "max_context_tokens": 250000,
       "max_output_tokens": 16000

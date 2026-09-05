@@ -1,7 +1,9 @@
-# Pairing with GPT Sol (consult bridge) — goal, steer, show, generate
+# Pairing with the GPT consultant (consult bridge) — goal, steer, show, generate
 
-Sol is the consultant behind `consult`. It runs as a Codex CLI session on the
-owner's ChatGPT plan. Since 2026-09-02 the bridge supports the full pairing loop:
+The consultant behind `consult` runs as a Codex CLI session on the owner's ChatGPT plan.
+Since 2026-09-05 the default model is **GPT-6 Astra** (`gpt-6-astra`); **Sol** (`gpt-5.6-sol`)
+stays reachable. "Sol" below means whichever model the call targets. The bridge supports the
+full pairing loop:
 
 | Move | How | Why it matters |
 |---|---|---|
@@ -9,6 +11,18 @@ owner's ChatGPT plan. Since 2026-09-02 the bridge supports the full pairing loop
 | **Steer** | Every answer returns `thread_id`. Pass it back as `thread_id=` to continue THAT session: follow-up, correction, "you said X, it rendered as Y". | Sol keeps its own memory of what it wrote and why. Cold starts re-explain everything and drift. |
 | **Show** | `images=[...]` attaches PNG/JPG with `-i`. A path in the prompt is a no-op. | Sol's image recognition is how it debugs a render, a viewport, a mockup. |
 | **Generate** | Sol has a built-in image generator (`image_gen`, no API key). Give `write_dir` and say *"save the PNGs into <write_dir>"*; Sol cannot return images inline. Default output otherwise lands in `~/.codex/generated_images/`. | Texture tiles, colour ramps, skybox panels, concept refs. |
+
+## Which model (the `model=` parameter)
+
+| Model | Use it for | Effort | Why |
+|---|---|---|---|
+| `gpt-6-astra` (default) | 3D/visual craft: galaxy archetype briefs, nebula texture sets, black-hole lensing look, image critique of a render (`creative`, `build`, `visual`) | high | Astra is the stronger 3D/scene model (Blender→UE5 workflows in OpenAI's launch material) and is natively multimodal — the show+steer loop lands on it. Keep one thread per family. |
+| `gpt-5.6-sol` | An independent second voice: `adversary` / `second_opinion` on work an Astra thread produced; cheap sanity checks | medium | A different model family has no stake in the thread's earlier answer; roughly half the quota cost of Astra. |
+
+Precedence: per-call `model=` → `EDP8_SOL_MODEL` → default. A resumed `thread_id` keeps its model
+unless you override it. Both models answered on the ChatGPT login with codex-cli 0.153.4 (probe 2026-09-05);
+the built-in `image_gen` tool is model-independent (`gpt-image-2`) — record the consultant in the manifest's
+`consultant_model` field beside `model` (the image model).
 
 ## The pairing loop (engineer, per iteration)
 

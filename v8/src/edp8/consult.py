@@ -60,7 +60,7 @@ _BIN_ENV = "EDP8_CODEX_BIN"
 _MODEL_ENV = "EDP8_SOL_MODEL"
 _LOG_DIR_ENV = "EDP8_SOL_LOG_DIR"
 _DEFAULT_BIN = "codex"
-_DEFAULT_MODEL = "gpt-5.6-sol"  # matches claude/.bridge.json's "sol" delegate
+_DEFAULT_MODEL = "gpt-6-astra"  # matches claude/.bridge.json's "sol" delegate (2026-09-05: Astra)
 # Reasoning effort by purpose (owner finding 2026-09-02: creative/build work at medium
 # effort came out flat — screenshots pasted where the human's own high-effort prompts
 # had produced crafted, animated work. Advice stays medium; CRAFT runs high.)
@@ -87,6 +87,13 @@ def _resolve_bin() -> str:
         return override
     found = shutil.which("codex") or shutil.which("codex.cmd")
     if found:
+        # npm hands back a .cmd shim; run the REAL exe behind it so the prompt
+        # never passes through cmd.exe quoting.
+        if Path(found).suffix.lower() != ".exe":
+            pkg_root = Path(found).resolve().parent / "node_modules" / "@openai"
+            for exe in sorted(pkg_root.rglob("codex.exe")) if pkg_root.is_dir() else []:
+                if exe.parent.name == "bin":
+                    return str(exe)
         return found
     root = Path(os.environ.get("EDP8_CODEX_HOME") or (Path.home() / ".codex"))
     preferred = root / "plugins" / ".plugin-appserver" / "codex.exe"
@@ -163,7 +170,7 @@ def _last_nonempty_line(text: str) -> str:
 def consult(purpose: Purpose, question: str, context: str = "",
             files: list[str] | None = None, timeout_s: int = 600,
             write_dir: str | None = None, images: list[str] | None = None,
-            thread_id: str | None = None) -> dict[str, Any]:
+            thread_id: str | None = None, model: str | None = None) -> dict[str, Any]:
     """Ask Sol one question and return the standard envelope. Never retries,
     never glosses a failure as a quota cap — `error.message` is always the
     real last output line from the codex process.
@@ -179,7 +186,12 @@ def consult(purpose: Purpose, question: str, context: str = "",
     screenshot of what you told me to build". Omit it for a cold start.
 
     `images` are attached with `-i` — the ONLY way a picture reaches Sol
-    (citing a path in the prompt is a no-op). Screenshots, renders, mockups."""
+    (citing a path in the prompt is a no-op). Screenshots, renders, mockups.
+
+    `model` picks the consultant for THIS call (a Codex model id such as
+    `gpt-6-astra` or `gpt-5.6-sol`); omitted → `EDP8_SOL_MODEL` → the default
+    (gpt-6-astra since 2026-09-05). A resumed thread keeps whatever model it
+    was started with unless overridden here."""
     if purpose not in _PREAMBLES:
         return {"ok": False,
                 "error": {"code": "exit", "message": f"unknown purpose {purpose!r}"},
@@ -208,7 +220,7 @@ def consult(purpose: Purpose, question: str, context: str = "",
     prompt = "\n".join(parts)
 
     codex = _resolve_bin()
-    model = os.environ.get(_MODEL_ENV, "").strip() or _DEFAULT_MODEL
+    model = (model or "").strip() or os.environ.get(_MODEL_ENV, "").strip() or _DEFAULT_MODEL
 
     run_id = f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{uuid.uuid4().hex[:8]}"
     log_dir = _log_dir()

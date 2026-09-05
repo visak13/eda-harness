@@ -71,6 +71,32 @@ if exist "%BIN%" (
     echo Binary healthy: %BIN% ^(!BINSIZE! bytes^)
 )
 
+rem (6) update the Codex CLI too. The Sol/Astra bridge resolves the `codex`
+rem     on PATH (the npm copy) ahead of the ChatGPT app's bundled one, because
+rem     a NEW model (gpt-6-astra) is served only to a new-enough client and
+rem     the bundled copy lags the app. Refuse if a bridge call is still running
+rem     (npm cannot replace a locked exe).
+echo.
+echo Current codex version:
+call codex --version 2>nul || echo   ^(codex not on PATH yet - will be installed^)
+echo.
+echo Updating @openai/codex ...
+call npm install -g @openai/codex@latest
+if errorlevel 1 (
+    echo [ERROR] npm install of @openai/codex failed - claude was updated,
+    echo         codex left as-is. Re-run to retry.
+    goto :die
+)
+echo.
+echo New codex version:
+call codex --version
+if errorlevel 1 (
+    echo [ERROR] codex --version failed after update. Repair via:
+    echo         npm uninstall -g @openai/codex ^&^& npm install -g @openai/codex
+    goto :die
+)
+call codex login status 2>nul || echo [WARN] codex is not logged in - run: codex login
+
 echo.
 echo Done. Every shell spawned from now on runs the new version -
 echo restart the stack ^(start-stack-claude.bat^) and your foreground

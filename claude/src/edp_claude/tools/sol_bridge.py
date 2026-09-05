@@ -42,6 +42,7 @@ calling Sol. Only `run_sol` spawns the subprocess.
 
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import time
@@ -105,14 +106,38 @@ def _has_host_sibling(codex_exe: Path) -> bool:
     return (codex_exe.parent / _HOST_SIBLING).is_file()
 
 
+def _path_codex() -> Path | None:
+    """The `codex` on PATH (the npm-installed CLI, updated by update-claude.bat),
+    resolved to its REAL exe. `shutil.which` hands back the npm `.cmd` shim; we
+    never run that — a prompt would then pass through cmd.exe quoting — so walk
+    from the shim's directory into the platform package and take the `codex.exe`
+    that has the host sibling beside it. None when there is no usable copy."""
+    shim = shutil.which("codex") or shutil.which("codex.cmd")
+    if not shim:
+        return None
+    here = Path(shim).resolve().parent
+    if here.name.lower() == "codex.exe" or Path(shim).suffix.lower() == ".exe":
+        exe = Path(shim)
+        return exe if _has_host_sibling(exe) else None
+    pkg_root = here / "node_modules" / "@openai"
+    if not pkg_root.is_dir():
+        return None
+    for exe in sorted(pkg_root.rglob("codex.exe")):
+        if exe.parent.name == "bin" and _has_host_sibling(exe):
+            return exe
+    return None
+
+
 def resolve_codex_binary() -> Path:
     """The one `codex.exe` that can actually let Sol WRITE — i.e. the copy with
     `codex-code-mode-host.exe` beside it. Selection rule, never a hard-coded path
     (the ChatGPT app moves these on update; SOL-BRIDGE §2).
 
-    Order: explicit env override (still validated) → the appserver path →
-    a recursive scan under ~/.codex for any codex.exe with the host beside it.
-    Raises SolBridgeError naming the fix if none qualifies. NEVER returns the
+    Order: explicit env override (still validated) → the `codex` on PATH (the npm
+    CLI: it is what update-claude.bat keeps current, and a NEW model such as
+    gpt-6-astra is served only to a new-enough client) → the app's appserver
+    path → a recursive scan under ~/.codex for any codex.exe with the host beside
+    it. Raises SolBridgeError naming the fix if none qualifies. NEVER returns the
     `.sandbox-bin` copy.
     """
     override = os.environ.get(_ENV_BIN, "").strip()
@@ -130,6 +155,10 @@ def resolve_codex_binary() -> Path:
                 f"files (the write failure is silent). Pick the copy with the "
                 f"host sibling.")
         return p
+
+    on_path = _path_codex()
+    if on_path is not None:
+        return on_path
 
     home = os.environ.get(_SEARCH_ROOT_ENV) or str(Path.home() / ".codex")
     root = Path(home)

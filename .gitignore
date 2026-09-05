@@ -89,3 +89,4 @@ claude/.sol_review_out-*.txt
 .sol-last-message*.txt
 .sol-run*.jsonl
 v8/.test-tmp/
+review-package/

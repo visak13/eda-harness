@@ -14,7 +14,7 @@ def _base(**kw):
     kw.setdefault("prompt", "hello")
     kw.setdefault("workdir", "C:/w")
     kw.setdefault("last_message_file", "C:/w/last.txt")
-    kw.setdefault("model", "gpt-5.6-sol")
+    kw.setdefault("model", "gpt-6-astra")
     kw.setdefault("effort", "medium")
     return _build_argv("codex", **kw)
 
@@ -111,3 +111,28 @@ def test_consult_fresh_returns_thread_id_and_hint(tmp_path, monkeypatch):
     assert resp["ok"]
     assert resp["value"]["thread_id"] == "tid-1"
     assert "STEER" in resp["hint"]
+
+
+def test_consult_model_override_beats_env_and_default(tmp_path, monkeypatch):
+    """Per-call `model=` wins over EDP8_SOL_MODEL, which wins over the default."""
+    from edp8 import consult as c
+    seen = {}
+
+    def fake_run(argv, **kw):
+        seen["argv"] = argv
+        raise FileNotFoundError("no codex in this test")
+
+    monkeypatch.setattr(c.subprocess, "run", fake_run)
+    monkeypatch.setattr(c, "_resolve_bin", lambda: "codex")
+    monkeypatch.setenv(c._LOG_DIR_ENV, str(tmp_path))
+
+    monkeypatch.delenv(c._MODEL_ENV, raising=False)
+    c.consult("second_opinion", "q")
+    assert seen["argv"][seen["argv"].index("-m") + 1] == "gpt-6-astra"
+
+    monkeypatch.setenv(c._MODEL_ENV, "gpt-5.6-sol")
+    c.consult("second_opinion", "q")
+    assert seen["argv"][seen["argv"].index("-m") + 1] == "gpt-5.6-sol"
+
+    c.consult("second_opinion", "q", model="gpt-6-astra")
+    assert seen["argv"][seen["argv"].index("-m") + 1] == "gpt-6-astra"

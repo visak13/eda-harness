@@ -163,9 +163,41 @@ def test_override_missing_file_is_refused(monkeypatch, tmp_path):
         sb.resolve_codex_binary()
 
 
+def test_path_codex_beats_codex_home(monkeypatch, tmp_path):
+    """The npm CLI on PATH is the copy update-claude.bat keeps current, so it
+    wins over the app-bundled copy (which lags and is refused newer models).
+    `which` returns the npm .cmd shim; the resolver must hand back the REAL exe
+    with the host beside it, never the shim."""
+    monkeypatch.delenv("EDP_SOL_CODEX_BIN", raising=False)
+    _make_codex(tmp_path / "home" / "plugins" / ".plugin-appserver",
+                with_sibling=True)
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "home"))
+    npm = tmp_path / "npm"
+    npm.mkdir()
+    (npm / "codex.cmd").write_text("@echo off", encoding="utf-8")
+    real = _make_codex(npm / "node_modules" / "@openai" / "codex-win32-x64"
+                       / "vendor" / "x86_64-pc-windows-msvc" / "bin",
+                       with_sibling=True)
+    monkeypatch.setattr(sb.shutil, "which",
+                        lambda name: str(npm / "codex.cmd") if name == "codex" else None)
+    assert sb.resolve_codex_binary() == real
+
+
+def test_path_shim_without_real_exe_is_skipped(monkeypatch, tmp_path):
+    monkeypatch.delenv("EDP_SOL_CODEX_BIN", raising=False)
+    good = _make_codex(tmp_path / "home" / "plugins" / ".plugin-appserver",
+                       with_sibling=True)
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "home"))
+    (tmp_path / "codex.cmd").write_text("@echo off", encoding="utf-8")
+    monkeypatch.setattr(sb.shutil, "which",
+                        lambda name: str(tmp_path / "codex.cmd") if name == "codex" else None)
+    assert sb.resolve_codex_binary() == good
+
+
 def test_autoresolve_scans_codex_home_for_the_copy_with_the_sibling(
         monkeypatch, tmp_path):
     monkeypatch.delenv("EDP_SOL_CODEX_BIN", raising=False)
+    monkeypatch.setattr(sb.shutil, "which", lambda name: None)
     # a broken copy and a good copy under the same CODEX_HOME
     _make_codex(tmp_path / ".sandbox-bin", with_sibling=False)
     good = _make_codex(tmp_path / "plugins" / ".plugin-appserver",
