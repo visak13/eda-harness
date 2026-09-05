@@ -777,6 +777,11 @@ class ConsultArgs(BaseModel):
     question: str = Field(description="what you want a second, independent read on — or the build/delivery brief")
     purpose: str = Field(default="second_opinion",
                           description="adversary|creative|visual|second_opinion|build — selects the consultant's brief")
+    profile: str | None = Field(default=None,
+                          description="override the purpose→profile map: design (read-only advice) | concept "
+                          "(image_gen + asset write) | blender (shell→Blender, asset write) | verify (images in, "
+                          "read-only, structured PASS/FAIL/UNVERIFIED verdict) | direct (read-only inspection → "
+                          "spec). Omit to derive from purpose. Only concept/blender may take write_dir")
     context: str = ""
     files: list[str] | None = None
     ticket_id: str | None = Field(default=None, description="if set, post the answer to this ticket's thread")
@@ -799,11 +804,36 @@ def _consult(a: ConsultArgs) -> dict[str, Any]:
 
     resp = consult_mod.consult(a.purpose, a.question, context=a.context,
                                 files=a.files, timeout_s=a.timeout_s, write_dir=a.write_dir,
-                                images=a.images, thread_id=a.thread_id, model=a.model)
-    if resp.get("ok") and a.ticket_id:
-        answer = resp["value"]["answer"]
-        get_client().message_send(ticket_id=a.ticket_id, kind="note",
-                                  text=f"consultant[{a.purpose}]: {answer}", to=None)
+                                images=a.images, thread_id=a.thread_id, model=a.model,
+                                profile=a.profile)
+    if a.ticket_id:
+        val = resp.get("value") or {}
+        tag = val.get("profile", a.purpose)
+        answer = val.get("answer")
+        if answer and val.get("recovered"):
+            # S0d: the UE write-fence saw dirty paths. Either an attributed escape
+            # failed the run closed, or only concurrent/unattributed writes were seen
+            # (run clean). Post the answer under a header EITHER way so the thread shows
+            # the recovery and what the fence did — criterion c-16ae18056e.
+            escs = val.get("escapes") or []
+            reverted = [e for e in escs if e.get("action") in
+                        ("deleted_new", "restored_tracked", "left_modified_no_git", "delete_failed")]
+            conc = [e for e in escs if e.get("action") in
+                    ("pre_dirty_concurrent", "unattributed_concurrent")]
+            detail = "; ".join(f"{e.get('action')} {e.get('path')}" for e in escs) or "see manifest"
+            if reverted:
+                lead = (f"the consultant wrote into the protected UE tree; the write-fence reverted "
+                        f"{len(reverted)} attributed path(s) and the run FAILED CLOSED (code=boundary) "
+                        "— the answer below is preserved for reference only, NOT an accepted delivery")
+            else:
+                lead = (f"{len(conc)} concurrent seat write(s) were seen in the UE tree during this "
+                        "run and left untouched (not attributed to this run); the run itself is clean")
+            header = (f"⚠️ RECOVERED FROM FAIL-CLOSED RUN — {lead}. Fence report: [{detail}].")
+            get_client().message_send(ticket_id=a.ticket_id, kind="note",
+                                      text=f"{header}\n\nconsultant[{tag}]: {answer}", to=None)
+        elif resp.get("ok"):
+            get_client().message_send(ticket_id=a.ticket_id, kind="note",
+                                      text=f"consultant[{tag}]: {answer}", to=None)
     return resp
 
 

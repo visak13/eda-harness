@@ -12,6 +12,7 @@ dependencies = [
     "sse-starlette>=2.1",
     "numpy>=1.26",
     "markdown>=3.6",
+    "pillow>=10.0",
 ]
 
 [project.optional-dependencies]
