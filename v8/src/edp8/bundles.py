@@ -30,6 +30,7 @@ from .schemas import (
     MessageKind,
     Relation,
     Role,
+    StatusValue,
     TicketKind,
     TicketStatus,
     WorkType,
@@ -523,6 +524,9 @@ class SpawnArgs(BaseModel):
     participant_id: str | None = Field(default=None, description="explicit participant id (pool handle); "
                                        "omit when ticket_id is given")
     parent_session: str | None = Field(default=None, description="session id spawning this one, for fan-out")
+    assign: bool | None = Field(default=None, description="assign the ticket to the new seat: default only "
+                                "when it is unassigned or its assignee's shell is dead; false = advisor/checker "
+                                "spawn that never touches the assignee; true = take it over explicitly")
     model: str | None = None
     mode: str | None = None
 
@@ -531,12 +535,21 @@ class ResumeArgs(BaseModel):
     participant_id: str
 
 
-class FinishArgs(BaseModel):
-    note: str = Field(default="", description="one line: what you finished (post it on your ticket thread first)")
+class InboxArgs(BaseModel):
+    pass
 
 
-class ParkArgs(BaseModel):
-    participant_id: str
+class RecordStatusArgs(BaseModel):
+    status: StatusValue = Field(description="done | deferred | failed | blocked | reviewed | handed_off")
+    note: str = Field(default="", description="one line: what you did / what is left, for the people told")
+    to: str | None = Field(default=None, description="an extra recipient (participant id, @handle or role); "
+                           "your spawner, the epic architect and the epic's human owner are told anyway")
+    ticket_id: str | None = Field(default=None, description="the ticket you worked; omit when you are a "
+                                  "per-ticket seat (<role>.<ticket_id>)")
+
+
+class CloseSelfArgs(BaseModel):
+    pass
 
 
 class ReapArgs(BaseModel):
@@ -568,14 +581,34 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
         return {"ok": False, "error": {"code": "schema", "message": "spawn needs ticket_id or participant_id"},
                 "hint": "spawn(role=engineer, ticket_id=<story>) registers engineer.<story> and assigns it"}
     c = get_client()
+    assign_flag = args.pop("assign", None)
     if not pid:
         pid = f"{a.role.value}.{ticket_id}"
+    tk = None
+    if ticket_id:
+        got_t = c.ticket_read(ticket_id)
+        if not got_t.get("ok"):
+            return got_t
+        tk = got_t["value"].get("ticket", got_t["value"]) if isinstance(got_t["value"], dict) else None
+        # the architect is RESIDENT per epic: while architect.<epic> is up, a second architect
+        # seat on one of its stories only steals the assignment — message the resident instead
+        if a.role.value == "architect" and tk and tk.get("kind") != "epic":
+            epic_id = _epic_id(c, tk)
+            resident = f"architect.{epic_id}" if epic_id else None
+            if resident and resident != pid:
+                live = c.session_query(participant_id=resident)
+                if live.get("ok") and any(r.get("state") in ("alive", "parked") for r in live.get("value") or []):
+                    return {"ok": False, "error": {"code": "conflict",
+                                                   "message": f"resident architect {resident} is up"},
+                            "hint": f"message_send(ticket_id={ticket_id!r}, to='architect', kind='question') "
+                                    "reaches it; it answers without taking the ticket over"}
     got = c.participant_get(pid)
     if not got.get("ok"):
         made = c.participant_create("agent", a.role.value, pid, id=pid)
         if not made.get("ok"):
             return made
-    if ticket_id:
+    assignee_kept = None
+    if ticket_id and tk is not None:
         # A checker is never assigned a ticket whose criteria it checks (the doer guard would
         # block its verdicts). But a checker CAN be the doer of a ticket checked by someone
         # else — e.g. a reviewer doing a review-type story whose criteria are checked by qa.
@@ -584,10 +617,22 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
             crits = c.criterion_query(ticket_id)
             rows = crits.get("value") or []
             assign = bool(rows) and all(x.get("checked_by") != a.role.value for x in rows)
-        if assign:
+        current = tk.get("assignee")
+        if assign_flag is False:
+            assign = False
+        elif assign_flag is None and current and current != pid:
+            # never displace a LIVE assignee (2026-09-05 pain: a respawned advisor stole a
+            # story mid-work); a dead one is replaced only by the same role
+            live = c.session_query(participant_id=current)
+            alive = live.get("ok") and any(r.get("state") in ("alive", "parked") for r in live.get("value") or [])
+            same_role = current.split(".", 1)[0] == a.role.value
+            assign = (not alive) and same_role
+        if assign and current != pid:
             assigned = c.ticket_update(ticket_id, assignee=pid)
             if not assigned.get("ok"):
                 return assigned
+        elif current and current != pid:
+            assignee_kept = current
     args["participant_id"] = pid
     if not args.get("parent_session"):  # lineage: the pool records who spawned this shell
         args["parent_session"] = os.environ.get("EDP_SPAWN_SESSION_ID") or None
@@ -607,34 +652,81 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
                     "hint": "message the seat instead of spawning; reap it first if it is truly stuck"}
     if out.get("ok") and isinstance(out.get("value"), dict):
         out["value"]["participant_id"] = pid
+        out["value"]["closing"] = "the seat records status to you (record_status) and closes itself (close_self)"
+        if assignee_kept:
+            out["value"]["assignee_kept"] = assignee_kept
+            out["hint"] = (out.get("hint") or "") + f"; {ticket_id} stays assigned to {assignee_kept} " \
+                          "(pass assign=true to take it over)"
     return out
 
 
-def _finish(a: FinishArgs) -> dict[str, Any]:
-    """Stand down: ack pending comms first, then close this shell's own session."""
-    me = os.environ.get("EDP8_PARTICIPANT") or os.environ.get("EDP_HANDLE")
+def _epic_id(c: BoardClient, tk: dict[str, Any]) -> str | None:
+    """Walk parent_id up to the epic via ticket_read (bounded)."""
+    cur = tk
+    for _ in range(8):
+        if cur.get("kind") == "epic":
+            return cur.get("id")
+        if not cur.get("parent_id"):
+            return None
+        got = c.ticket_read(cur["parent_id"])
+        if not got.get("ok"):
+            return None
+        v = got["value"]
+        cur = v.get("ticket", v) if isinstance(v, dict) else {}
+    return None
+
+
+def _inbox(_: InboxArgs) -> dict[str, Any]:
+    out = get_client().inbox()
+    if out.get("ok"):
+        rows = out.get("value") or []
+        out["hint"] = ("inbox clear — nothing addressed to you awaits an answer" if not rows else
+                       f"{len(rows)} item(s) await you: answer each with its answer_with call, "
+                       "act on steers, then call inbox() again until clear")
+    return out
+
+
+def _record_status(a: RecordStatusArgs) -> dict[str, Any]:
+    return get_client().record_status(a.status.value, note=a.note, to=a.to, ticket_id=a.ticket_id)
+
+
+def _close_self(_: CloseSelfArgs) -> dict[str, Any]:
+    """The self-asserted close: refuse with everything still owed in ONE structured error,
+    else release this shell's pool session synchronously with an honest reason."""
+    client = get_client()
+    me = client.participant
     if not me:
-        return {"ok": False, "error": {"code": "identity", "message": "no participant identity in env"},
-                "hint": "EDP8_PARTICIPANT/EDP_HANDLE unset; ask the owner to close you"}
-    ctx = get_client().context()
-    if ctx.get("ok"):
-        pending = [(m.get("id"), m.get("kind"), (m.get("text") or "")[:80])
-                   for m in (ctx["value"].get("asks_for_me") or [])]
-        if pending:
-            listing = "; ".join(f"{i} ({k}): {t}" for i, k, t in pending)
-            return {"ok": False,
-                    "error": {"code": "precondition",
-                              "message": f"{len(pending)} message(s) still await your answer: {listing}"},
-                    "hint": "answer or explicitly acknowledge each (message_send kind=answer), then finish"}
-    return _pool_call("finish_self", {"participant_id": me})
+        return {"ok": False, "error": {"code": "identity", "message": "no participant identity"},
+                "hint": "EDP8_PARTICIPANT/EDP_HANDLE unset; ask the owner to reap you"}
+    chk = client.close_check()
+    if not chk.get("ok"):
+        chk["hint"] = (chk.get("hint") or "") + " | board unreachable: end your turn and stop calling tools; " \
+                      "the SessionEnd hook releases your pool session"
+        return chk
+    inbox = chk["value"].get("inbox") or []
+    status = chk["value"].get("status")
+    owed: list[str] = []
+    if inbox:
+        owed.append(f"{len(inbox)} message(s) await you: " + "; ".join(
+            f"{m.get('id')} ({m.get('kind')} from {m.get('created_by')}): {(m.get('text') or '')[:80]}"
+            for m in inbox))
+    if not status:
+        owed.append("no status recorded yet")
+    if owed:
+        return {"ok": False,
+                "error": {"code": "precondition", "message": " | ".join(owed)},
+                "value": {"inbox": inbox, "status": status},
+                "hint": "sequence: inbox() → answer/act on each → record_status(status=...) → close_self()"}
+    reason = f"closed by self: {status.get('status')}"
+    out = _pool_call("release_self", {"participant_id": me, "reason": reason})
+    if not out.get("ok"):
+        out["hint"] = (out.get("hint") or "") + " | fallback: end your turn and stop calling tools; " \
+                      "the SessionEnd hook releases your pool session, and the owner can reap you"
+    return out
 
 
 def _resume(a: ResumeArgs) -> dict[str, Any]:
     return _pool_call("resume", a.model_dump())
-
-
-def _park(a: ParkArgs) -> dict[str, Any]:
-    return _pool_call("park", a.model_dump())
 
 
 def _reap(a: ReapArgs) -> dict[str, Any]:
@@ -646,20 +738,27 @@ def _session_query(a: SessionQueryArgs) -> dict[str, Any]:
 
 
 POOL_TOOLS = [
-    ToolDef("finish", "Stand down when your job on the ticket is recorded. Refuses while messages "
-            "addressed to you are unanswered (ack them first — the transparency rule). On success the "
-            "pool CLOSES this shell after 120s of quiet; disarm your cron (CronDelete) and monitor "
-            "(TaskStop) before ending the turn. Post your closing status on the thread first. "
-            "Returns the arm result, or the pending-comms list.", FinishArgs, _finish, "pool"),
-    ToolDef("spawn", "Start a new session for a role on a ticket (fan-out). "
+    ToolDef("inbox", "Everything addressed to you that still awaits an answer or an action (questions and "
+            "steers), oldest first, each with its answer_with call. Step 1 of closing and the first "
+            "thing to call when woken. Returns the list; empty == clear.", InboxArgs, _inbox, "pool"),
+    ToolDef("record_status", "Record the outcome of your work on your ticket: status is one of "
+            "done | deferred | failed | blocked | reviewed | handed_off, with a one-line note. Tells your "
+            "spawner, the epic's architect and its human owner (plus `to`). Step 2 of closing; a "
+            "resident seat (architect) records status and keeps listening. Returns the message and who was told.",
+            RecordStatusArgs, _record_status, "pool"),
+    ToolDef("close_self", "Step 3 of closing: end your own shell NOW. Refuses (one structured error) while "
+            "inbox() is non-empty or no status is recorded. On success the pool releases your session with "
+            "reason 'closed by self: <status>' and kills the process — stop calling tools and end the turn. "
+            "If the pool is unreachable, just end the turn: the SessionEnd hook releases you.",
+            CloseSelfArgs, _close_self, "pool"),
+    ToolDef("spawn", "Start a new session for a role on a ticket (fan-out). The seat boots with whoami → "
+            "subscribe → context, will record_status to you when done, and closes itself. "
             "Returns the session, or unavailable if the pool adapter is not configured.",
             SpawnArgs, _spawn, "pool"),
     ToolDef("resume", "Resume a parked/stalled session. Returns the session, or unavailable.",
             ResumeArgs, _resume, "pool"),
-    ToolDef("park", "Park a running session for later resume. Returns the session, or unavailable.",
-            ParkArgs, _park, "pool"),
-    ToolDef("reap", "Tear down a dead/finished session. Returns confirmation, or unavailable.",
-            ReapArgs, _reap, "pool"),
+    ToolDef("reap", "Tear down a seat's shell (a dead one, or a resident architect at epic close). "
+            "Returns confirmation, or unavailable.", ReapArgs, _reap, "pool"),
     ToolDef("session_query", "List sessions matching filters. Returns matching session records.",
             SessionQueryArgs, _session_query, "pool"),
 ]
@@ -900,7 +999,13 @@ def _close(a: CloseArgs) -> dict[str, Any]:
     if status not in ("done", "partial"):
         return {"ok": False, "error": {"code": "transition", "message": f"epic {a.epic_id} is {status}, not done/partial"},
                 "hint": "close only after the epic reaches done or partial"}
-    return {"ok": True, "value": {"disarm": ["CronDelete <ids you armed>", "TaskStop <monitor>"]},
+    resident = f"architect.{a.epic_id}"
+    disarm = ["CronDelete <ids you armed>", "TaskStop <monitor>"]
+    seat = get_client().session_query(participant_id=resident)
+    rows = (seat.get("value") or []) if seat.get("ok") else []
+    if any((r.get("state") in ("alive", "parked")) for r in rows):
+        disarm.insert(0, f"reap(participant_id={resident!r}) — the resident architect never closes itself")
+    return {"ok": True, "value": {"disarm": disarm},
             "hint": "epic is closed in the record; disarm your wiring"}
 
 
@@ -928,26 +1033,35 @@ _DOC_RW = ["doc_create", "doc_read", "doc_query", "doc_update", "link_create", "
 _DOC_RO = ["doc_read", "doc_query"]
 _THREAD = ["message_send", "message_query", "gate_open", "gate_answer", "gates"]
 _BOARD = ["board", "events_query", "participants"]
+_CLOSING = ["inbox", "record_status", "close_self"]
 
 ROLE_BUNDLES: dict[str, list[str]] = {
     # The owner shell is the orchestrator: it spawns every seat (except SMEs —
     # the architect spawns those) and recovers dead ones. No coordinator seat.
+    # Closing is a self-assertion (inbox → record_status → close_self). The owner (a human
+    # shell) and the architect (RESIDENT for the epic's life; the owner reaps it at close)
+    # never get close_self — every other seat does.
     Role.owner.value: _IDENTITY + _THREAD + _BOARD + _DOC_RO + _TICKET_RO + _CHECK
-        + ["find", "ticket_create", "spawn", "resume", "reap", "session_query", "close"],
+        + ["find", "ticket_create", "inbox", "spawn", "resume", "reap", "session_query", "close"],
     Role.architect.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD + _BOARD
-        + ["find", "consult", "artifact_create", "artifact_read", "spawn", "finish"],
+        + ["find", "consult", "artifact_create", "artifact_read", "spawn", "inbox", "record_status"],
     Role.sme.value: _IDENTITY + _TICKET_RO + _DOC_RW + _THREAD
         + ["find", "participants", "assemble_ruleset", "criterion_query", "criterion_update",
-           "artifact_create", "artifact_read", "finish"],
+           "artifact_create", "artifact_read"] + _CLOSING,
     Role.engineer.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD
-        + ["find", "participants", "assemble_ruleset", "consult", "artifact_create", "artifact_read", "finish"],
+        + ["find", "participants", "assemble_ruleset", "consult", "artifact_create", "artifact_read"] + _CLOSING,
     Role.reviewer.value: _IDENTITY + _TICKET_RO + _CHECK + _DOC_RW + _THREAD
-        + ["find", "participants", "assemble_ruleset", "consult", "artifact_create", "artifact_read", "finish"],
+        + ["find", "participants", "assemble_ruleset", "consult", "artifact_create", "artifact_read"] + _CLOSING,
     Role.adversary.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD
-        + ["find", "participants", "assemble_ruleset", "consult", "artifact_create", "artifact_read", "finish"],
+        + ["find", "participants", "assemble_ruleset", "consult", "artifact_create", "artifact_read"] + _CLOSING,
     Role.qa.value: _IDENTITY + _TICKET_RO + _CHECK + _DOC_RW + _THREAD + _BOARD
-        + ["find", "assemble_ruleset", "consult", "artifact_create", "artifact_read", "finish"],
+        + ["find", "assemble_ruleset", "consult", "artifact_create", "artifact_read"] + _CLOSING,
 }
+
+
+ROLE_BUNDLES[Role.coordinator.value] = list(ROLE_BUNDLES[Role.owner.value])  # retired seat: explicit, not implicit
+ROLE_BUNDLES[Role.consultant.value] = _IDENTITY + ["ticket_read", "ticket_query", "message_send", "message_query",
+                                                   "find", "inbox"] + _DOC_RO
 
 
 def tools_for_role(role: str) -> list[ToolDef]:

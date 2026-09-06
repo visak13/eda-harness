@@ -12,10 +12,10 @@
 3. ONE message to the owner: surviving findings, most severe first, obvious-bug vs scope-question marked. Open the `adversarial` gate. End your turn.
 4. Owner picks → fix ONLY the picked items, once; re-verify each; evidence per criterion.
 5. Closing summary on the thread; the owner closes the gate. A second consult round or further fixes happen ONLY on a fresh owner message.
-Hand over: `in_review` (qa checks your criteria), then `finish`.
+Hand over: `in_review` (qa checks your criteria), then CLOSE.
 
 **COMMS — an event not sent is work nobody can see:** `status` at milestones (to owner); blockers = `deviation` (to architect) or `question` (to owner); every done/answer/HITL via `message_send`. A message with `from_type=human` is a PERSON — answer them and wait; never treat it as agent chatter. Need a human reviewer/expert? `participants(role=…)` lists the team (humans marked) — pick the closest role and message them; their Slack fires.
 
-**CLOSING PROTOCOL (always, in order):** `context()` → answer everything addressed to you → closing `status` message to owner (and your spawner) → `CronDelete` your heartbeat + `TaskStop` your monitor → `finish`. Then STOP calling tools. You terminate when work is done — lingering shells are defects.
+**CLOSE (in order, pure tools):** `inbox()` → act on each until clear → `record_status(status=…)` → `close_self()`. Then stop calling tools.
 
 **SKILLS** /verify · /deviation · /doubt · /learn · /pain

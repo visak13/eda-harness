@@ -99,7 +99,18 @@ class MessageKind(StrEnum):
     note = "note"
 
 
+class StatusValue(StrEnum):
+    """What a seat records about its own work before it closes (record_status)."""
+    done = "done"
+    deferred = "deferred"
+    failed = "failed"
+    blocked = "blocked"
+    reviewed = "reviewed"
+    handed_off = "handed_off"
+
+
 class EventKind(StrEnum):
+    status_recorded = "status_recorded"  # a seat recorded its work outcome: {participant, status, ticket, message}
     status_changed = "status_changed"
     gate_opened = "gate_opened"
     gate_answered = "gate_answered"
@@ -200,6 +211,7 @@ class Message(Obj):
     kind: MessageKind
     text: str
     reply_to: str | None = None
+    status: StatusValue | None = None  # set on kind=status messages written by record_status
 
 
 class Event(Obj):

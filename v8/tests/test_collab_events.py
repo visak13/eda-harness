@@ -74,11 +74,24 @@ def test_message_events_and_asks_carry_sender_identity(client, rig):
 
 
 def test_message_to_closed_agent_seat_notifies_owner(client, rig, published):
+    # a base-role stub ("arch", no ticket) is NOT a seat: no fyi (2026-09-05 flood: 37/45 owner fyis
+    # named a stub); a real per-ticket seat with a dead shell pages THIS epic's human owner
     r = client.post("/v1/messages", json={"ticket_id": rig["epic"], "kind": "question", "to": "arch",
                                           "text": "anyone home?"}, headers={"X-Participant": "ravi"})
     assert r.json()["ok"]
-    fyis = [x for x in published if x[1] == "owner" and "CLOSED seat arch" in str(x[3])]
+    assert not [x for x in published if "CLOSED seat" in str(x[3])], published
+    seat = f"architect.{rig['epic']}"
+    client.post("/v1/participants", json={"type": "agent", "role": "architect", "handle": seat, "id": seat},
+                headers=ADMIN)
+    client.put("/v1/sessions/s-dead", json={"participant_id": seat, "ticket_id": rig["epic"], "pool_id": "local",
+                                            "state": "dead", "reason": "closed by self: done"}, headers=ADMIN)
+    published.clear()
+    r = client.post("/v1/messages", json={"ticket_id": rig["epic"], "kind": "question", "to": "architect",
+                                          "text": "anyone home?"}, headers={"X-Participant": "ravi"})
+    assert r.json()["ok"] and r.json()["value"]["to"] == seat  # role resolved to the epic's seat
+    fyis = [x for x in published if x[1] == "owner" and f"CLOSED seat {seat}" in str(x[3])]
     assert fyis, published
+    assert "spawn(participant_id=" in fyis[0][3]["text"]
     # a HUMAN recipient never triggers the closed-seat path
     published.clear()
     client.post("/v1/messages", json={"ticket_id": rig["epic"], "kind": "question", "to": "ravi",

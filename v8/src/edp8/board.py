@@ -45,6 +45,7 @@ from .schemas import (
     Role,
     Session,
     SessionState,
+    StatusValue,
     Ticket,
     TicketKind,
     TicketStatus,
@@ -463,25 +464,82 @@ class Board:
                 out.append(pid)
         return out
 
-    def epic_owner(self, ticket_id: str) -> str:
+    def epic_owner(self, ticket_id: str) -> str | None:
         """The human who owns a ticket's epic (its creator when that is an owner-role
-        participant); falls back to the 'owner' handle for legacy/agent-created epics."""
+        participant). None for agent-created epics — there is NO fallback to a shared
+        'owner' handle any more (2026-09-05 pain: every agent-created epic paged the one
+        human running an unrelated epic)."""
         try:
             epic = self.epic_of(self.ticket(ticket_id))
         except BoardError:
-            return "owner"
+            return None
         creator = self.store.get("participant", epic.created_by)
         if creator is not None and creator.role == Role.owner:  # type: ignore[union-attr]
             return epic.created_by
-        return "owner"
+        return None
+
+    def recovery_seat(self, ticket_id: str, exclude: set[str] | None = None) -> str | None:
+        """Who is told when something on this ticket needs a decision and nobody is addressed:
+        the epic's human owner, else the epic's LIVE resident architect, else nobody."""
+        who = self.epic_owner(ticket_id)
+        if who and who not in (exclude or set()):
+            return who
+        try:
+            arch = self.seat_for_role("architect", self.ticket(ticket_id))
+        except BoardError:
+            return None
+        if arch and arch not in (exclude or set()) and self.seat_state(arch) in ("alive", "parked"):
+            return arch
+        return None
+
+    def seat_state(self, pid: str) -> str | None:
+        """Latest session state for a participant (alive|parked|dead|stalled); None = never had a shell."""
+        rows = sorted(self.store.query("session", {"participant_id": pid}), key=lambda s: s.created_at)
+        return rows[-1].state.value if rows else None  # type: ignore[union-attr]
+
+    def seat_for_role(self, role: str, t: Ticket) -> str | None:
+        """The seat participant that plays `role` for ticket t: role.<t>, then up the chain to
+        role.<epic>, then any role.<sibling> under the epic. A live seat wins; else a registered
+        one (the next shell on it reads its inbox first thing); else None."""
+        chain: list[str] = []
+        cur: Ticket | None = t
+        while cur is not None:
+            chain.append(cur.id)
+            cur = self.store.get("ticket", cur.parent_id) if cur.parent_id else None  # type: ignore[assignment]
+        candidates = [f"{role}.{tid}" for tid in chain]
+        candidates += [f"{role}.{x.id}" for x in self._descendants(chain[-1]) if x.id not in chain]
+        existing = [c for c in candidates if self.store.get("participant", c) is not None]
+        alive = [c for c in existing if self.seat_state(c) in ("alive", "parked")]
+        return (alive or existing or [None])[0]
+
+    def resolve_recipient(self, to: str | None, t: Ticket) -> tuple[str | None, str]:
+        """A bare role name becomes the seat that plays it on this ticket's epic (owner → the
+        epic's human owner). Returns (resolved_to, note); note is "" when nothing changed."""
+        if not to:
+            return None, ""
+        if to.startswith("@"):
+            return self.participant(to).id, ""
+        if to == Role.owner.value:
+            human = self.epic_owner(t.id)
+            if human:
+                return human, f"'owner' resolved to the epic's human owner {human}"
+            if self.store.get("participant", to) is not None:
+                return to, ""
+            return to, "this epic has no human owner; nobody is paged"
+        if to in {r.value for r in Role}:
+            seat = self.seat_for_role(to, t)
+            if seat:
+                state = self.seat_state(seat) or "never spawned"
+                return seat, f"'{to}' resolved to seat {seat} ({state})"
+            return to, f"no {to} seat exists on this epic yet — stored as a role note; nobody is woken"
+        self.participant(to)
+        return to, ""
 
     def message_send(self, actor: Participant, *, ticket_id: str, to: str | None, kind: MessageKind,
                      text: str, reply_to: str | None = None) -> Message:
         t = self.ticket(ticket_id)
-        if to and to.startswith("@"):
-            to = self.participant(to).id
-        elif to and to not in {r.value for r in Role}:
-            self.participant(to)
+        asked = to
+        to, note = self.resolve_recipient(to, t)
         if reply_to:
             self._get("message", reply_to, "message")
         m = Message(id=new_id("m"), ticket_id=ticket_id, to=to, kind=kind, text=text, reply_to=reply_to,
@@ -491,7 +549,9 @@ class Board:
         mentioned = self.mentions(text, exclude={actor.id, to} if to else {actor.id})
         self._emit(t.id, EventKind.message_sent, {"message": m.id, "to": to, "kind": kind, "from": actor.id,
                                                   "from_type": actor.type, "from_role": actor.role.value,
-                                                  "text": text[:280], "mentions": mentioned})
+                                                  "text": text[:280], "mentions": mentioned,
+                                                  **({"asked": asked, "note": note} if note else {})})
+        self.last_send_note = note
         if kind == MessageKind.steer and actor.role == Role.owner and t.kind != TicketKind.task:
             pass  # a steer is data on the thread; widening is the asker's call via /doubt → architect
         return m
@@ -534,7 +594,7 @@ class Board:
         self.store.put("session", s)
         if ticket_id and state in (SessionState.dead, SessionState.stalled) and (prev is None or prev.state != state):
             kind = EventKind.shell_dead if state == SessionState.dead else EventKind.shell_stalled
-            clean = any(k in (reason or "").lower() for k in ("finish", "reaped", "clean exit"))
+            clean = any(k in (reason or "").lower() for k in ("closed by self", "reaped", "clean exit"))
             self._emit(ticket_id, kind, {"session": id_, "participant": participant_id,
                                          "reason": reason or "no reason recorded", "clean": clean})
         return s
@@ -614,14 +674,26 @@ class Board:
             if strategy_links and not out["hint"]:
                 out["hint"] = (f"strategy/domain docs are linked: run assemble_ruleset(ticket_id={t.id!r}) "
                                "for your working brief (docs above are summaries; doc_read fetches full text)")
-        # questions AND steers: a directed steer to a booting seat must survive the
-        # whoami->subscribe race. Queried BY RECIPIENT (indexed) — a global scan capped at
-        # 200 rows silently dropped every recent ask once the board grew (drill 2026-09-03).
+        out["asks_for_me"] = self.inbox(p)
+        if not tickets:
+            out["hint"] = "no ticket assigned or created by you yet"
+        return out
+
+    def inbox(self, p: Participant) -> list[dict[str, Any]]:
+        """Unanswered questions AND steers addressed to this participant, oldest first. A directed
+        steer to a booting seat must survive the whoami->subscribe race, so this is queried BY
+        RECIPIENT (indexed) — a global scan capped at 200 rows silently dropped every recent ask
+        once the board grew (drill 2026-09-03). Empty list == clear to close."""
         asks = list(self.store.query("message", {"to": p.id,
                                                  "kind": [MessageKind.question, MessageKind.steer]}, limit=100))
         if p.role.value != p.id:
-            asks += list(self.store.query("message", {"to": p.role.value,
-                                                      "kind": [MessageKind.question, MessageKind.steer]}, limit=100))
+            # a bare-role address (legacy rows, or a role with no seat when sent) reaches the
+            # seats of that role ON THE SAME EPIC only — never every seat of the role fleet-wide
+            mine = self.my_epics(p)
+            for m in self.store.query("message", {"to": p.role.value,
+                                                  "kind": [MessageKind.question, MessageKind.steer]}, limit=100):
+                if self._epic_id_of(m.ticket_id) in mine:  # type: ignore[union-attr]
+                    asks.append(m)
 
         def _is_answered(ask_id: str) -> bool:
             return bool(self.store.query("message", {"reply_to": ask_id, "kind": MessageKind.answer}, limit=1))
@@ -639,12 +711,89 @@ class Board:
             sender = self.store.get("participant", m.created_by)
             row["from_type"] = getattr(sender, "type", "agent") if sender else "agent"
             row["from_role"] = getattr(getattr(sender, "role", None), "value", "unknown") if sender else "unknown"
+            row["answer_with"] = (f"message_send(ticket_id={m.ticket_id!r}, kind='answer', "
+                                  f"to={m.created_by!r}, reply_to={m.id!r})")
             return row
 
-        out["asks_for_me"] = [_ask_row(m) for m in asks if not _is_answered(m.id) and _ask_live(m)]
-        if not tickets:
-            out["hint"] = "no ticket assigned or created by you yet"
+        return [_ask_row(m) for m in asks if not _is_answered(m.id) and _ask_live(m)]
+
+    def _epic_id_of(self, ticket_id: str) -> str | None:
+        t = self.store.get("ticket", ticket_id)
+        return self.epic_of(t).id if t is not None else None  # type: ignore[arg-type]
+
+    def my_epics(self, p: Participant) -> set[str]:
+        """Epic ids this participant works in: its tickets' epics plus its seat ticket's epic."""
+        out: set[str] = set()
+        for t in self.my_tickets(p):
+            out.add(self.epic_of(t).id)
+        st = self.seat_ticket(p)
+        if st is not None:
+            out.add(self.epic_of(st).id)
         return out
+
+    def seat_ticket(self, p: Participant) -> Ticket | None:
+        """The ticket a seat is named for (role.<ticket_id>), else its first assigned ticket."""
+        if "." in p.id:
+            tk = self.store.get("ticket", p.id.split(".", 1)[1])
+            if tk is not None:
+                return tk  # type: ignore[return-value]
+        mine = self.my_tickets(p)
+        return mine[0] if mine else None
+
+    def record_status(self, actor: Participant, *, status: StatusValue, note: str = "",
+                      to: str | None = None, ticket_id: str | None = None) -> tuple[Message, list[str]]:
+        """A seat records the outcome of its work as a status message on its ticket and a
+        status_recorded event. Returns the message and the participant ids that should be
+        told: the ticket's epic architect seat, the epic's human owner, plus `to`. (The
+        spawner is added by delivery, which can ask the pool for lineage.)"""
+        t = self.ticket(ticket_id) if ticket_id else self.seat_ticket(actor)
+        if t is None:
+            raise BoardError("precondition", "no ticket to record a status on",
+                             "pass ticket_id=<the ticket you worked>")
+        to, _ = self.resolve_recipient(to, t)
+        text = f"[{status.value}] {note}".strip()
+        m = Message(id=new_id("m"), ticket_id=t.id, to=to, kind=MessageKind.status, text=text,
+                    status=status, created_by=actor.id)
+        self.store.put("message", m)
+        self._index("message", m.id, text)
+        self._emit(t.id, EventKind.message_sent, {"message": m.id, "to": to, "kind": MessageKind.status,
+                                                  "from": actor.id, "from_type": actor.type,
+                                                  "from_role": actor.role.value, "text": text[:280],
+                                                  "mentions": self.mentions(text, exclude={actor.id})})
+        self._emit(t.id, EventKind.status_recorded, {"participant": actor.id, "status": status.value,
+                                                     "ticket": t.id, "message": m.id, "note": note[:280]})
+        recipients: list[str] = []
+        epic = self.epic_of(t)
+        arch = f"architect.{epic.id}"
+        if self.store.get("participant", arch) is not None and arch != actor.id:
+            recipients.append(arch)
+        owner = self.epic_owner(t.id)
+        if owner and owner != actor.id and owner not in recipients:
+            recipients.append(owner)
+        if to and to != actor.id and to not in recipients:
+            recipients.append(to)
+        return m, recipients
+
+    def last_status(self, p: Participant) -> dict[str, Any] | None:
+        """The most recent status_recorded event data by this participant on its tickets."""
+        seen: list[Event] = []
+        tickets = self.my_tickets(p)
+        st = self.seat_ticket(p)
+        if st is not None and all(x.id != st.id for x in tickets):
+            tickets.append(st)
+        for t in tickets:
+            for ev in self.store.query("event", {"subject_id": t.id, "kind": EventKind.status_recorded}):
+                if ev.data.get("participant") == p.id:  # type: ignore[union-attr]
+                    seen.append(ev)  # type: ignore[arg-type]
+        if not seen:
+            return None
+        last = max(seen, key=lambda e: e.created_at)
+        return {**last.data, "at": last.created_at.isoformat()}
+
+    def close_check(self, p: Participant) -> dict[str, Any]:
+        """Everything close_self needs to decide, in one read: the open inbox and the last
+        recorded status. The pool release itself happens client-side."""
+        return {"inbox": self.inbox(p), "status": self.last_status(p)}
 
     def board(self, epic_id: str) -> dict[str, Any]:
         epic = self.ticket(epic_id)
@@ -685,8 +834,7 @@ class Board:
         tk = self.store.get("ticket", subject_id)
         if tk is None:
             return True
-        o = self.epic_owner(tk.id)
-        return o == p.id or o == "owner"  # "owner" = fallback: no specific human owns it
+        return self.epic_owner(tk.id) == p.id  # no fallback: an epic without a human owner pages no owner
 
     def relevant(self, ev: Event, p: Participant) -> bool:
         d = ev.data
@@ -697,10 +845,13 @@ class Board:
                 return self._owner_scope(p, ev.subject_id)
             if ev.kind == EventKind.message_sent and d.get("from") != p.id:
                 to = d.get("to")
-                if to in (p.id, p.role.value):
+                if to == p.id:
                     return True
+                if to == p.role.value:
+                    return self._owner_scope(p, ev.subject_id)
                 return to is None and d.get("kind") in (MessageKind.status, MessageKind.finding,
-                                                         MessageKind.deviation)
+                                                         MessageKind.deviation) \
+                    and self._owner_scope(p, ev.subject_id)
             # the owner is the orchestrator + recovery seat (no coordinator): it must see
             # dying shells and the phase boundaries its card spawns on — for ITS epics
             if ev.kind in (EventKind.shell_dead, EventKind.shell_stalled):
@@ -715,15 +866,20 @@ class Board:
             to = d.get("to")
             if d.get("from") == p.id:
                 return False
-            if to in (p.id, p.role.value):
+            if to == p.id:
                 return True
-            if to is None:
-                return self._in_subtree(p, ev.subject_id)
+            if to == p.role.value:  # unresolved role note: my epic only, never fleet-wide
+                return self._epic_id_of(ev.subject_id) in self.my_epics(p)
+            if to is None:  # a thread note reaches the seats working that ticket and its ancestors
+                return self._on_ticket(p, ev.subject_id, parents=True)
             return False
         if ev.kind == EventKind.gate_opened:
             return p.role in HUMAN_GATE_ANSWERERS or self._in_subtree(p, ev.subject_id)
         if ev.kind == EventKind.gate_answered:
-            return d.get("by") == p.id or self._in_subtree(p, ev.subject_id)
+            opened_by_me = any(e.data.get("gate") == d.get("gate") and e.data.get("by") == p.id
+                               for e in self.store.query("event", {"subject_id": ev.subject_id,
+                                                                    "kind": EventKind.gate_opened}))
+            return d.get("by") == p.id or opened_by_me or self._in_subtree(p, ev.subject_id)
         if ev.kind in (EventKind.shell_dead, EventKind.shell_stalled):
             return p.role == Role.coordinator or self._on_ticket(p, ev.subject_id, parents=True)
         if ev.kind in (EventKind.status_changed, EventKind.ticket_created, EventKind.assigned,
@@ -746,14 +902,19 @@ class Board:
             return False
         epic = self.epic_of(t)  # type: ignore[arg-type]
         for x in (epic, *self._descendants(epic.id)):
-            if x.assignee == p.id or x.created_by == p.id:
+            if self._works(p, x):
                 return True
         return False
+
+    def _works(self, p: Participant, t: Ticket) -> bool:
+        """p works ticket t: assigned to it, or the seat named for it. Creating a ticket does
+        NOT subscribe you to it for life (2026-09-05 pain: created_by widened every feed)."""
+        return t.assignee == p.id or p.id == f"{p.role.value}.{t.id}"
 
     def _on_ticket(self, p: Participant, ticket_id: str, parents: bool = False) -> bool:
         t = self.store.get("ticket", ticket_id)
         while t is not None:
-            if t.assignee == p.id or t.created_by == p.id:
+            if self._works(p, t):
                 return True
             if not parents or not t.parent_id:
                 return False

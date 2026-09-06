@@ -655,9 +655,13 @@ def test_gate_answered_reaches_the_gate_opener(board, rig):
     board.gate_open(epic.id, Gate.design_signoff, by=arch.id)
     ev = board.gate_answer(owner, epic.id, Gate.design_signoff, "signed")
     assert ev.kind == EventKind.gate_answered
-    assert board.relevant(ev, arch), "the story-creating architect must receive the gate answer"
+    assert board.relevant(ev, arch), "the gate OPENER must receive the gate answer"
     thread_note = [e for s, e in board.store.events_since(0) if e.kind == EventKind.message_sent][-1]
-    assert board.relevant(thread_note, arch), "thread notes on the epic reach subtree participants"
+    # creating stories no longer subscribes a seat for life (2026-09-05 feed leak); working the
+    # epic (assignee or the seat named for it) does
+    assert not board.relevant(thread_note, arch)
+    board.ticket_update(owner, epic.id, assignee=arch.id)
+    assert board.relevant(thread_note, arch), "thread notes on the epic reach the seats working it"
 
 
 def test_auto_advance_on_evidence_and_verdicts(board, rig):

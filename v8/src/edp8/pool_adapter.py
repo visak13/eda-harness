@@ -90,27 +90,24 @@ def reap(participant_id: str) -> dict[str, Any]:
     return _post(f"/v1/reap/{participant_id}")
 
 
-def finish_self(participant_id: str, idle_secs: float = 120.0, park: bool | None = None) -> dict[str, Any]:
-    """Deferred self-stand-down: a shell cannot stop itself mid-turn, so this arms the pool's
-    close_when_idle on its own session. EVERY role CLOSES (owner ruling 2026-09-02 — no parks:
-    the ticket holds everything it knew, a fresh spawn re-grounds from the record, and a parked
-    console kept burning tokens). The shell's own hooks ping the pool per tool call, so a busy
-    shell is never mistaken for a quiet one."""
+def release_self(participant_id: str, reason: str) -> dict[str, Any]:
+    """Synchronous self-close: the shell asserts it is finished and the pool releases its
+    session immediately with `reason` as the honest dead_reason (owner ruling 2026-09-06:
+    no idle inference, ever — a shell decides when it closes). The pool kills the process
+    tree, so the cron/monitor die with it. Idempotent: no active session == already closed."""
     got = sessions()
     if not got["ok"]:
         return got
     rows = got["value"] if isinstance(got["value"], list) else got["value"].get("sessions", [])
     sid = next((s.get("session_id") for s in rows
-                if s.get("handle") == participant_id and s.get("state") in ("active", "alive")), None)
+                if s.get("handle") == participant_id and s.get("state") in ("active", "alive", "starting")), None)
     if not sid:
-        return _envelope(False, error=f"no active session for {participant_id!r}", code="not_found",
-                         hint="already closed or reaped; nothing to do")
-    out = _post(f"/v1/close_when_idle/{sid}", {"park": False, "idle_secs": idle_secs,
-                                               "reason": "job recorded"})
+        return _envelope(True, value={"closed": True, "session_id": None, "reason": "already closed"},
+                         hint="no active session for you in the pool; nothing to do — stop calling tools")
+    out = _post(f"/v1/release/{sid}", {"reason": reason})
     if out["ok"]:
-        out["hint"] = (f"stand-down armed: the pool closes this shell after {int(idle_secs)}s of quiet. "
-                       "Disarm your wiring NOW (CronDelete your heartbeat, TaskStop your monitor), "
-                       "then end your turn and stop calling tools")
+        out["value"] = {"closed": True, "session_id": sid, "reason": reason}
+        out["hint"] = "closed: the pool is ending this shell now — stop calling tools and end the turn"
     return out
 
 
@@ -153,11 +150,20 @@ def sync_sessions(board_url: str | None = None, admin_token: str | None = None) 
         # unknown/legacy pool states (done, released, …) map to DEAD: "your answer is saved
         # for the next shell" is the safe claim; "this wakes it" must never be a lie
         state = _STATE_MAP.get((live.get("value") or {}).get("state", s.get("state", "dead")), SessionState.dead)
+        reason = s.get("dead_reason") or ""
+        if state == SessionState.dead and not reason:
+            # the list snapshot can predate the close: a shell that released itself between the
+            # list and the liveness call would otherwise be mirrored as "no reason recorded"
+            fresh = sessions()
+            if fresh["ok"]:
+                frows = fresh["value"] if isinstance(fresh["value"], list) else fresh["value"].get("sessions", [])
+                reason = next((r.get("dead_reason") or "" for r in frows
+                               if r.get("session_id") == s.get("session_id")), "")
         try:
             ticket_id = handle.split(".", 1)[1] if "." in handle else None
             httpx.put(f"{board_url}/v1/sessions/{s.get('session_id')}",
                       json={"participant_id": handle, "ticket_id": ticket_id, "pool_id": POOL_ID,
-                            "state": state.value, "reason": s.get("dead_reason") or ""},
+                            "state": state.value, "reason": reason},
                       headers={"X-Admin": admin_token}, timeout=10.0)
             n += 1
         except httpx.HTTPError as e:

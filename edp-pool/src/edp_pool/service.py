@@ -68,6 +68,21 @@ def _max_total_shells() -> int:
     return _env_int("EDP_MAX_TOTAL_SHELLS", 10)
 
 
+def _min_free_mb() -> int:
+    # v8 2026-09-06: a count cap is not a resource guard on a laptop — seats
+    # were admitted onto a host at 98% RAM and codex consults died OOM. 0
+    # disables the check.
+    return _env_int("EDP_MIN_FREE_MB", 2048)
+
+
+def _free_mb() -> int | None:
+    try:
+        import psutil
+        return int(psutil.virtual_memory().available // (1024 * 1024))
+    except Exception:  # noqa: BLE001 — no psutil / odd platform: no verdict
+        return None
+
+
 _ENVELOPE_HTTP_STATUS = 409
 
 
@@ -208,7 +223,7 @@ def _proc_kill_allowed(fp: dict | None) -> tuple[bool, str]:
 # anything that reads as authorship.
 #
 # ── DELIBERATELY UNGUARDED ────────────────────────────────────────────────
-# `/v1/spawn`, `/v1/release/{sid}`, `/v1/close_when_idle/{sid}`,
+# `/v1/spawn`, `/v1/release/{sid}`, `/v1/session_end/{sid}`,
 # `/v1/park/{handle}`, `/v1/resume/{handle}`, `/v1/reap/{handle}`,
 # `/v1/sessions`, `/v1/locks`, `/v1/liveness/{handle}`,
 # `/v1/doctor` carry NO Origin/Host check, ON PURPOSE. They are the MCP tool
@@ -406,7 +421,6 @@ class PoolService(Microservice):
         # promise about a LIVE shell this pool is watching. A pool restart
         # kills the watcher, and the restart's own orphan handling
         # (release/reap → fingerprint-gated kill) is the correct owner then.
-        self._close_timers: dict[str, object] = {}
         # DESIGN-v7 park/resume: one mutex guards every parked/resuming
         # state TRANSITION. Service methods run via asyncio.to_thread, so
         # two threads (the resume watchdog + the neuron's backstop tool, or
@@ -809,9 +823,6 @@ class PoolService(Microservice):
               the kill on `_proc_kill_allowed`, which is STRICTER than this
               (fail-closed on a missing/mismatched create_time). Authorizing a
               kill must never fall back to pid-only the way this may.
-            * _close_when_idle — reads the session's own `state` and the
-              spawner's output timestamp. It reaps only a session that ARMED
-              itself, and releases through `_kill_session`'s guard anyway.
 
         `test_no_new_caller_of_spawner_alive` pins the enumeration: exactly one
         call of `spawner.alive(` may exist in this module — the one below.
@@ -879,7 +890,9 @@ class PoolService(Microservice):
             if self._session_alive(sid) is not False:
                 continue
             s["state"] = "done"  # phantom — reconcile
-            s["dead_reason"] = "process gone (reconcile sweep) — died without closing itself"
+            code = getattr(self.spawner, "exit_code", lambda _s: None)(sid)
+            s["dead_reason"] = ("process exited without close_self"
+                                + (f" (exit {code})" if code is not None else " (exit unknown)"))
             if self.locks.get(s.get("handle")) == sid:
                 del self.locks[s["handle"]]
             changed += 1
@@ -1016,6 +1029,16 @@ class PoolService(Microservice):
                     f"are alive); {live_total} live incl. parked. Resume+"
                     "close or pool_reap parked sessions before spawning "
                     "more.",
+                )
+            need = _min_free_mb()
+            free = _free_mb() if need > 0 else None
+            if free is not None and free < need:
+                return Tool.propagate(
+                    source="edp-pool",
+                    code=ErrorCode.POOL_CAPACITY_EXCEEDED,
+                    message=f"host has {free} MB free RAM, below EDP_MIN_FREE_MB="
+                    f"{need}; close or reap a seat (or free memory) before "
+                    "spawning another",
                 )
             admitted = self._admit_handle_locked(handle)
             if admitted is not None:
@@ -1359,8 +1382,7 @@ class PoolService(Microservice):
         records for the watchdog to announce."""
         crashed: list[dict] = []
         for sid, s in list(self.sessions.items()):
-            if s.get("state") not in ("active", "parked") \
-                    or sid in self._close_timers:
+            if s.get("state") not in ("active", "parked"):
                 continue
             # Two death signals: (1) the turn client exited NONZERO;
             # (2) the OPERATOR closed the shell's window — 1:1 with
@@ -1743,163 +1765,14 @@ class PoolService(Microservice):
         return {"resumed": True, "handle": handle, "session_id": sid,
                 "via": resumed_via, "claude_session_id": new_claude_session}
 
-    # ── s26 item 1: close-on-terminal-status (the worker-shell leak) ──────
+    # ── close is a SELF-ASSERTION (owner ruling 2026-09-06) ──────────────
     #
-    # THE BUG. A worker's close is the last line of a TEXT guide. Nothing
-    # compels an assistant turn after the worker emits its report, so a worker
-    # that stops to report never resumes: it deletes its cron, replies in chat,
-    # and idles at a prompt holding RAM until a human closes it. A text
-    # instruction cannot be the only thing between a finished action and a
-    # reaped shell.
-    #
-    # WHY THIS SHAPE, and why it does NOT contradict `reap`'s "NOT a background
-    # auto-reaper" stance directly below. That stance rejects an EAGER LOOP that
-    # infers death from silence — R5's whole point is that silence != death, and
-    # a heads-down shell reasoning for 40 minutes is alive. This is not that:
-    #
-    #   * The trigger is a TERMINAL ACTION STATUS, not elapsed silence. The
-    #     shell has told the store it is finished. There is no inference.
-    #   * It is PUSH-ARMED for ONE session, by that session, at the moment it
-    #     reports. The pool never scans, never polls a store, never enumerates
-    #     "stale" shells. Nothing is armed that did not arm itself.
-    #   * Idle is a SECOND gate, not the trigger. A shell still emitting output
-    #     is re-checked, never killed mid-flush.
-    #   * The kill goes through `release` → `_kill_session` → `_proc_kill_allowed`,
-    #     which is FAIL-CLOSED on a missing/mismatched create_time. R10 holds:
-    #     we only ever signal a pid+create_time we ourselves recorded at spawn.
-    #     A shell with no pool row — the neuron's foreground shell, the user's
-    #     terminal — can never be armed, because arming requires a session id.
-    #
-    # A reaping act stays REASONED. What changed is that the reason is now a
-    # fact the shell asserted about itself, rather than a human noticing.
-    def arm_close_when_idle(
-        self, sid: str, idle_secs: float = 120.0, reason: str = "",
-        max_checks: int = 5, park: bool = False,
-    ) -> dict:
-        """Arm a ONE-SHOT deferred reap for `sid`. Idempotent: re-arming an
-        already-armed session leaves the existing timer alone.
-
-        Returns `{"session_id", "armed", "reason"}`. `armed=False` when the
-        session is unknown or already released — the HEALTHY case, meaning the
-        shell closed itself and the normal path won. Never raises."""
-        s = self.sessions.get(sid)
-        if not s or s["state"] != "active":
-            return {"session_id": sid, "armed": False,
-                    "reason": "session is not active — nothing to arm"}
-        if sid in self._close_timers:
-            # PARK-FLAG CORRECTNESS (2026-07-20, lost-park incident): a
-            # blanket "already armed" let an earlier park=False arm WIN
-            # over a later park=True — the shell believed it parked, the
-            # timer released it terminally, and the row was stranded as
-            # `done` with no watermark. A differing park flag is a NEW
-            # intent: cancel the stale timer and re-arm with the new one.
-            if bool(s.get("close_armed_park")) == park:
-                return {"session_id": sid, "armed": True,
-                        "reason": "already armed"}
-            old = self._close_timers.pop(sid, None)
-            if old is not None:
-                old.cancel()
-            _log.warning("close_rearm_park_changed", sid, sid=sid,
-                         old_park=bool(s.get("close_armed_park")),
-                         new_park=park)
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            # No loop (sync test / CLI). Arming is a no-op rather than an
-            # error: the shell's own pool_close_self still closes it.
-            return {"session_id": sid, "armed": False,
-                    "reason": "no running event loop"}
-        s["close_armed_park"] = park      # forensic + the differ-guard above
-        task = loop.create_task(
-            self._close_when_idle(sid, idle_secs, reason, max_checks, park))
-        self._close_timers[sid] = task
-
-        def _done(t) -> None:
-            # A bare `pop` here would SWALLOW any exception raised inside the
-            # reap task (asyncio only reports it when the task is garbage
-            # collected, as "Task exception was never retrieved"). That is how
-            # a reap silently never happens while the arm reports success —
-            # the leak this whole mechanism exists to close, reintroduced one
-            # level down. Surface it instead.
-            self._close_timers.pop(sid, None)
-            if not t.cancelled() and t.exception() is not None:
-                _log.error("close_when_idle_failed", sid, sid=sid,
-                           error=repr(t.exception()))
-
-        task.add_done_callback(_done)
-        _log.info("close_armed", sid, sid=sid, idle_secs=idle_secs,
-                  reason=reason)
-        return {"session_id": sid, "armed": True, "reason": reason}
-
-    async def _close_when_idle(
-        self, sid: str, idle_secs: float, reason: str, max_checks: int,
-        park: bool = False,
-    ) -> None:
-        """Wait for `sid`'s shell to fall idle, then release (or park) it.
-
-        Re-checks up to `max_checks` times while the shell is still producing
-        output — a worker that reports and THEN runs its close sequence
-        (CronDelete → stop Monitor → pool_close_self) is busy, not leaked, and
-        must be left alone to finish. Once it closes itself, `sessions[sid]`
-        leaves `active` and this returns without signalling anything.
-
-        DESIGN-v7 1.5.2 `park`: the same idle-gated trigger, but the terminal
-        act is `park_session` — this is the shell-callable park path (a
-        planner arms it, ends its turn, and the pool parks it once quiet).
-        The park's flush-wait + kill are blocking, so they run off the loop."""
-        unknown_streak = 0
-        for _ in range(max(1, max_checks)):
-            await asyncio.sleep(idle_secs)
-            s = self.sessions.get(sid)
-            if not s or s["state"] != "active":
-                # The healthy path: the shell closed itself first.
-                _log.info("close_when_idle_noop", sid, sid=sid)
-                return
-            last = self.spawner.last_output_ts(sid)
-            if last is not None and (time.time() - last) < idle_secs:
-                unknown_streak = 0
-                continue   # still emitting → busy, not leaked. Re-check.
-            # v8 2026-09-02: monitor shells have no drain log, but their
-            # Claude Code hooks POST /v1/turn_ping on every tool call and
-            # turn boundary — a recent ping is PROOF of busy, and this is
-            # what stops the blind 2-sample kill of a mid-work shell.
-            ping = s.get("last_turn_ts")
-            if ping is not None and (time.time() - float(ping)) < idle_secs:
-                unknown_streak = 0
-                continue
-            # F36 R4#8 (2026-08-18): NO instrumentation is not PROOF of
-            # idleness. A monitor-mode shell (the default) has no drain
-            # log, so `last is None` used to read as "idle since forever"
-            # and the very first check could kill it mid-final-write. An
-            # unknown reading now needs TWO consecutive quiet checks
-            # (double the grace) before the reap proceeds — the leaked-
-            # shell cleanup this timer exists for still happens, just
-            # never on a single blind sample.
-            if last is None:
-                unknown_streak += 1
-                if unknown_streak < 2:
-                    _log.info("close_when_idle_unknown_activity", sid,
-                              sid=sid,
-                              note="no output instrumentation — deferring "
-                                   "one extra check before assuming idle")
-                    continue
-            _log.info("close_when_idle_reap", sid, sid=sid, reason=reason,
-                      park=park)
-            if park:
-                out = await asyncio.to_thread(self.park_session, sid)
-                if not out.get("parked"):
-                    # A shell that BELIEVES it parked but did not is the
-                    # worst stranding class (lost-park incident) — stamp
-                    # the row so the failure names itself, never silent.
-                    s["park_failed"] = out.get("reason", "unknown")
-                    _log.warning("park_FAILED_after_arm", sid, sid=sid,
-                                 reason=out.get("reason"))
-            else:
-                self.release(sid, reason=f"finish: {reason or 'job recorded'} (closed after idle)")
-            return
-        _log.info("close_when_idle_gave_up", sid, sid=sid,
-                  checks=max_checks)
-
+    # A shell closes itself: inbox() → record_status() → close_self() →
+    # POST /v1/release with reason "closed by self: <status>". The pool never
+    # infers idleness — idle is a legitimate state (a resident architect may
+    # sit for days), so the s26 close_when_idle reaper that killed shells
+    # mid-long-tool-call was deleted outright. Everything that is not a
+    # self-close is a crash and is labelled as one by reconcile/sweep.
     def liveness(self, handle: str) -> str:
         # 2026-05-26: the pool persists `sessions` + `locks` to disk but NOT
         # the in-memory `_launches` (PTY handles). After a pool restart the
@@ -2394,8 +2267,9 @@ def create_app(
     @app.post("/v1/turn_ping/{session_id}")
     async def turn_ping(session_id: str):
         """Liveness heartbeat from a shell's own Claude Code hooks (PostToolUse +
-        Stop): a monitor-mode console has no drain log, so this ping is the only
-        busy signal close_when_idle can see. In-memory only — no persist churn."""
+        Stop): a monitor-mode console has no drain log, so this ping is the
+        pool's only turn-level activity signal (doctor/panel). It never gates a
+        kill. In-memory only — no persist churn."""
         s = svc.sessions.get(session_id)
         if s is None:
             return {"ok": False, "note": "unknown session"}
@@ -2416,29 +2290,10 @@ def create_app(
             s["dead_reason"] = s.get("dead_reason") or f"clean exit: {why}"
         return {"ok": True}
 
-    @app.post("/v1/close_when_idle/{session_id}")
-    async def close_when_idle(session_id: str, body: dict | None = None):
-        """s26 item 1. The shell whose action just reached a TERMINAL status
-        arms its own deferred reap. One session, pushed by that session — the
-        pool never scans. See PoolService.arm_close_when_idle.
-
-        DESIGN-v7 1.5.2: `{"park": true}` makes the deferred act a PARK —
-        this is how a planner parks ITSELF (arm, end the turn, and the pool
-        parks the quiesced shell; a self-park cannot be synchronous because
-        the shell must stop consuming before the watermark is cut)."""
-        body = body or {}
-        return svc.arm_close_when_idle(
-            session_id,
-            idle_secs=float(body.get("idle_secs", 120.0)),
-            reason=str(body.get("reason", "")),
-            park=bool(body.get("park", False)),
-        )
-
     @app.post("/v1/park/{handle}")
     async def park(handle: str):
         """DESIGN-v7 1.5.2: immediate park of the shell holding `handle`'s
-        lock (operator/MCP surface; a shell parking ITSELF should prefer the
-        close_when_idle park trigger above so it isn't killed mid-turn)."""
+        lock (operator/MCP surface)."""
         _log.info("POST /v1/park", handle, handle=handle)
         return await asyncio.to_thread(svc.park, handle)
 

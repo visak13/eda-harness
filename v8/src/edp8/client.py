@@ -65,6 +65,17 @@ class BoardClient:
     def context(self, ticket_id: str | None = None) -> dict[str, Any]:
         return self._request("GET", "/v1/context", params={"ticket_id": ticket_id})
 
+    def inbox(self) -> dict[str, Any]:
+        return self._request("GET", "/v1/inbox")
+
+    def record_status(self, status: str, note: str = "", to: str | None = None,
+                      ticket_id: str | None = None) -> dict[str, Any]:
+        return self._request("POST", "/v1/status",
+                             json={"status": status, "note": note, "to": to, "ticket_id": ticket_id})
+
+    def close_check(self) -> dict[str, Any]:
+        return self._request("GET", "/v1/close_check")
+
     # ------------------------------------------------------------------ registry
     def participant_create(self, type: str, role: str, handle: str, location: str | None = None,
                            model: str | None = None, id: str | None = None) -> dict[str, Any]:

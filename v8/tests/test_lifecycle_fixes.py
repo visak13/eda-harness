@@ -1,4 +1,4 @@
-"""Field-report fixes: ack-before-finish, steers in context, close reasons,
+"""Field-report fixes: self-asserted close (inbox → record_status → close_self), steers in context, close reasons,
 criterion text edits, extends validation, ruleset graceful skips."""
 
 from __future__ import annotations
@@ -58,14 +58,64 @@ def test_seat_participant_sees_its_ticket_unassigned(client, rig):
     assert rig["epic"] in who["tickets"]  # named for the ticket -> surfaced even unassigned
 
 
-def test_finish_refuses_with_pending_asks(client, rig, monkeypatch):
+def _tool(name, **kw):
+    t = ALL_TOOLS[name]
+    return t.handler(t.args_model(**kw))
+
+
+def test_close_self_refuses_with_pending_asks_and_no_status(client, rig, monkeypatch):
     set_client(BoardClient(participant="eng", admin_token="t", client=client))
-    monkeypatch.setenv("EDP8_PARTICIPANT", "eng")
     client.post("/v1/messages", json={"ticket_id": rig["epic"], "kind": "question", "to": "eng",
                                       "text": "blocking q"}, headers={"X-Participant": "owner"})
-    out = ALL_TOOLS["finish"].handler(ALL_TOOLS["finish"].args_model())
+    out = _tool("close_self")
     assert out["ok"] is False and out["error"]["code"] == "precondition"
-    assert "blocking q" in out["error"]["message"]
+    assert "blocking q" in out["error"]["message"] and "no status recorded" in out["error"]["message"]
+    assert out["value"]["inbox"][0]["answer_with"].startswith("message_send(")
+
+
+def test_closing_sequence_inbox_status_close(client, rig, board, monkeypatch):
+    """inbox() → answer → record_status() → close_self() releases the pool session synchronously."""
+    set_client(BoardClient(participant="eng", admin_token="t", client=client))
+    published, released = [], []
+    monkeypatch.setattr(broker_adapter, "publish", lambda *a: published.append(a) or True)
+    from edp8 import pool_adapter
+    monkeypatch.setattr(pool_adapter, "sessions", lambda: {"ok": True, "value": [
+        {"session_id": "sid-eng", "handle": "eng", "state": "active", "parent": "sid-own"},
+        {"session_id": "sid-own", "handle": "owner", "state": "active", "parent": None}]})
+    monkeypatch.setattr(pool_adapter, "_post", lambda path, body=None, timeout=90.0:
+                        released.append((path, body)) or {"ok": True, "value": {"ok": True}, "hint": ""})
+    client.patch(f"/v1/tickets/{rig['epic']}", json={"assignee": "eng"}, headers={"X-Participant": "owner"})
+    q = client.post("/v1/messages", json={"ticket_id": rig["epic"], "kind": "question", "to": "eng",
+                                          "text": "ready?"}, headers={"X-Participant": "owner"}).json()["value"]
+    inbox = _tool("inbox")
+    assert inbox["ok"] and [m["id"] for m in inbox["value"]] == [q["id"]]
+    client.post("/v1/messages", json={"ticket_id": rig["epic"], "kind": "answer", "to": "owner",
+                                      "reply_to": q["id"], "text": "yes"}, headers={"X-Participant": "eng"})
+    assert _tool("inbox")["value"] == []
+    st = _tool("record_status", status="done", note="built it")
+    assert st["ok"], st
+    assert st["value"]["message"]["status"] == "done" and st["value"]["message"]["text"] == "[done] built it"
+    assert "owner" in st["value"]["told"]  # epic's human owner + spawner (both 'owner' here)
+    evs = client.get("/v1/events", params={"subject_id": rig["epic"]},
+                     headers={"X-Participant": "owner"}).json()["value"]
+    assert any(e["kind"] == "status_recorded" and e["data"]["status"] == "done" for e in evs)
+    assert any(a[2] == "status" and a[3]["status"] == "done" for a in published)
+    out = _tool("close_self")
+    assert out["ok"] and out["value"]["closed"] is True
+    assert released == [("/v1/release/sid-eng", {"reason": "closed by self: done"})]
+    # idempotent: a second close finds no active session and still says closed
+    monkeypatch.setattr(pool_adapter, "sessions", lambda: {"ok": True, "value": []})
+    again = _tool("close_self")
+    assert again["ok"] and again["value"]["reason"] == "already closed"
+
+
+def test_architect_and_owner_have_no_close_self():
+    from edp8.bundles import ROLE_BUNDLES
+    assert "close_self" not in ROLE_BUNDLES["architect"] and "close_self" not in ROLE_BUNDLES["owner"]
+    assert {"inbox", "record_status"} <= set(ROLE_BUNDLES["architect"])
+    for r in ("engineer", "reviewer", "qa", "adversary", "sme"):
+        assert ROLE_BUNDLES[r][-3:] == ["inbox", "record_status", "close_self"]
+    assert "finish" not in ALL_TOOLS and "park" not in ALL_TOOLS
 
 
 def test_close_reason_reaches_feed_and_broker(client, rig, monkeypatch):
@@ -75,12 +125,12 @@ def test_close_reason_reaches_feed_and_broker(client, rig, monkeypatch):
             "state": "alive"}
     client.put("/v1/sessions/s-9", json=body, headers=ADMIN)
     client.put("/v1/sessions/s-9", json={**body, "state": "dead",
-                                         "reason": "finish: job recorded (closed after idle)"}, headers=ADMIN)
+                                         "reason": "closed by self: done"}, headers=ADMIN)
     evs = client.get("/v1/events", params={"subject_id": rig["epic"]},
                      headers={"X-Participant": "owner"}).json()["value"]
     dead = [e for e in evs if e["kind"] == "shell_dead"]
     assert dead and dead[-1]["data"]["clean"] is True
-    assert "finish" in dead[-1]["data"]["reason"]
+    assert "closed by self" in dead[-1]["data"]["reason"]
     assert sent[-1][2] == "fyi"  # clean close is not a crash notice
 
 

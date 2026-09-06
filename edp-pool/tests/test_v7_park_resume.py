@@ -419,38 +419,6 @@ def test_park_and_resume_endpoints():
     assert sp.launched[-1]["resume_session"] == "base-h1"
 
 
-async def test_close_when_idle_with_park_parks_instead_of_releasing(svc,
-                                                                    monkeypatch):
-    """The shell-callable park trigger: a planner arms it and ends its turn;
-    the pool parks the quiesced shell instead of closing it for good."""
-    monkeypatch.setattr(svc, "_inbox_depth", lambda h: 5)
-    # no claude_session → the park's flush-wait short-circuits; the deferred
-    # trigger itself is what this test proves.
-    sid = svc.spawn("planner", "rec-x:s1", None)
-    res = svc.arm_close_when_idle(sid, idle_secs=0.05, park=True,
-                                  reason="pacing says child_in_progress")
-    assert res["armed"] is True
-    await asyncio.sleep(0.4)
-    row = svc.sessions[sid]
-    assert row["state"] == "parked", "park=True must park, not release"
-    assert row["parked"]["inbox_watermark"] == 5
-    assert svc.locks["rec-x:s1"] == sid                  # lock kept
-
-
-def test_close_when_idle_endpoint_accepts_park():
-    from edp_pool.service import create_app as mk
-    sp = FakeSpawner()
-    app = mk(sp)
-    app.state.svc._inbox_depth = lambda h: 0
-    with TestClient(app) as c:
-        sid = c.post("/v1/spawn", json={"role": "planner",
-                                        "handle": "rec-x:s1"}).json()[
-                                            "session_id"]
-        r = c.post(f"/v1/close_when_idle/{sid}",
-                   json={"idle_secs": 30, "park": True})
-        assert r.status_code == 200 and r.json()["armed"] is True
-
-
 # ── resume watchdog ────────────────────────────────────────────────────────
 
 def test_watchdog_resumes_when_depth_exceeds_watermark(svc, monkeypatch):
@@ -704,11 +672,9 @@ def test_crashed_child_wakes_the_parked_parent(svc, monkeypatch):
     assert svc.sessions[parent_sid]["state"] == "active"
 
 
-def test_normal_exit_and_close_armed_rows_are_not_crashes(svc, monkeypatch):
+def test_normal_exit_rows_are_not_crashes(svc, monkeypatch):
     sid0 = svc.spawn("worker", "rec-x-s1:a2", None)      # exit 0 = done
-    sid_armed = svc.spawn("worker", "rec-x-s1:a3", None)  # reap in grace
-    svc._close_timers[sid_armed] = object()
-    codes = {sid0: 0, sid_armed: 1}
+    codes = {sid0: 0}
     monkeypatch.setattr(svc.spawner, "exit_code",
                         lambda s: codes.get(s), raising=False)
     assert svc.sweep_crashed() == []

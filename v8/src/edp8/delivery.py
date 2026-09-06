@@ -46,21 +46,63 @@ def after_message(board: Board, actor_id: str, m: Message) -> None:
             p = board.participant(to)
         except BoardError:
             continue
-        if p.type == "agent" and _seat_alive(board, to) is not True:
-            owner_pid = board.epic_owner(m.ticket_id)
-            if owner_pid not in (to, actor_id):
-                broker_adapter.publish("board", owner_pid, "fyi",
+        # closed-seat fyi: only for a REAL per-ticket seat (role.<ticket>) with no live shell —
+        # a base-role stub is not a seat, and the fyi goes to THIS epic's human owner, else to
+        # its live resident architect; never to a shared 'owner' handle (2026-09-05 flood)
+        if p.type == "agent" and "." in to and _seat_alive(board, to) is not True and m.kind.value != "status":
+            fyi_to = board.recovery_seat(m.ticket_id, exclude={to, actor_id})
+            if fyi_to:
+                broker_adapter.publish("board", fyi_to, "fyi",
                                        {"ticket_id": m.ticket_id,
                                         "text": f"{m.kind.value} from {actor_id} awaits CLOSED seat {to} "
-                                                f"on {m.ticket_id} — respawn it to answer, or let it wait "
-                                                f"for the next shell",
+                                                f"on {m.ticket_id} — it reads its inbox first thing on its "
+                                                f"next shell; spawn(participant_id={to!r}) revives it "
+                                                f"without reassigning the ticket",
                                         "board_msg_id": m.id, "closed_seat": to})
 
 
-def after_gate_open(board: Board, actor_id: str, ticket_id: str, gate: str, note: str) -> None:
-    """A gate needs a human: wake the epic's owning human (not the role broadcast)."""
-    broker_adapter.publish(actor_id, board.epic_owner(ticket_id), "question",
-                           {"ticket_id": ticket_id, "gate": gate, "note": note})
+def spawner_of(participant_id: str) -> str | None:
+    """The handle that spawned this participant's live shell (pool lineage); None when unknown."""
+    try:
+        from . import pool_adapter
+        got = pool_adapter.sessions()
+        if not got.get("ok"):
+            return None
+        rows = got["value"] if isinstance(got["value"], list) else got["value"].get("sessions", [])
+        by_sid = {s.get("session_id"): s for s in rows}
+        mine = next((s for s in rows if s.get("handle") == participant_id
+                     and s.get("state") in ("active", "alive", "starting")), None) \
+            or next((s for s in rows if s.get("handle") == participant_id), None)
+        parent = by_sid.get((mine or {}).get("parent"))
+        return parent.get("handle") if parent else None
+    except Exception:  # noqa: BLE001 — lineage is a courtesy, never a failure
+        return None
+
+
+def after_status(board: Board, actor_id: str, m: Message, recipients: list[str]) -> list[str]:
+    """A recorded status reaches the seat's spawner, the epic architect and the epic's human
+    owner (computed by the board) — the spawner is added here from pool lineage."""
+    targets = list(recipients)
+    sp = spawner_of(actor_id)
+    if sp and sp != actor_id and sp not in targets and _is_participant(board, sp):
+        targets.append(sp)
+    for pid in board.mentions(m.text, exclude={actor_id, *targets}):
+        targets.append(pid)
+    for to in targets:
+        broker_adapter.publish(actor_id, to, "status",
+                               {"ticket_id": m.ticket_id, "text": m.text, "board_msg_id": m.id,
+                                "status": m.status.value if m.status else None})
+    return targets
+
+
+def after_gate_open(board: Board, actor_id: str, ticket_id: str, gate: str, note: str) -> str | None:
+    """A gate needs a human: wake the epic's owning human (not the role broadcast). Returns
+    who was woken, or None when the epic has no human owner (the gate still stands on the
+    board; the UI shows it to whoever opens the epic)."""
+    who = board.epic_owner(ticket_id)
+    if who:
+        broker_adapter.publish(actor_id, who, "question", {"ticket_id": ticket_id, "gate": gate, "note": note})
+    return who
 
 
 def after_gate_answer(board: Board, actor_id: str, ticket_id: str, gate: str, answer: str) -> None:

@@ -14,4 +14,4 @@ Write status, what is done, what is next, and any open questions — complete en
 fresh shell can run boot and continue without asking you anything.
 
 **Writes**
-`message_send(kind=status)` on the ticket thread.
+`record_status(status=handed_off, note=…)` on the ticket thread.

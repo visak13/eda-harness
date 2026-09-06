@@ -32,6 +32,7 @@ from .schemas import (
     Relation,
     Role,
     SessionState,
+    StatusValue,
     TicketKind,
     TicketStatus,
     Verdict,
@@ -120,6 +121,13 @@ class MessageIn(BaseModel):
     kind: MessageKind
     text: str
     reply_to: str | None = None
+
+
+class StatusIn(BaseModel):
+    status: StatusValue
+    note: str = ""
+    to: str | None = None
+    ticket_id: str | None = None
 
 
 class ArtifactIn(BaseModel):
@@ -243,6 +251,15 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     @app.get("/v1/context")
     def context(ticket_id: str | None = None, a: Participant = Depends(actor)):
         return ok(board.context(a, ticket_id))
+
+    @app.get("/v1/inbox")
+    def inbox(a: Participant = Depends(actor)):
+        rows = board.inbox(a)
+        return ok(rows, "" if rows else "inbox clear")
+
+    @app.get("/v1/close_check")
+    def close_check(a: Participant = Depends(actor)):
+        return ok(board.close_check(a))
 
     # registry (admin) -----------------------------------------------------------
     @app.post("/v1/participants")
@@ -382,7 +399,16 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     def message_send(b: MessageIn, a: Participant = Depends(actor)):
         m = board.message_send(a, ticket_id=b.ticket_id, to=b.to, kind=b.kind, text=b.text, reply_to=b.reply_to)
         delivery.after_message(board, a.id, m)
-        return ok(_dump(m), "delivered to the recipient's feed; end your turn if you are waiting for an answer")
+        note = getattr(board, "last_send_note", "")
+        hint = "delivered to the recipient's feed; end your turn if you are waiting for an answer"
+        return ok(_dump(m), f"{note}; {hint}" if note else hint)
+
+    @app.post("/v1/status")
+    def record_status(b: StatusIn, a: Participant = Depends(actor)):
+        m, recipients = board.record_status(a, status=b.status, note=b.note, to=b.to, ticket_id=b.ticket_id)
+        told = delivery.after_status(board, a.id, m, recipients)
+        return ok({"message": _dump(m), "told": told},
+                  "status recorded; next: close_self() (resident seats: keep listening)")
 
     @app.get("/v1/messages")
     def message_query(ticket_id: str | None = None, to: str | None = None, kind: MessageKind | None = None,
@@ -392,8 +418,9 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     @app.post("/v1/gates/{ticket_id}/{gate}/open")
     def gate_open(ticket_id: str, gate: Gate, b: GateOpenIn, a: Participant = Depends(actor)):
         ev = board.gate_open(ticket_id, gate, by=a.id, note=b.note)
-        delivery.after_gate_open(board, a.id, ticket_id, gate.value, b.note)
-        return ok(_dump(ev), "the epic's owner is notified")
+        who = delivery.after_gate_open(board, a.id, ticket_id, gate.value, b.note)
+        return ok(_dump(ev), f"{who} is notified" if who else
+                  "this epic has no human owner: the gate stands on the board for whoever opens the epic page")
 
     @app.post("/v1/gates/{ticket_id}/{gate}/answer")
     def gate_answer(ticket_id: str, gate: Gate, b: GateAnswerIn, a: Participant = Depends(actor)):
@@ -433,11 +460,13 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         # carry their reason and are marked clean so nobody treats them as failures.
         if (b.state in (SessionState.dead, SessionState.stalled)
                 and (prev is None or prev.state != b.state)):
-            clean = any(k in (b.reason or "").lower() for k in ("finish", "reaped", "clean exit"))
-            broker_adapter.publish("pool", "owner", "fyi" if clean else "crashed",
-                                   {"participant": b.participant_id, "ticket_id": b.ticket_id,
-                                    "session_id": id_, "state": b.state.value,
-                                    "reason": b.reason, "clean": clean})
+            clean = any(k in (b.reason or "").lower() for k in ("closed by self", "reaped", "clean exit"))
+            who = board.recovery_seat(b.ticket_id, exclude={b.participant_id}) if b.ticket_id else None
+            if who:  # THIS epic's human owner, else its live resident architect — never a shared handle
+                broker_adapter.publish("pool", who, "fyi" if clean else "crashed",
+                                       {"participant": b.participant_id, "ticket_id": b.ticket_id,
+                                        "session_id": id_, "state": b.state.value,
+                                        "reason": b.reason, "clean": clean})
         return ok(_dump(s))
 
     @app.get("/v1/sessions")
