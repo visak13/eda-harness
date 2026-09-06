@@ -354,6 +354,12 @@ class Board:
                 if not by_qa:
                     raise BoardError("transition", "an epic needs criteria checked_by=qa", "qa acceptance is the last word")
 
+    def _design_gate_open(self, t: Ticket) -> bool:
+        """An open design_signoff gate on the epic HARD-BLOCKS readiness below it (2026-09-01 pain:
+        the board auto-readied stories and seats ran while the owner was still deciding)."""
+        epic = self.epic_of(t)
+        return epic.id != t.id and bool(self.open_gates(epic.id, Gate.design_signoff))
+
     def _after_status(self, t: Ticket) -> None:
         # readiness: any sibling/dependent waiting on this ticket becomes ready when unblocked
         if t.status == TicketStatus.done:
@@ -365,13 +371,14 @@ class Board:
             deps = [d for d in deps_raw if d is not None and not (d.id in seen or seen.add(d.id))]
             for dep in deps:
                 if dep and dep.status == TicketStatus.signed_off:
-                    if all(b.status == TicketStatus.done for b in self.blockers(dep.id)):
+                    if all(b.status == TicketStatus.done for b in self.blockers(dep.id))                             and not self._design_gate_open(dep):
                         dep.status = TicketStatus.ready
                         self.store.put("ticket", dep)
                         self._emit(dep.id, EventKind.status_changed,
                                    {"from": "signed_off", "to": "ready", "by": "board"})
         if (t.status == TicketStatus.signed_off and t.kind != TicketKind.epic
-                and not [b for b in self.blockers(t.id) if b.status != TicketStatus.done]):
+                and not [b for b in self.blockers(t.id) if b.status != TicketStatus.done]
+                and not self._design_gate_open(t)):
             t.status = TicketStatus.ready
             self.store.put("ticket", t)
             self._emit(t.id, EventKind.status_changed, {"from": "signed_off", "to": "ready", "by": "board"})
@@ -667,7 +674,13 @@ class Board:
         if not self.open_gates(ticket_id, gate):
             raise BoardError("transition", f"no open {gate} gate on {ticket_id}")
         self.message_send(actor, ticket_id=ticket_id, to=None, kind=MessageKind.answer, text=f"[{gate}] {answer}")
-        return self._emit(ticket_id, EventKind.gate_answered, {"gate": gate, "answer": answer, "by": actor.id})
+        ev = self._emit(ticket_id, EventKind.gate_answered, {"gate": gate, "answer": answer, "by": actor.id})
+        if gate == Gate.design_signoff:
+            # the human's word releases what the gate held back: signed-off, unblocked stories go ready now
+            for k in self._descendants(ticket_id):
+                if k.status == TicketStatus.signed_off:
+                    self._after_status(k)
+        return ev
 
     def open_gates(self, ticket_id: str, gate: Gate | None = None) -> list[Event]:
         evs = self.store.query("event", {"subject_id": ticket_id, "kind": [EventKind.gate_opened, EventKind.gate_answered]})

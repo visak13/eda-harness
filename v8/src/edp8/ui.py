@@ -69,9 +69,36 @@ details.fold{border:1px solid var(--border);border-radius:10px;background:var(--
 /* Inbox composer: flow-owned by the conversation column, never the viewport */
 .content.has-composer{padding-bottom:24px}.content.has-composer .content-inner{min-height:calc(100vh - 120px);display:flex;flex-direction:column}.content.has-composer .page-body{flex:1;min-width:0}.composer{position:sticky;z-index:2;left:auto;right:auto;bottom:0;display:grid;grid-template-columns:40px minmax(0,1fr);gap:12px;max-width:760px;margin:0;padding:24px 0;background:var(--app);border-top:1px solid var(--border)}.composer-card{grid-column:2;max-width:none;margin:0;background:var(--raised);border:1px solid var(--border);border-radius:10px;padding:12px;box-shadow:0 8px 24px #0008}.composer-title{margin:0 0 8px;font-size:13px}.composer-top{grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto}.composer-field{display:grid;gap:3px;min-width:0}.composer-field span{color:var(--secondary);font-size:11px;font-weight:700}.composer-field input,.composer-field select{width:100%}.composer-hint{margin:8px 0 0;color:var(--secondary);font-size:12px;line-height:1.4}.composer-footer{justify-content:flex-end}.composer-footer span{display:none}
 @media(max-width:759px){.content.has-composer{padding-bottom:16px}.composer{grid-template-columns:32px minmax(0,1fr);gap:8px;padding:16px 0}.composer-top{grid-template-columns:1fr}}
+/* Live updates (no page reload), mention menu, filters, tickets table */
+.live-pill{position:fixed;top:12px;right:18px;z-index:9;background:var(--brand);color:#fff;border-radius:99px;padding:6px 14px;font-size:13px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.4)}.live-pill:hover{text-decoration:none;filter:brightness(1.1)}
+.mention-menu{position:absolute;z-index:10;background:var(--raised);border:1px solid var(--border);border-radius:8px;min-width:220px;max-height:220px;overflow:auto;box-shadow:0 4px 14px rgba(0,0,0,.4)}.mention-menu div{padding:6px 10px;cursor:pointer;font-size:13px}.mention-menu div:hover,.mention-menu div.active{background:var(--hover)}.mention-menu .muted{margin-left:6px}
+.filter-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0 14px}.filter-bar input,.filter-bar select{min-height:34px;padding:4px 8px;font-size:13px}.filter-bar button{min-height:34px;padding:4px 12px}.filter-bar a{font-size:13px;color:var(--secondary)}
+.ask-group{margin-bottom:10px}.ask-group>summary{display:flex;align-items:center;gap:8px;font-weight:650;cursor:pointer;min-height:34px}.ask-group>summary .muted{font-weight:400}
+.composer-slim{grid-template-columns:minmax(140px,210px) 110px minmax(120px,170px) minmax(0,1fr) auto}
+.tag{display:inline-block;background:var(--raised);border:1px solid var(--border);border-radius:99px;padding:0 8px;font-size:11px;margin-right:4px}
 /* Reduced motion and print */
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}@media print{.workspace-rail,.sidebar,.composer{display:none}.app-shell,.page-grid,.page-grid.with-context{display:block}.main-pane{margin:0}.channel-header{position:static}.context-panel{border:0}}
 """
+
+_JS = r"""
+(function(){
+var b=document.body,scope=b.dataset.poll,qs=b.dataset.qs||'',seq=+b.dataset.seq||0;
+function dirty(){var a=document.activeElement;var typing=!!(a&&a.matches&&a.matches('input:not([type=hidden]),textarea,select'));var has=Array.prototype.some.call(document.querySelectorAll('input[name=text],input[name=answer],input[name=note],textarea'),function(i){return i.value.trim().length>0;});return typing||has;}
+var pill=document.createElement('a');pill.className='live-pill';pill.hidden=true;pill.href='#';pill.title='the page has new activity; click to refresh (your draft is kept only if you copy it)';
+pill.addEventListener('click',function(e){e.preventDefault();swap().then(function(){pill.hidden=true;});});document.body.appendChild(pill);
+function swap(){return fetch(location.href,{headers:{'X-Requested-With':'poll'}}).then(function(r){return r.text();}).then(function(h){var d=new DOMParser().parseFromString(h,'text/html');['page-body','context-panel','sidebar-local'].forEach(function(id){var n=d.getElementById(id),o=document.getElementById(id);if(n&&o)o.innerHTML=n.innerHTML;});if(d.body&&d.body.dataset.seq)seq=+d.body.dataset.seq;});}
+function tick(){if(!scope)return;fetch('/ui/poll?since='+seq+'&scope='+encodeURIComponent(scope)+(qs?'&'+qs:'')).then(function(r){return r.json();}).then(function(j){if(j.new>0){if(dirty()){pill.textContent=j.new+' new \u2014 refresh';pill.hidden=false;}else{return swap().then(function(){pill.hidden=true;});}}else{seq=j.seq;}}).catch(function(){});}
+if(scope)setInterval(tick,5000);
+var people=[];try{people=JSON.parse((document.getElementById('people-json')||{}).textContent||'[]');}catch(e){}
+var menu=null,target=null;
+function close(){if(menu){menu.remove();menu=null;target=null;}}
+function pick(h){if(!target)return;var v=target.value,c=target.selectionStart||v.length,head=v.slice(0,c).replace(/@[\w.\-]*$/,'@'+h+' ');target.value=head+v.slice(c);target.focus();target.setSelectionRange(head.length,head.length);close();}
+document.addEventListener('input',function(e){var t=e.target;if(!(t.matches&&t.matches('input[name=text],textarea[name=text]')))return;var v=t.value.slice(0,t.selectionStart||t.value.length);var m=v.match(/@([\w.\-]*)$/);if(!m||!people.length){close();return;}var q=m[1].toLowerCase();var hits=people.filter(function(p){return p.handle.toLowerCase().indexOf(q)===0||p.handle.toLowerCase().indexOf(q)>-1;}).slice(0,8);if(!hits.length){close();return;}if(!menu){menu=document.createElement('div');menu.className='mention-menu';document.body.appendChild(menu);}target=t;var r=t.getBoundingClientRect();menu.style.left=(r.left+window.scrollX)+'px';menu.style.top=(r.bottom+window.scrollY+4)+'px';menu.innerHTML='';hits.forEach(function(p,i){var d=document.createElement('div');if(i===0)d.className='active';d.innerHTML='@'+p.handle+'<span class=muted>'+p.label+'</span>';d.addEventListener('mousedown',function(ev){ev.preventDefault();pick(p.handle);});menu.appendChild(d);});});
+document.addEventListener('keydown',function(e){if(!menu)return;if(e.key==='Escape'){close();}else if(e.key==='Enter'||e.key==='Tab'){var a=menu.querySelector('.active');if(a){e.preventDefault();pick(a.textContent.replace(/^@/,'').split(/\s/)[0]);}}else if(e.key==='ArrowDown'||e.key==='ArrowUp'){var items=Array.prototype.slice.call(menu.children),i=items.findIndex(function(x){return x.classList.contains('active');});items.forEach(function(x){x.classList.remove('active');});i=(i+(e.key==='ArrowDown'?1:-1)+items.length)%items.length;items[i].classList.add('active');e.preventDefault();}});
+document.addEventListener('click',function(e){if(menu&&!menu.contains(e.target))close();});
+})();
+"""
+
 
 def _e(value: Any) -> str: return html.escape(str(value))
 
@@ -98,15 +125,20 @@ def _format_time(value: datetime, include_date: bool = False) -> str:
 def _hidden_identity_fields(participant: Participant, token: str | None) -> str:
     return f"<input type='hidden' name='as_' value='{_e(participant.id)}'><input type='hidden' name='token' value='{_e(token or '')}'>"
 
-def _page(title: str, body: str, *, refresh: int | None = None, active_nav: str | None = None, sidebar: str = "", context: str = "", composer: str = "", identity: str = "", qs: str = "") -> str:
-    meta = f"<meta http-equiv='refresh' content='{refresh}'>" if refresh else ""
+def _page(title: str, body: str, *, poll: str | None = None, seq: int = 0, active_nav: str | None = None, sidebar: str = "", context: str = "", composer: str = "", identity: str = "", qs: str = "", people: str = "") -> str:
+    # No <meta refresh> (2026-09-06): the page polls /ui/poll for events in its scope every 5s and
+    # swaps ONLY #page-body/#context-panel/#sidebar-local in place — the composer node is never
+    # touched, so focus and drafts survive; while you type, a pill offers the refresh instead.
     q = f"?{qs}" if qs else ""
     nav = (f"<nav class='nav-list'><a class='nav-link{' active' if active_nav=='me' else ''}' href='/ui/me{q}'>{_icon('inbox')} My inbox</a>"
            f"<a class='nav-link{' active' if active_nav=='epics' else ''}' href='/ui{q}'>{_icon('epic')} Projects</a>"
+           f"<a class='nav-link{' active' if active_nav=='tickets' else ''}' href='/ui/tickets{q}'>{_icon('ticket')} Tickets</a>"
            f"<a class='nav-link{' active' if active_nav=='activity' else ''}' href='/ui/activity{q}'>{_icon('thread')} Activity</a></nav>"
            f"<a class='utility-link' href='/docs'>API reference</a>")
-    right = f"<aside class='context-panel'>{context}</aside>" if context else ""
-    return f"<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{_e(title)} · edp8</title>{meta}<style>{_CSS}</style></head><body><div class='app-shell'><aside class='sidebar'><div class='sidebar-brand'>edp8 board</div><div class='sidebar-body'>{nav}<div class='sidebar-local'>{sidebar}</div></div></aside><main class='main-pane'><header class='channel-header'><div><h1>{_e(title)}</h1><p>Project-persistent board workspace</p></div></header><div class='page-grid{' with-context' if context else ''}'><section class='content{' has-composer' if composer else ''}'><div class='content-inner'><div class='page-body'>{body}</div>{composer}</div></section>{right}</div></main></div></body></html>"
+    right = f"<aside class='context-panel' id='context-panel'>{context}</aside>" if context else ""
+    data = f" data-seq='{seq}' data-qs='{_e(qs)}'" + (f" data-poll='{_e(poll)}'" if poll else "")
+    meta = f"<script type='application/json' id='people-json'>{people}</script>" if people else ""
+    return f"<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{_e(title)} · edp8</title>{meta}<style>{_CSS}</style></head><body{data}><div class='app-shell'><aside class='sidebar'><div class='sidebar-brand'>edp8 board</div><div class='sidebar-body'>{nav}<div class='sidebar-local' id='sidebar-local'>{sidebar}</div></div></aside><main class='main-pane'><header class='channel-header'><div><h1>{_e(title)}</h1><p>Project-persistent board workspace</p></div></header><div class='page-grid{' with-context' if context else ''}'><section class='content{' has-composer' if composer else ''}'><div class='content-inner'><div class='page-body' id='page-body'>{body}</div>{composer}</div></section>{right}</div></main></div>{meta}<script>{_JS}</script></body></html>"
 
 def router(board: Board, verify: Callable[[str, str | None], Participant] | None = None) -> APIRouter:
     r = APIRouter()
@@ -117,6 +149,9 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
         try: return board.store.get("participant", pid) if pid else None  # type: ignore[return-value]
         except Exception: return None
     def _participant_label(p: Participant | None) -> str: return (p.handle or p.id) if p else "Unknown participant"
+    def _participant_by_handle(h: str) -> Participant | None:
+        try: return board.participant(f"@{h}")
+        except BoardError: return None
     def _avatar_for(pid: str | None, size: int = 36) -> str:
         p = _participant(pid)
         if not p: return system_avatar_svg(size, unknown=True)
@@ -178,10 +213,28 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
         children="".join(_node_html(k) for k in n["children"])
         return f"<li class='ticket-node'><a class='ticket-card' href='/ui/ticket/{quote(n['id'],safe='')}'><div class='ticket-card-top'>{_icon('ticket')}<span class='object-id'>{_e(n['id'])}</span>{_badge(n['status'])}<span class='secondary'>{_e(n['criteria'])} criteria</span>{markers}{assignee}</div><div class='ticket-card-title'>{_e(n['title'])}</div></a>{f'<ul>{children}</ul>' if children else ''}</li>"
 
+    @r.get("/ui/poll")
+    def poll(since: int=0,scope: str="all",as_: str|None=Query(default=None,alias="as"),token: str|None=Query(default=None)):
+        """How many events landed in `scope` since seq — the page decides whether to swap or offer a pill."""
+        from fastapi.responses import JSONResponse
+        top=board.store.max_seq()
+        if top<=since: return JSONResponse({"seq":top,"new":0})
+        evs=board.store.events_since(since,limit=500)
+        if scope=="me":
+            try: p=_me(as_ or "owner",token)
+            except Exception: p=None
+            new=sum(1 for _s,e in evs if p is not None and board.relevant(e,p))
+        elif scope.startswith(("ticket:","epic:")):
+            tid=scope.split(":",1)[1]
+            ids={tid}|{t.id for t in board._descendants(tid)}
+            new=sum(1 for _s,e in evs if e.subject_id in ids)
+        else: new=len(evs)
+        return JSONResponse({"seq":top,"new":new})
+
     @r.get("/ui/me",response_class=HTMLResponse)
     def me(as_: str=Query(default="owner",alias="as"),token: str|None=Query(default=None),err: str|None=Query(default=None),
-           sent: str|None=Query(default=None)):
-        p=_me(as_,token); hidden=_hidden_identity_fields(p,token); qs=_qs(p,token); ctx=board.context(p)
+           sent: str|None=Query(default=None),unresolved: str|None=Query(default=None)):
+        p=_me(as_,token); hidden=_hidden_identity_fields(p,token); qs=_qs(p,token); ctx=board.context(p); seq0=board.store.max_seq()
         def asker_note(pid: str) -> str:
             asker=_participant(pid)
             if asker and asker.type=="human": return "A person will see your answer on their page."
@@ -190,8 +243,17 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
         ask_rows=[]
         for m in ctx["asks_for_me"]:
             asker=_participant(m["created_by"]); created=m.get("created_at"); when=_format_time(created) if isinstance(created,datetime) else ""
-            ask_rows.append(f"<article class='question-unit'>{_avatar_for(m['created_by'])}<div><div class='message-head'><strong>{_e(_participant_label(asker))}</strong><span class='message-meta'>{_e(getattr(asker,'role','system'))} · {when}</span></div><div class='question-bubble'><div class='message-text'>{_e(m['text'])}</div>{_ticket_chip(m['ticket_id'])}</div><div class='delivery-note'>{_e(asker_note(m['created_by']))}</div><form class='reply-form' method='post' action='/ui/me/message'>{hidden}<input type='hidden' name='ticket_id' value='{_e(m['ticket_id'])}'><input type='hidden' name='to' value='{_e(m['created_by'])}'><input type='hidden' name='kind' value='answer'><input type='hidden' name='reply_to' value='{_e(m['id'])}'><input name='text' placeholder='Write an answer…' required><button>Send</button></form></div></article>")
-        asks="".join(ask_rows) or _empty_state("inbox","Inbox clear","Nothing is waiting for your answer.")
+            ask_rows.append((m['ticket_id'],f"<article class='question-unit'>{_avatar_for(m['created_by'])}<div><div class='message-head'><strong>{_e(_participant_label(asker))}</strong><span class='message-meta'>{_e(getattr(asker,'role','system'))} · {when}</span></div><div class='question-bubble'><div class='message-text'>{_e(m['text'])}</div>{_ticket_chip(m['ticket_id'])}</div><div class='delivery-note'>{_e(asker_note(m['created_by']))}</div><form class='reply-form' method='post' action='/ui/me/message'>{hidden}<input type='hidden' name='ticket_id' value='{_e(m['ticket_id'])}'><input type='hidden' name='to' value='{_e(m['created_by'])}'><input type='hidden' name='kind' value='answer'><input type='hidden' name='reply_to' value='{_e(m['id'])}'><input name='text' placeholder='Write an answer…' required><button>Send</button></form></div></article>"))
+        # grouped by ticket (epic → ticket) so one busy thread does not bury the others
+        groups: dict[str,list[str]]={}
+        for tid,row in ask_rows: groups.setdefault(tid,[]).append(row)
+        def _group(tid: str,rows: list[str]) -> str:
+            tk=board.store.get("ticket",tid); ep=board.epic_of(tk).id if tk else None
+            crumbs=(f"{_ticket_chip(ep)} › " if ep and ep!=tid else "")+_ticket_chip(tid)
+            title=_e((tk.title if tk else tid)[:70])
+            return (f"<details class='fold ask-group' open><summary>{crumbs}<span class='muted'>{title}</span>"
+                    f"<span class='count'>{len(rows)}</span></summary>{''.join(rows)}</details>")
+        asks="".join(_group(t,rows) for t,rows in groups.items()) or _empty_state("inbox","Inbox clear","Nothing is waiting for your answer.")
         gate_rows=[]
         if p.role==Role.owner:
             for t in board.store.query("ticket",{"kind":TicketKind.epic},limit=200):
@@ -237,19 +299,11 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
         _kind_order=["note","question","steer","finding","status","answer","deviation"]
         kinds="".join(f"<option value='{k}' title='{_e(_KIND_LABELS[k][1])}'>{_e(_KIND_LABELS[k][0])}</option>"
                       for k in _kind_order if k in _KIND_LABELS)
-        active_tickets=sorted((ticket for ticket in board.store.query("ticket",{}) if ticket.status not in _TERMINAL),
+        active_tickets=sorted((ticket for ticket in board.store.query("ticket",{},limit=5000) if ticket.status not in _TERMINAL),
                               key=lambda ticket:ticket.created_at,reverse=True)
-        ticket_options="".join(f"<option value='{_e(ticket.id)}' title='{_e(ticket.title[:160])}'>"
-                               f"{_e(ticket.id)} — {_e(ticket.title[:56])}{'…' if len(ticket.title)>56 else ''}</option>"
-                               for ticket in active_tickets)
-        composer=(f"<div class='composer'><form class='composer-card composer-slim' method='post' action='/ui/me/message'>{hidden}"
-                  f"<select name='ticket_id' required title='the conversation this joins — that ticket&#39;s page is the chat window'>"
-                  f"<option value='' disabled selected>Conversation…</option>{ticket_options}</select>"
-                  f"<select name='kind' title='Note = FYI · Question = expects an answer · Steer = redirect work'>{kinds}</select>"
-                  f"<input name='text' placeholder='Message — @mention anyone to notify them' required "
-                  f"title='posts to the ticket thread; every @mention gets it in their inbox'>"
-                  f"<input type='hidden' name='reply_to' value=''>"
-                  f"<button title='send to the thread and notify every @mention'>Send</button></form></div>")
+        def _opt(ticket: Any) -> str:
+            return (f"<option value='{_e(ticket.id)}' title='{_e(ticket.title[:160])}'>"
+                    f"{_e(ticket.id)} — {_e(ticket.title[:56])}{'…' if len(ticket.title)>56 else ''}</option>")
         selected=avatar_id_for(p,preferences); identity=human_avatar_svg(selected,36) if p.type=="human" else _avatar_for(p.id)
         # CONVERSATIONS (Discord-style): one row per ticket that involves me — unanswered
         # asks first (unread dot), then my open epics/tickets by recent traffic. Each row
@@ -274,6 +328,11 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
                 f"title='{_e(tk.title[:120])}'>{unread}{who}<span class='convo-name'>{_e(tid)}</span>"
                 f"<span class='muted convo-snip'>{_e((last[-1].text if last else tk.title)[:34])}</span></a>")
         conversations="".join(convo_rows) or "<p class='muted' style='font-size:12px'>no open conversations</p>"
+        # the composer's conversation list: MY conversations first, every other open ticket after
+        mine_opts="".join(_opt(board.store.get("ticket",tid)) for tid in convo_ids if board.store.get("ticket",tid))
+        other_opts="".join(_opt(t) for t in active_tickets if t.id not in convo_ids)
+        ticket_options=(f"<optgroup label='Your conversations'>{mine_opts}</optgroup>" if mine_opts else "")+ \
+                       (f"<optgroup label='Other open tickets'>{other_opts}</optgroup>" if other_opts else "")
         sidebar=(f"<div class='identity'>{identity}<div class='identity-copy'><strong>{_e(p.handle)}</strong>"
                  f"<span>{_e(p.role)} · {_e(p.type)}</span></div></div>"
                  f"<div class='nav-stat'><span>Waiting on you</span><b>{len(ask_rows)}</b></div>"
@@ -286,10 +345,11 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
         def _seat_state(pid: str) -> str | None:
             rows=sorted(board.store.query("session",{"participant_id":pid}),key=lambda s:s.created_at)
             return rows[-1].state.value if rows else None
-        people_rows=[]
+        people_rows=[]; people_list=[]
         for c in sorted(board.store.query("participant",{}),key=lambda c:(c.type!="human",c.handle or "")):
             if not c.handle or c.handle.startswith(("__","wt-")): continue
             if c.type=="human":
+                if c.id!=p.id: people_list.append(c)
                 people_rows.append(
                     f"<div class='people-row' title='type @{_e(c.handle)} in a message to notify them'>"
                     f"{_avatar_for(c.id,24)}<span class='mono'>@{_e(c.handle)}</span>"
@@ -298,11 +358,28 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
             state=_seat_state(c.id)
             if state not in ("alive","parked"): continue  # a closed seat is not a recipient
             tid=c.id.split(".",1)[1] if "." in c.id else None
+            people_list.append(c)
             people_rows.append(
                 f"<div class='people-row' title='a running {_e(c.role)} seat — steer it on its ticket thread'>"
                 f"{_avatar_for(c.id,24)}<span class='mono'>@{_e(c.handle)}</span>"
                 f"{_ticket_chip(tid) if tid else ''}<span class='muted seat-up'>● up</span></div>")
         people="".join(people_rows) or "<p class='muted'>no one else is on right now — agents appear here while their shells run</p>"
+        # the SAME list feeds the recipient picker and the @autocomplete — what you can see is what you can reach
+        import json as _json
+        people_json=_json.dumps([{"id":c.id,"handle":c.handle,"label":("person" if c.type=="human" else f"{c.role} seat")}
+                                 for c in people_list]).replace("</","<\\/")
+        to_options="".join(f"<option value='{_e(c.id)}'>@{_e(c.handle)} · {_e('person' if c.type=='human' else c.role)}</option>"
+                           for c in people_list)
+        composer=(f"<div class='composer'><form class='composer-card composer-slim' method='post' action='/ui/me/message'>{hidden}"
+                  f"<select name='ticket_id' required title='the conversation this joins — that ticket&#39;s page is the chat window'>"
+                  f"<option value='' disabled selected>Conversation…</option>{ticket_options}</select>"
+                  f"<select name='kind' title='Note = FYI · Question = expects an answer · Steer = redirect work'>{kinds}</select>"
+                  f"<select name='to' title='who this is addressed to (their inbox wakes); a thread note reaches the seats working the ticket'>"
+                  f"<option value=''>To: thread note</option>{to_options}</select>"
+                  f"<input name='text' placeholder='Message — type @ to mention someone' required autocomplete='off' "
+                  f"title='posts to the ticket thread; the addressee and every @mention get it in their inbox'>"
+                  f"<input type='hidden' name='reply_to' value=''>"
+                  f"<button title='send to the thread and notify the addressee + every @mention'>Send</button></form></div>")
         right=(f"{_section_header('Open gates',len(gate_rows))}{gates}"
                f"{_section_header('Who can I reach',len(people_rows))}<div class='people-list'>{people}</div>"
                f"<p class='muted' style='font-size:12px'>Agents without a running shell aren't listed: "
@@ -312,10 +389,13 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
         if sent:
             banner+=(f"<div class='alert alert-ok' role='status'>✓ Sent — it's on "
                      f"<a href='/ui/ticket/{quote(sent,safe='')}'>{_e(sent)}</a>'s thread (that page is the conversation); "
-                     f"everyone you @mentioned has it in their inbox.</div>")
+                     f"the addressee and everyone you @mentioned have it in their inbox.</div>")
+        if unresolved:
+            banner+=(f"<div class='alert' role='alert'>⚠ {_e(', '.join('@'+h for h in unresolved.split(',') if h))} matched nobody — "
+                     f"the message is posted but nobody was notified for those; pick from the list (type @).</div>")
         signoff_block=f"{_section_header('Docs awaiting your sign-off',len(signoff_rows))}{signoffs}" if signoff_rows else ""
         body=f"{banner}<div class='identity'>{identity}<div class='identity-copy'><strong>{_e(p.handle)}</strong><span>{_e(p.role)} · {_e(p.type)} participant</span></div></div><p class='secondary'>Messages are pinned to the project. Active shells wake immediately; closed shells read them when they reopen.</p>{signoff_block}{_section_header('Waiting on you',len(ask_rows))}<div class='conversation'>{asks}</div>"
-        return _page(f"{p.handle} · My inbox",body,refresh=30,active_nav="me",sidebar=sidebar,context=right,composer=composer,identity=identity,qs=qs)
+        return _page(f"{p.handle} · My inbox",body,poll="me",seq=seq0,active_nav="me",sidebar=sidebar,context=right,composer=composer,identity=identity,qs=qs,people=people_json)
 
     @r.post("/ui/me/message")
     def me_message(as_: str=Form(...),token: str=Form(default=""),ticket_id: str=Form(...),to: str=Form(default=""),kind: str=Form(default="note"),text: str=Form(...),reply_to: str=Form(default="")):
@@ -323,7 +403,10 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
         try:
             m=board.message_send(p,ticket_id=ticket_id.strip(),to=to.strip() or None,kind=MessageKind(kind),text=text,reply_to=reply_to.strip() or None); delivery.after_message(board,p.id,m)
         except (BoardError,ValueError) as e: return RedirectResponse(f"/ui/me?{_qs(p,token or None)}&err={quote(str(e))}",status_code=303)
-        return RedirectResponse(f"/ui/me?{_qs(p,token or None)}&sent={quote(m.ticket_id,safe='')}",status_code=303)
+        from .board import _MENTION_RX
+        bad=[h for h in _MENTION_RX.findall(text) if not _participant_by_handle(h)]
+        extra=f"&unresolved={quote(','.join(dict.fromkeys(bad)))}" if bad else ""
+        return RedirectResponse(f"/ui/me?{_qs(p,token or None)}&sent={quote(m.ticket_id,safe='')}{extra}",status_code=303)
 
     @r.post("/ui/me/gate")
     def me_gate(as_: str=Form(...),token: str=Form(default=""),ticket_id: str=Form(...),gate: str=Form(...),answer: str=Form(...)):
@@ -343,7 +426,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
             f"{_section_header(day,len(evs))}"+ "".join(_event_html(e) for e in evs)
             for day,evs in by_day.items()) or _empty_state("thread","Quiet","Project activity will appear here.")
         body=f"<p class='secondary'>Everything relevant to you, newest first. Your inbox stays for things that need YOU; this page is the pulse.</p>{sections}"
-        return _page("Activity",body,refresh=30,active_nav="activity",qs=_qs(p,token))
+        return _page("Activity",body,poll="me",seq=board.store.max_seq(),active_nav="activity",qs=_qs(p,token))
 
     @r.post("/ui/me/verdict")
     def me_verdict(as_: str=Form(...),token: str=Form(default=""),criterion_id: str=Form(...),
@@ -374,22 +457,85 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
         return RedirectResponse(f"/ui/me?{_qs(p,token or None)}",status_code=303)
 
     @r.get("/ui",response_class=HTMLResponse)
-    def epics(as_: str|None=Query(default=None,alias="as"),token: str|None=Query(default=None)):
+    def epics(as_: str|None=Query(default=None,alias="as"),token: str|None=Query(default=None),
+              status: str|None=Query(default=None),q: str|None=Query(default=None)):
         qs=""
         if as_:
             try: qs=_qs(_me(as_,token),token)
             except Exception: qs=""
         link_q=f"?{qs}" if qs else ""
-        rows=[]; epic_rows=board.store.query("ticket",{"kind":TicketKind.epic},limit=200)
+        rows=[]; epic_rows=board.store.query("ticket",{"kind":TicketKind.epic},limit=5000)
+        if status=="open": epic_rows=[t for t in epic_rows if t.status not in _TERMINAL]
+        elif status: epic_rows=[t for t in epic_rows if t.status.value==status]
+        if q:
+            hit={h["id"] for h in board.store.fts_search(q,types={"ticket"},limit=500)}
+            epic_rows=[t for t in epic_rows if t.id in hit]
+        statuses="".join(f"<option value='{s}'{' selected' if status==s else ''}>{s.replace('_',' ')}</option>"
+                         for s in ["open",*[x.value for x in TicketStatus]])
+        filters=(f"<form class='filter-bar' method='get' action='/ui'>{''.join(f'<input type=hidden name={k} value=\'{_e(v)}\'>' for k,v in (('as',as_),('token',token)) if v)}"
+                 f"<select name='status'><option value=''>any status</option>{statuses}</select>"
+                 f"<input name='q' value='{_e(q or '')}' placeholder='search words in epic titles/descriptions'>"
+                 f"<button>Filter</button><a href='/ui{link_q}'>clear</a></form>")
         for t in epic_rows:
             crits=board.criteria(t.id); passed=sum(c.verdict==Verdict.passed for c in crits); percent=int(100*passed/len(crits)) if crits else 0
             rows.append(f"<a class='epic-row' href='/ui/epic/{quote(t.id,safe='')}{link_q}'><div class='epic-title'><span class='object-id'>{_e(t.id)}</span>{_e(t.title[:160])}</div><div class='epic-meta'>{passed} / {len(crits)} passed<div class='progress'><span style='width:{percent}%'></span></div></div><div class='epic-meta'>{_e(t.created_at.strftime('%Y-%m-%d'))}</div>{_badge(t.status)}<span class='chevron'>›</span></a>")
-        body=f"<p class='reader-lead'>{len(epic_rows)} workspaces in progress</p><div class='epic-list'>{''.join(rows) if rows else _empty_state('epic','No epics yet','Created epics will appear here.')}</div>"
-        return _page("Epics",body,active_nav="epics",qs=qs)
+        body=f"<p class='reader-lead'>{len(epic_rows)} epics</p>{filters}<div class='epic-list'>{''.join(rows) if rows else _empty_state('epic','No epics match','Adjust the filter, or create an epic.')}</div>"
+        return _page("Epics",body,poll="all",seq=board.store.max_seq(),active_nav="epics",qs=qs)
+
+    @r.get("/ui/tickets",response_class=HTMLResponse)
+    def tickets(as_: str|None=Query(default=None,alias="as"),token: str|None=Query(default=None),
+                epic: str|None=Query(default=None),status: str|None=Query(default=None),kind: str|None=Query(default=None),
+                work_type: str|None=Query(default=None),assignee: str|None=Query(default=None),tag: str|None=Query(default=None),
+                q: str|None=Query(default=None)):
+        """Every ticket across epics, filterable — the view the board never had (2026-09-06)."""
+        qs=""
+        if as_:
+            try: qs=_qs(_me(as_,token),token)
+            except Exception: qs=""
+        link_q=f"?{qs}" if qs else ""
+        rows=board.store.query("ticket",{"epic_id":epic or None,"status":status or None,"kind":kind or None,
+                                         "work_type":work_type or None},limit=5000)
+        if assignee: rows=[t for t in rows if (t.assignee or "").find(assignee)>=0]
+        if tag: rows=[t for t in rows if tag in (t.tags or [])]
+        if q:
+            hits=[h["id"] for h in board.store.fts_search(q,types={"ticket"},limit=500)]; order={i:n for n,i in enumerate(hits)}
+            rows=sorted([t for t in rows if t.id in order],key=lambda t:order[t.id])
+        else:
+            rows=sorted(rows,key=lambda t:t.created_at,reverse=True)
+        if not (status or q or epic): rows=[t for t in rows if t.status not in _TERMINAL]
+        from .schemas import WorkType as _WT
+        epics_open=[t for t in board.store.query("ticket",{"kind":TicketKind.epic},limit=5000) if t.status not in _TERMINAL]
+        def _sel(name: str,cur: str|None,values: list[tuple[str,str]],label: str) -> str:
+            return (f"<select name='{name}'><option value=''>{label}</option>"+
+                    "".join(f"<option value='{_e(v)}'{' selected' if cur==v else ''}>{_e(l)}</option>" for v,l in values)+"</select>")
+        keep="".join(f"<input type='hidden' name='{k}' value='{_e(v)}'>" for k,v in (("as",as_),("token",token)) if v)
+        filters=(f"<form class='filter-bar' method='get' action='/ui/tickets'>{keep}"
+                 f"{_sel('epic',epic,[(t.id,f'{t.id} — {t.title[:40]}') for t in epics_open],'any epic')}"
+                 f"{_sel('status',status,[(x.value,x.value.replace('_',' ')) for x in TicketStatus],'open (any status)')}"
+                 f"{_sel('kind',kind,[(x.value,x.value) for x in TicketKind],'any kind')}"
+                 f"{_sel('work_type',work_type,[(x.value,x.value) for x in _WT],'any work type')}"
+                 f"<input name='assignee' value='{_e(assignee or '')}' placeholder='assignee contains…' size='14'>"
+                 f"<input name='tag' value='{_e(tag or '')}' placeholder='tag' size='10'>"
+                 f"<input name='q' value='{_e(q or '')}' placeholder='words in title/description/tags'>"
+                 f"<button>Filter</button><a href='/ui/tickets{link_q}'>clear</a></form>")
+        trs="".join(
+            f"<tr><td><a href='/ui/ticket/{quote(t.id,safe='')}{link_q}' class='object-id'>{_e(t.id)}</a></td>"
+            f"<td>{_ticket_chip(t.epic_id) if t.epic_id and t.epic_id!=t.id else '—'}</td>"
+            f"<td title='{_e(t.title)}'>{_e(t.title[:70])}{'…' if len(t.title)>70 else ''}</td>"
+            f"<td>{_e(t.kind)}/{_e(t.work_type)}</td><td>{_badge(t.status)}</td><td>{_e(t.assignee or '—')}</td>"
+            f"<td>{''.join('<span class=tag>'+_e(x)+'</span>' for x in (t.tags or []))}</td>"
+            f"<td>{sum(1 for c in board.criteria(t.id) if c.verdict==Verdict.passed)}/{len(board.criteria(t.id))}</td></tr>"
+            for t in rows[:500])
+        table=(f"<table class='ticket-table'><tr><th>id</th><th>epic</th><th>title</th><th>kind</th><th>status</th>"
+               f"<th>assignee</th><th>tags</th><th>criteria</th></tr>{trs}</table>") if rows else \
+              _empty_state("ticket","No tickets match","Adjust the filters.")
+        body=f"<p class='reader-lead'>{len(rows)} ticket{'s' if len(rows)!=1 else ''}</p>{filters}{table}"
+        return _page("Tickets",body,poll="all",seq=board.store.max_seq(),active_nav="tickets",qs=qs)
 
     @r.get("/ui/epic/{epic_id}",response_class=HTMLResponse)
     def epic(epic_id: str,as_: str=Query(default="owner",alias="as"),token: str|None=Query(default=None),
-             order: str=Query(default="newest")):
+             order: str=Query(default="newest"),status: str|None=Query(default=None),work_type: str|None=Query(default=None),
+             assignee: str|None=Query(default=None),q: str|None=Query(default=None)):
         bd=board.board(epic_id); thread=board.thread(epic_id,limit=100); docs=board.store.query("doc",{"scope":epic_id},limit=100); gates=bd["open_gates"]
         counts=" ".join(f"{_badge(k)} {v}" for k,v in bd["counts"].items())
         # identity: anyone on the team comments AS THEMSELVES from this page
@@ -406,6 +552,23 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
         _COLS=[("Backlog",("drafted","designed","signed_off","blocked")),("Ready",("ready",)),
                ("In progress",("in_progress",)),("In review",("in_review",)),("Done",("done","partial"))]
         kids=[t for t in board._descendants(epic_id) if t.status.value!="dropped"]
+        if status: kids=[k for k in kids if k.status.value==status]
+        if work_type: kids=[k for k in kids if k.work_type.value==work_type]
+        if assignee: kids=[k for k in kids if (k.assignee or "").find(assignee)>=0]
+        if q:
+            hit={h["id"] for h in board.store.fts_search(q,types={"ticket"},limit=500)}
+            kids=[k for k in kids if k.id in hit]
+        from .schemas import WorkType as _WT
+        def _sel(name: str,cur: str|None,values: list[str],label: str) -> str:
+            return (f"<select name='{name}'><option value=''>{label}</option>"+
+                    "".join(f"<option value='{v}'{' selected' if cur==v else ''}>{v.replace('_',' ')}</option>" for v in values)+"</select>")
+        keep="".join(f"<input type='hidden' name='{k}' value='{_e(v)}'>" for k,v in (("as",as_),("token",token),("order",order)) if v)
+        filters=(f"<form class='filter-bar' method='get' action='/ui/epic/{quote(epic_id,safe='')}'>{keep}"
+                 f"{_sel('status',status,[x.value for x in TicketStatus],'any status')}"
+                 f"{_sel('work_type',work_type,[x.value for x in _WT],'any work type')}"
+                 f"<input name='assignee' value='{_e(assignee or '')}' placeholder='assignee contains…' size='16'>"
+                 f"<input name='q' value='{_e(q or '')}' placeholder='words in title/description/tags'>"
+                 f"<button>Filter</button><a href='/ui/epic/{quote(epic_id,safe='')}?{qs or 'as='+quote(as_)}'>clear</a></form>")
         col_html=""
         for label,states in _COLS:
             cards="".join(
@@ -413,7 +576,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
                 f"<div class='kanban-top'><span class='object-id'>{_e(k.id)}</span>"
                 f"{_avatar_for(k.assignee,20) if k.assignee else ''}</div>"
                 f"<div class='kanban-title'>{_e(k.title[:70])}</div>"
-                f"<div class='kanban-meta'>{_e(k.work_type)}"
+                f"<div class='kanban-meta'>{_e(k.work_type)}{''.join('<span class=tag>'+_e(x)+'</span>' for x in (k.tags or [])[:3])}"
                 f"{''.join('<span class=marker>'+_e(g)+'</span>' for _t,g in gates if _t==k.id)}</div></a>"
                 for k in kids if k.status.value in states)
             n=sum(1 for k in kids if k.status.value in states)
@@ -431,14 +594,14 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
                f"<th>criteria</th><th>blocked by</th></tr>{rows}</table></details>")
         newest = order != "oldest"
         body=(f"<p class='reader-lead'>{_e(bd['words'])}</p><div>{counts}</div>"
-              f"{_section_header('Board',len(kids))}<div class='kanban'>{col_html}</div>{table}"
+              f"{_section_header('Board',len(kids))}{filters}<div class='kanban'>{col_html}</div>{table}"
               f"{_section_header('Epic thread',len(thread))}"
               f"{_order_toggle(f'/ui/epic/{quote(epic_id,safe='')}', qs, newest)}"
               f"{_message_group_html(thread,newest_first=newest)}")
         gate_html="".join(_gate_card_html(t,g,"board","Open decision") for t,g in gates) or _empty_state("gate","No open gates","This epic has no pending decisions.")
         doc_html="".join(_doc_row(d) for d in docs) or _empty_state("doc","No documents","Linked epic documents will appear here.")
         right=f"{_section_header('Open gates',len(gates))}{gate_html}{_section_header('Documents',len(docs))}{doc_html}"
-        return _page(f"Epic {epic_id}",body,refresh=10,active_nav="epics",context=right,composer=composer,identity=identity,qs=qs)
+        return _page(f"Epic {epic_id}",body,poll=f"epic:{epic_id}",seq=board.store.max_seq(),active_nav="epics",context=right,composer=composer,identity=identity,qs=qs)
 
     @r.get("/ui/ticket/{ticket_id}",response_class=HTMLResponse)
     def ticket(ticket_id: str,as_: str|None=Query(default=None,alias="as"),token: str|None=Query(default=None),
@@ -463,7 +626,10 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
             except Exception: _qs_str=""
         newest = order != "oldest"
         body=(f"<p><a href='/ui/epic/{quote(epic_id,safe='')}{'?'+_qs_str if _qs_str else ''}'>← Epic {_e(epic_id)}</a></p>"
-              f"<p class='reader-lead'>{_e(t.title)}</p><div class='identity'>{_avatar_for(t.assignee)}<div class='identity-copy'><strong>{_e(_participant_label(assignee))}</strong><span>{_e(t.kind)} / {_e(t.work_type)} · {_badge(t.status)}</span></div></div>"
+              f"<p class='reader-lead'>{_e(t.title)}</p>"
+              f"{('<p class=secondary>'+_e(t.description)+'</p>') if t.description else ''}"
+              f"{''.join('<span class=tag>'+_e(x)+'</span>' for x in (t.tags or []))}"
+              f"<div class='identity'>{_avatar_for(t.assignee)}<div class='identity-copy'><strong>{_e(_participant_label(assignee))}</strong><span>{_e(t.kind)} / {_e(t.work_type)} · {_badge(t.status)}</span></div></div>"
               f"{_section_header('Conversation',len(thread))}"
               f"{_order_toggle(f'/ui/ticket/{quote(ticket_id,safe='')}', _qs_str, newest)}"
               f"{_message_group_html(thread,newest_first=newest)}")
@@ -471,7 +637,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
         criteria_html="".join(_criterion_html(c) for c in crits) or _empty_state("ticket","No criteria","Acceptance criteria have not been added."); docs_html="".join(_doc_row(d, rel_by_doc.get(d.id)) for d in docs) or _empty_state("doc","No linked documents","Documents linked to this ticket will appear here.")
         design=f"<a href='/ui/doc/{quote(t.design_ref,safe='')}'>{_e(t.design_ref)}</a>" if t.design_ref else "Not linked"
         right=f"{_section_header('Acceptance criteria',len(crits))}{criteria_html}{_section_header('Linked documents',len(docs))}{docs_html}{_section_header('Ticket metadata')}<div class='meta-row'><span>Design</span><span>{design}</span></div><div class='meta-row'><span>Kind</span><span>{_e(t.kind)}</span></div><div class='meta-row'><span>Work type</span><span>{_e(t.work_type)}</span></div>"
-        return _page(f"Ticket {ticket_id}",body,refresh=15,active_nav="epics",context=right,composer=composer,identity=identity,qs=_qs_str)
+        return _page(f"Ticket {ticket_id}",body,poll=f"ticket:{ticket_id}",seq=board.store.max_seq(),active_nav="epics",context=right,composer=composer,identity=identity,qs=_qs_str)
 
     @r.post("/ui/ticket/{ticket_id}/say")
     def ticket_say(ticket_id: str,as_: str=Form(...),token: str=Form(default=""),text: str=Form(...)):

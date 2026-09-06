@@ -167,3 +167,23 @@ def test_ruleset_skips_dangling_layer(client, rig, board):
     assert out["ok"], out
     assert out["value"]["skipped_layers"] == [rig["epic"]]
     assert any("rule one" in x["text"] for x in out["value"]["constructive"])
+
+
+def test_open_design_signoff_gate_blocks_auto_ready_until_answered(client, rig):
+    """2026-09-01 pain: an open design_signoff gate must hold stories at signed_off; the owner's
+    answer releases them."""
+    H = {"X-Participant": "arch"}
+    epic = rig["epic"]
+    client.post("/v1/participants", json={"type": "agent", "role": "qa", "handle": "q", "id": "q"}, headers=ADMIN)
+    s = client.post("/v1/tickets", json={"kind": "story", "work_type": "feature", "title": "s", "parent_id": epic},
+                    headers=H).json()["value"]["id"]
+    d = client.post("/v1/docs", json={"doc_type": "design", "title": "d", "body_md": "x", "scope": epic},
+                    headers=H).json()["value"]["id"]
+    client.patch(f"/v1/tickets/{s}", json={"design_ref": d}, headers=H)
+    client.post("/v1/criteria", json={"ticket_id": s, "text": "c", "check": "verdict", "checked_by": "reviewer"}, headers=H)
+    client.post(f"/v1/gates/{epic}/design_signoff/open", json={"note": "please"}, headers=H)
+    client.patch(f"/v1/tickets/{s}", json={"status": "designed"}, headers=H)
+    r = client.patch(f"/v1/tickets/{s}", json={"status": "signed_off"}, headers=H).json()
+    assert r["ok"] and r["value"]["status"] == "signed_off"  # NOT auto-readied while the gate is open
+    client.post(f"/v1/gates/{epic}/design_signoff/answer", json={"answer": "signed"}, headers={"X-Participant": "owner"})
+    assert client.get(f"/v1/tickets/{s}", headers={"X-Participant": "owner"}).json()["value"]["status"] == "ready"

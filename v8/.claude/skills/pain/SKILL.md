@@ -12,12 +12,15 @@ improvise around the framework, or two authoritative texts disagreed and you pic
 Not for your own mistakes or task-domain problems.
 
 **Do**
-Append one single-line JSON record (create the file if missing; never rewrite existing
-lines): `{"ts","role","handle","severity":"high|medium|low","area":"prompts|tools|gates|
-board|memory|wake|spawn|broker|other","symptom","expected","evidence","workaround","cost"}`.
-Say one line (`pain point filed: <area> — <symptom>`) and continue the task where you left
-off. If it also blocks you, escalate the blocker separately via /doubt — this record is
-telemetry, not a request for help.
+1. `python scripts/pain.py list --open --area <area>` — an open record with the same symptom
+   already exists? File nothing new; add yours as `"dup_of": "<id>"` (step 2) so the count grows.
+2. `python scripts/pain.py file '<one JSON object>'` with `{"role","handle","severity":"high|medium|low",
+   "area":"prompts|tools|gates|board|memory|wake|spawn|broker|other","symptom","expected","evidence",
+   "workaround","cost"}` — plus `"supersedes":"<id>"` when correcting an earlier record of yours.
+   The script assigns the id and prints one line; say that line and continue where you left off.
+If it also blocks you, escalate via /doubt — this record is telemetry, not a request for help.
+Resolved records are invisible to you unless you ask (`list --all`): they are fixed from outside
+the framework, and the fix names the commit.
 
 **Writes**
-One line appended to `v8/.pain/pain-points.jsonl`.
+One line appended to `v8/.pain/pain-points.jsonl` by `scripts/pain.py`.
