@@ -118,7 +118,8 @@ class Board:
 
     # ------------------------------------------------------------------ tickets
     def ticket_create(self, actor: Participant, *, kind: TicketKind, work_type: WorkType, title: str,
-                      parent_id: str | None = None, assignee: str | None = None) -> Ticket:
+                      parent_id: str | None = None, assignee: str | None = None, description: str = "",
+                      tags: list[str] | None = None) -> Ticket:
         if actor.role not in TICKET_CREATORS[kind]:
             raise BoardError("scope", f"{actor.role} may not create a {kind}",
                              f"creators of {kind}: {sorted(r.value for r in TICKET_CREATORS[kind])}")
@@ -135,9 +136,11 @@ class Board:
             raise BoardError("schema", "title is empty",
                              "an epic's title is the owner's words verbatim; a story/task title names the slice")
         t = Ticket(id=new_id(kind.value[0] if kind != TicketKind.epic else "epic"), kind=kind, work_type=work_type,
-                   title=title, parent_id=parent_id, assignee=assignee, created_by=actor.id)
+                   title=title, parent_id=parent_id, assignee=assignee, created_by=actor.id,
+                   description=description or "", tags=[x.strip() for x in (tags or []) if x.strip()])
+        t.epic_id = t.id if kind == TicketKind.epic else self.epic_of(t).id
         self.store.put("ticket", t)
-        self._index("ticket", t.id, t.title)
+        self._index("ticket", t.id, self.store._fts_text("ticket", t.model_dump(mode="json")) or t.title)
         self._emit(t.id, EventKind.ticket_created, {"kind": kind, "parent_id": parent_id, "by": actor.id})
         if assignee:
             self._emit(t.id, EventKind.assigned, {"assignee": assignee})
@@ -157,6 +160,85 @@ class Board:
     def children(self, ticket_id: str) -> list[Ticket]:
         return self.store.query("ticket", {"parent_id": ticket_id})  # type: ignore[return-value]
 
+    def ensure_epic_ids(self) -> int:
+        """Backfill Ticket.epic_id on boards created before 2026-09-06. Idempotent."""
+        n = 0
+        for t in self.store.query("ticket", {}, limit=100000):
+            if t.epic_id:
+                continue
+            t.epic_id = t.id if t.kind == TicketKind.epic else self.epic_of(t).id  # type: ignore[union-attr]
+            self.store.put("ticket", t)
+            n += 1
+        return n
+
+    _VIEW_SECTIONS = ("chain", "criteria", "docs", "children", "blockers", "gates", "thread", "links")
+
+    def ticket_view(self, ticket_id: str, include: Iterable[str] | None = None, thread_limit: int = 20) -> dict[str, Any]:
+        """ONE fat read of a ticket: the record plus every section an agent used to assemble by
+        hand (2026-09-06: the most-called tool in the fleet was message_query re-fetching threads).
+        `include` narrows the sections; default = all of them."""
+        t = self.ticket(ticket_id)
+        want = set(include) if include else set(self._VIEW_SECTIONS)
+        epic = self.epic_of(t)
+        out: dict[str, Any] = {"ticket": t.model_dump(mode="json"), "words": epic.title}
+        if "chain" in want:
+            chain: list[dict[str, Any]] = []
+            cur: Ticket | None = t
+            while cur is not None:
+                chain.append({"id": cur.id, "kind": cur.kind, "title": cur.title, "status": cur.status,
+                              "design_ref": cur.design_ref})
+                cur = self.store.get("ticket", cur.parent_id) if cur.parent_id else None  # type: ignore[assignment]
+            out["chain"] = chain
+        if "criteria" in want:
+            out["criteria"] = [c.model_dump(mode="json") for c in self.criteria(t.id)]
+        if "docs" in want:
+            rel_by_doc: dict[str, str] = {lk.to_id: lk.relation.value for lk in self.links(from_id=t.id)}
+            docs = self.linked_docs(t.id)
+            for ref, why in ((t.design_ref, "design_ref"), (epic.design_ref if epic.id != t.id else None, "epic design_ref")):
+                if ref:
+                    dd = self.store.get("doc", ref)
+                    if dd and all(d.id != dd.id for d in docs):
+                        docs.insert(0, dd)  # type: ignore[arg-type]
+                        rel_by_doc.setdefault(dd.id, why)
+            out["docs"] = [{**self._doc_summary(d), "relation": rel_by_doc.get(d.id, "linked")} for d in docs]
+            out["strategy_links"] = any(
+                self.links(from_id=x, relation=rel) for x in {t.id, epic.id}
+                for rel in (Relation.uses_strategy, Relation.uses_domain))
+        if "children" in want:
+            kids = []
+            for k in self.children(t.id):
+                crits = self.criteria(k.id)
+                kids.append({"id": k.id, "kind": k.kind, "title": k.title, "status": k.status, "work_type": k.work_type,
+                             "assignee": k.assignee,
+                             "assignee_role": (k.assignee.split(".", 1)[0] if k.assignee and "." in k.assignee
+                                               else getattr(self.store.get("participant", k.assignee or ""), "role", None)),
+                             "criteria": f"{sum(c.verdict == Verdict.passed for c in crits)}/{len(crits)}",
+                             "tags": k.tags})
+            out["children"] = kids
+        if "blockers" in want:
+            out["blockers"] = [{"id": b.id, "status": b.status, "title": b.title[:80]} for b in self.blockers(t.id)]
+        if "gates" in want:
+            out["open_gates"] = [e.data.get("gate") for e in self.open_gates(t.id)]
+        if "thread" in want:
+            rows = self.store.query_seq("message", {"ticket_id": t.id}, limit=100000)
+            tail = rows[-thread_limit:]
+            out["thread"] = [{**m.model_dump(mode="json"), "seq": seq} for seq, m in tail]
+            out["thread_seq"] = rows[-1][0] if rows else 0
+            out["thread_total"] = len(rows)
+        if "links" in want:
+            out["links"] = [lk.model_dump(mode="json") for lk in (*self.links(from_id=t.id), *self.links(to_id=t.id))]
+        return out
+
+    def message_read(self, id_: str) -> dict[str, Any]:
+        m = self._get("message", id_, "message")
+        row = m.model_dump(mode="json")
+        row["seq"] = self.store.seq_of("message", m.id)
+        row["replies"] = [r.model_dump(mode="json") for r in self.store.query("message", {"reply_to": m.id})]
+        if m.reply_to:
+            parent = self.store.get("message", m.reply_to)
+            row["in_reply_to"] = parent.model_dump(mode="json") if parent else None
+        return row
+
     def criteria(self, ticket_id: str) -> list[Criterion]:
         return self.store.query("criterion", {"ticket_id": ticket_id})  # type: ignore[return-value]
 
@@ -173,9 +255,21 @@ class Board:
         return out
 
     def ticket_update(self, actor: Participant, id_: str, *, status: TicketStatus | None = None,
-                      assignee: str | None = None, design_ref: str | None = None) -> Ticket:
+                      assignee: str | None = None, design_ref: str | None = None,
+                      description: str | None = None, tags: list[str] | None = None) -> Ticket:
         t = self.ticket(id_)
         changed: dict[str, Any] = {}
+        if description is not None or tags is not None:
+            if actor.id not in (t.created_by, t.assignee) and actor.role not in (Role.architect, Role.owner,
+                                                                                  Role.coordinator):
+                raise BoardError("scope", f"{actor.role} may not edit this ticket's description/tags",
+                                 "the creator, the assignee, the architect or the owner may")
+            if description is not None:
+                t.description = description
+                changed["description"] = True
+            if tags is not None:
+                t.tags = [x.strip() for x in tags if x.strip()]
+                changed["tags"] = t.tags
         if assignee is not None:
             if actor.role not in (Role.coordinator, Role.architect, Role.engineer, Role.owner):
                 raise BoardError("scope", f"{actor.role} may not assign tickets",
@@ -199,6 +293,8 @@ class Board:
         if not changed:
             return t
         self.store.put("ticket", t)
+        if "description" in changed or "tags" in changed:
+            self._index("ticket", t.id, self.store._fts_text("ticket", t.model_dump(mode="json")) or t.title)
         if "assignee" in changed:
             self._emit(t.id, EventKind.assigned, {"assignee": t.assignee, "by": actor.id})
         if "status" in changed:
@@ -639,38 +735,9 @@ class Board:
         out: dict[str, Any] = {"participant": p.model_dump(mode="json"), "tickets": [], "asks_for_me": [],
                                "hint": ""}
         for t in tickets:
-            epic = self.epic_of(t)
-            chain: list[dict[str, Any]] = []
-            cur: Ticket | None = t
-            while cur is not None:
-                chain.append({"id": cur.id, "kind": cur.kind, "title": cur.title, "status": cur.status,
-                              "design_ref": cur.design_ref})
-                cur = self.store.get("ticket", cur.parent_id) if cur.parent_id else None  # type: ignore[assignment]
-            docs = self.linked_docs(t.id)
-            if t.design_ref:
-                dd = self.store.get("doc", t.design_ref)
-                if dd and all(d.id != dd.id for d in docs):
-                    docs.insert(0, dd)  # type: ignore[arg-type]
-            if epic.design_ref and epic.id != t.id:
-                ed = self.store.get("doc", epic.design_ref)
-                if ed and all(d.id != ed.id for d in docs):
-                    docs.insert(0, ed)  # type: ignore[arg-type]
-            strategy_links = any(
-                self.links(from_id=x, relation=rel)
-                for x in {t.id, epic.id}
-                for rel in (Relation.uses_strategy, Relation.uses_domain)
-            )
-            out["tickets"].append({
-                "ticket": t.model_dump(mode="json"),
-                "words": epic.title,
-                "chain": chain,
-                "criteria": [c.model_dump(mode="json") for c in self.criteria(t.id)],
-                "docs": [self._doc_summary(d) for d in docs],
-                "strategy_links": strategy_links,
-                "blockers": [{"id": b.id, "status": b.status} for b in self.blockers(t.id)],
-                "open_gates": [e.data.get("gate") for e in self.open_gates(t.id)],
-                "thread": [m.model_dump(mode="json") for m in self.thread(t.id, limit=20)],
-            })
+            view = self.ticket_view(t.id)
+            strategy_links = view.get("strategy_links", False)
+            out["tickets"].append(view)
             if strategy_links and not out["hint"]:
                 out["hint"] = (f"strategy/domain docs are linked: run assemble_ruleset(ticket_id={t.id!r}) "
                                "for your working brief (docs above are summaries; doc_read fetches full text)")
@@ -960,7 +1027,64 @@ class Board:
                 if self.relevant(e, p):
                     out.append((s, e))
 
-    def find(self, query: str, *, k: int = 10, types: Iterable[str] | None = None) -> list[dict[str, Any]]:
-        if self.index is None:
-            return []
-        return self.index.search(query, k=k, types=set(types) if types else None)
+    def find(self, query: str, *, k: int = 10, types: Iterable[str] | None = None,
+             epic_id: str | None = None) -> list[dict[str, Any]]:
+        """Exact words (FTS5) ∪ semantic (BM25 + vectors), fused by reciprocal rank; every hit
+        names its ticket and epic so the reader rarely needs a second call."""
+        tset = set(types) if types else None
+        fused: dict[str, dict[str, Any]] = {}
+        rrf_k = 60
+
+        def add(hits: list[dict[str, Any]]) -> None:
+            for rank, h in enumerate(hits, start=1):
+                key = f"{h['type']}:{h['id']}"
+                cur = fused.setdefault(key, {"type": h["type"], "id": h["id"], "score": 0.0,
+                                             "snippet": h.get("snippet", "")})
+                cur["score"] += 1.0 / (rrf_k + rank)
+                if not cur["snippet"] and h.get("snippet"):
+                    cur["snippet"] = h["snippet"]
+
+        try:
+            add(self.store.fts_search(query, types=tset, limit=max(k * 3, 20)))
+        except Exception as e:  # noqa: BLE001 — fts is best-effort, never the write path
+            _log.warning("fts search failed: %s", e)
+        if self.index is not None:
+            add(self.index.search(query, k=max(k * 3, 20), types=tset))
+        ranked = sorted(fused.values(), key=lambda h: h["score"], reverse=True)
+        out: list[dict[str, Any]] = []
+        for h in ranked:
+            self._locate(h)
+            if epic_id and h.get("epic_id") != epic_id:
+                continue
+            out.append(h)
+            if len(out) >= k:
+                break
+        return out
+
+    def _locate(self, h: dict[str, Any]) -> None:
+        """Attach ticket_id / epic_id / title to a search hit."""
+        t, i = h["type"], h["id"]
+        tid: str | None = None
+        if t == "ticket":
+            tid = i
+        elif t == "criterion":
+            c = self.store.get("criterion", i)
+            tid = c.ticket_id if c else None  # type: ignore[union-attr]
+        elif t == "message":
+            m = self.store.get("message", i)
+            tid = m.ticket_id if m else None  # type: ignore[union-attr]
+        elif t == "doc":
+            d = self.store.get("doc", i)
+            if d is not None:
+                h["title"] = d.title  # type: ignore[union-attr]
+                h["scope"] = d.scope  # type: ignore[union-attr]
+                if d.scope and self.store.get("ticket", d.scope):  # type: ignore[union-attr]
+                    tid = d.scope  # type: ignore[union-attr]
+        if tid:
+            tk = self.store.get("ticket", tid)
+            if tk is not None:
+                h["ticket_id"] = tid
+                h["epic_id"] = tk.epic_id or self.epic_of(tk).id  # type: ignore[union-attr]
+                if t == "ticket":
+                    h["title"] = tk.title  # type: ignore[union-attr]
+                    h["status"] = tk.status  # type: ignore[union-attr]

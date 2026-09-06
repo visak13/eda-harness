@@ -91,24 +91,30 @@ class BoardClient:
 
     # ------------------------------------------------------------------ tickets
     def ticket_create(self, kind: str, work_type: str, title: str, parent_id: str | None = None,
-                      assignee: str | None = None) -> dict[str, Any]:
+                      assignee: str | None = None, description: str = "",
+                      tags: list[str] | None = None) -> dict[str, Any]:
         return self._request("POST", "/v1/tickets",
                              json={"kind": kind, "work_type": work_type, "title": title,
-                                   "parent_id": parent_id, "assignee": assignee})
+                                   "parent_id": parent_id, "assignee": assignee, "description": description,
+                                   "tags": tags})
 
-    def ticket_read(self, id_: str) -> dict[str, Any]:
-        return self._request("GET", f"/v1/tickets/{id_}")
+    def ticket_read(self, id_: str, include: str | None = None, thread_limit: int = 20) -> dict[str, Any]:
+        return self._request("GET", f"/v1/tickets/{id_}", params={"include": include, "thread_limit": thread_limit})
 
     def ticket_query(self, kind: str | None = None, work_type: str | None = None, parent_id: str | None = None,
-                     status: str | None = None, assignee: str | None = None) -> dict[str, Any]:
+                     status: str | None = None, assignee: str | None = None, epic_id: str | None = None,
+                     created_by: str | None = None, tag: str | None = None, q: str | None = None) -> dict[str, Any]:
         return self._request("GET", "/v1/tickets", params={"kind": kind, "work_type": work_type,
                                                             "parent_id": parent_id, "status": status,
-                                                            "assignee": assignee})
+                                                            "assignee": assignee, "epic_id": epic_id,
+                                                            "created_by": created_by, "tag": tag, "q": q})
 
     def ticket_update(self, id_: str, status: str | None = None, assignee: str | None = None,
-                      design_ref: str | None = None) -> dict[str, Any]:
+                      design_ref: str | None = None, description: str | None = None,
+                      tags: list[str] | None = None) -> dict[str, Any]:
         return self._request("PATCH", f"/v1/tickets/{id_}",
-                             json={"status": status, "assignee": assignee, "design_ref": design_ref})
+                             json={"status": status, "assignee": assignee, "design_ref": design_ref,
+                                   "description": description, "tags": tags})
 
     # ------------------------------------------------------------------ criteria
     def criterion_create(self, ticket_id: str, text: str, check: str, checked_by: str) -> dict[str, Any]:
@@ -164,9 +170,13 @@ class BoardClient:
                                    "reply_to": reply_to})
 
     def message_query(self, ticket_id: str | None = None, to: str | None = None, kind: str | None = None,
-                      limit: int = 50) -> dict[str, Any]:
+                      limit: int = 50, since_seq: int | None = None, created_by: str | None = None) -> dict[str, Any]:
         return self._request("GET", "/v1/messages", params={"ticket_id": ticket_id, "to": to, "kind": kind,
-                                                             "limit": limit})
+                                                             "limit": limit, "since_seq": since_seq,
+                                                             "created_by": created_by})
+
+    def message_read(self, id_: str) -> dict[str, Any]:
+        return self._request("GET", f"/v1/messages/{id_}")
 
     def gate_open(self, ticket_id: str, gate: str, note: str = "") -> dict[str, Any]:
         return self._request("POST", f"/v1/gates/{ticket_id}/{gate}/open", json={"note": note})
@@ -184,8 +194,8 @@ class BoardClient:
     def events_query(self, subject_id: str | None = None, since: int = 0, limit: int = 200) -> dict[str, Any]:
         return self._request("GET", "/v1/events", params={"subject_id": subject_id, "since": since, "limit": limit})
 
-    def find(self, q: str, k: int = 10, types: str | None = None) -> dict[str, Any]:
-        return self._request("GET", "/v1/find", params={"q": q, "k": k, "types": types})
+    def find(self, q: str, k: int = 10, types: str | None = None, epic_id: str | None = None) -> dict[str, Any]:
+        return self._request("GET", "/v1/find", params={"q": q, "k": k, "types": types, "epic_id": epic_id})
 
     # ------------------------------------------------------------------ sessions (pool, admin)
     def session_upsert(self, id_: str, participant_id: str, pool_id: str, state: str,

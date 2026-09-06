@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 from .client import BoardClient
 from .schemas import (
@@ -189,8 +189,24 @@ def _context(args: ContextArgs) -> dict[str, Any]:
     return get_client().context(ticket_id=args.ticket_id)
 
 
+_TOOLS_BY_TYPE: dict[str, list[str]] = {
+    "ticket": ["ticket_create", "ticket_read", "ticket_query", "ticket_update", "find", "board", "spawn"],
+    "criterion": ["criterion_create", "criterion_query", "criterion_update", "ticket_read"],
+    "doc": ["doc_create", "doc_read", "doc_query", "doc_update", "link_create", "assemble_ruleset", "find"],
+    "link": ["link_create", "link_query", "link_delete", "ticket_read"],
+    "message": ["message_send", "message_query", "message_read", "inbox", "record_status", "find"],
+    "event": ["events_query", "subscribe"],
+    "artifact": ["artifact_create", "artifact_read"],
+    "session": ["session_query", "spawn", "reap", "resume", "close_self"],
+    "participant": ["participants", "whoami", "spawn"],
+}
+
+
 def _describe(args: DescribeArgs) -> dict[str, Any]:
-    return get_client().describe(args.type)
+    out = get_client().describe(args.type)
+    if out.get("ok"):
+        out["value"]["tools"] = _TOOLS_BY_TYPE.get(args.type, [])
+    return out
 
 
 def _edp8_home() -> Path:
@@ -232,25 +248,40 @@ class TicketCreateArgs(BaseModel):
     title: str = Field(description="epic: the owner's words verbatim. story/task: names the slice")
     parent_id: str | None = Field(default=None, description="required for story/task: the parent ticket id")
     assignee: str | None = Field(default=None, description="participant id to assign, if known now")
+    description: str = Field(default="", description="the slice in prose: scope, intent, pointers to files/docs "
+                             "— searchable by find and ticket_query(q=)")
+    tags: list[str] | None = Field(default=None, description="free labels for filtering (ticket_query(tag=))")
 
 
 class TicketReadArgs(BaseModel):
-    id: str = Field(description="ticket id")
+    id: str = Field(description="ticket id", validation_alias=AliasChoices("id", "ticket_id"))
+    include: str | None = Field(default=None, description="comma list to narrow: chain,criteria,docs,children,"
+                                "blockers,gates,thread,links — omit for everything")
+    thread_limit: int = Field(default=20, description="how many of the newest thread messages to include")
 
 
 class TicketQueryArgs(BaseModel):
-    kind: TicketKind | None = None
+    kind: TicketKind | None = Field(default=None, description="epic|story|task")
     work_type: WorkType | None = None
     parent_id: str | None = None
-    status: TicketStatus | None = None
+    status: TicketStatus | None = Field(default=None, description="drafted|designed|signed_off|ready|in_progress|"
+                                        "in_review|blocked|done|partial|dropped")
     assignee: str | None = None
+    epic_id: str | None = Field(default=None, description="every ticket under this epic (any depth)")
+    created_by: str | None = None
+    tag: str | None = Field(default=None, description="tickets carrying this tag")
+    q: str | None = Field(default=None, description="words to match in title/description/tags (exact-word search)")
 
 
 class TicketUpdateArgs(BaseModel):
-    id: str = Field(description="ticket id")
-    status: TicketStatus | None = Field(default=None, description="a legal next status; see the transition guard")
+    id: str = Field(description="ticket id", validation_alias=AliasChoices("id", "ticket_id"))
+    status: TicketStatus | None = Field(default=None, description="a legal next status: drafted→designed→signed_off→"
+                                        "ready→in_progress→in_review→done (or blocked/partial/dropped); the "
+                                        "transition guard names what is missing")
     assignee: str | None = Field(default=None, description="participant id to assign")
     design_ref: str | None = Field(default=None, description="doc id of the design/plan doc")
+    description: str | None = Field(default=None, description="replace the description (creator/assignee/architect/owner)")
+    tags: list[str] | None = Field(default=None, description="replace the tag list")
 
 
 class CriterionCreateArgs(BaseModel):
@@ -274,20 +305,23 @@ class CriterionUpdateArgs(BaseModel):
 
 def _ticket_create(a: TicketCreateArgs) -> dict[str, Any]:
     return get_client().ticket_create(kind=a.kind, work_type=a.work_type, title=a.title,
-                                      parent_id=a.parent_id, assignee=a.assignee)
+                                      parent_id=a.parent_id, assignee=a.assignee, description=a.description,
+                                      tags=a.tags)
 
 
 def _ticket_read(a: TicketReadArgs) -> dict[str, Any]:
-    return get_client().ticket_read(a.id)
+    return get_client().ticket_read(a.id, include=a.include, thread_limit=a.thread_limit)
 
 
 def _ticket_query(a: TicketQueryArgs) -> dict[str, Any]:
     return get_client().ticket_query(kind=a.kind, work_type=a.work_type, parent_id=a.parent_id,
-                                     status=a.status, assignee=a.assignee)
+                                     status=a.status, assignee=a.assignee, epic_id=a.epic_id,
+                                     created_by=a.created_by, tag=a.tag, q=a.q)
 
 
 def _ticket_update(a: TicketUpdateArgs) -> dict[str, Any]:
-    return get_client().ticket_update(a.id, status=a.status, assignee=a.assignee, design_ref=a.design_ref)
+    return get_client().ticket_update(a.id, status=a.status, assignee=a.assignee, design_ref=a.design_ref,
+                                      description=a.description, tags=a.tags)
 
 
 def _criterion_create(a: CriterionCreateArgs) -> dict[str, Any]:
@@ -306,10 +340,14 @@ TICKET_TOOLS = [
     ToolDef("ticket_create", "Create a ticket (epic by owner/coordinator, story by architect, task by engineer). "
             "Returns the ticket and a hint for the next step.",
             TicketCreateArgs, _ticket_create, "ticket"),
-    ToolDef("ticket_read", "Read one ticket with its criteria, linked docs and open gates. "
+    ToolDef("ticket_read", "ONE fat read of a ticket: the record (title, description, tags, status, assignee), its "
+            "chain up to the epic, criteria, docs WITH the relation that links them, children with their "
+            "assignee_role and criteria tally, blockers, open gates, the newest thread messages (thread_seq for "
+            "message_query since_seq), and links. Use this instead of stitching ticket_query + link_query + "
+            "message_query. "
             "Returns the full ticket record.",
             TicketReadArgs, _ticket_read, "ticket"),
-    ToolDef("ticket_query", "List tickets matching filters. Returns matching ticket records.",
+    ToolDef("ticket_query", "List tickets by kind, status, assignee, parent, epic_id (whole subtree), created_by, tag, or q (words in title/description/tags). Returns matching ticket records.",
             TicketQueryArgs, _ticket_query, "ticket"),
     ToolDef("ticket_update", "Change a ticket's status/assignee/design_ref. Guarded by the transition rules "
             "(e.g. done needs every criterion passed). Returns the updated ticket, or a transition/scope error.",
@@ -428,10 +466,17 @@ class MessageSendArgs(BaseModel):
 
 
 class MessageQueryArgs(BaseModel):
-    ticket_id: str | None = None
-    to: str | None = None
-    kind: MessageKind | None = None
+    ticket_id: str | None = Field(default=None, description="the thread to read")
+    to: str | None = Field(default=None, description="only messages addressed to this participant id / role")
+    kind: MessageKind | None = Field(default=None, description="question|answer|steer|status|finding|deviation|note")
+    created_by: str | None = Field(default=None, description="only messages from this participant id")
+    since_seq: int | None = Field(default=None, description="only messages newer than this seq (the last_seq "
+                                  "hint of your previous call, or ticket_read's thread_seq) — the way to poll")
     limit: int = 50
+
+
+class MessageReadArgs(BaseModel):
+    id: str = Field(description="message id", validation_alias=AliasChoices("id", "message_id"))
 
 
 class GateOpenArgs(BaseModel):
@@ -455,7 +500,12 @@ def _message_send(a: MessageSendArgs) -> dict[str, Any]:
 
 
 def _message_query(a: MessageQueryArgs) -> dict[str, Any]:
-    return get_client().message_query(ticket_id=a.ticket_id, to=a.to, kind=a.kind, limit=a.limit)
+    return get_client().message_query(ticket_id=a.ticket_id, to=a.to, kind=a.kind, limit=a.limit,
+                                      since_seq=a.since_seq, created_by=a.created_by)
+
+
+def _message_read(a: MessageReadArgs) -> dict[str, Any]:
+    return get_client().message_read(a.id)
 
 
 def _gate_open(a: GateOpenArgs) -> dict[str, Any]:
@@ -474,8 +524,12 @@ THREAD_TOOLS = [
     ToolDef("message_send", "Post to a ticket's thread, addressed to a participant/role/@handle or left as a note. "
             "Returns the message; a question or steer is delivered to the recipient's feed.",
             MessageSendArgs, _message_send, "thread"),
-    ToolDef("message_query", "List a ticket's thread messages. Returns matching messages, newest-relevant first.",
+    ToolDef("message_query", "List thread messages, oldest first, each with its seq. Pass since_seq (from the "
+            "last_seq hint or ticket_read's thread_seq) to get ONLY what is new — never re-read a thread you "
+            "already have. Returns the messages and a last_seq hint.",
             MessageQueryArgs, _message_query, "thread"),
+    ToolDef("message_read", "Read one message by id with its seq, the message it replies to, and its replies. "
+            "Returns the message record.", MessageReadArgs, _message_read, "thread"),
     ToolDef("gate_open", "Open a human gate on a ticket (precondition: none already open for that gate). "
             "Returns the gate_opened event; the owner is notified.",
             GateOpenArgs, _gate_open, "thread"),
@@ -800,17 +854,20 @@ POOL_TOOLS = [
 
 
 class FindArgs(BaseModel):
-    query: str = Field(description="search text (BM25 + vectors over docs, tickets, threads)")
+    query: str = Field(description="words or a phrase: exact-word (FTS) and semantic hits are fused")
     k: int = 10
-    types: str | None = Field(default=None, description="comma-separated object types to restrict to")
+    types: str | None = Field(default=None, description="comma list of ticket,doc,message,criterion to restrict to")
+    epic_id: str | None = Field(default=None, description="only hits inside this epic")
 
 
 def _find(a: FindArgs) -> dict[str, Any]:
-    return get_client().find(a.query, k=a.k, types=a.types)
+    return get_client().find(a.query, k=a.k, types=a.types, epic_id=a.epic_id)
 
 
 SEARCH_TOOLS = [
-    ToolDef("find", "Semantic search across tickets/docs/messages. Returns ranked hits.",
+    ToolDef("find", "Search tickets (title/description/tags), criteria, docs and thread messages by words or "
+            "meaning. Every hit carries ticket_id and epic_id (and title/status for tickets) so one "
+            "ticket_read(id) finishes the job. Returns ranked hits with snippets.",
             FindArgs, _find, "search"),
 ]
 
@@ -1079,7 +1136,7 @@ _TICKET_RO = ["ticket_read", "ticket_query", "ticket_update"]  # owner: sign-off
 _CHECK = ["criterion_query", "criterion_update"]  # checkers record verdicts (board guards who may)
 _DOC_RW = ["doc_create", "doc_read", "doc_query", "doc_update", "link_create", "link_query", "link_delete"]
 _DOC_RO = ["doc_read", "doc_query"]
-_THREAD = ["message_send", "message_query", "gate_open", "gate_answer", "gates"]
+_THREAD = ["message_send", "message_query", "message_read", "gate_open", "gate_answer", "gates"]
 _BOARD = ["board", "events_query", "participants"]
 _CLOSING = ["inbox", "record_status", "close_self"]
 

@@ -75,12 +75,16 @@ class TicketIn(BaseModel):
     title: str
     parent_id: str | None = None
     assignee: str | None = None
+    description: str = ""
+    tags: list[str] | None = None
 
 
 class TicketPatch(BaseModel):
     status: TicketStatus | None = None
     assignee: str | None = None
     design_ref: str | None = None
+    description: str | None = None
+    tags: list[str] | None = None
 
 
 class CriterionIn(BaseModel):
@@ -176,6 +180,10 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
             except Exception as e:  # search degrades to nothing; the board keeps running, loudly
                 logging.getLogger("edp8.service").warning("search index rebuild failed: %s", e)
     admin_token = admin_token or os.environ.get("EDP8_ADMIN_TOKEN", "dev")
+    try:
+        board.ensure_epic_ids()
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger("edp8.service").warning("epic_id backfill failed: %s", e)
     app = FastAPI(title="edp8 board", version="0.8.0")
     app.state.board = board
 
@@ -291,7 +299,8 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     @app.post("/v1/tickets")
     def ticket_create(b: TicketIn, a: Participant = Depends(actor)):
         t = board.ticket_create(a, kind=b.kind, work_type=b.work_type, title=b.title,
-                                parent_id=b.parent_id, assignee=b.assignee)
+                                parent_id=b.parent_id, assignee=b.assignee, description=b.description,
+                                tags=b.tags)
         if t.kind == TicketKind.epic:
             hint = "epic created; an architect designs it (doc_create design, criteria, stories)"
         elif t.kind == TicketKind.task:
@@ -302,22 +311,33 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         return ok(_dump(t), hint)
 
     @app.get("/v1/tickets/{id_}")
-    def ticket_get(id_: str, a: Participant = Depends(actor)):
-        t = board.ticket(id_)
-        return ok({**_dump(t), "criteria": _dump(board.criteria(id_)),
-                   "docs": [board._doc_summary(d) for d in board.linked_docs(id_)],
-                   "open_gates": [e.data.get("gate") for e in board.open_gates(id_)]})
+    def ticket_get(id_: str, include: str | None = None, thread_limit: int = 20, a: Participant = Depends(actor)):
+        view = board.ticket_view(id_, include=include.split(",") if include else None, thread_limit=thread_limit)
+        # flat ticket fields at the top level (back-compat) + every section
+        return ok({**view["ticket"], **{k: v for k, v in view.items() if k != "ticket"}},
+                  "one read: chain, criteria, docs(+relation), children(+assignee_role), blockers, open_gates, "
+                  "thread tail (thread_seq = newest seq; message_query(since_seq=…) for what follows)")
 
     @app.get("/v1/tickets")
     def ticket_query(kind: TicketKind | None = None, work_type: WorkType | None = None,
                      parent_id: str | None = None, status: TicketStatus | None = None,
-                     assignee: str | None = None, a: Participant = Depends(actor)):
-        return ok(_dump(board.store.query("ticket", {"kind": kind, "work_type": work_type, "parent_id": parent_id,
-                                                     "status": status, "assignee": assignee})))
+                     assignee: str | None = None, epic_id: str | None = None, created_by: str | None = None,
+                     tag: str | None = None, q: str | None = None, a: Participant = Depends(actor)):
+        rows = board.store.query("ticket", {"kind": kind, "work_type": work_type, "parent_id": parent_id,
+                                            "status": status, "assignee": assignee, "epic_id": epic_id,
+                                            "created_by": created_by}, limit=5000)
+        if tag:
+            rows = [t for t in rows if tag in (t.tags or [])]
+        if q:
+            hit_ids = [h["id"] for h in board.store.fts_search(q, types={"ticket"}, limit=500)]
+            order = {i: n for n, i in enumerate(hit_ids)}
+            rows = sorted([t for t in rows if t.id in order], key=lambda t: order[t.id])
+        return ok(_dump(rows))
 
     @app.patch("/v1/tickets/{id_}")
     def ticket_update(id_: str, b: TicketPatch, a: Participant = Depends(actor)):
-        t = board.ticket_update(a, id_, status=b.status, assignee=b.assignee, design_ref=b.design_ref)
+        t = board.ticket_update(a, id_, status=b.status, assignee=b.assignee, design_ref=b.design_ref,
+                                description=b.description, tags=b.tags)
         hint = ""
         if b.status == TicketStatus.in_progress and t.kind == TicketKind.story:
             hint = ("bigger than one sitting? split it into task tickets NOW (ticket_create kind=task) — "
@@ -412,8 +432,18 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     @app.get("/v1/messages")
     def message_query(ticket_id: str | None = None, to: str | None = None, kind: MessageKind | None = None,
-                      limit: int = 50, a: Participant = Depends(actor)):
-        return ok(_dump(board.store.query("message", {"ticket_id": ticket_id, "to": to, "kind": kind}, limit=limit)))
+                      created_by: str | None = None, since_seq: int | None = None, limit: int = 50,
+                      a: Participant = Depends(actor)):
+        rows = board.store.query_seq("message", {"ticket_id": ticket_id, "to": to, "kind": kind,
+                                                 "created_by": created_by}, since_seq=since_seq, limit=100000)
+        rows = rows[-limit:] if since_seq is None else rows[:limit]
+        out = [{**_dump(m), "seq": seq} for seq, m in rows]
+        return ok(out, f"last_seq={rows[-1][0] if rows else (since_seq or 0)}; pass it as since_seq next time "
+                       "to get only what is new")
+
+    @app.get("/v1/messages/{id_}")
+    def message_get(id_: str, a: Participant = Depends(actor)):
+        return ok(board.message_read(id_))
 
     @app.post("/v1/gates/{ticket_id}/{gate}/open")
     def gate_open(ticket_id: str, gate: Gate, b: GateOpenIn, a: Participant = Depends(actor)):
@@ -444,8 +474,10 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         return ok([{"seq": s, **_dump(e)} for s, e in board.replay(a, since)][:limit])
 
     @app.get("/v1/find")
-    def find(q: str, k: int = 10, types: str | None = None, a: Participant = Depends(actor)):
-        return ok(board.find(q, k=k, types=types.split(",") if types else None))
+    def find(q: str, k: int = 10, types: str | None = None, epic_id: str | None = None,
+             a: Participant = Depends(actor)):
+        return ok(board.find(q, k=k, types=types.split(",") if types else None, epic_id=epic_id),
+                  "hits carry ticket_id/epic_id; ticket_read(id) or doc_read(id) for the full object")
 
     # sessions (pool, admin) -----------------------------------------------------
     @app.put("/v1/sessions/{id_}", dependencies=[Depends(admin)])

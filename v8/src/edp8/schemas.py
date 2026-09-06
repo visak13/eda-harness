@@ -179,6 +179,9 @@ class Ticket(Obj):
     status: TicketStatus = TicketStatus.drafted
     assignee: str | None = None  # participant id
     design_ref: str | None = None  # doc id
+    description: str = ""  # the slice in prose: scope, intent, pointers — searchable (2026-09-06)
+    tags: list[str] = Field(default_factory=list)  # free labels for filtering/grouping
+    epic_id: str | None = None  # derived by the board at create time (an epic's own id for an epic)
 
 
 class Criterion(Obj):
@@ -294,9 +297,11 @@ DOC_AUTHORS: dict[DocType, set[Role]] = {
 DESCRIBE: dict[str, str] = {
     "participant": "An actor (human or agent) with a role, an @handle inbox, and a location (pool). "
     "Owner: registry. CRUD: create, read, query, update(location, model).",
-    "ticket": "A work item: epic (the owner's words verbatim as title) / story / task. Status is derived "
-    "upward by the board. Owner: architect (epic design, stories), engineer (tasks). CRUD: create, read, "
-    "query, update(status, assignee, design_ref). Has criteria, a thread, linked docs and artifacts.",
+    "ticket": "A work item: epic (the owner's words verbatim as title) / story / task, with a description "
+    "and tags. Status is derived upward by the board. Owner: architect (epic design, stories), engineer "
+    "(tasks). CRUD: create, read (ticket_read = one fat read: chain, criteria, docs+relation, children+roles, "
+    "blockers, gates, thread tail), query(kind, status, assignee, epic_id, created_by, tag, q text), "
+    "update(status, assignee, design_ref, description, tags). Has criteria, a thread, linked docs and artifacts.",
     "criterion": "A checkable definition of done on a ticket, written by the parent owner before work; "
     "the doer never edits it; the checker records verdict + evidence_ref. CRUD: create, read, update.",
     "doc": "A versioned markdown knowledge unit: design (architect), strategy_hl/strategy_ll/domain (sme), "
