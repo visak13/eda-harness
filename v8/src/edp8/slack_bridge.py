@@ -121,8 +121,31 @@ def _watch(cfg: dict, handle: str, person: dict, stop: threading.Event) -> None:
             time.sleep(5)
 
 
+def _lock_or_exit() -> Path:
+    """One bridge per host: a lockfile holding the live owner's pid. A stale lock (pid gone)
+    is taken over; a live one means a second start is a no-op (2026-09-05: five stacked
+    bridges doubled every Slack ping and leaked ~135 MB)."""
+    lock = Path(os.environ.get("EDP8_HOME", ".")) / ".data" / "bridge.lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        other = int(lock.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        other = 0
+    if other and other != os.getpid():
+        try:
+            import psutil
+            alive = psutil.pid_exists(other) and "slack_bridge" in " ".join(psutil.Process(other).cmdline())
+        except Exception:  # noqa: BLE001
+            alive = False
+        if alive:
+            raise SystemExit(f"slack bridge already running (pid {other}); not starting another")
+    lock.write_text(str(os.getpid()), encoding="utf-8")
+    return lock
+
+
 def run() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+    _lock_or_exit()
     cfg = _config()
     stop = threading.Event()
     people = cfg.get("people") or {}

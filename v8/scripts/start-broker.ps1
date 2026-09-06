@@ -4,6 +4,7 @@
 param([int]$Port = 9300,
       [string]$BindHost = $(if ($env:EDP8_BIND) { $env:EDP8_BIND } else { "127.0.0.1" }))  # teammates over Tailscale: EDP8_BIND=0.0.0.0 + firewall scoped to the tailnet
 $ErrorActionPreference = "Stop"
+try { Invoke-RestMethod "http://127.0.0.1:$Port/v1/health" -TimeoutSec 2 | Out-Null; Write-Host "broker already up on :$Port - not starting another"; exit 0 } catch {}
 $v8 = Split-Path -Parent $PSScriptRoot
 $root = Split-Path -Parent $v8
 $brokerDir = Join-Path $root "edp-broker"

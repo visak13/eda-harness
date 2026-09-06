@@ -49,6 +49,15 @@ if errorlevel 1 (
   echo [owner.bat] pool already up.
 )
 
+rem --- shared MCP server (skip if already answering) ---------------------------
+powershell -NoProfile -Command "try { (Invoke-RestMethod http://127.0.0.1:9402/healthz -TimeoutSec 2).ok } catch { exit 1 }" >nul 2>&1
+if errorlevel 1 (
+  echo [owner.bat] starting mcp server...
+  powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%v8\scripts\start-mcp.ps1"
+) else (
+  echo [owner.bat] mcp server already up.
+)
+
 echo.
 echo [owner.bat] board UI:   http://127.0.0.1:9400/ui
 echo [owner.bat] model:      %MODEL%    auto-compact window: %ACW% tokens
@@ -64,6 +73,7 @@ set "EDP_ROLE=owner"
 set "EDP8_BOARD_URL=http://127.0.0.1:9400"
 set "EDP_BROKER_URL=http://127.0.0.1:9300"
 set "EDP_POOL_URL=http://127.0.0.1:9301"
+set "EDP8_MCP_URL=http://127.0.0.1:9402"
 set "CLAUDE_CODE_AUTO_COMPACT_WINDOW=%ACW%"
 set "FORCE_COLOR=1"
 claude --model %MODEL%

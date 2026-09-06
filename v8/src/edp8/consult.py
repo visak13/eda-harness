@@ -55,7 +55,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -882,6 +884,171 @@ def _now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
+# ------------------------------------------------------------------ the consult LANE
+#
+# The codex login is ONE fleet resource (rolling usage cap) and the host OOMs codex
+# above ~90% RAM — so the bridge serialises: one consult in flight process-wide, callers
+# queue in FIFO order, and every launch is gated on free RAM and on the last quota
+# block. This replaces the prose "CONSULT START/DONE" ritual seats used to post
+# (2026-09-05: two seats raced, one died OOM). Lives in the shared MCP server, so
+# "process-wide" == fleet-wide.
+
+_LANE = threading.Lock()
+_LANE_STATE_LOCK = threading.Lock()
+_LANE_STATE: dict[str, Any] = {"in_flight": None, "queued": 0, "entered": 0, "started_at": None}
+_QUOTA_FILE = "quota.json"
+_QUOTA_RX = re.compile(r"(usage limit|quota|rate limit|too many requests|try again (?:at|in)|"
+                       r"limit reached|429)", re.I)
+_TRY_AGAIN_RX = re.compile(r"try again (?:at|in)\s+([^\n.;]+)", re.I)
+
+
+def _min_free_mb() -> int:
+    try:
+        return int(os.environ.get("EDP8_CONSULT_MIN_FREE_MB", "2560"))
+    except ValueError:
+        return 2560
+
+
+def free_mb() -> int | None:
+    try:
+        import psutil
+        return int(psutil.virtual_memory().available // (1024 * 1024))
+    except Exception:  # noqa: BLE001 — no psutil: no verdict, no gate
+        return None
+
+
+def quota_path() -> Path:
+    return _log_dir() / _QUOTA_FILE
+
+
+def quota_block() -> dict[str, Any] | None:
+    """The active quota block, or None. {"blocked_until": iso, "evidence": str, "seen_at": iso}."""
+    try:
+        d = json.loads(quota_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    until = d.get("blocked_until")
+    if not until:
+        return None
+    try:
+        t = time.mktime(time.strptime(until, "%Y-%m-%dT%H:%M:%SZ")) - time.timezone
+    except ValueError:
+        return None
+    return d if time.time() < t else None
+
+
+def note_quota(raw: str) -> dict[str, Any] | None:
+    """Record a quota/rate-limit signal from a failed run. A parseable "try again at/in …"
+    is kept as evidence; the block itself is a fixed backoff (EDP8_CONSULT_QUOTA_BACKOFF_S,
+    default 1800) because codex prints local clock times we cannot trust across hosts."""
+    tail = "\n".join(raw.splitlines()[-40:])
+    m = _QUOTA_RX.search(tail)
+    if not m:
+        return None
+    try:
+        backoff = int(os.environ.get("EDP8_CONSULT_QUOTA_BACKOFF_S", "1800"))
+    except ValueError:
+        backoff = 1800
+    line = next((ln.strip() for ln in tail.splitlines() if _QUOTA_RX.search(ln)), m.group(0))
+    hint = _TRY_AGAIN_RX.search(tail)
+    rec = {"blocked_until": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + backoff)),
+           "evidence": line[:300], "try_again": hint.group(1).strip() if hint else None, "seen_at": _now()}
+    try:
+        quota_path().parent.mkdir(parents=True, exist_ok=True)
+        quota_path().write_text(json.dumps(rec, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+    return rec
+
+
+def lane_status() -> dict[str, Any]:
+    with _LANE_STATE_LOCK:
+        st = dict(_LANE_STATE)
+    st["quota_block"] = quota_block()
+    st["free_mb"] = free_mb()
+    st["min_free_mb"] = _min_free_mb()
+    return st
+
+
+def preflight() -> dict[str, Any] | None:
+    """The refusal envelope when a consult may not launch right now, else None."""
+    q = quota_block()
+    if q:
+        return {"ok": False,
+                "error": {"code": "quota",
+                          "message": f"the codex login is rate/usage capped until {q['blocked_until']} "
+                                     f"(evidence: {q.get('evidence')})"},
+                "value": {"quota": q},
+                "hint": "this cap is fleet-wide; do other work and consult after blocked_until "
+                        "(consult_status reports the lane)"}
+    need = _min_free_mb()
+    free = free_mb()
+    if need > 0 and free is not None and free < need:
+        return {"ok": False,
+                "error": {"code": "capacity",
+                          "message": f"host has {free} MB free RAM, below EDP8_CONSULT_MIN_FREE_MB={need}; "
+                                     "codex dies OOM under that"},
+                "value": {"free_mb": free, "min_free_mb": need},
+                "hint": "ask the owner to close a seat or free memory, then retry; the check is per launch"}
+    return None
+
+
+def recover_answer(raw: str) -> str:
+    """The assistant's final text from a codex --json log: the LAST agent_message item
+    (the -o file is what a live run uses; this is for post-hoc recovery only)."""
+    last = ""
+    for ln in raw.splitlines():
+        ln = ln.strip()
+        if not ln.startswith("{"):
+            continue
+        try:
+            ev = json.loads(ln)
+        except ValueError:
+            continue
+        item = ev.get("item") if isinstance(ev, dict) else None
+        if isinstance(item, dict) and item.get("type") == "agent_message" and item.get("text"):
+            last = str(item["text"])
+    return last.strip()
+
+
+def consult_status(run_id: str | None = None) -> dict[str, Any]:
+    """Manifest status (+ recovered answer when the run has one) for a run, or the newest."""
+    log_dir = _log_dir()
+    if not run_id:
+        mans = sorted(log_dir.glob("*.manifest.json"))
+        run_id = mans[-1].name.replace(".manifest.json", "") if mans else None
+    lane = lane_status()
+    if not run_id:
+        return {"ok": True, "value": {"run_id": None, "lane": lane}, "hint": "no consult runs recorded yet"}
+    mp = log_dir / f"{run_id}.manifest.json"
+    lp = log_dir / f"{run_id}.jsonl"
+    manifest: dict[str, Any] = {}
+    if mp.is_file():
+        try:
+            manifest = json.loads(mp.read_text(encoding="utf-8"))
+        except ValueError:
+            manifest = {"status": "manifest_unreadable"}
+    answer = manifest.get("answer") or ""
+    if not answer and lp.is_file():
+        try:
+            answer = recover_answer(lp.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            answer = ""
+    status = manifest.get("status") or ("running" if lane.get("in_flight") == run_id else
+                                        ("log_only" if lp.is_file() else "unknown"))
+    val = {"run_id": run_id, "status": status, "manifest": manifest or None, "lane": lane,
+           "thread_id": manifest.get("thread_id")}
+    if answer:
+        val["answer"] = answer
+        val["recovered"] = True
+    hint = ("the run is still in flight" if status == "running" else
+            "answer recovered from the run log" if answer else
+            "no answer on record for this run")
+    return {"ok": mp.is_file() or lp.is_file(), "value": val, "hint": hint} if (mp.is_file() or lp.is_file()) else \
+        {"ok": False, "error": {"code": "not_found", "message": f"no run {run_id!r} in {log_dir}"},
+         "value": {"lane": lane}, "hint": "pass the run_id a consult returned"}
+
+
 # ------------------------------------------------------------------ consult
 
 def consult(purpose: Purpose, question: str, context: str = "",
@@ -949,6 +1116,47 @@ def consult(purpose: Purpose, question: str, context: str = "",
                 "hint": "attach a decodable png/jpg; the bridge validates images before the run"}
     thread_id = (thread_id or "").strip() or None
 
+    refused = preflight()
+    if refused:
+        return refused
+
+    codex = _resolve_bin()
+    requested_model = (model or "").strip() or os.environ.get(_MODEL_ENV, "").strip() or _DEFAULT_MODEL
+
+    # single-flight lane: queue behind whatever is in flight, re-check the gate on entry.
+    # `entered` counts every caller between here and its finally (holder + waiters), so
+    # the number a caller sees IS how many runs precede it.
+    with _LANE_STATE_LOCK:
+        queued_behind = _LANE_STATE["entered"]
+        _LANE_STATE["entered"] += 1
+        _LANE_STATE["queued"] += 1
+    _LANE.acquire()
+    with _LANE_STATE_LOCK:
+        _LANE_STATE["queued"] -= 1
+    try:
+        refused = preflight()
+        if refused:
+            return refused
+        return _consult_locked(purpose, question, context=context, files=files, timeout_s=timeout_s,
+                               write_dir=write_dir, images=images, thread_id=thread_id,
+                               requested_model=requested_model, profile_name=profile_name, spec=spec,
+                               img_records=img_records, codex=codex, queued_behind=queued_behind)
+    finally:
+        with _LANE_STATE_LOCK:
+            _LANE_STATE["in_flight"] = None
+            _LANE_STATE["started_at"] = None
+            _LANE_STATE["entered"] -= 1
+        _LANE.release()
+
+
+def _consult_locked(purpose: str, question: str, *, context: str, files: list[str] | None, timeout_s: int,
+                    write_dir: str | None, images: list[str], thread_id: str | None, requested_model: str,
+                    profile_name: str, spec: Any, img_records: list[Any], codex: str,
+                    queued_behind: int) -> dict[str, Any]:
+    run_id = f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{uuid.uuid4().hex[:8]}"
+    with _LANE_STATE_LOCK:
+        _LANE_STATE["in_flight"] = run_id
+        _LANE_STATE["started_at"] = _now()
     parts = [_PREAMBLES[purpose], "", (question or "").strip()]
     if context.strip():
         parts += ["", "Context:", context.strip()]
@@ -961,11 +1169,6 @@ def consult(purpose: Purpose, question: str, context: str = "",
     if spec.brief:
         parts += ["", spec.brief]
     prompt = "\n".join(parts)
-
-    codex = _resolve_bin()
-    requested_model = (model or "").strip() or os.environ.get(_MODEL_ENV, "").strip() or _DEFAULT_MODEL
-
-    run_id = f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{uuid.uuid4().hex[:8]}"
     log_dir = _log_dir()
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / f"{run_id}.jsonl"
@@ -1046,6 +1249,7 @@ def consult(purpose: Purpose, question: str, context: str = "",
     manifest["elapsed_s"] = round(elapsed, 3)
     out_thread = parse_thread_id(raw) or thread_id
     manifest["thread_id"] = out_thread
+    manifest["queued_behind"] = queued_behind
 
     answer = ""
     if last_msg.is_file():
@@ -1056,6 +1260,8 @@ def consult(purpose: Purpose, question: str, context: str = "",
                 last_msg.unlink()
             except OSError:
                 pass
+    if answer:
+        manifest["answer"] = answer  # consult_status can hand it back after a client-side timeout
 
     # Post-run write-fence: attribute every dirty path in the protected UE tree.
     # Concurrent seats' edits (pre-dirty) and gitignored build outputs are reported
@@ -1119,13 +1325,20 @@ def consult(purpose: Purpose, question: str, context: str = "",
 
     if exit_code != 0:
         manifest["status"] = f"exit_{exit_code}"
+        quota = note_quota(raw)
+        if quota:
+            manifest["quota"] = quota
         _save_manifest()
         return {"ok": False,
-                "error": {"code": "exit",
-                          "message": f"codex exited {exit_code}: {_last_nonempty_line(raw)}"},
-                "value": {"run_id": run_id, "manifest": str(manifest_path), "thread_id": out_thread},
-                "hint": "check `codex login` status, EDP8_SOL_MODEL, and network — "
-                        "a non-zero exit is not automatically a quota cap"}
+                "error": {"code": "quota" if quota else "exit",
+                          "message": (f"codex reports a usage/rate cap: {quota['evidence']} — consults are "
+                                      f"blocked fleet-wide until {quota['blocked_until']}" if quota else
+                                      f"codex exited {exit_code}: {_last_nonempty_line(raw)}")},
+                "value": {"run_id": run_id, "manifest": str(manifest_path), "thread_id": out_thread,
+                          **({"quota": quota} if quota else {})},
+                "hint": ("do other work; consult_status shows when the lane reopens" if quota else
+                         "check `codex login` status, EDP8_SOL_MODEL, and network — "
+                         "a non-zero exit is not automatically a quota cap")}
 
     # Fail closed: no final answer is NOT rescued by the last log line.
     if not answer:
@@ -1142,7 +1355,7 @@ def consult(purpose: Purpose, question: str, context: str = "",
         "answer": answer, "model": requested_model, "provider_model": provider_model,
         "profile": profile_name, "elapsed_s": round(elapsed, 3), "run_id": run_id,
         "log": str(log_path), "manifest": str(manifest_path), "thread_id": out_thread,
-        "images_attached": len(images),
+        "images_attached": len(images), "queued_behind": queued_behind,
     }
     if profile_name == "verify":
         verdict = parse_verdict(answer, images_decoded=len(img_records))

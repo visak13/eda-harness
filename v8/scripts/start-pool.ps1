@@ -1,6 +1,7 @@
 # Start edp-pool pinned to the v8 agent home (spawned shells cwd = v8, load v8/.mcp.json + v8/.claude).
 param([int]$Port = 9301, [string]$BoardUrl = "http://127.0.0.1:9400")
 $ErrorActionPreference = "Stop"
+try { Invoke-RestMethod "http://127.0.0.1:$Port/v1/health" -TimeoutSec 2 | Out-Null; Write-Host "pool already up on :$Port - not starting another"; exit 0 } catch {}
 $v8 = Split-Path -Parent $PSScriptRoot
 $root = Split-Path -Parent $v8
 $poolDir = Join-Path $root "edp-pool"

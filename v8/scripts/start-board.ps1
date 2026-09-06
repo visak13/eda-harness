@@ -6,6 +6,7 @@ param([int]$Port = 9400, [string]$AdminToken = "dev", [string]$OwnerHandle = "ow
       [string]$PoolUrl = "http://127.0.0.1:9301", [string]$BrokerUrl = "http://127.0.0.1:9300",
       [string]$BindHost = $(if ($env:EDP8_BIND) { $env:EDP8_BIND } else { "127.0.0.1" }))  # teammates over Tailscale: EDP8_BIND=0.0.0.0 + firewall scoped to the tailnet
 $ErrorActionPreference = "Stop"
+try { Invoke-RestMethod "http://127.0.0.1:$Port/healthz" -TimeoutSec 2 | Out-Null; Write-Host "board already up on :$Port - not starting another"; exit 0 } catch {}
 $v8 = Split-Path -Parent $PSScriptRoot
 $env:EDP8_HOST = $BindHost
 $env:EDP8_PORT = "$Port"; $env:EDP8_ADMIN_TOKEN = $AdminToken; $env:EDP8_HOME = $v8

@@ -13,8 +13,11 @@ named tools for the running participant's role.
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import os
 import sys
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -39,6 +42,11 @@ from .schemas import (
 # ----------------------------------------------------------------------------- client wiring
 
 _client: BoardClient | None = None
+# The shared HTTP server binds a per-REQUEST client (identity from headers) in a contextvar;
+# stdio and tests keep the module global. get_client() prefers the request-scoped one.
+_req_client: contextvars.ContextVar[BoardClient | None] = contextvars.ContextVar("edp8_req_client", default=None)
+_req_session: contextvars.ContextVar[str | None] = contextvars.ContextVar("edp8_req_session", default=None)
+_server_version: str = "stdio"
 
 
 def set_client(client: BoardClient) -> None:
@@ -47,9 +55,33 @@ def set_client(client: BoardClient) -> None:
 
 
 def get_client() -> BoardClient:
+    c = _req_client.get()
+    if c is not None:
+        return c
     if _client is None:
         raise RuntimeError("edp8.bundles: no BoardClient set — call set_client() before invoking a tool handler")
     return _client
+
+
+@contextlib.contextmanager
+def bind_request(client: BoardClient, *, session_id: str | None = None,
+                 server_version: str | None = None) -> Iterator[None]:
+    """Scope one tool call to a request identity (the shared server calls this per request)."""
+    global _server_version
+    if server_version:
+        _server_version = server_version
+    t1 = _req_client.set(client)
+    t2 = _req_session.set(session_id)
+    try:
+        yield
+    finally:
+        _req_client.reset(t1)
+        _req_session.reset(t2)
+
+
+def my_session_id() -> str | None:
+    """The caller's pool session id: the request header on the shared server, else the env."""
+    return _req_session.get() or os.environ.get("EDP_SPAWN_SESSION_ID") or None
 
 
 def unavailable(message: str, hint: str) -> dict[str, Any]:
@@ -98,6 +130,7 @@ def _whoami(_: WhoamiArgs) -> dict[str, Any]:
         resp["value"]["role"] = role
         resp["value"]["bundles_available"] = ROLE_BUNDLES.get(role, [])
         resp["value"]["lineage"] = _lineage(resp["value"]["participant"].get("id") or "")
+        resp["value"]["server_version"] = _server_version  # the tool code you are talking to (git sha)
     return resp
 
 
@@ -635,7 +668,7 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
             assignee_kept = current
     args["participant_id"] = pid
     if not args.get("parent_session"):  # lineage: the pool records who spawned this shell
-        args["parent_session"] = os.environ.get("EDP_SPAWN_SESSION_ID") or None
+        args["parent_session"] = my_session_id()
     out = _pool_call("spawn", args)
     if not out.get("ok") and "lock" in str(out.get("error", "")).lower():
         # board said dead, pool lock says staffed (pain 2026-09-01 11:19) — resolve with the
@@ -936,7 +969,22 @@ def _consult(a: ConsultArgs) -> dict[str, Any]:
     return resp
 
 
+class ConsultStatusArgs(BaseModel):
+    run_id: str = Field(description="the run_id a consult returned (or the newest run when omitted)")
+
+
+def _consult_status(a: ConsultStatusArgs) -> dict[str, Any]:
+    from . import consult as consult_mod
+
+    return consult_mod.consult_status(a.run_id)
+
+
 CONSULT_TOOLS = [
+    ToolDef("consult_status", "Look up a consult run by run_id: its manifest status and, when the run "
+            "produced one, the recovered answer — use it after your own call timed out or the server "
+            "restarted mid-run, instead of re-asking. Also reports the fleet-wide consult lane "
+            "(in flight / queued) and the quota block, if any.",
+            ConsultStatusArgs, _consult_status, "consult"),
     ToolDef("consult", "Ask the consultant (GPT Sol) — adversarial review, creative/visual judgment, a second "
             "opinion, or (with write_dir) actual DELIVERY: Sol writes assets into the directory or edits files "
             "in place. STEER: every answer carries a thread_id — pass it back to continue THAT Sol session "
@@ -1044,18 +1092,18 @@ ROLE_BUNDLES: dict[str, list[str]] = {
     Role.owner.value: _IDENTITY + _THREAD + _BOARD + _DOC_RO + _TICKET_RO + _CHECK
         + ["find", "ticket_create", "inbox", "spawn", "resume", "reap", "session_query", "close"],
     Role.architect.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD + _BOARD
-        + ["find", "consult", "artifact_create", "artifact_read", "spawn", "inbox", "record_status"],
+        + ["find", "consult", "consult_status", "artifact_create", "artifact_read", "spawn", "inbox", "record_status"],
     Role.sme.value: _IDENTITY + _TICKET_RO + _DOC_RW + _THREAD
         + ["find", "participants", "assemble_ruleset", "criterion_query", "criterion_update",
            "artifact_create", "artifact_read"] + _CLOSING,
     Role.engineer.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD
-        + ["find", "participants", "assemble_ruleset", "consult", "artifact_create", "artifact_read"] + _CLOSING,
+        + ["find", "participants", "assemble_ruleset", "consult", "consult_status", "artifact_create", "artifact_read"] + _CLOSING,
     Role.reviewer.value: _IDENTITY + _TICKET_RO + _CHECK + _DOC_RW + _THREAD
-        + ["find", "participants", "assemble_ruleset", "consult", "artifact_create", "artifact_read"] + _CLOSING,
+        + ["find", "participants", "assemble_ruleset", "consult", "consult_status", "artifact_create", "artifact_read"] + _CLOSING,
     Role.adversary.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD
-        + ["find", "participants", "assemble_ruleset", "consult", "artifact_create", "artifact_read"] + _CLOSING,
+        + ["find", "participants", "assemble_ruleset", "consult", "consult_status", "artifact_create", "artifact_read"] + _CLOSING,
     Role.qa.value: _IDENTITY + _TICKET_RO + _CHECK + _DOC_RW + _THREAD + _BOARD
-        + ["find", "assemble_ruleset", "consult", "artifact_create", "artifact_read"] + _CLOSING,
+        + ["find", "assemble_ruleset", "consult", "consult_status", "artifact_create", "artifact_read"] + _CLOSING,
 }
 
 

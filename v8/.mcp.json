@@ -1,20 +1,11 @@
 {
   "mcpServers": {
     "edp8": {
-      "command": "uv",
-      "args": [
-        "run",
-        "--directory",
-        ".",
-        "python",
-        "-m",
-        "edp8.mcp_server"
-      ],
-      "env": {
-        "EDP8_BOARD_URL": "${EDP8_BOARD_URL:-http://127.0.0.1:9400}",
-        "EDP8_PARTICIPANT": "${EDP_HANDLE:-owner}",
-        "EDP8_ROLE": "${EDP_ROLE:-owner}",
-        "EDP_POOL_URL": "${EDP_POOL_URL:-http://127.0.0.1:9301}"
+      "type": "http",
+      "url": "${EDP8_MCP_URL:-http://127.0.0.1:9402}/mcp/${EDP_ROLE:-owner}",
+      "headers": {
+        "X-Participant": "${EDP_HANDLE:-owner}",
+        "X-Session": "${EDP_SPAWN_SESSION_ID:-}"
       }
     }
   }
