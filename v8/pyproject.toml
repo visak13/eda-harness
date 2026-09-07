@@ -31,6 +31,16 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/edp8"]
+# force-include is the SOLE source of dist. Exclude it from the standard file selection so a
+# non-VCS build (e.g. inside Docker, where .git is absent and hatch would otherwise include
+# every file under the package) does not add dist a second time and collide with force-include.
+exclude = ["src/edp8/webapp/dist"]
+
+# The Vite SPA build output is gitignored (src/edp8/webapp/dist) but MUST ship in the
+# wheel — hatch's VCS file selection skips gitignored paths, so force-include re-adds it.
+# Proven in S1: `uv build --wheel` then listing the wheel shows edp8/webapp/dist/index.html.
+[tool.hatch.build.targets.wheel.force-include]
+"src/edp8/webapp/dist" = "edp8/webapp/dist"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

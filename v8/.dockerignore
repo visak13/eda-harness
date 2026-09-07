@@ -1,0 +1,21 @@
+# Keep the build context small and reproducible: the web stage installs from the
+# committed lockfile and builds dist itself; the python stage installs from source.
+.venv/
+.data/
+.sol/
+.sandbox/
+.pain/
+.logs/
+.pytest_cache/
+.ruff_cache/
+.uv-cache/
+.test-tmp/
+**/__pycache__/
+web/node_modules/
+web/test-results/
+web/playwright-report/
+# dist is rebuilt inside the web stage
+src/edp8/webapp/dist/
+dist/
+*.whl
+.git/
