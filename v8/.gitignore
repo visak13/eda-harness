@@ -4,3 +4,4 @@
 .pain/
 .venv/
 __pycache__/
+docs/ui-concepts/**/.render-profile/
