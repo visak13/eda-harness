@@ -580,7 +580,13 @@ class CriterionCreateArgs(BaseModel):
     ticket_id: str
     text: str = Field(description="a checkable definition of done")
     check: Check = Field(description="command|path|look|verdict")
-    checked_by: CheckedBy = Field(description="the role that will verdict this: reviewer|qa|owner")
+    checked_by: CheckedBy | None = Field(default=None, description="IGNORED (accepted for one release): "
+                                         "the board DERIVES the checker from the ticket — qa for every "
+                                         "story/task/epic criterion, reviewer only when a story is tagged "
+                                         "review_required, owner for a knowledge ticket. The owner may "
+                                         "override by ALSO passing override_reason")
+    override_reason: str | None = Field(default=None, description="owner-only: a reason to override the "
+                                        "derived checker (recorded as a criterion_checker_overridden event)")
 
 
 class CriterionQueryArgs(BaseModel):
@@ -617,7 +623,8 @@ def _ticket_update(a: TicketUpdateArgs) -> dict[str, Any]:
 
 
 def _criterion_create(a: CriterionCreateArgs) -> dict[str, Any]:
-    return get_client().criterion_create(ticket_id=a.ticket_id, text=a.text, check=a.check, checked_by=a.checked_by)
+    return get_client().criterion_create(ticket_id=a.ticket_id, text=a.text, check=a.check,
+                                         checked_by=a.checked_by, override_reason=a.override_reason)
 
 
 def _criterion_query(a: CriterionQueryArgs) -> dict[str, Any]:
@@ -630,9 +637,11 @@ def _criterion_update(a: CriterionUpdateArgs) -> dict[str, Any]:
 
 TICKET_TOOLS = [
     ToolDef("ticket_create",
-            "Create a ticket — epic (owner/coordinator), story (architect), task (engineer/architect)",
+            "Create a ticket — epic (owner/coordinator), story (architect), task (engineer/architect). "
+            "Caps (design §24.1): at most 8 open stories per epic (the owner raises it by answering a "
+            "scope gate) and at most 5 tasks per story",
             "when you own a new slice of work: an epic from the owner's words, a story, or a task under your story",
-            "the ticket and a hint for the next step",
+            "the ticket and a hint for the next step, or a scope error when a cap is hit",
             TicketCreateArgs, _ticket_create, "ticket"),
     ToolDef("ticket_read",
             "ONE fat read of a ticket: the record (title, description, tags, status, assignee), its chain up to "
@@ -655,9 +664,13 @@ TICKET_TOOLS = [
             "the updated ticket, or a transition/scope error naming what is missing",
             TicketUpdateArgs, _ticket_update, "ticket"),
     ToolDef("criterion_create",
-            "Add a checkable definition of done to a ticket",
+            "Add a checkable definition of done to a ticket. The board DERIVES its checker from the "
+            "ticket (qa for every story/task/epic criterion; reviewer only when a story is tagged "
+            "review_required; owner for a knowledge ticket) — the checked_by argument is accepted for "
+            "one release but ignored unless the owner also passes override_reason. A story carries at "
+            "most 6 freshly-written criteria (a folded story keeps what it inherits)",
             "before work starts, while you own the ticket, one criterion per checkable fact",
-            "the criterion",
+            "the criterion (its checked_by is the derived checker, or the owner override)",
             CriterionCreateArgs, _criterion_create, "ticket"),
     ToolDef("criterion_query",
             "List a ticket's criteria",

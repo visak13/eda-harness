@@ -111,14 +111,19 @@ def test_epic_page_comment_form_posts_as_identity(client, rig):
 
 
 def test_doc_page_approve_and_comment(client, rig):
-    c = client.post("/v1/criteria", json={"ticket_id": rig["epic"], "text": "strategy signed", "check": "look",
-                                          "checked_by": "owner"}, headers={"X-Participant": "arch"}).json()["value"]
+    # a knowledge ticket's criterion is checked by the owner (§24.1 derivation): the strategy-doc
+    # sign-off is the one HITL point, so this is where the owner's doc-approve UI shows.
+    kt = client.post("/v1/tickets", json={"kind": "story", "work_type": "knowledge", "title": "hl-craft",
+                                          "parent_id": rig["epic"]}, headers={"X-Participant": "arch"}).json()["value"]["id"]
+    c = client.post("/v1/criteria", json={"ticket_id": kt, "text": "strategy signed", "check": "look"},
+                    headers={"X-Participant": "arch"}).json()["value"]
+    assert c["checked_by"] == "owner"
     d = client.post("/v1/docs", json={"doc_type": "strategy_hl", "title": "s", "body_md": "b",
                                       "scope": rig["epic"]}, headers={"X-Participant": "craft"}).json()["value"]
     client.patch(f"/v1/criteria/{c['id']}", json={"evidence_ref": d["id"]}, headers={"X-Participant": "craft"})
     page = client.get(f"/ui/doc/{d['id']}", params={"as": "owner"}).text
     assert "Approve" in page and "Needs work" in page and "← Epic" in page and "to-top" in page
-    r = client.post("/ui/me/verdict", data={"as_": "owner", "criterion_id": c["id"], "ticket_id": rig["epic"],
+    r = client.post("/ui/me/verdict", data={"as_": "owner", "criterion_id": c["id"], "ticket_id": kt,
                                             "verdict": "pass", "back": f"/ui/doc/{d['id']}?as=owner"},
                     follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"].startswith(f"/ui/doc/{d['id']}")

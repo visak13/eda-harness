@@ -94,7 +94,8 @@ class CriterionIn(BaseModel):
     ticket_id: str
     text: str
     check: Check
-    checked_by: str
+    checked_by: str | None = None  # accepted for one release, ignored unless owner + override_reason
+    override_reason: str | None = None
 
 
 class CriterionPatch(BaseModel):
@@ -476,8 +477,15 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     # criteria -----------------------------------------------------------------
     @app.post("/v1/criteria")
     def criterion_create(b: CriterionIn, a: Participant = Depends(actor)):
-        return ok(_dump(board.criterion_create(a, ticket_id=b.ticket_id, text=b.text, check=b.check,
-                                               checked_by=b.checked_by)))
+        c = board.criterion_create(a, ticket_id=b.ticket_id, text=b.text, check=b.check,
+                                   checked_by=b.checked_by, override_reason=b.override_reason)
+        hint = ""
+        if b.checked_by and b.checked_by != c.checked_by:
+            hint = (f"checked_by is ignored — the board derived checked_by={c.checked_by} from this "
+                    f"ticket (design §24.1); an owner override needs override_reason")
+        elif b.checked_by and b.checked_by == c.checked_by and a.role == Role.owner and b.override_reason:
+            hint = f"owner override recorded: checked_by={c.checked_by}"
+        return ok(_dump(c), hint)
 
     @app.get("/v1/criteria")
     def criterion_query(ticket_id: str, a: Participant = Depends(actor)):

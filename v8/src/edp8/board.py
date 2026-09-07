@@ -31,6 +31,7 @@ from .schemas import (
     Artifact,
     ArtifactForm,
     Check,
+    CheckedBy,
     Criterion,
     Doc,
     DocType,
@@ -60,6 +61,12 @@ _log = logging.getLogger("edp8.board")
 HUMAN_GATE_ANSWERERS = {Role.owner}
 _TERMINAL = (TicketStatus.done, TicketStatus.partial, TicketStatus.dropped)
 
+# Design §24.1 caps — the tool layer bounds what an architect can file, so an epic's shell
+# count is bounded by construction, not restraint. Enforced in the board (not the cards).
+STORY_CAP = 8    # stories per epic (not counting done/dropped); the owner raises it via a scope gate
+TASK_CAP = 5     # tasks per story (not counting done/dropped)
+CRITERIA_CAP = 6  # criteria written fresh on a story (a folded story carries what it inherits)
+
 
 def _dedup(reasons: list[Reason]) -> list[Reason]:
     """Preserve first-seen order, drop repeats — a recipient's reason list for one event."""
@@ -80,11 +87,21 @@ class BoardError(Exception):
 
 
 class Board:
-    def __init__(self, store: Store, index: Any | None = None):
+    def __init__(self, store: Store, index: Any | None = None, *, pool: Any | None = None,
+                 free_mb: Any | None = None):
         self.store = store
         self.index = index  # edp8.search.Index or None
         self._subs: dict[str, list[asyncio.Queue]] = {}
         self._lock = threading.RLock()
+        # Automatic checker pairing (design §24 rule 3): `pool` is the spawn adapter (defaults to
+        # edp8.pool_adapter, injected as a stub in tests); `free_mb` reports host free RAM for the
+        # preflight-aware queue. `_pending_pairings` maps participant_id -> {role, ticket, noted}
+        # for seats waiting on RAM headroom; run_pending_pairings() (the pool-watch loop) drains it.
+        self._pool = pool
+        self._free_mb = free_mb
+        self._pending_pairings: dict[str, dict[str, Any]] = {}
+
+    SEAT_FLOOR_MB = 500  # design §24 rule 3: free RAM below this queues a pairing instead of spawning
 
     # ------------------------------------------------------------------ helpers
     def _get(self, type_: str, id_: str, what: str | None = None):
@@ -145,6 +162,10 @@ class Board:
         if not title.strip():
             raise BoardError("schema", "title is empty",
                              "an epic's title is the owner's words verbatim; a story/task title names the slice")
+        if kind == TicketKind.story and parent_id:
+            self._enforce_story_cap(parent_id)
+        if kind == TicketKind.task and parent_id:
+            self._enforce_task_cap(parent_id)
         t = Ticket(id=new_id(kind.value[0] if kind != TicketKind.epic else "epic"), kind=kind, work_type=work_type,
                    title=title, parent_id=parent_id, assignee=assignee, created_by=actor.id,
                    description=description or "", tags=[x.strip() for x in (tags or []) if x.strip()])
@@ -169,6 +190,29 @@ class Board:
 
     def children(self, ticket_id: str) -> list[Ticket]:
         return self.store.query("ticket", {"parent_id": ticket_id})  # type: ignore[return-value]
+
+    # ------------------------------------------------------------------ caps (design §24.1)
+    def _open_stories(self, epic_id: str) -> list[Ticket]:
+        """Stories under an epic that still count against the cap (not done/dropped)."""
+        return [k for k in self.children(epic_id)
+                if k.kind == TicketKind.story and k.status not in (TicketStatus.done, TicketStatus.dropped)]
+
+    def _scope_cap_raised(self, epic_id: str) -> bool:
+        """The owner raised this epic's story cap by answering a `scope` gate on it (§24.1)."""
+        return any(e.data.get("gate") == Gate.scope.value
+                   for e in self.store.query("event", {"subject_id": epic_id, "kind": EventKind.gate_answered}))
+
+    def _enforce_story_cap(self, epic_id: str) -> None:
+        if len(self._open_stories(epic_id)) >= STORY_CAP and not self._scope_cap_raised(epic_id):
+            raise BoardError("scope", f"an epic holds at most {STORY_CAP} open stories",
+                             "split the epic (or the owner answers a `scope` gate to raise the cap)")
+
+    def _enforce_task_cap(self, story_id: str) -> None:
+        tasks = [k for k in self.children(story_id)
+                 if k.kind == TicketKind.task and k.status not in (TicketStatus.done, TicketStatus.dropped)]
+        if len(tasks) >= TASK_CAP:
+            raise BoardError("scope", f"a story holds at most {TASK_CAP} tasks",
+                             "fold work into fewer tasks, or hand a slice to a second engineer")
 
     def ensure_epic_ids(self) -> int:
         """Backfill Ticket.epic_id on boards created before 2026-09-06. Idempotent."""
@@ -334,7 +378,7 @@ class Board:
         if to == TicketStatus.ready:
             if r not in (Role.coordinator, Role.architect, Role.owner, Role.engineer):
                 raise BoardError("scope", "ready is set by coordinator/architect/owner (engineer: its tasks)")
-            open_blockers = [b for b in self.blockers(t.id) if b.status != TicketStatus.done]
+            open_blockers = [b for b in self.blockers(t.id) if not self._released(b)]
             if open_blockers:
                 raise BoardError("transition", "blocked by unfinished tickets",
                                  "open blockers: " + ", ".join(f"{b.id}({b.status})" for b in open_blockers))
@@ -370,24 +414,48 @@ class Board:
         epic = self.epic_of(t)
         return epic.id != t.id and bool(self.open_gates(epic.id, Gate.design_signoff))
 
+    def _released(self, b: Ticket) -> bool:
+        """A predecessor no longer blocks its successors (design §24.1 release rule): it is `done`,
+        OR it is `in_review` with an evidence_ref on every criterion — `done` is qa's verdict, not
+        the successor's trigger, so a story that is evidence-complete releases what it holds while
+        its own status waits on qa."""
+        if b.status == TicketStatus.done:
+            return True
+        if b.status == TicketStatus.in_review:
+            crits = self.criteria(b.id)
+            return bool(crits) and all(c.evidence_ref for c in crits)
+        return False
+
+    def _release_successors(self, t: Ticket) -> None:
+        """Promote to ready every signed-off successor of t (explicit `blocks` links t holds, plus
+        the implicit review-story-waits-on-its-siblings dependency) once all ITS blockers are
+        released and no design gate holds it."""
+        deps_raw = [self.store.get("ticket", lk.to_id)  # type: ignore[attr-defined]
+                    for lk in self.store.query("link", {"from_id": t.id, "relation": Relation.blocks})]
+        if t.kind == TicketKind.story and t.parent_id:
+            deps_raw += [k for k in self.children(t.parent_id) if k.work_type == WorkType.review and k.id != t.id]
+        seen: set[str] = set()
+        deps = [d for d in deps_raw if d is not None and not (d.id in seen or seen.add(d.id))]
+        for dep in deps:
+            if dep.status == TicketStatus.signed_off \
+                    and all(self._released(b) for b in self.blockers(dep.id)) \
+                    and not self._design_gate_open(dep):
+                dep.status = TicketStatus.ready
+                self.store.put("ticket", dep)
+                self._emit(dep.id, EventKind.status_changed,
+                           {"from": "signed_off", "to": "ready", "by": "board"})
+
     def _after_status(self, t: Ticket) -> None:
-        # readiness: any sibling/dependent waiting on this ticket becomes ready when unblocked
-        if t.status == TicketStatus.done:
-            deps_raw = [self.store.get("ticket", lk.to_id)  # type: ignore[attr-defined]
-                        for lk in self.store.query("link", {"from_id": t.id, "relation": Relation.blocks})]
-            if t.kind == TicketKind.story and t.parent_id:
-                deps_raw += [k for k in self.children(t.parent_id) if k.work_type == WorkType.review and k.id != t.id]
-            seen: set[str] = set()
-            deps = [d for d in deps_raw if d is not None and not (d.id in seen or seen.add(d.id))]
-            for dep in deps:
-                if dep and dep.status == TicketStatus.signed_off:
-                    if all(b.status == TicketStatus.done for b in self.blockers(dep.id))                             and not self._design_gate_open(dep):
-                        dep.status = TicketStatus.ready
-                        self.store.put("ticket", dep)
-                        self._emit(dep.id, EventKind.status_changed,
-                                   {"from": "signed_off", "to": "ready", "by": "board"})
+        # readiness: a successor waiting on this ticket becomes ready the moment this ticket is
+        # RELEASED — evidence-complete in_review, or done (design §24.1: done no longer gates).
+        if self._released(t):
+            self._release_successors(t)
+        # §24 rule 3: a story reaching in_review pairs a reviewer (when review_required); the
+        # actual spawn is deferred to run_pending_pairings (the pool-watch loop), preflight-aware.
+        if t.status == TicketStatus.in_review and t.kind == TicketKind.story:
+            self._on_reach_in_review(t)
         if (t.status == TicketStatus.signed_off and t.kind != TicketKind.epic
-                and not [b for b in self.blockers(t.id) if b.status != TicketStatus.done]
+                and not [b for b in self.blockers(t.id) if not self._released(b)]
                 and not self._design_gate_open(t)):
             t.status = TicketStatus.ready
             self.store.put("ticket", t)
@@ -409,28 +477,163 @@ class Board:
                 elif parent.kind == TicketKind.story and parent.status == TicketStatus.in_progress:
                     self._emit(parent.id, EventKind.status_changed, {"note": "all tasks done; hand the story to review"})
 
+    # ------------------------------------------------------------------ automatic pairing (§24 rule 3)
+    def _pool_adapter(self) -> Any:
+        if self._pool is not None:
+            return self._pool
+        from . import pool_adapter
+        return pool_adapter
+
+    def _host_free_mb(self) -> int | None:
+        """Host free RAM in MB (the preflight number), or None when it cannot be read."""
+        if self._free_mb is not None:
+            try:
+                return self._free_mb()
+            except Exception:  # noqa: BLE001 — a broken probe never blocks a spawn
+                return None
+        try:
+            import psutil
+            return int(psutil.virtual_memory().available // (1024 * 1024))
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _seat_live(self, pid: str) -> bool:
+        return self.seat_state(pid) in ("alive", "parked")
+
+    def _enqueue_pairing(self, participant_id: str, role: str, ticket_id: str) -> None:
+        with self._lock:
+            if self._seat_live(participant_id):
+                return
+            self._pending_pairings.setdefault(participant_id,
+                                              {"role": role, "ticket": ticket_id, "noted": False})
+
+    def _on_reach_in_review(self, t: Ticket) -> None:
+        """A story reaching in_review pairs reviewer.<story> when it is review_required (§24.1: qa
+        is the default checker, so a plain story pairs no reviewer — qa verdicts at acceptance).
+        Idempotent: a live reviewer seat short-circuits. The spawn itself is deferred to
+        run_pending_pairings (the pool-watch loop / an explicit drain), so no request thread blocks
+        on the pool."""
+        if self.checker_for(t) != CheckedBy.reviewer.value:
+            return
+        self._enqueue_pairing(f"reviewer.{t.id}", Role.reviewer.value, t.id)
+
+    def on_new_evidence(self, t: Ticket) -> None:
+        """New evidence landed on a review_required story that is in_review: if its reviewer seat
+        closed after a first pass, re-pair it (§24 rule 3, re-spawn on new evidence)."""
+        if t.status == TicketStatus.in_review and self.checker_for(t) == CheckedBy.reviewer.value:
+            self._enqueue_pairing(f"reviewer.{t.id}", Role.reviewer.value, t.id)
+
+    def run_pending_pairings(self) -> dict[str, Any]:
+        """Drain the pairing queue: spawn each seat whose RAM headroom is sufficient, drop one that
+        already has a live seat, and leave an under-RAM one queued with ONE feed note. Called at
+        every pool-watch tick (the 60 s retry) and directly by tests. Returns a small summary."""
+        with self._lock:
+            pending = list(self._pending_pairings.items())
+        spawned: list[str] = []
+        queued: list[str] = []
+        for pid, info in pending:
+            if self._seat_live(pid):
+                with self._lock:
+                    self._pending_pairings.pop(pid, None)
+                continue
+            free = self._host_free_mb()
+            if free is not None and free < self.SEAT_FLOOR_MB:
+                queued.append(pid)
+                if not info.get("noted"):
+                    self._pairing_note(info["ticket"],
+                                       f"{info['role']} for {info['ticket']} queued: {free} MB free")
+                    with self._lock:
+                        if pid in self._pending_pairings:
+                            self._pending_pairings[pid]["noted"] = True
+                continue
+            self._spawn_seat(info["role"], pid, info["ticket"])
+            spawned.append(pid)
+            with self._lock:
+                self._pending_pairings.pop(pid, None)
+        return {"spawned": spawned, "queued": queued}
+
+    def _spawn_seat(self, role: str, participant_id: str, ticket_id: str) -> None:
+        """Register the seat participant (so it can be addressed and can verdict) then spawn its
+        shell via the pool adapter — the assignee is never touched (a checker is not the doer)."""
+        if self.store.get("participant", participant_id) is None:
+            try:
+                self.participant_create("agent", Role(role), participant_id, id_=participant_id)
+            except BoardError:  # a concurrent create raced us; fine
+                pass
+        try:
+            self._pool_adapter().spawn(role, participant_id)
+        except Exception as e:  # noqa: BLE001 — a pool hiccup keeps the seat registered; retry next tick
+            _log.warning("pairing spawn for %s failed: %s", participant_id, e)
+
+    def _pairing_note(self, ticket_id: str, text: str) -> None:
+        """Post one board-authored thread note (the queued-pairing notice)."""
+        m = Message(id=new_id("m"), ticket_id=ticket_id, to=None, kind=MessageKind.note, text=text,
+                    created_by="board")
+        self.store.put("message", m)
+        self._emit(ticket_id, EventKind.message_sent,
+                   {"message": m.id, "to": None, "kind": MessageKind.note, "from": "board",
+                    "from_type": "agent", "from_role": "board", "text": text[:280], "mentions": []})
+
     # ------------------------------------------------------------------ criteria
+    def checker_for(self, t: Ticket) -> str:
+        """The board derives a criterion's checker from its ticket (design §24.1, owner ruling
+        v22 2026-09-08): **qa** is the default for every story/task/epic criterion; a **reviewer**
+        is paired only when the architect tags a non-review story `review_required` (auth,
+        sanitiser, cutover); a knowledge ticket's criteria are the **owner**'s single HITL
+        sign-off (the strategy-doc approval). The doer never chooses — this removes the blind spot
+        where a story froze on a checker role with no seat."""
+        if t.work_type == WorkType.knowledge:
+            return CheckedBy.owner.value
+        if (t.kind == TicketKind.story and t.work_type != WorkType.review
+                and "review_required" in (t.tags or [])):
+            return CheckedBy.reviewer.value
+        return CheckedBy.qa.value
+
+    def _is_folded(self, ticket_id: str) -> bool:
+        """A folded story carries criteria inherited from other stories (prefixed `(from S…)`) —
+        its criteria count is not the freshly-written count the cap bounds."""
+        return any((c.text or "").lstrip().startswith("(from S") for c in self.criteria(ticket_id))
+
     def criterion_create(self, actor: Participant, *, ticket_id: str, text: str, check: Check,
-                         checked_by: str) -> Criterion:
+                         checked_by: str | None = None, override_reason: str | None = None) -> Criterion:
         t = self.ticket(ticket_id)
-        if actor.role not in CRITERION_AUTHORS:
-            raise BoardError("scope", f"{actor.role} may not write criteria",
-                             "the parent owner writes criteria before work: architect (epic/story), engineer (task)")
-        if actor.role == Role.engineer and t.kind != TicketKind.task:
-            raise BoardError("scope", "an engineer writes criteria for its tasks only")
+        # the owner overriding the derived checker (checked_by + override_reason) is the one case
+        # where a non-author writes a criterion; it bypasses the author/engineer/doer guards.
+        owner_override = actor.role == Role.owner and checked_by is not None and override_reason is not None
+        if not owner_override:
+            if actor.role not in CRITERION_AUTHORS:
+                raise BoardError("scope", f"{actor.role} may not write criteria",
+                                 "the parent owner writes criteria before work: architect (epic/story), engineer (task)")
+            if actor.role == Role.engineer and t.kind != TicketKind.task:
+                raise BoardError("scope", "an engineer writes criteria for its tasks only")
+            if (t.assignee == actor.id and t.kind != TicketKind.task
+                    and not (actor.role == Role.architect and t.kind == TicketKind.epic)):
+                # the architect IS the designer of epics/stories — assignment bookkeeping must not
+                # deadlock criteria authoring (pain 2026-08-23 architect epic deadlock)
+                raise BoardError("scope", "the doer of a ticket does not write its criteria")
         if t.status in (TicketStatus.in_review, TicketStatus.done, TicketStatus.partial, TicketStatus.dropped):
             raise BoardError("transition", f"criteria cannot be added to a {t.status} ticket")
-        if (t.assignee == actor.id and t.kind != TicketKind.task
-                and not (actor.role == Role.architect and t.kind == TicketKind.epic)):
-            # the architect IS the designer of epics/stories — assignment bookkeeping must not
-            # deadlock criteria authoring (pain 2026-08-23 architect epic deadlock)
-            raise BoardError("scope", "the doer of a ticket does not write its criteria")
-        if t.work_type == WorkType.review and checked_by == "reviewer":
-            raise BoardError("schema", "a review-type ticket is checked by qa (or owner), not by reviewer",
-                             "the reviewer is the usual doer of a review story; set checked_by=qa")
+        # §24.1 criteria cap: a non-folded story carries at most CRITERIA_CAP freshly-written criteria
+        if t.kind == TicketKind.story and not self._is_folded(t.id):
+            fresh = [c for c in self.criteria(t.id) if not (c.text or "").lstrip().startswith("(from S")]
+            if len(fresh) >= CRITERIA_CAP:
+                raise BoardError("scope", f"a story carries at most {CRITERIA_CAP} freshly-written criteria",
+                                 "tighten to the load-bearing checks, or split the story")
+        # §24: the board DERIVES the checker; the checked_by argument is accepted for one release
+        # but ignored (a hint says so) unless the actor is the owner AND passes an override_reason,
+        # which is recorded as a criterion_checker_overridden event.
+        derived = self.checker_for(t)
+        final = derived
+        if checked_by is not None and checked_by != derived and actor.role == Role.owner and override_reason:
+            final = checked_by
         c = Criterion(id=new_id("c"), ticket_id=ticket_id, text=text, check=check,
-                      checked_by=checked_by, created_by=actor.id)  # type: ignore[arg-type]
-        return self.store.put("criterion", c)
+                      checked_by=final, created_by=actor.id)  # type: ignore[arg-type]
+        self.store.put("criterion", c)
+        if final != derived:
+            self._emit(ticket_id, EventKind.criterion_checker_overridden,
+                       {"criterion": c.id, "from": derived, "to": final,
+                        "reason": override_reason, "by": actor.id})
+        return c
 
     def criterion_update(self, actor: Participant, id_: str, *, evidence_ref: str | None = None,
                          verdict: Verdict | None = None, text: str | None = None) -> Criterion:
@@ -464,11 +667,14 @@ class Board:
         if verdict is not None:  # a verdict is a first-class WHO/WHAT event, not a doc edit
             self._emit(t.id, EventKind.criterion_checked,
                        {"criterion": c.id, "verdict": c.verdict, "by": actor.id, "by_type": actor.type,
-                        "evidence": c.evidence_ref, "ticket": t.id, "pending": pending})
+                        "evidence": c.evidence_ref, "ticket": t.id, "pending": pending,
+                        "check": c.check, "checked_by": c.checked_by})
         else:
             self._emit(t.id, EventKind.doc_updated,
                        {"criterion": c.id, "verdict": c.verdict, "pending": pending, "by": actor.id})
         self._auto_advance(self.ticket(t.id))
+        if evidence_ref is not None:  # §24 rule 3: re-pair a closed reviewer when new evidence lands
+            self.on_new_evidence(self.ticket(t.id))
         return c
 
     def _auto_advance(self, t: Ticket) -> None:
@@ -485,6 +691,8 @@ class Board:
             self.store.put("ticket", t)
             self._emit(t.id, EventKind.status_changed, {"from": frm, "to": "in_review", "by": "board",
                                                         "note": "auto: evidence complete"})
+            # §24.1 release rule + §24 rule 3 pairing run in _after_status (in_review branch).
+            self._after_status(t)
         if t.status == TicketStatus.in_review and all(c.verdict == Verdict.passed for c in crits):
             if t.kind == TicketKind.epic and not any(c.checked_by == "qa" for c in crits):
                 return
@@ -707,13 +915,81 @@ class Board:
         t = self.ticket(ticket_id)
         if self.open_gates(ticket_id, gate):
             return self.open_gates(ticket_id, gate)[0]
-        return self._emit(t.id, EventKind.gate_opened, {"gate": gate, "by": by, "note": note})
+        ev = self._emit(t.id, EventKind.gate_opened, {"gate": gate, "by": by, "note": note})
+        # §24 rule 3: the acceptance gate opening pairs qa.<epic> once (the spawn is deferred to
+        # run_pending_pairings so no request thread blocks on the pool).
+        if gate == Gate.acceptance and t.kind == TicketKind.epic:
+            self._enqueue_pairing(f"qa.{t.id}", Role.qa.value, t.id)
+        return ev
+
+    def _first_cycle(self, edges: dict[str, list[str]]) -> list[str] | None:
+        """First directed cycle in `edges` as a node path (…-> back to the repeat), or None."""
+        WHITE, GRAY, BLACK = 0, 1, 2
+        color: dict[str, int] = {}
+        stack: list[str] = []
+
+        def dfs(u: str) -> list[str] | None:
+            color[u] = GRAY
+            stack.append(u)
+            for v in edges.get(u, []):
+                if color.get(v, WHITE) == GRAY:
+                    return stack[stack.index(v):] + [v]
+                if color.get(v, WHITE) == WHITE:
+                    r = dfs(v)
+                    if r:
+                        return r
+            stack.pop()
+            color[u] = BLACK
+            return None
+
+        for n in list(edges):
+            if color.get(n, WHITE) == WHITE:
+                r = dfs(n)
+                if r:
+                    return r
+        return None
+
+    def _design_signoff_lint(self, epic_id: str) -> str | None:
+        """Design §24 rule 2 (v22): the one plain sentence that refuses a design_signoff answer, or
+        None when the epic is clean. Offenders: (a) a non-review, non-knowledge story criterion
+        checked by owner (no seat path — qa/reviewer are auto-paired, owner is not a per-story
+        seat); (b) a `blocks` cycle among the epic's tickets; (c) a non-review story blocked by the
+        review story (the review pass runs after delivery, never before)."""
+        stories = [k for k in self._descendants(epic_id) if k.kind == TicketKind.story]
+        by_id = {s.id: s for s in stories}
+        for s in stories:
+            if s.work_type in (WorkType.review, WorkType.knowledge):
+                continue
+            for c in self.criteria(s.id):
+                if c.checked_by == CheckedBy.owner.value:
+                    return (f"criterion {c.id} on story {s.id} is checked by owner, which has no seat "
+                            f"path before the story is done — the board derives qa/reviewer; drop the "
+                            f"owner override (a per-story human check is not a seat)")
+        edges: dict[str, list[str]] = {}
+        for lk in self.store.query("link", {"relation": Relation.blocks}):
+            if self._epic_id_of(lk.from_id) == epic_id and self._epic_id_of(lk.to_id) == epic_id:
+                edges.setdefault(lk.from_id, []).append(lk.to_id)
+        cyc = self._first_cycle(edges)
+        if cyc:
+            return f"a blocks chain has a cycle ({' -> '.join(cyc)}) — break it before sign-off"
+        for lk in self.store.query("link", {"relation": Relation.blocks}):
+            frm, to = by_id.get(lk.from_id), by_id.get(lk.to_id)
+            if frm is not None and to is not None and frm.work_type == WorkType.review \
+                    and to.work_type != WorkType.review:
+                return (f"non-review story {to.id} is blocked by the review story {frm.id} — the "
+                        f"review pass runs after delivery, not before; remove that blocks link")
+        return None
 
     def gate_answer(self, actor: Participant, ticket_id: str, gate: Gate, answer: str) -> Event:
         if actor.role not in HUMAN_GATE_ANSWERERS:
             raise BoardError("scope", f"gate {gate} is answered by a human owner, not {actor.role}")
         if not self.open_gates(ticket_id, gate):
             raise BoardError("transition", f"no open {gate} gate on {ticket_id}")
+        if gate == Gate.design_signoff:
+            offence = self._design_signoff_lint(self.epic_of(self.ticket(ticket_id)).id)
+            if offence:
+                raise BoardError("transition", offence,
+                                 "fix the named criterion or link, then answer the gate again")
         self.message_send(actor, ticket_id=ticket_id, to=None, kind=MessageKind.answer, text=f"[{gate}] {answer}")
         ev = self._emit(ticket_id, EventKind.gate_answered, {"gate": gate, "answer": answer, "by": actor.id})
         if gate == Gate.design_signoff:
@@ -1145,8 +1421,12 @@ class Board:
                     and scoped and Reason.owner_listener not in out:
                 out.append(Reason.owner_listener)
             return out
-        if ev.kind in (EventKind.shell_dead, EventKind.shell_stalled):
+        if ev.kind == EventKind.shell_stalled:  # a stall always needs the human
             if self._owner_scope(p, ev.subject_id):
+                out.append(Reason.owner_listener)
+            return out
+        if ev.kind == EventKind.shell_dead:  # v21: a CLEAN self-close after done/reviewed is not paged
+            if not d.get("clean") and self._owner_scope(p, ev.subject_id):
                 out.append(Reason.owner_listener)
             return out
         if ev.kind == EventKind.status_changed:
@@ -1155,8 +1435,14 @@ class Board:
                 out.append(Reason.owner_listener)
             return out
         if ev.kind == EventKind.criterion_checked:
+            # v21: the owner is paged only for a check that NEEDS the human — a fail, a `look`
+            # criterion, or an owner-checked one. An agent reviewer passing a command check is not.
             if d.get("by") != p.id and self._owner_scope(p, ev.subject_id):
-                out.append(Reason.owner_listener)
+                needs_human = (d.get("verdict") == Verdict.failed
+                               or d.get("check") == Check.look
+                               or d.get("checked_by") == CheckedBy.owner.value)
+                if needs_human:
+                    out.append(Reason.owner_listener)
         return out
 
     def _architect_listener_reasons(self, ev: Event, p: Participant) -> list[Reason]:
@@ -1182,7 +1468,9 @@ class Board:
             return [Reason.architect_listener]
         if k in (EventKind.gate_opened, EventKind.gate_answered):
             return [Reason.architect_listener]
-        if k in (EventKind.shell_dead, EventKind.shell_stalled):
+        if k == EventKind.shell_stalled:  # a stall is always crucial
+            return [Reason.architect_listener]
+        if k == EventKind.shell_dead and not d.get("clean"):  # v21: a CLEAN self-close is not a page
             return [Reason.architect_listener]
         if k == EventKind.criterion_checked and d.get("verdict") == Verdict.failed:
             return [Reason.architect_listener]

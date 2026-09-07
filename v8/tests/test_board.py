@@ -229,27 +229,19 @@ def test_verdict_by_wrong_checker_role_refused(board, rig):
     assert "checked_by qa" in ei.value.message
 
 
-def test_epic_done_requires_qa_checked_criterion(board, rig):
+def test_epic_criteria_derive_to_qa_ignoring_checked_by(board, rig):
+    """§24.1: every epic criterion is checked by qa — a passed checked_by=owner by the architect is
+    ignored (only the owner may override, and only with an override_reason)."""
     epic = make_epic(board, rig)
-    d = design_doc(board, rig, epic.id)
-    # criterion checked_by owner (not qa)
-    board.ticket_update(rig["architect"], epic.id, design_ref=d.id)
-    board.criterion_create(rig["architect"], ticket_id=epic.id, text="x", check=Check.command,
-                            checked_by="owner")
-    board.ticket_update(rig["architect"], epic.id, status=TicketStatus.designed)
-    advance_to_signed_off(board, rig, epic)
-    board.ticket_update(rig["coordinator"], epic.id, status=TicketStatus.ready)
-    board.ticket_update(rig["coordinator"], epic.id, assignee=rig["engineer"].id)
-    board.ticket_update(rig["engineer"], epic.id, status=TicketStatus.in_progress)
-    crit = board.criteria(epic.id)[0]
-    ev = board.doc_create(rig["engineer"], doc_type=DocType.report, title="evidence", body_md="ok",
-                           scope=epic.id)
-    board.criterion_update(rig["engineer"], crit.id, evidence_ref=ev.id)
-    board.criterion_update(rig["owner"], crit.id, verdict=Verdict.passed)
-    board.ticket_update(rig["engineer"], epic.id, status=TicketStatus.in_review)
-    with pytest.raises(BoardError) as ei:
-        board.ticket_update(rig["owner"], epic.id, status=TicketStatus.done)
-    assert "checked_by=qa" in ei.value.message
+    crit = board.criterion_create(rig["architect"], ticket_id=epic.id, text="x", check=Check.command,
+                                  checked_by="owner")
+    assert crit.checked_by == "qa"  # architect's checked_by=owner ignored; board derived qa
+    # the owner CAN override with a reason (recorded as a criterion_checker_overridden event)
+    crit2 = board.criterion_create(rig["owner"], ticket_id=epic.id, text="y", check=Check.command,
+                                   checked_by="owner", override_reason="epic-level human sign-off")
+    assert crit2.checked_by == "owner"
+    ovr = board.store.query("event", {"subject_id": epic.id, "kind": EventKind.criterion_checker_overridden})
+    assert ovr and ovr[-1].data["to"] == "owner" and ovr[-1].data["from"] == "qa"
 
 
 # ------------------------------------------------------------------ readiness
@@ -287,8 +279,12 @@ def test_story_auto_promotes_to_ready_when_blocker_done(board, rig):
                            scope=epic.id)
     board.criterion_update(rig["engineer"], kcrit.id, evidence_ref=ev.id)
     board.ticket_update(rig["engineer"], knowledge.id, status=TicketStatus.in_review)
-    board.criterion_update(rig["qa"], kcrit.id, verdict=Verdict.passed)
-    board.ticket_update(rig["qa"], knowledge.id, status=TicketStatus.done)
+    # a knowledge ticket's criterion is checked by the owner (derivation); the successor is already
+    # released at the blocker's evidence-complete in_review, before any verdict (§24.1 release rule)
+    story = board.ticket(story.id)
+    assert story.status == TicketStatus.ready
+    board.criterion_update(rig["owner"], kcrit.id, verdict=Verdict.passed)
+    board.ticket_update(rig["owner"], knowledge.id, status=TicketStatus.done)
 
     story = board.ticket(story.id)
     assert story.status == TicketStatus.ready
@@ -515,19 +511,15 @@ def test_session_upsert_dead_emits_shell_dead_once(board, rig):
 
 # ------------------------------------------------------------------ review-type criteria checker
 
-def test_review_story_criterion_refuses_checked_by_reviewer(board, rig):
+def test_review_story_criterion_derives_qa_ignoring_reviewer(board, rig):
+    """§24.1: a review story's criteria are checked by qa; a passed checked_by=reviewer is ignored
+    (the derivation, not a refusal, is the mechanism now)."""
     epic = make_epic(board, rig)
     review_story = board.ticket_create(rig["architect"], kind=TicketKind.story, work_type=WorkType.review,
                                         title="review the slice", parent_id=epic.id)
-    with pytest.raises(BoardError) as ei:
-        board.criterion_create(rig["architect"], ticket_id=review_story.id, text="reviewed",
-                                check=Check.verdict, checked_by="reviewer")
-    assert ei.value.code == "schema"
-    assert "qa" in ei.value.hint
-
     crit = board.criterion_create(rig["architect"], ticket_id=review_story.id, text="reviewed",
-                                   check=Check.verdict, checked_by="qa")
-    assert crit.checked_by == "qa"
+                                   check=Check.verdict, checked_by="reviewer")
+    assert crit.checked_by == "qa"  # reviewer ignored, board derived qa for a review story
 
 
 # ------------------------------------------------------------------ implicit blockers on review stories
@@ -584,11 +576,13 @@ def test_implicit_blocker_review_story_waits_on_sibling_then_auto_promotes(board
 
 def test_my_tickets_and_context_for_checker_roles(board, rig):
     epic = make_epic(board, rig)
-    story = make_story(board, rig, epic)
+    # a review_required story → the board derives reviewer as its checker (§24.1)
+    story = board.ticket_create(rig["architect"], kind=TicketKind.story, work_type=WorkType.feature,
+                                title="CLI skeleton", parent_id=epic.id, tags=["review_required"])
     d = design_doc(board, rig, epic.id)
     board.ticket_update(rig["architect"], story.id, design_ref=d.id)
-    crit = board.criterion_create(rig["architect"], ticket_id=story.id, text="reviewed", check=Check.verdict,
-                                  checked_by="reviewer")
+    crit = board.criterion_create(rig["architect"], ticket_id=story.id, text="reviewed", check=Check.verdict)
+    assert crit.checked_by == "reviewer"
     board.ticket_update(rig["architect"], story.id, status=TicketStatus.designed)
     board.ticket_update(rig["owner"], story.id, status=TicketStatus.signed_off)
     board.ticket_update(rig["coordinator"], story.id, status=TicketStatus.ready)
@@ -665,32 +659,42 @@ def test_gate_answered_reaches_the_gate_opener(board, rig):
 
 
 def test_auto_advance_on_evidence_and_verdicts(board, rig):
-    """Evidence on every criterion walks ready/in_progress -> in_review by the board; the last
-    passing verdict walks in_review -> done and releases dependents exactly once."""
+    """Evidence on every criterion walks ready/in_progress -> in_review by the board; a review_required
+    story's reviewer verdict then walks in_review -> done. §24.1 release rule: the review story is
+    released at the blocker's evidence-complete in_review (before the verdict), exactly once."""
     from edp8.schemas import Check, DocType, EventKind, TicketKind, TicketStatus, WorkType
 
     owner, arch, eng, rev = rig["owner"], rig["architect"], rig["engineer"], rig["reviewer"]
     epic = board.ticket_create(owner, kind=TicketKind.epic, work_type=WorkType.feature, title="auto adv epic")
-    s1 = board.ticket_create(arch, kind=TicketKind.story, work_type=WorkType.feature, title="s1", parent_id=epic.id)
+    s1 = board.ticket_create(arch, kind=TicketKind.story, work_type=WorkType.feature, title="s1",
+                             parent_id=epic.id, tags=["review_required"])  # → checker reviewer
     r1 = board.ticket_create(arch, kind=TicketKind.story, work_type=WorkType.review, title="rev", parent_id=epic.id)
-    c1 = board.criterion_create(arch, ticket_id=s1.id, text="x", check=Check.command, checked_by="reviewer")
-    board.criterion_create(arch, ticket_id=r1.id, text="y", check=Check.verdict, checked_by="qa")
+    c1 = board.criterion_create(arch, ticket_id=s1.id, text="x", check=Check.command)
+    assert c1.checked_by == "reviewer"
+    board.criterion_create(arch, ticket_id=r1.id, text="y", check=Check.verdict)  # review story → qa
     board.ticket_update(arch, s1.id, assignee=eng.id)
-    # walk sign-off legally
+    # walk sign-off legally (r1 waits on s1 implicitly; sign both off)
     d = board.doc_create(arch, doc_type=DocType.design, title="d", body_md="b", scope=epic.id)
     board.ticket_update(arch, s1.id, design_ref=d.id)
     board.ticket_update(arch, s1.id, status=TicketStatus.designed)
     board.ticket_update(owner, s1.id, status=TicketStatus.signed_off)  # auto-promotes to ready
     assert board.ticket(s1.id).status == TicketStatus.ready
-    rep = board.doc_create(rig["engineer"], doc_type=DocType.report, title="ev", body_md="ran", scope=epic.id)
+    rd = board.doc_create(arch, doc_type=DocType.design, title="rd", body_md="b", scope=epic.id)
+    board.ticket_update(arch, r1.id, design_ref=rd.id)
+    board.ticket_update(arch, r1.id, status=TicketStatus.designed)
+    board.ticket_update(owner, r1.id, status=TicketStatus.signed_off)  # stays signed_off (blocked by s1)
+    assert board.ticket(r1.id).status == TicketStatus.signed_off
+    rep = board.doc_create(eng, doc_type=DocType.report, title="ev", body_md="ran", scope=epic.id)
     board.criterion_update(eng, c1.id, evidence_ref=rep.id)
     assert board.ticket(s1.id).status == TicketStatus.in_review, "evidence complete must auto-advance to in_review"
+    # §24.1: the review story is released NOW (evidence-complete in_review), before any verdict
+    assert board.ticket(r1.id).status == TicketStatus.ready, "successor released at evidence-complete in_review"
     board.criterion_update(rev, c1.id, verdict="pass")
     assert board.ticket(s1.id).status == TicketStatus.done, "all verdicts passed must auto-advance to done"
-    # dependent review story released exactly once
+    # the dependent review story was promoted exactly once
     evs = [e for _s, e in board.store.events_since(0)
            if e.kind == EventKind.status_changed and e.subject_id == r1.id and e.data.get("to") == "ready"]
-    assert len(evs) <= 1, f"dependent promoted more than once: {len(evs)}"
+    assert len(evs) == 1, f"dependent promoted {len(evs)} times, expected once"
 
 
 def test_architect_writes_criteria_on_its_assigned_epic(board, rig):

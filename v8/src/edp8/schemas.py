@@ -151,7 +151,9 @@ class EventKind(StrEnum):
     shell_dead = "shell_dead"
     shell_stalled = "shell_stalled"
     ticket_created = "ticket_created"
-    criterion_checked = "criterion_checked"  # a verdict landed: {criterion, verdict, by, by_type, evidence, ticket}
+    criterion_checked = "criterion_checked"  # a verdict landed: {criterion, verdict, by, by_type, evidence, ticket, check, checked_by}
+    criterion_checker_overridden = "criterion_checker_overridden"  # owner overrode the derived checker: {criterion, from, to, reason, by}
+    service_restarted = "service_restarted"  # launcher restarted a shared service: {service, reason, by, git_rev} (design §22)
 
 
 class Reason(StrEnum):
@@ -175,6 +177,7 @@ class Gate(StrEnum):
     adversarial = "adversarial"
     budget = "budget"
     acceptance = "acceptance"
+    scope = "scope"  # the owner raises a story/criteria cap by answering this (design §24.1)
 
 
 class ArtifactForm(StrEnum):
@@ -382,7 +385,11 @@ DESCRIBE: dict[str, str] = {
     "blockers, gates, thread tail), query(kind, status, assignee, epic_id, created_by, tag, q text), "
     "update(status, assignee, design_ref, description, tags). Has criteria, a thread, linked docs and artifacts.",
     "criterion": "A checkable definition of done on a ticket, written by the parent owner before work; "
-    "the doer never edits it; the checker records verdict + evidence_ref. CRUD: create, read, update.",
+    "the doer never edits it; the checker records verdict + evidence_ref. The board DERIVES the checker "
+    "from the ticket (design §24.1): qa for every story/task/epic criterion, reviewer only when a story "
+    "is tagged review_required, owner for a knowledge ticket — criterion_create's checked_by argument is "
+    "accepted for one release but ignored unless the owner also passes override_reason (recorded as a "
+    "criterion_checker_overridden event). CRUD: create, read, update.",
     "doc": "A versioned markdown knowledge unit: design (architect), strategy_hl/strategy_ll/domain (sme), "
     "report (engineer/reviewer/qa), note. Every update is a new version. CRUD: create, read, query, update.",
     "link": "A typed edge: ticket/doc -> doc/artifact/ticket with a relation. CRUD: create, query, delete.",

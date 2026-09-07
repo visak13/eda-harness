@@ -120,9 +120,11 @@ class BoardClient:
                                    "description": description, "tags": tags})
 
     # ------------------------------------------------------------------ criteria
-    def criterion_create(self, ticket_id: str, text: str, check: str, checked_by: str) -> dict[str, Any]:
+    def criterion_create(self, ticket_id: str, text: str, check: str, checked_by: str | None = None,
+                         override_reason: str | None = None) -> dict[str, Any]:
         return self._request("POST", "/v1/criteria",
-                             json={"ticket_id": ticket_id, "text": text, "check": check, "checked_by": checked_by})
+                             json={"ticket_id": ticket_id, "text": text, "check": check,
+                                   "checked_by": checked_by, "override_reason": override_reason})
 
     def criterion_query(self, ticket_id: str) -> dict[str, Any]:
         return self._request("GET", "/v1/criteria", params={"ticket_id": ticket_id})
