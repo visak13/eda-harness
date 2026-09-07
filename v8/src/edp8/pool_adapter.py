@@ -60,8 +60,11 @@ def _get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
 
 
 def spawn(role: str, participant_id: str, *, parent_session: str | None = None, model: str | None = None,
-          mode: str | None = None) -> dict[str, Any]:
-    """Spawn a shell for `participant_id` running `/<role>`. Returns {session_id}."""
+          mode: str | None = None, env: dict[str, str] | None = None) -> dict[str, Any]:
+    """Spawn a shell for `participant_id` running `/<role>`. Returns {session_id}.
+
+    `env` is extra environment for the shell (the pool records it as spawn_settings and
+    injects it); S20 passes the per-seat `EDP8_TOKEN` here so the shell authenticates."""
     body: dict[str, Any] = {"role": role, "handle": participant_id}
     if parent_session:
         body["parent_session"] = parent_session
@@ -69,6 +72,8 @@ def spawn(role: str, participant_id: str, *, parent_session: str | None = None, 
         body["model"] = model
     if mode:
         body["mode"] = mode
+    if env:
+        body["env"] = env
     out = _post("/v1/spawn", body)
     if out["ok"]:
         out["hint"] = f"shell for {participant_id} is starting; it boots with whoami → subscribe → context"
@@ -78,6 +83,38 @@ def spawn(role: str, participant_id: str, *, parent_session: str | None = None, 
 def resume(participant_id: str) -> dict[str, Any]:
     """Fork-resume the parked shell of a participant (same session, same context)."""
     return _post(f"/v1/resume/{participant_id}")
+
+
+def resume_closed(participant_id: str) -> dict[str, Any]:
+    """Fork-resume a CLOSED (done) shell from its stored claude_session_id with the
+    role/cwd/env/settings recorded at spawn (spawn_settings). The pool re-takes the handle
+    lock and returns the new session. Design §18.3 (owner m-6ffe756cf7)."""
+    return _post(f"/v1/resume_closed/{participant_id}")
+
+
+def close(participant_id: str, reason: str) -> dict[str, Any]:
+    """Gracefully close a named participant's active shell with `reason` (distinct from
+    reap, which force-kills). Idempotent: no active session == already closed."""
+    got = sessions()
+    if not got["ok"]:
+        return got
+    rows = got["value"] if isinstance(got["value"], list) else got["value"].get("sessions", [])
+    sid = next((s.get("session_id") for s in rows
+                if s.get("handle") == participant_id and s.get("state") in ("active", "alive", "starting", "parked")),
+               None)
+    if not sid:
+        return _envelope(True, value={"closed": True, "session_id": None, "reason": "already closed"},
+                         hint="no active session for that participant; nothing to do")
+    out = _post(f"/v1/release/{sid}", {"reason": reason})
+    if out["ok"]:
+        out["value"] = {"closed": True, "session_id": sid, "reason": reason}
+    return out
+
+
+def capabilities() -> dict[str, Any]:
+    """What the pool supports: {resume_parked, resume_closed, park, spawn} booleans as the
+    pool reports them (GET /v1/pool/capabilities). Never hard-coded by the board."""
+    return _get("/v1/pool/capabilities")
 
 
 def park(participant_id: str) -> dict[str, Any]:
@@ -130,43 +167,86 @@ def capacity() -> dict[str, Any]:
 
 _STATE_MAP = {"alive": SessionState.alive, "dead": SessionState.dead, "parked": SessionState.parked,
               "stalled": SessionState.stalled}
+# pool row states in which a shell is still LIVE and worth a liveness probe (design §18.3).
+# done/released/reaped are TERMINAL and carry their own dead_reason — never re-probed.
+_LIVE_POOL_STATES = ("active", "starting", "parked", "resuming")
+# a live pool row we could not freshly probe falls back to the pool's own row state, mapped —
+# never to dead (that was the false-death bug). active/starting → alive, parked → parked.
+_POOL_STATE_MAP = {"active": SessionState.alive, "starting": SessionState.alive,
+                   "parked": SessionState.parked, "resuming": SessionState.alive,
+                   "stalled": SessionState.stalled}
+
+
+def _liveness_via(client: httpx.Client, handle: str) -> dict[str, Any]:
+    """One liveness GET on a SHARED keep-alive client (no fresh socket per row). Returns
+    {answered: bool, state: str|None, reason: str}. A transport error / 4xx / missing or
+    'unknown' state is a NON-ANSWER (answered may be True but state None)."""
+    try:
+        r = client.get(f"{_env('EDP_POOL_URL', POOL_URL)}/v1/liveness/{handle}")
+    except httpx.HTTPError as e:
+        return {"answered": False, "state": None, "reason": str(e)}
+    if r.status_code >= 400:
+        return {"answered": False, "state": None, "reason": r.text}
+    data = r.json() if r.content else {}
+    st = data.get("state")
+    return {"answered": st not in (None, "unknown"), "state": st,
+            "reason": data.get("dead_reason") or data.get("reason") or ""}
 
 
 def sync_sessions(board_url: str | None = None, admin_token: str | None = None) -> dict[str, Any]:
-    """Mirror pool sessions into the board's session objects (admin)."""
+    """Mirror pool sessions into the board's session objects (admin). Design §18.3 / criterion
+    c-1a82925acb — no false deaths, no port flood:
+
+    (a) liveness is polled ONLY for rows the pool reports live (active/parked/resuming/starting);
+        terminal rows (done/released/reaped) are mirrored dead WITH their own dead_reason, never
+        re-probed;
+    (b) one keep-alive httpx.Client carries the whole sweep — the single session list, every
+        liveness GET and every board PUT — so nothing opens a fresh socket per row;
+    (c) the pool's 'active' maps to alive; a failed/timed-out/'unknown' liveness answer for a
+        live row KEEPS the board's previous state and stamps presence_stale_since, emitting no
+        event (silence is never rendered as Closed);
+    (d) a shell_dead/crashed event is emitted by the board only on a positive 'dead' answer
+        carrying the pool's dead_reason (or the pool's own crash sweep, elsewhere)."""
     board_url = board_url or _env("EDP8_BOARD_URL", "http://127.0.0.1:9400")
     admin_token = admin_token or _env("EDP8_ADMIN_TOKEN", "dev")
-    got = sessions()
+    got = sessions()  # exactly ONE session list for the whole sweep — never re-listed per row
     if not got["ok"]:
         return got
     rows = got["value"] if isinstance(got["value"], list) else got["value"].get("sessions", [])
     n = 0
+    stale = 0
     failed: list[str] = []
-    for s in rows:
-        handle = s.get("handle")
-        if not handle:
-            continue
-        live = liveness(handle)
-        # unknown/legacy pool states (done, released, …) map to DEAD: "your answer is saved
-        # for the next shell" is the safe claim; "this wakes it" must never be a lie
-        state = _STATE_MAP.get((live.get("value") or {}).get("state", s.get("state", "dead")), SessionState.dead)
-        reason = s.get("dead_reason") or ""
-        if state == SessionState.dead and not reason:
-            # the list snapshot can predate the close: a shell that released itself between the
-            # list and the liveness call would otherwise be mirrored as "no reason recorded"
-            fresh = sessions()
-            if fresh["ok"]:
-                frows = fresh["value"] if isinstance(fresh["value"], list) else fresh["value"].get("sessions", [])
-                reason = next((r.get("dead_reason") or "" for r in frows
-                               if r.get("session_id") == s.get("session_id")), "")
-        try:
+    with httpx.Client(timeout=10.0) as client:
+        for s in rows:
+            handle = s.get("handle")
+            if not handle:
+                continue
+            sid = s.get("session_id")
+            pool_state = s.get("state")
             ticket_id = handle.split(".", 1)[1] if "." in handle else None
-            httpx.put(f"{board_url}/v1/sessions/{s.get('session_id')}",
-                      json={"participant_id": handle, "ticket_id": ticket_id, "pool_id": POOL_ID,
-                            "state": state.value, "reason": reason},
-                      headers={"X-Admin": admin_token}, timeout=10.0)
-            n += 1
-        except httpx.HTTPError as e:
-            failed.append(f"{handle}: {e}")
-    return _envelope(True, value={"mirrored": n, "failed": failed},
+            body: dict[str, Any] = {"participant_id": handle, "ticket_id": ticket_id, "pool_id": POOL_ID}
+            if pool_state in _LIVE_POOL_STATES:
+                ans = _liveness_via(client, handle)
+                if not ans["answered"]:
+                    # (c) non-answer: keep the board's previous state, stamp staleness, no event.
+                    body["state"] = _POOL_STATE_MAP.get(pool_state, SessionState.alive).value
+                    body["presence_stale"] = True
+                    stale += 1
+                elif ans["state"] == "dead":
+                    body["state"] = SessionState.dead.value
+                    body["reason"] = ans["reason"] or s.get("dead_reason") or ""
+                else:
+                    body["state"] = _STATE_MAP.get(ans["state"], SessionState.alive).value
+            else:
+                # (a) terminal pool row: mirror dead with its recorded reason (a positive close),
+                # not a probe. session_upsert only emits on a state TRANSITION, so a long-dead
+                # row re-mirrored every sweep raises no new event.
+                body["state"] = SessionState.dead.value
+                body["reason"] = s.get("dead_reason") or "closed (no reason recorded)"
+            try:
+                client.put(f"{board_url}/v1/sessions/{sid}", json=body, headers={"X-Admin": admin_token})
+                n += 1
+            except httpx.HTTPError as e:
+                failed.append(f"{handle}: {e}")
+    return _envelope(True, value={"mirrored": n, "stale": stale, "failed": failed},
                      hint="" if not failed else "some sessions could not be mirrored; see failed")

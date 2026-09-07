@@ -11,6 +11,8 @@ import asyncio
 import json
 import logging
 import os
+import secrets
+import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -19,6 +21,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
+from . import pool_adapter
 from .board import Board, BoardError
 from .schemas import (
     DESCRIBE,
@@ -134,6 +137,12 @@ class StatusIn(BaseModel):
     ticket_id: str | None = None
 
 
+class ResolveIn(BaseModel):
+    ticket_id: str
+    to: str | None = None
+    kind: MessageKind = MessageKind.question
+
+
 class ArtifactIn(BaseModel):
     form: ArtifactForm
     uri: str
@@ -155,6 +164,24 @@ class SessionIn(BaseModel):
     pool_id: str
     state: SessionState
     resume_token: str = ""
+    reason: str = ""
+    presence_stale: bool = False  # sweep had no fresh answer for a live row: keep prev state, no event
+
+
+class SessionSpawnIn(BaseModel):
+    """Body for POST /v1/sessions/spawn (S20 pool control plane)."""
+    role: Role
+    participant_id: str
+    ticket_id: str | None = None  # for architect authz (target seat's epic); optional for owner
+    parent_session: str | None = None
+    model: str | None = None
+    mode: str | None = None
+
+
+class SessionActionIn(BaseModel):
+    """Body for POST /v1/sessions/{resume,reap,close}."""
+    participant_id: str
+    ticket_id: str | None = None
     reason: str = ""
 
 
@@ -187,24 +214,39 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     app = FastAPI(title="edp8 board", version="0.8.0")
     app.state.board = board
 
-    def _tokens() -> dict[str, str]:
-        """handle -> secret for HUMAN participants (tokens.json at the agent home, or
-        EDP8_TOKENS). Absent file = trusted single-machine mode (header-only identity)."""
-        f = Path(os.environ.get("EDP8_TOKENS", str(Path(os.environ.get("EDP8_HOME", ".")) / "tokens.json")))
+    def _tokens_file() -> Path:
+        return Path(os.environ.get("EDP8_TOKENS", str(Path(os.environ.get("EDP8_HOME", ".")) / "tokens.json")))
+
+    def _tokens() -> tuple[dict[str, str], dict[str, str]]:
+        """(humans, agents) handle -> secret, read from tokens.json (top-level keys are
+        HUMANS; the `agents` sub-map is AGENT seat secrets minted at spawn by S20). Absent
+        file = trusted single-machine mode (({}, {}) — header-only identity for everyone)."""
+        f = _tokens_file()
         try:
             mtime = f.stat().st_mtime
         except OSError:
-            return {}
+            return {}, {}
         cache = getattr(_tokens, "_cache", None)
         if cache and cache[0] == (str(f), mtime):
             return cache[1]
         try:
-            data = json.loads(f.read_text(encoding="utf-8"))
-            data = {str(k).lstrip("@"): str(v) for k, v in data.items()}
-        except (OSError, ValueError):
-            data = {}
-        _tokens._cache = ((str(f), mtime), data)  # type: ignore[attr-defined]
-        return data
+            raw = json.loads(f.read_text(encoding="utf-8"))
+            agents = {str(k).lstrip("@"): str(v) for k, v in (raw.get("agents") or {}).items()}
+            humans = {str(k).lstrip("@"): str(v) for k, v in raw.items() if k != "agents"}
+        except (OSError, ValueError, AttributeError):
+            humans, agents = {}, {}
+        _tokens._cache = ((str(f), mtime), (humans, agents))  # type: ignore[attr-defined]
+        return humans, agents
+
+    def _verify_token(p: Participant, token: str | None) -> str | None:
+        """Return an error message if p's token is required and wrong, else None. An agent is
+        verified exactly as a human (§20 finding 1): its secret lives in tokens.json's `agents`
+        map. A participant with no configured secret is header-only (trusted mode)."""
+        humans, agents = _tokens()
+        secret = (humans if p.type == "human" else agents).get(p.handle.lstrip("@"))
+        if secret is not None and token != secret:
+            return f"X-Token required for {p.type} participant {p.handle!r}"
+        return None
 
     def actor(x_participant: str | None = Header(default=None),
               x_token: str | None = Header(default=None)) -> Participant:
@@ -214,9 +256,9 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
             p = board.participant(x_participant)
         except BoardError as e:
             raise HTTPException(401, e.message)
-        secret = _tokens().get(p.handle.lstrip("@"))
-        if p.type == "human" and secret is not None and x_token != secret:
-            raise HTTPException(401, f"X-Token required for human participant {p.handle!r}")
+        err = _verify_token(p, x_token)
+        if err:
+            raise HTTPException(401, err)
         return p
 
     def human_verify(handle: str, token: str | None) -> Participant:
@@ -225,14 +267,91 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
             p = board.participant(handle)
         except BoardError as e:
             raise HTTPException(401, e.message)
-        secret = _tokens().get(p.handle.lstrip("@"))
-        if p.type == "human" and secret is not None and token != secret:
-            raise HTTPException(401, f"token required for {p.handle!r}")
+        err = _verify_token(p, token)
+        if err:
+            raise HTTPException(401, err.replace("X-Token required for", "token required for"))
         return p
+
+    def _mint_agent_token(handle: str) -> str | None:
+        """Mint and persist a per-seat secret into tokens.json's `agents` map for `handle`,
+        returning it. Trusted mode (no tokens.json) → None: nothing to inject, the shell is
+        header-only. Rewrites the file atomically-ish; the mtime bump invalidates _tokens cache."""
+        f = _tokens_file()
+        if not f.exists():
+            return None
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                data = {}
+        except (OSError, ValueError):
+            data = {}
+        agents = data.get("agents")
+        if not isinstance(agents, dict):
+            agents = {}
+        secret = secrets.token_urlsafe(24)
+        agents[handle.lstrip("@")] = secret
+        data["agents"] = agents
+        tmp = f.with_suffix(f.suffix + ".tmp")
+        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        os.replace(tmp, f)
+        return secret
 
     def admin(x_admin: str | None = Header(default=None)) -> None:
         if x_admin != admin_token:
             raise HTTPException(403, "X-Admin token invalid")
+
+    # pool control plane (S20) ---------------------------------------------------
+    _idem: dict[tuple[str, str], tuple[float, dict]] = {}
+    _IDEM_TTL = 600.0  # an Idempotency-Key is honoured for 10 minutes (design §15/§20-1)
+
+    def _idem_get(a: Participant, key: str | None) -> dict | None:
+        if not key:
+            return None
+        now = time.time()
+        for k in [k for k, (exp, _) in _idem.items() if exp < now]:
+            _idem.pop(k, None)
+        hit = _idem.get((a.id, key))
+        return hit[1] if hit else None
+
+    def _idem_put(a: Participant, key: str | None, result: dict) -> None:
+        if key:
+            _idem[(a.id, key)] = (time.time() + _IDEM_TTL, result)
+
+    def _target_epic(participant_id: str | None, ticket_id: str | None) -> str | None:
+        if ticket_id:
+            return board._epic_id_of(ticket_id)
+        if participant_id and "." in participant_id:
+            return board._epic_id_of(participant_id.split(".", 1)[1])
+        return None
+
+    def _authorize_pool_op(a: Participant, participant_id: str | None, ticket_id: str | None) -> None:
+        """Owner: any seat. Architect: only seats in its own epic. Everyone else: refused with a
+        §19 error naming the allowed roles (design §15/§20 finding 1)."""
+        allowed = ["owner", "architect (own epic only)"]
+        if a.role == Role.owner:
+            return
+        if a.role == Role.architect:
+            epic = _target_epic(participant_id, ticket_id)
+            if epic and epic in board.my_epics(a):
+                return
+            raise HTTPException(403, json.dumps({
+                "message": f"architect {a.handle!r} may only operate seats in its own epic"
+                           + (f" (target epic {epic})" if epic else "; target epic could not be resolved"
+                              " — pass ticket_id"),
+                "allowed": allowed}))
+        raise HTTPException(403, json.dumps({
+            "message": f"role {a.role.value!r} may not operate the pool control plane", "allowed": allowed}))
+
+    def _pool_result(out: dict):
+        """Pass a pool success through; map a pool failure to a {code,message,hint} envelope with
+        the right HTTP status and a next-step hint (design §20 finding 15)."""
+        if out.get("ok"):
+            return out
+        code = (out.get("error") or {}).get("code", "pool")
+        hint = out.get("hint") or ("start the pool (edp-pool) and retry" if code == "unavailable"
+                                   else "check the edp-pool logs; retry or pick a different verb")
+        out = {**out, "hint": hint}
+        return JSONResponse(status_code=503 if code == "unavailable" else 502, content=out)
 
     @app.exception_handler(BoardError)
     async def _board_error(_: Request, e: BoardError):
@@ -240,6 +359,16 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     @app.exception_handler(HTTPException)
     async def _http_error(_: Request, e: HTTPException):
+        # a 403 whose detail is our JSON {message, allowed} renders as a §19 forbidden envelope
+        if e.status_code == 403 and isinstance(e.detail, str) and e.detail.startswith("{"):
+            try:
+                d = json.loads(e.detail)
+                return JSONResponse(status_code=403, content={
+                    "ok": False, "error": {"code": "forbidden", "message": d.get("message", ""),
+                                           "allowed": d.get("allowed", [])},
+                    "hint": "sign as owner, or as the architect of this epic"})
+            except ValueError:
+                pass
         return JSONResponse(status_code=e.status_code,
                             content={"ok": False, "error": {"code": "http", "message": str(e.detail)}, "hint": ""})
 
@@ -441,6 +570,12 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         return ok(out, f"last_seq={rows[-1][0] if rows else (since_seq or 0)}; pass it as since_seq next time "
                        "to get only what is new")
 
+    @app.post("/v1/messages/resolve")
+    def message_resolve(b: ResolveIn, a: Participant = Depends(actor)):
+        r = board.resolve(a, ticket_id=b.ticket_id, to=b.to, kind=b.kind)
+        return ok(r, "wake preview only — nothing was sent; `wakes`/`plan` are the same list "
+                     "(each {recipient, reason, why}); an empty list means nobody is woken")
+
     @app.get("/v1/messages/{id_}")
     def message_get(id_: str, a: Participant = Depends(actor)):
         return ok(board.message_read(id_))
@@ -485,13 +620,15 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         prev = board.store.get("session", id_)
         s = board.session_upsert(id_=id_, participant_id=b.participant_id, ticket_id=b.ticket_id,
                                  pool_id=b.pool_id, state=b.state, resume_token=b.resume_token,
-                                 reason=b.reason)
+                                 reason=b.reason, presence_stale=b.presence_stale)
         # a death/stall TRANSITION is crucial: besides the shell_dead feed event, drop a durable
         # crashed notice in the owner's broker inbox (the recovery seat wakes even if its feed
         # stream happened to be down at that moment). Clean closes (finish/reap/clean exit)
         # carry their reason and are marked clean so nobody treats them as failures.
-        if (b.state in (SessionState.dead, SessionState.stalled)
-                and (prev is None or prev.state != b.state)):
+        # A presence-stale upsert is a MISSED PROBE, not a death: the state did not change and
+        # no crashed notice is sent (design §18.3 — silence is never rendered as Closed).
+        if (not b.presence_stale and s.state in (SessionState.dead, SessionState.stalled)
+                and (prev is None or prev.state != s.state)):
             clean = any(k in (b.reason or "").lower() for k in ("closed by self", "reaped", "clean exit"))
             who = board.recovery_seat(b.ticket_id, exclude={b.participant_id}) if b.ticket_id else None
             if who:  # THIS epic's human owner, else its live resident architect — never a shared handle
@@ -507,21 +644,107 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         return ok(_dump(board.store.query("session", {"participant_id": participant_id, "ticket_id": ticket_id,
                                                       "state": state})))
 
+    # pool control plane: spawn/resume/reap/close proxy edp-pool (S20) ------------
+    @app.post("/v1/sessions/spawn")
+    def session_spawn(b: SessionSpawnIn, a: Participant = Depends(actor),
+                      idempotency_key: str | None = Header(default=None)):
+        _authorize_pool_op(a, b.participant_id, b.ticket_id)
+        cached = _idem_get(a, idempotency_key)
+        if cached is not None:
+            return {**cached, "hint": "idempotent replay: same session, no second shell"}
+        token = _mint_agent_token(b.participant_id)
+        env = {"EDP8_TOKEN": token} if token else None
+        out = pool_adapter.spawn(b.role.value, b.participant_id, parent_session=b.parent_session,
+                                 model=b.model, mode=b.mode, env=env)
+        if out.get("ok"):
+            _idem_put(a, idempotency_key, out)
+            return out
+        return _pool_result(out)
+
+    @app.post("/v1/sessions/resume")
+    def session_resume(b: SessionActionIn, a: Participant = Depends(actor),
+                       idempotency_key: str | None = Header(default=None)):
+        _authorize_pool_op(a, b.participant_id, b.ticket_id)
+        cached = _idem_get(a, idempotency_key)
+        if cached is not None:
+            return {**cached, "hint": "idempotent replay"}
+        # accept CLOSED participants: a done pool row resumes from its stored session id (§18.3)
+        got = pool_adapter.sessions()
+        closed = False
+        if got.get("ok"):
+            rows = got["value"] if isinstance(got["value"], list) else (got.get("value") or {}).get("sessions", [])
+            closed = any(s.get("handle") == b.participant_id and s.get("state") == "done" for s in rows)
+        out = (pool_adapter.resume_closed(b.participant_id) if closed
+               else pool_adapter.resume(b.participant_id))
+        if out.get("ok"):
+            _idem_put(a, idempotency_key, out)
+            return out
+        return _pool_result(out)
+
+    @app.post("/v1/sessions/reap")
+    def session_reap(b: SessionActionIn, a: Participant = Depends(actor),
+                     idempotency_key: str | None = Header(default=None)):
+        _authorize_pool_op(a, b.participant_id, b.ticket_id)
+        cached = _idem_get(a, idempotency_key)
+        if cached is not None:
+            return {**cached, "hint": "idempotent replay"}
+        out = pool_adapter.reap(b.participant_id)
+        if out.get("ok"):
+            _idem_put(a, idempotency_key, out)
+            return out
+        return _pool_result(out)
+
+    @app.post("/v1/sessions/close")
+    def session_close(b: SessionActionIn, a: Participant = Depends(actor),
+                      idempotency_key: str | None = Header(default=None)):
+        _authorize_pool_op(a, b.participant_id, b.ticket_id)
+        cached = _idem_get(a, idempotency_key)
+        if cached is not None:
+            return {**cached, "hint": "idempotent replay"}
+        out = pool_adapter.close(b.participant_id, b.reason or "closed via board")
+        if out.get("ok"):
+            _idem_put(a, idempotency_key, out)
+            return out
+        return _pool_result(out)
+
+    @app.get("/v1/pool/capabilities")
+    def pool_capabilities(a: Participant = Depends(actor)):
+        """What the pool supports, read live (never hard-coded). Pool unreachable → every
+        capability false plus a reason, so the UI hides pool controls rather than guessing."""
+        keys = ("resume_parked", "resume_closed", "park", "spawn")
+        out = pool_adapter.capabilities()
+        if out.get("ok") and isinstance(out.get("value"), dict):
+            v = out["value"]
+            return ok({k: bool(v.get(k, False)) for k in keys},
+                      "the UI reads these to decide which pool controls to show (S10 Resume, S16 spawn)")
+        reason = (out.get("error") or {}).get("message", "pool unreachable")
+        return ok({**{k: False for k in keys}, "reason": reason},
+                  "pool unreachable — every capability false; the UI hides pool controls")
+
     # feed (SSE) ------------------------------------------------------------------
+    @app.get("/v1/listening")
+    def listening(a: Participant = Depends(actor)):
+        return ok(board.listening(a.role.value),
+                  "your listening contract — what wakes you, how to get what does not, how to reach the architect")
+
     @app.get("/v1/feed")
     async def feed(since: int = Query(default=-1), a: Participant = Depends(actor)):
+        def frame(s: int | None, e) -> bytes:
+            # every event carries WHY this subscriber was woken (design §16.2 rule 5) so a seat
+            # can tell a page from a courtesy copy
+            return f"data: {json.dumps({'seq': s, 'why': board.why(e, a), **_dump(e)})}\n\n".encode()
+
         async def gen() -> AsyncIterator[bytes]:
             q = board.subscribe(a.id)
             try:
                 start = since if since >= 0 else board.store.max_seq()
                 for s, e in board.replay(a, start):
-                    yield f"data: {json.dumps({'seq': s, **_dump(e)})}\n\n".encode()
+                    yield frame(s, e)
                 yield b": ready\n\n"
                 while True:
                     try:
                         e = await asyncio.wait_for(q.get(), timeout=15)
-                        s = board.store.seq_of("event", e.id)
-                        yield f"data: {json.dumps({'seq': s, **_dump(e)})}\n\n".encode()
+                        yield frame(board.store.seq_of("event", e.id), e)
                     except asyncio.TimeoutError:
                         yield b": ping\n\n"
             finally:
@@ -552,6 +775,13 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     from .ui import router as ui_router
 
     app.include_router(ui_router(board, verify=human_verify))
+
+    # SPA (Folio) mounted AFTER the legacy router so /ui/poll and every /v1 route keep
+    # priority; the catch-all only matches under its prefix. Missing build → 503 page,
+    # never a failed create_app() (webapp/serve.py).
+    from .webapp import mount_spa
+
+    mount_spa(app, os.environ.get("EDP8_WEB_PREFIX", "/app"))
 
     if os.environ.get("EDP8_PLANE_URL"):
         from .plane_adapter import start_mirror_thread, webhook_router
