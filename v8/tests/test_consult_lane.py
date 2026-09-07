@@ -24,20 +24,33 @@ def test_quota_note_and_block(sol_dir, monkeypatch):
     assert rec and rec["try_again"] == "3:45 PM" and "usage limit" in rec["evidence"]
     blk = consult.quota_block()
     assert blk and blk["blocked_until"] == rec["blocked_until"]
-    refused = consult.preflight()
-    assert refused["ok"] is False and refused["error"]["code"] == "quota"
-    # an expired block is no block
+    notes = consult.advisory()  # advisory, never a refusal
+    assert any("usage/rate cap" in n and "3:45 PM" in n for n in notes)
+    # an expired block is no note
     (sol_dir / "quota.json").write_text(json.dumps({**rec, "blocked_until": "2020-01-01T00:00:00Z"}), encoding="utf-8")
-    assert consult.quota_block() is None and consult.preflight() is None
+    assert consult.quota_block() is None and not any("cap" in n for n in consult.advisory())
 
 
-def test_ram_gate_refuses_with_the_number(sol_dir, monkeypatch):
-    monkeypatch.setenv("EDP8_CONSULT_MIN_FREE_MB", "999999")
-    monkeypatch.setattr(consult, "free_mb", lambda: 1234)
-    refused = consult.preflight()
-    assert refused["error"]["code"] == "capacity" and "1234 MB" in refused["error"]["message"]
-    monkeypatch.setenv("EDP8_CONSULT_MIN_FREE_MB", "0")
-    assert consult.preflight() is None
+def test_low_ram_is_a_note_not_a_gate(sol_dir, monkeypatch):
+    monkeypatch.setattr(consult, "free_mb", lambda: 700)
+    notes = consult.advisory()
+    assert any("700 MB free" in n for n in notes)
+    monkeypatch.setattr(consult, "free_mb", lambda: 5000)
+    assert consult.advisory() == []
+
+
+def test_preflight_tool_is_advisory_and_idempotent(monkeypatch):
+    from edp8.bundles import ALL_TOOLS, ROLE_BUNDLES
+    from edp8 import pool_adapter
+    monkeypatch.setattr(pool_adapter, "sessions", lambda: {"ok": True, "value": [
+        {"session_id": "a", "handle": "engineer.s1", "state": "active"}]})
+    monkeypatch.setattr(pool_adapter, "capacity", lambda: {"ok": True, "value": {"max_total_shells": 10}})
+    t = ALL_TOOLS["preflight"]
+    one = t.handler(t.args_model()); two = t.handler(t.args_model())
+    assert one["ok"] and one["value"]["host"]["free_mb"] > 0 and one["value"]["seats"]["live"] == 1
+    assert one["value"]["seats"]["caps"] == {"max_total_shells": 10} and "advisory" in one["value"]
+    assert one["value"]["seats"] == two["value"]["seats"] and "never a gate" in one["hint"]
+    assert all("preflight" in b for b in ROLE_BUNDLES.values())
 
 
 def test_recover_answer_takes_last_agent_message():
@@ -68,7 +81,6 @@ def test_consult_status_recovers_from_manifest_or_log(sol_dir):
 
 def test_lane_serialises_and_reports_queue(sol_dir, monkeypatch):
     """Two callers: the second waits for the first and sees queued_behind=1."""
-    monkeypatch.setenv("EDP8_CONSULT_MIN_FREE_MB", "0")
     order: list[str] = []
 
     def fake_locked(purpose, question, **kw):

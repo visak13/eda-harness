@@ -40,10 +40,11 @@ Start cold (omit `thread_id`) when the goal changes, when Sol is looping on a wr
 
 The codex login is ONE fleet resource (rolling usage cap) and the host OOMs codex above ~90% RAM. Since
 2026-09-06 the bridge runs inside the ONE shared MCP server and enforces this itself: one consult in flight
-fleet-wide (callers queue FIFO; the result carries `queued_behind`), a free-RAM gate before every launch
-(`EDP8_CONSULT_MIN_FREE_MB`, default 2560 — refused with `code=capacity` and the number), and a quota block
-recorded from codex's own usage-cap message (`code=quota`, `blocked_until`, in `.sol/quota.json`). There is
-no CONSULT START/DONE ritual to post any more. If your call times out client-side or the server restarts
+fleet-wide (callers queue FIFO; the result carries `queued_behind`). Nothing else gates you: `preflight()`
+reports host free RAM, live seats, the lane, and any recent codex usage-cap message (recorded from codex's
+own words in `.sol/quota.json`), and every consult result carries the same `advisory` notes — you weigh them
+and decide (a run against a still-active cap just fails the same way). There is no CONSULT START/DONE
+ritual to post any more. If your call times out client-side or the server restarts
 mid-run, `consult_status(run_id)` returns the manifest status and the recovered answer — do not re-ask.
 Restarting the shared MCP server hot-reloads the bridge for every seat (`whoami.server_version` is the sha).
 

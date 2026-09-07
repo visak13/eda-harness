@@ -902,13 +902,6 @@ _QUOTA_RX = re.compile(r"(usage limit|quota|rate limit|too many requests|try aga
 _TRY_AGAIN_RX = re.compile(r"try again (?:at|in)\s+([^\n.;]+)", re.I)
 
 
-def _min_free_mb() -> int:
-    try:
-        return int(os.environ.get("EDP8_CONSULT_MIN_FREE_MB", "2560"))
-    except ValueError:
-        return 2560
-
-
 def free_mb() -> int | None:
     try:
         import psutil
@@ -966,31 +959,24 @@ def lane_status() -> dict[str, Any]:
         st = dict(_LANE_STATE)
     st["quota_block"] = quota_block()
     st["free_mb"] = free_mb()
-    st["min_free_mb"] = _min_free_mb()
     return st
 
 
-def preflight() -> dict[str, Any] | None:
-    """The refusal envelope when a consult may not launch right now, else None."""
+def advisory() -> list[str]:
+    """What a caller should know before launching — NEVER a refusal (owner ruling 2026-09-07:
+    information plus the agent's judgment, no gates). A quota block seen from codex's own
+    message, and low host RAM (codex died OOM at ~250 MB free on 2026-09-05)."""
+    notes: list[str] = []
     q = quota_block()
     if q:
-        return {"ok": False,
-                "error": {"code": "quota",
-                          "message": f"the codex login is rate/usage capped until {q['blocked_until']} "
-                                     f"(evidence: {q.get('evidence')})"},
-                "value": {"quota": q},
-                "hint": "this cap is fleet-wide; do other work and consult after blocked_until "
-                        "(consult_status reports the lane)"}
-    need = _min_free_mb()
+        notes.append(f"codex reported a usage/rate cap at {q.get('seen_at')} ({q.get('evidence')}); "
+                     f"it suggested retrying around {q.get('try_again') or q.get('blocked_until')} — a run "
+                     "before that will likely fail the same way")
     free = free_mb()
-    if need > 0 and free is not None and free < need:
-        return {"ok": False,
-                "error": {"code": "capacity",
-                          "message": f"host has {free} MB free RAM, below EDP8_CONSULT_MIN_FREE_MB={need}; "
-                                     "codex dies OOM under that"},
-                "value": {"free_mb": free, "min_free_mb": need},
-                "hint": "ask the owner to close a seat or free memory, then retry; the check is per launch"}
-    return None
+    if free is not None and free < 1024:
+        notes.append(f"host has {free} MB free RAM; a codex run needs ~300 MB (text) to ~1 GB (image gen) "
+                     "and died OOM at ~250 MB free on 2026-09-05")
+    return notes
 
 
 def recover_answer(raw: str) -> str:
@@ -1116,10 +1102,6 @@ def consult(purpose: Purpose, question: str, context: str = "",
                 "hint": "attach a decodable png/jpg; the bridge validates images before the run"}
     thread_id = (thread_id or "").strip() or None
 
-    refused = preflight()
-    if refused:
-        return refused
-
     codex = _resolve_bin()
     requested_model = (model or "").strip() or os.environ.get(_MODEL_ENV, "").strip() or _DEFAULT_MODEL
 
@@ -1134,9 +1116,6 @@ def consult(purpose: Purpose, question: str, context: str = "",
     with _LANE_STATE_LOCK:
         _LANE_STATE["queued"] -= 1
     try:
-        refused = preflight()
-        if refused:
-            return refused
         return _consult_locked(purpose, question, context=context, files=files, timeout_s=timeout_s,
                                write_dir=write_dir, images=images, thread_id=thread_id,
                                requested_model=requested_model, profile_name=profile_name, spec=spec,
@@ -1250,6 +1229,7 @@ def _consult_locked(purpose: str, question: str, *, context: str, files: list[st
     out_thread = parse_thread_id(raw) or thread_id
     manifest["thread_id"] = out_thread
     manifest["queued_behind"] = queued_behind
+    manifest["advisory"] = advisory()
 
     answer = ""
     if last_msg.is_file():
@@ -1331,12 +1311,13 @@ def _consult_locked(purpose: str, question: str, *, context: str, files: list[st
         _save_manifest()
         return {"ok": False,
                 "error": {"code": "quota" if quota else "exit",
-                          "message": (f"codex reports a usage/rate cap: {quota['evidence']} — consults are "
-                                      f"blocked fleet-wide until {quota['blocked_until']}" if quota else
+                          "message": (f"codex reports a usage/rate cap: {quota['evidence']} (it suggests "
+                                      f"retrying around {quota.get('try_again') or quota['blocked_until']})" if quota else
                                       f"codex exited {exit_code}: {_last_nonempty_line(raw)}")},
                 "value": {"run_id": run_id, "manifest": str(manifest_path), "thread_id": out_thread,
+                          "advisory": manifest.get("advisory") or [],
                           **({"quota": quota} if quota else {})},
-                "hint": ("do other work; consult_status shows when the lane reopens" if quota else
+                "hint": ("codex itself refused; preflight() shows its suggested retry time — your call" if quota else
                          "check `codex login` status, EDP8_SOL_MODEL, and network — "
                          "a non-zero exit is not automatically a quota cap")}
 
@@ -1356,6 +1337,7 @@ def _consult_locked(purpose: str, question: str, *, context: str, files: list[st
         "profile": profile_name, "elapsed_s": round(elapsed, 3), "run_id": run_id,
         "log": str(log_path), "manifest": str(manifest_path), "thread_id": out_thread,
         "images_attached": len(images), "queued_behind": queued_behind,
+        "advisory": manifest.get("advisory") or [],
     }
     if profile_name == "verify":
         verdict = parse_verdict(answer, images_decoded=len(img_records))

@@ -68,19 +68,6 @@ def _max_total_shells() -> int:
     return _env_int("EDP_MAX_TOTAL_SHELLS", 10)
 
 
-def _min_free_mb() -> int:
-    # v8 2026-09-06: a count cap is not a resource guard on a laptop — seats
-    # were admitted onto a host at 98% RAM and codex consults died OOM. 0
-    # disables the check.
-    return _env_int("EDP_MIN_FREE_MB", 2048)
-
-
-def _free_mb() -> int | None:
-    try:
-        import psutil
-        return int(psutil.virtual_memory().available // (1024 * 1024))
-    except Exception:  # noqa: BLE001 — no psutil / odd platform: no verdict
-        return None
 
 
 _ENVELOPE_HTTP_STATUS = 409
@@ -1030,16 +1017,8 @@ class PoolService(Microservice):
                     "close or pool_reap parked sessions before spawning "
                     "more.",
                 )
-            need = _min_free_mb()
-            free = _free_mb() if need > 0 else None
-            if free is not None and free < need:
-                return Tool.propagate(
-                    source="edp-pool",
-                    code=ErrorCode.POOL_CAPACITY_EXCEEDED,
-                    message=f"host has {free} MB free RAM, below EDP_MIN_FREE_MB="
-                    f"{need}; close or reap a seat (or free memory) before "
-                    "spawning another",
-                )
+            # No RAM guard here (owner ruling 2026-09-07): the `preflight` tool reports
+            # free memory and the caller decides; the pool never refuses a spawn for it.
             admitted = self._admit_handle_locked(handle)
             if admitted is not None:
                 return admitted

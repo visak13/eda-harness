@@ -123,6 +123,47 @@ class WhoamiArgs(BaseModel):
     pass
 
 
+class PreflightArgs(BaseModel):
+    pass
+
+
+def _preflight(_: PreflightArgs) -> dict[str, Any]:
+    """Host + fleet headroom in one idempotent read. Advisory only: nothing here refuses
+    anything (owner ruling 2026-09-07) — the caller weighs it and decides."""
+    out: dict[str, Any] = {}
+    try:
+        import psutil
+        vm = psutil.virtual_memory()
+        out["host"] = {"free_mb": int(vm.available // 2**20), "total_mb": int(vm.total // 2**20),
+                       "used_pct": round(vm.percent, 1)}
+    except Exception as e:  # noqa: BLE001
+        out["host"] = {"note": f"memory unreadable: {type(e).__name__}"}
+    try:
+        from . import pool_adapter
+        got = pool_adapter.sessions()
+        rows = (got["value"] if isinstance(got.get("value"), list) else (got.get("value") or {}).get("sessions", [])) \
+            if got.get("ok") else []
+        live = [s for s in rows if s.get("state") in ("active", "starting", "resuming", "parked")]
+        out["seats"] = {"live": len(live), "handles": sorted(s.get("handle") or "" for s in live)}
+        cap = pool_adapter.capacity()
+        if cap.get("ok"):
+            out["seats"]["caps"] = cap["value"]
+    except Exception as e:  # noqa: BLE001
+        out["seats"] = {"note": f"pool unreachable: {type(e).__name__}"}
+    try:
+        from . import consult as consult_mod
+        out["consult"] = consult_mod.lane_status()
+        out["advisory"] = consult_mod.advisory()
+    except Exception as e:  # noqa: BLE001
+        out["consult"] = {"note": f"lane unreadable: {type(e).__name__}"}
+    out["rules_of_thumb"] = {"claude_seat_mb": "250-500 (grows with context)", "codex_text_mb": "~300",
+                             "codex_image_gen_mb": "up to ~1000", "stack_mb": "~500"}
+    return {"ok": True, "value": out,
+            "hint": "advisory, never a gate: compare host.free_mb with what you are about to start "
+                    "(rules_of_thumb); consult.in_flight/queued is the fleet-wide codex lane; "
+                    "a quota note means codex itself refused recently — you decide, and say why on the thread"}
+
+
 def _whoami(_: WhoamiArgs) -> dict[str, Any]:
     resp = get_client().whoami()
     if resp.get("ok"):
@@ -225,6 +266,10 @@ IDENTITY_TOOLS = [
     ToolDef("whoami", "Report your registered identity and which tool bundles your role has. "
             "Returns the participant record, its open tickets, and the bundle list.",
             WhoamiArgs, _whoami, "identity"),
+    ToolDef("preflight", "Headroom before you spawn or consult: host free RAM, live seats vs the pool caps, "
+            "the fleet-wide codex lane (in flight / queued), and any recent codex usage-cap note. Idempotent, "
+            "read-only, ADVISORY — it never blocks; you weigh it. Returns the numbers plus rules of thumb.",
+            PreflightArgs, _preflight, "identity"),
     ToolDef("subscribe", "Arm your event feed for this session (one-time setup). "
             "Returns the monitor command to run and the heartbeat cron to create.",
             SubscribeArgs, _subscribe, "identity"),
@@ -1129,7 +1174,7 @@ ALL_TOOLS: dict[str, ToolDef] = {
     )
 }
 
-_IDENTITY = ["whoami", "subscribe", "context", "describe", "get_guide"]
+_IDENTITY = ["whoami", "preflight", "subscribe", "context", "describe", "get_guide"]
 _TICKET_RW = ["ticket_create", "ticket_read", "ticket_query", "ticket_update", "criterion_create",
               "criterion_query", "criterion_update"]
 _TICKET_RO = ["ticket_read", "ticket_query", "ticket_update"]  # owner: sign-off only, guarded by the board
