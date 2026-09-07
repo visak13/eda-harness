@@ -102,6 +102,7 @@ class FakeSpawner(Spawner):
         model: str | None = None,
         activation: str | None = None,
         parent: str | None = None,
+        extra_env: dict | None = None,
     ) -> None:
         self._alive.add(session_id)
         self._known.add(session_id)
@@ -115,6 +116,9 @@ class FakeSpawner(Spawner):
             # DESIGN-v7 park/resume: custom activation line (None → the
             # role activator) — observable by park/resume tests.
             "activation": activation,
+            # S20 (v8): extra env injected into the shell AFTER the secret
+            # strip — the per-seat EDP8_TOKEN so the shell authenticates.
+            "extra_env": extra_env,
         })
 
     def alive(self, session_id: str) -> bool:
@@ -198,6 +202,7 @@ class SubprocessSpawner(Spawner):
         model: str | None = None,
         activation: str | None = None,
         parent: str | None = None,
+        extra_env: dict | None = None,
     ) -> None:
         if sys.platform != "win32":
             raise RuntimeError(
@@ -232,6 +237,11 @@ class SubprocessSpawner(Spawner):
             log_dir=self.shell_log_dir,
             parent=parent,       # F40#13: lineage stamp for bare handles
         )
+        # S20 (v8): inject the caller's extra env AFTER build_env's foreign-secret
+        # strip, so the per-seat EDP8_TOKEN (a *_TOKEN name build_env would drop)
+        # reaches the shell and its MCP client authenticates as the seat.
+        if extra_env:
+            env.update({str(k): str(v) for k, v in extra_env.items()})
         # phase 5: snapshot/branch flags (pin id / resume+fork a base).
         sargs = build_session_args(claude_session, resume_session)
 

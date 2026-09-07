@@ -950,6 +950,7 @@ class PoolService(Microservice):
         claude_session: str | None = None,
         resume_session: str | None = None,
         model: str | None = None,
+        env: dict | None = None,
     ):
         # ── DESIGN-v7 1.2 capacity model ───────────────────────────────────
         # Per-role throughput caps first (workers, planners), then the
@@ -1026,20 +1027,29 @@ class PoolService(Microservice):
             # so a concurrent admission sees this slot taken (F36 R4#1/#2).
             sid = f"{role}:{uuid.uuid4()}"
             now0 = _utc_now_iso()
+            # S20 (v8, design §18.3): record everything a resume-from-closed needs to
+            # re-launch this seat days later with the SAME shape — role, cwd, env, model,
+            # mode, parent. Nothing has to be reconstructed from a `done` row.
+            spawn_settings = {
+                "role": role, "handle": handle, "parent": parent, "mode": mode,
+                "model": model, "cwd": self._spawner_agent_home()
+                or os.environ.get("EDP_AGENT_HOME"),
+                "env": dict(env) if env else {},
+            }
             self.sessions[sid] = {
                 "session_id": sid, "role": role, "handle": handle,
                 "parent": parent, "state": "starting",
                 "proc": None, "claude_session_id": claude_session,
                 "recipe_id": self._recipe_id_for(role, handle),
                 "spawned_at": now0, "last_seen": now0, "mode": mode,
-                "model": None,
+                "model": None, "spawn_settings": spawn_settings,
             }
             self.locks[handle] = sid
             self._persist()
         return self._launch_reserved(
             sid, role, handle, mode,
             claude_session=claude_session, resume_session=resume_session,
-            model=model, parent=parent)
+            model=model, parent=parent, extra_env=env)
 
     @staticmethod
     def _age_secs(iso_ts) -> float | None:
@@ -1133,6 +1143,7 @@ class PoolService(Microservice):
         claude_session: str | None, resume_session: str | None,
         model: str | None,
         parent: str | None = None,      # F40#13: EDP_PARENT lineage stamp
+        extra_env: dict | None = None,  # S20 (v8): EDP8_TOKEN et al into the shell env
     ):
         """F36 R4#1/#2 — launch against an already-RESERVED 'starting' row.
         The reservation (session row + handle lock) was committed under the
@@ -1166,6 +1177,7 @@ class PoolService(Microservice):
                 resume_session=resume_session,
                 model=resolved_model,
                 parent=parent,       # F40#13: EDP_PARENT lineage stamp
+                extra_env=extra_env,  # S20 (v8): per-seat EDP8_TOKEN
             )
         except BaseException:
             # F36 R4#1: ROLLBACK the reservation — a failed launch must not
@@ -1210,6 +1222,9 @@ class PoolService(Microservice):
                 # WP2 provenance: the RESOLVED model this shell actually
                 # launched with.
                 "model": resolved_model,
+                # S20 (v8): carry the spawn_settings recorded at reservation, with the
+                # resolved model filled in, so resume_closed can re-launch this exact seat.
+                "spawn_settings": {**((s or {}).get("spawn_settings") or {}), "model": resolved_model},
             }
             self.locks[handle] = sid  # lock-by-spawn-lifetime
             self._persist()
@@ -1744,6 +1759,78 @@ class PoolService(Microservice):
         return {"resumed": True, "handle": handle, "session_id": sid,
                 "via": resumed_via, "claude_session_id": new_claude_session}
 
+    def resume_closed(self, handle: str) -> dict:
+        """S20 / design §18.3 (owner m-6ffe756cf7) — fork-resume a CLOSED (`done`) seat from its
+        stored claude_session_id with the role/cwd/env/model/mode recorded at spawn
+        (`spawn_settings`), so a seat closed days ago comes back with the same context and shape.
+
+        Unlike `resume` (a PARKED handle whose lock was kept), a released/reaped seat had its
+        handle lock FREED — so this RE-TAKES the lock under the transition lock. It refuses if the
+        handle is currently held by a live seat (something cold-spawned it since), and if no
+        resumable `done` row exists it says so instead of guessing."""
+        with self._transition_lock:
+            held = self.locks.get(handle)
+            if held is not None:
+                hs = (self.sessions.get(held) or {}).get("state")
+                if hs in ("active", "starting", "parked", "resuming"):
+                    return {"resumed": False, "handle": handle,
+                            "reason": f"handle {handle!r} is held by a {hs} session ({held}); "
+                                      "use /v1/resume for a parked seat, or reap it first"}
+            # release() freed the lock, so the done row is found by scanning handles, newest first.
+            done = [s for s in self.sessions.values()
+                    if s.get("handle") == handle and s.get("state") == "done"]
+            if not done:
+                return {"resumed": False, "handle": handle,
+                        "reason": f"no closed (done) session for {handle!r} to resume"}
+            s = max(done, key=lambda r: r.get("resumed_at") or r.get("spawned_at") or "")
+            base = s.get("claude_session_id")
+            if not base:
+                return {"resumed": False, "handle": handle,
+                        "reason": "the closed row has no claude_session_id — nothing to fork-resume"}
+            sid = s["session_id"]
+            settings = s.get("spawn_settings") or {}
+            s["state"] = "resuming"
+            self.locks[handle] = sid   # RE-TAKE the freed handle lock
+            self._persist()
+        role = settings.get("role") or s.get("role") or "planner"
+        mode = settings.get("mode") or s.get("mode") or os.environ.get("EDP_SPAWN_MODE", "monitor")
+        model = settings.get("model") or s.get("model")
+        parent = settings.get("parent") or s.get("parent")
+        extra_env = settings.get("env") or None
+        fork = str(uuid.uuid4())
+        _log.info("resume_closed_start", handle, handle=handle, sid=sid, base=base, fork=fork)
+        try:
+            token = getattr(self.spawner, "session_token", lambda _sid: None)(sid)
+            if token:
+                base = token
+            self.spawner.launch(
+                sid, role, handle, mode,
+                claude_session=fork, resume_session=base, model=model,
+                activation=self.PARK_RESUME_ACTIVATION,
+                parent=parent, extra_env=extra_env)
+            new_claude_session = (getattr(self.spawner, "session_token",
+                                          lambda _sid: None)(sid) or fork)
+        except Exception as exc:  # noqa: BLE001 — leave the row closed & the lock free for a retry
+            with self._transition_lock:
+                s["state"] = "done"
+                if self.locks.get(handle) == sid:
+                    del self.locks[handle]
+                self._persist()
+            _log.error("resume_closed_failed", handle, handle=handle, sid=sid, error=repr(exc))
+            return {"resumed": False, "handle": handle,
+                    "reason": f"fork-resume of the closed session failed: {exc!r}; left closed"}
+        with self._transition_lock:
+            s["claude_session_id"] = new_claude_session
+            s["state"] = "active"
+            s["proc"] = _proc_fingerprint(self.spawner.pid(sid))
+            s["last_seen"] = s["resumed_at"] = _utc_now_iso()
+            s.pop("dead_reason", None)
+            self._persist()
+        _log.info("resume_closed_done", handle, handle=handle, sid=sid,
+                  claude_session=new_claude_session)
+        return {"resumed": True, "handle": handle, "session_id": sid,
+                "via": "resume-from-closed", "claude_session_id": new_claude_session}
+
     # ── close is a SELF-ASSERTION (owner ruling 2026-09-06) ──────────────
     #
     # A shell closes itself: inbox() → record_status() → close_self() →
@@ -2190,6 +2277,9 @@ def create_app(
             # s17 FA3: optional per-action model tier from the spawn body;
             # absent → None → svc.spawn defaults to the host tier (Opus).
             model=b.get("model"),
+            # S20 (v8): optional extra shell env (the board passes the per-seat
+            # EDP8_TOKEN here); recorded as spawn_settings.env and injected.
+            env=b.get("env"),
         )
         if not isinstance(res, str):  # ToolError
             return _envelope(res)
@@ -2284,6 +2374,20 @@ def create_app(
         the second caller a no-op."""
         _log.info("POST /v1/resume", handle, handle=handle)
         return await asyncio.to_thread(svc.resume, handle)
+
+    @app.post("/v1/resume_closed/{handle}")
+    async def resume_closed(handle: str):
+        """S20 (v8) / design §18.3: fork-resume a CLOSED (`done`) seat from its stored
+        claude_session_id + spawn_settings, re-taking the freed handle lock. The board's
+        /v1/sessions/resume routes here when the pool row for a handle is `done`."""
+        _log.info("POST /v1/resume_closed", handle, handle=handle)
+        return await asyncio.to_thread(svc.resume_closed, handle)
+
+    @app.get("/v1/pool/capabilities")
+    async def pool_capabilities():
+        """What this pool supports, so the board's /v1/pool/capabilities and the UI never
+        guess (S20). resume_closed is True now that /v1/resume_closed exists."""
+        return {"resume_parked": True, "resume_closed": True, "park": True, "spawn": True}
 
     @app.get("/v1/sessions")
     async def sessions(recipe_id: str | None = None):
