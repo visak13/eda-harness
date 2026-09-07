@@ -80,7 +80,43 @@ def test_checker_derivation_per_ticket_kind(board, rig):
     task = board.ticket_create(rig["engineer"], kind=TicketKind.task, work_type=WorkType.feature,
                                title="t", parent_id=story.id)
     assert board.criterion_create(rig["engineer"], ticket_id=task.id, text="a",
-                                  check=Check.command).checked_by == "qa"
+                                  check=Check.command).checked_by == "engineer"  # §24.1(d): task → its doer
+
+
+def test_task_criterion_is_self_verdicted_by_its_engineer(board, rig):
+    """§24.1(d): a task is the doer's own checklist — its engineer records evidence AND the verdict
+    (no doer guard, no paired seat), and the task auto-advances to done. A reviewer/qa cannot
+    verdict a task criterion (it is not theirs)."""
+    epic = make_epic(board, rig)
+    story = make_story(board, rig, epic)
+    task = board.ticket_create(rig["engineer"], kind=TicketKind.task, work_type=WorkType.feature,
+                               title="t", parent_id=story.id)
+    c = board.criterion_create(rig["engineer"], ticket_id=task.id, text="a", check=Check.command)
+    assert c.checked_by == "engineer"
+    board.ticket_update(rig["architect"], task.id, status=TicketStatus.designed)
+    board.ticket_update(rig["owner"], task.id, status=TicketStatus.signed_off)
+    board.ticket_update(rig["engineer"], task.id, status=TicketStatus.ready)
+    board.ticket_update(rig["engineer"], task.id, assignee=rig["engineer"].id)
+    board.ticket_update(rig["engineer"], task.id, status=TicketStatus.in_progress)
+    ev = board.doc_create(rig["engineer"], doc_type=DocType.report, title="e", body_md="ok", scope=epic.id)
+    board.criterion_update(rig["engineer"], c.id, evidence_ref=ev.id)  # auto → in_review
+    assert board.ticket(task.id).status == TicketStatus.in_review
+    with pytest.raises(BoardError) as ei:  # qa is not this task's checker
+        board.criterion_update(rig["qa"], c.id, verdict=Verdict.passed)
+    assert ei.value.code == "scope"
+    board.criterion_update(rig["engineer"], c.id, verdict=Verdict.passed)  # the doer self-verdicts
+    assert board.ticket(task.id).status == TicketStatus.done  # auto: a task gates nothing, closes itself
+
+
+def test_owner_doer_guard_applies_without_override_reason(board, rig):
+    """§24.1(d): the doer guard reaches the owner too — an owner writing a criterion is only allowed
+    as an explicit override (checked_by + override_reason); without a reason the owner is not a
+    criterion author and is refused (it never silently bypasses the guard)."""
+    epic = make_epic(board, rig)
+    story = make_story(board, rig, epic)
+    with pytest.raises(BoardError) as ei:
+        board.criterion_create(rig["owner"], ticket_id=story.id, text="x", check=Check.command)
+    assert ei.value.code == "scope"
 
 
 def test_checked_by_argument_ignored_unless_owner_override(board, rig):

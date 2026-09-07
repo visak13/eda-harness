@@ -71,10 +71,12 @@ class Verdict(StrEnum):
 
 
 class CheckedBy(StrEnum):
-    """The checker role a criterion is verdicted by (a strict subset of Role)."""
+    """The checker role a criterion is verdicted by (a strict subset of Role). A task's criterion
+    is `engineer` — the task is the doer's own checklist, self-verdicted, and gates nothing."""
     reviewer = "reviewer"
     qa = "qa"
     owner = "owner"
+    engineer = "engineer"
 
 
 class ConsultPurpose(StrEnum):
@@ -236,7 +238,7 @@ class Criterion(Obj):
     ticket_id: str
     text: str
     check: Check
-    checked_by: Literal["reviewer", "qa", "owner"]
+    checked_by: Literal["reviewer", "qa", "owner", "engineer"]
     evidence_ref: str | None = None  # doc id (report)
     verdict: Verdict = Verdict.pending
 
@@ -386,8 +388,9 @@ DESCRIBE: dict[str, str] = {
     "update(status, assignee, design_ref, description, tags). Has criteria, a thread, linked docs and artifacts.",
     "criterion": "A checkable definition of done on a ticket, written by the parent owner before work; "
     "the doer never edits it; the checker records verdict + evidence_ref. The board DERIVES the checker "
-    "from the ticket (design §24.1): qa for every story/task/epic criterion, reviewer only when a story "
-    "is tagged review_required, owner for a knowledge ticket — criterion_create's checked_by argument is "
+    "from the ticket (design §24.1): qa for a story/epic criterion, reviewer only when a story "
+    "is tagged review_required, engineer for a task criterion (a task is its doer's own checklist, "
+    "self-verdicted, gating nothing), owner for a knowledge ticket — criterion_create's checked_by argument is "
     "accepted for one release but ignored unless the owner also passes override_reason (recorded as a "
     "criterion_checker_overridden event). CRUD: create, read, update.",
     "doc": "A versioned markdown knowledge unit: design (architect), strategy_hl/strategy_ll/domain (sme), "

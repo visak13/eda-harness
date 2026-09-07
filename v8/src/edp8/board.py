@@ -390,6 +390,11 @@ class Board:
         if to == TicketStatus.in_review:
             if t.assignee and actor.id != t.assignee and r not in (Role.coordinator,):
                 raise BoardError("scope", "only the assignee hands a ticket to review")
+            if not crits:
+                # §24.1(a): a zero-criteria ticket is never evidence-complete, so it must not reach
+                # in_review — there is nothing for a checker to verdict and _released would never fire.
+                raise BoardError("transition", "in_review needs at least one criterion with evidence",
+                                 "criterion_create(...) then criterion_update(evidence_ref=...)")
             missing = [c.id for c in crits if not c.evidence_ref]
             if missing:
                 raise BoardError("transition", "in_review needs evidence_ref on every criterion",
@@ -429,7 +434,9 @@ class Board:
     def _release_successors(self, t: Ticket) -> None:
         """Promote to ready every signed-off successor of t (explicit `blocks` links t holds, plus
         the implicit review-story-waits-on-its-siblings dependency) once all ITS blockers are
-        released and no design gate holds it."""
+        released and no design gate holds it. This only ever PROMOTES: a reopen (a qa fail walking
+        a blocker in_review→in_progress) never re-blocks a successor already readied (§24.1(a),
+        owner ruling 2026-09-08) — release is monotonic, the successor keeps its head start."""
         deps_raw = [self.store.get("ticket", lk.to_id)  # type: ignore[attr-defined]
                     for lk in self.store.query("link", {"from_id": t.id, "relation": Relation.blocks})]
         if t.kind == TicketKind.story and t.parent_id:
@@ -525,45 +532,61 @@ class Board:
 
     def run_pending_pairings(self) -> dict[str, Any]:
         """Drain the pairing queue: spawn each seat whose RAM headroom is sufficient, drop one that
-        already has a live seat, and leave an under-RAM one queued with ONE feed note. Called at
-        every pool-watch tick (the 60 s retry) and directly by tests. Returns a small summary."""
-        with self._lock:
-            pending = list(self._pending_pairings.items())
+        already has a live seat, leave an under-RAM one queued with ONE feed note, and KEEP a seat
+        whose spawn failed (pool error or a falsey adapter result) queued for the 60 s retry with
+        ONE feed note. Called at every pool-watch tick and directly by tests. Returns a summary.
+
+        The whole drain runs under a single board lock (§24.1(b), owner ruling 2026-09-08): the
+        snapshot, the live-seat/RAM/spawn decision and the queue mutation are one atomic step, so
+        two concurrent drainers can never both claim the same entry and double-spawn. The lock is
+        re-entrant, so _spawn_seat's participant_create and _pairing_note's emit nest safely."""
         spawned: list[str] = []
         queued: list[str] = []
-        for pid, info in pending:
-            if self._seat_live(pid):
-                with self._lock:
+        failed: list[str] = []
+        with self._lock:
+            for pid, info in list(self._pending_pairings.items()):
+                if self._seat_live(pid):
                     self._pending_pairings.pop(pid, None)
-                continue
-            free = self._host_free_mb()
-            if free is not None and free < self.SEAT_FLOOR_MB:
-                queued.append(pid)
-                if not info.get("noted"):
-                    self._pairing_note(info["ticket"],
-                                       f"{info['role']} for {info['ticket']} queued: {free} MB free")
-                    with self._lock:
-                        if pid in self._pending_pairings:
-                            self._pending_pairings[pid]["noted"] = True
-                continue
-            self._spawn_seat(info["role"], pid, info["ticket"])
-            spawned.append(pid)
-            with self._lock:
-                self._pending_pairings.pop(pid, None)
-        return {"spawned": spawned, "queued": queued}
+                    continue
+                free = self._host_free_mb()
+                if free is not None and free < self.SEAT_FLOOR_MB:
+                    queued.append(pid)
+                    if not info.get("noted"):
+                        self._pairing_note(info["ticket"],
+                                           f"{info['role']} for {info['ticket']} queued: {free} MB free")
+                        info["noted"] = True
+                    continue
+                if self._spawn_seat(info["role"], pid, info["ticket"]):
+                    spawned.append(pid)
+                    self._pending_pairings.pop(pid, None)
+                else:
+                    # a failed spawn stays queued for the next 60 s tick; note it once (quietly)
+                    failed.append(pid)
+                    if not info.get("spawn_failed_noted"):
+                        self._pairing_note(info["ticket"],
+                                           f"{info['role']} for {info['ticket']} spawn failed; retrying next tick")
+                        info["spawn_failed_noted"] = True
+        return {"spawned": spawned, "queued": queued, "failed": failed}
 
-    def _spawn_seat(self, role: str, participant_id: str, ticket_id: str) -> None:
+    def _spawn_seat(self, role: str, participant_id: str, ticket_id: str) -> bool:
         """Register the seat participant (so it can be addressed and can verdict) then spawn its
-        shell via the pool adapter — the assignee is never touched (a checker is not the doer)."""
+        shell via the pool adapter — the assignee is never touched (a checker is not the doer).
+        Returns True only when the spawn succeeded; a pool exception or an `{"ok": False}` adapter
+        result returns False so the caller keeps the entry queued for the retry (§24.1(b))."""
         if self.store.get("participant", participant_id) is None:
             try:
                 self.participant_create("agent", Role(role), participant_id, id_=participant_id)
             except BoardError:  # a concurrent create raced us; fine
                 pass
         try:
-            self._pool_adapter().spawn(role, participant_id)
+            res = self._pool_adapter().spawn(role, participant_id)
         except Exception as e:  # noqa: BLE001 — a pool hiccup keeps the seat registered; retry next tick
             _log.warning("pairing spawn for %s failed: %s", participant_id, e)
+            return False
+        if isinstance(res, dict) and res.get("ok") is False:
+            _log.warning("pairing spawn for %s refused: %s", participant_id, res.get("error"))
+            return False
+        return True
 
     def _pairing_note(self, ticket_id: str, text: str) -> None:
         """Post one board-authored thread note (the queued-pairing notice)."""
@@ -577,13 +600,19 @@ class Board:
     # ------------------------------------------------------------------ criteria
     def checker_for(self, t: Ticket) -> str:
         """The board derives a criterion's checker from its ticket (design §24.1, owner ruling
-        v22 2026-09-08): **qa** is the default for every story/task/epic criterion; a **reviewer**
-        is paired only when the architect tags a non-review story `review_required` (auth,
-        sanitiser, cutover); a knowledge ticket's criteria are the **owner**'s single HITL
-        sign-off (the strategy-doc approval). The doer never chooses — this removes the blind spot
-        where a story froze on a checker role with no seat."""
+        v22 2026-09-08): **qa** is the default for a story/epic criterion; a **reviewer** is paired
+        only when the architect tags a non-review story `review_required` (auth, sanitiser, cutover);
+        a **task** criterion is the task's own **engineer** (a task is the doer's checklist —
+        self-verdicted, no paired seat, gating nothing); a knowledge ticket's criteria are the
+        **owner**'s single HITL sign-off (the strategy-doc approval). The doer never chooses — this
+        removes the blind spot where a story froze on a checker role with no seat."""
         if t.work_type == WorkType.knowledge:
             return CheckedBy.owner.value
+        if t.kind == TicketKind.task:
+            # §24.1(d): a task derives to its OWN engineer (the story doer). A task is a checklist,
+            # self-verdicted by the doer; no seat is paired and a task gates nothing — deriving it to
+            # qa deadlocked the epic (qa is auto-paired only at acceptance, which needs tasks done).
+            return CheckedBy.engineer.value
         if (t.kind == TicketKind.story and t.work_type != WorkType.review
                 and "review_required" in (t.tags or [])):
             return CheckedBy.reviewer.value
@@ -653,12 +682,19 @@ class Board:
                                           "its assignee, or its checker")
             c.evidence_ref = evidence_ref
         if verdict is not None:
-            if actor.role not in CRITERION_CHECKERS:
-                raise BoardError("scope", "verdicts are recorded by reviewer/qa/owner only")
-            if actor.role.value != c.checked_by and actor.role != Role.owner:
-                raise BoardError("scope", f"this criterion is checked_by {c.checked_by}; you are {actor.role}")
-            if actor.id == t.assignee:
-                raise BoardError("scope", "the doer cannot verdict its own ticket")
+            if c.checked_by == CheckedBy.engineer.value:
+                # §24.1(d): a task criterion is the doer's own checklist — its engineer (or an sme
+                # standing in) self-verdicts it; no paired seat and NO doer guard (the doer IS the
+                # checker here). Nothing gates on it.
+                if actor.role not in (Role.engineer, Role.sme, Role.owner):
+                    raise BoardError("scope", "a task criterion is verdicted by its engineer (the task's doer)")
+            else:
+                if actor.role not in CRITERION_CHECKERS:
+                    raise BoardError("scope", "verdicts are recorded by reviewer/qa/owner only")
+                if actor.role.value != c.checked_by and actor.role != Role.owner:
+                    raise BoardError("scope", f"this criterion is checked_by {c.checked_by}; you are {actor.role}")
+                if actor.id == t.assignee:
+                    raise BoardError("scope", "the doer cannot verdict its own ticket")
             if verdict != Verdict.pending and not c.evidence_ref:
                 raise BoardError("transition", "a verdict needs evidence_ref first", "criterion_update(evidence_ref=...)")
             c.verdict = verdict
@@ -1359,9 +1395,17 @@ class Board:
         return _dedup(reasons)
 
     def _architect_courtesy_copy(self, ev: Event) -> bool:
-        """A subtree event the epic's architect can read but is NOT paged for (design §16.2 rule 1,
-        v21): clean self-closes, routine record_status notes, plain note/answer between other seats,
-        and passing/pending criterion checks. Every rule-1 kind returns False (it stays delivered)."""
+        """A subtree event the epic's architect can READ but is NOT paged for by ANCESTOR delivery
+        (design §16.2 rule 1, v21/v23 — rule 1 is EXHAUSTIVE, an allowlist not a blacklist, owner
+        ruling 2026-09-08 §24.1(c)). It stays delivered (returns False) ONLY for a rule-1 crucial
+        kind: an unclean death, a FAIL criterion verdict, a question/deviation/finding/steer or a
+        blocked/failed/deferred status note, and a status_changed INTO a phase boundary
+        (ready/in_review/blocked/done/partial/dropped). EVERYTHING else is a courtesy copy the
+        architect can read but is not woken for — clean deaths, passing/pending checks, plain
+        note/answer and routine status notes, ticket_created, assigned, doc_updated, and the
+        design-time transitions drafted/designed/signed_off/in_progress. (Gates and stalls still
+        reach the architect through _architect_listener_reasons, so dropping their ancestor copy
+        here loses no page.)"""
         d = ev.data
         k = ev.kind
         if k == EventKind.shell_dead:
@@ -1375,7 +1419,12 @@ class Board:
             if mk == MessageKind.status:
                 return d.get("status") not in (StatusValue.blocked, StatusValue.failed, StatusValue.deferred)
             return False  # question / deviation / finding / steer are crucial
-        return False  # status_changed, gates, stalls, doc edits: never a courtesy copy
+        if k == EventKind.status_changed:
+            # phase boundaries stay delivered; the design-time transitions are courtesy
+            return d.get("to") not in ("ready", "in_review", "blocked", "done", "partial", "dropped")
+        # ticket_created, assigned, doc_updated, gates, stalls, anything else: courtesy for ANCESTOR
+        # delivery (rule 1 is the whole list). A crucial kind not named above must be added HERE.
+        return True
 
     def _general_reasons(self, ev: Event, p: Participant) -> list[Reason]:
         """Delivery every seat has always had: addressed, its ticket/ancestors, gates it can

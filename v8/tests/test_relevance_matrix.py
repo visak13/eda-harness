@@ -317,6 +317,39 @@ def test_architect_not_paged_for_passing_criterion_check(rig):
     assert b.relevant(failing, P["a1"])
 
 
+@pytest.mark.parametrize("to", ["drafted", "designed", "signed_off", "in_progress"])
+def test_architect_not_paged_for_design_time_transitions(rig, to):
+    """rule 1 is EXHAUSTIVE (§24.1(c)): a status_changed INTO a design-time phase
+    (drafted/designed/signed_off/in_progress) is a courtesy copy — the architect can read it but is
+    not paged. Only the phase boundaries (ready/in_review/blocked/done/partial/dropped) still page."""
+    b, P, I = rig["b"], rig["p"], rig["ids"]
+    ev = synth(I["s1"], EventKind.status_changed, **{"from": "x", "to": to})
+    assert not b.relevant(ev, P["a1"]), f"architect must not be paged for a transition to {to}"
+
+
+@pytest.mark.parametrize("ev_kind,data", [
+    (EventKind.ticket_created, {"kind": "task", "by": "someone.else"}),
+    (EventKind.assigned, {"assignee": "someone.else", "by": "someone.else"}),
+    (EventKind.doc_updated, {"version": 2, "by": "someone.else"}),
+])
+def test_architect_not_paged_for_routine_subtree_events(rig, ev_kind, data):
+    """rule 1 is EXHAUSTIVE (§24.1(c)): ticket_created, assigned and doc_updated on a subtree ticket
+    are courtesy copies — they no longer wake the epic's architect through ancestor delivery. (These
+    are frequent: recording evidence emits doc_updated.)"""
+    b, P, I = rig["b"], rig["p"], rig["ids"]
+    ev = synth(I["s1"], ev_kind, **data)
+    assert not b.relevant(ev, P["a1"]), f"architect must not be paged for a subtree {ev_kind}"
+
+
+def test_architect_still_paged_for_epic_ticket_events_directly(rig):
+    """The exhaustive rule drops only ANCESTOR courtesy copies: an event on the epic ticket the
+    architect works DIRECTLY (on_ticket) is never dropped — a routine transition on E1 still reaches
+    architect.E1."""
+    b, P, I = rig["b"], rig["p"], rig["ids"]
+    ev = synth(I["e1"], EventKind.status_changed, **{"from": "x", "to": "in_progress"})
+    assert b.relevant(ev, P["a1"]), "architect works the epic directly; its own ticket's events reach it"
+
+
 def test_owner_not_paged_for_agent_passing_command_check(rig):
     """rule 2 (v21): an agent reviewer passing a `command` criterion is not a human page; a `look`
     check, an owner-checked one, or a fail still wakes the owner."""

@@ -30,6 +30,26 @@ class StubPool:
         return {"ok": True, "participant_id": participant_id}
 
 
+class FlakyPool:
+    """Fails the first N spawn attempts (raising, or returning the adapter's {'ok': False}
+    envelope), then succeeds — exercises the §24.1(b) keep-and-retry contract."""
+
+    def __init__(self, fails=1, raises=False):
+        self.spawns: list[tuple[str, str]] = []
+        self.attempts = 0
+        self.fails = fails
+        self.raises = raises
+
+    def spawn(self, role, participant_id, **kw):
+        self.attempts += 1
+        if self.attempts <= self.fails:
+            if self.raises:
+                raise RuntimeError("pool broke")
+            return {"ok": False, "error": {"code": "pool", "message": "no capacity"}}
+        self.spawns.append((role, participant_id))
+        return {"ok": True, "participant_id": participant_id}
+
+
 @pytest.fixture
 def pool():
     return StubPool()
@@ -147,6 +167,35 @@ def test_under_ram_floor_queues_with_one_feed_note(pool):
     # RAM frees up → the queued seat spawns on the next tick
     board._free_mb = lambda: 4096
     assert board.run_pending_pairings()["spawned"] == [seat]
+
+
+@pytest.mark.parametrize("raises", [False, True])
+def test_failed_spawn_keeps_the_entry_for_retry_with_one_note(raises):
+    """§24.1(b): a spawn that fails (a pool exception, or the adapter's {'ok': False}) leaves the
+    seat QUEUED for the next 60 s tick and posts exactly ONE feed note; it never reports a phantom
+    pairing. When the pool recovers, the retry spawns it and drains the entry."""
+    flaky = FlakyPool(fails=2, raises=raises)  # first two ticks fail, third recovers
+    board = Board(Store(":memory:"), pool=flaky, free_mb=lambda: 4096)
+    r = rig(board)
+    epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
+    story, _ = review_story_to_in_review(board, r, epic)
+    seat = f"reviewer.{story.id}"
+    out = board.run_pending_pairings()  # first attempt fails
+    assert out["spawned"] == [] and out["failed"] == [seat]
+    assert flaky.spawns == []               # nothing reported as spawned
+    assert seat in board._pending_pairings  # kept for the retry
+    notes = [m for m in board.store.query("message", {"ticket_id": story.id})
+             if m.created_by == "board" and "spawn failed" in m.text]
+    assert len(notes) == 1
+    board.run_pending_pairings()  # still noted once (the retry is quiet)
+    notes = [m for m in board.store.query("message", {"ticket_id": story.id})
+             if m.created_by == "board" and "spawn failed" in m.text]
+    assert len(notes) == 1
+    # third tick: the pool has recovered → the seat finally spawns and leaves the queue
+    out3 = board.run_pending_pairings()
+    assert out3["spawned"] == [seat]
+    assert (Role.reviewer.value, seat) in flaky.spawns
+    assert seat not in board._pending_pairings
 
 
 def test_acceptance_gate_spawns_single_qa(pool):
