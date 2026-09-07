@@ -2,28 +2,20 @@
 from __future__ import annotations
 
 import html
-import re as _re
 from datetime import datetime
 from typing import Any, Callable, Iterable
 from urllib.parse import quote
 
-import markdown as _markdown
-
-_SCRIPT_RX = _re.compile(r"<\s*script\b.*?<\s*/\s*script\s*>", _re.IGNORECASE | _re.DOTALL)
-_ON_ATTR_RX = _re.compile(r"\son\w+\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", _re.IGNORECASE)
-
-
-def _md(body: str) -> str:
-    """Render doc markdown to HTML (fenced code + tables), stripped of scripts and
-    inline handlers — docs are fleet-authored, but the browser gets no excuses."""
-    rendered = _markdown.markdown(body or "", extensions=["fenced_code", "tables", "sane_lists"])
-    rendered = _SCRIPT_RX.sub("", rendered)
-    return _ON_ATTR_RX.sub("", rendered)
-
 from fastapi import APIRouter, Form, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from . import delivery
+from . import delivery, views
+
+
+def _md(body: str) -> str:
+    """Render doc markdown to sanitised HTML — delegates to views.render_markdown, the single
+    renderer the legacy HTML and the JSON API share (strategy Phase 2 extraction)."""
+    return views.render_markdown(body)
 from .avatar_preferences import load_avatar_preferences, save_avatar_preference
 from .avatars import HUMAN_AVATAR_IDS, avatar_id_for, avatar_picker_html, human_avatar_svg, role_avatar_svg, system_avatar_svg
 from .board import Board, BoardError
@@ -265,13 +257,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
         # the deliverable renders HERE (markdown) and the verdict button IS the HITL gate
         signoff_rows=[]
         if p.role==Role.owner:
-            from .schemas import Verdict as _V
-            for c in board.store.query("criterion",{"verdict":_V.pending},limit=300):
-                if c.checked_by!="owner": continue
-                tk=board.store.get("ticket",c.ticket_id)
-                if tk is None or tk.status in _TERMINAL or not c.evidence_ref: continue
-                if not board._owner_scope(p,tk.id): continue
-                doc=board.store.get("doc",c.evidence_ref)
+            for c,tk,doc in views.pending_signoffs(board,p):
                 doc_view=(f"<details open><summary>{_e(getattr(doc,'title','evidence'))} "
                           f"<span class='muted'>{_e(getattr(doc,'doc_type',''))} v{getattr(doc,'version','?')}</span></summary>"
                           f"<div class='doc-md'>{_md(getattr(doc,'body_md',''))}</div></details>") if doc else \
@@ -342,9 +328,6 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
         # People = humans (taggable, always) + LIVE agent seats (with their ticket + state).
         # Base-role registry stubs (@engineer, @reviewer…) are empty chairs: tagging them
         # reaches nobody, so they do not appear — you talk to agents on their TICKET thread.
-        def _seat_state(pid: str) -> str | None:
-            rows=sorted(board.store.query("session",{"participant_id":pid}),key=lambda s:s.created_at)
-            return rows[-1].state.value if rows else None
         people_rows=[]; people_list=[]
         for c in sorted(board.store.query("participant",{}),key=lambda c:(c.type!="human",c.handle or "")):
             if not c.handle or c.handle.startswith(("__","wt-")): continue
@@ -355,7 +338,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
                     f"{_avatar_for(c.id,24)}<span class='mono'>@{_e(c.handle)}</span>"
                     f"<span class='muted'>person</span></div>")
                 continue
-            state=_seat_state(c.id)
+            state=views.seat_state(board,c.id)
             if state not in ("alive","parked"): continue  # a closed seat is not a recipient
             tid=c.id.split(".",1)[1] if "." in c.id else None
             people_list.append(c)
@@ -468,7 +451,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
         if status=="open": epic_rows=[t for t in epic_rows if t.status not in _TERMINAL]
         elif status: epic_rows=[t for t in epic_rows if t.status.value==status]
         if q:
-            hit={h["id"] for h in board.store.fts_search(q,types={"ticket"},limit=500)}
+            hit=set(views.search_ticket_ids(board,q))
             epic_rows=[t for t in epic_rows if t.id in hit]
         statuses="".join(f"<option value='{s}'{' selected' if status==s else ''}>{s.replace('_',' ')}</option>"
                          for s in ["open",*[x.value for x in TicketStatus]])
@@ -498,7 +481,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
         if assignee: rows=[t for t in rows if (t.assignee or "").find(assignee)>=0]
         if tag: rows=[t for t in rows if tag in (t.tags or [])]
         if q:
-            hits=[h["id"] for h in board.store.fts_search(q,types={"ticket"},limit=500)]; order={i:n for n,i in enumerate(hits)}
+            hits=views.search_ticket_ids(board,q); order={i:n for n,i in enumerate(hits)}
             rows=sorted([t for t in rows if t.id in order],key=lambda t:order[t.id])
         else:
             rows=sorted(rows,key=lambda t:t.created_at,reverse=True)
@@ -556,7 +539,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
         if work_type: kids=[k for k in kids if k.work_type.value==work_type]
         if assignee: kids=[k for k in kids if (k.assignee or "").find(assignee)>=0]
         if q:
-            hit={h["id"] for h in board.store.fts_search(q,types={"ticket"},limit=500)}
+            hit=set(views.search_ticket_ids(board,q))
             kids=[k for k in kids if k.id in hit]
         from .schemas import WorkType as _WT
         def _sel(name: str,cur: str|None,values: list[str],label: str) -> str:
@@ -664,19 +647,14 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
                 selected=avatar_id_for(p,preferences); identity=human_avatar_svg(selected,36) if p.type=="human" else _avatar_for(p.id)
                 # approve/needs-work: a pending owner-checked criterion holding THIS doc as evidence
                 approve=""
-                if p.type=="human" and p.role==Role.owner:
-                    from .schemas import Verdict as _V
-                    for c in board.store.query("criterion",{"verdict":_V.pending},limit=300):
-                        if c.checked_by!="owner" or c.evidence_ref!=d.id: continue
-                        tk=board.store.get("ticket",c.ticket_id)
-                        if tk is None or tk.status in _TERMINAL: continue
+                c=views.signoff_criterion_for_doc(board,p,d)
+                if c is not None:
                         approve=(f"<form method='post' action='/ui/me/verdict' style='display:flex;gap:8px;align-items:center'>{hidden}"
                                  f"<input type='hidden' name='criterion_id' value='{_e(c.id)}'>"
                                  f"<input type='hidden' name='ticket_id' value='{_e(c.ticket_id)}'>"
                                  f"<input type='hidden' name='back' value='/ui/doc/{quote(doc_id,safe='')}?{qs}'>"
                                  f"<button name='verdict' value='pass' title='sign this doc off — {_e(c.ticket_id)} can proceed'>Approve</button>"
                                  f"<button name='verdict' value='fail' class='btn-fail' title='send back — add a comment saying what is missing'>Needs work</button></form>")
-                        break
                 comment=(f"<form method='post' action='/ui/doc/{quote(doc_id,safe='')}/comment' style='display:flex;gap:8px;flex:1'>{hidden}"
                          f"<input name='text' placeholder='Comment on this doc as @{_e(p.handle.lstrip('@'))} — @mention a reviewer to request review' required "
                          f"title='posts [doc {_e(doc_id)} v{d.version}] + your comment to the epic thread; @mentions get inbox + Slack'>"
