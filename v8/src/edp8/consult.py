@@ -472,11 +472,48 @@ def ue_project_root() -> Path:
     return Path(os.environ.get(_UE_ROOT_ENV) or _DEFAULT_UE_ROOT)
 
 
+def _git_toplevel(p: Path) -> Path | None:
+    """The git worktree root containing `p`, or None if `p` is not in a repo."""
+    r = _git(p if p.is_dir() else p.parent, "rev-parse", "--show-toplevel")
+    if r and r.returncode == 0:
+        out = (r.stdout or "").strip()
+        if out:
+            return _realpath(out)
+    return None
+
+
+def run_fence_root(write_dir: str | None, files: list[str] | None, cwd: str | None = None) -> Path:
+    """The tree the write-fence scans for THIS run, derived from the run itself (design §19
+    rule 7): the git root of write_dir, else the git root of the first file passed, else the
+    shell's cwd. There is NO hard-coded project default — the old `C:\\Projects\\SpaceTravel`
+    fallback is gone, so a run on any epic never fences (or leaks paths from) an unrelated
+    project. `EDP8_UE_PROJECT_ROOT`, when an operator sets it explicitly, still pins the
+    protected tree (back-compat for the S0d containment tests / a deliberate protected root)."""
+    env = os.environ.get(_UE_ROOT_ENV)
+    if env:
+        return Path(env)
+    cwd = cwd or os.getcwd()
+    if write_dir:
+        base = _realpath(write_dir)
+    elif files:
+        f0 = Path(files[0])
+        base = _realpath(f0 if f0.is_dir() else f0.parent)
+    else:
+        base = _realpath(cwd)
+    return _git_toplevel(base) or base
+
+
 def check_write_dir_boundary(write_dir: str) -> str | None:
     """Return an error string if `write_dir` is inside / equal to / a parent
     (ancestor) of the UE project root — the only allowlisted exception being the
     Content/Concepts asset subtree. Junctions/symlinks are resolved first. None
-    means the directory is safe to write into. (criterion c-198d217e38)"""
+    means the directory is safe to write into. (criterion c-198d217e38)
+
+    Only enforced when EDP8_UE_PROJECT_ROOT is set to a protected tree (§19 rule 7):
+    with no explicit protected root there is nothing to keep write_dir out of — a
+    write_dir inside its own project is the normal case."""
+    if not os.environ.get(_UE_ROOT_ENV):
+        return None
     wd = _realpath(write_dir)
     ue = _realpath(ue_project_root()) if ue_project_root().exists() else Path(
         os.path.normpath(str(ue_project_root())))
@@ -1041,7 +1078,8 @@ def consult(purpose: Purpose, question: str, context: str = "",
             files: list[str] | None = None, timeout_s: int = 600,
             write_dir: str | None = None, images: list[str] | None = None,
             thread_id: str | None = None, model: str | None = None,
-            profile: str | None = None) -> dict[str, Any]:
+            profile: str | None = None,
+            on_run_id: Any = None) -> dict[str, Any]:
     """Ask the consultant one question under a purpose PROFILE and return the
     standard envelope. Never retries, never glosses a failure as a quota cap.
 
@@ -1119,7 +1157,8 @@ def consult(purpose: Purpose, question: str, context: str = "",
         return _consult_locked(purpose, question, context=context, files=files, timeout_s=timeout_s,
                                write_dir=write_dir, images=images, thread_id=thread_id,
                                requested_model=requested_model, profile_name=profile_name, spec=spec,
-                               img_records=img_records, codex=codex, queued_behind=queued_behind)
+                               img_records=img_records, codex=codex, queued_behind=queued_behind,
+                               on_run_id=on_run_id)
     finally:
         with _LANE_STATE_LOCK:
             _LANE_STATE["in_flight"] = None
@@ -1131,11 +1170,19 @@ def consult(purpose: Purpose, question: str, context: str = "",
 def _consult_locked(purpose: str, question: str, *, context: str, files: list[str] | None, timeout_s: int,
                     write_dir: str | None, images: list[str], thread_id: str | None, requested_model: str,
                     profile_name: str, spec: Any, img_records: list[Any], codex: str,
-                    queued_behind: int) -> dict[str, Any]:
+                    queued_behind: int, on_run_id: Any = None) -> dict[str, Any]:
     run_id = f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{uuid.uuid4().hex[:8]}"
     with _LANE_STATE_LOCK:
         _LANE_STATE["in_flight"] = run_id
         _LANE_STATE["started_at"] = _now()
+    # The run now has an id and holds the lane — hand it to a bounded caller so a call that
+    # exceeds the tool-call cap can return {run_id, status:"running"} and let this finish in
+    # the background (design §19 rule 4). Best-effort: a callback error never fails the run.
+    if on_run_id is not None:
+        try:
+            on_run_id(run_id)
+        except Exception:  # noqa: BLE001 — the caller's bookkeeping, never the run's concern
+            pass
     parts = [_PREAMBLES[purpose], "", (question or "").strip()]
     if context.strip():
         parts += ["", "Context:", context.strip()]
@@ -1207,8 +1254,9 @@ def _consult_locked(purpose: str, question: str, *, context: str, files: list[st
     # fence can ATTRIBUTE each dirty path: git status is the primary signal (a path
     # already dirty here is a concurrent seat's edit, never ours), the mtime scan a
     # secondary signal for a non-git tree. Cheap when the root does not exist.
-    boundary_before = _snapshot_mtimes([ue_project_root()])
-    pre_status = git_status_map(ue_project_root())
+    fence_root = run_fence_root(write_dir, files)
+    boundary_before = _snapshot_mtimes([fence_root])
+    pre_status = git_status_map(fence_root)
     start = time.monotonic()
     try:
         raw, exit_code, timed_out = _run_codex(argv, timeout_s)
@@ -1247,7 +1295,7 @@ def _consult_locked(purpose: str, question: str, *, context: str, files: list[st
     # Concurrent seats' edits (pre-dirty) and gitignored build outputs are reported
     # but never touched; only THIS run's escapes (clean→dirty) are reverted, and even
     # then the answer is RECOVERED, never discarded. A concurrent-only run succeeds.
-    fence = fence_remediate(write_dir, pre_status, boundary_before, ue_project_root(),
+    fence = fence_remediate(write_dir, pre_status, boundary_before, fence_root,
                             run_log=raw)
     real = _real_escapes(fence)
     concurrent = [e for e in fence["escapes"]

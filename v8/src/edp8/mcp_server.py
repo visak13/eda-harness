@@ -36,7 +36,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from .bundles import ROLE_BUNDLES, ToolDef, bind_request, set_client, tools_for_role
+from .bundles import ROLE_BUNDLES, ToolDef, bind_request, invoke, set_client, tools_for_role
 from .client import BoardClient
 
 STARTED_AT = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -87,8 +87,9 @@ def _wrap(tool: ToolDef, *, board_url: str, admin_token: str | None):
         participant, session = _identity_from(ctx)
         client = BoardClient(base_url=board_url, participant=participant, admin_token=admin_token)
         with bind_request(client, session_id=session, server_version=VERSION):
-            args = tool.args_model(**kwargs)
-            result = tool.handler(args)
+            # invoke() validates args → envelope on a bad enum (naming field + allowed values),
+            # carries the deprecation hint, and counts consecutive failures per seat (§19).
+            result = invoke(tool, kwargs, seat=participant)
         return json.dumps(result, default=str)
 
     params = [inspect.Parameter("ctx", inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=Context)]

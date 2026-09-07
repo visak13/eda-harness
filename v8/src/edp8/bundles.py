@@ -15,19 +15,27 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
+import enum as _enum
 import os
 import sys
+import threading
+import typing
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from pydantic import AliasChoices, BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field, ValidationError
 
 from .client import BoardClient
 from .schemas import (
+    ENUMS,
     ArtifactForm,
     Check,
+    CheckedBy,
+    ConsultModel,
+    ConsultProfile,
+    ConsultPurpose,
     DocType,
     Gate,
     MessageKind,
@@ -36,6 +44,7 @@ from .schemas import (
     StatusValue,
     TicketKind,
     TicketStatus,
+    Verdict,
     WorkType,
 )
 
@@ -91,13 +100,204 @@ def unavailable(message: str, hint: str) -> dict[str, Any]:
 # ----------------------------------------------------------------------------- tool def
 
 
+# ----------------------------------------------------------------------------- description composer
+#
+# A tool's MCP description is COMPOSED, never hand-typed as one blob (design §19 rule 2):
+# what it does · when to call it · the enum args it takes with allowed values inline ·
+# what it returns. The enum clause is derived from the args_model, so a tool's advertised
+# allowed values can never drift from its pydantic schema.
+
+
+def _enum_class(annotation: Any) -> type[_enum.Enum] | None:
+    """The StrEnum inside an annotation (unwrapping Optional/Union), or None."""
+    if isinstance(annotation, type) and issubclass(annotation, _enum.Enum):
+        return annotation
+    for a in typing.get_args(annotation):
+        got = _enum_class(a)
+        if got is not None:
+            return got
+    return None
+
+
+def enum_fields(args_model: type[BaseModel]) -> dict[str, list[str]]:
+    """{field name -> allowed values} for every enum-typed argument of a tool."""
+    out: dict[str, list[str]] = {}
+    for fname, field in args_model.model_fields.items():
+        ec = _enum_class(field.annotation)
+        if ec is not None:
+            out[fname] = [m.value for m in ec]
+    return out
+
+
+def _type_name(annotation: Any) -> str:
+    origin = typing.get_origin(annotation)
+    if origin is None:
+        return getattr(annotation, "__name__", str(annotation))
+    args = [a for a in typing.get_args(annotation) if a is not type(None)]
+    return "|".join(_type_name(a) for a in args) or str(annotation)
+
+
+def _enum_clause(args_model: type[BaseModel]) -> str:
+    ef = enum_fields(args_model)
+    if not ef:
+        return ""
+    parts = [f"{k} one of: {'|'.join(v)}" for k, v in ef.items()]
+    return "Enum args — " + "; ".join(parts) + " (describe('enums') lists every enum). "
+
+
+def compose_description(what: str, when: str, returns: str, args_model: type[BaseModel]) -> str:
+    what = what.strip().rstrip(".") + "."
+    when = when.strip().rstrip(".") + "."
+    returns = returns.strip().rstrip(".") + "."
+    return f"{what} When to call: {when} {_enum_clause(args_model)}Returns {returns}"
+
+
 @dataclass
 class ToolDef:
     name: str
-    description: str
+    what: str        # what the tool does
+    when: str        # when to call it
+    returns: str     # what it returns (value shape + the hint contract, in one line)
     args_model: type[BaseModel]
     handler: Callable[[BaseModel], dict[str, Any]]
     bundle: str
+
+    @property
+    def description(self) -> str:
+        """The composed MCP description: what · when · enum args (from schema) · returns."""
+        return compose_description(self.what, self.when, self.returns, self.args_model)
+
+    def schema_inline(self) -> str:
+        """The full argument schema on one line — inlined into the hint after the third
+        consecutive failure of this tool by one seat (design §19 rule 6)."""
+        rows = []
+        ef = enum_fields(self.args_model)
+        for fname, field in self.args_model.model_fields.items():
+            req = "required" if field.is_required() else "optional"
+            typ = f"one of {'|'.join(ef[fname])}" if fname in ef else _type_name(field.annotation)
+            rows.append(f"{fname} ({req}: {typ})")
+        return f"{self.name}({', '.join(rows)})"
+
+
+# ----------------------------------------------------------------------------- invoke (the dispatcher)
+#
+# Every tool call the MCP server serves goes through invoke(): it validates the args into
+# the pydantic model — turning a bad enum into an envelope that NAMES the field and its
+# allowed values (§19 rule 3/5) — carries the ticket_update `id`→`ticket_id` deprecation
+# hint (§19 rule 3), counts consecutive failures per (seat, tool) and inlines the full
+# schema on the third (§19 rule 6), then calls the handler. Tests may call a handler
+# directly; the MCP path always goes through here.
+
+_TRIPWIRE = 3
+_FAIL_COUNTS: dict[tuple[str, str], int] = {}
+_FAIL_LOCK = threading.Lock()
+# tools whose primary id argument was renamed to <new>; the old `id` is accepted one release
+_RENAMED_ID: dict[str, str] = {"ticket_update": "ticket_id", "ticket_read": "ticket_id"}
+
+
+def _bump_failure(seat: str, name: str) -> int:
+    with _FAIL_LOCK:
+        key = (seat, name)
+        _FAIL_COUNTS[key] = _FAIL_COUNTS.get(key, 0) + 1
+        return _FAIL_COUNTS[key]
+
+
+def _reset_failure(seat: str, name: str) -> None:
+    with _FAIL_LOCK:
+        _FAIL_COUNTS.pop((seat, name), None)
+
+
+def _validation_envelope(tool: ToolDef, exc: ValidationError) -> dict[str, Any]:
+    err = exc.errors()[0]
+    field = ".".join(str(x) for x in err.get("loc", ())) or "?"
+    allowed = enum_fields(tool.args_model).get(field)
+    error: dict[str, Any] = {"code": "schema",
+                             "message": f"{tool.name}: invalid {field!r} — {err.get('msg')}",
+                             "field": field}
+    if allowed:
+        error["allowed"] = allowed
+    hint = (f"pass a valid {field}"
+            + (f" — one of: {'|'.join(allowed)}" if allowed else "")
+            + f"; describe('enums') lists allowed values")
+    return {"ok": False, "error": error, "hint": hint}
+
+
+def _deprecation_note(tool: ToolDef, kwargs: dict[str, Any]) -> str | None:
+    new = _RENAMED_ID.get(tool.name)
+    if new and "id" in kwargs and new not in kwargs:
+        return (f" | note: {tool.name} arg 'id' is deprecated — use '{new}' "
+                "(the old name is accepted this release only)")
+    return None
+
+
+def _apply_tripwire(tool: ToolDef, seat: str, env: dict[str, Any]) -> dict[str, Any]:
+    n = _bump_failure(seat, tool.name)
+    if n >= _TRIPWIRE:
+        env = dict(env)
+        env["hint"] = ((env.get("hint") or "")
+                       + f" | {n} consecutive {tool.name} failures by this seat — "
+                       f"full schema: {tool.schema_inline()}").strip()
+    return env
+
+
+def invoke(tool: ToolDef, kwargs: dict[str, Any] | None, *, seat: str | None = None) -> dict[str, Any]:
+    """Validate → dispatch → count. The one entry the MCP server uses for every call."""
+    seat = seat or "?"
+    kwargs = kwargs or {}
+    try:
+        args = tool.args_model(**kwargs)
+    except ValidationError as e:
+        return _apply_tripwire(tool, seat, _validation_envelope(tool, e))
+    dep = _deprecation_note(tool, kwargs)
+    result = tool.handler(args)
+    if not isinstance(result, dict):
+        result = {"ok": False, "error": {"code": "internal", "message": "handler returned a non-envelope"},
+                  "hint": ""}
+    if result.get("ok"):
+        _reset_failure(seat, tool.name)
+        if dep:
+            result["hint"] = ((result.get("hint") or "") + dep).strip()
+        return result
+    return _apply_tripwire(tool, seat, result)
+
+
+# ----------------------------------------------------------------------------- bounded calls
+#
+# No tool call blocks on an executable or another service beyond the call cap (design §19
+# rule 4). A tool that launches a process or waits on the pool (consult, spawn, resume,
+# reap, preflight) runs its work in a daemon thread the server owns; if it does not finish
+# within the cap the tool returns {status:"running", poll:...} and the work continues in the
+# background. consult additionally wakes the caller with a consult_done thread note when a
+# background run finishes (see _consult).
+
+
+def _call_cap() -> float:
+    try:
+        return float(os.environ.get("EDP8_TOOL_CALL_CAP_S", "30"))
+    except ValueError:
+        return 30.0
+
+
+def _bounded(name: str, thunk: Callable[[], dict[str, Any]], running: dict[str, Any]) -> dict[str, Any]:
+    """Run `thunk` in a daemon thread carrying this request's context; return its result if it
+    finishes within the call cap, else `running` (the work keeps going in the background)."""
+    ctx = contextvars.copy_context()
+    holder: dict[str, Any] = {}
+    done = threading.Event()
+
+    def _work() -> None:
+        try:
+            holder["r"] = ctx.run(thunk)
+        except Exception as e:  # noqa: BLE001 — a crashed bg call must still surface, never hang
+            holder["r"] = {"ok": False, "error": {"code": "internal", "message": f"{name} crashed: {e}"},
+                           "hint": "the background call raised; see the server log"}
+        finally:
+            done.set()
+
+    threading.Thread(target=_work, name=f"bounded:{name}", daemon=True).start()
+    if done.wait(timeout=_call_cap()):
+        return holder["r"]
+    return running
 
 
 # ============================================================================= identity
@@ -112,7 +312,8 @@ class ContextArgs(BaseModel):
 
 
 class DescribeArgs(BaseModel):
-    type: str = Field(description="object type: participant|ticket|criterion|doc|link|message|event|artifact|session")
+    type: str = Field(description="object type (participant|ticket|criterion|doc|link|message|event|artifact|"
+                      "session), or 'enums' to list every enum, or 'enum:<Name>' for one enum's allowed values")
 
 
 class GetGuideArgs(BaseModel):
@@ -164,6 +365,13 @@ def _preflight(_: PreflightArgs) -> dict[str, Any]:
                     "a quota note means codex itself refused recently — you decide, and say why on the thread"}
 
 
+def _preflight_bounded(a: PreflightArgs) -> dict[str, Any]:
+    # §19 rule 4: even the advisory read is bounded — a slow host/pool never hangs the call.
+    return _bounded("preflight", lambda: _preflight(a),
+                    {"ok": True, "value": {"status": "running", "poll": "preflight"},
+                     "hint": "preflight is taking unusually long (host/pool slow) — retry, and weigh the risk yourself"})
+
+
 def _whoami(_: WhoamiArgs) -> dict[str, Any]:
     resp = get_client().whoami()
     if resp.get("ok"):
@@ -212,17 +420,25 @@ def _subscribe(_: SubscribeArgs) -> dict[str, Any]:
     broker = os.environ.get("EDP_BROKER_URL")
     if broker:
         monitor_cmd += f" --broker {broker}"
+    listening: dict[str, Any] = {}
+    try:  # the delivery contract for this seat's role; best-effort (an old board lacks the route)
+        got = client.listening()
+        if got.get("ok"):
+            listening = got["value"]
+    except Exception:  # noqa: BLE001 — the wake plane still works without the contract text
+        pass
     return {
         "ok": True,
         "value": {
             "monitor_cmd": monitor_cmd,
+            "listening": listening,
             "cron": {
                 "expr": "*/30 * * * *",
                 "prompt": "edp8 heartbeat: call context() and act only if something is new; if nothing, end the turn silently",
             },
         },
-        "hint": "run monitor_cmd under the Monitor tool once (your event+message wake plane); "
-                "CronCreate the cron once (the fallback if a wake is missed)",
+        "hint": "run monitor_cmd under the Monitor tool once — it is your wake plane, and its first line "
+                "prints `listening` (what wakes you); CronCreate the cron once as the fallback if a wake is missed",
     }
 
 
@@ -244,9 +460,27 @@ _TOOLS_BY_TYPE: dict[str, list[str]] = {
 
 
 def _describe(args: DescribeArgs) -> dict[str, Any]:
-    out = get_client().describe(args.type)
+    t = args.type
+    # Enums are answered from the schema registry (§19 rule 3): describe('enums') lists them
+    # all, describe('enum:<Name>') returns one — no board round-trip, so every seat can look
+    # up a strict argument's allowed values without a network call.
+    if t == "enums":
+        return {"ok": True,
+                "value": {"enums": {name: [m.value for m in e] for name, e in ENUMS.items()}},
+                "hint": "describe('enum:<Name>') returns one enum's values; these are the strict "
+                        "vocabularies tool args use — pass one of these, never a guess"}
+    if t.startswith("enum:"):
+        name = t.split(":", 1)[1]
+        e = ENUMS.get(name)
+        if e is None:
+            return {"ok": False,
+                    "error": {"code": "not_found", "message": f"unknown enum {name!r}",
+                              "field": "type", "allowed": sorted(ENUMS)},
+                    "hint": "describe('enums') lists every enum name"}
+        return {"ok": True, "value": {"enum": name, "values": [m.value for m in e]}, "hint": ""}
+    out = get_client().describe(t)
     if out.get("ok"):
-        out["value"]["tools"] = _TOOLS_BY_TYPE.get(args.type, [])
+        out["value"]["tools"] = _TOOLS_BY_TYPE.get(t, [])
     return out
 
 
@@ -263,24 +497,37 @@ def _get_guide(args: GetGuideArgs) -> dict[str, Any]:
 
 
 IDENTITY_TOOLS = [
-    ToolDef("whoami", "Report your registered identity and which tool bundles your role has. "
-            "Returns the participant record, its open tickets, and the bundle list.",
+    ToolDef("whoami",
+            "Report your registered identity and which tool bundles your role has",
+            "at boot, or whenever you need your handle, role, open tickets or lineage",
+            "the participant record, its open tickets, the bundle list, and the server version",
             WhoamiArgs, _whoami, "identity"),
-    ToolDef("preflight", "Headroom before you spawn or consult: host free RAM, live seats vs the pool caps, "
-            "the fleet-wide codex lane (in flight / queued), and any recent codex usage-cap note. Idempotent, "
-            "read-only, ADVISORY — it never blocks; you weigh it. Returns the numbers plus rules of thumb.",
-            PreflightArgs, _preflight, "identity"),
-    ToolDef("subscribe", "Arm your event feed for this session (one-time setup). "
-            "Returns the monitor command to run and the heartbeat cron to create.",
+    ToolDef("preflight",
+            "Read host free RAM, live seats vs the pool caps, the fleet-wide codex lane (in flight / "
+            "queued), and any recent codex usage-cap note — idempotent, read-only, ADVISORY (it never blocks)",
+            "before you spawn or consult, to weigh headroom yourself",
+            "the numbers plus rules of thumb; a hint that it is advisory, never a gate",
+            PreflightArgs, _preflight_bounded, "identity"),
+    ToolDef("subscribe",
+            "Arm your event feed for this session (one-time setup)",
+            "once, at boot, right after whoami",
+            "the monitor command to run and the heartbeat cron to create",
             SubscribeArgs, _subscribe, "identity"),
-    ToolDef("context", "Load everything needed to act on your ticket(s): chain, criteria, docs, thread, open asks. "
-            "Returns one context block per ticket, plus any unanswered questions addressed to you.",
+    ToolDef("context",
+            "Load everything needed to act on your ticket(s): chain, criteria, docs, thread, open asks",
+            "at boot after subscribe, and whenever a feed event says your ticket changed",
+            "one context block per ticket, plus any unanswered questions addressed to you",
             ContextArgs, _context, "identity"),
-    ToolDef("describe", "Look up an object type's shape and one-line contract. "
-            "Returns the JSON schema and the contract text for that type.",
+    ToolDef("describe",
+            "Look up an object type's shape and one-line contract, or an enum's allowed values "
+            "(type='enums' lists every enum, type='enum:<Name>' returns one)",
+            "when you are unsure of a type's fields or a strict argument's allowed values",
+            "the JSON schema and contract text for a type, or the values for an enum",
             DescribeArgs, _describe, "identity"),
-    ToolDef("get_guide", "Fetch one on-demand reference page (a template, a format spec). "
-            "Returns the guide's markdown body, or not_found if no such guide exists.",
+    ToolDef("get_guide",
+            "Fetch one on-demand reference page (a template, a format spec)",
+            "when a task points you at a named guide, e.g. get_guide('tools')",
+            "the guide's markdown body, or not_found if no such guide exists",
             GetGuideArgs, _get_guide, "identity"),
 ]
 
@@ -299,7 +546,7 @@ class TicketCreateArgs(BaseModel):
 
 
 class TicketReadArgs(BaseModel):
-    id: str = Field(description="ticket id", validation_alias=AliasChoices("id", "ticket_id"))
+    ticket_id: str = Field(description="ticket id", validation_alias=AliasChoices("ticket_id", "id"))
     include: str | None = Field(default=None, description="comma list to narrow: chain,criteria,docs,children,"
                                 "blockers,gates,thread,links — omit for everything")
     thread_limit: int = Field(default=20, description="how many of the newest thread messages to include")
@@ -319,7 +566,7 @@ class TicketQueryArgs(BaseModel):
 
 
 class TicketUpdateArgs(BaseModel):
-    id: str = Field(description="ticket id", validation_alias=AliasChoices("id", "ticket_id"))
+    ticket_id: str = Field(description="ticket id", validation_alias=AliasChoices("ticket_id", "id"))
     status: TicketStatus | None = Field(default=None, description="a legal next status: drafted→designed→signed_off→"
                                         "ready→in_progress→in_review→done (or blocked/partial/dropped); the "
                                         "transition guard names what is missing")
@@ -333,7 +580,7 @@ class CriterionCreateArgs(BaseModel):
     ticket_id: str
     text: str = Field(description="a checkable definition of done")
     check: Check = Field(description="command|path|look|verdict")
-    checked_by: str = Field(description="the role that will verdict this: reviewer|qa|owner")
+    checked_by: CheckedBy = Field(description="the role that will verdict this: reviewer|qa|owner")
 
 
 class CriterionQueryArgs(BaseModel):
@@ -344,7 +591,7 @@ class CriterionUpdateArgs(BaseModel):
     model_config = {"extra": "forbid"}  # an unknown kwarg is an ERROR, never a silent drop
     id: str = Field(description="criterion id")
     evidence_ref: str | None = Field(default=None, description="doc id (a report) proving the check")
-    verdict: str | None = Field(default=None, description="pending|pass|fail — set after evidence_ref")
+    verdict: Verdict | None = Field(default=None, description="pending|pass|fail — set after evidence_ref")
     text: str | None = Field(default=None, description="reword the criterion (authors only, while verdict pending)")
 
 
@@ -355,7 +602,7 @@ def _ticket_create(a: TicketCreateArgs) -> dict[str, Any]:
 
 
 def _ticket_read(a: TicketReadArgs) -> dict[str, Any]:
-    return get_client().ticket_read(a.id, include=a.include, thread_limit=a.thread_limit)
+    return get_client().ticket_read(a.ticket_id, include=a.include, thread_limit=a.thread_limit)
 
 
 def _ticket_query(a: TicketQueryArgs) -> dict[str, Any]:
@@ -365,7 +612,7 @@ def _ticket_query(a: TicketQueryArgs) -> dict[str, Any]:
 
 
 def _ticket_update(a: TicketUpdateArgs) -> dict[str, Any]:
-    return get_client().ticket_update(a.id, status=a.status, assignee=a.assignee, design_ref=a.design_ref,
+    return get_client().ticket_update(a.ticket_id, status=a.status, assignee=a.assignee, design_ref=a.design_ref,
                                       description=a.description, tags=a.tags)
 
 
@@ -382,28 +629,45 @@ def _criterion_update(a: CriterionUpdateArgs) -> dict[str, Any]:
 
 
 TICKET_TOOLS = [
-    ToolDef("ticket_create", "Create a ticket (epic by owner/coordinator, story by architect, task by engineer). "
-            "Returns the ticket and a hint for the next step.",
+    ToolDef("ticket_create",
+            "Create a ticket — epic (owner/coordinator), story (architect), task (engineer/architect)",
+            "when you own a new slice of work: an epic from the owner's words, a story, or a task under your story",
+            "the ticket and a hint for the next step",
             TicketCreateArgs, _ticket_create, "ticket"),
-    ToolDef("ticket_read", "ONE fat read of a ticket: the record (title, description, tags, status, assignee), its "
-            "chain up to the epic, criteria, docs WITH the relation that links them, children with their "
-            "assignee_role and criteria tally, blockers, open gates, the newest thread messages (thread_seq for "
-            "message_query since_seq), and links. Use this instead of stitching ticket_query + link_query + "
-            "message_query. "
-            "Returns the full ticket record.",
+    ToolDef("ticket_read",
+            "ONE fat read of a ticket: the record (title, description, tags, status, assignee), its chain up to "
+            "the epic, criteria, docs WITH their relation, children with assignee_role and criteria tally, "
+            "blockers, open gates, the newest thread messages (thread_seq for message_query since_seq), and links",
+            "whenever you need the full state of a ticket — instead of stitching ticket_query + link_query + "
+            "message_query",
+            "the full ticket record",
             TicketReadArgs, _ticket_read, "ticket"),
-    ToolDef("ticket_query", "List tickets by kind, status, assignee, parent, epic_id (whole subtree), created_by, tag, or q (words in title/description/tags). Returns matching ticket records.",
+    ToolDef("ticket_query",
+            "List tickets by kind, status, assignee, parent, epic_id (whole subtree), created_by, tag, or q "
+            "(words in title/description/tags)",
+            "to find tickets matching a filter when you do not have the id",
+            "matching ticket records",
             TicketQueryArgs, _ticket_query, "ticket"),
-    ToolDef("ticket_update", "Change a ticket's status/assignee/design_ref. Guarded by the transition rules "
-            "(e.g. done needs every criterion passed). Returns the updated ticket, or a transition/scope error.",
+    ToolDef("ticket_update",
+            "Change a ticket's status/assignee/design_ref/description/tags, guarded by the transition rules "
+            "(e.g. done needs every criterion passed)",
+            "to move your ticket to its next status, (re)assign it, or attach its design",
+            "the updated ticket, or a transition/scope error naming what is missing",
             TicketUpdateArgs, _ticket_update, "ticket"),
-    ToolDef("criterion_create", "Add a checkable definition of done to a ticket, before work starts. "
-            "Returns the criterion.",
+    ToolDef("criterion_create",
+            "Add a checkable definition of done to a ticket",
+            "before work starts, while you own the ticket, one criterion per checkable fact",
+            "the criterion",
             CriterionCreateArgs, _criterion_create, "ticket"),
-    ToolDef("criterion_query", "List a ticket's criteria. Returns the criterion records.",
+    ToolDef("criterion_query",
+            "List a ticket's criteria",
+            "to see what a ticket must satisfy, or which criteria are still pending",
+            "the criterion records",
             CriterionQueryArgs, _criterion_query, "ticket"),
-    ToolDef("criterion_update", "Record evidence_ref then a verdict on a criterion (the checker only; not the doer). "
-            "Returns the criterion plus a hint on remaining pending criteria.",
+    ToolDef("criterion_update",
+            "Record an evidence_ref then a verdict on a criterion (the checker only, never the doer)",
+            "as a reviewer/qa/owner, after the evidence doc exists, to pass or fail a criterion",
+            "the criterion plus a hint on remaining pending criteria",
             CriterionUpdateArgs, _criterion_update, "ticket"),
 ]
 
@@ -482,20 +746,40 @@ def _link_delete(a: LinkDeleteArgs) -> dict[str, Any]:
 
 
 DOC_TOOLS = [
-    ToolDef("doc_create", "Author a versioned markdown doc (design/strategy/domain/report/note per your role). "
-            "Returns the doc and a hint to link it to its ticket.",
+    ToolDef("doc_create",
+            "Author a versioned markdown doc — design/strategy_hl/strategy_ll/domain/report/note, per your role",
+            "to record a design, strategy, domain guide, evidence report, or a thread-worthy note",
+            "the doc and a hint to link it to its ticket",
             DocCreateArgs, _doc_create, "doc"),
-    ToolDef("doc_read", "Read a doc, latest or a specific version. Returns the doc plus the list of versions.",
+    ToolDef("doc_read",
+            "Read a doc, latest or a specific version",
+            "when a ticket's design_ref or a link points at a doc you need to act on",
+            "the doc plus the list of versions",
             DocReadArgs, _doc_read, "doc"),
-    ToolDef("doc_query", "List docs matching filters. Returns doc summaries.",
+    ToolDef("doc_query",
+            "List docs matching doc_type/scope/owner_role filters",
+            "to find the design or strategy docs for an epic when you do not have their ids",
+            "doc summaries",
             DocQueryArgs, _doc_query, "doc"),
-    ToolDef("doc_update", "Revise a doc's body/title; every update is a new version. Returns the updated doc.",
+    ToolDef("doc_update",
+            "Revise a doc's body/title; every update is a new version",
+            "to amend a doc you own without losing its history",
+            "the updated doc",
             DocUpdateArgs, _doc_update, "doc"),
-    ToolDef("link_create", "Link a ticket/doc to a doc/artifact/ticket with a typed relation. Returns the link.",
+    ToolDef("link_create",
+            "Link a ticket/doc to a doc/artifact/ticket with a typed relation",
+            "to attach a design, strategy, evidence, blocker, produced artifact, or doc-layer edge",
+            "the link",
             LinkCreateArgs, _link_create, "doc"),
-    ToolDef("link_query", "List links matching filters. Returns the link records.",
+    ToolDef("link_query",
+            "List links matching from_id/to_id/relation filters",
+            "to discover what a ticket or doc is linked to",
+            "the link records",
             LinkQueryArgs, _link_query, "doc"),
-    ToolDef("link_delete", "Remove a link. Returns whether it was deleted.",
+    ToolDef("link_delete",
+            "Remove a link",
+            "to undo a link created in error",
+            "whether it was deleted",
             LinkDeleteArgs, _link_delete, "doc"),
 ]
 
@@ -566,21 +850,35 @@ def _gates(a: GatesArgs) -> dict[str, Any]:
 
 
 THREAD_TOOLS = [
-    ToolDef("message_send", "Post to a ticket's thread, addressed to a participant/role/@handle or left as a note. "
-            "Returns the message; a question or steer is delivered to the recipient's feed.",
+    ToolDef("message_send",
+            "Post to a ticket's thread, addressed to a participant/role/@handle or left as a note",
+            "at every milestone, blocker, question, answer or hand-off — an event not sent is work nobody sees",
+            "the message; a question or steer is delivered to the recipient's feed",
             MessageSendArgs, _message_send, "thread"),
-    ToolDef("message_query", "List thread messages, oldest first, each with its seq. Pass since_seq (from the "
-            "last_seq hint or ticket_read's thread_seq) to get ONLY what is new — never re-read a thread you "
-            "already have. Returns the messages and a last_seq hint.",
+    ToolDef("message_query",
+            "List thread messages, oldest first, each with its seq; since_seq returns ONLY what is new",
+            "to read a thread, or to poll it with since_seq (from the last_seq hint or ticket_read's thread_seq)",
+            "the messages and a last_seq hint",
             MessageQueryArgs, _message_query, "thread"),
-    ToolDef("message_read", "Read one message by id with its seq, the message it replies to, and its replies. "
-            "Returns the message record.", MessageReadArgs, _message_read, "thread"),
-    ToolDef("gate_open", "Open a human gate on a ticket (precondition: none already open for that gate). "
-            "Returns the gate_opened event; the owner is notified.",
+    ToolDef("message_read",
+            "Read one message by id with its seq, the message it replies to, and its replies",
+            "to inspect a single message a feed event or reply_to pointed you at",
+            "the message record",
+            MessageReadArgs, _message_read, "thread"),
+    ToolDef("gate_open",
+            "Open a human gate on a ticket (precondition: none already open for that gate)",
+            "when work needs a human decision — design sign-off, poc, demo, adversarial, budget, or acceptance",
+            "the gate_opened event; the owner is notified",
             GateOpenArgs, _gate_open, "thread"),
-    ToolDef("gate_answer", "Answer an open human gate (owner only). Returns the gate_answered event.",
+    ToolDef("gate_answer",
+            "Answer an open human gate (owner only)",
+            "as the owner, to resolve a gate a seat opened",
+            "the gate_answered event",
             GateAnswerArgs, _gate_answer, "thread"),
-    ToolDef("gates", "List a ticket's currently open gates. Returns the open gate events.",
+    ToolDef("gates",
+            "List a ticket's currently open gates",
+            "to see whether a ticket is waiting on a human decision",
+            "the open gate events",
             GatesArgs, _gates, "thread"),
 ]
 
@@ -633,16 +931,21 @@ def _participants(a: ParticipantsArgs) -> dict[str, Any]:
 
 
 BOARD_TOOLS = [
-    ToolDef("board", "Render an epic's ticket tree with status counts, ready/in_review lists and open gates. "
-            "Returns the board view for that epic.",
+    ToolDef("board",
+            "Render an epic's ticket tree with status counts, ready/in_review lists and open gates",
+            "to see the whole epic's state at a glance",
+            "the board view for that epic",
             BoardArgs, _board, "board"),
-    ToolDef("events_query", "Read the audit/feed log, by subject or since a sequence number. "
-            "Returns matching events.",
+    ToolDef("events_query",
+            "Read the audit/feed log, by subject or since a sequence number",
+            "to reconstruct what happened on a subject, or to catch up on events since a seq",
+            "matching events",
             EventsQueryArgs, _events_query, "board"),
-    ToolDef("participants", "List the whole team — humans and agent seats — optionally by role. Each row "
-            "carries type, @handle, role, and reach (person / live seat / closed seat). THE way to find a "
-            "collaborator: match the role you need (exact or closest judgment call), then "
-            "message_send(to='@'+handle) — humans get their Slack doorbell automatically. Returns the roster.",
+    ToolDef("participants",
+            "List the whole team — humans and agent seats — optionally by role; each row carries type, @handle, "
+            "role, and reach (person / live seat / closed seat)",
+            "to find a collaborator: match the role you need, then message_send(to='@'+handle)",
+            "the roster; a hint on reaching a human reviewer",
             ParticipantsArgs, _participants, "board"),
 ]
 
@@ -869,29 +1172,68 @@ def _session_query(a: SessionQueryArgs) -> dict[str, Any]:
     return get_client().session_query(participant_id=a.participant_id, ticket_id=a.ticket_id, state=a.state)
 
 
+# Bounded (§19 rule 4): a pool call that hangs must not block the tool past the call cap.
+# The work keeps going in a background thread; the caller gets a {status:"running"} pointer.
+
+def _spawn_bounded(a: SpawnArgs) -> dict[str, Any]:
+    return _bounded("spawn", lambda: _spawn(a),
+                    {"ok": True, "value": {"status": "running", "poll": "session_query"},
+                     "hint": "spawn is still starting the shell (pool slow); the seat will boot and "
+                             "record_status to you — poll session_query(participant_id=...)"})
+
+
+def _resume_bounded(a: ResumeArgs) -> dict[str, Any]:
+    return _bounded("resume", lambda: _resume(a),
+                    {"ok": True, "value": {"status": "running", "poll": "session_query"},
+                     "hint": "resume is still working (pool slow); poll session_query(participant_id=...)"})
+
+
+def _reap_bounded(a: ReapArgs) -> dict[str, Any]:
+    return _bounded("reap", lambda: _reap(a),
+                    {"ok": True, "value": {"status": "running", "poll": "session_query"},
+                     "hint": "reap is still working (pool slow); poll session_query(participant_id=...)"})
+
+
 POOL_TOOLS = [
-    ToolDef("inbox", "Everything addressed to you that still awaits an answer or an action (questions and "
-            "steers), oldest first, each with its answer_with call. Step 1 of closing and the first "
-            "thing to call when woken. Returns the list; empty == clear.", InboxArgs, _inbox, "pool"),
-    ToolDef("record_status", "Record the outcome of your work on your ticket: status is one of "
-            "done | deferred | failed | blocked | reviewed | handed_off, with a one-line note. Tells your "
-            "spawner, the epic's architect and its human owner (plus `to`). Step 2 of closing; a "
-            "resident seat (architect) records status and keeps listening. Returns the message and who was told.",
+    ToolDef("inbox",
+            "Everything addressed to you that still awaits an answer or an action (questions and steers), "
+            "oldest first, each with its answer_with call",
+            "the first thing to call when woken, and step 1 of closing",
+            "the list (empty == clear); a hint on how many items await you",
+            InboxArgs, _inbox, "pool"),
+    ToolDef("record_status",
+            "Record the outcome of your work on your ticket, with a one-line note; tells your spawner, the "
+            "epic's architect and its human owner (plus `to`)",
+            "at milestones and as step 2 of closing (a resident architect records status and keeps listening)",
+            "the message and who was told",
             RecordStatusArgs, _record_status, "pool"),
-    ToolDef("close_self", "Step 3 of closing: end your own shell NOW. Refuses (one structured error) while "
-            "inbox() is non-empty or no status is recorded. On success the pool releases your session with "
-            "reason 'closed by self: <status>' and kills the process — stop calling tools and end the turn. "
-            "If the pool is unreachable, just end the turn: the SessionEnd hook releases you.",
+    ToolDef("close_self",
+            "End your own shell NOW; refuses (one structured error) while inbox() is non-empty or no status "
+            "is recorded",
+            "step 3 of closing, after inbox is clear and record_status is done",
+            "the release result — then stop calling tools and end the turn",
             CloseSelfArgs, _close_self, "pool"),
-    ToolDef("spawn", "Start a new session for a role on a ticket (fan-out). The seat boots with whoami → "
-            "subscribe → context, will record_status to you when done, and closes itself. "
-            "Returns the session, or unavailable if the pool adapter is not configured.",
-            SpawnArgs, _spawn, "pool"),
-    ToolDef("resume", "Resume a parked/stalled session. Returns the session, or unavailable.",
-            ResumeArgs, _resume, "pool"),
-    ToolDef("reap", "Tear down a seat's shell (a dead one, or a resident architect at epic close). "
-            "Returns confirmation, or unavailable.", ReapArgs, _reap, "pool"),
-    ToolDef("session_query", "List sessions matching filters. Returns matching session records.",
+    ToolDef("spawn",
+            "Start a new session for a role on a ticket (fan-out); the seat boots whoami → subscribe → context, "
+            "records status to you when done, and closes itself",
+            "to delegate a story/task to a fresh seat, or spawn a reviewer/qa on a ticket",
+            "the session (or unavailable if the pool adapter is not configured); it returns within the "
+            "call cap — a slow pool yields {status:'running', poll:'session_query'}",
+            SpawnArgs, _spawn_bounded, "pool"),
+    ToolDef("resume",
+            "Resume a parked/stalled session",
+            "to wake a seat that parked or stalled mid-work",
+            "the session, or unavailable; a slow pool yields {status:'running', poll:'session_query'}",
+            ResumeArgs, _resume_bounded, "pool"),
+    ToolDef("reap",
+            "Tear down a seat's shell (a dead one, or a resident architect at epic close)",
+            "to clear a dead seat, or close the resident architect once the epic is done",
+            "confirmation, or unavailable; a slow pool yields {status:'running', poll:'session_query'}",
+            ReapArgs, _reap_bounded, "pool"),
+    ToolDef("session_query",
+            "List sessions matching participant/ticket/state filters",
+            "to check whether a seat is live before messaging or spawning it",
+            "matching session records",
             SessionQueryArgs, _session_query, "pool"),
 ]
 
@@ -910,9 +1252,11 @@ def _find(a: FindArgs) -> dict[str, Any]:
 
 
 SEARCH_TOOLS = [
-    ToolDef("find", "Search tickets (title/description/tags), criteria, docs and thread messages by words or "
-            "meaning. Every hit carries ticket_id and epic_id (and title/status for tickets) so one "
-            "ticket_read(id) finishes the job. Returns ranked hits with snippets.",
+    ToolDef("find",
+            "Search tickets (title/description/tags), criteria, docs and thread messages by words or meaning; "
+            "every hit carries ticket_id and epic_id (and title/status for tickets)",
+            "when you need something across the board and do not have its id — one ticket_read finishes the job",
+            "ranked hits with snippets",
             FindArgs, _find, "search"),
 ]
 
@@ -997,10 +1341,12 @@ def _assemble_ruleset(a: AssembleRulesetArgs) -> dict[str, Any]:
 
 
 RULESET_TOOLS = [
-    ToolDef("assemble_ruleset", "Compose the layered ruleset for a ticket (or explicit docs): walks doc "
-            "`extends` chains universal-first / most-specific-last, dedupes, and splits into the constructive "
-            "view (how to build) and the enforced view (what a checker verifies). Returns the ordered layers "
-            "and both views, or a precondition error on a cycle/missing layer.",
+    ToolDef("assemble_ruleset",
+            "Compose the layered ruleset for a ticket (or explicit docs): walks doc `extends` chains "
+            "universal-first / most-specific-last, dedupes, and splits into the constructive view (how to "
+            "build) and the enforced view (what a checker verifies)",
+            "at the start of a story/task, to get your working brief from the linked strategy/domain docs",
+            "the ordered layers and both views, or a precondition error on a cycle/missing layer",
             AssembleRulesetArgs, _assemble_ruleset, "ruleset"),
 ]
 
@@ -1009,9 +1355,9 @@ RULESET_TOOLS = [
 
 class ConsultArgs(BaseModel):
     question: str = Field(description="what you want a second, independent read on — or the build/delivery brief")
-    purpose: str = Field(default="second_opinion",
+    purpose: ConsultPurpose = Field(default=ConsultPurpose.second_opinion,
                           description="adversary|creative|visual|second_opinion|build — selects the consultant's brief")
-    profile: str | None = Field(default=None,
+    profile: ConsultProfile | None = Field(default=None,
                           description="override the purpose→profile map: design (read-only advice) | concept "
                           "(image_gen + asset write) | blender (shell→Blender, asset write) | verify (images in, "
                           "read-only, structured PASS/FAIL/UNVERIFIED verdict) | direct (read-only inspection → "
@@ -1028,47 +1374,93 @@ class ConsultArgs(BaseModel):
     images: list[str] | None = Field(default=None, description="image files (png/jpg) to attach — screenshots, "
                                      "renders, mockups. Attaching is the ONLY way a picture reaches Sol; a path "
                                      "in the prompt is a no-op")
-    model: str | None = Field(default=None, description="consultant model for this call: gpt-6-astra (default; "
-                              "3D/visual craft, image critique) or gpt-5.6-sol (independent second voice, "
+    model: ConsultModel | None = Field(default=None, description="consultant model for this call: gpt-6-astra "
+                              "(default; 3D/visual craft, image critique) or gpt-5.6-sol (independent second voice, "
                               "cheaper adversary/second_opinion rounds). Omit for the default")
+
+
+def _fence_status_line(resp: dict[str, Any], run_id: str | None) -> str:
+    """ONE line naming the run and whether the write-fence was clean or failed the run
+    closed — NEVER a file path (design §19 rule 7). The full fence report lives only in the
+    run manifest (consult_status(run_id) surfaces it); a spacetravel-style path from another
+    project can no longer leak onto a thread through this note."""
+    if not run_id:
+        return ""
+    code = None if resp.get("ok") else (resp.get("error") or {}).get("code")
+    if code == "boundary":
+        return f"run {run_id} FAILED CLOSED (write-fence): see consult_status(run_id='{run_id}')"
+    return f"run {run_id}, fence clean"
+
+
+def _consult_complete(client: BoardClient, a: ConsultArgs, resp: dict[str, Any],
+                      caller: str | None, run_id: str | None, *, wake: bool) -> None:
+    """Post the answer to the ticket thread (one-line fence status appended, no paths) and,
+    for a run that finished in the background, wake the caller with a consult_done note."""
+    if not a.ticket_id:
+        return
+    val = resp.get("value") or {}
+    rid = val.get("run_id") or run_id
+    tag = val.get("profile") or getattr(a.purpose, "value", a.purpose)
+    answer = val.get("answer")
+    fence = _fence_status_line(resp, rid)
+    try:
+        if answer:
+            note = f"consultant[{tag}]: {answer}"
+            if fence:
+                note = f"{note}\n\n{fence}"
+            client.message_send(ticket_id=a.ticket_id, kind="note", text=note, to=None)
+        if wake and caller:
+            status = "ok" if resp.get("ok") else (resp.get("error") or {}).get("code", "failed")
+            client.message_send(ticket_id=a.ticket_id, kind="note", to=caller,
+                                text=f"consult_done: run {rid or '?'} finished ({status}); "
+                                     + (f"answer on this thread" if answer else
+                                        f"see consult_status(run_id='{rid}')"))
+    except Exception:  # noqa: BLE001 — a thread-note failure never crashes the background run
+        pass
 
 
 def _consult(a: ConsultArgs) -> dict[str, Any]:
     from . import consult as consult_mod
 
-    resp = consult_mod.consult(a.purpose, a.question, context=a.context,
-                                files=a.files, timeout_s=a.timeout_s, write_dir=a.write_dir,
-                                images=a.images, thread_id=a.thread_id, model=a.model,
-                                profile=a.profile)
+    client = get_client()          # concrete client, safe to use from the background thread
+    caller = client.participant
+    holder: dict[str, Any] = {}
+    run_box: dict[str, str] = {}
+    early = {"v": False}
+    done = threading.Event()
+
+    def _work() -> None:
+        try:
+            resp = consult_mod.consult(a.purpose, a.question, context=a.context, files=a.files,
+                                       timeout_s=a.timeout_s, write_dir=a.write_dir, images=a.images,
+                                       thread_id=a.thread_id, model=a.model, profile=a.profile,
+                                       on_run_id=lambda rid: run_box.setdefault("id", rid))
+        except Exception as e:  # noqa: BLE001 — a crashed consult must surface, never hang the caller
+            resp = {"ok": False, "error": {"code": "internal", "message": f"consult crashed: {e}"}, "hint": ""}
+        holder["resp"] = resp
+        done.set()
+        # Over-cap only: the caller already has a {running} envelope, so the background run
+        # owns the completion side effects — post the answer AND wake the caller. Within the
+        # cap the handler posts synchronously below (never both: `early` is set only over-cap).
+        if early["v"]:
+            _consult_complete(client, a, resp, caller, run_box.get("id"), wake=True)
+
+    threading.Thread(target=_work, name="consult", daemon=True).start()
+    if done.wait(timeout=_call_cap()):
+        resp = holder["resp"]
+        _consult_complete(client, a, resp, caller, run_box.get("id"), wake=False)
+        return resp
+    early["v"] = True
+    rid = run_box.get("id")
+    val: dict[str, Any] = {"status": "running", "poll": "consult_status"}
+    if rid:
+        val["run_id"] = rid
+    hint = ("consult exceeds the tool-call cap and is running in the background; "
+            + (f"poll consult_status(run_id='{rid}')" if rid else
+               "it is queued behind another run — poll consult_status()"))
     if a.ticket_id:
-        val = resp.get("value") or {}
-        tag = val.get("profile", a.purpose)
-        answer = val.get("answer")
-        if answer and val.get("recovered"):
-            # S0d: the UE write-fence saw dirty paths. Either an attributed escape
-            # failed the run closed, or only concurrent/unattributed writes were seen
-            # (run clean). Post the answer under a header EITHER way so the thread shows
-            # the recovery and what the fence did — criterion c-16ae18056e.
-            escs = val.get("escapes") or []
-            reverted = [e for e in escs if e.get("action") in
-                        ("deleted_new", "restored_tracked", "left_modified_no_git", "delete_failed")]
-            conc = [e for e in escs if e.get("action") in
-                    ("pre_dirty_concurrent", "unattributed_concurrent")]
-            detail = "; ".join(f"{e.get('action')} {e.get('path')}" for e in escs) or "see manifest"
-            if reverted:
-                lead = (f"the consultant wrote into the protected UE tree; the write-fence reverted "
-                        f"{len(reverted)} attributed path(s) and the run FAILED CLOSED (code=boundary) "
-                        "— the answer below is preserved for reference only, NOT an accepted delivery")
-            else:
-                lead = (f"{len(conc)} concurrent seat write(s) were seen in the UE tree during this "
-                        "run and left untouched (not attributed to this run); the run itself is clean")
-            header = (f"⚠️ RECOVERED FROM FAIL-CLOSED RUN — {lead}. Fence report: [{detail}].")
-            get_client().message_send(ticket_id=a.ticket_id, kind="note",
-                                      text=f"{header}\n\nconsultant[{tag}]: {answer}", to=None)
-        elif resp.get("ok"):
-            get_client().message_send(ticket_id=a.ticket_id, kind="note",
-                                      text=f"consultant[{tag}]: {answer}", to=None)
-    return resp
+        hint += "; a consult_done note lands on the ticket thread when it finishes"
+    return {"ok": True, "value": val, "hint": hint}
 
 
 class ConsultStatusArgs(BaseModel):
@@ -1082,26 +1474,22 @@ def _consult_status(a: ConsultStatusArgs) -> dict[str, Any]:
 
 
 CONSULT_TOOLS = [
-    ToolDef("consult_status", "Look up a consult run by run_id: its manifest status and, when the run "
-            "produced one, the recovered answer — use it after your own call timed out or the server "
-            "restarted mid-run, instead of re-asking. Also reports the fleet-wide consult lane "
-            "(in flight / queued) and the quota block, if any.",
+    ToolDef("consult_status",
+            "Look up a consult run by run_id: its manifest status and, when the run produced one, the "
+            "recovered answer; also reports the fleet-wide consult lane (in flight / queued) and any quota block",
+            "after your own consult returned {status:running} or timed out, or the server restarted mid-run — "
+            "instead of re-asking",
+            "the run's status and recovered answer if any, plus the lane and quota block",
             ConsultStatusArgs, _consult_status, "consult"),
-    ToolDef("consult", "Ask the consultant (GPT Sol) — adversarial review, creative/visual judgment, a second "
-            "opinion, or (with write_dir) actual DELIVERY: Sol writes assets into the directory or edits files "
-            "in place. STEER: every answer carries a thread_id — pass it back to continue THAT Sol session "
-            "(follow-up, correction, 'here is what you told me to build'); omit it to start cold. SHOW: attach "
-            "screenshots/renders via images (the only way a picture reaches Sol) for visual critique and "
-            "debugging. IMAGE GEN: Sol has a built-in image generator; give a write_dir and say 'save the PNGs "
-            "into <write_dir>' — Sol cannot return images inline. For substantial creative "
-            "or build work, consult TWICE: round 1 without write_dir to agree a plan, round 2 passing that plan "
-            "back with write_dir to build it — never one-shot a large build. HOW TO BRIEF SOL (this determines "
-            "output quality): state the GOAL, the audience, the quality bar, and reference work to match — then "
-            "stop. Do NOT script its steps or bury it in mechanical constraints; a checklist-shaped brief gets a "
-            "checklist-shaped (janky) result, while goal+references+ownership gets craft. Put unavoidable "
-            "mechanics (paths, forbidden commands) in a short final CONSTRAINTS block, never as the body. "
-            "If ticket_id is given, the answer is also posted as a note to that ticket's thread. Returns the "
-            "answer (with run log), or unavailable/timeout/exit on failure.",
+    ToolDef("consult",
+            "Ask the consultant (GPT Sol/Astra) for adversarial review, creative/visual judgment or a second "
+            "opinion — or, with write_dir, actual DELIVERY (Sol writes/edits files there). Brief it with the "
+            "GOAL, audience, quality bar and reference work, not a step-by-step checklist. thread_id resumes a "
+            "session; images attach pictures; ticket_id posts the answer to that thread",
+            "when a task needs a second independent read or a build the consultant should produce; runs in the "
+            "background — a long run returns a run_id and completes via a consult_done feed event",
+            "the answer with run log and run_id, or {run_id, status:'running', poll:'consult_status'} when it "
+            "exceeds the call cap, or unavailable/timeout/exit on failure",
             ConsultArgs, _consult, "consult"),
 ]
 
@@ -1128,9 +1516,15 @@ def _artifact_read(a: ArtifactReadArgs) -> dict[str, Any]:
 
 
 ARTIFACT_TOOLS = [
-    ToolDef("artifact_create", "Record a produced thing by uri. Returns the artifact.",
+    ToolDef("artifact_create",
+            "Record a produced thing by uri (never a machine path); optionally link it to a ticket",
+            "when you ship an artifact — an image, file, url, app or repo_ref — the owner should see",
+            "the artifact",
             ArtifactCreateArgs, _artifact_create, "artifact"),
-    ToolDef("artifact_read", "Read one artifact. Returns the artifact record.",
+    ToolDef("artifact_read",
+            "Read one artifact",
+            "to inspect an artifact a ticket or link points at",
+            "the artifact record",
             ArtifactReadArgs, _artifact_read, "artifact"),
 ]
 
@@ -1160,8 +1554,10 @@ def _close(a: CloseArgs) -> dict[str, Any]:
 
 
 CLOSE_TOOLS = [
-    ToolDef("close", "Confirm an epic is closed (done/partial) and hand back the wiring to disarm. "
-            "Returns the disarm checklist, or a transition error if the epic is not yet closed.",
+    ToolDef("close",
+            "Confirm an epic is closed (done/partial) and hand back the wiring to disarm",
+            "as the owner, once an epic reaches done/partial, to get the disarm checklist",
+            "the disarm checklist, or a transition error if the epic is not yet closed",
             CloseArgs, _close, "close"),
 ]
 
