@@ -1,4 +1,5 @@
-import { defineConfig } from "vite";
+/// <reference types="vitest/config" />
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 // SEAM (serve-under-prefix): the built bundle is mounted by FastAPI at `/app`
@@ -26,5 +27,13 @@ export default defineConfig({
     // → v8/src/edp8/webapp/dist (gitignored, hatch force-included into the wheel)
     outDir: "../src/edp8/webapp/dist",
     emptyOutDir: true,
+  },
+  // Vitest (unit) runs only src/*.test.* under jsdom. The Playwright e2e/visual specs are a
+  // SEPARATE runner (`npm run e2e`, win32-only) and MUST be excluded here so `npm test` (and
+  // the Linux CI job) never tries to collect them (design §4.4, S17 CI criterion).
+  test: {
+    environment: "jsdom",
+    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    exclude: ["e2e/**", "node_modules/**", "dist/**"],
   },
 });

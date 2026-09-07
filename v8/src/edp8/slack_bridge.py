@@ -76,7 +76,9 @@ def _line(cfg: dict, handle: str, msg: dict) -> str:
     ticket = body.get("ticket_id") or ""
     text = (body.get("text") or body.get("note") or body.get("answer")
             or json.dumps(body)[:120])
-    base = cfg.get("board_url", "http://127.0.0.1:9400")
+    # Deep-link base: bridge config wins, else EDP8_PUBLIC_URL (S17 — a tagged person on
+    # another machine lands on the SPA), else loopback for a single-machine setup.
+    base = cfg.get("board_url") or os.environ.get("EDP8_PUBLIC_URL") or "http://127.0.0.1:9400"
     # deep-link the exact conversation, identity attached — one click and they can reply
     link = f"{base}/ui/ticket/{ticket}?as={handle}" if ticket else f"{base}/ui/me?as={handle}"
     return (f"*{handle}* ← {msg.get('from')} ({msg.get('kind')})"

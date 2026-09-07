@@ -21,9 +21,11 @@ dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.4"]
 embed = ["fastembed>=0.3"]
 
 [project.scripts]
+edp8 = "edp8.cli:main"
 edp8-board = "edp8.service:run"
 edp8-mcp = "edp8.mcp_server:run"
 edp8-feed = "edp8.feed_driver:run"
+edp8-supervisor = "edp8.supervisor:main"
 
 [build-system]
 requires = ["hatchling"]

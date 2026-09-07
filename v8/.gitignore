@@ -1,5 +1,8 @@
 .sandbox/
 .data/
+.run/
+.env
+tokens.json
 .sol/
 .pain/
 .venv/

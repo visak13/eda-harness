@@ -56,6 +56,16 @@ def _get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
     return _envelope(r.status_code < 400, value=r.json() if r.content else None, error=r.text)
 
 
+def reachable(timeout: float = 2.0) -> bool:
+    """Fast liveness probe (design §22 rule 4: spawn/resume must refuse within 2s when the pool
+    does not answer, instead of hanging on the 90s spawn timeout). GET /v1/limits is cheap."""
+    try:
+        r = httpx.get(f"{_env('EDP_POOL_URL', POOL_URL)}/v1/limits", timeout=timeout)
+        return r.status_code < 500
+    except httpx.HTTPError:
+        return False
+
+
 # ----------------------------------------------------------------------------- verbs
 
 

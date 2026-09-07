@@ -1,0 +1,47 @@
+name: v8 CI
+
+# Keeps the cross-platform promise honest (design §15, S17): the board's Python suite and the
+# web app's unit tests both run on Linux on every push, so a change that only works on Windows
+# is caught here. The Playwright visual/e2e specs are win32-only (a pinned local Chromium) and
+# are NOT run in CI — `npm test` (vitest) is scoped to src unit tests and excludes e2e/.
+
+on:
+  push:
+    paths: ["v8/**", ".github/workflows/ci.yml"]
+  pull_request:
+    paths: ["v8/**", ".github/workflows/ci.yml"]
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: v8
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Sync Python deps
+        run: uv sync --extra dev
+
+      - name: Board tests (pytest)
+        env:
+          EDP8_EMBEDDER: none
+        run: uv run pytest -q
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install web deps
+        run: npm --prefix web ci
+
+      - name: Web unit tests (vitest; visual/e2e skipped off win32)
+        run: npm --prefix web test -- --run

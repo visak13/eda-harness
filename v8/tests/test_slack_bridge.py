@@ -28,6 +28,22 @@ def test_line_renders_deep_link_and_body():
     assert "http://100.1.2.3:9400/ui/me?as=x" in bare
 
 
+def test_line_base_falls_back_to_public_url(monkeypatch):
+    """S17: with no board_url in bridge config, the deep link uses EDP8_PUBLIC_URL so a tagged
+    person on another machine reaches the SPA; config board_url still wins when present."""
+    monkeypatch.setenv("EDP8_PUBLIC_URL", "http://host.example:9400")
+    msg = {"from": "owner", "kind": "steer", "body": {"ticket_id": "s-1", "text": "hi"}}
+    assert "http://host.example:9400/ui/ticket/s-1?as=x" in slack_bridge._line({}, "x", msg)
+    # config wins over the env fallback
+    assert "http://cfg:9400/ui/ticket/s-1?as=x" in slack_bridge._line({"board_url": "http://cfg:9400"}, "x", msg)
+
+
+def test_line_base_defaults_loopback(monkeypatch):
+    monkeypatch.delenv("EDP8_PUBLIC_URL", raising=False)
+    msg = {"from": "owner", "kind": "steer", "body": {"ticket_id": "s-1", "text": "hi"}}
+    assert "http://127.0.0.1:9400/ui/ticket/s-1?as=x" in slack_bridge._line({}, "x", msg)
+
+
 def test_post_prefers_dm_then_webhook(monkeypatch):
     calls = []
 

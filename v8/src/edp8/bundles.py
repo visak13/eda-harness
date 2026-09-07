@@ -352,6 +352,11 @@ def _preflight(_: PreflightArgs) -> dict[str, Any]:
     except Exception as e:  # noqa: BLE001
         out["seats"] = {"note": f"pool unreachable: {type(e).__name__}"}
     try:
+        from . import run_state
+        out["services"] = run_state.snapshot()  # launcher-owned infra state, read-only (design §22 rule 4)
+    except Exception as e:  # noqa: BLE001
+        out["services"] = {"note": f"run-state unreadable: {type(e).__name__}"}
+    try:
         from . import consult as consult_mod
         out["consult"] = consult_mod.lane_status()
         out["advisory"] = consult_mod.advisory()

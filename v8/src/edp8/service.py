@@ -29,6 +29,7 @@ from .schemas import (
     ArtifactForm,
     Check,
     DocType,
+    EventKind,
     Gate,
     MessageKind,
     Participant,
@@ -186,6 +187,62 @@ class SessionActionIn(BaseModel):
     reason: str = ""
 
 
+class ServiceEventIn(BaseModel):
+    """Body for POST /v1/service_event — the launcher records a service_restarted (design §22)."""
+    service: str
+    reason: str
+    by: str = "supervisor"
+    git_rev: str = "unknown"
+
+
+# --------------------------------------------------------------- public-mode reach (S17)
+
+DEFAULT_ADMIN_TOKEN = "dev"
+
+
+def public_mode() -> bool:
+    """Reach-from-another-machine is on when EDP8_PUBLIC_URL is set (design §15, S17)."""
+    return bool(os.environ.get("EDP8_PUBLIC_URL"))
+
+
+def resolve_host() -> str:
+    """Bind address. Public mode defaults to 0.0.0.0 so another machine can reach the
+    board; EDP8_HOST always overrides (even in public mode). Trusted mode → 127.0.0.1."""
+    explicit = os.environ.get("EDP8_HOST")
+    if explicit:
+        return explicit
+    return "0.0.0.0" if public_mode() else "127.0.0.1"
+
+
+def tokens_file_path() -> Path:
+    return Path(os.environ.get("EDP8_TOKENS", str(Path(os.environ.get("EDP8_HOME", ".")) / "tokens.json")))
+
+
+def public_startup_error(admin_token: str | None, tokens_path: Path | None = None) -> str | None:
+    """§15/§20 fail-closed gate for public mode. Returns a one-line plain reason to REFUSE
+    start (never bind to the network open), or None when it is safe. Trusted mode is the
+    default and one env var away — this is only consulted when EDP8_PUBLIC_URL is set."""
+    if (admin_token or DEFAULT_ADMIN_TOKEN) == DEFAULT_ADMIN_TOKEN:
+        return ("refusing public start: EDP8_PUBLIC_URL is set but EDP8_ADMIN_TOKEN is the default "
+                "'dev'. Set EDP8_ADMIN_TOKEN to a non-default secret.")
+    f = tokens_path or tokens_file_path()
+    try:
+        raw = json.loads(f.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise ValueError("not an object")
+    except (OSError, ValueError):
+        return (f"refusing public start: {f} is missing or invalid. Public mode needs credentials "
+                "for every participant (humans + agents) — no host may act header-only from the network.")
+    humans = {k: v for k, v in raw.items() if k != "agents"}
+    agents = raw.get("agents")
+    if not humans:
+        return f"refusing public start: {f} has no human credentials (top-level handle→secret entries)."
+    if not isinstance(agents, dict) or not agents:
+        return (f"refusing public start: {f} has no agent credentials. Seed at least one agent secret "
+                "under 'agents' (S20 mints them at spawn), or run one spawn in trusted mode first.")
+    return None
+
+
 # ----------------------------------------------------------------------------- app
 
 
@@ -215,8 +272,17 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     app = FastAPI(title="edp8 board", version="0.8.0")
     app.state.board = board
 
+    # Reach-from-another-machine (S17, design §15). Public mode fails closed BEFORE the app is
+    # usable: no default admin token, credentials for every participant type, and header-only
+    # requests refused at actor(). Trusted single-machine mode is the default and unchanged.
+    public = public_mode()
+    if public:
+        err = public_startup_error(admin_token, tokens_file_path())
+        if err:
+            raise RuntimeError(err)
+
     def _tokens_file() -> Path:
-        return Path(os.environ.get("EDP8_TOKENS", str(Path(os.environ.get("EDP8_HOME", ".")) / "tokens.json")))
+        return tokens_file_path()
 
     def _tokens() -> tuple[dict[str, str], dict[str, str]]:
         """(humans, agents) handle -> secret, read from tokens.json (top-level keys are
@@ -242,10 +308,15 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     def _verify_token(p: Participant, token: str | None) -> str | None:
         """Return an error message if p's token is required and wrong, else None. An agent is
         verified exactly as a human (§20 finding 1): its secret lives in tokens.json's `agents`
-        map. A participant with no configured secret is header-only (trusted mode)."""
+        map. Trusted mode: a participant with no configured secret is header-only. Public mode
+        (S17): a participant with no credential is REFUSED — no host acts header-only over the net."""
         humans, agents = _tokens()
         secret = (humans if p.type == "human" else agents).get(p.handle.lstrip("@"))
-        if secret is not None and token != secret:
+        if secret is None:
+            if public:  # fail closed: an uncredentialed participant cannot act from the network
+                return f"X-Token required for {p.type} participant {p.handle!r} (public mode)"
+            return None
+        if token != secret:
             return f"X-Token required for {p.type} participant {p.handle!r}"
         return None
 
@@ -567,6 +638,16 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         return ok({"message": _dump(m), "told": told},
                   "status recorded; next: close_self() (resident seats: keep listening)")
 
+    @app.post("/v1/service_event")
+    def service_event(b: ServiceEventIn, _: None = Depends(admin)):
+        """The launcher's supervisor (or `start.* --restart`) records that it restarted a shared
+        service (design §22 rule 3). Admin-guarded: only the launcher, which holds the admin token,
+        may post it. Delivery to the owner/architect listening set is S18's job; here we just record."""
+        ev = board._emit(f"service/{b.service}", EventKind.service_restarted,
+                         {"service": b.service, "reason": b.reason, "by": b.by, "git_rev": b.git_rev})
+        return ok({"event": ev.id, "service": b.service, "reason": b.reason},
+                  "service_restarted recorded on the board event log")
+
     @app.get("/v1/messages")
     def message_query(ticket_id: str | None = None, to: str | None = None, kind: MessageKind | None = None,
                       created_by: str | None = None, since_seq: int | None = None, limit: int = 50,
@@ -653,10 +734,23 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
                                                       "state": state})))
 
     # pool control plane: spawn/resume/reap/close proxy edp-pool (S20) ------------
+    def _pool_down_envelope() -> dict[str, Any]:
+        """A plain sentence naming when the pool was last seen, within 2s — never a 90s hang
+        (design §22 rule 4). The launcher's supervisor records pool freshness under v8/.run/."""
+        from . import run_state
+        rec = run_state.read("pool") or {}
+        since = rec.get("last_ok") or rec.get("started_at") or "an unknown time"
+        return {"ok": False, "error": {"code": "unavailable",
+                "message": f"pool is down (no response since {since}); the launcher's supervisor "
+                           "restarts it — retry shortly, or run `start.* --restart pool`."},
+                "hint": "seats never start the pool themselves (design §22); the launcher owns it"}
+
     @app.post("/v1/sessions/spawn")
     def session_spawn(b: SessionSpawnIn, a: Participant = Depends(actor),
                       idempotency_key: str | None = Header(default=None)):
         _authorize_pool_op(a, b.participant_id, b.ticket_id)
+        if not pool_adapter.reachable():
+            return _pool_down_envelope()
         cached = _idem_get(a, idempotency_key)
         if cached is not None:
             return {**cached, "hint": "idempotent replay: same session, no second shell"}
@@ -673,6 +767,8 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     def session_resume(b: SessionActionIn, a: Participant = Depends(actor),
                        idempotency_key: str | None = Header(default=None)):
         _authorize_pool_op(a, b.participant_id, b.ticket_id)
+        if not pool_adapter.reachable():
+            return _pool_down_envelope()
         cached = _idem_get(a, idempotency_key)
         if cached is not None:
             return {**cached, "hint": "idempotent replay"}
@@ -801,15 +897,29 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     def healthz():
         return {"ok": True}
 
+    @app.get("/v1/health")
+    def v1_health():
+        """Uniform health route the launcher's supervisor probes (design §22 rule 3), same
+        shape the pool and broker expose. No auth: it is the liveness probe."""
+        from . import run_state
+        return {"ok": True, "service": "board", "version": app.version, "git_rev": run_state.git_rev()}
+
     return app
 
 
 def run() -> None:
+    import sys
+
     import uvicorn
 
-    host = os.environ.get("EDP8_HOST", "127.0.0.1")
+    host = resolve_host()  # 0.0.0.0 in public mode (EDP8_PUBLIC_URL), else 127.0.0.1; EDP8_HOST overrides
     port = int(os.environ.get("EDP8_PORT", "9400"))
-    uvicorn.run(create_app(), host=host, port=port, log_level=os.environ.get("EDP8_LOG", "warning"))
+    try:
+        app = create_app()  # public mode fails closed here with a plain message
+    except RuntimeError as e:
+        print(str(e), file=sys.stderr)
+        raise SystemExit(2) from e
+    uvicorn.run(app, host=host, port=port, log_level=os.environ.get("EDP8_LOG", "warning"))
 
 
 if __name__ == "__main__":

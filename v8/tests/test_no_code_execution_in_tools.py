@@ -1,15 +1,17 @@
 """Rule: MCP tools validate, store, route and signal. They never execute code or commands on the
 agent's behalf — the tool tells the agent what to run; the agent runs it in its own shell and
 records evidence — and they never swallow failures (every error travels in the envelope).
-The single subprocess is the consultant bridge (consult.py), which surfaces the real exit code
-and last error line."""
+Two modules legitimately run a process and are NOT MCP tools: the consultant bridge (consult.py),
+which surfaces the real exit code and last error line, and the launcher's supervisor
+(supervisor.py, design §22), whose whole job is to restart a shared service through `start.*`.
+Neither is registered in any role's tool bundle."""
 
 import pathlib
 import re
 
 SRC = pathlib.Path(__file__).resolve().parents[1] / "src" / "edp8"
 FORBIDDEN = re.compile(r"(subprocess|os\.system|os\.popen|\bexec\(|\beval\(|(?<!re\.)\bcompile\()")
-ALLOWED_SUBPROCESS = {"consult.py"}
+ALLOWED_SUBPROCESS = {"consult.py", "supervisor.py"}
 SILENT = re.compile(r"except\s*(Exception|BaseException)?\s*:\s*\r?\n\s*pass\b")
 
 
