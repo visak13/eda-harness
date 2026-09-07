@@ -41,6 +41,7 @@ from .schemas import (
     Message,
     MessageKind,
     Participant,
+    Reason,
     Relation,
     Role,
     Session,
@@ -58,6 +59,15 @@ from .store import Store, new_id
 _log = logging.getLogger("edp8.board")
 HUMAN_GATE_ANSWERERS = {Role.owner}
 _TERMINAL = (TicketStatus.done, TicketStatus.partial, TicketStatus.dropped)
+
+
+def _dedup(reasons: list[Reason]) -> list[Reason]:
+    """Preserve first-seen order, drop repeats — a recipient's reason list for one event."""
+    out: list[Reason] = []
+    for r in reasons:
+        if r not in out:
+            out.append(r)
+    return out
 
 
 class BoardError(Exception):
@@ -638,6 +648,37 @@ class Board:
         self.participant(to)
         return to, ""
 
+    def resolve(self, actor: Participant | None, *, ticket_id: str, to: str | None,
+                kind: MessageKind = MessageKind.question) -> dict[str, Any]:
+        """The composer wake preview (design §16.1): who a message to `to` of this `kind` on this
+        ticket WOULD wake, and why — computed from the SAME delivery.delivery_plan that delivers,
+        without persisting or publishing anything. `wakes` and `plan` are the same list (the
+        criterion names it `wakes`, the SPA design §16.1 names it `plan`)."""
+        from . import delivery
+        t = self.ticket(ticket_id)
+        resolved, note = self.resolve_recipient(to, t)
+        ev = Event(id="ev-preview", subject_id=ticket_id, kind=EventKind.message_sent,
+                   data={"to": resolved, "kind": kind,
+                         "from": actor.id if actor else None,
+                         "from_type": actor.type if actor else None,
+                         "from_role": actor.role.value if actor else None,
+                         "mentions": self.mentions("")})
+        wakes: list[dict[str, Any]] = []
+        for pid, reasons in delivery.delivery_plan(self, ev):
+            primary = self._primary(reasons)
+            wakes.append({"recipient": pid, "reason": primary.value,
+                          "reasons": [r.value for r in reasons],
+                          "why": self._WHY_CLAUSE[primary],
+                          "alive": self.seat_state(pid) in ("alive", "parked") if "." in pid else None})
+        # recovery overrides any resolve_recipient note: a "nobody is woken" tail would be a lie
+        # when the plan fell back to the human owner (design §16.2 rule 3 — no silent drop)
+        if any(w["reason"] == Reason.recovery.value for w in wakes):
+            note = "no live seat for this recipient and no architect seat on this epic; the epic's " \
+                   "human owner is woken as the recovery recipient (design §16.2 rule 3)"
+        elif not wakes and not note:
+            note = "nobody is woken"
+        return {"to": resolved, "wakes": wakes, "plan": wakes, "note": note}
+
     def message_send(self, actor: Participant, *, ticket_id: str, to: str | None, kind: MessageKind,
                      text: str, reply_to: str | None = None) -> Message:
         t = self.ticket(ticket_id)
@@ -695,14 +736,26 @@ class Board:
 
     # ------------------------------------------------------------------ sessions (pool-owned)
     def session_upsert(self, *, id_: str, participant_id: str, ticket_id: str | None, pool_id: str,
-                       state: SessionState, resume_token: str = "", reason: str = "") -> Session:
+                       state: SessionState, resume_token: str = "", reason: str = "",
+                       presence_stale: bool = False) -> Session:
         prev = self.store.get("session", id_)
-        s = Session(id=id_, participant_id=participant_id, ticket_id=ticket_id, pool_id=pool_id, state=state,
+        # presence_stale: the sweep had no fresh answer for a LIVE row. Keep the previous state
+        # (never downgrade a healthy seat to dead on a missed probe) and stamp when staleness
+        # began; emit nothing. A positive answer (presence_stale=False) clears the stamp.
+        if presence_stale and prev is not None:
+            eff_state = prev.state
+            stale_since = prev.presence_stale_since or now()
+        else:
+            eff_state = state
+            stale_since = None
+        s = Session(id=id_, participant_id=participant_id, ticket_id=ticket_id, pool_id=pool_id, state=eff_state,
                     resume_token=resume_token or (prev.resume_token if prev else ""), last_output_at=now(),
-                    reason=reason or (prev.reason if prev else ""), created_by="pool")
+                    reason=reason or (prev.reason if prev else ""), presence_stale_since=stale_since,
+                    created_by="pool")
         self.store.put("session", s)
-        if ticket_id and state in (SessionState.dead, SessionState.stalled) and (prev is None or prev.state != state):
-            kind = EventKind.shell_dead if state == SessionState.dead else EventKind.shell_stalled
+        if (not presence_stale and ticket_id and eff_state in (SessionState.dead, SessionState.stalled)
+                and (prev is None or prev.state != eff_state)):
+            kind = EventKind.shell_dead if eff_state == SessionState.dead else EventKind.shell_stalled
             clean = any(k in (reason or "").lower() for k in ("closed by self", "reaped", "clean exit"))
             self._emit(ticket_id, kind, {"session": id_, "participant": participant_id,
                                          "reason": reason or "no reason recorded", "clean": clean})
@@ -837,6 +890,7 @@ class Board:
         self.store.put("message", m)
         self._index("message", m.id, text)
         self._emit(t.id, EventKind.message_sent, {"message": m.id, "to": to, "kind": MessageKind.status,
+                                                  "status": status.value,  # structured; delivery never parses text
                                                   "from": actor.id, "from_type": actor.type,
                                                   "from_role": actor.role.value, "text": text[:280],
                                                   "mentions": self.mentions(text, exclude={actor.id})})
@@ -916,62 +970,227 @@ class Board:
             return True
         return self.epic_owner(tk.id) == p.id  # no fallback: an epic without a human owner pages no owner
 
+    # delivery — who is woken and why (design §16.2). The single decider is _reason_for
+    # (this participant, this event); relevant/why/delivery.delivery_plan all read it, so the
+    # wake preview can never drift from delivery. Recovery (rule 3) is the one plan-level
+    # rule (it needs to know the plan is otherwise empty) and lives in delivery.delivery_plan.
+    _WHY_CLAUSE = {
+        Reason.addressed: "addressed to you",
+        Reason.mention: "@mention",
+        Reason.architect_listener: "architect listener",
+        Reason.owner_listener: "owner listener",
+        Reason.gate_party: "on your ticket",
+        Reason.on_ticket: "on your ticket",
+        Reason.ancestor_seat: "on your ticket",
+        Reason.recovery: "owner listener",
+    }
+    _WHY_PRIORITY = (Reason.addressed, Reason.mention, Reason.architect_listener,
+                     Reason.owner_listener, Reason.gate_party, Reason.on_ticket,
+                     Reason.ancestor_seat, Reason.recovery)
+
     def relevant(self, ev: Event, p: Participant) -> bool:
-        d = ev.data
-        if p.id in (d.get("mentions") or []):  # an @mention reaches its person, any role
+        if self._reason_for(ev, p):
             return True
-        if p.role == Role.owner:
-            if ev.kind in (EventKind.gate_opened, EventKind.gate_answered):
-                return self._owner_scope(p, ev.subject_id)
-            if ev.kind == EventKind.message_sent and d.get("from") != p.id:
-                to = d.get("to")
-                if to == p.id:
-                    return True
-                if to == p.role.value:
-                    return self._owner_scope(p, ev.subject_id)
-                return to is None and d.get("kind") in (MessageKind.status, MessageKind.finding,
-                                                         MessageKind.deviation) \
-                    and self._owner_scope(p, ev.subject_id)
-            # the owner is the orchestrator + recovery seat (no coordinator): it must see
-            # dying shells and the phase boundaries its card spawns on — for ITS epics
-            if ev.kind in (EventKind.shell_dead, EventKind.shell_stalled):
-                return self._owner_scope(p, ev.subject_id)
-            if ev.kind == EventKind.status_changed:
-                return d.get("to") in ("ready", "in_review", "done", "blocked", "partial") \
-                    and self._owner_scope(p, ev.subject_id)
-            if ev.kind == EventKind.criterion_checked:
-                return d.get("by") != p.id and self._owner_scope(p, ev.subject_id)
+        return self._is_recovery_recipient(ev, p)
+
+    def why(self, ev: Event, p: Participant) -> str | None:
+        """The one clause a subscriber sees on an event: why it was woken, or None if it
+        would not be (a courtesy replay-by-seq can still carry an event a seat filters)."""
+        reasons = self._reason_for(ev, p)
+        if not reasons and self._is_recovery_recipient(ev, p):
+            reasons = [Reason.recovery]
+        if not reasons:
+            return None
+        return self._WHY_CLAUSE[self._primary(reasons)]
+
+    def _primary(self, reasons: list[Reason]) -> Reason:
+        return next(r for r in self._WHY_PRIORITY if r in reasons)
+
+    def listening(self, role: str) -> dict[str, Any]:
+        """The contract a seat sees before its first event (design §16.2 rule 4): what it is
+        woken for, how to get what it is NOT woken for, and how any seat reaches the architect.
+        Worded per role; the same block subscribe() returns and feed_driver prints as line 1."""
+        _GET = "address it `to=` you (by id, or by your role on your epic), or @mention you in the text"
+        consult = ("to reach the architect from any seat: message_send(kind='question', to='architect') — "
+                   "the architect is woken for every question, deviation, finding and steer on its epic, "
+                   "whatever the addressee")
+        if role == Role.architect.value:
+            receives = ("as the epic's architect you are woken for every question, deviation, finding and "
+                        "steer anywhere in your epic whatever the `to`; every recorded status of "
+                        "blocked/failed/deferred; every ticket moving to blocked/partial/dropped; gates "
+                        "opened and answered; shells that die or stall; any criterion that fails; plus "
+                        "anything addressed to you or @mentioning you")
+            not_received = ("plain notes and answers between two other seats (they are on the thread for you "
+                            f"to read, not a page) — to be paged on one, {_GET}")
+        elif role == Role.owner.value:
+            receives = ("you are woken, on epics you own, for: gates; anything addressed to you or the owner "
+                        "role; shells that die or stall; tickets reaching ready/in_review/done/blocked/"
+                        "partial/dropped; recorded statuses of failed/blocked whatever the addressee; and "
+                        "criterion checks by others; plus @mentions")
+            not_received = ("ticket_created and design-time status noise (drafted→designed→signed_off): a "
+                            "story reaching `ready` is the page, not its birth. A question with no `to` is "
+                            f"the architect's page, not yours — to be paged on one, {_GET}")
+        else:
+            receives = ("you are woken for anything addressed to you (by id, or by your role on your epic), "
+                        "thread notes on your ticket and its ancestors, that ticket's status changes and "
+                        "criterion checks, gates on it, and @mentions")
+            not_received = ("events on sibling stories or other epics, and messages addressed to another "
+                            f"seat — to be paged on one, {_GET}")
+        return {"receives": receives, "not_received": not_received, "consult": consult}
+
+    def _is_recovery_recipient(self, ev: Event, p: Participant) -> bool:
+        """rule 3: a question/deviation whose plan is otherwise empty falls back to the epic's
+        human owner. Cheap check for the feed path — only the epic owner can qualify."""
+        d = ev.data
+        if ev.kind != EventKind.message_sent or d.get("kind") not in (MessageKind.question, MessageKind.deviation):
             return False
+        if self.epic_owner(ev.subject_id) != p.id:
+            return False
+        from . import delivery
+        return not any(rs for pid, rs in delivery.delivery_plan(self, ev) if pid != p.id)
+
+    def _reason_for(self, ev: Event, p: Participant) -> list[Reason]:
+        """Every reason this event wakes this participant (never parses text; the message
+        `status` field rides the event data). Empty == not woken (before recovery)."""
+        d = ev.data
+        reasons: list[Reason] = []
+        if p.id in (d.get("mentions") or []):  # an @mention reaches its person, any role
+            reasons.append(Reason.mention)
+        if p.role == Role.owner:
+            reasons += self._owner_reasons(ev, p)
+            return _dedup(reasons)
+        if p.role == Role.architect:  # rule 1, additive listener for the epic's architect seat
+            reasons += self._architect_listener_reasons(ev, p)
+        reasons += self._general_reasons(ev, p)
+        return _dedup(reasons)
+
+    def _general_reasons(self, ev: Event, p: Participant) -> list[Reason]:
+        """Delivery every seat has always had: addressed, its ticket/ancestors, gates it can
+        answer or worked, its own status changes. Ported 1:1 from the pre-§16 relevant()."""
+        d = ev.data
+        out: list[Reason] = []
         if ev.kind == EventKind.message_sent:
             to = d.get("to")
             if d.get("from") == p.id:
-                return False
+                return out
             if to == p.id:
-                return True
-            if to == p.role.value:  # unresolved role note: my epic only, never fleet-wide
-                return self._epic_id_of(ev.subject_id) in self.my_epics(p)
-            if to is None:  # a thread note reaches the seats working that ticket and its ancestors
-                return self._on_ticket(p, ev.subject_id, parents=True)
-            return False
+                out.append(Reason.addressed)
+            elif to == p.role.value:  # unresolved role note: my epic only, never fleet-wide
+                if self._epic_id_of(ev.subject_id) in self.my_epics(p):
+                    out.append(Reason.addressed)
+            elif to is None:  # a thread note reaches the seats working that ticket and its ancestors
+                r = self._on_ticket_reason(p, ev.subject_id, parents=True)
+                if r:
+                    out.append(r)
+            return out
         if ev.kind == EventKind.gate_opened:
-            return p.role in HUMAN_GATE_ANSWERERS or self._in_subtree(p, ev.subject_id)
+            if p.role in HUMAN_GATE_ANSWERERS or self._in_subtree(p, ev.subject_id):
+                out.append(Reason.gate_party)
+            return out
         if ev.kind == EventKind.gate_answered:
             opened_by_me = any(e.data.get("gate") == d.get("gate") and e.data.get("by") == p.id
                                for e in self.store.query("event", {"subject_id": ev.subject_id,
                                                                     "kind": EventKind.gate_opened}))
-            return d.get("by") == p.id or opened_by_me or self._in_subtree(p, ev.subject_id)
+            if d.get("by") == p.id or opened_by_me or self._in_subtree(p, ev.subject_id):
+                out.append(Reason.gate_party)
+            return out
         if ev.kind in (EventKind.shell_dead, EventKind.shell_stalled):
-            return p.role == Role.coordinator or self._on_ticket(p, ev.subject_id, parents=True)
+            if p.role == Role.coordinator:
+                out.append(Reason.on_ticket)
+            else:
+                r = self._on_ticket_reason(p, ev.subject_id, parents=True)
+                if r:
+                    out.append(r)
+            return out
         if ev.kind in (EventKind.status_changed, EventKind.ticket_created, EventKind.assigned,
                        EventKind.criterion_checked):
             if p.role == Role.coordinator:
-                return True
-            if d.get("assignee") == p.id:
-                return True
-            return self._on_ticket(p, ev.subject_id, parents=True)
-        if ev.kind == EventKind.doc_updated:
-            return self._on_ticket(p, ev.subject_id, parents=True) if self.store.get("ticket", ev.subject_id) else False
-        return False
+                out.append(Reason.on_ticket)
+            elif d.get("assignee") == p.id:
+                out.append(Reason.on_ticket)
+            else:
+                r = self._on_ticket_reason(p, ev.subject_id, parents=True)
+                if r:
+                    out.append(r)
+            return out
+        if ev.kind == EventKind.doc_updated and self.store.get("ticket", ev.subject_id):
+            r = self._on_ticket_reason(p, ev.subject_id, parents=True)
+            if r:
+                out.append(r)
+        return out
+
+    def _owner_reasons(self, ev: Event, p: Participant) -> list[Reason]:
+        """What a human owner is paged for on ITS epics (design §16.2 rule 2): gates,
+        addressed messages, dying shells, phase boundaries incl. dropped, record_status of
+        failed/blocked whatever the addressee, and others' criterion checks. Not ticket_created,
+        not design-time noise."""
+        d = ev.data
+        out: list[Reason] = []
+        if ev.kind in (EventKind.gate_opened, EventKind.gate_answered):
+            if self._owner_scope(p, ev.subject_id):
+                out.append(Reason.gate_party)
+            return out
+        if ev.kind == EventKind.message_sent and d.get("from") != p.id:
+            to = d.get("to")
+            scoped = self._owner_scope(p, ev.subject_id)
+            if to == p.id:
+                out.append(Reason.addressed)
+            elif to == p.role.value and scoped:
+                out.append(Reason.owner_listener)
+            elif to is None and d.get("kind") in (MessageKind.status, MessageKind.finding,
+                                                   MessageKind.deviation) and scoped:
+                out.append(Reason.owner_listener)
+            # rule 2: a recorded status of failed/blocked pages the owner however it is addressed
+            if d.get("kind") == MessageKind.status and d.get("status") in (StatusValue.failed, StatusValue.blocked) \
+                    and scoped and Reason.owner_listener not in out:
+                out.append(Reason.owner_listener)
+            return out
+        if ev.kind in (EventKind.shell_dead, EventKind.shell_stalled):
+            if self._owner_scope(p, ev.subject_id):
+                out.append(Reason.owner_listener)
+            return out
+        if ev.kind == EventKind.status_changed:
+            if d.get("to") in ("ready", "in_review", "done", "blocked", "partial", "dropped") \
+                    and self._owner_scope(p, ev.subject_id):
+                out.append(Reason.owner_listener)
+            return out
+        if ev.kind == EventKind.criterion_checked:
+            if d.get("by") != p.id and self._owner_scope(p, ev.subject_id):
+                out.append(Reason.owner_listener)
+        return out
+
+    def _architect_listener_reasons(self, ev: Event, p: Participant) -> list[Reason]:
+        """rule 1: the epic's architect seat hears every crucial event in its subtree whatever
+        the addressee — the fix for a low-tier seat addressing its problem to the wrong seat.
+        Additive: the addressee still gets its own copy via _general_reasons."""
+        d = ev.data
+        if d.get("from") == p.id:  # never page the architect for its own action
+            return []
+        epic = self._epic_ticket(ev.subject_id)
+        if epic is None or p.id != f"architect.{epic.id}":
+            return []
+        k = ev.kind
+        if k == EventKind.message_sent:
+            mk = d.get("kind")
+            if mk in (MessageKind.question, MessageKind.deviation, MessageKind.finding, MessageKind.steer):
+                return [Reason.architect_listener]
+            if mk == MessageKind.status and d.get("status") in (StatusValue.blocked, StatusValue.failed,
+                                                                StatusValue.deferred):
+                return [Reason.architect_listener]
+            return []
+        if k == EventKind.status_changed and d.get("to") in ("blocked", "partial", "dropped"):
+            return [Reason.architect_listener]
+        if k in (EventKind.gate_opened, EventKind.gate_answered):
+            return [Reason.architect_listener]
+        if k in (EventKind.shell_dead, EventKind.shell_stalled):
+            return [Reason.architect_listener]
+        if k == EventKind.criterion_checked and d.get("verdict") == Verdict.failed:
+            return [Reason.architect_listener]
+        return []
+
+    def _epic_ticket(self, subject_id: str) -> Ticket | None:
+        t = self.store.get("ticket", subject_id)
+        return self.epic_of(t) if t is not None else None  # type: ignore[arg-type]
 
     def _in_subtree(self, p: Participant, ticket_id: str) -> bool:
         """Involved anywhere in this ticket's epic tree: assignee or creator of the ticket, any
@@ -992,14 +1211,21 @@ class Board:
         return t.assignee == p.id or p.id == f"{p.role.value}.{t.id}"
 
     def _on_ticket(self, p: Participant, ticket_id: str, parents: bool = False) -> bool:
+        return self._on_ticket_reason(p, ticket_id, parents=parents) is not None
+
+    def _on_ticket_reason(self, p: Participant, ticket_id: str, parents: bool = False) -> Reason | None:
+        """on_ticket when p works the subject ticket itself, ancestor_seat when it works only an
+        ancestor of it (design §16.2 reason vocabulary); None when it works neither."""
         t = self.store.get("ticket", ticket_id)
+        first = True
         while t is not None:
             if self._works(p, t):
-                return True
+                return Reason.on_ticket if first else Reason.ancestor_seat
             if not parents or not t.parent_id:
-                return False
+                return None
             t = self.store.get("ticket", t.parent_id)
-        return False
+            first = False
+        return None
 
     def subscribe(self, participant_id: str) -> asyncio.Queue:
         q: asyncio.Queue = asyncio.Queue()

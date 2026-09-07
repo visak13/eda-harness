@@ -95,6 +95,16 @@ def run() -> None:
     p.add_argument("--since", type=int, default=-1)
     args = p.parse_args()
 
+    # line 1 is the listening contract (design §16.2 rule 5): what wakes this seat, before any
+    # event arrives. Best-effort — an old board without the route just omits it.
+    try:
+        with httpx.Client(timeout=10.0) as c:
+            r = c.get(f"{args.board}/v1/listening", headers={"X-Participant": args.participant})
+            if r.status_code == 200 and r.json().get("ok"):
+                _print({"listening": r.json()["value"]})
+    except Exception as e:  # noqa: BLE001 — the stream is the job; the contract line is a courtesy
+        _print({"listening_error": f"{type(e).__name__}: {e}"})
+
     if args.broker:
         threading.Thread(target=_broker_loop, args=(args.broker, args.participant),
                          name="broker-inbox", daemon=True).start()

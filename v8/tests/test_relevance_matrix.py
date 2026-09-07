@@ -1,0 +1,278 @@
+"""The listening contract as a table (design §16.2 rule 6): role × event/message kind ×
+addressee × subject topology × actor relation × mention × epic ownership, with explicit
+negative rows (sibling story, other epic, other epic's owner/architect) and overlapping-reason
+rows. This is the durable statement of "no blind spots" and the reviewer's checklist for any
+future change to delivery.delivery_plan — if a row here fails, delivery changed.
+
+Events are built two ways: message_sent / status_recorded through the real board writes (so the
+structured `status` field on the event is exercised, never text-parsed), the rest as synthetic
+Events over real ticket ids (so subject topology resolves) — the predicate is what is under test.
+"""
+
+from __future__ import annotations
+
+import os
+
+os.environ.setdefault("EDP8_EMBEDDER", "none")
+
+import pytest
+
+from edp8 import broker_adapter, delivery
+from edp8.board import Board
+from edp8.schemas import (
+    Event,
+    EventKind,
+    MessageKind,
+    Reason,
+    Role,
+    StatusValue,
+    TicketKind,
+    Verdict,
+    WorkType,
+)
+from edp8.store import Store
+
+WHY_CLAUSES = {"addressed to you", "on your ticket", "architect listener",
+               "owner listener", "@mention"}
+
+
+@pytest.fixture(autouse=True)
+def _no_broker(monkeypatch):
+    monkeypatch.setattr(broker_adapter, "publish", lambda *a, **k: True)
+
+
+@pytest.fixture
+def rig():
+    """Two epics. e1 owned by human `owner`, with architect a1, story s1 (engineer e1e, qa e1q)
+    and sibling story s1b (engineer e1s). e2 owned by human `owner2`, architect a2, story s2
+    (engineer e2e). e3 owned by `owner`, story s3 with NO architect and NO qa (recovery bed)."""
+    b = Board(Store(":memory:"))
+    p = {}
+    p["owner"] = b.participant_create("human", Role.owner, "owner", id_="owner")
+    p["owner2"] = b.participant_create("human", Role.owner, "owner2", id_="owner2")
+
+    def epic(owner, title):
+        return b.ticket_create(p[owner], kind=TicketKind.epic, work_type=WorkType.feature, title=title)
+
+    def seat(role, tid):
+        pid = f"{role.value}.{tid}"
+        return b.participant_create("agent", role, pid, id_=pid)
+
+    e1 = epic("owner", "E1")
+    a1 = seat(Role.architect, e1.id)
+    b.ticket_update(p["owner"], e1.id, assignee=a1.id)
+    s1 = b.ticket_create(a1, kind=TicketKind.story, work_type=WorkType.feature, title="S1", parent_id=e1.id)
+    e1e = seat(Role.engineer, s1.id)
+    b.ticket_update(p["owner"], s1.id, assignee=e1e.id)
+    e1q = seat(Role.qa, s1.id)
+    s1b = b.ticket_create(a1, kind=TicketKind.story, work_type=WorkType.feature, title="S1b", parent_id=e1.id)
+    e1s = seat(Role.engineer, s1b.id)
+    b.ticket_update(p["owner"], s1b.id, assignee=e1s.id)
+
+    e2 = epic("owner2", "E2")
+    a2 = seat(Role.architect, e2.id)
+    b.ticket_update(p["owner2"], e2.id, assignee=a2.id)
+    s2 = b.ticket_create(a2, kind=TicketKind.story, work_type=WorkType.feature, title="S2", parent_id=e2.id)
+    e2e = seat(Role.engineer, s2.id)
+    b.ticket_update(p["owner2"], s2.id, assignee=e2e.id)
+
+    # e3 deliberately has NO architect SEAT (recovery bed). A base architect (id "architect",
+    # not architect.<epic>) authors its story — it is inert for delivery (never matches a seat).
+    arch0 = b.participant_create("agent", Role.architect, "architect", id_="architect")
+    e3 = epic("owner", "E3")
+    s3 = b.ticket_create(arch0, kind=TicketKind.story, work_type=WorkType.feature, title="S3", parent_id=e3.id)
+
+    p.update(a1=a1, e1e=e1e, e1q=e1q, e1s=e1s, a2=a2, e2e=e2e)
+    ids = dict(e1=e1.id, s1=s1.id, s1b=s1b.id, e2=e2.id, s2=s2.id, e3=e3.id, s3=s3.id)
+    return {"b": b, "p": p, "ids": ids}
+
+
+def synth(subject_id, ev_kind, **data):
+    return Event(id="ev-synth", subject_id=subject_id, kind=ev_kind, data=data)
+
+
+def recips(b, ev):
+    return {pid: rs for pid, rs in delivery.delivery_plan(b, ev)}
+
+
+def _why_ok(b, ev, p):
+    w = b.why(ev, p)
+    assert w in WHY_CLAUSES, f"why {w!r} not one of the five clauses"
+    return w
+
+
+# --------------------------------------------------------------------------- the required row
+def test_engineer_question_to_qa_reaches_qa_and_architect_only(rig):
+    b, P, I = rig["b"], rig["p"], rig["ids"]
+    b.message_send(P["e1e"], ticket_id=I["s1"], to="qa", kind=MessageKind.question, text="q?")
+    ev = b.store.query("event", {"subject_id": I["s1"], "kind": EventKind.message_sent})[-1]
+    r = recips(b, ev)
+    assert set(r) == {P["e1q"].id, P["a1"].id}, r
+    assert b.relevant(ev, P["e1q"]) and b.relevant(ev, P["a1"])
+    for absent in ("e1s", "e2e", "a2", "owner", "owner2", "e1e"):
+        assert not b.relevant(ev, P[absent]), f"{absent} should not hear a question to qa"
+    assert _why_ok(b, ev, P["e1q"]) == "addressed to you"
+    assert _why_ok(b, ev, P["a1"]) == "architect listener"
+
+
+# --------------------------------------------------------------------------- rule 1: architect
+@pytest.mark.parametrize("kind", [MessageKind.question, MessageKind.deviation,
+                                  MessageKind.finding, MessageKind.steer])
+@pytest.mark.parametrize("to_key", ["e1e", "owner"])  # addressed to someone else entirely
+def test_architect_hears_crucial_message_however_addressed(rig, kind, to_key):
+    b, P, I = rig["b"], rig["p"], rig["ids"]
+    to = P[to_key].id
+    b.message_send(P["e1e"], ticket_id=I["s1"], to=to, kind=kind, text="x")
+    ev = b.store.query("event", {"subject_id": I["s1"], "kind": EventKind.message_sent})[-1]
+    assert b.relevant(ev, P["a1"]), f"architect must hear a {kind} to {to_key}"
+    assert Reason.architect_listener in recips(b, ev)[P["a1"].id]
+    assert not b.relevant(ev, P["a2"]), "other epic's architect must not hear"
+
+
+@pytest.mark.parametrize("kind", [MessageKind.note, MessageKind.answer])
+def test_architect_not_paged_for_notes_between_others(rig, kind):
+    b, P, I = rig["b"], rig["p"], rig["ids"]
+    # addressed to the sibling engineer: no listener, and not on the architect's read path either
+    b.message_send(P["e1e"], ticket_id=I["s1"], to=P["e1s"].id, kind=kind, text="x")
+    ev = b.store.query("event", {"subject_id": I["s1"], "kind": EventKind.message_sent})[-1]
+    assert not b.relevant(ev, P["a1"]), f"a {kind} between two other seats must not page the architect"
+
+
+@pytest.mark.parametrize("status", [StatusValue.blocked, StatusValue.failed, StatusValue.deferred])
+def test_architect_and_owner_hear_recorded_status(rig, status):
+    b, P, I = rig["b"], rig["p"], rig["ids"]
+    # addressed to the architect (a non-null `to`) so the OWNER's page depends only on rule 2's
+    # failed/blocked filter, not on the to=None status-note path every status would take
+    b.record_status(P["e1e"], status=status, note="n", to=P["a1"].id, ticket_id=I["s1"])
+    ev = b.store.query("event", {"subject_id": I["s1"], "kind": EventKind.message_sent})[-1]
+    assert ev.data.get("status") == status.value, "status must ride the event data, not the text"
+    assert b.relevant(ev, P["a1"]), f"architect must hear a {status} status"
+    # owner is paged for failed/blocked whatever the addressee (rule 2), not for deferred
+    if status in (StatusValue.failed, StatusValue.blocked):
+        assert b.relevant(ev, P["owner"]) and _why_ok(b, ev, P["owner"]) == "owner listener"
+    else:
+        assert not b.relevant(ev, P["owner"]), "owner is not paged for a deferred status addressed elsewhere"
+    assert not b.relevant(ev, P["owner2"]), "other epic's owner never hears"
+
+
+@pytest.mark.parametrize("to,arch_hears", [("blocked", True), ("partial", True),
+                                           ("dropped", True), ("in_review", False),
+                                           ("ready", False)])
+def test_architect_hears_bad_status_transitions(rig, to, arch_hears):
+    b, P, I = rig["b"], rig["p"], rig["ids"]
+    ev = synth(I["s1"], EventKind.status_changed, **{"from": "in_progress", "to": to})
+    # the architect works the epic, so on_ticket already covers it; the listener adds the reason
+    got = b.relevant(ev, P["a1"])
+    assert got  # architect works the subtree — always on_ticket
+    if arch_hears:
+        assert Reason.architect_listener in recips(b, ev)[P["a1"].id]
+
+
+# --------------------------------------------------------------------------- rule 2: owner
+@pytest.mark.parametrize("to,hears", [("ready", True), ("in_review", True), ("done", True),
+                                      ("blocked", True), ("partial", True), ("dropped", True),
+                                      ("designed", False), ("signed_off", False)])
+def test_owner_status_transitions(rig, to, hears):
+    b, P, I = rig["b"], rig["p"], rig["ids"]
+    ev = synth(I["s1"], EventKind.status_changed, **{"from": "x", "to": to})
+    assert b.relevant(ev, P["owner"]) is hears
+    assert not b.relevant(ev, P["owner2"])  # scoped to the epic's owner
+
+
+def test_owner_not_paged_for_ticket_created(rig):
+    b, P, I = rig["b"], rig["p"], rig["ids"]
+    ev = synth(I["s1"], EventKind.ticket_created, kind="task", by="x")
+    assert not b.relevant(ev, P["owner"]), "ticket_created is not an owner page (design §16.2 rule 2)"
+
+
+def test_owner_hears_criterion_fail_by_other_not_self(rig):
+    b, P, I = rig["b"], rig["p"], rig["ids"]
+    assert b.relevant(synth(I["s1"], EventKind.criterion_checked, by="reviewer.x",
+                            verdict=Verdict.failed), P["owner"])
+    assert not b.relevant(synth(I["s1"], EventKind.criterion_checked, by="owner",
+                                verdict=Verdict.failed), P["owner"])
+
+
+@pytest.mark.parametrize("kind", [EventKind.shell_dead, EventKind.shell_stalled])
+def test_owner_and_architect_hear_dying_shells_scoped(rig, kind):
+    b, P, I = rig["b"], rig["p"], rig["ids"]
+    ev = synth(I["s1"], kind, participant=P["e1e"].id)
+    assert b.relevant(ev, P["owner"]) and b.relevant(ev, P["a1"])
+    assert not b.relevant(ev, P["owner2"]) and not b.relevant(ev, P["a2"])
+
+
+# --------------------------------------------------------------------------- overlap & negatives
+def test_addressed_and_mention_is_one_delivery_two_reasons(rig):
+    b, P, I = rig["b"], rig["p"], rig["ids"]
+    # a real send excludes `to` from its own mentions, so the co-occurrence is exercised at the
+    # plan level: an event both addressed to e1e AND @mentioning e1e collapses to one delivery
+    ev = synth(I["s1"], EventKind.message_sent, to=P["e1e"].id, kind=MessageKind.note,
+               mentions=[P["e1e"].id], **{"from": "someone.else"})
+    rs = recips(b, ev)[P["e1e"].id]
+    assert Reason.addressed in rs and Reason.mention in rs, rs  # two reasons
+    assert [pid for pid, _ in delivery.delivery_plan(b, ev)].count(P["e1e"].id) == 1  # one delivery
+
+
+def test_sibling_engineer_and_cross_epic_are_silent(rig):
+    b, P, I = rig["b"], rig["p"], rig["ids"]
+    # a thread note on s1 reaches its seats + ancestors, never the sibling story's engineer
+    b.message_send(P["e1e"], ticket_id=I["s1"], to=None, kind=MessageKind.note, text="note")
+    ev = b.store.query("event", {"subject_id": I["s1"], "kind": EventKind.message_sent})[-1]
+    assert b.relevant(ev, P["a1"]) and not b.relevant(ev, P["e1s"])
+    # every event on the other epic is invisible to e1's owner and architect
+    ev2 = synth(I["s2"], EventKind.status_changed, **{"from": "x", "to": "blocked"})
+    assert not b.relevant(ev2, P["owner"]) and not b.relevant(ev2, P["a1"])
+
+
+def test_recovery_when_no_seat_and_no_architect(rig):
+    b, P, I = rig["b"], rig["p"], rig["ids"]
+    # e3/s3 has no architect and no qa seat: a question to qa falls back to the epic's human owner
+    r = b.resolve(P["owner"], ticket_id=I["s3"], to="qa", kind=MessageKind.question)
+    assert r["wakes"] == r["plan"]  # same list under both keys
+    assert [w["recipient"] for w in r["wakes"]] == ["owner"]
+    assert r["wakes"][0]["reason"] == Reason.recovery.value
+    assert "recovery" in r["note"] or "owner" in r["note"]
+    # and the feed agrees: the owner is woken for that (synthetic) message
+    ev = synth(I["s3"], EventKind.message_sent, to="qa", kind=MessageKind.question, **{"from": "x"})
+    assert b.relevant(ev, P["owner"])
+
+
+def test_resolve_endpoint_over_http(rig):
+    """POST /v1/messages/resolve is a preview: it returns {to, wakes, plan, note}, sends nothing,
+    and its hint documents the contract. Covers a live-seat wake and the no-seat cases."""
+    from fastapi.testclient import TestClient
+
+    from edp8.service import create_app
+    b, I = rig["b"], rig["ids"]
+    client = TestClient(create_app(b, admin_token="t"))
+
+    def resolve(tid, to, kind="question"):
+        return client.post("/v1/messages/resolve", json={"ticket_id": tid, "to": to, "kind": kind},
+                           headers={"X-Participant": "owner"}).json()
+
+    before = len(b.store.query("message", {}, limit=100_000))
+    r = resolve(I["s1"], "qa")  # a real (never-spawned) qa seat exists on s1
+    assert r["ok"], r
+    v = r["value"]
+    assert v["to"] == f"qa.{I['s1']}" and v["wakes"] == v["plan"]
+    recips = {w["recipient"] for w in v["wakes"]}
+    assert recips == {f"qa.{I['s1']}", f"architect.{I['e1']}"}
+    assert "sent" in r["hint"].lower() or "preview" in r["hint"].lower()
+    assert len(b.store.query("message", {}, limit=100_000)) == before, "resolve must not send"
+
+    # no seat exists yet on this epic AND it is a plain note → nobody is woken
+    r2 = resolve(I["s3"], "sme", kind="note")["value"]
+    assert r2["wakes"] == [] and "nobody is woken" in r2["note"]
+
+    # a question to that same no-seat role, no architect seat on e3 → recovery to the human owner
+    r3 = resolve(I["s3"], "sme", kind="question")["value"]
+    assert [w["recipient"] for w in r3["wakes"]] == ["owner"]
+    assert r3["wakes"][0]["reason"] == Reason.recovery.value
+
+
+def test_resolve_matches_delivery_for_a_real_send(rig):
+    b, P, I = rig["b"], rig["p"], rig["ids"]
+    preview = b.resolve(P["e1e"], ticket_id=I["s1"], to="qa", kind=MessageKind.question)
+    b.message_send(P["e1e"], ticket_id=I["s1"], to="qa", kind=MessageKind.question, text="q?")
+    ev = b.store.query("event", {"subject_id": I["s1"], "kind": EventKind.message_sent})[-1]
+    assert {w["recipient"] for w in preview["wakes"]} == set(recips(b, ev))  # preview == delivery

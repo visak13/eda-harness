@@ -70,6 +70,37 @@ class Verdict(StrEnum):
     failed = "fail"
 
 
+class CheckedBy(StrEnum):
+    """The checker role a criterion is verdicted by (a strict subset of Role)."""
+    reviewer = "reviewer"
+    qa = "qa"
+    owner = "owner"
+
+
+class ConsultPurpose(StrEnum):
+    """consult(purpose=…) — selects the consultant's brief."""
+    adversary = "adversary"
+    creative = "creative"
+    visual = "visual"
+    second_opinion = "second_opinion"
+    build = "build"
+
+
+class ConsultProfile(StrEnum):
+    """consult(profile=…) — the codex-exec invocation (sandbox/effort/MCP+feature set)."""
+    design = "design"
+    concept = "concept"
+    blender = "blender"
+    verify = "verify"
+    direct = "direct"
+
+
+class ConsultModel(StrEnum):
+    """consult(model=…) — the consultant model for one call."""
+    astra = "gpt-6-astra"
+    sol = "gpt-5.6-sol"
+
+
 class DocType(StrEnum):
     design = "design"
     strategy_hl = "strategy_hl"
@@ -121,6 +152,20 @@ class EventKind(StrEnum):
     shell_stalled = "shell_stalled"
     ticket_created = "ticket_created"
     criterion_checked = "criterion_checked"  # a verdict landed: {criterion, verdict, by, by_type, evidence, ticket}
+
+
+class Reason(StrEnum):
+    """Why one participant is woken for one event — the vocabulary of delivery.delivery_plan
+    (design §16.2 rule 0). One event can yield several reasons for the same recipient; the
+    feed's one-clause `why` picks the highest-priority one (Board._primary)."""
+    addressed = "addressed"            # the message's `to` is you (or your role, on your epic)
+    mention = "mention"                # @you in the text
+    on_ticket = "on_ticket"            # you work the subject ticket
+    ancestor_seat = "ancestor_seat"    # you work an ancestor of the subject ticket
+    architect_listener = "architect_listener"  # you are the epic's architect, crucial event (rule 1)
+    owner_listener = "owner_listener"  # you are the epic's human owner, spawn/decision event (rule 2)
+    gate_party = "gate_party"          # a gate you can answer / opened / worked the subtree of
+    recovery = "recovery"              # empty plan for a question/deviation fell back to you (rule 3)
 
 
 class Gate(StrEnum):
@@ -237,6 +282,10 @@ class Session(Obj):
     resume_token: str = ""
     last_output_at: datetime | None = None
     reason: str = ""  # why the shell ended (finish/reaped/clean exit/process gone) — "" while alive
+    # set when a liveness sweep could not get a fresh answer for a LIVE row: the state shown is
+    # the last known one, not a probed truth. The UI renders "Presence not refreshed" (S10) —
+    # silence is never rendered as Closed (design §18.3). Cleared on the next positive answer.
+    presence_stale_since: datetime | None = None
 
 
 OBJECT_TYPES: dict[str, type[Obj]] = {
@@ -250,6 +299,36 @@ OBJECT_TYPES: dict[str, type[Obj]] = {
     "artifact": Artifact,
     "session": Session,
 }
+
+# Every strict-valued enum in the model + the consult tool args, keyed by class name.
+# `describe('enums')` lists them; `describe('enum:<Name>')` returns one. The description
+# composer (bundles.py) and the error envelopes read allowed values from here so a
+# tool's allowed set can never drift from its schema (design §19 rule 3).
+ENUMS: dict[str, type[StrEnum]] = {
+    "Role": Role,
+    "TicketKind": TicketKind,
+    "WorkType": WorkType,
+    "TicketStatus": TicketStatus,
+    "Check": Check,
+    "Verdict": Verdict,
+    "CheckedBy": CheckedBy,
+    "DocType": DocType,
+    "Relation": Relation,
+    "MessageKind": MessageKind,
+    "StatusValue": StatusValue,
+    "Gate": Gate,
+    "ArtifactForm": ArtifactForm,
+    "SessionState": SessionState,
+    "EventKind": EventKind,
+    "ConsultPurpose": ConsultPurpose,
+    "ConsultProfile": ConsultProfile,
+    "ConsultModel": ConsultModel,
+}
+
+
+def enum_values(name: str) -> list[str] | None:
+    e = ENUMS.get(name)
+    return [m.value for m in e] if e is not None else None
 
 # ----------------------------------------------------------------------------- transitions
 

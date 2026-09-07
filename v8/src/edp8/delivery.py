@@ -9,7 +9,30 @@ from __future__ import annotations
 
 from . import broker_adapter
 from .board import Board, BoardError
-from .schemas import Message
+from .schemas import Event, EventKind, Message, MessageKind, Reason
+
+
+def delivery_plan(board: Board, ev: Event) -> list[tuple[str, list[Reason]]]:
+    """The single decider of who a board event wakes and why (design §16.2 rule 0). One
+    entry per recipient, its reasons in priority order. This is the one function behind the
+    feed (`Board.relevant` = recipient in plan), the `why` clause, broker publication and the
+    `/v1/messages/resolve` wake preview — so a preview can never drift from delivery.
+
+    `ev` may be a real stored event or a synthetic one (the resolve preview builds a
+    `message_sent`-shaped event that is never persisted)."""
+    plan: list[tuple[str, list[Reason]]] = []
+    for p in board.store.query("participant", {}, limit=100_000):
+        reasons = board._reason_for(ev, p)  # the per-participant predicate (never parses text)
+        if reasons:
+            plan.append((p.id, reasons))
+    # rule 3 — no silent drop: a question/deviation whose plan is otherwise empty (no addressee,
+    # no working seat, no architect seat) falls back to the epic's human owner.
+    if not plan and ev.kind == EventKind.message_sent \
+            and ev.data.get("kind") in (MessageKind.question, MessageKind.deviation):
+        owner = board.epic_owner(ev.subject_id)
+        if owner:
+            plan.append((owner, [Reason.recovery]))
+    return plan
 
 
 def _is_participant(board: Board, pid: str) -> bool:

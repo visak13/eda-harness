@@ -68,6 +68,9 @@ class BoardClient:
     def inbox(self) -> dict[str, Any]:
         return self._request("GET", "/v1/inbox")
 
+    def listening(self) -> dict[str, Any]:
+        return self._request("GET", "/v1/listening")
+
     def record_status(self, status: str, note: str = "", to: str | None = None,
                       ticket_id: str | None = None) -> dict[str, Any]:
         return self._request("POST", "/v1/status",
