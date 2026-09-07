@@ -31,7 +31,11 @@
       "TaskStop",
       "CronCreate",
       "CronList",
-      "CronDelete"
+      "CronDelete",
+      "Bash(npm:*)",
+      "Bash(npx:*)",
+      "Bash(node:*)",
+      "Bash(npm --prefix web:*)"
     ]
   },
   "enableAllProjectMcpServers": true
