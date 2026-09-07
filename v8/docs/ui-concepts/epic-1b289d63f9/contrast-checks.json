@@ -1,0 +1,68 @@
+[
+  {
+    "concept": "A",
+    "contrast": {
+      "text": 15.57,
+      "secondary": 6.79,
+      "muted": 5.02,
+      "brand": 5.29,
+      "brand_hover": 6.94,
+      "brand_active": 8.83,
+      "control": 3.31,
+      "link": 7.17,
+      "success_pair": 5.19,
+      "danger_pair": 5.57,
+      "progress_pair": 5.71,
+      "review_pair": 5.75,
+      "orange_on_selected": 4.75
+    },
+    "saturated_orange_area_percent": {
+      "inbox": 0.727,
+      "epics": 0.506
+    }
+  },
+  {
+    "concept": "B",
+    "contrast": {
+      "text": 14.63,
+      "secondary": 6.95,
+      "muted": 5.18,
+      "brand": 6.07,
+      "brand_hover": 7.98,
+      "brand_active": 10.22,
+      "control": 3.38,
+      "link": 6.78,
+      "success_pair": 5.53,
+      "danger_pair": 5.69,
+      "progress_pair": 5.8,
+      "review_pair": 5.57,
+      "orange_on_selected": 5.34
+    },
+    "saturated_orange_area_percent": {
+      "inbox": 0.841,
+      "epics": 0.58
+    }
+  },
+  {
+    "concept": "C",
+    "contrast": {
+      "text": 14.3,
+      "secondary": 6.46,
+      "muted": 5.01,
+      "brand": 5.55,
+      "brand_hover": 7.35,
+      "brand_active": 9.56,
+      "control": 3.3,
+      "link": 6.65,
+      "success_pair": 5.48,
+      "danger_pair": 5.45,
+      "progress_pair": 5.66,
+      "review_pair": 5.13,
+      "orange_on_selected": 4.99
+    },
+    "saturated_orange_area_percent": {
+      "inbox": 1.397,
+      "epics": 1.124
+    }
+  }
+]

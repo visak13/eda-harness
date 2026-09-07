@@ -1,0 +1,173 @@
+[
+  {
+    "file": "concept-A-inbox.png",
+    "width": 1440,
+    "height": 900,
+    "documentWidth": 1440,
+    "documentHeight": 900,
+    "fonts": "loaded",
+    "epicRows": 0,
+    "composer": {
+      "x": 296,
+      "y": 786,
+      "width": 840,
+      "height": 114,
+      "top": 786,
+      "right": 1136,
+      "bottom": 900,
+      "left": 296
+    }
+  },
+  {
+    "file": "concept-A-epics.png",
+    "width": 1440,
+    "height": 900,
+    "documentWidth": 1440,
+    "documentHeight": 900,
+    "fonts": "loaded",
+    "epicRows": 8,
+    "lastRow": {
+      "x": 296,
+      "y": 759,
+      "width": 1120,
+      "height": 81,
+      "top": 759,
+      "right": 1416,
+      "bottom": 840,
+      "left": 296
+    }
+  },
+  {
+    "file": "concept-A-tiles.png",
+    "width": 1200,
+    "height": 900,
+    "documentWidth": 1200,
+    "documentHeight": 900,
+    "fonts": "loaded",
+    "epicRows": 0,
+    "tileFooter": {
+      "x": 40,
+      "y": 808,
+      "width": 1120,
+      "height": 55,
+      "top": 808,
+      "right": 1160,
+      "bottom": 863,
+      "left": 40
+    }
+  },
+  {
+    "file": "concept-B-inbox.png",
+    "width": 1440,
+    "height": 900,
+    "documentWidth": 1440,
+    "documentHeight": 900,
+    "fonts": "loaded",
+    "epicRows": 0,
+    "composer": {
+      "x": 296,
+      "y": 786,
+      "width": 840,
+      "height": 114,
+      "top": 786,
+      "right": 1136,
+      "bottom": 900,
+      "left": 296
+    }
+  },
+  {
+    "file": "concept-B-epics.png",
+    "width": 1440,
+    "height": 900,
+    "documentWidth": 1440,
+    "documentHeight": 900,
+    "fonts": "loaded",
+    "epicRows": 8,
+    "lastRow": {
+      "x": 296,
+      "y": 778,
+      "width": 1120,
+      "height": 85,
+      "top": 778,
+      "right": 1416,
+      "bottom": 863,
+      "left": 296
+    }
+  },
+  {
+    "file": "concept-B-tiles.png",
+    "width": 1200,
+    "height": 900,
+    "documentWidth": 1200,
+    "documentHeight": 900,
+    "fonts": "loaded",
+    "epicRows": 0,
+    "tileFooter": {
+      "x": 40,
+      "y": 808,
+      "width": 1120,
+      "height": 55,
+      "top": 808,
+      "right": 1160,
+      "bottom": 863,
+      "left": 40
+    }
+  },
+  {
+    "file": "concept-C-inbox.png",
+    "width": 1440,
+    "height": 900,
+    "documentWidth": 1440,
+    "documentHeight": 900,
+    "fonts": "loaded",
+    "epicRows": 0,
+    "composer": {
+      "x": 296,
+      "y": 786,
+      "width": 840,
+      "height": 114,
+      "top": 786,
+      "right": 1136,
+      "bottom": 900,
+      "left": 296
+    }
+  },
+  {
+    "file": "concept-C-epics.png",
+    "width": 1440,
+    "height": 900,
+    "documentWidth": 1440,
+    "documentHeight": 910,
+    "fonts": "loaded",
+    "epicRows": 8,
+    "lastRow": {
+      "x": 296,
+      "y": 804,
+      "width": 1120,
+      "height": 82,
+      "top": 804,
+      "right": 1416,
+      "bottom": 886,
+      "left": 296
+    }
+  },
+  {
+    "file": "concept-C-tiles.png",
+    "width": 1200,
+    "height": 900,
+    "documentWidth": 1200,
+    "documentHeight": 900,
+    "fonts": "loaded",
+    "epicRows": 0,
+    "tileFooter": {
+      "x": 40,
+      "y": 808,
+      "width": 1120,
+      "height": 55,
+      "top": 808,
+      "right": 1160,
+      "bottom": 863,
+      "left": 40
+    }
+  }
+]
