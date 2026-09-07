@@ -872,6 +872,15 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
                         log.warning("pool session mirror failed: %s", out.get("error"))
                 except Exception as e:
                     log.warning("pool watcher error: %s", e)
+                try:
+                    # design §24 rule 3: drain the checker-pairing queue on the same tick — spawn a
+                    # reviewer/qa whose RAM headroom is now sufficient, retry the ones still under the
+                    # seat floor (the queued-note guard keeps the retry quiet).
+                    res = board.run_pending_pairings()
+                    if res.get("spawned"):
+                        log.info("paired checkers: %s", res["spawned"])
+                except Exception as e:
+                    log.warning("pairing drain error: %s", e)
                 time.sleep(10)  # death-detection latency rides this cadence
 
         threading.Thread(target=_pool_watch, name="edp8-pool-watch", daemon=True).start()

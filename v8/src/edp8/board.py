@@ -913,6 +913,14 @@ class Board:
 
     def gate_open(self, ticket_id: str, gate: Gate, *, by: str = "board", note: str = "") -> Event:
         t = self.ticket(ticket_id)
+        # §24.1 cap: design_signoff is refused while the epic carries more than STORY_CAP open
+        # stories (a scope gate can raise creation past the cap, but the epic must be split back
+        # under the cap before its design is signed off — the cap is a design-time ceiling too).
+        if gate == Gate.design_signoff and t.kind == TicketKind.epic:
+            n = len(self._open_stories(t.id))
+            if n > STORY_CAP:
+                raise BoardError("scope", f"the epic has {n} open stories (> {STORY_CAP}); design_signoff is refused",
+                                 f"split the epic, or drop/fold stories to {STORY_CAP} or fewer")
         if self.open_gates(ticket_id, gate):
             return self.open_gates(ticket_id, gate)[0]
         ev = self._emit(t.id, EventKind.gate_opened, {"gate": gate, "by": by, "note": note})
@@ -1337,8 +1345,37 @@ class Board:
             return _dedup(reasons)
         if p.role == Role.architect:  # rule 1, additive listener for the epic's architect seat
             reasons += self._architect_listener_reasons(ev, p)
+            gen = self._general_reasons(ev, p)
+            if self._architect_courtesy_copy(ev):
+                # v21 (design §16.2 rule 1): the epic seat pays no ANCESTOR courtesy copy — a clean
+                # death, a routine status note, a plain note between other seats, a passing check.
+                # It keeps every rule-1 kind (question/deviation/finding/steer, blocked/failed status,
+                # unclean death, gate, fail verdict, ready/in_review/done transitions) and any event
+                # on the epic ticket it works DIRECTLY (on_ticket, never dropped).
+                gen = [r for r in gen if r != Reason.ancestor_seat]
+            reasons += gen
+            return _dedup(reasons)
         reasons += self._general_reasons(ev, p)
         return _dedup(reasons)
+
+    def _architect_courtesy_copy(self, ev: Event) -> bool:
+        """A subtree event the epic's architect can read but is NOT paged for (design §16.2 rule 1,
+        v21): clean self-closes, routine record_status notes, plain note/answer between other seats,
+        and passing/pending criterion checks. Every rule-1 kind returns False (it stays delivered)."""
+        d = ev.data
+        k = ev.kind
+        if k == EventKind.shell_dead:
+            return bool(d.get("clean"))
+        if k == EventKind.criterion_checked:
+            return d.get("verdict") != Verdict.failed
+        if k == EventKind.message_sent:
+            mk = d.get("kind")
+            if mk in (MessageKind.note, MessageKind.answer):
+                return True
+            if mk == MessageKind.status:
+                return d.get("status") not in (StatusValue.blocked, StatusValue.failed, StatusValue.deferred)
+            return False  # question / deviation / finding / steer are crucial
+        return False  # status_changed, gates, stalls, doc edits: never a courtesy copy
 
     def _general_reasons(self, ev: Event, p: Participant) -> list[Reason]:
         """Delivery every seat has always had: addressed, its ticket/ancestors, gates it can

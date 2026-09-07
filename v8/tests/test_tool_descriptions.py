@@ -82,3 +82,20 @@ def test_role_cards_untouched():
     if r.returncode != 0:
         pytest.skip(f"git unavailable: {r.stderr.strip()}")
     assert r.stdout.strip() == "", f".claude/commands/ has uncommitted changes:\n{r.stdout}"
+
+
+# --------------------------------------------------------------------------- S22 §24.1 caps/derivation
+def test_ticket_create_description_names_the_caps():
+    """§24.1 (criterion c-bcc4d02da1): the ticket_create tool description states the story/task caps."""
+    d = ALL_TOOLS["ticket_create"].description.lower()
+    assert "8 open stories" in d or "at most 8" in d, d
+    assert "5 tasks" in d or "at most 5" in d, d
+    assert "scope gate" in d, d
+
+
+def test_criterion_create_description_states_derivation_and_criteria_cap():
+    """§24/§24.1 (criteria c-abb821e363, c-bcc4d02da1): the criterion_create tool description states
+    the checker derivation and the freshly-written-criteria cap."""
+    d = ALL_TOOLS["criterion_create"].description.lower()
+    for token in ("qa", "review_required", "knowledge", "override_reason", "6 fresh"):
+        assert token in d.replace("freshly-written", "fresh"), f"criterion_create desc missing {token!r}: {d}"

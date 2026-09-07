@@ -112,10 +112,18 @@ def test_creating_a_ticket_does_not_subscribe_for_life(client, board, two_epics)
     _reg(client, "arch-x", "architect")
     t = client.post("/v1/tickets", json={"kind": "story", "work_type": "feature", "title": "t", "parent_id": a},
                     headers={"X-Participant": "arch-x"}).json()["value"]["id"]
+    # a PLAIN note wakes neither the creator nor the epic's architect seat (v21: no ancestor courtesy —
+    # design §16.2 rule 1; the architect can read the thread, it is not paged for chatter)
     client.post("/v1/messages", json={"ticket_id": t, "kind": "note", "text": "n"}, headers={"X-Participant": "owner"})
-    ev = [e for _, e in board.store.events_since(0) if e.kind == EventKind.message_sent][-1]
-    assert not board.relevant(ev, board.participant("arch-x"))  # creator, not worker
-    assert board.relevant(ev, board.participant(f"architect.{a}"))  # assigned up the chain
+    note = [e for _, e in board.store.events_since(0) if e.kind == EventKind.message_sent][-1]
+    assert not board.relevant(note, board.participant("arch-x"))  # creator, not worker
+    assert not board.relevant(note, board.participant(f"architect.{a}"))  # v21: no plain-note courtesy
+    # a CRUCIAL message (question) still reaches the epic's architect seat via rule 1, never the creator
+    client.post("/v1/messages", json={"ticket_id": t, "kind": "question", "to": "owner", "text": "q?"},
+                headers={"X-Participant": "owner"})
+    q = [e for _, e in board.store.events_since(0) if e.kind == EventKind.message_sent][-1]
+    assert not board.relevant(q, board.participant("arch-x"))  # creator, not worker
+    assert board.relevant(q, board.participant(f"architect.{a}"))  # rule-1 listener, assigned up the chain
 
 
 @pytest.fixture

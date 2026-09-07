@@ -20,6 +20,7 @@ import pytest
 from edp8 import broker_adapter, delivery
 from edp8.board import Board
 from edp8.schemas import (
+    Check,
     Event,
     EventKind,
     MessageKind,
@@ -161,9 +162,11 @@ def test_architect_and_owner_hear_recorded_status(rig, status):
 def test_architect_hears_bad_status_transitions(rig, to, arch_hears):
     b, P, I = rig["b"], rig["p"], rig["ids"]
     ev = synth(I["s1"], EventKind.status_changed, **{"from": "in_progress", "to": to})
-    # the architect works the epic, so on_ticket already covers it; the listener adds the reason
+    # a status_changed is never a courtesy copy (v21): the architect hears every lifecycle move on
+    # its subtree via ancestor delivery; the crucial ones (blocked/partial/dropped) ALSO add the
+    # rule-1 listener reason.
     got = b.relevant(ev, P["a1"])
-    assert got  # architect works the subtree — always on_ticket
+    assert got  # architect works the subtree — ancestor delivery of a transition always applies
     if arch_hears:
         assert Reason.architect_listener in recips(b, ev)[P["a1"].id]
 
@@ -215,10 +218,16 @@ def test_addressed_and_mention_is_one_delivery_two_reasons(rig):
 
 def test_sibling_engineer_and_cross_epic_are_silent(rig):
     b, P, I = rig["b"], rig["p"], rig["ids"]
-    # a thread note on s1 reaches its seats + ancestors, never the sibling story's engineer
+    # v21 (rule 1): a plain thread note reaches the seats working s1 directly, but NOT the epic's
+    # architect (no ancestor courtesy — it can read the thread) and never the sibling story's engineer
     b.message_send(P["e1e"], ticket_id=I["s1"], to=None, kind=MessageKind.note, text="note")
     ev = b.store.query("event", {"subject_id": I["s1"], "kind": EventKind.message_sent})[-1]
-    assert b.relevant(ev, P["a1"]) and not b.relevant(ev, P["e1s"])
+    assert not b.relevant(ev, P["a1"]) and not b.relevant(ev, P["e1s"])
+    # a crucial note (deviation) still reaches the architect via rule 1, so the negative above is
+    # about the note KIND, not a broken listener
+    b.message_send(P["e1e"], ticket_id=I["s1"], to=None, kind=MessageKind.deviation, text="dev")
+    dev = b.store.query("event", {"subject_id": I["s1"], "kind": EventKind.message_sent})[-1]
+    assert b.relevant(dev, P["a1"])
     # every event on the other epic is invisible to e1's owner and architect
     ev2 = synth(I["s2"], EventKind.status_changed, **{"from": "x", "to": "blocked"})
     assert not b.relevant(ev2, P["owner"]) and not b.relevant(ev2, P["a1"])
@@ -276,3 +285,49 @@ def test_resolve_matches_delivery_for_a_real_send(rig):
     b.message_send(P["e1e"], ticket_id=I["s1"], to="qa", kind=MessageKind.question, text="q?")
     ev = b.store.query("event", {"subject_id": I["s1"], "kind": EventKind.message_sent})[-1]
     assert {w["recipient"] for w in preview["wakes"]} == set(recips(b, ev))  # preview == delivery
+
+
+# --------------------------------------------------------------------------- v21: no courtesy wakes (S22)
+@pytest.mark.parametrize("status", [StatusValue.reviewed, StatusValue.handed_off, StatusValue.done])
+def test_architect_not_paged_for_clean_status(rig, status):
+    """rule 1 (v21): a benign record_status (reviewed/handed_off/done) is not an architect page —
+    only blocked/failed/deferred are."""
+    b, P, I = rig["b"], rig["p"], rig["ids"]
+    b.record_status(P["e1e"], status=status, note="n", to=None, ticket_id=I["s1"])
+    ev = b.store.query("event", {"subject_id": I["s1"], "kind": EventKind.message_sent})[-1]
+    assert not b.relevant(ev, P["a1"]), f"architect must not be paged for a clean {status} status"
+
+
+def test_clean_shell_dead_pages_neither_owner_nor_architect(rig):
+    """rule 1+2 (v21): a CLEAN self-close (clean=true) wakes nobody; an unclean death still pages
+    both the epic's architect and its human owner."""
+    b, P, I = rig["b"], rig["p"], rig["ids"]
+    clean = synth(I["s1"], EventKind.shell_dead, participant=P["e1e"].id, clean=True)
+    assert not b.relevant(clean, P["a1"]) and not b.relevant(clean, P["owner"])
+    unclean = synth(I["s1"], EventKind.shell_dead, participant=P["e1e"].id)
+    assert b.relevant(unclean, P["a1"]) and b.relevant(unclean, P["owner"])
+
+
+def test_architect_not_paged_for_passing_criterion_check(rig):
+    """rule 1 (v21): only a FAIL verdict pages the architect; a pass is not a wake."""
+    b, P, I = rig["b"], rig["p"], rig["ids"]
+    passing = synth(I["s1"], EventKind.criterion_checked, by="qa.x", verdict=Verdict.passed)
+    assert not b.relevant(passing, P["a1"])
+    failing = synth(I["s1"], EventKind.criterion_checked, by="qa.x", verdict=Verdict.failed)
+    assert b.relevant(failing, P["a1"])
+
+
+def test_owner_not_paged_for_agent_passing_command_check(rig):
+    """rule 2 (v21): an agent reviewer passing a `command` criterion is not a human page; a `look`
+    check, an owner-checked one, or a fail still wakes the owner."""
+    b, P, I = rig["b"], rig["p"], rig["ids"]
+    agent_pass = synth(I["s1"], EventKind.criterion_checked, by="reviewer.s1", verdict=Verdict.passed,
+                       check=Check.command, checked_by="reviewer")
+    assert not b.relevant(agent_pass, P["owner"])
+    look_pass = synth(I["s1"], EventKind.criterion_checked, by="reviewer.s1", verdict=Verdict.passed,
+                      check=Check.look, checked_by="reviewer")
+    owner_checked = synth(I["s1"], EventKind.criterion_checked, by="reviewer.s1", verdict=Verdict.passed,
+                          check=Check.command, checked_by="owner")
+    a_fail = synth(I["s1"], EventKind.criterion_checked, by="qa.s1", verdict=Verdict.failed,
+                   check=Check.command, checked_by="qa")
+    assert b.relevant(look_pass, P["owner"]) and b.relevant(owner_checked, P["owner"]) and b.relevant(a_fail, P["owner"])
