@@ -2,8 +2,10 @@ import { useState } from "react";
 import { Link, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { getTicketPage } from "../api/endpoints";
-import type { MessageView } from "../api/types";
+import type { MessageView, TicketStatus } from "../api/types";
 import { StatusChip } from "../components/StatusChip";
+import { ProcessStrip } from "../components/ProcessStrip";
+import { StatusControl } from "../components/StatusControl";
 import { CriterionCard } from "../components/CriterionCard";
 import { Composer } from "../components/Composer";
 import { useDocDrawer } from "../components/DocDrawer";
@@ -16,6 +18,18 @@ import styles from "./Ticket.module.css";
 // read-only cards (verdict word + evidence link, opening in the doc drawer), the linked documents
 // with their relation labels (also drawer), and an object-attached composer whose "as @x" mirrors
 // the ?as= identity. A note posts to THIS ticket (parity with /ui/ticket/{id}/say).
+// The process strip's next action links to the status control below rather than repeating the
+// board's rules — the control is where the legal move actually lives (design §16).
+function nextActionLink(status: string): string {
+  switch (status) {
+    case "in_review": return "Review the evidence, then change the status →";
+    case "in_progress": return "Attach evidence, then move it to In review →";
+    case "ready": return "Assign or spawn a seat, then start it →";
+    case "done": return "Complete — see the status below.";
+    default: return "Change the status →";
+  }
+}
+
 export function TicketPage(): React.JSX.Element {
   const { id = "" } = useParams();
   const as = identity();
@@ -66,6 +80,11 @@ export function TicketPage(): React.JSX.Element {
         </span>
       </div>
 
+      <ProcessStrip
+        status={ticket.status}
+        nextAction={<a href="#change-status">{nextActionLink(ticket.status)}</a>}
+      />
+
       <div className={styles.layout}>
         <div className={styles.mainCol}>
           <div className={ui.sectionLabel}>Acceptance criteria ({criteria.length})</div>
@@ -114,6 +133,11 @@ export function TicketPage(): React.JSX.Element {
         </div>
 
         <aside className={styles.rail} aria-label="Ticket details">
+          <section className={ui.card} id="change-status">
+            <div className={ui.sectionLabel}>Change status</div>
+            <StatusControl ticketId={id} currentStatus={ticket.status as TicketStatus} />
+          </section>
+
           <section className={ui.card}>
             <div className={ui.sectionLabel}>Linked documents ({docs.length})</div>
             {docs.length === 0 ? (

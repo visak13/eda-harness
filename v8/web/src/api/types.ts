@@ -312,6 +312,19 @@ export interface TicketPage {
   waiting_reason: WaitingReason;
 }
 
+// The status edges offered on a ticket for the current viewer (GET /v1/tickets/{id}/transitions).
+// Legality is the board's, computed through the one _guard_transition — the client never re-derives
+// which moves are legal; it only renders them and shows the board's reason when one is blocked.
+export interface TicketTransition {
+  to: TicketStatus;
+  allowed: boolean;
+  reason: string | null;
+}
+export interface TicketTransitions {
+  status: TicketStatus;
+  transitions: TicketTransition[];
+}
+
 // --------------------------------------------------------------------------- docs / activity / library
 
 export interface DocHtml {

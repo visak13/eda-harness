@@ -34,6 +34,11 @@ function ticketPage(over: Partial<TicketPageData> = {}): TicketPageData {
 
 function mount(data: TicketPageData) {
   server.use(http.get("/v1/tickets/s-1/page", () => okJson(data)));
+  server.use(
+    http.get("/v1/tickets/s-1/transitions", () =>
+      okJson({ status: data.ticket.status, transitions: [{ to: "done", allowed: true, reason: null }] }),
+    ),
+  );
   server.use(http.post("/v1/messages/resolve", () => okJson({ to: null, wakes: [], plan: [], note: "" })));
   renderRoute("/ticket/s-1?as=owner", "/ticket/:id", <TicketPage />);
 }

@@ -1,0 +1,89 @@
+/* Status control (folio-ticket): a flat list of the moves the board offers this viewer. Each move
+   is a text button + a one-line consequence; a blocked move is dimmed and carries the board's own
+   reason. No fills, no chips — the page's ink and hairlines only. */
+
+.control {
+  border: 1px solid var(--line);
+  padding: 16px;
+  margin: 0 0 24px;
+  background: var(--panel);
+}
+
+.now {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.nowLabel {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.nowStatus {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.moves {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.move {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.move:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.moveBtn {
+  font: inherit;
+  font-weight: 600;
+  color: var(--accentink);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.moveBtn:hover:not(:disabled) {
+  text-decoration: underline;
+}
+.moveBtn:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.consequence {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ink);
+}
+.reason {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.terminal,
+.loading {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.error {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--accentink);
+}

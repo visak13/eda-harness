@@ -34,10 +34,16 @@ export async function apiEnvelope<T>(path: string, init?: RequestInit): Promise<
   return { value: body.value as T, hint: (body.hint as string) ?? "" };
 }
 
-// JSON POST helper: the board expects application/json and returns the same envelope.
-export function postJson<T>(path: string, body: unknown): Promise<{ value: T; hint: string }> {
+// JSON write helper: the board expects application/json and returns the same envelope. Defaults to
+// POST (create/action); pass "PATCH" for a partial update (ticket status/assignee, criterion, doc).
+// Either way the envelope hint is returned, so a blocked write surfaces the board's resolution note.
+export function postJson<T>(
+  path: string,
+  body: unknown,
+  method: "POST" | "PATCH" = "POST",
+): Promise<{ value: T; hint: string }> {
   return apiEnvelope<T>(path, {
-    method: "POST",
+    method,
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });

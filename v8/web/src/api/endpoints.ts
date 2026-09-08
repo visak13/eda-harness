@@ -12,7 +12,10 @@ import type {
   Library,
   MessageSent,
   TicketPage,
+  TicketRecord,
   TicketsTable,
+  TicketStatus,
+  TicketTransitions,
 } from "./types";
 
 function qs(params: Record<string, string | number | null | undefined>): string {
@@ -77,3 +80,15 @@ export interface Verdict {
  *  names the doc version read; the board refuses a stale version unless stale_ok is passed. */
 export const postVerdict = (b: Verdict) =>
   postJson<{ criterion: Record<string, unknown>; message: string }>("/v1/me/verdict", b);
+
+// The status edges the board offers THIS viewer on a ticket (the status control reads legality
+// from the server, never a client copy of the rules — design §16, "one implementation").
+export const getTicketTransitions = (id: string) =>
+  api<TicketTransitions>(`/v1/tickets/${encodeURIComponent(id)}/transitions`);
+
+/** PATCH /v1/tickets/{id} — the status move (and, where the board requires it, the assignee it is
+ *  set with). Goes through postJson so a blocked move surfaces the board's resolution hint. */
+export const patchTicket = (
+  id: string,
+  b: { status?: TicketStatus; assignee?: string | null; design_ref?: string | null },
+) => postJson<TicketRecord>(`/v1/tickets/${encodeURIComponent(id)}`, b, "PATCH");
