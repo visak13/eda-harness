@@ -9,16 +9,8 @@ export { TicketPage } from "./Ticket";
 export { DocPage } from "./Doc";
 export { LibraryPage } from "./Library";
 
-// DecisionsPage is G2's (pages/Decisions.tsx). Until it lands this stub keeps the barrel whole;
-// flip to `export { DecisionsPage } from "./Decisions";` once G2 commits its page.
-export function DecisionsPage(): React.JSX.Element {
-  return (
-    <>
-      <PageHeader title="Decisions" subtitle="Sign-offs, questions and gates that need you." />
-      <Placeholder story="G2" />
-    </>
-  );
-}
+// DecisionsPage is G2's, now landed (pages/Decisions.tsx).
+export { DecisionsPage } from "./Decisions";
 
 export function SeatsPage(): React.JSX.Element {
   return (

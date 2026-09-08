@@ -4,8 +4,7 @@
 }
 .crumb a {
   color: var(--accentink);
-}
-.crumb a:hover {
+  /* Persistent underline: distinguishable without colour (WCAG 1.4.1 / axe link-in-text-block). */
   text-decoration: underline;
 }
 

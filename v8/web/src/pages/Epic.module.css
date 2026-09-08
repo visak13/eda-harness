@@ -5,8 +5,8 @@
 }
 .crumb a {
   color: var(--accentink);
-}
-.crumb a:hover {
+  /* Persistent underline so the link is distinguishable without relying on colour (WCAG 1.4.1 /
+     axe link-in-text-block): the accentink-on-muted crumb is below 3:1 against its neighbour text. */
   text-decoration: underline;
 }
 .crumbHere {
