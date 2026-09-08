@@ -589,7 +589,8 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
                f"<table class='ticket-table'><tr><th>id</th><th>kind</th><th>status</th><th>assignee</th>"
                f"<th>criteria</th><th>blocked by</th></tr>{rows}</table></details>")
         newest = order != "oldest"
-        body=(f"<p class='reader-lead'>{_e(bd['words'])}</p><div>{counts}</div>"
+        body=(f"<p class='reader-provenance muted'>{_e(bd['words_header'])}</p>"
+              f"<p class='reader-lead'>{_e(bd['words'])}</p><div>{counts}</div>"
               f"{_section_header('Board',len(kids))}{filters}<div class='kanban'>{col_html}</div>{table}"
               f"{_section_header('Epic thread',len(thread))}"
               f"{_order_toggle(f'{prefix}/epic/{quote(epic_id,safe='')}', qs, newest)}"

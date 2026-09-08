@@ -200,6 +200,43 @@ class Board:
             t = self._get("ticket", t.parent_id)
         return t
 
+    # ---- epic phase is machine-carried, never seat-remembered (c-c80f7cd8f0) ----
+    # Root cause of the 2026-09-08 consult fork (m-77af6e8145): every story's context leads with
+    # the epic's verbatim words, and the epic still read `drafted` long after its design was set,
+    # so a fresh seat saw an open concept phase and asked rather than built. The board now advances
+    # the epic's phase from facts (design_ref set → designed; design_signoff answered → signed_off;
+    # a child story starting → in_progress, via the parent derivation in _after_status) and every
+    # read stamps a one-line provenance header on the words, so the phase is never a seat's memory.
+    _EPIC_PHASE_ORDER = (TicketStatus.drafted, TicketStatus.designed, TicketStatus.signed_off,
+                         TicketStatus.in_progress)
+
+    def _epic_phase_header(self, epic: Ticket) -> str:
+        """The one-line provenance stamped above an epic's verbatim words: when they were recorded,
+        the epic's current machine-carried phase, and the design version that now governs them."""
+        recorded = epic.created_at.date().isoformat()
+        gov = "(no design yet)"
+        if epic.design_ref:
+            d = self.store.get("doc", epic.design_ref)
+            gov = f"{epic.design_ref} v{d.version}" if d is not None else epic.design_ref  # type: ignore[union-attr]
+        return f"words recorded {recorded}; phase: {epic.status.value}; governed by {gov}"
+
+    def _advance_epic_phase(self, epic: Ticket, to: TicketStatus, *, trigger: str) -> None:
+        """Machine-carry an epic FORWARD along drafted→designed→signed_off→in_progress from a fact,
+        no architect memory. Idempotent and monotonic: a no-op if the epic already sits at or past
+        `to`, or is terminal; it never moves an epic backward. Bypasses _guard_transition (a
+        board-authored transition, like the ready-release at _release_successors)."""
+        order = self._EPIC_PHASE_ORDER
+        if (epic.kind != TicketKind.epic or epic.status in _TERMINAL
+                or to not in order or epic.status not in order
+                or order.index(epic.status) >= order.index(to)):
+            return
+        old = epic.status
+        epic.status = to
+        self.store.put("ticket", epic)
+        self._emit(epic.id, EventKind.status_changed,
+                   {"from": old.value, "to": to.value, "by": "board", "trigger": trigger})
+        self._after_status(epic)
+
     def children(self, ticket_id: str) -> list[Ticket]:
         return self.store.query("ticket", {"parent_id": ticket_id})  # type: ignore[return-value]
 
@@ -246,7 +283,8 @@ class Board:
         t = self.ticket(ticket_id)
         want = set(include) if include else set(self._VIEW_SECTIONS)
         epic = self.epic_of(t)
-        out: dict[str, Any] = {"ticket": t.model_dump(mode="json"), "words": epic.title}
+        out: dict[str, Any] = {"ticket": t.model_dump(mode="json"), "words": epic.title,
+                               "words_header": self._epic_phase_header(epic)}
         if "chain" in want:
             chain: list[dict[str, Any]] = []
             cur: Ticket | None = t
@@ -384,6 +422,10 @@ class Board:
         if "status" in changed:
             self._emit(t.id, EventKind.status_changed, {**changed["status"], "by": actor.id})
             self._after_status(t)
+        # c-c80f7cd8f0: setting an epic's design_ref carries it to `designed` on its own (the guard's
+        # own precondition — ≥1 criterion — is required so the machine phase matches a manual one).
+        if "design_ref" in changed and t.kind == TicketKind.epic and self.criteria(t.id):
+            self._advance_epic_phase(t, TicketStatus.designed, trigger="design_ref set")
         return t
 
     def _guard_transition(self, actor: Participant, t: Ticket, to: TicketStatus) -> None:
@@ -1339,6 +1381,11 @@ class Board:
         self.message_send(actor, ticket_id=ticket_id, to=None, kind=MessageKind.answer, text=f"[{gate}] {answer}")
         ev = self._emit(ticket_id, EventKind.gate_answered, {"gate": gate, "answer": answer, "by": actor.id})
         if gate == Gate.design_signoff:
+            # c-c80f7cd8f0: the human's word IS the acceptance (a rejection is a steer, not a gate
+            # answer — the lint above already refused a non-go), so the board carries the epic to
+            # `signed_off` from the answer itself, no architect ticket_update.
+            self._advance_epic_phase(self.epic_of(self.ticket(ticket_id)), TicketStatus.signed_off,
+                                     trigger="design_signoff accepted")
             # the human's word releases what the gate held back: signed-off, unblocked stories go ready now
             for k in self._descendants(ticket_id):
                 if k.status == TicketStatus.signed_off:
@@ -1591,7 +1638,7 @@ class Board:
         in_review = [t.id for t in flat if t.status == TicketStatus.in_review]
         gates = [(t.id, e.data.get("gate")) for t in flat for e in self.open_gates(t.id)]
         return {"epic": tree, "counts": counts, "ready": ready, "in_review": in_review,
-                "open_gates": gates, "words": epic.title}
+                "open_gates": gates, "words": epic.title, "words_header": self._epic_phase_header(epic)}
 
     def _descendants(self, ticket_id: str) -> list[Ticket]:
         out: list[Ticket] = []
