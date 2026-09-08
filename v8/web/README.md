@@ -1,10 +1,11 @@
-# edp8 web (Folio SPA) — S1 walking skeleton
+# edp8 web (Folio SPA)
 
-Vite + React 19 + TypeScript front-end for the edp8 board. S1 is a **spike**: the thinnest real
-end-to-end thread through the five risky seams, on the production interfaces the later stories keep
-(`src/auth/identity.ts`, `src/live/feed.ts`, `src/edp8/webapp/serve.py`). No Folio components yet.
+Vite + React 19 + TypeScript front-end for the edp8 board — the Folio destinations (Decisions, Epics,
+Epic, Seats, Library, Ticket, Doc), themes, identity adapter and SSE live feed. Built on the five
+production seams the S1 spike proved (`src/auth/identity.ts`, `src/live/feed.ts`,
+`src/edp8/webapp/serve.py`). After the G4 cutover the SPA is the default UI at `/ui` (see **Cutover**).
 
-> Design: `design-dc3a77cbc1` §4.1 (HLD), §4.4 (testing), §9 (risks). Craft bars: `strategyll-37c460a141`.
+> Design: `design-dc3a77cbc1` §4.1 (HLD), §4.2 (IA/geometry), §4.4 (testing), §9 (risks). Craft bars: `strategyll-37c460a141`.
 
 ## Commands (run from `v8/`, never `cd` into `web/`)
 
@@ -14,8 +15,28 @@ end-to-end thread through the five risky seams, on the production interfaces the
 | install + update lock | `npm --prefix web install` |
 | dev server (proxying a running board on :9400) | `npm --prefix web run dev` |
 | production build → `../src/edp8/webapp/dist` | `npm --prefix web run build` |
-| Playwright e2e | `npm --prefix web run e2e` |
+| unit tests (Vitest + RTL, jsdom) | `npm --prefix web test -- --run` |
+| unit coverage (v8, ≥80% lines) | `npm --prefix web test -- --run --coverage` |
+| Playwright e2e (win32) | `npm --prefix web run e2e` |
 | single e2e spec | `npm --prefix web run e2e -- e2e/spike.spec.ts` |
+
+## Cutover — which renderer owns `/ui` (`EDP8_UI`, S12, design §4.1)
+
+`create_app` reads **`EDP8_UI`** at board boot:
+
+| `EDP8_UI` | `/ui` | `/ui-legacy` | `/app` | `/ui/poll` |
+|---|---|---|---|---|
+| **`folio`** (default) | Folio SPA | legacy server-rendered UI (rollback) | — | poll (unchanged) |
+| `legacy` | legacy server-rendered UI | — | Folio SPA | poll (unchanged) |
+
+`/ui/poll` and every `/v1` route answer identically under both. The legacy renderer is **retained**,
+not deleted (its retirement is a follow-up epic — see the retire-legacy plan note on story
+`s-edb266895d`). Slack deep-link shapes `/ui/ticket/{id}?as=x` and `/ui/me?as=x` keep their shape and
+open the SPA under `folio`.
+
+**Rollback the SPA in one flag** (a seat never restarts the shared board — ask the launcher/owner):
+`EDP8_UI=legacy` then `scripts/start-board.ps1 -Restart`. The SPA bundle must be built with a matching
+base — **`EDP8_WEB_BASE` defaults to `/ui/`** (was `/app/` during the build phase); `npm --prefix web run build`.
 
 Backend serve + wheel + serve tests (from `v8/`):
 
@@ -27,10 +48,12 @@ uv build --wheel && python -m zipfile -l dist/edp8-*.whl | grep webapp/dist   # 
 ## Seam findings
 
 ### 1. Serve a Vite bundle from FastAPI under a prefix (`webapp/serve.py::mount_spa`)
-- Vite `base` **must equal the mount prefix** so emitted asset URLs resolve. S1 mounts at `/app`, so
-  `vite.config.ts` sets `base: "/app/"` (override via `EDP8_WEB_BASE`). The `/ui` cutover (later story)
-  moves this to `/ui/`. A relative `base: "./"` breaks on deep SPA routes (catch-all serves `index.html`
-  from a nested path) — use an absolute prefix.
+- Vite `base` **must equal the mount prefix** so emitted asset URLs resolve. Post-cutover (S12) the
+  SPA owns `/ui` under `EDP8_UI=folio`, so `vite.config.ts` sets `base: "/ui/"` (override via
+  `EDP8_WEB_BASE`; build with `/app/` only for the legacy-mode SPA at `/app`). `main.tsx` derives the
+  react-router basename from `import.meta.env.BASE_URL`, so this one knob moves both. A relative
+  `base: "./"` breaks on deep SPA routes (catch-all serves `index.html` from a nested path) — use an
+  absolute prefix.
 - `build.outDir` is `../src/edp8/webapp/dist` so `npm run build` writes straight where `serve.py` and the
   wheel force-include expect it. `emptyOutDir: true` is required because outDir is outside the web root.
 - `mount_spa` registers `{prefix}/assets` as `StaticFiles` (immutable cache) **before** the SPA catch-all,

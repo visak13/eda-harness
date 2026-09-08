@@ -2,12 +2,13 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
-// SEAM (serve-under-prefix): the built bundle is mounted by FastAPI at `/app`
-// (src/edp8/webapp/serve.py::mount_spa). `base` MUST equal the mount prefix so the
-// emitted asset URLs (`/app/assets/*`) resolve against StaticFiles, and so a deep
-// link like `/app/x/y` (served index.html by the SPA catch-all) still finds them.
-// When the /ui cutover happens (later story) this base moves to `/ui/`.
-const BASE = process.env.EDP8_WEB_BASE ?? "/app/";
+// SEAM (serve-under-prefix): the built bundle is mounted by FastAPI (serve.py::mount_spa).
+// `base` MUST equal the mount prefix so the emitted asset URLs resolve against StaticFiles,
+// and so a deep link like `/ui/x/y` (served index.html by the SPA catch-all) still finds them.
+// Post-cutover (S12) the SPA owns `/ui` under EDP8_UI=folio (the default), so `base` is `/ui/`.
+// `main.tsx` derives the react-router basename from import.meta.env.BASE_URL, so this one knob
+// moves both. Build with EDP8_WEB_BASE=/app/ only for the legacy-mode SPA mount at /app.
+const BASE = process.env.EDP8_WEB_BASE ?? "/ui/";
 
 // Dev proxy: `vite dev` serves the SPA at BASE and forwards the board's real
 // endpoints to the running board on :9400 (no CORS — same-origin in prod).

@@ -6,6 +6,7 @@ coverage/
 *.local
 
 # The root .gitignore ignores *.png; re-include the committed reference plates and
-# win32 Playwright baselines so evidence lives in the repo (strategy_ll §9).
+# win32 Playwright baselines so evidence lives in the repo (strategy_ll §9, risk §9).
 !e2e/design-reference/*.png
 !e2e/**/*-snapshots/**/*.png
+!e2e/__screenshots__/**/*.png
