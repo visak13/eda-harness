@@ -22,7 +22,7 @@ if (Test-Path $envFile) {
     if (-not $t -or $t.StartsWith("#")) { continue }
     $kv = $t -split "=", 2
     if ($kv.Count -eq 2) {
-      $k = $kv[0].Trim(); $val = $kv[1].Trim()
+      $k = $kv[0].Trim(); $val = ($kv[1] -split "\s+#", 2)[0].Trim()  # drop an inline comment
       if (-not [Environment]::GetEnvironmentVariable($k, "Process")) { Set-Item -Path "Env:$k" -Value $val }
     }
   }

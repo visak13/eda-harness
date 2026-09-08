@@ -818,6 +818,9 @@ class Board:
                     raise BoardError("transition",
                                      f"you are ruling version {evidence_version} but the doc is now v{cur}; "
                                      f"re-read and pass evidence_version={cur}, or stale_ok=true to sign the old one")
+                if cur is not None and evidence_version > cur:
+                    raise BoardError("transition", f"the doc has no version {evidence_version} (current v{cur})",
+                                     f"pass evidence_version={cur}")
                 c.evidence_version = evidence_version
             c.verdict = verdict
         self.store.put("criterion", c)
@@ -900,6 +903,9 @@ class Board:
         for x in (from_id, to_id):
             if not any(self.store.get(t, x) for t in ("ticket", "doc", "artifact")):
                 raise BoardError("not_found", f"{x!r} is not a ticket, doc or artifact")
+            art = self.store.get("artifact", x)
+            if art is not None and getattr(art, "staged", False):  # §18.1: staged uploads are invisible
+                raise BoardError("scope", f"artifact {x} is a staged upload; attach it with a message first")
         if relation == Relation.extends:  # layering is doc->doc; a dangling layer breaks assemble_ruleset
             for x in (from_id, to_id):
                 if self.store.get("doc", x) is None:
@@ -986,6 +992,18 @@ class Board:
                 self.store.put("artifact", a)
             self.link_create(actor, from_id=ticket_id, to_id=a.id, relation=Relation.produced)
         return arts
+
+    def artifact_unfinalise(self, *, artifact_ids: list[str], ticket_id: str) -> None:
+        """Undo artifact_finalise for uploads that were staged before it ran: the message that
+        should have carried them failed, so re-stage them and drop their `produced` links (§18.1)."""
+        for aid in artifact_ids:
+            a = self.store.get("artifact", aid)
+            if a is None:
+                continue
+            a.staged = True
+            self.store.put("artifact", a)
+            for lk in self.store.query("link", {"from_id": ticket_id, "to_id": aid, "relation": Relation.produced}):
+                self.store.delete("link", lk.id)
 
     def sweep_staged_artifacts(self, *, max_age_hours: int = 24) -> list[str]:
         """Delete staged upload artifacts (and their bytes) older than max_age_hours — an upload

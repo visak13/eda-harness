@@ -26,6 +26,7 @@ if [ -f "$V8/.env" ]; then
   while IFS= read -r line; do
     line="${line%%$'\r'}"; case "$line" in ''|\#*) continue;; esac
     key="${line%%=*}"; val="${line#*=}"; key="$(echo "$key" | xargs)"
+    val="${val%%[[:space:]]#*}"; val="${val%"${val##*[![:space:]]}"}"  # drop an inline comment + trailing blanks
     [ -z "${!key:-}" ] && export "$key=$val" || true
   done < "$V8/.env"
 fi

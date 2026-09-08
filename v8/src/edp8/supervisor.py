@@ -87,7 +87,7 @@ def make_probe(client) -> Callable[[str], bool]:
             return real_alive(svc)
         try:
             r = client.get(f"http://127.0.0.1:{port}{health}", timeout=PROBE_TIMEOUT)
-            return r.status_code < 500
+            return r.status_code < 400  # a 401/404 on the port is not the service answering
         except Exception:  # noqa: BLE001
             return False
     return probe

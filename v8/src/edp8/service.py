@@ -491,7 +491,8 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     # registry (admin) -----------------------------------------------------------
     @app.post("/v1/participants")
     def participant_create(b: ParticipantIn, x_admin: str | None = Header(default=None),
-                           x_participant: str | None = Header(default=None)):
+                           x_participant: str | None = Header(default=None),
+                           x_token: str | None = Header(default=None)):
         # admin registers anyone; a spawner role (coordinator/engineer/architect) registers AGENT participants
         # for the tickets it spawns shells on — the scope a per-ticket spawn needs, nothing more.
         if x_admin != admin_token:
@@ -501,6 +502,9 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
                 a = board.participant(x_participant)
             except BoardError as e:
                 raise HTTPException(401, e.message)
+            err = _verify_token(a, x_token)  # same gate as actor(): public mode refuses header-only
+            if err:
+                raise HTTPException(401, err)
             if a.role not in (Role.owner, Role.coordinator, Role.engineer, Role.architect) or b.type != "agent":
                 raise HTTPException(403, "only admin, or a spawner role registering an agent participant")
         p = board.participant_create(b.type, b.role, b.handle, location=b.location, model=b.model, id_=b.id)
@@ -696,9 +700,16 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         from . import views
         # §18.1: finalise any staged uploads BEFORE the message posts — all-or-nothing, so a bad
         # artifact id raises here and nothing (message or artifact) becomes visible.
+        was_staged = [x for x in (b.artifacts or [])
+                      if getattr(board.store.get("artifact", x), "staged", False)]
         if b.artifacts:
             board.artifact_finalise(a, artifact_ids=b.artifacts, ticket_id=b.ticket_id)
-        m = board.message_send(a, ticket_id=b.ticket_id, to=b.to, kind=b.kind, text=b.text, reply_to=b.reply_to)
+        try:
+            m = board.message_send(a, ticket_id=b.ticket_id, to=b.to, kind=b.kind, text=b.text, reply_to=b.reply_to)
+        except Exception:
+            if was_staged:  # all-or-nothing: the message failed, so nothing it carried becomes visible
+                board.artifact_unfinalise(artifact_ids=was_staged, ticket_id=b.ticket_id)
+            raise
         delivery.after_message(board, a.id, m)
         note = getattr(board, "last_send_note", "")
         hint = "delivered to the recipient's feed; end your turn if you are waiting for an answer"
