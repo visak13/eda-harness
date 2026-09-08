@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import type { SignoffRow } from "../api/types";
 import { getDocHtml } from "../api/endpoints";
@@ -68,12 +69,12 @@ export function RulingDrawer({ signoff, kOfN, onClose, onRuled, returnFocusTo }:
             </div>
             {doc.data ? <Markdown html={doc.data.html} /> : <p className={styles.loading}>Loading evidence…</p>}
             {signoff.doc ? (
-              <a
+              <Link
                 className={styles.fullReport}
-                href={`/doc/${encodeURIComponent(signoff.doc.id)}?version=${frozen}&as=${encodeURIComponent(identity())}`}
+                to={`/doc/${encodeURIComponent(signoff.doc.id)}?version=${frozen}&as=${encodeURIComponent(identity())}`}
               >
                 Full report ↗
-              </a>
+              </Link>
             ) : null}
           </div>
 

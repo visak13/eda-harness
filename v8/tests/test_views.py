@@ -30,7 +30,7 @@ OWN = {"X-Participant": "owner"}
 
 
 @pytest.fixture
-def client(monkeypatch):
+def client(monkeypatch, ui_prefix):
     monkeypatch.setattr(broker_adapter, "publish", lambda *a, **k: True)
     return TestClient(create_app(Board(Store(":memory:")), admin_token="t"))
 
@@ -83,17 +83,17 @@ def _one(html: str, pattern: str) -> str:
 # --------------------------------------------------------------------------- /ui/me
 
 
-def test_signoff_card_pinned(rig):
-    page = rig["client"].get("/ui/me", params={"as": "owner"}).text
+def test_signoff_card_pinned(rig, ui_prefix):
+    page = rig["client"].get(f"{ui_prefix}/me", params={"as": "owner"}).text
     frag = _one(page, r"<article class='signoff-card'>.*?</article>")
     kt, kcrit = rig["kt"], rig["kcrit"]
     assert frag == (
         f"<article class='signoff-card'><div class='who'>sign-off wanted on "
-        f"<a href='/ui/ticket/{kt}'>{kt}</a> · <span class='object-id'>{kcrit}</span></div>"
+        f"<a href='{ui_prefix}/ticket/{kt}'>{kt}</a> · <span class='object-id'>{kcrit}</span></div>"
         f"<p>strategy doc signed by the owner</p><details open><summary>shape "
         f"<span class='muted'>strategy_hl v1</span></summary><div class='doc-md'>"
         f"<h1>Walking skeleton</h1>\n<ul>\n<li>build the <strong>thin</strong> thread first</li>\n</ul>"
-        f"</div></details><form class='signoff-actions' method='post' action='/ui/me/verdict'>"
+        f"</div></details><form class='signoff-actions' method='post' action='{ui_prefix}/me/verdict'>"
         f"<input type='hidden' name='as_' value='owner'><input type='hidden' name='token' value=''>"
         f"<input type='hidden' name='criterion_id' value='{kcrit}'>"
         f"<input type='hidden' name='ticket_id' value='{kt}'>"
@@ -104,24 +104,24 @@ def test_signoff_card_pinned(rig):
         f"title='send back — add a note saying what is missing'>Needs work</button></form></article>")
 
 
-def test_asks_grouped_by_ticket(rig):
-    page = rig["client"].get("/ui/me", params={"as": "owner"}).text
+def test_asks_grouped_by_ticket(rig, ui_prefix):
+    page = rig["client"].get(f"{ui_prefix}/me", params={"as": "owner"}).text
     assert page.count("class='fold ask-group'") == 2  # one group per ticket
     epic, story = rig["epic"], rig["story"]
     summary = _one(page, r"<details class='fold ask-group' open><summary>.*?</summary>")
     assert summary == (
         f"<details class='fold ask-group' open><summary>"
-        f"<a class='ticket-chip' href='/ui/ticket/{epic}'>{epic}</a> › "
-        f"<a class='ticket-chip' href='/ui/ticket/{story}'>{story}</a>"
+        f"<a class='ticket-chip' href='{ui_prefix}/ticket/{epic}'>{epic}</a> › "
+        f"<a class='ticket-chip' href='{ui_prefix}/ticket/{story}'>{story}</a>"
         f"<span class='muted'>fix the ship sheet</span><span class='count'>1</span></summary>")
 
 
-def test_who_can_i_reach_seat_states(rig):
-    page = rig["client"].get("/ui/me", params={"as": "owner"}).text
+def test_who_can_i_reach_seat_states(rig, ui_prefix):
+    page = rig["client"].get(f"{ui_prefix}/me", params={"as": "owner"}).text
     seat, story = rig["seat"], rig["story"]
     # a live engineer seat: mono handle + ticket chip + "● up"
     assert (f"<span class='mono'>@{seat}</span>"
-            f"<a class='ticket-chip' href='/ui/ticket/{story}'>{story}</a>"
+            f"<a class='ticket-chip' href='{ui_prefix}/ticket/{story}'>{story}</a>"
             f"<span class='muted seat-up'>● up</span></div>") in page
     assert "title='a running engineer seat — steer it on its ticket thread'" in page
     # a human person row
@@ -129,10 +129,10 @@ def test_who_can_i_reach_seat_states(rig):
     assert "title='type @owner in a message to notify them'" in page
 
 
-def test_conversations_rows(rig):
-    page = rig["client"].get("/ui/me", params={"as": "owner"}).text
+def test_conversations_rows(rig, ui_prefix):
+    page = rig["client"].get(f"{ui_prefix}/me", params={"as": "owner"}).text
     story, epic = rig["story"], rig["epic"]
-    assert (f"<a class='convo-row' href='/ui/ticket/{story}?as=owner' title='fix the ship sheet'>"
+    assert (f"<a class='convo-row' href='{ui_prefix}/ticket/{story}?as=owner' title='fix the ship sheet'>"
             f"<span class='unread-dot' title='waiting on you'></span>") in page
     assert f"<span class='convo-name'>{story}</span><span class='muted convo-snip'>one?</span></a>" in page
     assert f"<span class='convo-name'>{epic}</span><span class='muted convo-snip'>two?</span></a>" in page
@@ -141,12 +141,12 @@ def test_conversations_rows(rig):
 # --------------------------------------------------------------------------- /ui
 
 
-def test_epics_row_with_passed_total(rig):
-    page = rig["client"].get("/ui").text
+def test_epics_row_with_passed_total(rig, ui_prefix):
+    page = rig["client"].get(f"{ui_prefix}").text
     epic = rig["epic"]
     frag = _mask(_one(page, r"<a class='epic-row'.*?</a>"))
     assert frag == (
-        f"<a class='epic-row' href='/ui/epic/{epic}'><div class='epic-title'>"
+        f"<a class='epic-row' href='{ui_prefix}/epic/{epic}'><div class='epic-title'>"
         f"<span class='object-id'>{epic}</span>Galaxy site</div>"
         f"<div class='epic-meta'>0 / 0 passed<div class='progress'><span style='width:0%'></span></div></div>"
         f"<div class='epic-meta'>DATE</div><span class='badge s-drafted'>drafted</span>"
@@ -156,12 +156,12 @@ def test_epics_row_with_passed_total(rig):
 # --------------------------------------------------------------------------- /ui/tickets
 
 
-def test_tickets_table_row(rig):
-    page = rig["client"].get("/ui/tickets").text
+def test_tickets_table_row(rig, ui_prefix):
+    page = rig["client"].get(f"{ui_prefix}/tickets").text
     story, epic = rig["story"], rig["epic"]
     assert (
-        f"<tr><td><a href='/ui/ticket/{story}' class='object-id'>{story}</a></td>"
-        f"<td><a class='ticket-chip' href='/ui/ticket/{epic}'>{epic}</a></td>"
+        f"<tr><td><a href='{ui_prefix}/ticket/{story}' class='object-id'>{story}</a></td>"
+        f"<td><a class='ticket-chip' href='{ui_prefix}/ticket/{epic}'>{epic}</a></td>"
         f"<td title='fix the ship sheet'>fix the ship sheet</td><td>story/bug</td>"
         f"<td><span class='badge s-drafted'>drafted</span></td><td>—</td>"
         f"<td><span class=tag>assets</span></td><td>0/1</td></tr>") in page
@@ -170,12 +170,12 @@ def test_tickets_table_row(rig):
 # --------------------------------------------------------------------------- /ui/epic
 
 
-def test_epic_kanban_columns(rig):
-    page = rig["client"].get(f"/ui/epic/{rig['epic']}", params={"as": "owner"}).text
+def test_epic_kanban_columns(rig, ui_prefix):
+    page = rig["client"].get(f"{ui_prefix}/epic/{rig['epic']}", params={"as": "owner"}).text
     story = rig["story"]
     assert "<div class='kanban-head'>Backlog <span class='count'>2</span></div>" in page
     assert (
-        f"<a class='kanban-card' href='/ui/ticket/{story}?as=owner' title='fix the ship sheet'>"
+        f"<a class='kanban-card' href='{ui_prefix}/ticket/{story}?as=owner' title='fix the ship sheet'>"
         f"<div class='kanban-top'><span class='object-id'>{story}</span></div>"
         f"<div class='kanban-title'>fix the ship sheet</div>"
         f"<div class='kanban-meta'>bug<span class=tag>assets</span></div></a>") in page
@@ -187,8 +187,8 @@ def test_epic_kanban_columns(rig):
 # --------------------------------------------------------------------------- /ui/ticket
 
 
-def test_ticket_page_criterion(rig):
-    page = rig["client"].get(f"/ui/ticket/{rig['story']}", params={"as": "owner"}).text
+def test_ticket_page_criterion(rig, ui_prefix):
+    page = rig["client"].get(f"{ui_prefix}/ticket/{rig['story']}", params={"as": "owner"}).text
     crit = rig["crit"]
     frag = _one(page, r"<article class='criterion pending'>.*?</article>")
     assert frag == (
@@ -201,8 +201,8 @@ def test_ticket_page_criterion(rig):
 # --------------------------------------------------------------------------- /ui/doc
 
 
-def test_doc_page_html(rig):
-    page = rig["client"].get(f"/ui/doc/{rig['doc']}").text
+def test_doc_page_html(rig, ui_prefix):
+    page = rig["client"].get(f"{ui_prefix}/doc/{rig['doc']}").text
     frag = _one(page, r"<article class='document-reader doc-md'>.*?</article>")
     assert frag == (
         "<article class='document-reader doc-md'><h1>Walking skeleton</h1>\n<ul>\n"
@@ -212,8 +212,8 @@ def test_doc_page_html(rig):
 # --------------------------------------------------------------------------- /ui/activity
 
 
-def test_activity_feed_lines(rig):
-    page = rig["client"].get("/ui/activity", params={"as": "owner"}).text
+def test_activity_feed_lines(rig, ui_prefix):
+    page = rig["client"].get(f"{ui_prefix}/activity", params={"as": "owner"}).text
     # feed_line for the two questions ravi asked the owner
     assert "ravi → owner: one?" in page
     assert "ravi → owner: two?" in page

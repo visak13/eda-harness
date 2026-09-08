@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { identity } from "../auth/identity";
 import { Drawer } from "./Drawer";
 import { DocView } from "./DocView";
@@ -96,12 +96,12 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
       <span>Document</span>
       {top ? <span className={styles.id}>{top}</span> : null}
       {top ? (
-        <a
+        <Link
           className={styles.asPage}
-          href={`/doc/${encodeURIComponent(top)}?as=${encodeURIComponent(identity())}`}
+          to={`/doc/${encodeURIComponent(top)}?as=${encodeURIComponent(identity())}`}
         >
           Open as page
-        </a>
+        </Link>
       ) : null}
     </div>
   );

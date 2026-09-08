@@ -84,12 +84,23 @@ test.describe("legacy paths redirect into Folio with the filter intact", () => {
   });
 });
 
-// A wrong token with a tokens.json present → the legacy server-side "identity panel". The Folio SPA
-// does NOT implement this: identity (src/auth/identity.ts) strips ?token into sessionStorage and
-// sends it as X-Token; there is no in-SPA token-validation panel (grep for tokens.json / identity
-// panel across web/src returns nothing). The behaviour lives in the legacy server UI, unreachable
-// from the SPA — so this leg is left for qa to exercise against the server, not the SPA. FLAGGED.
-test.fixme("wrong token + tokens.json → identity panel (legacy server UI, not reachable in-SPA)", () => {
-  // Unbuilt in the Folio SPA — the identity panel is a legacy server-rendered surface. qa: exercise
-  // against the board's server UI with a tokens.json fixture, or drop this leg if the SPA is canon.
+// A wrong token with a tokens.json present → the SPA's inline identity panel (design §4.1;
+// finding 3, second-opinion 2026-09-08 — built, not deferred). globalSetup wrote a tokens.json
+// crediting `tokuser`, so /v1/whoami 401s on a wrong X-Token; AppShell renders <IdentityPanel/>
+// (src/components/IdentityPanel.tsx) instead of silently falling back to `as`.
+test.describe("wrong token + tokens.json → the SPA inline identity panel", () => {
+  const TOKEN = () => process.env.EDP8_E2E_TOKEN ?? "e2e-good-token";
+
+  test("a wrong token for a credentialled participant shows the identity panel, not the shell", async ({ page }) => {
+    await page.goto(`${BASE}/ui/me?as=tokuser&token=definitely-the-wrong-token`);
+    await expect(page.getByTestId("identity-panel")).toBeVisible();
+    // The shell chrome is NOT rendered while identity is unresolved (no silent `as` fallback).
+    await expect(page.getByTestId("decisions")).toHaveCount(0);
+  });
+
+  test("the matching token for the same participant loads Decisions normally", async ({ page }) => {
+    await page.goto(`${BASE}/ui/me?as=tokuser&token=${TOKEN()}`);
+    await expect(page.getByTestId("decisions")).toBeVisible();
+    await expect(page.getByTestId("identity-panel")).toHaveCount(0);
+  });
 });

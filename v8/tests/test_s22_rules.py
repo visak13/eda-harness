@@ -157,6 +157,7 @@ def test_signoff_lint_refuses_owner_checked_story_criterion(board, rig):
     story = make_story(board, rig, epic)
     board.criterion_create(rig["owner"], ticket_id=story.id, text="human check", check=Check.look,
                            checked_by="owner", override_reason="force the no-seat-path offender")
+    advance_to_designed(board, rig, epic, design_doc(board, rig, epic.id))  # design_signoff needs a designed epic
     _open_signoff(board, epic)
     with pytest.raises(BoardError) as ei:
         board.gate_answer(rig["owner"], epic.id, Gate.design_signoff, "go")
@@ -170,6 +171,7 @@ def test_signoff_lint_refuses_blocks_cycle(board, rig):
     b = make_story(board, rig, epic)
     board.link_create(rig["architect"], from_id=a.id, to_id=b.id, relation=Relation.blocks)
     board.link_create(rig["architect"], from_id=b.id, to_id=a.id, relation=Relation.blocks)
+    advance_to_designed(board, rig, epic, design_doc(board, rig, epic.id))  # design_signoff needs a designed epic
     _open_signoff(board, epic)
     with pytest.raises(BoardError) as ei:
         board.gate_answer(rig["owner"], epic.id, Gate.design_signoff, "go")
@@ -182,6 +184,7 @@ def test_signoff_lint_refuses_non_review_behind_review_story(board, rig):
     review = board.ticket_create(rig["architect"], kind=TicketKind.story, work_type=WorkType.review,
                                  title="rv", parent_id=epic.id)
     board.link_create(rig["architect"], from_id=review.id, to_id=deliver.id, relation=Relation.blocks)
+    advance_to_designed(board, rig, epic, design_doc(board, rig, epic.id))  # design_signoff needs a designed epic
     _open_signoff(board, epic)
     with pytest.raises(BoardError) as ei:
         board.gate_answer(rig["owner"], epic.id, Gate.design_signoff, "go")
@@ -193,6 +196,7 @@ def test_signoff_lint_passes_clean_epic(board, rig):
     make_story(board, rig, epic)  # qa-checked delivery story
     board.ticket_create(rig["architect"], kind=TicketKind.story, work_type=WorkType.review,
                         title="rv", parent_id=epic.id)  # implicitly waits on the delivery story
+    advance_to_designed(board, rig, epic, design_doc(board, rig, epic.id))  # design_signoff needs a designed epic
     _open_signoff(board, epic)
     ev = board.gate_answer(rig["owner"], epic.id, Gate.design_signoff, "go")  # no raise
     assert ev.kind == EventKind.gate_answered

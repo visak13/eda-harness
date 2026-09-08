@@ -113,3 +113,22 @@
   font-size: 13px;
   cursor: pointer;
 }
+
+/* At/≤1024 the Drawer clamps to the viewport (≈984px at 1024, per Drawer.module.css max-width),
+   narrower than the fixed 650+462 = 1112 grid — so the panes MUST stack and drop their fixed
+   widths, or the ruling body is clipped by the Drawer's overflow:hidden rather than reported as
+   overflow (second-opinion 2026-09-08, criterion c-10bd85c316). One column, each pane full width,
+   still edge-to-edge (the -24 margin stays); the split rule becomes a bottom divider. */
+@media (max-width: 1024px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+  .evidence,
+  .pane {
+    width: auto;
+  }
+  .evidence {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+}

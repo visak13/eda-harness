@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { GEOMETRY } from "./geometry";
 import { bandDiffRatio, expectPx, readPng } from "./fidelity-helpers";
 import { seedEpic, type G3aFixture } from "./g3a.seed";
+import { seedDecisions } from "./g2.seed";
 
 // Criterion c-fee415dda3: at 1440×900 the shell geometry, tokens, type and focus ring
 // match the Folio plate (design §4.2, board-concepts-r2/source/design.css `.folio`).
@@ -127,14 +128,34 @@ test.describe("shell fidelity — band pixelmatch @ 1440×900", () => {
     await bandCheck(page, `${BASE}/ui/epic/${fx.epic}?as=owner`, "folio-epic.png", "epic");
   });
 
-  // TODO(qa): ruling-drawer band vs folio-ruling.png. The drawer opens from a pending owner-checked
-  // criterion's "Review evidence" (fx.signoffCriterion) → the ruling drawer (design §17). Wiring the
-  // exact open-drawer route + focused state into this fixture is left for the full qa run; the
-  // helper + band pattern above apply unchanged once the drawer URL/interaction is settled.
-  test.fixme("ruling drawer band matches folio-ruling.png", async ({ page }) => {
-    // qa: open the ruling drawer from fx.signoffCriterion's "Review evidence", then band-check
-    // the drawer chrome vs plate("folio-ruling.png") with bandDiffRatio — same pattern as above.
-    void page;
-    void fx;
+  // Ruling-drawer band vs folio-ruling.png (finding 2, second-opinion 2026-09-08 — implemented, not
+  // deferred). The drawer opens from a pending owner sign-off's "Review evidence" (design §17). With
+  // the drawer open the shell chrome behind it is dimmed by the scrim — a deterministic, content-free
+  // target (g2-fidelity asserts the sidebar/queue stay visible behind the dim), so the rail + header
+  // bands are asserted against the ruling plate exactly as home/epic are; the drawer body is seed-
+  // dependent, so its band is logged-only.
+  const DRAWER_BAND = {
+    x: GEOMETRY.drawer.rightEdge - GEOMETRY.drawer.w, // 1420 - 1112 = 308
+    y: GEOMETRY.drawer.top, // 20
+    w: GEOMETRY.drawer.w, // 1112
+    h: 900 - GEOMETRY.drawer.top * 2, // 860
+  };
+
+  test("ruling drawer rail + header bands match folio-ruling.png (drawer body logged-only)", async ({ page }) => {
+    await seedDecisions(); // a pending owner sign-off → "Review evidence" opens the ruling drawer
+    await page.goto(`${BASE}/ui/me?as=owner`);
+    await page.getByTestId("review-evidence").click();
+    await expect(page.getByTestId("drawer-panel")).toBeVisible();
+
+    const shot = readPng(await page.screenshot());
+    const ref = plate("folio-ruling.png");
+    const rail = bandDiffRatio(shot, ref, RAIL_BAND);
+    const header = bandDiffRatio(shot, ref, HEADER_BAND);
+    const drawer = bandDiffRatio(shot, ref, DRAWER_BAND);
+    console.log(
+      `[fidelity ruling] rail band diff=${(rail * 100).toFixed(2)}% header band diff=${(header * 100).toFixed(2)}% drawer diff=${(drawer * 100).toFixed(2)}% (drawer logged-only)`,
+    );
+    expect(rail, "ruling rail band").toBeLessThanOrEqual(0.05);
+    expect(header, "ruling header band").toBeLessThanOrEqual(0.05);
   });
 });

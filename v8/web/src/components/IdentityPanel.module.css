@@ -1,0 +1,90 @@
+/* Inline identity panel (design §4.1): a centred card on the app ground, shown in place of the
+   shell when /v1/whoami returns 401. Theme tokens only, so it holds across all four themes. */
+.wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--canvas, var(--rail));
+}
+.card {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.title {
+  font: 27px/1.2 Georgia, serif;
+  color: var(--ink);
+  margin: 0;
+}
+.body {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--muted);
+  margin: 0;
+}
+.who {
+  font-family: Consolas, ui-monospace, monospace;
+  font-size: 13px;
+  color: var(--ink);
+}
+.hint {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--accentink);
+  background: var(--accentwash);
+  border-left: 3px solid var(--accentink);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 0;
+}
+.label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.opt {
+  font-weight: 400;
+  color: var(--muted);
+}
+.input {
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--strongline);
+  border-radius: 6px;
+  background: var(--secondary);
+  color: var(--ink);
+  font-size: 14px;
+}
+.input:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 2px;
+}
+.submit {
+  margin-top: 4px;
+  height: 40px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--buttonink);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.submit:hover {
+  filter: brightness(0.97);
+}
+.submit:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 3px;
+}

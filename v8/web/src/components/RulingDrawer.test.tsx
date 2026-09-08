@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { http, HttpResponse } from "msw";
 import { server } from "../test/setup";
@@ -42,7 +43,9 @@ function mount() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <RulingDrawer signoff={signoff} kOfN={{ k: 1, n: 3 }} onClose={vi.fn()} onRuled={vi.fn()} />
+      <MemoryRouter>
+        <RulingDrawer signoff={signoff} kOfN={{ k: 1, n: 3 }} onClose={vi.fn()} onRuled={vi.fn()} />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }

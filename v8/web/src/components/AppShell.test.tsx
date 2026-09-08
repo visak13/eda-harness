@@ -68,6 +68,22 @@ describe("AppShell", () => {
     expect(await screen.findByTestId("whoami-handle")).toHaveTextContent("owner");
   });
 
+  it("shows the inline identity panel when whoami returns 401 (design §4.1)", async () => {
+    server.use(
+      http.get("/v1/whoami", () =>
+        HttpResponse.json(
+          { ok: false, error: "X-Token required for human participant 'owner'", hint: "check your token" },
+          { status: 401 },
+        ),
+      ),
+    );
+    renderShell("/me");
+    expect(await screen.findByTestId("identity-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("identity-hint")).toHaveTextContent("check your token");
+    // The shell chrome is NOT rendered while identity is unresolved (no silent `as` fallback).
+    expect(screen.queryByRole("link", { name: /Decisions/ })).not.toBeInTheDocument();
+  });
+
   it("opens the identity popover to the ThemePicker and can switch theme", async () => {
     renderShell("/me");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

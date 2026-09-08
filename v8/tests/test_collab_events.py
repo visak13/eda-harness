@@ -24,7 +24,7 @@ def board():
 
 
 @pytest.fixture
-def client(board):
+def client(board, ui_prefix):
     return TestClient(create_app(board, admin_token="t"))
 
 
@@ -99,18 +99,18 @@ def test_message_to_closed_agent_seat_notifies_owner(client, rig, published):
     assert not any("CLOSED seat" in str(x[3]) for x in published)
 
 
-def test_epic_page_comment_form_posts_as_identity(client, rig):
-    page = client.get(f"/ui/epic/{rig['epic']}", params={"as": "ravi"}).text
+def test_epic_page_comment_form_posts_as_identity(client, rig, ui_prefix):
+    page = client.get(f"{ui_prefix}/epic/{rig['epic']}", params={"as": "ravi"}).text
     assert "Comment on this epic as @ravi" in page
-    r = client.post(f"/ui/ticket/{rig['epic']}/say", data={"as_": "ravi", "text": "from the browser"},
+    r = client.post(f"{ui_prefix}/ticket/{rig['epic']}/say", data={"as_": "ravi", "text": "from the browser"},
                     follow_redirects=False)
-    assert r.status_code == 303 and f"/ui/epic/{rig['epic']}" in r.headers["location"]
+    assert r.status_code == 303 and f"{ui_prefix}/epic/{rig['epic']}" in r.headers["location"]
     msgs = client.get("/v1/messages", params={"ticket_id": rig["epic"]},
                       headers={"X-Participant": "owner"}).json()["value"]
     assert any(m["created_by"] == "ravi" and m["text"] == "from the browser" for m in msgs)
 
 
-def test_doc_page_approve_and_comment(client, rig):
+def test_doc_page_approve_and_comment(client, rig, ui_prefix):
     # a knowledge ticket's criterion is checked by the owner (§24.1 derivation): the strategy-doc
     # sign-off is the one HITL point, so this is where the owner's doc-approve UI shows.
     kt = client.post("/v1/tickets", json={"kind": "story", "work_type": "knowledge", "title": "hl-craft",
@@ -121,14 +121,14 @@ def test_doc_page_approve_and_comment(client, rig):
     d = client.post("/v1/docs", json={"doc_type": "strategy_hl", "title": "s", "body_md": "b",
                                       "scope": rig["epic"]}, headers={"X-Participant": "craft"}).json()["value"]
     client.patch(f"/v1/criteria/{c['id']}", json={"evidence_ref": d["id"]}, headers={"X-Participant": "craft"})
-    page = client.get(f"/ui/doc/{d['id']}", params={"as": "owner"}).text
+    page = client.get(f"{ui_prefix}/doc/{d['id']}", params={"as": "owner"}).text
     assert "Approve" in page and "Needs work" in page and "← Epic" in page and "to-top" in page
-    r = client.post("/ui/me/verdict", data={"as_": "owner", "criterion_id": c["id"], "ticket_id": kt,
+    r = client.post(f"{ui_prefix}/me/verdict", data={"as_": "owner", "criterion_id": c["id"], "ticket_id": kt,
                                             "verdict": "pass", "evidence_version": 1,
-                                            "back": f"/ui/doc/{d['id']}?as=owner"},
+                                            "back": f"{ui_prefix}/doc/{d['id']}?as=owner"},
                     follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"].startswith(f"/ui/doc/{d['id']}")
-    r2 = client.post(f"/ui/doc/{d['id']}/comment", data={"as_": "ravi", "text": "solid @arch"},
+    assert r.status_code == 303 and r.headers["location"].startswith(f"{ui_prefix}/doc/{d['id']}")
+    r2 = client.post(f"{ui_prefix}/doc/{d['id']}/comment", data={"as_": "ravi", "text": "solid @arch"},
                      follow_redirects=False)
     assert r2.status_code == 303
     msgs = client.get("/v1/messages", params={"ticket_id": rig["epic"]},
@@ -136,13 +136,13 @@ def test_doc_page_approve_and_comment(client, rig):
     assert any(m["created_by"] == "ravi" and m["text"].startswith(f"[doc {d['id']} v1]") for m in msgs)
 
 
-def test_thread_newest_first_default_with_toggle(client, rig):
+def test_thread_newest_first_default_with_toggle(client, rig, ui_prefix):
     for i in range(3):
         client.post("/v1/messages", json={"ticket_id": rig["epic"], "kind": "note", "text": f"m{i}"},
                     headers={"X-Participant": "owner"})
-    convo = client.get(f"/ui/epic/{rig['epic']}", params={"as": "owner"}).text.split("class='conversation'")[1]
+    convo = client.get(f"{ui_prefix}/epic/{rig['epic']}", params={"as": "owner"}).text.split("class='conversation'")[1]
     assert convo.index(">m2<") < convo.index(">m0<")  # newest first
-    assert "order=oldest" in client.get(f"/ui/epic/{rig['epic']}", params={"as": "owner"}).text
-    convo_old = client.get(f"/ui/epic/{rig['epic']}",
+    assert "order=oldest" in client.get(f"{ui_prefix}/epic/{rig['epic']}", params={"as": "owner"}).text
+    convo_old = client.get(f"{ui_prefix}/epic/{rig['epic']}",
                            params={"as": "owner", "order": "oldest"}).text.split("class='conversation'")[1]
     assert convo_old.index(">m0<") < convo_old.index(">m2<")

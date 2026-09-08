@@ -180,6 +180,11 @@ def test_open_design_signoff_gate_blocks_auto_ready_until_answered(client, rig):
                     headers=H).json()["value"]["id"]
     client.patch(f"/v1/tickets/{s}", json={"design_ref": d}, headers=H)
     client.post("/v1/criteria", json={"ticket_id": s, "text": "c", "check": "verdict", "checked_by": "reviewer"}, headers=H)
+    # design_signoff needs a designed epic (design_ref + a criterion → phase `designed`), 2026-09-08.
+    client.post("/v1/criteria", json={"ticket_id": epic, "text": "ec", "check": "command"}, headers=H)
+    de = client.post("/v1/docs", json={"doc_type": "design", "title": "de", "body_md": "x", "scope": epic},
+                     headers=H).json()["value"]["id"]
+    client.patch(f"/v1/tickets/{epic}", json={"design_ref": de}, headers=H)
     client.post(f"/v1/gates/{epic}/design_signoff/open", json={"note": "please"}, headers=H)
     client.patch(f"/v1/tickets/{s}", json={"status": "designed"}, headers=H)
     r = client.patch(f"/v1/tickets/{s}", json={"status": "signed_off"}, headers=H).json()

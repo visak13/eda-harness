@@ -17,7 +17,7 @@ ADMIN = {"X-Admin": "t"}
 
 
 @pytest.fixture
-def client():
+def client(ui_prefix):
     return TestClient(create_app(Board(Store(":memory:")), admin_token="t"))
 
 
@@ -43,21 +43,21 @@ def rig(client):
     return {"epic": epic, "kt": kt, "crit": c, "doc": d}
 
 
-def test_signoff_renders_markdown_and_takes_verdict(client, rig):
-    page = client.get("/ui/me", params={"as": "owner"}).text
+def test_signoff_renders_markdown_and_takes_verdict(client, rig, ui_prefix):
+    page = client.get(f"{ui_prefix}/me", params={"as": "owner"}).text
     assert "Docs awaiting your sign-off" in page
     assert "<strong>thin</strong>" in page  # markdown RENDERED, not raw
-    r = client.post("/ui/me/verdict", data={"as_": "owner", "criterion_id": rig["crit"],
+    r = client.post(f"{ui_prefix}/me/verdict", data={"as_": "owner", "criterion_id": rig["crit"],
                                             "ticket_id": rig["kt"], "verdict": "pass", "evidence_version": 1,
                                             "note": "good shape, proceed"}, follow_redirects=False)
     assert r.status_code == 303
     crit = client.get("/v1/criteria", params={"ticket_id": rig["kt"]},
                       headers={"X-Participant": "owner"}).json()["value"][0]
     assert crit["verdict"] == "pass"
-    page2 = client.get("/ui/me", params={"as": "owner"}).text
+    page2 = client.get(f"{ui_prefix}/me", params={"as": "owner"}).text
     assert "Docs awaiting your sign-off" not in page2  # nothing pending anymore
 
 
-def test_doc_page_renders_markdown(client, rig):
-    page = client.get(f"/ui/doc/{rig['doc']}").text
+def test_doc_page_renders_markdown(client, rig, ui_prefix):
+    page = client.get(f"{ui_prefix}/doc/{rig['doc']}").text
     assert "<h1>Walking skeleton</h1>" in page and "<pre>#" not in page

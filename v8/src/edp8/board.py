@@ -575,9 +575,18 @@ class Board:
             kids = self.children(parent.id)
             active = any(k.status in (TicketStatus.in_progress, TicketStatus.in_review, TicketStatus.blocked) for k in kids)
             if active and parent.status in (TicketStatus.signed_off, TicketStatus.ready):
+                # signed_off/ready parent (any kind, incl. a `ready` epic that is not in the epic
+                # phase-order) → in_progress the moment a child is active. Unchanged.
                 parent.status = TicketStatus.in_progress
                 self.store.put("ticket", parent)
                 self._emit(parent.id, EventKind.status_changed, {"from": "ready", "to": "in_progress", "by": "board"})
+            elif active and parent.kind == TicketKind.epic:
+                # finding 4 (second-opinion 2026-09-08): also machine-carry an epic still in `designed`
+                # (or `drafted`) forward when a child starts — an evidence-complete story auto-advances
+                # ready→in_review directly, and a story can be started while its epic is still
+                # `designed`, so the signed_off/ready branch alone left the epic behind at `designed`
+                # (reproduced: story=in_progress, epic=designed).
+                self._advance_epic_phase(parent, TicketStatus.in_progress, trigger=f"child {t.id} started")
             # §24 finding 1 (independent `if`, NOT elif — second-opinion 2026-09-08): an epic opens
             # its acceptance gate once every child is dropped OR released (done, or an evidence-
             # complete in_review story), NOT only when every child is `done`. This MUST run even
@@ -1374,7 +1383,21 @@ class Board:
         if not self.open_gates(ticket_id, gate):
             raise BoardError("transition", f"no open {gate} gate on {ticket_id}")
         if gate == Gate.design_signoff:
-            offence = self._design_signoff_lint(self.epic_of(self.ticket(ticket_id)).id)
+            # finding 5 (second-opinion 2026-09-08): design_signoff is answered on the EPIC itself,
+            # in the `designed` phase — never on a child story, and never on an epic with no design
+            # (a drafted, criterion-less epic could otherwise be carried straight to signed_off,
+            # skipping `designed`). Validate the designed-phase invariants before advancing.
+            epic = self.ticket(ticket_id)
+            if epic.kind != TicketKind.epic:
+                raise BoardError("scope",
+                                 f"design_signoff is answered on the epic, not {ticket_id} ({epic.kind.value})",
+                                 "open and answer the gate on the epic ticket")
+            if not (epic.design_ref and self.criteria(epic.id) and epic.status == TicketStatus.designed):
+                raise BoardError("transition",
+                                 f"epic {epic.id} is {epic.status.value} with no signed-off-ready design — set "
+                                 f"its design_ref and acceptance criteria (→ designed) before sign-off",
+                                 "the board carries an epic to `designed` when its design_ref is set")
+            offence = self._design_signoff_lint(epic.id)
             if offence:
                 raise BoardError("transition", offence,
                                  "fix the named criterion or link, then answer the gate again")
@@ -1384,7 +1407,7 @@ class Board:
             # c-c80f7cd8f0: the human's word IS the acceptance (a rejection is a steer, not a gate
             # answer — the lint above already refused a non-go), so the board carries the epic to
             # `signed_off` from the answer itself, no architect ticket_update.
-            self._advance_epic_phase(self.epic_of(self.ticket(ticket_id)), TicketStatus.signed_off,
+            self._advance_epic_phase(self.ticket(ticket_id), TicketStatus.signed_off,
                                      trigger="design_signoff accepted")
             # the human's word releases what the gate held back: signed-off, unblocked stories go ready now
             for k in self._descendants(ticket_id):

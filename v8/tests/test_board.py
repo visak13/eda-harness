@@ -641,11 +641,15 @@ def test_doc_update_bumps_version_old_readable(board, rig):
 def test_gate_answered_reaches_the_gate_opener(board, rig):
     """The architect creates stories under an epic it neither owns nor is assigned to; when the
     owner answers the design_signoff gate, the architect must be woken (C2-rnd regression)."""
-    from edp8.schemas import EventKind, Gate, TicketKind, WorkType
+    from edp8.schemas import Check, DocType, EventKind, Gate, TicketKind, WorkType
 
     owner, arch = rig["owner"], rig["architect"]
     epic = board.ticket_create(owner, kind=TicketKind.epic, work_type=WorkType.feature, title="gate wake epic")
     board.ticket_create(arch, kind=TicketKind.story, work_type=WorkType.feature, title="s", parent_id=epic.id)
+    # design_signoff needs a designed epic (design_ref + a criterion → phase `designed`), 2026-09-08.
+    d = board.doc_create(arch, doc_type=DocType.design, title="d", body_md="b", scope=epic.id)
+    board.criterion_create(arch, ticket_id=epic.id, text="ships", check=Check.command)
+    board.ticket_update(arch, epic.id, design_ref=d.id)
     board.gate_open(epic.id, Gate.design_signoff, by=arch.id)
     ev = board.gate_answer(owner, epic.id, Gate.design_signoff, "signed")
     assert ev.kind == EventKind.gate_answered

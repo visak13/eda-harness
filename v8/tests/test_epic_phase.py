@@ -88,6 +88,53 @@ def test_child_story_start_advances_epic_to_in_progress(board, rig):
     assert board.ticket(epic.id).status == TicketStatus.in_progress  # carried by the board
 
 
+def test_child_start_advances_epic_from_designed_not_only_signed_off(board, rig):
+    """finding 4 (second-opinion 2026-09-08): a child can start while the epic is still `designed`
+    (never signed_off) — an evidence-complete story auto-advances ready->in_review directly. The
+    board must still machine-carry the epic to in_progress."""
+    epic = _epic(board, rig)
+    d = _design(board, rig, epic.id)
+    _criterion(board, rig, epic.id)
+    board.ticket_update(rig["architect"], epic.id, design_ref=d.id)  # -> designed (NOT signed_off)
+    assert board.ticket(epic.id).status == TicketStatus.designed
+    story = board.ticket_create(rig["architect"], kind=TicketKind.story, work_type=WorkType.feature,
+                                title="a slice", parent_id=epic.id)
+    _criterion(board, rig, story.id, checked_by="qa")
+    board.ticket_update(rig["architect"], story.id, design_ref=d.id, status=TicketStatus.designed)
+    board.ticket_update(rig["owner"], story.id, status=TicketStatus.signed_off)  # -> ready (no epic gate)
+    board.ticket_update(rig["coordinator"], story.id, assignee=rig["engineer"].id)
+    assert board.ticket(epic.id).status == TicketStatus.designed  # epic still designed, not signed off
+    board.ticket_update(rig["engineer"], story.id, status=TicketStatus.in_progress)
+    assert board.ticket(epic.id).status == TicketStatus.in_progress  # carried from `designed`
+
+
+def test_design_signoff_refused_on_a_story(board, rig):
+    """finding 5: design_signoff is answered on the EPIC itself, never a child story."""
+    epic = _epic(board, rig)
+    d = _design(board, rig, epic.id)
+    _criterion(board, rig, epic.id)
+    board.ticket_update(rig["architect"], epic.id, design_ref=d.id)
+    story = board.ticket_create(rig["architect"], kind=TicketKind.story, work_type=WorkType.feature,
+                                title="a slice", parent_id=epic.id)
+    board.gate_open(story.id, Gate.design_signoff, by=rig["architect"].id, note="please")
+    with pytest.raises(Exception) as ei:
+        board.gate_answer(rig["owner"], story.id, Gate.design_signoff, "signed")
+    assert "epic" in str(ei.value)
+    assert board.ticket(epic.id).status == TicketStatus.designed  # untouched
+
+
+def test_design_signoff_refused_on_an_undesigned_epic(board, rig):
+    """finding 5: an unprepared (drafted, design-less, criterion-less) epic cannot be signed off —
+    it would skip `designed`. The reproduced bug (m-4ec93f8271)."""
+    epic = _epic(board, rig)
+    assert board.ticket(epic.id).status == TicketStatus.drafted
+    board.gate_open(epic.id, Gate.design_signoff, by=rig["architect"].id, note="please")
+    with pytest.raises(Exception) as ei:
+        board.gate_answer(rig["owner"], epic.id, Gate.design_signoff, "signed")
+    assert "designed" in str(ei.value)
+    assert board.ticket(epic.id).status == TicketStatus.drafted  # NOT signed_off
+
+
 def test_phase_is_monotonic_never_walks_backward(board, rig):
     epic = _epic(board, rig)
     d = _design(board, rig, epic.id)

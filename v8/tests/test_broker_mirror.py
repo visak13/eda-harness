@@ -80,6 +80,12 @@ def test_gate_open_wakes_owner_and_answer_wakes_assignee(client, rig, published)
                     headers={"X-Participant": "arch"})
     assert r.json()["ok"], r.text
     assert ("arch", "owner", "question") == published[-1][:3]
+    # design_signoff needs a designed epic (design_ref + a criterion → phase `designed`), 2026-09-08.
+    assert client.post("/v1/criteria", json={"ticket_id": rig, "text": "c", "check": "command"},
+                       headers={"X-Participant": "arch"}).json()["ok"]
+    d = client.post("/v1/docs", json={"doc_type": "design", "title": "d", "body_md": "x", "scope": rig},
+                    headers={"X-Participant": "arch"}).json()["value"]["id"]
+    assert client.patch(f"/v1/tickets/{rig}", json={"design_ref": d}, headers={"X-Participant": "arch"}).json()["ok"]
     r = client.post(f"/v1/gates/{rig}/design_signoff/answer", json={"answer": "signed"},
                     headers={"X-Participant": "owner"})
     assert r.json()["ok"], r.text

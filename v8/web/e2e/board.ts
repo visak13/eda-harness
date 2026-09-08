@@ -99,10 +99,20 @@ export async function startBoard(): Promise<Seeded> {
     id: string;
   };
 
+  // A CREDENTIALLED participant for the wrong-token deep-link test (deeplink.spec.ts, design §4.1).
+  // Writing a tokens.json makes ONLY `tokuser` require a matching X-Token; every other seeded handle
+  // (owner/arch/alice/eng) has no secret, so it stays header-only in trusted mode (public=false) and
+  // no other spec is affected. The board reads tokens.json lazily (mtime-cached), so writing it after
+  // the board is healthy is fine. Path = EDP8_HOME/tokens.json (service.tokens_file_path default).
+  const E2E_TOKEN = "e2e-good-token";
+  await post(base, "/v1/participants", { type: "human", role: "owner", handle: "tokuser", id: "tokuser" }, { "X-Admin": ADMIN });
+  fs.writeFileSync(path.join(tmpHome, "tokens.json"), JSON.stringify({ tokuser: E2E_TOKEN }), "utf8");
+
   // Expose for the spec + config baseURL (workers spawn after globalSetup, inheriting env).
   process.env.EDP8_E2E_BASE = base;
   process.env.EDP8_E2E_EPIC = epic.id;
   process.env.EDP8_ADMIN_TOKEN = ADMIN;
+  process.env.EDP8_E2E_TOKEN = E2E_TOKEN;
   return { base, epic: epic.id };
 }
 

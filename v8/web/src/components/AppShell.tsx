@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "../api/client";
+import { api, BoardApiError } from "../api/client";
 import { identity } from "../auth/identity";
+import { IdentityPanel } from "./IdentityPanel";
 import { DraftGuardProvider, useDraftGuard } from "../live/useDraftGuard";
 import { DocDrawerProvider } from "./DocDrawer";
 import { ThemePicker } from "../theme/ThemePicker";
@@ -129,6 +130,14 @@ function AppShellChrome(): React.JSX.Element {
   const handle = whoami.data?.participant.handle ?? as;
   const role = whoami.data?.participant.role ?? "";
   const counts = summary.data;
+
+  // Design §4.1: a 401 from the identity probe (a wrong token against a board with a tokens.json, or
+  // an unknown participant) is NOT silently downgraded to showing `as` — render the inline identity
+  // panel so the reader can re-enter a participant id / token. (second-opinion 2026-09-08)
+  const authError = whoami.error instanceof BoardApiError && whoami.error.status === 401 ? whoami.error : null;
+  if (authError) {
+    return <IdentityPanel hint={authError.hint ?? authError.message} />;
+  }
 
   return (
     <div className={styles.shell}>

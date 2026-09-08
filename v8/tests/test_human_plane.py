@@ -27,7 +27,7 @@ def published(monkeypatch):
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch):
+def client(tmp_path, monkeypatch, ui_prefix):
     monkeypatch.setenv("EDP8_TOKENS", str(tmp_path / "tokens.json"))
     return TestClient(create_app(Board(Store(":memory:")), admin_token="t"))
 
@@ -113,13 +113,13 @@ def test_asks_on_closed_projects_disappear(client, rig):
 
 # ----------------------------------------------------------------------- /ui/me
 
-def test_ui_me_renders_and_replies(client, rig, published):
+def test_ui_me_renders_and_replies(client, rig, published, ui_prefix):
     client.post("/v1/messages", json={"ticket_id": rig["epic"], "kind": "question", "to": "x",
                                       "text": "your call on the auth boundary?"},
                 headers={"X-Participant": "aksou"})
-    page = client.get("/ui/me", params={"as": "x"})
+    page = client.get(f"{ui_prefix}/me", params={"as": "x"})
     assert page.status_code == 200 and "auth boundary" in page.text
-    r = client.post("/ui/me/message", data={"as_": "x", "ticket_id": rig["epic"], "to": "aksou",
+    r = client.post(f"{ui_prefix}/me/message", data={"as_": "x", "ticket_id": rig["epic"], "to": "aksou",
                                             "kind": "answer", "text": "option B, keep it server-side"},
                     follow_redirects=False)
     assert r.status_code == 303
@@ -129,12 +129,21 @@ def test_ui_me_renders_and_replies(client, rig, published):
     assert any("option B" in m["text"] for m in thread)
 
 
-def test_ui_me_gate_answer(client, rig, published):
+def test_ui_me_gate_answer(client, rig, published, ui_prefix):
+    # design_signoff now requires the epic to actually be `designed` — a drafted, design-less epic
+    # can no longer be signed off (board finding 5, second-opinion 2026-09-08). Give it a criterion
+    # (before the design_ref PATCH, so the board carries it drafted→designed) and a design doc.
+    assert client.post("/v1/criteria", json={"ticket_id": rig["epic"], "text": "ships", "check": "command"},
+                       headers={"X-Participant": "arch"}).json()["ok"]
+    doc = client.post("/v1/docs", json={"doc_type": "design", "title": "d", "body_md": "x", "scope": rig["epic"]},
+                      headers={"X-Participant": "arch"}).json()["value"]["id"]
+    assert client.patch(f"/v1/tickets/{rig['epic']}", json={"design_ref": doc},
+                        headers={"X-Participant": "arch"}).json()["ok"]
     client.post(f"/v1/gates/{rig['epic']}/design_signoff/open", json={"note": "n"},
                 headers={"X-Participant": "arch"})
-    page = client.get("/ui/me", params={"as": "aksou"})
+    page = client.get(f"{ui_prefix}/me", params={"as": "aksou"})
     assert "design_signoff" in page.text
-    r = client.post("/ui/me/gate", data={"as_": "aksou", "ticket_id": rig["epic"],
+    r = client.post(f"{ui_prefix}/me/gate", data={"as_": "aksou", "ticket_id": rig["epic"],
                                          "gate": "design_signoff", "answer": "signed"},
                     follow_redirects=False)
     assert r.status_code == 303
