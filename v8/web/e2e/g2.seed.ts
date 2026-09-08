@@ -44,28 +44,35 @@ export async function seedDecisions(): Promise<G2Fixture> {
   const gate = "design_signoff";
   const liveSeatEng = `eng-live-${n}`;
   const deadSeatEng = `eng-dead-${n}`;
+  // Stories, story criteria and their assignment are the ARCHITECT's, not the owner's (board role
+  // scope: "owner may not create a story") — mirrors g3a.seed. The owner still owns the epic and
+  // rules the §14 sign-off. Register a per-call architect seat for the authoring.
+  const arch = `architect.g2-${n}`;
 
   // The owner-owned epic (owner is seeded by board.ts startBoard).
   const epic = (await call("POST", "/v1/tickets", { kind: "epic", work_type: "feature", title: words }, as("owner"))).id;
   const freshEpic = (
     await call("POST", "/v1/tickets", { kind: "epic", work_type: "feature", title: `${words} — fresh` }, as("owner"))
   ).id;
+  await call("POST", "/v1/participants", { type: "agent", role: "architect", handle: `arch-g2-${n}`, id: arch }, admin()).catch(
+    () => {},
+  );
 
-  // Story under the epic. Its assignee is the live engineer SEAT id (role.ticket), so Seats-now
-  // and seat_for_role resolve it. We register that participant first.
+  // Story under the epic (authored by the architect). Its assignee is the live engineer SEAT id
+  // (role.ticket), so Seats-now and seat_for_role resolve it. We register that participant first.
   const story = (
     await call(
       "POST",
       "/v1/tickets",
       { kind: "story", work_type: "feature", title: "Decisions home story", parent_id: epic },
-      as("owner"),
+      as(arch),
     )
   ).id;
   const liveSeat = `engineer.${story}`;
   await call("POST", "/v1/participants", { type: "agent", role: "engineer", handle: liveSeatEng, id: liveSeat }, admin()).catch(
     () => {},
   );
-  await call("PATCH", `/v1/tickets/${story}`, { assignee: liveSeat }, as("owner")).catch(() => {});
+  await call("PATCH", `/v1/tickets/${story}`, { assignee: liveSeat }, as(arch)).catch(() => {});
   // Make the seat ALIVE via a session record (seat_state reads the latest session).
   await call(
     "PUT",
@@ -74,9 +81,9 @@ export async function seedDecisions(): Promise<G2Fixture> {
     admin(),
   );
 
-  // Two extra story criteria → a non-trivial tally on the epic pulse (0 of N passed).
-  await call("POST", "/v1/criteria", { ticket_id: story, text: "RTL is green", check: "command" }, as("owner")).catch(() => {});
-  await call("POST", "/v1/criteria", { ticket_id: story, text: "e2e is green", check: "command" }, as("owner")).catch(() => {});
+  // Two extra story criteria → a non-trivial tally on the epic pulse (0 of N passed). Architect-authored.
+  await call("POST", "/v1/criteria", { ticket_id: story, text: "RTL is green", check: "command" }, as(arch)).catch(() => {});
+  await call("POST", "/v1/criteria", { ticket_id: story, text: "e2e is green", check: "command" }, as(arch)).catch(() => {});
 
   // The report the owner must sign off, scoped to the story (opens in the ruling drawer).
   const doc = (
@@ -106,7 +113,8 @@ export async function seedDecisions(): Promise<G2Fixture> {
     },
     as("owner"),
   );
-  await call("PATCH", `/v1/criteria/${c.id}`, { evidence_ref: doc }, as("owner"));
+  // The doer (the assigned engineer seat) records the evidence_ref, not the owner (mirrors g3a.seed).
+  await call("PATCH", `/v1/criteria/${c.id}`, { evidence_ref: doc }, as(liveSeat));
 
   // A question from the LIVE seat to the owner → lands in the owner inbox (Questions tab, count 1).
   const q = await call(
@@ -116,8 +124,9 @@ export async function seedDecisions(): Promise<G2Fixture> {
     as(liveSeat),
   );
 
-  // An open design_signoff gate on the epic → owner Gates tab, count 1.
-  await call("POST", `/v1/gates/${epic}/${gate}/open`, { note: "please rule on the design" }, as("owner"));
+  // An open design_signoff gate on the epic → owner Gates tab, count 1. The architect asks the owner
+  // to rule (design_signoff is opened by the architect, answered by the owner).
+  await call("POST", `/v1/gates/${epic}/${gate}/open`, { note: "please rule on the design" }, as(arch));
 
   // A DEAD seat that asked the owner a question on its own story → §18.2 collapse + dead-seat flag.
   const deadStory = (
@@ -125,14 +134,14 @@ export async function seedDecisions(): Promise<G2Fixture> {
       "POST",
       "/v1/tickets",
       { kind: "story", work_type: "feature", title: "Abandoned story", parent_id: epic },
-      as("owner"),
+      as(arch),
     )
   ).id;
   const deadSeat = `engineer.${deadStory}`;
   await call("POST", "/v1/participants", { type: "agent", role: "engineer", handle: deadSeatEng, id: deadSeat }, admin()).catch(
     () => {},
   );
-  await call("PATCH", `/v1/tickets/${deadStory}`, { assignee: deadSeat }, as("owner")).catch(() => {});
+  await call("PATCH", `/v1/tickets/${deadStory}`, { assignee: deadSeat }, as(arch)).catch(() => {});
   await call(
     "POST",
     "/v1/messages",
