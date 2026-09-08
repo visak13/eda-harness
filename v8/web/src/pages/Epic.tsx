@@ -2,13 +2,15 @@ import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { getEpicPage, getEpicsSummary, getTicketsTable } from "../api/endpoints";
-import type { EpicSummaryRow, EpicTreeNode, MessageView, TicketStatus } from "../api/types";
+import type { CriterionView, EpicSummaryRow, EpicTreeNode, MessageView, TicketStatus } from "../api/types";
 import { StatusChip } from "../components/StatusChip";
 import { ProcessStrip } from "../components/ProcessStrip";
 import { StatusControl } from "../components/StatusControl";
 import { GateOpenControl } from "../components/GateOpenControl";
 import { GateForm } from "../components/GateForm";
 import { AssignControl } from "../components/AssignControl";
+import { CriterionCard } from "../components/CriterionCard";
+import { AddCriterion } from "../components/CriterionControls";
 import { Tabs } from "../components/Tabs";
 import { Composer } from "../components/Composer";
 import { AgentLine } from "../components/AgentLine";
@@ -131,10 +133,12 @@ export function EpicPage(): React.JSX.Element {
 
           {tab === "overview" ? (
             <OverviewTab
+              epicId={id}
               storyCount={stories.length}
               totals={totals}
               openGates={data.open_gates.length}
               docs={data.docs}
+              criteria={data.criteria}
             />
           ) : null}
 
@@ -274,15 +278,19 @@ function DocLink({ id }: { id: string | null }): React.JSX.Element {
 }
 
 function OverviewTab({
+  epicId,
   storyCount,
   totals,
   openGates,
   docs,
+  criteria,
 }: {
+  epicId: string;
   storyCount: number;
   totals: { passed: number; total: number };
   openGates: number;
   docs: { id: string; doc_type: string; title: string }[];
+  criteria: CriterionView[];
 }): React.JSX.Element {
   const drawer = useDocDrawer();
   const design = docs.find((d) => d.doc_type === "design");
@@ -303,6 +311,34 @@ function OverviewTab({
           </button>
         </p>
       ) : null}
+
+      {/* The epic's OWN acceptance criteria, with the same verdict + reword + add controls as a
+          ticket (design §16 epic "criteria list with add/verdict"), not just a tally. */}
+      <div className={ui.sectionLabel}>Acceptance criteria ({criteria.length})</div>
+      {criteria.length === 0 ? (
+        <p className={ui.empty}>No acceptance criteria on the epic itself.</p>
+      ) : (
+        <div className={styles.epicCriteria}>
+          {criteria.map((c) => (
+            <CriterionCard
+              key={c.id}
+              criterion={c}
+              ticketId={epicId}
+              ruling={
+                c.verdict === "pending" && c.evidence_ref && c.evidence_version != null
+                  ? { evidenceVersion: c.evidence_version }
+                  : undefined
+              }
+              canReword={c.verdict === "pending"}
+              onOpenEvidence={(docId) => drawer.openDoc(docId)}
+            />
+          ))}
+        </div>
+      )}
+      <details className={styles.addCrit}>
+        <summary className={styles.addCritSummary}>Add an acceptance criterion</summary>
+        <AddCriterion ticketId={epicId} />
+      </details>
     </div>
   );
 }

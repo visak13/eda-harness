@@ -515,9 +515,14 @@ def epic_page(board: Board, epic_id: str) -> dict[str, Any]:
     answerable_gates = [{"ticket_id": epic_id, "gate": ev.data.get("gate"), "by": ev.data.get("by"),
                          "note": ev.data.get("note"), "opened_at": ev.created_at.isoformat(), "epic": epic_id}
                         for ev in board.open_gates(epic_id)]
+    crits = board.criteria(epic_id)
     return {"board": bd, "words": bd.get("words"), "counts": bd.get("counts"),
             "thread": thread, "docs": docs, "open_gates": bd.get("open_gates", []),
-            "answerable_gates": answerable_gates}
+            "answerable_gates": answerable_gates,
+            "criteria": [{"id": c.id, "text": c.text, "check": c.check.value,
+                          "checked_by": c.checked_by, "verdict": c.verdict.value,
+                          "evidence_ref": c.evidence_ref,
+                          "evidence_version": getattr(c, "evidence_version", None)} for c in crits]}
 
 
 def ticket_page(board: Board, ticket_id: str) -> dict[str, Any]:

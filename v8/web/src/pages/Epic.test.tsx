@@ -42,6 +42,7 @@ function page(over: Partial<EpicPageData> = {}, thread: MessageView[] = []): Epi
     docs: [],
     open_gates: [],
     answerable_gates: [],
+    criteria: [],
     ...over,
   };
 }
@@ -116,6 +117,22 @@ describe("EpicPage", () => {
     mount(page());
     await screen.findByText("Upgrade the board UI", { selector: "h1" });
     expect(screen.getByText("2 of 4 passed")).toBeInTheDocument();
+  });
+
+  it("lists the epic's OWN acceptance criteria with a verdict pane, not just a count (§16)", async () => {
+    mount(
+      page({
+        criteria: [
+          { id: "c-e1", text: "the epic is accepted", check: "look", checked_by: "owner", verdict: "pending", evidence_ref: "report-1", evidence_version: 2 },
+        ],
+      }),
+    );
+    await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    expect(await screen.findByText("the epic is accepted")).toBeInTheDocument();
+    // pending + evidence → the one-click ruling pane is on the epic page itself
+    expect(screen.getByTestId("approve")).toBeInTheDocument();
+    // and the add-criterion affordance is present
+    expect(screen.getByText("Add an acceptance criterion")).toBeInTheDocument();
   });
 
   it("answers the epic's own open gate from the page (§16 Epic 'Answer gate')", async () => {

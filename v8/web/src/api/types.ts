@@ -282,6 +282,7 @@ export interface EpicPage {
   docs: DocSummary[];
   open_gates: [string, string][];
   answerable_gates: GateRow[]; // the epic's own open gates, answerable from the page (§16)
+  criteria: CriterionView[]; // the epic's own acceptance criteria, with add/verdict on the page (§16)
 }
 
 export interface DocSummaryRelated extends DocSummary {
