@@ -509,8 +509,15 @@ def epic_page(board: Board, epic_id: str) -> dict[str, Any]:
     bd = board.board(epic_id)
     thread = [_msg(m) for m in board.thread(epic_id, limit=100)]
     docs = [board._doc_summary(d) for d in board.store.query("doc", {"scope": epic_id}, limit=100)]
+    # The epic's OWN open gates as answerable rows (design §16 "Epic page: Answer gate"); child-ticket
+    # gates are answered on their own ticket pages. `open_gates` (the [tid,gate] tree aggregate from
+    # board()) stays as-is for the at-a-glance count.
+    answerable_gates = [{"ticket_id": epic_id, "gate": ev.data.get("gate"), "by": ev.data.get("by"),
+                         "note": ev.data.get("note"), "opened_at": ev.created_at.isoformat(), "epic": epic_id}
+                        for ev in board.open_gates(epic_id)]
     return {"board": bd, "words": bd.get("words"), "counts": bd.get("counts"),
-            "thread": thread, "docs": docs, "open_gates": bd.get("open_gates", [])}
+            "thread": thread, "docs": docs, "open_gates": bd.get("open_gates", []),
+            "answerable_gates": answerable_gates}
 
 
 def ticket_page(board: Board, ticket_id: str) -> dict[str, Any]:

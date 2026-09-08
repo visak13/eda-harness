@@ -281,6 +281,7 @@ export interface EpicPage {
   thread: MessageView[];
   docs: DocSummary[];
   open_gates: [string, string][];
+  answerable_gates: GateRow[]; // the epic's own open gates, answerable from the page (§16)
 }
 
 export interface DocSummaryRelated extends DocSummary {

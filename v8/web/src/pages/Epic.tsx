@@ -7,6 +7,7 @@ import { StatusChip } from "../components/StatusChip";
 import { ProcessStrip } from "../components/ProcessStrip";
 import { StatusControl } from "../components/StatusControl";
 import { GateOpenControl } from "../components/GateOpenControl";
+import { GateForm } from "../components/GateForm";
 import { Tabs } from "../components/Tabs";
 import { Composer } from "../components/Composer";
 import { AgentLine } from "../components/AgentLine";
@@ -156,6 +157,15 @@ export function EpicPage(): React.JSX.Element {
             <div className={ui.sectionLabel}>Change status</div>
             <StatusControl ticketId={id} currentStatus={epic.status as TicketStatus} />
           </section>
+
+          {data.answerable_gates.length > 0 ? (
+            <section className={ui.card} data-testid="epic-answer-gates">
+              <div className={ui.sectionLabel}>Answer a decision ({data.answerable_gates.length})</div>
+              {data.answerable_gates.map((g) => (
+                <GateForm key={`${g.ticket_id}:${g.gate}`} gate={g} />
+              ))}
+            </section>
+          ) : null}
 
           <section className={ui.card}>
             <div className={ui.sectionLabel}>Raise a decision</div>

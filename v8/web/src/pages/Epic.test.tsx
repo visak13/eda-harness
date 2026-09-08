@@ -41,6 +41,7 @@ function page(over: Partial<EpicPageData> = {}, thread: MessageView[] = []): Epi
     thread,
     docs: [],
     open_gates: [],
+    answerable_gates: [],
     ...over,
   };
 }
@@ -113,5 +114,28 @@ describe("EpicPage", () => {
     mount(page());
     await screen.findByText("Upgrade the board UI", { selector: "h1" });
     expect(screen.getByText("2 of 4 passed")).toBeInTheDocument();
+  });
+
+  it("answers the epic's own open gate from the page (§16 Epic 'Answer gate')", async () => {
+    let answered: Record<string, unknown> | null = null;
+    mount(
+      page({
+        answerable_gates: [
+          { ticket_id: "epic-1", gate: "acceptance", by: "owner", note: "accept the epic?", opened_at: "2026-09-02T10:00:00Z", epic: "epic-1" },
+        ],
+      }),
+    );
+    server.use(
+      http.post("/v1/gates/epic-1/acceptance/answer", async ({ request }) => {
+        answered = (await request.json()) as Record<string, unknown>;
+        return okJson({ ok: true });
+      }),
+    );
+    const form = await screen.findByTestId("gate-form");
+    const { within, waitFor } = await import("@testing-library/react");
+    fireEvent.change(within(form).getByTestId("gate-answer"), { target: { value: "accepted" } });
+    fireEvent.click(within(form).getByTestId("gate-submit"));
+    await waitFor(() => expect(answered).not.toBeNull());
+    expect(answered!).toMatchObject({ answer: "accepted" });
   });
 });
