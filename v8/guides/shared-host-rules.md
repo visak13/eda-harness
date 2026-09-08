@@ -17,8 +17,10 @@ They are framework behaviour, so they live here and in CLAUDE.md; a card points 
   broker (:9300). If one is down, post `kind=blocked` with the evidence and wait; the human or the
   launcher (`start.ps1 -Restart <service>`) restarts it. A board that is down often self-heals in
   ~2 minutes after an ephemeral-port flood; re-probe before escalating.
-- Never `taskkill /IM edp8-board.exe` (kills the fleet board too). Kill the boards YOU spawned
-  (tests, e2e) by PID or port.
+- Never `taskkill /IM edp8-board.exe` (kills the fleet board too). The fleet board's pid is the one in
+  `.run/board.json` - never kill it or its children. Identify a board YOU spawned by its port or its
+  EDP8_HOME/EDP8_DB (`Get-CimInstance Win32_Process | select ProcessId,CommandLine`), never by
+  guessing among `edp8-board`/python processes (2026-09-08: an engineer killed the fleet board this way).
 - The MCP proxy loads its code at boot: a merged bridge/tool fix reaches only shells that boot
   after the proxy restart. Say so in your hand-off when your change touches `mcp_server`,
   `bundles`, `consult` or `client`.
