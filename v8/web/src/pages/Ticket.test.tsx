@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { screen, within, waitFor } from "@testing-library/react";
+import { screen, within, waitFor, fireEvent } from "@testing-library/react";
+import { HttpResponse } from "msw";
 import { server } from "../test/setup";
 import { http, okJson, renderRoute } from "./testUtils";
 import { TicketPage } from "./Ticket";
@@ -103,10 +104,105 @@ describe("TicketPage", () => {
       }),
     );
     const form = await screen.findByTestId("gate-form");
-    const { fireEvent } = await import("@testing-library/react");
     fireEvent.change(within(form).getByTestId("gate-answer"), { target: { value: "looks good, shipping" } });
     fireEvent.click(within(form).getByTestId("gate-submit"));
     await waitFor(() => expect(answered).not.toBeNull());
     expect(answered!.body).toMatchObject({ answer: "looks good, shipping" });
+  });
+
+  it("renders the empty-state variants: no description, no tags, no criteria, no docs, no thread", async () => {
+    mount(
+      ticketPage({
+        ticket: {
+          id: "s-1",
+          kind: "story",
+          work_type: "feature",
+          title: "Bare ticket",
+          description: "",
+          status: "ready",
+          assignee: null,
+          tags: [],
+          design_ref: null,
+          epic_id: "epic-1",
+        },
+        criteria: [],
+        docs: [],
+        thread: [],
+        assignee: { id: null, handle: null, role: null },
+        waiting_reason: { reason: "", presence: null, latest_status: null },
+      }),
+    );
+    await screen.findByText("Bare ticket", { selector: "h1" });
+    expect(screen.getByText("No acceptance criteria have been added.")).toBeInTheDocument();
+    expect(screen.getByText("No documents linked.")).toBeInTheDocument();
+    expect(screen.getByText("No messages on this ticket yet.")).toBeInTheDocument();
+    // no live shell state, unassigned seat label, design not linked, waiting "—"
+    expect(screen.getByText("no live shell")).toBeInTheDocument();
+    expect(screen.getByTestId("assignee")).toHaveTextContent("unassigned");
+    expect(screen.getByText("Not linked")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["in_review", "Review the evidence, then change the status →"],
+    ["in_progress", "Attach evidence, then move it to In review →"],
+    ["ready", "Assign or spawn a seat, then start it →"],
+    ["done", "Complete — see the status below."],
+    ["blocked", "Change the status →"],
+  ] as const)("process strip next action for status %s", async (status, text) => {
+    mount(ticketPage({ ticket: { ...ticketPage().ticket, status } }));
+    expect(await screen.findByText(text)).toBeInTheDocument();
+  });
+
+  it("toggles the conversation order", async () => {
+    mount(ticketPage());
+    await screen.findByText("Build the epic page", { selector: "h1" });
+    const toggle = screen.getByTestId("order-toggle");
+    expect(toggle).toHaveTextContent("Newest first");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveTextContent("Oldest first");
+  });
+
+  it("links a document to the ticket via the Link & ask control", async () => {
+    let linked: Record<string, unknown> | null = null;
+    mount(ticketPage());
+    server.use(
+      http.post("/v1/links", async ({ request }) => {
+        linked = (await request.json()) as Record<string, unknown>;
+        return okJson({ ok: true });
+      }),
+    );
+    await screen.findByText("Build the epic page", { selector: "h1" });
+    const form = screen.getByTestId("link-doc");
+    fireEvent.change(within(form).getByPlaceholderText("document id"), { target: { value: "design-9" } });
+    fireEvent.change(within(form).getByLabelText("Relation"), { target: { value: "supersedes" } });
+    fireEvent.submit(form);
+    await waitFor(() => expect(linked).not.toBeNull());
+    expect(linked!).toMatchObject({ from_id: "s-1", to_id: "design-9", relation: "supersedes" });
+    expect(await screen.findByTestId("link-doc-ok")).toBeInTheDocument();
+  });
+
+  it("asks a role a question via the Link & ask control", async () => {
+    let asked: Record<string, unknown> | null = null;
+    mount(ticketPage());
+    server.use(
+      http.post("/v1/messages", async ({ request }) => {
+        asked = (await request.json()) as Record<string, unknown>;
+        return okJson({ id: "m9", unresolved_mentions: [] }, "asked");
+      }),
+    );
+    await screen.findByText("Build the epic page", { selector: "h1" });
+    const form = screen.getByTestId("ask-role");
+    fireEvent.change(within(form).getByLabelText("Question"), { target: { value: "what is the scope?" } });
+    fireEvent.submit(form);
+    await waitFor(() => expect(asked).not.toBeNull());
+    expect(asked!).toMatchObject({ ticket_id: "s-1", kind: "question", text: "what is the scope?" });
+    expect(await screen.findByTestId("ask-role-ok")).toBeInTheDocument();
+  });
+
+  it("shows the loading state, then an error banner when the page fails", async () => {
+    server.use(http.get("/v1/tickets/s-1/page", () => new HttpResponse(null, { status: 500 })));
+    renderRoute("/ticket/s-1?as=owner", "/ticket/:id", <TicketPage />);
+    expect(screen.getByText("Loading ticket…")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Could not load s-1/);
   });
 });

@@ -135,6 +135,173 @@ describe("EpicPage", () => {
     expect(screen.getByText("Add an acceptance criterion")).toBeInTheDocument();
   });
 
+  it("Documents tab lists linked docs; empty epic shows the no-docs sentence", async () => {
+    mount(page({ docs: [{ id: "design-1", doc_type: "design_note", title: "The design", version: 1, scope: "epic-1", summary: "", full: "" }] }));
+    await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    fireEvent.click(screen.getByRole("tab", { name: /Documents/ }));
+    expect(await screen.findByText("The design")).toBeInTheDocument();
+    expect(screen.getByText("design note")).toBeInTheDocument();
+  });
+
+  it("Documents tab shows an empty sentence when no docs are linked", async () => {
+    mount(page({ docs: [] }));
+    await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    fireEvent.click(screen.getByRole("tab", { name: /Documents/ }));
+    expect(await screen.findByText("No documents are linked to this epic yet.")).toBeInTheDocument();
+  });
+
+  it("Overview shows a design link and the multi-story pulse sentence", async () => {
+    const data = page({ docs: [{ id: "design-1", doc_type: "design", title: "The design", version: 1, scope: "epic-1", summary: "", full: "" }] });
+    data.board.epic.children = [node({ id: "s-1" }), node({ id: "s-2", title: "Second story" })];
+    mount(data);
+    await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    // pulse sentence pluralises stories and shows the criteria + open gate tally
+    expect(screen.getByText(/2 stories ·/)).toBeInTheDocument();
+    expect(screen.getByText(/passed ·/)).toBeInTheDocument();
+    // design link inside the overview
+    expect(screen.getByRole("button", { name: "The design" })).toBeInTheDocument();
+  });
+
+  it("Overview pulse reads 'No stories yet' when the epic has none", async () => {
+    const data = page();
+    data.board.epic.children = [];
+    mount(data);
+    await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    expect(screen.getByText(/No stories yet — this epic is still being shaped/)).toBeInTheDocument();
+  });
+
+  it("Thread tab renders messages, toggles order, and shows the empty state", async () => {
+    mount(
+      page({}, [
+        { id: "m1", by: "engineer.s-99", to: null, kind: "note", text: "first message", at: "2026-09-01T10:00:00Z", reply_to: null },
+        { id: "m2", by: "owner", to: null, kind: "note", text: "second message", at: "2026-09-02T10:00:00Z", reply_to: null },
+      ]),
+    );
+    await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    fireEvent.click(screen.getByRole("tab", { name: /Thread/ }));
+    const toggle = await screen.findByTestId("order-toggle");
+    expect(toggle).toHaveTextContent("Newest first");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveTextContent("Oldest first");
+    expect(screen.getByTestId("thread")).toHaveTextContent("first message");
+  });
+
+  it("Thread tab shows the empty state when there are no messages", async () => {
+    mount(page({}, []));
+    await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    fireEvent.click(screen.getByRole("tab", { name: /Thread/ }));
+    expect(await screen.findByText("No messages on this epic yet.")).toBeInTheDocument();
+  });
+
+  it("Steer this epic jumps to the Thread tab with the steer composer", async () => {
+    mount(page({}, []));
+    await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    fireEvent.click(screen.getByRole("button", { name: "Steer this epic" }));
+    expect(await screen.findByTestId("order-toggle")).toBeInTheDocument();
+  });
+
+  it("Work tab filters by status, work type and assignee", async () => {
+    const data = page();
+    data.board.epic.children = [
+      node({ id: "s-1", title: "Alpha", status: "in_progress", work_type: "feature", assignee: "engineer.s-1" }),
+      node({ id: "s-2", title: "Bravo", status: "done", work_type: "bug", assignee: "reviewer.s-2" }),
+    ];
+    mount(data);
+    await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    fireEvent.click(screen.getByRole("tab", { name: /Work/ }));
+    await screen.findByTestId("work-filters");
+    // titles appear in both the tree and the kanban → use queryAll
+    expect(screen.queryAllByText("Alpha").length).toBeGreaterThan(0);
+    expect(screen.queryAllByText("Bravo").length).toBeGreaterThan(0);
+    // status filter narrows to the in_progress story
+    fireEvent.change(screen.getByLabelText("Status"), { target: { value: "done" } });
+    expect(screen.queryAllByText("Alpha")).toHaveLength(0);
+    expect(screen.queryAllByText("Bravo").length).toBeGreaterThan(0);
+    // work type filter
+    fireEvent.change(screen.getByLabelText("Status"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Work type"), { target: { value: "feature" } });
+    expect(screen.queryAllByText("Alpha").length).toBeGreaterThan(0);
+    expect(screen.queryAllByText("Bravo")).toHaveLength(0);
+    // assignee contains
+    fireEvent.change(screen.getByLabelText("Work type"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Assignee contains"), { target: { value: "reviewer" } });
+    expect(screen.queryAllByText("Alpha")).toHaveLength(0);
+    expect(screen.queryAllByText("Bravo").length).toBeGreaterThan(0);
+  });
+
+  it("Work tab with a no-match filter shows the empty sentence", async () => {
+    const data = page();
+    data.board.epic.children = [node({ id: "s-1", title: "Alpha", status: "in_progress" })];
+    mount(data);
+    await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    fireEvent.click(screen.getByRole("tab", { name: /Work/ }));
+    await screen.findByTestId("work-filters");
+    fireEvent.change(screen.getByLabelText("Status"), { target: { value: "done" } });
+    expect(await screen.findByText("No tickets match these filters.")).toBeInTheDocument();
+  });
+
+  it("Work tab search resolves matching ids via the tickets table", async () => {
+    server.use(
+      http.get("/v1/tickets/table", () =>
+        okJson({ rows: [{ id: "s-1", epic_id: "epic-1", title: "Alpha", kind: "story", work_type: "feature", status: "in_progress", assignee: null, tags: [], criteria: { passed: 0, failed: 0, pending: 0, total: 0 }, blocked_by: [] }], count: 1 }),
+      ),
+    );
+    const data = page();
+    data.board.epic.children = [
+      node({ id: "s-1", title: "Alpha", status: "in_progress" }),
+      node({ id: "s-2", title: "Bravo", status: "in_progress" }),
+    ];
+    mount(data);
+    await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    fireEvent.click(screen.getByRole("tab", { name: /Work/ }));
+    await screen.findByTestId("work-filters");
+    fireEvent.change(screen.getByLabelText("Search words"), { target: { value: "Alpha" } });
+    const { waitFor } = await import("@testing-library/react");
+    // once the search resolves, only the searched-for id (s-1 / Alpha) survives the qHits filter
+    await waitFor(() => expect(screen.queryAllByText("Alpha").length).toBeGreaterThan(0));
+    expect(screen.queryAllByText("Bravo")).toHaveLength(0);
+  });
+
+  it("renders the assigned-seat rail when the summary row carries seats", async () => {
+    server.use(
+      http.get("/v1/epics/summary", () =>
+        okJson([
+          {
+            id: "epic-1",
+            assigned_seats: ["engineer.s-99"],
+            waiting_reason: { presence: "alive" },
+            latest_status: "on it",
+          },
+        ]),
+      ),
+    );
+    server.use(http.get("/v1/epics/epic-1/page", () => okJson(page())));
+    server.use(
+      http.get("/v1/tickets/epic-1/transitions", () =>
+        okJson({ status: "in_progress", transitions: [{ to: "done", allowed: true, reason: null }] }),
+      ),
+    );
+    server.use(http.get("/v1/pool/capabilities", () => okJson({ resume_parked: true, resume_closed: false, park: true, spawn: true })));
+    renderRoute("/epic/epic-1", "/epic/:id", <EpicPage />);
+    await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    const { waitFor } = await import("@testing-library/react");
+    await waitFor(() => expect(screen.getByText("on it")).toBeInTheDocument());
+    expect(screen.getAllByText("engineer.s-99").length).toBeGreaterThan(0);
+  });
+
+  it("shows the loading state before the page resolves", async () => {
+    mount(page());
+    expect(screen.getByText("Loading epic…")).toBeInTheDocument();
+  });
+
+  it("shows an error banner when the epic page fails to load", async () => {
+    const { HttpResponse } = await import("msw");
+    server.use(http.get("/v1/epics/epic-1/page", () => new HttpResponse(null, { status: 500 })));
+    server.use(http.get("/v1/epics/summary", () => okJson([])));
+    renderRoute("/epic/epic-1", "/epic/:id", <EpicPage />);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Could not load epic-1/);
+  });
+
   it("answers the epic's own open gate from the page (§16 Epic 'Answer gate')", async () => {
     let answered: Record<string, unknown> | null = null;
     mount(

@@ -1,8 +1,19 @@
 import { describe, it, expect } from "vitest";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { HttpResponse } from "msw";
 import { server } from "../test/setup";
 import { http, okJson, renderRoute } from "./testUtils";
 import { LibraryPage } from "./Library";
+
+const LIB = {
+  docs: [{ id: "design-1", doc_type: "design_note", title: "The design", version: 2, scope: "epic-1", summary: "", full: "" }],
+  artifacts: [
+    { id: "art-1", form: "image", uri: "http://x/one.png", note: "a shot", created_by: "engineer.s-1", created_at: "2026-09-01T10:00:00Z" },
+    { id: "art-2", form: "file", uri: "http://x/two.txt", note: "", created_by: "engineer.s-1", created_at: "2026-09-01T10:00:00Z" },
+  ],
+  links: [{ id: "l-1", from_id: "s-1", to_id: "design-1", relation: "designed_by", created_by: "architect.epic-1" }],
+};
+const EMPTY_LIB = { docs: [], artifacts: [], links: [] };
 
 const TABLE = {
   rows: [
@@ -78,5 +89,97 @@ describe("LibraryPage — History", () => {
     for (const s of ["Documents", "Artifacts", "Links", "Tickets", "History"]) {
       expect(screen.getByRole("link", { name: s })).toBeInTheDocument();
     }
+  });
+});
+
+describe("LibraryPage — Documents", () => {
+  it("lists documents with the doc type de-underscored and passes ?epic to the read", async () => {
+    let seen = "";
+    server.use(
+      http.get("/v1/library", ({ request }) => {
+        seen = new URL(request.url).search;
+        return okJson(LIB);
+      }),
+    );
+    renderRoute("/library/documents?epic=epic-1", "/library/:section", <LibraryPage />);
+    expect(await screen.findByText("The design")).toBeInTheDocument();
+    expect(screen.getByText("design note")).toBeInTheDocument();
+    expect(seen).toContain("epic=epic-1");
+  });
+
+  it("shows the empty state when there are no documents", async () => {
+    server.use(http.get("/v1/library", () => okJson(EMPTY_LIB)));
+    renderRoute("/library/documents", "/library/:section", <LibraryPage />);
+    expect(await screen.findByText("No documents.")).toBeInTheDocument();
+  });
+
+  it("surfaces a load error as an alert banner", async () => {
+    server.use(http.get("/v1/library", () => new HttpResponse(null, { status: 500 })));
+    renderRoute("/library/documents", "/library/:section", <LibraryPage />);
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+  });
+});
+
+describe("LibraryPage — Artifacts", () => {
+  it("lists artifacts, rendering the note only when present", async () => {
+    server.use(http.get("/v1/library", () => okJson(LIB)));
+    renderRoute("/library/artifacts", "/library/:section", <LibraryPage />);
+    expect(await screen.findByText("http://x/one.png")).toBeInTheDocument();
+    expect(screen.getByText("a shot")).toBeInTheDocument();
+    // second artifact has an empty note → no note span text for it
+    expect(screen.getByText("http://x/two.txt")).toBeInTheDocument();
+  });
+
+  it("shows the empty state when there are no artifacts", async () => {
+    server.use(http.get("/v1/library", () => okJson(EMPTY_LIB)));
+    renderRoute("/library/artifacts", "/library/:section", <LibraryPage />);
+    expect(await screen.findByText("No artifacts.")).toBeInTheDocument();
+  });
+});
+
+describe("LibraryPage — Links", () => {
+  it("renders the link table", async () => {
+    server.use(http.get("/v1/library", () => okJson(LIB)));
+    renderRoute("/library/links", "/library/:section", <LibraryPage />);
+    expect(await screen.findByText("designed_by")).toBeInTheDocument();
+    expect(screen.getAllByText("s-1").length).toBeGreaterThan(0);
+  });
+
+  it("shows the empty state when there are no links", async () => {
+    server.use(http.get("/v1/library", () => okJson(EMPTY_LIB)));
+    renderRoute("/library/links", "/library/:section", <LibraryPage />);
+    expect(await screen.findByText("No links.")).toBeInTheDocument();
+  });
+});
+
+describe("LibraryPage — routing + empty states", () => {
+  it("falls back to Tickets for an unknown section", async () => {
+    server.use(http.get("/v1/tickets/table", () => okJson(TABLE)));
+    renderRoute("/library/bogus", "/library/:section", <LibraryPage />);
+    expect(await screen.findByTestId("ticket-filters")).toBeInTheDocument();
+  });
+
+  it("shows the no-tickets empty state when the table is empty", async () => {
+    server.use(http.get("/v1/tickets/table", () => okJson({ rows: [], count: 0 })));
+    renderRoute("/library/tickets", "/library/:section", <LibraryPage />);
+    expect(await screen.findByText("No tickets match these filters.")).toBeInTheDocument();
+  });
+
+  it("surfaces a tickets-table load error", async () => {
+    server.use(http.get("/v1/tickets/table", () => new HttpResponse(null, { status: 500 })));
+    renderRoute("/library/tickets", "/library/:section", <LibraryPage />);
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+  });
+
+  it("shows the no-activity empty state for History", async () => {
+    server.use(http.get("/v1/activity", () => okJson([])));
+    renderRoute("/library/history", "/library/:section", <LibraryPage />);
+    expect(await screen.findByText("No activity yet.")).toBeInTheDocument();
+  });
+
+  it("surfaces a history load error", async () => {
+    server.use(http.get("/v1/activity", () => new HttpResponse(null, { status: 500 })));
+    renderRoute("/library/history", "/library/:section", <LibraryPage />);
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
   });
 });

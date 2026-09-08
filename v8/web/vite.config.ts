@@ -40,7 +40,7 @@ export default defineConfig({
     exclude: ["e2e/**", "node_modules/**", "dist/**"],
     coverage: {
       provider: "v8",
-      thresholds: { lines: 80 },
+      thresholds: { lines: 80, branches: 80 },
       include: ["src/**/*.{ts,tsx}"],
       exclude: ["src/**/*.{test,spec}.{ts,tsx}", "src/test/**", "src/main.tsx"],
     },

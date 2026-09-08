@@ -52,4 +52,25 @@ describe("GateForm", () => {
     await waitFor(() => expect(onAnswered).toHaveBeenCalled());
     expect(posted).toMatchObject({ path: "epic-1/design_signoff", body: { answer: "approved" } });
   });
+
+  it("renders a gate with no note (the em-dash quote branch is skipped)", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <GateForm gate={{ ...gate, note: "" }} />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText(/opened by architect\.epic-1/)).toBeInTheDocument();
+    expect(screen.queryByText(/please rule/)).not.toBeInTheDocument();
+  });
+
+  it("keeps the ruling and shows an error when the answer POST fails", async () => {
+    server.use(
+      http.post("/v1/gates/:t/:g/answer", () => new HttpResponse(null, { status: 500 })),
+    );
+    mount();
+    fireEvent.change(screen.getByTestId("gate-answer"), { target: { value: "approved" } });
+    fireEvent.click(screen.getByTestId("gate-submit"));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/your ruling is kept/);
+  });
 });

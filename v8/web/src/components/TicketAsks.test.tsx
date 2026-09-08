@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { screen, waitFor, fireEvent } from "@testing-library/react";
+import { HttpResponse } from "msw";
 import { server } from "../test/setup";
 import { http, okJson, renderRoute } from "../pages/testUtils";
 import { LinkDocControl, AskRoleControl } from "./TicketAsks";
@@ -25,6 +26,18 @@ describe("LinkDocControl", () => {
     );
     expect(await screen.findByTestId("link-doc-ok")).toBeInTheDocument();
   });
+
+  it("surfaces the board's refusal hint on a failed link", async () => {
+    server.use(
+      http.post("/v1/links", () =>
+        HttpResponse.json({ ok: false, error: "no such doc", hint: "no such doc" }, { status: 400 }),
+      ),
+    );
+    renderRoute("/x", "/x", <LinkDocControl ticketId="s-1" />);
+    fireEvent.change(screen.getByPlaceholderText("document id"), { target: { value: "nope" } });
+    fireEvent.click(screen.getByRole("button", { name: "Link" }));
+    expect(await screen.findByTestId("link-doc-error")).toBeInTheDocument();
+  });
 });
 
 describe("AskRoleControl", () => {
@@ -44,5 +57,17 @@ describe("AskRoleControl", () => {
       expect(body).toEqual({ ticket_id: "s-1", kind: "question", to: "qa", text: "can you re-run it?" }),
     );
     expect(await screen.findByTestId("ask-role-ok")).toBeInTheDocument();
+  });
+
+  it("surfaces the board's refusal hint on a failed ask", async () => {
+    server.use(
+      http.post("/v1/messages", () =>
+        HttpResponse.json({ ok: false, error: "not allowed", hint: "not allowed" }, { status: 403 }),
+      ),
+    );
+    renderRoute("/x", "/x", <AskRoleControl ticketId="s-1" />);
+    fireEvent.change(screen.getByLabelText("Question"), { target: { value: "why?" } });
+    fireEvent.click(screen.getByRole("button", { name: /Ask the/ }));
+    expect(await screen.findByTestId("ask-role-error")).toBeInTheDocument();
   });
 });
