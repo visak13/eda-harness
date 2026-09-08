@@ -16,9 +16,12 @@ import {
   getPeople,
   getResolved,
 } from "../api/decisions";
+import { getSeats, getPoolCapabilities } from "../api/seats";
+import type { PoolCapabilities } from "../api/types";
 import { Composer } from "../components/Composer";
 import { GateForm } from "../components/GateForm";
 import { RulingDrawer } from "../components/RulingDrawer";
+import { SeatTableRow } from "./Seats";
 import { useDraftGuard } from "../live/useDraftGuard";
 import styles from "./Decisions.module.css";
 
@@ -108,7 +111,7 @@ export function DecisionsPage(): React.JSX.Element {
       </div>
 
       <aside className={styles.rail} aria-label="Status">
-        <SeatsNow people={people.data ?? []} />
+        <SeatsNow />
         <PeopleRow people={people.data ?? []} />
         <EpicPulse epics={epics.data ?? []} />
       </aside>
@@ -369,25 +372,33 @@ function Conversations({ rows, people }: { rows: ConversationRow[]; people: Pers
 }
 
 // ------------------------------------------------------------------ right rail
-function SeatsNow({ people }: { people: PersonRow[] }): React.JSX.Element {
-  const seats = people.filter((p) => p.type === "agent");
+// "Seats, now" (design §4.2): the SAME row the Seats page uses (SeatTableRow), driven by the SAME
+// /v1/seats source and the shared 60s presence rule — so this strip is honest by construction (the
+// true latest status, or "Last work update unavailable" only when a seat has reported none) and can
+// never drift from the Seats page. A 280px rail, so the wide row scrolls inside its own box.
+function SeatsNow(): React.JSX.Element {
+  const seatsQ = useQuery({ queryKey: ["seats"], queryFn: getSeats, retry: false });
+  const capsQ = useQuery({ queryKey: ["pool", "capabilities"], queryFn: getPoolCapabilities, retry: false });
+  const caps = capsQ.data as PoolCapabilities | undefined;
+  const seats = seatsQ.data?.seats ?? [];
   return (
     <section className={styles.railCard} data-testid="seats-now">
       <h2 className={styles.sectionTitle}>Seats, now</h2>
       <p className={styles.railHint}>Shell alive ≠ work progressing</p>
-      {seats.length === 0 ? (
-        <p className={styles.calm}>No agent seats are alive.</p>
+      {seatsQ.isError ? (
+        <p className={styles.calm}>Seats are unavailable right now.</p>
+      ) : seats.length === 0 ? (
+        <p className={styles.calm}>No agent seats yet.</p>
       ) : (
-        <ul className={styles.seatList}>
-          {seats.map((s) => (
-            <li key={s.id} className={styles.seatRow}>
-              <span className={styles.seatRole}>{s.role}</span>
-              <span className={styles.seatTicket}>{s.seat_ticket ?? "—"}</span>
-              <span className={styles.seatState}>{s.seat_state}</span>
-              <span className={styles.seatStatus}>Last work update unavailable</span>
-            </li>
-          ))}
-        </ul>
+        <div className={styles.seatsNowScroll}>
+          <table className={styles.seatsNowTable}>
+            <tbody>
+              {seats.map((s) => (
+                <SeatTableRow key={s.id} seat={s} caps={caps} />
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   );

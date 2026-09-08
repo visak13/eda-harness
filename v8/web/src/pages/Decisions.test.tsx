@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, within, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router";
 import { http, HttpResponse } from "msw";
 import type { FeedEvent } from "../live/feed";
 import { server } from "../test/setup";
@@ -33,6 +34,7 @@ interface Fixtures {
   people?: unknown[];
   conversations?: unknown[];
   epics?: unknown[];
+  seats?: unknown[];
 }
 
 function setBoard(f: Fixtures) {
@@ -50,6 +52,9 @@ function setBoard(f: Fixtures) {
     http.get("/v1/me/people", () => HttpResponse.json({ ok: true, value: f.people ?? [] })),
     http.get("/v1/me/conversations", () => HttpResponse.json({ ok: true, value: f.conversations ?? [] })),
     http.get("/v1/epics/summary", () => HttpResponse.json({ ok: true, value: f.epics ?? [] })),
+    http.get("/v1/seats", () => HttpResponse.json({ ok: true, value: { seats: f.seats ?? [], people: [] } })),
+    http.get("/v1/pool/capabilities", () =>
+      HttpResponse.json({ ok: true, value: { resume_parked: true, resume_closed: false, park: true, spawn: false } })),
     http.post("/v1/messages/resolve", () => HttpResponse.json({ ok: true, value: { to: null, wakes: [], plan: [], note: "nobody is woken" } })),
   );
 }
@@ -58,9 +63,11 @@ function mount() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <DraftGuardProvider>
-        <DecisionsPage />
-      </DraftGuardProvider>
+      <MemoryRouter>
+        <DraftGuardProvider>
+          <DecisionsPage />
+        </DraftGuardProvider>
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -101,14 +108,21 @@ describe("Decisions home", () => {
     expect(pulse.querySelector("progress")).toBeNull();
   });
 
-  it("Seats-now lists the alive agent seat with its ticket and 'Last work update unavailable'", async () => {
+  it("Seats-now reuses the Seats row from /v1/seats: alive seat, its ticket, honest 'no update'", async () => {
     setBoard({
-      people: [{ id: "engineer.s-9", handle: "engineer.s-9", type: "agent", role: "engineer", seat_ticket: "s-9", seat_state: "alive", label: "engineer seat", self: false }],
+      seats: [{
+        id: "engineer.s-9", handle: "engineer.s-9", role: "engineer", state: "alive",
+        ticket_id: "s-9", ticket_title: "Ship the sheet", last_output_at: new Date().toISOString(),
+        latest_status: null, reason: null,
+      }],
     });
     mount();
     const seats = await screen.findByTestId("seats-now");
-    expect(await within(seats).findByText("s-9")).toBeInTheDocument();
-    expect(within(seats).getByText("Last work update unavailable")).toBeInTheDocument();
+    // the SAME row component the Seats page uses (SeatTableRow) renders here
+    expect(await within(seats).findByTestId("seat-row")).toBeInTheDocument();
+    expect(within(seats).getByText("s-9")).toBeInTheDocument();
+    // honest by construction: a seat that reported no status says so, never a fake progress number
+    expect(within(seats).getByTestId("no-status")).toHaveTextContent("Last work update unavailable");
     expect(within(seats).getByText("Shell alive ≠ work progressing")).toBeInTheDocument();
   });
 

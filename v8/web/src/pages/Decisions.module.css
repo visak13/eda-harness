@@ -426,3 +426,18 @@
     gap: 32px;
   }
 }
+
+/* "Seats, now" reuses the wide Seats row (SeatTableRow) in a 280px rail — let it scroll in its box. */
+.seatsNowScroll {
+  overflow-x: auto;
+}
+.seatsNowTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.seatsNowTable td {
+  padding: 8px 6px;
+  border-top: 1px solid var(--line);
+  vertical-align: top;
+}
