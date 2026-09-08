@@ -134,6 +134,17 @@ def test_ui_verdict_form_carries_the_rendered_version(rig):
     assert r.status_code == 422
 
 
+def test_agent_patch_path_defaults_evidence_version_to_current(rig):
+    # ruling m-fb5296bfbd: the agent paths (PATCH /v1/criteria, MCP tool) may omit the version, but
+    # the board defaults it to the evidence doc's CURRENT version and records it — no null-version
+    # sign-off on any path. Move the doc to v2 first so "current" is unambiguous.
+    c = rig["client"]
+    c.patch(f"/v1/docs/{rig['doc']}", json={"body_md": "# v2"}, headers={"X-Participant": "craft"})
+    r = c.patch(f"/v1/criteria/{rig['kcrit']}", json={"verdict": "pass"},
+                headers={"X-Participant": "alice"}).json()
+    assert r["ok"] and r["value"]["evidence_version"] == 2
+
+
 # --- finding 4: a staged upload is invisible to everyone but its uploader ----------------------
 
 

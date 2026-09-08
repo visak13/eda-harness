@@ -161,6 +161,9 @@ def test_full_flow(raw_client, board):
     verdict = ALL_TOOLS["criterion_update"].handler(
         ALL_TOOLS["criterion_update"].args_model(id=crit_id, verdict="pass"))
     assert verdict["ok"], verdict
+    # §14 ruling m-fb5296bfbd: the MCP path may omit evidence_version, but the board defaults it to
+    # the evidence doc's CURRENT version and records it — no verdict signs a doc without a version.
+    assert verdict["value"]["evidence_version"] == 1
 
     done = ALL_TOOLS["ticket_update"].handler(
         ALL_TOOLS["ticket_update"].args_model(id=epic_id, status="done"))

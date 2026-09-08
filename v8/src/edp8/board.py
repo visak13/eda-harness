@@ -818,20 +818,28 @@ class Board:
                     raise BoardError("scope", "the doer cannot verdict its own ticket")
             if verdict != Verdict.pending and not c.evidence_ref:
                 raise BoardError("transition", "a verdict needs evidence_ref first", "criterion_update(evidence_ref=...)")
-            if verdict != Verdict.pending and evidence_version is not None:
-                # §14 finding 3: a verdict names the doc version it signed off. Refuse to rule an
-                # OLDER version than the doc's current one (the author moved it after you read) unless
-                # stale_ok — otherwise a stale sign-off silently blesses text nobody checked.
+            if verdict != Verdict.pending:
+                # §14 finding 3: a verdict names the doc version it signed off. evidence_ref is
+                # always a doc, so every pass/fail records a version — no null-version bypass of the
+                # stale check on ANY path (ruling m-fb5296bfbd).
                 ed = self.store.get("doc", c.evidence_ref) if c.evidence_ref else None
                 cur = getattr(ed, "version", None)
-                if cur is not None and evidence_version < cur and not stale_ok:
-                    raise BoardError("transition",
-                                     f"you are ruling version {evidence_version} but the doc is now v{cur}; "
-                                     f"re-read and pass evidence_version={cur}, or stale_ok=true to sign the old one")
-                if cur is not None and evidence_version > cur:
-                    raise BoardError("transition", f"the doc has no version {evidence_version} (current v{cur})",
-                                     f"pass evidence_version={cur}")
-                c.evidence_version = evidence_version
+                if evidence_version is not None:
+                    # Refuse an OLDER version than the doc's current one (the author moved it after
+                    # you read) unless stale_ok, and a nonexistent future version outright.
+                    if cur is not None and evidence_version < cur and not stale_ok:
+                        raise BoardError("transition",
+                                         f"you are ruling version {evidence_version} but the doc is now v{cur}; "
+                                         f"re-read and pass evidence_version={cur}, or stale_ok=true to sign the old one")
+                    if cur is not None and evidence_version > cur:
+                        raise BoardError("transition", f"the doc has no version {evidence_version} (current v{cur})",
+                                         f"pass evidence_version={cur}")
+                    c.evidence_version = evidence_version
+                elif cur is not None:
+                    # The two agent paths (PATCH /v1/criteria, MCP criterion_update) may omit the
+                    # version; default it to the doc's CURRENT version and record it. The two human
+                    # paths (/v1/me/verdict, legacy form) require it explicitly.
+                    c.evidence_version = cur
             c.verdict = verdict
         self.store.put("criterion", c)
         pending = [x.id for x in self.criteria(t.id) if x.verdict != Verdict.passed]
