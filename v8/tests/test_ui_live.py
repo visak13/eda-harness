@@ -50,7 +50,9 @@ def test_no_meta_refresh_anywhere_and_pages_carry_poll_scope(client, rig, ui_pre
     for path, params, scope in ((f"{ui_prefix}/me", {"as": "owner"}, "me"),
                                 (f"{ui_prefix}/epic/{rig['epic']}", {"as": "owner"}, f"epic:{rig['epic']}"),
                                 (f"{ui_prefix}/ticket/{rig['story']}", {"as": "owner"}, f"ticket:{rig['story']}"),
-                                (f"{ui_prefix}/activity", {"as": "owner"}, "me"), (f"{ui_prefix}/tickets", {}, "all"), (f"{ui_prefix}", {}, "all")):
+                                (f"{ui_prefix}/activity", {"as": "owner"}, "me"),
+                                (f"{ui_prefix}/tickets", {}, "all"),
+                                (f"{ui_prefix}", {}, "all")):
         page = client.get(path, params=params).text
         assert "http-equiv" not in page, path
         assert f"data-poll='{scope}'" in page and "data-seq='" in page, path

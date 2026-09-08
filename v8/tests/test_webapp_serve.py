@@ -1,8 +1,12 @@
-"""S1 seam: the Vite SPA served by FastAPI under `/app` with an immutable asset cache,
-a no-store SPA fallback, and a 503 "not built" page when the bundle is absent — while the
-legacy `/ui` and every `/v1` route are unaffected (design §4.1, §4.4a; criterion
-c-35447ca142). Cases 1–3 require the built bundle (`npm --prefix web run build`); case 4
-proves create_app() still boots with no bundle."""
+"""S1 seam: the Vite SPA served by FastAPI with an immutable asset cache, a no-store SPA
+fallback, and a 503 "not built" page when the bundle is absent — while the legacy renderer
+and every `/v1` route are unaffected (design §4.1, §4.4a; criterion c-35447ca142).
+
+The cutover (S12) fixed the built base at `/ui/` (vite base 8680dbc), so the SPA only serves
+correctly at the prefix it was built for — `/ui` under the shipping folio default. The two
+built-bundle cases therefore run in folio mode and assert `/ui/assets/`; the mount mechanics
+(503 fallback, mount_spa returns) stay prefix-agnostic. Case 4 proves create_app() still
+boots with no bundle."""
 
 from __future__ import annotations
 
@@ -38,21 +42,35 @@ def client(monkeypatch):
     return c
 
 
+@pytest.fixture
+def folio_client(monkeypatch):
+    # The dist is built with vite base /ui/, so it serves correctly only where the mount prefix
+    # matches — /ui under folio. Pin folio here (overriding the autouse ui_prefix fixture) so the
+    # SPA the built bundle asserts against is the one create_app actually serves.
+    monkeypatch.setattr(broker_adapter, "publish", lambda *a: True)
+    monkeypatch.setenv("EDP8_UI", "folio")
+    board = Board(Store(":memory:"))
+    c = TestClient(create_app(board, admin_token="t"))
+    assert c.post("/v1/participants", json={"type": "human", "role": "owner", "handle": "owner", "id": "owner"},
+                  headers=ADMIN).json()["ok"]
+    return c
+
+
 @needs_build
-def test_app_prefix_serves_index_html_no_store(client):
-    r = client.get("/app/anything", params={"as": "owner"})
+def test_app_prefix_serves_index_html_no_store(folio_client):
+    r = folio_client.get("/ui/anything", params={"as": "owner"})
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/html")
     assert r.headers.get("cache-control") == "no-store"
-    assert '<div id="root">' in r.text and "/app/assets/" in r.text
+    assert '<div id="root">' in r.text and "/ui/assets/" in r.text
 
 
 @needs_build
-def test_app_assets_are_immutably_cached(client):
-    index = client.get("/app/", params={"as": "owner"}).text
-    m = re.search(r"/app/assets/([^\"']+)", index)
-    assert m, "built index.html should reference a fingerprinted /app/assets/* file"
-    a = client.get("/app/assets/" + m.group(1))
+def test_app_assets_are_immutably_cached(folio_client):
+    index = folio_client.get("/ui/", params={"as": "owner"}).text
+    m = re.search(r"/ui/assets/([^\"']+)", index)
+    assert m, "built index.html should reference a fingerprinted /ui/assets/* file"
+    a = folio_client.get("/ui/assets/" + m.group(1))
     assert a.status_code == 200
     assert a.headers.get("cache-control") == "public, max-age=31536000, immutable"
 
