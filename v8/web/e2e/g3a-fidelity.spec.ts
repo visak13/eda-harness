@@ -1,6 +1,7 @@
 import { expect, test, type Locator } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { seedEpic, type G3aFixture } from "./g3a.seed";
+import { GEOMETRY } from "./geometry";
 
 // G3a fidelity + accessibility (c-a23e72f460): at 1440×900 the epic page matches the Folio plate
 // (744/336 split, gap 64, Georgia 38 title, Georgia 22 owner's-words quote, accentwash+3px-rule
@@ -28,18 +29,18 @@ test.describe("epic page fidelity @ 1440×900", () => {
     // Two-column split: main content 744, rail 336, gap 64.
     const rail = page.getByRole("complementary", { name: "Epic details" });
     const rb = (await rail.boundingBox())!;
-    expect(Math.abs(rb.width - 336)).toBeLessThan(1);
+    expect(Math.abs(rb.width - GEOMETRY.homeGrid.right)).toBeLessThan(1);
     const mainCol = page.getByRole("tablist").locator("..");
     const mb = (await mainCol.boundingBox())!;
-    expect(Math.abs(mb.width - 744)).toBeLessThan(1);
-    expect(Math.abs(rb.x - (mb.x + mb.width) - 64)).toBeLessThan(1);
+    expect(Math.abs(mb.width - GEOMETRY.homeGrid.left)).toBeLessThan(1);
+    expect(Math.abs(rb.x - (mb.x + mb.width) - GEOMETRY.homeGrid.gap)).toBeLessThan(1);
 
     // Title Georgia 38; owner's-words quote Georgia 22.
     const h1 = page.locator("main h1");
-    expect(await style(h1, "font-family")).toContain("Georgia");
-    expect(await style(h1, "font-size")).toBe("38px");
+    expect(await style(h1, "font-family")).toContain(GEOMETRY.type.h1.family);
+    expect(await style(h1, "font-size")).toBe(`${GEOMETRY.type.h1.px}px`);
     const quote = page.locator("blockquote");
-    expect(await style(quote, "font-family")).toContain("Georgia");
+    expect(await style(quote, "font-family")).toContain(GEOMETRY.type.h1.family);
     expect(await style(quote, "font-size")).toBe("22px");
 
     // Directive callout: accentwash ground + 3px accentink left rule.
@@ -53,13 +54,13 @@ test.describe("epic page fidelity @ 1440×900", () => {
       const s = getComputedStyle(el, "::after");
       return { h: s.height, bg: s.backgroundColor };
     });
-    expect(under.h).toBe("3px");
+    expect(under.h).toBe(`${GEOMETRY.tabUnderline}px`);
     expect(under.bg).toBe(ACCENTINK);
 
     // Steer button 40px tall.
     const steer = page.getByRole("button", { name: "Steer this epic" });
     const stb = (await steer.boundingBox())!;
-    expect(Math.abs(stb.height - 40)).toBeLessThan(1);
+    expect(Math.abs(stb.height - GEOMETRY.button.h)).toBeLessThan(1);
   });
 });
 

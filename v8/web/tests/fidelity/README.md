@@ -7,17 +7,23 @@ cited by criterion `c-80b50710a6`.
 ## 1. Geometry (DOM measurement) — `e2e/fidelity.spec.ts`, `e2e/g3a-fidelity.spec.ts`
 
 The shell and page geometry are measured live with `boundingBox()` and `getComputedStyle`, then
-asserted against the design tokens in **`src/theme/geometry.ts`** (the single source of truth —
-the same module the CSS-in-JS / module.css values derive from, so a token and its test never drift).
-A failure reports **measured vs expected** via the `expectPx(actual, token, label)` helper, e.g.
+asserted against the **canonical EXPECTED** design values in **`e2e/geometry.ts`** (`GEOMETRY`,
+design §4.2 — the single source of the expected numbers). This module and the CSS are **independent
+on purpose**: the CSS does **not** derive from `geometry.ts`. It holds what the design says the
+geometry *should* be; the spec measures what the live DOM (driven by the real CSS) *is*, and
+`expectPx` compares them. So the moment a real CSS value diverges from the design token the check
+FAILS — that independence is what makes the check load-bearing (if the CSS derived from this module,
+the two could never disagree and the check would rubber-stamp itself).
+
+A failure reports **measured vs expected** via the `expectPx(actual, expected, label)` helper, e.g.
 
 ```
-sidebar width — expected 216 (token layout.sidebar), measured 200 (Δ16 > 1px)
+sidebar width — measured 200, expected 216 (Δ-16.0 > 1px)
 ```
 
-The deliberately-changed-token check for `c-7c51c6b69b`: flip one token (e.g. `layout.sidebar`
-216→200) and the geometry project fails with that measured-vs-expected line — proving the check
-is load-bearing, not a rubber stamp.
+The deliberately-changed-token check for `c-7c51c6b69b`: change one real CSS geometry value (e.g.
+sidebar `216→200px`) and the geometry project fails with that measured-vs-expected line — proving
+the check is load-bearing, not a rubber stamp.
 
 Tolerance: **±1px** on every geometry token (sub-pixel rounding only).
 

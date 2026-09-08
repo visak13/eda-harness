@@ -1,4 +1,8 @@
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { GEOMETRY } from "./geometry";
+import { bandDiffRatio, expectPx, readPng } from "./fidelity-helpers";
+import { seedEpic, type G3aFixture } from "./g3a.seed";
 
 // Criterion c-fee415dda3: at 1440×900 the shell geometry, tokens, type and focus ring
 // match the Folio plate (design §4.2, board-concepts-r2/source/design.css `.folio`).
@@ -12,6 +16,10 @@ const ACCENTINK = "rgb(135, 63, 56)"; // #873F38
 const style = (loc: Locator, prop: string) =>
   loc.evaluate((el, p) => getComputedStyle(el).getPropertyValue(p), prop);
 
+// Reference plates (full-page 1440×900 win32 renders), decoded once.
+const plate = (name: string) =>
+  readPng(readFileSync(new URL(`./design-reference/${name}`, import.meta.url)));
+
 test.describe("shell fidelity @ 1440×900", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
@@ -21,33 +29,33 @@ test.describe("shell fidelity @ 1440×900", () => {
     // Sidebar: x=0, width 216, background = the rail token.
     const sidebar = page.locator("aside");
     const sb = (await sidebar.boundingBox())!;
-    expect(sb.x).toBeLessThan(1);
-    expect(Math.abs(sb.width - 216)).toBeLessThan(1);
+    expectPx(sb.x, GEOMETRY.sidebar.x, "sidebar x");
+    expectPx(sb.width, GEOMETRY.sidebar.w, "sidebar width");
     expect(await style(sidebar, "background-color")).toBe(RAIL);
 
     // Header: height 72, starting at x=216.
     const header = page.getByTestId("app-header");
     const hb = (await header.boundingBox())!;
-    expect(Math.abs(hb.x - 216)).toBeLessThan(1);
-    expect(Math.abs(hb.height - 72)).toBeLessThan(1);
+    expectPx(hb.x, GEOMETRY.header.x, "header x");
+    expectPx(hb.height, GEOMETRY.header.h, "header height");
 
     // Main: x=256, width 1144.
     const main = page.locator("main");
     const mb = (await main.boundingBox())!;
-    expect(Math.abs(mb.x - 256)).toBeLessThan(1);
-    expect(Math.abs(mb.width - 1144)).toBeLessThan(1);
+    expectPx(mb.x, GEOMETRY.main.x, "main x");
+    expectPx(mb.width, GEOMETRY.main.w, "main width");
 
     // Active nav row (Decisions on /me): 43px tall, on the panel colour, icon in accentink.
     const active = page.locator("a[aria-current='page']");
     const ab = (await active.boundingBox())!;
-    expect(Math.abs(ab.height - 43)).toBeLessThan(1);
+    expectPx(ab.height, 43, "active nav row height");
     expect(await style(active, "background-color")).toBe(PANEL);
     expect(await style(active.locator("[data-nav-icon] svg"), "color")).toBe(ACCENTINK);
 
     // Page h1: Georgia 38px.
     const h1 = page.locator("main h1");
-    expect(await style(h1, "font-family")).toContain("Georgia");
-    expect(await style(h1, "font-size")).toBe("38px");
+    expect(await style(h1, "font-family")).toContain(GEOMETRY.type.h1.family);
+    expect(await style(h1, "font-size")).toBe(`${GEOMETRY.type.h1.px}px`);
 
     // Focus ring on a nav link: 2px accentink, offset 3px. Keyboard focus so :focus-visible
     // engages (the first Tab lands on the Decisions link, first focusable in the DOM).
@@ -63,8 +71,70 @@ test.describe("shell fidelity @ 1440×900", () => {
       };
     });
     expect(ring.text).toContain("Decisions");
-    expect(ring.width).toBe("2px");
-    expect(ring.offset).toBe("3px");
+    expect(ring.width).toBe(`${GEOMETRY.focus.width}px`);
+    expect(ring.offset).toBe(`${GEOMETRY.focus.offset}px`);
     expect(ring.color).toBe(ACCENTINK);
+  });
+});
+
+// --- Band pixelmatch (image diff) — criterion c-80b50710a6 ------------------------------------
+// The rail + header chrome bands are the fixed target; the content area (seeded rows/copy) will
+// never pixel-match a live board, so it is logged, never asserted (see tests/fidelity/README.md:
+// per-pixel threshold 0.1, band ratio ≤ 5%, content logged-only). Plates are win32 renders, so the
+// whole block is skipped off win32 to match the visual-baseline policy.
+test.describe("shell fidelity — band pixelmatch @ 1440×900", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+  test.skip(process.platform !== "win32", "reference plates are win32 renders (visual-baseline policy)");
+
+  let fx: G3aFixture;
+  test.beforeAll(async () => {
+    fx = await seedEpic();
+  });
+
+  const RAIL_BAND = GEOMETRY.bands.rail;
+  const HEADER_BAND = GEOMETRY.bands.header;
+  // Content area: right of the rail, below the header (logged, never asserted).
+  const CONTENT_BAND = {
+    x: GEOMETRY.header.x,
+    y: GEOMETRY.header.h,
+    w: 1440 - GEOMETRY.header.x,
+    h: 900 - GEOMETRY.header.h,
+  };
+
+  async function bandCheck(page: Page, url: string, plateName: string, label: string) {
+    await page.goto(url);
+    await expect(page.locator("main h1")).toBeVisible();
+    const shot = readPng(await page.screenshot());
+    const ref = plate(plateName);
+
+    const rail = bandDiffRatio(shot, ref, RAIL_BAND);
+    const header = bandDiffRatio(shot, ref, HEADER_BAND);
+    const content = bandDiffRatio(shot, ref, CONTENT_BAND);
+    console.log(
+      `[fidelity ${label}] rail band diff=${(rail * 100).toFixed(2)}% header band diff=${(header * 100).toFixed(2)}% content diff=${(content * 100).toFixed(2)}% (content logged-only)`,
+    );
+    expect(rail, `${label} rail band`).toBeLessThanOrEqual(0.05);
+    expect(header, `${label} header band`).toBeLessThanOrEqual(0.05);
+  }
+
+  test("home rail + header bands match folio-home.png", async ({ page }) => {
+    await bandCheck(page, `${BASE}/ui/me?as=owner`, "folio-home.png", "home");
+  });
+
+  // The rail + header are the outer shell chrome — identical bands on the epic page — so the epic
+  // plate's chrome is a real, asserting check too.
+  test("epic rail + header bands match folio-epic.png", async ({ page }) => {
+    await bandCheck(page, `${BASE}/ui/epic/${fx.epic}?as=owner`, "folio-epic.png", "epic");
+  });
+
+  // TODO(qa): ruling-drawer band vs folio-ruling.png. The drawer opens from a pending owner-checked
+  // criterion's "Review evidence" (fx.signoffCriterion) → the ruling drawer (design §17). Wiring the
+  // exact open-drawer route + focused state into this fixture is left for the full qa run; the
+  // helper + band pattern above apply unchanged once the drawer URL/interaction is settled.
+  test.fixme("ruling drawer band matches folio-ruling.png", async ({ page }) => {
+    // qa: open the ruling drawer from fx.signoffCriterion's "Review evidence", then band-check
+    // the drawer chrome vs plate("folio-ruling.png") with bandDiffRatio — same pattern as above.
+    void page;
+    void fx;
   });
 });
