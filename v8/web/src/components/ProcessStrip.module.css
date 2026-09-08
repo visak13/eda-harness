@@ -1,0 +1,57 @@
+/* Process strip (folio-ticket): full main width, ordered stages with arrows between, the current
+   stage underlined and tagged "current", a next-action sentence beneath. Flat — no chips, no fill. */
+
+.strip {
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 16px 0;
+  margin: 8px 0 24px;
+}
+
+.stages {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin: 0;
+  padding: 0;
+  font-size: 14px;
+}
+
+.stage {
+  color: var(--muted);
+}
+.stage.past {
+  color: var(--ink);
+}
+.stage.current {
+  color: var(--ink);
+  font-weight: 600;
+  border-bottom: 2px solid var(--accentink);
+  padding-bottom: 2px;
+}
+.currentTag {
+  color: var(--accentink);
+  font-weight: 600;
+}
+
+.arrow {
+  color: var(--strongline);
+}
+
+.offLine {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--accentink);
+}
+
+.next {
+  margin: 12px 0 0;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--ink);
+}
+.nextLabel {
+  font-weight: 700;
+}
