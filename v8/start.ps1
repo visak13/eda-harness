@@ -95,7 +95,7 @@ function Start-Board {
   for ($i=0; $i -lt 60 -and -not (Probe $BOARD_PORT "/v1/health"); $i++) { Start-Sleep -Milliseconds 250 }
   WriteState "board" $p.Id $BOARD_PORT
   try { & uv run --directory $HOMEDIR python -m edp8.bootstrap --board "http://127.0.0.1:$BOARD_PORT" --admin $ADMIN --owner $OWNER | Out-Null } catch {}
-  Write-Host "board    up   pid $($p.Id)  http://127.0.0.1:$BOARD_PORT  (SPA: /app)"
+  Write-Host "board    up   pid $($p.Id)  http://127.0.0.1:$BOARD_PORT  (SPA: /ui)"
 }
 
 function Start-Broker {

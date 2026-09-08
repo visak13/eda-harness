@@ -3,7 +3,7 @@ c-e36e437482).
 
 Proves both mappings on one board, parametrised by mode, WITHOUT deleting the legacy renderer:
   folio  (default) — SPA at /ui, legacy renderer reachable at /ui-legacy/*, /ui/poll fixed
-  legacy           — legacy renderer at /ui, SPA at /app, /ui/poll fixed
+  legacy           — legacy renderer at /ui, NO SPA mounted (one-flag rollback), /ui/poll fixed
 and that /ui/poll answers identically under both, plus the missing-build 503 under folio.
 
 The rich legacy-renderer characterisation lives in test_ui_live / test_views (pinned to
@@ -61,7 +61,9 @@ def test_legacy_mode_restores_previous_mapping(monkeypatch):
     c = _app(monkeypatch, "legacy")
     me = c.get("/ui/me", params={"as": "owner"})
     assert me.status_code == 200 and "id='page-body'" in me.text  # legacy renderer back at /ui
-    assert c.get("/app").status_code in (200, 503)  # SPA at /app
+    # One-flag rollback (c-a8c1be7137): no second bundle — the SPA is not mounted anywhere.
+    assert c.get("/app").status_code == 404
+    assert c.get("/app/x").status_code == 404
     # /ui-legacy is NOT mounted in legacy mode.
     assert c.get("/ui-legacy/me", params={"as": "owner"}).status_code == 404
 

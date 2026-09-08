@@ -87,7 +87,7 @@ start_board() {
   local pid=$!; for _ in $(seq 1 60); do probe "$BOARD_PORT" /v1/health && break; sleep 0.25; done
   write_state board "$pid" "$BOARD_PORT"
   uv run --directory "$HOMEDIR" python -m edp8.bootstrap --board "http://127.0.0.1:$BOARD_PORT" --admin "$ADMIN" --owner "$OWNER" >/dev/null 2>&1 || true
-  echo "board    up   pid $pid  http://127.0.0.1:$BOARD_PORT  (SPA: /app)"
+  echo "board    up   pid $pid  http://127.0.0.1:$BOARD_PORT  (SPA: /ui)"
 }
 
 start_broker() {

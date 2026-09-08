@@ -46,6 +46,13 @@ exclude = ["src/edp8/webapp/dist"]
 [tool.hatch.build.targets.wheel.force-include]
 "src/edp8/webapp/dist" = "edp8/webapp/dist"
 
+# `uv build` (no flag) builds the sdist first, then the wheel FROM that sdist. hatch's sdist honours
+# .gitignore, so without this the gitignored dist never enters the tarball and the wheel stage dies
+# with "Forced include not found: …/src/edp8/webapp/dist". Carry dist into the sdist so the built
+# SPA survives the sdist→wheel round-trip. (qa cold run 2026-09-08; c-f54afda4db.)
+[tool.hatch.build.targets.sdist]
+artifacts = ["src/edp8/webapp/dist/**"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

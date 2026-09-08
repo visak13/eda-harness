@@ -102,10 +102,12 @@ def test_missing_dist_yields_503_not_built_and_app_still_boots(tmp_path: Path):
 
 
 def test_real_create_app_boots_even_if_bundle_absent(monkeypatch, tmp_path):
-    # Point the default dist somewhere empty and prove create_app() itself does not raise.
+    # Under folio the SPA owns /ui; point the default dist somewhere empty and prove create_app()
+    # itself does not raise — /ui serves the 503 not-built page instead of failing construction.
+    monkeypatch.setenv("EDP8_UI", "folio")
     monkeypatch.setattr("edp8.webapp.serve.DIST_DIR", tmp_path / "nope")
     monkeypatch.setattr(broker_adapter, "publish", lambda *a: True)
     app = create_app(Board(Store(":memory:")), admin_token="t")
     c = TestClient(app)
-    assert c.get("/app/x").status_code == 503
+    assert c.get("/ui/x").status_code == 503
     assert c.get("/healthz").json()["ok"] is True

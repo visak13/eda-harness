@@ -11,7 +11,7 @@ Ten objects, six invariants, role-scoped MCP bundles. Spec: `../claude/docs/desi
 
 | service | port | what it is for |
 |---|---|---|
-| **board** | 9400 | the source of truth — tickets, docs, criteria, events; also serves the SPA at `/app` |
+| **board** | 9400 | the source of truth — tickets, docs, criteria, events; also serves the Folio SPA at `/ui` (`EDP8_UI=folio`, the default) |
 | **broker** | 9300 | the wake plane — shell inboxes, channels, SSE events; wakes parked shells |
 | **pool** | 9301 | spawns / parks / reaps the Claude shells, one per seat |
 | **mcp** | 9402 | the one shared MCP server every shell's tools talk to |
@@ -37,7 +37,7 @@ the pids recorded in its own `EDP8_RUN_DIR`, so a private/test fleet can never t
 5. `npx --prefix web playwright install chromium`   — only if you will run the win32 visual/e2e specs.
 6. `copy .env.example .env`   — then edit ports/secrets if the defaults do not suit.
 7. `.\start.ps1`   — brings up board, broker, pool, mcp, bridge; prints pids + URLs; builds the SPA if `src\edp8\webapp\dist` is missing.
-8. Open the printed board URL (`http://127.0.0.1:9400/app`). `.\stop.ps1` brings it all down.
+8. Open the printed board URL (`http://127.0.0.1:9400/ui`). `.\stop.ps1` brings it all down.
 
 ## Fresh machine — Linux
 
@@ -48,7 +48,7 @@ the pids recorded in its own `EDP8_RUN_DIR`, so a private/test fleet can never t
 5. `npx --prefix web playwright install chromium`   — only for local Playwright runs (CI skips them).
 6. `cp .env.example .env`   — then edit if needed.
 7. `chmod +x start.sh stop.sh && ./start.sh`   — builds the SPA if its dist is missing, then starts everything.
-8. Open `http://127.0.0.1:9400/app`. `./stop.sh` brings it all down.
+8. Open `http://127.0.0.1:9400/ui`. `./stop.sh` brings it all down.
 
 A missing `uv` or `node` makes `start.*` exit non-zero with a one-line message naming the tool.
 

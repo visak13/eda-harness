@@ -3,7 +3,7 @@
 #
 # EDP8_UI (S12 cutover, design 4.1) selects which renderer owns /ui at board boot:
 #   folio  (default) - Folio SPA at /ui, legacy server-rendered UI kept at /ui-legacy (rollback)
-#   legacy           - legacy UI back at /ui, SPA at /app (the pre-cutover mapping)
+#   legacy           - legacy UI back at /ui, NO SPA mounted (one-flag rollback, no second bundle)
 # /ui/poll and every /v1 route are identical under both. Rollback the SPA in one flag:
 #   $env:EDP8_UI = 'legacy'; scripts\start-board.ps1 -Restart     (the launcher restarts the board)
 # The SPA must be built with a matching base (EDP8_WEB_BASE, default /ui/): npm --prefix web run build.

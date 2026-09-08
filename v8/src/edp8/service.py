@@ -984,16 +984,18 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     from .ui import router as ui_router
     from .webapp import mount_spa
 
-    # Cutover switch (design §4.1 Transition, S12). EDP8_UI selects which renderer owns /ui:
+    # Cutover switch (design §4.1 Transition, S12; rollback contract narrowed by ruling on
+    # report-0e7081b562's second opinion — c-a8c1be7137). EDP8_UI selects which renderer owns /ui:
     #   folio  (default) — SPA at /ui, legacy renderer kept at /ui-legacy as a one-flag rollback
-    #   legacy           — legacy renderer at /ui, SPA at /app (the pre-cutover mapping)
+    #   legacy           — legacy renderer at /ui, and NO SPA is mounted (one flag, one bundle): a
+    #                      /ui-built bundle cannot also serve at /app because BASE_URL is compiled in,
+    #                      so the rollback is simply "the SPA is off; the legacy renderer is /ui".
     # The legacy router ALWAYS registers the fixed /ui/poll route (its prefix never moves poll),
-    # and is included BEFORE the SPA catch-all so /ui/poll and every /v1 route keep priority.
-    # A missing build → 503 page from mount_spa, never a failed create_app() (webapp/serve.py).
+    # and under folio is included BEFORE the SPA catch-all so /ui/poll and every /v1 route keep
+    # priority. A missing build under folio → 503 page from mount_spa, never a failed create_app().
     ui_mode = os.environ.get("EDP8_UI", "folio").strip().lower()
     if ui_mode == "legacy":
         app.include_router(ui_router(board, verify=human_verify, public=public, prefix="/ui"))
-        mount_spa(app, os.environ.get("EDP8_WEB_PREFIX", "/app"))
     else:  # folio
         app.include_router(ui_router(board, verify=human_verify, public=public, prefix="/ui-legacy"))
         mount_spa(app, "/ui")

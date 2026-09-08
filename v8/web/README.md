@@ -25,10 +25,10 @@ production seams the S1 spike proved (`src/auth/identity.ts`, `src/live/feed.ts`
 
 `create_app` reads **`EDP8_UI`** at board boot:
 
-| `EDP8_UI` | `/ui` | `/ui-legacy` | `/app` | `/ui/poll` |
+| `EDP8_UI` | `/ui` | `/ui-legacy` | SPA mounted? | `/ui/poll` |
 |---|---|---|---|---|
-| **`folio`** (default) | Folio SPA | legacy server-rendered UI (rollback) | — | poll (unchanged) |
-| `legacy` | legacy server-rendered UI | — | Folio SPA | poll (unchanged) |
+| **`folio`** (default) | Folio SPA | legacy server-rendered UI (rollback) | yes, at `/ui` | poll (unchanged) |
+| `legacy` | legacy server-rendered UI | — | **no** (one-flag rollback) | poll (unchanged) |
 
 `/ui/poll` and every `/v1` route answer identically under both. The legacy renderer is **retained**,
 not deleted (its retirement is a follow-up epic — see the retire-legacy plan note on story
@@ -36,8 +36,10 @@ not deleted (its retirement is a follow-up epic — see the retire-legacy plan n
 open the SPA under `folio`.
 
 **Rollback the SPA in one flag** (a seat never restarts the shared board — ask the launcher/owner):
-`EDP8_UI=legacy` then `scripts/start-board.ps1 -Restart`. The SPA bundle must be built with a matching
-base — **`EDP8_WEB_BASE` defaults to `/ui/`** (was `/app/` during the build phase); `npm --prefix web run build`.
+`EDP8_UI=legacy` then `scripts/start-board.ps1 -Restart`. There is **no second bundle** — a `/ui`-built
+SPA cannot also serve at `/app` (its `BASE_URL` is compiled in), so legacy mode simply turns the SPA
+off and hands `/ui` back to the legacy renderer. The `/ui` bundle is built at **`EDP8_WEB_BASE=/ui/`**
+(the default; was `/app/` during the pre-cutover build phase); `npm --prefix web run build`.
 
 Backend serve + wheel + serve tests (from `v8/`):
 
@@ -93,15 +95,20 @@ uv build --wheel && python -m zipfile -l dist/edp8-*.whl | grep webapp/dist   # 
 ### 5. Wheel / Docker packaging of a gitignored `dist/`
 - `src/edp8/webapp/dist/` is **gitignored** (regenerated) yet **force-included** into the wheel:
   `pyproject.toml [tool.hatch.build.targets.wheel.force-include] "src/edp8/webapp/dist" = "edp8/webapp/dist"`.
-  Proven: `uv build --wheel` → the wheel contains `edp8/webapp/dist/index.html`, while
+  Because `uv build` (no flag) builds the sdist first and the wheel *from* that sdist, and hatch's
+  sdist honours `.gitignore`, the sdist must also carry `dist`
+  (`[tool.hatch.build.targets.sdist] artifacts = ["src/edp8/webapp/dist/**"]`) — otherwise the
+  wheel-from-sdist stage fails with `Forced include not found`. Proven: `uv build` (no flag) → the
+  wheel contains `edp8/webapp/dist/index.html` + hashed `assets/*`, while
   `git status --short src/edp8/webapp/dist` is empty.
 - `Dockerfile`: a `node:24-alpine` stage runs `npm --prefix web ci && npm --prefix web run build`
   (writing `/app/src/edp8/webapp/dist`), copied into the `python:3.12-slim` stage before `pip install .`.
   `engines.node` is `>=24` (LL §13), agreeing with the Docker node version. A `.dockerignore` keeps the
   context small (excludes `.venv`, `.data`, `node_modules`, `dist`, `.git`).
 - Proven: `docker build -t edp8-spike:s1 .` succeeds, and
-  `docker run --rm -p 9410:9400 -e EDP8_HOST=0.0.0.0 edp8-spike:s1` serves `GET /app/x?as=owner` (200,
-  `Cache-Control: no-store`, referencing `/app/assets/*`).
+  `docker run --rm -p 9410:9400 -e EDP8_HOST=0.0.0.0 edp8-spike:s1` serves the Folio SPA at
+  `GET /ui/x?as=owner` (200, `Cache-Control: no-store`, referencing `/ui/assets/*`) under the
+  `EDP8_UI=folio` default.
 - **force-include vs non-VCS builds.** Outside git (the Docker stage copies `dist` but excludes `.git`),
   hatch's file selection includes *everything* under the package, so `dist` was added twice — once by
   `packages` and once by `force-include` — failing with `A second file is being added ... at the same
