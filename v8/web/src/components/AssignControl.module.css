@@ -1,0 +1,83 @@
+/* Assign / spawn control (folio-ticket): plain stacked form + one spawn action. No card of its own. */
+
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.current {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink);
+}
+.currentLabel {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.row {
+  display: flex;
+  gap: 8px;
+}
+.input {
+  flex: 1;
+  font: inherit;
+  border: 1px solid var(--line);
+  padding: 6px 8px;
+  background: var(--canvas, #fff);
+  color: var(--ink);
+}
+.input:focus {
+  outline: 2px solid var(--accentink);
+  outline-offset: 1px;
+}
+
+.btn,
+.spawn {
+  font: inherit;
+  font-weight: 600;
+  color: var(--accentink);
+  background: none;
+  border: 1px solid var(--accentink);
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.spawn {
+  text-align: left;
+}
+.btn:hover:not(:disabled),
+.spawn:hover:not(:disabled) {
+  background: var(--accentwash, transparent);
+}
+.btn:disabled,
+.spawn:disabled {
+  color: var(--muted);
+  border-color: var(--line);
+  cursor: not-allowed;
+}
+
+.note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--muted);
+}
+.error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--accentink);
+}

@@ -39,6 +39,11 @@ function mount(data: TicketPageData) {
       okJson({ status: data.ticket.status, transitions: [{ to: "done", allowed: true, reason: null }] }),
     ),
   );
+  server.use(
+    http.get("/v1/pool/capabilities", () =>
+      okJson({ resume_parked: true, resume_closed: false, park: true, spawn: false, reason: "no pool in tests" }),
+    ),
+  );
   server.use(http.post("/v1/messages/resolve", () => okJson({ to: null, wakes: [], plan: [], note: "" })));
   renderRoute("/ticket/s-1?as=owner", "/ticket/:id", <TicketPage />);
 }

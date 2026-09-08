@@ -7,6 +7,7 @@ import { StatusChip } from "../components/StatusChip";
 import { ProcessStrip } from "../components/ProcessStrip";
 import { StatusControl } from "../components/StatusControl";
 import { AddCriterion } from "../components/CriterionControls";
+import { AssignControl } from "../components/AssignControl";
 import { CriterionCard } from "../components/CriterionCard";
 import { Composer } from "../components/Composer";
 import { useDocDrawer } from "../components/DocDrawer";
@@ -142,6 +143,11 @@ export function TicketPage(): React.JSX.Element {
           <section className={ui.card} id="change-status">
             <div className={ui.sectionLabel}>Change status</div>
             <StatusControl ticketId={id} currentStatus={ticket.status as TicketStatus} />
+          </section>
+
+          <section className={ui.card}>
+            <div className={ui.sectionLabel}>Seat</div>
+            <AssignControl ticketId={id} currentAssignee={assignee.handle ?? ticket.assignee ?? null} />
           </section>
 
           <section className={ui.card}>
