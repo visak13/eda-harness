@@ -1,0 +1,68 @@
+/* Link-doc + ask-a-role controls (folio-ticket): plain stacked blocks. */
+
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+.label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.input,
+.select,
+.textarea {
+  font: inherit;
+  border: 1px solid var(--line);
+  padding: 6px 8px;
+  background: var(--canvas, #fff);
+  color: var(--ink);
+}
+.input {
+  flex: 1;
+}
+.textarea {
+  resize: vertical;
+}
+.input:focus,
+.select:focus,
+.textarea:focus {
+  outline: 2px solid var(--accentink);
+  outline-offset: 1px;
+}
+.btn {
+  font: inherit;
+  font-weight: 600;
+  color: var(--accentink);
+  background: none;
+  border: 1px solid var(--accentink);
+  padding: 6px 12px;
+  cursor: pointer;
+  align-self: flex-start;
+}
+.btn:hover:not(:disabled) {
+  background: var(--accentwash, transparent);
+}
+.btn:disabled {
+  color: var(--muted);
+  border-color: var(--line);
+  cursor: not-allowed;
+}
+.ok {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink);
+}
+.error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--accentink);
+}

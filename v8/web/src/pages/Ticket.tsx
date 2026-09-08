@@ -9,6 +9,7 @@ import { StatusControl } from "../components/StatusControl";
 import { AddCriterion } from "../components/CriterionControls";
 import { AssignControl } from "../components/AssignControl";
 import { GateOpenControl } from "../components/GateOpenControl";
+import { LinkDocControl, AskRoleControl } from "../components/TicketAsks";
 import { CriterionCard } from "../components/CriterionCard";
 import { Composer } from "../components/Composer";
 import { useDocDrawer } from "../components/DocDrawer";
@@ -156,6 +157,13 @@ export function TicketPage(): React.JSX.Element {
           <section className={ui.card}>
             <div className={ui.sectionLabel}>Raise a decision</div>
             <GateOpenControl ticketId={id} />
+          </section>
+
+          <section className={ui.card}>
+            <div className={ui.sectionLabel}>Link &amp; ask</div>
+            <LinkDocControl ticketId={id} />
+            <div className={styles.controlGap} />
+            <AskRoleControl ticketId={id} />
           </section>
 
           <section className={ui.card}>

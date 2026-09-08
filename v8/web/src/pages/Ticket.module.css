@@ -196,3 +196,7 @@
 .addCrit[open] .addCritSummary {
   margin-bottom: 12px;
 }
+
+.controlGap {
+  height: 16px;
+}
