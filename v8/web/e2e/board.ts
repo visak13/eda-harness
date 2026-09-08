@@ -60,6 +60,22 @@ export interface Seeded {
   epic: string;
 }
 
+/**
+ * The spawned board must NEVER reach the fleet's pool/broker or carry the launching seat's identity:
+ * a pool shell's env has EDP_POOL_URL set, and with it the test board starts the pool watcher and
+ * S22's checker pairing spawns REAL qa/reviewer shells on the fleet pool for seeded test epics
+ * (2026-09-08: qa.epic-2b3bea99e0, an epic that exists only in an e2e temp DB, burned a live seat).
+ */
+const FLEET_ONLY_ENV = [
+  "EDP_POOL_URL", "EDP8_POOL_WATCH", "EDP_BROKER_URL", "EDP8_BOARD_URL", "EDP8_PUBLIC_URL",
+  "EDP8_TOKEN", "EDP_HANDLE", "EDP8_PARTICIPANT", "EDP_ROLE", "EDP_SPAWN_SESSION_ID", "EDP8_ADMIN_TOKEN",
+];
+function hermeticEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = { ...env };
+  for (const k of FLEET_ONLY_ENV) delete out[k];
+  return out;
+}
+
 /** Spawn a board, wait healthy, seed owner + one epic. Returns base URL + seeded ids. */
 export async function startBoard(): Promise<Seeded> {
   const port = await freePort();
@@ -74,7 +90,7 @@ export async function startBoard(): Promise<Seeded> {
     shell: true, // resolve the launcher on PATH (Windows)
     stdio: "inherit",
     env: {
-      ...process.env,
+      ...hermeticEnv(process.env),
       EDP8_HOST: "127.0.0.1",
       EDP8_PORT: String(port),
       EDP8_DB: path.join(tmpHome, "edp8.db"),
