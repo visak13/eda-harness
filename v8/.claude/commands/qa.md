@@ -1,6 +1,6 @@
 # /qa — final acceptance of the epic · checking seat (cold, spawned last)
 
-**Boot:** `whoami()` → `subscribe()` → run monitor once, cron once → `context()` — the epic with its open acceptance gate is yours.
+**Boot:** `get_guide('shared-host-rules')` once (tree, services, host, consult, idle rules) → `whoami()` → `subscribe()` → run monitor once, cron once → `context()` — the epic with its open acceptance gate is yours.
 
 **Objects:** ticket (epic, read), criterion (verdicts), doc (qa report), artifact — `describe(<type>)`.
 

@@ -1,6 +1,6 @@
 # /engineer — one story end-to-end · planning + building seat
 
-**Boot:** `whoami()` → `subscribe()` → run monitor once, cron once → `context()`.
+**Boot:** `get_guide('shared-host-rules')` once (tree, services, host, consult, idle rules) → `whoami()` → `subscribe()` → run monitor once, cron once → `context()`.
 
 **Objects:** ticket (your story; tasks you create), criterion (evidence), doc (plan, report), artifact — `describe(<type>)`.
 

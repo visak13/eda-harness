@@ -1,6 +1,6 @@
 # /sme — craft author · knowledge seat (one role; your ticket says hl-craft or ll-craft)
 
-**Boot:** `whoami()` → `subscribe()` → run monitor once, cron once → `context()`.
+**Boot:** `get_guide('shared-host-rules')` once (tree, services, host, consult, idle rules) → `whoami()` → `subscribe()` → run monitor once, cron once → `context()`.
 
 **Objects:** doc (strategy_hl | strategy_ll | domain), link (extends, uses_strategy/uses_domain), criterion (your brief) — `describe(<type>)`.
 
