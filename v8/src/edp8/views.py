@@ -225,6 +225,63 @@ def people_for(board: Board, viewer: Participant) -> list[dict[str, Any]]:
     return [p for p in _roster(board, viewer) if not p["self"]]
 
 
+def _latest_seat_status(board: Board, pid: str) -> dict[str, Any] | None:
+    """The seat's most recent record_status, as the note it wrote + who/when — separate from any
+    presence signal (design §18.3: a status is what the seat SAID, never inferred from silence).
+    None when the seat has recorded nothing (the UI shows 'Last work update unavailable')."""
+    msgs = board.store.query("message", {"created_by": pid, "kind": MessageKind.status})
+    if not msgs:
+        return None
+    m = max(msgs, key=lambda x: x.created_at)
+    note = m.text
+    if note.startswith("[") and "] " in note:  # strip the "[status] " prefix record_status adds
+        note = note.split("] ", 1)[1]
+    p = _participant(board, pid)
+    return {"text": note, "status": (m.status.value if getattr(m, "status", None) else None),
+            "role": p.role.value if p else None, "at": m.created_at.isoformat()}
+
+
+def seats_for(board: Board, viewer: Participant) -> dict[str, Any]:
+    """The Seats destination (design §4.2, §18.3): one row per agent SEAT — its LATEST session row,
+    closed/dead seats INCLUDED (unlike the recipient roster, which omits them) — plus a People block
+    of humans with no shell state. Composed from participants + sessions + each seat's latest
+    record_status message (the sources the parity matrix names for the Seats page). Presence AGE is
+    deliberately left to the client: the row carries `last_output_at`/`presence_stale_since` and the
+    client applies the 60s rule, so silence is never rendered here as a death (design §18.3)."""
+    latest_by_pid: dict[str, Any] = {}
+    for s in board.store.query("session", {}):
+        cur = latest_by_pid.get(s.participant_id)
+        if cur is None or s.created_at > cur.created_at:
+            latest_by_pid[s.participant_id] = s
+
+    seats: list[dict[str, Any]] = []
+    people: list[dict[str, Any]] = []
+    for c in sorted(board.store.query("participant", {}), key=lambda c: (c.type != "human", c.handle or "")):
+        if not c.handle or c.handle.startswith(("__", "wt-")):
+            continue
+        if c.type == "human":
+            people.append({"id": c.id, "handle": c.handle, "role": c.role.value})
+            continue
+        s = latest_by_pid.get(c.id)
+        tk = board.store.get("ticket", s.ticket_id) if (s and s.ticket_id) else None
+        seats.append({
+            "id": c.id, "handle": c.handle, "role": c.role.value,
+            # state None = an agent seat with no mirrored session here → client reads 'Availability
+            # unknown' (a remote seat), never a death.
+            "state": s.state.value if s else None,
+            "ticket_id": s.ticket_id if s else None,
+            "ticket_title": tk.title if tk else None,
+            "last_output_at": s.last_output_at.isoformat() if (s and s.last_output_at) else None,
+            "presence_stale_since": s.presence_stale_since.isoformat() if (s and s.presence_stale_since) else None,
+            "reason": (s.reason if s else ""),
+            "latest_status": _latest_seat_status(board, c.id),
+        })
+    # Alive first, then parked, stalled, closed/dead, unknown; ties by handle (folio-seats order).
+    rank = {"alive": 0, "parked": 1, "stalled": 2, "dead": 3}
+    seats.sort(key=lambda r: (rank.get(r["state"], 4), r["handle"]))
+    return {"seats": seats, "people": people}
+
+
 def conversations_for(board: Board, viewer: Participant) -> list[dict[str, Any]]:
     """One row per ticket that involves the viewer — unanswered asks first (unread), then the
     viewer's open tickets by recent traffic. Each row carries the last message (design §18.2)."""

@@ -261,3 +261,65 @@ def test_tokens_require_x_token(monkeypatch, tmp_path):
     assert c.get("/v1/me/summary", headers=OWN).status_code == 401
     r = c.get("/v1/me/summary", headers={**OWN, "X-Token": "s3cr3t"}).json()
     assert r["ok"], r
+
+
+def test_seats_lists_agent_seats_closed_and_humans(rig):
+    """GET /v1/seats (S10, design §4.2/§18.3): agent seats — closed ones INCLUDED with their
+    reason — plus a People block of humans, and each seat's latest record_status separate from
+    presence. Composed from participants + sessions + status messages."""
+    c = rig["client"]
+    story, seat = rig["story"], rig["seat"]
+
+    # The engineer seat records a status → it should surface as latest_status (note, role, time),
+    # with the "[reviewed]" prefix stripped to the plain note.
+    r = c.post("/v1/status", json={"ticket_id": story, "status": "reviewed",
+                                   "note": "Owner checks are ready for review."},
+               headers={"X-Participant": seat})
+    assert r.json()["ok"], r.json()
+
+    # A parked seat and a CLOSED (dead + reason) seat, each its own participant + session.
+    for pid, role, state, sid, reason in [
+        (f"reviewer.{story}", "reviewer", "parked", "sid-parked", ""),
+        (f"qa.{story}", "qa", "dead", "sid-dead", "closed by self: work completed; session saved"),
+    ]:
+        c.post("/v1/participants", json={"type": "agent", "role": role, "handle": pid, "id": pid}, headers=ADMIN)
+        c.put(f"/v1/sessions/{sid}", json={"participant_id": pid, "ticket_id": story, "pool_id": "local",
+                                           "state": state, "reason": reason}, headers=ADMIN)
+
+    val = _get(rig, "/v1/seats")
+    seats = {s["id"]: s for s in val["seats"]}
+    people = {p["id"]: p for p in val["people"]}
+
+    # Humans in the People block, no seat state anywhere on them.
+    assert people["owner"]["role"] == "owner" and "state" not in people["owner"]
+    assert "ravi" in people
+
+    # The alive engineer seat: state, ticket title, and its latest status (prefix stripped).
+    eng = seats[seat]
+    assert eng["state"] == "alive"
+    assert eng["ticket_title"] == "fix the ship sheet"
+    assert eng["latest_status"]["text"] == "Owner checks are ready for review."
+    assert eng["latest_status"]["status"] == "reviewed"
+    assert eng["latest_status"]["role"] == "engineer"
+
+    # The closed seat is present WITH its reason verbatim (never dropped from the list).
+    closed = seats[f"qa.{story}"]
+    assert closed["state"] == "dead"
+    assert closed["reason"] == "closed by self: work completed; session saved"
+
+    # The parked seat is present; the sme seat 'craft' never had a session → state None (unknown).
+    assert seats[f"reviewer.{story}"]["state"] == "parked"
+    assert seats["craft"]["state"] is None
+    assert seats["craft"]["latest_status"] is None  # never recorded a status
+
+    # Alive sorts before parked before dead (folio-seats order).
+    order = [s["id"] for s in val["seats"]]
+    assert order.index(seat) < order.index(f"reviewer.{story}") < order.index(f"qa.{story}")
+
+
+def test_seats_readable_by_any_participant(rig):
+    """Seats is not owner-scoped — any authenticated participant sees the roster (parity with
+    /v1/sessions). A reviewer gets the same shape as the owner."""
+    r = rig["client"].get("/v1/seats", headers=RAVI).json()
+    assert r["ok"], r
+    assert "seats" in r["value"] and "people" in r["value"]

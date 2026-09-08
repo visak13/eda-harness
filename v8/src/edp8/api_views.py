@@ -77,6 +77,13 @@ def views_router(board: Board, actor: Callable[..., Participant]) -> APIRouter:
     def me_people(a: Participant = Depends(actor)):
         return ok(views.people_for(board, a), "who you can reach — humans and live agent seats")
 
+    @r.get("/v1/seats")
+    def seats(a: Participant = Depends(actor)):
+        """The Seats page (design §4.2, §18.3): agent seats with presence signals + closed seats
+        with their reason, and a People block of humans. The client applies the 60s presence rule."""
+        return ok(views.seats_for(board, a),
+                  "agent seats (closed included) + humans; client reads presence age, never death from silence")
+
     @r.get("/v1/me/conversations")
     def me_conversations(a: Participant = Depends(actor)):
         return ok(views.conversations_for(board, a))

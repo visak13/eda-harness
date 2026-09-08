@@ -37,12 +37,15 @@ export function usePageFrameCtx(): Ctx {
 }
 
 /** A page declares its framing sentence and the glossary terms it shows. Registered on mount,
- *  cleared on unmount so a route change never leaves a stale sentence or term list behind. */
+ *  cleared on unmount so a route change never leaves a stale sentence or term list behind. Safe to
+ *  call OUTSIDE a provider (a page unit-tested in isolation) — it simply no-ops there. */
 export function usePageFrame(framing: string, terms: TermRef[] = []): void {
-  const { setFrame } = usePageFrameCtx();
+  const ctx = useContext(PageFrameContext);
+  const setFrame = ctx?.setFrame;
   // Serialise terms so the effect only re-runs when the actual content changes, not each render.
   const key = terms.map((t) => `${t.category}:${t.value}`).join(",");
   useEffect(() => {
+    if (!setFrame) return;
     setFrame({ framing, terms });
     return () => setFrame(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps

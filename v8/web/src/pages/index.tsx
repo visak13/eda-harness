@@ -1,4 +1,4 @@
-import { PageHeader, Placeholder } from "../components/PageHeader";
+import { PageHeader } from "../components/PageHeader";
 
 // Route destinations. Real pages live in their own files and are re-exported here (the barrel
 // main.tsx imports). G3a owns Epics/Epic/Ticket/Doc/Library; G2 owns Decisions; G3b owns Seats.
@@ -12,14 +12,8 @@ export { LibraryPage } from "./Library";
 // DecisionsPage is G2's, now landed (pages/Decisions.tsx).
 export { DecisionsPage } from "./Decisions";
 
-export function SeatsPage(): React.JSX.Element {
-  return (
-    <>
-      <PageHeader title="Seats" subtitle="Who is alive, and what each shell is doing." />
-      <Placeholder story="G3b" />
-    </>
-  );
-}
+// SeatsPage is G3b's, now landed (pages/Seats.tsx).
+export { SeatsPage } from "./Seats";
 
 export function NotFoundPage(): React.JSX.Element {
   return (

@@ -140,6 +140,47 @@ export interface PersonRow {
   self: boolean;
 }
 
+// --------------------------------------------------------------------------- /v1/seats (S10)
+
+/** A seat's most recent record_status — what it SAID about its work, kept separate from any
+ *  presence signal (design §18.3). `null` on a seat that has recorded nothing. */
+export interface SeatStatus {
+  text: string;
+  status: string | null;
+  role: string | null;
+  at: ISODateString;
+}
+
+/** One agent seat row for the Seats page. `state` is null when no session is mirrored here (a
+ *  remote seat → "Availability unknown"). Presence AGE is derived on the client from
+ *  `last_output_at` / `presence_stale_since` — the board never renders silence as death. */
+export interface SeatRow {
+  id: string;
+  handle: string;
+  role: string;
+  state: SessionState | null;
+  ticket_id: string | null;
+  ticket_title: string | null;
+  last_output_at: ISODateString | null;
+  presence_stale_since: ISODateString | null;
+  reason: string;
+  latest_status: SeatStatus | null;
+}
+
+export interface SeatsView {
+  seats: SeatRow[];
+  people: { id: string; handle: string; role: string }[];
+}
+
+/** What the pool supports, read live from /v1/pool/capabilities (never assumed). */
+export interface PoolCapabilities {
+  resume_parked: boolean;
+  resume_closed: boolean;
+  park: boolean;
+  spawn: boolean;
+  reason?: string;
+}
+
 export interface ConversationRow {
   ticket_id: string;
   title: string;
