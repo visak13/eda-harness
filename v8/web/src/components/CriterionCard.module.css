@@ -1,0 +1,153 @@
+.card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 20px 22px;
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.chipRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.chip {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  background: var(--secondary);
+}
+.pending {
+  background: var(--secondary);
+}
+.pass {
+  background: var(--successwash);
+  color: var(--success);
+  border-color: var(--success);
+}
+.fail {
+  background: var(--accentwash);
+  color: var(--accentink);
+  border-color: var(--accent);
+}
+.checkedBy {
+  font-size: 13px;
+  color: var(--muted);
+}
+/* Criterion text: the READING measure — 14/22, at most 72ch, never truncated (design §14). */
+.text {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--ink);
+  max-width: 72ch;
+  margin: 0;
+  white-space: pre-wrap;
+}
+/* The id lives on its own line in the mono face, never inline in the sentence (design §14). */
+.id {
+  font-family: Consolas, "SF Mono", ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--muted);
+}
+.evidenceLink {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--accentink);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+}
+.ruling {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+.condition {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--muted);
+  background: var(--rail);
+  border-left: 3px solid var(--strongline);
+  padding: 10px 12px;
+  border-radius: 6px;
+  margin: 0;
+}
+.noteLabel {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.note {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  background: var(--bg);
+  color: var(--ink);
+  resize: vertical;
+}
+.note:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 3px;
+}
+.error {
+  font-size: 13px;
+  color: var(--accentink);
+  margin: 0;
+}
+.actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+.secondary,
+.primary {
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.secondary {
+  background: var(--secondary);
+  color: var(--ink);
+  border: 1px solid var(--strongline);
+}
+/* Salmon never carries small text: the primary is INK on the accent fill (design §4.2). */
+.primary {
+  background: var(--accent);
+  color: var(--buttonink);
+  border: 1px solid var(--accent);
+}
+.secondary:disabled,
+.primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.recorded {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--ink);
+  margin: 0;
+}
+.footer {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+}

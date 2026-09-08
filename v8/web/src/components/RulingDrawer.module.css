@@ -1,0 +1,115 @@
+/* The ruling body fills the Drawer panel edge-to-edge: cancel the Drawer's 24px body padding so
+   the two panes measure exactly 650 / 462 (design §4.2, criterion c-03436484b6). */
+.grid {
+  display: grid;
+  grid-template-columns: 650px 462px;
+  margin: -24px;
+  min-height: calc(100% + 48px);
+}
+.evidence,
+.pane {
+  box-sizing: border-box;
+  padding: 24px;
+}
+.evidence {
+  width: 650px;
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+}
+.pane {
+  width: 462px;
+  background: var(--rail);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.titleRow {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.crumb {
+  font: 13px/1.4 "Segoe UI", system-ui, sans-serif;
+  color: var(--muted);
+}
+.kofn {
+  font: 13px/1.4 "Segoe UI", system-ui, sans-serif;
+  color: var(--muted);
+}
+.evLabel {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.versionPill {
+  font-size: 11px;
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink);
+  background: var(--secondary);
+  letter-spacing: 0;
+}
+.evTitle {
+  font: 31px/1.2 Georgia, serif;
+  color: var(--ink);
+  margin: 10px 0 8px;
+}
+.author {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 16px;
+}
+.avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accentwash);
+  color: var(--accentink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+}
+.loading {
+  color: var(--muted);
+  font-size: 14px;
+}
+.fullReport {
+  display: inline-block;
+  margin-top: 16px;
+  color: var(--accentink);
+  font-size: 13px;
+  text-decoration: none;
+}
+.newerBanner {
+  background: var(--accentwash);
+  border-left: 3px solid var(--accentink);
+  border-radius: 6px;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--accentink);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.staleBtn {
+  align-self: flex-start;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid var(--accentink);
+  background: transparent;
+  color: var(--accentink);
+  font-size: 13px;
+  cursor: pointer;
+}

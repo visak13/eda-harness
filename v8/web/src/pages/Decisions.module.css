@@ -1,0 +1,428 @@
+/* Home split 744 / 336, gap 64 (design §4.2, criterion c-f7b9e7983c). */
+.grid {
+  display: grid;
+  grid-template-columns: 744px 336px;
+  gap: 64px;
+  align-items: start;
+}
+.main {
+  min-width: 0;
+}
+.title {
+  font: 38px/1.1 Georgia, serif;
+  color: var(--ink);
+  margin: 0 0 16px;
+}
+.refresh {
+  display: inline-block;
+  margin-bottom: 12px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accentwash);
+  color: var(--accentink);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Tabs: 3px accentink underline on the active tab (criterion c-f7b9e7983c). */
+.tabs {
+  display: flex;
+  gap: 20px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 20px;
+}
+.tab {
+  background: none;
+  border: none;
+  padding: 8px 2px;
+  margin-bottom: -1px;
+  font-size: 14px;
+  color: var(--muted);
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tabActive {
+  color: var(--ink);
+  border-bottom-color: var(--accentink);
+}
+.tabCount {
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--secondary);
+  border-radius: 999px;
+  padding: 0 7px;
+}
+
+.calm {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+/* Featured sign-off: 3px salmon TOP rule, Georgia 27 title, padding 23 (criterion c-f7b9e7983c). */
+.featured {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--panel);
+}
+.featuredTop {
+  height: 3px;
+  background: var(--accent);
+}
+.featuredBody {
+  padding: 23px;
+}
+.featuredCrumb {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.featuredTitle {
+  font: 27px/1.2 Georgia, serif;
+  color: var(--ink);
+  margin: 0 0 10px;
+}
+.featuredExcerpt {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--ink);
+  margin: 0 0 12px;
+  max-width: 66ch;
+}
+.docRef {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 16px;
+}
+/* Salmon carries no small text: INK on the accent fill, 40px high (design §4.2). */
+.reviewBtn {
+  height: 40px;
+  padding: 0 20px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--buttonink);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.moreDocs {
+  margin-top: 20px;
+}
+.moreCount {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.moreList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.moreRow {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--ink);
+  text-align: left;
+}
+.moreTicket {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* Questions */
+.questions {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.qGroupTitle {
+  font: 18px/1.3 Georgia, serif;
+  color: var(--ink);
+  margin: 0 0 10px;
+}
+.question {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--panel);
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.qMeta {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.qAsker {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.qNote {
+  font-size: 12px;
+  color: var(--muted);
+}
+.qText {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--ink);
+  margin: 0;
+}
+.replyBtn {
+  align-self: flex-start;
+  background: var(--secondary);
+  border: 1px solid var(--strongline);
+  border-radius: 6px;
+  height: 32px;
+  padding: 0 14px;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.gates {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.resolved {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.resolvedRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 14px;
+}
+.resolvedWhat {
+  color: var(--ink);
+}
+.resolvedTicket {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* Conversations */
+.convos {
+  margin-top: 32px;
+}
+.convosHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.convosControls {
+  display: flex;
+  gap: 12px;
+}
+.sectionTitle {
+  font: 18px/1.3 Georgia, serif;
+  color: var(--ink);
+  margin: 0 0 12px;
+}
+.linkBtn {
+  background: none;
+  border: none;
+  color: var(--accentink);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+}
+.convoList {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.convoRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 13px;
+}
+.unreadDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+}
+.convoTitle {
+  color: var(--ink);
+  font-weight: 600;
+}
+.convoWhy {
+  color: var(--muted);
+}
+.convoLast {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.convoClosed {
+  opacity: 0.75;
+}
+.convoFlag {
+  color: var(--accentink);
+  font-size: 12px;
+}
+.closedSeats {
+  margin-top: 10px;
+}
+
+/* right rail */
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.railCard {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--panel);
+}
+.railHint {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 0 10px;
+}
+.seatList,
+.peopleList,
+.pulseList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.seatRow {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 6px 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+.seatRole {
+  font-weight: 600;
+  color: var(--ink);
+}
+.seatTicket {
+  font-family: Consolas, ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--muted);
+}
+.seatState {
+  color: var(--success);
+}
+.seatStatus {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 12px;
+}
+.peopleList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.personChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.personAvatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accentwash);
+  color: var(--accentink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+}
+.pulseRow {
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pulseTop {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.pulseStatus {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accentink);
+  text-transform: capitalize;
+}
+.pulseTitle {
+  font-size: 13px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pulseReason {
+  font-size: 12px;
+  color: var(--muted);
+}
+.pulseCriteria {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Below 960 the split becomes one column, right rail below (design §4.2 viewport rule). */
+@media (max-width: 959px) {
+  .grid {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+}

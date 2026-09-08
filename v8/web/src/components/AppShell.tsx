@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { identity } from "../auth/identity";
-import { subscribeFeed } from "../live/feed";
+import { DraftGuardProvider, useDraftGuard } from "../live/useDraftGuard";
+import { DocDrawerProvider } from "./DocDrawer";
 import { ThemePicker } from "../theme/ThemePicker";
 import { Icon } from "./Icon";
 import styles from "./AppShell.module.css";
@@ -42,12 +43,23 @@ function crumbFor(pathname: string): string {
   return "Decisions";
 }
 
+// AppShell is wrapped in the DraftGuardProvider so the WHOLE chrome (its live pill included) and
+// every page share ONE feed subscription and one draft-guarded refresh (design §4.2: "G2 turns
+// [the live pill] into the draft-guarded refresh"). The chrome is a child so it can read the
+// guard via context.
 export function AppShell(): React.JSX.Element {
-  const qc = useQueryClient();
+  return (
+    <DraftGuardProvider>
+      <AppShellChrome />
+    </DraftGuardProvider>
+  );
+}
+
+function AppShellChrome(): React.JSX.Element {
   const location = useLocation();
   const as = identity();
   const [popoverOpen, setPopoverOpen] = useState(false);
-  const [newEvents, setNewEvents] = useState(0);
+  const { pending, flush } = useDraftGuard();
   const identityRef = useRef<HTMLDivElement>(null);
 
   // Seam 1+2 proof + identity display: an authenticated /v1 call that succeeds on a
@@ -68,18 +80,9 @@ export function AppShell(): React.JSX.Element {
     retry: false,
   });
 
-  // Live plane: feed events invalidate server-state queries; a visible "N new" pill is the
-  // parity stub for the legacy live pill (G2 turns it into the draft-guarded refresh).
-  useEffect(() => {
-    const stop = subscribeFeed(
-      () => {
-        setNewEvents((n) => n + 1);
-        qc.invalidateQueries();
-      },
-      { onError: () => void 0 },
-    );
-    return stop;
-  }, [qc]);
+  // Live plane is owned by the DraftGuardProvider (one subscription for the whole app). The pill
+  // reflects its `pending` count and flushes on click — held while a composer is dirty so a
+  // half-typed reply is never wiped (design §4.2).
 
   // Close the identity popover on outside click / Escape.
   useEffect(() => {
@@ -189,15 +192,15 @@ export function AppShell(): React.JSX.Element {
           <span className={styles.here}>{crumbFor(location.pathname)}</span>
         </div>
         <div className={styles.headerRight}>
-          {newEvents > 0 ? (
+          {pending > 0 ? (
             <button
               className={styles.btnPrimary}
               type="button"
               data-testid="live-new"
               aria-live="polite"
-              onClick={() => setNewEvents(0)}
+              onClick={flush}
             >
-              {newEvents} new · refresh
+              {pending} new · refresh
             </button>
           ) : (
             <button className={styles.btnPrimary} type="button">
@@ -208,7 +211,9 @@ export function AppShell(): React.JSX.Element {
       </header>
 
       <main className={styles.main}>
-        <Outlet />
+        <DocDrawerProvider>
+          <Outlet />
+        </DocDrawerProvider>
       </main>
     </div>
   );
