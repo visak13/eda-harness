@@ -487,6 +487,12 @@ class Board:
                            {"from": "signed_off", "to": "ready", "by": "board"})
 
     def _after_status(self, t: Ticket) -> None:
+        # §24.1(a) (live failure m-969cb61cfe): a ticket that goes terminal (dropped/done/partial)
+        # closes its own open gates. A dropped epic that kept an open acceptance gate made the boot
+        # re-derivation re-spawn a qa seat for a dead epic — those qa seats then verdicted a LIVE
+        # epic's in_review stories. Retiring the gate the moment the epic dies removes the source.
+        if t.status in _TERMINAL:
+            self._close_open_gates(t)
         # readiness: a successor waiting on this ticket becomes ready the moment this ticket is
         # RELEASED — evidence-complete in_review, or done (design §24.1: done no longer gates).
         if self._released(t):
@@ -592,10 +598,21 @@ class Board:
             if (t.kind == TicketKind.story and t.status == TicketStatus.in_review
                     and self._story_wants_reviewer(t)):
                 self._enqueue_pairing(f"reviewer.{t.id}", Role.reviewer.value, t.id)
-            elif (t.kind == TicketKind.epic and t.status not in (TicketStatus.done, TicketStatus.partial)
+            elif (t.kind == TicketKind.epic and t.status not in _TERMINAL
                     and self.open_gates(t.id, Gate.acceptance)):
-                # a done/partial epic whose gate never closed does not need qa re-spawned
+                # §24.1(a): a terminal epic (done/partial/DROPPED) never re-spawns qa — dropping now
+                # closes its gates too, but excluding dropped here is the belt to that suspenders.
                 self._enqueue_pairing(f"qa.{t.id}", Role.qa.value, t.id)
+
+    def _pairing_epic_active(self, ticket_id: str) -> bool:
+        """§24.1(a): the pairing's epic is still active. A qa pairing's ticket IS the epic; a reviewer
+        pairing's ticket is a story under one. A pairing whose epic is terminal (or gone) is dead."""
+        t = self.store.get("ticket", ticket_id)
+        if t is None:
+            return False
+        epic_id = t.id if t.kind == TicketKind.epic else self._epic_id_of(t.id)
+        epic = self.store.get("ticket", epic_id) if epic_id else None
+        return epic is not None and epic.status not in _TERMINAL
 
     def run_pending_pairings(self) -> dict[str, Any]:
         """Drain the pairing queue: spawn each seat whose RAM headroom is sufficient, drop one that
@@ -612,6 +629,11 @@ class Board:
         failed: list[str] = []
         with self._lock:
             for pid, info in list(self._pending_pairings.items()):
+                if not self._pairing_epic_active(info["ticket"]):
+                    # §24.1(a): the pairing's epic died (dropped/done/partial) while it sat queued —
+                    # drop it rather than spawn a checker for a dead epic.
+                    self._pending_pairings.pop(pid, None)
+                    continue
                 if self._seat_live(pid):
                     self._pending_pairings.pop(pid, None)
                     continue
@@ -1222,15 +1244,23 @@ class Board:
         return ev
 
     def open_gates(self, ticket_id: str, gate: Gate | None = None) -> list[Event]:
-        evs = self.store.query("event", {"subject_id": ticket_id, "kind": [EventKind.gate_opened, EventKind.gate_answered]})
+        evs = self.store.query("event", {"subject_id": ticket_id,
+                                          "kind": [EventKind.gate_opened, EventKind.gate_answered, EventKind.gate_closed]})
         opened: dict[str, Event] = {}
         for e in evs:  # type: ignore[assignment]
             g = e.data.get("gate")
             if e.kind == EventKind.gate_opened:
                 opened[g] = e
-            else:
+            else:  # gate_answered (human word) or gate_closed (§24.1(a) epic retired) both retire it
                 opened.pop(g, None)
         return [e for g, e in opened.items() if gate is None or g == gate]
+
+    def _close_open_gates(self, t: Ticket) -> None:
+        """§24.1(a): retire every open gate on a ticket that has gone terminal (dropped/done/partial),
+        so a dead epic never keeps an acceptance/design_signoff gate that re-derivation would honour."""
+        for e in self.open_gates(t.id):
+            self._emit(t.id, EventKind.gate_closed, {"gate": e.data.get("gate"), "by": "board",
+                                                     "reason": f"{t.kind} {t.id} is {t.status}"})
 
     # ------------------------------------------------------------------ sessions (pool-owned)
     def session_upsert(self, *, id_: str, participant_id: str, ticket_id: str | None, pool_id: str,
@@ -1278,11 +1308,20 @@ class Board:
                     mine.append(t)  # type: ignore[arg-type]
             mine = [t for t in mine if not (t.kind == TicketKind.epic and t.status in _TERMINAL)]
         if p.role in CRITERION_CHECKERS:
+            # §24.1(b) (live failure m-969cb61cfe): a qa seat is named qa.<epic_id> and verdicts ONLY
+            # its own epic. Two qa seats for dropped epics were seeing — and starting to verdict — a
+            # LIVE epic's in_review stories because qa context was not epic-scoped. Confine both the
+            # in_review-story surfacing and the acceptance-gate epics to the seat's own epic.
+            own_epic = p.id.split(".", 1)[1] if (p.role == Role.qa and "." in p.id) else None
             for t in self.store.query("ticket", {"status": TicketStatus.in_review}):
+                if own_epic is not None and self._epic_id_of(t.id) != own_epic:
+                    continue
                 if any(c.checked_by == p.role.value for c in self.criteria(t.id)) and all(x.id != t.id for x in mine):
                     mine.append(t)  # type: ignore[arg-type]
             if p.role == Role.qa:
                 for t in self.store.query("ticket", {"kind": TicketKind.epic}):
+                    if own_epic is not None and t.id != own_epic:
+                        continue
                     if self.open_gates(t.id, Gate.acceptance) and all(x.id != t.id for x in mine):
                         mine.append(t)  # type: ignore[arg-type]
         if not mine:

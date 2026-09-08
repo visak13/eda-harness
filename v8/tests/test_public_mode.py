@@ -136,6 +136,27 @@ def test_public_uncredentialed_participant_is_401(public_client):
     assert r.status_code == 401
 
 
+# --------------------------------------------------------------- §24.1(c) request token wins over env
+
+def test_boardclient_request_token_wins_over_env(monkeypatch):
+    """On the shared proxy the process env EDP8_TOKEN is the PROXY's own secret; a per-request seat
+    token (forwarded X-Token) must override it so a minted-token seat authenticates as itself."""
+    from edp8.client import BoardClient
+    monkeypatch.setenv("EDP8_TOKEN", "proxy-secret")
+    assert BoardClient(participant="eng.x", token="seat-secret")._headers()["X-Token"] == "seat-secret"
+    # no request token → fall back to the process env (the owner's own stdio seat)
+    assert BoardClient(participant="owner")._headers()["X-Token"] == "proxy-secret"
+
+
+def test_mcp_identity_reads_x_token_header():
+    from edp8 import mcp_server
+
+    class _Ctx:
+        headers = {"X-Participant": "eng.x", "X-Session": "s1", "X-Token": "seat-secret"}
+
+    assert mcp_server._identity_from(_Ctx()) == ("eng.x", "s1", "seat-secret")
+
+
 # --------------------------------------------------------------- /v1/health
 
 def test_v1_health_shape(monkeypatch):

@@ -337,3 +337,63 @@ def test_finding12_drafted_task_may_be_dropped_without_a_criterion():
     # ...but cancelling never-started work (drafted → dropped) stays legal
     board.ticket_update(r["engineer"], task.id, status=TicketStatus.dropped)
     assert board.ticket(task.id).status == TicketStatus.dropped
+
+
+# ============================================================ S22 reopen §24.1(a)/(b)/(c)
+# (live failure m-969cb61cfe: a restarted board spawned qa for two DROPPED epics whose acceptance
+# gates were left open, and those qa seats then verdicted a LIVE epic's in_review stories.)
+
+# --------------------------------------------------------------- (a) drop closes the epic's gates
+def test_reopen_a_drop_closes_the_epics_open_gates():
+    board = make_board(StubPool(), free_mb=lambda: 4096)
+    r = rig(board)
+    epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
+    board.gate_open(epic.id, Gate.acceptance)
+    assert board.open_gates(epic.id, Gate.acceptance)  # open before the drop
+    board.ticket_update(r["owner"], epic.id, status=TicketStatus.dropped)
+    assert board.open_gates(epic.id) == []  # the drop retired the gate (gate_closed)
+    kinds = [e.kind for e in board.store.query("event", {"subject_id": epic.id})]
+    assert EventKind.gate_closed in kinds
+
+
+def test_reopen_a_dropped_epic_is_not_rederived_after_a_restart():
+    """The live failure: a dropped epic must never re-spawn qa on a board restart."""
+    store = Store(":memory:")
+    board = Board(store, pool=StubPool(), free_mb=lambda: 4096)
+    r = rig(board)
+    epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
+    board.gate_open(epic.id, Gate.acceptance)
+    board.ticket_update(r["owner"], epic.id, status=TicketStatus.dropped)
+    board2 = Board(store, pool=StubPool(), free_mb=lambda: 4096)  # a restart
+    assert f"qa.{epic.id}" not in board2._pending_pairings
+    assert board2.run_pending_pairings()["spawned"] == []
+
+
+def test_reopen_a_sweep_skips_a_pairing_whose_epic_died():
+    """A qa pairing already enqueued in memory when its epic is dropped is dropped, not spawned."""
+    pool = StubPool()
+    board = make_board(pool, free_mb=lambda: 4096)
+    r = rig(board)
+    epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
+    board.gate_open(epic.id, Gate.acceptance)
+    assert f"qa.{epic.id}" in board._pending_pairings
+    board.ticket_update(r["owner"], epic.id, status=TicketStatus.dropped)
+    out = board.run_pending_pairings()
+    assert out["spawned"] == [] and pool.spawns == []
+    assert f"qa.{epic.id}" not in board._pending_pairings  # popped as a dead-epic pairing
+
+
+# --------------------------------------------------------------- (b) qa context scoped to its epic
+def test_reopen_b_qa_context_is_scoped_to_its_own_epic():
+    """qa.<epicA> sees only epicA's in_review stories and epicA's acceptance gate — never epicB's,
+    the exact cross-epic leak that let dropped-epic qa seats verdict a live epic's stories."""
+    board = make_board(StubPool(), free_mb=lambda: 4096)
+    r = rig(board)
+    epic_a = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="A")
+    epic_b = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="B")
+    sa, _ = story_to_in_review(board, r, epic_a, title="SA", tags=())  # qa-checked (default)
+    sb, _ = story_to_in_review(board, r, epic_b, title="SB", tags=())
+    qa_a = board.participant_create("agent", Role.qa, f"qa.{epic_a.id}", id_=f"qa.{epic_a.id}")
+    ids = {t.id for t in board.my_tickets(qa_a)}
+    assert sa.id in ids and epic_a.id in ids       # its own epic's story + epic surface
+    assert sb.id not in ids and epic_b.id not in ids  # the sibling epic is invisible

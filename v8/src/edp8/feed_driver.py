@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import threading
 import time
@@ -28,10 +29,20 @@ def _print(obj: dict) -> None:
         sys.stdout.flush()
 
 
+def _headers(participant: str) -> dict[str, str]:
+    """Identity headers for the board: the seat handle plus its per-seat secret (S20 mints
+    EDP8_TOKEN into the spawn env; a tokened board 401s a bare X-Participant)."""
+    h = {"X-Participant": participant}
+    token = os.environ.get("EDP8_TOKEN")
+    if token:
+        h["X-Token"] = token
+    return h
+
+
 def _stream_board_once(board: str, participant: str, since: int) -> int:
     """Stream board events; returns the last seen seq (or `since` if none arrived)."""
     last = since
-    headers = {"X-Participant": participant}
+    headers = _headers(participant)
     with httpx.Client(timeout=httpx.Timeout(connect=10.0, read=60.0, write=10.0, pool=10.0)) as client:
         with client.stream("GET", f"{board}/v1/feed", params={"since": last}, headers=headers) as resp:
             resp.raise_for_status()
@@ -99,7 +110,7 @@ def run() -> None:
     # event arrives. Best-effort — an old board without the route just omits it.
     try:
         with httpx.Client(timeout=10.0) as c:
-            r = c.get(f"{args.board}/v1/listening", headers={"X-Participant": args.participant})
+            r = c.get(f"{args.board}/v1/listening", headers=_headers(args.participant))
             if r.status_code == 200 and r.json().get("ok"):
                 _print({"listening": r.json()["value"]})
     except Exception as e:  # noqa: BLE001 — the stream is the job; the contract line is a courtesy

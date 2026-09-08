@@ -5,7 +5,8 @@
       "url": "${EDP8_MCP_URL:-http://127.0.0.1:9402}/mcp/${EDP_ROLE:-owner}",
       "headers": {
         "X-Participant": "${EDP_HANDLE:-owner}",
-        "X-Session": "${EDP_SPAWN_SESSION_ID:-}"
+        "X-Session": "${EDP_SPAWN_SESSION_ID:-}",
+        "X-Token": "${EDP8_TOKEN:-}"
       }
     }
   }

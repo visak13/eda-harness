@@ -147,6 +147,7 @@ class EventKind(StrEnum):
     status_changed = "status_changed"
     gate_opened = "gate_opened"
     gate_answered = "gate_answered"
+    gate_closed = "gate_closed"  # a gate retired without a human answer (§24.1(a): its epic dropped/closed)
     assigned = "assigned"
     doc_updated = "doc_updated"
     message_sent = "message_sent"

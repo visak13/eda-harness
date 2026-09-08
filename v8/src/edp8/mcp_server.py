@@ -64,8 +64,10 @@ def server_version() -> str:
 VERSION = server_version()
 
 
-def _identity_from(ctx: Context | None) -> tuple[str | None, str | None]:
-    """(participant, pool session id) from request headers (HTTP) or the process env (stdio)."""
+def _identity_from(ctx: Context | None) -> tuple[str | None, str | None, str | None]:
+    """(participant, pool session id, seat token) from request headers (HTTP) or the process env
+    (stdio). §24.1(c): the per-request X-Token is carried through so a minted-token seat behind the
+    shared proxy authenticates as itself — the proxy's own env EDP8_TOKEN is not that seat's secret."""
     headers = None
     if ctx is not None:
         try:
@@ -74,9 +76,10 @@ def _identity_from(ctx: Context | None) -> tuple[str | None, str | None]:
             headers = None
     if headers:
         h = {k.lower(): v for k, v in headers.items()}
-        return (h.get("x-participant") or None), (h.get("x-session") or None)
+        return (h.get("x-participant") or None), (h.get("x-session") or None), (h.get("x-token") or None)
     return (os.environ.get("EDP8_PARTICIPANT") or os.environ.get("EDP_HANDLE") or None,
-            os.environ.get("EDP_SPAWN_SESSION_ID") or None)
+            os.environ.get("EDP_SPAWN_SESSION_ID") or None,
+            os.environ.get("EDP8_TOKEN") or None)
 
 
 def _wrap(tool: ToolDef, *, board_url: str, admin_token: str | None):
@@ -84,8 +87,8 @@ def _wrap(tool: ToolDef, *, board_url: str, admin_token: str | None):
     plus a Context parameter the SDK injects; the request identity binds the BoardClient."""
 
     def call(ctx: Context, **kwargs: Any) -> str:
-        participant, session = _identity_from(ctx)
-        client = BoardClient(base_url=board_url, participant=participant, admin_token=admin_token)
+        participant, session, token = _identity_from(ctx)
+        client = BoardClient(base_url=board_url, participant=participant, admin_token=admin_token, token=token)
         with bind_request(client, session_id=session, server_version=VERSION):
             # invoke() validates args → envelope on a bad enum (naming field + allowed values),
             # carries the deprecation hint, and counts consecutive failures per seat (§19).

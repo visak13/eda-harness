@@ -121,3 +121,43 @@ def test_concurrent_callers_keep_their_own_identity(stack):
     results = _run(both())
     ids = [json.loads(r[1].content[0].text)["value"]["participant"]["id"] for r in results]
     assert ids == ["eng.s1", "arch.e1"] * 3
+
+
+# --------------------------------------------------------------- §24.1(c) X-Token forwarded end-to-end
+@pytest.fixture
+def public_stack(tmp_path, monkeypatch):
+    """A PUBLIC-mode board (tokens.json, fail-closed) behind the shared MCP proxy. A minted-token
+    seat must authenticate through the proxy — the proxy forwards X-Token, it does not substitute
+    its own process env (client.py:35 was the bug: the proxy's EDP8_TOKEN, not the seat's)."""
+    import json as _json
+    tf = tmp_path / "tokens.json"
+    tf.write_text(_json.dumps({"owner": "ownersecret", "agents": {"eng.s1": "engsecret"}}), encoding="utf-8")
+    monkeypatch.setenv("EDP8_PUBLIC_URL", "http://host.example:9400")
+    monkeypatch.setenv("EDP8_TOKENS", str(tf))
+    monkeypatch.delenv("EDP8_TOKEN", raising=False)  # the proxy process holds NO seat secret
+    board = Board(Store(":memory:"))
+    bport, mport = _free_port(), _free_port()
+    board_app = create_app(board, admin_token="realsecret")
+    tc = TestClient(board_app)
+    for pid, role, typ in [("owner", "owner", "human"), ("eng.s1", "engineer", "agent")]:
+        assert tc.post("/v1/participants", json={"type": typ, "role": role, "handle": pid, "id": pid},
+                       headers={"X-Admin": "realsecret"}).json()["ok"]
+    monkeypatch.setenv("EDP8_BOARD_URL", f"http://127.0.0.1:{bport}")
+    monkeypatch.setenv("EDP8_ADMIN_TOKEN", "realsecret")
+    with _Server(board_app, bport), _Server(mcp_server.build_http_app(), mport):
+        yield {"mcp": f"http://127.0.0.1:{mport}", "board": f"http://127.0.0.1:{bport}"}
+
+
+def test_minted_token_authenticates_through_the_proxy(public_stack):
+    import json
+    _, res = _run(_call(f"{public_stack['mcp']}/mcp/engineer",
+                        {"X-Participant": "eng.s1", "X-Token": "engsecret"}, "whoami"))
+    out = json.loads(res.content[0].text)
+    assert out["ok"] and out["value"]["participant"]["id"] == "eng.s1"
+
+
+def test_missing_token_is_refused_through_the_proxy(public_stack):
+    import json
+    _, res = _run(_call(f"{public_stack['mcp']}/mcp/engineer", {"X-Participant": "eng.s1"}, "whoami"))
+    out = json.loads(res.content[0].text)
+    assert out.get("ok") is not True  # header-only is 401 at the board → not an ok envelope
