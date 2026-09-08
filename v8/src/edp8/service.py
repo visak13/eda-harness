@@ -444,6 +444,16 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         return JSONResponse(status_code=e.status_code,
                             content={"ok": False, "error": {"code": "http", "message": str(e.detail)}, "hint": ""})
 
+    # JSON API over the same view derivations (design §4.1, was S3): the SPA reads these; the
+    # legacy /ui renders from the identical views.py functions, so they can never drift. Included
+    # HERE (ahead of the dynamic /v1/tickets/{id} and /v1/docs/{id} routes) so its static
+    # sub-paths — /v1/tickets/table, /v1/epics/{id}/page, /v1/docs/{id}/html — win the match;
+    # Starlette resolves routes in registration order (design §4.1 note: "after the /v1 block"
+    # assumed no static-under-dynamic collision; /v1/tickets/table is one, so it registers first).
+    from .api_views import views_router
+
+    app.include_router(views_router(board, actor))
+
     # identity -----------------------------------------------------------------
     @app.get("/v1/whoami")
     def whoami(a: Participant = Depends(actor)):
@@ -625,11 +635,15 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     @app.post("/v1/messages")
     def message_send(b: MessageIn, a: Participant = Depends(actor)):
+        from . import views
         m = board.message_send(a, ticket_id=b.ticket_id, to=b.to, kind=b.kind, text=b.text, reply_to=b.reply_to)
         delivery.after_message(board, a.id, m)
         note = getattr(board, "last_send_note", "")
         hint = "delivered to the recipient's feed; end your turn if you are waiting for an answer"
-        return ok(_dump(m), f"{note}; {hint}" if note else hint)
+        # unresolved_mentions: @handles that match no participant — the message posted, but nobody
+        # was woken for these (design §4.1). The caller surfaces them so a typo'd @handle is visible.
+        return ok({**_dump(m), "unresolved_mentions": views.unresolved_mentions(board, b.text)},
+                  f"{note}; {hint}" if note else hint)
 
     @app.post("/v1/status")
     def record_status(b: StatusIn, a: Participant = Depends(actor)):

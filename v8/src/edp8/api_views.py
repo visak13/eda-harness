@@ -1,0 +1,152 @@
+"""JSON API over the pure view derivations (design §4.1, was S3).
+
+`views_router(board, actor)` returns a FastAPI router that exposes every derivation in
+`views.py` as JSON under the same `{ok, value, hint}` envelope the rest of the service uses.
+`create_app` includes it AHEAD of the dynamic `/v1/tickets/{id}` and `/v1/docs/{id}` routes so
+its static sub-paths (`/v1/tickets/table`, `/v1/epics/{id}/page`, `/v1/docs/{id}/html`) win the
+match — Starlette resolves in registration order. Each endpoint is a thin adapter: it
+authenticates through the shared `actor` dependency (except the raw avatar SVG, which an <img>
+tag loads header-less) and returns a `views.*` result verbatim, so the legacy HTML renderer and
+this API can never drift (both call the same function).
+
+Scope note: the sign-off write path (POST /v1/me/verdict), evidence_version and the stale-verdict
+refusal ride `board.criterion_update`'s new kwargs and land with the schema/board hunks; this
+module carries the READ surface plus the avatar read/write that needs no board change.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Callable
+
+from fastapi import APIRouter, Depends, Query, Response
+from pydantic import BaseModel
+
+from . import views
+from .avatar_preferences import save_avatar_preference
+from .avatars import (
+    _HUMAN_NAMES,
+    HUMAN_AVATAR_IDS,
+    avatar_id_for,
+    human_avatar_svg,
+    role_avatar_svg,
+    system_avatar_svg,
+)
+from .board import Board
+from .schemas import Participant
+
+
+def ok(value: Any, hint: str = "") -> dict[str, Any]:
+    return {"ok": True, "value": value, "hint": hint}
+
+
+class AvatarIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    avatar_id: str
+
+
+def _catalog() -> list[dict[str, str]]:
+    """The pickable human avatars — id, display name and the inline SVG — the source the
+    avatar picker renders (parity with avatars.avatar_picker_html, as JSON)."""
+    return [{"id": aid, "name": _HUMAN_NAMES[i], "svg": human_avatar_svg(aid, 48)}
+            for i, aid in enumerate(HUMAN_AVATAR_IDS)]
+
+
+def views_router(board: Board, actor: Callable[..., Participant]) -> APIRouter:
+    r = APIRouter()
+
+    # -------------------------------------------------------------- me (Decisions home)
+    @r.get("/v1/me/decisions")
+    def me_decisions(a: Participant = Depends(actor)):
+        return ok(views.decisions_for(board, a),
+                  "sign-offs you must rule, questions in your inbox, open gates you can answer")
+
+    @r.get("/v1/me/decisions/resolved")
+    def me_resolved(limit: int = 30, a: Participant = Depends(actor)):
+        return ok(views.resolved_for(board, a, limit=limit))
+
+    @r.get("/v1/me/people")
+    def me_people(a: Participant = Depends(actor)):
+        return ok(views.people_for(board, a), "who you can reach — humans and live agent seats")
+
+    @r.get("/v1/me/conversations")
+    def me_conversations(a: Participant = Depends(actor)):
+        return ok(views.conversations_for(board, a))
+
+    @r.get("/v1/me/summary")
+    def me_summary(a: Participant = Depends(actor)):
+        return ok(views.summary_for(board, a))
+
+    # -------------------------------------------------------------- avatars
+    @r.get("/v1/me/avatar")
+    def me_avatar_get(a: Participant = Depends(actor)):
+        ident = views.avatar_for(board, a.id)
+        return ok({"avatar_id": ident["avatar_id"], "kind": ident["kind"],
+                   "catalog": _catalog() if a.type == "human" else []})
+
+    @r.put("/v1/me/avatar")
+    def me_avatar_put(b: AvatarIn, a: Participant = Depends(actor)):
+        if a.type != "human" or b.avatar_id not in HUMAN_AVATAR_IDS:
+            return {"ok": False, "error": {"code": "bad_request",
+                    "message": f"choose one of {list(HUMAN_AVATAR_IDS)} (humans only)"},
+                    "hint": "GET /v1/me/avatar lists the catalog"}
+        save_avatar_preference(a.id, b.avatar_id)
+        ident = views.avatar_for(board, a.id)
+        return ok({"avatar_id": ident["avatar_id"], "kind": ident["kind"]},
+                  "saved; the mtime bump makes it show without a board restart")
+
+    @r.get("/v1/avatars/catalog")
+    def avatars_catalog(a: Participant = Depends(actor)):
+        return ok({"avatars": _catalog()})
+
+    @r.get("/v1/avatars/{pid}.svg")
+    def avatar_svg(pid: str, size: int = 36, palette: str | None = Query(default=None)):
+        """The inline identity SVG for a participant — served header-less so an <img src>
+        can load it, image/svg+xml with a 5-minute cache. `palette=human-0N` overrides with a
+        specific human avatar (the picker previews a choice before it is saved)."""
+        if palette in HUMAN_AVATAR_IDS:
+            svg = human_avatar_svg(palette, size)
+        else:
+            p = views._participant(board, pid)
+            if p is None:
+                svg = system_avatar_svg(size, unknown=True)
+            elif p.type == "human":
+                svg = human_avatar_svg(avatar_id_for(p, views._prefs()), size)
+            else:
+                svg = role_avatar_svg(p.role, p.model, size)
+        return Response(content=svg, media_type="image/svg+xml",
+                        headers={"Cache-Control": "public, max-age=300"})
+
+    # -------------------------------------------------------------- epics / tickets
+    @r.get("/v1/epics/summary")
+    def epics_summary(status: str | None = None, q: str | None = None, a: Participant = Depends(actor)):
+        return ok(views.epics_summary(board, a, status=status, q=q))
+
+    @r.get("/v1/epics/{epic_id}/page")
+    def epic_page(epic_id: str, a: Participant = Depends(actor)):
+        return ok(views.epic_page(board, epic_id))
+
+    @r.get("/v1/tickets/table")
+    def tickets_table(epic: str | None = None, status: str | None = None, kind: str | None = None,
+                      work_type: str | None = None, assignee: str | None = None, tag: str | None = None,
+                      q: str | None = None, a: Participant = Depends(actor)):
+        return ok(views.tickets_table(board, epic=epic, status=status, kind=kind, work_type=work_type,
+                                      assignee=assignee, tag=tag, q=q))
+
+    @r.get("/v1/tickets/{ticket_id}/page")
+    def ticket_page(ticket_id: str, a: Participant = Depends(actor)):
+        return ok(views.ticket_page(board, ticket_id))
+
+    # -------------------------------------------------------------- docs / activity / library
+    @r.get("/v1/docs/{doc_id}/html")
+    def doc_html(doc_id: str, version: int | None = None, a: Participant = Depends(actor)):
+        return ok(views.doc_page(board, doc_id, viewer=a, version=version))
+
+    @r.get("/v1/activity")
+    def activity(limit: int = 120, a: Participant = Depends(actor)):
+        return ok(views.activity_for(board, a, limit=limit))
+
+    @r.get("/v1/library")
+    def library(epic: str | None = None, a: Participant = Depends(actor)):
+        return ok(views.library_for(board, epic))
+
+    return r
