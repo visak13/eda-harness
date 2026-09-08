@@ -9,20 +9,50 @@
 // --------------------------------------------------------------------------- primitives
 
 export type ISODateString = string;
-// Board Verdict enum .value strings (schemas.py Verdict): passed→"pass", failed→"fail".
-// The JSON view API returns these verbatim, so the client renders them, never "passed".
-export type Verdict = "pending" | "pass" | "fail";
 
-// Board MessageKind enum (schemas.py MessageKind) — the kinds a Composer can post. Shared
-// primitive kept here so the Composer (G2) and the epic/ticket pages (G3a) agree on one union.
-export type MessageKind =
-  | "question"
-  | "answer"
-  | "steer"
-  | "status"
-  | "finding"
-  | "deviation"
-  | "note";
+// --------------------------------------------------------------------------- board enum value lists
+//
+// The canonical value lists of the board's string enums (src/edp8/schemas.py). These are the ONE
+// source: `copy/glossary.ts` must carry a label + one-line meaning for every value here, and
+// `copy/glossary.test.ts` iterates these arrays and FAILS naming the missing key when a glossary
+// entry is dropped (design §15, criterion c-581d50496d). Keep in lockstep with schemas.py; a value
+// added there without a glossary entry turns the table test red, which is the point.
+
+// Verdict enum .value strings: passed→"pass", failed→"fail". The JSON view API returns these
+// verbatim, so the client renders them, never "passed".
+export const VERDICTS = ["pending", "pass", "fail"] as const;
+export type Verdict = (typeof VERDICTS)[number];
+
+// MessageKind — the kinds a Composer can post. Shared primitive so the Composer (G2) and the
+// epic/ticket pages (G3a) agree on one union.
+export const MESSAGE_KINDS = ["question", "answer", "steer", "status", "finding", "deviation", "note"] as const;
+export type MessageKind = (typeof MESSAGE_KINDS)[number];
+
+export const TICKET_STATUSES = [
+  "drafted", "designed", "signed_off", "ready", "in_progress", "in_review", "blocked", "done", "partial", "dropped",
+] as const;
+export type TicketStatus = (typeof TICKET_STATUSES)[number];
+
+export const TICKET_KINDS = ["epic", "story", "task"] as const;
+export type TicketKind = (typeof TICKET_KINDS)[number];
+
+export const WORK_TYPES = ["feature", "bug", "rnd", "creative", "review", "knowledge", "chore"] as const;
+export type WorkType = (typeof WORK_TYPES)[number];
+
+export const GATE_KINDS = ["design_signoff", "poc", "demo", "adversarial", "budget", "acceptance", "scope"] as const;
+export type GateKind = (typeof GATE_KINDS)[number];
+
+export const ROLES = [
+  "owner", "coordinator", "architect", "sme", "engineer", "reviewer", "adversary", "qa", "consultant",
+] as const;
+export type Role = (typeof ROLES)[number];
+
+export const CHECKS = ["command", "path", "look", "verdict"] as const;
+export type Check = (typeof CHECKS)[number];
+
+// SessionState — pool shell lifecycle (schemas.py SessionState). Used by the Seats page.
+export const SESSION_STATES = ["alive", "stalled", "dead", "parked"] as const;
+export type SessionState = (typeof SESSION_STATES)[number];
 
 export interface CriterionView {
   id: string;
