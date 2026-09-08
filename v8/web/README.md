@@ -15,6 +15,7 @@ production seams the S1 spike proved (`src/auth/identity.ts`, `src/live/feed.ts`
 | install + update lock | `npm --prefix web install` |
 | dev server (proxying a running board on :9400) | `npm --prefix web run dev` |
 | production build → `../src/edp8/webapp/dist` | `npm --prefix web run build` |
+| one-shot install+build (wraps the above) | `scripts/build-web.ps1 [-Ci]` · `scripts/build-web.sh [--ci]` |
 | unit tests (Vitest + RTL, jsdom) | `npm --prefix web test -- --run` |
 | unit coverage (v8, ≥80% lines) | `npm --prefix web test -- --run --coverage` |
 | Playwright e2e (win32) | `npm --prefix web run e2e` |
