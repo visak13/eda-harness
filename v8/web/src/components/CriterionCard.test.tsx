@@ -34,6 +34,34 @@ describe("CriterionCard", () => {
     expect(screen.getByText(crit.text).textContent).not.toContain("c-abc123");
   });
 
+  it("read-only + canReword: a pending card offers Reword and PATCHes the new text", async () => {
+    let patched: Record<string, unknown> | null = null;
+    server.use(
+      http.patch("/v1/criteria/c-abc123", async ({ request }) => {
+        patched = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ ok: true, value: { id: "c-abc123" }, hint: "" });
+      }),
+    );
+    renderCard({ ticketId: "s-1", canReword: true });
+    fireEvent.click(screen.getByTestId("reword-open"));
+    fireEvent.change(screen.getByLabelText("Reword this criterion"), {
+      target: { value: "The featured card is the oldest pending sign-off, reworded." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save wording" }));
+    await waitFor(() =>
+      expect(patched).toEqual({ text: "The featured card is the oldest pending sign-off, reworded." }),
+    );
+  });
+
+  it("does not offer Reword once the criterion has a verdict", () => {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <CriterionCard criterion={{ ...crit, verdict: "pass" }} ticketId="s-1" canReword />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByTestId("reword-open")).not.toBeInTheDocument();
+  });
+
   it("ruling mode: nothing preselected; Needs work disabled until a note is typed", () => {
     renderCard({ ruling: { evidenceVersion: 2 }, ticketId: "s-1" });
     expect(screen.getByTestId("verdict-chip")).toHaveTextContent("Pending");

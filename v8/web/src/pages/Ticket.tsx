@@ -99,6 +99,8 @@ export function TicketPage(): React.JSX.Element {
                 <CriterionCard
                   key={c.id}
                   criterion={c}
+                  ticketId={id}
+                  canReword
                   onOpenEvidence={(docId) => drawer.openDoc(docId)}
                 />
               ))}

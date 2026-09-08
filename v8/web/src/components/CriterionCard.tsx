@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { CriterionView, Verdict } from "../api/types";
 import { postVerdict } from "../api/decisions";
 import { BoardApiError } from "../api/client";
+import { RewordCriterion } from "./CriterionControls";
 import styles from "./CriterionCard.module.css";
 
 // The owner's criterion, typeset to be read (design §14): text verbatim at 14/22 ≤72ch, the id in
@@ -24,14 +25,18 @@ export interface CriterionCardProps {
   ticketId?: string;
   /** Read-only card: open this criterion's evidence doc (the drawer/reader). */
   onOpenEvidence?: (docId: string) => void;
+  /** Read-only card: allow rewording the criterion text while it is still pending (design §16).
+   *  Needs `ticketId` for the cache invalidation; only offered on a pending, un-ruled card. */
+  canReword?: boolean;
   /** Ruling pane: called after a verdict is recorded so the opener can close + refresh. */
   onRuled?: (verdict: "pass" | "fail") => void;
 }
 
-export function CriterionCard({ criterion, ruling, ticketId, onOpenEvidence, onRuled }: CriterionCardProps): React.JSX.Element {
+export function CriterionCard({ criterion, ruling, ticketId, onOpenEvidence, canReword, onRuled }: CriterionCardProps): React.JSX.Element {
   const qc = useQueryClient();
   const [note, setNote] = useState("");
   const [decided, setDecided] = useState<"pass" | "fail" | null>(null);
+  const [rewording, setRewording] = useState(false);
 
   const mutation = useMutation({
     mutationFn: (verdict: "pass" | "fail") =>
@@ -58,6 +63,7 @@ export function CriterionCard({ criterion, ruling, ticketId, onOpenEvidence, onR
   useEffect(() => {
     setDecided(null);
     setNote("");
+    setRewording(false);
     mutation.reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [criterion.id]);
@@ -81,15 +87,36 @@ export function CriterionCard({ criterion, ruling, ticketId, onOpenEvidence, onR
       <div className={styles.id}>{criterion.id}</div>
 
       {!ruling ? (
-        criterion.evidence_ref ? (
-          <button
-            className={styles.evidenceLink}
-            type="button"
-            onClick={() => onOpenEvidence?.(criterion.evidence_ref!)}
-          >
-            Open evidence ↗
-          </button>
-        ) : null
+        <>
+          {criterion.evidence_ref ? (
+            <button
+              className={styles.evidenceLink}
+              type="button"
+              onClick={() => onOpenEvidence?.(criterion.evidence_ref!)}
+            >
+              Open evidence ↗
+            </button>
+          ) : null}
+          {canReword && ticketId && criterion.verdict === "pending" ? (
+            rewording ? (
+              <RewordCriterion
+                criterionId={criterion.id}
+                ticketId={ticketId}
+                current={criterion.text}
+                onDone={() => setRewording(false)}
+              />
+            ) : (
+              <button
+                className={styles.evidenceLink}
+                type="button"
+                data-testid="reword-open"
+                onClick={() => setRewording(true)}
+              >
+                Reword
+              </button>
+            )
+          ) : null}
+        </>
       ) : decided ? (
         <p className={styles.recorded} role="status">
           Recorded: <strong>{WORD[decided]}</strong>. Ticket advancement depends on the remaining checks.
