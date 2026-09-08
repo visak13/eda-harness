@@ -339,3 +339,24 @@ def test_auto_advance_and_release_wait_for_the_doers_consult(board, rig, tmp_pat
                        text="consultant[second_opinion]: fine")
     assert board.ticket(blocker.id).status == TicketStatus.in_review     # advanced on the note
     assert board.ticket(succ.id).status == TicketStatus.ready            # released once
+
+
+def test_a_foreign_board_never_spawns_on_the_fleet_pool(tmp_path, monkeypatch):
+    """A board whose EDP8_HOME is not the pool's agent home (an e2e temp board, a private instance)
+    is refused at the one spawn choke point, before any pool call (2026-09-08: an e2e board spawned
+    qa.epic-2b3bea99e0 on the fleet pool for an epic that existed only in its temp DB)."""
+    from edp8 import pool_adapter
+    calls: list[str] = []
+    monkeypatch.setattr(pool_adapter, "_post", lambda path, body=None, timeout=90.0: calls.append(path) or {"ok": True})
+    monkeypatch.setenv("EDP_POOL_AGENT_HOME", str(tmp_path / "fleet"))
+    monkeypatch.setenv("EDP8_HOME", str(tmp_path / "e2e-home"))
+    out = pool_adapter.spawn("qa", "qa.epic-x")
+    assert out["ok"] is False and out["error"]["code"] == "foreign_board"
+    assert calls == []
+    monkeypatch.setenv("EDP8_HOME", str(tmp_path / "fleet"))
+    assert pool_adapter.foreign_board_reason() is None
+    assert pool_adapter.spawn("qa", "qa.epic-x")["ok"] is True and calls == ["/v1/spawn"]
+    monkeypatch.delenv("EDP_POOL_AGENT_HOME")
+    monkeypatch.delenv("EDP_AGENT_HOME", raising=False)
+    assert pool_adapter.foreign_board_reason() is None  # no pool home known: the launcher's call
+

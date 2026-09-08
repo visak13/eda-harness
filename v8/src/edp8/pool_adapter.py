@@ -14,6 +14,7 @@ Sessions are mirrored into the board (`PUT /v1/sessions/{id}`, admin) by
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -69,12 +70,40 @@ def reachable(timeout: float = 2.0) -> bool:
 # ----------------------------------------------------------------------------- verbs
 
 
+def foreign_board_reason() -> str | None:
+    """Why THIS process must not spawn shells on the pool, or None when it is the fleet board.
+
+    The pool serves exactly one agent home (EDP_POOL_AGENT_HOME, exported to every seat). A board
+    whose EDP8_HOME is anywhere else — an e2e board in a temp dir, a private test instance, a seat's
+    experiment — is a foreign board: its epics do not exist on the fleet board, so any seat it
+    spawned would boot into nothing and burn a live shell (2026-09-08: qa.epic-2b3bea99e0). The
+    gate sits here, the one choke point every spawn path (service tool, S22 pairing) goes through."""
+    agent_home = os.environ.get("EDP_POOL_AGENT_HOME") or os.environ.get("EDP_AGENT_HOME")
+    home = os.environ.get("EDP8_HOME")
+    if not agent_home or not home:
+        return None
+    try:
+        same = Path(home).resolve() == Path(agent_home).resolve()
+    except OSError:
+        same = False
+    if same:
+        return None
+    return (f"this board's EDP8_HOME ({home}) is not the pool's agent home ({agent_home}): a test or "
+            "private board never spawns shells on the fleet pool")
+
+
 def spawn(role: str, participant_id: str, *, parent_session: str | None = None, model: str | None = None,
           mode: str | None = None, env: dict[str, str] | None = None) -> dict[str, Any]:
     """Spawn a shell for `participant_id` running `/<role>`. Returns {session_id}.
 
     `env` is extra environment for the shell (the pool records it as spawn_settings and
-    injects it); S20 passes the per-seat `EDP8_TOKEN` here so the shell authenticates."""
+    injects it); S20 passes the per-seat `EDP8_TOKEN` here so the shell authenticates.
+    Refused with code `foreign_board` when this process is not the fleet board (see
+    foreign_board_reason)."""
+    why = foreign_board_reason()
+    if why:
+        return _envelope(False, error=why, code="foreign_board",
+                         hint="run the fleet board from the pool's agent home, or use a stub pool adapter in tests")
     body: dict[str, Any] = {"role": role, "handle": participant_id}
     if parent_session:
         body["parent_session"] = parent_session

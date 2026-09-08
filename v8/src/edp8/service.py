@@ -952,7 +952,11 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
         return StreamingResponse(gen(), media_type="text/event-stream")
 
-    if os.environ.get("EDP_POOL_URL") or os.environ.get("EDP8_POOL_WATCH"):
+    from . import pool_adapter as _pool_gate
+    _foreign = _pool_gate.foreign_board_reason()
+    if _foreign:
+        logging.getLogger("edp8.poolwatch").info("pool watcher off: %s", _foreign)
+    if not _foreign and (os.environ.get("EDP_POOL_URL") or os.environ.get("EDP8_POOL_WATCH")):
         import threading
 
         def _pool_watch() -> None:
