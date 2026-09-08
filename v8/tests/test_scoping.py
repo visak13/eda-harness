@@ -126,6 +126,44 @@ def test_creating_a_ticket_does_not_subscribe_for_life(client, board, two_epics)
     assert board.relevant(q, board.participant(f"architect.{a}"))  # rule-1 listener, assigned up the chain
 
 
+def test_status_control_route_is_role_scoped_and_matches_the_transitions_route(client, two_epics):
+    """The UI status control (S16) drives PATCH /v1/tickets/{id}; legality is the board's and must
+    scope by role, and GET .../transitions must offer exactly what the PATCH would allow — same
+    _guard_transition, one implementation (c-a715cbffdc / c-ac6aa4bb28)."""
+    a = two_epics["a"]
+    arch = f"architect.{a}"
+    # a story that has reached `designed`, so signed_off is the next edge (owner/architect only)
+    s = client.post("/v1/tickets", json={"kind": "story", "work_type": "feature", "title": "S", "parent_id": a},
+                    headers={"X-Participant": arch}).json()["value"]["id"]
+    client.post("/v1/criteria", json={"ticket_id": s, "text": "it works", "check": "command"},
+                headers={"X-Participant": arch})
+    d = client.post("/v1/docs", json={"doc_type": "design", "title": "d", "body_md": "# d", "scope": a},
+                    headers={"X-Participant": arch}).json()["value"]["id"]
+    client.patch(f"/v1/tickets/{s}", json={"design_ref": d}, headers={"X-Participant": arch})
+    moved = client.patch(f"/v1/tickets/{s}", json={"status": "designed"}, headers={"X-Participant": arch}).json()
+    assert moved["ok"], moved
+
+    # an unrelated engineer may NOT sign off — refused with the board's plain reason
+    _reg(client, "eng-x", "engineer")
+    refused = client.patch(f"/v1/tickets/{s}", json={"status": "signed_off"}, headers={"X-Participant": "eng-x"})
+    body = refused.json()
+    assert body["ok"] is False and refused.status_code in (400, 403, 409)
+    assert "sign-off" in (body.get("hint", "") + str(body.get("error", ""))).lower()
+
+    # and the transitions route the UI reads shows the SAME answer per actor
+    eng_view = {t["to"]: t for t in
+                client.get(f"/v1/tickets/{s}/transitions", headers={"X-Participant": "eng-x"}).json()["value"]["transitions"]}
+    owner_view = {t["to"]: t for t in
+                  client.get(f"/v1/tickets/{s}/transitions", headers={"X-Participant": "owner"}).json()["value"]["transitions"]}
+    assert eng_view["signed_off"]["allowed"] is False
+    assert owner_view["signed_off"]["allowed"] is True
+
+    # the owner (the epic's human owner) may sign off — the move the UI enables. Sign-off with no
+    # open gate/blocker auto-releases the story to ready, so either landing proves the write took.
+    ok = client.patch(f"/v1/tickets/{s}", json={"status": "signed_off"}, headers={"X-Participant": "owner"}).json()
+    assert ok["ok"] and ok["value"]["status"] in ("signed_off", "ready")
+
+
 @pytest.fixture
 def spawn_rig(client, two_epics, monkeypatch):
     a = two_epics["a"]
