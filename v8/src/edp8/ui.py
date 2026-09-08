@@ -108,8 +108,8 @@ def _section_header(title: str, count: int | None = None) -> str:
 def _empty_state(icon: str, title: str, text: str) -> str:
     return f"<div class='empty-state'>{_icon(icon,22)}<h3>{_e(title)}</h3><p>{_e(text)}</p></div>"
 
-def _ticket_chip(ticket_id: str) -> str:
-    return f"<a class='ticket-chip' href='/ui/ticket/{quote(str(ticket_id),safe='')}'>{_e(ticket_id)}</a>"
+def _ticket_chip(ticket_id: str, prefix: str = "/ui") -> str:
+    return f"<a class='ticket-chip' href='{prefix}/ticket/{quote(str(ticket_id),safe='')}'>{_e(ticket_id)}</a>"
 
 def _format_time(value: datetime, include_date: bool = False) -> str:
     return value.strftime("%d %b %H:%M" if include_date else "%H:%M")
@@ -117,15 +117,15 @@ def _format_time(value: datetime, include_date: bool = False) -> str:
 def _hidden_identity_fields(participant: Participant, token: str | None) -> str:
     return f"<input type='hidden' name='as_' value='{_e(participant.id)}'><input type='hidden' name='token' value='{_e(token or '')}'>"
 
-def _page(title: str, body: str, *, poll: str | None = None, seq: int = 0, active_nav: str | None = None, sidebar: str = "", context: str = "", composer: str = "", identity: str = "", qs: str = "", people: str = "") -> str:
+def _page(title: str, body: str, *, poll: str | None = None, seq: int = 0, active_nav: str | None = None, sidebar: str = "", context: str = "", composer: str = "", identity: str = "", qs: str = "", people: str = "", prefix: str = "/ui") -> str:
     # No <meta refresh> (2026-09-06): the page polls /ui/poll for events in its scope every 5s and
     # swaps ONLY #page-body/#context-panel/#sidebar-local in place — the composer node is never
     # touched, so focus and drafts survive; while you type, a pill offers the refresh instead.
     q = f"?{qs}" if qs else ""
-    nav = (f"<nav class='nav-list'><a class='nav-link{' active' if active_nav=='me' else ''}' href='/ui/me{q}'>{_icon('inbox')} My inbox</a>"
-           f"<a class='nav-link{' active' if active_nav=='epics' else ''}' href='/ui{q}'>{_icon('epic')} Projects</a>"
-           f"<a class='nav-link{' active' if active_nav=='tickets' else ''}' href='/ui/tickets{q}'>{_icon('ticket')} Tickets</a>"
-           f"<a class='nav-link{' active' if active_nav=='activity' else ''}' href='/ui/activity{q}'>{_icon('thread')} Activity</a></nav>"
+    nav = (f"<nav class='nav-list'><a class='nav-link{' active' if active_nav=='me' else ''}' href='{prefix}/me{q}'>{_icon('inbox')} My inbox</a>"
+           f"<a class='nav-link{' active' if active_nav=='epics' else ''}' href='{prefix}{q}'>{_icon('epic')} Projects</a>"
+           f"<a class='nav-link{' active' if active_nav=='tickets' else ''}' href='{prefix}/tickets{q}'>{_icon('ticket')} Tickets</a>"
+           f"<a class='nav-link{' active' if active_nav=='activity' else ''}' href='{prefix}/activity{q}'>{_icon('thread')} Activity</a></nav>"
            f"<a class='utility-link' href='/docs'>API reference</a>")
     right = f"<aside class='context-panel' id='context-panel'>{context}</aside>" if context else ""
     data = f" data-seq='{seq}' data-qs='{_e(qs)}'" + (f" data-poll='{_e(poll)}'" if poll else "")
@@ -133,7 +133,7 @@ def _page(title: str, body: str, *, poll: str | None = None, seq: int = 0, activ
     return f"<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{_e(title)} · edp8</title>{meta}<style>{_CSS}</style></head><body{data}><div class='app-shell'><aside class='sidebar'><div class='sidebar-brand'>edp8 board</div><div class='sidebar-body'>{nav}<div class='sidebar-local' id='sidebar-local'>{sidebar}</div></div></aside><main class='main-pane'><header class='channel-header'><div><h1>{_e(title)}</h1><p>Project-persistent board workspace</p></div></header><div class='page-grid{' with-context' if context else ''}'><section class='content{' has-composer' if composer else ''}'><div class='content-inner'><div class='page-body' id='page-body'>{body}</div>{composer}</div></section>{right}</div></main></div>{meta}<script>{_JS}</script></body></html>"
 
 def router(board: Board, verify: Callable[[str, str | None], Participant] | None = None,
-           public: bool = False) -> APIRouter:
+           public: bool = False, prefix: str = "/ui") -> APIRouter:
     r = APIRouter()
     preferences = load_avatar_preferences()
     def _me(as_: str, token: str | None) -> Participant: return verify(as_, token) if verify else board.participant(as_)
@@ -187,7 +187,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
     def _doc_row(d: Any, relation: str | None = None) -> str:
         rel = f" · <span class='muted'>{_e(str(relation).replace('_',' '))}</span>" if relation else ""
         return (f"<div class='doc-row'><span class='badge s-{_e(d.doc_type)}'>{_e(d.doc_type)}</span>"
-                f"<a href='/ui/doc/{quote(d.id,safe='')}' title='{_e(d.title)}'>{_e(d.title[:60])}</a>"
+                f"<a href='{prefix}/doc/{quote(d.id,safe='')}' title='{_e(d.title)}'>{_e(d.title[:60])}</a>"
                 f"<span class='muted'>v{d.version}{rel}</span></div>")
     def _feed_line(e: Any) -> str:
         d=e.data
@@ -203,23 +203,23 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
             who=f"{d.get('by')} ({'human' if d.get('by_type')=='human' else 'agent'})"
             return f"criterion {d.get('criterion')} verdict {d.get('verdict')} by {who}"
         return str({k:v for k,v in d.items() if k!="mentions"})[:200]
-    def _event_html(e: Any) -> str: return f"<div class='system-event'>{system_avatar_svg(24)}<div>{_e(_feed_line(e)[:220])} {_ticket_chip(e.subject_id)}<span class='event-time'>{_format_time(e.created_at,True)}</span></div></div>"
+    def _event_html(e: Any) -> str: return f"<div class='system-event'>{system_avatar_svg(24)}<div>{_e(_feed_line(e)[:220])} {_ticket_chip(e.subject_id, prefix)}<span class='event-time'>{_format_time(e.created_at,True)}</span></div></div>"
     def _gate_card_html(ticket_id: str, gate: Any, opened_by: Any, note: Any, hidden: str="", actionable: bool=False) -> str:
         value=getattr(gate,"value",gate); form=""
         if actionable:
             options="".join(f"<option>{_e(x.value)}</option>" for x in Gate if x.value==value)
-            form=f"<form method='post' action='/ui/me/gate'>{hidden}<input type='hidden' name='ticket_id' value='{_e(ticket_id)}'><select name='gate'>{options}</select><input name='answer' placeholder='Your ruling…' required><button>Submit ruling</button></form>"
-        return f"<article class='gate-card'><h3>{_icon('gate')} {_e(str(value).replace('_',' ').title())}</h3><p>{_ticket_chip(ticket_id)} · opened by {_e(opened_by or 'board')}</p><p>{_e(note or 'No note provided.')}</p>{form}</article>"
+            form=f"<form method='post' action='{prefix}/me/gate'>{hidden}<input type='hidden' name='ticket_id' value='{_e(ticket_id)}'><select name='gate'>{options}</select><input name='answer' placeholder='Your ruling…' required><button>Submit ruling</button></form>"
+        return f"<article class='gate-card'><h3>{_icon('gate')} {_e(str(value).replace('_',' ').title())}</h3><p>{_ticket_chip(ticket_id, prefix)} · opened by {_e(opened_by or 'board')}</p><p>{_e(note or 'No note provided.')}</p>{form}</article>"
     def _criterion_html(c: Any) -> str:
         verdict=getattr(c.verdict,"value",c.verdict); symbol="✓" if verdict=="pass" else "!" if verdict=="fail" else "·"
-        evidence=f" · <a href='/ui/doc/{quote(c.evidence_ref,safe='')}'>Evidence</a>" if c.evidence_ref else ""
+        evidence=f" · <a href='{prefix}/doc/{quote(c.evidence_ref,safe='')}'>Evidence</a>" if c.evidence_ref else ""
         return f"<article class='criterion {_e(verdict)}'><div class='criterion-head'><span>{symbol}</span>{_badge(verdict)}<span class='object-id'>{_e(c.id)}</span></div><p>{_e(c.text)}</p><div class='criterion-meta'>{_e(c.check)} · responsible: {_e(c.checked_by)}{evidence}</div></article>"
     def _node_html(n: dict[str,Any]) -> str:
         markers="".join(f"<span class='marker'>Gate: {_e(g)}</span>" for g in n["gates"])
         if n["blocked_by"]: markers+=f"<span class='marker'>Blocked by {_e(', '.join(n['blocked_by']))}</span>"
         assignee=f"<span class='node-assignee'>{_avatar_for(n.get('assignee'),24)}</span>" if n.get("assignee") else ""
         children="".join(_node_html(k) for k in n["children"])
-        return f"<li class='ticket-node'><a class='ticket-card' href='/ui/ticket/{quote(n['id'],safe='')}'><div class='ticket-card-top'>{_icon('ticket')}<span class='object-id'>{_e(n['id'])}</span>{_badge(n['status'])}<span class='secondary'>{_e(n['criteria'])} criteria</span>{markers}{assignee}</div><div class='ticket-card-title'>{_e(n['title'])}</div></a>{f'<ul>{children}</ul>' if children else ''}</li>"
+        return f"<li class='ticket-node'><a class='ticket-card' href='{prefix}/ticket/{quote(n['id'],safe='')}'><div class='ticket-card-top'>{_icon('ticket')}<span class='object-id'>{_e(n['id'])}</span>{_badge(n['status'])}<span class='secondary'>{_e(n['criteria'])} criteria</span>{markers}{assignee}</div><div class='ticket-card-title'>{_e(n['title'])}</div></a>{f'<ul>{children}</ul>' if children else ''}</li>"
 
     @r.get("/ui/poll")
     def poll(since: int=0,scope: str="all",as_: str|None=Query(default=None,alias="as"),token: str|None=Query(default=None)):
@@ -240,7 +240,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
         else: new=len(evs)
         return JSONResponse({"seq":top,"new":new})
 
-    @r.get("/ui/me",response_class=HTMLResponse)
+    @r.get(prefix + "/me",response_class=HTMLResponse)
     def me(as_: str=Query(default="owner",alias="as"),token: str|None=Query(default=None),err: str|None=Query(default=None),
            sent: str|None=Query(default=None),unresolved: str|None=Query(default=None)):
         p=_me(as_,token); hidden=_hidden_identity_fields(p,token); qs=_qs(p,token); ctx=board.context(p); seq0=board.store.max_seq()
@@ -252,13 +252,13 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
         ask_rows=[]
         for m in ctx["asks_for_me"]:
             asker=_participant(m["created_by"]); created=m.get("created_at"); when=_format_time(created) if isinstance(created,datetime) else ""
-            ask_rows.append((m['ticket_id'],f"<article class='question-unit'>{_avatar_for(m['created_by'])}<div><div class='message-head'><strong>{_e(_participant_label(asker))}</strong><span class='message-meta'>{_e(getattr(asker,'role','system'))} · {when}</span></div><div class='question-bubble'><div class='message-text'>{_e(m['text'])}</div>{_ticket_chip(m['ticket_id'])}</div><div class='delivery-note'>{_e(asker_note(m['created_by']))}</div><form class='reply-form' method='post' action='/ui/me/message'>{hidden}<input type='hidden' name='ticket_id' value='{_e(m['ticket_id'])}'><input type='hidden' name='to' value='{_e(m['created_by'])}'><input type='hidden' name='kind' value='answer'><input type='hidden' name='reply_to' value='{_e(m['id'])}'><input name='text' placeholder='Write an answer…' required><button>Send</button></form></div></article>"))
+            ask_rows.append((m['ticket_id'],f"<article class='question-unit'>{_avatar_for(m['created_by'])}<div><div class='message-head'><strong>{_e(_participant_label(asker))}</strong><span class='message-meta'>{_e(getattr(asker,'role','system'))} · {when}</span></div><div class='question-bubble'><div class='message-text'>{_e(m['text'])}</div>{_ticket_chip(m['ticket_id'], prefix)}</div><div class='delivery-note'>{_e(asker_note(m['created_by']))}</div><form class='reply-form' method='post' action='{prefix}/me/message'>{hidden}<input type='hidden' name='ticket_id' value='{_e(m['ticket_id'])}'><input type='hidden' name='to' value='{_e(m['created_by'])}'><input type='hidden' name='kind' value='answer'><input type='hidden' name='reply_to' value='{_e(m['id'])}'><input name='text' placeholder='Write an answer…' required><button>Send</button></form></div></article>"))
         # grouped by ticket (epic → ticket) so one busy thread does not bury the others
         groups: dict[str,list[str]]={}
         for tid,row in ask_rows: groups.setdefault(tid,[]).append(row)
         def _group(tid: str,rows: list[str]) -> str:
             tk=board.store.get("ticket",tid); ep=board.epic_of(tk).id if tk else None
-            crumbs=(f"{_ticket_chip(ep)} › " if ep and ep!=tid else "")+_ticket_chip(tid)
+            crumbs=(f"{_ticket_chip(ep, prefix)} › " if ep and ep!=tid else "")+_ticket_chip(tid, prefix)
             title=_e((tk.title if tk else tid)[:70])
             return (f"<details class='fold ask-group' open><summary>{crumbs}<span class='muted'>{title}</span>"
                     f"<span class='count'>{len(rows)}</span></summary>{''.join(rows)}</details>")
@@ -281,9 +281,9 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
                          f"<p class='muted'>evidence {_e(c.evidence_ref)} unreadable</p>"
                 signoff_rows.append(
                     f"<article class='signoff-card'><div class='who'>sign-off wanted on "
-                    f"<a href='/ui/ticket/{quote(c.ticket_id,safe='')}'>{_e(c.ticket_id)}</a> · "
+                    f"<a href='{prefix}/ticket/{quote(c.ticket_id,safe='')}'>{_e(c.ticket_id)}</a> · "
                     f"<span class='object-id'>{_e(c.id)}</span></div><p>{_e(c.text)}</p>{doc_view}"
-                    f"<form class='signoff-actions' method='post' action='/ui/me/verdict'>{hidden}"
+                    f"<form class='signoff-actions' method='post' action='{prefix}/me/verdict'>{hidden}"
                     f"<input type='hidden' name='criterion_id' value='{_e(c.id)}'>"
                     f"<input type='hidden' name='ticket_id' value='{_e(c.ticket_id)}'>"
                     f"<input type='hidden' name='evidence_version' value='{getattr(doc,'version','') if doc else ''}'>"
@@ -328,7 +328,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
             last=board.thread(tid,limit=1)
             who=_avatar_for(last[-1].created_by,20) if last else _icon("thread",14)
             convo_rows.append(
-                f"<a class='convo-row' href='/ui/ticket/{quote(tid,safe='')}?{qs}' "
+                f"<a class='convo-row' href='{prefix}/ticket/{quote(tid,safe='')}?{qs}' "
                 f"title='{_e(tk.title[:120])}'>{unread}{who}<span class='convo-name'>{_e(tid)}</span>"
                 f"<span class='muted convo-snip'>{_e((last[-1].text if last else tk.title)[:34])}</span></a>")
         conversations="".join(convo_rows) or "<p class='muted' style='font-size:12px'>no open conversations</p>"
@@ -363,7 +363,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
             people_rows.append(
                 f"<div class='people-row' title='a running {_e(c.role)} seat — steer it on its ticket thread'>"
                 f"{_avatar_for(c.id,24)}<span class='mono'>@{_e(c.handle)}</span>"
-                f"{_ticket_chip(tid) if tid else ''}<span class='muted seat-up'>● up</span></div>")
+                f"{_ticket_chip(tid, prefix) if tid else ''}<span class='muted seat-up'>● up</span></div>")
         people="".join(people_rows) or "<p class='muted'>no one else is on right now — agents appear here while their shells run</p>"
         # the SAME list feeds the recipient picker and the @autocomplete — what you can see is what you can reach
         import json as _json
@@ -371,7 +371,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
                                  for c in people_list]).replace("</","<\\/")
         to_options="".join(f"<option value='{_e(c.id)}'>@{_e(c.handle)} · {_e('person' if c.type=='human' else c.role)}</option>"
                            for c in people_list)
-        composer=(f"<div class='composer'><form class='composer-card composer-slim' method='post' action='/ui/me/message'>{hidden}"
+        composer=(f"<div class='composer'><form class='composer-card composer-slim' method='post' action='{prefix}/me/message'>{hidden}"
                   f"<select name='ticket_id' required title='the conversation this joins — that ticket&#39;s page is the chat window'>"
                   f"<option value='' disabled selected>Conversation…</option>{ticket_options}</select>"
                   f"<select name='kind' title='Note = FYI · Question = expects an answer · Steer = redirect work'>{kinds}</select>"
@@ -385,38 +385,37 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
                f"{_section_header('Who can I reach',len(people_rows))}<div class='people-list'>{people}</div>"
                f"<p class='muted' style='font-size:12px'>Agents without a running shell aren't listed: "
                f"post on their <b>ticket thread</b> instead — the next shell on that seat reads it first thing. "
-               f"<a href='/ui/activity?{qs}'>Full activity →</a></p>")
+               f"<a href='{prefix}/activity?{qs}'>Full activity →</a></p>")
         banner=f"<div class='alert' role='alert'>⚠ {_e(err)}</div>" if err else ""
         if sent:
             banner+=(f"<div class='alert alert-ok' role='status'>✓ Sent — it's on "
-                     f"<a href='/ui/ticket/{quote(sent,safe='')}'>{_e(sent)}</a>'s thread (that page is the conversation); "
+                     f"<a href='{prefix}/ticket/{quote(sent,safe='')}'>{_e(sent)}</a>'s thread (that page is the conversation); "
                      f"the addressee and everyone you @mentioned have it in their inbox.</div>")
         if unresolved:
             banner+=(f"<div class='alert' role='alert'>⚠ {_e(', '.join('@'+h for h in unresolved.split(',') if h))} matched nobody — "
                      f"the message is posted but nobody was notified for those; pick from the list (type @).</div>")
         signoff_block=f"{_section_header('Docs awaiting your sign-off',len(signoff_rows))}{signoffs}" if signoff_rows else ""
         body=f"{banner}<div class='identity'>{identity}<div class='identity-copy'><strong>{_e(p.handle)}</strong><span>{_e(p.role)} · {_e(p.type)} participant</span></div></div><p class='secondary'>Messages are pinned to the project. Active shells wake immediately; closed shells read them when they reopen.</p>{signoff_block}{_section_header('Waiting on you',len(ask_rows))}<div class='conversation'>{asks}</div>"
-        return _page(f"{p.handle} · My inbox",body,poll="me",seq=seq0,active_nav="me",sidebar=sidebar,context=right,composer=composer,identity=identity,qs=qs,people=people_json)
-
-    @r.post("/ui/me/message")
+        return _page(f"{p.handle} · My inbox",body,poll="me",seq=seq0,active_nav="me",sidebar=sidebar,context=right,composer=composer,identity=identity,qs=qs,people=people_json,prefix=prefix)
+    @r.post(prefix + "/me/message")
     def me_message(as_: str=Form(...),token: str=Form(default=""),ticket_id: str=Form(...),to: str=Form(default=""),kind: str=Form(default="note"),text: str=Form(...),reply_to: str=Form(default="")):
         p=_me(as_,token or None)
         try:
             m=board.message_send(p,ticket_id=ticket_id.strip(),to=to.strip() or None,kind=MessageKind(kind),text=text,reply_to=reply_to.strip() or None); delivery.after_message(board,p.id,m)
-        except (BoardError,ValueError) as e: return RedirectResponse(f"/ui/me?{_qs(p,token or None)}&err={quote(str(e))}",status_code=303)
+        except (BoardError,ValueError) as e: return RedirectResponse(f"{prefix}/me?{_qs(p,token or None)}&err={quote(str(e))}",status_code=303)
         from .board import _MENTION_RX
         bad=[h for h in _MENTION_RX.findall(text) if not _participant_by_handle(h)]
         extra=f"&unresolved={quote(','.join(dict.fromkeys(bad)))}" if bad else ""
-        return RedirectResponse(f"/ui/me?{_qs(p,token or None)}&sent={quote(m.ticket_id,safe='')}{extra}",status_code=303)
+        return RedirectResponse(f"{prefix}/me?{_qs(p,token or None)}&sent={quote(m.ticket_id,safe='')}{extra}",status_code=303)
 
-    @r.post("/ui/me/gate")
+    @r.post(prefix + "/me/gate")
     def me_gate(as_: str=Form(...),token: str=Form(default=""),ticket_id: str=Form(...),gate: str=Form(...),answer: str=Form(...)):
         p=_me(as_,token or None)
         try: board.gate_answer(p,ticket_id.strip(),Gate(gate),answer); delivery.after_gate_answer(board,p.id,ticket_id.strip(),gate,answer)
-        except (BoardError,ValueError) as e: return RedirectResponse(f"/ui/me?{_qs(p,token or None)}&err={quote(str(e))}",status_code=303)
-        return RedirectResponse(f"/ui/me?{_qs(p,token or None)}",status_code=303)
+        except (BoardError,ValueError) as e: return RedirectResponse(f"{prefix}/me?{_qs(p,token or None)}&err={quote(str(e))}",status_code=303)
+        return RedirectResponse(f"{prefix}/me?{_qs(p,token or None)}",status_code=303)
 
-    @r.get("/ui/activity",response_class=HTMLResponse)
+    @r.get(prefix + "/activity",response_class=HTMLResponse)
     def activity_page(as_: str=Query(default="owner",alias="as"),token: str|None=Query(default=None)):
         p=_me(as_,token)
         feed=board.replay(p,0)[-120:]
@@ -427,16 +426,15 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
             f"{_section_header(day,len(evs))}"+ "".join(_event_html(e) for e in evs)
             for day,evs in by_day.items()) or _empty_state("thread","Quiet","Project activity will appear here.")
         body=f"<p class='secondary'>Everything relevant to you, newest first. Your inbox stays for things that need YOU; this page is the pulse.</p>{sections}"
-        return _page("Activity",body,poll="me",seq=board.store.max_seq(),active_nav="activity",qs=_qs(p,token))
-
-    @r.post("/ui/me/verdict")
+        return _page("Activity",body,poll="me",seq=board.store.max_seq(),active_nav="activity",qs=_qs(p,token),prefix=prefix)
+    @r.post(prefix + "/me/verdict")
     def me_verdict(as_: str=Form(...),token: str=Form(default=""),criterion_id: str=Form(...),
                    ticket_id: str=Form(default=""),verdict: str=Form(...),note: str=Form(default=""),
                    evidence_version: int=Form(...),back: str=Form(default="")):
         # §14 finding 2: route through views.record_verdict (the shared UI+API path) and send the
         # doc version the page rendered — the sign-off can never silently bless an unread revision.
         p=_me(as_,token or None)
-        done_url=back if back.startswith("/ui/") else f"/ui/me?{_qs(p,token or None)}"
+        done_url=back if back.startswith(f"{prefix}/") else f"{prefix}/me?{_qs(p,token or None)}"
         try:
             views.record_verdict(board,p,criterion_id=criterion_id.strip(),verdict=verdict,note=note,
                                  ticket_id=ticket_id.strip() or None,evidence_version=evidence_version)
@@ -445,15 +443,15 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
             return RedirectResponse(f"{done_url}{sep}err={quote(str(e))}",status_code=303)
         return RedirectResponse(done_url,status_code=303)
 
-    @r.post("/ui/me/avatar")
+    @r.post(prefix + "/me/avatar")
     def me_avatar(as_: str=Form(...),token: str=Form(default=""),avatar: str=Form(...)):
         p=_me(as_,token or None)
-        if p.type!="human" or avatar not in HUMAN_AVATAR_IDS: return RedirectResponse(f"/ui/me?{_qs(p,token or None)}&err=Invalid%20avatar",status_code=303)
+        if p.type!="human" or avatar not in HUMAN_AVATAR_IDS: return RedirectResponse(f"{prefix}/me?{_qs(p,token or None)}&err=Invalid%20avatar",status_code=303)
         try: save_avatar_preference(p.id,avatar); preferences[p.id]=avatar
-        except (OSError,ValueError) as e: return RedirectResponse(f"/ui/me?{_qs(p,token or None)}&err={quote(str(e))}",status_code=303)
-        return RedirectResponse(f"/ui/me?{_qs(p,token or None)}",status_code=303)
+        except (OSError,ValueError) as e: return RedirectResponse(f"{prefix}/me?{_qs(p,token or None)}&err={quote(str(e))}",status_code=303)
+        return RedirectResponse(f"{prefix}/me?{_qs(p,token or None)}",status_code=303)
 
-    @r.get("/ui",response_class=HTMLResponse)
+    @r.get(prefix,response_class=HTMLResponse)
     def epics(as_: str|None=Query(default=None,alias="as"),token: str|None=Query(default=None),
               status: str|None=Query(default=None),q: str|None=Query(default=None)):
         _guard(as_,token)
@@ -470,17 +468,16 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
             epic_rows=[t for t in epic_rows if t.id in hit]
         statuses="".join(f"<option value='{s}'{' selected' if status==s else ''}>{s.replace('_',' ')}</option>"
                          for s in ["open",*[x.value for x in TicketStatus]])
-        filters=(f"<form class='filter-bar' method='get' action='/ui'>{''.join(f'<input type=hidden name={k} value=\'{_e(v)}\'>' for k,v in (('as',as_),('token',token)) if v)}"
+        filters=(f"<form class='filter-bar' method='get' action='{prefix}'>{''.join(f'<input type=hidden name={k} value=\'{_e(v)}\'>' for k,v in (('as',as_),('token',token)) if v)}"
                  f"<select name='status'><option value=''>any status</option>{statuses}</select>"
                  f"<input name='q' value='{_e(q or '')}' placeholder='search words in epic titles/descriptions'>"
-                 f"<button>Filter</button><a href='/ui{link_q}'>clear</a></form>")
+                 f"<button>Filter</button><a href='{prefix}{link_q}'>clear</a></form>")
         for t in epic_rows:
             crits=board.criteria(t.id); passed=sum(c.verdict==Verdict.passed for c in crits); percent=int(100*passed/len(crits)) if crits else 0
-            rows.append(f"<a class='epic-row' href='/ui/epic/{quote(t.id,safe='')}{link_q}'><div class='epic-title'><span class='object-id'>{_e(t.id)}</span>{_e(t.title[:160])}</div><div class='epic-meta'>{passed} / {len(crits)} passed<div class='progress'><span style='width:{percent}%'></span></div></div><div class='epic-meta'>{_e(t.created_at.strftime('%Y-%m-%d'))}</div>{_badge(t.status)}<span class='chevron'>›</span></a>")
+            rows.append(f"<a class='epic-row' href='{prefix}/epic/{quote(t.id,safe='')}{link_q}'><div class='epic-title'><span class='object-id'>{_e(t.id)}</span>{_e(t.title[:160])}</div><div class='epic-meta'>{passed} / {len(crits)} passed<div class='progress'><span style='width:{percent}%'></span></div></div><div class='epic-meta'>{_e(t.created_at.strftime('%Y-%m-%d'))}</div>{_badge(t.status)}<span class='chevron'>›</span></a>")
         body=f"<p class='reader-lead'>{len(epic_rows)} epics</p>{filters}<div class='epic-list'>{''.join(rows) if rows else _empty_state('epic','No epics match','Adjust the filter, or create an epic.')}</div>"
-        return _page("Epics",body,poll="all",seq=board.store.max_seq(),active_nav="epics",qs=qs)
-
-    @r.get("/ui/tickets",response_class=HTMLResponse)
+        return _page("Epics",body,poll="all",seq=board.store.max_seq(),active_nav="epics",qs=qs,prefix=prefix)
+    @r.get(prefix + "/tickets",response_class=HTMLResponse)
     def tickets(as_: str|None=Query(default=None,alias="as"),token: str|None=Query(default=None),
                 epic: str|None=Query(default=None),status: str|None=Query(default=None),kind: str|None=Query(default=None),
                 work_type: str|None=Query(default=None),assignee: str|None=Query(default=None),tag: str|None=Query(default=None),
@@ -508,7 +505,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
             return (f"<select name='{name}'><option value=''>{label}</option>"+
                     "".join(f"<option value='{_e(v)}'{' selected' if cur==v else ''}>{_e(l)}</option>" for v,l in values)+"</select>")
         keep="".join(f"<input type='hidden' name='{k}' value='{_e(v)}'>" for k,v in (("as",as_),("token",token)) if v)
-        filters=(f"<form class='filter-bar' method='get' action='/ui/tickets'>{keep}"
+        filters=(f"<form class='filter-bar' method='get' action='{prefix}/tickets'>{keep}"
                  f"{_sel('epic',epic,[(t.id,f'{t.id} — {t.title[:40]}') for t in epics_open],'any epic')}"
                  f"{_sel('status',status,[(x.value,x.value.replace('_',' ')) for x in TicketStatus],'open (any status)')}"
                  f"{_sel('kind',kind,[(x.value,x.value) for x in TicketKind],'any kind')}"
@@ -516,10 +513,10 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
                  f"<input name='assignee' value='{_e(assignee or '')}' placeholder='assignee contains…' size='14'>"
                  f"<input name='tag' value='{_e(tag or '')}' placeholder='tag' size='10'>"
                  f"<input name='q' value='{_e(q or '')}' placeholder='words in title/description/tags'>"
-                 f"<button>Filter</button><a href='/ui/tickets{link_q}'>clear</a></form>")
+                 f"<button>Filter</button><a href='{prefix}/tickets{link_q}'>clear</a></form>")
         trs="".join(
-            f"<tr><td><a href='/ui/ticket/{quote(t.id,safe='')}{link_q}' class='object-id'>{_e(t.id)}</a></td>"
-            f"<td>{_ticket_chip(t.epic_id) if t.epic_id and t.epic_id!=t.id else '—'}</td>"
+            f"<tr><td><a href='{prefix}/ticket/{quote(t.id,safe='')}{link_q}' class='object-id'>{_e(t.id)}</a></td>"
+            f"<td>{_ticket_chip(t.epic_id, prefix) if t.epic_id and t.epic_id!=t.id else '—'}</td>"
             f"<td title='{_e(t.title)}'>{_e(t.title[:70])}{'…' if len(t.title)>70 else ''}</td>"
             f"<td>{_e(t.kind)}/{_e(t.work_type)}</td><td>{_badge(t.status)}</td><td>{_e(t.assignee or '—')}</td>"
             f"<td>{''.join('<span class=tag>'+_e(x)+'</span>' for x in (t.tags or []))}</td>"
@@ -529,9 +526,8 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
                f"<th>assignee</th><th>tags</th><th>criteria</th></tr>{trs}</table>") if rows else \
               _empty_state("ticket","No tickets match","Adjust the filters.")
         body=f"<p class='reader-lead'>{len(rows)} ticket{'s' if len(rows)!=1 else ''}</p>{filters}{table}"
-        return _page("Tickets",body,poll="all",seq=board.store.max_seq(),active_nav="tickets",qs=qs)
-
-    @r.get("/ui/epic/{epic_id}",response_class=HTMLResponse)
+        return _page("Tickets",body,poll="all",seq=board.store.max_seq(),active_nav="tickets",qs=qs,prefix=prefix)
+    @r.get(prefix + "/epic/{epic_id}",response_class=HTMLResponse)
     def epic(epic_id: str,as_: str=Query(default="owner",alias="as"),token: str|None=Query(default=None),
              order: str=Query(default="newest"),status: str|None=Query(default=None),work_type: str|None=Query(default=None),
              assignee: str|None=Query(default=None),q: str|None=Query(default=None)):
@@ -543,7 +539,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
         try:
             p=_me(as_,token); qs=_qs(p,token); hidden=_hidden_identity_fields(p,token)
             selected=avatar_id_for(p,preferences); identity=human_avatar_svg(selected,36) if p.type=="human" else _avatar_for(p.id)
-            composer=(f"<div class='composer'><form class='composer-card composer-slim' style='grid-template-columns:minmax(0,1fr) auto' method='post' action='/ui/ticket/{quote(epic_id,safe='')}/say'>{hidden}"
+            composer=(f"<div class='composer'><form class='composer-card composer-slim' style='grid-template-columns:minmax(0,1fr) auto' method='post' action='{prefix}/ticket/{quote(epic_id,safe='')}/say'>{hidden}"
                       f"<input name='text' placeholder='Comment on this epic as @{_e(p.handle.lstrip('@'))} — @mention anyone' required "
                       f"title='posts to the epic thread; every @mention gets it in their inbox + Slack'>"
                       f"<button>Send</button></form></div>")
@@ -563,16 +559,16 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
             return (f"<select name='{name}'><option value=''>{label}</option>"+
                     "".join(f"<option value='{v}'{' selected' if cur==v else ''}>{v.replace('_',' ')}</option>" for v in values)+"</select>")
         keep="".join(f"<input type='hidden' name='{k}' value='{_e(v)}'>" for k,v in (("as",as_),("token",token),("order",order)) if v)
-        filters=(f"<form class='filter-bar' method='get' action='/ui/epic/{quote(epic_id,safe='')}'>{keep}"
+        filters=(f"<form class='filter-bar' method='get' action='{prefix}/epic/{quote(epic_id,safe='')}'>{keep}"
                  f"{_sel('status',status,[x.value for x in TicketStatus],'any status')}"
                  f"{_sel('work_type',work_type,[x.value for x in _WT],'any work type')}"
                  f"<input name='assignee' value='{_e(assignee or '')}' placeholder='assignee contains…' size='16'>"
                  f"<input name='q' value='{_e(q or '')}' placeholder='words in title/description/tags'>"
-                 f"<button>Filter</button><a href='/ui/epic/{quote(epic_id,safe='')}?{qs or 'as='+quote(as_)}'>clear</a></form>")
+                 f"<button>Filter</button><a href='{prefix}/epic/{quote(epic_id,safe='')}?{qs or 'as='+quote(as_)}'>clear</a></form>")
         col_html=""
         for label,states in _COLS:
             cards="".join(
-                f"<a class='kanban-card' href='/ui/ticket/{quote(k.id,safe='')}?{qs or 'as='+quote(as_)}' title='{_e(k.title[:140])}'>"
+                f"<a class='kanban-card' href='{prefix}/ticket/{quote(k.id,safe='')}?{qs or 'as='+quote(as_)}' title='{_e(k.title[:140])}'>"
                 f"<div class='kanban-top'><span class='object-id'>{_e(k.id)}</span>"
                 f"{_avatar_for(k.assignee,20) if k.assignee else ''}</div>"
                 f"<div class='kanban-title'>{_e(k.title[:70])}</div>"
@@ -583,7 +579,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
             col_html+=f"<div class='kanban-col'><div class='kanban-head'>{_e(label)} <span class='count'>{n}</span></div>{cards or '<div class=kanban-empty></div>'}</div>"
         # all tickets: a collapsed TABLE below the board (the old side tree, made scannable)
         rows="".join(
-            f"<tr><td><a href='/ui/ticket/{quote(k.id,safe='')}?{qs or 'as='+quote(as_)}' class='object-id'>{_e(k.id)}</a></td>"
+            f"<tr><td><a href='{prefix}/ticket/{quote(k.id,safe='')}?{qs or 'as='+quote(as_)}' class='object-id'>{_e(k.id)}</a></td>"
             f"<td>{_e(k.kind)}/{_e(k.work_type)}</td><td>{_badge(k.status)}</td>"
             f"<td>{_e(k.assignee or '—')}</td>"
             f"<td>{sum(1 for c in board.criteria(k.id) if c.verdict==Verdict.passed)}/{len(board.criteria(k.id))}</td>"
@@ -596,14 +592,13 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
         body=(f"<p class='reader-lead'>{_e(bd['words'])}</p><div>{counts}</div>"
               f"{_section_header('Board',len(kids))}{filters}<div class='kanban'>{col_html}</div>{table}"
               f"{_section_header('Epic thread',len(thread))}"
-              f"{_order_toggle(f'/ui/epic/{quote(epic_id,safe='')}', qs, newest)}"
+              f"{_order_toggle(f'{prefix}/epic/{quote(epic_id,safe='')}', qs, newest)}"
               f"{_message_group_html(thread,newest_first=newest)}")
         gate_html="".join(_gate_card_html(t,g,"board","Open decision") for t,g in gates) or _empty_state("gate","No open gates","This epic has no pending decisions.")
         doc_html="".join(_doc_row(d) for d in docs) or _empty_state("doc","No documents","Linked epic documents will appear here.")
         right=f"{_section_header('Open gates',len(gates))}{gate_html}{_section_header('Documents',len(docs))}{doc_html}"
-        return _page(f"Epic {epic_id}",body,poll=f"epic:{epic_id}",seq=board.store.max_seq(),active_nav="epics",context=right,composer=composer,identity=identity,qs=qs)
-
-    @r.get("/ui/ticket/{ticket_id}",response_class=HTMLResponse)
+        return _page(f"Epic {epic_id}",body,poll=f"epic:{epic_id}",seq=board.store.max_seq(),active_nav="epics",context=right,composer=composer,identity=identity,qs=qs,prefix=prefix)
+    @r.get(prefix + "/ticket/{ticket_id}",response_class=HTMLResponse)
     def ticket(ticket_id: str,as_: str|None=Query(default=None,alias="as"),token: str|None=Query(default=None),
                order: str=Query(default="newest")):
         _guard(as_,token)  # public mode: the ticket page renders only for a verified identity
@@ -614,7 +609,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
             try:
                 p=_me(as_,token); hidden=_hidden_identity_fields(p,token)
                 selected=avatar_id_for(p,preferences); identity=human_avatar_svg(selected,36) if p.type=="human" else _avatar_for(p.id)
-                composer=(f"<div class='composer'><form class='composer-card' method='post' action='/ui/ticket/{quote(ticket_id,safe='')}/say'>{hidden}"
+                composer=(f"<div class='composer'><form class='composer-card' method='post' action='{prefix}/ticket/{quote(ticket_id,safe='')}/say'>{hidden}"
                           f"<input type='hidden' name='ticket_id' value='{_e(ticket_id)}'>"
                           f"<input class='composer-main' name='text' placeholder='Message this conversation — @mention anyone' required "
                           f"title='posts to this thread; every @mention gets it in their inbox'>"
@@ -626,34 +621,33 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
             try: _qs_str=_qs(_me(as_,token),token)
             except Exception: _qs_str=""
         newest = order != "oldest"
-        body=(f"<p><a href='/ui/epic/{quote(epic_id,safe='')}{'?'+_qs_str if _qs_str else ''}'>← Epic {_e(epic_id)}</a></p>"
+        body=(f"<p><a href='{prefix}/epic/{quote(epic_id,safe='')}{'?'+_qs_str if _qs_str else ''}'>← Epic {_e(epic_id)}</a></p>"
               f"<p class='reader-lead'>{_e(t.title)}</p>"
               f"{('<p class=secondary>'+_e(t.description)+'</p>') if t.description else ''}"
               f"{''.join('<span class=tag>'+_e(x)+'</span>' for x in (t.tags or []))}"
               f"<div class='identity'>{_avatar_for(t.assignee)}<div class='identity-copy'><strong>{_e(_participant_label(assignee))}</strong><span>{_e(t.kind)} / {_e(t.work_type)} · {_badge(t.status)}</span></div></div>"
               f"{_section_header('Conversation',len(thread))}"
-              f"{_order_toggle(f'/ui/ticket/{quote(ticket_id,safe='')}', _qs_str, newest)}"
+              f"{_order_toggle(f'{prefix}/ticket/{quote(ticket_id,safe='')}', _qs_str, newest)}"
               f"{_message_group_html(thread,newest_first=newest)}")
         rel_by_doc={lk.to_id: lk.relation.value for lk in board.links(from_id=ticket_id)}
         criteria_html="".join(_criterion_html(c) for c in crits) or _empty_state("ticket","No criteria","Acceptance criteria have not been added."); docs_html="".join(_doc_row(d, rel_by_doc.get(d.id)) for d in docs) or _empty_state("doc","No linked documents","Documents linked to this ticket will appear here.")
-        design=f"<a href='/ui/doc/{quote(t.design_ref,safe='')}'>{_e(t.design_ref)}</a>" if t.design_ref else "Not linked"
+        design=f"<a href='{prefix}/doc/{quote(t.design_ref,safe='')}'>{_e(t.design_ref)}</a>" if t.design_ref else "Not linked"
         right=f"{_section_header('Acceptance criteria',len(crits))}{criteria_html}{_section_header('Linked documents',len(docs))}{docs_html}{_section_header('Ticket metadata')}<div class='meta-row'><span>Design</span><span>{design}</span></div><div class='meta-row'><span>Kind</span><span>{_e(t.kind)}</span></div><div class='meta-row'><span>Work type</span><span>{_e(t.work_type)}</span></div>"
-        return _page(f"Ticket {ticket_id}",body,poll=f"ticket:{ticket_id}",seq=board.store.max_seq(),active_nav="epics",context=right,composer=composer,identity=identity,qs=_qs_str)
-
-    @r.post("/ui/ticket/{ticket_id}/say")
+        return _page(f"Ticket {ticket_id}",body,poll=f"ticket:{ticket_id}",seq=board.store.max_seq(),active_nav="epics",context=right,composer=composer,identity=identity,qs=_qs_str,prefix=prefix)
+    @r.post(prefix + "/ticket/{ticket_id}/say")
     def ticket_say(ticket_id: str,as_: str=Form(...),token: str=Form(default=""),text: str=Form(...)):
         p=_me(as_,token or None)
-        page_of=f"/ui/ticket/{quote(ticket_id,safe='')}"
+        page_of=f"{prefix}/ticket/{quote(ticket_id,safe='')}"
         try:
             t=board.ticket(ticket_id)
-            if t.kind.value=="epic": page_of=f"/ui/epic/{quote(ticket_id,safe='')}"
+            if t.kind.value=="epic": page_of=f"{prefix}/epic/{quote(ticket_id,safe='')}"
             m=board.message_send(p,ticket_id=ticket_id,to=None,kind=MessageKind.note,text=text)
             delivery.after_message(board,p.id,m)
         except (BoardError,ValueError) as e:
             return RedirectResponse(f"{page_of}?{_qs(p,token or None)}&err={quote(str(e))}",status_code=303)
         return RedirectResponse(f"{page_of}?{_qs(p,token or None)}",status_code=303)
 
-    @r.get("/ui/doc/{doc_id}",response_class=HTMLResponse)
+    @r.get(prefix + "/doc/{doc_id}",response_class=HTMLResponse)
     def doc(doc_id: str,version: int|None=None,as_: str|None=Query(default=None,alias="as"),
             token: str|None=Query(default=None),err: str|None=Query(default=None)):
         _guard(as_,token)  # public mode: the document reader renders only for a verified identity
@@ -668,37 +662,36 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
                 approve=""
                 c=views.signoff_criterion_for_doc(board,p,d)
                 if c is not None:
-                        approve=(f"<form method='post' action='/ui/me/verdict' style='display:flex;gap:8px;align-items:center'>{hidden}"
+                        approve=(f"<form method='post' action='{prefix}/me/verdict' style='display:flex;gap:8px;align-items:center'>{hidden}"
                                  f"<input type='hidden' name='criterion_id' value='{_e(c.id)}'>"
                                  f"<input type='hidden' name='ticket_id' value='{_e(c.ticket_id)}'>"
                                  f"<input type='hidden' name='evidence_version' value='{d.version}'>"
-                                 f"<input type='hidden' name='back' value='/ui/doc/{quote(doc_id,safe='')}?{qs}'>"
+                                 f"<input type='hidden' name='back' value='{prefix}/doc/{quote(doc_id,safe='')}?{qs}'>"
                                  f"<button name='verdict' value='pass' title='sign this doc off — {_e(c.ticket_id)} can proceed'>Approve</button>"
                                  f"<button name='verdict' value='fail' class='btn-fail' title='send back — add a comment saying what is missing'>Needs work</button></form>")
-                comment=(f"<form method='post' action='/ui/doc/{quote(doc_id,safe='')}/comment' style='display:flex;gap:8px;flex:1'>{hidden}"
+                comment=(f"<form method='post' action='{prefix}/doc/{quote(doc_id,safe='')}/comment' style='display:flex;gap:8px;flex:1'>{hidden}"
                          f"<input name='text' placeholder='Comment on this doc as @{_e(p.handle.lstrip('@'))} — @mention a reviewer to request review' required "
                          f"title='posts [doc {_e(doc_id)} v{d.version}] + your comment to the epic thread; @mentions get inbox + Slack'>"
                          f"<button>Comment</button></form>") if scope_is_epic else ""
                 actions=f"<div class='doc-actions'>{approve}{comment}</div>" if (approve or comment) else ""
             except Exception: pass
         versions="".join(
-            f"<a class='{'active' if v==d.version else ''}' href='/ui/doc/{quote(doc_id,safe='')}?version={v}{'&'+qs if qs else ''}' "
+            f"<a class='{'active' if v==d.version else ''}' href='{prefix}/doc/{quote(doc_id,safe='')}?version={v}{'&'+qs if qs else ''}' "
             f"title='{'you are reading this version' if v==d.version else 'open version '+str(v)}'>v{v}"
             f"{' · latest' if v==latest else ''}{' · viewing' if v==d.version and v!=latest else ''}</a>"
             for v in all_versions)
-        back=f"<p><a href='/ui/epic/{quote(d.scope,safe='')}{'?'+qs if qs else ''}'>← Epic {_e(d.scope)}</a></p>" if scope_is_epic else \
-             f"<p><a href='/ui{'?'+qs if qs else ''}'>← Projects</a></p>"
+        back=f"<p><a href='{prefix}/epic/{quote(d.scope,safe='')}{'?'+qs if qs else ''}'>← Epic {_e(d.scope)}</a></p>" if scope_is_epic else \
+             f"<p><a href='{prefix}{'?'+qs if qs else ''}'>← Projects</a></p>"
         banner=f"<div class='alert' role='alert'>⚠ {_e(err)}</div>" if err else ""
         body=(f"<span id='top'></span>{back}{banner}<p class='secondary'>{_e(d.doc_type)} · owner {_e(d.owner_role)} · scope {_e(d.scope)} · version {d.version}</p>"
               f"<div class='version-control'>{versions}</div>{actions}"
               f"<article class='document-reader doc-md'>{_md(d.body_md)}</article>"
               f"<a class='to-top' href='#top' title='back to the top of the doc'>↑ top</a>")
-        return _page(d.title,body,active_nav="epics",identity=identity,qs=qs)
-
-    @r.post("/ui/doc/{doc_id}/comment")
+        return _page(d.title,body,active_nav="epics",identity=identity,qs=qs,prefix=prefix)
+    @r.post(prefix + "/doc/{doc_id}/comment")
     def doc_comment(doc_id: str,as_: str=Form(...),token: str=Form(default=""),text: str=Form(...)):
         p=_me(as_,token or None)
-        back=f"/ui/doc/{quote(doc_id,safe='')}?{_qs(p,token or None)}"
+        back=f"{prefix}/doc/{quote(doc_id,safe='')}?{_qs(p,token or None)}"
         try:
             d=board.doc(doc_id)
             m=board.message_send(p,ticket_id=d.scope,to=None,kind=MessageKind.note,

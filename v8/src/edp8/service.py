@@ -982,15 +982,21 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         threading.Thread(target=_pool_watch, name="edp8-pool-watch", daemon=True).start()
 
     from .ui import router as ui_router
-
-    app.include_router(ui_router(board, verify=human_verify, public=public))
-
-    # SPA (Folio) mounted AFTER the legacy router so /ui/poll and every /v1 route keep
-    # priority; the catch-all only matches under its prefix. Missing build → 503 page,
-    # never a failed create_app() (webapp/serve.py).
     from .webapp import mount_spa
 
-    mount_spa(app, os.environ.get("EDP8_WEB_PREFIX", "/app"))
+    # Cutover switch (design §4.1 Transition, S12). EDP8_UI selects which renderer owns /ui:
+    #   folio  (default) — SPA at /ui, legacy renderer kept at /ui-legacy as a one-flag rollback
+    #   legacy           — legacy renderer at /ui, SPA at /app (the pre-cutover mapping)
+    # The legacy router ALWAYS registers the fixed /ui/poll route (its prefix never moves poll),
+    # and is included BEFORE the SPA catch-all so /ui/poll and every /v1 route keep priority.
+    # A missing build → 503 page from mount_spa, never a failed create_app() (webapp/serve.py).
+    ui_mode = os.environ.get("EDP8_UI", "folio").strip().lower()
+    if ui_mode == "legacy":
+        app.include_router(ui_router(board, verify=human_verify, public=public, prefix="/ui"))
+        mount_spa(app, os.environ.get("EDP8_WEB_PREFIX", "/app"))
+    else:  # folio
+        app.include_router(ui_router(board, verify=human_verify, public=public, prefix="/ui-legacy"))
+        mount_spa(app, "/ui")
 
     if os.environ.get("EDP8_PLANE_URL"):
         from .plane_adapter import start_mirror_thread, webhook_router
