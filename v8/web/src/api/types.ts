@@ -308,6 +308,7 @@ export interface TicketPage {
   criteria: CriterionView[];
   docs: DocSummaryRelated[];
   thread: MessageView[];
+  open_gates: GateRow[];
   assignee: { id: string | null; handle: string | null; role: string | null };
   waiting_reason: WaitingReason;
 }

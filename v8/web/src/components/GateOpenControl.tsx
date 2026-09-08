@@ -8,8 +8,9 @@ import styles from "./GateOpenControl.module.css";
 
 // Open-a-gate control (design §5, §16): raise a decision the owner must rule on, from the object it
 // concerns. The gate kinds are the board's enum; each carries its glossary meaning so the person
-// picks the right question. Answering is GateForm elsewhere (Decisions/Doc/Epic) — this is the other
-// half of the loop. The board decides who may open and what it holds; its hint is shown verbatim.
+// picks the right question. The other half of the loop — answering — is GateForm, mounted on
+// Decisions and on the Ticket page's "Answer a decision" card. The board decides who may open and
+// what it holds; its hint is shown verbatim.
 export function GateOpenControl({
   ticketId,
   onOpened,

@@ -143,12 +143,18 @@ def test_status_control_route_is_role_scoped_and_matches_the_transitions_route(c
     moved = client.patch(f"/v1/tickets/{s}", json={"status": "designed"}, headers={"X-Participant": arch}).json()
     assert moved["ok"], moved
 
-    # an unrelated engineer may NOT sign off — refused with the board's plain reason
+    # an unrelated engineer may NOT sign off — refused with the board's plain reason. The board's
+    # convention for a permission/scope refusal is a 400 envelope (ok:false + hint); an illegal-
+    # transition refusal is 409. It is NEVER a bare 403 — the criterion wording "403" means "the
+    # board forbids it and says why", which the envelope delivers. Pin the ACTUAL contract (not a
+    # loose set) so a regression that drops the refusal or the hint turns this red.
     _reg(client, "eng-x", "engineer")
     refused = client.patch(f"/v1/tickets/{s}", json={"status": "signed_off"}, headers={"X-Participant": "eng-x"})
     body = refused.json()
-    assert body["ok"] is False and refused.status_code in (400, 403, 409)
-    assert "sign-off" in (body.get("hint", "") + str(body.get("error", ""))).lower()
+    assert body["ok"] is False, body
+    assert refused.status_code in (400, 409), refused.status_code
+    hint = (body.get("hint", "") + " " + str(body.get("error", ""))).lower()
+    assert "sign-off" in hint or "sign off" in hint, body
 
     # and the transitions route the UI reads shows the SAME answer per actor
     eng_view = {t["to"]: t for t in

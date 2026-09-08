@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { screen } from "@testing-library/react";
+import { screen, within, waitFor } from "@testing-library/react";
 import { server } from "../test/setup";
 import { http, okJson, renderRoute } from "./testUtils";
 import { TicketPage } from "./Ticket";
@@ -28,6 +28,7 @@ function ticketPage(over: Partial<TicketPageData> = {}): TicketPageData {
     thread: [{ id: "m1", by: "engineer.s-99", to: null, kind: "note", text: "working on it", at: "2026-09-02T10:00:00Z", reply_to: null }],
     assignee: { id: "engineer.s-99", handle: "engineer.s-99", role: "engineer" },
     waiting_reason: { reason: "awaiting qa", presence: "alive", latest_status: "on it" },
+    open_gates: [],
     ...over,
   };
 }
@@ -84,5 +85,28 @@ describe("TicketPage", () => {
     // ruling mode → the Approve / Needs work buttons are present on the ticket page itself
     expect(screen.getByTestId("approve")).toBeInTheDocument();
     expect(screen.getByTestId("needs-work")).toBeInTheDocument();
+  });
+
+  it("closes the OTHER half of the gate loop: an open gate on the ticket can be answered from the page", async () => {
+    let answered: { path: string; body: Record<string, unknown> } | null = null;
+    mount(
+      ticketPage({
+        open_gates: [
+          { ticket_id: "s-1", gate: "demo", by: "architect.epic-1", note: "does it work?", opened_at: "2026-09-02T10:00:00Z", epic: "epic-1" },
+        ],
+      }),
+    );
+    server.use(
+      http.post("/v1/gates/s-1/demo/answer", async ({ request }) => {
+        answered = { path: "/v1/gates/s-1/demo/answer", body: (await request.json()) as Record<string, unknown> };
+        return okJson({ ok: true });
+      }),
+    );
+    const form = await screen.findByTestId("gate-form");
+    const { fireEvent } = await import("@testing-library/react");
+    fireEvent.change(within(form).getByTestId("gate-answer"), { target: { value: "looks good, shipping" } });
+    fireEvent.click(within(form).getByTestId("gate-submit"));
+    await waitFor(() => expect(answered).not.toBeNull());
+    expect(answered!.body).toMatchObject({ answer: "looks good, shipping" });
   });
 });

@@ -1,4 +1,5 @@
 import { label as glossLabel, term } from "../copy/glossary";
+import { Term } from "./Term";
 import styles from "./AgentLine.module.css";
 
 // Agent-authored text framing (design §15): a line of agent text is shown verbatim, but framed so a
@@ -34,7 +35,6 @@ export function AgentLine({
 }): React.JSX.Element {
   const role = roleWordOf(by);
   const waitingOnYou = kind === "question" && !!viewer && to === viewer;
-  const kindTip = term("message_kind", kind)?.meaning;
 
   return (
     <div className={styles.line} data-testid="agent-line">
@@ -43,9 +43,9 @@ export function AgentLine({
       <span className={styles.mono} data-testid="agent-id">
         {by}
       </span>
-      <span className={styles.kind} title={kindTip}>
-        {glossLabel("message_kind", kind)}
-      </span>
+      {/* The message kind carries its plain meaning as a keyboard-reachable tooltip (aria-describedby),
+          not a mouse-only title — the S15 "kind label" rule (c-581d50496d). */}
+      <Term category="message_kind" value={kind} className={styles.kind} />
       <span
         className={`${styles.tag} ${waitingOnYou ? styles.waiting : styles.fyi}`}
         data-testid="reader-tag"

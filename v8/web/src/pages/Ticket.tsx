@@ -9,8 +9,10 @@ import { StatusControl } from "../components/StatusControl";
 import { AddCriterion } from "../components/CriterionControls";
 import { AssignControl } from "../components/AssignControl";
 import { GateOpenControl } from "../components/GateOpenControl";
+import { GateForm } from "../components/GateForm";
 import { LinkDocControl, AskRoleControl } from "../components/TicketAsks";
 import { AgentLine } from "../components/AgentLine";
+import { Term } from "../components/Term";
 import { CriterionCard } from "../components/CriterionCard";
 import { Composer } from "../components/Composer";
 import { useDocDrawer } from "../components/DocDrawer";
@@ -51,7 +53,7 @@ export function TicketPage(): React.JSX.Element {
       </p>
     );
 
-  const { ticket, epic_id, criteria, docs, thread, assignee, waiting_reason } = page.data;
+  const { ticket, epic_id, criteria, docs, thread, assignee, waiting_reason, open_gates } = page.data;
   const ordered = order === "newest" ? [...thread].reverse() : thread;
   const seatLabel = assignee.handle ?? ticket.assignee ?? "unassigned";
 
@@ -162,6 +164,15 @@ export function TicketPage(): React.JSX.Element {
             <AssignControl ticketId={id} currentAssignee={assignee.handle ?? ticket.assignee ?? null} />
           </section>
 
+          {open_gates.length > 0 ? (
+            <section className={ui.card} data-testid="answer-gates">
+              <div className={ui.sectionLabel}>Answer a decision ({open_gates.length})</div>
+              {open_gates.map((g) => (
+                <GateForm key={`${g.ticket_id}:${g.gate}`} gate={g} />
+              ))}
+            </section>
+          ) : null}
+
           <section className={ui.card}>
             <div className={ui.sectionLabel}>Raise a decision</div>
             <GateOpenControl ticketId={id} />
@@ -207,7 +218,8 @@ export function TicketPage(): React.JSX.Element {
             <div className={ui.metaRow}>
               <span>Kind</span>
               <span>
-                {ticket.kind} / {ticket.work_type}
+                <Term category="ticket_kind" value={ticket.kind} /> /{" "}
+                <Term category="work_type" value={ticket.work_type} />
               </span>
             </div>
             <div className={ui.metaRow}>
