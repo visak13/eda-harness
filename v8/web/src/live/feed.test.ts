@@ -3,7 +3,7 @@ import { http, HttpResponse } from "msw";
 import { server } from "../test/setup";
 import { subscribeFeed, type FeedEvent } from "./feed";
 
-function sseResponse(chunks: string[]): HttpResponse {
+function sseResponse(chunks: string[]) {
   const enc = new TextEncoder();
   const stream = new ReadableStream({
     start(c) {
