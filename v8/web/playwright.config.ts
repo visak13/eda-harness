@@ -16,6 +16,10 @@ export default defineConfig({
   fullyParallel: false,
   reporter: [["list"]],
   timeout: 30_000,
+  // Screenshot baselines (visual.spec.ts, criterion c-80b50710a6) live under e2e/__screenshots__
+  // (web/.gitignore negates that path) and are keyed by platform — the plates are win32 renders, so
+  // a mac/linux run must never diff against a win32 baseline. {arg} is the toHaveScreenshot name.
+  snapshotPathTemplate: "e2e/__screenshots__/{testFilePath}/{arg}-{platform}{ext}",
   globalSetup: "./e2e/globalSetup.ts",
   globalTeardown: "./e2e/globalTeardown.ts",
   use: {
