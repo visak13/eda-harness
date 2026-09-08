@@ -1,0 +1,141 @@
+.subnav {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 20px;
+}
+.subnavItem {
+  position: relative;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 14px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+.subnavItem:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: -2px;
+  border-radius: 4px;
+}
+.subnavActive {
+  color: var(--ink);
+}
+.subnavActive::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 3px;
+  background: var(--accentink);
+  border-radius: 2px 2px 0 0;
+}
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.docRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+.docRow:hover {
+  border-color: var(--strongline);
+}
+.docRow:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 2px;
+}
+.docTitle {
+  flex: 1;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.artRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.artUri {
+  color: var(--accentink);
+  text-decoration: underline;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.artNote {
+  color: var(--muted);
+  font-size: 13px;
+  margin-left: auto;
+}
+
+.filterBar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.filterBar input {
+  height: 34px;
+  width: 130px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.table th,
+.table td {
+  border-bottom: 1px solid var(--line);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.table th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.history section {
+  margin-bottom: 20px;
+}
+.event {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+.eventTime {
+  font: 12px/18px Consolas, monospace;
+  color: var(--muted);
+  flex: none;
+}
+.eventLine {
+  flex: 1;
+  font-size: 14px;
+  color: var(--ink);
+}

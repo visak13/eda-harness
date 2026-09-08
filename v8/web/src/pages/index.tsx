@@ -1,9 +1,16 @@
-import { useParams } from "react-router";
 import { PageHeader, Placeholder } from "../components/PageHeader";
 
-// Route destination stubs (design §4.2 IA). Each renders the shell-measured <h1>; bodies
-// arrive in later stories (Decisions/inbox → G2, Epics/Ticket/Doc/Library → G3a, Seats → G3b).
+// Route destinations. Real pages live in their own files and are re-exported here (the barrel
+// main.tsx imports). G3a owns Epics/Epic/Ticket/Doc/Library; G2 owns Decisions; G3b owns Seats.
 
+export { EpicsPage } from "./Epics";
+export { EpicPage } from "./Epic";
+export { TicketPage } from "./Ticket";
+export { DocPage } from "./Doc";
+export { LibraryPage } from "./Library";
+
+// DecisionsPage is G2's (pages/Decisions.tsx). Until it lands this stub keeps the barrel whole;
+// flip to `export { DecisionsPage } from "./Decisions";` once G2 commits its page.
 export function DecisionsPage(): React.JSX.Element {
   return (
     <>
@@ -13,60 +20,11 @@ export function DecisionsPage(): React.JSX.Element {
   );
 }
 
-export function EpicsPage(): React.JSX.Element {
-  return (
-    <>
-      <PageHeader title="Epics" subtitle="Every epic on the board and its pulse." />
-      <Placeholder story="G3a" />
-    </>
-  );
-}
-
-export function EpicPage(): React.JSX.Element {
-  const { id } = useParams();
-  return (
-    <>
-      <PageHeader title="Epic" subtitle={id} />
-      <Placeholder story="G3a" />
-    </>
-  );
-}
-
 export function SeatsPage(): React.JSX.Element {
   return (
     <>
       <PageHeader title="Seats" subtitle="Who is alive, and what each shell is doing." />
       <Placeholder story="G3b" />
-    </>
-  );
-}
-
-export function TicketPage(): React.JSX.Element {
-  const { id } = useParams();
-  return (
-    <>
-      <PageHeader title="Ticket" subtitle={id} />
-      <Placeholder story="G3a" />
-    </>
-  );
-}
-
-export function DocPage(): React.JSX.Element {
-  const { id } = useParams();
-  return (
-    <>
-      <PageHeader title="Document" subtitle={id} />
-      <Placeholder story="G3a" />
-    </>
-  );
-}
-
-export function LibraryPage(): React.JSX.Element {
-  const { section } = useParams();
-  return (
-    <>
-      <PageHeader title="Library" subtitle={section ? `${section}` : undefined} />
-      <Placeholder story="G3a" />
     </>
   );
 }

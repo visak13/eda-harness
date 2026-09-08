@@ -1,0 +1,315 @@
+.crumb {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 16px;
+}
+.crumb a {
+  color: var(--accentink);
+}
+.crumb a:hover {
+  text-decoration: underline;
+}
+.crumbHere {
+  color: var(--ink);
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.idline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+/* Georgia 38 page title (design §4.2 / criterion c-a23e72f460). */
+.title {
+  font: 38px/1.18 Georgia, serif;
+  letter-spacing: -1.1px;
+  font-weight: 600;
+  color: var(--ink);
+  flex: 1;
+  min-width: 0;
+}
+
+/* 'Steer this epic' control: 40px tall (criterion c-a23e72f460). */
+.steer {
+  height: 40px;
+  padding: 0 16px;
+  flex: none;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--buttonink);
+  font-size: 13px;
+  font-weight: 600;
+}
+.steer:hover {
+  filter: brightness(0.97);
+}
+.steer:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 3px;
+}
+
+.words {
+  margin: 20px 0;
+}
+.words figcaption {
+  margin-bottom: 8px;
+}
+
+/* Two-column split: 744 / 336, gap 64 (fidelity criterion c-a23e72f460). */
+.layout {
+  display: grid;
+  grid-template-columns: 744px 336px;
+  gap: 64px;
+  margin-top: 24px;
+  align-items: start;
+}
+
+.mainCol {
+  min-width: 0;
+}
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.overview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.pulse {
+  font-size: 15px;
+  line-height: 24px;
+  color: var(--ink);
+}
+
+.docLink {
+  border: 0;
+  background: transparent;
+  color: var(--accentink);
+  text-decoration: underline;
+  padding: 0;
+  font: inherit;
+}
+.docLink:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 2px;
+}
+
+.seat {
+  margin-bottom: 8px;
+}
+
+.filterBar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.filterBar input {
+  flex: 1;
+  min-width: 120px;
+  height: 34px;
+}
+
+.tree {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+.treeRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.treeRow:last-child {
+  border-bottom: 0;
+}
+.treeLink {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+.treeLink:hover .treeTitle {
+  text-decoration: underline;
+}
+.treeTitle {
+  font-size: 14px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.treeRole {
+  font-size: 12px;
+  color: var(--muted);
+  flex: none;
+}
+.treeTally {
+  font: 12px/18px Consolas, monospace;
+  color: var(--muted);
+  flex: none;
+}
+
+.kanban {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+}
+.kanbanCol {
+  background: var(--rail);
+  border-radius: 8px;
+  padding: 10px;
+  min-height: 60px;
+}
+.kanbanHead {
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+}
+.kanbanCount {
+  color: var(--accentink);
+}
+.kanbanCard {
+  display: block;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+}
+.kanbanCard:hover {
+  border-color: var(--strongline);
+}
+.kanbanCard:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 2px;
+}
+.kanbanTitle {
+  display: block;
+  font-size: 12px;
+  color: var(--ink);
+  margin-top: 4px;
+}
+
+.docList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.docRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+.docRow:hover {
+  border-color: var(--strongline);
+}
+.docRow:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 2px;
+}
+.docTitle {
+  flex: 1;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.thread {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.threadHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.orderToggle {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  height: 28px;
+  padding: 0 10px;
+}
+.orderToggle:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 2px;
+}
+.messages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.message {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 16px;
+  background: var(--panel);
+}
+.messageMeta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.messageBy {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.messageText {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+
+/* Below 960 the split stacks (design §4.2 viewport rule; parity, not a plate). */
+@media (max-width: 959px) {
+  .layout {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+  .kanban {
+    grid-template-columns: 1fr;
+  }
+}

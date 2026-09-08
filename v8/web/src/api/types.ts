@@ -13,6 +13,17 @@ export type ISODateString = string;
 // The JSON view API returns these verbatim, so the client renders them, never "passed".
 export type Verdict = "pending" | "pass" | "fail";
 
+// Board MessageKind enum (schemas.py MessageKind) — the kinds a Composer can post. Shared
+// primitive kept here so the Composer (G2) and the epic/ticket pages (G3a) agree on one union.
+export type MessageKind =
+  | "question"
+  | "answer"
+  | "steer"
+  | "status"
+  | "finding"
+  | "deviation"
+  | "note";
+
 export interface CriterionView {
   id: string;
   text: string;

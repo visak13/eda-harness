@@ -4,6 +4,7 @@ import { getDocHtml, sendMessage } from "../api/endpoints";
 import type { DocHtml } from "../api/types";
 import { identity } from "../auth/identity";
 import { Markdown } from "./Markdown";
+import { SignoffPane } from "./SignoffPane";
 import ui from "./ui.module.css";
 import styles from "./DocView.module.css";
 
@@ -110,9 +111,7 @@ function DocBody({
         </div>
       ) : null}
 
-      {/* Sign-off pane (§14 one-click Approve / Needs work, G2's CriterionCard) mounts here via
-          <SignoffPane doc={doc} /> once that component lands — added in a follow-up commit so this
-          foundation builds standalone. */}
+      <SignoffPane doc={doc} />
 
       <div ref={bodyRef} onClick={onBodyClick}>
         <Markdown html={doc.html} />

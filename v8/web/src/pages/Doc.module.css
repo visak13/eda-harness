@@ -1,0 +1,22 @@
+.page {
+  max-width: 860px;
+}
+
+.crumb {
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+.crumb a {
+  color: var(--accentink);
+}
+.crumb a:hover {
+  text-decoration: underline;
+}
+
+.title {
+  font: 34px/1.2 Georgia, serif;
+  letter-spacing: -0.9px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 20px;
+}
