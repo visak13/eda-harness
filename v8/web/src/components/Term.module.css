@@ -1,0 +1,46 @@
+/* A glossary term: the label, with its meaning revealed on hover/focus. Flat Folio styling — no
+   shadow; a hairline border and the panel ground, positioned above the trigger. */
+
+.wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+/* The label carries a dotted underline so a reader knows it can be hovered for a meaning. */
+.trigger {
+  text-decoration: underline dotted var(--strongline);
+  text-underline-offset: 3px;
+  cursor: help;
+  outline-offset: 3px;
+}
+.trigger:focus-visible {
+  outline: 2px solid var(--accentink);
+}
+
+/* The tooltip stays in the DOM (so aria-describedby always resolves) but is only shown on
+   hover/focus. Not display:none — hidden via clip so assistive tech can still read it. */
+.tip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  width: max-content;
+  max-width: 260px;
+  padding: 8px 10px;
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--strongline);
+  border-radius: 6px;
+  font: 13px/18px "Segoe UI", system-ui, sans-serif;
+  font-weight: 400;
+  text-decoration: none;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.08s ease;
+}
+
+.wrap:hover .tip,
+.trigger:focus-visible + .tip,
+.trigger:focus + .tip {
+  opacity: 1;
+}

@@ -7,6 +7,8 @@ import { DraftGuardProvider, useDraftGuard } from "../live/useDraftGuard";
 import { DocDrawerProvider } from "./DocDrawer";
 import { ThemePicker } from "../theme/ThemePicker";
 import { Icon } from "./Icon";
+import { PageFrameProvider, usePageFrameCtx, defaultFraming } from "./PageFrame";
+import { GlossaryPanel } from "./GlossaryPanel";
 import styles from "./AppShell.module.css";
 
 interface WhoAmI {
@@ -50,7 +52,9 @@ function crumbFor(pathname: string): string {
 export function AppShell(): React.JSX.Element {
   return (
     <DraftGuardProvider>
-      <AppShellChrome />
+      <PageFrameProvider>
+        <AppShellChrome />
+      </PageFrameProvider>
     </DraftGuardProvider>
   );
 }
@@ -59,8 +63,29 @@ function AppShellChrome(): React.JSX.Element {
   const location = useLocation();
   const as = identity();
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const { pending, flush } = useDraftGuard();
+  const { framing, terms } = usePageFrameCtx();
   const identityRef = useRef<HTMLDivElement>(null);
+  const helpBtnRef = useRef<HTMLButtonElement>(null);
+  const pageFraming = framing ?? defaultFraming(location.pathname);
+
+  const closeHelp = () => {
+    setHelpOpen(false);
+    helpBtnRef.current?.focus(); // restore focus to the opener (§15 keyboard contract)
+  };
+
+  // Ctrl-/ opens (and toggles) the "What am I looking at?" panel from anywhere in the app.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "/" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        setHelpOpen((o) => !o);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   // Seam 1+2 proof + identity display: an authenticated /v1 call that succeeds on a
   // seeded board (unlike summary, which is G1a's). Falls back to `as` if it errors.
@@ -192,6 +217,20 @@ function AppShellChrome(): React.JSX.Element {
           <span className={styles.here}>{crumbFor(location.pathname)}</span>
         </div>
         <div className={styles.headerRight}>
+          <button
+            ref={helpBtnRef}
+            className={styles.helpBtn}
+            type="button"
+            data-testid="glossary-open"
+            aria-haspopup="dialog"
+            aria-expanded={helpOpen}
+            onClick={() => setHelpOpen((o) => !o)}
+          >
+            <span className={styles.helpText}>What am I looking at?</span>
+            <span className={styles.q} aria-hidden="true">
+              ?
+            </span>
+          </button>
           {pending > 0 ? (
             <button
               className={styles.btnPrimary}
@@ -211,10 +250,18 @@ function AppShellChrome(): React.JSX.Element {
       </header>
 
       <main className={styles.main}>
+        {/* The page-framing sentence, in the main landmark (design §15): one sentence per route,
+            what this is and what you can do. Visually the page's own heading block repeats it for
+            sighted readers; here it is a stable, findable landmark and a screen-reader intro. */}
+        <p className={styles.pageFraming} data-testid="page-framing" data-route={location.pathname}>
+          {pageFraming}
+        </p>
         <DocDrawerProvider>
           <Outlet />
         </DocDrawerProvider>
       </main>
+
+      <GlossaryPanel open={helpOpen} onClose={closeHelp} framing={pageFraming} terms={terms} />
     </div>
   );
 }

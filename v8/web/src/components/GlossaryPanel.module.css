@@ -1,0 +1,115 @@
+/* The help panel: a flat Folio sheet over a light scrim, right of centre (folio-glossary plate).
+   No shadow; a hairline border and the panel ground. Two columns of definitions on wide screens. */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--ink) 22%, transparent);
+  z-index: 90;
+}
+
+.panel {
+  position: fixed;
+  top: 64px;
+  right: 40px;
+  bottom: 64px;
+  width: min(760px, calc(100vw - 80px));
+  overflow-y: auto;
+  z-index: 91;
+  background: var(--panel);
+  border: 1px solid var(--strongline);
+  border-radius: 8px;
+  padding: 28px 32px;
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.title {
+  font: 26px/32px Georgia, serif;
+  color: var(--ink);
+  margin: 0;
+}
+
+.close {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+}
+.close:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 2px;
+}
+
+.framing {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 22px;
+  margin: 8px 0 20px;
+  max-width: 62ch;
+}
+
+.cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 40px;
+}
+@media (max-width: 640px) {
+  .cols {
+    grid-template-columns: 1fr;
+  }
+}
+
+.group {
+  break-inside: avoid;
+  margin-bottom: 18px;
+}
+
+.groupLabel {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.defs {
+  margin: 0;
+}
+.def {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 4px 12px;
+  padding: 3px 0;
+}
+.dt {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.dd {
+  margin: 0;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--muted);
+}
+
+.footer {
+  margin: 12px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--muted);
+}

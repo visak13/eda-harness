@@ -246,6 +246,70 @@
   font-weight: 600;
 }
 
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* "What am I looking at?" — plain text plus a bordered ? square (folio-glossary plate). */
+.helpBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+}
+.helpText {
+  white-space: nowrap;
+}
+.q {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  font-weight: 600;
+}
+.helpBtn:hover .q {
+  background: var(--secondary);
+}
+.helpBtn:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+@media (max-width: 1023px) {
+  .helpText {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+}
+
+/* The framing landmark is a real sentence for screen readers and tests; the visible copy lives in
+   each page's heading block, so this one is clipped to avoid a duplicate line on screen. */
+.pageFraming {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 .btnPrimary {
   height: 40px;
   padding: 0 16px;
