@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { CriterionView, Verdict } from "../api/types";
 import { postVerdict } from "../api/decisions";
@@ -49,6 +49,18 @@ export function CriterionCard({ criterion, ruling, ticketId, onOpenEvidence, onR
       onRuled?.(verdict);
     },
   });
+
+  // Reset the local ruling state whenever the card is pointed at a DIFFERENT criterion. One card
+  // instance is reused across criteria (the ruling drawer's next sign-off, G3a's doc-reader
+  // SignoffPane) — without this, criterion B would inherit A's decided/note/error and hide its own
+  // controls (second-opinion finding, G3a run 2026-09-08). Keyed by id so a stable criterion keeps
+  // its just-recorded "Recorded: …" state.
+  useEffect(() => {
+    setDecided(null);
+    setNote("");
+    mutation.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [criterion.id]);
 
   const shownVerdict: Verdict = decided ?? criterion.verdict;
   const error = mutation.error instanceof BoardApiError ? mutation.error.message : mutation.error ? String(mutation.error) : null;
