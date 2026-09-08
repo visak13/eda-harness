@@ -92,3 +92,20 @@ export const patchTicket = (
   id: string,
   b: { status?: TicketStatus; assignee?: string | null; design_ref?: string | null },
 ) => postJson<TicketRecord>(`/v1/tickets/${encodeURIComponent(id)}`, b, "PATCH");
+
+// Add an acceptance criterion to a ticket. The board DERIVES checked_by from the ticket (§24.1) and
+// returns a hint when it overrides a passed-in value — the control shows that hint verbatim.
+export const createCriterion = (b: {
+  ticket_id: string;
+  text: string;
+  check: string;
+  checked_by?: string | null;
+}) => postJson<Record<string, unknown>>("/v1/criteria", b);
+
+/** PATCH /v1/criteria/{id} — reword a criterion's text (the same route the verdict path uses). */
+export const rewordCriterion = (id: string, text: string) =>
+  postJson<Record<string, unknown>>(`/v1/criteria/${encodeURIComponent(id)}`, { text }, "PATCH");
+
+/** POST /v1/links — attach a doc (or any object) to the ticket with a named relation. */
+export const createLink = (b: { from_id: string; to_id: string; relation: string }) =>
+  postJson<Record<string, unknown>>("/v1/links", b);

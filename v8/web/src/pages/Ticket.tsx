@@ -6,6 +6,7 @@ import type { MessageView, TicketStatus } from "../api/types";
 import { StatusChip } from "../components/StatusChip";
 import { ProcessStrip } from "../components/ProcessStrip";
 import { StatusControl } from "../components/StatusControl";
+import { AddCriterion } from "../components/CriterionControls";
 import { CriterionCard } from "../components/CriterionCard";
 import { Composer } from "../components/Composer";
 import { useDocDrawer } from "../components/DocDrawer";
@@ -101,6 +102,11 @@ export function TicketPage(): React.JSX.Element {
               ))}
             </div>
           )}
+
+          <details className={styles.addCrit}>
+            <summary className={styles.addCritSummary}>Add an acceptance criterion</summary>
+            <AddCriterion ticketId={id} />
+          </details>
 
           <div className={styles.threadHead}>
             <span className={ui.sectionLabel}>Conversation ({thread.length})</span>

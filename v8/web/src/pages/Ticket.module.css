@@ -181,3 +181,18 @@
     gap: 32px;
   }
 }
+
+/* "Add an acceptance criterion" disclosure (S16): folded by default so it never crowds the read. */
+.addCrit {
+  margin: 12px 0 24px;
+  border: 1px solid var(--line);
+  padding: 12px;
+}
+.addCritSummary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--accentink);
+}
+.addCrit[open] .addCritSummary {
+  margin-bottom: 12px;
+}
