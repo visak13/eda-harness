@@ -74,6 +74,14 @@ export interface VerdictBody {
 export const postVerdict = (b: VerdictBody) =>
   postJson<{ criterion: Record<string, unknown>; message: string | null }>("/v1/me/verdict", b);
 
+/** POST /v1/gates/{ticket}/{gate}/open — open a gate on a ticket (design §5, §16). The gate kind
+ *  is the decision being asked for; the optional note frames it. The board wakes/holds as needed. */
+export const openGate = (ticketId: string, gate: string, note: string) =>
+  postJson<Record<string, unknown>>(
+    `/v1/gates/${encodeURIComponent(ticketId)}/${encodeURIComponent(gate)}/open`,
+    { note },
+  );
+
 /** POST /v1/gates/{ticket}/{gate}/answer — answer an open gate (design §5). */
 export const answerGate = (ticketId: string, gate: string, answer: string) =>
   postJson<Record<string, unknown>>(

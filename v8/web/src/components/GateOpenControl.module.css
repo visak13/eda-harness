@@ -1,0 +1,62 @@
+/* Open-a-gate control (folio-ticket): plain stacked form — select, meaning, note, one action. */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+.label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.select {
+  font: inherit;
+  border: 1px solid var(--line);
+  padding: 6px 8px;
+  background: var(--canvas, #fff);
+  color: var(--ink);
+}
+.hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--muted);
+}
+.textarea {
+  font: inherit;
+  color: var(--ink);
+  background: var(--canvas, #fff);
+  border: 1px solid var(--line);
+  padding: 8px;
+  resize: vertical;
+}
+.textarea:focus {
+  outline: 2px solid var(--accentink);
+  outline-offset: 1px;
+}
+.submit {
+  align-self: flex-start;
+  font: inherit;
+  font-weight: 600;
+  color: var(--accentink);
+  background: none;
+  border: 1px solid var(--accentink);
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.submit:hover:not(:disabled) {
+  background: var(--accentwash, transparent);
+}
+.submit:disabled {
+  color: var(--muted);
+  border-color: var(--line);
+  cursor: not-allowed;
+}
+.error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--accentink);
+}
