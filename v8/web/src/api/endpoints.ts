@@ -109,3 +109,7 @@ export const rewordCriterion = (id: string, text: string) =>
 /** POST /v1/links — attach a doc (or any object) to the ticket with a named relation. */
 export const createLink = (b: { from_id: string; to_id: string; relation: string }) =>
   postJson<Record<string, unknown>>("/v1/links", b);
+
+/** PATCH /v1/docs/{id} — revise a doc's body/title; the board records it as a new version. */
+export const updateDoc = (id: string, b: { body_md?: string; title?: string }) =>
+  postJson<Record<string, unknown>>(`/v1/docs/${encodeURIComponent(id)}`, b, "PATCH");

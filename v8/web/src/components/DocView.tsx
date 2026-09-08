@@ -5,6 +5,7 @@ import type { DocHtml } from "../api/types";
 import { identity } from "../auth/identity";
 import { Markdown } from "./Markdown";
 import { SignoffPane } from "./SignoffPane";
+import { DocControls } from "./DocControls";
 import ui from "./ui.module.css";
 import styles from "./DocView.module.css";
 
@@ -143,6 +144,8 @@ function DocBody({
           </div>
         </div>
       ) : null}
+
+      <DocControls docId={doc.id} scope={doc.scope} version={doc.version} scopeIsThread={scopeIsTicket} />
     </div>
   );
 }
