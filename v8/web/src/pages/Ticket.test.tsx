@@ -71,4 +71,18 @@ describe("TicketPage", () => {
     const crumb = await screen.findByRole("link", { name: /Epic epic-1/ });
     expect(crumb).toHaveAttribute("href", "/epic/epic-1");
   });
+
+  it("offers the one-click verdict pane on a pending criterion that already has evidence (§16)", async () => {
+    mount(
+      ticketPage({
+        criteria: [
+          { id: "c-9", text: "the report proves it", check: "look", checked_by: "owner", verdict: "pending", evidence_ref: "report-1", evidence_version: 3 },
+        ],
+      }),
+    );
+    await screen.findByText("the report proves it");
+    // ruling mode → the Approve / Needs work buttons are present on the ticket page itself
+    expect(screen.getByTestId("approve")).toBeInTheDocument();
+    expect(screen.getByTestId("needs-work")).toBeInTheDocument();
+  });
 });

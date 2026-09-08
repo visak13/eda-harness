@@ -101,7 +101,15 @@ export function TicketPage(): React.JSX.Element {
                   key={c.id}
                   criterion={c}
                   ticketId={id}
-                  canReword
+                  // A pending criterion that already carries evidence is ready to verdict — show the
+                  // one-click ruling pane (design §16 "Record verdict"; the board refuses a non-checker
+                  // and the card shows why). One without evidence yet can still be reworded in place.
+                  ruling={
+                    c.verdict === "pending" && c.evidence_ref && c.evidence_version != null
+                      ? { evidenceVersion: c.evidence_version }
+                      : undefined
+                  }
+                  canReword={!(c.evidence_ref && c.evidence_version != null)}
                   onOpenEvidence={(docId) => drawer.openDoc(docId)}
                 />
               ))}
