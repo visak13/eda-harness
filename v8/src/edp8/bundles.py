@@ -1467,6 +1467,9 @@ def _consult(a: ConsultArgs) -> dict[str, Any]:
     early = {"v": False}
     done = threading.Event()
 
+    if a.ticket_id:  # hold the board's auto-advance on this ticket until the run lands
+        consult_mod.inflight_mark(a.ticket_id, None, caller)
+
     def _work() -> None:
         try:
             resp = consult_mod.consult(a.purpose, a.question, context=a.context, files=a.files,
@@ -1476,6 +1479,8 @@ def _consult(a: ConsultArgs) -> dict[str, Any]:
         except Exception as e:  # noqa: BLE001 — a crashed consult must surface, never hang the caller
             resp = {"ok": False, "error": {"code": "internal", "message": f"consult crashed: {e}"}, "hint": ""}
         holder["resp"] = resp
+        if a.ticket_id:  # cleared BEFORE the thread note lands, so the note itself re-evaluates the advance
+            consult_mod.inflight_clear(a.ticket_id)
         done.set()
         # Over-cap only: the caller already has a {running} envelope, so the background run
         # owns the completion side effects — post the answer AND wake the caller. Within the

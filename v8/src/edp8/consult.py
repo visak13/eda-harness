@@ -991,6 +991,51 @@ def note_quota(raw: str) -> dict[str, Any] | None:
     return rec
 
 
+# ------------------------------------------------------------------ per-ticket in-flight marker
+# The board (a separate process) must not auto-advance a story to in_review, nor release its
+# successors, while the doing seat's own consult on that ticket is still running (2026-09-08:
+# G3b was auto-advanced and G4 released mid-second_opinion; the read then failed the story —
+# m-d58f899a3b). The marker is a file under the consult log dir, which both processes share.
+_INFLIGHT_MAX_AGE_S = 45 * 60
+
+
+def _inflight_path(ticket_id: str) -> Path:
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", ticket_id)
+    return _log_dir() / "inflight" / f"{safe}.json"
+
+
+def inflight_mark(ticket_id: str, run_id: str | None, participant: str | None) -> None:
+    try:
+        p = _inflight_path(ticket_id)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({"ticket_id": ticket_id, "run_id": run_id, "participant": participant,
+                                 "started_at": _now()}), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def inflight_clear(ticket_id: str) -> None:
+    try:
+        _inflight_path(ticket_id).unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def inflight_for(ticket_id: str) -> dict[str, Any] | None:
+    """The in-flight consult on this ticket, or None. A marker older than the longest
+    possible run is stale (a crashed proxy) and is ignored, so a story can never be held
+    forever by a dead run."""
+    p = _inflight_path(ticket_id)
+    try:
+        if not p.is_file():
+            return None
+        if time.time() - p.stat().st_mtime > _INFLIGHT_MAX_AGE_S:
+            return None
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
 def lane_status() -> dict[str, Any]:
     with _LANE_STATE_LOCK:
         st = dict(_LANE_STATE)

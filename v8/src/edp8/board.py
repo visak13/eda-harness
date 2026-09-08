@@ -901,6 +901,17 @@ class Board:
             self.on_new_evidence(self.ticket(t.id))
         return c
 
+    @staticmethod
+    def _consult_inflight(ticket_id: str) -> dict[str, Any] | None:
+        """A consult run the doing seat started on this ticket and has not yet received (marker
+        written by the MCP bridge; see consult.inflight_for). Never raises: a board without the
+        bridge module behaves as before."""
+        try:
+            from .consult import inflight_for
+        except Exception:  # noqa: BLE001
+            return None
+        return inflight_for(ticket_id)
+
     def _auto_advance(self, t: Ticket) -> None:
         """The board walks a ticket whose facts are already in: evidence on every criterion
         advances ready/in_progress -> in_review; every verdict passed advances in_review -> done
@@ -910,6 +921,12 @@ class Board:
         if not crits:
             return
         if t.status in (TicketStatus.ready, TicketStatus.in_progress) and all(c.evidence_ref for c in crits):
+            held = self._consult_inflight(t.id)
+            if held:  # the doer's own final read is still running: no advance, no release yet
+                self._emit(t.id, EventKind.doc_updated,
+                           {"note": "auto-advance held: consult in flight", "run": held.get("run_id"),
+                            "by": held.get("participant")})
+                return
             frm = t.status
             t.status = TicketStatus.in_review
             self.store.put("ticket", t)
@@ -1224,8 +1241,9 @@ class Board:
                                                   "text": text[:280], "mentions": mentioned,
                                                   **({"asked": asked, "note": note} if note else {})})
         self.last_send_note = note
-        if kind == MessageKind.steer and actor.role == Role.owner and t.kind != TicketKind.task:
-            pass  # a steer is data on the thread; widening is the asker's call via /doubt → architect
+        if t.status in (TicketStatus.ready, TicketStatus.in_progress):
+            # a new fact on the thread (typically the consult result note) re-evaluates a held advance
+            self._auto_advance(self.ticket(t.id))
         return m
 
     def thread(self, ticket_id: str, limit: int = 50) -> list[Message]:
