@@ -18,12 +18,13 @@ const HEADINGS: Record<GlossaryCategory, string> = {
   ticket_kind: "Ticket kinds",
   work_type: "Work types",
   verdict: "Verdicts",
+  session_state: "Seat shell states",
   concept: "Words",
 };
 // Column/plate order (folio-glossary): stages, gates, checks on the left; message kinds, roles right.
 const ORDER: GlossaryCategory[] = [
   "ticket_status", "gate", "check", "ticket_kind", "work_type",
-  "message_kind", "role", "verdict",
+  "message_kind", "role", "verdict", "session_state",
 ];
 
 function groups(terms: TermRef[]): Array<[GlossaryCategory, string[]]> {

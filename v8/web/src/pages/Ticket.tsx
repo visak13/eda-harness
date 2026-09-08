@@ -110,7 +110,10 @@ export function TicketPage(): React.JSX.Element {
                       ? { evidenceVersion: c.evidence_version }
                       : undefined
                   }
-                  canReword={!(c.evidence_ref && c.evidence_version != null)}
+                  // The board freezes a criterion's text only after a verdict (board.py:830) — a
+                  // PENDING criterion is rewordable whether or not it already carries evidence. Mirror
+                  // exactly that rule, so the page never hides a move the board would allow.
+                  canReword={c.verdict === "pending"}
                   onOpenEvidence={(docId) => drawer.openDoc(docId)}
                 />
               ))}

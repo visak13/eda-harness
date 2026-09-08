@@ -20,6 +20,7 @@ import {
   ROLES,
   CHECKS,
   VERDICTS,
+  SESSION_STATES,
 } from "../api/types";
 
 export interface Term {
@@ -40,6 +41,7 @@ export type GlossaryCategory =
   | "role"
   | "check"
   | "verdict"
+  | "session_state"
   | "concept";
 
 type Table = Record<string, Term>;
@@ -118,6 +120,15 @@ const verdict: Table = {
   fail: { label: "Needs work", meaning: "The checker recorded a fail." },
 };
 
+// The pool shell lifecycle (schemas.py SessionState) shown on Seats. "dead" reads "Closed" — a
+// recorded end, not a guess from silence; the presence rule (presence.ts) handles staleness apart.
+const session_state: Table = {
+  alive: { label: "Alive", meaning: "The shell is running right now." },
+  stalled: { label: "Stalled", meaning: "The shell is up but has gone quiet." },
+  dead: { label: "Closed", meaning: "The shell has ended and recorded why." },
+  parked: { label: "Parked", meaning: "The shell is paused and can be resumed." },
+};
+
 // Concept words the plate footer explains — not a board enum, so not gated by the table test, but
 // listed in the help panel so a reader meets "seat", "wake", "presence" in plain words.
 const concept: Table = {
@@ -136,6 +147,7 @@ export const GLOSSARY: Record<GlossaryCategory, Table> = {
   role,
   check,
   verdict,
+  session_state,
   concept,
 };
 
@@ -150,6 +162,7 @@ export const REQUIRED_COVERAGE: ReadonlyArray<readonly [GlossaryCategory, readon
   ["role", ROLES],
   ["check", CHECKS],
   ["verdict", VERDICTS],
+  ["session_state", SESSION_STATES],
 ];
 
 /** The label + meaning for one value, or `undefined` if the term is unknown (callers fall back to

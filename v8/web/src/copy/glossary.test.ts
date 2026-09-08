@@ -8,7 +8,9 @@ import {
   ROLES,
   CHECKS,
   VERDICTS,
+  SESSION_STATES,
 } from "../api/types";
+import * as types from "../api/types";
 import { GLOSSARY, REQUIRED_COVERAGE, term, label, meaning } from "./glossary";
 
 // The table test that makes the glossary a contract (design §15, criterion c-581d50496d): every
@@ -27,6 +29,7 @@ describe("glossary coverage", () => {
     ["role", ROLES],
     ["check", CHECKS],
     ["verdict", VERDICTS],
+    ["session_state", SESSION_STATES],
   ];
 
   it.each(cases)("every %s value has a label and a one-line meaning", (category, values) => {
@@ -42,8 +45,27 @@ describe("glossary coverage", () => {
     }
   });
 
-  it("REQUIRED_COVERAGE lists exactly the eight board-enum categories the criterion names", () => {
+  it("REQUIRED_COVERAGE lists exactly the board-enum categories the criterion names", () => {
     expect(REQUIRED_COVERAGE.map(([c]) => c)).toEqual(cases.map(([c]) => c));
+  });
+
+  // The real guard against the S15 hole the second-opinion caught (SESSION_STATES shipped unglossed):
+  // don't hand-list the enums — DISCOVER every string-enum array exported by api/types.ts and prove
+  // each is one that REQUIRED_COVERAGE actually covers. A new enum array added to types.ts turns this
+  // red until it is glossed, by array identity, so a subset that "asserts itself" can't hide a gap.
+  it("every string-enum array exported by api/types.ts is covered by REQUIRED_COVERAGE", () => {
+    const covered = new Set<readonly string[]>(REQUIRED_COVERAGE.map(([, arr]) => arr));
+    const enumArrays = Object.entries(types).filter(
+      ([name, v]) =>
+        name === name.toUpperCase() &&
+        Array.isArray(v) &&
+        v.length > 0 &&
+        (v as unknown[]).every((x) => typeof x === "string"),
+    );
+    const uncovered = enumArrays
+      .filter(([, arr]) => !covered.has(arr as readonly string[]))
+      .map(([name]) => name);
+    expect(uncovered, `enum arrays in api/types.ts with no glossary coverage: ${uncovered.join(", ")}`).toEqual([]);
   });
 
   it("fails NAMING the missing key when an entry is removed (proves it pins, not just runs)", () => {

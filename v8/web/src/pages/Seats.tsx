@@ -25,7 +25,7 @@ const TAB_MATCH: Record<TabKey, (s: SeatRow) => boolean> = {
   all: () => true,
   alive: (s) => s.state === "alive" || s.state === "stalled",
   parked: (s) => s.state === "parked",
-  closed: (s) => s.state === "dead" || s.state == null,
+  closed: (s) => s.state === "dead", // an unknown/remote seat (state == null) is NOT closed
 };
 
 export function SeatsPage(): React.JSX.Element {
@@ -152,7 +152,11 @@ export function SeatTableRow({ seat, caps }: { seat: SeatRow; caps: PoolCapabili
   const [messaging, setMessaging] = useState(false);
   const qc = useQueryClient();
 
-  const isClosedOrGone = seat.state === "dead" || seat.state == null;
+  // "Closed" is ONLY a board-recorded dead seat. A seat with no mirrored session (state == null) is
+  // remote — its availability is unknown, which is NOT death and must never be labelled Closed or
+  // promise/deny a wake as if it were (c-c98b3e4319, §4.2: silence is never death).
+  const isClosed = seat.state === "dead";
+  const isUnknown = seat.state == null;
   const canResumeClosed = caps?.resume_closed === true;
 
   const resume = useMutation({
@@ -228,7 +232,7 @@ export function SeatTableRow({ seat, caps }: { seat: SeatRow; caps: PoolCapabili
               >
                 {resume.isPending ? "Resuming…" : "Resume"}
               </button>
-            ) : isClosedOrGone && !canResumeClosed ? (
+            ) : isClosed && !canResumeClosed ? (
               <span className={styles.resumeNote} data-testid="no-resume-note">
                 Closed; the owner shell can spawn a fresh seat.
               </span>
@@ -242,8 +246,10 @@ export function SeatTableRow({ seat, caps }: { seat: SeatRow; caps: PoolCapabili
           <td colSpan={5}>
             <div className={styles.messagePanel}>
               <p className={styles.deliveryNote} data-testid="seat-delivery-note">
-                {isClosedOrGone
+                {isClosed
                   ? "This seat is closed — your message waits on its ticket for the next shell; nobody is woken now."
+                  : isUnknown
+                  ? "This seat is remote and its availability is unknown — your message waits on its ticket; we can't promise a wake."
                   : `Sending will wake ${seat.handle} now.`}
               </p>
               {seat.ticket_id ? (

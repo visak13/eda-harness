@@ -32,7 +32,11 @@ export function StatusControl({
     mutationFn: (to: TicketStatus) => patchTicket(ticketId, { status: to }),
     onSuccess: () => {
       setChosen(null);
+      // The same control mounts on both the Ticket page (["ticket", id], which also prefixes the
+      // ["ticket", id, "transitions"] query) and the Epic page (["epic", id]); invalidate both so
+      // the page and its process strip re-read the new status wherever this control lives.
       void qc.invalidateQueries({ queryKey: ["ticket", ticketId] });
+      void qc.invalidateQueries({ queryKey: ["epic", ticketId] });
     },
   });
 

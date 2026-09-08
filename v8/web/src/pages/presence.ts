@@ -34,7 +34,9 @@ export function presenceOf(
   now: number = Date.now(),
 ): Presence {
   const canResumeClosed = caps?.resume_closed === true;
-  const canResumeParked = caps?.resume_parked !== false; // parked resume is the pool default
+  // Never assumed (c-3831aad362): Resume shows only when the pool has REPORTED it can resume — so a
+  // parked seat offers no Resume while capabilities are still loading or the pool is silent.
+  const canResumeParked = caps?.resume_parked === true;
 
   // No mirrored session: a remote seat we cannot see. Never a death.
   if (seat.state == null) {

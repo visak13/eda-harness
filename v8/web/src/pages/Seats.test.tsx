@@ -34,8 +34,15 @@ const closed: SeatRow = {
   latest_status: { text: "Resume checks completed.", status: "done", role: "qa", at: ago(26 * 3600_000) },
 };
 
+// A remote seat with no mirrored session — state null. It is NOT closed; availability is unknown.
+const remote: SeatRow = {
+  id: "architect.epic-x", handle: "architect.epic-x", role: "architect", state: null,
+  ticket_id: "epic-x", ticket_title: "Coordinate the epic", last_output_at: null,
+  presence_stale_since: null, reason: "", latest_status: null,
+};
+
 const VIEW: SeatsView = {
-  seats: [alive, staleSeat, parked, closed],
+  seats: [alive, staleSeat, parked, closed, remote],
   people: [{ id: "owner", handle: "owner", role: "owner" }],
 };
 
@@ -63,6 +70,16 @@ function mount() {
 
 const CAPS_YES: PoolCapabilities = { resume_parked: true, resume_closed: true, park: true, spawn: true };
 const CAPS_NO: PoolCapabilities = { resume_parked: true, resume_closed: false, park: true, spawn: true };
+const CAPS_NO_PARKED: PoolCapabilities = { resume_parked: false, resume_closed: false, park: true, spawn: true };
+
+/** Board where the capabilities endpoint never answers — the client must ASSUME NOTHING. */
+function mockBoardCapsDown() {
+  server.use(
+    http.get("/v1/seats", () => HttpResponse.json({ ok: true, value: VIEW })),
+    http.get("/v1/pool/capabilities", () => HttpResponse.json({ ok: false, error: { code: "down" } }, { status: 500 })),
+    http.get("/v1/me/people", () => HttpResponse.json({ ok: true, value: [] })),
+  );
+}
 
 function rowFor(seatId: string): HTMLElement {
   const row = document.querySelector(`[data-seat="${seatId}"]`);
@@ -130,10 +147,54 @@ describe("Seats Resume gating (both pool answers)", () => {
     await waitFor(() => expect(within(rowFor("qa.s-qa")).getByTestId("seat-resume")).toBeInTheDocument());
   });
 
-  it("a parked seat always offers Resume", async () => {
+  it("resume_parked=true: a parked seat offers Resume", async () => {
+    mockBoard(CAPS_YES);
     mount();
     await screen.findByText("engineer.s-eng");
-    expect(within(rowFor("reviewer.s-rev")).getByTestId("seat-resume")).toBeInTheDocument();
+    await waitFor(() => expect(within(rowFor("reviewer.s-rev")).getByTestId("seat-resume")).toBeInTheDocument());
+  });
+
+  it("resume_parked=false: a parked seat offers NO Resume (never assumed)", async () => {
+    mockBoard(CAPS_NO_PARKED);
+    mount();
+    await screen.findByText("engineer.s-eng");
+    expect(within(rowFor("reviewer.s-rev")).queryByTestId("seat-resume")).not.toBeInTheDocument();
+  });
+
+  it("capabilities unavailable: a parked seat offers NO Resume until the pool reports it can", async () => {
+    mockBoardCapsDown();
+    mount();
+    await screen.findByText("engineer.s-eng");
+    expect(within(rowFor("reviewer.s-rev")).queryByTestId("seat-resume")).not.toBeInTheDocument();
+  });
+});
+
+describe("Seats: a remote seat (no mirrored session) is unknown, never closed", () => {
+  it("reads 'Availability unknown', not Closed, and carries no closed/spawn note", async () => {
+    mount();
+    await screen.findByText("engineer.s-eng");
+    const r = rowFor("architect.epic-x");
+    expect(within(r).getByTestId("seat-state")).toHaveTextContent("Availability unknown");
+    expect(within(r).queryByTestId("no-resume-note")).not.toBeInTheDocument();
+    expect(r).not.toHaveTextContent("Closed");
+  });
+
+  it("its message note says availability is unknown — not that it is closed, not that it wakes", async () => {
+    mount();
+    await screen.findByText("engineer.s-eng");
+    fireEvent.click(within(rowFor("architect.epic-x")).getByTestId("seat-message"));
+    const note = await screen.findByTestId("seat-delivery-note");
+    expect(note).toHaveTextContent("availability is unknown");
+    expect(note).not.toHaveTextContent("closed");
+    expect(note).not.toHaveTextContent(/wake .* now/i);
+  });
+
+  it("the Closed tab holds only board-recorded dead seats, not the remote one", async () => {
+    mount();
+    await screen.findByText("engineer.s-eng");
+    fireEvent.click(screen.getByRole("tab", { name: /Closed/ }));
+    expect(rowFor("qa.s-qa")).toBeInTheDocument();
+    expect(document.querySelector('[data-seat="architect.epic-x"]')).toBeNull();
   });
 });
 
