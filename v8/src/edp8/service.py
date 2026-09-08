@@ -17,8 +17,8 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from . import pool_adapter
@@ -132,6 +132,7 @@ class MessageIn(BaseModel):
     kind: MessageKind
     text: str
     reply_to: str | None = None
+    artifacts: list[str] | None = None  # staged upload ids to finalise onto this ticket (§18.1)
 
 
 class StatusIn(BaseModel):
@@ -626,6 +627,55 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     def artifact_create(b: ArtifactIn, a: Participant = Depends(actor)):
         return ok(_dump(board.artifact_create(a, form=b.form, uri=b.uri, note=b.note, ticket_id=b.ticket_id)))
 
+    @app.post("/v1/artifacts/upload")
+    async def artifact_upload(file: UploadFile = File(...), note: str = Form(default=""),
+                              ticket_id: str | None = Form(default=None), a: Participant = Depends(actor)):
+        """Drop a file, get a STAGED artifact (design §18.1). The bytes stream to disk under a
+        25 MB cap; the type is SNIFFED from them (the client's name/Content-Type are never
+        trusted); an SVG is stored as a file, never an inline image. The artifact is invisible
+        until a message finalises it — attach it with POST /v1/messages artifacts:[id]."""
+        from . import uploads
+        buf = bytearray()
+        head = b""
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            buf.extend(chunk)
+            if len(buf) > uploads.MAX_UPLOAD_BYTES:
+                return JSONResponse(status_code=413, content={"ok": False, "error": {"code": "too_large",
+                    "message": f"the file is over the {uploads.MAX_UPLOAD_BYTES // (1024 * 1024)} MB upload limit"},
+                    "hint": "compress it or share a link instead"})
+            if len(head) < 4096:
+                head = bytes(buf[:4096])
+        ctype = uploads.sniff_upload(head, file.filename or "")
+        if ctype is None:
+            return JSONResponse(status_code=415, content={"ok": False, "error": {"code": "unsupported_type",
+                "message": "that file type is not accepted; allowed: images, pdf, text, markdown, json, log, zip, svg"},
+                "hint": "the type is read from the file's bytes, not its name"})
+        form = ArtifactForm.image if uploads.is_inline_image(ctype) else ArtifactForm.file
+        art = board.artifact_upload(a, form=form, content_type=ctype, filename=file.filename or "", note=note)
+        (uploads.uploads_dir() / f"{art.id}.{uploads.ext_for(ctype)}").write_bytes(bytes(buf))
+        return ok(_dump(art), "staged; post a message with artifacts:[this id] to attach it — "
+                              "unfinalised uploads are swept after 24 h")
+
+    @app.get("/v1/artifacts/{id_}/content")
+    def artifact_content(id_: str, a: Participant = Depends(actor)):
+        """Serve an uploaded artifact's bytes with the sniffed type. Never sniffs in the browser
+        (X-Content-Type-Options: nosniff) and forces a download for everything but the four inline
+        image types — an uploaded SVG is thus never rendered (design §18.1)."""
+        from . import uploads
+        art = board._get("artifact", id_, "artifact")
+        ctype = art.content_type or "application/octet-stream"
+        path = uploads.uploads_dir() / f"{id_}.{uploads.ext_for(ctype)}"
+        if not path.exists():
+            raise BoardError("not_found", f"artifact {id_} has no stored content")
+        disp = "inline" if uploads.is_inline_image(ctype) else "attachment"
+        name = art.filename or path.name
+        return FileResponse(path, media_type=ctype, headers={
+            "X-Content-Type-Options": "nosniff",
+            "Content-Disposition": f"{disp}; filename=\"{name}\""})
+
     @app.get("/v1/artifacts/{id_}")
     def artifact_get(id_: str, a: Participant = Depends(actor)):
         return ok(_dump(board._get("artifact", id_)))
@@ -639,6 +689,10 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     @app.post("/v1/messages")
     def message_send(b: MessageIn, a: Participant = Depends(actor)):
         from . import views
+        # §18.1: finalise any staged uploads BEFORE the message posts — all-or-nothing, so a bad
+        # artifact id raises here and nothing (message or artifact) becomes visible.
+        if b.artifacts:
+            board.artifact_finalise(a, artifact_ids=b.artifacts, ticket_id=b.ticket_id)
         m = board.message_send(a, ticket_id=b.ticket_id, to=b.to, kind=b.kind, text=b.text, reply_to=b.reply_to)
         delivery.after_message(board, a.id, m)
         note = getattr(board, "last_send_note", "")
@@ -918,6 +972,28 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
         app.include_router(webhook_router(board))
         start_mirror_thread(board)
+
+    # §18.1: reap staged uploads nobody finalised — once at startup, then hourly.
+    try:
+        swept = board.sweep_staged_artifacts()
+        if swept:
+            logging.getLogger("edp8.service").info("swept %d stale staged upload(s)", len(swept))
+    except Exception as e:  # noqa: BLE001 — a sweep failure must never block startup
+        logging.getLogger("edp8.service").warning("staged-artifact sweep failed: %s", e)
+    if os.environ.get("EDP8_UPLOAD_SWEEP", "1") != "0":
+        import threading
+
+        def _sweep_loop() -> None:
+            import time
+            log = logging.getLogger("edp8.uploadsweep")
+            while True:
+                time.sleep(3600)
+                try:
+                    board.sweep_staged_artifacts()
+                except Exception as e:
+                    log.warning("hourly staged-artifact sweep failed: %s", e)
+
+        threading.Thread(target=_sweep_loop, name="edp8-upload-sweep", daemon=True).start()
 
     @app.get("/healthz")
     def healthz():

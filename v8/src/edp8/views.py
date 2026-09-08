@@ -12,10 +12,10 @@ BEFORE this module existed; ui.py now sources its derivations here with identica
 
 from __future__ import annotations
 
-import re as _re
 from typing import Any
 
 import markdown as _markdown
+import nh3
 
 from .avatar_preferences import avatar_preferences_path, load_avatar_preferences
 from .avatars import avatar_id_for
@@ -34,17 +34,28 @@ _TERMINAL = (TicketStatus.done, TicketStatus.partial, TicketStatus.dropped)
 
 # ------------------------------------------------------------------ markdown / sanitiser
 
-_SCRIPT_RX = _re.compile(r"<\s*script\b.*?<\s*/\s*script\s*>", _re.IGNORECASE | _re.DOTALL)
-_ON_ATTR_RX = _re.compile(r"\son\w+\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", _re.IGNORECASE)
+# nh3 (Rust/ammonia) allowlist sanitiser (design §18.1, S21) — replaces the old regex strip.
+# The renderer is an ALLOWLIST: only these tags/attributes survive and only these URL schemes
+# on links; everything else (scripts, inline handlers, iframes, SVG/MathML, javascript:/data:
+# hrefs, encoded handlers, malformed HTML) is dropped, whatever shape the input takes.
+_ALLOWED_TAGS = {
+    "h1", "h2", "h3", "h4", "h5", "h6", "p", "br", "hr", "blockquote", "pre", "code",
+    "strong", "em", "b", "i", "del", "ins", "sub", "sup", "a", "img", "ul", "ol", "li",
+    "dl", "dt", "dd", "table", "thead", "tbody", "tfoot", "tr", "th", "td", "span", "div",
+}
+_ALLOWED_ATTRS = {"a": {"href", "title"}, "img": {"src", "alt", "title"},
+                  "td": {"align"}, "th": {"align"}, "code": {"class"}}
+_URL_SCHEMES = {"http", "https", "mailto"}
 
 
 def render_markdown(body: str) -> str:
-    """Render doc markdown to HTML (fenced code + tables), stripped of scripts and inline
-    handlers. Docs are fleet-authored, but the browser gets no excuses. (S21 replaces this
-    regex strip with an nh3 allowlist sanitiser — a deliberate snapshot change then.)"""
+    """Render doc markdown to HTML (fenced code + tables), then sanitise with an nh3 allowlist
+    (design §18.1): only safe tags/attributes survive, links only http/https/mailto. Docs are
+    fleet-authored, but the browser gets no excuses — a poisoned doc cannot ship a script,
+    handler, iframe, SVG/MathML payload or javascript:/data: link to a reader."""
     rendered = _markdown.markdown(body or "", extensions=["fenced_code", "tables", "sane_lists"])
-    rendered = _SCRIPT_RX.sub("", rendered)
-    return _ON_ATTR_RX.sub("", rendered)
+    return nh3.clean(rendered, tags=_ALLOWED_TAGS, attributes=_ALLOWED_ATTRS,
+                     url_schemes=_URL_SCHEMES, link_rel="noopener noreferrer")
 
 
 # ------------------------------------------------------------------ small derivations

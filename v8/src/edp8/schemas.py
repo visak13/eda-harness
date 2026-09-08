@@ -278,6 +278,11 @@ class Artifact(Obj):
     form: ArtifactForm
     uri: str
     note: str = ""
+    # uploaded-file artifacts (design §18.1). staged=true means uploaded but not yet finalised
+    # via a message — invisible to every list/page/link query and swept after 24 h if never used.
+    staged: bool = False
+    content_type: str = ""  # sniffed MIME type (never the client's claim)
+    filename: str = ""      # original client filename, for the download name only
 
 
 class Session(Obj):

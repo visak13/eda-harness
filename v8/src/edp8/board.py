@@ -820,6 +820,53 @@ class Board:
             self.link_create(actor, from_id=ticket_id, to_id=a.id, relation=Relation.produced)
         return a
 
+    def artifact_upload(self, actor: Participant, *, form: ArtifactForm, content_type: str,
+                        filename: str = "", note: str = "") -> Artifact:
+        """Record a STAGED upload artifact (design §18.1): metadata only — the service has
+        already streamed the sniffed bytes to <uploads>/<id>.<ext>. It is invisible everywhere
+        until a message finalises it, and swept after 24 h if it never is. Returns the artifact
+        so the caller knows the id (its content URI and the file both key off it)."""
+        aid = new_id("art")
+        a = Artifact(id=aid, form=form, uri=f"/v1/artifacts/{aid}/content", note=note,
+                     staged=True, content_type=content_type, filename=filename, created_by=actor.id)
+        self.store.put("artifact", a)
+        return a
+
+    def artifact_finalise(self, actor: Participant, *, artifact_ids: list[str],
+                          ticket_id: str) -> list[Artifact]:
+        """Finalise staged uploads onto a ticket (design §18.1): flip staged→false and link each
+        `produced`. Validated all-or-nothing — every id and the ticket are resolved BEFORE any
+        change, so a bad id leaves nothing visible (the message that carries them never posts)."""
+        arts = [self._get("artifact", aid, "artifact") for aid in artifact_ids]
+        self.ticket(ticket_id)
+        for a in arts:
+            if a.staged:
+                a.staged = False
+                self.store.put("artifact", a)
+            self.link_create(actor, from_id=ticket_id, to_id=a.id, relation=Relation.produced)
+        return arts
+
+    def sweep_staged_artifacts(self, *, max_age_hours: int = 24) -> list[str]:
+        """Delete staged upload artifacts (and their bytes) older than max_age_hours — an upload
+        that was never finalised onto a message (design §18.1). Run at startup and hourly."""
+        from datetime import timedelta
+
+        from . import uploads
+        from .schemas import now as _now
+        cutoff = _now() - timedelta(hours=max_age_hours)
+        removed: list[str] = []
+        for a in self.store.query("artifact", {}, limit=1000000):
+            if not getattr(a, "staged", False) or a.created_at >= cutoff:
+                continue
+            self.store.delete("artifact", a.id)
+            for f in uploads.uploads_dir().glob(f"{a.id}.*"):
+                try:
+                    f.unlink()
+                except OSError:
+                    pass
+            removed.append(a.id)
+        return removed
+
     # ------------------------------------------------------------------ messages / gates
     def mentions(self, text: str, *, exclude: set[str] | None = None) -> list[str]:
         """Participant ids @mentioned in text (unresolvable handles are just prose)."""
