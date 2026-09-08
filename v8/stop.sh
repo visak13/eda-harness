@@ -19,7 +19,8 @@ for svc in "${ORDER[@]}"; do
   if [ -n "$rec" ]; then
     pid="$(echo "$rec" | "$PY" -c "import sys,json;print(json.load(sys.stdin).get('pid') or '')")"
     port="$(echo "$rec" | "$PY" -c "import sys,json;print(json.load(sys.stdin).get('port') or '')")"
-    [ -n "$pid" ] && kill "$pid" 2>/dev/null && stopped=1 || true
+    # Windows pids are not MSYS pids under Git Bash: terminate through psutil, fall back to kill
+    [ -n "$pid" ] && { "$PY" -c "import psutil,sys; psutil.Process(int(sys.argv[1])).terminate()" "$pid" 2>/dev/null || kill "$pid" 2>/dev/null; } && stopped=1 || true
     [ -n "$port" ] && command -v fuser >/dev/null 2>&1 && fuser -k "${port}/tcp" 2>/dev/null && stopped=1 || true
     "$PY" -c "from edp8 import run_state; run_state.clear('$svc')" 2>/dev/null || true
   fi

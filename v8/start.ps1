@@ -158,9 +158,9 @@ function Start-Supervisor {
 function Stop-One($svc) {
   $rec = & $py -c "import json;from edp8 import run_state;r=run_state.read('$svc');print(json.dumps(r) if r else '')" 2>$null
   if ($rec) { $o = $rec | ConvertFrom-Json
-    if ($o.pid) { & taskkill /PID $o.pid /T /F 2>$null | Out-Null }
+    if ($o.pid) { if (Get-Process -Id $o.pid -ErrorAction SilentlyContinue) { & cmd /c "taskkill /PID $o.pid /T /F >nul 2>&1" } }
     if ($o.port) { Get-NetTCPConnection -LocalPort $o.port -State Listen -ErrorAction SilentlyContinue |
-        ForEach-Object { & taskkill /PID $_.OwningProcess /T /F 2>$null | Out-Null } }
+        ForEach-Object { if (Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue) { & cmd /c "taskkill /PID $_.OwningProcess /T /F >nul 2>&1" } } }
   }
 }
 

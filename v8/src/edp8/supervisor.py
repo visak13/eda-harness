@@ -80,7 +80,8 @@ def make_probe(client) -> Callable[[str], bool]:
     def probe(svc: str) -> bool:
         spec = run_state.SERVICES.get(svc, {})
         health = spec.get("health")
-        port = spec.get("port")
+        rec = run_state.read(svc) or {}
+        port = rec.get("port") or spec.get("port")  # the port the launcher actually started it on (qa: private fleets)
         if not health or not port:
             # portless service (bridge): liveness is process-only, handled by `alive`.
             return real_alive(svc)

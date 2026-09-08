@@ -1,4 +1,4 @@
-# edp8 fleet — bring everything down (the launcher owns the shared services; design §22).
+﻿# edp8 fleet — bring everything down (the launcher owns the shared services; design §22).
 #   .\stop.ps1            stop supervisor + bridge + mcp + pool + broker + board
 #   .\stop.ps1 -Only mcp  stop just one
 # Stops by the launcher's pid file (v8/.run) and, as a backstop, by the listener on each port.
@@ -21,10 +21,10 @@ foreach ($svc in $order) {
   $stopped = $false
   if ($rec) {
     $o = $rec | ConvertFrom-Json
-    if ($o.pid) { & taskkill /PID $o.pid /T /F 2>$null | Out-Null; $stopped = $true }
+    if ($o.pid) { if (Get-Process -Id $o.pid -ErrorAction SilentlyContinue) { & cmd /c "taskkill /PID $o.pid /T /F >nul 2>&1" }; $stopped = $true }
     if ($o.port) {
       Get-NetTCPConnection -LocalPort $o.port -State Listen -ErrorAction SilentlyContinue |
-        ForEach-Object { & taskkill /PID $_.OwningProcess /T /F 2>$null | Out-Null; $stopped = $true }
+        ForEach-Object { if (Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue) { & cmd /c "taskkill /PID $_.OwningProcess /T /F >nul 2>&1" }; $stopped = $true }
     }
     & $py -c "from edp8 import run_state; run_state.clear('$svc')" 2>$null
   }
@@ -32,7 +32,7 @@ foreach ($svc in $order) {
   if ($svc -eq "bridge") {
     Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" |
       Where-Object { $_.CommandLine -match 'edp8\.slack_bridge' } |
-      ForEach-Object { & taskkill /PID $_.ProcessId /T /F 2>$null | Out-Null; $stopped = $true }
+      ForEach-Object { if (Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue) { & cmd /c "taskkill /PID $_.ProcessId /T /F >nul 2>&1" }; $stopped = $true }
   }
   Write-Host ("{0,-11} {1}" -f $svc, $(if ($stopped) { "stopped" } else { "not running" }))
 }
