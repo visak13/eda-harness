@@ -124,7 +124,8 @@ def test_doc_page_approve_and_comment(client, rig):
     page = client.get(f"/ui/doc/{d['id']}", params={"as": "owner"}).text
     assert "Approve" in page and "Needs work" in page and "← Epic" in page and "to-top" in page
     r = client.post("/ui/me/verdict", data={"as_": "owner", "criterion_id": c["id"], "ticket_id": kt,
-                                            "verdict": "pass", "back": f"/ui/doc/{d['id']}?as=owner"},
+                                            "verdict": "pass", "evidence_version": 1,
+                                            "back": f"/ui/doc/{d['id']}?as=owner"},
                     follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"].startswith(f"/ui/doc/{d['id']}")
     r2 = client.post(f"/ui/doc/{d['id']}/comment", data={"as_": "ravi", "text": "solid @arch"},
@@ -142,5 +143,6 @@ def test_thread_newest_first_default_with_toggle(client, rig):
     convo = client.get(f"/ui/epic/{rig['epic']}", params={"as": "owner"}).text.split("class='conversation'")[1]
     assert convo.index(">m2<") < convo.index(">m0<")  # newest first
     assert "order=oldest" in client.get(f"/ui/epic/{rig['epic']}", params={"as": "owner"}).text
-    convo_old = client.get(f"/ui/epic/{rig['epic']}", params={"as": "owner", "order": "oldest"}).text.split("class='conversation'")[1]
+    convo_old = client.get(f"/ui/epic/{rig['epic']}",
+                           params={"as": "owner", "order": "oldest"}).text.split("class='conversation'")[1]
     assert convo_old.index(">m0<") < convo_old.index(">m2<")

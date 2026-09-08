@@ -642,7 +642,11 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         """Drop a file, get a STAGED artifact (design §18.1). The bytes stream to disk under a
         25 MB cap; the type is SNIFFED from them (the client's name/Content-Type are never
         trusted); an SVG is stored as a file, never an inline image. The artifact is invisible
-        until a message finalises it — attach it with POST /v1/messages artifacts:[id]."""
+        until a message finalises it — attach it with POST /v1/messages artifacts:[id].
+        Known limit (§14 finding 8, accepted): an accepted (≤25 MB) upload is buffered whole in
+        memory and copied once more for the disk write; the 25 MB cap bounds it but the framework
+        also spools the multipart body before this loop runs. True streaming-to-disk is a later
+        optimisation, not required at fleet scale."""
         from . import uploads
         buf = bytearray()
         head = b""
@@ -675,6 +679,8 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         image types — an uploaded SVG is thus never rendered (design §18.1)."""
         from . import uploads
         art = board._get("artifact", id_, "artifact")
+        if getattr(art, "staged", False) and art.created_by != a.id:  # §18.1: a staged upload is
+            raise HTTPException(404, f"{id_!r} is not an artifact")  # invisible until its owner attaches it
         ctype = art.content_type or "application/octet-stream"
         path = uploads.uploads_dir() / f"{id_}.{uploads.ext_for(ctype)}"
         if not path.exists():
@@ -687,7 +693,10 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     @app.get("/v1/artifacts/{id_}")
     def artifact_get(id_: str, a: Participant = Depends(actor)):
-        return ok(_dump(board._get("artifact", id_)))
+        art = board._get("artifact", id_, "artifact")
+        if getattr(art, "staged", False) and art.created_by != a.id:  # §18.1 finding 4: staged uploads
+            raise HTTPException(404, f"{id_!r} is not an artifact")  # are invisible to everyone but the uploader
+        return ok(_dump(art))
 
     # messages / gates -----------------------------------------------------------
     # Addressed traffic and @mentions are mirrored into edp-broker inboxes

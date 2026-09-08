@@ -12,7 +12,6 @@ from fastapi.testclient import TestClient
 
 from edp8 import broker_adapter
 from edp8.board import Board
-from edp8.schemas import Role
 from edp8.service import create_app
 from edp8.store import Store
 

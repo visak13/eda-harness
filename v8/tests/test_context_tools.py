@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from edp8.board import Board
 from edp8.bundles import ALL_TOOLS, set_client
 from edp8.client import BoardClient
-from edp8.schemas import Link, Relation, Ticket, TicketKind, WorkType
+from edp8.schemas import Ticket, TicketKind, WorkType
 from edp8.search import Index, make_embedder
 from edp8.service import create_app
 from edp8.store import Store
@@ -35,7 +35,8 @@ def client(board):
 @pytest.fixture
 def rig(client):
     for pid, role, typ in [("owner", "owner", "human"), ("arch", "architect", "agent"), ("eng", "engineer", "agent")]:
-        assert client.post("/v1/participants", json={"type": typ, "role": role, "handle": pid, "id": pid}, headers=ADMIN).json()["ok"]
+        assert client.post("/v1/participants", json={"type": typ, "role": role, "handle": pid, "id": pid},
+                           headers=ADMIN).json()["ok"]
     epic = client.post("/v1/tickets", json={"kind": "epic", "work_type": "feature", "title": "Space game site",
                                             "description": "showcase site for the galaxy game", "tags": ["web"]},
                        headers=H).json()["value"]
@@ -43,9 +44,11 @@ def rig(client):
                                           "parent_id": epic["id"], "description": "build the selection sheet from Astra concepts",
                                           "tags": ["assets", "astra"]}, headers={"X-Participant": "arch"}).json()["value"]
     t1 = client.post("/v1/tickets", json={"kind": "task", "work_type": "feature", "title": "T1 capture renders",
-                                          "parent_id": s1["id"], "assignee": "eng"}, headers={"X-Participant": "arch"}).json()["value"]
+                                          "parent_id": s1["id"], "assignee": "eng"},
+                       headers={"X-Participant": "arch"}).json()["value"]
     c = client.post("/v1/criteria", json={"ticket_id": s1["id"], "text": "the selection sheet renders four ships",
-                                          "check": "look", "checked_by": "reviewer"}, headers={"X-Participant": "arch"}).json()["value"]
+                                          "check": "look", "checked_by": "reviewer"},
+                     headers={"X-Participant": "arch"}).json()["value"]
     d = client.post("/v1/docs", json={"doc_type": "note", "title": "ship ledger", "body_md": "kestrel pilgrim",
                                       "scope": epic["id"]}, headers={"X-Participant": "arch"}).json()["value"]
     client.post("/v1/links", json={"from_id": s1["id"], "to_id": d["id"], "relation": "evidence_for"},
@@ -77,7 +80,8 @@ def test_fat_ticket_read_has_every_section(client, rig):
 
 
 def test_ticket_query_filters_and_word_search(client, rig):
-    q = lambda **p: [t["id"] for t in client.get("/v1/tickets", params=p, headers=H).json()["value"]]
+    def q(**p):
+        return [t["id"] for t in client.get("/v1/tickets", params=p, headers=H).json()["value"]]
     assert set(q(epic_id=rig["epic"]["id"])) == {rig["epic"]["id"], rig["s1"]["id"], rig["t1"]["id"]}
     assert q(tag="astra") == [rig["s1"]["id"]]
     assert q(created_by="owner") == [rig["epic"]["id"]]
@@ -88,7 +92,8 @@ def test_ticket_query_filters_and_word_search(client, rig):
 
 def test_message_since_seq_and_message_read(client, rig):
     sid = rig["s1"]["id"]
-    m1 = client.post("/v1/messages", json={"ticket_id": sid, "kind": "question", "to": "eng", "text": "q1"}, headers=H).json()["value"]
+    m1 = client.post("/v1/messages", json={"ticket_id": sid, "kind": "question", "to": "eng", "text": "q1"},
+                     headers=H).json()["value"]
     r = client.get("/v1/messages", params={"ticket_id": sid}, headers=H).json()
     seq1 = r["value"][-1]["seq"]
     assert "last_seq=" in r["hint"] and r["value"][-1]["id"] == m1["id"]
@@ -130,7 +135,7 @@ def test_tool_layer_accepts_ticket_id_alias_and_describe_lists_tools(client, rig
 def test_old_board_migrates_columns_and_fts(tmp_path):
     """A board file from before 2026-09-06 gains created_by/epic_id/checked_by columns, epic_id
     values, and a populated FTS table on first open."""
-    import sqlite3, json
+    import sqlite3
     db = tmp_path / "old.db"
     con = sqlite3.connect(str(db))
     con.execute("CREATE TABLE ticket (id TEXT PRIMARY KEY, seq INTEGER, created_at TEXT, body TEXT NOT NULL, "
@@ -144,7 +149,8 @@ def test_old_board_migrates_columns_and_fts(tmp_path):
                     (t.id, n, t.created_at.isoformat(), t.model_dump_json(exclude={"description", "tags", "epic_id"}),
                      t.kind, t.work_type, t.parent_id, t.status, t.assignee))
     con.execute("INSERT INTO seq VALUES ('global', 2)")
-    con.commit(); con.close()
+    con.commit()
+    con.close()
     store = Store(db)
     cols = {r[1] for r in store._conn.execute("PRAGMA table_info(ticket)")}
     assert {"created_by", "epic_id"} <= cols

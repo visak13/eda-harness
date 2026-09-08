@@ -33,18 +33,22 @@ def client(board, monkeypatch):
 @pytest.fixture
 def rig(client):
     for pid, role, typ in [("owner", "owner", "human"), ("ravi", "reviewer", "human"), ("arch", "architect", "agent")]:
-        assert client.post("/v1/participants", json={"type": typ, "role": role, "handle": pid, "id": pid}, headers=ADMIN).json()["ok"]
-    e = client.post("/v1/tickets", json={"kind": "epic", "work_type": "feature", "title": "Galaxy site"}, headers=H).json()["value"]["id"]
+        assert client.post("/v1/participants", json={"type": typ, "role": role, "handle": pid, "id": pid},
+                           headers=ADMIN).json()["ok"]
+    e = client.post("/v1/tickets", json={"kind": "epic", "work_type": "feature", "title": "Galaxy site"},
+                    headers=H).json()["value"]["id"]
     s = client.post("/v1/tickets", json={"kind": "story", "work_type": "bug", "title": "fix the ship sheet", "parent_id": e,
                                          "tags": ["assets"]}, headers={"X-Participant": "arch"}).json()["value"]["id"]
     seat = f"engineer.{s}"
     client.post("/v1/participants", json={"type": "agent", "role": "engineer", "handle": seat, "id": seat}, headers=ADMIN)
-    client.put("/v1/sessions/sid-1", json={"participant_id": seat, "ticket_id": s, "pool_id": "local", "state": "alive"}, headers=ADMIN)
+    client.put("/v1/sessions/sid-1", headers=ADMIN,
+               json={"participant_id": seat, "ticket_id": s, "pool_id": "local", "state": "alive"})
     return {"epic": e, "story": s, "seat": seat}
 
 
 def test_no_meta_refresh_anywhere_and_pages_carry_poll_scope(client, rig):
-    for path, params, scope in (("/ui/me", {"as": "owner"}, "me"), (f"/ui/epic/{rig['epic']}", {"as": "owner"}, f"epic:{rig['epic']}"),
+    for path, params, scope in (("/ui/me", {"as": "owner"}, "me"),
+                                (f"/ui/epic/{rig['epic']}", {"as": "owner"}, f"epic:{rig['epic']}"),
                                 (f"/ui/ticket/{rig['story']}", {"as": "owner"}, f"ticket:{rig['story']}"),
                                 ("/ui/activity", {"as": "owner"}, "me"), ("/ui/tickets", {}, "all"), ("/ui", {}, "all")):
         page = client.get(path, params=params).text
@@ -55,7 +59,8 @@ def test_no_meta_refresh_anywhere_and_pages_carry_poll_scope(client, rig):
 
 def test_poll_counts_only_events_in_scope(client, rig):
     seq = client.get("/ui/poll", params={"since": 0, "scope": "all"}).json()["seq"]
-    other = client.post("/v1/tickets", json={"kind": "epic", "work_type": "feature", "title": "elsewhere"}, headers=H).json()["value"]["id"]
+    other = client.post("/v1/tickets", json={"kind": "epic", "work_type": "feature", "title": "elsewhere"},
+                        headers=H).json()["value"]["id"]
     assert client.get("/ui/poll", params={"since": seq, "scope": f"epic:{rig['epic']}"}).json()["new"] == 0
     assert client.get("/ui/poll", params={"since": seq, "scope": "all"}).json()["new"] >= 1
     client.post("/v1/messages", json={"ticket_id": rig["story"], "kind": "note", "text": "hi"}, headers=H)
@@ -105,5 +110,6 @@ def test_tickets_page_filters(client, rig):
 def test_epic_page_filter_bar(client, rig):
     page = client.get(f"/ui/epic/{rig['epic']}", params={"as": "owner"}).text
     assert "class='filter-bar'" in page and rig["story"] in page
-    assert rig["story"] not in client.get(f"/ui/epic/{rig['epic']}", params={"as": "owner", "work_type": "feature"}).text.split("Epic thread")[0]
+    filtered = client.get(f"/ui/epic/{rig['epic']}", params={"as": "owner", "work_type": "feature"}).text
+    assert rig["story"] not in filtered.split("Epic thread")[0]
     assert rig["story"] in client.get(f"/ui/epic/{rig['epic']}", params={"as": "owner", "q": "sheet"}).text

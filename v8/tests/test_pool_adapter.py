@@ -13,7 +13,6 @@ import os
 os.environ.setdefault("EDP8_EMBEDDER", "none")
 
 import httpx
-import pytest
 
 from edp8 import pool_adapter
 from edp8.board import Board

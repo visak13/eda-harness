@@ -22,7 +22,6 @@ from edp8.schemas import (
     SessionState,
     TicketKind,
     TicketStatus,
-    Verdict,
     WorkType,
 )
 from edp8.store import Store
@@ -309,7 +308,8 @@ def test_finding11_story_cap_counts_under_the_board_lock():
         # this runs INSIDE `with self._lock` — a second thread must not be able to take the lock
         holder: list[bool] = []
         th = threading.Thread(target=lambda: holder.append(board._lock.acquire(blocking=False)))
-        th.start(); th.join()
+        th.start()
+        th.join()
         got = holder[0]
         if got:
             board._lock.release()

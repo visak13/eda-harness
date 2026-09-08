@@ -10,11 +10,10 @@ os.environ.setdefault("EDP8_EMBEDDER", "none")
 import pytest
 from fastapi.testclient import TestClient
 
-from edp8 import broker_adapter, bundles
-from edp8.board import Board, BoardError
+from edp8 import broker_adapter
+from edp8.board import Board
 from edp8.bundles import ALL_TOOLS, set_client
 from edp8.client import BoardClient
-from edp8.schemas import Role, SessionState
 from edp8.service import create_app
 from edp8.store import Store
 

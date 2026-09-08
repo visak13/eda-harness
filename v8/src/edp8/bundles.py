@@ -218,7 +218,7 @@ def _validation_envelope(tool: ToolDef, exc: ValidationError) -> dict[str, Any]:
         error["allowed"] = allowed
     hint = (f"pass a valid {field}"
             + (f" — one of: {'|'.join(allowed)}" if allowed else "")
-            + f"; describe('enums') lists allowed values")
+            + "; describe('enums') lists allowed values")
     return {"ok": False, "error": error, "hint": hint}
 
 
@@ -604,6 +604,9 @@ class CriterionUpdateArgs(BaseModel):
     evidence_ref: str | None = Field(default=None, description="doc id (a report) proving the check")
     verdict: Verdict | None = Field(default=None, description="pending|pass|fail — set after evidence_ref")
     text: str | None = Field(default=None, description="reword the criterion (authors only, while verdict pending)")
+    evidence_version: int | None = Field(default=None,
+        description="the doc version this verdict signed off (§14); refused if below the doc's current version")
+    stale_ok: bool = Field(default=False, description="sign the version you read even if the doc has since moved on")
 
 
 def _ticket_create(a: TicketCreateArgs) -> dict[str, Any]:
@@ -637,7 +640,8 @@ def _criterion_query(a: CriterionQueryArgs) -> dict[str, Any]:
 
 
 def _criterion_update(a: CriterionUpdateArgs) -> dict[str, Any]:
-    return get_client().criterion_update(a.id, evidence_ref=a.evidence_ref, verdict=a.verdict, text=a.text)
+    return get_client().criterion_update(a.id, evidence_ref=a.evidence_ref, verdict=a.verdict, text=a.text,
+                                         evidence_version=a.evidence_version, stale_ok=a.stale_ok)
 
 
 TICKET_TOOLS = [
@@ -1431,7 +1435,7 @@ def _consult_complete(client: BoardClient, a: ConsultArgs, resp: dict[str, Any],
             status = "ok" if resp.get("ok") else (resp.get("error") or {}).get("code", "failed")
             client.message_send(ticket_id=a.ticket_id, kind="note", to=caller,
                                 text=f"consult_done: run {rid or '?'} finished ({status}); "
-                                     + (f"answer on this thread" if answer else
+                                     + ("answer on this thread" if answer else
                                         f"see consult_status(run_id='{rid}')"))
     except Exception:  # noqa: BLE001 — a thread-note failure never crashes the background run
         pass

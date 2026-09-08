@@ -48,7 +48,7 @@ def test_signoff_renders_markdown_and_takes_verdict(client, rig):
     assert "Docs awaiting your sign-off" in page
     assert "<strong>thin</strong>" in page  # markdown RENDERED, not raw
     r = client.post("/ui/me/verdict", data={"as_": "owner", "criterion_id": rig["crit"],
-                                            "ticket_id": rig["kt"], "verdict": "pass",
+                                            "ticket_id": rig["kt"], "verdict": "pass", "evidence_version": 1,
                                             "note": "good shape, proceed"}, follow_redirects=False)
     assert r.status_code == 303
     crit = client.get("/v1/criteria", params={"ticket_id": rig["kt"]},

@@ -135,9 +135,11 @@ class BoardClient:
         return self._request("GET", "/v1/criteria", params={"ticket_id": ticket_id})
 
     def criterion_update(self, id_: str, evidence_ref: str | None = None,
-                         verdict: str | None = None, text: str | None = None) -> dict[str, Any]:
+                         verdict: str | None = None, text: str | None = None,
+                         evidence_version: int | None = None, stale_ok: bool = False) -> dict[str, Any]:
         return self._request("PATCH", f"/v1/criteria/{id_}",
-                             json={"evidence_ref": evidence_ref, "verdict": verdict, "text": text})
+                             json={"evidence_ref": evidence_ref, "verdict": verdict, "text": text,
+                                   "evidence_version": evidence_version, "stale_ok": stale_ok})
 
     # ------------------------------------------------------------------ docs / links / artifacts
     def doc_create(self, doc_type: str, title: str, body_md: str, scope: str) -> dict[str, Any]:

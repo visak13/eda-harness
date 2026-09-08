@@ -49,7 +49,7 @@ class VerdictIn(BaseModel):
     verdict: str
     note: str = ""
     ticket_id: str | None = None
-    evidence_version: int | None = None
+    evidence_version: int  # §14 finding 2: a sign-off must name the doc version it read — required, no bypass
     stale_ok: bool = False
 
 

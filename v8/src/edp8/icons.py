@@ -3,18 +3,17 @@ from __future__ import annotations
 
 import html
 
-
 _ICONS = {
     # Navigation and core.
     "inbox": "<path d='M4 5.5h16v13H4zM4 14h4l1.5 2h5l1.5-2h4M9 3.5h6M12 3.5v5m0 0-2-2m2 2 2-2'/>",
-    "epic": "<path d='M5 3v18M5 6h3M5 12h3M5 18h3'/><rect x='8' y='4' width='11' height='5' rx='1.5'/><rect x='8' y='10' width='11' height='5' rx='1.5'/><rect x='8' y='16' width='11' height='4' rx='1.5'/>",
-    "api-reference": "<path d='M7 3.5h8l3 3V20H7zM15 3.5V7h3M4 8H2.5v8H4M21 8h1.5v8H21M10 12h4'/><circle cx='16.5' cy='12' r='1.25'/>",
+    "epic": "<path d='M5 3v18M5 6h3M5 12h3M5 18h3'/><rect x='8' y='4' width='11' height='5' rx='1.5'/><rect x='8' y='10' width='11' height='5' rx='1.5'/><rect x='8' y='16' width='11' height='4' rx='1.5'/>",  # noqa: E501 (unsplittable SVG data literal)
+    "api-reference": "<path d='M7 3.5h8l3 3V20H7zM15 3.5V7h3M4 8H2.5v8H4M21 8h1.5v8H21M10 12h4'/><circle cx='16.5' cy='12' r='1.25'/>",  # noqa: E501 (unsplittable SVG data literal)
     "thread": "<path d='M3 5.5h12v8H9l-3.5 3v-3H3zM9 9h12v8h-2.5v3L15 17H9z'/>",
     "document": "<path d='M6 3h8l4 4v14H6zM14 3v5h4M9 12h6M9 16h6'/>",
     "ticket": "<path d='M5 4h15v16H5v-5a2 2 0 0 0 0-4V4zM9 9h7'/>",
 
     # Ticket kinds.
-    "ticket-epic": "<path d='M4 3h16v18H4v-5a2 2 0 0 0 0-4V3z'/><rect x='8' y='7' width='8' height='3' rx='1'/><rect x='8' y='13' width='8' height='3' rx='1'/>",
+    "ticket-epic": "<path d='M4 3h16v18H4v-5a2 2 0 0 0 0-4V3z'/><rect x='8' y='7' width='8' height='3' rx='1'/><rect x='8' y='13' width='8' height='3' rx='1'/>",  # noqa: E501 (unsplittable SVG data literal)
     "story": "<path d='M5 4h15v15H12l-3.5 3v-3H5v-4a2 2 0 0 0 0-4V4zM9 9h7'/>",
     "task": "<path d='M5 4h15v16H5v-5a2 2 0 0 0 0-4V4zM9 12l2 2 5-6'/>",
 
@@ -32,7 +31,7 @@ _ICONS = {
     "status-changed": "<path d='M3 17h5v-5h5V7h4M15 5h5v5h-5z'/>",
     "gate-opened": "<path d='M4 21V9h3v12M17 21V9h3v12M8 7l8-3M10 3h6v6'/>",
     "gate-answered": "<path d='M4 21V8h3v13M17 21V8h3v13M7 11h10v10H7'/><circle cx='12' cy='16' r='1.5'/>",
-    "assigned": "<path d='M3 5h11v14H3v-4a2 2 0 0 0 0-4V5zM14 12h3'/><circle cx='19' cy='8' r='2'/><path d='M16 19c.4-2.4 1.4-3.5 3-3.5s2.6 1.1 3 3.5'/>",
+    "assigned": "<path d='M3 5h11v14H3v-4a2 2 0 0 0 0-4V5zM14 12h3'/><circle cx='19' cy='8' r='2'/><path d='M16 19c.4-2.4 1.4-3.5 3-3.5s2.6 1.1 3 3.5'/>",  # noqa: E501 (unsplittable SVG data literal)
     "document-updated": "<path d='M4 3h8l3 3v8H4zM12 3v4h3M8 10h3M16 15a4 4 0 1 1-1 4m1-4v3h-3'/>",
     "shell-dead": "<rect x='3' y='4' width='18' height='16' rx='2'/><path d='m6 9 2 2-2 2M10 15h2l1-4 2 7 1-3h2M12 11l2 4'/>",
     "shell-stalled": "<rect x='3' y='4' width='18' height='16' rx='2'/><path d='m6 9 2 2-2 2M10 15h2l1-4 1 4h1M17 12v5M20 12v5'/>",

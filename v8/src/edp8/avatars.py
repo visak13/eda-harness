@@ -26,9 +26,9 @@ def _svg(body: str, label: str, size: int, decorative: bool = False) -> str:
 
 
 def system_avatar_svg(size: int = 36, *, unknown: bool = False) -> str:
-    question = "<path d='M27 7c4 0 5 5 2 7l-2 1v2M27 21h.01' fill='none' stroke='#F7F5F8' stroke-width='2' stroke-linecap='round'/>" if unknown else ""
+    question = "<path d='M27 7c4 0 5 5 2 7l-2 1v2M27 21h.01' fill='none' stroke='#F7F5F8' stroke-width='2' stroke-linecap='round'/>" if unknown else ""  # noqa: E501 (unsplittable SVG data literal)
     body = ("<rect width='36' height='36' rx='8' fill='#30313A'/><rect x='8' y='8' width='17' height='6' rx='2' fill='#8D8794'/>"
-            "<rect x='8' y='16' width='20' height='6' rx='2' fill='#B8B3BE'/><rect x='8' y='24' width='17' height='5' rx='2' fill='#8D8794'/>"
+            "<rect x='8' y='16' width='20' height='6' rx='2' fill='#B8B3BE'/><rect x='8' y='24' width='17' height='5' rx='2' fill='#8D8794'/>"  # noqa: E501 (unsplittable SVG data literal)
             "<path d='M10 19h4l2-3 3 7 2-4h5' fill='none' stroke='#36C5F0' stroke-width='1.8' stroke-linejoin='round'/>" + question)
     return _svg(body, "Board system", size)
 
@@ -62,24 +62,24 @@ def role_avatar_svg(role: Any, model: str | None = None, size: int = 36) -> str:
     role_name = str(role_value or "system").lower()
     if role_name == "consultant" or (model and "gpt" in model.lower()):
         body = ("<rect width='36' height='36' rx='8' fill='#172554'/><circle cx='18' cy='18' r='5' fill='#FBBF24'/>"
-                "<path d='M6 20c4-10 17-14 25-7M9 27c8 3 19-2 21-10' fill='none' stroke='#93C5FD' stroke-width='2' stroke-linecap='round'/>"
+                "<path d='M6 20c4-10 17-14 25-7M9 27c8 3 19-2 21-10' fill='none' stroke='#93C5FD' stroke-width='2' stroke-linecap='round'/>"  # noqa: E501 (unsplittable SVG data literal)
                 "<circle cx='29' cy='13' r='2.5' fill='#F7F5F8'/>")
         return _svg(body, "Consultant avatar", size)
     color = _ROLE_COLORS.get(role_name)
     if color is None:
         return system_avatar_svg(size, unknown=True)
     spark = ("<g fill='#FFF3D8'><ellipse cx='18' cy='11' rx='3.4' ry='6'/><ellipse cx='18' cy='25' rx='3.4' ry='6'/>"
-             "<ellipse cx='12' cy='14.5' rx='3.4' ry='6' transform='rotate(-60 12 14.5)'/><ellipse cx='24' cy='21.5' rx='3.4' ry='6' transform='rotate(-60 24 21.5)'/>"
-             "<ellipse cx='24' cy='14.5' rx='3.4' ry='6' transform='rotate(60 24 14.5)'/><ellipse cx='12' cy='21.5' rx='3.4' ry='6' transform='rotate(60 12 21.5)'/></g>")
+             "<ellipse cx='12' cy='14.5' rx='3.4' ry='6' transform='rotate(-60 12 14.5)'/><ellipse cx='24' cy='21.5' rx='3.4' ry='6' transform='rotate(-60 24 21.5)'/>"  # noqa: E501 (unsplittable SVG data literal)
+             "<ellipse cx='24' cy='14.5' rx='3.4' ry='6' transform='rotate(60 24 14.5)'/><ellipse cx='12' cy='21.5' rx='3.4' ry='6' transform='rotate(60 12 21.5)'/></g>")  # noqa: E501 (unsplittable SVG data literal)
     motifs = {
         "architect": "<path d='M4 9h8M4 13h5M27 23v9M23 28h9' stroke='#C7D2FE' fill='none'/>",
         "engineer": "<path d='M9 11 5 18l4 7M27 11l4 7-4 7' stroke='#fff' stroke-width='2' fill='none'/>",
         "reviewer": "<path d='m22 24 3 3 6-8' stroke='#fff' stroke-width='2.4' fill='none'/>",
         "adversary": "<path d='M3 30 31 4v10L14 31z' fill='#7D2020' opacity='.75'/>",
         "qa": "<circle cx='18' cy='18' r='13' fill='none' stroke='#D7F6FF' stroke-width='1.5'/>",
-        "sme": "<circle cx='7' cy='9' r='2' fill='#fff'/><circle cx='29' cy='27' r='2' fill='#fff'/><path d='m8 10 7 5m6 6 7 5' stroke='#fff'/>",
+        "sme": "<circle cx='7' cy='9' r='2' fill='#fff'/><circle cx='29' cy='27' r='2' fill='#fff'/><path d='m8 10 7 5m6 6 7 5' stroke='#fff'/>",  # noqa: E501 (unsplittable SVG data literal)
         "owner": "<path d='M10 9h16l-2 5H12zM13 7l5 4 5-4' fill='#FDE68A'/>",
-        "coordinator": "<path d='M7 27 18 8l11 19M7 27h22' stroke='#fff' fill='none'/><circle cx='7' cy='27' r='2' fill='#fff'/><circle cx='18' cy='8' r='2' fill='#fff'/><circle cx='29' cy='27' r='2' fill='#fff'/>",
+        "coordinator": "<path d='M7 27 18 8l11 19M7 27h22' stroke='#fff' fill='none'/><circle cx='7' cy='27' r='2' fill='#fff'/><circle cx='18' cy='8' r='2' fill='#fff'/><circle cx='29' cy='27' r='2' fill='#fff'/>",  # noqa: E501 (unsplittable SVG data literal)
     }
     return _svg(f"<rect width='36' height='36' rx='8' fill='{color}'/>{motifs[role_name]}{spark}",
                 f"{role_name.title()} avatar", size)

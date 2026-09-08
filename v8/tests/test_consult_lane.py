@@ -40,13 +40,14 @@ def test_low_ram_is_a_note_not_a_gate(sol_dir, monkeypatch):
 
 
 def test_preflight_tool_is_advisory_and_idempotent(monkeypatch):
-    from edp8.bundles import ALL_TOOLS, ROLE_BUNDLES
     from edp8 import pool_adapter
+    from edp8.bundles import ALL_TOOLS, ROLE_BUNDLES
     monkeypatch.setattr(pool_adapter, "sessions", lambda: {"ok": True, "value": [
         {"session_id": "a", "handle": "engineer.s1", "state": "active"}]})
     monkeypatch.setattr(pool_adapter, "capacity", lambda: {"ok": True, "value": {"max_total_shells": 10}})
     t = ALL_TOOLS["preflight"]
-    one = t.handler(t.args_model()); two = t.handler(t.args_model())
+    one = t.handler(t.args_model())
+    two = t.handler(t.args_model())
     assert one["ok"] and one["value"]["host"]["free_mb"] > 0 and one["value"]["seats"]["live"] == 1
     assert one["value"]["seats"]["caps"] == {"max_total_shells": 10} and "advisory" in one["value"]
     assert one["value"]["seats"] == two["value"]["seats"] and "never a gate" in one["hint"]
@@ -96,10 +97,13 @@ def test_lane_serialises_and_reports_queue(sol_dir, monkeypatch):
     def go(q):
         results[q] = consult.consult("second_opinion", q)
 
-    t1 = threading.Thread(target=go, args=("one",)); t1.start()
+    t1 = threading.Thread(target=go, args=("one",))
+    t1.start()
     time.sleep(0.05)
-    t2 = threading.Thread(target=go, args=("two",)); t2.start()
-    t1.join(); t2.join()
+    t2 = threading.Thread(target=go, args=("two",))
+    t2.start()
+    t1.join()
+    t2.join()
     assert order == ["start:one", "end:one", "start:two", "end:two"]
     assert results["one"]["value"]["queued_behind"] == 0 and results["two"]["value"]["queued_behind"] == 1
     assert consult.lane_status()["in_flight"] is None

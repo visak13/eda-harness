@@ -97,6 +97,7 @@ def test_signoff_card_pinned(rig):
         f"<input type='hidden' name='as_' value='owner'><input type='hidden' name='token' value=''>"
         f"<input type='hidden' name='criterion_id' value='{kcrit}'>"
         f"<input type='hidden' name='ticket_id' value='{kt}'>"
+        f"<input type='hidden' name='evidence_version' value='1'>"
         f"<input name='note' placeholder='optional note to the author…'>"
         f"<button name='verdict' value='pass' title='approve — the ticket can close'>Approve</button>"
         f"<button name='verdict' value='fail' class='btn-fail' "

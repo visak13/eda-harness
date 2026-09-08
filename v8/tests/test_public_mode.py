@@ -16,7 +16,6 @@ os.environ.setdefault("EDP8_EMBEDDER", "none")
 import pytest
 from fastapi.testclient import TestClient
 
-from edp8 import service
 from edp8.board import Board
 from edp8.service import create_app, public_startup_error, resolve_host
 from edp8.store import Store

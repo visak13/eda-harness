@@ -164,6 +164,8 @@ def signoff_criterion_for_doc(board: Board, viewer: Participant, doc: Any) -> An
         tk = board.store.get("ticket", c.ticket_id)
         if tk is None or tk.status in _TERMINAL:
             continue
+        if not board._owner_scope(viewer, tk.id):  # §14 finding 1: owner A's card stays off owner B's reader
+            continue
         return c
     return None
 
@@ -531,10 +533,21 @@ def activity_for(board: Board, viewer: Participant, limit: int = 120) -> list[di
 
 def library_for(board: Board, epic_id: str | None = None) -> dict[str, Any]:
     """The knowledge library (design §4.1): docs, non-staged artifacts and links, optionally
-    scoped to one epic. Staged upload artifacts never appear (S21)."""
+    scoped to one epic. Staged upload artifacts never appear (S21). §14 finding 9: when an epic
+    is named the scope covers artifacts and links too, not docs alone — an artifact belongs to the
+    epic when a link joins it to an in-epic ticket/doc, and a link when either end is in scope."""
     doc_filter = {"scope": epic_id} if epic_id else {}
     docs = [board._doc_summary(d) for d in board.store.query("doc", doc_filter, limit=500)]
-    arts = [a.model_dump(mode="json") for a in board.store.query("artifact", {}, limit=500)
-            if not getattr(a, "staged", False)]
-    links = [lk.model_dump(mode="json") for lk in board.links()]
-    return {"docs": docs, "artifacts": arts, "links": links}
+    arts = [a for a in board.store.query("artifact", {}, limit=500) if not getattr(a, "staged", False)]
+    links = list(board.links())
+    if epic_id:
+        tk = board.store.get("ticket", epic_id)
+        scope_ids = {tk.id, *(d.id for d in board._descendants(tk.id))} if tk is not None else set()
+        scope_ids |= {d["id"] for d in docs}
+        art_ids = {lk.to_id for lk in links if lk.from_id in scope_ids} \
+            | {lk.from_id for lk in links if lk.to_id in scope_ids}
+        arts = [a for a in arts if a.id in art_ids]
+        reachable = scope_ids | art_ids
+        links = [lk for lk in links if lk.from_id in reachable or lk.to_id in reachable]
+    return {"docs": docs, "artifacts": [a.model_dump(mode="json") for a in arts],
+            "links": [lk.model_dump(mode="json") for lk in links]}

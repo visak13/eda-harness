@@ -269,6 +269,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
                     f"<form class='signoff-actions' method='post' action='/ui/me/verdict'>{hidden}"
                     f"<input type='hidden' name='criterion_id' value='{_e(c.id)}'>"
                     f"<input type='hidden' name='ticket_id' value='{_e(c.ticket_id)}'>"
+                    f"<input type='hidden' name='evidence_version' value='{getattr(doc,'version','') if doc else ''}'>"
                     f"<input name='note' placeholder='optional note to the author…'>"
                     f"<button name='verdict' value='pass' title='approve — the ticket can close'>Approve</button>"
                     f"<button name='verdict' value='fail' class='btn-fail' title='send back — add a note saying what is missing'>Needs work</button>"
@@ -414,18 +415,14 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
     @r.post("/ui/me/verdict")
     def me_verdict(as_: str=Form(...),token: str=Form(default=""),criterion_id: str=Form(...),
                    ticket_id: str=Form(default=""),verdict: str=Form(...),note: str=Form(default=""),
-                   back: str=Form(default="")):
+                   evidence_version: int=Form(...),back: str=Form(default="")):
+        # §14 finding 2: route through views.record_verdict (the shared UI+API path) and send the
+        # doc version the page rendered — the sign-off can never silently bless an unread revision.
         p=_me(as_,token or None)
         done_url=back if back.startswith("/ui/") else f"/ui/me?{_qs(p,token or None)}"
         try:
-            from .schemas import Verdict as _V
-            board.criterion_update(p,criterion_id.strip(),verdict=_V(verdict))
-            if note.strip() and ticket_id.strip():
-                tk=board.store.get("ticket",ticket_id.strip())
-                m=board.message_send(p,ticket_id=ticket_id.strip(),to=getattr(tk,"assignee",None),
-                                     kind=MessageKind.answer if verdict=="pass" else MessageKind.finding,
-                                     text=f"[sign-off {verdict}] {note.strip()}")
-                delivery.after_message(board,p.id,m)
+            views.record_verdict(board,p,criterion_id=criterion_id.strip(),verdict=verdict,note=note,
+                                 ticket_id=ticket_id.strip() or None,evidence_version=evidence_version)
         except (BoardError,ValueError) as e:
             sep="&" if "?" in done_url else "?"
             return RedirectResponse(f"{done_url}{sep}err={quote(str(e))}",status_code=303)
@@ -652,6 +649,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
                         approve=(f"<form method='post' action='/ui/me/verdict' style='display:flex;gap:8px;align-items:center'>{hidden}"
                                  f"<input type='hidden' name='criterion_id' value='{_e(c.id)}'>"
                                  f"<input type='hidden' name='ticket_id' value='{_e(c.ticket_id)}'>"
+                                 f"<input type='hidden' name='evidence_version' value='{d.version}'>"
                                  f"<input type='hidden' name='back' value='/ui/doc/{quote(doc_id,safe='')}?{qs}'>"
                                  f"<button name='verdict' value='pass' title='sign this doc off — {_e(c.ticket_id)} can proceed'>Approve</button>"
                                  f"<button name='verdict' value='fail' class='btn-fail' title='send back — add a comment saying what is missing'>Needs work</button></form>")

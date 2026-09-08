@@ -8,8 +8,8 @@ import pytest
 
 from edp8.board import Board, BoardError
 from edp8.schemas import (
-    Check,
     DESCRIBE,
+    Check,
     DocType,
     EventKind,
     Gate,

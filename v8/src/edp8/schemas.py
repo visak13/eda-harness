@@ -154,8 +154,10 @@ class EventKind(StrEnum):
     shell_dead = "shell_dead"
     shell_stalled = "shell_stalled"
     ticket_created = "ticket_created"
-    criterion_checked = "criterion_checked"  # a verdict landed: {criterion, verdict, by, by_type, evidence, ticket, check, checked_by}
-    criterion_checker_overridden = "criterion_checker_overridden"  # owner overrode the derived checker: {criterion, from, to, reason, by}
+    # a verdict landed: {criterion, verdict, by, by_type, evidence, ticket, check, checked_by}
+    criterion_checked = "criterion_checked"
+    # owner overrode the derived checker: {criterion, from, to, reason, by}
+    criterion_checker_overridden = "criterion_checker_overridden"
     service_restarted = "service_restarted"  # launcher restarted a shared service: {service, reason, by, git_rev} (design §22)
 
 

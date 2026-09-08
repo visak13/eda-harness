@@ -20,8 +20,6 @@ import threading
 from collections.abc import Iterable
 from typing import Any
 
-_MENTION_RX = re.compile(r"@([A-Za-z0-9][A-Za-z0-9_.\-]*)")
-
 from .schemas import (
     CRITERION_AUTHORS,
     CRITERION_CHECKERS,
@@ -57,6 +55,7 @@ from .schemas import (
 )
 from .store import Store, new_id
 
+_MENTION_RX = re.compile(r"@([A-Za-z0-9][A-Za-z0-9_.\-]*)")
 _log = logging.getLogger("edp8.board")
 HUMAN_GATE_ANSWERERS = {Role.owner}
 _TERMINAL = (TicketStatus.done, TicketStatus.partial, TicketStatus.dropped)
@@ -349,8 +348,10 @@ class Board:
                         new_rr = "review_required" in new_tags
                         if old_rr != new_rr:
                             raise BoardError("scope",
-                                             "review_required is frozen once a story has criteria (its checkers are already derived)",
-                                             "tag the story before writing criteria, or override a criterion's checker as the owner")
+                                             "review_required is frozen once a story has criteria "
+                                             "(its checkers are already derived)",
+                                             "tag the story before writing criteria, or override a "
+                                             "criterion's checker as the owner")
                     t.tags = new_tags
                     changed["tags"] = t.tags
         if assignee is not None:
@@ -804,6 +805,10 @@ class Board:
                     raise BoardError("scope", "verdicts are recorded by reviewer/qa/owner only")
                 if actor.role.value != c.checked_by and actor.role != Role.owner:
                     raise BoardError("scope", f"this criterion is checked_by {c.checked_by}; you are {actor.role}")
+                if actor.role == Role.owner and not self._owner_scope(actor, t.id):
+                    # §14 finding 1: an owner rules only its own epic's criteria — the checked_by==owner
+                    # bypass above must not let owner B sign off owner A's ticket.
+                    raise BoardError("scope", "this criterion belongs to another owner's epic")
                 if actor.id == t.assignee:
                     raise BoardError("scope", "the doer cannot verdict its own ticket")
             if verdict != Verdict.pending and not c.evidence_ref:
@@ -1007,7 +1012,11 @@ class Board:
 
     def sweep_staged_artifacts(self, *, max_age_hours: int = 24) -> list[str]:
         """Delete staged upload artifacts (and their bytes) older than max_age_hours — an upload
-        that was never finalised onto a message (design §18.1). Run at startup and hourly."""
+        that was never finalised onto a message (design §18.1). Run at startup and hourly.
+        Known limit (§14 finding 6, accepted): finalise and sweep take no shared lock, so a sweep
+        that read a staged snapshot could in principle delete an artifact finalised a moment later.
+        The board is single-writer (§24.1) — calls serialise — so this race cannot occur in the
+        deployed topology; it is not defended against here."""
         from datetime import timedelta
 
         from . import uploads

@@ -48,7 +48,6 @@ def _epic(raw):
 
 
 def test_consult_over_cap_returns_running_with_run_id(raw_client, monkeypatch):
-    import edp8.bundles as bundles_mod
     import edp8.consult as consult_mod
     monkeypatch.setenv("EDP8_TOOL_CALL_CAP_S", "1")
 

@@ -18,9 +18,9 @@ import pytest
 
 from edp8 import consult as consult_mod
 from edp8.consult import (
+    _PROFILES,
     _build_argv,
     _profile_config_args,
-    _PROFILES,
     _real_escapes,
     _snapshot_mtimes,
     check_write_dir_boundary,
@@ -579,7 +579,8 @@ def test_post_run_scan_ignores_allowlisted_concepts_writes(_ue, monkeypatch, tmp
     # concurrent concept drop) must NOT trip the boundary scan.
     monkeypatch.setenv(consult_mod._LOG_DIR_ENV, str(tmp_path / "logs"))
     monkeypatch.setattr(consult_mod, "_resolve_bin", lambda: "codex")
-    outside = tmp_path / "assets"; outside.mkdir()
+    outside = tmp_path / "assets"
+    outside.mkdir()
     allowed = _ue / "Content" / "Concepts" / "ship" / "kestrel_side.png"
     monkeypatch.setattr(consult_mod, "_run_codex",
                         _fake_codex(answer="done", writes_file=str(allowed)))

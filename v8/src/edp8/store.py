@@ -7,9 +7,8 @@ is process-local and the service is the single writer.
 
 from __future__ import annotations
 
-import re
-
 import json
+import re
 import sqlite3
 import threading
 import uuid
