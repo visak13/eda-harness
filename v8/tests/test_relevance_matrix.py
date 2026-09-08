@@ -355,17 +355,23 @@ def test_owner_not_paged_for_agent_passing_command_check(rig):
     check, an owner-checked one, or a fail still wakes the owner."""
     b, P, I = rig["b"], rig["p"], rig["ids"]
     agent_pass = synth(I["s1"], EventKind.criterion_checked, by="reviewer.s1", verdict=Verdict.passed,
-                       check=Check.command, checked_by="reviewer")
+                       check=Check.command, checked_by="reviewer", by_type="agent", by_role="reviewer")
     assert not b.relevant(agent_pass, P["owner"])
     look_pass = synth(I["s1"], EventKind.criterion_checked, by="reviewer.s1", verdict=Verdict.passed,
-                      check=Check.look, checked_by="reviewer")
+                      check=Check.look, checked_by="reviewer", by_type="agent", by_role="reviewer")
     owner_checked = synth(I["s1"], EventKind.criterion_checked, by="reviewer.s1", verdict=Verdict.passed,
-                          check=Check.command, checked_by="owner")
+                          check=Check.command, checked_by="owner", by_type="agent", by_role="reviewer")
     a_fail = synth(I["s1"], EventKind.criterion_checked, by="qa.s1", verdict=Verdict.failed,
-                   check=Check.command, checked_by="qa")
+                   check=Check.command, checked_by="qa", by_type="agent", by_role="qa")
     assert b.relevant(look_pass, P["owner"]) and b.relevant(owner_checked, P["owner"]) and b.relevant(a_fail, P["owner"])
     # §24 finding 9: only an AGENT reviewer/qa passing check is suppressed. A HUMAN reviewer's
     # passing command check (by_type=human) always pages the owner.
     human_pass = synth(I["s1"], EventKind.criterion_checked, by="human-reviewer", verdict=Verdict.passed,
-                       check=Check.command, checked_by="reviewer", by_type="human")
+                       check=Check.command, checked_by="reviewer", by_type="human", by_role="reviewer")
     assert b.relevant(human_pass, P["owner"]), "a human's passing check must page the owner"
+    # §24 finding 9 (second-opinion): an AGENT seat whose ROLE is owner verdicting a reviewer
+    # criterion is NOT an agent reviewer/qa — its passing check must still page (suppression keys on
+    # the acting role, not just by_type + checked_by).
+    agent_owner_pass = synth(I["s1"], EventKind.criterion_checked, by="owner-agent", verdict=Verdict.passed,
+                             check=Check.command, checked_by="reviewer", by_type="agent", by_role="owner")
+    assert b.relevant(agent_owner_pass, P["owner"]), "an agent-owner's passing check must page the owner"

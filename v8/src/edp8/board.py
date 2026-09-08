@@ -340,15 +340,19 @@ class Board:
                 # each criterion at creation — so once a story has criteria the tag is frozen.
                 # Flipping it later would spawn a reviewer who cannot verdict qa-checked criteria, or
                 # drop a reviewer whose criteria still demand one. Tag before writing criteria.
-                if t.kind == TicketKind.story and self.criteria(t.id):
-                    old_rr = "review_required" in (t.tags or [])
-                    new_rr = "review_required" in new_tags
-                    if old_rr != new_rr:
-                        raise BoardError("scope",
-                                         "review_required is frozen once a story has criteria (its checkers are already derived)",
-                                         "tag the story before writing criteria, or override a criterion's checker as the owner")
-                t.tags = new_tags
-                changed["tags"] = t.tags
+                # The criteria-count check is taken under the board lock (second-opinion 2026-09-08)
+                # so it serialises against criterion_create's derive+insert — a flip cannot slip in
+                # while a first criterion is mid-insert.
+                with self._lock:
+                    if t.kind == TicketKind.story and self.criteria(t.id):
+                        old_rr = "review_required" in (t.tags or [])
+                        new_rr = "review_required" in new_tags
+                        if old_rr != new_rr:
+                            raise BoardError("scope",
+                                             "review_required is frozen once a story has criteria (its checkers are already derived)",
+                                             "tag the story before writing criteria, or override a criterion's checker as the owner")
+                    t.tags = new_tags
+                    changed["tags"] = t.tags
         if assignee is not None:
             if actor.role not in (Role.coordinator, Role.architect, Role.engineer, Role.owner):
                 raise BoardError("scope", f"{actor.role} may not assign tickets",
@@ -508,12 +512,15 @@ class Board:
                 parent.status = TicketStatus.in_progress
                 self.store.put("ticket", parent)
                 self._emit(parent.id, EventKind.status_changed, {"from": "ready", "to": "in_progress", "by": "board"})
-            elif kids and all(k.status == TicketStatus.dropped or self._released(k) for k in kids):
-                # §24 finding 1: an epic opens its acceptance gate once every child is dropped OR
-                # released (done, or an evidence-complete in_review story) — NOT only when every
-                # child is `done`. Under §24.1 stories settle at in_review awaiting qa, so a
-                # done-only condition deadlocked the gate (qa is spawned BY the gate). qa then
-                # verdicts the in_review stories first, then the epic's own criteria.
+            # §24 finding 1 (independent `if`, NOT elif — second-opinion 2026-09-08): an epic opens
+            # its acceptance gate once every child is dropped OR released (done, or an evidence-
+            # complete in_review story), NOT only when every child is `done`. This MUST run even
+            # when the active branch above just moved the epic to in_progress: an evidence-complete
+            # story can auto-advance ready→in_review directly (never in_progress), so the epic is
+            # still ready/signed_off when its last child releases — an `elif` here skipped the gate
+            # and deadlocked (qa is spawned BY the gate). qa then verdicts the in_review stories,
+            # then the epic's own criteria.
+            if kids and all(k.status == TicketStatus.dropped or self._released(k) for k in kids):
                 if parent.kind == TicketKind.epic and parent.status not in (TicketStatus.done, TicketStatus.partial):
                     self.gate_open(parent.id, Gate.acceptance, by="board")
                 elif parent.kind == TicketKind.story and parent.status == TicketStatus.in_progress:
@@ -579,11 +586,15 @@ class Board:
         restart between enqueue and drain never strands a checker. Two sources: a reviewer-checked
         story that is in_review without a live reviewer seat, and an epic whose acceptance gate is
         open without a live qa seat. Idempotent — _enqueue_pairing skips a live seat and de-dups."""
-        for t in self.store.query("ticket", {}):  # type: ignore[assignment]
+        # scan ALL tickets — the default 500-row page would silently skip eligible stories/epics on
+        # a long-lived board (second-opinion 2026-09-08), stranding their pairing after a restart.
+        for t in self.store.query("ticket", {}, limit=1_000_000):  # type: ignore[assignment]
             if (t.kind == TicketKind.story and t.status == TicketStatus.in_review
                     and self._story_wants_reviewer(t)):
                 self._enqueue_pairing(f"reviewer.{t.id}", Role.reviewer.value, t.id)
-            elif t.kind == TicketKind.epic and self.open_gates(t.id, Gate.acceptance):
+            elif (t.kind == TicketKind.epic and t.status not in (TicketStatus.done, TicketStatus.partial)
+                    and self.open_gates(t.id, Gate.acceptance)):
+                # a done/partial epic whose gate never closed does not need qa re-spawned
                 self._enqueue_pairing(f"qa.{t.id}", Role.qa.value, t.id)
 
     def run_pending_pairings(self) -> dict[str, Any]:
@@ -643,10 +654,13 @@ class Board:
         if self._mint_token is not None:
             try:
                 token = self._mint_token(participant_id)
-            except Exception as e:  # noqa: BLE001 — a minter hiccup falls back to header-only, never blocks
-                _log.warning("token mint for %s failed: %s", participant_id, e)
-                token = None
-            if token:
+            except Exception as e:  # noqa: BLE001 — second-opinion 2026-09-08: FAIL CLOSED.
+                # A configured minter that RAISES must not silently fall back to a token-less spawn:
+                # in public mode that seat could never authenticate, yet a successful spawn would
+                # drop it from the queue. Keep it queued for the 60 s retry instead.
+                _log.warning("token mint for %s failed; keeping the pairing queued: %s", participant_id, e)
+                return False
+            if token:  # a present minter returning None is trusted mode (no tokens.json) → header-only
                 env = {"EDP8_TOKEN": token}
         try:
             res = self._pool_adapter().spawn(role, participant_id, env=env)
@@ -712,16 +726,18 @@ class Board:
                 raise BoardError("scope", "the doer of a ticket does not write its criteria")
         if t.status in (TicketStatus.in_review, TicketStatus.done, TicketStatus.partial, TicketStatus.dropped):
             raise BoardError("transition", f"criteria cannot be added to a {t.status} ticket")
-        # §24: the board DERIVES the checker; the checked_by argument is accepted for one release
-        # but ignored (a hint says so) unless the actor is the owner AND passes an override_reason,
-        # which is recorded as a criterion_checker_overridden event.
-        derived = self.checker_for(t)
-        final = derived
-        if checked_by is not None and checked_by != derived and actor.role == Role.owner and override_reason:
-            final = checked_by
-        # §24 finding 11: the criteria-cap count and the insert are one atomic step under the board
-        # lock, so two concurrent creates cannot both read CRITERIA_CAP-1 and both insert.
+        # §24 finding 11 + finding 5 freeze race (second-opinion 2026-09-08): the checker DERIVATION,
+        # the cap count and the insert are one atomic step under the board lock. Deriving the checker
+        # inside the lock closes the window where a concurrent ticket_update flips `review_required`
+        # after this thread read the tags but before it inserted the (now stale-tagged) criterion.
         with self._lock:
+            # §24: the board DERIVES the checker; the checked_by argument is accepted for one release
+            # but ignored (a hint says so) unless the actor is the owner AND passes an override_reason,
+            # which is recorded as a criterion_checker_overridden event.
+            derived = self.checker_for(t)
+            final = derived
+            if checked_by is not None and checked_by != derived and actor.role == Role.owner and override_reason:
+                final = checked_by
             if t.kind == TicketKind.story and not self._is_folded(t.id):
                 fresh = [c for c in self.criteria(t.id) if not (c.text or "").lstrip().startswith("(from S")]
                 if len(fresh) >= CRITERIA_CAP:
@@ -787,6 +803,7 @@ class Board:
         if verdict is not None:  # a verdict is a first-class WHO/WHAT event, not a doc edit
             self._emit(t.id, EventKind.criterion_checked,
                        {"criterion": c.id, "verdict": c.verdict, "by": actor.id, "by_type": actor.type,
+                        "by_role": actor.role.value if hasattr(actor.role, "value") else actor.role,
                         "evidence": c.evidence_ref, "evidence_version": c.evidence_version,
                         "ticket": t.id, "pending": pending, "check": c.check, "checked_by": c.checked_by})
         else:
@@ -869,10 +886,14 @@ class Board:
         dup = [lk for lk in self.store.query("link", {"from_id": from_id, "to_id": to_id, "relation": relation})]
         if dup:
             return dup[0]  # type: ignore[return-value]
-        lk = Link(id=new_id("lk"), from_id=from_id, to_id=to_id, relation=relation, created_by=actor.id)
-        self.store.put("link", lk)
-        if relation == Relation.blocks:
-            self._reconcile_blocks(from_id, to_id)
+        # second-opinion 2026-09-08: the insert and its readiness reconciliation are one atomic step
+        # under the board lock, so a successor cannot slip ready→in_progress between them (which
+        # would dodge the walk-back) and two racing link_creates cannot interleave.
+        with self._lock:
+            lk = Link(id=new_id("lk"), from_id=from_id, to_id=to_id, relation=relation, created_by=actor.id)
+            self.store.put("link", lk)
+            if relation == Relation.blocks:
+                self._reconcile_blocks(from_id, to_id)
         return lk
 
     def _reconcile_blocks(self, from_id: str, to_id: str) -> None:
@@ -1678,16 +1699,20 @@ class Board:
                 out.append(Reason.owner_listener)
             return out
         if ev.kind == EventKind.criterion_checked:
-            # v21 / §24 finding 9: the owner is paged only for a check that NEEDS the human — a
-            # fail, a `look` criterion, an owner-checked one, OR any check performed BY a human
-            # (by_type=human). Only an AGENT reviewer/qa passing a command/path check is suppressed;
-            # a human's passing check always pages.
+            # v21 / §24 finding 9 (tightened per second-opinion 2026-09-08): the owner is paged for
+            # EVERY criterion check EXCEPT the one case rule 2 names — an AGENT reviewer/qa PASSING a
+            # command/path check. Keying suppression on the acting role (by_role), not just by_type +
+            # checked_by, closes the branch where an agent seat with Role.owner verdicts a reviewer
+            # criterion and was wrongly suppressed. A human's pass, any fail, a `look` check, and an
+            # owner-checked criterion all still page.
             if d.get("by") != p.id and self._owner_scope(p, ev.subject_id):
-                needs_human = (d.get("verdict") == Verdict.failed
-                               or d.get("check") == Check.look
-                               or d.get("checked_by") == CheckedBy.owner.value
-                               or d.get("by_type") == "human")
-                if needs_human:
+                agent_reviewer_qa_pass = (
+                    d.get("by_type") == "agent"
+                    and d.get("by_role") in (Role.reviewer.value, Role.qa.value)
+                    and d.get("verdict") == Verdict.passed
+                    and d.get("check") in (Check.command, Check.path)
+                    and d.get("checked_by") != CheckedBy.owner.value)
+                if not agent_reviewer_qa_pass:
                     out.append(Reason.owner_listener)
         return out
 

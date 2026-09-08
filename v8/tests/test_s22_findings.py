@@ -102,6 +102,32 @@ def test_finding1_epic_opens_acceptance_on_evidence_complete_in_review():
     assert pool.spawns.count((Role.qa.value, f"qa.{epic.id}")) == 1
 
 
+def test_finding1_gate_opens_when_child_jumps_ready_to_in_review_under_a_ready_epic():
+    """The residual deadlock (second-opinion): a story evidence-completes straight from `ready` to
+    `in_review` while its epic is still `ready`. The active branch moves the epic to in_progress; an
+    `elif` would skip the release check and the gate would never open. The independent `if` opens it."""
+    board = make_board()
+    r = rig(board)
+    epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
+    story = board.ticket_create(r["architect"], kind=TicketKind.story, work_type=WorkType.feature,
+                                title="S", parent_id=epic.id)
+    d = board.doc_create(r["architect"], doc_type=DocType.design, title="d", body_md="b", scope=epic.id)
+    board.ticket_update(r["architect"], story.id, design_ref=d.id)
+    crit = board.criterion_create(r["architect"], ticket_id=story.id, text="c", check=Check.command)
+    board.ticket_update(r["architect"], story.id, status=TicketStatus.designed)
+    board.ticket_update(r["owner"], story.id, status=TicketStatus.signed_off)  # auto → ready
+    assert board.ticket(story.id).status == TicketStatus.ready
+    # force the epic to `ready` so the active branch will fire on the child's in_review transition
+    ep = board.ticket(epic.id)
+    ep.status = TicketStatus.ready
+    board.store.put("ticket", ep)
+    ev = board.doc_create(r["engineer"], doc_type=DocType.report, title="e", body_md="ok", scope=epic.id)
+    board.criterion_update(r["engineer"], crit.id, evidence_ref=ev.id)  # ready → in_review (no in_progress)
+    assert board.ticket(story.id).status == TicketStatus.in_review
+    assert board.ticket(epic.id).status == TicketStatus.in_progress  # active branch moved it
+    assert board.open_gates(epic.id, Gate.acceptance)  # ...and the gate STILL opened
+
+
 # --------------------------------------------------------------- finding 4: authenticated spawn
 def test_finding4_auto_seat_spawns_with_minted_token():
     """An auto-paired seat spawns through the same path as the service route — its EDP8_TOKEN is
@@ -128,6 +154,24 @@ def test_finding4_auto_seat_spawns_with_minted_token():
     story_to_in_review(board2, r2, epic2)
     board2.run_pending_pairings()
     assert pool2.envs and pool2.envs[0] is None
+
+
+def test_finding4_minter_exception_fails_closed_keeps_pairing_queued():
+    """A configured minter that RAISES must not spawn a token-less seat (it could never authenticate
+    in public mode); the pairing stays queued for the retry and nothing is spawned."""
+    pool = StubPool()
+
+    def boom(handle):
+        raise RuntimeError("mint backend down")
+
+    board = make_board(pool, free_mb=lambda: 4096, mint_token=boom)
+    r = rig(board)
+    epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
+    story, _ = story_to_in_review(board, r, epic)
+    out = board.run_pending_pairings()
+    assert pool.spawns == []                       # nothing spawned token-less
+    assert out["spawned"] == [] and f"reviewer.{story.id}" in out["failed"]
+    assert f"reviewer.{story.id}" in board._pending_pairings  # kept for the retry
 
 
 # --------------------------------------------------------------- finding 6: _released story-only
