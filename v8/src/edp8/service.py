@@ -371,6 +371,11 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         os.replace(tmp, f)
         return secret
 
+    # §24 finding 4: auto-paired reviewer/qa seats spawn through the board, so give the board the
+    # same token minter the service spawn route uses — the seat gets its EDP8_TOKEN injected and can
+    # authenticate in public mode (trusted mode mints None and injects nothing, unchanged).
+    board._mint_token = _mint_agent_token
+
     def admin(x_admin: str | None = Header(default=None)) -> None:
         if x_admin != admin_token:
             raise HTTPException(403, "X-Admin token invalid")

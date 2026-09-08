@@ -67,7 +67,12 @@ def rig(board):
 
 
 def review_story_to_in_review(board, r, epic, tags=("review_required",)):
-    """Walk a review_required story to evidence-complete in_review (auto-advances)."""
+    """Walk a review_required story to evidence-complete in_review (auto-advances). A bare drafted
+    HOLDING sibling is created first so the single evidence-complete story does not, on its own,
+    release the whole epic and open its acceptance gate (§24 finding 1) — these tests isolate the
+    reviewer pairing; the qa acceptance spawn has its own test."""
+    board.ticket_create(r["architect"], kind=TicketKind.story, work_type=WorkType.feature,
+                        title="hold", parent_id=epic.id)  # drafted → never released → epic stays open
     story = board.ticket_create(r["architect"], kind=TicketKind.story, work_type=WorkType.feature,
                                 title="S", parent_id=epic.id, tags=list(tags))
     d = board.doc_create(r["architect"], doc_type=DocType.design, title="d", body_md="b", scope=epic.id)

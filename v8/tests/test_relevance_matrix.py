@@ -364,3 +364,8 @@ def test_owner_not_paged_for_agent_passing_command_check(rig):
     a_fail = synth(I["s1"], EventKind.criterion_checked, by="qa.s1", verdict=Verdict.failed,
                    check=Check.command, checked_by="qa")
     assert b.relevant(look_pass, P["owner"]) and b.relevant(owner_checked, P["owner"]) and b.relevant(a_fail, P["owner"])
+    # §24 finding 9: only an AGENT reviewer/qa passing check is suppressed. A HUMAN reviewer's
+    # passing command check (by_type=human) always pages the owner.
+    human_pass = synth(I["s1"], EventKind.criterion_checked, by="human-reviewer", verdict=Verdict.passed,
+                       check=Check.command, checked_by="reviewer", by_type="human")
+    assert b.relevant(human_pass, P["owner"]), "a human's passing check must page the owner"
