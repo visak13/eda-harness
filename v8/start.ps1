@@ -1,4 +1,4 @@
-# edp8 fleet launcher (Windows). One command from one .env brings up board, broker, pool, MCP
+﻿# edp8 fleet launcher (Windows). One command from one .env brings up board, broker, pool, MCP
 # and the Slack bridge; idempotent (a running service is left alone); builds the web app when its
 # dist is missing; leaves a supervisor watching the fleet. Design §15/§22 (S17).
 #
