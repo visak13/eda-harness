@@ -794,6 +794,15 @@ class Board:
                                           "its assignee, or its checker")
             c.evidence_ref = evidence_ref
         if verdict is not None:
+            # §14 finding 1/2: an owner may rule a criterion only on its OWN epic — this guards
+            # BOTH the engineer-checklist branch and the checker branch (the owner-role bypass in
+            # either must not cross owners). A human-owned epic refuses a foreign owner; an
+            # agent-created epic has no human owner (epic_owner is None) and still reaches every
+            # owner, so the None case is deliberately allowed.
+            if actor.role == Role.owner:
+                oid = self.epic_owner(t.id)
+                if oid is not None and oid != actor.id:
+                    raise BoardError("scope", "this criterion belongs to another owner's epic")
             if c.checked_by == CheckedBy.engineer.value:
                 # §24.1(d): a task criterion is the doer's own checklist — its engineer (or an sme
                 # standing in) self-verdicts it; no paired seat and NO doer guard (the doer IS the
@@ -805,10 +814,6 @@ class Board:
                     raise BoardError("scope", "verdicts are recorded by reviewer/qa/owner only")
                 if actor.role.value != c.checked_by and actor.role != Role.owner:
                     raise BoardError("scope", f"this criterion is checked_by {c.checked_by}; you are {actor.role}")
-                if actor.role == Role.owner and not self._owner_scope(actor, t.id):
-                    # §14 finding 1: an owner rules only its own epic's criteria — the checked_by==owner
-                    # bypass above must not let owner B sign off owner A's ticket.
-                    raise BoardError("scope", "this criterion belongs to another owner's epic")
                 if actor.id == t.assignee:
                     raise BoardError("scope", "the doer cannot verdict its own ticket")
             if verdict != Verdict.pending and not c.evidence_ref:

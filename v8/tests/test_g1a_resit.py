@@ -39,7 +39,8 @@ def rig(client):
     """Two owner-humans, each owning their own epic. Owner A's epic carries a strategy doc and an
     owner-checked, evidence-bearing criterion pending sign-off — the surface findings 1/2 probe."""
     for pid, role, typ in [("alice", "owner", "human"), ("bob", "owner", "human"),
-                           ("arch", "architect", "agent"), ("craft", "sme", "agent")]:
+                           ("arch", "architect", "agent"), ("craft", "sme", "agent"),
+                           ("coord", "coordinator", "agent")]:
         _post(client, "/v1/participants", {"type": typ, "role": role, "handle": pid, "id": pid}, ADMIN)
     epic_a = _post(client, "/v1/tickets", {"kind": "epic", "work_type": "feature", "title": "A"},
                    {"X-Participant": "alice"})["id"]
@@ -68,6 +69,40 @@ def test_verdict_write_refuses_a_foreign_owner(rig):
                                         "ticket_id": rig["kt"], "evidence_version": 1},
                 headers={"X-Participant": "alice"}).json()
     assert ok["ok"] and ok["value"]["criterion"]["verdict"] == "pass"
+
+
+def test_owner_may_verdict_an_epic_with_no_human_owner(client):
+    # a coordinator-created epic has no human owner (epic_owner is None); the scope guard must NOT
+    # refuse an owner there — the "reaches every owner" case the helper docstring promises.
+    for pid, role, typ in [("alice", "owner", "human"), ("arch", "architect", "agent"),
+                           ("craft", "sme", "agent"), ("coord", "coordinator", "agent")]:
+        _post(client, "/v1/participants", {"type": typ, "role": role, "handle": pid, "id": pid}, ADMIN)
+    epic = _post(client, "/v1/tickets", {"kind": "epic", "work_type": "feature", "title": "agent epic"},
+                 {"X-Participant": "coord"})["id"]
+    kt = _post(client, "/v1/tickets", {"kind": "story", "work_type": "knowledge", "title": "k",
+                                       "parent_id": epic, "assignee": "craft"}, {"X-Participant": "arch"})["id"]
+    crit = _post(client, "/v1/criteria", {"ticket_id": kt, "text": "signed", "check": "look",
+                                          "checked_by": "owner"}, {"X-Participant": "arch"})["id"]
+    doc = _post(client, "/v1/docs", {"doc_type": "strategy_hl", "title": "s", "body_md": "# b",
+                                     "scope": epic}, {"X-Participant": "craft"})["id"]
+    client.patch(f"/v1/criteria/{crit}", json={"evidence_ref": doc}, headers={"X-Participant": "craft"})
+    r = client.post("/v1/me/verdict", json={"criterion_id": crit, "verdict": "pass",
+                                            "ticket_id": kt, "evidence_version": 1},
+                    headers={"X-Participant": "alice"}).json()
+    assert r["ok"] and r["value"]["criterion"]["verdict"] == "pass"
+
+
+def test_foreign_owner_refused_on_engineer_checked_criterion(rig):
+    # finding 2: the owner-scope guard must also cover the engineer-checklist branch, not only the
+    # checker branch — a foreign owner cannot verdict any criterion outside its epic.
+    c = rig["client"]
+    task = _post(c, "/v1/tickets", {"kind": "task", "work_type": "bug", "title": "T", "parent_id": rig["kt"],
+                                    "assignee": "craft"}, {"X-Participant": "arch"})["id"]
+    tcrit = _post(c, "/v1/criteria", {"ticket_id": task, "text": "self-check", "check": "command"},
+                  {"X-Participant": "arch"})["id"]  # a task criterion defaults to checked_by=engineer
+    r = c.post("/v1/me/verdict", json={"criterion_id": tcrit, "verdict": "pass", "ticket_id": task,
+                                       "evidence_version": 1}, headers={"X-Participant": "bob"})
+    assert r.status_code >= 400 and not r.json()["ok"]  # bob owns no epic here
 
 
 def test_doc_signoff_card_hidden_from_a_foreign_owner(rig):
@@ -132,6 +167,20 @@ def test_library_epic_scopes_artifacts_and_links(rig):
     lib = c.get("/v1/library", params={"epic": rig["epic_a"]}, headers={"X-Participant": "alice"}).json()["value"]
     ids = {x["id"] for x in lib["artifacts"]}
     assert a_art in ids and b_art not in ids  # only epic A's artifact
-    assert all(rig["epic_a"] in (lk["from_id"], lk["to_id"]) or lk["to_id"] in ids or lk["from_id"] in ids
-               for lk in lib["links"])
     assert not any(lk["to_id"] == b_art or lk["from_id"] == epic_b for lk in lib["links"])
+
+
+def test_library_epic_does_not_leak_a_shared_artifacts_foreign_link(rig):
+    # finding 4: an artifact linked to BOTH epic A and epic B must appear in A's library, but A's
+    # link list must not carry the edge that ties it to epic B (a link is in-epic only when BOTH
+    # ends are in scope).
+    c = rig["client"]
+    epic_b = _post(c, "/v1/tickets", {"kind": "epic", "work_type": "feature", "title": "B"},
+                   {"X-Participant": "bob"})["id"]
+    shared = _post(c, "/v1/artifacts", {"form": "url", "uri": "https://shared", "ticket_id": rig["kt"]},
+                   {"X-Participant": "craft"})["id"]
+    _post(c, "/v1/links", {"from_id": epic_b, "to_id": shared, "relation": "produced"},
+          {"X-Participant": "bob"})  # the same artifact also linked to epic B
+    lib = c.get("/v1/library", params={"epic": rig["epic_a"]}, headers={"X-Participant": "alice"}).json()["value"]
+    assert shared in {a["id"] for a in lib["artifacts"]}  # the artifact is in A's library
+    assert not any(lk["from_id"] == epic_b for lk in lib["links"])  # but the epic-B edge is not

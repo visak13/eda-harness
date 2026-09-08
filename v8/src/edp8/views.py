@@ -164,7 +164,8 @@ def signoff_criterion_for_doc(board: Board, viewer: Participant, doc: Any) -> An
         tk = board.store.get("ticket", c.ticket_id)
         if tk is None or tk.status in _TERMINAL:
             continue
-        if not board._owner_scope(viewer, tk.id):  # §14 finding 1: owner A's card stays off owner B's reader
+        oid = board.epic_owner(tk.id)  # §14 finding 1: owner A's card stays off owner B's reader; an
+        if oid is not None and oid != viewer.id:  # agent-created epic has no human owner → any owner may sign
             continue
         return c
     return None
@@ -538,16 +539,24 @@ def library_for(board: Board, epic_id: str | None = None) -> dict[str, Any]:
     epic when a link joins it to an in-epic ticket/doc, and a link when either end is in scope."""
     doc_filter = {"scope": epic_id} if epic_id else {}
     docs = [board._doc_summary(d) for d in board.store.query("doc", doc_filter, limit=500)]
-    arts = [a for a in board.store.query("artifact", {}, limit=500) if not getattr(a, "staged", False)]
-    links = list(board.links())
-    if epic_id:
-        tk = board.store.get("ticket", epic_id)
-        scope_ids = {tk.id, *(d.id for d in board._descendants(tk.id))} if tk is not None else set()
-        scope_ids |= {d["id"] for d in docs}
-        art_ids = {lk.to_id for lk in links if lk.from_id in scope_ids} \
-            | {lk.from_id for lk in links if lk.to_id in scope_ids}
-        arts = [a for a in arts if a.id in art_ids]
-        reachable = scope_ids | art_ids
-        links = [lk for lk in links if lk.from_id in reachable or lk.to_id in reachable]
+    if not epic_id:
+        arts = [a for a in board.store.query("artifact", {}, limit=500) if not getattr(a, "staged", False)]
+        return {"docs": docs, "artifacts": [a.model_dump(mode="json") for a in arts],
+                "links": [lk.model_dump(mode="json") for lk in board.links()]}
+    # Epic-scoped: the store has no epic column for artifacts/links, so pull them ALL (no 500-row
+    # cap that could drop an in-epic row behind unrelated earlier ones — finding 5) and filter by
+    # epic membership here. An artifact is in-epic when a link joins it to an in-epic ticket/doc.
+    tk = board.store.get("ticket", epic_id)
+    scope_ids = {tk.id, *(d.id for d in board._descendants(tk.id))} if tk is not None else set()
+    scope_ids |= {d["id"] for d in docs}
+    all_links = board.store.query("link", {}, limit=1_000_000)
+    art_ids = {lk.to_id for lk in all_links if lk.from_id in scope_ids} \
+        | {lk.from_id for lk in all_links if lk.to_id in scope_ids}
+    reachable = scope_ids | art_ids
+    # A link belongs to the epic only when BOTH ends are in scope: a shared artifact linked to
+    # another epic must not drag that foreign link (or its foreign endpoint) in here (finding 4).
+    links = [lk for lk in all_links if lk.from_id in reachable and lk.to_id in reachable]
+    arts = [a for a in board.store.query("artifact", {}, limit=1_000_000)
+            if a.id in art_ids and not getattr(a, "staged", False)]
     return {"docs": docs, "artifacts": [a.model_dump(mode="json") for a in arts],
             "links": [lk.model_dump(mode="json") for lk in links]}
