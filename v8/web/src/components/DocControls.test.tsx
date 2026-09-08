@@ -21,7 +21,7 @@ describe("DocControls", () => {
     fireEvent.click(screen.getByRole("button", { name: "Ask for a review" }));
     await waitFor(() => expect(body).not.toBeNull());
     expect(body).toMatchObject({ ticket_id: "epic-1", kind: "question", to: "qa" });
-    expect(String((body as Record<string, unknown>).text)).toContain("[doc design-1 v3]");
+    expect(String(body!.text)).toContain("[doc design-1 v3]");
     expect(await screen.findByTestId("doc-review-asked")).toBeInTheDocument();
   });
 

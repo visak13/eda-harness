@@ -9,7 +9,9 @@ import { StatusControl } from "../components/StatusControl";
 import { GateOpenControl } from "../components/GateOpenControl";
 import { Tabs } from "../components/Tabs";
 import { Composer } from "../components/Composer";
+import { AgentLine } from "../components/AgentLine";
 import { useDocDrawer } from "../components/DocDrawer";
+import { identity } from "../auth/identity";
 import ui from "../components/ui.module.css";
 import styles from "./Epic.module.css";
 
@@ -479,11 +481,7 @@ function ThreadTab({
         <ul className={styles.messages} data-testid="thread">
           {ordered.map((m) => (
             <li key={m.id} className={styles.message}>
-              <div className={styles.messageMeta}>
-                <span className={styles.messageBy}>{m.by}</span>
-                <span className={ui.tag}>{m.kind}</span>
-                <span className={ui.idMono}>{m.at.slice(0, 16).replace("T", " ")}</span>
-              </div>
+              <AgentLine by={m.by} kind={m.kind} to={m.to} viewer={identity()} at={m.at} />
               <div className={styles.messageText}>{m.text}</div>
             </li>
           ))}
