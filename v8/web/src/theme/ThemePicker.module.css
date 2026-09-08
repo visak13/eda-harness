@@ -1,0 +1,67 @@
+.picker {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px 14px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.legend {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0 4px;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: default;
+}
+
+.option:hover {
+  background: var(--secondary);
+}
+
+.option input {
+  accent-color: var(--accentink);
+  margin: 0;
+}
+
+/* Focus ring parity with the shell (design §4.2: 2px accentink, offset 3px). */
+.option input:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 3px;
+}
+
+.swatch {
+  width: 34px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 4px;
+  flex: none;
+}
+
+.swatch span {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.label {
+  font-weight: 600;
+}

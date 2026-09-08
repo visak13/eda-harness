@@ -16,7 +16,7 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "types": ["node"]
+    "types": ["node", "vite/client"]
   },
   "include": ["src", "e2e", "vite.config.ts", "playwright.config.ts"]
 }

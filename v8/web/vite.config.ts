@@ -33,7 +33,15 @@ export default defineConfig({
   // the Linux CI job) never tries to collect them (design §4.4, S17 CI criterion).
   test: {
     environment: "jsdom",
+    globals: true,
+    setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
     exclude: ["e2e/**", "node_modules/**", "dist/**"],
+    coverage: {
+      provider: "v8",
+      thresholds: { lines: 80 },
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/**/*.{test,spec}.{ts,tsx}", "src/test/**", "src/main.tsx"],
+    },
   },
 });

@@ -10,6 +10,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "tokens": "node scripts/emit-tokens.mjs",
     "test": "vitest --passWithNoTests",
     "e2e": "playwright test"
   },

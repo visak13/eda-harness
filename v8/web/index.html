@@ -4,6 +4,27 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>edp8 board</title>
+    <!--
+      Pre-paint theme: runs before the bundle so <html data-theme> is set before first
+      paint (no FOUC). NO imports allowed here. This MUST mirror resolveTheme() in
+      src/theme/resolve.ts: stored choice wins; else prefers-contrast:more → folio-hc;
+      else prefers-color-scheme:dark → ember; else folio. Cite: MDN prefers-color-scheme.
+    -->
+    <script>
+      try {
+        var t = localStorage.getItem("edp8.theme");
+        if (t !== "folio" && t !== "dusk" && t !== "ember" && t !== "folio-hc") {
+          t = matchMedia("(prefers-contrast: more)").matches
+            ? "folio-hc"
+            : matchMedia("(prefers-color-scheme: dark)").matches
+              ? "ember"
+              : "folio";
+        }
+        document.documentElement.dataset.theme = t;
+      } catch (e) {
+        document.documentElement.dataset.theme = "folio";
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -1,0 +1,319 @@
+/* Folio shell geometry — numbers verbatim from board-concepts-r2/source/design.css
+   `.folio` (design §4.2, fidelity criterion c-fee415dda3): sidebar 216 on the rail token,
+   header 72 starting at x=216, main x=256 width 1144 at 1440×900. */
+
+.shell {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 216px;
+  background: var(--rail);
+  border-right: 1px solid var(--line);
+  padding: 29px 18px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.brand {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-left: 10px;
+}
+
+.brandmark {
+  height: 26px;
+  width: 26px;
+  background: var(--accent);
+  color: var(--buttonink);
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  font: bold 17px Georgia, serif;
+  flex: none;
+}
+
+.workspaceName {
+  margin: 26px 10px 20px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+}
+
+.navItem {
+  height: 43px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 0 12px;
+  margin-bottom: 5px;
+  font-size: 13px;
+  color: var(--muted);
+  border-radius: 6px;
+}
+
+.navItem.active {
+  background: var(--panel);
+  color: var(--ink);
+  font-weight: 650;
+  box-shadow: 0 1px 2px #342b2509;
+}
+
+.navItem.active .icon {
+  color: var(--accentink);
+}
+
+.navItem:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 3px;
+}
+
+.icon {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  flex: none;
+  color: inherit;
+}
+
+.count {
+  margin-left: auto;
+  color: var(--accentink);
+  font-size: 11px;
+}
+
+.sectionLabel {
+  padding-left: 12px;
+  margin-top: 38px;
+  margin-bottom: 12px;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.miniEpic {
+  font-size: 12px;
+  line-height: 18px;
+  padding: 9px 12px;
+  color: var(--muted);
+  display: flex;
+  gap: 9px;
+}
+
+.miniEpic .dot {
+  margin-top: 6px;
+  height: 6px;
+  width: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+}
+
+.find {
+  margin: 14px 10px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  background: transparent;
+  width: calc(100% - 20px);
+}
+
+.find:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 3px;
+}
+
+.find .key {
+  margin-left: auto;
+  border: 1px solid var(--line);
+  padding: 2px 5px;
+  border-radius: 4px;
+  font: 11px Consolas, monospace;
+}
+
+.identity {
+  margin-top: auto;
+  position: relative;
+}
+
+.identityBtn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.identityBtn:hover {
+  background: var(--secondary);
+}
+
+.identityBtn:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 3px;
+}
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: var(--accentwash);
+  color: var(--accentink);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.identityName {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.identityRole {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 16px 48px #261b2333;
+  padding: 12px;
+  z-index: 20;
+}
+
+/* Header: starts at x=216 (right of the sidebar), 72 tall. */
+.header {
+  position: fixed;
+  top: 0;
+  left: 216px;
+  right: 0;
+  height: 72px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 40px;
+  background: var(--bg);
+  z-index: 10;
+}
+
+.breadcrumb {
+  font-size: 13px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.breadcrumb .here {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.btnPrimary {
+  height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--buttonink);
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btnPrimary:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 3px;
+}
+
+/* Main: x=256 (40px gutter past the 216 sidebar), width 1144, cleared past the header. */
+.main {
+  margin-left: 256px;
+  margin-right: 40px;
+  padding-top: 108px;
+  padding-bottom: 64px;
+  min-height: 100vh;
+}
+
+/* §4.2 viewport rules (parity, not a Folio plate): below 1280 the sidebar collapses to a
+   56px icon rail — labels/counts kept, same order — and the header/main shift with it. */
+@media (max-width: 1279px) {
+  .sidebar {
+    width: 56px;
+    padding: 29px 8px;
+  }
+  .brand span,
+  .workspaceName,
+  .navLabel,
+  .count,
+  .sectionLabel,
+  .miniEpic,
+  .find .findLabel,
+  .find .key,
+  .identityName,
+  .identityRole {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .navItem {
+    justify-content: center;
+    padding: 0;
+  }
+  .find {
+    justify-content: center;
+    width: calc(100% - 4px);
+    margin: 14px 2px 0;
+    padding: 0;
+  }
+  .header {
+    left: 56px;
+  }
+  .main {
+    margin-left: 96px;
+  }
+}

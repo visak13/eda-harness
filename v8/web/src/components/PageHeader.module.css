@@ -1,0 +1,23 @@
+.head {
+  margin-bottom: 24px;
+}
+
+.title {
+  font: 38px/1.18 Georgia, serif;
+  letter-spacing: -1.1px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.subtitle {
+  color: var(--muted);
+  margin-top: 10px;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.placeholder {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 22px;
+}
