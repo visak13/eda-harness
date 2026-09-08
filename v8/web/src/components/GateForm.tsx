@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { GateRow } from "../api/types";
 import { answerGate } from "../api/decisions";
+import { Term } from "./Term";
 import styles from "./GateForm.module.css";
 
 // One open gate the owner can answer (design §5, folded S7). The gate kind is FIXED (it is the
@@ -31,7 +32,7 @@ export function GateForm({ gate, onAnswered }: GateFormProps): React.JSX.Element
     <section className={styles.gate} data-testid="gate-form" aria-label={`Gate ${gate.gate}`}>
       <header className={styles.head}>
         <span className={styles.kind} data-testid="gate-kind">
-          {gate.gate}
+          <Term category="gate" value={gate.gate} />
         </span>
         <span className={styles.crumb}>{gate.ticket_id}</span>
       </header>

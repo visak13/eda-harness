@@ -28,7 +28,7 @@ function mount(onAnswered = vi.fn()) {
 describe("GateForm", () => {
   it("shows the fixed gate kind and the opener, submit disabled until a ruling is typed", () => {
     mount();
-    expect(screen.getByTestId("gate-kind")).toHaveTextContent("design_signoff");
+    expect(screen.getByTestId("gate-kind")).toHaveTextContent("Design sign-off"); // human label, not the raw enum
     expect(screen.getByText(/architect\.epic-1/)).toBeInTheDocument();
     expect(screen.getByTestId("gate-submit")).toBeDisabled();
     fireEvent.change(screen.getByTestId("gate-answer"), { target: { value: "approved" } });

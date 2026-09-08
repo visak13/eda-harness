@@ -393,8 +393,9 @@ function WorkTab({
               </div>
               {cards.map((n) => (
                 <Link key={n.id} to={`/ticket/${encodeURIComponent(n.id)}`} className={styles.kanbanCard}>
-                  <span className={ui.idMono}>{n.id}</span>
+                  {/* Name first (§15): the story title leads; its id is secondary, in mono after. */}
                   <span className={styles.kanbanTitle}>{n.title}</span>
+                  <span className={ui.idMono}>{n.id}</span>
                 </Link>
               ))}
             </div>
@@ -422,8 +423,8 @@ function TreeNode({
       {selfShown ? (
         <div className={styles.treeRow} style={{ paddingLeft: depth * 20 }}>
           <Link to={`/ticket/${encodeURIComponent(node.id)}`} className={styles.treeLink}>
-            <span className={ui.idMono}>{node.id}</span>
             <span className={styles.treeTitle}>{node.title}</span>
+            <span className={ui.idMono}>{node.id}</span>
           </Link>
           <span className={styles.treeRole}>{roleOf(node.assignee)}</span>
           <StatusChip status={node.status} />

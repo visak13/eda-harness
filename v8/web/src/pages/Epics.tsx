@@ -93,11 +93,12 @@ export function EpicsPage(): React.JSX.Element {
               <li key={row.id}>
                 <Link className={styles.row} to={`/epic/${encodeURIComponent(row.id)}`}>
                   <div className={styles.main}>
+                    {/* Name first (§15): the epic's title leads; the id is secondary, in mono after. */}
                     <div className={styles.titleLine}>
-                      <span className={ui.idMono}>{row.id}</span>
+                      <div className={styles.title}>{row.title}</div>
                       <StatusChip status={row.status} />
                     </div>
-                    <div className={styles.title}>{row.title}</div>
+                    <span className={ui.idMono}>{row.id}</span>
                     {row.waiting_reason.reason ? (
                       <div className={styles.reason} data-testid="waiting-reason">
                         {row.waiting_reason.reason}
