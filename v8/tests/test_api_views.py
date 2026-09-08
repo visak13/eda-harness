@@ -127,6 +127,26 @@ def test_epic_page(rig):
     assert "board" in page and "thread" in page and isinstance(page["docs"], list)
 
 
+def test_transitions_are_per_actor_via_the_one_guard(rig):
+    # The status control (§16) reads legality from the server, which routes every edge through the
+    # SAME _guard_transition as an actual move — so the offered set is per-viewer and cannot drift.
+    story = rig["story"]  # drafted, one criterion, no design_ref, no assignee
+    owner = _get(rig, f"/v1/tickets/{story}/transitions")
+    assert owner["status"] == "drafted"
+    edges = {t["to"]: t for t in owner["transitions"]}
+    assert set(edges) == {"designed", "dropped"}  # exactly TRANSITIONS[drafted]
+    # owner is not the architect → designed is blocked by the ROLE rule, with the board's own hint;
+    # dropping never-started work is not progress, so it stays open to the owner.
+    assert edges["designed"]["allowed"] is False and "architect" in edges["designed"]["reason"]
+    assert edges["dropped"]["allowed"] is True and edges["dropped"]["reason"] is None
+
+    # the architect clears the role gate but is stopped one step later — designed needs a design_ref.
+    arch = rig["client"].get(f"/v1/tickets/{story}/transitions",
+                             headers={"X-Participant": "arch"}).json()["value"]
+    aedges = {t["to"]: t for t in arch["transitions"]}
+    assert aedges["designed"]["allowed"] is False and "design_ref" in aedges["designed"]["reason"]
+
+
 # --------------------------------------------------------------------------- docs / activity / library
 
 

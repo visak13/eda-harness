@@ -446,6 +446,23 @@ class Board:
                 if not by_qa:
                     raise BoardError("transition", "an epic needs criteria checked_by=qa", "qa acceptance is the last word")
 
+    def legal_transitions(self, actor: Participant, id_: str) -> dict[str, Any]:
+        """Every status edge from the ticket's current status, each marked allowed/blocked for THIS
+        actor with the board's own reason — the data behind the S16 status control (design §16).
+        Reuses `_guard_transition` (the single rule source, so the UI cannot drift from enforcement)
+        by probing a deep COPY of the ticket, so a probe never mutates the stored row. The one-line
+        consequence per target is left to the client's glossary (one copy source)."""
+        t = self.ticket(id_)
+        out: list[dict[str, Any]] = []
+        for to in sorted(TRANSITIONS[t.status], key=lambda s: s.value):
+            probe = t.model_copy(deep=True)
+            try:
+                self._guard_transition(actor, probe, to)
+                out.append({"to": to.value, "allowed": True, "reason": None})
+            except BoardError as e:
+                out.append({"to": to.value, "allowed": False, "reason": e.hint or e.message})
+        return {"status": t.status.value, "transitions": out}
+
     def _design_gate_open(self, t: Ticket) -> bool:
         """An open design_signoff gate on the epic HARD-BLOCKS readiness below it (2026-09-01 pain:
         the board auto-readied stories and seats ran while the owner was still deciding)."""

@@ -162,6 +162,12 @@ def views_router(board: Board, actor: Callable[..., Participant]) -> APIRouter:
     def ticket_page(ticket_id: str, a: Participant = Depends(actor)):
         return ok(views.ticket_page(board, ticket_id))
 
+    @r.get("/v1/tickets/{ticket_id}/transitions")
+    def ticket_transitions(ticket_id: str, a: Participant = Depends(actor)):
+        # The status edges offered to THIS viewer, each allowed/blocked with the board's own reason
+        # (S16 status control). Legality comes from the board's single rule source, never the client.
+        return ok(board.legal_transitions(a, ticket_id))
+
     # -------------------------------------------------------------- docs / activity / library
     @r.get("/v1/docs/{doc_id}/html")
     def doc_html(doc_id: str, version: int | None = None, a: Participant = Depends(actor)):
