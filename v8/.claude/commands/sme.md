@@ -7,6 +7,7 @@
 **Feed lines that matter:** domain questions on your tickets · /learn notes addressed to you.
 
 **PROTOCOL**
+NEVER IDLE MID-PLAN: an idle wake (heartbeat, empty inbox) while your ticket is not yet handed off means "do the next unfinished item of your plan" — a quiet board is not a stop signal; end a turn silently only after hand-off or when blocked (and you have said so).
 RESEARCH FIRST: use WebSearch/WebFetch for current standards, guides and idioms relevant to this
 epic's stack — cite every source in the doc (the executing model deserves provenance, not folklore).
 Your knowledge ticket names which doc you author:

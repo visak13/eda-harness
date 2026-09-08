@@ -418,6 +418,22 @@ def _lineage(me: str) -> dict[str, Any]:
     return out
 
 
+_LISTENING_ROLES = {"architect", "owner", "coordinator"}
+
+
+def _heartbeat_prompt(participant: str) -> str:
+    """The cron fallback text is role-aware: a listening seat idles on a quiet board, a doing
+    seat resumes its plan. (2026-09-08: a role-blind "act only if new" prompt made an engineer
+    with an unbuilt plan end every idle wake — m-0743c493b2.)"""
+    role = participant.split(".", 1)[0]
+    if role in _LISTENING_ROLES:
+        return ("edp8 heartbeat: call context() and act only if something is new; "
+                "if nothing, end the turn silently")
+    return ("edp8 heartbeat: call context(); answer anything new, then RESUME THE NEXT UNBUILT ITEM of "
+            "your plan doc — a quiet board is not a reason to stop. End the turn silently only when your "
+            "ticket is in_review/done or you are blocked (post kind=blocked or deviation first).")
+
+
 def _subscribe(_: SubscribeArgs) -> dict[str, Any]:
     client = get_client()
     py = sys.executable.replace("\\", "/")  # bash-safe: the Monitor tool runs bash, which eats backslashes
@@ -439,7 +455,7 @@ def _subscribe(_: SubscribeArgs) -> dict[str, Any]:
             "listening": listening,
             "cron": {
                 "expr": "*/30 * * * *",
-                "prompt": "edp8 heartbeat: call context() and act only if something is new; if nothing, end the turn silently",
+                "prompt": _heartbeat_prompt(client.participant),
             },
         },
         "hint": "run monitor_cmd under the Monitor tool once — it is your wake plane, and its first line "
