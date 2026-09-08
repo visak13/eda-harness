@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { MessageSent, PersonRow } from "../api/types";
-import type { MessageKind } from "../api/decisions.types";
-import { getPeople, resolveMessage, sendMessage, uploadArtifact } from "../api/decisions";
+import type { MessageKind } from "../api/types";
+import { getPeople, resolveMessage, sendMessage, uploadArtifact } from "../api/endpoints";
 import { useDirtyGuard } from "../live/useDraftGuard";
 import { useMentions } from "./useMentions";
 import styles from "./Composer.module.css";

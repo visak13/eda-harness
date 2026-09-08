@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { SignoffRow } from "../api/types";
-import { getDocHtml } from "../api/decisions";
+import { getDocHtml } from "../api/endpoints";
 import { Drawer } from "./Drawer";
 import { Markdown } from "./Markdown";
 import { CriterionCard } from "./CriterionCard";

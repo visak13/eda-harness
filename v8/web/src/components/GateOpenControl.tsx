@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { openGate } from "../api/decisions";
+import { openGate } from "../api/endpoints";
 import { BoardApiError } from "../api/client";
 import { GATE_KINDS } from "../api/types";
 import { label as glossLabel, meaning as glossMeaning } from "../copy/glossary";

@@ -15,7 +15,7 @@ import {
   getEpicsSummary,
   getPeople,
   getResolved,
-} from "../api/decisions";
+} from "../api/endpoints";
 import { getSeats, getPoolCapabilities } from "../api/seats";
 import type { PoolCapabilities } from "../api/types";
 import { Composer } from "../components/Composer";
@@ -45,7 +45,7 @@ export function DecisionsPage(): React.JSX.Element {
   const resolved = useQuery({ queryKey: ["me", "resolved"], queryFn: () => getResolved(30), retry: false });
   const people = useQuery({ queryKey: ["me", "people"], queryFn: getPeople, retry: false });
   const conversations = useQuery({ queryKey: ["me", "conversations"], queryFn: getConversations, retry: false });
-  const epics = useQuery({ queryKey: ["epics", "summary"], queryFn: getEpicsSummary, retry: false });
+  const epics = useQuery({ queryKey: ["epics", "summary"], queryFn: () => getEpicsSummary(), retry: false });
 
   const d = decisions.data;
   const counts = d?.counts ?? { signoffs: 0, questions: 0, gates: 0 };

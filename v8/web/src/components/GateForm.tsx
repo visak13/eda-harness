@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { GateRow } from "../api/types";
-import { answerGate } from "../api/decisions";
+import { answerGate } from "../api/endpoints";
 import { Term } from "./Term";
 import styles from "./GateForm.module.css";
 

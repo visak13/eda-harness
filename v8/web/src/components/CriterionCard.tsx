@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { CriterionView, Verdict } from "../api/types";
-import { postVerdict } from "../api/decisions";
+import { postVerdict } from "../api/endpoints";
 import { BoardApiError } from "../api/client";
 import { RewordCriterion } from "./CriterionControls";
 import styles from "./CriterionCard.module.css";
