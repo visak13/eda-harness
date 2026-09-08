@@ -20,8 +20,10 @@ import { getSeats, getPoolCapabilities } from "../api/seats";
 import type { PoolCapabilities } from "../api/types";
 import { Composer } from "../components/Composer";
 import { GateForm } from "../components/GateForm";
+import { AgentLine } from "../components/AgentLine";
 import { RulingDrawer } from "../components/RulingDrawer";
 import { SeatTableRow } from "./Seats";
+import { identity } from "../auth/identity";
 import { useDraftGuard } from "../live/useDraftGuard";
 import styles from "./Decisions.module.css";
 
@@ -225,14 +227,12 @@ function QuestionsTab({
 
 function QuestionRowView({ q }: { q: QuestionRow }): React.JSX.Element {
   const [replying, setReplying] = useState(false);
-  const askerRole = q.asker?.role ?? String(q.from_role ?? "");
-  const askerName = String(q.created_by);
   return (
     <div className={styles.question} data-testid="question">
+      {/* Framed agent text (§15, c-cccc3183db): name-first, role word, id in mono, and a reader-
+          relative tag — a question in the owner's own inbox is "Waiting on you". */}
       <div className={styles.qMeta}>
-        <span className={styles.qAsker}>
-          {askerName} · {askerRole}
-        </span>
+        <AgentLine by={String(q.created_by)} kind={String(q.kind)} to={q.to} viewer={identity()} />
         {q.asker?.note ? <span className={styles.qNote}>{q.asker.note}</span> : null}
       </div>
       <p className={styles.qText}>{q.text}</p>

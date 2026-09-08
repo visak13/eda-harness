@@ -140,6 +140,18 @@ describe("Decisions home", () => {
     act(() => fire!({ seq: 99 }));
     expect(await screen.findByTestId("page-refresh")).toHaveTextContent("1 new — refresh");
   });
+
+  it("frames a question through AgentLine — name-first, id in mono, a reader-relative tag (§15)", async () => {
+    setBoard({
+      questions: [{ id: "m-1", ticket_id: "s-1", created_by: "engineer.s-1", to: "owner", kind: "question", text: "which theme?", from_role: "engineer", asker: { type: "agent", role: "engineer", seat_state: "alive", note: "its shell is alive" } }],
+    });
+    mount();
+    fireEvent.click(await screen.findByRole("tab", { name: /Questions/ }));
+    const line = await screen.findByTestId("agent-line");
+    expect(line).toHaveTextContent("engineer"); // name/role first, not a bare id
+    expect(within(line).getByTestId("agent-id")).toHaveTextContent("engineer.s-1");
+    expect(within(line).getByTestId("reader-tag")).toBeInTheDocument();
+  });
 });
 
 describe("Decisions conversations (§16.1 / §18.2)", () => {
