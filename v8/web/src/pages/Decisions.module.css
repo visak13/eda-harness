@@ -419,8 +419,10 @@
   color: var(--muted);
 }
 
-/* Below 960 the split becomes one column, right rail below (design §4.2 viewport rule). */
-@media (max-width: 959px) {
+/* At/below 1024 the split becomes one column, right rail below (design §4.2 viewport rule,
+   amended breakpoint: "stacks to one column at ≤1024px (was <960)" — the 56px icon rail applies
+   <1280, so the content must stack by 1024 or the rail zone overflows at the S11 1024×768 e2e). */
+@media (max-width: 1024px) {
   .grid {
     grid-template-columns: 1fr;
     gap: 32px;

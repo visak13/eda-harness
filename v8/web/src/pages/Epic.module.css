@@ -303,8 +303,9 @@
   white-space: pre-wrap;
 }
 
-/* Below 960 the split stacks (design §4.2 viewport rule; parity, not a plate). */
-@media (max-width: 959px) {
+/* At/below 1024 the split stacks (design §4.2 viewport rule, amended breakpoint ≤1024px, was <960;
+   parity, not a plate). Aligns with the 1024×768 S11 reflow e2e (the 56px rail applies <1280). */
+@media (max-width: 1024px) {
   .layout {
     grid-template-columns: 1fr;
     gap: 32px;
