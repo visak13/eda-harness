@@ -10,6 +10,7 @@ import { AddCriterion } from "../components/CriterionControls";
 import { AssignControl } from "../components/AssignControl";
 import { GateOpenControl } from "../components/GateOpenControl";
 import { LinkDocControl, AskRoleControl } from "../components/TicketAsks";
+import { AgentLine } from "../components/AgentLine";
 import { CriterionCard } from "../components/CriterionCard";
 import { Composer } from "../components/Composer";
 import { useDocDrawer } from "../components/DocDrawer";
@@ -139,11 +140,7 @@ export function TicketPage(): React.JSX.Element {
             <ul className={styles.messages} data-testid="thread">
               {ordered.map((m: MessageView) => (
                 <li key={m.id} className={styles.message}>
-                  <div className={styles.messageMeta}>
-                    <span className={styles.messageBy}>{m.by}</span>
-                    <span className={ui.tag}>{m.kind}</span>
-                    <span className={ui.idMono}>{m.at.slice(0, 16).replace("T", " ")}</span>
-                  </div>
+                  <AgentLine by={m.by} kind={m.kind} to={m.to} viewer={as} at={m.at} />
                   <div className={styles.messageText}>{m.text}</div>
                 </li>
               ))}

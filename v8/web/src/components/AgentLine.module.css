@@ -1,0 +1,50 @@
+/* Agent-text framing line (folio): name first, role, id in mono, kind, reader-relative tag. */
+
+.line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.name {
+  font-weight: 700;
+  color: var(--ink);
+}
+.role {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.mono {
+  font-family: Consolas, "SF Mono", ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--muted);
+}
+.kind {
+  font-size: 11px;
+  color: var(--accentink);
+}
+
+.tag {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+}
+.waiting {
+  color: var(--accentink);
+  border-color: var(--accentink);
+}
+.fyi {
+  color: var(--muted);
+}
+
+.at {
+  font-family: Consolas, "SF Mono", ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--muted);
+}
