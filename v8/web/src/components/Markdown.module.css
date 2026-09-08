@@ -1,0 +1,68 @@
+/* Document body typography (design §4.2): Segoe UI body 14/22, Georgia doc headings, ids and
+   code in Consolas. Kept readable at a comfortable measure. */
+.docMd {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--ink);
+  max-width: 72ch;
+}
+.docMd :global(h1),
+.docMd :global(h2),
+.docMd :global(h3) {
+  font-family: Georgia, serif;
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 24px 0 10px;
+}
+.docMd :global(h1) {
+  font-size: 27px;
+}
+.docMd :global(h2) {
+  font-size: 21px;
+}
+.docMd :global(h3) {
+  font-size: 17px;
+}
+.docMd :global(p),
+.docMd :global(ul),
+.docMd :global(ol) {
+  margin: 10px 0;
+}
+.docMd :global(code),
+.docMd :global(pre) {
+  font: 12px/18px Consolas, monospace;
+  background: var(--secondary);
+  border-radius: 4px;
+}
+.docMd :global(code) {
+  padding: 1px 5px;
+}
+.docMd :global(pre) {
+  padding: 12px 14px;
+  overflow-x: auto;
+}
+.docMd :global(pre) code {
+  background: transparent;
+  padding: 0;
+}
+.docMd :global(a) {
+  color: var(--accentink);
+  text-decoration: underline;
+}
+.docMd :global(table) {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+.docMd :global(th),
+.docMd :global(td) {
+  border: 1px solid var(--line);
+  padding: 6px 10px;
+  text-align: left;
+}
+.docMd :global(blockquote) {
+  border-left: 3px solid var(--strongline);
+  margin: 10px 0;
+  padding: 4px 14px;
+  color: var(--muted);
+}

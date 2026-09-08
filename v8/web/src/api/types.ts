@@ -9,7 +9,9 @@
 // --------------------------------------------------------------------------- primitives
 
 export type ISODateString = string;
-export type Verdict = "pending" | "passed" | "failed";
+// Board Verdict enum .value strings (schemas.py Verdict): passed→"pass", failed→"fail".
+// The JSON view API returns these verbatim, so the client renders them, never "passed".
+export type Verdict = "pending" | "pass" | "fail";
 
 export interface CriterionView {
   id: string;
@@ -156,21 +158,70 @@ export interface TicketsTable {
   count: number;
 }
 
-export interface EpicPage {
-  board: Record<string, unknown>;
-  words: string | null;
-  counts: Record<string, unknown> | null;
-  thread: MessageView[];
-  docs: Record<string, unknown>[];
-  open_gates: unknown[];
+// The recursive kanban/tree node from board.board() (board.py). `criteria` is a "N/M" string
+// (passed/total); `gates` are open gate names; `blocked_by` the ids of non-done blockers.
+export interface EpicTreeNode {
+  id: string;
+  kind: string;
+  work_type: string;
+  title: string;
+  status: string;
+  assignee: string | null;
+  criteria: string;
+  gates: string[];
+  blocked_by: string[];
+  children: EpicTreeNode[];
 }
 
-export interface DocSummaryRelated extends Record<string, unknown> {
+export interface EpicBoard {
+  epic: EpicTreeNode;
+  counts: Record<string, number>; // status.value → count over the epic + descendants
+  ready: string[];
+  in_review: string[];
+  open_gates: [string, string][]; // [ticket_id, gate]
+  words: string;
+}
+
+export interface DocSummary extends Record<string, unknown> {
+  id: string;
+  doc_type: string;
+  title: string;
+  version: number;
+  scope: string;
+  summary: string;
+  full: string;
+}
+
+export interface EpicPage {
+  board: EpicBoard;
+  words: string | null;
+  counts: Record<string, number> | null;
+  thread: MessageView[];
+  docs: DocSummary[];
+  open_gates: [string, string][];
+}
+
+export interface DocSummaryRelated extends DocSummary {
   relation: string | null;
 }
 
+// The ticket record (Ticket.model_dump). Extra fields arrive verbatim; the ones the page
+// renders are named so a shape drift is a TS error, not a blank cell.
+export interface TicketRecord extends Record<string, unknown> {
+  id: string;
+  kind: string;
+  work_type: string;
+  title: string;
+  description: string;
+  status: string;
+  assignee: string | null;
+  tags: string[];
+  design_ref: string | null;
+  epic_id: string | null;
+}
+
 export interface TicketPage {
-  ticket: Record<string, unknown>;
+  ticket: TicketRecord;
   epic_id: string;
   criteria: CriterionView[];
   docs: DocSummaryRelated[];
@@ -198,10 +249,27 @@ export interface ActivityDay {
   events: { line: string; subject_id: string; kind: string; at: ISODateString }[];
 }
 
+export interface ArtifactRow extends Record<string, unknown> {
+  id: string;
+  form: string;
+  uri: string;
+  note: string;
+  created_by: string;
+  created_at: ISODateString;
+}
+
+export interface LinkRow extends Record<string, unknown> {
+  id: string;
+  from_id: string;
+  to_id: string;
+  relation: string;
+  created_by: string;
+}
+
 export interface Library {
-  docs: Record<string, unknown>[];
-  artifacts: Record<string, unknown>[];
-  links: Record<string, unknown>[];
+  docs: DocSummary[];
+  artifacts: ArtifactRow[];
+  links: LinkRow[];
 }
 
 // --------------------------------------------------------------------------- POST /v1/messages

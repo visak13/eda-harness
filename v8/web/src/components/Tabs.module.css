@@ -1,0 +1,44 @@
+.bar {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 20px;
+}
+
+.tab {
+  position: relative;
+  height: 40px;
+  padding: 0 14px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: -2px;
+  border-radius: 4px;
+}
+
+.tab.active {
+  color: var(--ink);
+}
+
+/* 3px selected underline in accentink (design §4.2, criterion c-a23e72f460). */
+.tab.active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 3px;
+  background: var(--accentink);
+  border-radius: 2px 2px 0 0;
+}
+
+.count {
+  color: var(--accentink);
+  font-size: 12px;
+}

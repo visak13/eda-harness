@@ -15,6 +15,13 @@ export class BoardApiError extends Error {
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  return (await apiEnvelope<T>(path, init)).value;
+}
+
+// Same unwrap, but also returns the envelope `hint`. The board writes its recipient-resolution
+// note into `hint` on POST /v1/messages ("'reviewer' resolved to seat …") — the Composer must
+// REPORT that verbatim, never compute its own (design §13). Reads use `api()` and drop it.
+export async function apiEnvelope<T>(path: string, init?: RequestInit): Promise<{ value: T; hint: string }> {
   const res = await fetch(path, {
     ...init,
     headers: { ...authHeaders(), ...init?.headers },
@@ -24,5 +31,14 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     const err = typeof body.error === "object" ? body.error?.message : body.error;
     throw new BoardApiError(res.status, body.hint, err);
   }
-  return body.value as T; // callers get value, never the envelope
+  return { value: body.value as T, hint: (body.hint as string) ?? "" };
+}
+
+// JSON POST helper: the board expects application/json and returns the same envelope.
+export function postJson<T>(path: string, body: unknown): Promise<{ value: T; hint: string }> {
+  return apiEnvelope<T>(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }

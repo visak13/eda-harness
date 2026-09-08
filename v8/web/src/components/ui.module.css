@@ -1,0 +1,220 @@
+/* Shared Folio primitives (design §4.2): cards radius 8 / padding 23-24, controls radius 6
+   height 40, status words never colour alone, ids in Consolas 12, quotes in Georgia. Imported
+   by several components — CSS-module class names hash per this file, so they stay consistent. */
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 23px 24px;
+}
+
+.sectionLabel {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+.idMono {
+  font: 12px/18px Consolas, "SFMono-Regular", monospace;
+  color: var(--muted);
+}
+
+/* Status chip: a WORD, on a wash, with a dot — never colour alone. Colour is a hint on top. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 11px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--secondary);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.chipDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex: none;
+}
+
+.chip.done {
+  background: var(--successwash);
+  color: var(--success);
+  border-color: transparent;
+}
+.chip.done .chipDot {
+  background: var(--success);
+}
+.chip.active {
+  background: var(--accentwash);
+  color: var(--accentink);
+  border-color: transparent;
+}
+.chip.active .chipDot {
+  background: var(--accentink);
+}
+.chip.blocked {
+  background: var(--accentwash);
+  color: var(--accentink);
+  border-color: transparent;
+}
+
+.button {
+  height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--strongline);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.button:hover:not(:disabled) {
+  background: var(--secondary);
+}
+.button:disabled {
+  opacity: 0.5;
+}
+.button:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 3px;
+}
+
+.buttonPrimary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--buttonink);
+}
+.buttonPrimary:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(0.97);
+}
+
+.buttonFail {
+  border-color: var(--strongline);
+  background: var(--panel);
+  color: var(--accentink);
+}
+
+.textarea {
+  width: 100%;
+  min-height: 92px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--ink);
+  padding: 10px 12px;
+  font: 14px/22px "Segoe UI", system-ui, sans-serif;
+  resize: vertical;
+}
+.textarea:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 2px;
+}
+
+.input {
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--ink);
+  padding: 0 10px;
+  font: 13px/20px "Segoe UI", system-ui, sans-serif;
+}
+.input:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 2px;
+}
+.select {
+  composes: input;
+}
+
+.banner {
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 13px;
+  background: var(--accentwash);
+  color: var(--accentink);
+  border: 1px solid transparent;
+}
+
+.empty {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+/* Georgia quote (owner's words), 22px per §4.2. */
+.quote {
+  font: 22px/32px Georgia, serif;
+  color: var(--ink);
+  margin: 0;
+}
+
+/* Directive callout: accentwash ground, 3px accentink left rule (§4.2 / criterion c-a23e72f460). */
+.directive {
+  background: var(--accentwash);
+  color: var(--accentink);
+  border-left: 3px solid var(--accentink);
+  border-radius: 0 8px 8px 0;
+  padding: 14px 18px;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.metaRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.metaRow:last-child {
+  border-bottom: 0;
+}
+.metaRow > span:first-child {
+  color: var(--muted);
+}
+
+.fold summary {
+  cursor: default;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 10px 0;
+  color: var(--ink);
+  list-style: none;
+}
+.fold summary::-webkit-details-marker {
+  display: none;
+}
+.fold summary::before {
+  content: "▸ ";
+  color: var(--muted);
+}
+.fold[open] summary::before {
+  content: "▾ ";
+}
+
+.tag {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--secondary);
+  color: var(--muted);
+  margin-right: 6px;
+}

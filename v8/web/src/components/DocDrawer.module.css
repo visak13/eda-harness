@@ -1,0 +1,43 @@
+.title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.back {
+  height: 30px;
+  width: 30px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 20px;
+  line-height: 1;
+  flex: none;
+}
+.back:hover {
+  background: var(--secondary);
+}
+.back:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 2px;
+}
+
+.id {
+  font: 12px/18px Consolas, monospace;
+  color: var(--muted);
+}
+
+.asPage {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accentink);
+  text-decoration: underline;
+  white-space: nowrap;
+}
+.asPage:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 2px;
+}

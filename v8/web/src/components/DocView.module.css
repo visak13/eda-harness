@@ -1,0 +1,54 @@
+.doc {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.meta {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.versions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.vpill {
+  font: 12px/18px Consolas, monospace;
+  padding: 2px 9px;
+  border-radius: 11px;
+  background: var(--secondary);
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+.vactive {
+  background: var(--accentwash);
+  color: var(--accentink);
+  border-color: transparent;
+}
+
+.signoff {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.commentBox {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+
+.commentActions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.posted {
+  font-size: 13px;
+  color: var(--success);
+}

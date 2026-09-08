@@ -1,0 +1,75 @@
+/* Right drawer (design §6/§17): 1112px panel, top margin 20, radius 12, over a dim scrim.
+   Header 73px (G2 asserts its ruling panes 650/462 + 40px buttons inside the body). */
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: #261b2355;
+  z-index: 40;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.panel {
+  margin: 20px;
+  max-width: calc(100vw - 40px);
+  height: calc(100vh - 40px);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 24px 64px #261b2340;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.header {
+  height: 73px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.title {
+  font: 22px/1.2 Georgia, serif;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.close {
+  height: 32px;
+  width: 32px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  flex: none;
+}
+.close:hover {
+  background: var(--secondary);
+}
+.close:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 2px;
+}
+
+.body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+/* Below 960 the drawer spans the viewport minus 20px margins (design §4.2 viewport rule). */
+@media (max-width: 959px) {
+  .panel {
+    width: auto !important;
+    left: 20px;
+    right: 20px;
+  }
+}
