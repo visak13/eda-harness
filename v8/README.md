@@ -21,8 +21,12 @@ The launcher owns these. **Seats never start, stop or restart a shared service**
 test that needs a server starts a private instance on a free port (`edp8-board --port 0 --data <tmp>`).
 `start.* --restart <service>` is the only supported way to make a code change live; it records a
 `service_restarted` event on the board. `edp8 status` shows each service's pid, port, git rev,
-uptime and last restart. `start.*` leaves a supervisor that probes every 15 s and restarts a service
-after three failed probes (or when its process is alive but its listener is gone).
+uptime and last restart; a service whose port is listening reads **up** even when it was not
+launcher-started (no pid file). `start.*` leaves a supervisor that probes every 15 s and restarts a
+service after three failed probes (or when its process is alive but its listener is gone); it also
+watches the port-less bridge by process liveness, **but only a bridge this fleet itself started** —
+a fleet never adopts, restarts or stops a Slack bridge it did not launch (each fleet acts only on
+the pids recorded in its own `EDP8_RUN_DIR`, so a private/test fleet can never touch the live one).
 
 ## Fresh machine — Windows
 

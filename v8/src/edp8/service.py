@@ -983,7 +983,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     from .ui import router as ui_router
 
-    app.include_router(ui_router(board, verify=human_verify))
+    app.include_router(ui_router(board, verify=human_verify, public=public))
 
     # SPA (Folio) mounted AFTER the legacy router so /ui/poll and every /v1 route keep
     # priority; the catch-all only matches under its prefix. Missing build → 503 page,

@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, Callable, Iterable
 from urllib.parse import quote
 
-from fastapi import APIRouter, Form, Query
+from fastapi import APIRouter, Form, HTTPException, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from . import delivery, views
@@ -132,10 +132,26 @@ def _page(title: str, body: str, *, poll: str | None = None, seq: int = 0, activ
     meta = f"<script type='application/json' id='people-json'>{people}</script>" if people else ""
     return f"<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{_e(title)} · edp8</title>{meta}<style>{_CSS}</style></head><body{data}><div class='app-shell'><aside class='sidebar'><div class='sidebar-brand'>edp8 board</div><div class='sidebar-body'>{nav}<div class='sidebar-local' id='sidebar-local'>{sidebar}</div></div></aside><main class='main-pane'><header class='channel-header'><div><h1>{_e(title)}</h1><p>Project-persistent board workspace</p></div></header><div class='page-grid{' with-context' if context else ''}'><section class='content{' has-composer' if composer else ''}'><div class='content-inner'><div class='page-body' id='page-body'>{body}</div>{composer}</div></section>{right}</div></main></div>{meta}<script>{_JS}</script></body></html>"
 
-def router(board: Board, verify: Callable[[str, str | None], Participant] | None = None) -> APIRouter:
+def router(board: Board, verify: Callable[[str, str | None], Participant] | None = None,
+           public: bool = False) -> APIRouter:
     r = APIRouter()
     preferences = load_avatar_preferences()
     def _me(as_: str, token: str | None) -> Participant: return verify(as_, token) if verify else board.participant(as_)
+    def _guard(as_: str | None, token: str | None) -> Participant | None:
+        """S17 c-9428c09be1 / adversary #1: in PUBLIC mode no legacy `/ui` page renders without a
+        verified identity — a request with no `as=` (or a wrong/missing token) is refused 401,
+        exactly like the `/v1` API. In trusted single-machine mode the legacy anonymous view is
+        unchanged (returns None when no identity is supplied, so callers render as before)."""
+        if public:
+            if not as_:
+                raise HTTPException(401, "identity required in public mode: append ?as=<you>&token=<secret>")
+            return _me(as_, token)  # raises 401 on an unknown participant or a wrong/missing token
+        if not as_:
+            return None
+        try:  # trusted mode NEVER raises — a bad/unknown identity just renders the legacy anon view
+            return _me(as_, token)
+        except Exception:  # noqa: BLE001
+            return None
     def _qs(p: Participant, token: str | None) -> str: return f"as={quote(p.id)}" + (f"&token={quote(token)}" if token else "")
     def _participant(pid: str | None) -> Participant | None:
         try: return board.store.get("participant", pid) if pid else None  # type: ignore[return-value]
@@ -209,6 +225,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
     def poll(since: int=0,scope: str="all",as_: str|None=Query(default=None,alias="as"),token: str|None=Query(default=None)):
         """How many events landed in `scope` since seq — the page decides whether to swap or offer a pill."""
         from fastapi.responses import JSONResponse
+        _guard(as_,token)  # public mode: no polling without a verified identity
         top=board.store.max_seq()
         if top<=since: return JSONResponse({"seq":top,"new":0})
         evs=board.store.events_since(since,limit=500)
@@ -439,6 +456,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
     @r.get("/ui",response_class=HTMLResponse)
     def epics(as_: str|None=Query(default=None,alias="as"),token: str|None=Query(default=None),
               status: str|None=Query(default=None),q: str|None=Query(default=None)):
+        _guard(as_,token)
         qs=""
         if as_:
             try: qs=_qs(_me(as_,token),token)
@@ -468,6 +486,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
                 work_type: str|None=Query(default=None),assignee: str|None=Query(default=None),tag: str|None=Query(default=None),
                 q: str|None=Query(default=None)):
         """Every ticket across epics, filterable — the view the board never had (2026-09-06)."""
+        _guard(as_,token)
         qs=""
         if as_:
             try: qs=_qs(_me(as_,token),token)
@@ -516,6 +535,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
     def epic(epic_id: str,as_: str=Query(default="owner",alias="as"),token: str|None=Query(default=None),
              order: str=Query(default="newest"),status: str|None=Query(default=None),work_type: str|None=Query(default=None),
              assignee: str|None=Query(default=None),q: str|None=Query(default=None)):
+        _guard(as_,token)  # public mode: the epic board renders only for a verified identity
         bd=board.board(epic_id); thread=board.thread(epic_id,limit=100); docs=board.store.query("doc",{"scope":epic_id},limit=100); gates=bd["open_gates"]
         counts=" ".join(f"{_badge(k)} {v}" for k,v in bd["counts"].items())
         # identity: anyone on the team comments AS THEMSELVES from this page
@@ -586,6 +606,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
     @r.get("/ui/ticket/{ticket_id}",response_class=HTMLResponse)
     def ticket(ticket_id: str,as_: str|None=Query(default=None,alias="as"),token: str|None=Query(default=None),
                order: str=Query(default="newest")):
+        _guard(as_,token)  # public mode: the ticket page renders only for a verified identity
         t=board.ticket(ticket_id); crits=board.criteria(ticket_id); docs=board.linked_docs(ticket_id); thread=board.thread(ticket_id,limit=100); epic_id=board.epic_of(t).id; assignee=_participant(t.assignee)
         # the ticket page IS the chat room: arriving with an identity docks a composer
         composer=""; identity=""
@@ -635,6 +656,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
     @r.get("/ui/doc/{doc_id}",response_class=HTMLResponse)
     def doc(doc_id: str,version: int|None=None,as_: str|None=Query(default=None,alias="as"),
             token: str|None=Query(default=None),err: str|None=Query(default=None)):
+        _guard(as_,token)  # public mode: the document reader renders only for a verified identity
         d=board.doc(doc_id,version); all_versions=board.store.doc_versions(doc_id); latest=max(all_versions) if all_versions else d.version
         qs=""; identity=""; actions=""
         scope_is_epic=board.store.get("ticket",d.scope) is not None

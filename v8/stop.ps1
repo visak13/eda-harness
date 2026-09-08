@@ -21,18 +21,20 @@ foreach ($svc in $order) {
   $stopped = $false
   if ($rec) {
     $o = $rec | ConvertFrom-Json
-    if ($o.pid) { if (Get-Process -Id $o.pid -ErrorAction SilentlyContinue) { & cmd /c "taskkill /PID $o.pid /T /F >nul 2>&1" }; $stopped = $true }
+    # Scoped stop (c-c0f2ceea9b): kill only THIS fleet's OWN recorded pid. For the port-less bridge,
+    # verify the pid is still a slack_bridge first — a stale/reused pid, or the LIVE fleet's bridge,
+    # is never taskkilled by a private fleet. The old machine-global CommandLine sweep (which killed
+    # every slack_bridge on the box, the live one included) is gone.
+    $killable = $true
+    if ($svc -eq "bridge" -and $o.pid) {
+      $killable = [bool](& $py -c "from edp8 import run_state; print('1' if run_state.pid_cmdline_matches($($o.pid),'edp8.slack_bridge') else '')" 2>$null)
+    }
+    if ($o.pid -and $killable) { if (Get-Process -Id $o.pid -ErrorAction SilentlyContinue) { & cmd /c "taskkill /PID $o.pid /T /F >nul 2>&1" }; $stopped = $true }
     if ($o.port) {
       Get-NetTCPConnection -LocalPort $o.port -State Listen -ErrorAction SilentlyContinue |
         ForEach-Object { if (Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue) { & cmd /c "taskkill /PID $_.OwningProcess /T /F >nul 2>&1" }; $stopped = $true }
     }
     & $py -c "from edp8 import run_state; run_state.clear('$svc')" 2>$null
-  }
-  # bridge has no port and its pid file can be stale — sweep by command line too
-  if ($svc -eq "bridge") {
-    Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" |
-      Where-Object { $_.CommandLine -match 'edp8\.slack_bridge' } |
-      ForEach-Object { if (Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue) { & cmd /c "taskkill /PID $_.ProcessId /T /F >nul 2>&1" }; $stopped = $true }
   }
   Write-Host ("{0,-11} {1}" -f $svc, $(if ($stopped) { "stopped" } else { "not running" }))
 }

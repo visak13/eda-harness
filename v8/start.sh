@@ -54,7 +54,22 @@ need() { command -v "$1" >/dev/null 2>&1 || { echo "edp8: '$1' is not on PATH. I
 need uv; need node; need npm
 
 probe() { curl -fsS --max-time 2 "http://127.0.0.1:$1$2" >/dev/null 2>&1; }
-write_state() { "$PY" -c "from edp8 import run_state; run_state.write('$1', pid=$2, port=${3:-None}, git_rev=run_state.git_rev())" 2>/dev/null || true; }
+# Record the REAL process pid, not bash's `$!` — on Git Bash/MSYS `$!` is the shim, not the Windows
+# child (S17 c-c0f2ceea9b). For a ported service we record the pid owning the listener; for the
+# port-less bridge, the newest edp8.slack_bridge; both fall back to the passed pid when psutil can't.
+write_state() { # $1 svc  $2 fallback-pid  $3 port (empty for the bridge)
+  "$PY" - "$1" "${2:-}" "${3:-}" 2>/dev/null <<'PYEOF' || true
+import sys
+from edp8 import run_state
+svc, fallback, port = sys.argv[1], sys.argv[2], sys.argv[3]
+port_i = int(port) if port else None
+pid = run_state.listener_pid(port_i) if port_i else run_state.process_pid_matching("edp8.slack_bridge")
+if not pid:
+    try: pid = int(fallback)
+    except (ValueError, TypeError): pid = 0
+run_state.write(svc, pid=pid, port=port_i, git_rev=run_state.git_rev())
+PYEOF
+}
 
 build_web() {
   [ -f "$V8/src/edp8/webapp/dist/index.html" ] && return 0
@@ -65,7 +80,7 @@ build_web() {
 }
 
 start_board() {
-  probe "$BOARD_PORT" /v1/health && { echo "board    already running on :$BOARD_PORT"; return; }
+  probe "$BOARD_PORT" /v1/health && { write_state board "" "$BOARD_PORT"; echo "board    already running on :$BOARD_PORT"; return; }
   EDP8_HOST="$BIND" EDP8_PORT="$BOARD_PORT" EDP8_ADMIN_TOKEN="$ADMIN" EDP8_HOME="$HOMEDIR" \
     EDP8_DB="$DATA/edp8.db" EDP_POOL_URL="http://127.0.0.1:$POOL_PORT" EDP_BROKER_URL="http://127.0.0.1:$BROKER_PORT" \
     nohup uv run --directory "$HOMEDIR" edp8-board >"$DATA/board.log" 2>"$DATA/board.err" &
@@ -76,7 +91,7 @@ start_board() {
 }
 
 start_broker() {
-  probe "$BROKER_PORT" /v1/health && { echo "broker   already running on :$BROKER_PORT"; return; }
+  probe "$BROKER_PORT" /v1/health && { write_state broker "" "$BROKER_PORT"; echo "broker   already running on :$BROKER_PORT"; return; }
   [ -d "$ROOT/edp-broker" ] || { echo "broker   skipped (no $ROOT/edp-broker)"; return; }
   mkdir -p "$DATA/broker-data"
   EDP_BROKER_HOST="$BIND" EDP_BROKER_PORT="$BROKER_PORT" EDP_BROKER_DATA="$DATA/broker-data" \
@@ -87,7 +102,7 @@ start_broker() {
 }
 
 start_pool() {
-  probe "$POOL_PORT" /v1/health && { echo "pool     already running on :$POOL_PORT"; return; }
+  probe "$POOL_PORT" /v1/health && { write_state pool "" "$POOL_PORT"; echo "pool     already running on :$POOL_PORT"; return; }
   local ppy="$ROOT/edp-pool/.venv/bin/python"; [ -x "$ppy" ] || ppy="$ROOT/edp-pool/.venv/Scripts/python.exe"
   [ -x "$ppy" ] || { echo "pool     skipped (no edp-pool venv)"; return; }
   mkdir -p "$DATA/pool-logs"
@@ -102,7 +117,7 @@ start_pool() {
 }
 
 start_mcp() {
-  probe "$MCP_PORT" /healthz && { echo "mcp      already running on :$MCP_PORT"; return; }
+  probe "$MCP_PORT" /healthz && { write_state mcp "" "$MCP_PORT"; echo "mcp      already running on :$MCP_PORT"; return; }
   EDP8_HOME="$HOMEDIR" EDP8_BOARD_URL="http://127.0.0.1:$BOARD_PORT" EDP_POOL_URL="http://127.0.0.1:$POOL_PORT" \
     EDP_BROKER_URL="http://127.0.0.1:$BROKER_PORT" EDP8_MCP_PORT="$MCP_PORT" EDP8_MCP_HOST=127.0.0.1 PYTHONPATH="$V8/src" \
     nohup "$PY" -m edp8.mcp_server >"$DATA/mcp.log" 2>"$DATA/mcp.err" &
@@ -113,7 +128,14 @@ start_mcp() {
 
 start_bridge() {
   [ -f "$V8/slack_map.json" ] || { echo "bridge   skipped (no slack_map.json)"; return; }
-  if pgrep -f 'edp8\.slack_bridge' >/dev/null 2>&1; then echo "bridge   already running"; return; fi
+  # Scoped detection (c-c0f2ceea9b): adopt ONLY the bridge pid THIS fleet recorded in its run dir,
+  # and only if it is still a live slack_bridge — never a machine-global `pgrep`, which would let a
+  # private fleet adopt (and stop.sh later kill) the LIVE Slack bridge. pgrep/fuser are also absent
+  # on this Git Bash, so the old scan was always false and started a duplicate every run.
+  local rec_pid; rec_pid="$("$PY" -c "from edp8 import run_state; r=run_state.read('bridge'); print((r or {}).get('pid') or '')" 2>/dev/null || true)"
+  if [ -n "$rec_pid" ] && "$PY" -c "import sys;from edp8 import run_state;sys.exit(0 if run_state.pid_cmdline_matches($rec_pid,'edp8.slack_bridge') else 1)" 2>/dev/null; then
+    echo "bridge   already running pid $rec_pid"; return
+  fi
   local pub=""; [ -n "$PUBLIC" ] && pub="$PUBLIC"
   EDP8_HOME="$HOMEDIR" EDP_BROKER_URL="http://127.0.0.1:$BROKER_PORT" EDP8_PUBLIC_URL="$pub" PYTHONPATH="$V8/src" \
     nohup "$PY" -m edp8.slack_bridge >"$DATA/bridge.log" 2>"$DATA/bridge.err" &

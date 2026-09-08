@@ -136,6 +136,47 @@ def test_live_reviewer_seat_skips_the_spawn(pool):
     assert pool.spawns == []
 
 
+def test_variant_reviewer_handle_skips_double_spawn(pool):
+    """m-1760540512: dedupe matches ANY live reviewer-role seat bound to the ticket, not only the
+    canonical `reviewer.<story>` id — a variant/suffixed reviewer seat (a re-spawn under another id)
+    must not be double-paired (the live case: reviewer.s-13cd244cc9 beside reviewer.s-ac1c99a2cb)."""
+    board = make_board(pool)
+    r = rig(board)
+    epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
+    story, crit = review_story_to_in_review(board, r, epic)
+    board.run_pending_pairings()
+    pool.spawns.clear()
+    # a live reviewer seat exists under a NON-canonical handle for this same story (no live session
+    # on the canonical reviewer.<story>, so only the broadened match can catch it)
+    variant = f"reviewer.{story.id}.2"
+    board.participant_create("agent", Role.reviewer, variant, id_=variant)
+    board.session_upsert(id_="sess-variant", participant_id=variant, ticket_id=story.id, pool_id="p",
+                         state=SessionState.alive)
+    ev2 = board.doc_create(r["engineer"], doc_type=DocType.report, title="e2", body_md="ok2", scope=epic.id)
+    board.criterion_update(r["engineer"], crit.id, evidence_ref=ev2.id)
+    assert f"reviewer.{story.id}" not in board._pending_pairings
+    assert board.run_pending_pairings()["spawned"] == []
+    assert pool.spawns == []
+
+
+def test_all_reviewer_criteria_verdicted_skips_pairing(pool):
+    """m-1760540512: once every checked_by=reviewer criterion has a verdict there is nothing left to
+    review, so re-derivation / new evidence must not re-pair a reviewer."""
+    from edp8.schemas import Verdict
+
+    board = make_board(pool)
+    r = rig(board)
+    epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
+    story, crit = review_story_to_in_review(board, r, epic)
+    board.run_pending_pairings()
+    reviewer = board.store.get("participant", f"reviewer.{story.id}")
+    assert board._reviewer_pairing_needed(board.ticket(story.id)) is True  # still pending
+    board.criterion_update(reviewer, crit.id, verdict=Verdict.passed)
+    assert board._reviewer_pairing_needed(board.ticket(story.id)) is False  # all verdicted → no re-pair
+    board._rederive_pending_pairings()
+    assert f"reviewer.{story.id}" not in board._pending_pairings
+
+
 def test_re_pairs_when_evidence_lands_after_reviewer_closed(pool):
     board = make_board(pool)
     r = rig(board)

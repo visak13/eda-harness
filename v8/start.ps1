@@ -61,7 +61,12 @@ function Probe($port, $path) {
   try { Invoke-RestMethod "http://127.0.0.1:$port$path" -TimeoutSec 2 | Out-Null; $true } catch { $false }
 }
 function WriteState($svc, $procId, $port) {
-  & $py -c "from edp8 import run_state; run_state.write('$svc', pid=$procId, port=$($port -as [string] -replace '^$','None'), git_rev=run_state.git_rev())" 2>$null
+  # Record the REAL pid owning the listener (or, for the port-less bridge, the newest slack_bridge),
+  # falling back to the passed pid — so `edp8 status` and pid-kills hit the right process even from
+  # the already-running branch, and consistently with Git Bash (S17 c-c0f2ceea9b).
+  $fb = if ($procId) { "$procId" } else { "0" }
+  $pt = if ("$port") { "$port" } else { "" }
+  & $py -c "from edp8 import run_state; p=('$pt' and int('$pt')) or None; pid=(run_state.listener_pid(p) if p else run_state.process_pid_matching('edp8.slack_bridge')) or int('$fb' or 0); run_state.write('$svc', pid=pid, port=p, git_rev=run_state.git_rev())" 2>$null
 }
 function StartProc($file, $argList, $log, $errlog) {
   Start-Process -FilePath $file -ArgumentList $argList -WorkingDirectory $HOMEDIR -WindowStyle Hidden `
@@ -82,7 +87,7 @@ function Build-Web {
 $root = Split-Path -Parent $v8
 
 function Start-Board {
-  if (Probe $BOARD_PORT "/v1/health") { Write-Host "board    already running on :$BOARD_PORT"; return }
+  if (Probe $BOARD_PORT "/v1/health") { WriteState "board" $null $BOARD_PORT; Write-Host "board    already running on :$BOARD_PORT"; return }
   $env:EDP8_HOST = $BIND; $env:EDP8_PORT = "$BOARD_PORT"; $env:EDP8_ADMIN_TOKEN = $ADMIN
   $env:EDP8_HOME = $HOMEDIR; $env:EDP8_DB = Join-Path $DATA "edp8.db"
   $env:EDP_POOL_URL = "http://127.0.0.1:$POOL_PORT"; $env:EDP_BROKER_URL = "http://127.0.0.1:$BROKER_PORT"
@@ -94,7 +99,7 @@ function Start-Board {
 }
 
 function Start-Broker {
-  if (Probe $BROKER_PORT "/v1/health") { Write-Host "broker   already running on :$BROKER_PORT"; return }
+  if (Probe $BROKER_PORT "/v1/health") { WriteState "broker" $null $BROKER_PORT; Write-Host "broker   already running on :$BROKER_PORT"; return }
   $brokerDir = Join-Path $root "edp-broker"
   if (-not (Test-Path $brokerDir)) { Write-Host "broker   skipped (no $brokerDir)"; return }
   $env:EDP_BROKER_HOST = $BIND; $env:EDP_BROKER_PORT = "$BROKER_PORT"; $env:EDP_BROKER_DATA = Join-Path $DATA "broker-data"
@@ -106,7 +111,7 @@ function Start-Broker {
 }
 
 function Start-Pool {
-  if (Probe $POOL_PORT "/v1/health") { Write-Host "pool     already running on :$POOL_PORT"; return }
+  if (Probe $POOL_PORT "/v1/health") { WriteState "pool" $null $POOL_PORT; Write-Host "pool     already running on :$POOL_PORT"; return }
   $poolDir = Join-Path $root "edp-pool"; $ppy = Join-Path $poolDir ".venv\Scripts\python.exe"
   if (-not (Test-Path $ppy)) { Write-Host "pool     skipped (no edp-pool venv: $ppy)"; return }
   $env:EDP_POOL_AGENT_HOME = $HOMEDIR; $env:EDP_POOL_HOST = "127.0.0.1"; $env:EDP_POOL_PORT = "$POOL_PORT"
@@ -122,7 +127,7 @@ function Start-Pool {
 }
 
 function Start-Mcp {
-  if (Probe $MCP_PORT "/healthz") { Write-Host "mcp      already running on :$MCP_PORT"; return }
+  if (Probe $MCP_PORT "/healthz") { WriteState "mcp" $null $MCP_PORT; Write-Host "mcp      already running on :$MCP_PORT"; return }
   $env:EDP8_HOME = $HOMEDIR; $env:EDP8_BOARD_URL = "http://127.0.0.1:$BOARD_PORT"
   $env:EDP_POOL_URL = "http://127.0.0.1:$POOL_PORT"; $env:EDP_BROKER_URL = "http://127.0.0.1:$BROKER_PORT"
   $env:EDP8_MCP_PORT = "$MCP_PORT"; $env:EDP8_MCP_HOST = "127.0.0.1"; $env:PYTHONPATH = Join-Path $v8 "src"
@@ -134,8 +139,14 @@ function Start-Mcp {
 
 function Start-Bridge {
   if (-not (Test-Path (Join-Path $v8 "slack_map.json"))) { Write-Host "bridge   skipped (no slack_map.json)"; return }
-  $running = Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" | Where-Object { $_.CommandLine -match 'edp8\.slack_bridge' }
-  if ($running) { WriteState "bridge" $running[0].ProcessId ""; Write-Host "bridge   already running pid $($running[0].ProcessId)"; return }
+  # Scoped detection (c-c0f2ceea9b): adopt ONLY the bridge pid THIS fleet recorded, verified still a
+  # live slack_bridge — never a machine-global Win32_Process scan, which let a private fleet adopt
+  # (and stop.ps1 later taskkill) the LIVE Slack bridge.
+  $recPid = & $py -c "from edp8 import run_state; r=run_state.read('bridge'); print((r or {}).get('pid') or '')" 2>$null
+  if ($recPid) {
+    $ok = & $py -c "from edp8 import run_state; print('1' if run_state.pid_cmdline_matches($recPid,'edp8.slack_bridge') else '')" 2>$null
+    if ($ok) { Write-Host "bridge   already running pid $recPid"; return }
+  }
   $env:EDP8_HOME = $HOMEDIR; $env:EDP_BROKER_URL = "http://127.0.0.1:$BROKER_PORT"; $env:PYTHONPATH = Join-Path $v8 "src"
   if ($PUBLIC) { $env:EDP8_PUBLIC_URL = $PUBLIC }
   $p = StartProc $py @("-m","edp8.slack_bridge") (Join-Path $DATA "bridge.log") (Join-Path $DATA "bridge.err")

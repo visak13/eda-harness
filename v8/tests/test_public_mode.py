@@ -135,6 +135,76 @@ def test_public_uncredentialed_participant_is_401(public_client):
     assert r.status_code == 401
 
 
+# --------------------------------------------------------------- public mode: legacy /ui fails closed
+# c-9428c09be1 / adversary #1: the server-rendered /ui router read ?as= and trusted it, so a request
+# with NO identity rendered the whole board (a seeded title visible) while /v1 was 401. In public
+# mode every /ui page must require a verified identity; trusted mode keeps the anonymous view.
+
+SECRET_TITLE = "TOP SECRET PROJECT eyes only"
+
+
+def _seed_board() -> tuple[Board, str, str, str]:
+    """An epic, a story and an epic-scoped doc all carrying SECRET_TITLE, so a leak is visible."""
+    from edp8.schemas import Doc, DocType, Role, Ticket, TicketKind, WorkType
+
+    board = Board(Store(":memory:"))
+    board.store.put("ticket", Ticket(id="epic-secret", kind=TicketKind.epic, work_type=WorkType.chore,
+                                     title=SECRET_TITLE, epic_id="epic-secret"))
+    board.store.put("ticket", Ticket(id="s-secret", kind=TicketKind.story, work_type=WorkType.chore,
+                                     title=SECRET_TITLE + " story", parent_id="epic-secret", epic_id="epic-secret"))
+    board.store.put("doc", Doc(id="design-secret", doc_type=DocType.design, title=SECRET_TITLE + " design",
+                               body_md=SECRET_TITLE + " body", owner_role=Role.architect, scope="epic-secret"))
+    return board, "epic-secret", "s-secret", "design-secret"
+
+
+def _public_ui_client(tmp_path, monkeypatch):
+    monkeypatch.setenv("EDP8_PUBLIC_URL", "http://host.example:9400")
+    monkeypatch.setenv("EDP8_TOKENS", _tokens(tmp_path, {"owner": "ownersecret", "agents": {"eng.x": "engsecret"}}))
+    board, epic_id, story_id, doc_id = _seed_board()
+    c = TestClient(create_app(board, admin_token="realsecret"))
+    for pid, role, typ in [("owner", "owner", "human"), ("eng.x", "engineer", "agent")]:
+        assert c.post("/v1/participants", json={"type": typ, "role": role, "handle": pid, "id": pid},
+                      headers={"X-Admin": "realsecret"}).json()["ok"]
+    return c, epic_id, story_id, doc_id
+
+
+@pytest.mark.parametrize("path_tmpl", ["/ui", "/ui/tickets", "/ui/epic/{epic}", "/ui/ticket/{story}",
+                                       "/ui/doc/{doc}", "/ui/poll?since=0&scope=all"])
+def test_public_ui_refuses_without_identity(tmp_path, monkeypatch, path_tmpl):
+    c, epic_id, story_id, doc_id = _public_ui_client(tmp_path, monkeypatch)
+    path = path_tmpl.format(epic=epic_id, story=story_id, doc=doc_id)
+    r = c.get(path)
+    assert r.status_code == 401, f"{path} rendered without identity: {r.status_code}"
+    assert SECRET_TITLE not in r.text
+
+
+@pytest.mark.parametrize("path_tmpl", ["/ui", "/ui/tickets", "/ui/epic/{epic}", "/ui/ticket/{story}", "/ui/doc/{doc}"])
+def test_public_ui_refuses_bad_token(tmp_path, monkeypatch, path_tmpl):
+    c, epic_id, story_id, doc_id = _public_ui_client(tmp_path, monkeypatch)
+    path = path_tmpl.format(epic=epic_id, story=story_id, doc=doc_id)
+    r = c.get(path, params={"as": "owner", "token": "wrong"})
+    assert r.status_code == 401
+    assert SECRET_TITLE not in r.text
+
+
+def test_public_ui_renders_with_valid_identity(tmp_path, monkeypatch):
+    c, epic_id, story_id, doc_id = _public_ui_client(tmp_path, monkeypatch)
+    for path in ("/ui", f"/ui/ticket/{story_id}", f"/ui/doc/{doc_id}"):
+        r = c.get(path, params={"as": "owner", "token": "ownersecret"})
+        assert r.status_code == 200, f"{path}: {r.status_code} {r.text[:200]}"
+        assert SECRET_TITLE in r.text
+
+
+def test_trusted_ui_still_renders_anonymously(monkeypatch):
+    """Rollback guarantee: with no EDP8_PUBLIC_URL the legacy anonymous /ui view is unchanged."""
+    monkeypatch.delenv("EDP8_PUBLIC_URL", raising=False)
+    monkeypatch.setenv("EDP8_TOKENS", "does-not-exist.json")
+    board, _epic, story_id, _doc = _seed_board()
+    c = TestClient(create_app(board, admin_token="secret"))
+    r = c.get(f"/ui/ticket/{story_id}")
+    assert r.status_code == 200 and SECRET_TITLE in r.text
+
+
 # --------------------------------------------------------------- §24.1(c) request token wins over env
 
 def test_boardclient_request_token_wins_over_env(monkeypatch):

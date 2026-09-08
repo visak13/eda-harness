@@ -72,6 +72,33 @@ def test_dead_process_reason_is_failed_probes():
     assert calls["restart"] and "consecutive failed probes" in calls["restart"][0][1]
 
 
+def test_process_pid_matching_excludes_self_and_needs_discrete_argv():
+    """S17 c-c0f2ceea9b: the bridge-pid resolver must NOT match its own `-c` invocation nor a shell
+    that merely quotes the needle — the needle must be a discrete argv element (`-m edp8.foo`), and
+    the current process is always skipped. A needle nothing runs resolves to None."""
+    assert run_state.process_pid_matching("edp8.no_such_module_zzz_xyz") is None
+    # this test process's own cmdline contains the literal below (as a substring of a -c/arg), yet
+    # it is excluded (self) and not a discrete argv element → still None, never our own pid.
+    assert run_state.process_pid_matching("edp8.no_such_module_zzz_xyz2") is None
+    assert run_state.pid_cmdline_matches(None, "x") is False
+    assert run_state.pid_cmdline_matches(0, "x") is False
+
+
+def test_bridge_is_supervised_by_process_liveness(monkeypatch):
+    """S17 c-c0f2ceea9b / adversary #9: the port-less Slack bridge IS supervised — make_probe falls
+    back to process liveness for it, so a dead bridge probes False (and would be restarted)."""
+    import httpx
+
+    from edp8 import supervisor
+
+    run_state.write("bridge", pid=os.getpid(), port=None, git_rev="abc")
+    with httpx.Client() as client:
+        probe = supervisor.make_probe(client)
+        assert probe("bridge") is True  # our own pid is alive → portless probe true
+        monkeypatch.setattr(run_state, "_process_alive", lambda pid: False)
+        assert probe("bridge") is False  # dead process → the supervisor counts a miss
+
+
 def test_run_state_roundtrip_and_snapshot():
     run_state.write("pool", pid=os.getpid(), port=9301, git_rev="deadbeef")
     run_state.mark_probe("pool", True)
@@ -81,4 +108,25 @@ def test_run_state_roundtrip_and_snapshot():
     snap = {r["service"]: r for r in run_state.snapshot()}
     assert set(snap) == set(run_state.SERVICES)  # a row per known service, even the ones never started
     assert snap["pool"]["state"] == "up"  # our own pid is alive
-    assert snap["board"]["state"] == "down"  # never written
+    assert snap["bridge"]["state"] == "down"  # port-less and never written → down (board:9400 may be live)
+
+
+def test_snapshot_listening_port_is_up_without_pid_file(monkeypatch, tmp_path):
+    """S17 c-c0f2ceea9b: a service with NO pid file whose port is listening reads `up` — the live
+    fleet's board/pool/broker/mcp answer even though the launcher did not write their files; a
+    port-less service (bridge) with no file stays `down`."""
+    import socket
+
+    monkeypatch.setenv("EDP8_RUN_DIR", str(tmp_path))
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen()
+    port = srv.getsockname()[1]
+    monkeypatch.setattr(run_state, "SERVICES", {"tsvc": {"port": port, "health": "/x"}})
+    try:
+        rows = {r["service"]: r for r in run_state.snapshot()}
+        assert rows["tsvc"]["state"] == "up" and rows["tsvc"]["pid"] is None
+    finally:
+        srv.close()
+    rows = {r["service"]: r for r in run_state.snapshot()}  # listener gone, no pid file → down
+    assert rows["tsvc"]["state"] == "down"

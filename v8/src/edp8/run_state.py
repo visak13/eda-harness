@@ -152,7 +152,13 @@ def snapshot() -> list[dict[str, Any]]:
     for name, spec in SERVICES.items():
         rec = read(name)
         if rec is None:
-            rows.append({"service": name, "state": "down", "port": spec["port"]})
+            # No pid file (never launcher-started, or the file was cleaned): a listening port still
+            # means the service is up — the live fleet's board/pool/broker/mcp answer without a file
+            # (S17 c-c0f2ceea9b). A port-less service (the bridge) with no file is genuinely down.
+            listening = _port_listening(spec["port"])
+            rows.append({"service": name, "state": "up" if listening else "down",
+                         "port": spec["port"], "pid": None,
+                         "note": "listener up (not launcher-started)" if listening else None})
             continue
         port = rec.get("port", spec["port"])
         up = _process_alive(rec.get("pid")) or _port_listening(port)  # a live listener means up even
@@ -181,6 +187,65 @@ def _port_listening(port: int | None) -> bool:
             return s.connect_ex(("127.0.0.1", int(port))) == 0
         except OSError:
             return False
+
+
+def listener_pid(port: int | None) -> int | None:
+    """The pid that owns the LISTEN socket on 127.0.0.1:port, or None. This is the reliable pid on
+    Git Bash / MSYS, where a shell's `$!` is the bash shim rather than the Windows child process
+    (S17 c-c0f2ceea9b): the launcher records THIS so `edp8 status` and pid-kills hit the real
+    process, not a defunct MSYS shim pid."""
+    if not port:
+        return None
+    try:
+        import psutil
+        for c in psutil.net_connections(kind="inet"):
+            if (getattr(c, "status", None) == psutil.CONN_LISTEN and c.laddr
+                    and getattr(c.laddr, "port", None) == int(port) and c.pid):
+                return int(c.pid)
+    except Exception:  # noqa: BLE001 — psutil absent or unprivileged; caller falls back to its own pid
+        return None
+    return None
+
+
+def process_pid_matching(needle: str) -> int | None:
+    """The NEWEST running process whose command line contains `needle` — used for the port-less
+    Slack bridge (S17 c-c0f2ceea9b). Newest wins so the launcher records the child it just spawned,
+    never an older unrelated one. Fleet SCOPING is the caller's job (it reads its own run dir and
+    verifies the recorded pid); this is only ever called to learn the pid of a just-started child."""
+    try:
+        import psutil
+    except Exception:  # noqa: BLE001
+        return None
+    best: tuple[float, int] | None = None
+    me = os.getpid()
+    try:
+        for p in psutil.process_iter(["pid", "cmdline", "create_time"]):
+            pid = p.info.get("pid")
+            if pid == me:
+                continue  # skip THIS process — the launcher's `-c` resolver carries the needle itself
+            # Match `needle` as a DISCRETE argv element (`python -m edp8.slack_bridge`), never a
+            # substring — so a shell/`-c` command line that merely quotes the string is not a false
+            # positive (that bit the resolver: its own `-c` argument contained the needle).
+            if needle in (p.info.get("cmdline") or []):
+                ct = float(p.info.get("create_time") or 0.0)
+                if best is None or ct > best[0]:
+                    best = (ct, int(pid))
+    except Exception:  # noqa: BLE001
+        return None
+    return best[1] if best else None
+
+
+def pid_cmdline_matches(pid: int | None, needle: str) -> bool:
+    """True when `pid` is a live process whose command line contains `needle`. The launcher uses
+    this to verify a bridge pid it recorded is still the bridge (not a reused pid) before treating
+    the service as already running — scoped detection, never a machine-global scan (c-c0f2ceea9b)."""
+    if not pid:
+        return False
+    try:
+        import psutil
+        return needle in psutil.Process(int(pid)).cmdline()  # discrete argv element, not a substring
+    except Exception:  # noqa: BLE001 — no such pid / no privilege / no psutil
+        return False
 
 
 def _process_alive(pid: int | None) -> bool:

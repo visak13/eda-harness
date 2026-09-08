@@ -137,7 +137,13 @@ def make_emit(by: str = "supervisor") -> Callable[[str, str], None]:
 def main() -> None:
     import httpx
 
-    services = [s for s in run_state.SERVICES if run_state.SERVICES[s]["port"]]  # probe the four with a port
+    services = [s for s in run_state.SERVICES if run_state.SERVICES[s]["port"]]  # the four with a port
+    # Supervise the port-less Slack bridge too — but ONLY when THIS fleet actually started one (a
+    # run-dir record naming a live slack_bridge). A fleet with no bridge never adopts or restarts a
+    # machine-global one, so a private fleet cannot resurrect/kill the LIVE bridge (S17
+    # c-c0f2ceea9b / adversary #9). Its liveness is process-only (make_probe → real_alive).
+    if run_state.pid_cmdline_matches((run_state.read("bridge") or {}).get("pid"), "edp8.slack_bridge"):
+        services.append("bridge")
     run_state.write("supervisor", pid=os.getpid(), port=None, git_rev=git_rev())
     with httpx.Client() as client:  # ONE keep-alive connection for every probe (§22 rule 3)
         sup = Supervisor(services, probe=make_probe(client), alive=real_alive,

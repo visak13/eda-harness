@@ -572,20 +572,47 @@ class Board:
         return (t.kind == TicketKind.story
                 and any(c.checked_by == CheckedBy.reviewer.value for c in self.criteria(t.id)))
 
+    def _ticket_has_live_reviewer(self, ticket_id: str) -> bool:
+        """A live reviewer-role seat already bound to THIS ticket — matched by the seat handle's
+        ticket, not only the canonical `reviewer.<ticket>` id (m-1760540512), so a variant/suffixed
+        or separately-spawned reviewer for the same story is not double-paired. Sibling reviewers
+        (`reviewer.<other-story>`) do NOT match — pairing is per story."""
+        prefix = f"reviewer.{ticket_id}"
+        for p in self.store.query("participant", {"role": Role.reviewer}):
+            pid = getattr(p, "id", "") or ""
+            if (pid == prefix or pid.startswith(prefix + ".") or pid.startswith(prefix + "-")) \
+                    and self._seat_live(pid):
+                return True
+        return False
+
+    def _reviewer_pairing_needed(self, t: Ticket) -> bool:
+        """Whether a reviewer must still be paired for story `t`: it is reviewer-checked, no live
+        reviewer seat is already on it, and at least one of its reviewer criteria is still
+        unverdicted. Skipping an all-verdicted story, or one that already has a live reviewer,
+        closes the double-spawn the pairing sweep and the restart re-derivation used to cause
+        (m-1760540512: reviewer.s-13cd244cc9 spawned beside reviewer.s-ac1c99a2cb)."""
+        if not self._story_wants_reviewer(t):
+            return False
+        reviewer_crits = [c for c in self.criteria(t.id) if c.checked_by == CheckedBy.reviewer.value]
+        if reviewer_crits and all(c.verdict != Verdict.pending for c in reviewer_crits):
+            return False  # every reviewer criterion already has a verdict — nothing left to review
+        return not self._ticket_has_live_reviewer(t.id)
+
     def _on_reach_in_review(self, t: Ticket) -> None:
         """A story reaching in_review pairs reviewer.<story> when its criteria are reviewer-checked
         (§24.1: qa is the default checker, so a plain story pairs no reviewer — qa verdicts at
-        acceptance). Idempotent: a live reviewer seat short-circuits. The spawn itself is deferred to
-        run_pending_pairings (the pool-watch loop / an explicit drain), so no request thread blocks
-        on the pool."""
-        if not self._story_wants_reviewer(t):
+        acceptance). Idempotent: a live reviewer seat (any handle for this ticket) or an
+        all-verdicted story short-circuits. The spawn itself is deferred to run_pending_pairings
+        (the pool-watch loop / an explicit drain), so no request thread blocks on the pool."""
+        if not self._reviewer_pairing_needed(t):
             return
         self._enqueue_pairing(f"reviewer.{t.id}", Role.reviewer.value, t.id)
 
     def on_new_evidence(self, t: Ticket) -> None:
         """New evidence landed on a reviewer-checked story that is in_review: if its reviewer seat
-        closed after a first pass, re-pair it (§24 rule 3, re-spawn on new evidence)."""
-        if t.status == TicketStatus.in_review and self._story_wants_reviewer(t):
+        closed after a first pass, re-pair it (§24 rule 3, re-spawn on new evidence) — unless a live
+        reviewer is already on it or every reviewer criterion is verdicted (m-1760540512)."""
+        if t.status == TicketStatus.in_review and self._reviewer_pairing_needed(t):
             self._enqueue_pairing(f"reviewer.{t.id}", Role.reviewer.value, t.id)
 
     def _rederive_pending_pairings(self) -> None:
@@ -597,7 +624,7 @@ class Board:
         # a long-lived board (second-opinion 2026-09-08), stranding their pairing after a restart.
         for t in self.store.query("ticket", {}, limit=1_000_000):  # type: ignore[assignment]
             if (t.kind == TicketKind.story and t.status == TicketStatus.in_review
-                    and self._story_wants_reviewer(t)):
+                    and self._reviewer_pairing_needed(t)):  # skips a live reviewer / all-verdicted (m-1760540512)
                 self._enqueue_pairing(f"reviewer.{t.id}", Role.reviewer.value, t.id)
             elif (t.kind == TicketKind.epic and t.status not in _TERMINAL
                     and self.open_gates(t.id, Gate.acceptance)):
