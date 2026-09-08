@@ -49,6 +49,12 @@ function mount(data: EpicPageData) {
   server.use(http.get("/v1/epics/epic-1/page", () => okJson(data)));
   // summary is queried for the assigned-seat rail; default handler returns [], override to be safe
   server.use(http.get("/v1/epics/summary", () => okJson([])));
+  // the epic's status control reads its legal moves (epics are tickets → same route)
+  server.use(
+    http.get("/v1/tickets/epic-1/transitions", () =>
+      okJson({ status: data.board.epic.status, transitions: [{ to: "done", allowed: true, reason: null }] }),
+    ),
+  );
   renderRoute("/epic/epic-1", "/epic/:id", <EpicPage />);
 }
 

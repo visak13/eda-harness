@@ -2,8 +2,11 @@ import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { getEpicPage, getEpicsSummary, getTicketsTable } from "../api/endpoints";
-import type { EpicSummaryRow, EpicTreeNode, MessageView } from "../api/types";
+import type { EpicSummaryRow, EpicTreeNode, MessageView, TicketStatus } from "../api/types";
 import { StatusChip } from "../components/StatusChip";
+import { ProcessStrip } from "../components/ProcessStrip";
+import { StatusControl } from "../components/StatusControl";
+import { GateOpenControl } from "../components/GateOpenControl";
 import { Tabs } from "../components/Tabs";
 import { Composer } from "../components/Composer";
 import { useDocDrawer } from "../components/DocDrawer";
@@ -112,6 +115,12 @@ export function EpicPage(): React.JSX.Element {
         </div>
       ) : null}
 
+      <ProcessStrip
+        status={epic.status}
+        ariaLabel="Epic process"
+        nextAction={<a href="#epic-status">Change the epic&rsquo;s status →</a>}
+      />
+
       <div className={styles.layout}>
         <div className={styles.mainCol}>
           <Tabs tabs={tabs} active={tab} onChange={(k) => setTab(k as typeof tab)} />
@@ -141,6 +150,16 @@ export function EpicPage(): React.JSX.Element {
         </div>
 
         <aside className={styles.rail} aria-label="Epic details">
+          <section className={ui.card} id="epic-status">
+            <div className={ui.sectionLabel}>Change status</div>
+            <StatusControl ticketId={id} currentStatus={epic.status as TicketStatus} />
+          </section>
+
+          <section className={ui.card}>
+            <div className={ui.sectionLabel}>Raise a decision</div>
+            <GateOpenControl ticketId={id} />
+          </section>
+
           <section className={ui.card}>
             <div className={ui.sectionLabel}>At a glance</div>
             <div className={ui.metaRow}>
