@@ -665,7 +665,8 @@ class Board:
         return c
 
     def criterion_update(self, actor: Participant, id_: str, *, evidence_ref: str | None = None,
-                         verdict: Verdict | None = None, text: str | None = None) -> Criterion:
+                         verdict: Verdict | None = None, text: str | None = None,
+                         evidence_version: int | None = None, stale_ok: bool = False) -> Criterion:
         c: Criterion = self._get("criterion", id_, "criterion")
         t = self.ticket(c.ticket_id)
         if text is not None:
@@ -697,14 +698,25 @@ class Board:
                     raise BoardError("scope", "the doer cannot verdict its own ticket")
             if verdict != Verdict.pending and not c.evidence_ref:
                 raise BoardError("transition", "a verdict needs evidence_ref first", "criterion_update(evidence_ref=...)")
+            if verdict != Verdict.pending and evidence_version is not None:
+                # §14 finding 3: a verdict names the doc version it signed off. Refuse to rule an
+                # OLDER version than the doc's current one (the author moved it after you read) unless
+                # stale_ok — otherwise a stale sign-off silently blesses text nobody checked.
+                ed = self.store.get("doc", c.evidence_ref) if c.evidence_ref else None
+                cur = getattr(ed, "version", None)
+                if cur is not None and evidence_version < cur and not stale_ok:
+                    raise BoardError("transition",
+                                     f"you are ruling version {evidence_version} but the doc is now v{cur}; "
+                                     f"re-read and pass evidence_version={cur}, or stale_ok=true to sign the old one")
+                c.evidence_version = evidence_version
             c.verdict = verdict
         self.store.put("criterion", c)
         pending = [x.id for x in self.criteria(t.id) if x.verdict != Verdict.passed]
         if verdict is not None:  # a verdict is a first-class WHO/WHAT event, not a doc edit
             self._emit(t.id, EventKind.criterion_checked,
                        {"criterion": c.id, "verdict": c.verdict, "by": actor.id, "by_type": actor.type,
-                        "evidence": c.evidence_ref, "ticket": t.id, "pending": pending,
-                        "check": c.check, "checked_by": c.checked_by})
+                        "evidence": c.evidence_ref, "evidence_version": c.evidence_version,
+                        "ticket": t.id, "pending": pending, "check": c.check, "checked_by": c.checked_by})
         else:
             self._emit(t.id, EventKind.doc_updated,
                        {"criterion": c.id, "verdict": c.verdict, "pending": pending, "by": actor.id})

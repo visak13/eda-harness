@@ -104,6 +104,8 @@ class CriterionPatch(BaseModel):
     evidence_ref: str | None = None
     verdict: Verdict | None = None
     text: str | None = None
+    evidence_version: int | None = None  # the doc version this verdict signs off (design §14)
+    stale_ok: bool = False  # rule an older doc version deliberately
 
 
 class DocIn(BaseModel):
@@ -574,7 +576,8 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     @app.patch("/v1/criteria/{id_}")
     def criterion_update(id_: str, b: CriterionPatch, a: Participant = Depends(actor)):
-        c = board.criterion_update(a, id_, evidence_ref=b.evidence_ref, verdict=b.verdict, text=b.text)
+        c = board.criterion_update(a, id_, evidence_ref=b.evidence_ref, verdict=b.verdict, text=b.text,
+                                   evidence_version=b.evidence_version, stale_ok=b.stale_ok)
         pending = [x.id for x in board.criteria(c.ticket_id) if x.verdict != Verdict.passed]
         return ok(_dump(c), f"{len(pending)} criteria not yet passed on {c.ticket_id}" if pending else
                   "all criteria passed; the ticket can be marked done by its checker")

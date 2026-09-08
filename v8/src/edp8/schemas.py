@@ -240,6 +240,7 @@ class Criterion(Obj):
     check: Check
     checked_by: Literal["reviewer", "qa", "owner", "engineer"]
     evidence_ref: str | None = None  # doc id (report)
+    evidence_version: int | None = None  # the doc version this verdict signed off (design §14 finding 3)
     verdict: Verdict = Verdict.pending
 
 

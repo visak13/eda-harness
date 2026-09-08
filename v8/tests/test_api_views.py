@@ -3,8 +3,7 @@
 Every endpoint is a thin adapter over views.py, so these assert the ENVELOPE and the
 owner-scoping/auth rules the adapter owns — not the derivations themselves (tests/test_views.py
 pins those against the legacy HTML). The verdict write path, evidence_version and the
-stale-verdict refusal ride board.criterion_update's new kwargs and are covered with the
-schema/board hunks; this file is the read surface plus avatar read/write.
+stale-verdict refusal ride board.criterion_update's evidence_version/stale_ok kwargs (§14).
 """
 
 from __future__ import annotations
@@ -207,6 +206,48 @@ def test_unresolved_mentions_on_message(rig):
 
 
 # --------------------------------------------------------------------------- auth (tokens.json)
+
+
+# --------------------------------------------------------------------------- verdict + evidence_version (§14)
+
+
+def test_verdict_records_and_stores_version(rig):
+    c = rig["client"]
+    r = c.post("/v1/me/verdict", json={"criterion_id": rig["kcrit"], "verdict": "pass",
+                                       "ticket_id": rig["kt"], "evidence_version": 1,
+                                       "note": "looks right"}, headers=OWN).json()
+    assert r["ok"], r
+    assert r["value"]["criterion"]["verdict"] == "pass"
+    assert r["value"]["criterion"]["evidence_version"] == 1
+    assert r["value"]["message"] is not None  # a note was posted to the assignee
+    # the version rode the criterion_checked event too
+    evs = c.get("/v1/events", params={"subject_id": rig["kt"]}, headers=OWN).json()["value"]
+    checked = [e for e in evs if e["kind"] == "criterion_checked"]
+    assert checked and checked[-1]["data"]["evidence_version"] == 1
+
+
+def test_verdict_refuses_stale_version_unless_ok(rig):
+    c = rig["client"]
+    # author moves the doc to v2 after the owner read v1
+    up = c.patch(f"/v1/docs/{rig['doc']}", json={"body_md": "# v2 body"},
+                 headers={"X-Participant": "craft"}).json()
+    assert up["ok"] and up["value"]["version"] == 2
+    stale = c.post("/v1/me/verdict", json={"criterion_id": rig["kcrit"], "verdict": "pass",
+                                           "ticket_id": rig["kt"], "evidence_version": 1}, headers=OWN)
+    assert stale.status_code == 409 and not stale.json()["ok"]
+    okr = c.post("/v1/me/verdict", json={"criterion_id": rig["kcrit"], "verdict": "pass",
+                                         "ticket_id": rig["kt"], "evidence_version": 1,
+                                         "stale_ok": True}, headers=OWN).json()
+    assert okr["ok"] and okr["value"]["criterion"]["evidence_version"] == 1
+
+
+def test_docs_html_serves_named_version(rig):
+    c = rig["client"]
+    c.patch(f"/v1/docs/{rig['doc']}", json={"body_md": "# second"}, headers={"X-Participant": "craft"})
+    v1 = c.get(f"/v1/docs/{rig['doc']}/html", params={"version": 1}, headers=OWN).json()["value"]
+    cur = c.get(f"/v1/docs/{rig['doc']}/html", headers=OWN).json()["value"]
+    assert "Walking skeleton" in v1["html"] and v1["version"] == 1
+    assert "second" in cur["html"] and cur["version"] == 2
 
 
 def test_tokens_require_x_token(monkeypatch, tmp_path):

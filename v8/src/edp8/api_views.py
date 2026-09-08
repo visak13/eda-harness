@@ -9,9 +9,8 @@ authenticates through the shared `actor` dependency (except the raw avatar SVG, 
 tag loads header-less) and returns a `views.*` result verbatim, so the legacy HTML renderer and
 this API can never drift (both call the same function).
 
-Scope note: the sign-off write path (POST /v1/me/verdict), evidence_version and the stale-verdict
-refusal ride `board.criterion_update`'s new kwargs and land with the schema/board hunks; this
-module carries the READ surface plus the avatar read/write that needs no board change.
+The sign-off write path (POST /v1/me/verdict), evidence_version and the stale-verdict refusal
+ride `board.criterion_update`'s evidence_version/stale_ok kwargs (design §14 finding 3).
 """
 
 from __future__ import annotations
@@ -42,6 +41,16 @@ def ok(value: Any, hint: str = "") -> dict[str, Any]:
 class AvatarIn(BaseModel):
     model_config = {"extra": "forbid"}
     avatar_id: str
+
+
+class VerdictIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    criterion_id: str
+    verdict: str
+    note: str = ""
+    ticket_id: str | None = None
+    evidence_version: int | None = None
+    stale_ok: bool = False
 
 
 def _catalog() -> list[dict[str, str]]:
@@ -75,6 +84,16 @@ def views_router(board: Board, actor: Callable[..., Participant]) -> APIRouter:
     @r.get("/v1/me/summary")
     def me_summary(a: Participant = Depends(actor)):
         return ok(views.summary_for(board, a))
+
+    @r.post("/v1/me/verdict")
+    def me_verdict(b: VerdictIn, a: Participant = Depends(actor)):
+        """One-click sign-off (design §14): record the verdict for the doc version named, and,
+        when a note is given, post '[sign-off pass|fail] note' to the ticket's assignee. The
+        board refuses an older version than the doc's current one unless stale_ok."""
+        out = views.record_verdict(board, a, criterion_id=b.criterion_id, verdict=b.verdict,
+                                   note=b.note, ticket_id=b.ticket_id,
+                                   evidence_version=b.evidence_version, stale_ok=b.stale_ok)
+        return ok(out, "verdict recorded" + (" and the assignee was told" if out["message"] else ""))
 
     # -------------------------------------------------------------- avatars
     @r.get("/v1/me/avatar")
