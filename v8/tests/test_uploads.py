@@ -126,6 +126,18 @@ def test_finalise_is_atomic_bad_id_posts_nothing(board_app):
 # --------------------------------------------------------------------------- content endpoint
 
 
+def test_finalise_refuses_another_actors_staged_upload(board_app):
+    c, board, epic = board_app["client"], board_app["board"], board_app["epic"]
+    c.post("/v1/participants", json={"type": "human", "role": "reviewer", "handle": "ravi", "id": "ravi"},
+           headers=ADMIN)
+    aid = _upload(c, PNG, "a.png").json()["value"]["id"]  # uploaded by owner
+    # ravi tries to attach owner's staged upload onto a message → refused, artifact stays staged
+    r = c.post("/v1/messages", json={"ticket_id": epic, "kind": "note", "text": "mine now",
+                                     "artifacts": [aid]}, headers={"X-Participant": "ravi"})
+    assert not r.json()["ok"] and r.json()["error"]["code"] == "scope"
+    assert board._get("artifact", aid, "artifact").staged is True
+
+
 def test_content_headers_png_inline_svg_attachment(board_app):
     c = board_app["client"]
     png_id = _upload(c, PNG, "a.png").json()["value"]["id"]

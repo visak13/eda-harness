@@ -839,6 +839,10 @@ class Board:
         change, so a bad id leaves nothing visible (the message that carries them never posts)."""
         arts = [self._get("artifact", aid, "artifact") for aid in artifact_ids]
         self.ticket(ticket_id)
+        for a in arts:  # a staged upload is finalised only by the actor who uploaded it (§18.1)
+            if a.staged and a.created_by != actor.id:
+                raise BoardError("scope", f"artifact {a.id} was uploaded by someone else; "
+                                          "only its uploader can attach it")
         for a in arts:
             if a.staged:
                 a.staged = False
