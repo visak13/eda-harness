@@ -56,6 +56,8 @@ function mount(data: EpicPageData) {
       okJson({ status: data.board.epic.status, transitions: [{ to: "done", allowed: true, reason: null }] }),
     ),
   );
+  // the assign/spawn control on the epic rail reads pool capabilities
+  server.use(http.get("/v1/pool/capabilities", () => okJson({ resume_parked: true, resume_closed: false, park: true, spawn: true })));
   renderRoute("/epic/epic-1", "/epic/:id", <EpicPage />);
 }
 

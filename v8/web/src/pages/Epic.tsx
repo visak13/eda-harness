@@ -8,6 +8,7 @@ import { ProcessStrip } from "../components/ProcessStrip";
 import { StatusControl } from "../components/StatusControl";
 import { GateOpenControl } from "../components/GateOpenControl";
 import { GateForm } from "../components/GateForm";
+import { AssignControl } from "../components/AssignControl";
 import { Tabs } from "../components/Tabs";
 import { Composer } from "../components/Composer";
 import { AgentLine } from "../components/AgentLine";
@@ -170,6 +171,11 @@ export function EpicPage(): React.JSX.Element {
           <section className={ui.card}>
             <div className={ui.sectionLabel}>Raise a decision</div>
             <GateOpenControl ticketId={id} />
+          </section>
+
+          <section className={ui.card}>
+            <div className={ui.sectionLabel}>Assign or spawn a seat</div>
+            <AssignControl ticketId={id} currentAssignee={epic.assignee ?? null} />
           </section>
 
           <section className={ui.card}>

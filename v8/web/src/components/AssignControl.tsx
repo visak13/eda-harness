@@ -23,7 +23,12 @@ export function AssignControl({
   const capsQ = useQuery({ queryKey: ["pool", "capabilities"], queryFn: getPoolCapabilities, retry: false });
   const caps = capsQ.data as PoolCapabilities | undefined;
 
-  const invalidate = () => void qc.invalidateQueries({ queryKey: ["ticket", ticketId] });
+  // The control mounts on both the Ticket page (["ticket", id]) and the Epic page (["epic", id]);
+  // refresh whichever owns this id so the seat rail updates in place after an assign/spawn.
+  const invalidate = () => {
+    void qc.invalidateQueries({ queryKey: ["ticket", ticketId] });
+    void qc.invalidateQueries({ queryKey: ["epic", ticketId] });
+  };
 
   const assign = useMutation({
     mutationFn: (id: string) => patchTicket(ticketId, { assignee: id }),
