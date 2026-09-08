@@ -1,13 +1,14 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page, BASE } from "./fixtures";
 import { readFileSync } from "node:fs";
 import { GEOMETRY } from "./geometry";
 import { bandDiffRatio, expectPx, readPng } from "./fidelity-helpers";
 import { seedEpic, type G3aFixture } from "./g3a.seed";
 import { seedDecisions } from "./g2.seed";
 
+test.use({ boardFile: "fidelity" }); // one fresh board per spec file (fixtures.ts)
+
 // Criterion c-fee415dda3: at 1440×900 the shell geometry, tokens, type and focus ring
 // match the Folio plate (design §4.2, board-concepts-r2/source/design.css `.folio`).
-const BASE = process.env.EDP8_E2E_BASE!;
 
 // Folio (default theme) token colours as the browser reports them.
 const RAIL = "rgb(238, 229, 216)"; // #EEE5D8
@@ -25,10 +26,10 @@ test.describe("shell fidelity @ 1440×900", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
   test("sidebar / header / main geometry, rail token, active nav, h1, focus ring", async ({ page }) => {
-    await page.goto(`${BASE}/ui/me?as=owner`);
+    await page.goto(`${BASE()}/ui/me?as=owner`);
 
     // Sidebar: x=0, width 216, background = the rail token.
-    const sidebar = page.locator("aside");
+    const sidebar = page.getByRole("complementary", { name: "Primary" }); // the Status rail is a second <aside>
     const sb = (await sidebar.boundingBox())!;
     expectPx(sb.x, GEOMETRY.sidebar.x, "sidebar x");
     expectPx(sb.width, GEOMETRY.sidebar.w, "sidebar width");
@@ -119,13 +120,13 @@ test.describe("shell fidelity — band pixelmatch @ 1440×900", () => {
   }
 
   test("home rail + header bands match folio-home.png", async ({ page }) => {
-    await bandCheck(page, `${BASE}/ui/me?as=owner`, "folio-home.png", "home");
+    await bandCheck(page, `${BASE()}/ui/me?as=owner`, "folio-home.png", "home");
   });
 
   // The rail + header are the outer shell chrome — identical bands on the epic page — so the epic
   // plate's chrome is a real, asserting check too.
   test("epic rail + header bands match folio-epic.png", async ({ page }) => {
-    await bandCheck(page, `${BASE}/ui/epic/${fx.epic}?as=owner`, "folio-epic.png", "epic");
+    await bandCheck(page, `${BASE()}/ui/epic/${fx.epic}?as=owner`, "folio-epic.png", "epic");
   });
 
   // Ruling-drawer band vs folio-ruling.png (finding 2, second-opinion 2026-09-08 — implemented, not
@@ -143,7 +144,7 @@ test.describe("shell fidelity — band pixelmatch @ 1440×900", () => {
 
   test("ruling drawer rail + header bands match folio-ruling.png (drawer body logged-only)", async ({ page }) => {
     await seedDecisions(); // a pending owner sign-off → "Review evidence" opens the ruling drawer
-    await page.goto(`${BASE}/ui/me?as=owner`);
+    await page.goto(`${BASE()}/ui/me?as=owner`);
     await page.getByTestId("review-evidence").click();
     await expect(page.getByTestId("drawer-panel")).toBeVisible();
 

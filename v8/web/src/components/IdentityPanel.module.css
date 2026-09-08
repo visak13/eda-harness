@@ -6,7 +6,7 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: var(--canvas, var(--rail));
+  background: var(--rail);
 }
 .card {
   width: 100%;

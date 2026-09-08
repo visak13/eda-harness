@@ -1,13 +1,14 @@
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test, type Locator, BASE } from "./fixtures";
 import AxeBuilder from "@axe-core/playwright";
 import { seedEpic, type G3aFixture } from "./g3a.seed";
 import { GEOMETRY } from "./geometry";
+
+test.use({ boardFile: "g3a-fidelity" }); // one fresh board per spec file (fixtures.ts)
 
 // G3a fidelity + accessibility (c-a23e72f460): at 1440×900 the epic page matches the Folio plate
 // (744/336 split, gap 64, Georgia 38 title, Georgia 22 owner's-words quote, accentwash+3px-rule
 // directive, 3px tab underline, 40px steer button), and every destination is axe-clean across the
 // four themes.
-const BASE = process.env.EDP8_E2E_BASE!;
 const ACCENTINK = "rgb(135, 63, 56)"; // #873F38
 const THEMES = ["folio", "dusk", "ember", "folio-hc"] as const;
 let fx: G3aFixture;
@@ -23,7 +24,7 @@ test.describe("epic page fidelity @ 1440×900", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
   test("split geometry, type scale, directive rule, tab underline and steer button", async ({ page }) => {
-    await page.goto(`${BASE}/ui/epic/${fx.epic}?as=owner`);
+    await page.goto(`${BASE()}/ui/epic/${fx.epic}?as=owner`);
     await expect(page.getByTestId("directive")).toBeVisible();
 
     // Two-column split: main content 744, rail 336, gap 64.
@@ -74,7 +75,7 @@ test.describe("accessibility across the four themes", () => {
         `/ui/doc/${fx.doc}?as=owner`,
         `/ui/library/tickets?as=owner`,
       ]) {
-        await page.goto(`${BASE}${path}`);
+        await page.goto(`${BASE()}${path}`);
         await expect(page.locator("main h1")).toBeVisible();
         // @axe-core/playwright pins its own playwright-core copy, so its Page type is nominally a
         // different structural type than @playwright/test's Page here — the same object at runtime.

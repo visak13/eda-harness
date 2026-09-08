@@ -18,7 +18,7 @@
 .textarea {
   font: inherit;
   color: var(--ink);
-  background: var(--canvas, #fff);
+  background: var(--panel);
   border: 1px solid var(--line);
   padding: 8px;
   resize: vertical;
@@ -41,7 +41,7 @@
   font: inherit;
   border: 1px solid var(--line);
   padding: 4px 6px;
-  background: var(--canvas, #fff);
+  background: var(--panel);
   color: var(--ink);
 }
 

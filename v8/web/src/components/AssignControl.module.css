@@ -38,7 +38,7 @@
   font: inherit;
   border: 1px solid var(--line);
   padding: 6px 8px;
-  background: var(--canvas, #fff);
+  background: var(--panel);
   color: var(--ink);
 }
 .input:focus {

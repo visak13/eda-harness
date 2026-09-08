@@ -2,7 +2,7 @@
 // temp EDP8_DB/EDP8_HOME, EDP8_EMBEDDER=none, EDP8_ADMIN_TOKEN=t, seeded via /v1 — the
 // production endpoints, not mocks. Shared by globalSetup/globalTeardown (same runner
 // process) and read by specs through process.env.EDP8_E2E_BASE. (LL §9.3 / design §4.4c.)
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:net";
 import fs from "node:fs";
 import os from "node:os";
@@ -135,7 +135,10 @@ export async function startBoard(): Promise<Seeded> {
 export function stopBoard(): void {
   if (board && board.exitCode === null) {
     try {
-      board.kill();
+      // shell:true wraps the launcher in cmd.exe; board.kill() ends the shell and ORPHANS the board
+      // (edp8-board.exe → python → python kept listening after every run, 2026-09-08). Kill the tree.
+      if (process.platform === "win32" && board.pid) spawnSync("taskkill", ["/PID", String(board.pid), "/T", "/F"], { stdio: "ignore" });
+      else board.kill();
     } catch {
       /* already gone */
     }

@@ -1,11 +1,12 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, BASE } from "./fixtures";
 import { seedEpic, type G3aFixture } from "./g3a.seed";
+
+test.use({ boardFile: "g3a-destinations" }); // one fresh board per spec file (fixtures.ts)
 
 // G3a destinations (S8+S9), proven end-to-end through the real Folio shell served at /ui:
 // epics list + filter (c-af7da9d034), epic page steer/work-filter/thread-toggle (c-af7da9d034),
 // ticket deeplink + crumb, library sections + legacy redirects (c-e0b24cd134). Each block seeds
 // its own epic via /v1 so the specs are order-independent.
-const BASE = process.env.EDP8_E2E_BASE!;
 let fx: G3aFixture;
 
 test.beforeAll(async () => {
@@ -14,7 +15,7 @@ test.beforeAll(async () => {
 
 test.describe("epics list", () => {
   test("lists the seeded epic with a criteria tally, and status/q filters bind to the query string", async ({ page }) => {
-    await page.goto(`${BASE}/ui/epics?as=owner`);
+    await page.goto(`${BASE()}/ui/epics?as=owner`);
     const list = page.getByTestId("epic-list");
     await expect(list).toContainText(fx.words);
     // The story carries 2 criteria (0 passed) → a tally, never a bare bar.
@@ -32,7 +33,7 @@ test.describe("epics list", () => {
 
 test.describe("epic page", () => {
   test("shows the owner steer as a directive, filters work, and the thread order toggles", async ({ page }) => {
-    await page.goto(`${BASE}/ui/epic/${fx.epic}?as=owner`);
+    await page.goto(`${BASE()}/ui/epic/${fx.epic}?as=owner`);
 
     // Directive callout carries the owner's steer text.
     await expect(page.getByTestId("directive")).toHaveText(fx.steer);
@@ -59,7 +60,7 @@ test.describe("epic page", () => {
 
 test.describe("ticket page", () => {
   test("a ticket deeplink renders the status word and a crumb back to its epic", async ({ page }) => {
-    await page.goto(`${BASE}/ui/ticket/${fx.story}?as=owner`);
+    await page.goto(`${BASE()}/ui/ticket/${fx.story}?as=owner`);
     await expect(page.getByTestId("status-chip")).toBeVisible();
     const crumb = page.getByRole("link", { name: new RegExp(fx.epic) });
     await expect(crumb).toBeVisible();
@@ -70,7 +71,7 @@ test.describe("ticket page", () => {
 
 test.describe("library + legacy redirects", () => {
   test("the library lists all five sections and the tickets table renders", async ({ page }) => {
-    await page.goto(`${BASE}/ui/library/tickets?as=owner`);
+    await page.goto(`${BASE()}/ui/library/tickets?as=owner`);
     await expect(page.getByTestId("tickets-table")).toBeVisible();
     for (const s of ["Documents", "Artifacts", "Links", "Tickets", "History"]) {
       await expect(page.getByRole("link", { name: s })).toBeVisible();
@@ -78,11 +79,11 @@ test.describe("library + legacy redirects", () => {
   });
 
   test("/tickets → /library/tickets and /activity → /library/history, preserving ?as=", async ({ page }) => {
-    await page.goto(`${BASE}/ui/tickets?as=owner`);
+    await page.goto(`${BASE()}/ui/tickets?as=owner`);
     await expect.poll(() => new URL(page.url()).pathname).toContain("/library/tickets");
     expect(new URL(page.url()).searchParams.get("as")).toBe("owner");
 
-    await page.goto(`${BASE}/ui/activity?as=owner`);
+    await page.goto(`${BASE()}/ui/activity?as=owner`);
     await expect.poll(() => new URL(page.url()).pathname).toContain("/library/history");
     expect(new URL(page.url()).searchParams.get("as")).toBe("owner");
   });

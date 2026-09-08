@@ -1,5 +1,7 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, BASE } from "./fixtures";
 import { seedDecisions, type G2Fixture } from "./g2.seed";
+
+test.use({ boardFile: "g2-composer" }); // one fresh board per spec file (fixtures.ts)
 
 // The object-attached composer, proven through the real shell (design §13/§16.1/§18.1/§4.2):
 //   c-8c5ea3c8ba / c-01e4b9073e: the To picker groups People / Live seats / Roles; a wake preview
@@ -9,12 +11,11 @@ import { seedDecisions, type G2Fixture } from "./g2.seed";
 //     600-character paragraph is fully readable without scrolling inside the field at 1440×900.
 //   c-3430cb816f: dropping a file shows a "Drop to attach" veil and, on drop, stages it via
 //     /v1/artifacts/upload and inserts its token; a refused type leaves the draft intact.
-const BASE = process.env.EDP8_E2E_BASE!;
 
 test.use({ viewport: { width: 1440, height: 900 } });
 
 async function openNewConversation(page: Page): Promise<void> {
-  await page.goto(`${BASE}/ui/me?as=owner`);
+  await page.goto(`${BASE()}/ui/me?as=owner`);
   await expect(page.getByTestId("decisions")).toBeVisible();
   await page.getByTestId("new-conversation").click();
   await expect(page.getByTestId("composer")).toBeVisible();

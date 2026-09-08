@@ -1,7 +1,9 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page, BASE } from "./fixtures";
 import { seedDecisions } from "./g2.seed";
 import { GEOMETRY } from "./geometry";
+
+test.use({ boardFile: "g2-fidelity" }); // one fresh board per spec file (fixtures.ts)
 
 // G2 geometry + a11y, proven at 1440×900 through the real Folio shell (design §4.2/§6/§14):
 //   c-f7b9e7983c: home grid 744/336 gap 64, featured padding 23 + 3px salmon top rule + Georgia
@@ -10,7 +12,6 @@ import { GEOMETRY } from "./geometry";
 //   c-03436484b6: ruling drawer 1112 wide, top 20, right edge 1420, radius 12, header 73; panes
 //     650/462; both buttons 40px; Georgia 31px evidence title; sidebar + queue visible behind the
 //     dim; Tab cycles inside the drawer; axe clean in all four themes.
-const BASE = process.env.EDP8_E2E_BASE!;
 const THEMES = ["folio", "dusk", "ember", "folio-hc"] as const;
 
 const box = async (loc: Locator) => (await loc.boundingBox())!;
@@ -47,7 +48,7 @@ test.use({ viewport: { width: 1440, height: 900 } });
 test.describe("Decisions home geometry + a11y", () => {
   test.beforeEach(async ({ page }) => {
     await seedDecisions();
-    await page.goto(`${BASE}/ui/me?as=owner`);
+    await page.goto(`${BASE()}/ui/me?as=owner`);
     await expect(page.getByTestId("featured-signoff")).toBeVisible();
   });
 
@@ -94,7 +95,7 @@ test.describe("Decisions home geometry + a11y", () => {
 test.describe("ruling drawer geometry + a11y", () => {
   test.beforeEach(async ({ page }) => {
     await seedDecisions();
-    await page.goto(`${BASE}/ui/me?as=owner`);
+    await page.goto(`${BASE()}/ui/me?as=owner`);
     await page.getByTestId("review-evidence").click();
     await expect(page.getByTestId("drawer-panel")).toBeVisible();
   });

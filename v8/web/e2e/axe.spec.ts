@@ -1,14 +1,15 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, BASE } from "./fixtures";
 import AxeBuilder from "@axe-core/playwright";
 import { seedDecisions } from "./g2.seed";
 import { seedEpic, type G3aFixture } from "./g3a.seed";
+
+test.use({ boardFile: "axe" }); // one fresh board per spec file (fixtures.ts)
 
 // Criterion c-80b50710a6 (standalone accessibility sweep, distinct from the axe fold in
 // g3a-fidelity): every core surface is axe-clean — zero "serious"/"critical" violations — in each
 // of the four themes. Theme is switched through the real radiogroup (theme.spec.ts mechanism: the
 // "Account and preferences" popover → the theme radio), which persists to localStorage so it
 // survives the subsequent navigations. The axe invocation mirrors g3a-fidelity.spec.ts.
-const BASE = process.env.EDP8_E2E_BASE!;
 const THEMES = [
   { id: "folio", label: "Folio" },
   { id: "dusk", label: "Dusk" },
@@ -38,7 +39,7 @@ for (const theme of THEMES) {
   }) => {
     // Switch theme via the radiogroup (theme.spec.ts). It writes localStorage.edp8.theme, so every
     // navigation below re-applies it pre-paint.
-    await page.goto(`${BASE}/ui/me?as=owner`);
+    await page.goto(`${BASE()}/ui/me?as=owner`);
     await page.getByRole("button", { name: "Account and preferences" }).click();
     await page.getByRole("radio", { name: theme.label, exact: true }).check();
     await expect
@@ -46,22 +47,22 @@ for (const theme of THEMES) {
       .toBe(theme.id);
 
     // Decisions — fresh load (popover closed, theme applied pre-paint).
-    await page.goto(`${BASE}/ui/me?as=owner`);
+    await page.goto(`${BASE()}/ui/me?as=owner`);
     await expect(page.getByTestId("decisions")).toBeVisible();
     await axeClean(page, `${theme.id} Decisions`);
 
     // Epic.
-    await page.goto(`${BASE}/ui/epic/${g3a.epic}?as=owner`);
+    await page.goto(`${BASE()}/ui/epic/${g3a.epic}?as=owner`);
     await expect(page.locator("main h1")).toBeVisible();
     await axeClean(page, `${theme.id} Epic`);
 
     // Library.
-    await page.goto(`${BASE}/ui/library/tickets?as=owner`);
+    await page.goto(`${BASE()}/ui/library/tickets?as=owner`);
     await expect(page.getByTestId("tickets-table")).toBeVisible();
     await axeClean(page, `${theme.id} Library`);
 
     // Ruling drawer — open it from the pending owner sign-off on Decisions.
-    await page.goto(`${BASE}/ui/me?as=owner`);
+    await page.goto(`${BASE()}/ui/me?as=owner`);
     await expect(page.getByTestId("decisions")).toBeVisible();
     await page.getByTestId("review-evidence").click();
     await expect(page.getByTestId("drawer-panel")).toBeVisible();

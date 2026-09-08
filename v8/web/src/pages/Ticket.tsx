@@ -108,9 +108,7 @@ export function TicketPage(): React.JSX.Element {
                   // one-click ruling pane (design §16 "Record verdict"; the board refuses a non-checker
                   // and the card shows why). One without evidence yet can still be reworded in place.
                   ruling={
-                    c.verdict === "pending" && c.evidence_ref && c.evidence_version != null
-                      ? { evidenceVersion: c.evidence_version }
-                      : undefined
+                    c.verdict === "pending" && c.evidence_ref ? { evidenceVersion: c.evidence_version ?? null } : undefined
                   }
                   // The board freezes a criterion's text only after a verdict (board.py:830) — a
                   // PENDING criterion is rewordable whether or not it already carries evidence. Mirror

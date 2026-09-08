@@ -381,8 +381,13 @@ def _asker_note(board: Board, pid: str) -> str:
 def resolved_for(board: Board, viewer: Participant, limit: int = 30) -> list[dict[str, Any]]:
     """The viewer's recent rulings — criterion verdicts, gate answers and answers they posted —
     newest first, so a decision made is visible after it leaves the inbox (design §4.1)."""
+    # The viewer's OWN acts, read from the event log by kind — never through the feed's relevance
+    # filter (board.replay): a person's ruling is theirs whether or not the feed would have delivered
+    # the event to them, and on a board where the owner subscribes to nothing, replay() returned []
+    # and the Resolved tab stayed empty right after an approve (acceptance finding 2026-09-08).
     out: list[dict[str, Any]] = []
-    for _s, e in board.replay(viewer, 0):
+    events = board.store.query("event", {"kind": [EventKind.criterion_checked, EventKind.gate_answered]}, limit=5000)
+    for e in events:
         d = e.data
         if e.kind == EventKind.criterion_checked and d.get("by") == viewer.id:
             out.append({"at": e.created_at.isoformat(), "kind": "verdict", "ticket_id": e.subject_id,

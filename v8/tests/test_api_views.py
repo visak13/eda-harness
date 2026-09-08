@@ -343,3 +343,17 @@ def test_seats_readable_by_any_participant(rig):
     r = rig["client"].get("/v1/seats", headers=RAVI).json()
     assert r["ok"], r
     assert "seats" in r["value"] and "people" in r["value"]
+
+
+def test_resolved_lists_the_owners_own_verdict_without_a_feed_subscription(rig):
+    """§4.1 Resolved: a ruling the viewer just made is visible after it leaves the inbox — sourced
+    from the event log by kind, not from the viewer's feed relevance (acceptance finding: on a fresh
+    board the owner's approve never showed under Resolved because replay() delivered nothing)."""
+    c = rig["client"]
+    assert _get(rig, "/v1/me/decisions/resolved") == []
+    r = c.post("/v1/me/verdict", json={"criterion_id": rig["kcrit"], "verdict": "pass", "evidence_version": 1,
+                                       "note": "", "ticket_id": rig["kt"]}, headers=OWN).json()
+    assert r["ok"], r
+    rows = _get(rig, "/v1/me/decisions/resolved")
+    assert [x["criterion"] for x in rows if x["kind"] == "verdict"] == [rig["kcrit"]]
+    assert rows[0]["verdict"] == "pass"

@@ -1,7 +1,9 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, BASE } from "./fixtures";
 import { seedDecisions } from "./g2.seed";
 import { seedEpic, type G3aFixture } from "./g3a.seed";
 import { GEOMETRY } from "./geometry";
+
+test.use({ boardFile: "reflow" }); // one fresh board per spec file (fixtures.ts)
 
 // Criterion c-10bd85c316 @ 1024×768: the shell reflows without horizontal overflow, the sidebar
 // collapses to a 56px icon rail (nav still keyboard-reachable), and the ruling drawer spans the
@@ -18,7 +20,6 @@ import { GEOMETRY } from "./geometry";
 //  • ruling body inside the drawer — RulingDrawer.module.css `@media (max-width: 1024px)` stacks the
 //    fixed 650/462 panes to one full-width column (second-opinion 2026-09-08), so the ruling grid no
 //    longer exceeds the ≈984px drawer and is not clipped by the Drawer's overflow:hidden.
-const BASE = process.env.EDP8_E2E_BASE!;
 const VW = 1024;
 let epicFx: G3aFixture;
 
@@ -33,20 +34,20 @@ const scrollWidth = (page: import("@playwright/test").Page) =>
   page.evaluate(() => document.scrollingElement!.scrollWidth);
 
 test("no horizontal overflow on Decisions and the Epic page", async ({ page }) => {
-  await page.goto(`${BASE}/ui/me?as=owner`);
+  await page.goto(`${BASE()}/ui/me?as=owner`);
   await expect(page.getByTestId("decisions")).toBeVisible();
   expect(await scrollWidth(page), "Decisions horizontal overflow").toBe(VW);
 
-  await page.goto(`${BASE}/ui/epic/${epicFx.epic}?as=owner`);
+  await page.goto(`${BASE()}/ui/epic/${epicFx.epic}?as=owner`);
   await expect(page.locator("main h1")).toBeVisible();
   expect(await scrollWidth(page), "Epic page horizontal overflow").toBe(VW);
 });
 
 test("the sidebar collapses to a 56px icon rail, nav still keyboard-reachable", async ({ page }) => {
-  await page.goto(`${BASE}/ui/me?as=owner`);
+  await page.goto(`${BASE()}/ui/me?as=owner`);
   await expect(page.getByTestId("decisions")).toBeVisible();
 
-  const aside = page.locator("aside");
+  const aside = page.getByRole("complementary", { name: "Primary" }); // the Status rail is a second <aside>
   const ab = (await aside.boundingBox())!;
   expect(Math.abs(ab.width - 56), "sidebar rail width").toBeLessThan(1);
 
@@ -63,7 +64,7 @@ test("the sidebar collapses to a 56px icon rail, nav still keyboard-reachable", 
 });
 
 test("the ruling drawer spans the viewport minus 20px margins (no horizontal overflow)", async ({ page }) => {
-  await page.goto(`${BASE}/ui/me?as=owner`);
+  await page.goto(`${BASE()}/ui/me?as=owner`);
   await expect(page.getByTestId("decisions")).toBeVisible();
   await page.getByTestId("review-evidence").click();
   const drawer = page.getByTestId("drawer-panel");

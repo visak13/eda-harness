@@ -325,9 +325,7 @@ function OverviewTab({
               criterion={c}
               ticketId={epicId}
               ruling={
-                c.verdict === "pending" && c.evidence_ref && c.evidence_version != null
-                  ? { evidenceVersion: c.evidence_version }
-                  : undefined
+                c.verdict === "pending" && c.evidence_ref ? { evidenceVersion: c.evidence_version ?? null } : undefined
               }
               canReword={c.verdict === "pending"}
               onOpenEvidence={(docId) => drawer.openDoc(docId)}

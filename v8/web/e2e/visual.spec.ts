@@ -1,6 +1,8 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, BASE } from "./fixtures";
 import { seedDecisions } from "./g2.seed";
 import { seedEpic, type G3aFixture } from "./g3a.seed";
+
+test.use({ boardFile: "visual" }); // one fresh board per spec file (fixtures.ts)
 
 // Criterion c-80b50710a6 (screenshot project): each Folio plate {Decisions, Epic, Ruling, Library}
 // renders pixel-stable across the four themes (maxDiffPixelRatio 0.01). Reference PNGs are win32
@@ -11,7 +13,6 @@ import { seedEpic, type G3aFixture } from "./g3a.seed";
 // BASELINES ARE NOT COMMITTED HERE. They are generated on the FIRST qa win32 run with
 // `npx playwright test e2e/visual.spec.ts --update-snapshots`, land under e2e/__screenshots__
 // (web/.gitignore negates that path), and are committed from that run. Do NOT run playwright here.
-const BASE = process.env.EDP8_E2E_BASE!;
 const THEMES = ["folio", "dusk", "ember", "folio-hc"] as const;
 
 let g3a: G3aFixture;
@@ -29,28 +30,28 @@ test.describe("Folio plates — visual regression @ 1440×900", () => {
     {
       name: "decisions",
       open: async (page) => {
-        await page.goto(`${BASE}/ui/me?as=owner`);
+        await page.goto(`${BASE()}/ui/me?as=owner`);
         await expect(page.getByTestId("decisions")).toBeVisible();
       },
     },
     {
       name: "epic",
       open: async (page) => {
-        await page.goto(`${BASE}/ui/epic/${g3a.epic}?as=owner`);
+        await page.goto(`${BASE()}/ui/epic/${g3a.epic}?as=owner`);
         await expect(page.locator("main h1")).toBeVisible();
       },
     },
     {
       name: "library",
       open: async (page) => {
-        await page.goto(`${BASE}/ui/library/tickets?as=owner`);
+        await page.goto(`${BASE()}/ui/library/tickets?as=owner`);
         await expect(page.getByTestId("tickets-table")).toBeVisible();
       },
     },
     {
       name: "ruling",
       open: async (page) => {
-        await page.goto(`${BASE}/ui/me?as=owner`);
+        await page.goto(`${BASE()}/ui/me?as=owner`);
         await expect(page.getByTestId("decisions")).toBeVisible();
         await page.getByTestId("review-evidence").click();
         await expect(page.getByTestId("drawer-panel")).toBeVisible();

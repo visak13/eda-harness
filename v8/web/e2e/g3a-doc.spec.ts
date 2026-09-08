@@ -1,10 +1,11 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, BASE } from "./fixtures";
 import { seedEpic, type G3aFixture } from "./g3a.seed";
+
+test.use({ boardFile: "g3a-doc" }); // one fresh board per spec file (fixtures.ts)
 
 // G3a doc reader + drawer + §14 one-click sign-off, end-to-end. The reader sanitises and renders
 // the doc (c-a0b2f8ddda); the shared drawer opens a doc in place over the epic (c-a44757ca87); the
 // owner approves a doc-cited criterion in one click and the board records a pass (c-a0b2f8ddda).
-const BASE = process.env.EDP8_E2E_BASE!;
 let fx: G3aFixture;
 
 test.beforeEach(async () => {
@@ -13,7 +14,7 @@ test.beforeEach(async () => {
 });
 
 test("the doc reader shows the title, version pills and sanitised body", async ({ page }) => {
-  await page.goto(`${BASE}/ui/doc/${fx.doc}?as=owner`);
+  await page.goto(`${BASE()}/ui/doc/${fx.doc}?as=owner`);
   await expect(page.getByRole("heading", { level: 1, name: "Folio craft bars" })).toBeVisible();
   const versions = page.getByLabel("Versions");
   await expect(versions).toContainText("v2"); // latest
@@ -22,7 +23,7 @@ test("the doc reader shows the title, version pills and sanitised body", async (
 });
 
 test("a doc opens in the shared drawer over the epic, and Esc restores the page", async ({ page }) => {
-  await page.goto(`${BASE}/ui/epic/${fx.epic}?as=owner`);
+  await page.goto(`${BASE()}/ui/epic/${fx.epic}?as=owner`);
   await page.getByRole("tab", { name: /Documents/ }).click();
   await page.getByRole("button", { name: /Folio craft bars/ }).click();
 
@@ -38,7 +39,7 @@ test("a doc opens in the shared drawer over the epic, and Esc restores the page"
 });
 
 test("the owner approves a doc-cited criterion in one click and the board records a pass", async ({ page }) => {
-  await page.goto(`${BASE}/ui/doc/${fx.doc}?as=owner`);
+  await page.goto(`${BASE()}/ui/doc/${fx.doc}?as=owner`);
   const pane = page.getByTestId("signoff-pane");
   await expect(pane).toBeVisible();
 
@@ -48,7 +49,7 @@ test("the owner approves a doc-cited criterion in one click and the board record
   await expect(pane.getByTestId("verdict-chip")).toHaveText("Passed");
 
   // The board persisted it: the criterion now carries a pass verdict citing the doc version.
-  const r = await fetch(`${BASE}/v1/criteria?ticket_id=${fx.story}`, { headers: { "X-Participant": "owner" } });
+  const r = await fetch(`${BASE()}/v1/criteria?ticket_id=${fx.story}`, { headers: { "X-Participant": "owner" } });
   const j = (await r.json()) as { ok: boolean; value: { id: string; verdict: string; evidence_version: number | null }[] };
   const c = j.value.find((x) => x.id === fx.signoffCriterion)!;
   expect(c.verdict).toBe("pass");

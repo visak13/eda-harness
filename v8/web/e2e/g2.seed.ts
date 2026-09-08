@@ -36,25 +36,29 @@ export interface G2Fixture {
 }
 
 let counter = 0;
+// Handles must be unique per BOARD, not per worker: Playwright restarts the worker after a failure,
+// which resets `counter`, and a swallowed handle conflict leaves `engineer.<story>` unregistered
+// (every later /v1 write as that seat 401s). Salt the handle with a per-process nonce.
+const NONCE = `${process.pid.toString(36)}${Date.now().toString(36).slice(-4)}`;
 
 /** One self-contained Decisions scenario. Idempotent-ish via a per-call suffix. */
 export async function seedDecisions(): Promise<G2Fixture> {
   const n = ++counter;
   const words = `Decisions surface fixture ${n}`;
   const gate = "design_signoff";
-  const liveSeatEng = `eng-live-${n}`;
-  const deadSeatEng = `eng-dead-${n}`;
+  const liveSeatEng = `eng-live-${NONCE}-${n}`;
+  const deadSeatEng = `eng-dead-${NONCE}-${n}`;
   // Stories, story criteria and their assignment are the ARCHITECT's, not the owner's (board role
   // scope: "owner may not create a story") — mirrors g3a.seed. The owner still owns the epic and
   // rules the §14 sign-off. Register a per-call architect seat for the authoring.
-  const arch = `architect.g2-${n}`;
+  const arch = `architect.g2-${NONCE}-${n}`;
 
   // The owner-owned epic (owner is seeded by board.ts startBoard).
   const epic = (await call("POST", "/v1/tickets", { kind: "epic", work_type: "feature", title: words }, as("owner"))).id;
   const freshEpic = (
     await call("POST", "/v1/tickets", { kind: "epic", work_type: "feature", title: `${words} — fresh` }, as("owner"))
   ).id;
-  await call("POST", "/v1/participants", { type: "agent", role: "architect", handle: `arch-g2-${n}`, id: arch }, admin()).catch(
+  await call("POST", "/v1/participants", { type: "agent", role: "architect", handle: `arch-g2-${NONCE}-${n}`, id: arch }, admin()).catch(
     () => {},
   );
 
@@ -64,7 +68,10 @@ export async function seedDecisions(): Promise<G2Fixture> {
     await call(
       "POST",
       "/v1/tickets",
-      { kind: "story", work_type: "feature", title: "Decisions home story", parent_id: epic },
+      // A KNOWLEDGE story: design §24 rule 2 lets only review/knowledge stories carry an owner-checked
+      // criterion (a feature story's checker is derived — qa/reviewer — and a design_signoff answer
+      // is refused while a feature story is owner-checked; acceptance finding 2026-09-08).
+      { kind: "story", work_type: "knowledge", title: "Decisions home story", parent_id: epic },
       as(arch),
     )
   ).id;
@@ -125,7 +132,16 @@ export async function seedDecisions(): Promise<G2Fixture> {
   );
 
   // An open design_signoff gate on the epic → owner Gates tab, count 1. The architect asks the owner
-  // to rule (design_signoff is opened by the architect, answered by the owner).
+  // to rule (design_signoff is opened by the architect, answered by the owner). The board answers a
+  // design_signoff only on a DESIGNED epic (design_ref + acceptance criteria + status designed) —
+  // a gate on a drafted epic is refused at answer time (acceptance finding 2026-09-08), so the
+  // fixture walks the epic there first, exactly as an architect would.
+  const design = (
+    await call("POST", "/v1/docs", { doc_type: "design", title: `${words} — design`, body_md: "# Design\n\nThe Decisions surface.", scope: epic }, as(arch))
+  ).id;
+  await call("PATCH", `/v1/tickets/${epic}`, { design_ref: design }, as(arch));
+  await call("POST", "/v1/criteria", { ticket_id: epic, text: "The owner accepts the Decisions surface.", check: "look" }, as(arch)).catch(() => {});
+  await call("PATCH", `/v1/tickets/${epic}`, { status: "designed" }, as(arch));
   await call("POST", `/v1/gates/${epic}/${gate}/open`, { note: "please rule on the design" }, as(arch));
 
   // A DEAD seat that asked the owner a question on its own story → §18.2 collapse + dead-seat flag.

@@ -1,5 +1,8 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 import { seedDecisions, type G2Fixture } from "./g2.seed";
+import { get, openDecisions } from "./g2-owner-loop.helpers";
+
+test.use({ boardFile: "g2-owner-loop" }); // one fresh board per spec file (fixtures.ts)
 
 // The G2 owner loop, proven end-to-end through the real Folio shell served at /ui/me:
 //   part 1 (c-da073491bd): the seeded Sign-offs/Questions/Gates counts, Seats-now with the alive
@@ -11,19 +14,7 @@ import { seedDecisions, type G2Fixture } from "./g2.seed";
 //   gate (c-4941d309f1): answering the seeded design_signoff gate drops the Gates count to 0 and
 //     GET /v1/gates/{epic} is empty.
 // Each test seeds its own scenario via /v1 so they are order-independent.
-const BASE = process.env.EDP8_E2E_BASE!;
-const owner = { "X-Participant": "owner" };
-
-async function get(path: string): Promise<any> {
-  const r = await fetch(`${BASE}${path}`, { headers: owner });
-  const j = (await r.json()) as { ok: boolean; value?: any };
-  return j.value;
-}
-
-async function openDecisions(page: import("@playwright/test").Page) {
-  await page.goto(`${BASE}/ui/me?as=owner`);
-  await expect(page.getByTestId("decisions")).toBeVisible();
-}
+// This file: part 1. Part 2 and the gate answer live in g2-owner-loop-ruling.spec.ts / g2-owner-loop-gate.spec.ts, each on its own board.
 
 test.describe("owner loop — part 1 (waiting-on-you + conversations)", () => {
   let fx: G2Fixture;
@@ -63,76 +54,5 @@ test.describe("owner loop — part 1 (waiting-on-you + conversations)", () => {
         return (msgs ?? []).some((m: any) => m.reply_to === fx.question);
       })
       .toBe(true);
-  });
-});
-
-test.describe("owner loop — part 2 (ruling drawer)", () => {
-  test("Review evidence → Approve-with-note lands the item under Resolved, verdict=pass", async ({ page }) => {
-    const fx = await seedDecisions();
-    await openDecisions(page);
-
-    await page.getByTestId("review-evidence").click();
-    const drawer = page.getByTestId("drawer-panel");
-    await expect(drawer).toBeVisible();
-    // The frozen report body and the verbatim owner criterion.
-    await expect(page.getByTestId("ruling-evidence")).toContainText("Decisions report");
-    await expect(page.getByTestId("ruling-pane")).toContainText("The report proves the Decisions surface end-to-end.");
-
-    await page.getByTestId("note").fill("Reads well; approved.");
-    await page.getByTestId("approve").click();
-
-    // Drawer closes; the sign-off leaves the queue.
-    await expect(page.getByTestId("drawer-panel")).toHaveCount(0);
-    await expect(page.getByRole("tab", { name: /Sign-offs/ })).toContainText("0");
-
-    // It shows under Resolved, and the wire verdict is pass.
-    await page.getByRole("tab", { name: /Resolved/ }).click();
-    await expect(page.getByTestId("resolved")).toContainText(fx.story);
-    await expect
-      .poll(async () => {
-        const crits = await get(`/v1/criteria?ticket_id=${fx.story}`);
-        return (crits ?? []).find((c: any) => c.id === fx.signoffCriterion)?.verdict;
-      })
-      .toBe("pass");
-  });
-
-  test("Needs-work-with-note yields verdict=fail and a '[sign-off fail] …' message to the assignee", async ({ page }) => {
-    const fx = await seedDecisions();
-    await openDecisions(page);
-
-    await page.getByTestId("review-evidence").click();
-    await expect(page.getByTestId("drawer-panel")).toBeVisible();
-    await page.getByTestId("note").fill("The cold-start proof is missing.");
-    await page.getByTestId("needs-work").click();
-
-    await expect(page.getByTestId("drawer-panel")).toHaveCount(0);
-    await expect
-      .poll(async () => {
-        const crits = await get(`/v1/criteria?ticket_id=${fx.story}`);
-        return (crits ?? []).find((c: any) => c.id === fx.signoffCriterion)?.verdict;
-      })
-      .toBe("fail");
-    // The assignee gets a durable '[sign-off fail] …' note on the ticket thread.
-    await expect
-      .poll(async () => {
-        const msgs = await get(`/v1/messages?ticket_id=${fx.story}`);
-        return (msgs ?? []).some((m: any) => typeof m.text === "string" && m.text.startsWith("[sign-off fail]"));
-      })
-      .toBe(true);
-  });
-});
-
-test.describe("owner loop — gate answer", () => {
-  test("answering the design_signoff gate drops the count to 0 and empties GET /v1/gates", async ({ page }) => {
-    const fx = await seedDecisions();
-    await openDecisions(page);
-
-    await page.getByRole("tab", { name: /Gates/ }).click();
-    await expect(page.getByTestId("gate-kind")).toContainText(fx.gate);
-    await page.getByTestId("gate-answer").fill("Approved — proceed.");
-    await page.getByTestId("gate-submit").click();
-
-    await expect(page.getByRole("tab", { name: /Gates/ })).toContainText("0");
-    await expect.poll(async () => (await get(`/v1/gates/${fx.epic}`))?.length ?? 0).toBe(0);
   });
 });

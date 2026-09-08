@@ -48,7 +48,14 @@ export function DecisionsPage(): React.JSX.Element {
   const epics = useQuery({ queryKey: ["epics", "summary"], queryFn: () => getEpicsSummary(), retry: false });
 
   const d = decisions.data;
-  const counts = d?.counts ?? { signoffs: 0, questions: 0, gates: 0 };
+  // §18.2: "Waiting on you shows only items that need a human act". A question whose asker seat is
+  // closed/dead/reaped cannot receive the answer, so it is not one — it stays visible under the
+  // conversations' "Closed seats" row instead (acceptance finding: the tab counted it, 2026-09-08).
+  const liveQuestions = useMemo(
+    () => (d?.questions ?? []).filter((q) => !["dead", "reaped", "closed", "done"].includes(q.asker?.seat_state ?? "")),
+    [d?.questions],
+  );
+  const counts = { ...(d?.counts ?? { signoffs: 0, questions: 0, gates: 0 }), questions: liveQuestions.length };
 
   // A ticket-id → title map so the questions queue can name a ticket in the owner's words
   // (the inbox rows carry no title). Conversations and epics both supply id → title.
@@ -102,7 +109,7 @@ export function DecisionsPage(): React.JSX.Element {
         ) : tab === "signoffs" ? (
           <SignoffsTab signoffs={d?.signoffs ?? []} onOpen={openRuling} />
         ) : tab === "questions" ? (
-          <QuestionsTab questions={d?.questions ?? []} titleFor={titleFor} />
+          <QuestionsTab questions={liveQuestions} titleFor={titleFor} />
         ) : tab === "gates" ? (
           <GatesTab gates={d?.gates ?? []} />
         ) : (
@@ -337,7 +344,7 @@ function Conversations({ rows, people }: { rows: ConversationRow[]; people: Pers
         <ul className={styles.convoList}>
           {live.map((c) => (
             <li key={c.ticket_id} className={styles.convoRow}>
-              {c.unread ? <span className={styles.unreadDot} aria-label="unread" /> : null}
+              {c.unread ? <span className={styles.unreadDot} role="img" aria-label="unread" /> : null}
               <span className={styles.convoTitle}>{c.title}</span>
               <span className={styles.convoWhy}>{label(c)}</span>
               {c.last ? <span className={styles.convoLast}>{c.last.text}</span> : null}

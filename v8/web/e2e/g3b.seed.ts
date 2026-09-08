@@ -24,23 +24,30 @@ export interface G3bLoopFixture {
   story: string;
   doc: string;
   criterion: string;
+  engineer: string; // the story's doer seat (hands the story to review)
 }
 
 let counter = 0;
 
-/** A story at `ready`, assigned to the owner, with one pending owner-checked criterion that already
+/** A story at `ready`, assigned to an engineer seat, with one pending owner-checked criterion that already
  *  cites a doc as evidence. Reaching `ready` walks the real status path (drafted → designed →
  *  signed_off → ready) so the board's own guards produce the state — nothing is forced. */
 export async function seedLoopStory(): Promise<G3bLoopFixture> {
   const n = ++counter;
   const arch = `architect.g3b-${n}`;
+  const eng = `engineer.g3b-${n}`;
   await call("POST", "/v1/participants", { type: "agent", role: "architect", handle: `barch${n}`, id: arch }, admin).catch(() => {});
+  // The story's DOER is an engineer seat, never the owner: the board's doer guard refuses "the doer
+  // cannot verdict its own ticket", and the loop's last step is the owner ruling on the criterion
+  // (acceptance finding 2026-09-08 — the fixture used to assign the story to the owner). The owner
+  // still drives every status move (board: owner/architect may move any ticket).
+  await call("POST", "/v1/participants", { type: "agent", role: "engineer", handle: `beng${n}`, id: eng }, admin).catch(() => {});
 
   // Epic authored BY THE OWNER so epic_owner === owner — the owner may then verdict the sign-off
   // criterion and mark the story done (board checker guard).
   const epic = (await call("POST", "/v1/tickets", { kind: "epic", work_type: "feature", title: `Loop epic ${n}` }, as("owner"))).id;
   const story = (
-    await call("POST", "/v1/tickets", { kind: "story", work_type: "feature", title: `Close the loop ${n}`, parent_id: epic, assignee: "owner" }, as(arch))
+    await call("POST", "/v1/tickets", { kind: "story", work_type: "feature", title: `Close the loop ${n}`, parent_id: epic, assignee: eng }, as(arch))
   ).id;
 
   // A design doc + the design_ref, so the architect can mark the story `designed`.
@@ -50,7 +57,7 @@ export async function seedLoopStory(): Promise<G3bLoopFixture> {
   await call("PATCH", `/v1/tickets/${story}`, { design_ref: doc }, as(arch));
 
   // One owner-checked criterion (needs an override_reason when the owner authors checked_by=owner),
-  // then the engineer-less evidence_ref is set by the owner assignee. Its presence lets the story
+  // then the evidence_ref is set by the owner (a checker may attach evidence). Its presence lets the story
   // reach in_review and gives the spec something to verdict.
   const c = await call(
     "POST",
@@ -64,5 +71,5 @@ export async function seedLoopStory(): Promise<G3bLoopFixture> {
   await call("PATCH", `/v1/tickets/${story}`, { status: "designed" }, as(arch)); // architect marks designed
   await call("PATCH", `/v1/tickets/${story}`, { status: "signed_off" }, as("owner")); // owner signs off → auto-releases to ready
 
-  return { epic, story, doc, criterion: c.id };
+  return { epic, story, doc, criterion: c.id, engineer: eng };
 }

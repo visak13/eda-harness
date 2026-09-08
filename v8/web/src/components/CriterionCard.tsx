@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CriterionView, Verdict } from "../api/types";
-import { postVerdict } from "../api/endpoints";
+import { getDocHtml, postVerdict } from "../api/endpoints";
 import { BoardApiError } from "../api/client";
 import { RewordCriterion } from "./CriterionControls";
 import styles from "./CriterionCard.module.css";
@@ -20,7 +20,11 @@ export interface CriterionCardProps {
   criterion: CriterionView;
   /** Present → the verdict pane (design §14). evidenceVersion is the frozen doc version the ruling
    *  read; stale=true rules on an older version (sends stale_ok). Absent → read-only card. */
-  ruling?: { evidenceVersion: number; stale?: boolean };
+  /** evidenceVersion null = the criterion carries evidence but no version yet (the board stamps
+   *  evidence_version only AT the verdict; a REST evidence_ref PATCH leaves it null) — the card then
+   *  resolves the doc's current version itself, so the Ticket/Epic ruling panes are never hidden
+   *  behind a version the page cannot know (acceptance finding, g3b-loop 2026-09-08). */
+  ruling?: { evidenceVersion: number | null; stale?: boolean };
   /** Required when `ruling` is present: the ticket the '[sign-off …] note' message posts to. */
   ticketId?: string;
   /** Read-only card: open this criterion's evidence doc (the drawer/reader). */
@@ -38,12 +42,23 @@ export function CriterionCard({ criterion, ruling, ticketId, onOpenEvidence, can
   const [decided, setDecided] = useState<"pass" | "fail" | null>(null);
   const [rewording, setRewording] = useState(false);
 
+  // A ruling pane whose caller could not name the version reads the evidence doc's versions once.
+  const needsVersion = Boolean(ruling) && ruling!.evidenceVersion == null && Boolean(criterion.evidence_ref);
+  const evidenceDoc = useQuery({
+    queryKey: ["doc-versions", criterion.evidence_ref],
+    queryFn: () => getDocHtml(criterion.evidence_ref!),
+    enabled: needsVersion,
+    retry: false,
+  });
+  const resolvedVersion: number | null =
+    ruling?.evidenceVersion ?? (evidenceDoc.data ? Math.max(evidenceDoc.data.version, ...evidenceDoc.data.versions) : null);
+
   const mutation = useMutation({
     mutationFn: (verdict: "pass" | "fail") =>
       postVerdict({
         criterion_id: criterion.id,
         verdict,
-        evidence_version: ruling!.evidenceVersion,
+        evidence_version: resolvedVersion!,
         note: note.trim(),
         ticket_id: ticketId,
         stale_ok: ruling!.stale ?? false,
@@ -137,6 +152,7 @@ export function CriterionCard({ criterion, ruling, ticketId, onOpenEvidence, can
             onChange={(e) => setNote(e.target.value)}
             placeholder="Optional for Approve; required for Needs work."
             rows={3}
+            data-testid="note"
           />
           {error ? (
             <p className={styles.error} role="alert">
@@ -147,7 +163,7 @@ export function CriterionCard({ criterion, ruling, ticketId, onOpenEvidence, can
             <button
               className={styles.secondary}
               type="button"
-              disabled={note.trim().length === 0 || mutation.isPending}
+              disabled={note.trim().length === 0 || mutation.isPending || resolvedVersion == null}
               onClick={() => mutation.mutate("fail")}
               data-testid="needs-work"
             >
@@ -156,7 +172,7 @@ export function CriterionCard({ criterion, ruling, ticketId, onOpenEvidence, can
             <button
               className={styles.primary}
               type="button"
-              disabled={mutation.isPending}
+              disabled={mutation.isPending || resolvedVersion == null}
               onClick={() => mutation.mutate("pass")}
               data-testid="approve"
             >
