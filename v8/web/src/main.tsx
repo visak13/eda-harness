@@ -16,7 +16,7 @@ import {
   TicketPage,
 } from "./pages";
 
-// Router basename tracks the Vite mount prefix (import.meta.env.BASE_URL, e.g. "/app/"),
+// Router basename tracks the Vite mount prefix (import.meta.env.BASE_URL, e.g. "/ui/"),
 // so the later /ui cutover moves the whole SPA by changing one env var — no route edits.
 const basename = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
 

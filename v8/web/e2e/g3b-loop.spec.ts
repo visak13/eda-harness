@@ -48,7 +48,7 @@ test.describe("S16 — one full loop from the pages, no shell", () => {
 
   test("open gate → spawn → in_progress → in_review → verdict → done, each mirrored by the board", async ({ page }) => {
     const dbl = await installSpawnDouble(page);
-    await page.goto(`${BASE}/app/ticket/${fx.story}?as=owner`);
+    await page.goto(`${BASE}/ui/ticket/${fx.story}?as=owner`);
 
     // the process strip opens on the seeded stage
     await expect(page.getByTestId("process-strip")).toHaveAttribute("data-status", "ready");

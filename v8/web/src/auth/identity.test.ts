@@ -12,12 +12,12 @@ async function loadIdentity(href: string) {
 
 beforeEach(() => {
   sessionStorage.clear();
-  history.replaceState({}, "", "/app/");
+  history.replaceState({}, "", "/ui/");
 });
 
 describe("identity adapter", () => {
   it("reads ?as & ?token once, moves them to sessionStorage, strips token from the URL", async () => {
-    const { identity, authHeaders } = await loadIdentity("/app/?as=alice&token=s3cret");
+    const { identity, authHeaders } = await loadIdentity("/ui/?as=alice&token=s3cret");
 
     expect(identity()).toBe("alice");
     expect(sessionStorage.getItem("edp8.as")).toBe("alice");
@@ -33,7 +33,7 @@ describe("identity adapter", () => {
   });
 
   it("every request carries X-Participant and X-Token", async () => {
-    await loadIdentity("/app/?as=bob&token=tok-9");
+    await loadIdentity("/ui/?as=bob&token=tok-9");
     const { api } = await import("../api/client");
 
     let seen: Record<string, string | null> = {};
@@ -52,7 +52,7 @@ describe("identity adapter", () => {
   });
 
   it("defaults as=owner and sends no X-Token when none is provided", async () => {
-    const { identity, authHeaders } = await loadIdentity("/app/");
+    const { identity, authHeaders } = await loadIdentity("/ui/");
 
     expect(identity()).toBe("owner");
     const headers = authHeaders();
@@ -62,7 +62,7 @@ describe("identity adapter", () => {
 
   it("falls back to the stored as when the URL omits it", async () => {
     sessionStorage.setItem("edp8.as", "carol");
-    const { identity } = await loadIdentity("/app/epics");
+    const { identity } = await loadIdentity("/ui/epics");
     expect(identity()).toBe("carol");
   });
 });

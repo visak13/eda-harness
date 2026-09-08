@@ -82,6 +82,10 @@ export async function startBoard(): Promise<Seeded> {
       EDP8_EMBEDDER: "none",
       EDP8_ADMIN_TOKEN: ADMIN,
       EDP8_LOG: "warning",
+      // Hermetic cutover: the e2e suite exercises the Folio SPA at /ui (EDP8_UI=folio, the default),
+      // pinned here so a stray EDP8_UI=legacy in the launching shell can't flip the board to serve
+      // the SPA at /app and 404 every spec's /ui/* navigation.
+      EDP8_UI: "folio",
     },
   });
 

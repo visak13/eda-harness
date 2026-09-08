@@ -22,7 +22,7 @@ test.describe("epic page fidelity @ 1440×900", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
   test("split geometry, type scale, directive rule, tab underline and steer button", async ({ page }) => {
-    await page.goto(`${BASE}/app/epic/${fx.epic}?as=owner`);
+    await page.goto(`${BASE}/ui/epic/${fx.epic}?as=owner`);
     await expect(page.getByTestId("directive")).toBeVisible();
 
     // Two-column split: main content 744, rail 336, gap 64.
@@ -68,10 +68,10 @@ test.describe("accessibility across the four themes", () => {
     test(`${theme}: epic, ticket, doc and library are axe-clean (no serious/critical)`, async ({ page }) => {
       await page.addInitScript((t) => localStorage.setItem("edp8.theme", t), theme);
       for (const path of [
-        `/app/epic/${fx.epic}?as=owner`,
-        `/app/ticket/${fx.story}?as=owner`,
-        `/app/doc/${fx.doc}?as=owner`,
-        `/app/library/tickets?as=owner`,
+        `/ui/epic/${fx.epic}?as=owner`,
+        `/ui/ticket/${fx.story}?as=owner`,
+        `/ui/doc/${fx.doc}?as=owner`,
+        `/ui/library/tickets?as=owner`,
       ]) {
         await page.goto(`${BASE}${path}`);
         await expect(page.locator("main h1")).toBeVisible();

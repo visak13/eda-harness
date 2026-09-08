@@ -14,7 +14,7 @@ const BASE = process.env.EDP8_E2E_BASE!;
 test.use({ viewport: { width: 1440, height: 900 } });
 
 async function openNewConversation(page: Page): Promise<void> {
-  await page.goto(`${BASE}/app/me?as=owner`);
+  await page.goto(`${BASE}/ui/me?as=owner`);
   await expect(page.getByTestId("decisions")).toBeVisible();
   await page.getByTestId("new-conversation").click();
   await expect(page.getByTestId("composer")).toBeVisible();

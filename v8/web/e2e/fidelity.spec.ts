@@ -16,7 +16,7 @@ test.describe("shell fidelity @ 1440×900", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
   test("sidebar / header / main geometry, rail token, active nav, h1, focus ring", async ({ page }) => {
-    await page.goto(`${BASE}/app/me?as=owner`);
+    await page.goto(`${BASE}/ui/me?as=owner`);
 
     // Sidebar: x=0, width 216, background = the rail token.
     const sidebar = page.locator("aside");

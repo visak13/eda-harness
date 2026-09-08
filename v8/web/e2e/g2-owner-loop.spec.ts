@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { seedDecisions, type G2Fixture } from "./g2.seed";
 
-// The G2 owner loop, proven end-to-end through the real Folio shell served at /app/me:
+// The G2 owner loop, proven end-to-end through the real Folio shell served at /ui/me:
 //   part 1 (c-da073491bd): the seeded Sign-offs/Questions/Gates counts, Seats-now with the alive
 //     engineer seat + "Last work update unavailable", Epic pulse status + waiting_reason, and an
 //     inline question reply that leaves the tab and sets reply_to on the wire.
@@ -21,7 +21,7 @@ async function get(path: string): Promise<any> {
 }
 
 async function openDecisions(page: import("@playwright/test").Page) {
-  await page.goto(`${BASE}/app/me?as=owner`);
+  await page.goto(`${BASE}/ui/me?as=owner`);
   await expect(page.getByTestId("decisions")).toBeVisible();
 }
 

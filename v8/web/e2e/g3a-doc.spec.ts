@@ -13,7 +13,7 @@ test.beforeEach(async () => {
 });
 
 test("the doc reader shows the title, version pills and sanitised body", async ({ page }) => {
-  await page.goto(`${BASE}/app/doc/${fx.doc}?as=owner`);
+  await page.goto(`${BASE}/ui/doc/${fx.doc}?as=owner`);
   await expect(page.getByRole("heading", { level: 1, name: "Folio craft bars" })).toBeVisible();
   const versions = page.getByLabel("Versions");
   await expect(versions).toContainText("v2"); // latest
@@ -22,7 +22,7 @@ test("the doc reader shows the title, version pills and sanitised body", async (
 });
 
 test("a doc opens in the shared drawer over the epic, and Esc restores the page", async ({ page }) => {
-  await page.goto(`${BASE}/app/epic/${fx.epic}?as=owner`);
+  await page.goto(`${BASE}/ui/epic/${fx.epic}?as=owner`);
   await page.getByRole("tab", { name: /Documents/ }).click();
   await page.getByRole("button", { name: /Folio craft bars/ }).click();
 
@@ -38,7 +38,7 @@ test("a doc opens in the shared drawer over the epic, and Esc restores the page"
 });
 
 test("the owner approves a doc-cited criterion in one click and the board records a pass", async ({ page }) => {
-  await page.goto(`${BASE}/app/doc/${fx.doc}?as=owner`);
+  await page.goto(`${BASE}/ui/doc/${fx.doc}?as=owner`);
   const pane = page.getByTestId("signoff-pane");
   await expect(pane).toBeVisible();
 

@@ -46,7 +46,7 @@ test.use({ viewport: { width: 1440, height: 900 } });
 test.describe("Decisions home geometry + a11y", () => {
   test.beforeEach(async ({ page }) => {
     await seedDecisions();
-    await page.goto(`${BASE}/app/me?as=owner`);
+    await page.goto(`${BASE}/ui/me?as=owner`);
     await expect(page.getByTestId("featured-signoff")).toBeVisible();
   });
 
@@ -93,7 +93,7 @@ test.describe("Decisions home geometry + a11y", () => {
 test.describe("ruling drawer geometry + a11y", () => {
   test.beforeEach(async ({ page }) => {
     await seedDecisions();
-    await page.goto(`${BASE}/app/me?as=owner`);
+    await page.goto(`${BASE}/ui/me?as=owner`);
     await page.getByTestId("review-evidence").click();
     await expect(page.getByTestId("drawer-panel")).toBeVisible();
   });
