@@ -100,11 +100,11 @@ class BoardClient:
     # ------------------------------------------------------------------ tickets
     def ticket_create(self, kind: str, work_type: str, title: str, parent_id: str | None = None,
                       assignee: str | None = None, description: str = "",
-                      tags: list[str] | None = None) -> dict[str, Any]:
+                      tags: list[str] | None = None, words: str | None = None) -> dict[str, Any]:
         return self._request("POST", "/v1/tickets",
                              json={"kind": kind, "work_type": work_type, "title": title,
                                    "parent_id": parent_id, "assignee": assignee, "description": description,
-                                   "tags": tags})
+                                   "tags": tags, "words": words})
 
     def ticket_read(self, id_: str, include: str | None = None, thread_limit: int = 20) -> dict[str, Any]:
         return self._request("GET", f"/v1/tickets/{id_}", params={"include": include, "thread_limit": thread_limit})
@@ -119,10 +119,10 @@ class BoardClient:
 
     def ticket_update(self, id_: str, status: str | None = None, assignee: str | None = None,
                       design_ref: str | None = None, description: str | None = None,
-                      tags: list[str] | None = None) -> dict[str, Any]:
+                      tags: list[str] | None = None, title: str | None = None) -> dict[str, Any]:
         return self._request("PATCH", f"/v1/tickets/{id_}",
                              json={"status": status, "assignee": assignee, "design_ref": design_ref,
-                                   "description": description, "tags": tags})
+                                   "description": description, "tags": tags, "title": title})
 
     # ------------------------------------------------------------------ criteria
     def criterion_create(self, ticket_id: str, text: str, check: str, checked_by: str | None = None,

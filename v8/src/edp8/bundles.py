@@ -558,7 +558,10 @@ IDENTITY_TOOLS = [
 class TicketCreateArgs(BaseModel):
     kind: TicketKind = Field(description="epic (owner/coordinator) | story (architect) | task (engineer/architect)")
     work_type: WorkType = Field(description="feature|bug|rnd|creative|review|knowledge|chore")
-    title: str = Field(description="epic: the owner's words verbatim. story/task: names the slice")
+    title: str = Field(description="epic: the owner's words verbatim; the board keeps them in `words` and derives "
+                       "a short title (<=80 chars) from the first clause. story/task: names the slice")
+    words: str | None = Field(default=None, description="epic only: the owner's verbatim request, if given "
+                              "separately from a short title; immutable after create")
     parent_id: str | None = Field(default=None, description="required for story/task: the parent ticket id")
     assignee: str | None = Field(default=None, description="participant id to assign, if known now")
     description: str = Field(default="", description="the slice in prose: scope, intent, pointers to files/docs "
@@ -595,6 +598,8 @@ class TicketUpdateArgs(BaseModel):
     design_ref: str | None = Field(default=None, description="doc id of the design/plan doc")
     description: str | None = Field(default=None, description="replace the description (creator/assignee/architect/owner)")
     tags: list[str] | None = Field(default=None, description="replace the tag list")
+    title: str | None = Field(default=None, description="a short human title (<=80 chars) for an epic or a story "
+                              "(architect/owner); an epic's words stay verbatim")
 
 
 class CriterionCreateArgs(BaseModel):
@@ -628,7 +633,7 @@ class CriterionUpdateArgs(BaseModel):
 def _ticket_create(a: TicketCreateArgs) -> dict[str, Any]:
     return get_client().ticket_create(kind=a.kind, work_type=a.work_type, title=a.title,
                                       parent_id=a.parent_id, assignee=a.assignee, description=a.description,
-                                      tags=a.tags)
+                                      tags=a.tags, words=a.words)
 
 
 def _ticket_read(a: TicketReadArgs) -> dict[str, Any]:
@@ -643,7 +648,7 @@ def _ticket_query(a: TicketQueryArgs) -> dict[str, Any]:
 
 def _ticket_update(a: TicketUpdateArgs) -> dict[str, Any]:
     return get_client().ticket_update(a.ticket_id, status=a.status, assignee=a.assignee, design_ref=a.design_ref,
-                                      description=a.description, tags=a.tags)
+                                      description=a.description, tags=a.tags, title=a.title)
 
 
 def _criterion_create(a: CriterionCreateArgs) -> dict[str, Any]:
@@ -665,7 +670,8 @@ TICKET_TOOLS = [
             "Create a ticket — epic (owner/coordinator), story (architect), task (engineer/architect). "
             "Caps (design §24.1): at most 8 open stories per epic (the owner raises it by answering a "
             "scope gate) and at most 5 tasks per story",
-            "when you own a new slice of work: an epic from the owner's words, a story, or a task under your story",
+            "when you own a new slice of work: an epic from the owner's words (given verbatim; the board derives "
+            "a short title), a story, or a task under your story",
             "the ticket and a hint for the next step, or a scope error when a cap is hit",
             TicketCreateArgs, _ticket_create, "ticket"),
     ToolDef("ticket_read",
@@ -683,8 +689,9 @@ TICKET_TOOLS = [
             "matching ticket records",
             TicketQueryArgs, _ticket_query, "ticket"),
     ToolDef("ticket_update",
-            "Change a ticket's status/assignee/design_ref/description/tags, guarded by the transition rules "
-            "(e.g. done needs every criterion passed)",
+            "Change a ticket's status/assignee/design_ref/description/tags/title, guarded by the transition rules "
+            "(e.g. done needs every criterion passed). title: a short human title (<=80 chars) on an epic or "
+            "story, architect/owner only — an epic's words stay verbatim",
             "to move your ticket to its next status, (re)assign it, or attach its design",
             "the updated ticket, or a transition/scope error naming what is missing",
             TicketUpdateArgs, _ticket_update, "ticket"),

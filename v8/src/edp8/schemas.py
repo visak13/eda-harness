@@ -155,6 +155,7 @@ class EventKind(StrEnum):
     shell_dead = "shell_dead"
     shell_stalled = "shell_stalled"
     ticket_created = "ticket_created"
+    ticket_updated = "ticket_updated"  # a non-status field changed: {changed: [field...], by} (ruling #32: title)
     # a verdict landed: {criterion, verdict, by, by_type, evidence, ticket, check, checked_by}
     criterion_checked = "criterion_checked"
     # owner overrode the derived checker: {criterion, from, to, reason, by}
@@ -228,7 +229,8 @@ class Participant(Obj):
 class Ticket(Obj):
     kind: TicketKind
     work_type: WorkType
-    title: str  # epic: the owner's words verbatim
+    title: str  # a short human title (<= 80 chars); story/task: names the slice (ruling #32, 2026-09-10)
+    words: str | None = None  # epic only: the owner's verbatim request — immutable after create (design §1)
     parent_id: str | None = None
     status: TicketStatus = TicketStatus.drafted
     assignee: str | None = None  # participant id
@@ -391,11 +393,13 @@ DOC_AUTHORS: dict[DocType, set[Role]] = {
 DESCRIBE: dict[str, str] = {
     "participant": "An actor (human or agent) with a role, an @handle inbox, and a location (pool). "
     "Owner: registry. CRUD: create, read, query, update(location, model).",
-    "ticket": "A work item: epic (the owner's words verbatim as title) / story / task, with a description "
+    "ticket": "A work item: epic (the owner's verbatim request in `words`, a short derived title) / story / "
+    "task, with a description "
     "and tags. Status is derived upward by the board. Owner: architect (epic design, stories), engineer "
     "(tasks). CRUD: create, read (ticket_read = one fat read: chain, criteria, docs+relation, children+roles, "
     "blockers, gates, thread tail), query(kind, status, assignee, epic_id, created_by, tag, q text), "
-    "update(status, assignee, design_ref, description, tags). Has criteria, a thread, linked docs and artifacts.",
+    "update(status, assignee, design_ref, description, tags, title — words never change). Has criteria, "
+    "a thread, linked docs and artifacts.",
     "criterion": "A checkable definition of done on a ticket, written by the parent owner before work; "
     "the doer never edits it; the checker records verdict + evidence_ref. The board DERIVES the checker "
     "from the ticket (design §24.1): qa for a story/epic criterion, reviewer only when a story "

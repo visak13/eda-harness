@@ -172,9 +172,26 @@ class Board:
         return p
 
     # ------------------------------------------------------------------ tickets
+    TITLE_MAX = 80  # ruling #32 (2026-09-10, "Title ≠ words"): a ticket title is a short human title
+
+    @classmethod
+    def derive_title(cls, words: str) -> str:
+        """A short human title from an epic's verbatim words (ruling #32): the first clause — up to
+        the first `. ! ? ; : — –` or newline — and, if that is still over TITLE_MAX, cut at the last
+        word boundary before TITLE_MAX-3 with an ellipsis appended. Never touches `words`."""
+        text = words.strip()
+        first = re.split(r"[.!?;:\u2014\u2013\n]", text, maxsplit=1)[0].strip()
+        if not first:
+            first = text
+        if len(first) <= cls.TITLE_MAX:
+            return first
+        cut = first[:cls.TITLE_MAX - 3]
+        cut = cut[:cut.rfind(" ")] if " " in cut else cut
+        return cut.rstrip(" ,") + "\u2026"
+
     def ticket_create(self, actor: Participant, *, kind: TicketKind, work_type: WorkType, title: str,
                       parent_id: str | None = None, assignee: str | None = None, description: str = "",
-                      tags: list[str] | None = None) -> Ticket:
+                      tags: list[str] | None = None, words: str | None = None) -> Ticket:
         if actor.role not in TICKET_CREATORS[kind]:
             raise BoardError("scope", f"{actor.role} may not create a {kind}",
                              f"creators of {kind}: {sorted(r.value for r in TICKET_CREATORS[kind])}")
@@ -189,7 +206,18 @@ class Board:
                 raise BoardError("schema", f"a {kind} must hang under a {expected}, not a {parent.kind}")
         if not title.strip():
             raise BoardError("schema", "title is empty",
-                             "an epic's title is the owner's words verbatim; a story/task title names the slice")
+                             "an epic's title is derived from the owner's words; a story/task title names the slice")
+        # Ruling #32 (2026-09-10): an epic's `words` are the owner's request verbatim and immutable; its
+        # `title` is a short human title. A caller may pass both; passing only `title` (the historical
+        # shape — the words verbatim) stores them as `words` and derives the title when they run long.
+        if kind == TicketKind.epic:
+            words = words if words is not None and words.strip() else title
+            if len(title.strip()) > self.TITLE_MAX:
+                title = self.derive_title(title)
+            else:
+                title = title.strip()
+        else:
+            words = None
         # §24 finding 11: the cap count and the insert are one atomic step under the board lock, so
         # two concurrent creates cannot both read N-1 and both insert (producing N+1 over the cap).
         with self._lock:
@@ -198,7 +226,7 @@ class Board:
             if kind == TicketKind.task and parent_id:
                 self._enforce_task_cap(parent_id)
             t = Ticket(id=new_id(kind.value[0] if kind != TicketKind.epic else "epic"), kind=kind, work_type=work_type,
-                       title=title, parent_id=parent_id, assignee=assignee, created_by=actor.id,
+                       title=title, words=words, parent_id=parent_id, assignee=assignee, created_by=actor.id,
                        description=description or "", tags=[x.strip() for x in (tags or []) if x.strip()])
             t.epic_id = t.id if kind == TicketKind.epic else self.epic_of(t).id
             self.store.put("ticket", t)
@@ -302,7 +330,7 @@ class Board:
         t = self.ticket(ticket_id)
         want = set(include) if include else set(self._VIEW_SECTIONS)
         epic = self.epic_of(t)
-        out: dict[str, Any] = {"ticket": t.model_dump(mode="json"), "words": epic.title,
+        out: dict[str, Any] = {"ticket": t.model_dump(mode="json"), "words": epic.words or epic.title,
                                "words_header": self._epic_phase_header(epic)}
         if "chain" in want:
             chain: list[dict[str, Any]] = []
@@ -379,9 +407,28 @@ class Board:
 
     def ticket_update(self, actor: Participant, id_: str, *, status: TicketStatus | None = None,
                       assignee: str | None = None, design_ref: str | None = None,
-                      description: str | None = None, tags: list[str] | None = None) -> Ticket:
+                      description: str | None = None, tags: list[str] | None = None,
+                      title: str | None = None) -> Ticket:
         t = self.ticket(id_)
         changed: dict[str, Any] = {}
+        if title is not None:
+            # Ruling #32: the title is a short human title, settable by the architect or the owner on an
+            # epic or a story; an epic's `words` are immutable — nothing after create writes them.
+            if actor.role not in (Role.architect, Role.owner):
+                raise BoardError("scope", f"{actor.role} may not set a ticket's title",
+                                 "the architect or the owner sets an epic's or a story's title")
+            if t.kind == TicketKind.task:
+                raise BoardError("scope", "a task's title is fixed at create",
+                                 "title is settable on epics and stories only")
+            new_title = title.strip()
+            if not new_title:
+                raise BoardError("schema", "title is empty")
+            if len(new_title) > self.TITLE_MAX:
+                raise BoardError("scope", f"title is at most {self.TITLE_MAX} characters",
+                                 "an epic's words stay verbatim in `words`; the title is the short form")
+            if new_title != t.title:
+                t.title = new_title
+                changed["title"] = new_title
         if description is not None or tags is not None:
             if actor.id not in (t.created_by, t.assignee) and actor.role not in (Role.architect, Role.owner,
                                                                                   Role.coordinator):
@@ -434,8 +481,10 @@ class Board:
         if not changed:
             return t
         self.store.put("ticket", t)
-        if "description" in changed or "tags" in changed:
+        if "description" in changed or "tags" in changed or "title" in changed:
             self._index("ticket", t.id, self.store._fts_text("ticket", t.model_dump(mode="json")) or t.title)
+        if "title" in changed:
+            self._emit(t.id, EventKind.ticket_updated, {"changed": ["title"], "title": t.title, "by": actor.id})
         if "assignee" in changed:
             self._emit(t.id, EventKind.assigned, {"assignee": t.assignee, "by": actor.id})
         if "status" in changed:
@@ -1700,7 +1749,8 @@ class Board:
         in_review = [t.id for t in flat if t.status == TicketStatus.in_review]
         gates = [(t.id, e.data.get("gate")) for t in flat for e in self.open_gates(t.id)]
         return {"epic": tree, "counts": counts, "ready": ready, "in_review": in_review,
-                "open_gates": gates, "words": epic.title, "words_header": self._epic_phase_header(epic)}
+                "open_gates": gates, "words": epic.words or epic.title,
+                "words_header": self._epic_phase_header(epic)}
 
     def _descendants(self, ticket_id: str) -> list[Ticket]:
         out: list[Ticket] = []

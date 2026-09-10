@@ -77,6 +77,7 @@ class TicketIn(BaseModel):
     kind: TicketKind
     work_type: WorkType
     title: str
+    words: str | None = None  # epic only: the owner's verbatim request (ruling #32); title may be its short form
     parent_id: str | None = None
     assignee: str | None = None
     description: str = ""
@@ -85,6 +86,7 @@ class TicketIn(BaseModel):
 
 class TicketPatch(BaseModel):
     status: TicketStatus | None = None
+    title: str | None = None  # a short human title (<=80 chars), epic/story, architect/owner (ruling #32)
     assignee: str | None = None
     design_ref: str | None = None
     description: str | None = None
@@ -524,7 +526,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     def ticket_create(b: TicketIn, a: Participant = Depends(actor)):
         t = board.ticket_create(a, kind=b.kind, work_type=b.work_type, title=b.title,
                                 parent_id=b.parent_id, assignee=b.assignee, description=b.description,
-                                tags=b.tags)
+                                tags=b.tags, words=b.words)
         if t.kind == TicketKind.epic:
             hint = "epic created; an architect designs it (doc_create design, criteria, stories)"
         elif t.kind == TicketKind.task:
@@ -561,7 +563,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     @app.patch("/v1/tickets/{id_}")
     def ticket_update(id_: str, b: TicketPatch, a: Participant = Depends(actor)):
         t = board.ticket_update(a, id_, status=b.status, assignee=b.assignee, design_ref=b.design_ref,
-                                description=b.description, tags=b.tags)
+                                description=b.description, tags=b.tags, title=b.title)
         hint = ""
         if b.status == TicketStatus.in_progress and t.kind == TicketKind.story:
             hint = ("bigger than one sitting? split it into task tickets NOW (ticket_create kind=task) — "

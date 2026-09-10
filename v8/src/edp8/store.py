@@ -89,7 +89,9 @@ class Store:
     @staticmethod
     def _fts_text(type_: str, d: dict[str, Any]) -> str | None:
         if type_ == "ticket":
-            return "\n".join([d.get("title") or "", d.get("description") or "", " ".join(d.get("tags") or [])])
+            # ruling #32: an epic's verbatim `words` stay searchable now that its title is short
+            return "\n".join([d.get("title") or "", d.get("words") or "", d.get("description") or "",
+                              " ".join(d.get("tags") or [])])
         if type_ == "doc":
             return f"{d.get('title') or ''}\n{d.get('body_md') or ''}"
         if type_ == "message":

@@ -567,7 +567,11 @@ def epic_page(board: Board, epic_id: str, include: str | None = None) -> dict[st
                          "note": ev.data.get("note"), "opened_at": ev.created_at.isoformat(), "epic": epic_id}
                         for ev in board.open_gates(epic_id)]
     crits = board.criteria(epic_id)
-    return {"board": bd, "words": bd.get("words"), "counts": bd.get("counts"),
+    epic = board.ticket(epic_id)
+    # Ruling #32/#33: `words` are the owner's verbatim request, `title` the short human title, and
+    # `description` the architect's brief (the SPA's "Architect's brief" card).
+    return {"board": bd, "words": bd.get("words"), "title": epic.title, "description": epic.description,
+            "counts": bd.get("counts"),
             "thread": thread, "docs": docs, "open_gates": bd.get("open_gates", []),
             "answerable_gates": answerable_gates,
             "criteria": [{"id": c.id, "text": c.text, "check": c.check.value,

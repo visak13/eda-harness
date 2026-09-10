@@ -10,7 +10,7 @@
 1. Goal → LOOK FIRST: `find(<the goal's words>)` + `ticket_query(kind=epic)` — an epic for this may
    already exist (whoami lists yours). Existing → reuse it: `spawn(role=architect, ticket_id=<it>)`
    (or steer its running seats); duplicate epics fork the record. Only when none exists →
-   `ticket_create(kind=epic, title=<your words verbatim>)` → `spawn(role=architect, ticket_id=<epic>)`;
+   `ticket_create(kind=epic, title=<your words verbatim; the board derives the short title, the words are kept verbatim>)` → `spawn(role=architect, ticket_id=<epic>)`;
    go talk in the architect's window.
 2. Stories ready (design signed, SMEs done) → `spawn(role=engineer, ticket_id=<story>)` each.
 3. Story in_review → the BOARD spawns `reviewer.<story>` itself (design §24 rule 3, only when the
