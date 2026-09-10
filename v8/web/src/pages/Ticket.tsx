@@ -18,6 +18,7 @@ import { Composer } from "../components/Composer";
 import { useDocDrawer } from "../components/DocDrawer";
 import { identity } from "../auth/identity";
 import ui from "../components/ui.module.css";
+import { MessageText } from "../components/ArtifactLink";
 import styles from "./Ticket.module.css";
 
 // Ticket page (design §4.2, criteria c-d2dbb34b06 / c-e0b24cd134): crumb to the epic, id + status
@@ -144,7 +145,7 @@ export function TicketPage(): React.JSX.Element {
               {ordered.map((m: MessageView) => (
                 <li key={m.id} className={styles.message}>
                   <AgentLine by={m.by} kind={m.kind} to={m.to} viewer={as} at={m.at} />
-                  <div className={styles.messageText}>{m.text}</div>
+                  <MessageText className={styles.messageText} text={m.text} />
                 </li>
               ))}
             </ul>

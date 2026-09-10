@@ -211,6 +211,14 @@ export function Composer({
           setSentNote(null);
         }}
         onKeyDown={onKeyDown}
+        onPaste={(e) => {
+          // A pasted image/file attaches like a drop (adversary finding #10, 2026-09-10).
+          const files = Array.from(e.clipboardData?.files ?? []);
+          if (files.length) {
+            e.preventDefault();
+            void ingestFiles(files);
+          }
+        }}
         onKeyUp={mentions.refresh}
         onClick={mentions.refresh}
         aria-label="Message"

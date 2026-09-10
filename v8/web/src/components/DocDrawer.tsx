@@ -28,6 +28,7 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const [stack, setStack] = useState<string[]>([]);
+  const [topVersion, setTopVersion] = useState<number | null>(null); // what the reader shows (finding #2)
   const returnFocus = useRef<HTMLElement | null>(null);
 
   const urlDoc = params.get("doc");
@@ -98,7 +99,7 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
       {top ? (
         <Link
           className={styles.asPage}
-          to={`/doc/${encodeURIComponent(top)}?as=${encodeURIComponent(identity())}`}
+          to={`/doc/${encodeURIComponent(top)}?${topVersion != null ? `version=${topVersion}&` : ""}as=${encodeURIComponent(identity())}`}
         >
           Open as page
         </Link>
@@ -115,7 +116,7 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
         title={title}
         returnFocusTo={returnFocus.current}
       >
-        {top ? <DocView docId={top} onOpenDoc={openDoc} onOpenTicket={openTicket} /> : null}
+        {top ? <DocView docId={top} onOpenDoc={openDoc} onOpenTicket={openTicket} onVersion={setTopVersion} /> : null}
       </Drawer>
     </Ctx.Provider>
   );

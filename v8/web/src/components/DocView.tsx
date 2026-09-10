@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getDocHtml, sendMessage } from "../api/endpoints";
 import type { DocHtml } from "../api/types";
@@ -22,16 +22,37 @@ export function DocView({
   version,
   onOpenDoc,
   onOpenTicket,
+  onVersion,
 }: {
   docId: string;
   version?: number | null;
   onOpenDoc?: (id: string) => void;
   onOpenTicket?: (id: string) => void;
+  /** Reports the version the reader is showing (the drawer's "Open as page" carries it). */
+  onVersion?: (v: number) => void;
 }): React.JSX.Element {
+  // The version the reader OPENED is pinned (adversary finding #2, 2026-09-10): without an explicit
+  // version the first load resolves "latest" once and is then FROZEN — the query is disabled, so a
+  // feed invalidation cannot swap the body (or the ruling target) under the reader when a new
+  // version is published. A version pill re-requests an explicit (immutable) version.
+  const [requested, setRequested] = useState<number | null>(version ?? null);
+  const [frozen, setFrozen] = useState<number | null>(null);
+  useEffect(() => {
+    setRequested(version ?? null);
+    setFrozen(null);
+  }, [docId, version]);
   const q = useQuery({
-    queryKey: ["doc", docId, version ?? null],
-    queryFn: () => getDocHtml(docId, version),
+    queryKey: ["doc", docId, requested],
+    queryFn: () => getDocHtml(docId, requested),
+    enabled: !(requested == null && frozen != null),
   });
+  const shown = q.data?.version ?? null;
+  useEffect(() => {
+    if (requested == null && shown != null && frozen == null) setFrozen(shown);
+  }, [requested, shown, frozen]);
+  useEffect(() => {
+    if (shown != null) onVersion?.(shown);
+  }, [shown, onVersion]);
 
   if (q.isPending) return <p className={ui.empty}>Loading document…</p>;
   if (q.isError)
@@ -40,17 +61,19 @@ export function DocView({
         Could not load {docId}: {(q.error as Error).message}
       </p>
     );
-  return <DocBody doc={q.data} onOpenDoc={onOpenDoc} onOpenTicket={onOpenTicket} />;
+  return <DocBody doc={q.data} onOpenDoc={onOpenDoc} onOpenTicket={onOpenTicket} onPickVersion={setRequested} />;
 }
 
 function DocBody({
   doc,
   onOpenDoc,
   onOpenTicket,
+  onPickVersion,
 }: {
   doc: DocHtml;
   onOpenDoc?: (id: string) => void;
   onOpenTicket?: (id: string) => void;
+  onPickVersion?: (v: number) => void;
 }): React.JSX.Element {
   const as = identity();
   const qc = useQueryClient();
@@ -104,10 +127,17 @@ function DocBody({
       {doc.versions.length > 1 ? (
         <div className={styles.versions} aria-label="Versions">
           {doc.versions.map((v) => (
-            <span key={v} className={`${styles.vpill} ${v === doc.version ? styles.vactive : ""}`}>
+            <button
+              key={v}
+              type="button"
+              className={`${styles.vpill} ${v === doc.version ? styles.vactive : ""}`}
+              aria-pressed={v === doc.version}
+              data-testid="version-pill"
+              onClick={() => onPickVersion?.(v)}
+            >
               v{v}
               {v === latest ? " · latest" : ""}
-            </span>
+            </button>
           ))}
         </div>
       ) : null}

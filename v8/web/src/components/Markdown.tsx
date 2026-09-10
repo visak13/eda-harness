@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import DOMPurify from "dompurify";
 import styles from "./Markdown.module.css";
 
@@ -23,12 +24,16 @@ export function demoteHeadings(html: string): string {
 }
 
 export function Markdown({ html, className }: { html: string; className?: string }): React.JSX.Element {
-  const clean = demoteHeadings(DOMPurify.sanitize(html));
+  // React 19 re-applies innerHTML whenever the dangerouslySetInnerHTML OBJECT changes identity —
+  // a fresh `{ __html }` per render would rebuild the body's DOM on every parent re-render and
+  // detach whatever the reader had (a link mid-click, a selection). Memoise on the sanitised
+  // string so the body's nodes survive re-renders (qa finding while pinning doc versions, 2026-09-10).
+  const inner = useMemo(() => ({ __html: demoteHeadings(DOMPurify.sanitize(html)) }), [html]);
   return (
     <div
       className={`${styles.docMd} doc-md ${className ?? ""}`}
       // eslint-disable-next-line react/no-danger
-      dangerouslySetInnerHTML={{ __html: clean }}
+      dangerouslySetInnerHTML={inner}
     />
   );
 }

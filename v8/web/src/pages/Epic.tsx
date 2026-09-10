@@ -17,6 +17,7 @@ import { AgentLine } from "../components/AgentLine";
 import { useDocDrawer } from "../components/DocDrawer";
 import { identity } from "../auth/identity";
 import ui from "../components/ui.module.css";
+import { MessageText } from "../components/ArtifactLink";
 import styles from "./Epic.module.css";
 
 // Epic page (design §4.2): crumb, id + status chip, Georgia 38 title, the owner's words verbatim,
@@ -541,7 +542,7 @@ function ThreadTab({
           {ordered.map((m) => (
             <li key={m.id} className={styles.message}>
               <AgentLine by={m.by} kind={m.kind} to={m.to} viewer={identity()} at={m.at} />
-              <div className={styles.messageText}>{m.text}</div>
+              <MessageText className={styles.messageText} text={m.text} />
             </li>
           ))}
         </ul>

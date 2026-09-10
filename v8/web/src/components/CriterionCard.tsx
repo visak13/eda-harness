@@ -4,6 +4,7 @@ import type { CriterionView, Verdict } from "../api/types";
 import { getDocHtml, postVerdict } from "../api/endpoints";
 import { BoardApiError } from "../api/client";
 import { RewordCriterion } from "./CriterionControls";
+import { useDirtyGuard } from "../live/useDraftGuard";
 import styles from "./CriterionCard.module.css";
 
 // The owner's criterion, typeset to be read (design §14): text verbatim at 14/22 ≤72ch, the id in
@@ -39,6 +40,9 @@ export interface CriterionCardProps {
 export function CriterionCard({ criterion, ruling, ticketId, onOpenEvidence, canReword, onRuled }: CriterionCardProps): React.JSX.Element {
   const qc = useQueryClient();
   const [note, setNote] = useState("");
+  // A half-typed ruling note is a draft: the feed holds its refreshes ("N new · refresh") instead
+  // of refetching the doc/list under the card (adversary finding #2, 2026-09-10).
+  useDirtyGuard(`note:${criterion.id}`, note.trim().length > 0);
   const [decided, setDecided] = useState<"pass" | "fail" | null>(null);
   const [rewording, setRewording] = useState(false);
 

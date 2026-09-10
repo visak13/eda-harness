@@ -10,6 +10,7 @@ import { Composer } from "../components/Composer";
 import { identity } from "../auth/identity";
 import { AgentLine } from "../components/AgentLine";
 import { presenceOf } from "./presence";
+import { MessageText } from "../components/ArtifactLink";
 import styles from "./Seats.module.css";
 
 const FRAMING = "See who is available, read their latest status, and message or resume a seat.";
@@ -322,7 +323,7 @@ function SeatThread({ ticketId, seat }: { ticketId: string; seat: SeatRow }): Re
       {rows.map((m) => (
         <li key={m.id} className={styles.seatThreadRow}>
           <AgentLine by={m.created_by} kind={m.kind} to={m.to} viewer={viewer} at={m.created_at} />
-          <div className={styles.seatThreadText}>{m.text}</div>
+          <MessageText className={styles.seatThreadText} text={m.text} />
         </li>
       ))}
     </ul>

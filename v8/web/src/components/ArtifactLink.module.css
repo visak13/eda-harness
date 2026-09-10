@@ -1,0 +1,18 @@
+.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--accentink);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.link:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 2px;
+}
+.err {
+  color: var(--muted);
+  font-size: 12px;
+  margin-left: 6px;
+}

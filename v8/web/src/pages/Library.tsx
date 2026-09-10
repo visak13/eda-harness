@@ -6,6 +6,7 @@ import { StatusChip } from "../components/StatusChip";
 import { useDocDrawer } from "../components/DocDrawer";
 import { PageHeader } from "../components/PageHeader";
 import ui from "../components/ui.module.css";
+import { ArtifactLink } from "../components/ArtifactLink";
 import styles from "./Library.module.css";
 
 // Library destination (design §4.2/§12): sub-nav Documents / Artifacts / Links / Tickets /
@@ -83,9 +84,13 @@ function ArtifactsSection(): React.JSX.Element {
       {q.data.artifacts.map((a) => (
         <li key={a.id} className={styles.artRow}>
           <span className={ui.tag}>{a.form}</span>
-          <a className={styles.artUri} href={a.uri} target="_blank" rel="noreferrer">
-            {a.uri}
-          </a>
+          {/^\/v1\/artifacts\/[^/]+\/content/.test(a.uri) || a.form === "upload" ? (
+            <ArtifactLink id={a.id} label={a.uri} />
+          ) : (
+            <a className={styles.artUri} href={a.uri} target="_blank" rel="noreferrer">
+              {a.uri}
+            </a>
+          )}
           {a.note ? <span className={styles.artNote}>{a.note}</span> : null}
         </li>
       ))}

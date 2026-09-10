@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router";
 import type {
   ConversationRow,
   EpicSummaryRow,
@@ -25,6 +26,7 @@ import { RulingDrawer } from "../components/RulingDrawer";
 import { SeatTableRow } from "./Seats";
 import { identity } from "../auth/identity";
 import { useDraftGuard } from "../live/useDraftGuard";
+import { MessageText } from "../components/ArtifactLink";
 import styles from "./Decisions.module.css";
 
 // Decisions home (design §4.2 / §16.1 / §18.2, folded S5). The owner's one place to see what needs
@@ -242,7 +244,7 @@ function QuestionRowView({ q }: { q: QuestionRow }): React.JSX.Element {
         <AgentLine by={String(q.created_by)} kind={String(q.kind)} to={q.to} viewer={identity()} />
         {q.asker?.note ? <span className={styles.qNote}>{q.asker.note}</span> : null}
       </div>
-      <p className={styles.qText}>{q.text}</p>
+      <MessageText className={styles.qText} text={q.text} />
       {replying ? (
         <Composer
           ticketId={q.ticket_id}
@@ -305,6 +307,10 @@ function Conversations({ rows, people }: { rows: ConversationRow[]; people: Pers
   const [byCounterpart, setByCounterpart] = useState(false);
   const [showClosed, setShowClosed] = useState(false);
   const [composing, setComposing] = useState(false);
+  // "New conversation" posts on a ticket the viewer picks (adversary finding #6, 2026-09-10) — it
+  // used to post silently on whichever row happened to be first.
+  const [newTicket, setNewTicket] = useState<string>("");
+  const composeTicket = newTicket || rows[0]?.ticket_id || "";
 
   const liveIds = useMemo(() => new Set(people.map((p) => p.id)), [people]);
   // A conversation's counterpart is the last message's sender. It is "live" if that id is in the
@@ -314,6 +320,17 @@ function Conversations({ rows, people }: { rows: ConversationRow[]; people: Pers
   const closed = rows.filter((c) => !isLive(c));
 
   const label = (c: ConversationRow) => (c.unread ? "you were paged" : "on your ticket");
+  // "By counterpart" groups the live rows by who last spoke (adversary finding #7: the toggle
+  // changed nothing before); "By ticket" is one flat list in the board's order.
+  const groups: [string, ConversationRow[]][] = byCounterpart
+    ? Array.from(
+        live.reduce((m, c) => {
+          const k = c.last?.by ?? "thread";
+          m.set(k, [...(m.get(k) ?? []), c]);
+          return m;
+        }, new Map<string, ConversationRow[]>()),
+      )
+    : [["all", live]];
 
   return (
     <section className={styles.convos} aria-label="Your conversations" data-testid="conversations">
@@ -335,22 +352,52 @@ function Conversations({ rows, people }: { rows: ConversationRow[]; people: Pers
       </div>
 
       {composing ? (
-        <Composer ticketId={rows[0]?.ticket_id ?? ""} kinds={["note", "question"]} showTo onSent={() => setComposing(false)} />
+        <div className={styles.newConvo}>
+          <label className={styles.newConvoLabel}>
+            On ticket
+            <select
+              className={styles.newConvoSelect}
+              value={composeTicket}
+              data-testid="new-conversation-ticket"
+              onChange={(e) => setNewTicket(e.target.value)}
+            >
+              {rows.map((r) => (
+                <option key={r.ticket_id} value={r.ticket_id}>
+                  {r.title} · {r.ticket_id}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Composer ticketId={composeTicket} kinds={["note", "question"]} showTo onSent={() => setComposing(false)} />
+        </div>
       ) : null}
 
       {live.length === 0 && closed.length === 0 ? (
         <p className={styles.calm}>No conversations yet.</p>
       ) : (
-        <ul className={styles.convoList}>
-          {live.map((c) => (
-            <li key={c.ticket_id} className={styles.convoRow}>
-              {c.unread ? <span className={styles.unreadDot} role="img" aria-label="unread" /> : null}
-              <span className={styles.convoTitle}>{c.title}</span>
-              <span className={styles.convoWhy}>{label(c)}</span>
-              {c.last ? <span className={styles.convoLast}>{c.last.text}</span> : null}
-            </li>
-          ))}
-        </ul>
+        groups.map(([who, items]) => (
+          <div key={who} data-testid="convo-group">
+            {byCounterpart ? <div className={styles.convoGroup}>{who}</div> : null}
+            <ul className={styles.convoList}>
+              {items.map((c) => (
+                <li key={c.ticket_id} className={styles.convoRow}>
+                  {c.unread ? <span className={styles.unreadDot} role="img" aria-label="unread" /> : null}
+                  {/* The row IS the way into the thread (adversary finding #7): it links to the ticket. */}
+                  <Link className={styles.convoTitle} to={`/ticket/${encodeURIComponent(c.ticket_id)}`} data-testid="convo-link">
+                    {c.title}
+                  </Link>
+                  <span className={styles.convoWhy}>{label(c)}</span>
+                  {c.last ? (
+                    <span className={styles.convoLast}>
+                      {byCounterpart ? "" : `${c.last.by}: `}
+                      {c.last.text}
+                    </span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))
       )}
 
       {closed.length > 0 ? (
