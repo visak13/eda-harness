@@ -41,6 +41,14 @@ SPA cannot also serve at `/app` (its `BASE_URL` is compiled in), so legacy mode 
 off and hands `/ui` back to the legacy renderer. The `/ui` bundle is built at **`EDP8_WEB_BASE=/ui/`**
 (the default; was `/app/` during the pre-cutover build phase); `npm --prefix web run build`.
 
+**Freshness guard.** The wheel build (`uv build --wheel`) runs `hatch_build.py`: if
+`src/edp8/webapp/dist/index.html` is missing or older than any file under `web/src` (or
+`web/index.html`, `vite.config.ts`, `package.json`) it runs `npm --prefix web run build` when npm is on
+PATH and otherwise FAILS with the command to run; `EDP8_WEB_AUTOBUILD=0` makes it check-only. The e2e
+`globalSetup` applies the same rule before a run. The :9400 fleet board serves dist from disk, so after a
+`web/src` change rebuild (`$env:EDP8_WEB_BASE='/ui/'; npm run build` from PowerShell — Git Bash rewrites
+`/ui/`) and hard-refresh; a wheel/docker image always carries a bundle at least as new as its sources.
+
 Backend serve + wheel + serve tests (from `v8/`):
 
 ```

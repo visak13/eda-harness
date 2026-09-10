@@ -71,7 +71,15 @@ export async function seedEpic(): Promise<G3aFixture> {
     await call(
       "POST",
       "/v1/docs",
-      { doc_type: "design", title: "Folio craft bars", body_md: "# Craft\n\nSafe body text.", scope: epic },
+      {
+        doc_type: "design",
+        title: "Folio craft bars",
+        // v1 is HOSTILE (adversary finding #13, 2026-09-10): a script, an onerror image and a
+        // javascript: link. The reader must render the safe text and none of these.
+        body_md:
+          "# Craft\n\nSafe body text.\n\n<script>window.__pwned = 1</script>\n<img src=x onerror=\"window.__pwned=2\">\n<a href=\"javascript:window.__pwned=3\">click</a>",
+        scope: epic,
+      },
       as(arch),
     )
   ).id;

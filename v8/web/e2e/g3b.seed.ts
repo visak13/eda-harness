@@ -29,6 +29,41 @@ export interface G3bLoopFixture {
 
 let counter = 0;
 
+export interface G3bQaLoopFixture extends G3bLoopFixture {
+  qa: string; // the derived checker seat (rules the criterion from the UI)
+}
+
+/** The companion loop (adversary finding #16, 2026-09-10): a feature story whose criterion keeps the
+ *  board's DERIVED checker (qa, §24.1) — no owner override — with evidence recorded by the doer. The
+ *  qa seat rules it from the ticket page; the board then advances the story itself. */
+export async function seedQaLoopStory(): Promise<G3bQaLoopFixture> {
+  const n = ++counter;
+  const arch = `architect.g3bq-${n}`;
+  const eng = `engineer.g3bq-${n}`;
+  const qa = `qa.g3bq-${n}`;
+  await call("POST", "/v1/participants", { type: "agent", role: "architect", handle: `qarch${n}`, id: arch }, admin).catch(() => {});
+  await call("POST", "/v1/participants", { type: "agent", role: "engineer", handle: `qeng${n}`, id: eng }, admin).catch(() => {});
+  await call("POST", "/v1/participants", { type: "agent", role: "qa", handle: `qqa${n}`, id: qa }, admin).catch(() => {});
+
+  const epic = (await call("POST", "/v1/tickets", { kind: "epic", work_type: "feature", title: `Qa loop epic ${n}` }, as("owner"))).id;
+  const story = (
+    await call("POST", "/v1/tickets", { kind: "story", work_type: "feature", title: `Qa closes the loop ${n}`, parent_id: epic, assignee: eng }, as(arch))
+  ).id;
+  const doc = (
+    await call("POST", "/v1/docs", { doc_type: "design", title: `Qa loop design ${n}`, body_md: "# Loop\n\nEvidence body.", scope: epic }, as(arch))
+  ).id;
+  await call("PATCH", `/v1/tickets/${story}`, { design_ref: doc }, as(arch));
+
+  // The architect writes the criterion; the board DERIVES its checker (feature story → qa).
+  const c = await call("POST", "/v1/criteria", { ticket_id: story, text: "The qa loop closes end to end.", check: "look" }, as(arch));
+  if (c.checked_by !== "qa") throw new Error(`expected the derived checker to be qa, got ${c.checked_by}`);
+  await call("PATCH", `/v1/criteria/${c.id}`, { evidence_ref: doc }, as(eng)); // the doer records evidence
+
+  await call("PATCH", `/v1/tickets/${story}`, { status: "designed" }, as(arch));
+  await call("PATCH", `/v1/tickets/${story}`, { status: "signed_off" }, as("owner")); // → ready
+  return { epic, story, doc, criterion: c.id, engineer: eng, qa };
+}
+
 /** A story at `ready`, assigned to an engineer seat, with one pending owner-checked criterion that already
  *  cites a doc as evidence. Reaching `ready` walks the real status path (drafted → designed →
  *  signed_off → ready) so the board's own guards produce the state — nothing is forced. */

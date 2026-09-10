@@ -40,7 +40,7 @@ export async function apiEnvelope<T>(path: string, init?: RequestInit): Promise<
 export function postJson<T>(
   path: string,
   body: unknown,
-  method: "POST" | "PATCH" = "POST",
+  method: "POST" | "PATCH" | "PUT" = "POST",
 ): Promise<{ value: T; hint: string }> {
   return apiEnvelope<T>(path, {
     method,

@@ -22,6 +22,17 @@ test("the doc reader shows the title, version pills and sanitised body", async (
   await expect(page.locator(".doc-md")).toContainText("Safe body text");
 });
 
+test("a hostile doc body (script, onerror, javascript: link) is stripped by the reader", async ({ page }) => {
+  // v1 of the seeded doc carries the hostile markup (g3a.seed); v2 is the safe revision.
+  await page.goto(`${BASE()}/ui/doc/${fx.doc}?version=1&as=owner`);
+  const body = page.locator(".doc-md");
+  await expect(body).toContainText("Safe body text");
+  await expect(body.locator("script")).toHaveCount(0);
+  await expect(body.locator("[onerror]")).toHaveCount(0);
+  await expect(body.locator('a[href^="javascript:"]')).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as { __pwned?: number }).__pwned ?? 0)).toBe(0);
+});
+
 test("a doc opens in the shared drawer over the epic, and Esc restores the page", async ({ page }) => {
   await page.goto(`${BASE()}/ui/epic/${fx.epic}?as=owner`);
   await page.getByRole("tab", { name: /Documents/ }).click();

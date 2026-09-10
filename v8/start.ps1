@@ -91,10 +91,14 @@ function Start-Board {
   $env:EDP8_HOST = $BIND; $env:EDP8_PORT = "$BOARD_PORT"; $env:EDP8_ADMIN_TOKEN = $ADMIN
   $env:EDP8_HOME = $HOMEDIR; $env:EDP8_DB = Join-Path $DATA "edp8.db"
   $env:EDP_POOL_URL = "http://127.0.0.1:$POOL_PORT"; $env:EDP_BROKER_URL = "http://127.0.0.1:$BROKER_PORT"
-  $p = StartProc "uv" @("run","--directory",$HOMEDIR,"edp8-board") (Join-Path $DATA "board.log") (Join-Path $DATA "board.err")
+  # With a synced .venv present, run WITHOUT re-syncing: `uv run` otherwise tries to replace
+  # .venv\Scripts\edp8-board.exe, which fails (os error 32) while another board from this tree is
+  # running — the launcher drill's board never listened (qa launcher drill, 2026-09-10).
+  $uvArgs = @("run"); if (Test-Path (Join-Path $HOMEDIR ".venv\Scripts\edp8-board.exe")) { $uvArgs += "--no-sync" }
+  $p = StartProc "uv" ($uvArgs + @("--directory",$HOMEDIR,"edp8-board")) (Join-Path $DATA "board.log") (Join-Path $DATA "board.err")
   for ($i=0; $i -lt 60 -and -not (Probe $BOARD_PORT "/v1/health"); $i++) { Start-Sleep -Milliseconds 250 }
   WriteState "board" $p.Id $BOARD_PORT
-  try { & uv run --directory $HOMEDIR python -m edp8.bootstrap --board "http://127.0.0.1:$BOARD_PORT" --admin $ADMIN --owner $OWNER | Out-Null } catch {}
+  try { & uv @uvArgs --directory $HOMEDIR python -m edp8.bootstrap --board "http://127.0.0.1:$BOARD_PORT" --admin $ADMIN --owner $OWNER | Out-Null } catch {}
   Write-Host "board    up   pid $($p.Id)  http://127.0.0.1:$BOARD_PORT  (SPA: /ui)"
 }
 

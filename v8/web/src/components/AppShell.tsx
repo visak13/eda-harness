@@ -7,6 +7,7 @@ import { IdentityPanel } from "./IdentityPanel";
 import { DraftGuardProvider, useDraftGuard } from "../live/useDraftGuard";
 import { DocDrawerProvider } from "./DocDrawer";
 import { ThemePicker } from "../theme/ThemePicker";
+import { AvatarPicker } from "./AvatarPicker";
 import { Icon } from "./Icon";
 import { PageFrameProvider, usePageFrameCtx, defaultFraming } from "./PageFrame";
 import { GlossaryPanel } from "./GlossaryPanel";
@@ -196,6 +197,7 @@ function AppShellChrome(): React.JSX.Element {
           {popoverOpen ? (
             <div className={styles.popover} role="dialog" aria-label="Preferences">
               <ThemePicker />
+              <AvatarPicker />
             </div>
           ) : null}
         </div>
