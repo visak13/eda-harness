@@ -10,6 +10,7 @@ import { GateOpenControl } from "../components/GateOpenControl";
 import { GateForm } from "../components/GateForm";
 import { AssignControl } from "../components/AssignControl";
 import { AskRoleControl } from "../components/AskRole";
+import { SpawnArchitect } from "../components/SpawnArchitect";
 import { CriterionCard } from "../components/CriterionCard";
 import { AddCriterion } from "../components/CriterionControls";
 import { Tabs } from "../components/Tabs";
@@ -214,6 +215,7 @@ export function EpicPage(): React.JSX.Element {
           <section className={ui.card} {...copyProps("epic", "assign-spawn")}>
             <div className={ui.sectionLabel}>Assign or spawn a seat</div>
             <AssignControl ticketId={id} currentAssignee={epic.assignee ?? null} />
+            <SpawnArchitect epicId={id} assignedSeats={row?.assigned_seats ?? []} />
           </section>
 
           <section className={ui.card} data-testid="epic-ask-role">

@@ -349,4 +349,50 @@ describe("EpicPage", () => {
     // the board's resolution note is the confirmation, verbatim
     expect(await screen.findByTestId("ask-role-sent")).toHaveTextContent("delivered to reviewer.epic-1");
   });
+
+  it("Spawn the architect POSTs the pool spawn with role=architect for the epic and shows the hint (promise #18)", async () => {
+    let body: Record<string, unknown> | null = null;
+    mount(page());
+    server.use(
+      http.post("/v1/sessions/spawn", async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return okJson({ ok: true, session: "sid-7" }, "architect.epic-1 booted on the fleet host");
+      }),
+    );
+    await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    fireEvent.click(await screen.findByTestId("spawn-architect-btn"));
+    const { waitFor } = await import("@testing-library/react");
+    await waitFor(() => expect(body).not.toBeNull());
+    expect(body!).toEqual({ role: "architect", participant_id: "architect.epic-1", ticket_id: "epic-1" });
+    expect(await screen.findByTestId("spawn-architect-hint")).toHaveTextContent("architect.epic-1 booted on the fleet host");
+  });
+
+  it("Spawn the architect is hidden when the pool cannot spawn, and shows the board's error hint verbatim", async () => {
+    const data = page();
+    server.use(http.get("/v1/epics/epic-1/page", () => okJson(data)));
+    server.use(http.get("/v1/epics/summary", () => okJson([])));
+    server.use(
+      http.get("/v1/tickets/epic-1/transitions", () =>
+        okJson({ status: "in_progress", transitions: [{ to: "done", allowed: true, reason: null }] }),
+      ),
+    );
+    server.use(http.get("/v1/pool/capabilities", () => okJson({ resume_parked: false, resume_closed: false, park: false, spawn: false, reason: "pool unreachable" })));
+    renderRoute("/epic/epic-1", "/epic/:id", <EpicPage />);
+    await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    await screen.findByTestId("spawn-unavailable");
+    expect(screen.queryByTestId("spawn-architect")).not.toBeInTheDocument();
+  });
+
+  it("Spawn the architect reports the board's refusal hint (promise #18)", async () => {
+    const { HttpResponse } = await import("msw");
+    mount(page());
+    server.use(
+      http.post("/v1/sessions/spawn", () =>
+        HttpResponse.json({ ok: false, value: null, hint: "architect.epic-1 is already alive; message it instead" }, { status: 409 }),
+      ),
+    );
+    await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    fireEvent.click(await screen.findByTestId("spawn-architect-btn"));
+    expect(await screen.findByTestId("spawn-architect-error")).toHaveTextContent("architect.epic-1 is already alive; message it instead");
+  });
 });
