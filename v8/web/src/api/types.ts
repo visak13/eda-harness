@@ -104,6 +104,8 @@ export interface QuestionRow {
   kind: string;
   text: string;
   asker: { type: string; role: string; seat_state: string | null; note: string };
+  /** Why this ask is in the viewer's inbox — board-derived, verbatim (design §16.2, promise #21). */
+  why?: string;
   [k: string]: unknown; // inbox rows carry additional board fields verbatim
 }
 

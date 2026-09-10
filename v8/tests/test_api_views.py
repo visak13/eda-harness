@@ -84,6 +84,19 @@ def test_decisions_owner_sees_signoff(rig):
     assert isinstance(v["gates"], list)
 
 
+def test_decisions_question_rows_say_why(rig):
+    """Promise #21 (design §16.2): every question row carries a `why` clause derived from the
+    inbox routing — addressed to the viewer's id, or to their role on an epic they work in."""
+    v = _get(rig, "/v1/me/decisions")
+    assert [q["why"] for q in v["questions"]] == ["addressed to you (@owner)"]
+    # a bare-role address reaches the architect who created the story (same epic)
+    r = rig["client"].post("/v1/messages", json={"ticket_id": rig["story"], "kind": "question",
+                                                   "to": "architect", "text": "two?"}, headers=RAVI).json()
+    assert r["ok"], r
+    v = rig["client"].get("/v1/me/decisions", headers={"X-Participant": "arch"}).json()["value"]
+    assert [q["why"] for q in v["questions"]] == ["addressed to your role (architect)"]
+
+
 def test_decisions_non_owner_empty_signoffs_and_gates(rig):
     r = rig["client"].get("/v1/me/decisions", headers=RAVI).json()
     assert r["ok"], r

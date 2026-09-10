@@ -281,6 +281,12 @@ function QuestionRowView({ q }: { q: QuestionRow }): React.JSX.Element {
         <AgentLine by={String(q.created_by)} kind={String(q.kind)} to={q.to} viewer={identity()} />
         {q.asker?.note ? <span className={styles.qNote}>{q.asker.note}</span> : null}
       </div>
+      {/* "Why you see it" (design §16.2, promise #21): the board's routing reason, verbatim. */}
+      {q.why ? (
+        <p className={styles.qWhy} data-testid="why">
+          Why you see it: {q.why}
+        </p>
+      ) : null}
       <MessageText className={styles.qText} text={q.text} />
       {replying ? (
         <Composer

@@ -157,6 +157,30 @@ describe("Decisions home", () => {
   });
 });
 
+describe("Decisions question rows say why (§16.2, promise #21)", () => {
+  const q = (why?: string) => ({
+    id: "m-1", ticket_id: "s-1", created_by: "engineer.s-1", to: "owner", kind: "question", text: "which theme?",
+    from_role: "engineer", asker: { type: "agent", role: "engineer", seat_state: "alive", note: "its shell is alive" },
+    ...(why ? { why } : {}),
+  });
+
+  it("renders the board's why clause verbatim as a muted line", async () => {
+    setBoard({ questions: [q("addressed to you (@owner)")] });
+    mount();
+    fireEvent.click(await screen.findByRole("tab", { name: /Questions/ }));
+    const row = await screen.findByTestId("question");
+    expect(within(row).getByTestId("why")).toHaveTextContent("Why you see it: addressed to you (@owner)");
+  });
+
+  it("omits the line when the board sent no why (older boards)", async () => {
+    setBoard({ questions: [q()] });
+    mount();
+    fireEvent.click(await screen.findByRole("tab", { name: /Questions/ }));
+    const row = await screen.findByTestId("question");
+    expect(within(row).queryByTestId("why")).toBeNull();
+  });
+});
+
 describe("Decisions conversations (§16.1 / §18.2)", () => {
   const people = [{ id: "owner", handle: "owner", type: "human", role: "owner", seat_ticket: null, seat_state: null, label: "person", self: false }];
   const conversations = [

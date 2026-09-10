@@ -399,7 +399,7 @@ def decisions_for(board: Board, viewer: Participant) -> dict[str, Any]:
     questions = []
     for m in board.inbox(viewer):
         asker = _participant(board, m["created_by"])
-        questions.append({**m, "asker": {
+        questions.append({**m, "why": _why_in_inbox(board, viewer, m), "asker": {
             "type": getattr(asker, "type", "agent") if asker else "agent",
             "role": getattr(getattr(asker, "role", None), "value", "unknown") if asker else "unknown",
             "seat_state": seat_state(board, m["created_by"]),
@@ -411,6 +411,23 @@ def decisions_for(board: Board, viewer: Participant) -> dict[str, Any]:
                       "epic": board.epic_of(board.ticket(tid)).id})
     return {"signoffs": signoffs, "questions": questions, "gates": gates,
             "counts": {"signoffs": len(signoffs), "questions": len(questions), "gates": len(gates)}}
+
+
+def _why_in_inbox(board: Board, viewer: Participant, m: dict[str, Any]) -> str:
+    """Why this ask is in the viewer's inbox (design §16.2 "why you see it"), derived from the
+    SAME routing board.inbox uses — never re-parsed from prose: addressed to the viewer's id or
+    @handle, to their role, an @mention of them, or the epic is theirs. One short clause, verbatim
+    on the Decisions question row (human promise #21)."""
+    to = m.get("to") or ""
+    if to == viewer.id or to.lstrip("@") == viewer.handle:
+        return f"addressed to you (@{viewer.handle})"
+    if to == viewer.role.value:
+        return f"addressed to your role ({viewer.role.value})"
+    if viewer.id in board.mentions(m.get("text") or ""):
+        return "mentioned you"
+    if board.epic_owner(m["ticket_id"]) == viewer.id:
+        return "you own this epic"
+    return "in your inbox"
 
 
 def _asker_note(board: Board, pid: str) -> str:
