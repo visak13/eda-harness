@@ -100,7 +100,8 @@ class ConsultProfile(StrEnum):
 class ConsultModel(StrEnum):
     """consult(model=…) — the consultant model for one call."""
     astra = "gpt-6-astra"
-    sol = "gpt-5.6-sol"
+    # gpt-5.6-sol RETIRED (owner ruling 2026-09-10): never a valid consult model again; the bridge
+    # refuses any other model name at the choke point (consult.ALLOWED_MODELS) as well.
 
 
 class DocType(StrEnum):

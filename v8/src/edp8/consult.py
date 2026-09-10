@@ -315,6 +315,9 @@ _LOG_DIR_ENV = "EDP8_SOL_LOG_DIR"
 _UE_ROOT_ENV = "EDP8_UE_PROJECT_ROOT"
 _DEFAULT_BIN = "codex"
 _DEFAULT_MODEL = "gpt-6-astra"  # matches claude/.bridge.json's "sol" delegate (2026-09-05: Astra)
+# Owner ruling 2026-09-10: GPT-6 Astra is the ONLY consultant model; gpt-5.6-sol is retired and any
+# other name (argument, EDP8_SOL_MODEL, a resumed thread's model) is refused before codex launches.
+ALLOWED_MODELS = frozenset({"gpt-6-astra"})
 _DEFAULT_UE_ROOT = r"C:\Projects\SpaceTravel"
 #: only this subtree of the UE project may be a write_dir (criterion c-198d217e38)
 _UE_ALLOWLIST_SUBPATH = ("Content", "Concepts")
@@ -1044,6 +1047,21 @@ def lane_status() -> dict[str, Any]:
     return st
 
 
+def lane_line() -> str:
+    """ONE line of lane/quota state for a reader of a consult answer (human item #25,
+    2026-09-10): a failure at ~90% host RAM or under the codex usage cap is the HOST or
+    the QUOTA, not the bridge — say which. e.g. "lane: ok" / "quota: capped until 14:30Z"."""
+    q = quota_block()
+    if q:
+        until = str(q.get("try_again") or q.get("blocked_until") or "?")
+        m = re.search(r"T(\d{2}:\d{2})", until)
+        return f"quota: capped until {m.group(1) + 'Z' if m else until}"
+    free = free_mb()
+    if free is not None and free < 1024:
+        return f"lane: ok, host RAM low ({free} MB free)"
+    return "lane: ok"
+
+
 def advisory() -> list[str]:
     """What a caller should know before launching — NEVER a refusal (owner ruling 2026-09-07:
     information plus the agent's judgment, no gates). A quota block seen from codex's own
@@ -1187,6 +1205,11 @@ def consult(purpose: Purpose, question: str, context: str = "",
 
     codex = _resolve_bin()
     requested_model = (model or "").strip() or os.environ.get(_MODEL_ENV, "").strip() or _DEFAULT_MODEL
+    if requested_model not in ALLOWED_MODELS:
+        return {"ok": False, "error": {"code": "model_retired",
+                                       "message": f"consult model {requested_model!r} is not allowed; "
+                                                  f"only {sorted(ALLOWED_MODELS)} (gpt-5.6-sol retired 2026-09-10)"},
+                "hint": "omit model= (GPT-6 Astra is the default) and unset EDP8_SOL_MODEL"}
 
     # single-flight lane: queue behind whatever is in flight, re-check the gate on entry.
     # `entered` counts every caller between here and its finally (holder + waiters), so
@@ -1408,7 +1431,7 @@ def _consult_locked(purpose: str, question: str, *, context: str, files: list[st
                                       f"retrying around {quota.get('try_again') or quota['blocked_until']})" if quota else
                                       f"codex exited {exit_code}: {_last_nonempty_line(raw)}")},
                 "value": {"run_id": run_id, "manifest": str(manifest_path), "thread_id": out_thread,
-                          "advisory": manifest.get("advisory") or [],
+                          "advisory": manifest.get("advisory") or [], "lane": lane_line(),
                           **({"quota": quota} if quota else {})},
                 "hint": ("codex itself refused; preflight() shows its suggested retry time — your call" if quota else
                          "check `codex login` status, EDP8_SOL_MODEL, and network — "
@@ -1430,7 +1453,7 @@ def _consult_locked(purpose: str, question: str, *, context: str, files: list[st
         "profile": profile_name, "elapsed_s": round(elapsed, 3), "run_id": run_id,
         "log": str(log_path), "manifest": str(manifest_path), "thread_id": out_thread,
         "images_attached": len(images), "queued_behind": queued_behind,
-        "advisory": manifest.get("advisory") or [],
+        "advisory": manifest.get("advisory") or [], "lane": lane_line(),
     }
     if profile_name == "verify":
         verdict = parse_verdict(answer, images_decoded=len(img_records))
@@ -1453,4 +1476,5 @@ def _consult_locked(purpose: str, question: str, *, context: str, files: list[st
         hint = (f"OK — {len(concurrent)} concurrent seat write(s) in the UE tree were "
                 "left untouched (attributed pre-dirty, not this run); see value.concurrent. "
                 + hint)
+    hint = f"{hint} ({value['lane']})" if hint else value["lane"]
     return {"ok": True, "value": value, "hint": hint}

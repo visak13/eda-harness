@@ -1412,9 +1412,8 @@ class ConsultArgs(BaseModel):
     images: list[str] | None = Field(default=None, description="image files (png/jpg) to attach — screenshots, "
                                      "renders, mockups. Attaching is the ONLY way a picture reaches Sol; a path "
                                      "in the prompt is a no-op")
-    model: ConsultModel | None = Field(default=None, description="consultant model for this call: gpt-6-astra "
-                              "(default; 3D/visual craft, image critique) or gpt-5.6-sol (independent second voice, "
-                              "cheaper adversary/second_opinion rounds). Omit for the default")
+    model: ConsultModel | None = Field(default=None, description="consultant model for this call: gpt-6-astra is the only "
+                              "model (gpt-5.6-sol retired 2026-09-10 by owner ruling). Omit for the default")
 
 
 def _fence_status_line(resp: dict[str, Any], run_id: str | None) -> str:

@@ -1,8 +1,9 @@
 # Pairing with the GPT consultant (consult bridge) — goal, steer, show, generate
 
 The consultant behind `consult` runs as a Codex CLI session on the owner's ChatGPT plan.
-Since 2026-09-05 the default model is **GPT-6 Astra** (`gpt-6-astra`); **Sol** (`gpt-5.6-sol`)
-stays reachable. "Sol" below means whichever model the call targets. The bridge supports the
+**GPT-6 Astra** (`gpt-6-astra`) is the ONLY consultant model (owner ruling 2026-09-10; `gpt-5.6-sol`
+is retired — the bridge refuses it and any other name before codex launches, whatever `model=`,
+`EDP8_SOL_MODEL` or a resumed thread says). "Sol" below is the historical name of the seat. The bridge supports the
 full pairing loop:
 
 | Move | How | Why it matters |
@@ -17,7 +18,7 @@ full pairing loop:
 | Model | Use it for | Effort | Why |
 |---|---|---|---|
 | `gpt-6-astra` (default) | 3D/visual craft: galaxy archetype briefs, nebula texture sets, black-hole lensing look, image critique of a render (`creative`, `build`, `visual`) | high | Astra is the stronger 3D/scene model (Blender→UE5 workflows in OpenAI's launch material) and is natively multimodal — the show+steer loop lands on it. Keep one thread per family. |
-| `gpt-5.6-sol` | An independent second voice: `adversary` / `second_opinion` on work an Astra thread produced; cheap sanity checks | medium | A different model family has no stake in the thread's earlier answer; roughly half the quota cost of Astra. |
+| `gpt-5.6-sol` | RETIRED 2026-09-10 — refused by the bridge (`model_retired`). For an independent second read, start a COLD Astra thread (no `thread_id`) so it has no stake in the earlier answer. | — | Owner ruling: one consultant model, no older-generation fallbacks. |
 
 Precedence: per-call `model=` → `EDP8_SOL_MODEL` → default. A resumed `thread_id` keeps its model
 unless you override it. Both models answered on the ChatGPT login with codex-cli 0.153.4 (probe 2026-09-05);

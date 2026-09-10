@@ -270,7 +270,7 @@ def test_consult_posts_answer_to_thread(raw_client, monkeypatch):
 
     def fake_consult(purpose, question, context="", files=None, timeout_s=600, write_dir=None, **kw):
         return {"ok": True,
-                "value": {"answer": "looks solid, one gap: no timeout test", "model": "gpt-5.6-sol",
+                "value": {"answer": "looks solid, one gap: no timeout test", "model": "gpt-6-astra",
                           "elapsed_s": 1.23, "run_id": "fake-run", "log": "C:/tmp/fake-run.jsonl"},
                 "hint": ""}
 
@@ -299,3 +299,19 @@ def test_owner_bundle_can_kick_off():
     from edp8.bundles import ROLE_BUNDLES
     assert "ticket_create" in ROLE_BUNDLES["owner"], "owner must originate epics (pain 2026-08-24)"
     assert "spawn" in ROLE_BUNDLES["owner"], "owner must be able to start the coordinator"
+
+
+def test_consult_refuses_every_model_but_astra(monkeypatch, tmp_path):
+    """Owner ruling 2026-09-10: gpt-5.6-sol is retired — the bridge refuses it (and any other name,
+    including an EDP8_SOL_MODEL override) before codex is launched."""
+    import edp8.consult as consult_mod
+    launched = []
+    monkeypatch.setattr(consult_mod, "_resolve_bin", lambda: launched.append("bin") or "codex")
+    monkeypatch.setenv("EDP8_SOL_LOG_DIR", str(tmp_path))
+    out = consult_mod.consult("second_opinion", "q", model="gpt-5.6-sol")
+    assert out["ok"] is False and out["error"]["code"] == "model_retired"
+    monkeypatch.setenv("EDP8_SOL_MODEL", "gpt-5.6-sol")
+    out = consult_mod.consult("second_opinion", "q")
+    assert out["ok"] is False and out["error"]["code"] == "model_retired"
+    assert "gpt-6-astra" in out["error"]["message"]
+
