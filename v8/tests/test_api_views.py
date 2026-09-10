@@ -204,7 +204,10 @@ def test_activity_and_library(rig):
 def test_avatar_svg_headers_and_palette(rig):
     r = rig["client"].get("/v1/avatars/owner.svg")
     assert r.status_code == 200 and r.headers["content-type"].startswith("image/svg+xml")
-    assert "max-age=300" in r.headers["cache-control"] and "<svg" in r.text
+    # Round 2 #15: cached by content — no-cache + ETag, a revalidation answers 304 until the face changes
+    assert r.headers["cache-control"] == "no-cache" and r.headers["etag"] and "<svg" in r.text
+    r304 = rig["client"].get("/v1/avatars/owner.svg", headers={"If-None-Match": r.headers["etag"]})
+    assert r304.status_code == 304
     # palette override renders a specific human avatar even for a seat id
     r2 = rig["client"].get(f"/v1/avatars/{rig['seat']}.svg", params={"palette": "human-03"})
     assert r2.status_code == 200 and "<svg" in r2.text

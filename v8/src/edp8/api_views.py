@@ -15,9 +15,10 @@ ride `board.criterion_update`'s evidence_version/stale_ok kwargs (design §14 fi
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any, Callable
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import BaseModel
 
 from . import views
@@ -131,10 +132,13 @@ def views_router(board: Board, actor: Callable[..., Participant]) -> APIRouter:
         return ok({"avatars": _catalog()})
 
     @r.get("/v1/avatars/{pid}.svg")
-    def avatar_svg(pid: str, size: int = 36, palette: str | None = Query(default=None)):
+    def avatar_svg(request: Request, pid: str, size: int = 36, palette: str | None = Query(default=None)):
         """The inline identity SVG for a participant — served header-less so an <img src>
-        can load it, image/svg+xml with a 5-minute cache. `palette=human-0N` overrides with a
-        specific human avatar (the picker previews a choice before it is saved)."""
+        can load it, image/svg+xml. Cached by CONTENT (ETag + no-cache: the browser revalidates
+        every time and gets a 304 unless the chosen avatar changed) — a fixed max-age served the
+        previous face after a reload or a second pick (adversary round 2 #15, 2026-09-10).
+        `palette=human-0N` overrides with a specific human avatar (the picker previews a choice
+        before it is saved)."""
         if palette in HUMAN_AVATAR_IDS:
             svg = human_avatar_svg(palette, size)
         else:
@@ -145,8 +149,11 @@ def views_router(board: Board, actor: Callable[..., Participant]) -> APIRouter:
                 svg = human_avatar_svg(avatar_id_for(p, views._prefs()), size)
             else:
                 svg = role_avatar_svg(p.role, p.model, size)
+        etag = '"' + hashlib.sha1(svg.encode("utf-8")).hexdigest()[:20] + '"'
+        if request.headers.get("if-none-match") == etag:
+            return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "no-cache"})
         return Response(content=svg, media_type="image/svg+xml",
-                        headers={"Cache-Control": "public, max-age=300"})
+                        headers={"Cache-Control": "no-cache", "ETag": etag})
 
     # -------------------------------------------------------------- epics / tickets
     @r.get("/v1/epics/summary")

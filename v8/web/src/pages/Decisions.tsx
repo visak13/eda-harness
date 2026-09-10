@@ -29,6 +29,7 @@ import { RulingDrawer } from "../components/RulingDrawer";
 import { presenceOf } from "./presence";
 import { Avatar } from "../components/Avatar";
 import { identity } from "../auth/identity";
+import { useViewerAliases } from "../auth/useViewer";
 import { useDraftGuard } from "../live/useDraftGuard";
 import { MessageText } from "../components/ArtifactLink";
 import styles from "./Decisions.module.css";
@@ -349,21 +350,44 @@ function Replies({ rows }: { rows: ReplyRow[] }): React.JSX.Element | null {
       </div>
       <ul className={styles.convoList}>
         {rows.map((r) => (
-          <li key={r.id} className={styles.replyRow} data-testid="reply-row">
-            <AgentLine by={r.created_by} kind={r.kind} to={identity()} viewer={identity()} at={r.at} />
-            {r.in_reply_to ? (
-              <blockquote className={styles.replyQuote}>
-                <span className={styles.replyQuoteWho}>you wrote:</span> {r.in_reply_to.text}
-              </blockquote>
-            ) : null}
-            <MessageText className={styles.replyText} text={r.text} />
-            <Link className={styles.replyTicket} to={`/ticket/${encodeURIComponent(r.ticket_id)}`}>
-              {r.ticket_title}
-            </Link>
-          </li>
+          <ReplyRowView key={r.id} r={r} />
         ))}
       </ul>
     </section>
+  );
+}
+
+function ReplyRowView({ r }: { r: ReplyRow }): React.JSX.Element {
+  const [replying, setReplying] = useState(false); // round 2 #16: answer in place, threaded
+  return (
+    <li className={styles.replyRow} data-testid="reply-row">
+      <AgentLine by={r.created_by} kind={r.kind} to={identity()} viewer={identity()} at={r.at} />
+      {r.in_reply_to ? (
+        <blockquote className={styles.replyQuote}>
+          <span className={styles.replyQuoteWho}>you wrote:</span> {r.in_reply_to.text}
+        </blockquote>
+      ) : null}
+      <MessageText className={styles.replyText} text={r.text} />
+      <Link className={styles.replyTicket} to={`/${r.ticket_id.startsWith("epic-") ? "epic" : "ticket"}/${encodeURIComponent(r.ticket_id)}#${r.id}`}>
+        {r.ticket_title}
+      </Link>
+      {replying ? (
+        <Composer
+          ticketId={r.ticket_id}
+          kinds={["answer", "note"]}
+          to={r.created_by}
+          replyTo={r.id}
+          replyToBy={r.created_by}
+          onCancelReply={() => setReplying(false)}
+          placeholder={`Reply to @${r.created_by}`}
+          onSent={() => setReplying(false)}
+        />
+      ) : (
+        <button type="button" className={styles.replyBtn} onClick={() => setReplying(true)} data-testid="reply-to-reply">
+          Reply
+        </button>
+      )}
+    </li>
   );
 }
 
@@ -377,9 +401,12 @@ function Conversations({ rows, people }: { rows: ConversationRow[]; people: Pers
   const [newTicket, setNewTicket] = useState<string>("");
   const composeTicket = newTicket || rows[0]?.ticket_id || "";
 
-  const liveIds = useMemo(() => new Set(people.map((p) => p.id)), [people]);
+  // Round 2 #10: the viewer is excluded from /v1/me/people by design, so a conversation the viewer
+  // spoke last on was filed under "Closed seats". The viewer's own aliases count as live.
+  const viewerIds = useViewerAliases();
+  const liveIds = useMemo(() => new Set([...people.map((p) => p.id), ...viewerIds]), [people, viewerIds]);
   // A conversation's counterpart is the last message's sender. It is "live" if that id is in the
-  // reachable people list (a live seat or a human); otherwise its seat has closed.
+  // reachable people list (a live seat or a human) or is the viewer; otherwise its seat has closed.
   const isLive = (c: ConversationRow) => (c.last ? liveIds.has(c.last.by) : true);
   const live = rows.filter(isLive);
   const closed = rows.filter((c) => !isLive(c));

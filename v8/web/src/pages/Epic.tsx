@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Link, useParams } from "react-router";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useLocation, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { getEpicPage, getEpicsSummary, getTicketsTable } from "../api/endpoints";
 import type { CriterionView, EpicSummaryRow, EpicTreeNode, MessageView, TicketStatus } from "../api/types";
@@ -62,7 +62,14 @@ export function EpicPage(): React.JSX.Element {
   const [composerKind, setComposerKind] = useState<"note" | "steer">("note");
   const [order, setOrder] = useState<"newest" | "oldest">("newest");
 
-  const page = useQuery({ queryKey: ["epic", id], queryFn: () => getEpicPage(id) });
+  // Round 2 #13: a Find hit on an epic message lands at /epic/:id#m-…; the hash picks the Thread
+  // tab (the hook that scrolls lives inside it) and the message is fetched even outside the window.
+  const { hash } = useLocation();
+  const include = hash.startsWith("#m-") ? hash.slice(1) : null;
+  useEffect(() => {
+    if (include) setTab("thread");
+  }, [include]);
+  const page = useQuery({ queryKey: ["epic", id, include], queryFn: () => getEpicPage(id, include) });
   const summary = useQuery({ queryKey: ["epics", "summary", "", ""], queryFn: () => getEpicsSummary() });
 
   if (page.isPending) return <p className={ui.empty}>Loading epic…</p>;

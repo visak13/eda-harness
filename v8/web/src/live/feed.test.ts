@@ -71,3 +71,38 @@ describe("subscribeFeed (SSE fetch-stream parser)", () => {
     expect(events.length).toBe(count); // no further events after stop
   });
 });
+
+// Adversary round 2 #9 (2026-09-10): a 200 that closes before any frame, or one that never yields
+// a byte, must count as a failure so the /v1/events poll fallback (finding #14) actually engages.
+describe("subscribeFeed watchdog (round 2 #9)", () => {
+  it("two premature EOFs reach the poll fallback", async () => {
+    let polls = 0;
+    server.use(
+      http.get("/v1/feed", () => sseResponse([])), // 200, EOF before any frame
+      http.get("/v1/events", () => {
+        polls += 1;
+        return HttpResponse.json({ ok: true, value: [{ seq: 41, kind: "polled" }] });
+      }),
+    );
+    const events: FeedEvent[] = [];
+    const stop = subscribeFeed((e) => events.push(e), { backoffMs: 5 });
+    await until(() => polls >= 1);
+    stop();
+    expect(events.map((e) => e.kind)).toContain("polled");
+  });
+
+  it("a silent open stream is cut by the read watchdog and then polled", async () => {
+    let polls = 0;
+    server.use(
+      http.get("/v1/feed", () => new HttpResponse(new ReadableStream({ start() {} }), { headers: { "content-type": "text/event-stream" } })),
+      http.get("/v1/events", () => {
+        polls += 1;
+        return HttpResponse.json({ ok: true, value: [] });
+      }),
+    );
+    const stop = subscribeFeed(() => {}, { backoffMs: 5, readTimeoutMs: 30 });
+    await until(() => polls >= 1, 3000);
+    stop();
+    expect(polls).toBeGreaterThanOrEqual(1);
+  });
+});

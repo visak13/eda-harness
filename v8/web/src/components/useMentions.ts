@@ -35,6 +35,9 @@ export function useMentions(
   const [menu, setMenu] = useState<MentionsMenu>({ open: false, items: [], index: 0 });
   const caretToSet = useRef<number | null>(null);
   const lastQuery = useRef<string | null>(null);
+  // Round 2 #14: Esc dismissed the menu on keydown and the keyup's refresh reopened it on the same
+  // token. The dismissed token stays suppressed until the text or caret moves off it.
+  const dismissed = useRef<string | null>(null);
 
   // After an accept rewrites the value, restore the caret to just past the inserted "@handle ".
   useLayoutEffect(() => {
@@ -58,6 +61,9 @@ export function useMentions(
       return;
     }
     const q = m[1].toLowerCase();
+    const tokenKey = `${left.length}:${q}`;
+    if (dismissed.current === tokenKey) return;
+    dismissed.current = null;
     const items = people
       .filter((p) => p.handle.toLowerCase().includes(q) || p.label.toLowerCase().includes(q))
       .slice(0, 8);
@@ -112,12 +118,18 @@ export function useMentions(
       }
       if (e.key === "Escape") {
         e.preventDefault();
+        const ta = textareaRef.current;
+        if (ta) {
+          const left = ta.value.slice(0, ta.selectionStart ?? ta.value.length);
+          const t = TRIGGER.exec(left);
+          dismissed.current = t ? `${left.length}:${t[1].toLowerCase()}` : null;
+        }
         close();
         return true;
       }
       return false;
     },
-    [menu, accept, close],
+    [menu, accept, close, textareaRef],
   );
 
   return { menu, refresh, onKeyDown, accept, close };

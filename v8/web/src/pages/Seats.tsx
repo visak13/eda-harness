@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { PoolCapabilities, SeatRow, SeatsView } from "../api/types";
 import { getSeats, getPoolCapabilities, resumeSeat } from "../api/seats";
@@ -8,7 +8,9 @@ import { label as glossLabel } from "../copy/glossary";
 import { usePageFrame } from "../components/PageFrame";
 import { Composer } from "../components/Composer";
 import { Avatar } from "../components/Avatar";
+import { useScrollToHash } from "../components/useScrollToHash";
 import { identity } from "../auth/identity";
+import { useViewerAliases } from "../auth/useViewer";
 import { AgentLine } from "../components/AgentLine";
 import { presenceOf } from "./presence";
 import { MessageText } from "../components/ArtifactLink";
@@ -50,6 +52,12 @@ export function SeatsPage(): React.JSX.Element {
   // Find a seat by name / ticket / role: with a hundred closed seats the one you want (the human
   // looked for owner.epic-…) is otherwise buried (human report m-a398600978, 2026-09-10).
   const [find, setFind] = useState("");
+  // Round 2 #13: /seats#<seat-id> (a Find hit) must show and scroll to that row whatever the tab
+  // or filter says; the hashed seat is always in `shown`, and the hook scrolls once rows exist.
+  const { hash } = useLocation();
+  const hashed = hash ? decodeURIComponent(hash.slice(1)) : "";
+
+  useScrollToHash(seatsQ.data ? (seatsQ.data as SeatsView).seats.length : 0);
 
   if (seatsQ.isLoading) return <FrameOnly>Loading seats…</FrameOnly>;
   if (seatsQ.error || !seatsQ.data) return <FrameOnly>Seats are unavailable right now.</FrameOnly>;
@@ -63,10 +71,12 @@ export function SeatsPage(): React.JSX.Element {
     closed: seats.filter(TAB_MATCH.closed).length,
   };
   const needle = find.trim().toLowerCase();
-  const shown = seats.filter(TAB_MATCH[tab]).filter(
+  const shown = seats.filter(
     (r) =>
-      !needle ||
-      [r.handle, r.id, r.role, r.ticket_id ?? "", r.ticket_title ?? ""].some((v) => v.toLowerCase().includes(needle)),
+      r.id === hashed ||
+      (TAB_MATCH[tab](r) &&
+        (!needle ||
+          [r.handle, r.id, r.role, r.ticket_id ?? "", r.ticket_title ?? ""].some((v) => v.toLowerCase().includes(needle)))),
   );
 
   return (
@@ -178,6 +188,7 @@ export function SeatTableRow({ seat, caps }: { seat: SeatRow; caps: PoolCapabili
   const now = Date.now();
   const presence = presenceOf(seat, caps, now);
   const [messaging, setMessaging] = useState(false);
+  const [reply, setReply] = useState<{ id: string; by: string } | null>(null); // round 2 #16
   const qc = useQueryClient();
 
   // "Closed" is ONLY a board-recorded dead seat. A seat with no mirrored session (state == null) is
@@ -285,12 +296,16 @@ export function SeatTableRow({ seat, caps }: { seat: SeatRow; caps: PoolCapabili
               </p>
               {seat.ticket_id ? (
                 <>
-                  <SeatThread ticketId={seat.ticket_id} seat={seat} />
+                  <SeatThread ticketId={seat.ticket_id} seat={seat} onReply={(m) => setReply(m)} />
                   <Composer
+                    key={reply?.id ?? "new"}
                     ticketId={seat.ticket_id}
                     to={seat.handle}
-                    kinds={["note", "question"]}
-                    placeholder={`Message ${seat.handle}…`}
+                    kinds={reply ? ["answer", "note"] : ["note", "question"]}
+                    replyTo={reply?.id ?? null}
+                    replyToBy={reply?.by ?? null}
+                    onCancelReply={() => setReply(null)}
+                    placeholder={reply ? `Reply to @${reply.by}` : `Message ${seat.handle}…`}
                   />
                 </>
               ) : (
@@ -309,14 +324,22 @@ export function SeatTableRow({ seat, caps }: { seat: SeatRow; caps: PoolCapabili
 // The conversation with ONE seat, both directions, shown where the human writes it (the Seats row)
 // rather than only on the ticket thread (human report m-08822c1496, 2026-09-10). Read from
 // /v1/messages on the seat's ticket; the feed's invalidation refreshes it when the seat answers.
-function SeatThread({ ticketId, seat }: { ticketId: string; seat: SeatRow }): React.JSX.Element {
+function SeatThread({
+  ticketId,
+  seat,
+  onReply,
+}: {
+  ticketId: string;
+  seat: SeatRow;
+  onReply?: (m: { id: string; by: string }) => void;
+}): React.JSX.Element {
   const viewer = identity();
+  const mine = useViewerAliases(); // round 2 #4: canonical id + handle, not the raw login string
   const q = useQuery({
     queryKey: ["messages", ticketId, seat.id],
     queryFn: () => api<RawMessage[]>(`/v1/messages?ticket_id=${encodeURIComponent(ticketId)}&limit=200`),
     retry: false,
   });
-  const mine = new Set([viewer, `@${viewer}`].filter(Boolean));
   const theirs = new Set([seat.id, seat.handle, `@${seat.handle}`]);
   const isMine = (v: string | null | undefined) => !!v && mine.has(v);
   const isTheirs = (v: string | null | undefined) => !!v && theirs.has(v);
@@ -331,6 +354,11 @@ function SeatThread({ ticketId, seat }: { ticketId: string; seat: SeatRow }): Re
         <li key={m.id} className={styles.seatThreadRow}>
           <AgentLine by={m.created_by} kind={m.kind} to={m.to} viewer={viewer} at={m.created_at} />
           <MessageText className={styles.seatThreadText} text={m.text} />
+          {onReply && !isMine(m.created_by) ? (
+            <button type="button" className={styles.replyBtn} data-testid="seat-reply" onClick={() => onReply({ id: m.id, by: m.created_by })}>
+              Reply
+            </button>
+          ) : null}
         </li>
       ))}
     </ul>

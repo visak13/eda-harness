@@ -34,8 +34,6 @@ export interface PaletteRow {
   to: string; // router destination (may carry a #anchor)
 }
 
-const GROUP_ORDER = ["Epics", "Tickets", "Documents", "Messages", "Criteria", "Seats"];
-
 function stripMarks(s: string): string {
   return s.replace(/[\[\]]/g, "");
 }
@@ -171,6 +169,7 @@ export function CommandPalette({
   }, [hits.data, seats.data, epics.data, debounced]);
 
   useEffect(() => setIndex(0), [rows.length, debounced]);
+  const stale = q.trim() !== debounced; // results on screen belong to an older query (round 2 #12)
 
   function go(r: PaletteRow) {
     onClose();
@@ -185,7 +184,11 @@ export function CommandPalette({
       e.preventDefault();
       setIndex((i) => (rows.length ? (i - 1 + rows.length) % rows.length : 0));
     } else if (e.key === "Enter") {
+      // Round 2 #11: a focused result button activates ITSELF (its onClick); the combobox path
+      // opens the highlighted row. Round 2 #12: never while the typed query is ahead of the results.
+      if (e.target !== inputRef.current) return;
       e.preventDefault();
+      if (stale) return;
       const r = rows[index];
       if (r) go(r);
     } else if (e.key === "Escape") {
@@ -209,8 +212,9 @@ export function CommandPalette({
   }
 
   if (!open) return null;
-  const groups = GROUP_ORDER.filter((g) => rows.some((r) => r.group === g));
-  const activeId = rows[index] ? `find-opt-${rows[index].key}` : undefined;
+  // Round 2 #11: groups render in the order the rows were ranked — the same order ↑/↓ walk.
+  const groups = rows.map((r) => r.group).filter((g, i, a) => a.indexOf(g) === i);
+  const activeId = rows[index] && !stale ? `find-opt-${rows[index].key}` : undefined;
 
   return (
     <>
@@ -261,7 +265,10 @@ export function CommandPalette({
                       aria-selected={i === index}
                       className={`${styles.row} ${i === index ? styles.active : ""}`}
                       onMouseEnter={() => setIndex(i)}
-                      onClick={() => go(r)}
+                      onFocus={() => setIndex(i)}
+                      onClick={() => {
+                        if (!stale) go(r);
+                      }}
                       data-testid="find-row"
                       data-group={r.group}
                     >

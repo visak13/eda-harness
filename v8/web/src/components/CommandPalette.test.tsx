@@ -95,3 +95,46 @@ describe("CommandPalette", () => {
     expect(closed).toBe(1);
   });
 });
+
+// Adversary round 2 #11/#12 (2026-09-10): groups render in ranked order (the order ↑/↓ walk), a
+// focused result button activates itself, and Enter during the debounce never opens the previous
+// query's result.
+describe("CommandPalette round 2", () => {
+  it("#11 DOM order follows the ranking and the highlighted row is the first in the DOM", async () => {
+    server.use(
+      http.get("/v1/find", () =>
+        HttpResponse.json({
+          ok: true,
+          value: [
+            { type: "message", id: "m-9", score: 1, snippet: "top ranked message", ticket_id: "s-2", epic_id: "epic-1" },
+            { type: "ticket", id: "s-2", score: 0.5, snippet: "", title: "Folio shell story", epic_id: "epic-1" },
+          ],
+        }),
+      ),
+    );
+    mount();
+    const input = screen.getByTestId("find-input");
+    fireEvent.change(input, { target: { value: "folio" } });
+    await waitFor(() => expect(screen.getAllByTestId("find-row").some((r) => r.getAttribute("data-group") === "Messages")).toBe(true));
+    const rows = screen.getAllByTestId("find-row");
+    expect(rows[0]).toHaveAttribute("data-group", "Messages");
+    expect(rows[0]).toHaveAttribute("aria-selected", "true");
+    // Tab onto the second button and press Enter there: the button itself activates (no dialog Enter).
+    rows[1].focus();
+    fireEvent.keyDown(rows[1], { key: "Enter" });
+    expect(screen.getByTestId("where")).toHaveTextContent("/me"); // dialog did not navigate on its own
+    fireEvent.click(rows[1]);
+    await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/ticket/s-2"));
+  });
+
+  it("#12 Enter during the debounce does not open the previous query's result", async () => {
+    mount();
+    const input = screen.getByTestId("find-input");
+    fireEvent.change(input, { target: { value: "folio" } });
+    await waitFor(() => expect(screen.getAllByTestId("find-row").length).toBeGreaterThan(0));
+    fireEvent.change(input, { target: { value: "zzzz" } });
+    fireEvent.keyDown(input, { key: "Enter" }); // within the 120ms debounce
+    await new Promise((r) => setTimeout(r, 30));
+    expect(screen.getByTestId("where")).toHaveTextContent("/me");
+  });
+});

@@ -157,3 +157,25 @@
   border-radius: 6px;
   padding: 8px 10px;
 }
+
+/* Round 2 #16: the reply target chip */
+.replyChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--accentwash);
+  color: var(--accentink);
+  font-size: 12px;
+}
+.replyCancel {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}

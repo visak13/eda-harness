@@ -206,3 +206,60 @@ describe("Composer recipient from @mention (human defect #9, m-a7e74d81b0)", () 
     expect(picker.value).toBe("owner");
   });
 });
+
+// Adversary round 2 (2026-09-10): #7 the preview carries the draft's @mentions; #8 Ctrl+Enter
+// while a send is pending is a no-op and only the SUBMITTED draft is cleared; #14 Esc dismisses the
+// mention menu and the keyup on the same token does not reopen it.
+describe("Composer round 2", () => {
+  it("#7 the wake preview is asked with the draft text", async () => {
+    const seen: string[] = [];
+    server.use(
+      http.post("/v1/messages/resolve", async ({ request }) => {
+        const b = (await request.json()) as { text?: string };
+        seen.push(b.text ?? "");
+        return HttpResponse.json({ ok: true, value: { to: null, wakes: [], plan: [], note: "nobody is woken" } });
+      }),
+    );
+    mountComposer();
+    const ta = screen.getByTestId("composer-text") as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: "please coordinate with @owner" } });
+    await waitFor(() => expect(seen).toContain("please coordinate with @owner"), { timeout: 2000 });
+  });
+
+  it("#8 a second Ctrl+Enter while pending does not post twice; text typed meanwhile survives", async () => {
+    let posts = 0;
+    let release: () => void = () => {};
+    server.use(
+      http.post("/v1/messages", async () => {
+        posts += 1;
+        await new Promise<void>((r) => (release = r));
+        return HttpResponse.json({ ok: true, value: { id: "m1", unresolved_mentions: [] }, hint: "Sent." });
+      }),
+    );
+    mountComposer();
+    const ta = screen.getByTestId("composer-text") as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: "first" } });
+    fireEvent.keyDown(ta, { key: "Enter", ctrlKey: true });
+    fireEvent.keyDown(ta, { key: "Enter", ctrlKey: true });
+    await waitFor(() => expect(posts).toBe(1));
+    fireEvent.change(ta, { target: { value: "second draft" } });
+    release();
+    await screen.findByTestId("sent-note");
+    expect(posts).toBe(1);
+    expect(ta.value).toBe("second draft");
+  });
+
+  it("#14 Esc closes the mention menu and the same token's keyup keeps it closed", async () => {
+    mountComposer({ showTo: true });
+    await screen.findByRole("option", { name: /architect seat/ });
+    const ta = screen.getByTestId("composer-text") as HTMLTextAreaElement;
+    typeAt(ta, "@ar");
+    await waitFor(() => expect(screen.getByTestId("mentions-menu")).toBeInTheDocument());
+    fireEvent.keyDown(ta, { key: "Escape" });
+    fireEvent.keyUp(ta, { key: "Escape" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByTestId("mentions-menu")).not.toBeInTheDocument();
+    typeAt(ta, "@arc"); // a new partial reopens it
+    await waitFor(() => expect(screen.getByTestId("mentions-menu")).toBeInTheDocument());
+  });
+});

@@ -23,6 +23,7 @@ export function DocView({
   onOpenDoc,
   onOpenTicket,
   onVersion,
+  onDoc,
 }: {
   docId: string;
   version?: number | null;
@@ -30,29 +31,45 @@ export function DocView({
   onOpenTicket?: (id: string) => void;
   /** Reports the version the reader is showing (the drawer's "Open as page" carries it). */
   onVersion?: (v: number) => void;
+  /** Reports the pinned document (title/scope for a host page that must not run its own "latest" query). */
+  onDoc?: (doc: DocHtml) => void;
 }): React.JSX.Element {
-  // The version the reader OPENED is pinned (adversary finding #2, 2026-09-10): without an explicit
-  // version the first load resolves "latest" once and is then FROZEN — the query is disabled, so a
-  // feed invalidation cannot swap the body (or the ruling target) under the reader when a new
-  // version is published. A version pill re-requests an explicit (immutable) version.
+  // The version the reader OPENED is pinned (adversary finding #2, 2026-09-10; round 2 #2): without
+  // an explicit version the first load resolves "latest" ONCE, then the reader switches to the
+  // explicit, immutable ["doc", id, N] query — so a feed invalidation (or a sibling full-page
+  // query on the same "latest" key) can never swap the body or the ruling target under the reader
+  // when a new version is published. A version pill re-requests another explicit version.
   const [requested, setRequested] = useState<number | null>(version ?? null);
   const [frozen, setFrozen] = useState<number | null>(null);
   useEffect(() => {
     setRequested(version ?? null);
     setFrozen(null);
   }, [docId, version]);
+  const pinned = requested ?? frozen;
   const q = useQuery({
-    queryKey: ["doc", docId, requested],
-    queryFn: () => getDocHtml(docId, requested),
-    enabled: !(requested == null && frozen != null),
+    queryKey: ["doc", docId, pinned],
+    queryFn: () => getDocHtml(docId, pinned),
+    // An explicit version is immutable: never refetched, never invalidated under the reader.
+    ...(pinned != null ? { staleTime: Infinity, refetchOnWindowFocus: false, refetchOnReconnect: false } : {}),
   });
   const shown = q.data?.version ?? null;
+  const qc = useQueryClient();
+  const latestData = q.data;
   useEffect(() => {
-    if (requested == null && shown != null && frozen == null) setFrozen(shown);
-  }, [requested, shown, frozen]);
+    if (pinned == null && shown != null && latestData) {
+      // Seed the immutable key with the body already on screen: the switch is instant, no
+      // "Loading…" flash, and no second request for what the reader is already looking at.
+      qc.setQueryData(["doc", docId, shown], latestData);
+      setFrozen(shown);
+    }
+  }, [pinned, shown, latestData, qc, docId]);
   useEffect(() => {
     if (shown != null) onVersion?.(shown);
   }, [shown, onVersion]);
+  const data = q.data;
+  useEffect(() => {
+    if (data) onDoc?.(data);
+  }, [data, onDoc]);
 
   if (q.isPending) return <p className={ui.empty}>Loading document…</p>;
   if (q.isError)

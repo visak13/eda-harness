@@ -17,6 +17,9 @@ export interface FeedOptions {
   since?: number;
   onError?: (e: unknown) => void;
   backoffMs?: number;
+  /** Read watchdog: a stream that yields no bytes for this long is dropped and counted as a
+   *  failure (the board pings every 15s; adversary round 2 #9, 2026-09-10). */
+  readTimeoutMs?: number;
 }
 
 /** Subscribe to /v1/feed. Returns a stop function; call it to end the stream. */
@@ -25,7 +28,28 @@ export function subscribeFeed(onEvent: (e: FeedEvent) => void, opts: FeedOptions
   let since = opts.since ?? -1;
   let ctrl: AbortController | null = null;
   const backoff = opts.backoffMs ?? 1000;
+  const readTimeout = opts.readTimeoutMs ?? 45_000;
   let failures = 0; // consecutive stream failures; two in a row → poll /v1/events (finding #14)
+
+  // Round 2 #9: a 200 whose body never yields (a buffering proxy) or that closes at once (EOF
+  // before any frame) used to reset `failures` at the headers and never reach the poll fallback.
+  // Now `failures` resets only after a frame ARRIVES, a silent stream is cut by the watchdog, and
+  // a premature EOF counts as a failure.
+  function readWithTimeout<T>(p: Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error(`feed: no bytes for ${readTimeout}ms`)), readTimeout);
+      p.then(
+        (v) => {
+          clearTimeout(t);
+          resolve(v);
+        },
+        (e) => {
+          clearTimeout(t);
+          reject(e);
+        },
+      );
+    });
+  }
 
   // Polling fallback (adversary finding #14, 2026-09-10): a proxy that buffers SSE, or a board
   // without the stream, must not leave the page silent. After two consecutive stream failures we
@@ -60,17 +84,29 @@ export function subscribeFeed(onEvent: (e: FeedEvent) => void, opts: FeedOptions
           signal: ctrl.signal,
         });
         if (!res.ok || !res.body) throw new Error(`feed ${res.status}`);
-        failures = 0;
         const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
         let buf = "";
+        let progressed = false; // a frame (data or comment) arrived on this connection
         while (!stopped) {
-          const { done, value } = await reader.read();
-          if (done) break; // server closed — fall through to reconnect
+          let chunk: ReadableStreamReadResult<string>;
+          try {
+            chunk = await readWithTimeout(reader.read());
+          } catch (e) {
+            ctrl.abort();
+            throw e;
+          }
+          const { done, value } = chunk;
+          if (done) {
+            if (!progressed) throw new Error("feed: closed before any frame"); // premature EOF
+            break; // server closed after real traffic — reconnect
+          }
           buf += value;
           let idx: number;
           while ((idx = buf.indexOf("\n\n")) >= 0) {
             const frame = buf.slice(0, idx);
             buf = buf.slice(idx + 2);
+            progressed = true;
+            failures = 0;
             const data = frame
               .split("\n")
               .filter((l) => l.startsWith("data:"))

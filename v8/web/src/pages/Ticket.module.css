@@ -222,3 +222,20 @@
 .controlGap {
   height: 16px;
 }
+
+/* Round 2 #16: per-message Reply */
+.replyBtn {
+  margin-top: 8px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.replyBtn:hover {
+  color: var(--ink);
+  border-color: var(--strongline);
+}

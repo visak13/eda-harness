@@ -1,6 +1,6 @@
+import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
-import { useQuery } from "@tanstack/react-query";
-import { getDocHtml } from "../api/endpoints";
+import type { DocHtml } from "../api/types";
 import { DocView } from "../components/DocView";
 import styles from "./Doc.module.css";
 
@@ -14,19 +14,22 @@ export function DocPage(): React.JSX.Element {
   const versionParam = params.get("version");
   const version = versionParam ? Number(versionParam) : undefined;
 
-  const doc = useQuery({ queryKey: ["doc", id, version ?? null], queryFn: () => getDocHtml(id, version) });
+  // Round 2 #2: the page no longer runs its own ["doc", id, null] query — that shared "latest" key
+  // refetched on every feed invalidation and moved the reader's body under it. DocView pins the
+  // version and reports the document it shows.
+  const [doc, setDoc] = useState<DocHtml | null>(null);
 
   return (
     <div className={styles.page}>
       <nav className={styles.crumb} aria-label="Breadcrumb">
-        {doc.data ? (
-          <Link to={`/epic/${encodeURIComponent(doc.data.scope)}`}>← {doc.data.scope}</Link>
+        {doc ? (
+          <Link to={`/epic/${encodeURIComponent(doc.scope)}`}>← {doc.scope}</Link>
         ) : (
           <Link to="/library/documents">← Library</Link>
         )}
       </nav>
-      <h1 className={styles.title}>{doc.data?.title ?? "Document"}</h1>
-      <DocView docId={id} version={version} />
+      <h1 className={styles.title}>{doc?.title ?? "Document"}</h1>
+      <DocView docId={id} version={version} onDoc={setDoc} />
     </div>
   );
 }

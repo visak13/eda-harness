@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link, useParams } from "react-router";
+import { useRef, useState } from "react";
+import { Link, useLocation, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { getTicketPage } from "../api/endpoints";
 import type { MessageView, TicketStatus } from "../api/types";
@@ -45,8 +45,15 @@ export function TicketPage(): React.JSX.Element {
   const as = identity();
   const [order, setOrder] = useState<"newest" | "oldest">("newest");
   const drawer = useDocDrawer();
+  // Round 2 #16: a reply is a THREADED reply — the Reply action on a message carries reply_to and
+  // the sender into the composer; an @tag alone never picks a parent.
+  const [reply, setReply] = useState<{ id: string; by: string } | null>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
 
-  const page = useQuery({ queryKey: ["ticket", id], queryFn: () => getTicketPage(id) });
+  // A deep-linked message (#m-…) is always fetched, even outside the newest-100 window (round 2 #5/#13).
+  const { hash } = useLocation();
+  const include = hash.startsWith("#m-") ? hash.slice(1) : null;
+  const page = useQuery({ queryKey: ["ticket", id, include], queryFn: () => getTicketPage(id, include) });
   useScrollToHash(page.data?.thread.length ?? 0); // before the early returns: hooks run every render
 
   if (page.isPending) return <p className={ui.empty}>Loading ticket…</p>;
@@ -143,7 +150,19 @@ export function TicketPage(): React.JSX.Element {
               {order === "newest" ? "Newest first" : "Oldest first"}
             </button>
           </div>
-          <Composer ticketId={id} kinds={["note", "question"]} showTo placeholder={`Message this conversation as @${as}`} />
+          <div ref={composerRef}>
+            <Composer
+              key={reply?.id ?? "new"}
+              ticketId={id}
+              kinds={reply ? ["answer", "note"] : ["note", "question"]}
+              showTo
+              to={reply ? reply.by : null}
+              replyTo={reply?.id ?? null}
+              replyToBy={reply?.by ?? null}
+              onCancelReply={() => setReply(null)}
+              placeholder={reply ? `Reply to @${reply.by}` : `Message this conversation as @${as}`}
+            />
+          </div>
           {ordered.length === 0 ? (
             <p className={ui.empty}>No messages on this ticket yet.</p>
           ) : (
@@ -160,6 +179,18 @@ export function TicketPage(): React.JSX.Element {
                     </p>
                   ) : null}
                   <MessageText className={styles.messageText} text={m.text} />
+                  <button
+                    type="button"
+                    className={styles.replyBtn}
+                    data-testid="thread-reply"
+                    onClick={() => {
+                      setReply({ id: m.id, by: m.by });
+                      composerRef.current?.scrollIntoView({ block: "nearest" });
+                      composerRef.current?.querySelector("textarea")?.focus();
+                    }}
+                  >
+                    Reply
+                  </button>
                 </li>
               ))}
             </ul>

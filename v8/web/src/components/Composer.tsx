@@ -5,6 +5,7 @@ import type { MessageKind } from "../api/types";
 import { getPeople, resolveMessage, sendMessage, uploadArtifact } from "../api/endpoints";
 import { useDirtyGuard } from "../live/useDraftGuard";
 import { useMentions } from "./useMentions";
+import { mentionedHandles } from "./mentions";
 import styles from "./Composer.module.css";
 
 // The object-attached composer (design §4.2/§13/§16.1/§18.1). The conversation is IMPLICIT — the
@@ -25,16 +26,10 @@ const ROLE_GLOSS: Record<string, string> = {
 };
 const NEEDS_CONFIRM: MessageKind[] = ["question", "deviation"];
 
-/** The first `@handle` in `text` that names a known participant (handle or id), else null. */
+/** The first `@handle` in `text` that names a known participant (handle or id), else null.
+ *  Uses the shared tokeniser (round 2 #6): code spans and e-mail interiors never address anyone. */
 export function firstMentionedHandle(text: string, people: PersonRow[]): string | null {
-  const re = /(^|[^\w.@-])@([\w][\w.-]*)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    const tok = m[2].replace(/[.,;:!?]+$/, "");
-    const hit = people.find((p) => p.handle === tok || p.id === tok);
-    if (hit) return hit.handle;
-  }
-  return null;
+  return mentionedHandles(text, people)[0] ?? null;
 }
 
 export interface ComposerProps {
@@ -51,6 +46,14 @@ export interface ComposerProps {
   showTo?: boolean;
   /** Report dirty (non-empty draft) so the draft guard holds live refreshes while typing. */
   onDirtyChange?: (dirty: boolean) => void;
+  /** Who `replyTo` was written by — shown on the "Replying to" chip (round 2 #16). */
+  replyToBy?: string | null;
+  /** Clears the reply target (the chip's ✕). */
+  onCancelReply?: () => void;
+  /** Initial draft text (a moved draft, e.g. the §4.2 Expand drawer). */
+  initialText?: string;
+  /** Reports the live draft so a host can move it (Expand) or persist it. */
+  onTextChange?: (text: string) => void;
 }
 
 export function Composer({
@@ -62,9 +65,14 @@ export function Composer({
   replyTo = null,
   showTo = false,
   onDirtyChange,
+  replyToBy = null,
+  onCancelReply,
+  initialText = "",
+  onTextChange,
 }: ComposerProps): React.JSX.Element {
   const qc = useQueryClient();
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText);
+  useEffect(() => onTextChange?.(text), [text, onTextChange]);
   const [kind, setKind] = useState<MessageKind>(kinds[0]);
   const [to, setTo] = useState<string | null>(toProp);
   // Human defect #9 (m-a7e74d81b0, 2026-09-10): an @tagged note used to go out with to=None, so
@@ -103,9 +111,15 @@ export function Composer({
 
   // Wake preview — the board's delivery plan for this (to, kind). Reactive so it cannot drift from
   // delivery; nothing is sent (design §16.1). Enabled once there is a target to preview.
+  // Round 2 #7: the draft's @mentions are part of the plan, so the preview carries the text (debounced).
+  const [previewText, setPreviewText] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setPreviewText(text), 250);
+    return () => clearTimeout(t);
+  }, [text]);
   const preview = useQuery({
-    queryKey: ["resolve", ticketId, to, kind],
-    queryFn: () => resolveMessage({ ticket_id: ticketId, to, kind }),
+    queryKey: ["resolve", ticketId, to, kind, previewText],
+    queryFn: () => resolveMessage({ ticket_id: ticketId, to, kind, text: previewText }),
     enabled: Boolean(ticketId),
     retry: false,
   });
@@ -124,35 +138,41 @@ export function Composer({
   const emptyPlan = (preview.data?.plan?.length ?? 0) === 0;
   const needsConfirm = NEEDS_CONFIRM.includes(kind) && emptyPlan;
 
+  // Round 2 #8: the mutation carries the draft it SUBMITTED; on success only that draft is cleared —
+  // text typed while the post was in flight survives — and a second Ctrl+Enter while pending is a no-op.
   const send = useMutation({
-    mutationFn: () =>
+    mutationFn: (draft: { text: string; artifacts: string[] }) =>
       sendMessage({
         ticket_id: ticketId,
         kind,
-        text: text.trim(),
+        text: draft.text,
         to,
         reply_to: replyTo,
-        artifacts: artifacts.length ? artifacts : undefined,
-      }),
-    onSuccess: ({ value, hint }) => {
+        artifacts: draft.artifacts.length ? draft.artifacts : undefined,
+      }).then((r) => ({ ...r, draft })),
+    onSuccess: ({ value, hint, draft }) => {
       setSentNote(hint || "Sent.");
       setUnresolved(value.unresolved_mentions ?? []);
-      setText("");
-      setArtifacts([]);
+      setText((t) => (t.trim() === draft.text ? "" : t));
+      setArtifacts((a) => a.filter((id) => !draft.artifacts.includes(id)));
       setConfirming(false);
       onDirtyChange?.(false);
+      onCancelReply?.();
       onSent?.(value);
       void qc.invalidateQueries();
     },
   });
 
+  const inFlight = useRef(false); // synchronous guard: isPending flips only on the next render
   function trySend() {
+    if (send.isPending || inFlight.current) return;
     if (text.trim().length === 0 && artifacts.length === 0) return;
     if (needsConfirm && !confirming) {
       setConfirming(true); // one confirm step when a question/deviation would wake nobody
       return;
     }
-    send.mutate();
+    inFlight.current = true;
+    send.mutate({ text: text.trim(), artifacts: [...artifacts] }, { onSettled: () => (inFlight.current = false) });
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -198,6 +218,17 @@ export function Composer({
       }}
     >
       {dragOver ? <div className={styles.veil} data-testid="drop-veil">Drop to attach</div> : null}
+
+      {replyTo ? (
+        <div className={styles.replyChip} data-testid="reply-chip">
+          Replying to {replyToBy ? `@${replyToBy}` : replyTo}
+          {onCancelReply ? (
+            <button type="button" className={styles.replyCancel} onClick={onCancelReply} aria-label="Stop replying">
+              ✕
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className={styles.controls}>
         {kindFixed ? null : (

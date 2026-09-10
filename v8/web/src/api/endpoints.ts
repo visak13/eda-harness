@@ -39,7 +39,8 @@ export type EpicsFilter = { status?: string | null; q?: string | null };
 export const getEpicsSummary = (f: EpicsFilter = {}) =>
   api<EpicSummaryRow[]>(`/v1/epics/summary${qs(f)}`);
 
-export const getEpicPage = (id: string) => api<EpicPage>(`/v1/epics/${encodeURIComponent(id)}/page`);
+export const getEpicPage = (id: string, include?: string | null) =>
+  api<EpicPage>(`/v1/epics/${encodeURIComponent(id)}/page${qs({ include })}`);
 
 export type TicketsFilter = {
   epic?: string | null;
@@ -53,8 +54,8 @@ export type TicketsFilter = {
 export const getTicketsTable = (f: TicketsFilter = {}) =>
   api<TicketsTable>(`/v1/tickets/table${qs(f)}`);
 
-export const getTicketPage = (id: string) =>
-  api<TicketPage>(`/v1/tickets/${encodeURIComponent(id)}/page`);
+export const getTicketPage = (id: string, include?: string | null) =>
+  api<TicketPage>(`/v1/tickets/${encodeURIComponent(id)}/page${qs({ include })}`);
 
 export const getDocHtml = (id: string, version?: number | null) =>
   api<DocHtml>(`/v1/docs/${encodeURIComponent(id)}/html${qs({ version })}`);
@@ -91,6 +92,8 @@ export interface ResolveBody {
   ticket_id: string;
   to?: string | null;
   kind: MessageKind;
+  /** The draft body — its @mentions join the preview exactly as they join delivery (round 2 #7). */
+  text?: string;
 }
 export const resolveMessage = async (b: ResolveBody): Promise<ResolveResult> =>
   (await apiEnvelope<ResolveResult>("/v1/messages/resolve", {

@@ -92,3 +92,28 @@ describe("DocView", () => {
     expect(screen.getByText("accept the design")).toBeInTheDocument();
   });
 });
+
+// Adversary round 2 #2 (2026-09-10): once "latest" resolves the reader is pinned to that explicit
+// version; a refetch of the shared "latest" key (a feed invalidation, or the full page's own query)
+// must not advance the body under the reader.
+describe("DocView pins the opened version (round 2 #2)", () => {
+  it("keeps showing v1 after the board publishes v2 and every query is invalidated", async () => {
+    let latest = 1;
+    server.use(
+      http.get("/v1/docs/design-1/html", ({ request }) => {
+        const v = new URL(request.url).searchParams.get("version");
+        const n = v ? Number(v) : latest;
+        return okJson(doc({ version: n, versions: Array.from({ length: latest }, (_, i) => i + 1), html: `<p>body of version ${n}</p>` }));
+      }),
+    );
+    const { qc } = renderRoute("/doc/design-1", "/doc/:id", <DocView docId="design-1" />);
+    await screen.findByText("body of version 1");
+    latest = 2;
+    await qc.invalidateQueries();
+    await new Promise((r) => setTimeout(r, 50));
+    await qc.refetchQueries();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.getByText("body of version 1")).toBeInTheDocument();
+    expect(screen.queryByText("body of version 2")).toBeNull();
+  });
+});
