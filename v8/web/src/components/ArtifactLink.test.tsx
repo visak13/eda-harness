@@ -68,3 +68,19 @@ describe("openArtifact honours Content-Disposition", () => {
     expect(clicks[0].download).toBe("shot.png");
   });
 });
+
+describe("ArtifactLink copy link (promise #20)", () => {
+  it("renders a Copy link next to the artifact that yields the shareable /ui/artifact/<id> URL", async () => {
+    vi.stubEnv("BASE_URL", "/ui/"); // vitest serves at "/"; the built SPA mounts at /ui/
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    const { render, screen, fireEvent, waitFor } = await import("@testing-library/react");
+    const { MessageText } = await import("./ArtifactLink");
+    render(<MessageText text="see art-abc123 for the shot" />);
+    const copy = screen.getByTestId("artifact-copy-link");
+    expect(copy).toHaveAttribute("data-artifact", "art-abc123");
+    fireEvent.click(copy);
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/ui/artifact/art-abc123`));
+    expect(copy).toHaveTextContent("Link copied");
+  });
+});

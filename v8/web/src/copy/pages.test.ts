@@ -7,8 +7,8 @@ import { PAGES, SIDEBAR, RULES, copyItem, copyProps, pageKeyFor } from "./pages"
 // a framing sentence and at least one control, every entry is verbatim non-empty copy, and a
 // control key without copy fails loudly (copyProps throws) rather than rendering a blank tooltip.
 describe("UI copy contract", () => {
-  it("every route in main.tsx maps to a page with framing and controls", () => {
-    const main = readFileSync(resolve(__dirname, "../main.tsx"), "utf-8");
+  it("every route in routes.tsx (the table main.tsx mounts) maps to a page with framing and controls", () => {
+    const main = readFileSync(resolve(__dirname, "../routes.tsx"), "utf-8");
     const paths = [...main.matchAll(/path: "([^"*]+)"/g)].map((m) => "/" + m[1].replace(":id", "x-1"));
     expect(paths.length).toBeGreaterThan(5);
     for (const p of paths) {

@@ -1,0 +1,71 @@
+/* Promise #20: the shareable artifact page — reading column, meta list, inline preview or Download. */
+.page {
+  max-width: 1064px;
+}
+.crumb {
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+.crumb a {
+  color: var(--accentink);
+  text-decoration: underline;
+}
+.title {
+  font: 34px/1.2 Georgia, serif;
+  letter-spacing: -0.9px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 12px;
+  overflow-wrap: anywhere;
+}
+.meta {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 16px;
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+.meta dt {
+  color: var(--muted);
+}
+.meta dd {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.note {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--ink);
+  margin: 0 0 16px;
+}
+.preview {
+  display: block;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+.actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.button {
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.button:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 3px;
+}
+.calm {
+  color: var(--muted);
+  font-size: 14px;
+}

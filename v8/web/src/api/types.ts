@@ -419,6 +419,20 @@ export interface ResolveResult {
 // --------------------------------------------------------------------------- POST /v1/artifacts/upload
 
 // POST /v1/artifacts/upload → the staged artifact (design §18.1). Minimal shape the composer needs.
+/** GET /v1/artifacts/{id} (design §18.1). content_type is the board's sniffed type; filename the
+ *  original client name (download name only). */
+export interface ArtifactRecord {
+  id: string;
+  form: string;
+  uri: string;
+  note: string;
+  created_by: string;
+  created_at: ISODateString;
+  content_type?: string;
+  filename?: string;
+  [k: string]: unknown;
+}
+
 export interface UploadedArtifact {
   id: string;
   form: string; // "image" for png/jpeg/gif/webp; else "file"

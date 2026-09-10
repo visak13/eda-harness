@@ -11,6 +11,21 @@
   outline: 2px solid var(--accentink);
   outline-offset: 2px;
 }
+.copy {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin-left: 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.copy:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 2px;
+}
 .err {
   color: var(--muted);
   font-size: 12px;

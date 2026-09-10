@@ -24,6 +24,7 @@ import type {
   TicketStatus,
   TicketTransitions,
   UploadedArtifact,
+  ArtifactRecord,
 } from "./types";
 
 function qs(params: Record<string, string | number | null | undefined>): string {
@@ -129,6 +130,9 @@ export const answerGate = (ticketId: string, gate: string, answer: string) =>
     `/v1/gates/${encodeURIComponent(ticketId)}/${encodeURIComponent(gate)}/answer`,
     { answer },
   );
+
+/** GET /v1/artifacts/{id} — the artifact record (promise #20: the shareable /ui/artifact/:id page). */
+export const getArtifact = (id: string) => api<ArtifactRecord>(`/v1/artifacts/${encodeURIComponent(id)}`);
 
 /** POST /v1/artifacts/upload (multipart, design §18.1). The browser sets the multipart boundary,
  *  so we send FormData with NO content-type header. Returns the STAGED artifact; its id goes into

@@ -8,7 +8,21 @@ import styles from "./ArtifactLink.module.css";
 // only the four inline image types preview in a new tab; everything else (an SVG above all, which
 // can script at top level from a same-origin blob: URL) is saved through <a download> and never
 // navigated to. There is no current-tab fallback: a blocked popup degrades to the download.
-const PREVIEW_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+export const PREVIEW_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+
+/** The shareable SPA link for an artifact (promise #20): `${origin}/ui/artifact/<id>` — the /ui
+ *  base rides import.meta.env.BASE_URL so the link follows the mount prefix like the router does. */
+export function artifactShareUrl(id: string): string {
+  const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+  return `${window.location.origin}${base}/artifact/${encodeURIComponent(id)}`;
+}
+
+/** Authenticated fetch of an artifact's bytes (the plain <a href> would 401 — finding #5). */
+export async function fetchArtifactContent(id: string): Promise<Response> {
+  const res = await fetch(`/v1/artifacts/${encodeURIComponent(id)}/content`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`artifact ${id}: ${res.status}`);
+  return res;
+}
 
 export function dispositionOf(res: { headers: { get(name: string): string | null } }): { inline: boolean; filename: string | null } {
   const cd = res.headers.get("content-disposition") ?? "";
@@ -31,8 +45,7 @@ function saveBlob(blob: Blob, filename: string): void {
 }
 
 export async function openArtifact(id: string): Promise<void> {
-  const res = await fetch(`/v1/artifacts/${encodeURIComponent(id)}/content`, { headers: authHeaders() });
-  if (!res.ok) throw new Error(`artifact ${id}: ${res.status}`);
+  const res = await fetchArtifactContent(id);
   const { inline, filename } = dispositionOf(res);
   const blob = await res.blob();
   if (inline) {
@@ -45,6 +58,28 @@ export async function openArtifact(id: string): Promise<void> {
     URL.revokeObjectURL(url); // popup blocked → save it instead; never navigate this tab
   }
   saveBlob(blob, filename ?? id);
+}
+
+/** "Copy link" (promise #20): puts the shareable /ui/artifact/<id> URL on the clipboard and says so. */
+export function CopyArtifactLink({ id, className }: { id: string; className?: string }): React.JSX.Element {
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  const url = artifactShareUrl(id);
+  return (
+    <button
+      type="button"
+      className={className ?? styles.copy}
+      data-testid="artifact-copy-link"
+      data-artifact={id}
+      title={url}
+      aria-label={`Copy link to ${id}`}
+      onClick={() => {
+        const write = navigator.clipboard?.writeText(url) ?? Promise.reject(new Error("no clipboard"));
+        write.then(() => setState("copied")).catch(() => setState("failed"));
+      }}
+    >
+      {state === "copied" ? "Link copied" : state === "failed" ? `Copy failed — ${url}` : "Copy link"}
+    </button>
+  );
 }
 
 export function ArtifactLink({ id, label }: { id: string; label?: string }): React.JSX.Element {
@@ -63,6 +98,7 @@ export function ArtifactLink({ id, label }: { id: string; label?: string }): Rea
       >
         {label ?? id}
       </button>
+      <CopyArtifactLink id={id} />
       {err ? <span className={styles.err}>{err}</span> : null}
     </>
   );
