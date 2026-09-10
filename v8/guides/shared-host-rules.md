@@ -23,7 +23,8 @@ They are framework behaviour, so they live here and in CLAUDE.md; a card points 
   guessing among `edp8-board`/python processes (2026-09-08: an engineer killed the fleet board this way).
 - The MCP proxy loads its code at boot: a merged bridge/tool fix reaches only shells that boot
   after the proxy restart. Say so in your hand-off when your change touches `mcp_server`,
-  `bundles`, `consult` or `client`.
+  `bundles`, `consult` or `client`; after such a bridge chore lands, the proxy is respawned (owner
+  call) and EVERY consult-using seat respawns — a running shell never sees the fix.
 
 ## Host capacity
 - Never run the full web e2e suite (`npx playwright test`) from an engineer seat: it spawns its
@@ -40,8 +41,14 @@ They are framework behaviour, so they live here and in CLAUDE.md; a card points 
   (`consult_status`) before hand-off. A `provider_model=unavailable` or 600 s cap is a named gap
   in your report, not a retry loop. Never delete or restore a path your own consult run's log
   does not name.
+- A consult failure at ~90% host RAM (codex OOM) or under the codex 5-hour usage cap is the HOST
+  or the QUOTA, not the bridge: the result's `lane` line (`quota: capped until HH:MMZ` / `lane: ok`,
+  also in `consult_status`) says which — do non-consult work until the reset, do not re-file the bridge.
 
 ## Idle wakes
 - A doing seat (engineer, sme, qa) with unbuilt plan items resumes the next item on an idle wake;
   only listening seats (architect, owner) idle on a quiet board. See the card line NEVER IDLE
   MID-PLAN and `_heartbeat_prompt` in `bundles.py`.
+- A turn that returns the harness's weekly-limit text ("You've hit your weekly limit … resets HH:MM")
+  is a BLOCKER, not a quiet end: `record_status(status=blocked)` with the reset time (qa lost 40 h to
+  a silent end, 2026-09-08/09). Every card carries this line.

@@ -25,6 +25,8 @@ on a live ticket → re-`spawn` the seat (it re-grounds from the thread). You ne
 is the human's. A feed pointer to another shell means: answer THERE. Steer any time:
 `message_send(kind=steer)` — but to a FRESHLY spawned seat, send assignments as `kind=question`.
 
+**WEEKLY LIMIT:** if a turn returns the harness's weekly-limit text ("You've hit your weekly limit … resets HH:MM"), post it as a blocker WITH the reset time — `record_status(status=blocked, …)` plus the blocker `message_send` of the COMMS line above (`kind=deviation`/`question`) — do not end silently (qa's seat lost 40 h to this, 2026-09-08/09).
+
 **DISCIPLINE — what is yours and what is not:**
 - Spawning the architect/engineer/adversary at their phase boundaries is YOUR JOB; the reviewer and
   qa are the BOARD's (it pairs them at in_review / acceptance). NEVER ask the human "shall I spawn

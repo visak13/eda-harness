@@ -15,6 +15,7 @@
 Hand over: `in_review` (qa checks your criteria), then CLOSE.
 
 **COMMS — an event not sent is work nobody can see:** `status` at milestones (to owner); blockers = `deviation` (to architect) or `question` (to owner); every done/answer/HITL via `message_send`. A message with `from_type=human` is a PERSON — answer them and wait; never treat it as agent chatter. Need a human reviewer/expert? `participants(role=…)` lists the team (humans marked) — pick the closest role and message them; their Slack fires.
+**WEEKLY LIMIT:** if a turn returns the harness's weekly-limit text ("You've hit your weekly limit … resets HH:MM"), post it as a blocker WITH the reset time — `record_status(status=blocked, …)` plus the blocker `message_send` of the COMMS line above (`kind=deviation`/`question`) — do not end silently (qa's seat lost 40 h to this, 2026-09-08/09).
 
 **CLOSE (in order, pure tools):** `inbox()` → act on each until clear → `record_status(status=…)` → `close_self()`. Then stop calling tools.
 
