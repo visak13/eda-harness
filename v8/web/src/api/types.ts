@@ -280,6 +280,10 @@ export interface EpicPage {
   counts: Record<string, number> | null;
   thread: MessageView[];
   docs: DocSummary[];
+  /** The epic's short human title (human #32; falls back to the words on an older board). */
+  title?: string;
+  /** The architect's brief — the epic description (human #33). */
+  description?: string;
   open_gates: [string, string][];
   answerable_gates: GateRow[]; // the epic's own open gates, answerable from the page (§16)
   criteria: CriterionView[]; // the epic's own acceptance criteria, with add/verdict on the page (§16)

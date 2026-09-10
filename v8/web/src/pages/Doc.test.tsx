@@ -42,8 +42,10 @@ describe("DocPage", () => {
   it("version pills show the versions with the latest marked", async () => {
     server.use(http.get("/v1/docs/design-1/html", () => okJson(doc())));
     renderRoute("/doc/design-1", "/doc/:id", <DocPage />);
-    await screen.findByLabelText("Versions");
-    expect(screen.getByText(/v2/)).toBeInTheDocument();
-    expect(screen.getByText(/v1/)).toBeInTheDocument();
+    // Human #30: versions collapse to "vN · latest" on the meta line + a menu holding every pill
+    await screen.findByTestId("version-now");
+    expect(screen.getByTestId("version-now")).toHaveTextContent("v2 · latest");
+    const pills = screen.getAllByTestId("version-pill");
+    expect(pills.map((p) => p.textContent)).toEqual(["v1", "v2 · latest"]);
   });
 });

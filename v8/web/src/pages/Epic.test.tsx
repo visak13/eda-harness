@@ -36,7 +36,8 @@ function page(over: Partial<EpicPageData> = {}, thread: MessageView[] = []): Epi
   };
   return {
     board: { epic, counts: { in_progress: 1 }, ready: [], in_review: [], open_gates: [], words: epic.title },
-    words: epic.title,
+    words: "Upgrade the board UI so that a first-time human can read it without a shell",
+    title: epic.title,
     counts: { in_progress: 1 },
     thread,
     docs: [],
@@ -68,8 +69,8 @@ describe("EpicPage", () => {
     await screen.findByText("Upgrade the board UI", { selector: "h1" });
     expect(screen.getByTestId("status-chip")).toHaveTextContent("In progress");
     expect(screen.getByText(/Owner.s words/i)).toBeInTheDocument();
-    // words quote carries the request verbatim
-    expect(screen.getAllByText("Upgrade the board UI").length).toBeGreaterThanOrEqual(2);
+    // the words quote carries the request verbatim, once, under the short title (human #32)
+    expect(screen.getByTestId("owner-words")).toHaveTextContent("without a shell");
   });
 
   it("renders the directive callout only when the thread carries an owner steer", async () => {

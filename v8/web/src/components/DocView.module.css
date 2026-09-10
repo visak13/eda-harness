@@ -1,22 +1,85 @@
+/* Human #30 (2026-09-10): one reader layout for the page and the 1112px drawer. Reading column at a
+   ~720px measure; when a sign-off cites the doc a 320px sticky pane sits on the right; otherwise the
+   reading column alone. Meta is one line; versions collapse behind a menu. */
+
 .doc {
+  display: grid;
+  grid-template-columns: minmax(0, 760px);
+  gap: 24px;
+  align-items: start;
+}
+.withPane {
+  grid-template-columns: minmax(0, 720px) 320px;
+}
+@media (max-width: 1099px) {
+  .withPane {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.reading {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0;
+}
+.body {
+  min-width: 0;
+}
+
+.pane {
+  position: sticky;
+  top: 16px;
+  min-width: 0;
 }
 
 .meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
   font-size: 13px;
+  line-height: 20px;
   color: var(--muted);
 }
+.versionNow {
+  color: var(--ink);
+}
 
+.versionsMenu {
+  position: relative;
+}
+.versionsSummary {
+  cursor: pointer;
+  list-style: none;
+  font: 12px/18px Consolas, monospace;
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+  background: var(--secondary);
+}
+.versionsSummary::-webkit-details-marker {
+  display: none;
+}
 .versions {
+  position: absolute;
+  z-index: 3;
+  top: 24px;
+  left: 0;
   display: flex;
-  gap: 6px;
   flex-wrap: wrap;
+  gap: 6px;
+  max-width: 420px;
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
 .vpill {
-  font: inherit;
   cursor: pointer;
   font: 12px/18px Consolas, monospace;
   padding: 2px 9px;

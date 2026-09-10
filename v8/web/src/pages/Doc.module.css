@@ -1,5 +1,6 @@
+/* Human #30: the same reader as the drawer — reading column + optional sign-off pane. */
 .page {
-  max-width: 860px;
+  max-width: 1064px;
 }
 
 .crumb {
@@ -17,5 +18,5 @@
   letter-spacing: -0.9px;
   font-weight: 600;
   color: var(--ink);
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }

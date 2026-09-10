@@ -58,14 +58,11 @@ export function ProcessStrip({
                 data-testid={isCurrent ? "stage-current" : undefined}
                 title={tip}
               >
-                {glossLabel("ticket_status", stage)}
-                {isCurrent ? <span className={styles.currentTag}> · current</span> : null}
+                <span className={styles.dot} aria-hidden="true" />
+                <span className={styles.stageLabel}>{glossLabel("ticket_status", stage)}</span>
+                {isCurrent ? <span className={styles.currentTag}>current</span> : null}
               </li>
-              {i < STAGES.length - 1 ? (
-                <li className={styles.arrow} aria-hidden="true">
-                  →
-                </li>
-              ) : null}
+              {i < STAGES.length - 1 ? <li className={styles.joint} aria-hidden="true" /> : null}
             </Fragment>
           );
         })}

@@ -49,6 +49,12 @@ function tallyTotals(node: EpicTreeNode): { passed: number; total: number } {
     );
 }
 
+/** Lines to show of the brief before "Show all": its first paragraph (human #33). */
+function briefLines(text: string): number {
+  const first = text.trim().split(/\n\s*\n/)[0] ?? "";
+  return Math.max(2, Math.min(6, Math.ceil(first.length / 90)));
+}
+
 const KANBAN: [string, string[]][] = [
   ["Backlog", ["drafted", "designed", "signed_off", "blocked"]],
   ["Ready", ["ready"]],
@@ -84,12 +90,10 @@ export function EpicPage(): React.JSX.Element {
   const data = page.data;
   const epic = data.board.epic;
   const words = data.words ?? epic.title;
-  // The board titles an epic with the owner's words truncated; showing that line as the h1 AND the
-  // full words under "Owner's words" repeats the same text twice (human report 2026-09-10). When the
-  // title is a prefix of the words, the h1 carries the words in full and the figure is omitted.
-  const titleIsTruncatedWords =
-    words !== epic.title && words.startsWith(epic.title.replace(/[\u2026.]+$/, "").trimEnd());
-  const heading = titleIsTruncatedWords ? words : epic.title;
+  // Human #32 (2026-09-10): title ≠ words. The heading is the epic's short title; the owner's words
+  // render ONCE as a quoted block under it (omitted only when they are the same text).
+  const heading = data.title ?? epic.title;
+  const showWords = words.trim() !== heading.trim();
   const stories = epic.children;
   const directive = [...data.thread].reverse().find((m) => m.kind === "steer") ?? null;
   const row = summary.data?.find((r: EpicSummaryRow) => r.id === id) ?? null;
@@ -121,21 +125,33 @@ export function EpicPage(): React.JSX.Element {
           <span className={ui.idMono}>{epic.id}</span>
           <StatusChip status={epic.status} />
         </div>
-        <h1 className={`${styles.title} ${heading.length > 90 ? styles.titleLong : ""}`}>{heading}</h1>
+        <h1 className={`${styles.title} ${heading.length > 90 ? styles.titleLong : ""}`} {...copyProps("epic", "title")}>{heading}</h1>
         <button type="button" className={styles.steer} onClick={steer} {...copyProps("epic", "steer")}>
           Steer this epic
         </button>
       </div>
 
-      {titleIsTruncatedWords ? null : (
-      <figure className={styles.words}>
-        <figcaption className={ui.sectionLabel}>Owner&rsquo;s words · original request</figcaption>
-        <blockquote className={ui.quote}>{words}</blockquote>
-      </figure>
-      )}
+      {showWords ? (
+        <figure className={styles.words} data-testid="owner-words">
+          <figcaption className={ui.sectionLabel}>Owner&rsquo;s words · original request</figcaption>
+          <blockquote className={ui.quote}>{words}</blockquote>
+        </figure>
+      ) : null}
+
+      {/* Human #33: the description is the architect's brief — a quiet card, first paragraph
+          shown, "Show all" expands; never an alert. */}
+      {data.description?.trim() ? (
+        <section className={`${ui.card} ${styles.brief}`} data-testid="architect-brief" {...copyProps("epic", "directive")}>
+          <div className={ui.sectionLabel}>Architect&rsquo;s brief</div>
+          <Clamp className={styles.briefText} text={data.description} lines={briefLines(data.description)} />
+        </section>
+      ) : null}
 
       {directive ? (
-        <Clamp className={ui.directive} testId="directive" text={directive.text} lines={5} />
+        <section className={`${ui.card} ${styles.brief}`} data-testid="directive">
+          <div className={ui.sectionLabel}>Latest steer · {directive.by}</div>
+          <Clamp className={styles.briefText} text={directive.text} lines={3} />
+        </section>
       ) : null}
 
       <ProcessStrip
@@ -478,13 +494,17 @@ function TreeNode({
   return (
     <>
       {selfShown ? (
-        <div className={styles.treeRow} style={{ paddingLeft: depth * 20 }}>
+        <div className={styles.treeRow} style={{ paddingLeft: 14 + depth * 20 }} data-testid="work-row">
           <Link to={`/ticket/${encodeURIComponent(node.id)}`} className={styles.treeLink}>
-            <span className={styles.treeTitle}>{node.title}</span>
-            <span className={ui.idMono}>{node.id}</span>
+            <span className={styles.treeId}>{node.id}</span>
+            <span className={styles.treeTitle} title={node.title}>
+              {node.title}
+            </span>
           </Link>
           <span className={styles.treeRole}>{roleOf(node.assignee)}</span>
-          <StatusChip status={node.status} />
+          <span className={styles.treeStatus}>
+            <StatusChip status={node.status} />
+          </span>
           <span className={styles.treeTally}>{node.criteria}</span>
         </div>
       ) : null}

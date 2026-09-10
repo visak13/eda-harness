@@ -134,65 +134,88 @@ function DocBody({
     }
   }
 
+  // Human #30 (2026-09-10), one DocView layout for the drawer and the page: ONE meta line (type ·
+  // owner · scope · version, latest or pinned), versions collapsed to "vN · latest" + a menu, the
+  // body at a ~720px reading measure, and — only when the viewer has a sign-off citing this doc —
+  // a sticky criterion pane on the right (§4.2 reading pane + meta column). Nothing else on the right.
+  const hasSignoff = (doc.signoff_criteria?.length ?? 0) > 0 || Boolean(doc.signoff_criterion);
+  const isLatest = doc.version === latest;
   return (
-    <div className={styles.doc}>
-      <p className={styles.meta}>
-        {doc.doc_type} · owner {doc.owner_role} · scope <span className={ui.idMono}>{doc.scope}</span> ·
-        version {doc.version}
-      </p>
+    <div className={`${styles.doc} ${hasSignoff ? styles.withPane : ""}`} data-testid="doc-view">
+      <div className={styles.reading}>
+        <p className={styles.meta} data-testid="doc-meta">
+          <span>{doc.doc_type.replace(/_/g, " ")}</span>
+          <span aria-hidden="true">·</span>
+          <span>owner {doc.owner_role}</span>
+          <span aria-hidden="true">·</span>
+          <span>
+            scope <span className={ui.idMono}>{doc.scope}</span>
+          </span>
+          <span aria-hidden="true">·</span>
+          <span className={styles.versionNow} data-testid="version-now">
+            v{doc.version} · {isLatest ? "latest" : `pinned (latest v${latest})`}
+          </span>
+          {doc.versions.length > 1 ? (
+            <details className={styles.versionsMenu} aria-label="Versions">
+              <summary className={styles.versionsSummary}>versions ▾</summary>
+              <div className={styles.versions}>
+                {doc.versions.map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    className={`${styles.vpill} ${v === doc.version ? styles.vactive : ""}`}
+                    aria-pressed={v === doc.version}
+                    data-testid="version-pill"
+                    onClick={() => onPickVersion?.(v)}
+                  >
+                    v{v}
+                    {v === latest ? " · latest" : ""}
+                  </button>
+                ))}
+              </div>
+            </details>
+          ) : null}
+        </p>
 
-      {doc.versions.length > 1 ? (
-        <div className={styles.versions} aria-label="Versions">
-          {doc.versions.map((v) => (
-            <button
-              key={v}
-              type="button"
-              className={`${styles.vpill} ${v === doc.version ? styles.vactive : ""}`}
-              aria-pressed={v === doc.version}
-              data-testid="version-pill"
-              onClick={() => onPickVersion?.(v)}
-            >
-              v{v}
-              {v === latest ? " · latest" : ""}
-            </button>
-          ))}
+        <div ref={bodyRef} onClick={onBodyClick} className={styles.body}>
+          <Markdown html={doc.html} />
         </div>
-      ) : null}
 
-      <SignoffPane doc={doc} />
+        {scopeIsTicket ? (
+          <div className={styles.commentBox}>
+            <div className={ui.sectionLabel}>Comment on this document</div>
+            <textarea
+              className={ui.textarea}
+              aria-label="Comment"
+              value={comment}
+              placeholder={`Comment as @${as} — posts to ${doc.scope}`}
+              onChange={(e) => {
+                setComment(e.target.value);
+                setPosted(false);
+              }}
+            />
+            {posted ? <p className={styles.posted}>Comment posted to the thread.</p> : null}
+            <div className={styles.commentActions}>
+              <button
+                type="button"
+                className={`${ui.button} ${ui.buttonPrimary}`}
+                disabled={commentMut.isPending || comment.trim() === ""}
+                onClick={() => commentMut.mutate()}
+              >
+                Comment
+              </button>
+            </div>
+          </div>
+        ) : null}
 
-      <div ref={bodyRef} onClick={onBodyClick}>
-        <Markdown html={doc.html} />
+        <DocControls docId={doc.id} scope={doc.scope} version={doc.version} scopeIsThread={scopeIsTicket} />
       </div>
 
-      {scopeIsTicket ? (
-        <div className={styles.commentBox}>
-          <div className={ui.sectionLabel}>Comment on this document</div>
-          <textarea
-            className={ui.textarea}
-            aria-label="Comment"
-            value={comment}
-            placeholder={`Comment as @${as} — posts to ${doc.scope}`}
-            onChange={(e) => {
-              setComment(e.target.value);
-              setPosted(false);
-            }}
-          />
-          {posted ? <p className={styles.posted}>Comment posted to the thread.</p> : null}
-          <div className={styles.commentActions}>
-            <button
-              type="button"
-              className={`${ui.button} ${ui.buttonPrimary}`}
-              disabled={commentMut.isPending || comment.trim() === ""}
-              onClick={() => commentMut.mutate()}
-            >
-              Comment
-            </button>
-          </div>
-        </div>
+      {hasSignoff ? (
+        <aside className={styles.pane} aria-label="Your sign-off">
+          <SignoffPane doc={doc} />
+        </aside>
       ) : null}
-
-      <DocControls docId={doc.id} scope={doc.scope} version={doc.version} scopeIsThread={scopeIsTicket} />
     </div>
   );
 }

@@ -11,8 +11,8 @@ describe("ProcessStrip", () => {
     const strip = screen.getByTestId("process-strip");
     const stages = within(strip)
       .getAllByRole("listitem")
-      .filter((li) => li.getAttribute("aria-hidden") !== "true" && !li.textContent?.includes("→"));
-    expect(stages.map((s) => s.textContent?.replace(" · current", "").trim())).toEqual([
+      .filter((li) => li.getAttribute("aria-hidden") !== "true");
+    expect(stages.map((s) => s.textContent?.replace(/current$/, "").trim())).toEqual([
       "Drafted", "Designed", "Signed off", "Ready", "In progress", "In review", "Done",
     ]);
     const current = screen.getByTestId("stage-current");

@@ -1,10 +1,12 @@
-/* Process strip (folio-ticket): full main width, ordered stages with arrows between, the current
-   stage underlined and tagged "current", a next-action sentence beneath. Flat — no chips, no fill. */
+/* Process strip (folio-epic plate; human #28, 2026-09-10): the phase ladder as a token row — the
+   current step emphasised (accent wash + accent rule), done steps ink, future steps muted, joined
+   by a hairline instead of text arrows; the next-action sentence sits INSIDE the strip. Flat. */
 
 .strip {
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  padding: 16px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 14px 18px 12px;
   margin: 8px 0 24px;
 }
 
@@ -13,31 +15,56 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 14px;
+  gap: 8px 0;
   margin: 0;
   padding: 0;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .stage {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 14px;
   color: var(--muted);
+  white-space: nowrap;
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--line);
+  flex: none;
 }
 .stage.past {
   color: var(--ink);
 }
+.stage.past .dot {
+  background: var(--ink);
+}
 .stage.current {
-  color: var(--ink);
+  color: var(--accentink);
+  background: var(--accentwash);
   font-weight: 600;
-  border-bottom: 2px solid var(--accentink);
-  padding-bottom: 2px;
+}
+.stage.current .dot {
+  background: var(--accentink);
 }
 .currentTag {
+  font: 11px/16px Consolas, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
   color: var(--accentink);
-  font-weight: 600;
 }
 
-.arrow {
-  color: var(--strongline);
+/* hairline joint between tokens */
+.joint {
+  width: 18px;
+  height: 1px;
+  background: var(--strongline);
+  flex: none;
 }
 
 .offLine {
@@ -48,6 +75,8 @@
 
 .next {
   margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
   font-size: 14px;
   line-height: 22px;
   color: var(--ink);

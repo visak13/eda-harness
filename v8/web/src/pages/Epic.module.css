@@ -140,42 +140,60 @@
   overflow: hidden;
   margin-bottom: 20px;
 }
+/* Human #29 (2026-09-10): fixed column widths — id (Consolas 12, one line) · title (clamps to 2
+   lines) · role · status chip + tally right-aligned; nothing wraps into another column. */
 .treeRow {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px 120px 56px;
   align-items: center;
   gap: 12px;
-  padding: 10px 14px;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--line);
 }
 .treeRow:last-child {
   border-bottom: 0;
 }
 .treeLink {
-  display: flex;
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
-  flex: 1;
+  gap: 12px;
   min-width: 0;
 }
 .treeLink:hover .treeTitle {
   text-decoration: underline;
 }
-.treeTitle {
-  font-size: 14px;
-  color: var(--ink);
+.treeId {
+  font: 12px/18px Consolas, monospace;
+  color: var(--muted);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+}
+.treeTitle {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ink);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .treeRole {
   font-size: 12px;
   color: var(--muted);
-  flex: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.treeStatus {
+  display: flex;
+  justify-content: flex-end;
 }
 .treeTally {
   font: 12px/18px Consolas, monospace;
   color: var(--muted);
-  flex: none;
+  text-align: right;
 }
 
 .kanban {
@@ -337,4 +355,16 @@
   cursor: pointer;
   font-size: 13px;
   color: var(--accentink);
+}
+
+/* Human #33: the architect's brief is a quiet card, not an alert */
+.brief {
+  margin: 16px 0;
+  padding: 14px 18px;
+}
+.briefText {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--ink);
+  white-space: pre-wrap;
 }
