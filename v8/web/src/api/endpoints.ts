@@ -7,6 +7,7 @@ import { api, apiEnvelope, postJson } from "./client";
 import type {
   ActivityDay,
   ConversationRow,
+  ReplyRow,
   DecisionsHome,
   DocHtml,
   EpicPage,
@@ -67,6 +68,8 @@ export const getDecisions = () => api<DecisionsHome>("/v1/me/decisions");
 export const getResolved = (limit?: number) => api<ResolvedRow[]>(`/v1/me/decisions/resolved${qs({ limit })}`);
 export const getPeople = () => api<PersonRow[]>("/v1/me/people");
 export const getConversations = () => api<ConversationRow[]>("/v1/me/conversations");
+/** GET /v1/me/replies — replies to the viewer with the words they answer (human report m-3d3a36455f). */
+export const getReplies = (limit?: number) => api<ReplyRow[]>(`/v1/me/replies${qs({ limit })}`);
 
 // ------------------------------------------------------------------ writes
 

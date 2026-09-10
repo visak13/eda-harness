@@ -153,22 +153,37 @@ def pending_signoffs(board: Board, viewer: Participant) -> list[tuple[Any, Any, 
     return out
 
 
-def signoff_criterion_for_doc(board: Board, viewer: Participant, doc: Any) -> Any | None:
-    """The pending owner-checked criterion holding THIS doc as evidence (any version), for the
-    doc reader's Approve/Needs-work card (design §14). None for a non-owner or when none apply."""
-    if viewer.type != "human" or viewer.role != Role.owner:
-        return None
+def signoff_criteria_for_doc(board: Board, viewer: Participant, doc: Any) -> list[Any]:
+    """EVERY pending criterion the VIEWER checks whose evidence is THIS doc (any version), for the
+    doc reader's inline ruling cards (design §14). A human owner gets the owner-checked ones inside
+    their owner scope; any viewer (qa, reviewer, sme …) gets the ones whose checked_by names their
+    role, id or handle — the reader shows all of them, not the first owner one only (adversary
+    finding #8, 2026-09-10)."""
+    mine = {viewer.id, viewer.handle or "", viewer.role.value}
+    is_owner = viewer.type == "human" and viewer.role == Role.owner
+    out: list[Any] = []
     for c in board.store.query("criterion", {"verdict": Verdict.pending}, limit=300):
-        if c.checked_by != "owner" or c.evidence_ref != doc.id:
+        if c.evidence_ref != doc.id or not c.checked_by:
             continue
         tk = board.store.get("ticket", c.ticket_id)
         if tk is None or tk.status in _TERMINAL:
             continue
-        oid = board.epic_owner(tk.id)  # §14 finding 1: owner A's card stays off owner B's reader; an
-        if oid is not None and oid != viewer.id:  # agent-created epic has no human owner → any owner may sign
+        if c.checked_by == "owner":
+            if not is_owner:
+                continue
+            oid = board.epic_owner(tk.id)  # §14 finding 1: owner A's card stays off owner B's reader; an
+            if oid is not None and oid != viewer.id:  # agent-created epic has no human owner → any owner may sign
+                continue
+        elif c.checked_by not in mine:
             continue
-        return c
-    return None
+        out.append(c)
+    return out
+
+
+def signoff_criterion_for_doc(board: Board, viewer: Participant, doc: Any) -> Any | None:
+    """The first of signoff_criteria_for_doc — kept for callers that want one card."""
+    rows = signoff_criteria_for_doc(board, viewer, doc)
+    return rows[0] if rows else None
 
 
 def record_verdict(board: Board, actor: Participant, *, criterion_id: str, verdict: str,
@@ -305,6 +320,32 @@ def conversations_for(board: Board, viewer: Participant) -> list[dict[str, Any]]
                      "unread": tid in ask_tids,
                      "last": ({"by": lm.created_by, "text": lm.text[:120],
                                "at": lm.created_at.isoformat()} if lm else None)})
+    return rows
+
+
+def replies_for(board: Board, viewer: Participant, limit: int = 30) -> list[dict[str, Any]]:
+    """Messages that ANSWER the viewer — addressed to them (any kind but an open ask, which the inbox
+    holds) or replying to something they wrote — newest first, each with the viewer's own words it
+    answers. So a person who wrote from the UI can see the reply where they look (Decisions), not
+    only on the epic thread (human report m-3d3a36455f, 2026-09-10)."""
+    mine_ids = {viewer.id, viewer.handle or ""}
+    seen: dict[str, Any] = {}
+    for m in board.store.query("message", {"to": viewer.id}, limit=500):
+        if m.kind in (MessageKind.question, MessageKind.steer):
+            continue  # open asks live in the inbox
+        seen[m.id] = m
+    for mine in board.store.query("message", {"created_by": viewer.id}, limit=500):
+        for m in board.store.query("message", {"reply_to": mine.id}, limit=50):
+            if m.created_by not in mine_ids:
+                seen[m.id] = m
+    rows: list[dict[str, Any]] = []
+    for m in sorted(seen.values(), key=lambda x: x.created_at, reverse=True)[:limit]:
+        parent = board.store.get("message", m.reply_to) if m.reply_to else None
+        tk = board.store.get("ticket", m.ticket_id)
+        rows.append({"id": m.id, "ticket_id": m.ticket_id, "ticket_title": tk.title if tk else m.ticket_id,
+                     "created_by": m.created_by, "kind": m.kind.value, "text": m.text,
+                     "at": m.created_at.isoformat(), "reply_to": m.reply_to,
+                     "in_reply_to": ({"by": parent.created_by, "text": parent.text[:200]} if parent else None)})
     return rows
 
 
@@ -570,12 +611,13 @@ def doc_page(board: Board, doc_id: str, viewer: Participant | None = None, *,
     """A document rendered for reading (design §4.1/§14): sanitised HTML, the version list, and
     the viewer's pending sign-off criterion when one references this doc."""
     d = board.doc(doc_id, version)
-    signoff = signoff_criterion_for_doc(board, viewer, d) if viewer else None
+    crits = signoff_criteria_for_doc(board, viewer, d) if viewer else []
+    rows = [{"id": c.id, "text": c.text, "ticket_id": c.ticket_id, "checked_by": c.checked_by} for c in crits]
     return {"id": d.id, "title": d.title, "doc_type": d.doc_type.value, "scope": d.scope,
             "owner_role": d.owner_role.value, "version": d.version,
             "versions": board.store.doc_versions(doc_id), "html": render_markdown(d.body_md),
-            "signoff_criterion": ({"id": signoff.id, "text": signoff.text,
-                                   "ticket_id": signoff.ticket_id} if signoff else None)}
+            "signoff_criterion": rows[0] if rows else None,  # first card (back-compat)
+            "signoff_criteria": rows}  # every card the viewer must rule (finding #8)
 
 
 def feed_line(e: Any) -> str:

@@ -340,6 +340,20 @@ export interface DocHtml {
   versions: number[];
   html: string; // sanitised
   signoff_criterion: { id: string; text: string; ticket_id: string } | null;
+  /** Every pending criterion the viewer checks that cites this doc (finding #8); optional for old boards. */
+  signoff_criteria?: { id: string; text: string; ticket_id: string; checked_by?: string | null }[];
+}
+
+export interface ReplyRow {
+  id: string;
+  ticket_id: string;
+  ticket_title: string;
+  created_by: string;
+  kind: string;
+  text: string;
+  at: ISODateString;
+  reply_to: string | null;
+  in_reply_to: { by: string; text: string } | null;
 }
 
 export interface ActivityDay {

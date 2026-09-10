@@ -9,9 +9,11 @@ import type {
   QuestionRow,
   ResolvedRow,
   SignoffRow,
+  ReplyRow,
 } from "../api/types";
 import {
   getConversations,
+  getReplies,
   getDecisions,
   getEpicsSummary,
   getPeople,
@@ -47,6 +49,7 @@ export function DecisionsPage(): React.JSX.Element {
   const resolved = useQuery({ queryKey: ["me", "resolved"], queryFn: () => getResolved(30), retry: false });
   const people = useQuery({ queryKey: ["me", "people"], queryFn: getPeople, retry: false });
   const conversations = useQuery({ queryKey: ["me", "conversations"], queryFn: getConversations, retry: false });
+  const replies = useQuery({ queryKey: ["me", "replies"], queryFn: () => getReplies(30), retry: false });
   const epics = useQuery({ queryKey: ["epics", "summary"], queryFn: () => getEpicsSummary(), retry: false });
 
   const d = decisions.data;
@@ -118,6 +121,7 @@ export function DecisionsPage(): React.JSX.Element {
           <ResolvedTab rows={resolved.data ?? []} titleFor={titleFor} />
         )}
 
+        <Replies rows={replies.data ?? []} />
         <Conversations rows={conversations.data ?? []} people={people.data ?? []} />
       </div>
 
@@ -302,6 +306,37 @@ function ResolvedTab({
   );
 }
 
+// ------------------------------------------------------------------ Replies to you
+// A person who wrote from the UI must find the reply where they look (human report m-3d3a36455f,
+// 2026-09-10): every answer addressed to the viewer, or replying to what they wrote, with their own
+// words quoted above it and a way into the thread.
+function Replies({ rows }: { rows: ReplyRow[] }): React.JSX.Element | null {
+  if (rows.length === 0) return null;
+  return (
+    <section className={styles.convos} aria-label="Replies to you" data-testid="replies">
+      <div className={styles.convosHead}>
+        <h2 className={styles.sectionTitle}>Replies to you ({rows.length})</h2>
+      </div>
+      <ul className={styles.convoList}>
+        {rows.map((r) => (
+          <li key={r.id} className={styles.replyRow} data-testid="reply-row">
+            <AgentLine by={r.created_by} kind={r.kind} to={identity()} viewer={identity()} at={r.at} />
+            {r.in_reply_to ? (
+              <blockquote className={styles.replyQuote}>
+                <span className={styles.replyQuoteWho}>you wrote:</span> {r.in_reply_to.text}
+              </blockquote>
+            ) : null}
+            <MessageText className={styles.replyText} text={r.text} />
+            <Link className={styles.replyTicket} to={`/ticket/${encodeURIComponent(r.ticket_id)}`}>
+              {r.ticket_title}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 // ------------------------------------------------------------------ Conversations
 function Conversations({ rows, people }: { rows: ConversationRow[]; people: PersonRow[] }): React.JSX.Element {
   const [byCounterpart, setByCounterpart] = useState(false);
@@ -434,7 +469,9 @@ function SeatsNow(): React.JSX.Element {
   const seatsQ = useQuery({ queryKey: ["seats"], queryFn: getSeats, retry: false });
   const capsQ = useQuery({ queryKey: ["pool", "capabilities"], queryFn: getPoolCapabilities, retry: false });
   const caps = capsQ.data as PoolCapabilities | undefined;
-  const seats = seatsQ.data?.seats ?? [];
+  // Alive seats only — working/idle/parked. Closed/dead seats (and remote seats of unknown
+  // availability) live on the Seats page, not in "now" (human report m-3d3a36455f, 2026-09-10).
+  const seats = (seatsQ.data?.seats ?? []).filter((s) => s.state === "alive" || s.state === "parked" || s.state === "stalled");
   return (
     <section className={styles.railCard} data-testid="seats-now">
       <h2 className={styles.sectionTitle}>Seats, now</h2>
@@ -442,7 +479,7 @@ function SeatsNow(): React.JSX.Element {
       {seatsQ.isError ? (
         <p className={styles.calm}>Seats are unavailable right now.</p>
       ) : seats.length === 0 ? (
-        <p className={styles.calm}>No agent seats yet.</p>
+        <p className={styles.calm}>No seat is working right now.</p>
       ) : (
         <div className={styles.seatsNowScroll}>
           <table className={styles.seatsNowTable}>

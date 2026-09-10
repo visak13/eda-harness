@@ -88,6 +88,12 @@ def views_router(board: Board, actor: Callable[..., Participant]) -> APIRouter:
     def me_conversations(a: Participant = Depends(actor)):
         return ok(views.conversations_for(board, a))
 
+    @r.get("/v1/me/replies")
+    def me_replies(limit: int = 30, a: Participant = Depends(actor)):
+        """Replies to the viewer, newest first, each with the words it answers (human report
+        m-3d3a36455f: a person could not tell whether anyone replied)."""
+        return ok(views.replies_for(board, a, limit=limit))
+
     @r.get("/v1/me/summary")
     def me_summary(a: Participant = Depends(actor)):
         return ok(views.summary_for(board, a))

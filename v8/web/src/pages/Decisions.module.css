@@ -482,3 +482,36 @@ a.convoTitle {
 a.convoTitle:hover {
   text-decoration: underline;
 }
+
+/* Replies to you (human report m-3d3a36455f) */
+.replyRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 13px;
+}
+.replyQuote {
+  margin: 0;
+  padding: 4px 10px;
+  border-left: 3px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+.replyQuoteWho {
+  font-weight: 650;
+}
+.replyText {
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+.replyTicket {
+  color: var(--accentink);
+  font-size: 12px;
+  text-decoration: none;
+}
+.replyTicket:hover {
+  text-decoration: underline;
+}

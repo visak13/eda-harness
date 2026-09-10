@@ -33,6 +33,7 @@ interface Fixtures {
   resolved?: unknown[];
   people?: unknown[];
   conversations?: unknown[];
+  replies?: unknown[];
   epics?: unknown[];
   seats?: unknown[];
 }
@@ -51,6 +52,7 @@ function setBoard(f: Fixtures) {
     http.get("/v1/me/decisions/resolved", () => HttpResponse.json({ ok: true, value: f.resolved ?? [] })),
     http.get("/v1/me/people", () => HttpResponse.json({ ok: true, value: f.people ?? [] })),
     http.get("/v1/me/conversations", () => HttpResponse.json({ ok: true, value: f.conversations ?? [] })),
+    http.get("/v1/me/replies", () => HttpResponse.json({ ok: true, value: f.replies ?? [] })),
     http.get("/v1/epics/summary", () => HttpResponse.json({ ok: true, value: f.epics ?? [] })),
     http.get("/v1/seats", () => HttpResponse.json({ ok: true, value: { seats: f.seats ?? [], people: [] } })),
     http.get("/v1/pool/capabilities", () =>

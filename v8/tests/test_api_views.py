@@ -174,6 +174,20 @@ def test_docs_html_sanitised_with_signoff(client):
     assert "<script" not in v["html"] and "onerror" not in v["html"]
     assert "<h1>Title</h1>" in v["html"] and "https://ok.test" in v["html"]
     assert v["versions"] and v["signoff_criterion"]["id"] == kcrit
+    # Adversary finding #8 (2026-09-10): EVERY checker sees their pending criteria citing the doc —
+    # a qa-checked one appears for the qa seat, and not for the owner (who does not check it).
+    post("/v1/participants", {"type": "agent", "role": "qa", "handle": "qa.e", "id": "qa.e"}, ADMIN)
+    ft = post("/v1/tickets", {"kind": "story", "work_type": "feature", "title": "f",
+                              "parent_id": epic, "assignee": "craft"}, {"X-Participant": "arch"})["id"]
+    qcrit = post("/v1/criteria", {"ticket_id": ft, "text": "qa checks", "check": "look"},
+                 {"X-Participant": "arch"})  # a feature story's criterion derives to qa (§24.1)
+    assert qcrit["checked_by"] == "qa"
+    qcrit = qcrit["id"]
+    client.patch(f"/v1/criteria/{qcrit}", json={"evidence_ref": doc}, headers={"X-Participant": "craft"})
+    vq = client.get(f"/v1/docs/{doc}/html", headers={"X-Participant": "qa.e"}).json()["value"]
+    assert [c["id"] for c in vq["signoff_criteria"]] == [qcrit] and vq["signoff_criterion"]["id"] == qcrit
+    vo = client.get(f"/v1/docs/{doc}/html", headers=OWN).json()["value"]
+    assert [c["id"] for c in vo["signoff_criteria"]] == [kcrit]
 
 
 def test_activity_and_library(rig):
@@ -357,3 +371,24 @@ def test_resolved_lists_the_owners_own_verdict_without_a_feed_subscription(rig):
     rows = _get(rig, "/v1/me/decisions/resolved")
     assert [x["criterion"] for x in rows if x["kind"] == "verdict"] == [rig["kcrit"]]
     assert rows[0]["verdict"] == "pass"
+
+
+def test_replies_to_me_lists_answers_with_the_words_they_answer(client):
+    """Human report m-3d3a36455f (2026-09-10): a person who wrote from the UI must find the reply on
+    their Decisions page — /v1/me/replies lists answers addressed to them / replying to them, with the
+    text they wrote; open asks (question/steer) stay in the inbox, not here."""
+    def post(path, body, headers):
+        r = client.post(path, json=body, headers=headers).json()
+        assert r["ok"], r
+        return r["value"]
+
+    post("/v1/participants", {"type": "human", "role": "owner", "handle": "owner", "id": "owner"}, ADMIN)
+    post("/v1/participants", {"type": "agent", "role": "architect", "handle": "arch", "id": "arch"}, ADMIN)
+    epic = post("/v1/tickets", {"kind": "epic", "work_type": "feature", "title": "E"}, OWN)["id"]
+    ask = post("/v1/messages", {"ticket_id": epic, "kind": "note", "to": "arch", "text": "did you see my bug list?"}, OWN)["id"]
+    ans = post("/v1/messages", {"ticket_id": epic, "kind": "answer", "to": "owner", "reply_to": ask,
+                                "text": "yes — fixed"}, {"X-Participant": "arch"})["id"]
+    post("/v1/messages", {"ticket_id": epic, "kind": "question", "to": "owner", "text": "open ask"}, {"X-Participant": "arch"})
+    rows = client.get("/v1/me/replies", headers=OWN).json()["value"]
+    assert [r["id"] for r in rows] == [ans]
+    assert rows[0]["in_reply_to"]["text"] == "did you see my bug list?" and rows[0]["ticket_title"] == "E"
