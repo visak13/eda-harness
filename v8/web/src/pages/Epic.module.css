@@ -37,6 +37,14 @@
   flex: 1;
   min-width: 0;
 }
+/* The board titles an epic with the owner's words; a paragraph-long heading at 38px filled the
+   fold (spacing pass, 2026-09-10). Long words read at 24px — still the page's one h1. */
+.titleLong {
+  font-size: 24px;
+  line-height: 1.3;
+  letter-spacing: -0.4px;
+  font-weight: 500;
+}
 
 /* 'Steer this epic' control: 40px tall (criterion c-a23e72f460). */
 .steer {

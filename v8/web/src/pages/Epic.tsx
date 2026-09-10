@@ -18,6 +18,7 @@ import { useDocDrawer } from "../components/DocDrawer";
 import { identity } from "../auth/identity";
 import ui from "../components/ui.module.css";
 import { MessageText } from "../components/ArtifactLink";
+import { Clamp } from "../components/Clamp";
 import styles from "./Epic.module.css";
 
 // Epic page (design §4.2): crumb, id + status chip, Georgia 38 title, the owner's words verbatim,
@@ -111,7 +112,7 @@ export function EpicPage(): React.JSX.Element {
           <span className={ui.idMono}>{epic.id}</span>
           <StatusChip status={epic.status} />
         </div>
-        <h1 className={styles.title}>{heading}</h1>
+        <h1 className={`${styles.title} ${heading.length > 90 ? styles.titleLong : ""}`}>{heading}</h1>
         <button type="button" className={styles.steer} onClick={steer}>
           Steer this epic
         </button>
@@ -125,9 +126,7 @@ export function EpicPage(): React.JSX.Element {
       )}
 
       {directive ? (
-        <div className={ui.directive} data-testid="directive">
-          {directive.text}
-        </div>
+        <Clamp className={ui.directive} testId="directive" text={directive.text} lines={5} />
       ) : null}
 
       <ProcessStrip

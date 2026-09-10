@@ -80,14 +80,42 @@
   padding: 23px;
 }
 .featuredCrumb {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-size: 13px;
   color: var(--muted);
-  margin-bottom: 6px;
+  margin-bottom: 14px;
+  min-width: 0;
+}
+.featuredTag {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--accentwash);
+  color: var(--accentink);
+  font-size: 12px;
+  font-weight: 600;
+}
+.featuredEpic {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.featuredId {
+  flex: none;
+  font: 12px/18px Consolas, "SFMono-Regular", monospace;
 }
 .featuredTitle {
   font: 27px/1.2 Georgia, serif;
   color: var(--ink);
   margin: 0 0 10px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
 }
 .featuredExcerpt {
   font-size: 14px;
@@ -95,11 +123,45 @@
   color: var(--ink);
   margin: 0 0 12px;
   max-width: 66ch;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 .docRef {
   font-size: 13px;
   color: var(--muted);
+  padding-bottom: 16px;
   margin-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.docRefTitle {
+  color: var(--accentink);
+  font-weight: 600;
+}
+.featuredFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.featuredSeat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.featuredSeatName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.featuredSeatNote {
+  font-size: 13px;
+  color: var(--muted);
 }
 /* Salmon carries no small text: INK on the accent fill, 40px high (design §4.2). */
 .reviewBtn {
@@ -144,9 +206,22 @@
   color: var(--ink);
   text-align: left;
 }
+.moreRow > span:first-child {
+  flex: 1 1 60%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .moreTicket {
   color: var(--muted);
   font-size: 13px;
+  flex: 1 1 40%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
 }
 
 /* Questions */
@@ -430,18 +505,86 @@
 }
 
 /* "Seats, now" reuses the wide Seats row (SeatTableRow) in a 280px rail — let it scroll in its box. */
-.seatsNowScroll {
-  overflow-x: auto;
+.seatsNowList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
 }
-.seatsNowTable {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-.seatsNowTable td {
-  padding: 8px 6px;
+.seatNow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 0;
   border-top: 1px solid var(--line);
-  vertical-align: top;
+  font-size: 13px;
+  min-width: 0;
+}
+.seatNowHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.seatNowName {
+  font-weight: 650;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.seatNowRole {
+  color: var(--muted);
+  text-transform: capitalize;
+  flex: none;
+}
+.seatNowState {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  flex: none;
+}
+.seatNowDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.seatNowDot.alive,
+.seatNowDot.working {
+  background: var(--success);
+}
+.seatNowTicket {
+  color: var(--ink);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.seatNowTicket:hover {
+  text-decoration: underline;
+}
+.seatNowStatus {
+  margin: 0;
+  color: var(--muted);
+  line-height: 19px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+.seatNowOpen {
+  align-self: flex-end;
+  color: var(--accentink);
+  font-size: 12px;
+  text-decoration: none;
+}
+.seatNowOpen:hover {
+  text-decoration: underline;
 }
 
 /* New conversation ticket picker (finding #6) + counterpart groups (finding #7) */

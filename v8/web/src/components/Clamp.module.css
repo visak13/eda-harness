@@ -1,0 +1,22 @@
+.clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+}
+.toggle {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin-top: 4px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accentink);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.toggle:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 2px;
+}

@@ -95,7 +95,7 @@ export function EpicsPage(): React.JSX.Element {
                   <div className={styles.main}>
                     {/* Name first (§15): the epic's title leads; the id is secondary, in mono after. */}
                     <div className={styles.titleLine}>
-                      <div className={styles.title}>{row.title}</div>
+                      <div className={styles.title} title={row.title}>{row.title}</div>
                       <StatusChip status={row.status} />
                     </div>
                     <span className={ui.idMono}>{row.id}</span>

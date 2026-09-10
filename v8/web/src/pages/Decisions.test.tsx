@@ -110,7 +110,7 @@ describe("Decisions home", () => {
     expect(pulse.querySelector("progress")).toBeNull();
   });
 
-  it("Seats-now reuses the Seats row from /v1/seats: alive seat, its ticket, honest 'no update'", async () => {
+  it("Seats-now reads /v1/seats with the Seats presence rule: alive seat, its ticket, honest 'no update'", async () => {
     setBoard({
       seats: [{
         id: "engineer.s-9", handle: "engineer.s-9", role: "engineer", state: "alive",
@@ -120,9 +120,10 @@ describe("Decisions home", () => {
     });
     mount();
     const seats = await screen.findByTestId("seats-now");
-    // the SAME row component the Seats page uses (SeatTableRow) renders here
+    // a compact card per seat (spacing pass 2026-09-10), same source + presenceOf as the Seats page
     expect(await within(seats).findByTestId("seat-row")).toBeInTheDocument();
-    expect(within(seats).getByText("s-9")).toBeInTheDocument();
+    expect(within(seats).getByTestId("seat-state")).toHaveTextContent("Working");
+    expect(within(seats).getByText("Ship the sheet")).toBeInTheDocument();
     // honest by construction: a seat that reported no status says so, never a fake progress number
     expect(within(seats).getByTestId("no-status")).toHaveTextContent("Last work update unavailable");
     expect(within(seats).getByText("Shell alive ≠ work progressing")).toBeInTheDocument();

@@ -19,6 +19,7 @@ import { useDocDrawer } from "../components/DocDrawer";
 import { identity } from "../auth/identity";
 import ui from "../components/ui.module.css";
 import { MessageText } from "../components/ArtifactLink";
+import { Clamp } from "../components/Clamp";
 import styles from "./Ticket.module.css";
 
 // Ticket page (design §4.2, criteria c-d2dbb34b06 / c-e0b24cd134): crumb to the epic, id + status
@@ -68,8 +69,8 @@ export function TicketPage(): React.JSX.Element {
         <span className={ui.idMono}>{ticket.id}</span>
         <StatusChip status={ticket.status} />
       </div>
-      <h1 className={styles.title}>{ticket.title}</h1>
-      {ticket.description ? <p className={styles.desc}>{ticket.description}</p> : null}
+      <h1 className={`${styles.title} ${ticket.title.length > 90 ? styles.titleLong : ""}`}>{ticket.title}</h1>
+      {ticket.description ? <Clamp className={styles.desc} text={ticket.description} lines={4} testId="description" /> : null}
       {ticket.tags.length > 0 ? (
         <div className={styles.tags}>
           {ticket.tags.map((t) => (

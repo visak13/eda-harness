@@ -10,6 +10,7 @@ import type {
   ResolvedRow,
   SignoffRow,
   ReplyRow,
+  SeatRow,
 } from "../api/types";
 import {
   getConversations,
@@ -25,7 +26,7 @@ import { Composer } from "../components/Composer";
 import { GateForm } from "../components/GateForm";
 import { AgentLine } from "../components/AgentLine";
 import { RulingDrawer } from "../components/RulingDrawer";
-import { SeatTableRow } from "./Seats";
+import { presenceOf } from "./presence";
 import { identity } from "../auth/identity";
 import { useDraftGuard } from "../live/useDraftGuard";
 import { MessageText } from "../components/ArtifactLink";
@@ -142,6 +143,16 @@ export function DecisionsPage(): React.JSX.Element {
   );
 }
 
+/** The board's excerpt is the first 300 chars of raw markdown; the card shows it as prose. */
+function plainExcerpt(md: string): string {
+  return md
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/[*_`>]+/g, "")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 // ------------------------------------------------------------------ Sign-offs
 function SignoffsTab({
   signoffs,
@@ -160,24 +171,42 @@ function SignoffsTab({
       <article className={styles.featured} data-testid="featured-signoff">
         <div className={styles.featuredTop} aria-hidden="true" />
         <div className={styles.featuredBody}>
+          {/* Plate folio-home: tag · epic (one line) · ticket id; the QUESTION the owner answers as the
+              Georgia title; a two-line plain excerpt; the document line; seat + button in the foot.
+              The epic's full words and the raw markdown excerpt used to fill the card (spacing pass,
+              human report 2026-09-10). */}
           <div className={styles.featuredCrumb}>
-            {featured.ticket.epic_title} · {featured.ticket.title}
+            <span className={styles.featuredTag}>Owner sign-off</span>
+            <span className={styles.featuredEpic} title={featured.ticket.epic_title}>
+              {featured.ticket.epic_title}
+            </span>
+            <span className={styles.featuredId}>{featured.ticket.id}</span>
           </div>
-          <h2 className={styles.featuredTitle}>{featured.doc?.title ?? featured.ticket.title}</h2>
-          <p className={styles.featuredExcerpt}>{featured.excerpt}</p>
-          {featured.doc ? (
-            <div className={styles.docRef}>
-              {featured.doc.doc_type} · v{featured.doc.version}
-            </div>
-          ) : null}
-          <button
-            className={styles.reviewBtn}
-            type="button"
-            data-testid="review-evidence"
-            onClick={(e) => onOpen(featured, 1, n, e.currentTarget)}
-          >
-            Review evidence
-          </button>
+          <h2 className={styles.featuredTitle}>{featured.criterion.text}</h2>
+          {featured.excerpt ? <p className={styles.featuredExcerpt}>{plainExcerpt(featured.excerpt)}</p> : null}
+          <div className={styles.docRef}>
+            <span className={styles.docRefTitle}>{featured.doc?.title ?? featured.ticket.title}</span>
+            {featured.doc ? (
+              <span>
+                {" "}
+                · {featured.doc.doc_type} v{featured.doc.version}
+              </span>
+            ) : null}
+          </div>
+          <div className={styles.featuredFoot}>
+            <span className={styles.featuredSeat}>
+              <span className={styles.featuredSeatName}>{featured.ticket.assignee ?? "the assignee"}</span>
+              <span className={styles.featuredSeatNote}>Evidence attached · your verdict is pending</span>
+            </span>
+            <button
+              className={styles.reviewBtn}
+              type="button"
+              data-testid="review-evidence"
+              onClick={(e) => onOpen(featured, 1, n, e.currentTarget)}
+            >
+              Review evidence
+            </button>
+          </div>
         </div>
       </article>
 
@@ -481,17 +510,47 @@ function SeatsNow(): React.JSX.Element {
       ) : seats.length === 0 ? (
         <p className={styles.calm}>No seat is working right now.</p>
       ) : (
-        <div className={styles.seatsNowScroll}>
-          <table className={styles.seatsNowTable}>
-            <tbody>
-              {seats.map((s) => (
-                <SeatTableRow key={s.id} seat={s} caps={caps} />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ul className={styles.seatsNowList}>
+          {seats.map((s) => (
+            <SeatNowCard key={s.id} seat={s} caps={caps} />
+          ))}
+        </ul>
       )}
     </section>
+  );
+}
+
+// One seat in the 336px rail (plate folio-home "Seats, now"): name, role, presence word, the ticket
+// on one line, the latest status clamped to three lines. Same /v1/seats source and the same 60s
+// presence rule as the Seats page (presenceOf), so it cannot drift — but a CARD, not the page's
+// five-column table, which in this rail became a column of single words (human report "spacing
+// broken", 2026-09-10).
+function SeatNowCard({ seat, caps }: { seat: SeatRow; caps: PoolCapabilities | undefined }): React.JSX.Element {
+  const presence = presenceOf(seat, caps, Date.now());
+  return (
+    <li className={styles.seatNow} data-testid="seat-row" data-seat={seat.id} data-presence={presence.kind}>
+      <div className={styles.seatNowHead}>
+        <span className={styles.seatNowName}>{seat.handle}</span>
+        <span className={styles.seatNowRole}>{seat.role}</span>
+        <span className={styles.seatNowState}>
+          <span className={`${styles.seatNowDot} ${styles[presence.dot] ?? ""}`} aria-hidden="true" />
+          <span data-testid="seat-state">{presence.word}</span>
+        </span>
+      </div>
+      {seat.ticket_id ? (
+        <Link className={styles.seatNowTicket} to={`/ticket/${encodeURIComponent(seat.ticket_id)}`} title={seat.ticket_title ?? seat.ticket_id}>
+          {seat.ticket_title ?? seat.ticket_id}
+        </Link>
+      ) : null}
+      {seat.latest_status ? (
+        <p className={styles.seatNowStatus} data-testid="latest-status">{seat.latest_status.text}</p>
+      ) : (
+        <p className={styles.seatNowStatus} data-testid="no-status">Last work update unavailable</p>
+      )}
+      <Link className={styles.seatNowOpen} to="/seats">
+        Open seat →
+      </Link>
+    </li>
   );
 }
 
