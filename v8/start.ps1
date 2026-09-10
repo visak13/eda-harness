@@ -89,7 +89,10 @@ $root = Split-Path -Parent $v8
 function Start-Board {
   if (Probe $BOARD_PORT "/v1/health") { WriteState "board" $null $BOARD_PORT; Write-Host "board    already running on :$BOARD_PORT"; return }
   $env:EDP8_HOST = $BIND; $env:EDP8_PORT = "$BOARD_PORT"; $env:EDP8_ADMIN_TOKEN = $ADMIN
-  $env:EDP8_HOME = $HOMEDIR; $env:EDP8_DB = Join-Path $DATA "edp8.db"
+  # EDP8_DATA reaches the board too: uploads live under <EDP8_DATA>/uploads (uploads.py). Without
+  # it the board wrote v8/uploads into the source tree (qa acceptance, 2026-09-10). An existing
+  # v8/uploads must be MOVED to .data/uploads before the next restart or its artifacts 404.
+  $env:EDP8_HOME = $HOMEDIR; $env:EDP8_DATA = $DATA; $env:EDP8_DB = Join-Path $DATA "edp8.db"
   $env:EDP_POOL_URL = "http://127.0.0.1:$POOL_PORT"; $env:EDP_BROKER_URL = "http://127.0.0.1:$BROKER_PORT"
   # With a synced .venv present, run WITHOUT re-syncing: `uv run` otherwise tries to replace
   # .venv\Scripts\edp8-board.exe, which fails (os error 32) while another board from this tree is

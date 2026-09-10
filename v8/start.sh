@@ -85,7 +85,7 @@ start_board() {
   UV_NOSYNC=""; [ -x "$HOMEDIR/.venv/bin/edp8-board" ] || [ -f "$HOMEDIR/.venv/Scripts/edp8-board.exe" ] && UV_NOSYNC="--no-sync"
   probe "$BOARD_PORT" /v1/health && { write_state board "" "$BOARD_PORT"; echo "board    already running on :$BOARD_PORT"; return; }
   EDP8_HOST="$BIND" EDP8_PORT="$BOARD_PORT" EDP8_ADMIN_TOKEN="$ADMIN" EDP8_HOME="$HOMEDIR" \
-    EDP8_DB="$DATA/edp8.db" EDP_POOL_URL="http://127.0.0.1:$POOL_PORT" EDP_BROKER_URL="http://127.0.0.1:$BROKER_PORT" \
+    EDP8_DATA="$DATA" EDP8_DB="$DATA/edp8.db" EDP_POOL_URL="http://127.0.0.1:$POOL_PORT" EDP_BROKER_URL="http://127.0.0.1:$BROKER_PORT" \
     nohup uv run $UV_NOSYNC --directory "$HOMEDIR" edp8-board >"$DATA/board.log" 2>"$DATA/board.err" &
   local pid=$!; for _ in $(seq 1 60); do probe "$BOARD_PORT" /v1/health && break; sleep 0.25; done
   write_state board "$pid" "$BOARD_PORT"

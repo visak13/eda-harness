@@ -1,5 +1,7 @@
 .sandbox/
 .data/
+# a board started without EDP8_DATA wrote its uploads here (pre-2026-09-10 launcher); never source
+uploads/
 .run/
 .env
 tokens.json
