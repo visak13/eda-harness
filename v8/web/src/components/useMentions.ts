@@ -34,6 +34,7 @@ export function useMentions(
 ): Mentions {
   const [menu, setMenu] = useState<MentionsMenu>({ open: false, items: [], index: 0 });
   const caretToSet = useRef<number | null>(null);
+  const lastQuery = useRef<string | null>(null);
 
   // After an accept rewrites the value, restore the caret to just past the inserted "@handle ".
   useLayoutEffect(() => {
@@ -52,6 +53,7 @@ export function useMentions(
     const left = ta.value.slice(0, ta.selectionStart ?? ta.value.length);
     const m = TRIGGER.exec(left);
     if (!m) {
+      lastQuery.current = null;
       setMenu((cur) => (cur.open ? { open: false, items: [], index: 0 } : cur));
       return;
     }
@@ -59,7 +61,16 @@ export function useMentions(
     const items = people
       .filter((p) => p.handle.toLowerCase().includes(q) || p.label.toLowerCase().includes(q))
       .slice(0, 8);
-    setMenu({ open: items.length > 0, items, index: 0 });
+    // The keyup after an ArrowDown re-runs this; the highlight must survive it while the typed
+    // partial is unchanged — otherwise ↓ alternated between the first two rows (human report
+    // m-a398600978, 2026-09-10). A new partial starts the highlight at the top again.
+    const sameQuery = lastQuery.current === q;
+    lastQuery.current = q;
+    setMenu((cur) => ({
+      open: items.length > 0,
+      items,
+      index: sameQuery && cur.open ? Math.min(cur.index, Math.max(items.length - 1, 0)) : 0,
+    }));
   }, [people, textareaRef]);
 
   const accept = useCallback(
@@ -75,6 +86,7 @@ export function useMentions(
       const next = ta.value.slice(0, start) + insert + ta.value.slice(caret);
       caretToSet.current = start + insert.length;
       setText(next);
+      lastQuery.current = null;
       setMenu({ open: false, items: [], index: 0 });
     },
     [setText, textareaRef],

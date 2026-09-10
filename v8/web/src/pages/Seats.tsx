@@ -3,9 +3,12 @@ import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { PoolCapabilities, SeatRow, SeatsView } from "../api/types";
 import { getSeats, getPoolCapabilities, resumeSeat } from "../api/seats";
+import { api } from "../api/client";
 import { label as glossLabel } from "../copy/glossary";
 import { usePageFrame } from "../components/PageFrame";
 import { Composer } from "../components/Composer";
+import { identity } from "../auth/identity";
+import { AgentLine } from "../components/AgentLine";
 import { presenceOf } from "./presence";
 import styles from "./Seats.module.css";
 
@@ -42,6 +45,9 @@ export function SeatsPage(): React.JSX.Element {
   const seatsQ = useQuery({ queryKey: ["seats"], queryFn: getSeats, retry: false });
   const capsQ = useQuery({ queryKey: ["pool", "capabilities"], queryFn: getPoolCapabilities, retry: false });
   const [tab, setTab] = useState<TabKey>("all");
+  // Find a seat by name / ticket / role: with a hundred closed seats the one you want (the human
+  // looked for owner.epic-…) is otherwise buried (human report m-a398600978, 2026-09-10).
+  const [find, setFind] = useState("");
 
   if (seatsQ.isLoading) return <FrameOnly>Loading seats…</FrameOnly>;
   if (seatsQ.error || !seatsQ.data) return <FrameOnly>Seats are unavailable right now.</FrameOnly>;
@@ -54,7 +60,12 @@ export function SeatsPage(): React.JSX.Element {
     parked: seats.filter(TAB_MATCH.parked).length,
     closed: seats.filter(TAB_MATCH.closed).length,
   };
-  const shown = seats.filter(TAB_MATCH[tab]);
+  const needle = find.trim().toLowerCase();
+  const shown = seats.filter(TAB_MATCH[tab]).filter(
+    (r) =>
+      !needle ||
+      [r.handle, r.id, r.role, r.ticket_id ?? "", r.ticket_title ?? ""].some((v) => v.toLowerCase().includes(needle)),
+  );
 
   return (
     <>
@@ -81,10 +92,22 @@ export function SeatsPage(): React.JSX.Element {
             </button>
           ))}
         </div>
+        <label className={styles.find}>
+          <span className={styles.findLabel}>Find</span>
+          <input
+            type="search"
+            className={styles.findInput}
+            value={find}
+            placeholder="seat, ticket or role"
+            aria-label="Find a seat"
+            data-testid="seat-find"
+            onChange={(e) => setFind(e.target.value)}
+          />
+        </label>
       </div>
 
       {shown.length === 0 ? (
-        <p className={styles.empty}>No seats in this group.</p>
+        <p className={styles.empty}>{needle ? `No seat matches “${find.trim()}”.` : "No seats in this group."}</p>
       ) : (
         <table className={styles.table}>
           <thead>
@@ -253,13 +276,15 @@ export function SeatTableRow({ seat, caps }: { seat: SeatRow; caps: PoolCapabili
                   : `Sending will wake ${seat.handle} now.`}
               </p>
               {seat.ticket_id ? (
-                <Composer
-                  ticketId={seat.ticket_id}
-                  to={seat.handle}
-                  kinds={["note", "question"]}
-                  placeholder={`Message ${seat.handle}…`}
-                  onSent={() => setMessaging(false)}
-                />
+                <>
+                  <SeatThread ticketId={seat.ticket_id} seat={seat} />
+                  <Composer
+                    ticketId={seat.ticket_id}
+                    to={seat.handle}
+                    kinds={["note", "question"]}
+                    placeholder={`Message ${seat.handle}…`}
+                  />
+                </>
               ) : (
                 <p className={styles.muted}>
                   This seat has no assigned ticket to post on — reach it from its ticket thread instead.
@@ -271,4 +296,45 @@ export function SeatTableRow({ seat, caps }: { seat: SeatRow; caps: PoolCapabili
       ) : null}
     </>
   );
+}
+
+// The conversation with ONE seat, both directions, shown where the human writes it (the Seats row)
+// rather than only on the ticket thread (human report m-08822c1496, 2026-09-10). Read from
+// /v1/messages on the seat's ticket; the feed's invalidation refreshes it when the seat answers.
+function SeatThread({ ticketId, seat }: { ticketId: string; seat: SeatRow }): React.JSX.Element {
+  const viewer = identity();
+  const q = useQuery({
+    queryKey: ["messages", ticketId, seat.id],
+    queryFn: () => api<RawMessage[]>(`/v1/messages?ticket_id=${encodeURIComponent(ticketId)}&limit=200`),
+    retry: false,
+  });
+  const mine = new Set([viewer, `@${viewer}`].filter(Boolean));
+  const theirs = new Set([seat.id, seat.handle, `@${seat.handle}`]);
+  const isMine = (v: string | null | undefined) => !!v && mine.has(v);
+  const isTheirs = (v: string | null | undefined) => !!v && theirs.has(v);
+  const rows = (q.data ?? []).filter(
+    (m) => (isTheirs(m.created_by) && (isMine(m.to) || m.to == null)) || (isMine(m.created_by) && isTheirs(m.to)),
+  );
+  if (q.isError) return <p className={styles.muted}>The conversation could not be loaded.</p>;
+  if (rows.length === 0) return <p className={styles.muted} data-testid="seat-thread-empty">No messages with {seat.handle} yet.</p>;
+  return (
+    <ul className={styles.seatThread} data-testid="seat-thread">
+      {rows.map((m) => (
+        <li key={m.id} className={styles.seatThreadRow}>
+          <AgentLine by={m.created_by} kind={m.kind} to={m.to} viewer={viewer} at={m.created_at} />
+          <div className={styles.seatThreadText}>{m.text}</div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+interface RawMessage {
+  id: string;
+  created_by: string;
+  to: string | null;
+  kind: string;
+  text: string;
+  created_at: string;
+  reply_to: string | null;
 }

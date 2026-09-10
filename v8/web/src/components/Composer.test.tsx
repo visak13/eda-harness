@@ -47,6 +47,36 @@ describe("Composer @autocomplete", () => {
     expect(ta.value).toBe("@architect.s-1 ");
   });
 
+  it("ArrowDown walks the list: Down, Down, Enter inserts the third candidate (m-a398600978)", async () => {
+    server.use(
+      http.get("/v1/me/people", () =>
+        HttpResponse.json({
+          ok: true,
+          value: [
+            ...people,
+            { id: "qa.s-1", handle: "qa.s-1", type: "agent", role: "qa", seat_ticket: "s-1", seat_state: "alive", label: "qa seat", self: false },
+            { id: "sme.s-1", handle: "sme.s-1", type: "agent", role: "sme", seat_ticket: "s-1", seat_state: "alive", label: "sme seat", self: false },
+          ],
+        }),
+      ),
+    );
+    mountComposer({ showTo: true });
+    await screen.findByRole("option", { name: /sme seat/ });
+    const ta = screen.getByTestId("composer-text") as HTMLTextAreaElement;
+    typeAt(ta, "@s"); // matches architect.s-1, qa.s-1, sme.s-1 (+ owner via the "person" label) — 3+ rows
+    await waitFor(() => expect(screen.getByTestId("mentions-menu")).toBeInTheDocument());
+    const names = screen.getAllByRole("option", { name: /@/ }).map((o) => o.querySelector("span")?.textContent ?? "");
+    expect(names.length).toBeGreaterThanOrEqual(3);
+    for (const key of ["ArrowDown", "ArrowDown"]) {
+      fireEvent.keyDown(ta, { key });
+      fireEvent.keyUp(ta, { key }); // the keyup refresh must not reset the highlight
+    }
+    const active = screen.getAllByRole("option", { name: /@/ }).findIndex((o) => o.getAttribute("aria-selected") === "true");
+    expect(active).toBe(2);
+    fireEvent.keyDown(ta, { key: "Enter" });
+    expect(ta.value).toBe(`${names[2]} `); // "@qa.s-1 " — the THIRD candidate, not the second
+  });
+
   it("Esc closes the mentions menu", async () => {
     mountComposer({ showTo: true });
     await screen.findByRole("option", { name: /architect seat/ });

@@ -238,3 +238,51 @@
   line-height: 20px;
   margin: 24px 0 0;
 }
+
+/* Find a seat (human report m-a398600978) */
+.find {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.findLabel {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+}
+.findInput {
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 10px;
+  min-width: 220px;
+  min-height: 32px;
+}
+
+/* The conversation with one seat, in its Message panel (human report m-08822c1496) */
+.seatThread {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.seatThreadRow {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 8px;
+}
+.seatThreadText {
+  white-space: pre-wrap;
+  font-size: 14px;
+  line-height: 1.5;
+  margin-top: 4px;
+}
