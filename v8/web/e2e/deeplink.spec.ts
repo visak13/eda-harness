@@ -30,7 +30,10 @@ function captureFirstV1Participant(page: import("@playwright/test").Page): { val
   let seen: string | undefined;
   let captured = false;
   page.on("request", (req) => {
-    if (!captured && req.url().includes("/v1/")) {
+    // API calls only: the <Avatar> <img> loads /v1/avatars/{id}.svg header-less by design (the
+    // route is served without identity so an <img src> can fetch it) and, under load, can be the
+    // first /v1 request the page emits (full-suite flake, qa 2026-09-10).
+    if (!captured && req.url().includes("/v1/") && req.resourceType() !== "image") {
       captured = true;
       // Playwright lowercases header names.
       seen = req.headers()["x-participant"];
