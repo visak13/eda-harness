@@ -125,6 +125,26 @@
   font-size: 12px;
   color: var(--muted);
 }
+/* §4.2 Expand: the same composer opens in the right Drawer; the draft moves with it. */
+.expand {
+  margin-left: auto;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+.expand:hover {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+.expand:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 2px;
+}
 .send {
   height: 40px;
   padding: 0 18px;

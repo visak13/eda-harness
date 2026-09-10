@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { screen, within, waitFor, fireEvent } from "@testing-library/react";
 import { HttpResponse } from "msw";
+import { useLocation } from "react-router";
 import { server } from "../test/setup";
 import { http, okJson, renderRoute } from "./testUtils";
 import { TicketPage } from "./Ticket";
@@ -204,5 +205,79 @@ describe("TicketPage", () => {
     renderRoute("/ticket/s-1?as=owner", "/ticket/:id", <TicketPage />);
     expect(screen.getByText("Loading ticket…")).toBeInTheDocument();
     expect(await screen.findByRole("alert")).toHaveTextContent(/Could not load s-1/);
+  });
+});
+
+// Promise #15 (design §4.2 "Expand"): the same composer opens in the right Drawer; the draft
+// moves with it and back; `?compose=1` carries the state and reopens the expanded composer.
+function LocationProbe(): React.JSX.Element {
+  const { search } = useLocation();
+  return <span data-testid="location-search">{search}</span>;
+}
+
+function mountWithProbe(path: string, data: TicketPageData) {
+  server.use(http.get("/v1/tickets/s-1/page", () => okJson(data)));
+  server.use(
+    http.get("/v1/tickets/s-1/transitions", () =>
+      okJson({ status: data.ticket.status, transitions: [{ to: "done", allowed: true, reason: null }] }),
+    ),
+  );
+  server.use(
+    http.get("/v1/pool/capabilities", () =>
+      okJson({ resume_parked: true, resume_closed: false, park: true, spawn: false, reason: "no pool in tests" }),
+    ),
+  );
+  server.use(http.post("/v1/messages/resolve", () => okJson({ to: null, wakes: [], plan: [], note: "" })));
+  renderRoute(
+    path,
+    "/ticket/:id",
+    <>
+      <TicketPage />
+      <LocationProbe />
+    </>,
+  );
+}
+
+describe("TicketPage composer Expand (§4.2, promise #15)", () => {
+  it("Expand moves the draft into the drawer and sets ?compose=1; Collapse brings it back", async () => {
+    mountWithProbe("/ticket/s-1?as=owner", ticketPage());
+    await screen.findByText("Build the epic page", { selector: "h1" });
+    const inline = screen.getByTestId("composer-text") as HTMLTextAreaElement;
+    fireEvent.change(inline, { target: { value: "half-written thought" } });
+    fireEvent.click(screen.getByTestId("composer-expand"));
+
+    const drawer = await screen.findByTestId("drawer-panel");
+    expect(within(drawer).getByTestId("composer-text")).toHaveValue("half-written thought");
+    expect(screen.getByTestId("location-search").textContent).toContain("compose=1");
+    // the inline slot no longer holds a composer — only the note pointing at the drawer
+    expect(screen.getByTestId("composer-expanded-note")).toBeInTheDocument();
+    expect(screen.getAllByTestId("composer-text")).toHaveLength(1);
+
+    // keep typing in the drawer, then collapse: the draft comes back inline
+    fireEvent.change(within(drawer).getByTestId("composer-text"), { target: { value: "half-written thought, finished" } });
+    fireEvent.click(within(drawer).getByTestId("composer-expand")); // reads "Collapse"
+    await waitFor(() => expect(screen.queryByTestId("drawer-panel")).not.toBeInTheDocument());
+    expect(screen.getByTestId("composer-text")).toHaveValue("half-written thought, finished");
+    expect(screen.getByTestId("location-search").textContent).not.toContain("compose=1");
+  });
+
+  it("closing the drawer (Esc / ✕) also returns the draft to the page", async () => {
+    mountWithProbe("/ticket/s-1?as=owner", ticketPage());
+    await screen.findByText("Build the epic page", { selector: "h1" });
+    fireEvent.change(screen.getByTestId("composer-text"), { target: { value: "draft" } });
+    fireEvent.click(screen.getByTestId("composer-expand"));
+    const drawer = await screen.findByTestId("drawer-panel");
+    fireEvent.click(within(drawer).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByTestId("drawer-panel")).not.toBeInTheDocument());
+    expect(screen.getByTestId("composer-text")).toHaveValue("draft");
+  });
+
+  it("loading the page with ?compose=1 reopens the expanded composer", async () => {
+    mountWithProbe("/ticket/s-1?as=owner&compose=1", ticketPage());
+    await screen.findByText("Build the epic page", { selector: "h1" });
+    const drawer = await screen.findByTestId("drawer-panel");
+    expect(within(drawer).getByTestId("composer-text")).toBeInTheDocument();
+    expect(within(drawer).getByTestId("composer-expand")).toHaveTextContent("Collapse");
+    expect(screen.getByTestId("composer-expanded-note")).toBeInTheDocument();
   });
 });

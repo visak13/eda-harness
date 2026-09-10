@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { Link, useLocation, useParams } from "react-router";
+import { useCallback, useRef, useState } from "react";
+import { Link, useLocation, useParams, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { getTicketPage } from "../api/endpoints";
 import type { MessageView, TicketStatus } from "../api/types";
@@ -15,6 +15,7 @@ import { AgentLine } from "../components/AgentLine";
 import { Term } from "../components/Term";
 import { CriterionCard } from "../components/CriterionCard";
 import { Composer } from "../components/Composer";
+import { Drawer } from "../components/Drawer";
 import { useScrollToHash } from "../components/useScrollToHash";
 import { copyProps } from "../copy/pages";
 import { useDocDrawer } from "../components/DocDrawer";
@@ -51,6 +52,33 @@ export function TicketPage(): React.JSX.Element {
   const [reply, setReply] = useState<{ id: string; by: string } | null>(null);
   const composerRef = useRef<HTMLDivElement>(null);
 
+  // §4.2 "Expand" (promise #15): the SAME composer opens inside the right Drawer. The draft (text +
+  // staged artifacts) is mirrored into a ref by the mounted instance and handed to the next one as
+  // its initial state, so it moves out on Expand and back on Collapse. `?compose=1` carries the
+  // expanded state, so a refresh or a shared link reopens the drawer with the composer in it.
+  const [params, setParams] = useSearchParams();
+  const composeExpanded = params.get("compose") === "1";
+  const draft = useRef<{ text: string; artifacts: string[] }>({ text: "", artifacts: [] });
+  const onDraftText = useCallback((text: string) => {
+    draft.current.text = text;
+  }, []);
+  const onDraftArtifacts = useCallback((ids: string[]) => {
+    draft.current.artifacts = ids;
+  }, []);
+  const setComposeExpanded = useCallback(
+    (on: boolean) =>
+      setParams(
+        (prev) => {
+          const p = new URLSearchParams(prev);
+          if (on) p.set("compose", "1");
+          else p.delete("compose");
+          return p;
+        },
+        { replace: true },
+      ),
+    [setParams],
+  );
+
   // A deep-linked message (#m-…) is always fetched, even outside the newest-100 window (round 2 #5/#13).
   const { hash } = useLocation();
   const include = hash.startsWith("#m-") ? hash.slice(1) : null;
@@ -71,6 +99,27 @@ export function TicketPage(): React.JSX.Element {
   // thread is flat on the wire (reply_to), so the parent is quoted above the reply in one line.
   const byId = new Map(thread.map((m) => [m.id, m]));
   const seatLabel = assignee.handle ?? ticket.assignee ?? "unassigned";
+
+  // One composer definition for both hosts (inline / drawer); the key remounts it across the move
+  // so `initialText` / `initialArtifacts` are read from the mirrored draft.
+  const composer = (expanded: boolean) => (
+    <Composer
+      key={`${reply?.id ?? "new"}:${expanded ? "drawer" : "inline"}`}
+      ticketId={id}
+      kinds={reply ? ["answer", "note"] : ["note", "question"]}
+      showTo
+      to={reply ? reply.by : null}
+      replyTo={reply?.id ?? null}
+      replyToBy={reply?.by ?? null}
+      onCancelReply={() => setReply(null)}
+      placeholder={reply ? `Reply to @${reply.by}` : `Message this conversation as @${as}`}
+      initialText={draft.current.text}
+      initialArtifacts={draft.current.artifacts}
+      onTextChange={onDraftText}
+      onArtifactsChange={onDraftArtifacts}
+      expand={{ expanded, onToggle: () => setComposeExpanded(!expanded) }}
+    />
+  );
 
   return (
     <div>
@@ -152,18 +201,20 @@ export function TicketPage(): React.JSX.Element {
             </button>
           </div>
           <div ref={composerRef}>
-            <Composer
-              key={reply?.id ?? "new"}
-              ticketId={id}
-              kinds={reply ? ["answer", "note"] : ["note", "question"]}
-              showTo
-              to={reply ? reply.by : null}
-              replyTo={reply?.id ?? null}
-              replyToBy={reply?.by ?? null}
-              onCancelReply={() => setReply(null)}
-              placeholder={reply ? `Reply to @${reply.by}` : `Message this conversation as @${as}`}
-            />
+            {composeExpanded ? (
+              <p className={styles.composeAway} data-testid="composer-expanded-note">
+                The composer is open in the drawer.{" "}
+                <button type="button" className={styles.composeBack} onClick={() => setComposeExpanded(false)}>
+                  Bring it back here
+                </button>
+              </p>
+            ) : (
+              composer(false)
+            )}
           </div>
+          <Drawer open={composeExpanded} onClose={() => setComposeExpanded(false)} title={`Message ${ticket.id}`}>
+            {composeExpanded ? <div data-testid="composer-drawer">{composer(true)}</div> : null}
+          </Drawer>
           {ordered.length === 0 ? (
             <p className={ui.empty}>No messages on this ticket yet.</p>
           ) : (

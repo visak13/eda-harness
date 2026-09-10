@@ -54,6 +54,13 @@ export interface ComposerProps {
   initialText?: string;
   /** Reports the live draft so a host can move it (Expand) or persist it. */
   onTextChange?: (text: string) => void;
+  /** Staged (uploaded, unsent) artifact ids that move with the draft (§4.2 Expand). */
+  initialArtifacts?: string[];
+  /** Reports the staged artifact ids so a host can move them with the text. */
+  onArtifactsChange?: (ids: string[]) => void;
+  /** §4.2 "Expand": when given, a control opens the same composer in the right Drawer (or back).
+   *  `expanded` says which side this instance is on; `onToggle` moves the draft across. */
+  expand?: { expanded: boolean; onToggle: () => void };
 }
 
 export function Composer({
@@ -69,6 +76,9 @@ export function Composer({
   onCancelReply,
   initialText = "",
   onTextChange,
+  initialArtifacts,
+  onArtifactsChange,
+  expand,
 }: ComposerProps): React.JSX.Element {
   const qc = useQueryClient();
   const [text, setText] = useState(initialText);
@@ -81,7 +91,8 @@ export function Composer({
   // editable; once the writer picks a recipient by hand the text no longer overrides it. A note
   // with no tag stays a ticket broadcast (to=null).
   const [toPicked, setToPicked] = useState<boolean>(toProp != null);
-  const [artifacts, setArtifacts] = useState<string[]>([]);
+  const [artifacts, setArtifacts] = useState<string[]>(initialArtifacts ?? []);
+  useEffect(() => onArtifactsChange?.(artifacts), [artifacts, onArtifactsChange]);
   const [dragOver, setDragOver] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -330,6 +341,17 @@ export function Composer({
 
       <div className={styles.footer}>
         <span className={styles.hint}>Ctrl/Cmd+Enter sends · Enter for a newline · @ to notify</span>
+        {expand ? (
+          <button
+            type="button"
+            className={styles.expand}
+            onClick={expand.onToggle}
+            aria-label={expand.expanded ? "Collapse the composer back into the page" : "Expand the composer into the drawer"}
+            data-testid="composer-expand"
+          >
+            {expand.expanded ? "Collapse" : "Expand"}
+          </button>
+        ) : null}
         <button
           className={styles.send}
           type="button"
