@@ -16,7 +16,7 @@ import { AddCriterion } from "../components/CriterionControls";
 import { Tabs } from "../components/Tabs";
 import { Composer } from "../components/Composer";
 import { useScrollToHash } from "../components/useScrollToHash";
-import { copyProps } from "../copy/pages";
+import { copyItem, copyProps } from "../copy/pages";
 import { AgentLine } from "../components/AgentLine";
 import { useDocDrawer } from "../components/DocDrawer";
 import { identity } from "../auth/identity";
@@ -55,6 +55,16 @@ function tallyTotals(node: EpicTreeNode): { passed: number; total: number } {
 function briefLines(text: string): number {
   const first = text.trim().split(/\n\s*\n/)[0] ?? "";
   return Math.max(2, Math.min(6, Math.ceil(first.length / 90)));
+}
+
+/** Human #23: every epic-page control carries a VISIBLE one-line gloss — what it does and who is
+ *  woken — from the copy contract (the same text copyProps puts in the tooltip / aria-describedby). */
+function Gloss({ k }: { k: string }): React.JSX.Element {
+  return (
+    <p className={styles.gloss} data-testid={`gloss-${k}`}>
+      {copyItem("epic", k).text}
+    </p>
+  );
 }
 
 const KANBAN: [string, string[]][] = [
@@ -128,9 +138,12 @@ export function EpicPage(): React.JSX.Element {
           <StatusChip status={epic.status} />
         </div>
         <h1 className={`${styles.title} ${heading.length > 90 ? styles.titleLong : ""}`} {...copyProps("epic", "title")}>{heading}</h1>
-        <button type="button" className={styles.steer} onClick={steer} {...copyProps("epic", "steer")}>
-          Steer this epic
-        </button>
+        <div className={styles.steerWrap}>
+          <button type="button" className={styles.steer} onClick={steer} {...copyProps("epic", "steer")}>
+            Steer this epic
+          </button>
+          <Gloss k="steer" />
+        </div>
       </div>
 
       {showWords ? (
@@ -196,6 +209,7 @@ export function EpicPage(): React.JSX.Element {
           <section className={ui.card} id="epic-status" {...copyProps("epic", "change-status")}>
             <div className={ui.sectionLabel}>Change status</div>
             <StatusControl ticketId={id} currentStatus={epic.status as TicketStatus} />
+            <Gloss k="change-status" />
           </section>
 
           {data.answerable_gates.length > 0 ? (
@@ -204,23 +218,27 @@ export function EpicPage(): React.JSX.Element {
               {data.answerable_gates.map((g) => (
                 <GateForm key={`${g.ticket_id}:${g.gate}`} gate={g} />
               ))}
+              <Gloss k="answer-decision" />
             </section>
           ) : null}
 
           <section className={ui.card} {...copyProps("epic", "raise-decision")}>
             <div className={ui.sectionLabel}>Raise a decision</div>
             <GateOpenControl ticketId={id} />
+            <Gloss k="raise-decision" />
           </section>
 
           <section className={ui.card} {...copyProps("epic", "assign-spawn")}>
             <div className={ui.sectionLabel}>Assign or spawn a seat</div>
             <AssignControl ticketId={id} currentAssignee={epic.assignee ?? null} />
-            <SpawnArchitect epicId={id} assignedSeats={row?.assigned_seats ?? []} />
+            <Gloss k="assign-spawn" />
+            <SpawnArchitect epicId={id} assignedSeats={row?.assigned_seats ?? []} gloss={<Gloss k="spawn-architect" />} />
           </section>
 
           <section className={ui.card} data-testid="epic-ask-role">
             <div className={ui.sectionLabel}>Ask a role</div>
             <AskRoleControl ticketId={id} />
+            <Gloss k="ask-role" />
           </section>
 
           <section className={ui.card}>
@@ -266,6 +284,7 @@ export function EpicPage(): React.JSX.Element {
             ) : (
               <p className={ui.empty}>No seat is assigned to this epic directly.</p>
             )}
+            <Gloss k="assigned-seats" />
           </section>
 
           <section className={ui.card}>

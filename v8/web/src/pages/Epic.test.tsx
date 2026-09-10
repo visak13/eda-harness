@@ -395,4 +395,28 @@ describe("EpicPage", () => {
     fireEvent.click(await screen.findByTestId("spawn-architect-btn"));
     expect(await screen.findByTestId("spawn-architect-error")).toHaveTextContent("architect.epic-1 is already alive; message it instead");
   });
+
+  it("every control carries a visible gloss saying what it does and who is woken (human #23)", async () => {
+    mount(
+      page({
+        answerable_gates: [
+          { ticket_id: "epic-1", gate: "acceptance", by: "owner", note: "accept the epic?", opened_at: "2026-09-02T10:00:00Z", epic: "epic-1" },
+        ],
+      }),
+    );
+    await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    // the spawn-architect gloss renders with its button once capabilities resolve
+    await screen.findByTestId("spawn-architect-btn");
+    for (const k of ["steer", "change-status", "answer-decision", "raise-decision", "assign-spawn", "spawn-architect", "ask-role", "assigned-seats"]) {
+      const gloss = screen.getByTestId(`gloss-${k}`);
+      expect(gloss, k).toBeVisible();
+      expect(gloss.textContent, k).toMatch(/wakes/i);
+    }
+    // the specifics the human asked for
+    expect(screen.getByTestId("gloss-steer")).toHaveTextContent("POST /v1/messages/resolve");
+    expect(screen.getByTestId("gloss-change-status")).toHaveTextContent(/owner and the architect/);
+    expect(screen.getByTestId("gloss-answer-decision")).toHaveTextContent(/opener/);
+    expect(screen.getByTestId("gloss-assign-spawn")).toHaveTextContent(/assignee/);
+    expect(screen.getByTestId("gloss-spawn-architect")).toHaveTextContent(/new architect/);
+  });
 });

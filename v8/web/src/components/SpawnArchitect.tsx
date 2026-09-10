@@ -14,9 +14,12 @@ import styles from "./AssignControl.module.css";
 export function SpawnArchitect({
   epicId,
   assignedSeats = [],
+  gloss = null,
 }: {
   epicId: string;
   assignedSeats?: string[];
+  /** The visible "does / wakes" line (human #23), rendered only when the button is. */
+  gloss?: React.ReactNode;
 }): React.JSX.Element | null {
   const qc = useQueryClient();
   const [hint, setHint] = useState<string | null>(null);
@@ -50,6 +53,7 @@ export function SpawnArchitect({
       >
         {spawn.isPending ? "Spawning…" : "Spawn the architect"}
       </button>
+      {gloss}
       {existing ? (
         <p className={styles.note} data-testid="spawn-architect-existing">
           {existing} already holds this epic — the board decides whether a second shell starts.
