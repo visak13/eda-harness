@@ -65,3 +65,32 @@
 .label {
   font-weight: 600;
 }
+
+/* Header (compact) variant */
+.compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.compactLabel {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+}
+.compactSelect {
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  min-height: 32px;
+}
+.compactSelect:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 2px;
+}

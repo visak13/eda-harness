@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { GateRow } from "../api/types";
 import { answerGate } from "../api/endpoints";
+import { useDirtyGuard } from "../live/useDraftGuard";
 import { Term } from "./Term";
 import styles from "./GateForm.module.css";
 
@@ -18,6 +19,10 @@ export interface GateFormProps {
 export function GateForm({ gate, onAnswered }: GateFormProps): React.JSX.Element {
   const qc = useQueryClient();
   const [answer, setAnswer] = useState("");
+  // §16.1: while a ruling is being typed the feed holds its events ("N new · refresh") instead of
+  // refetching under the form — otherwise answering the gate elsewhere unmounted this form and the
+  // draft with it (adversary finding #4, 2026-09-10).
+  useDirtyGuard(`gate:${gate.ticket_id}:${gate.gate}`, answer.trim().length > 0);
 
   const submit = useMutation({
     mutationFn: () => answerGate(gate.ticket_id, gate.gate, answer.trim()),

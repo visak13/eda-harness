@@ -101,8 +101,11 @@ describe("AppShell", () => {
       ),
     );
     renderShell("/me");
-    expect(await screen.findByText("Board redesign")).toBeInTheDocument();
-    expect(screen.getByText("In view")).toBeInTheDocument();
+    // The former "In view" block is gone (human report 2026-09-10): epic words are not navigation
+    // and overflowed the rail. Nothing from /v1/epics/summary renders in the shell any more.
+    await screen.findByTestId("identity");
+    expect(screen.queryByText("In view")).toBeNull();
+    expect(screen.queryByText("Board redesign")).toBeNull();
   });
 
   it("renders the routed page body through the Outlet", async () => {

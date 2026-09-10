@@ -73,6 +73,12 @@ export function EpicPage(): React.JSX.Element {
   const data = page.data;
   const epic = data.board.epic;
   const words = data.words ?? epic.title;
+  // The board titles an epic with the owner's words truncated; showing that line as the h1 AND the
+  // full words under "Owner's words" repeats the same text twice (human report 2026-09-10). When the
+  // title is a prefix of the words, the h1 carries the words in full and the figure is omitted.
+  const titleIsTruncatedWords =
+    words !== epic.title && words.startsWith(epic.title.replace(/[\u2026.]+$/, "").trimEnd());
+  const heading = titleIsTruncatedWords ? words : epic.title;
   const stories = epic.children;
   const directive = [...data.thread].reverse().find((m) => m.kind === "steer") ?? null;
   const row = summary.data?.find((r: EpicSummaryRow) => r.id === id) ?? null;
@@ -104,16 +110,18 @@ export function EpicPage(): React.JSX.Element {
           <span className={ui.idMono}>{epic.id}</span>
           <StatusChip status={epic.status} />
         </div>
-        <h1 className={styles.title}>{epic.title}</h1>
+        <h1 className={styles.title}>{heading}</h1>
         <button type="button" className={styles.steer} onClick={steer}>
           Steer this epic
         </button>
       </div>
 
+      {titleIsTruncatedWords ? null : (
       <figure className={styles.words}>
         <figcaption className={ui.sectionLabel}>Owner&rsquo;s words · original request</figcaption>
         <blockquote className={ui.quote}>{words}</blockquote>
       </figure>
+      )}
 
       {directive ? (
         <div className={ui.directive} data-testid="directive">

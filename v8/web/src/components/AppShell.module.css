@@ -53,6 +53,11 @@
 .nav {
   display: flex;
   flex-direction: column;
+  /* The rail is a fixed-height flex column: the nav is the one part that may scroll, so the
+     identity/preferences button below it is always on screen (human report, 2026-09-10). */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .navItem {

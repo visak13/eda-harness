@@ -16,9 +16,16 @@ export function IdentityPanel({ hint }: { hint?: string }): React.JSX.Element {
     e.preventDefault();
     const url = new URL(window.location.href);
     url.searchParams.set("as", as.trim());
-    if (token.trim()) url.searchParams.set("token", token.trim());
-    else url.searchParams.delete("token");
-    window.location.assign(url.toString()); // full reload → identity.ts re-reads ?as/?token
+    url.searchParams.delete("token");
+    // The token goes to sessionStorage directly — never into a document URL, where it would land in
+    // the request line and the server access log (adversary finding #1, 2026-09-10). identity.ts
+    // reads sessionStorage on the reload.
+    try {
+      if (token.trim()) sessionStorage.setItem("edp8.token", token.trim());
+    } catch {
+      /* storage unavailable: header-only identity */
+    }
+    window.location.assign(url.toString()); // full reload → identity.ts re-reads ?as + stored token
   };
 
   return (

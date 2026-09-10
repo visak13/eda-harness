@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import type { SignoffRow } from "../api/types";
@@ -28,6 +28,12 @@ export interface RulingDrawerProps {
 export function RulingDrawer({ signoff, kOfN, onClose, onRuled, returnFocusTo }: RulingDrawerProps): React.JSX.Element {
   const [staleAck, setStaleAck] = useState(false);
   const docId = signoff?.doc?.id ?? null;
+  // "Rule on vN anyway" is an acknowledgement of ONE document's newer version — it never carries
+  // over to the next sign-off (adversary finding #3, 2026-09-10).
+  const signoffKey = signoff?.criterion.id ?? null;
+  useEffect(() => {
+    setStaleAck(false);
+  }, [signoffKey]);
   const frozen = signoff?.doc?.version ?? 0;
 
   // Freeze: fetch exactly the version this ruling opened. `versions` still lists ALL versions, so

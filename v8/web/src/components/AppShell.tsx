@@ -21,10 +21,6 @@ interface Summary {
   seats?: number;
   library?: number;
 }
-interface EpicInView {
-  id: string;
-  title: string;
-}
 
 // Nav order is fixed (design §4.2): Decisions, Epics, Seats, Library. `count` names the
 // key read from /v1/me/summary; that endpoint belongs to G1a, so counts render only when
@@ -100,11 +96,6 @@ function AppShellChrome(): React.JSX.Element {
     queryFn: () => api<Summary>("/v1/me/summary"),
     retry: false,
   });
-  const inView = useQuery({
-    queryKey: ["me", "epics-in-view"],
-    queryFn: () => api<EpicInView[]>("/v1/epics/summary"),
-    retry: false,
-  });
 
   // Live plane is owned by the DraftGuardProvider (one subscription for the whole app). The pill
   // reflects its `pending` count and flushes on click — held while a composer is dirty so a
@@ -176,18 +167,9 @@ function AppShellChrome(): React.JSX.Element {
           <span className={styles.key}>Ctrl K</span>
         </button>
 
-        {inView.data && inView.data.length > 0 ? (
-          <>
-            <div className={styles.sectionLabel}>In view</div>
-            {inView.data.slice(0, 4).map((e) => (
-              <div key={e.id} className={styles.miniEpic}>
-                <span className={styles.dot} aria-hidden="true" />
-                <span>{e.title}</span>
-              </div>
-            ))}
-          </>
-        ) : null}
-
+        {/* The former "In view" block (recent epic words) is gone: it was not navigation, it printed
+            whole epic texts, overflowed the rail and pushed the identity/preferences button off
+            screen (human report m-16b1efc68f, 2026-09-10). */}
         <div className={styles.identity} ref={identityRef}>
           <button
             className={styles.identityBtn}
@@ -226,6 +208,7 @@ function AppShellChrome(): React.JSX.Element {
           <span className={styles.here}>{crumbFor(location.pathname)}</span>
         </div>
         <div className={styles.headerRight}>
+          <ThemePicker compact />
           <button
             ref={helpBtnRef}
             className={styles.helpBtn}
