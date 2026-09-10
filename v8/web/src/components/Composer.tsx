@@ -16,15 +16,64 @@ import styles from "./Composer.module.css";
 // note is shown verbatim. It never fans out — exactly one `to`.
 
 const ROLES: string[] = ["architect", "engineer", "sme", "qa", "reviewer", "owner"];
+// Promise #16: every To/Kind option says WHO IT WAKES in one line (visible in the option label and
+// as its title). Copy is local to the composer on purpose — the shared copy table is not touched.
 const ROLE_GLOSS: Record<string, string> = {
-  architect: "design questions, rulings",
-  engineer: "builds a story",
-  sme: "craft author",
-  qa: "final acceptance",
-  reviewer: "independent verdict",
-  owner: "the human who steers and approves",
+  architect: "wakes the architect on this epic — design questions, rulings",
+  engineer: "wakes the engineer on this epic — builds a story",
+  sme: "wakes the sme on this epic — craft author",
+  qa: "wakes the qa on this epic — final acceptance",
+  reviewer: "wakes the reviewer on this epic — independent verdict",
+  owner: "reaches the owner — the human who steers and approves",
+};
+const KIND_GLOSS: Partial<Record<MessageKind, string>> = {
+  note: "wakes the seats working this ticket, or only the seat you @tag / pick in To",
+  question: "wakes the seat or role you address; they answer here",
+  answer: "wakes the seat that asked",
+  deviation: "wakes the seat or role you address — the design cannot be followed as written",
 };
 const NEEDS_CONFIRM: MessageKind[] = ["question", "deviation"];
+
+/** The "?" popover (promise #16): what wake / seat / role mean, once, in plain words. */
+function ComposerHelp({ onClose }: { onClose: () => void }): React.JSX.Element {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => closeRef.current?.focus(), []);
+  return (
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
+    <div
+      role="dialog"
+      aria-label="How sending works"
+      className={styles.help}
+      data-testid="composer-help"
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          onClose();
+        }
+      }}
+    >
+      <div className={styles.helpHead}>
+        <strong>How sending works</strong>
+        <button ref={closeRef} type="button" className={styles.helpClose} aria-label="Close help" onClick={onClose}>
+          ✕
+        </button>
+      </div>
+      <p>
+        <strong>Wake</strong> — a message addressed <em>to</em> a seat or role wakes that seat&apos;s shell:
+        the agent reads it and acts. A note with nobody addressed reaches the seats already working this
+        ticket.
+      </p>
+      <p>
+        <strong>Seat</strong> — one running agent shell bound to one ticket, named <code>role.ticket</code>
+        (for example <code>engineer.s-12</code>). Only a live seat can be woken.
+      </p>
+      <p>
+        <strong>Role</strong> — the job a seat does: architect, engineer, reviewer, qa, owner or
+        coordinator. Addressing a role wakes the seat holding that role on this epic.
+      </p>
+    </div>
+  );
+}
 
 /** The first `@handle` in `text` that names a known participant (handle or id), else null.
  *  Uses the shared tokeniser (round 2 #6): code spans and e-mail interiors never address anyone. */
@@ -96,6 +145,8 @@ export function Composer({
   const [dragOver, setDragOver] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpBtnRef = useRef<HTMLButtonElement>(null);
   const [sentNote, setSentNote] = useState<string | null>(null);
   const [unresolved, setUnresolved] = useState<string[]>([]);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -247,11 +298,17 @@ export function Composer({
             <span className={styles.fieldLabel}>Kind</span>
             <select value={kind} onChange={(e) => setKind(e.target.value as MessageKind)} aria-label="Message kind">
               {kinds.map((k) => (
-                <option key={k} value={k}>
+                <option key={k} value={k} title={KIND_GLOSS[k]}>
                   {k}
+                  {KIND_GLOSS[k] ? ` — ${KIND_GLOSS[k]}` : ""}
                 </option>
               ))}
             </select>
+            {KIND_GLOSS[kind] ? (
+              <span className={styles.gloss} data-testid="kind-gloss">
+                {KIND_GLOSS[kind]}
+              </span>
+            ) : null}
           </label>
         )}
         {showTo || to != null ? (
@@ -340,7 +397,21 @@ export function Composer({
       ) : null}
 
       <div className={styles.footer}>
-        <span className={styles.hint}>Ctrl/Cmd+Enter sends · Enter for a newline · @ to notify</span>
+        <span className={styles.hint}>
+          Ctrl/Cmd+Enter sends · Enter for a newline · @ to notify
+          <button
+            ref={helpBtnRef}
+            type="button"
+            className={styles.helpBtn}
+            aria-label="How sending works"
+            aria-haspopup="dialog"
+            aria-expanded={helpOpen}
+            onClick={() => setHelpOpen((o) => !o)}
+            data-testid="composer-help-toggle"
+          >
+            ?
+          </button>
+        </span>
         {expand ? (
           <button
             type="button"
@@ -362,6 +433,15 @@ export function Composer({
           {confirming ? "Send anyway — wakes nobody" : "Send"}
         </button>
       </div>
+
+      {helpOpen ? (
+        <ComposerHelp
+          onClose={() => {
+            setHelpOpen(false);
+            helpBtnRef.current?.focus();
+          }}
+        />
+      ) : null}
 
       {send.error ? (
         <p className={styles.error} role="alert">
@@ -409,7 +489,7 @@ export function Composer({
         ) : null}
         <optgroup label="Roles on this epic">
           {ROLES.map((r) => (
-            <option key={r} value={r}>
+            <option key={r} value={r} title={ROLE_GLOSS[r]}>
               {r} · {liveRoles.has(r) ? "seat live" : "no seat yet"}
               {glossFor(r)}
             </option>

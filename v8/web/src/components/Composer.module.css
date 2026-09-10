@@ -199,3 +199,64 @@
   padding: 0 2px;
   line-height: 1;
 }
+
+/* Promise #16: one-line "who it wakes" gloss under the Kind select, and the "?" help popover. */
+.gloss {
+  font-size: 12px;
+  color: var(--muted);
+  max-width: 48ch;
+}
+.helpBtn {
+  margin-left: 8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  vertical-align: middle;
+}
+.helpBtn:hover,
+.helpBtn[aria-expanded="true"] {
+  color: var(--accentink);
+  border-color: var(--accentink);
+}
+.helpBtn:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 2px;
+}
+.help {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--rail);
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.help p {
+  margin: 0;
+}
+.help code {
+  font: 12px/18px Consolas, monospace;
+}
+.helpHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.helpClose {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}

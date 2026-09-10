@@ -263,3 +263,40 @@ describe("Composer round 2", () => {
     await waitFor(() => expect(screen.getByTestId("mentions-menu")).toBeInTheDocument());
   });
 });
+
+// Promise #16: a "?" popover explains wake / seat / role once, in plain words; every kind and
+// role option carries a one-line "who it wakes" gloss.
+describe("Composer help (promise #16)", () => {
+  it("the ? button opens a dialog explaining wake, seat and role; ✕ and Esc close it", async () => {
+    mountComposer({ kinds: ["note", "question"] });
+    const toggle = screen.getByRole("button", { name: "How sending works" });
+    expect(screen.queryByRole("dialog", { name: "How sending works" })).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    const dialog = screen.getByRole("dialog", { name: "How sending works" });
+    expect(dialog).toHaveTextContent(/wakes that seat's shell/);
+    expect(dialog).toHaveTextContent(/one running agent shell bound to one ticket, named role\.ticket/);
+    expect(dialog).toHaveTextContent(/architect, engineer, reviewer, qa, owner or coordinator/);
+    fireEvent.click(screen.getByRole("button", { name: "Close help" }));
+    expect(screen.queryByRole("dialog", { name: "How sending works" })).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "How sending works" }), { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "How sending works" })).not.toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("kind and role options say who they wake (title + visible sub-label)", async () => {
+    mountComposer({ kinds: ["note", "question"], showTo: true });
+    await screen.findByRole("option", { name: /architect seat/ });
+    const kindSel = screen.getByLabelText("Message kind") as HTMLSelectElement;
+    const note = [...kindSel.options].find((o) => o.value === "note")!;
+    expect(note.title).toMatch(/wakes the seats working this ticket/);
+    expect(note.textContent).toMatch(/wakes/);
+    expect(screen.getByTestId("kind-gloss")).toHaveTextContent(/wakes the seats working this ticket/);
+    fireEvent.change(kindSel, { target: { value: "question" } });
+    expect(screen.getByTestId("kind-gloss")).toHaveTextContent(/wakes the seat or role you address/);
+    const toSel = screen.getByTestId("to-picker") as HTMLSelectElement;
+    const roleOpt = [...toSel.options].find((o) => o.value === "architect")!;
+    expect(roleOpt.title).toMatch(/wakes the architect on this epic/);
+    expect(roleOpt.textContent).toMatch(/wakes the architect on this epic/);
+  });
+});
