@@ -9,6 +9,7 @@ import { StatusControl } from "../components/StatusControl";
 import { GateOpenControl } from "../components/GateOpenControl";
 import { GateForm } from "../components/GateForm";
 import { AssignControl } from "../components/AssignControl";
+import { AskRoleControl } from "../components/AskRole";
 import { CriterionCard } from "../components/CriterionCard";
 import { AddCriterion } from "../components/CriterionControls";
 import { Tabs } from "../components/Tabs";
@@ -213,6 +214,11 @@ export function EpicPage(): React.JSX.Element {
           <section className={ui.card} {...copyProps("epic", "assign-spawn")}>
             <div className={ui.sectionLabel}>Assign or spawn a seat</div>
             <AssignControl ticketId={id} currentAssignee={epic.assignee ?? null} />
+          </section>
+
+          <section className={ui.card} data-testid="epic-ask-role">
+            <div className={ui.sectionLabel}>Ask a role</div>
+            <AskRoleControl ticketId={id} />
           </section>
 
           <section className={ui.card}>

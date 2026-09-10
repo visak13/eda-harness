@@ -1,0 +1,79 @@
+/* Ask a role (promise #17): a toggle that opens a small stacked form — role select, question,
+   the wake line, send. Same plain Folio styling as the assign/spawn control (no card of its own). */
+
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.toggle,
+.send {
+  font: inherit;
+  font-weight: 600;
+  color: var(--accentink);
+  background: none;
+  border: 1px solid var(--accentink);
+  padding: 6px 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.toggle:hover:not(:disabled),
+.send:hover:not(:disabled) {
+  background: var(--accentwash, transparent);
+}
+.send:disabled {
+  color: var(--muted);
+  border-color: var(--line);
+  cursor: not-allowed;
+}
+.toggle:focus-visible,
+.send:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 2px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.select,
+.text {
+  font: inherit;
+  border: 1px solid var(--line);
+  padding: 6px 8px;
+  background: var(--panel);
+  color: var(--ink);
+}
+.text {
+  resize: vertical;
+  min-height: 64px;
+}
+.select:focus,
+.text:focus {
+  outline: 2px solid var(--accentink);
+  outline-offset: 1px;
+}
+
+.wake,
+.sent {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--muted);
+}
+.sent {
+  color: var(--ink);
+}
+.error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--accentink);
+}

@@ -325,4 +325,28 @@ describe("EpicPage", () => {
     await waitFor(() => expect(answered).not.toBeNull());
     expect(answered!).toMatchObject({ answer: "accepted" });
   });
+
+  it("Ask a role posts a question addressed to the chosen role on the epic thread (promise #17)", async () => {
+    let body: Record<string, unknown> | null = null;
+    mount(page());
+    server.use(
+      http.post("/v1/messages", async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return okJson({ id: "m-9", unresolved_mentions: [] }, "delivered to reviewer.epic-1 (the epic's reviewer)");
+      }),
+    );
+    await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    fireEvent.click(screen.getByTestId("ask-role-toggle"));
+    // the gloss names who is woken: the epic's seat of that role
+    expect(screen.getByTestId("ask-role-wake")).toHaveTextContent("architect.epic-1");
+    fireEvent.change(screen.getByLabelText("Role"), { target: { value: "reviewer" } });
+    expect(screen.getByTestId("ask-role-wake")).toHaveTextContent("reviewer.epic-1");
+    fireEvent.change(screen.getByLabelText("Question"), { target: { value: "is the verdict in?" } });
+    fireEvent.click(screen.getByTestId("ask-role-send"));
+    const { waitFor } = await import("@testing-library/react");
+    await waitFor(() => expect(body).not.toBeNull());
+    expect(body!).toEqual({ ticket_id: "epic-1", kind: "question", to: "reviewer", text: "is the verdict in?" });
+    // the board's resolution note is the confirmation, verbatim
+    expect(await screen.findByTestId("ask-role-sent")).toHaveTextContent("delivered to reviewer.epic-1");
+  });
 });

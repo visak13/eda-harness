@@ -79,6 +79,7 @@ export const PAGES: Record<string, PageCopy> = {
       { key: "answer-decision", label: "Answer a decision", text: "open gates on this epic you can rule.", control: true },
       { key: "raise-decision", label: "Raise a decision", text: "open a gate for the owner (design sign-off, demo, scope…); wakes the owner.", control: true },
       { key: "assign-spawn", label: "Assign or spawn a seat", text: "set who does a story, or spawn its engineer; spawn happens on the fleet host; wakes: the new seat (boot) and the owner (assigned).", control: true },
+      { key: "ask-role", label: "Ask a role", text: "posts a question on the epic thread addressed to a role (architect, engineer, reviewer, qa, coordinator, owner); wakes that role's seat on this epic.", control: true },
       { key: "assigned-seats", label: "Assigned seats", text: "the seats holding stories here; click → the seat's row on Seats (message, resume).", control: true },
     ],
   },
