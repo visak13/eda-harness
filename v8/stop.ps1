@@ -1,7 +1,8 @@
 ﻿# edp8 fleet — bring everything down (the launcher owns the shared services; design §22).
 #   .\stop.ps1            stop supervisor + bridge + mcp + pool + broker + board
 #   .\stop.ps1 -Only mcp  stop just one
-# Stops by the launcher's pid file (v8/.run) and, as a backstop, by the listener on each port.
+# Stops by the launcher's pid file (v8/.run) and, as a backstop, by the listener on each port;
+# verifies every pid is gone before printing "stopped" and exits 1 naming any survivor.
 [CmdletBinding()]
 param([string]$Only)
 $ErrorActionPreference = "Stop"
@@ -16,25 +17,19 @@ $env:PYTHONPATH = Join-Path $v8 "src"
 $order = @("supervisor", "bridge", "mcp", "pool", "broker", "board")
 if ($Only) { $order = @($Only) }
 
+$failed = $false
 foreach ($svc in $order) {
-  $rec = & $py -c "import json;from edp8 import run_state;r=run_state.read('$svc');print(json.dumps(r) if r else '')" 2>$null
-  $stopped = $false
-  if ($rec) {
-    $o = $rec | ConvertFrom-Json
-    # Scoped stop (c-c0f2ceea9b): kill only THIS fleet's OWN recorded pid. For the port-less bridge,
-    # verify the pid is still a slack_bridge first — a stale/reused pid, or the LIVE fleet's bridge,
-    # is never taskkilled by a private fleet. The old machine-global CommandLine sweep (which killed
-    # every slack_bridge on the box, the live one included) is gone.
-    $killable = $true
-    if ($svc -eq "bridge" -and $o.pid) {
-      $killable = [bool](& $py -c "from edp8 import run_state; print('1' if run_state.pid_cmdline_matches($($o.pid),'edp8.slack_bridge') else '')" 2>$null)
-    }
-    if ($o.pid -and $killable) { if (Get-Process -Id $o.pid -ErrorAction SilentlyContinue) { & cmd /c "taskkill /PID $o.pid /T /F >nul 2>&1" }; $stopped = $true }
-    if ($o.port) {
-      Get-NetTCPConnection -LocalPort $o.port -State Listen -ErrorAction SilentlyContinue |
-        ForEach-Object { if (Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue) { & cmd /c "taskkill /PID $_.OwningProcess /T /F >nul 2>&1" }; $stopped = $true }
-    }
-    & $py -c "from edp8 import run_state; run_state.clear('$svc')" 2>$null
+  # One implementation for stop.ps1 and stop.sh (c-c0f2ceea9b): run_state.stop_service kills the
+  # recorded pid tree + the port's listener, WAITS, and clears the record only when nothing is
+  # left. "stopped" is printed only after the pids are verified gone (qa drill 2026-09-10 found
+  # the old script printing "stopped" while every service survived).
+  $res = & $py -c "import json;from edp8 import run_state;print(json.dumps(run_state.stop_service('$svc')))" | ConvertFrom-Json
+  if (-not $res.recorded) { Write-Host ("{0,-11} not running" -f $svc); continue }
+  if ($res.still_running.Count -gt 0) {
+    Write-Host ("{0,-11} still running: {1} pid {2}" -f $svc, $svc, ($res.still_running -join ", "))
+    $failed = $true
+  } else {
+    Write-Host ("{0,-11} stopped{1}" -f $svc, $(if ($res.killed.Count) { " (pid " + ($res.killed -join ", ") + ")" } else { " (already gone)" }))
   }
-  Write-Host ("{0,-11} {1}" -f $svc, $(if ($stopped) { "stopped" } else { "not running" }))
 }
+if ($failed) { [Console]::Error.WriteLine("edp8: some services are still running — see above"); exit 1 }

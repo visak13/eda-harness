@@ -12,7 +12,7 @@ export function ThemePicker({ compact = false }: { compact?: boolean } = {}): Re
   // only way to the picker and it had scrolled off screen): a labelled native <select>, always visible.
   if (compact) {
     return (
-      <label className={styles.compact}>
+      <label className={styles.compact} data-testid="theme-picker-compact">
         <span className={styles.compactLabel}>Theme</span>
         <select
           className={styles.compactSelect}

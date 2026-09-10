@@ -13,23 +13,19 @@ export PYTHONPATH="$V8/src"
 ONLY=""; [ "${1:-}" = "--only" ] && ONLY="${2:-}"
 ORDER=(supervisor bridge mcp pool broker board); [ -n "$ONLY" ] && ORDER=("$ONLY")
 
+failed=0
 for svc in "${ORDER[@]}"; do
-  rec="$("$PY" -c "import json;from edp8 import run_state;r=run_state.read('$svc');print(json.dumps(r) if r else '')" 2>/dev/null || true)"
-  stopped=0
-  if [ -n "$rec" ]; then
-    pid="$(echo "$rec" | "$PY" -c "import sys,json;print(json.load(sys.stdin).get('pid') or '')")"
-    port="$(echo "$rec" | "$PY" -c "import sys,json;print(json.load(sys.stdin).get('port') or '')")"
-    # Scoped stop (c-c0f2ceea9b): kill only THIS fleet's OWN recorded pid. For the port-less bridge,
-    # verify it is still a slack_bridge first, so a private fleet never kills the LIVE Slack bridge.
-    # The old machine-global `pkill -f edp8.slack_bridge` (which killed the live one too) is gone.
-    kill_ok=1
-    if [ "$svc" = "bridge" ] && [ -n "$pid" ]; then
-      "$PY" -c "import sys;from edp8 import run_state;sys.exit(0 if run_state.pid_cmdline_matches($pid,'edp8.slack_bridge') else 1)" 2>/dev/null || kill_ok=0
-    fi
-    # Windows pids are not MSYS pids under Git Bash: terminate through psutil, fall back to kill
-    [ -n "$pid" ] && [ "$kill_ok" = "1" ] && { "$PY" -c "import psutil,sys; psutil.Process(int(sys.argv[1])).terminate()" "$pid" 2>/dev/null || kill "$pid" 2>/dev/null; } && stopped=1 || true
-    [ -n "$port" ] && command -v fuser >/dev/null 2>&1 && fuser -k "${port}/tcp" 2>/dev/null && stopped=1 || true
-    "$PY" -c "from edp8 import run_state; run_state.clear('$svc')" 2>/dev/null || true
-  fi
-  if [ "$stopped" = "1" ]; then echo "$svc stopped"; else echo "$svc not running"; fi
+  # One implementation for stop.ps1 and stop.sh (c-c0f2ceea9b): run_state.stop_service kills the
+  # recorded pid tree + the port's listener, WAITS, and clears the record only when nothing is left;
+  # "stopped" is printed only after the pids are verified gone.
+  line="$("$PY" -c "
+from edp8 import run_state
+r = run_state.stop_service('$svc')
+if not r['recorded']: print('not running')
+elif r['still_running']: print('still running: $svc pid ' + ', '.join(map(str, r['still_running'])))
+else: print('stopped' + (' (pid ' + ', '.join(map(str, r['killed'])) + ')' if r['killed'] else ' (already gone)'))
+")"
+  echo "$svc $line"
+  case "$line" in "still running"*) failed=1;; esac
 done
+if [ "$failed" = "1" ]; then echo "edp8: some services are still running — see above" >&2; exit 1; fi

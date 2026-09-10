@@ -539,7 +539,13 @@ function SeatNowCard({ seat, caps }: { seat: SeatRow; caps: PoolCapabilities | u
       </div>
       {seat.ticket_id ? (
         <Link className={styles.seatNowTicket} to={`/ticket/${encodeURIComponent(seat.ticket_id)}`} title={seat.ticket_title ?? seat.ticket_id}>
-          {seat.ticket_title ?? seat.ticket_id}
+          {seat.ticket_title ? (
+            <>
+              {seat.ticket_title} <span className={styles.seatNowTicketId}>{seat.ticket_id}</span>
+            </>
+          ) : (
+            seat.ticket_id
+          )}
         </Link>
       ) : null}
       {seat.latest_status ? (

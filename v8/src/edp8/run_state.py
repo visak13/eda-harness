@@ -264,3 +264,72 @@ def _process_alive(pid: int | None) -> bool:
         return isinstance(pid, int)
     except (OSError, TypeError, ValueError):
         return os.name == "nt"  # can't cheaply check on Windows without psutil; trust the file
+
+
+def stop_service(service: str, *, timeout_s: float = 8.0) -> dict[str, Any]:
+    """Stop ONE service this launcher recorded and VERIFY it is gone (S17 c-c0f2ceea9b; qa launcher
+    drill 2026-09-10: `stop.ps1` printed "stopped" for five services and killed none — a false
+    success). Shared by stop.ps1 and stop.sh so there is one implementation.
+
+    Targets: the recorded pid (plus its process tree) and, when the record carries a port, whoever
+    owns the LISTEN socket on it. The port-less bridge is stopped only while its pid is still a
+    slack_bridge (scoped — never another fleet's bridge). Every target is terminated, then killed
+    after `timeout_s`; the record is cleared ONLY when nothing is left. Returns
+    {service, recorded, killed: [pids], still_running: [pids]}; `still_running` non-empty means the
+    caller must print it and exit non-zero.
+    """
+    rec = read(service)
+    out: dict[str, Any] = {"service": service, "recorded": rec is not None, "killed": [], "still_running": []}
+    if rec is None:
+        return out
+    try:
+        import psutil
+    except Exception:  # noqa: BLE001 — without psutil we cannot verify; report the pid as unverified
+        out["still_running"] = [int(rec.get("pid") or 0)] if rec.get("pid") else []
+        return out
+    targets: dict[int, Any] = {}
+
+    def add(pid: int | None) -> None:
+        if not pid or int(pid) == os.getpid():
+            return
+        try:
+            p = psutil.Process(int(pid))
+            for c in p.children(recursive=True):
+                targets.setdefault(c.pid, c)
+            targets.setdefault(p.pid, p)
+        except psutil.Error:
+            return
+
+    pid = rec.get("pid")
+    if service == "bridge":
+        if pid_cmdline_matches(pid, "edp8.slack_bridge"):
+            add(pid)
+    else:
+        add(pid)
+    port = rec.get("port")
+    if port:
+        add(listener_pid(int(port)))
+    procs = list(targets.values())
+    for p in procs:
+        try:
+            p.terminate()
+        except psutil.Error:
+            pass
+    gone, alive = psutil.wait_procs(procs, timeout=timeout_s / 2)
+    for p in alive:
+        try:
+            p.kill()
+        except psutil.Error:
+            pass
+    gone2, alive2 = psutil.wait_procs(alive, timeout=timeout_s / 2)
+    out["killed"] = sorted(p.pid for p in list(gone) + list(gone2))
+    still = sorted(p.pid for p in alive2)
+    # The listener is the contract: a survivor that re-bound the port is still "running".
+    if port and _port_listening(int(port)):
+        lp = listener_pid(int(port))
+        if lp and lp not in still:
+            still.append(lp)
+    out["still_running"] = still
+    if not still:
+        clear(service)
+    return out
