@@ -321,6 +321,12 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         if secret is None:
             if public:  # fail closed: an uncredentialed participant cannot act from the network
                 return f"X-Token required for {p.type} participant {p.handle!r} (public mode)"
+            # Human #34 (2026-09-10, P1): once tokens.json exists the board is in token mode — a HUMAN
+            # with no minted entry is refused, never trusted on the header alone (the fleet board
+            # accepted `X-Participant: owner` with no X-Token because its tokens.json listed only
+            # agents). Agents are still minted at spawn (S20); a pre-token agent stays header-only.
+            if p.type == "human" and _tokens_file().exists():
+                return f"no token minted for {p.handle.lstrip('@')} — mint one (tokens.json top-level handle→secret)"
             return None
         if token != secret:
             return f"X-Token required for {p.type} participant {p.handle!r}"

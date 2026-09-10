@@ -40,3 +40,13 @@ def ui_prefix(monkeypatch: pytest.MonkeyPatch) -> str:
     mode = env_ui or ("folio" if prefix == "/ui-legacy" else "legacy")
     monkeypatch.setenv("EDP8_UI", mode)
     return prefix
+
+
+@pytest.fixture(autouse=True)
+def isolated_tokens(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests never read the HOST's tokens.json (EDP8_HOME defaults to the cwd, where the fleet board
+    keeps its minted agent secrets). Human #34 made token mode refuse an unminted human, so a suite
+    run from v8/ would otherwise 401 every header-only `owner` call. Tests that need a tokens file
+    set EDP8_TOKENS themselves (test_human_plane, test_public_mode, test_s20_pool_control …)."""
+    if "EDP8_TOKENS" not in os.environ:
+        monkeypatch.setenv("EDP8_TOKENS", str(tmp_path_factory.mktemp("tokens") / "absent-tokens.json"))

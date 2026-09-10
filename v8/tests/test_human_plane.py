@@ -95,9 +95,26 @@ def test_token_required_only_when_configured(client, rig, tmp_path):
     assert denied.status_code == 401
     allowed = client.get("/v1/whoami", headers={"X-Participant": "x", "X-Token": "s3cret"}).json()
     assert allowed["ok"]
-    # agents and un-listed humans are untouched
+    # agents are untouched; an un-listed HUMAN is refused once tokens.json exists (human #34)
     assert client.get("/v1/whoami", headers={"X-Participant": "arch"}).json()["ok"]
-    assert client.get("/v1/whoami", headers={"X-Participant": "aksou"}).json()["ok"]
+    unminted = client.get("/v1/whoami", headers={"X-Participant": "aksou"})
+    assert unminted.status_code == 401 and "no token minted for aksou" in unminted.text
+
+
+def test_token_mode_refuses_unminted_human_writes(client, rig, tmp_path):
+    """Human #34 (P1): the fleet board ran with a tokens.json holding only agent secrets and accepted
+    POST /v1/tickets as `owner` with NO X-Token. In token mode a human with no minted entry is 401,
+    with the mint hint; minting an entry (top-level handle→secret) lets the same request through."""
+    (tmp_path / "tokens.json").write_text(json.dumps({"agents": {"arch": "a-secret"}}), encoding="utf-8")
+    body = {"kind": "epic", "work_type": "feature", "title": "smuggled"}
+    r = client.post("/v1/tickets", json=body, headers={"X-Participant": "aksou"})
+    assert r.status_code == 401 and "mint one" in r.text
+    assert client.get("/v1/whoami", headers={"X-Participant": "arch", "X-Token": "a-secret"}).json()["ok"]
+    (tmp_path / "tokens.json").write_text(json.dumps({"aksou": "h-secret", "agents": {"arch": "a-secret"}}),
+                                          encoding="utf-8")
+    assert client.post("/v1/tickets", json=body, headers={"X-Participant": "aksou"}).status_code == 401
+    ok = client.post("/v1/tickets", json=body, headers={"X-Participant": "aksou", "X-Token": "h-secret"})
+    assert ok.status_code == 200 and ok.json()["ok"]
 
 
 def test_asks_on_closed_projects_disappear(client, rig):
