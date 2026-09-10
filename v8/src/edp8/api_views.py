@@ -154,8 +154,8 @@ def views_router(board: Board, actor: Callable[..., Participant]) -> APIRouter:
         return ok(views.epics_summary(board, a, status=status, q=q))
 
     @r.get("/v1/epics/{epic_id}/page")
-    def epic_page(epic_id: str, a: Participant = Depends(actor)):
-        return ok(views.epic_page(board, epic_id))
+    def epic_page(epic_id: str, include: str | None = None, a: Participant = Depends(actor)):
+        return ok(views.epic_page(board, epic_id, include=include))
 
     @r.get("/v1/tickets/table")
     def tickets_table(epic: str | None = None, status: str | None = None, kind: str | None = None,
@@ -165,8 +165,9 @@ def views_router(board: Board, actor: Callable[..., Participant]) -> APIRouter:
                                       assignee=assignee, tag=tag, q=q))
 
     @r.get("/v1/tickets/{ticket_id}/page")
-    def ticket_page(ticket_id: str, a: Participant = Depends(actor)):
-        return ok(views.ticket_page(board, ticket_id))
+    def ticket_page(ticket_id: str, include: str | None = None, a: Participant = Depends(actor)):
+        # ?include=m-… keeps a deep-linked message in the thread even outside the newest-100 window
+        return ok(views.ticket_page(board, ticket_id, include=include))
 
     @r.get("/v1/tickets/{ticket_id}/transitions")
     def ticket_transitions(ticket_id: str, a: Participant = Depends(actor)):

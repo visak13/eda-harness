@@ -56,6 +56,25 @@ from .schemas import (
 from .store import Store, new_id
 
 _MENTION_RX = re.compile(r"@([A-Za-z0-9][A-Za-z0-9_.\-]*)")
+# Mention tokeniser contract (adversary round 2 #6, tests/fixtures/mention_cases.json — shared with
+# the SPA composer): an @handle counts only when it is NOT inside an inline code span or a fenced
+# block, and is preceded by start-of-text or a character that is neither a word char nor one of
+# `.@-` (so `alice@bob` / `x@bob.com` are emails). A trailing `.`/`,` is punctuation, not handle.
+_MENTION_TOKEN_RX = re.compile(r"(?<![\w.@\-])@([A-Za-z0-9][A-Za-z0-9_.\-]*)")
+_FENCE_RX = re.compile(r"```.*?(?:```|$)", re.S)
+_INLINE_CODE_RX = re.compile(r"`[^`\n]*`")
+
+
+def _mention_handles(text: str) -> list[str]:
+    """The @handles `text` addresses, in order, duplicates kept (the board maps them to participants
+    and drops the unresolvable ones as prose). Code spans and fences never mention anyone."""
+    plain = _INLINE_CODE_RX.sub(" ", _FENCE_RX.sub(" ", text or ""))
+    out: list[str] = []
+    for h in _MENTION_TOKEN_RX.findall(plain):
+        h = h.rstrip(".,")
+        if h:
+            out.append(h)
+    return out
 _log = logging.getLogger("edp8.board")
 HUMAN_GATE_ANSWERERS = {Role.owner}
 _TERMINAL = (TicketStatus.done, TicketStatus.partial, TicketStatus.dropped)
@@ -1164,7 +1183,7 @@ class Board:
     def mentions(self, text: str, *, exclude: set[str] | None = None) -> list[str]:
         """Participant ids @mentioned in text (unresolvable handles are just prose)."""
         out: list[str] = []
-        for h in _MENTION_RX.findall(text or ""):
+        for h in _mention_handles(text):
             try:
                 pid = self.participant(f"@{h}").id
             except BoardError:
@@ -1241,24 +1260,30 @@ class Board:
                 state = self.seat_state(seat) or "never spawned"
                 return seat, f"'{to}' resolved to seat {seat} ({state})"
             return to, f"no {to} seat exists on this epic yet — stored as a role note; nobody is woken"
-        self.participant(to)
-        return to, ""
+        # a bare handle ("bob") is stored as the canonical id, exactly like "@bob" — otherwise the
+        # row is invisible to every by-recipient query on the id (adversary round 2 #3)
+        return self.participant(to).id, ""
 
     def resolve(self, actor: Participant | None, *, ticket_id: str, to: str | None,
-                kind: MessageKind = MessageKind.question) -> dict[str, Any]:
+                kind: MessageKind = MessageKind.question, text: str = "") -> dict[str, Any]:
         """The composer wake preview (design §16.1): who a message to `to` of this `kind` on this
         ticket WOULD wake, and why — computed from the SAME delivery.delivery_plan that delivers,
         without persisting or publishing anything. `wakes` and `plan` are the same list (the
-        criterion names it `wakes`, the SPA design §16.1 names it `plan`)."""
+        criterion names it `wakes`, the SPA design §16.1 names it `plan`). `text` is the draft
+        body: its @mentions are resolved exactly as message_send resolves them, so the preview
+        lists the mentioned seats too (adversary round 2 #7)."""
         from . import delivery
         t = self.ticket(ticket_id)
         resolved, note = self.resolve_recipient(to, t)
+        exclude = {actor.id} if actor else set()
+        if resolved:
+            exclude.add(resolved)
         ev = Event(id="ev-preview", subject_id=ticket_id, kind=EventKind.message_sent,
                    data={"to": resolved, "kind": kind,
                          "from": actor.id if actor else None,
                          "from_type": actor.type if actor else None,
                          "from_role": actor.role.value if actor else None,
-                         "mentions": self.mentions("")})
+                         "mentions": self.mentions(text, exclude=exclude)})
         wakes: list[dict[str, Any]] = []
         for pid, reasons in delivery.delivery_plan(self, ev):
             primary = self._primary(reasons)
@@ -1297,8 +1322,20 @@ class Board:
             self._auto_advance(self.ticket(t.id))
         return m
 
-    def thread(self, ticket_id: str, limit: int = 50) -> list[Message]:
-        return self.store.query("message", {"ticket_id": ticket_id}, limit=limit)  # type: ignore[return-value]
+    def thread(self, ticket_id: str, limit: int = 50, *, include: str | None = None) -> list[Message]:
+        """The NEWEST `limit` messages on a ticket, in chronological order (adversary round 2 #5:
+        oldest-first LIMIT dropped every new message once a thread outgrew the window). `include`
+        names a message id that is returned in its chronological place even when it falls outside
+        the window (a deep link to an old message), provided it belongs to this ticket."""
+        rows = self.store.query_seq("message", {"ticket_id": ticket_id}, limit=limit, newest_first=True)
+        rows.reverse()
+        if include and all(m.id != include for _, m in rows):
+            m = self.store.get("message", include)
+            seq = self.store.seq_of("message", include)
+            if m is not None and seq is not None and m.ticket_id == ticket_id:  # type: ignore[union-attr]
+                rows.append((seq, m))
+                rows.sort(key=lambda r: r[0])
+        return [m for _, m in rows]  # type: ignore[misc]
 
     def gate_open(self, ticket_id: str, gate: Gate, *, by: str = "board", note: str = "") -> Event:
         t = self.ticket(ticket_id)
@@ -1526,14 +1563,16 @@ class Board:
         steer to a booting seat must survive the whoami->subscribe race, so this is queried BY
         RECIPIENT (indexed) — a global scan capped at 200 rows silently dropped every recent ask
         once the board grew (drill 2026-09-03). Empty list == clear to close."""
-        asks = list(self.store.query("message", {"to": p.id,
-                                                 "kind": [MessageKind.question, MessageKind.steer]}, limit=100))
+        asks = list(reversed(self.store.query("message", {"to": p.id,
+                                                          "kind": [MessageKind.question, MessageKind.steer]},
+                                              limit=100, newest_first=True)))
         if p.role.value != p.id:
             # a bare-role address (legacy rows, or a role with no seat when sent) reaches the
             # seats of that role ON THE SAME EPIC only — never every seat of the role fleet-wide
             mine = self.my_epics(p)
-            for m in self.store.query("message", {"to": p.role.value,
-                                                  "kind": [MessageKind.question, MessageKind.steer]}, limit=100):
+            for m in reversed(self.store.query("message", {"to": p.role.value,
+                                                           "kind": [MessageKind.question, MessageKind.steer]},
+                                               limit=100, newest_first=True)):
                 if self._epic_id_of(m.ticket_id) in mine:  # type: ignore[union-attr]
                     asks.append(m)
 

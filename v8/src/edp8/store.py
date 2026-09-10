@@ -175,8 +175,10 @@ class Store:
         return obj
 
     def query_seq(self, type_: str, filters: dict[str, Any] | None = None, *, since_seq: int | None = None,
-                  limit: int = 500) -> list[tuple[int, Obj]]:
-        """Like query(), with each row's global seq — so a caller can ask 'what is new since'."""
+                  limit: int = 500, newest_first: bool = False) -> list[tuple[int, Obj]]:
+        """Like query(), with each row's global seq — so a caller can ask 'what is new since'.
+        `newest_first=True` selects the LAST `limit` rows (ORDER BY seq DESC) — rows come back
+        newest first; reverse for chronological display."""
         filters = {k: v for k, v in (filters or {}).items() if v is not None}
         cols = _INDEXED[type_]
         where, args = [], []
@@ -195,7 +197,7 @@ class Store:
         sql = f"SELECT seq, body FROM {type_}"
         if where:
             sql += " WHERE " + " AND ".join(where)
-        sql += " ORDER BY seq LIMIT ?"
+        sql += " ORDER BY seq DESC LIMIT ?" if newest_first else " ORDER BY seq LIMIT ?"
         args.append(limit)
         with self._lock:
             rows = self._conn.execute(sql, args).fetchall()
@@ -215,7 +217,12 @@ class Store:
         since_seq: int | None = None,
         limit: int = 500,
         order: str = "seq",
+        newest_first: bool = False,
     ) -> list[Obj]:
+        """Rows of `type_` matching `filters` (a list/tuple/set value is an IN), oldest first.
+        `limit` keeps the FIRST `limit` rows in `order`; `newest_first=True` flips the order to
+        `seq DESC` so the LAST `limit` rows are kept (returned newest first — the caller reverses
+        for chronological display). Adversary round 2 #5: a history window must keep the newest."""
         filters = {k: v for k, v in (filters or {}).items() if v is not None}
         cols = _INDEXED[type_]
         where, args = [], []
@@ -234,7 +241,7 @@ class Store:
         sql = f"SELECT body FROM {type_}"
         if where:
             sql += " WHERE " + " AND ".join(where)
-        sql += f" ORDER BY {order} LIMIT ?"
+        sql += " ORDER BY seq DESC LIMIT ?" if newest_first else f" ORDER BY {order} LIMIT ?"
         args.append(limit)
         with self._lock:
             rows = self._conn.execute(sql, args).fetchall()

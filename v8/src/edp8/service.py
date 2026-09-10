@@ -146,6 +146,7 @@ class ResolveIn(BaseModel):
     ticket_id: str
     to: str | None = None
     kind: MessageKind = MessageKind.question
+    text: str = ""  # the draft body: its @mentions join the wake preview (adversary round 2 #7)
 
 
 class ArtifactIn(BaseModel):
@@ -757,7 +758,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     @app.post("/v1/messages/resolve")
     def message_resolve(b: ResolveIn, a: Participant = Depends(actor)):
-        r = board.resolve(a, ticket_id=b.ticket_id, to=b.to, kind=b.kind)
+        r = board.resolve(a, ticket_id=b.ticket_id, to=b.to, kind=b.kind, text=b.text)
         return ok(r, "wake preview only — nothing was sent; `wakes`/`plan` are the same list "
                      "(each {recipient, reason, why}); an empty list means nobody is woken")
 

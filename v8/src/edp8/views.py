@@ -79,9 +79,9 @@ def search_ticket_ids(board: Board, q: str, *, types: set[str] | None = None,
 def unresolved_mentions(board: Board, text: str) -> list[str]:
     """@handles in text that match no participant — the message posts, but nobody is woken
     for these. De-duped, order preserved (parity with ui.py's _MENTION_RX check)."""
-    from .board import _MENTION_RX
+    from .board import _mention_handles
 
-    bad = [h for h in _MENTION_RX.findall(text or "") if not _participant_by_handle(board, h)]
+    bad = [h for h in _mention_handles(text) if not _participant_by_handle(board, h)]
     return list(dict.fromkeys(bad))
 
 
@@ -244,7 +244,8 @@ def _latest_seat_status(board: Board, pid: str) -> dict[str, Any] | None:
     """The seat's most recent record_status, as the note it wrote + who/when — separate from any
     presence signal (design §18.3: a status is what the seat SAID, never inferred from silence).
     None when the seat has recorded nothing (the UI shows 'Last work update unavailable')."""
-    msgs = board.store.query("message", {"created_by": pid, "kind": MessageKind.status})
+    msgs = board.store.query("message", {"created_by": pid, "kind": MessageKind.status},
+                             limit=50, newest_first=True)
     if not msgs:
         return None
     m = max(msgs, key=lambda x: x.created_at)
@@ -330,12 +331,15 @@ def replies_for(board: Board, viewer: Participant, limit: int = 30) -> list[dict
     only on the epic thread (human report m-3d3a36455f, 2026-09-10)."""
     mine_ids = {viewer.id, viewer.handle or ""}
     seen: dict[str, Any] = {}
-    for m in board.store.query("message", {"to": viewer.id}, limit=500):
+    # Rows addressed to the viewer's id OR bare handle (historic handle-addressed rows, adversary
+    # round 2 #3), newest first so the caps keep the latest (#5).
+    addressed = [x for x in (viewer.id, viewer.handle) if x]
+    for m in board.store.query("message", {"to": addressed}, limit=500, newest_first=True):
         if m.kind in (MessageKind.question, MessageKind.steer):
             continue  # open asks live in the inbox
         seen[m.id] = m
-    for mine in board.store.query("message", {"created_by": viewer.id}, limit=500):
-        for m in board.store.query("message", {"reply_to": mine.id}, limit=50):
+    for mine in board.store.query("message", {"created_by": viewer.id}, limit=500, newest_first=True):
+        for m in board.store.query("message", {"reply_to": mine.id}, limit=50, newest_first=True):
             if m.created_by not in mine_ids:
                 seen[m.id] = m
     rows: list[dict[str, Any]] = []
@@ -479,7 +483,7 @@ def _pending_owner_request(board: Board, t: Any) -> bool:
     if not owner:
         return False
     for m in board.store.query("message", {"ticket_id": t.id, "to": owner,
-                                           "kind": MessageKind.question}, limit=50):
+                                           "kind": MessageKind.question}, limit=50, newest_first=True):
         if not board.store.query("message", {"reply_to": m.id, "kind": MessageKind.answer}, limit=1):
             return True
     return False
@@ -549,11 +553,12 @@ def tickets_table(board: Board, *, epic: str | None = None, status: str | None =
     return {"rows": out, "count": len(rows)}
 
 
-def epic_page(board: Board, epic_id: str) -> dict[str, Any]:
+def epic_page(board: Board, epic_id: str, include: str | None = None) -> dict[str, Any]:
     """One epic's board view (design §4.1): the kanban tree, counts, thread, linked docs and
-    open gates — the data behind /ui/epic and /v1/epics/{id}/page."""
+    open gates — the data behind /ui/epic and /v1/epics/{id}/page. `include` is a message id
+    (a deep link) that is always in the thread, even outside the newest-100 window."""
     bd = board.board(epic_id)
-    thread = [_msg(m) for m in board.thread(epic_id, limit=100)]
+    thread = [_msg(m) for m in board.thread(epic_id, limit=100, include=include)]
     docs = [board._doc_summary(d) for d in board.store.query("doc", {"scope": epic_id}, limit=100)]
     # The epic's OWN open gates as answerable rows (design §16 "Epic page: Answer gate"); child-ticket
     # gates are answered on their own ticket pages. `open_gates` (the [tid,gate] tree aggregate from
@@ -571,9 +576,11 @@ def epic_page(board: Board, epic_id: str) -> dict[str, Any]:
                           "evidence_version": getattr(c, "evidence_version", None)} for c in crits]}
 
 
-def ticket_page(board: Board, ticket_id: str) -> dict[str, Any]:
+def ticket_page(board: Board, ticket_id: str, include: str | None = None) -> dict[str, Any]:
     """One ticket's page data (design §4.1): the record, its criteria, linked docs with the
-    relation, the thread, and the resolved assignee — behind /ui/ticket and /v1/tickets/{id}/page."""
+    relation, the thread, and the resolved assignee — behind /ui/ticket and /v1/tickets/{id}/page.
+    The thread is the newest 100 messages; `include` (a message id, the ?include= deep link) is
+    always present in its chronological place even when older than the window."""
     t = board.ticket(ticket_id)
     crits = board.criteria(ticket_id)
     rel_by_doc = {lk.to_id: lk.relation.value for lk in board.links(from_id=ticket_id)}
@@ -591,7 +598,7 @@ def ticket_page(board: Board, ticket_id: str) -> dict[str, Any]:
                           "checked_by": c.checked_by, "verdict": c.verdict.value,
                           "evidence_ref": c.evidence_ref,
                           "evidence_version": getattr(c, "evidence_version", None)} for c in crits],
-            "docs": docs, "thread": [_msg(m) for m in board.thread(ticket_id, limit=100)],
+            "docs": docs, "thread": [_msg(m) for m in board.thread(ticket_id, limit=100, include=include)],
             "open_gates": open_gates,
             "assignee": {"id": t.assignee, "handle": getattr(assignee, "handle", None),
                          "role": getattr(getattr(assignee, "role", None), "value", None)},

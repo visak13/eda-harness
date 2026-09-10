@@ -1,0 +1,18 @@
+{
+  "_comment": "Shared mention-tokeniser contract (adversary round 2 #6, 2026-09-10): the SPA composer (Composer.tsx mentionTokens) and the board (board._mention_handles) must agree on which @handles a text addresses. `handles` are the registered handles; `expect` is the ordered list of handles the text mentions. Read by tests/test_mentions_contract.py and web/src/components/mentions.test.ts.",
+  "handles": ["bob", "alice", "qa.epic-1", "engineer.s-2"],
+  "cases": [
+    {"text": "@bob please look", "expect": ["bob"]},
+    {"text": "ping @alice and @bob", "expect": ["alice", "bob"]},
+    {"text": "`@bob` is a literal", "expect": []},
+    {"text": "see ```\n@bob\n``` block", "expect": []},
+    {"text": "mail alice@bob about it", "expect": []},
+    {"text": "(@bob) in parens", "expect": ["bob"]},
+    {"text": "@qa.epic-1 verdict please.", "expect": ["qa.epic-1"]},
+    {"text": "@engineer.s-2, then @engineer.s-2 again", "expect": ["engineer.s-2"]},
+    {"text": "@nobody is not registered", "expect": []},
+    {"text": "`code` then @alice after code", "expect": ["alice"]},
+    {"text": "x@bob.com and @bob", "expect": ["bob"]},
+    {"text": "@bob.", "expect": ["bob"]}
+  ]
+}
