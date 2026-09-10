@@ -4,6 +4,8 @@ export interface Tab {
   key: string;
   label: string;
   count?: number;
+  /** Tooltip + aria-describedby props from copyProps() (defect #31). */
+  copy?: { title: string; "aria-describedby": string; "data-copy": string };
 }
 
 // Underlined tab bar (design §4.2: 3px selected underline in accentink). Roving selection via
@@ -34,6 +36,7 @@ export function Tabs({
           aria-selected={active === t.key}
           tabIndex={active === t.key ? 0 : -1}
           className={`${styles.tab} ${active === t.key ? styles.active : ""}`}
+          {...(t.copy ?? {})}
           onClick={() => onChange(t.key)}
           onKeyDown={(e) => onKey(e, i)}
         >

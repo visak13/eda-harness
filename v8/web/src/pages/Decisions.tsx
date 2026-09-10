@@ -30,6 +30,7 @@ import { presenceOf } from "./presence";
 import { Avatar } from "../components/Avatar";
 import { identity } from "../auth/identity";
 import { useViewerAliases } from "../auth/useViewer";
+import { copyProps } from "../copy/pages";
 import { useDraftGuard } from "../live/useDraftGuard";
 import { MessageText } from "../components/ArtifactLink";
 import styles from "./Decisions.module.css";
@@ -204,6 +205,7 @@ function SignoffsTab({
               className={styles.reviewBtn}
               type="button"
               data-testid="review-evidence"
+              {...copyProps("decisions", "signoffs")}
               onClick={(e) => onOpen(featured, 1, n, e.currentTarget)}
             >
               Review evidence
@@ -437,7 +439,7 @@ function Conversations({ rows, people }: { rows: ConversationRow[]; people: Pers
           >
             {byCounterpart ? "By ticket" : "By counterpart"}
           </button>
-          <button type="button" className={styles.linkBtn} onClick={() => setComposing((v) => !v)} data-testid="new-conversation">
+          <button type="button" className={styles.linkBtn} onClick={() => setComposing((v) => !v)} data-testid="new-conversation" {...copyProps("decisions", "new-conversation")}>
             New conversation
           </button>
         </div>

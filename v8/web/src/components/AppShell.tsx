@@ -13,6 +13,8 @@ import { Icon } from "./Icon";
 import { PageFrameProvider, usePageFrameCtx, defaultFraming } from "./PageFrame";
 import { GlossaryPanel } from "./GlossaryPanel";
 import { CommandPalette } from "./CommandPalette";
+import { CopyDescriptions } from "./CopyDescriptions";
+import { copyProps, pageKeyFor } from "../copy/pages";
 import styles from "./AppShell.module.css";
 
 interface WhoAmI {
@@ -29,10 +31,10 @@ interface Summary {
 // key read from /v1/me/summary; that endpoint belongs to G1a, so counts render only when
 // present — the shell works (and fidelity holds) whether or not it has landed.
 const NAV = [
-  { to: "/me", label: "Decisions", icon: "decisions", count: "decisions" as const },
-  { to: "/epics", label: "Epics", icon: "epics", count: "epics" as const },
-  { to: "/seats", label: "Seats", icon: "seats", count: "seats" as const },
-  { to: "/library/tickets", label: "Library", icon: "library", count: "library" as const },
+  { to: "/me", label: "Decisions", icon: "decisions", count: "decisions" as const, copy: "decisions" },
+  { to: "/epics", label: "Epics", icon: "epics", count: "epics" as const, copy: "epics" },
+  { to: "/seats", label: "Seats", icon: "seats", count: "seats" as const, copy: "seats" },
+  { to: "/library/tickets", label: "Library", icon: "library", count: "library" as const, copy: "library" },
 ] as const;
 
 function crumbFor(pathname: string): string {
@@ -75,6 +77,7 @@ function AppShellChrome(): React.JSX.Element {
   const identityRef = useRef<HTMLDivElement>(null);
   const helpBtnRef = useRef<HTMLButtonElement>(null);
   const pageFraming = framing ?? defaultFraming(location.pathname);
+  const pageKey = pageKeyFor(location.pathname);
 
   const closeHelp = () => {
     setHelpOpen(false);
@@ -161,6 +164,7 @@ function AppShellChrome(): React.JSX.Element {
               key={item.to}
               to={item.to}
               className={({ isActive }) => `${styles.navItem} ${isActive ? styles.active : ""}`}
+              {...copyProps("sidebar", item.copy)}
             >
               <span className={styles.icon} data-nav-icon>
                 <Icon name={item.icon} />
@@ -178,6 +182,7 @@ function AppShellChrome(): React.JSX.Element {
           className={styles.find}
           type="button"
           aria-label="Find (Ctrl-K)"
+          {...copyProps("sidebar", "find")}
           aria-haspopup="dialog"
           aria-expanded={findOpen}
           onClick={() => setFindOpen(true)}
@@ -198,6 +203,7 @@ function AppShellChrome(): React.JSX.Element {
             className={styles.identityBtn}
             type="button"
             aria-label="Account and preferences"
+            {...copyProps("sidebar", "identity")}
             aria-haspopup="dialog"
             aria-expanded={popoverOpen}
             onClick={() => setPopoverOpen((o) => !o)}
@@ -274,7 +280,8 @@ function AppShellChrome(): React.JSX.Element {
         </DocDrawerProvider>
       </main>
 
-      <GlossaryPanel open={helpOpen} onClose={closeHelp} framing={pageFraming} terms={terms} />
+      <GlossaryPanel open={helpOpen} onClose={closeHelp} framing={pageFraming} terms={terms} page={pageKey} />
+      <CopyDescriptions page={pageKey} />
       <CommandPalette open={findOpen} onClose={closeFind} />
     </div>
   );

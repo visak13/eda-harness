@@ -113,3 +113,18 @@
   font-size: 13px;
   color: var(--muted);
 }
+
+/* Defect #31: page copy (regions → controls) above the glossary terms */
+.copy {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px 32px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+@media (max-width: 900px) {
+  .copy {
+    grid-template-columns: 1fr;
+  }
+}

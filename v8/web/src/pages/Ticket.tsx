@@ -16,6 +16,7 @@ import { Term } from "../components/Term";
 import { CriterionCard } from "../components/CriterionCard";
 import { Composer } from "../components/Composer";
 import { useScrollToHash } from "../components/useScrollToHash";
+import { copyProps } from "../copy/pages";
 import { useDocDrawer } from "../components/DocDrawer";
 import { identity } from "../auth/identity";
 import ui from "../components/ui.module.css";
@@ -139,7 +140,7 @@ export function TicketPage(): React.JSX.Element {
             <AddCriterion ticketId={id} />
           </details>
 
-          <div className={styles.threadHead}>
+          <div className={styles.threadHead} {...copyProps("ticket", "thread")}>
             <span className={ui.sectionLabel}>Conversation ({thread.length})</span>
             <button
               type="button"
@@ -198,7 +199,7 @@ export function TicketPage(): React.JSX.Element {
         </div>
 
         <aside className={styles.rail} aria-label="Ticket details">
-          <section className={ui.card} id="change-status">
+          <section className={ui.card} id="change-status" {...copyProps("ticket", "process-strip")}>
             <div className={ui.sectionLabel}>Change status</div>
             <StatusControl ticketId={id} currentStatus={ticket.status as TicketStatus} />
           </section>
@@ -229,7 +230,7 @@ export function TicketPage(): React.JSX.Element {
             <AskRoleControl ticketId={id} />
           </section>
 
-          <section className={ui.card}>
+          <section className={ui.card} {...copyProps("ticket", "documents")}>
             <div className={ui.sectionLabel}>Linked documents ({docs.length})</div>
             {docs.length === 0 ? (
               <p className={ui.empty}>No documents linked.</p>

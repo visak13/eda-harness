@@ -9,6 +9,7 @@ import { usePageFrame } from "../components/PageFrame";
 import { Composer } from "../components/Composer";
 import { Avatar } from "../components/Avatar";
 import { useScrollToHash } from "../components/useScrollToHash";
+import { copyProps } from "../copy/pages";
 import { identity } from "../auth/identity";
 import { useViewerAliases } from "../auth/useViewer";
 import { AgentLine } from "../components/AgentLine";
@@ -259,6 +260,7 @@ export function SeatTableRow({ seat, caps }: { seat: SeatRow; caps: PoolCapabili
               type="button"
               className={styles.action}
               data-testid="seat-message"
+              {...copyProps("seats", "message")}
               aria-expanded={messaging}
               onClick={() => setMessaging((m) => !m)}
             >
@@ -269,6 +271,7 @@ export function SeatTableRow({ seat, caps }: { seat: SeatRow; caps: PoolCapabili
                 type="button"
                 className={styles.action}
                 data-testid="seat-resume"
+                {...copyProps("seats", "resume")}
                 disabled={resume.isPending}
                 onClick={() => resume.mutate()}
               >

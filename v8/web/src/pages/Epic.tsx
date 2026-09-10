@@ -14,6 +14,7 @@ import { AddCriterion } from "../components/CriterionControls";
 import { Tabs } from "../components/Tabs";
 import { Composer } from "../components/Composer";
 import { useScrollToHash } from "../components/useScrollToHash";
+import { copyProps } from "../copy/pages";
 import { AgentLine } from "../components/AgentLine";
 import { useDocDrawer } from "../components/DocDrawer";
 import { identity } from "../auth/identity";
@@ -96,10 +97,10 @@ export function EpicPage(): React.JSX.Element {
   const workCount = flatten(epic).filter((n) => n.kind !== "epic").length;
 
   const tabs = [
-    { key: "overview", label: "Overview" },
-    { key: "work", label: "Work", count: workCount },
-    { key: "documents", label: "Documents", count: data.docs.length },
-    { key: "thread", label: "Thread", count: data.thread.length },
+    { key: "overview", label: "Overview", copy: copyProps("epic", "overview") },
+    { key: "work", label: "Work", count: workCount, copy: copyProps("epic", "work") },
+    { key: "documents", label: "Documents", count: data.docs.length, copy: copyProps("epic", "documents") },
+    { key: "thread", label: "Thread", count: data.thread.length, copy: copyProps("epic", "thread") },
   ];
 
   function steer() {
@@ -121,7 +122,7 @@ export function EpicPage(): React.JSX.Element {
           <StatusChip status={epic.status} />
         </div>
         <h1 className={`${styles.title} ${heading.length > 90 ? styles.titleLong : ""}`}>{heading}</h1>
-        <button type="button" className={styles.steer} onClick={steer}>
+        <button type="button" className={styles.steer} onClick={steer} {...copyProps("epic", "steer")}>
           Steer this epic
         </button>
       </div>
@@ -174,13 +175,13 @@ export function EpicPage(): React.JSX.Element {
         </div>
 
         <aside className={styles.rail} aria-label="Epic details">
-          <section className={ui.card} id="epic-status">
+          <section className={ui.card} id="epic-status" {...copyProps("epic", "change-status")}>
             <div className={ui.sectionLabel}>Change status</div>
             <StatusControl ticketId={id} currentStatus={epic.status as TicketStatus} />
           </section>
 
           {data.answerable_gates.length > 0 ? (
-            <section className={ui.card} data-testid="epic-answer-gates">
+            <section className={ui.card} data-testid="epic-answer-gates" {...copyProps("epic", "answer-decision")}>
               <div className={ui.sectionLabel}>Answer a decision ({data.answerable_gates.length})</div>
               {data.answerable_gates.map((g) => (
                 <GateForm key={`${g.ticket_id}:${g.gate}`} gate={g} />
@@ -188,12 +189,12 @@ export function EpicPage(): React.JSX.Element {
             </section>
           ) : null}
 
-          <section className={ui.card}>
+          <section className={ui.card} {...copyProps("epic", "raise-decision")}>
             <div className={ui.sectionLabel}>Raise a decision</div>
             <GateOpenControl ticketId={id} />
           </section>
 
-          <section className={ui.card}>
+          <section className={ui.card} {...copyProps("epic", "assign-spawn")}>
             <div className={ui.sectionLabel}>Assign or spawn a seat</div>
             <AssignControl ticketId={id} currentAssignee={epic.assignee ?? null} />
           </section>
@@ -220,7 +221,7 @@ export function EpicPage(): React.JSX.Element {
             </div>
           </section>
 
-          <section className={ui.card}>
+          <section className={ui.card} {...copyProps("epic", "assigned-seats")}>
             <div className={ui.sectionLabel}>Assigned seat</div>
             {row && row.assigned_seats.length > 0 ? (
               <>

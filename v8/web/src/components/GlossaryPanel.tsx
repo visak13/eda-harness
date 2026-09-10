@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { GLOSSARY, type GlossaryCategory } from "../copy/glossary";
+import { PAGES, RULES, SIDEBAR } from "../copy/pages";
 import type { TermRef } from "./PageFrame";
 import styles from "./GlossaryPanel.module.css";
 
@@ -47,11 +48,14 @@ export function GlossaryPanel({
   onClose,
   framing,
   terms,
+  page,
 }: {
   open: boolean;
   onClose: () => void;
   framing: string;
   terms: TermRef[];
+  /** The copy page (copy/pages.ts) whose regions and controls the panel explains (defect #31). */
+  page?: string;
 }): React.JSX.Element | null {
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -70,6 +74,7 @@ export function GlossaryPanel({
   }, [open, onClose]);
 
   if (!open) return null;
+  const copy = page ? PAGES[page] : undefined;
   const cols = groups(terms);
   const conceptValues = terms.length === 0 ? Object.keys(GLOSSARY.concept)
     : terms.filter((t) => t.category === "concept").map((t) => t.value);
@@ -90,8 +95,58 @@ export function GlossaryPanel({
             ✕
           </button>
         </div>
-        <p className={styles.framing}>{framing}</p>
+        <p className={styles.framing}>{copy?.framing || framing}</p>
 
+        {copy ? (
+          <div className={styles.copy} data-testid="page-copy">
+            <section className={styles.group}>
+              <h3 className={styles.groupLabel}>On this page</h3>
+              <dl className={styles.defs}>
+                {copy.items.filter((i) => !i.control).map((i) => (
+                  <div key={i.key} className={styles.def}>
+                    <dt className={styles.dt}>{i.label}</dt>
+                    <dd className={styles.dd}>{i.text}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+            <section className={styles.group}>
+              <h3 className={styles.groupLabel}>What each control does, and who it wakes</h3>
+              <dl className={styles.defs}>
+                {copy.items.filter((i) => i.control).map((i) => (
+                  <div key={i.key} className={styles.def} data-testid="copy-control">
+                    <dt className={styles.dt}>{i.label}</dt>
+                    <dd className={styles.dd}>{i.text}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+            <section className={styles.group}>
+              <h3 className={styles.groupLabel}>{SIDEBAR.title}</h3>
+              <dl className={styles.defs}>
+                {SIDEBAR.items.map((i) => (
+                  <div key={i.key} className={styles.def}>
+                    <dt className={styles.dt}>{i.label}</dt>
+                    <dd className={styles.dd}>{i.text}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+            <section className={styles.group}>
+              <h3 className={styles.groupLabel}>Rules the copy states once</h3>
+              <dl className={styles.defs}>
+                {RULES.map((i) => (
+                  <div key={i.key} className={styles.def}>
+                    <dt className={styles.dt}>{i.label}</dt>
+                    <dd className={styles.dd}>{i.text}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          </div>
+        ) : null}
+
+        <h3 className={styles.groupLabel}>Words on this page</h3>
         <div className={styles.cols}>
           {cols.map(([category, values]) => (
             <section key={category} className={styles.group}>
