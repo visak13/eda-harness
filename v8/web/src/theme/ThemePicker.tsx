@@ -5,32 +5,11 @@ import styles from "./ThemePicker.module.css";
 // A real <fieldset> + native radios: the browser gives us the radiogroup role, arrow-key
 // navigation and roving focus for free (design §4.3 "accessible radio-group picker").
 // Each option carries a text label (never colour alone) and a swatch preview.
-export function ThemePicker({ compact = false }: { compact?: boolean } = {}): React.JSX.Element {
+export function ThemePicker(): React.JSX.Element {
   const { theme, setTheme } = useTheme();
 
   // Header variant (design §4.3 "picker in the header"; human report 2026-09-10: the popover was the
   // only way to the picker and it had scrolled off screen): a labelled native <select>, always visible.
-  if (compact) {
-    return (
-      <label className={styles.compact} data-testid="theme-picker-compact">
-        <span className={styles.compactLabel}>Theme</span>
-        <select
-          className={styles.compactSelect}
-          value={theme}
-          aria-label="Theme"
-          data-testid="theme-select"
-          onChange={(e) => setTheme(e.target.value as ThemeId)}
-        >
-          {THEMES.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.label}
-            </option>
-          ))}
-        </select>
-      </label>
-    );
-  }
-
   return (
     <fieldset className={styles.picker}>
       <legend className={styles.legend}>Theme</legend>

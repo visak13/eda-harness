@@ -1,5 +1,6 @@
 import { label as glossLabel, term } from "../copy/glossary";
 import { Term } from "./Term";
+import { Avatar } from "./Avatar";
 import styles from "./AgentLine.module.css";
 
 // Agent-authored text framing (design §15): a line of agent text is shown verbatim, but framed so a
@@ -38,6 +39,7 @@ export function AgentLine({
 
   return (
     <div className={styles.line} data-testid="agent-line">
+      <Avatar id={by} size={20} />
       <span className={styles.name}>{nameOf(by)}</span>
       {role ? <span className={styles.role}>{role}</span> : null}
       <span className={styles.mono} data-testid="agent-id">

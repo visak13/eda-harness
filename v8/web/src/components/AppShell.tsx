@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { api, BoardApiError } from "../api/client";
@@ -8,9 +8,11 @@ import { DraftGuardProvider, useDraftGuard } from "../live/useDraftGuard";
 import { DocDrawerProvider } from "./DocDrawer";
 import { ThemePicker } from "../theme/ThemePicker";
 import { AvatarPicker } from "./AvatarPicker";
+import { Avatar } from "./Avatar";
 import { Icon } from "./Icon";
 import { PageFrameProvider, usePageFrameCtx, defaultFraming } from "./PageFrame";
 import { GlossaryPanel } from "./GlossaryPanel";
+import { CommandPalette } from "./CommandPalette";
 import styles from "./AppShell.module.css";
 
 interface WhoAmI {
@@ -62,6 +64,12 @@ function AppShellChrome(): React.JSX.Element {
   const as = identity();
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [findOpen, setFindOpen] = useState(false);
+  const findBtnRef = useRef<HTMLButtonElement>(null);
+  const closeFind = useCallback(() => {
+    setFindOpen(false);
+    findBtnRef.current?.focus();
+  }, []);
   const { pending, flush } = useDraftGuard();
   const { framing, terms } = usePageFrameCtx();
   const identityRef = useRef<HTMLDivElement>(null);
@@ -73,12 +81,17 @@ function AppShellChrome(): React.JSX.Element {
     helpBtnRef.current?.focus(); // restore focus to the opener (§15 keyboard contract)
   };
 
-  // Ctrl-/ opens (and toggles) the "What am I looking at?" panel from anywhere in the app.
+  // Ctrl-/ opens (and toggles) the "What am I looking at?" panel from anywhere in the app;
+  // Ctrl-K opens Find (human defect #12, m-783e725c2f).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "/" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         setHelpOpen((o) => !o);
+      }
+      if ((e.key === "k" || e.key === "K") && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        setFindOpen(true);
       }
     };
     document.addEventListener("keydown", onKey);
@@ -160,7 +173,16 @@ function AppShellChrome(): React.JSX.Element {
           ))}
         </nav>
 
-        <button className={styles.find} type="button" aria-label="Find (Ctrl-K)">
+        <button
+          ref={findBtnRef}
+          className={styles.find}
+          type="button"
+          aria-label="Find (Ctrl-K)"
+          aria-haspopup="dialog"
+          aria-expanded={findOpen}
+          onClick={() => setFindOpen(true)}
+          data-testid="find-open"
+        >
           <span className={styles.icon}>
             <Icon name="find" />
           </span>
@@ -180,9 +202,7 @@ function AppShellChrome(): React.JSX.Element {
             aria-expanded={popoverOpen}
             onClick={() => setPopoverOpen((o) => !o)}
           >
-            <span className={styles.avatar} aria-hidden="true">
-              {handle.slice(0, 1).toUpperCase()}
-            </span>
+            <Avatar id={as} size={32} className={styles.avatar} />
             <span>
               <span className={styles.identityName} data-testid="identity">
                 {as}
@@ -210,7 +230,6 @@ function AppShellChrome(): React.JSX.Element {
           <span className={styles.here}>{crumbFor(location.pathname)}</span>
         </div>
         <div className={styles.headerRight}>
-          <ThemePicker compact />
           <button
             ref={helpBtnRef}
             className={styles.helpBtn}
@@ -256,6 +275,7 @@ function AppShellChrome(): React.JSX.Element {
       </main>
 
       <GlossaryPanel open={helpOpen} onClose={closeHelp} framing={pageFraming} terms={terms} />
+      <CommandPalette open={findOpen} onClose={closeFind} />
     </div>
   );
 }

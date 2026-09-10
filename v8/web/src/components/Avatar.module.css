@@ -1,0 +1,6 @@
+.avatar {
+  flex: none;
+  border-radius: 50%;
+  background: var(--panel);
+  vertical-align: middle;
+}

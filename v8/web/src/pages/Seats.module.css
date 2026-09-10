@@ -79,6 +79,9 @@
 .seatName {
   font-weight: 600;
   color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 .seatRole {
   color: var(--muted);

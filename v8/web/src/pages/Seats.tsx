@@ -7,6 +7,7 @@ import { api } from "../api/client";
 import { label as glossLabel } from "../copy/glossary";
 import { usePageFrame } from "../components/PageFrame";
 import { Composer } from "../components/Composer";
+import { Avatar } from "../components/Avatar";
 import { identity } from "../auth/identity";
 import { AgentLine } from "../components/AgentLine";
 import { presenceOf } from "./presence";
@@ -134,7 +135,10 @@ export function SeatsPage(): React.JSX.Element {
           <ul className={styles.peopleList}>
             {people.map((p) => (
               <li key={p.id} className={styles.person} data-testid="person-row">
-                <span className={styles.personName}>{p.handle}</span>
+                <span className={styles.personName}>
+                  <Avatar id={p.id} size={24} />
+                  {p.handle}
+                </span>
                 <span className={styles.personRole}>{glossLabel("role", p.role)}</span>
               </li>
             ))}
@@ -190,9 +194,12 @@ export function SeatTableRow({ seat, caps }: { seat: SeatRow; caps: PoolCapabili
 
   return (
     <>
-      <tr data-testid="seat-row" data-seat={seat.id} data-presence={presence.kind}>
+      <tr id={seat.id} data-testid="seat-row" data-seat={seat.id} data-presence={presence.kind}>
         <td>
-          <div className={styles.seatName}>{seat.handle}</div>
+          <div className={styles.seatName}>
+            <Avatar id={seat.id} size={24} />
+            {seat.handle}
+          </div>
           <div className={styles.seatRole}>{glossLabel("role", seat.role)}</div>
           <div className={styles.stateLine}>
             <span className={`${styles.dot} ${styles[presence.dot]}`} aria-hidden="true" />

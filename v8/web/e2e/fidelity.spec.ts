@@ -103,33 +103,11 @@ test.describe("shell fidelity — band pixelmatch @ 1440×900", () => {
     h: 900 - GEOMETRY.header.h,
   };
 
-  // The header carries the theme picker the owner ruled into it (human defect #2, 2026-09-10 —
-  // the plates predate that ruling and show none). Its rectangle is painted over with the plate's
-  // own pixels before the header band is compared, so the ruled control is neither a false diff
-  // nor a hiding place for anything else: only the picker's box is excluded, nothing around it.
-  async function maskRuledControls(page: Page, shot: ReturnType<typeof readPng>, ref: ReturnType<typeof readPng>) {
-    const picker = page.getByTestId("theme-picker-compact");
-    if ((await picker.count()) === 0) return;
-    const b = await picker.boundingBox();
-    if (!b) return;
-    const x0 = Math.max(0, Math.floor(b.x) - 4);
-    const y0 = Math.max(0, Math.floor(b.y) - 4);
-    const x1 = Math.min(shot.width, Math.ceil(b.x + b.width) + 4);
-    const y1 = Math.min(shot.height, Math.ceil(b.y + b.height) + 4);
-    for (let y = y0; y < y1; y++) {
-      const s = (y * shot.width + x0) * 4;
-      const r = (y * ref.width + x0) * 4;
-      ref.data.copy(shot.data, s, r, r + (x1 - x0) * 4);
-    }
-    console.log(`[fidelity] header band excludes the ruled theme picker at ${x0},${y0}-${x1},${y1}`);
-  }
-
   async function bandCheck(page: Page, url: string, plateName: string, label: string) {
     await page.goto(url);
     await expect(page.locator("main h1")).toBeVisible();
     const shot = readPng(await page.screenshot());
     const ref = plate(plateName);
-    await maskRuledControls(page, shot, ref);
 
     const rail = bandDiffRatio(shot, ref, RAIL_BAND);
     const header = bandDiffRatio(shot, ref, HEADER_BAND);
@@ -172,7 +150,6 @@ test.describe("shell fidelity — band pixelmatch @ 1440×900", () => {
 
     const shot = readPng(await page.screenshot());
     const ref = plate("folio-ruling.png");
-    await maskRuledControls(page, shot, ref);
     const rail = bandDiffRatio(shot, ref, RAIL_BAND);
     const header = bandDiffRatio(shot, ref, HEADER_BAND);
     const drawer = bandDiffRatio(shot, ref, DRAWER_BAND);

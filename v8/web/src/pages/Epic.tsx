@@ -13,6 +13,7 @@ import { CriterionCard } from "../components/CriterionCard";
 import { AddCriterion } from "../components/CriterionControls";
 import { Tabs } from "../components/Tabs";
 import { Composer } from "../components/Composer";
+import { useScrollToHash } from "../components/useScrollToHash";
 import { AgentLine } from "../components/AgentLine";
 import { useDocDrawer } from "../components/DocDrawer";
 import { identity } from "../auth/identity";
@@ -520,6 +521,7 @@ function ThreadTab({
   composerKind: "note" | "steer";
 }): React.JSX.Element {
   const ordered = order === "newest" ? [...thread].reverse() : thread;
+  useScrollToHash(thread.length);
   return (
     <div className={styles.thread}>
       <Composer
@@ -539,7 +541,7 @@ function ThreadTab({
       ) : (
         <ul className={styles.messages} data-testid="thread">
           {ordered.map((m) => (
-            <li key={m.id} className={styles.message}>
+            <li key={m.id} id={m.id} className={styles.message}>
               <AgentLine by={m.by} kind={m.kind} to={m.to} viewer={identity()} at={m.at} />
               <MessageText className={styles.messageText} text={m.text} />
             </li>

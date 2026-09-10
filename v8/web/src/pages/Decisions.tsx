@@ -27,6 +27,7 @@ import { GateForm } from "../components/GateForm";
 import { AgentLine } from "../components/AgentLine";
 import { RulingDrawer } from "../components/RulingDrawer";
 import { presenceOf } from "./presence";
+import { Avatar } from "../components/Avatar";
 import { identity } from "../auth/identity";
 import { useDraftGuard } from "../live/useDraftGuard";
 import { MessageText } from "../components/ArtifactLink";
@@ -530,6 +531,7 @@ function SeatNowCard({ seat, caps }: { seat: SeatRow; caps: PoolCapabilities | u
   return (
     <li className={styles.seatNow} data-testid="seat-row" data-seat={seat.id} data-presence={presence.kind}>
       <div className={styles.seatNowHead}>
+        <Avatar id={seat.id} size={22} />
         <span className={styles.seatNowName}>{seat.handle}</span>
         <span className={styles.seatNowRole}>{seat.role}</span>
         <span className={styles.seatNowState}>
@@ -569,9 +571,7 @@ function PeopleRow({ people }: { people: PersonRow[] }): React.JSX.Element {
       <ul className={styles.peopleList}>
         {humans.map((p) => (
           <li key={p.id} className={styles.personChip}>
-            <span className={styles.personAvatar} aria-hidden="true">
-              {p.handle.slice(0, 1).toUpperCase()}
-            </span>
+            <Avatar id={p.id} size={24} className={styles.personAvatar} />
             {p.handle}
           </li>
         ))}

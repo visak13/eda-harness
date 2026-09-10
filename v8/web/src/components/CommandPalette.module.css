@@ -1,0 +1,107 @@
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--ink) 22%, transparent);
+  z-index: 90;
+}
+.dialog {
+  position: fixed;
+  top: 96px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(720px, calc(100vw - 40px));
+  max-height: calc(100vh - 160px);
+  display: flex;
+  flex-direction: column;
+  z-index: 91;
+  background: var(--panel);
+  border: 1px solid var(--strongline);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.inputWrap {
+  display: block;
+  border-bottom: 1px solid var(--line);
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 16px 20px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 16px/22px Georgia, serif;
+}
+.input:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: -2px;
+}
+.results {
+  overflow-y: auto;
+  padding: 8px 0 12px;
+}
+.hint {
+  margin: 0;
+  padding: 12px 20px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.group + .group {
+  margin-top: 6px;
+}
+.groupLabel {
+  padding: 8px 20px 4px;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.row {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 20px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.row.active,
+.row:hover {
+  background: var(--accentwash);
+}
+.row:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: -2px;
+}
+.typeWord {
+  color: var(--muted);
+  font-size: 12px;
+}
+.title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.epic {
+  color: var(--muted);
+  font-size: 12px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

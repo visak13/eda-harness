@@ -39,7 +39,6 @@ committed reference plates in `e2e/design-reference/` (`folio-home.png`, `folio-
 | per-pixel `threshold` | **0.1** | pixelmatch's YIQ tolerance — ignores antialiasing/subpixel noise |
 | band differing-pixel ratio | **≤ 5%** | the assertion: `diffPixels / bandPixels ≤ 0.05` |
 | content area | **logged only, never asserted** | seeded copy/data differ from the render; only the chrome bands gate |
-| ruled controls | **picker box excluded** | the header theme picker was ruled in by the owner after the plates (2026-09-10); its bounding box (+4px) is painted with the plate's pixels before the header diff, nothing else is |
 
 Rationale for a band (not full-page) diff: the reference plates carry Astra's mock copy and seeded
 rows, which will never pixel-match a live board. Only the **rail + header chrome** is a fixed target;

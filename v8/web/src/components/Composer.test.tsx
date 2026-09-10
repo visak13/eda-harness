@@ -173,3 +173,36 @@ describe("Composer drop/paste upload", () => {
     expect((screen.getByTestId("composer-text") as HTMLTextAreaElement).value).toContain("art-xyz");
   });
 });
+
+describe("Composer recipient from @mention (human defect #9, m-a7e74d81b0)", () => {
+  it("derives `to` from the first @handle, shows it in the picker, and sends it — no tag stays a broadcast", async () => {
+    let sent: any = null;
+    server.use(
+      http.post("/v1/messages", async ({ request }) => {
+        sent = await request.json();
+        return HttpResponse.json({ ok: true, value: { id: "m-1", unresolved_mentions: [] }, hint: "Sent." });
+      }),
+    );
+    mountComposer();
+    const ta = screen.getByTestId("composer-text") as HTMLTextAreaElement;
+    typeAt(ta, "plain note, nobody tagged");
+    expect(screen.queryByTestId("to-picker")).toBeNull(); // broadcast: no recipient, no picker
+    typeAt(ta, "hey @architect.s-1 please look, and @owner too");
+    const picker = (await screen.findByTestId("to-picker")) as HTMLSelectElement;
+    await waitFor(() => expect(picker.value).toBe("architect.s-1"));
+    fireEvent.click(screen.getByTestId("composer-send"));
+    await waitFor(() => expect(sent).not.toBeNull());
+    expect(sent.to).toBe("architect.s-1");
+  });
+
+  it("a hand-picked recipient is not overridden by the text", async () => {
+    mountComposer({ showTo: true });
+    await screen.findByRole("option", { name: /architect seat/ });
+    const picker = screen.getByTestId("to-picker") as HTMLSelectElement;
+    fireEvent.change(picker, { target: { value: "owner" } });
+    const ta = screen.getByTestId("composer-text") as HTMLTextAreaElement;
+    typeAt(ta, "@architect.s-1 fyi");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(picker.value).toBe("owner");
+  });
+});

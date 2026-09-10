@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, postJson } from "../api/client";
 import type { AvatarState } from "../api/types";
+import { bumpAvatarVersion } from "./Avatar";
 import styles from "./AvatarPicker.module.css";
 
 // The avatar picker lives in the preferences popover (design §4.1 "identity + preferences"): a
@@ -12,7 +13,10 @@ export function AvatarPicker(): React.JSX.Element | null {
   const q = useQuery({ queryKey: ["me", "avatar"], queryFn: () => api<AvatarState>("/v1/me/avatar"), retry: false });
   const save = useMutation({
     mutationFn: (avatar_id: string) => postJson<{ avatar_id: string }>("/v1/me/avatar", { avatar_id }, "PUT"),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["me"] }),
+    onSuccess: () => {
+      bumpAvatarVersion(); // every <Avatar> on the page re-fetches past the server's 5-minute cache
+      void qc.invalidateQueries({ queryKey: ["me"] });
+    },
   });
   const catalog = q.data?.catalog ?? [];
   if (catalog.length === 0) return null;

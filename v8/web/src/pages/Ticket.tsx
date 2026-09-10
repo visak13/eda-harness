@@ -15,6 +15,7 @@ import { AgentLine } from "../components/AgentLine";
 import { Term } from "../components/Term";
 import { CriterionCard } from "../components/CriterionCard";
 import { Composer } from "../components/Composer";
+import { useScrollToHash } from "../components/useScrollToHash";
 import { useDocDrawer } from "../components/DocDrawer";
 import { identity } from "../auth/identity";
 import ui from "../components/ui.module.css";
@@ -46,6 +47,7 @@ export function TicketPage(): React.JSX.Element {
   const drawer = useDocDrawer();
 
   const page = useQuery({ queryKey: ["ticket", id], queryFn: () => getTicketPage(id) });
+  useScrollToHash(page.data?.thread.length ?? 0); // before the early returns: hooks run every render
 
   if (page.isPending) return <p className={ui.empty}>Loading ticket…</p>;
   if (page.isError)
@@ -57,6 +59,9 @@ export function TicketPage(): React.JSX.Element {
 
   const { ticket, epic_id, criteria, docs, thread, assignee, waiting_reason, open_gates } = page.data;
   const ordered = order === "newest" ? [...thread].reverse() : thread;
+  // A reply is shown attached to the message it answers (human #3 widened, 2026-09-10): the
+  // thread is flat on the wire (reply_to), so the parent is quoted above the reply in one line.
+  const byId = new Map(thread.map((m) => [m.id, m]));
   const seatLabel = assignee.handle ?? ticket.assignee ?? "unassigned";
 
   return (
@@ -138,14 +143,22 @@ export function TicketPage(): React.JSX.Element {
               {order === "newest" ? "Newest first" : "Oldest first"}
             </button>
           </div>
-          <Composer ticketId={id} kinds={["note"]} placeholder={`Message this conversation as @${as}`} />
+          <Composer ticketId={id} kinds={["note", "question"]} showTo placeholder={`Message this conversation as @${as}`} />
           {ordered.length === 0 ? (
             <p className={ui.empty}>No messages on this ticket yet.</p>
           ) : (
             <ul className={styles.messages} data-testid="thread">
               {ordered.map((m: MessageView) => (
-                <li key={m.id} className={styles.message}>
+                <li key={m.id} id={m.id} className={styles.message} data-testid="thread-message" data-reply-to={m.reply_to ?? undefined}>
                   <AgentLine by={m.by} kind={m.kind} to={m.to} viewer={as} at={m.at} />
+                  {m.reply_to && byId.get(m.reply_to) ? (
+                    <p className={styles.replyQuote} data-testid="reply-quote">
+                      <span className={styles.replyQuoteWho}>
+                        replying to {byId.get(m.reply_to)!.by === as ? "you" : `@${byId.get(m.reply_to)!.by}`}:
+                      </span>{" "}
+                      {byId.get(m.reply_to)!.text.slice(0, 160)}
+                    </p>
+                  ) : null}
                   <MessageText className={styles.messageText} text={m.text} />
                 </li>
               ))}

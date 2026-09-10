@@ -25,6 +25,18 @@ const ROLE_GLOSS: Record<string, string> = {
 };
 const NEEDS_CONFIRM: MessageKind[] = ["question", "deviation"];
 
+/** The first `@handle` in `text` that names a known participant (handle or id), else null. */
+export function firstMentionedHandle(text: string, people: PersonRow[]): string | null {
+  const re = /(^|[^\w.@-])@([\w][\w.-]*)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const tok = m[2].replace(/[.,;:!?]+$/, "");
+    const hit = people.find((p) => p.handle === tok || p.id === tok);
+    if (hit) return hit.handle;
+  }
+  return null;
+}
+
 export interface ComposerProps {
   ticketId: string;
   /** Selectable message kinds; when one, the kind is fixed and no selector shows. Default ['note']. */
@@ -55,6 +67,12 @@ export function Composer({
   const [text, setText] = useState("");
   const [kind, setKind] = useState<MessageKind>(kinds[0]);
   const [to, setTo] = useState<string | null>(toProp);
+  // Human defect #9 (m-a7e74d81b0, 2026-09-10): an @tagged note used to go out with to=None, so
+  // the board woke every seat on the ticket instead of the tagged one. The recipient is derived
+  // from the FIRST @handle in the text (a known participant), shown pre-filled in the picker and
+  // editable; once the writer picks a recipient by hand the text no longer overrides it. A note
+  // with no tag stays a ticket broadcast (to=null).
+  const [toPicked, setToPicked] = useState<boolean>(toProp != null);
   const [artifacts, setArtifacts] = useState<string[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -65,7 +83,10 @@ export function Composer({
   const idRef = useRef(`composer-${Math.random().toString(36).slice(2)}`);
   const dirty = text.trim().length > 0 || artifacts.length > 0;
 
-  useEffect(() => setTo(toProp), [toProp]);
+  useEffect(() => {
+    setTo(toProp);
+    setToPicked(toProp != null);
+  }, [toProp]);
   // Hold the app's live refresh while this composer has an unsent draft (design §4.2 draft guard),
   // and surface the same flag to a parent that wants it.
   useDirtyGuard(idRef.current, dirty);
@@ -73,6 +94,12 @@ export function Composer({
 
   const people = useQuery({ queryKey: ["me", "people"], queryFn: getPeople, retry: false });
   const mentions = useMentions(people.data ?? [], taRef, setText);
+
+  const mentioned = firstMentionedHandle(text, people.data ?? []);
+  useEffect(() => {
+    if (toPicked) return;
+    setTo(mentioned);
+  }, [mentioned, toPicked]);
 
   // Wake preview — the board's delivery plan for this (to, kind). Reactive so it cannot drift from
   // delivery; nothing is sent (design §16.1). Enabled once there is a target to preview.
@@ -185,12 +212,15 @@ export function Composer({
             </select>
           </label>
         )}
-        {showTo ? (
+        {showTo || to != null ? (
           <label className={styles.field}>
             <span className={styles.fieldLabel}>To</span>
             <select
               value={to ?? ""}
-              onChange={(e) => setTo(e.target.value || null)}
+              onChange={(e) => {
+                setTo(e.target.value || null);
+                setToPicked(e.target.value !== "");
+              }}
               aria-label="Recipient"
               data-testid="to-picker"
             >
