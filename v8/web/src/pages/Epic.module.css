@@ -53,19 +53,21 @@
 }
 
 /* 'Steer this epic' control: 40px tall (criterion c-a23e72f460). */
+/* Astra #36 (5): Steer is outlined 40px — the salmon fill is reserved for the committing action
+   (Send inside the composer). */
 .steer {
   height: 40px;
   padding: 0 16px;
   flex: none;
-  border: 1px solid var(--accent);
+  border: 1px solid var(--strongline);
   border-radius: 6px;
-  background: var(--accent);
-  color: var(--buttonink);
+  background: var(--panel);
+  color: var(--ink);
   font-size: 13px;
   font-weight: 600;
 }
 .steer:hover {
-  filter: brightness(0.97);
+  background: var(--secondary);
 }
 .steer:focus-visible {
   outline: 2px solid var(--accentink);
