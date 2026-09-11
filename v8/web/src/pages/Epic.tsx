@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getEpicPage, getEpicsSummary, getTicketsTable } from "../api/endpoints";
-import type { CriterionView, EpicSummaryRow, EpicTreeNode, MessageView, TicketStatus } from "../api/types";
+import { getPoolCapabilities, resumeSeat } from "../api/seats";
+import { BoardApiError } from "../api/client";
+import type { CriterionView, EpicSummaryRow, EpicTreeNode, MessageView, PoolCapabilities, TicketStatus } from "../api/types";
 import { StatusChip } from "../components/StatusChip";
 import { ProcessStrip } from "../components/ProcessStrip";
 import { StatusControl } from "../components/StatusControl";
@@ -268,9 +270,7 @@ export function EpicPage(): React.JSX.Element {
             {row && row.assigned_seats.length > 0 ? (
               <>
                 {row.assigned_seats.map((s) => (
-                  <div key={s} className={styles.seat}>
-                    <span className={ui.idMono}>{s}</span>
-                  </div>
+                  <AssignedSeatRow key={s} seatId={s} epicId={id} />
                 ))}
                 <div className={ui.metaRow}>
                   <span>Presence</span>
@@ -319,6 +319,74 @@ export function EpicPage(): React.JSX.Element {
           </section>
         </aside>
       </div>
+    </div>
+  );
+}
+
+/** Human #24: an assigned seat is a link to its row on Seats (/seats#<seat-id>, the id Seats.tsx
+ *  puts on the <tr> and reads back from the hash), with the row's two actions inline — Message
+ *  lands on that row with the composer open (?message=<seat-id>), Resume is the same
+ *  POST /v1/sessions/resume Seats.tsx sends. The seat's own ticket is the tail of its id
+ *  (role.<ticket>); the board's hint is shown verbatim either way. */
+function AssignedSeatRow({ seatId, epicId }: { seatId: string; epicId: string }): React.JSX.Element {
+  const qc = useQueryClient();
+  const [hint, setHint] = useState<string | null>(null);
+  const capsQ = useQuery({ queryKey: ["pool", "capabilities"], queryFn: getPoolCapabilities, retry: false });
+  const caps = capsQ.data as PoolCapabilities | undefined;
+  const canResume = !!(caps?.resume_parked || caps?.resume_closed);
+  const dot = seatId.indexOf(".");
+  const seatTicket = dot > 0 ? seatId.slice(dot + 1) : epicId;
+  const anchor = `/seats#${encodeURIComponent(seatId)}`;
+
+  const resume = useMutation({
+    mutationFn: () => resumeSeat(seatId, seatTicket),
+    onSuccess: (res) => {
+      setHint(res.hint || `Resumed ${seatId}.`);
+      void qc.invalidateQueries({ queryKey: ["seats"] });
+      void qc.invalidateQueries({ queryKey: ["epics", "summary"] });
+    },
+  });
+  const err = resume.error as BoardApiError | undefined;
+
+  return (
+    <div className={styles.seat} data-testid="assigned-seat" data-seat={seatId}>
+      <div className={styles.seatRow}>
+        <Link to={anchor} className={`${ui.idMono} ${styles.seatLink}`} data-testid="assigned-seat-link">
+          {seatId}
+        </Link>
+        <div className={styles.seatActions}>
+          <Link
+            to={`/seats?message=${encodeURIComponent(seatId)}#${encodeURIComponent(seatId)}`}
+            className={styles.seatAction}
+            data-testid="assigned-seat-message"
+            {...copyProps("seats", "message")}
+          >
+            Message
+          </Link>
+          {canResume ? (
+            <button
+              type="button"
+              className={styles.seatAction}
+              data-testid="assigned-seat-resume"
+              disabled={resume.isPending}
+              onClick={() => resume.mutate()}
+              {...copyProps("seats", "resume")}
+            >
+              {resume.isPending ? "Resuming…" : "Resume"}
+            </button>
+          ) : null}
+        </div>
+      </div>
+      {hint ? (
+        <p className={styles.gloss} role="status" data-testid="assigned-seat-hint">
+          {hint}
+        </p>
+      ) : null}
+      {err ? (
+        <p className={styles.seatError} role="alert" data-testid="assigned-seat-error">
+          {err.hint ?? err.message}
+        </p>
+      ) : null}
     </div>
   );
 }

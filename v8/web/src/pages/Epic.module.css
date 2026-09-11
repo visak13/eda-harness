@@ -135,6 +135,55 @@
 .seat {
   margin-bottom: 8px;
 }
+/* Human #24: seat id links to its Seats row; Message / Resume sit inline on the right. */
+.seatRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.seatLink {
+  color: var(--accentink);
+  text-decoration: underline;
+}
+.seatLink:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 2px;
+}
+.seatActions {
+  display: flex;
+  gap: 6px;
+}
+.seatAction {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accentink);
+  background: none;
+  border: 1px solid var(--accentink);
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.seatAction:hover:not(:disabled) {
+  background: var(--accentwash, transparent);
+}
+.seatAction:disabled {
+  color: var(--muted);
+  border-color: var(--line);
+  cursor: not-allowed;
+}
+.seatAction:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 2px;
+}
+.seatError {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--accentink);
+}
 
 .filterBar {
   display: flex;

@@ -48,10 +48,10 @@ function page(over: Partial<EpicPageData> = {}, thread: MessageView[] = []): Epi
   };
 }
 
-function mount(data: EpicPageData) {
+function mount(data: EpicPageData, summary: Record<string, unknown>[] = []) {
   server.use(http.get("/v1/epics/epic-1/page", () => okJson(data)));
-  // summary is queried for the assigned-seat rail; default handler returns [], override to be safe
-  server.use(http.get("/v1/epics/summary", () => okJson([])));
+  // summary is queried for the assigned-seat rail (fired inside render's act — install rows here)
+  server.use(http.get("/v1/epics/summary", () => okJson(summary)));
   // the epic's status control reads its legal moves (epics are tickets → same route)
   server.use(
     http.get("/v1/tickets/epic-1/transitions", () =>
@@ -418,5 +418,39 @@ describe("EpicPage", () => {
     expect(screen.getByTestId("gloss-answer-decision")).toHaveTextContent(/opener/);
     expect(screen.getByTestId("gloss-assign-spawn")).toHaveTextContent(/assignee/);
     expect(screen.getByTestId("gloss-spawn-architect")).toHaveTextContent(/new architect/);
+  });
+
+  it("Assigned seats link to the Seats row with inline Message and Resume (human #24)", async () => {
+    let resumed: Record<string, unknown> | null = null;
+    server.use(
+      http.post("/v1/sessions/resume", async ({ request }) => {
+        resumed = (await request.json()) as Record<string, unknown>;
+        return okJson({ ok: true }, "engineer.s-99 resumed from its parked session");
+      }),
+    );
+    mount(page(), [{ id: "epic-1", assigned_seats: ["engineer.s-99", "architect.epic-1"], waiting_reason: { presence: "alive" }, latest_status: "on it" }]);
+    await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    const links = await screen.findAllByTestId("assigned-seat-link");
+    expect(links.map((l) => l.getAttribute("href"))).toEqual(["/seats#engineer.s-99", "/seats#architect.epic-1"]);
+    expect(links[0]).toHaveTextContent("engineer.s-99");
+    // Message → the seat's row with its composer open
+    const msgs = screen.getAllByTestId("assigned-seat-message");
+    expect(msgs[0]).toHaveAttribute("href", "/seats?message=engineer.s-99#engineer.s-99");
+    expect(msgs[0].getAttribute("title")).toMatch(/wakes that seat/);
+    // Resume → the same POST Seats.tsx sends, with the seat's own ticket; the hint shows verbatim
+    const resumes = await screen.findAllByTestId("assigned-seat-resume");
+    fireEvent.click(resumes[0]);
+    const { waitFor } = await import("@testing-library/react");
+    await waitFor(() => expect(resumed).not.toBeNull());
+    expect(resumed!).toEqual({ participant_id: "engineer.s-99", ticket_id: "s-99" });
+    expect(await screen.findByTestId("assigned-seat-hint")).toHaveTextContent("engineer.s-99 resumed from its parked session");
+  });
+
+  it("Message on an assigned seat navigates to the Seats row", async () => {
+    mount(page(), [{ id: "epic-1", assigned_seats: ["engineer.s-99"], waiting_reason: { presence: "alive" }, latest_status: "on it" }]);
+    await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    fireEvent.click(await screen.findByTestId("assigned-seat-message"));
+    // renderRoute's catch-all route receives the navigation to /seats
+    expect(await screen.findByTestId("elsewhere")).toBeInTheDocument();
   });
 });

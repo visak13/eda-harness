@@ -188,7 +188,10 @@ function FrameOnly({ children }: { children: React.ReactNode }): React.JSX.Eleme
 export function SeatTableRow({ seat, caps }: { seat: SeatRow; caps: PoolCapabilities | undefined }): React.JSX.Element {
   const now = Date.now();
   const presence = presenceOf(seat, caps, now);
-  const [messaging, setMessaging] = useState(false);
+  // Human #24: an Epic page "Message" lands here as /seats?message=<seat-id>#<seat-id> — the row
+  // opens with its composer already showing.
+  const { search } = useLocation();
+  const [messaging, setMessaging] = useState(() => new URLSearchParams(search).get("message") === seat.id);
   const [reply, setReply] = useState<{ id: string; by: string } | null>(null); // round 2 #16
   const qc = useQueryClient();
 

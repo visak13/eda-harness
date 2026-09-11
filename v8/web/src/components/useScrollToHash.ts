@@ -9,7 +9,7 @@ export function useScrollToHash(ready: number | boolean): void {
     if (!hash) return;
     const el = document.getElementById(hash.slice(1));
     if (el) {
-      el.scrollIntoView({ block: "center" });
+      if (typeof el.scrollIntoView === "function") el.scrollIntoView({ block: "center" }); // jsdom has none
       el.setAttribute("data-found", "true");
     }
   }, [hash, ready]);

@@ -216,3 +216,24 @@ describe("Seats Message action", () => {
     expect(note).not.toHaveTextContent(/wake .* now/i);
   });
 });
+
+describe("Seats — arriving from an Epic page 'Message' (human #24)", () => {
+  it("/seats?message=<seat>#<seat> opens that seat's row with its composer showing", async () => {
+    mockBoard(CAPS_NO);
+    server.use(http.get("/v1/messages", () => HttpResponse.json({ ok: true, value: [] }))); // the open row's thread
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={["/seats?message=engineer.s-eng#engineer.s-eng"]}>
+          <SeatsPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await screen.findByText("engineer.s-eng");
+    // only the addressed seat's composer is open, and its delivery note names the wake
+    const notes = await screen.findAllByTestId("seat-delivery-note");
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toHaveTextContent("wake engineer.s-eng");
+    expect(within(rowFor("engineer.s-eng")).getByTestId("seat-message")).toHaveAttribute("aria-expanded", "true");
+  });
+});
