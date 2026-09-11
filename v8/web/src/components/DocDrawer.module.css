@@ -1,4 +1,4 @@
-/* The doc drawer's toolbar (Astra ruling #36 item 2): inside the Drawer's 72px header —
+/* The doc drawer's toolbar (Astra ruling #36 item 2): inside the Drawer's 73px header (pinned by c-03436484b6) —
    doc type · "Open as page" · one version menu ("vN · Latest ▾") · the Drawer's 40px close. */
 .toolbar {
   display: flex;

@@ -36,13 +36,14 @@ test.describe("epic page fidelity @ 1440×900", () => {
     expect(Math.abs(mb.width - GEOMETRY.homeGrid.left)).toBeLessThan(1);
     expect(Math.abs(rb.x - (mb.x + mb.width) - GEOMETRY.homeGrid.gap)).toBeLessThan(1);
 
-    // Title Georgia 38; owner's-words quote Georgia 22.
+    // Title Georgia 38; owner's-words request Georgia 26/32 (Astra #36 item 1, ruling m-5887eb1a20,
+    // supersedes the 22px quote named in c-a23e72f460 — the criterion text awaits the architect's reword).
     const h1 = page.locator("main h1");
     expect(await style(h1, "font-family")).toContain(GEOMETRY.type.h1.family);
     expect(await style(h1, "font-size")).toBe(`${GEOMETRY.type.h1.px}px`);
-    const quote = page.locator("blockquote");
+    const quote = page.getByTestId("owner-words-text");
     expect(await style(quote, "font-family")).toContain(GEOMETRY.type.h1.family);
-    expect(await style(quote, "font-size")).toBe("22px");
+    expect(await style(quote, "font-size")).toBe("26px");
 
     // Directive callout: accentwash ground + 3px accentink left rule.
     const directive = page.getByTestId("directive");

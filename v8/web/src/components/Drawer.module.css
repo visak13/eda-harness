@@ -24,7 +24,7 @@
 }
 
 .header {
-  height: 72px;
+  height: 73px; /* pinned by c-03436484b6 (ruling drawer header 73); Astra #36 asked 72 — the 1px stays with the criterion */
   box-sizing: border-box;
   flex: none;
   display: flex;
