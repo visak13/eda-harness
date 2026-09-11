@@ -13,37 +13,43 @@
   color: var(--ink);
 }
 
+/* Astra #36 (1): the header is the same 744/336 grid as the body — meta line across both columns,
+   then title (col 1) beside the Steer control (col 2, the rail column starts at the title row),
+   then the owner's-words callout under the title in col 1. */
 .head {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 744px 336px;
+  column-gap: 64px;
+  row-gap: 16px;
+  align-items: start;
 }
 
 .idline {
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
   gap: 12px;
-  width: 100%;
-  margin-bottom: 8px;
+}
+/* ONE 24px status badge beside the id (the chip's word + dot, sized to the ruling). */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+}
+.badge [data-status] {
+  height: 24px;
+  border-radius: 12px;
 }
 
-/* Georgia 38 page title (design §4.2 / criterion c-a23e72f460). */
+/* Georgia 400 38px/44px short title (Astra #36; design §4.2 / criterion c-a23e72f460). */
 .title {
-  font: 38px/1.18 Georgia, serif;
-  letter-spacing: -1.1px;
-  font-weight: 600;
+  grid-column: 1;
+  font: 400 38px/44px Georgia, serif;
+  letter-spacing: -0.5px;
   color: var(--ink);
-  flex: 1;
+  margin: 0;
   min-width: 0;
-}
-/* The board titles an epic with the owner's words; a paragraph-long heading at 38px filled the
-   fold (spacing pass, 2026-09-10). Long words read at 24px — still the page's one h1. */
-.titleLong {
-  font-size: 24px;
-  line-height: 1.3;
-  letter-spacing: -0.4px;
-  font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
 /* 'Steer this epic' control: 40px tall (criterion c-a23e72f460). */
@@ -66,8 +72,8 @@
   outline-offset: 3px;
 }
 .steerWrap {
-  flex: none;
-  max-width: 336px;
+  grid-column: 2;
+  grid-row: 2;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -82,11 +88,37 @@
   color: var(--muted);
 }
 
+/* Owner's words callout (Astra #36 (1)): 3px accent left rule, 16px padding, label 11/16 uppercase
+   1.2px tracking, the request in Georgia 26/32 — two lines previewed, "Show all" reveals the rest. */
 .words {
-  margin: 20px 0;
+  grid-column: 1;
+  margin: 0;
+  padding: 16px;
+  border-left: 3px solid var(--accent);
+  background: var(--panel);
+  min-width: 0;
 }
-.words figcaption {
+.wordsLabel {
+  font: 600 11px/16px "Segoe UI", system-ui, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--muted);
   margin-bottom: 8px;
+}
+.wordsText {
+  font: 26px/32px Georgia, serif;
+  color: var(--ink);
+}
+
+/* Astra #36 (4): the revealed status control and the lifecycle lines in the Status history fold. */
+.statusControl {
+  margin-top: 12px;
+}
+.lifecycle {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ink);
 }
 
 /* Two-column split: 744 / 336, gap 64 (fidelity criterion c-a23e72f460). */
@@ -185,11 +217,49 @@
   color: var(--accentink);
 }
 
+/* Astra #36 (3): a 40px search input and a 40px "Filters" disclosure sit above the rows. */
+.workTools {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.workSearch {
+  height: 40px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.filters {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 12px;
+}
+.filtersSummary {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  cursor: default;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  list-style: none;
+}
+.filtersSummary::-webkit-details-marker {
+  display: none;
+}
+.filtersSummary::before {
+  content: "▸ ";
+  color: var(--muted);
+  margin-right: 4px;
+}
+.filters[open] .filtersSummary::before {
+  content: "▾ ";
+}
 .filterBar {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-  margin-bottom: 16px;
+  padding: 0 0 12px;
 }
 .filterBar input {
   flex: 1;
@@ -205,47 +275,59 @@
   overflow: hidden;
   margin-bottom: 20px;
 }
-/* Human #29 (2026-09-10): fixed column widths — id (Consolas 12, one line) · title (clamps to 2
-   lines) · role · status chip + tally right-aligned; nothing wraps into another column. */
+/* Astra #36 (3): rows on a `minmax(0,1fr) 96px 72px 40px` grid, 16px gap and padding, items top-
+   aligned, min-height 72px, a 1px rule between rows; title wraps (no ellipsis) with the id under
+   it in Consolas 12/18 on one line. Column labels 11/16 in a header row. */
+.treeHead {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px 72px 40px;
+  gap: 16px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  font: 600 11px/16px "Segoe UI", system-ui, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+}
+.treeHeadRight {
+  text-align: right;
+}
 .treeRow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 96px 120px 56px;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 14px;
+  grid-template-columns: minmax(0, 1fr) 96px 72px 40px;
+  align-items: start;
+  gap: 16px;
+  padding: 16px;
+  min-height: 72px;
+  box-sizing: border-box;
   border-bottom: 1px solid var(--line);
 }
 .treeRow:last-child {
   border-bottom: 0;
 }
 .treeLink {
-  display: grid;
-  grid-template-columns: 128px minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
 }
 .treeLink:hover .treeTitle {
   text-decoration: underline;
 }
-.treeId {
-  font: 12px/18px Consolas, monospace;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .treeTitle {
   font-size: 14px;
   line-height: 20px;
   color: var(--ink);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.treeId {
+  font: 12px/18px Consolas, monospace;
+  color: var(--muted);
+  white-space: nowrap;
 }
 .treeRole {
   font-size: 12px;
+  line-height: 18px;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -253,7 +335,8 @@
 }
 .treeStatus {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
+  min-width: 0;
 }
 .treeTally {
   font: 12px/18px Consolas, monospace;
@@ -400,6 +483,13 @@
   .layout {
     grid-template-columns: 1fr;
     gap: 32px;
+  }
+  .head {
+    grid-template-columns: 1fr;
+  }
+  .steerWrap {
+    grid-column: 1;
+    grid-row: auto;
   }
   .kanban {
     grid-template-columns: 1fr;

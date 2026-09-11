@@ -69,7 +69,7 @@ export const PAGES: Record<string, PageCopy> = {
     items: [
       { key: "title", label: "Title", text: "the owner's words verbatim (never edited by agents)." },
       { key: "directive", label: "Architect's brief", text: "the architect's fold of the flow and current rulings; \"Show all\" expands." },
-      { key: "process-strip", label: "Process strip", text: "the phase ladder; the current step is the epic's status; the line under it says the next expected move and who makes it." },
+      { key: "process-strip", label: "Process strip", text: "the phase ladder; the current step is the epic's status; the next expected move and who makes it live in the rail's Status history fold (Astra #36)." },
       { key: "steer", label: "Steer this epic", text: "posts a steer on the epic thread; the composer resolves who is reached via POST /v1/messages/resolve before you send. Wakes: the architect always, plus the seat you address.", control: true },
       { key: "overview", label: "Overview", text: "design link, criteria (acceptance) with checker and verdict, gates.", control: true },
       { key: "work", label: "Work", text: "the stories/tasks table: id, title, assignee role, status, criteria passed/total. Click → Ticket page.", control: true },

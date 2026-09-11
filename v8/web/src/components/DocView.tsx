@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getDocHtml, sendMessage } from "../api/endpoints";
 import type { DocHtml } from "../api/types";
@@ -10,13 +11,32 @@ import ui from "./ui.module.css";
 import styles from "./DocView.module.css";
 
 // The document reader body (design §4.1/§14/§17) shared by the full page (/doc/:id) and the
-// §17 drawer. It shows: version pills, doc meta, the sanitised HTML, the viewer's pending
-// sign-off criterion inline as a one-click ruling card (when the board reports one for this
-// doc), and a comment box that posts "[doc <id> v<n>] text" to the doc's scope ticket.
+// §17 drawer. Astra ruling #36 item (2) "Doc drawer/reader" (2026-09-10): two panes, 650 reading
+// + 462 side, separated by a 1px rule. Reading pane: meta line, Georgia title, the sanitised HTML,
+// the comment box. Side pane (sticky): the viewer's pending sign-off (only when the board reports
+// one), an Outline of the body headings, an Ownership list and a History of versions.
 //
 // `onOpenDoc` (drawer only) intercepts nested doc links so they open in the same drawer instead
 // of navigating. `onOpenTicket` similarly for ticket links. The version the reader opened is
 // frozen and named on every verdict (§14).
+
+/** Drops a trailing " (epic-…)" / " (s-…)" / " (t-…)" scope-id suffix from a display title. */
+export function stripScopeId(title: string): string {
+  return title.replace(/\s*\((?:epic|s|t)-[\w.-]+\)\s*$/, "").trim();
+}
+
+export type OutlineEntry = { level: 1 | 2 | 3; text: string };
+
+/** h1/h2/h3 headings of the doc's html, in document order (empty when DOMParser is unavailable). */
+export function outlineOf(html: string): OutlineEntry[] {
+  if (typeof DOMParser === "undefined") return [];
+  const parsed = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+  return Array.from(parsed.body.querySelectorAll("h1, h2, h3")).map((el) => ({
+    level: Number(el.tagName.slice(1)) as 1 | 2 | 3,
+    text: (el.textContent ?? "").trim(),
+  }));
+}
+
 export function DocView({
   docId,
   version,
@@ -24,6 +44,7 @@ export function DocView({
   onOpenTicket,
   onVersion,
   onDoc,
+  versionsHosted,
 }: {
   docId: string;
   version?: number | null;
@@ -33,6 +54,8 @@ export function DocView({
   onVersion?: (v: number) => void;
   /** Reports the pinned document (title/scope for a host page that must not run its own "latest" query). */
   onDoc?: (doc: DocHtml) => void;
+  /** The host renders its own "Versions" menu (the drawer toolbar); the History block then keeps its own label. */
+  versionsHosted?: boolean;
 }): React.JSX.Element {
   // The version the reader OPENED is pinned (adversary finding #2, 2026-09-10; round 2 #2): without
   // an explicit version the first load resolves "latest" ONCE, then the reader switches to the
@@ -78,7 +101,15 @@ export function DocView({
         Could not load {docId}: {(q.error as Error).message}
       </p>
     );
-  return <DocBody doc={q.data} onOpenDoc={onOpenDoc} onOpenTicket={onOpenTicket} onPickVersion={setRequested} />;
+  return (
+    <DocBody
+      doc={q.data}
+      onOpenDoc={onOpenDoc}
+      onOpenTicket={onOpenTicket}
+      onPickVersion={setRequested}
+      versionsHosted={versionsHosted}
+    />
+  );
 }
 
 function DocBody({
@@ -86,11 +117,13 @@ function DocBody({
   onOpenDoc,
   onOpenTicket,
   onPickVersion,
+  versionsHosted,
 }: {
   doc: DocHtml;
   onOpenDoc?: (id: string) => void;
   onOpenTicket?: (id: string) => void;
   onPickVersion?: (v: number) => void;
+  versionsHosted?: boolean;
 }): React.JSX.Element {
   const as = identity();
   const qc = useQueryClient();
@@ -98,6 +131,7 @@ function DocBody({
   const [comment, setComment] = useState("");
   const [posted, setPosted] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const outline = useMemo(() => outlineOf(doc.html), [doc.html]);
 
   // The legacy reader shows the comment box only when the scope is a ticket (not domain:/global);
   // a comment posts "[doc id vN] text" to that ticket's thread.
@@ -134,48 +168,33 @@ function DocBody({
     }
   }
 
-  // Human #30 (2026-09-10), one DocView layout for the drawer and the page: ONE meta line (type ·
-  // owner · scope · version, latest or pinned), versions collapsed to "vN · latest" + a menu, the
-  // body at a ~720px reading measure, and — only when the viewer has a sign-off citing this doc —
-  // a sticky criterion pane on the right (§4.2 reading pane + meta column). Nothing else on the right.
+  // Outline entry i ↔ the i-th rendered heading: <Markdown> demotes every body heading one level
+  // (h1→h2 … h3→h4) in document order, so the order — not the tag — is the join key.
+  function scrollToHeading(i: number) {
+    const el = bodyRef.current?.querySelectorAll<HTMLElement>("h2, h3, h4")[i];
+    el?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+  }
+
   const hasSignoff = (doc.signoff_criteria?.length ?? 0) > 0 || Boolean(doc.signoff_criterion);
   const isLatest = doc.version === latest;
+  const scopeHref = doc.scope.startsWith("epic-")
+    ? `/epic/${encodeURIComponent(doc.scope)}`
+    : `/ticket/${encodeURIComponent(doc.scope)}`;
   return (
     <div className={`${styles.doc} ${hasSignoff ? styles.withPane : ""}`} data-testid="doc-view">
       <div className={styles.reading}>
         <p className={styles.meta} data-testid="doc-meta">
           <span>{doc.doc_type.replace(/_/g, " ")}</span>
           <span aria-hidden="true">·</span>
-          <span>owner {doc.owner_role}</span>
-          <span aria-hidden="true">·</span>
-          <span>
-            scope <span className={ui.idMono}>{doc.scope}</span>
-          </span>
+          <span className={ui.idMono}>{doc.id}</span>
           <span aria-hidden="true">·</span>
           <span className={styles.versionNow} data-testid="version-now">
             v{doc.version} · {isLatest ? "latest" : `pinned (latest v${latest})`}
           </span>
-          {doc.versions.length > 1 ? (
-            <details className={styles.versionsMenu} aria-label="Versions">
-              <summary className={styles.versionsSummary}>versions ▾</summary>
-              <div className={styles.versions}>
-                {doc.versions.map((v) => (
-                  <button
-                    key={v}
-                    type="button"
-                    className={`${styles.vpill} ${v === doc.version ? styles.vactive : ""}`}
-                    aria-pressed={v === doc.version}
-                    data-testid="version-pill"
-                    onClick={() => onPickVersion?.(v)}
-                  >
-                    v{v}
-                    {v === latest ? " · latest" : ""}
-                  </button>
-                ))}
-              </div>
-            </details>
-          ) : null}
         </p>
+        <h1 className={styles.title} data-testid="doc-title">
+          {stripScopeId(doc.title)}
+        </h1>
 
         <div ref={bodyRef} onClick={onBodyClick} className={styles.body}>
           <Markdown html={doc.html} />
@@ -211,11 +230,85 @@ function DocBody({
         <DocControls docId={doc.id} scope={doc.scope} version={doc.version} scopeIsThread={scopeIsTicket} />
       </div>
 
-      {hasSignoff ? (
-        <aside className={styles.pane} aria-label="Your sign-off">
-          <SignoffPane doc={doc} />
-        </aside>
-      ) : null}
+      <aside className={styles.side} data-testid="doc-side">
+        <div className={styles.sideSticky}>
+          {hasSignoff ? (
+            <section className={styles.pane} aria-label="Your sign-off">
+              <SignoffPane doc={doc} />
+            </section>
+          ) : null}
+
+          {outline.length > 0 ? (
+            <nav className={styles.block} aria-label="Outline" data-testid="doc-outline">
+              <div className={ui.sectionLabel}>Outline</div>
+              <ul className={styles.outline}>
+                {outline.map((h, i) => (
+                  <li key={i} className={styles[`outlineL${h.level}`]}>
+                    <button type="button" className={styles.outlineLink} onClick={() => scrollToHeading(i)}>
+                      {h.text}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          ) : null}
+
+          <section className={styles.block} aria-label="Ownership" data-testid="doc-ownership">
+            <div className={ui.sectionLabel}>Ownership</div>
+            <dl className={styles.ownership}>
+              <dt>Type</dt>
+              <dd>{doc.doc_type.replace(/_/g, " ")}</dd>
+              <dt>Owner</dt>
+              <dd>{doc.owner_role}</dd>
+              <dt>Scope</dt>
+              <dd>
+                {scopeIsTicket ? (
+                  <Link
+                    to={scopeHref}
+                    className={ui.idMono}
+                    onClick={(e) => {
+                      if (onOpenTicket && !doc.scope.startsWith("epic-")) {
+                        e.preventDefault();
+                        onOpenTicket(doc.scope);
+                      }
+                    }}
+                  >
+                    {doc.scope}
+                  </Link>
+                ) : (
+                  <span className={ui.idMono}>{doc.scope}</span>
+                )}
+              </dd>
+            </dl>
+          </section>
+
+          {doc.versions.length > 1 ? (
+            <details
+              className={styles.block}
+              data-testid="doc-history"
+              aria-label={versionsHosted ? "History" : "Versions"}
+              open
+            >
+              <summary className={styles.historySummary}>History</summary>
+              <div className={styles.versions}>
+                {doc.versions.map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    className={`${styles.vpill} ${v === doc.version ? styles.vactive : ""}`}
+                    aria-pressed={v === doc.version}
+                    data-testid="version-pill"
+                    onClick={() => onPickVersion?.(v)}
+                  >
+                    v{v}
+                    {v === latest ? " · latest" : ""}
+                  </button>
+                ))}
+              </div>
+            </details>
+          ) : null}
+        </div>
+      </aside>
     </div>
   );
 }

@@ -1,6 +1,7 @@
-/* Human #30: the same reader as the drawer — reading column + optional sign-off pane. */
+/* Astra ruling #36 item 2: the same 1112px reader as the drawer, centred on the page. */
 .page {
-  max-width: 1064px;
+  max-width: 1112px;
+  margin: 0 auto;
 }
 
 .crumb {
@@ -13,10 +14,13 @@
   text-decoration: underline;
 }
 
-.title {
-  font: 34px/1.2 Georgia, serif;
-  letter-spacing: -0.9px;
-  font-weight: 600;
-  color: var(--ink);
-  margin-bottom: 12px;
+/* The panel the reader sits in: padding 24 (DocView's grid cancels it, exactly as in the Drawer
+   body), panel background, 1px line, radius 12. No overflow clipping here: it would make the
+   panel the sticky side pane's scroll container instead of the page. */
+.reader {
+  box-sizing: border-box;
+  padding: 24px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
 }

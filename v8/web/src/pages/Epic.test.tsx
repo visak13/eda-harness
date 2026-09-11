@@ -446,6 +446,106 @@ describe("EpicPage", () => {
     expect(await screen.findByTestId("assigned-seat-hint")).toHaveTextContent("engineer.s-99 resumed from its parked session");
   });
 
+  // ── Astra visual ruling #36 (1)(3)(4) ─────────────────────────────────────────────────────────
+
+  it("#36 (1): the meta line carries ONE status badge beside the id, wearing the status word", async () => {
+    mount(page());
+    await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    const badge = screen.getByTestId("epic-status-badge");
+    expect(badge).toHaveTextContent("In progress");
+    // exactly one status chip in the header (the rail shows the change button, not a second chip)
+    expect(screen.getAllByTestId("status-chip")).toHaveLength(1);
+  });
+
+  it("#36 (1): the owner's words sit in a callout with a two-line preview and a Show all / Show less disclosure", async () => {
+    // jsdom lays nothing out; make the clamped block report overflow so the disclosure appears
+    const sh = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
+    const ch = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", { configurable: true, get: () => 96 });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => 64 });
+    try {
+      mount(page());
+      await screen.findByText("Upgrade the board UI", { selector: "h1" });
+      const { within } = await import("@testing-library/react");
+      const callout = screen.getByTestId("owner-words");
+      expect(callout).toHaveTextContent(/Owner.s words · original request/i);
+      expect(within(callout).getByTestId("owner-words-text")).toHaveTextContent("without a shell");
+      const toggle = within(callout).getByRole("button", { name: "Show all" });
+      expect(toggle).toHaveAttribute("aria-expanded", "false");
+      fireEvent.click(toggle);
+      expect(within(callout).getByRole("button", { name: "Show less" })).toHaveAttribute("aria-expanded", "true");
+    } finally {
+      if (sh) Object.defineProperty(HTMLElement.prototype, "scrollHeight", sh);
+      else delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollHeight;
+      if (ch) Object.defineProperty(HTMLElement.prototype, "clientHeight", ch);
+      else delete (HTMLElement.prototype as unknown as Record<string, unknown>).clientHeight;
+    }
+  });
+
+  it("#36 (3): the Work search narrows rows by title / id text at once; Filters is a disclosure over the status controls", async () => {
+    server.use(http.get("/v1/tickets/table", () => okJson({ rows: [], count: 0 })));
+    const data = page();
+    data.board.epic.children = [
+      node({ id: "s-1", title: "Alpha", status: "in_progress" }),
+      node({ id: "s-2", title: "Bravo", status: "in_progress" }),
+    ];
+    mount(data);
+    await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    fireEvent.click(screen.getByRole("tab", { name: /Work/ }));
+    expect(await screen.findAllByTestId("work-row")).toHaveLength(2);
+    const fold = screen.getByTestId("work-filters-fold");
+    expect(fold.tagName).toBe("DETAILS");
+    expect(fold).toHaveTextContent("Filters");
+    expect(fold).not.toHaveAttribute("open");
+    // by id
+    fireEvent.change(screen.getByTestId("work-search"), { target: { value: "s-2" } });
+    let rows = screen.getAllByTestId("work-row");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent("Bravo");
+    // by title, case-insensitively; the id sits under the title in the same row
+    fireEvent.change(screen.getByTestId("work-search"), { target: { value: "alph" } });
+    rows = screen.getAllByTestId("work-row");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent("Alpha");
+    expect(rows[0]).toHaveTextContent("s-1");
+    // no hit → the empty sentence
+    fireEvent.change(screen.getByTestId("work-search"), { target: { value: "zzz" } });
+    expect(screen.getByText("No tickets match these filters.")).toBeInTheDocument();
+  });
+
+  it("#36 (4): the rail's Change status button reveals the status control on the #epic-status card", async () => {
+    mount(page());
+    await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    const card = document.getElementById("epic-status");
+    expect(card).not.toBeNull();
+    const toggle = screen.getByTestId("change-status-toggle");
+    expect(toggle).toHaveTextContent("Change status");
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByTestId("epic-status-control")).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const control = await screen.findByTestId("epic-status-control");
+    expect(card!.contains(control)).toBe(true);
+    // the existing StatusControl reads its legal moves once revealed
+    expect(await screen.findByTestId("status-control")).toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(screen.queryByTestId("epic-status-control")).not.toBeInTheDocument();
+  });
+
+  it("#36 (4): the lifecycle text lives in a Status history fold and the strip's Next: sentence is gone", async () => {
+    mount(page());
+    await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    const history = screen.getByTestId("status-history");
+    expect(history.tagName).toBe("DETAILS");
+    expect(history).not.toHaveAttribute("open");
+    expect(history).toHaveTextContent("Status history");
+    expect(history).toHaveTextContent("Next: Do the work and attach evidence");
+    // the step chips stay; the duplicate sentence under them does not
+    expect(screen.getByTestId("process-strip")).toBeInTheDocument();
+    expect(screen.getByTestId("stage-current")).toHaveTextContent("In progress");
+    expect(screen.queryByTestId("next-action")).not.toBeInTheDocument();
+  });
+
   it("Message on an assigned seat navigates to the Seats row", async () => {
     mount(page(), [{ id: "epic-1", assigned_seats: ["engineer.s-99"], waiting_reason: { presence: "alive" }, latest_status: "on it" }]);
     await screen.findByText("Upgrade the board UI", { selector: "h1" });

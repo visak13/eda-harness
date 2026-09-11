@@ -1,5 +1,6 @@
 /* Right drawer (design §6/§17): 1112px panel, top margin 20, radius 12, over a dim scrim.
-   Header 73px (G2 asserts its ruling panes 650/462 + 40px buttons inside the body). */
+   Header (toolbar) 72px tall, close button 40px square (Astra ruling #36 item 2, 2026-09-10; G2
+   asserts its ruling panes 650/462 + 40px buttons inside the body). */
 .scrim {
   position: fixed;
   inset: 0;
@@ -23,7 +24,8 @@
 }
 
 .header {
-  height: 73px;
+  height: 72px;
+  box-sizing: border-box;
   flex: none;
   display: flex;
   align-items: center;
@@ -39,11 +41,12 @@
   align-items: center;
   gap: 10px;
   min-width: 0;
+  flex: 1; /* the doc toolbar spans header to close button */
 }
 
 .close {
-  height: 32px;
-  width: 32px;
+  height: 40px;
+  width: 40px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: transparent;

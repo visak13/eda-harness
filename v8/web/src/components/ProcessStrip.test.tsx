@@ -31,6 +31,12 @@ describe("ProcessStrip", () => {
     expect(within(screen.getByTestId("next-action")).getByRole("link", { name: "Spawn a seat" })).toBeInTheDocument();
   });
 
+  it("omits the 'Next:' sentence when showNext is false (epic page, Astra #36) but keeps the steps", () => {
+    render(<ProcessStrip status="in_progress" showNext={false} />);
+    expect(screen.queryByTestId("next-action")).not.toBeInTheDocument();
+    expect(screen.getByTestId("stage-current")).toHaveTextContent("In progress");
+  });
+
   it("shows an off-line state for blocked/partial/dropped instead of a false position", () => {
     render(<ProcessStrip status="blocked" />);
     expect(screen.queryByTestId("stage-current")).not.toBeInTheDocument();

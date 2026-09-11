@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
+import type { DocHtml } from "../api/types";
 import { identity } from "../auth/identity";
 import { Drawer } from "./Drawer";
 import { DocView } from "./DocView";
@@ -10,6 +11,9 @@ import styles from "./DocDrawer.module.css";
 // `?doc=<id>` search param drives it, so a refresh or a shared link reopens the drawer; nested
 // doc links inside a doc push onto a back-stack capped at depth 3 (deeper → open as page); a
 // ticket link closes the drawer and navigates. "Open as page" goes to the kept /doc/:id route.
+//
+// The Drawer header is the reader's 72px toolbar (Astra ruling #36 item 2): doc type · "Open as
+// page" · ONE version menu ("vN · Latest ▾", a <details> labelled "Versions") · the Drawer's close.
 const MAX_DEPTH = 3;
 
 interface DocDrawerApi {
@@ -29,7 +33,11 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
   const navigate = useNavigate();
   const [stack, setStack] = useState<string[]>([]);
   const [topVersion, setTopVersion] = useState<number | null>(null); // what the reader shows (finding #2)
+  const [topDoc, setTopDoc] = useState<DocHtml | null>(null); // what the reader shows (toolbar menu)
+  // A version picked from the toolbar, keyed by doc so a stale pick never leaks onto the next doc.
+  const [picked, setPicked] = useState<{ id: string; v: number } | null>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
+  const menuRef = useRef<HTMLDetailsElement>(null);
 
   const urlDoc = params.get("doc");
 
@@ -78,7 +86,7 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
       setTop([]);
       navigate(`/ticket/${encodeURIComponent(id)}`);
     },
-    [navigate, setTop],
+    [setTop, navigate],
   );
 
   const back = useCallback(() => setTop(stack.slice(0, -1)), [setTop, stack]);
@@ -86,16 +94,27 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
 
   const api = useMemo(() => ({ openDoc }), [openDoc]);
   const top = stack[stack.length - 1] ?? null;
+  // The reader reports what it shows; mirroring it into `picked` keeps the toolbar's prop in step
+  // with a switch made from the History block, so re-picking the toolbar entry always applies.
+  const onVersion = useCallback(
+    (v: number) => {
+      setTopVersion(v);
+      if (top) setPicked({ id: top, v });
+    },
+    [top],
+  );
+  const shownDoc = topDoc && topDoc.id === top ? topDoc : null;
+  const latest = shownDoc ? (shownDoc.versions.length ? Math.max(...shownDoc.versions) : shownDoc.version) : null;
+  const pickedVersion = picked && picked.id === top ? picked.v : undefined;
 
   const title = (
-    <div className={styles.title}>
+    <div className={styles.toolbar}>
       {stack.length > 1 ? (
         <button type="button" className={styles.back} aria-label="Back" onClick={back}>
           ‹
         </button>
       ) : null}
-      <span>Document</span>
-      {top ? <span className={styles.id}>{top}</span> : null}
+      <span className={styles.kind}>{shownDoc ? shownDoc.doc_type.replace(/_/g, " ") : "Document"}</span>
       {top ? (
         <Link
           className={styles.asPage}
@@ -103,6 +122,31 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
         >
           Open as page
         </Link>
+      ) : null}
+      {shownDoc && top ? (
+        <details ref={menuRef} className={styles.versionsMenu} aria-label="Versions" data-testid="doc-versions-menu">
+          <summary className={styles.versionsSummary}>
+            v{shownDoc.version} · {shownDoc.version === latest ? "Latest" : "Pinned"} ▾
+          </summary>
+          <div className={styles.versionsList}>
+            {shownDoc.versions.map((v) => (
+              <button
+                key={v}
+                type="button"
+                className={`${styles.versionEntry} ${v === shownDoc.version ? styles.versionActive : ""}`}
+                aria-pressed={v === shownDoc.version}
+                data-testid="version-entry"
+                onClick={() => {
+                  setPicked({ id: top, v });
+                  if (menuRef.current) menuRef.current.open = false;
+                }}
+              >
+                v{v}
+                {v === latest ? " · latest" : ""}
+              </button>
+            ))}
+          </div>
+        </details>
       ) : null}
     </div>
   );
@@ -116,7 +160,18 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
         title={title}
         returnFocusTo={returnFocus.current}
       >
-        {top ? <DocView docId={top} onOpenDoc={openDoc} onOpenTicket={openTicket} onVersion={setTopVersion} /> : null}
+        {top ? (
+          <DocView
+            key={top}
+            docId={top}
+            version={pickedVersion}
+            onOpenDoc={openDoc}
+            onOpenTicket={openTicket}
+            onVersion={onVersion}
+            onDoc={setTopDoc}
+            versionsHosted
+          />
+        ) : null}
       </Drawer>
     </Ctx.Provider>
   );

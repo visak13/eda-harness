@@ -34,11 +34,16 @@ export function ProcessStrip({
   status,
   nextAction,
   ariaLabel = "Process",
+  showNext = true,
 }: {
   status: string;
   /** The next-action node (a sentence + a link to its control). Falls back to a plain sentence. */
   nextAction?: React.ReactNode;
   ariaLabel?: string;
+  /** Astra #36 (4): the epic page states the next move in its Status history fold instead, so it
+   *  drops the strip's own "Next:" sentence (the step chips stay). Default on — the Ticket page
+   *  keeps its linked sentence. */
+  showNext?: boolean;
 }): React.JSX.Element {
   const currentIndex = STAGES.indexOf(status as TicketStatus);
   const offLine = currentIndex === -1; // blocked / partial / dropped
@@ -75,9 +80,11 @@ export function ProcessStrip({
         </p>
       ) : null}
 
-      <p className={styles.next} data-testid="next-action">
-        <span className={styles.nextLabel}>Next:</span> {nextAction ?? nextActionFor(status)}
-      </p>
+      {showNext ? (
+        <p className={styles.next} data-testid="next-action">
+          <span className={styles.nextLabel}>Next:</span> {nextAction ?? nextActionFor(status)}
+        </p>
+      ) : null}
     </nav>
   );
 }

@@ -5,8 +5,9 @@ import { DocView } from "../components/DocView";
 import styles from "./Doc.module.css";
 
 // The kept full-page doc reader (/ui/doc/:id → /doc/:id, design §12/§14/§17). It is the same
-// DocView the §17 drawer hosts, at full width, with a Georgia title and a crumb back to the scope.
-// ?version=n pins a version (the version pills inside switch it). The one-click sign-off pane and
+// DocView the §17 drawer hosts — the 650/462 reader in a 1112px panel, centred (Astra ruling #36
+// item 2) — with a crumb back to the scope. DocView owns the title (the page's only <h1>).
+// ?version=n pins a version (the History pills inside switch it). The one-click sign-off pane and
 // the comment box are DocView's; on the full page nested links navigate normally (no drawer).
 export function DocPage(): React.JSX.Element {
   const { id = "" } = useParams();
@@ -28,8 +29,9 @@ export function DocPage(): React.JSX.Element {
           <Link to="/library/documents">← Library</Link>
         )}
       </nav>
-      <h1 className={styles.title}>{doc?.title ?? "Document"}</h1>
-      <DocView docId={id} version={version} onDoc={setDoc} />
+      <div className={styles.reader}>
+        <DocView docId={id} version={version} onDoc={setDoc} />
+      </div>
     </div>
   );
 }

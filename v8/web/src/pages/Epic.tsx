@@ -6,7 +6,8 @@ import { getPoolCapabilities, resumeSeat } from "../api/seats";
 import { BoardApiError } from "../api/client";
 import type { CriterionView, EpicSummaryRow, EpicTreeNode, MessageView, PoolCapabilities, TicketStatus } from "../api/types";
 import { StatusChip } from "../components/StatusChip";
-import { ProcessStrip } from "../components/ProcessStrip";
+import { ProcessStrip, nextActionFor } from "../components/ProcessStrip";
+import { label as glossLabel, meaning as glossMeaning } from "../copy/glossary";
 import { StatusControl } from "../components/StatusControl";
 import { GateOpenControl } from "../components/GateOpenControl";
 import { GateForm } from "../components/GateForm";
@@ -82,6 +83,7 @@ export function EpicPage(): React.JSX.Element {
   const [tab, setTab] = useState<"overview" | "work" | "documents" | "thread">("overview");
   const [composerKind, setComposerKind] = useState<"note" | "steer">("note");
   const [order, setOrder] = useState<"newest" | "oldest">("newest");
+  const [statusOpen, setStatusOpen] = useState(false);
 
   // Round 2 #13: a Find hit on an epic message lands at /epic/:id#m-…; the hash picks the Thread
   // tab (the hook that scrolls lives inside it) and the message is fetched even outside the window.
@@ -134,26 +136,32 @@ export function EpicPage(): React.JSX.Element {
         <span className={styles.crumbHere}>{epic.title}</span>
       </nav>
 
+      {/* Astra #36 (1): meta line (id + ONE 24px status badge) → Georgia 38/44 short title → the
+          owner's words in a 3px-accent callout, two-line preview with Show all. The header is the
+          same 744/336 grid as the body so the rail column (the Steer control) starts beside the
+          title row, not below the words. */}
       <div className={styles.head}>
         <div className={styles.idline}>
           <span className={ui.idMono}>{epic.id}</span>
-          <StatusChip status={epic.status} />
+          <span className={styles.badge} data-testid="epic-status-badge">
+            <StatusChip status={epic.status} />
+          </span>
         </div>
-        <h1 className={`${styles.title} ${heading.length > 90 ? styles.titleLong : ""}`} {...copyProps("epic", "title")}>{heading}</h1>
+        <h1 className={styles.title} {...copyProps("epic", "title")}>{heading}</h1>
         <div className={styles.steerWrap}>
           <button type="button" className={styles.steer} onClick={steer} {...copyProps("epic", "steer")}>
             Steer this epic
           </button>
           <Gloss k="steer" />
         </div>
-      </div>
 
-      {showWords ? (
-        <figure className={styles.words} data-testid="owner-words">
-          <figcaption className={ui.sectionLabel}>Owner&rsquo;s words · original request</figcaption>
-          <blockquote className={ui.quote}>{words}</blockquote>
-        </figure>
-      ) : null}
+        {showWords ? (
+          <figure className={styles.words} data-testid="owner-words">
+            <figcaption className={styles.wordsLabel}>Owner&rsquo;s words · original request</figcaption>
+            <Clamp className={styles.wordsText} text={words} lines={2} testId="owner-words-text" />
+          </figure>
+        ) : null}
+      </div>
 
       {/* Human #33: the description is the architect's brief — a quiet card, first paragraph
           shown, "Show all" expands; never an alert. */}
@@ -171,11 +179,9 @@ export function EpicPage(): React.JSX.Element {
         </section>
       ) : null}
 
-      <ProcessStrip
-        status={epic.status}
-        ariaLabel="Epic process"
-        nextAction={<a href="#epic-status">Change the epic&rsquo;s status →</a>}
-      />
+      {/* Astra #36 (4): the strip keeps its step chips; its "Next:" sentence was a duplicate of
+          the Status history fold in the rail, so the epic page drops it. */}
+      <ProcessStrip status={epic.status} ariaLabel="Epic process" showNext={false} />
 
       <div className={styles.layout}>
         <div className={styles.mainCol}>
@@ -208,10 +214,40 @@ export function EpicPage(): React.JSX.Element {
         </div>
 
         <aside className={styles.rail} aria-label="Epic details">
-          <section className={ui.card} id="epic-status" {...copyProps("epic", "change-status")}>
-            <div className={ui.sectionLabel}>Change status</div>
-            <StatusControl ticketId={id} currentStatus={epic.status as TicketStatus} />
+          {/* Astra #36 (4): status = the one badge beside the id; a 40px outlined "Change status"
+              button reveals the control; the lifecycle text lives in a "Status history" fold. */}
+          <section className={ui.card} id="epic-status">
+            <div className={ui.sectionLabel}>Status</div>
+            <button
+              type="button"
+              className={ui.button}
+              aria-expanded={statusOpen}
+              aria-controls="epic-status-control"
+              data-testid="change-status-toggle"
+              onClick={() => setStatusOpen((o) => !o)}
+              {...copyProps("epic", "change-status")}
+            >
+              {statusOpen ? "Hide status control" : "Change status"}
+            </button>
+            {statusOpen ? (
+              <div id="epic-status-control" className={styles.statusControl} data-testid="epic-status-control">
+                <StatusControl ticketId={id} currentStatus={epic.status as TicketStatus} />
+              </div>
+            ) : null}
             <Gloss k="change-status" />
+            <details className={ui.fold} data-testid="status-history">
+              <summary>Status history</summary>
+              <p className={styles.lifecycle}>
+                Now <strong>{glossLabel("ticket_status", epic.status)}</strong>
+                {glossMeaning("ticket_status", epic.status) ? ` — ${glossMeaning("ticket_status", epic.status)}` : ""}
+              </p>
+              <p className={styles.lifecycle}>
+                <strong>Next:</strong> {nextActionFor(epic.status)}
+              </p>
+              <p className={ui.empty}>
+                <Link to="/library/history">Open the full history →</Link>
+              </p>
+            </details>
           </section>
 
           {data.answerable_gates.length > 0 ? (
@@ -495,12 +531,18 @@ function WorkTab({
   );
 
   const all = flatten(epic).filter((n) => n.kind !== "epic");
+  // Astra #36 (3): the search box narrows rows by their title / id text at once (no round trip);
+  // the board's search adds description/tag hits when it answers.
+  const needle = q.trim().toLowerCase();
+  const textHit = (n: EpicTreeNode) =>
+    !needle || n.title.toLowerCase().includes(needle) || n.id.toLowerCase().includes(needle) || !!qHits?.has(n.id);
   const match = (n: EpicTreeNode) =>
     (!status || n.status === status) &&
     (!workType || n.work_type === workType) &&
     (!assignee || (n.assignee ?? "").includes(assignee)) &&
-    (!qHits || qHits.has(n.id));
+    textHit(n);
   const filtered = all.filter(match);
+  const filterCount = [status, workType, assignee].filter(Boolean).length;
 
   if (stories.length === 0) {
     return <p className={ui.empty}>This epic has no stories yet.</p>;
@@ -508,42 +550,59 @@ function WorkTab({
 
   return (
     <div>
-      <form className={styles.filterBar} onSubmit={(e) => e.preventDefault()} data-testid="work-filters">
-        <select className={ui.select} aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">any status</option>
-          {["drafted", "designed", "signed_off", "ready", "in_progress", "in_review", "blocked", "done", "partial", "dropped"].map(
-            (s) => (
-              <option key={s} value={s}>
-                {s.replace(/_/g, " ")}
-              </option>
-            ),
-          )}
-        </select>
-        <select className={ui.select} aria-label="Work type" value={workType} onChange={(e) => setWorkType(e.target.value)}>
-          <option value="">any work type</option>
-          {["feature", "bug", "rnd", "creative"].map((w) => (
-            <option key={w} value={w}>
-              {w}
-            </option>
-          ))}
-        </select>
+      {/* Astra #36 (3): a 40px search input, then a 40px "Filters" disclosure holding the
+          status / work-type / assignee controls, above the rows. */}
+      <div className={styles.workTools}>
         <input
-          className={ui.input}
-          aria-label="Assignee contains"
-          placeholder="assignee contains…"
-          value={assignee}
-          onChange={(e) => setAssignee(e.target.value)}
-        />
-        <input
-          className={ui.input}
+          className={`${ui.input} ${styles.workSearch}`}
+          type="search"
           aria-label="Search words"
-          placeholder="words in title/description/tags"
+          placeholder="Search by title or id…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
+          data-testid="work-search"
         />
-      </form>
+        <details className={styles.filters} data-testid="work-filters-fold">
+          <summary className={styles.filtersSummary}>
+            Filters{filterCount > 0 ? ` (${filterCount})` : ""}
+          </summary>
+          <form className={styles.filterBar} onSubmit={(e) => e.preventDefault()} data-testid="work-filters">
+            <select className={ui.select} aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="">any status</option>
+              {["drafted", "designed", "signed_off", "ready", "in_progress", "in_review", "blocked", "done", "partial", "dropped"].map(
+                (s) => (
+                  <option key={s} value={s}>
+                    {s.replace(/_/g, " ")}
+                  </option>
+                ),
+              )}
+            </select>
+            <select className={ui.select} aria-label="Work type" value={workType} onChange={(e) => setWorkType(e.target.value)}>
+              <option value="">any work type</option>
+              {["feature", "bug", "rnd", "creative"].map((w) => (
+                <option key={w} value={w}>
+                  {w}
+                </option>
+              ))}
+            </select>
+            <input
+              className={ui.input}
+              aria-label="Assignee contains"
+              placeholder="assignee contains…"
+              value={assignee}
+              onChange={(e) => setAssignee(e.target.value)}
+            />
+          </form>
+        </details>
+      </div>
 
       <div className={styles.tree} data-testid="work-tree">
+        <div className={styles.treeHead} aria-hidden="true">
+          <span>Ticket</span>
+          <span>Role</span>
+          <span>Status</span>
+          <span className={styles.treeHeadRight}>Criteria</span>
+        </div>
         {stories.filter(match).length === 0 && filtered.length === 0 ? (
           <p className={ui.empty}>No tickets match these filters.</p>
         ) : (
@@ -589,12 +648,11 @@ function TreeNode({
   return (
     <>
       {selfShown ? (
-        <div className={styles.treeRow} style={{ paddingLeft: 14 + depth * 20 }} data-testid="work-row">
+        <div className={styles.treeRow} style={{ paddingLeft: 16 + depth * 20 }} data-testid="work-row">
+          {/* Astra #36 (3): title first and wrapping; the id UNDER it in Consolas 12/18, one line. */}
           <Link to={`/ticket/${encodeURIComponent(node.id)}`} className={styles.treeLink}>
+            <span className={styles.treeTitle}>{node.title}</span>
             <span className={styles.treeId}>{node.id}</span>
-            <span className={styles.treeTitle} title={node.title}>
-              {node.title}
-            </span>
           </Link>
           <span className={styles.treeRole}>{roleOf(node.assignee)}</span>
           <span className={styles.treeStatus}>
