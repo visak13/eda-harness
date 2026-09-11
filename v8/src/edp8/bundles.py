@@ -573,7 +573,8 @@ class TicketReadArgs(BaseModel):
     ticket_id: str = Field(description="ticket id", validation_alias=AliasChoices("ticket_id", "id"))
     include: str | None = Field(default=None, description="comma list to narrow: chain,criteria,docs,children,"
                                 "blockers,gates,thread,links — omit for everything")
-    thread_limit: int = Field(default=20, description="how many of the newest thread messages to include")
+    thread_limit: int = Field(default=20, ge=0, le=200,
+                              description="how many of the newest thread messages to include (0 = none, max 200)")
 
 
 class TicketQueryArgs(BaseModel):

@@ -543,7 +543,8 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         return ok(_dump(t), hint)
 
     @app.get("/v1/tickets/{id_}")
-    def ticket_get(id_: str, include: str | None = None, thread_limit: int = 20, a: Participant = Depends(actor)):
+    def ticket_get(id_: str, include: str | None = None, thread_limit: int = Query(default=20, ge=0, le=200),
+                   a: Participant = Depends(actor)):
         view = board.ticket_view(id_, include=include.split(",") if include else None, thread_limit=thread_limit)
         # flat ticket fields at the top level (back-compat) + every section
         return ok({**view["ticket"], **{k: v for k, v in view.items() if k != "ticket"}},

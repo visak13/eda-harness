@@ -372,7 +372,8 @@ class Board:
             out["open_gates"] = [e.data.get("gate") for e in self.open_gates(t.id)]
         if "thread" in want:
             rows = self.store.query_seq("message", {"ticket_id": t.id}, limit=100000)
-            tail = rows[-thread_limit:]
+            # #37(a) (Astra, 2026-09-10): rows[-0:] is the WHOLE thread — 0 means none.
+            tail = rows[-thread_limit:] if thread_limit > 0 else []
             out["thread"] = [{**m.model_dump(mode="json"), "seq": seq} for seq, m in tail]
             out["thread_seq"] = rows[-1][0] if rows else 0
             out["thread_total"] = len(rows)
@@ -924,11 +925,19 @@ class Board:
             final = derived
             if checked_by is not None and checked_by != derived and actor.role == Role.owner and override_reason:
                 final = checked_by
-            if t.kind == TicketKind.story and not self._is_folded(t.id):
-                fresh = [c for c in self.criteria(t.id) if not (c.text or "").lstrip().startswith("(from S")]
-                if len(fresh) >= CRITERIA_CAP:
+            if t.kind == TicketKind.story:
+                # #37(b) (Astra, 2026-09-10): one "(from S…)" line used to switch the cap off for the
+                # whole story, so later fresh lines went uncounted. The cap now counts the fresh
+                # lines on every story, folded or not, and a total ceiling bounds fresh + inherited.
+                existing = self.criteria(t.id)
+                fresh = [c for c in existing if not (c.text or "").lstrip().startswith("(from S")]
+                is_fresh = not text.lstrip().startswith("(from S")
+                if is_fresh and len(fresh) >= CRITERIA_CAP:
                     raise BoardError("scope", f"a story carries at most {CRITERIA_CAP} freshly-written criteria",
                                      "tighten to the load-bearing checks, or split the story")
+                if len(existing) >= 2 * CRITERIA_CAP:
+                    raise BoardError("scope", f"a story carries at most {2 * CRITERIA_CAP} criteria in total "
+                                     f"(fresh + inherited)", "fold fewer stories into it, or split it")
             c = Criterion(id=new_id("c"), ticket_id=ticket_id, text=text, check=check,
                           checked_by=final, created_by=actor.id)  # type: ignore[arg-type]
             self.store.put("criterion", c)

@@ -293,11 +293,23 @@ def test_criteria_cap_seventh_refused_on_unfolded_story_folded_exempt(board, rig
     with pytest.raises(BoardError) as ei:
         board.criterion_create(rig["architect"], ticket_id=story.id, text="c7", check=Check.command)
     assert ei.value.code == "scope" and "at most 6" in ei.value.message
+    # #37(b) (Astra, 2026-09-10): a folded story is NOT exempt — its fresh lines are still capped,
+    # and fresh + inherited is bounded by 2×cap.
     folded = make_story(board, rig, epic)
     board.criterion_create(rig["architect"], ticket_id=folded.id, text="(from S1) inherited a",
                            check=Check.command)
-    for i in range(8):  # a folded story is exempt from the fresh-criteria cap
+    for i in range(6):
         board.criterion_create(rig["architect"], ticket_id=folded.id, text=f"f{i}", check=Check.command)
+    with pytest.raises(BoardError) as ei:
+        board.criterion_create(rig["architect"], ticket_id=folded.id, text="f7", check=Check.command)
+    assert ei.value.code == "scope" and "at most 6" in ei.value.message
+    for i in range(5):  # inherited lines still land until the total ceiling (12)
+        board.criterion_create(rig["architect"], ticket_id=folded.id, text=f"(from S{i + 2}) inherited",
+                               check=Check.command)
+    with pytest.raises(BoardError) as ei:
+        board.criterion_create(rig["architect"], ticket_id=folded.id, text="(from S9) one too many",
+                               check=Check.command)
+    assert ei.value.code == "scope" and "at most 12" in ei.value.message
 
 
 def test_design_signoff_refused_when_epic_over_story_cap(board, rig):
