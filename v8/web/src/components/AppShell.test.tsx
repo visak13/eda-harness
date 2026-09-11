@@ -114,3 +114,66 @@ describe("AppShell", () => {
     expect(screen.getByRole("link", { name: /Epics/ })).toHaveAttribute("aria-current", "page");
   });
 });
+
+// Human #38 (m-4e303d7b27): the sidebar highlight follows the ROUTE FAMILY. Epic and ticket pages
+// keep "Epics" lit; every Library tab, a doc page and an artifact page keep "Library" lit; a seat
+// deep-link keeps "Seats". Exactly one nav link is current on each.
+describe("AppShell nav route families (human #38)", () => {
+  function renderAt(path: string) {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={qc}>
+        <ThemeProvider>
+          <MemoryRouter initialEntries={[path]}>
+            <Routes>
+              <Route element={<AppShell />}>
+                <Route path="*" element={<div>body</div>} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </ThemeProvider>
+      </QueryClientProvider>,
+    );
+  }
+  const cases: Array<[string, string]> = [
+    ["/me", "Decisions"],
+    ["/epics", "Epics"],
+    ["/epic/epic-1b289d63f9", "Epics"],
+    ["/ticket/s-abc", "Epics"],
+    ["/seats", "Seats"],
+    ["/seats#engineer.s-1", "Seats"],
+    ["/library/tickets", "Library"],
+    ["/library/docs", "Library"],
+    ["/library/artifacts", "Library"],
+    ["/doc/d-1", "Library"],
+    ["/artifact/art-1", "Library"],
+  ];
+  for (const [path, label] of cases) {
+    it(`${path} lights ${label} only`, async () => {
+      renderAt(path);
+      await screen.findByRole("link", { name: new RegExp(label) });
+      const current = screen.getAllByRole("link").filter((l) => l.getAttribute("aria-current") === "page");
+      expect(current.map((l) => l.textContent?.replace(/\d+$/, "").trim())).toEqual([label]);
+    });
+  }
+  it("/unknown lights nothing", async () => {
+    renderAt("/nowhere");
+    await screen.findByRole("link", { name: /Decisions/ });
+    expect(screen.getAllByRole("link").filter((l) => l.getAttribute("aria-current") === "page")).toEqual([]);
+  });
+});
+
+// Human #22: the header "New epic" button opens the dialog (it used to be a dead plate control).
+describe("AppShell New epic (human #22)", () => {
+  it("opens the New epic dialog from the header button", async () => {
+    server.use(http.get("/v1/pool/capabilities", () => HttpResponse.json({ ok: true, value: { spawn: true } })));
+    renderShell("/me");
+    const btn = await screen.findByTestId("new-epic-open");
+    expect(btn).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(btn);
+    expect(await screen.findByRole("dialog", { name: "New epic" })).toBeInTheDocument();
+    expect(btn).toHaveAttribute("aria-expanded", "true");
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "New epic" })).not.toBeInTheDocument());
+  });
+});

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router";
+import { Link, Outlet, useLocation } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { api, BoardApiError } from "../api/client";
 import { identity } from "../auth/identity";
@@ -14,6 +14,7 @@ import { PageFrameProvider, usePageFrameCtx, defaultFraming } from "./PageFrame"
 import { GlossaryPanel } from "./GlossaryPanel";
 import { CommandPalette } from "./CommandPalette";
 import { CopyDescriptions } from "./CopyDescriptions";
+import { NewEpicDialog } from "./NewEpicDialog";
 import { copyProps, pageKeyFor } from "../copy/pages";
 import styles from "./AppShell.module.css";
 
@@ -36,6 +37,17 @@ const NAV = [
   { to: "/seats", label: "Seats", icon: "seats", count: "seats" as const, copy: "seats" },
   { to: "/library/tickets", label: "Library", icon: "library", count: "library" as const, copy: "library" },
 ] as const;
+
+// Human #38 (m-4e303d7b27, 2026-09-11): the sidebar highlight is by ROUTE FAMILY, not by exact
+// path — an epic page or a ticket page is still "Epics", every Library tab is "Library". NavLink's
+// own isActive only knows prefixes of its `to`, so the family is computed here from the pathname.
+export function navFamily(pathname: string): "/me" | "/epics" | "/seats" | "/library/tickets" | null {
+  if (pathname === "/me" || pathname.startsWith("/me/")) return "/me";
+  if (/^\/(epics|epic|ticket)(\/|$)/.test(pathname)) return "/epics";
+  if (/^\/seats(\/|$)/.test(pathname)) return "/seats";
+  if (/^\/(library|doc|artifact)(\/|$)/.test(pathname)) return "/library/tickets";
+  return null;
+}
 
 function crumbFor(pathname: string): string {
   if (pathname.startsWith("/epic")) return "Epic";
@@ -67,6 +79,9 @@ function AppShellChrome(): React.JSX.Element {
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
+  const [newEpicOpen, setNewEpicOpen] = useState(false);
+  const closeNewEpic = useCallback(() => setNewEpicOpen(false), []);
+  const activeFamily = navFamily(location.pathname);
   const findBtnRef = useRef<HTMLButtonElement>(null);
   const closeFind = useCallback(() => {
     setFindOpen(false);
@@ -160,10 +175,11 @@ function AppShellChrome(): React.JSX.Element {
 
         <nav className={styles.nav} aria-label="Sections">
           {NAV.map((item) => (
-            <NavLink
+            <Link
               key={item.to}
               to={item.to}
-              className={({ isActive }) => `${styles.navItem} ${isActive ? styles.active : ""}`}
+              className={`${styles.navItem} ${activeFamily === item.to ? styles.active : ""}`}
+              aria-current={activeFamily === item.to ? "page" : undefined}
               {...copyProps("sidebar", item.copy)}
             >
               <span className={styles.icon} data-nav-icon>
@@ -173,7 +189,7 @@ function AppShellChrome(): React.JSX.Element {
               {counts && typeof counts[item.count] === "number" ? (
                 <span className={styles.count}>{counts[item.count]}</span>
               ) : null}
-            </NavLink>
+            </Link>
           ))}
         </nav>
 
@@ -261,7 +277,15 @@ function AppShellChrome(): React.JSX.Element {
               {pending} new · refresh
             </button>
           ) : (
-            <button className={styles.btnPrimary} type="button">
+            <button
+              className={styles.btnPrimary}
+              type="button"
+              data-testid="new-epic-open"
+              aria-haspopup="dialog"
+              aria-expanded={newEpicOpen}
+              onClick={() => setNewEpicOpen(true)}
+              {...copyProps("sidebar", "new-epic")}
+            >
               New epic
             </button>
           )}
@@ -283,6 +307,7 @@ function AppShellChrome(): React.JSX.Element {
       <GlossaryPanel open={helpOpen} onClose={closeHelp} framing={pageFraming} terms={terms} page={pageKey} />
       <CopyDescriptions page={pageKey} />
       <CommandPalette open={findOpen} onClose={closeFind} />
+      <NewEpicDialog open={newEpicOpen} onClose={closeNewEpic} />
     </div>
   );
 }

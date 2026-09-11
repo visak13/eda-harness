@@ -181,3 +181,9 @@ export const createLink = (b: { from_id: string; to_id: string; relation: string
 /** PATCH /v1/docs/{id} — revise a doc's body/title; the board records it as a new version. */
 export const updateDoc = (id: string, b: { body_md?: string; title?: string }) =>
   postJson<Record<string, unknown>>(`/v1/docs/${encodeURIComponent(id)}`, b, "PATCH");
+
+/** POST /v1/tickets kind=epic — the header "New epic" dialog (human #22). The words go verbatim as
+ *  both `title` and `words`: the board keeps `words` immutable and derives the short title (ruling
+ *  #32; an older board without `words` simply keeps the title). */
+export const createEpic = (words: string) =>
+  postJson<TicketRecord>("/v1/tickets", { kind: "epic", work_type: "feature", title: words, words });
