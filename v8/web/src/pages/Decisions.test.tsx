@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, within, act } from "@testing-library/react";
+import { render, screen, fireEvent, within, act, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 import { http, HttpResponse } from "msw";
@@ -207,5 +207,160 @@ describe("Decisions conversations (§16.1 / §18.2)", () => {
     mount();
     fireEvent.click(await screen.findByTestId("new-conversation"));
     expect(await screen.findByTestId("composer")).toBeInTheDocument();
+  });
+});
+
+// Coverage pass (c-7c51c6b69b): the Gates / Resolved tabs (filled and empty), the board-unreachable
+// sentence, the featured card's optional fields, the "more" list opening the ruling drawer, the
+// Replies section, the conversations "By counterpart" grouping + the ticket picker, and the
+// Seats-now card variants (parked, ticket without a title, no ticket, a latest status, error).
+describe("Decisions coverage pass", () => {
+  it("shows one calm sentence when the decisions call fails, and the seats rail says it is unavailable", async () => {
+    setBoard({});
+    server.use(
+      http.get("/v1/me/decisions", () => HttpResponse.json({ ok: false, error: "down" }, { status: 500 })),
+      http.get("/v1/seats", () => HttpResponse.json({ ok: false, error: "down" }, { status: 500 })),
+    );
+    mount();
+    expect(await screen.findByText(/The board could not be reached/)).toBeInTheDocument();
+    expect(await screen.findByText("Seats are unavailable right now.")).toBeInTheDocument();
+  });
+
+  it("Gates tab lists a GateForm per open gate; Resolved tab lists verdicts and gate answers", async () => {
+    setBoard({
+      gates: [{ ticket_id: "epic-1", gate: "scope", by: "architect.epic-1", note: "widen?", opened_at: "x", epic: "epic-1" }],
+      resolved: [
+        { at: "x", kind: "verdict", ticket_id: "s-1", criterion: "c-1", verdict: "pass" },
+        { at: "x", kind: "gate", ticket_id: "epic-1", gate: "scope", answer: "yes" },
+      ],
+      conversations: [{ ticket_id: "s-1", title: "Named story", epic_id: "epic-1", unread: false, last: null }],
+      epics: [{ id: "epic-1", title: "Board redesign", status: "in_progress", created_at: "x", criteria: { passed: 0, failed: 0, pending: 0, total: 0 }, open_gates: 1, waiting_reason: { reason: "", presence: null, latest_status: null }, assigned_seats: [], latest_status: null }],
+    });
+    mount();
+    fireEvent.click(await screen.findByRole("tab", { name: /Gates/ }));
+    expect(await screen.findByTestId("gate-form")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: /Resolved/ }));
+    const resolved = await screen.findByTestId("resolved");
+    expect(resolved).toHaveTextContent("pass · c-1");
+    expect(resolved).toHaveTextContent("Named story");
+    expect(resolved).toHaveTextContent("scope gate · yes");
+    expect(resolved).toHaveTextContent("Board redesign");
+    // a conversation with no last message is live by definition and shows no "last" line
+    const convos = screen.getByTestId("conversations");
+    expect(within(convos).getByText("on your ticket")).toBeInTheDocument();
+  });
+
+  it("empty Gates / Resolved / Questions tabs each render their own calm sentence", async () => {
+    setBoard({});
+    mount();
+    fireEvent.click(await screen.findByRole("tab", { name: /Gates/ }));
+    expect(await screen.findByText(/No open gates/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: /Resolved/ }));
+    expect(await screen.findByText(/Nothing resolved yet/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: /Questions/ }));
+    expect(await screen.findByText(/No questions in your inbox/)).toBeInTheDocument();
+  });
+
+  it("a question without an asker block still counts and renders without the note", async () => {
+    setBoard({
+      questions: [
+        { id: "m-1", ticket_id: "s-1", created_by: "engineer.s-1", to: "owner", kind: "question", text: "bare?", from_role: "engineer" },
+        { id: "m-2", ticket_id: "s-1", created_by: "engineer.s-2", to: "owner", kind: "question", text: "gone?", from_role: "engineer", asker: { type: "agent", role: "engineer", seat_state: "dead", note: "its shell is dead" } },
+      ],
+    });
+    mount();
+    await waitFor(() => expect(screen.getByRole("tab", { name: /Questions/ })).toHaveTextContent("1"));
+    fireEvent.click(screen.getByRole("tab", { name: /Questions/ }));
+    const rows = await screen.findAllByTestId("question");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent("bare?");
+  });
+
+  it("featured card copes with no excerpt / no doc / no assignee; the 'more' rows open the ruling drawer", async () => {
+    server.use(
+      http.get("/v1/docs/:id/html", () => HttpResponse.json({ ok: true, value: { id: "report-2", title: "Second", doc_type: "report", version: 1, versions: [1], html: "<p>hi</p>" } })),
+    );
+    const bare = { ...sign("1", "unused"), doc: null, excerpt: "", ticket: { ...sign("1", "unused").ticket, assignee: null } };
+    setBoard({ signoffs: [bare, sign("2", "Second"), { ...sign("3", "unused"), doc: null }] });
+    mount();
+    const featured = await screen.findByTestId("featured-signoff");
+    expect(within(featured).getByText("the assignee")).toBeInTheDocument();
+    expect(within(featured).getByText("Ticket 1")).toBeInTheDocument();
+    expect(within(featured).queryByText(/excerpt/)).toBeNull();
+    const more = screen.getByTestId("more-docs");
+    expect(more).toHaveTextContent("2 more documents awaiting your sign-off");
+    // the doc-less rest row shows the ticket title in the doc slot
+    expect(within(more).getAllByText("Ticket 3").length).toBeGreaterThan(0);
+    fireEvent.click(within(more).getByText("Second"));
+    const panel = await screen.findByTestId("drawer-panel");
+    expect(panel).toHaveTextContent("2 of 3 sign-offs");
+  });
+
+  it("Replies to you: quotes the viewer's words, links epic and ticket threads, and replies in place", async () => {
+    setBoard({
+      replies: [
+        { id: "m-r1", ticket_id: "epic-1", ticket_title: "Epic thread", created_by: "architect.epic-1", kind: "answer", text: "yes, folio", at: "x", reply_to: "m-0", in_reply_to: { by: "owner", text: "which theme?" } },
+        { id: "m-r2", ticket_id: "s-1", ticket_title: "Story thread", created_by: "engineer.s-1", kind: "note", text: "done", at: "x", reply_to: null, in_reply_to: null },
+      ],
+    });
+    mount();
+    const replies = await screen.findByTestId("replies");
+    expect(replies).toHaveTextContent("Replies to you (2)");
+    expect(within(replies).getByText(/which theme\?/)).toBeInTheDocument();
+    expect(within(replies).getByRole("link", { name: "Epic thread" })).toHaveAttribute("href", "/epic/epic-1#m-r1");
+    expect(within(replies).getByRole("link", { name: "Story thread" })).toHaveAttribute("href", "/ticket/s-1#m-r2");
+    const rows = within(replies).getAllByTestId("reply-row");
+    expect(within(rows[1]).queryByText("you wrote:")).toBeNull();
+    fireEvent.click(within(rows[0]).getByTestId("reply-to-reply"));
+    expect(await within(rows[0]).findByTestId("composer")).toBeInTheDocument();
+  });
+
+  it("conversations group by counterpart on toggle, and the new-conversation picker selects a ticket", async () => {
+    const people = [{ id: "owner", handle: "owner", type: "human", role: "owner", seat_ticket: null, seat_state: null, label: "person", self: false }];
+    setBoard({
+      people,
+      conversations: [
+        { ticket_id: "s-1", title: "Silent", epic_id: "epic-1", unread: false, last: null },
+        { ticket_id: "s-2", title: "Spoken", epic_id: "epic-1", unread: true, last: { by: "owner", text: "hello", at: "x" } },
+        { ticket_id: "s-3", title: "Quiet closed", epic_id: "epic-1", unread: false, last: { by: "engineer.gone", text: "bye", at: "x" } },
+      ],
+    });
+    mount();
+    const convos = await screen.findByTestId("conversations");
+    expect(await within(convos).findAllByTestId("convo-group")).toHaveLength(1);
+    expect(within(convos).getByText("owner: hello")).toBeInTheDocument();
+    fireEvent.click(within(convos).getByRole("button", { name: "By counterpart" }));
+    expect(within(convos).getAllByTestId("convo-group")).toHaveLength(2);
+    expect(within(convos).getByText("thread")).toBeInTheDocument();
+    expect(within(convos).getByRole("button", { name: "By ticket" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(convos).queryByText("owner: hello")).toBeNull();
+    // closed seat with nothing unread shows no dead-seat flag
+    fireEvent.click(within(convos).getByTestId("closed-seats"));
+    expect(within(convos).getByText("Quiet closed")).toBeInTheDocument();
+    expect(within(convos).queryByTestId("dead-seat-flag")).toBeNull();
+    // the picker
+    fireEvent.click(within(convos).getByTestId("new-conversation"));
+    const select = (await within(convos).findByTestId("new-conversation-ticket")) as HTMLSelectElement;
+    expect(select.value).toBe("s-1");
+    fireEvent.change(select, { target: { value: "s-2" } });
+    expect(select.value).toBe("s-2");
+  });
+
+  it("Seats-now cards: parked seat with a bare ticket id, a seat with no ticket but a latest status; dead seats are left out", async () => {
+    setBoard({
+      seats: [
+        { id: "engineer.s-1", handle: "engineer.s-1", role: "engineer", state: "parked", ticket_id: "s-1", ticket_title: null, last_output_at: null, presence_stale_since: null, reason: "", latest_status: null },
+        { id: "qa.epic-1", handle: "qa.epic-1", role: "qa", state: "stalled", ticket_id: null, ticket_title: null, last_output_at: new Date().toISOString(), presence_stale_since: null, reason: "", latest_status: { text: "checking the sheet", status: null, role: null, at: "x" } },
+        { id: "engineer.s-2", handle: "engineer.s-2", role: "engineer", state: "dead", ticket_id: "s-2", ticket_title: "Gone", last_output_at: null, presence_stale_since: null, reason: "", latest_status: null },
+      ],
+    });
+    mount();
+    const seats = await screen.findByTestId("seats-now");
+    const rows = await within(seats).findAllByTestId("seat-row");
+    expect(rows).toHaveLength(2);
+    expect(within(rows[0]).getByRole("link", { name: "s-1" })).toHaveAttribute("href", "/ticket/s-1");
+    expect(within(rows[1]).queryByRole("link", { name: /s-/ })).toBeNull();
+    expect(within(rows[1]).getByTestId("latest-status")).toHaveTextContent("checking the sheet");
+    expect(within(seats).queryByText("Gone")).toBeNull();
   });
 });

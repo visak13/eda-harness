@@ -43,3 +43,28 @@ describe("ProcessStrip", () => {
     expect(screen.getByTestId("off-line-state")).toHaveTextContent("Blocked");
   });
 });
+
+// Coverage pass (c-7c51c6b69b): every stage sentence in `nextActionFor`, plus the unknown-status
+// fallbacks (empty sentence; an unglossed off-line status renders with no meaning text).
+describe("nextActionFor", () => {
+  it("names a next action for every happy-path and off-line status, and nothing for an unknown one", () => {
+    expect(nextActionFor("drafted")).toMatch(/Draft a design/);
+    expect(nextActionFor("designed")).toMatch(/Sign off the design/);
+    expect(nextActionFor("signed_off")).toMatch(/Mark it Ready/);
+    expect(nextActionFor("ready")).toMatch(/Assign or spawn/);
+    expect(nextActionFor("in_progress")).toMatch(/attach evidence/);
+    expect(nextActionFor("in_review")).toMatch(/Review the evidence/);
+    expect(nextActionFor("done")).toMatch(/Complete/);
+    expect(nextActionFor("blocked")).toMatch(/Clear what blocks/);
+    expect(nextActionFor("partial")).toMatch(/remaining work/);
+    expect(nextActionFor("dropped")).toMatch(/stopped/);
+    expect(nextActionFor("mystery")).toBe("");
+  });
+
+  it("an unglossed status is off-line with the raw word and an empty meaning", () => {
+    render(<ProcessStrip status="mystery_state" />);
+    const off = screen.getByTestId("off-line-state");
+    expect(off).toHaveTextContent("mystery state");
+    expect(screen.getByTestId("next-action")).toHaveTextContent("Next:");
+  });
+});

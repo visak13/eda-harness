@@ -138,3 +138,112 @@ describe("CommandPalette round 2", () => {
     expect(screen.getByTestId("where")).toHaveTextContent("/me");
   });
 });
+
+// Coverage pass (c-7c51c6b69b): the row fallbacks (no title → snippet → id; unknown epic id; an
+// orphan criterion; an unknown hit type), the keyboard edges (ArrowUp wrap, arrows with no rows,
+// the Tab focus trap), a seats endpoint that fails, and a title-matched epic FTS ranked out.
+describe("rowFor fallbacks", () => {
+  const titles = (id: string | undefined) => (id === "epic-1" ? "Folio redesign" : null);
+  it("falls back title → snippet → id and names an unknown epic by its id", () => {
+    const t = rowFor({ type: "ticket", id: "s-7", score: 1, snippet: "[Bare] ticket", epic_id: "epic-zz" }, titles)!;
+    expect(t.title).toBe("Bare ticket");
+    expect(t.epic).toBe("epic-zz");
+    expect(t.group).toBe("Tickets");
+    const noEpic = rowFor({ type: "ticket", id: "s-8", score: 1, snippet: "", title: "T" }, titles)!;
+    expect(noEpic.epic).toBeNull();
+    const d = rowFor({ type: "doc", id: "report-1", score: 1, snippet: "[report] body" }, titles)!;
+    expect(d.title).toBe("report body");
+    expect(d.epic).toBeNull();
+    const m = rowFor({ type: "message", id: "m-5", score: 1, snippet: "", ticket_id: "epic-1" }, titles)!;
+    expect(m.title).toBe("m-5");
+    expect(m.to).toBe("/epic/epic-1#m-5");
+    const c = rowFor({ type: "criterion", id: "c-5", score: 1, snippet: "", ticket_id: "s-2" }, titles)!;
+    expect(c.title).toBe("c-5");
+    expect(rowFor({ type: "criterion", id: "c-6", score: 1, snippet: "orphan" }, titles)).toBeNull();
+    expect(rowFor({ type: "weird" as unknown as "doc", id: "x", score: 1, snippet: "" }, titles)).toBeNull();
+  });
+});
+
+describe("CommandPalette keyboard + data edges", () => {
+  it("renders nothing while closed", () => {
+    mount(false);
+    expect(screen.queryByTestId("find-dialog")).toBeNull();
+  });
+
+  it("ArrowUp wraps to the last row, arrows with no rows are harmless, and a seat with no ticket title names its ticket id", async () => {
+    server.use(
+      http.get("/v1/seats", () =>
+        HttpResponse.json({ ok: true, value: { seats: [{ id: "qa.folio", handle: "qa.folio", role: "qa", state: "alive", ticket_id: "s-9", ticket_title: null, last_output_at: null, presence_stale_since: null, reason: "", latest_status: null }], people: [] } }),
+      ),
+    );
+    mount();
+    const input = screen.getByTestId("find-input");
+    // no rows yet: the arrows keep index at 0 without throwing
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "ArrowUp" });
+    fireEvent.change(input, { target: { value: "folio" } });
+    // 4 ranked hits + the one seat matched by handle (seats resolve before the hits: wait for all)
+    await waitFor(() => expect(screen.getAllByTestId("find-row").length).toBe(5));
+    const rows = screen.getAllByTestId("find-row");
+    const seat = rows.find((r) => r.getAttribute("data-group") === "Seats")!;
+    expect(seat).toHaveTextContent("s-9");
+    fireEvent.keyDown(input, { key: "ArrowUp" });
+    expect(rows[rows.length - 1]).toHaveAttribute("aria-selected", "true");
+    expect(input).toHaveAttribute("aria-activedescendant", rows[rows.length - 1].id);
+  });
+
+  it("traps Tab inside the dialog: Shift+Tab from the input lands on the last row, Tab from the last row returns to the input", async () => {
+    mount();
+    const input = screen.getByTestId("find-input");
+    fireEvent.change(input, { target: { value: "folio" } });
+    // seats/epics resolve before the find hits: wait for the full ranked set (4 hits + 1 seat)
+    await waitFor(() => expect(screen.getAllByTestId("find-row").length).toBe(5));
+    const rows = screen.getAllByTestId("find-row");
+    const last = rows[rows.length - 1];
+    input.focus();
+    fireEvent.keyDown(input, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(last);
+    fireEvent.keyDown(last, { key: "Tab" });
+    expect(document.activeElement).toBe(input);
+    // Tab from a middle row is left to the browser (no wrap)
+    rows[0].focus();
+    fireEvent.keyDown(rows[0], { key: "Tab" });
+    expect(document.activeElement).toBe(rows[0]);
+    // any other key is ignored by the dialog handler
+    fireEvent.keyDown(input, { key: "a" });
+  });
+
+  it("still lists a title-matched epic when FTS ranked it out, and survives a failed seats call", async () => {
+    server.use(
+      http.get("/v1/find", () => HttpResponse.json({ ok: true, value: [] })),
+      http.get("/v1/seats", () => HttpResponse.json({ ok: false, error: "down" }, { status: 500 })),
+    );
+    mount();
+    const input = screen.getByTestId("find-input");
+    fireEvent.change(input, { target: { value: "redesign" } });
+    await waitFor(() => expect(screen.getAllByTestId("find-row").length).toBe(1));
+    const row = screen.getByTestId("find-row");
+    expect(row).toHaveAttribute("data-group", "Epics");
+    expect(row).toHaveTextContent("Folio redesign");
+    // a hit whose epic_id is not in the summary falls back to the id; the scrim click closes
+    fireEvent.click(row);
+    await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/epic/epic-1"));
+  });
+
+  it("names an unknown epic by id and closes on the scrim", async () => {
+    let closed = 0;
+    server.use(
+      http.get("/v1/find", () =>
+        HttpResponse.json({ ok: true, value: [{ type: "ticket", id: "s-3", score: 1, snippet: "", title: "Stray story", epic_id: "epic-gone" }] }),
+      ),
+    );
+    mount(true, () => closed++);
+    const input = screen.getByTestId("find-input");
+    fireEvent.change(input, { target: { value: "stray" } });
+    await waitFor(() => expect(screen.getAllByTestId("find-row").length).toBe(1));
+    expect(screen.getByTestId("find-row")).toHaveTextContent("epic-gone");
+    fireEvent.mouseEnter(screen.getByTestId("find-row"));
+    fireEvent.click(screen.getByTestId("find-scrim"));
+    expect(closed).toBe(1);
+  });
+});
