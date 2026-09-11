@@ -43,7 +43,7 @@ test("a doc opens in the shared drawer over the epic, and Esc restores the page"
   await expect(panel).toContainText("Safe body text");
   // The epic page is still mounted behind the scrim (its own <h1> title survives; the doc body
   // also renders an <h1> inside the drawer, so match the epic title by name, not `main h1`).
-  await expect(page.getByRole("heading", { level: 1, name: fx.words })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: fx.title })).toBeVisible(); // short derived title (human #32)
 
   await page.keyboard.press("Escape");
   await expect(panel).toBeHidden();

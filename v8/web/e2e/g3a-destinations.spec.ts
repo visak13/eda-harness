@@ -17,7 +17,9 @@ test.describe("epics list", () => {
   test("lists the seeded epic with a criteria tally, and status/q filters bind to the query string", async ({ page }) => {
     await page.goto(`${BASE()}/ui/epics?as=owner`);
     const list = page.getByTestId("epic-list");
-    await expect(list).toContainText(fx.words);
+    // Human #32 (c1403e1): the list shows the board's short derived title (first clause ≤80), the
+    // words stay verbatim on the epic page.
+    await expect(list).toContainText(fx.title);
     // The story carries 2 criteria (0 passed) → a tally, never a bare bar.
     await expect(list).toContainText(/of\s+\d+\s+passed|None defined/);
 
@@ -27,7 +29,7 @@ test.describe("epics list", () => {
     await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe("nonesuchzzz");
     // Scope to main: the sidebar's "In view" recents also carry the title, so assert the row left
     // the list itself (which may drop to its empty state).
-    await expect(page.locator("main").getByText(fx.words)).toHaveCount(0);
+    await expect(page.locator("main").getByText(fx.title)).toHaveCount(0);
   });
 });
 
@@ -36,13 +38,13 @@ test.describe("epic page", () => {
     await page.goto(`${BASE()}/ui/epic/${fx.epic}?as=owner`);
 
     // Directive callout carries the owner's steer text.
-    await expect(page.getByTestId("directive")).toHaveText(fx.steer);
+    await expect(page.getByTestId("directive")).toContainText(fx.steer); // labelled "Latest steer · owner" (human #33 card)
 
     // Work tab → tree + 5-column kanban + a filter bar that narrows the tree.
     await page.getByRole("tab", { name: /Work/ }).click();
     await expect(page.getByTestId("work-tree")).toContainText("Epic page destination");
     await expect(page.getByTestId("kanban")).toBeVisible();
-    await page.getByTestId("work-filters").getByLabel("Search words").fill("zzz-no-match");
+    await page.getByTestId("work-search").fill("zzz-no-match"); // the 40px search sits above the Filters fold (Astra #36 item 3)
     await expect(page.getByTestId("work-tree")).not.toContainText("Epic page destination");
 
     // Thread tab → the newest/oldest order toggle flips its own label/state.

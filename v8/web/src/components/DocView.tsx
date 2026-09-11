@@ -175,7 +175,14 @@ function DocBody({
     el?.scrollIntoView?.({ block: "start", behavior: "smooth" });
   }
 
-  const hasSignoff = (doc.signoff_criteria?.length ?? 0) > 0 || Boolean(doc.signoff_criterion);
+  // LATCH (mirrors SignoffPane's own latch): a successful ruling refetches the doc and the ruled
+  // criterion leaves signoff_criteria — the pane must stay mounted so the card can read "Passed"
+  // without a navigation (c-a0b2f8ddda; g3a-doc.spec "approves … in one click" flaked on this gate
+  // after the #36 side-pane rewrite). Once a doc has shown a sign-off, its pane stays for that doc.
+  const signoffNow = (doc.signoff_criteria?.length ?? 0) > 0 || Boolean(doc.signoff_criterion);
+  const signoffSeen = useRef<string | null>(null);
+  if (signoffNow) signoffSeen.current = doc.id;
+  const hasSignoff = signoffNow || signoffSeen.current === doc.id;
   const isLatest = doc.version === latest;
   const scopeHref = doc.scope.startsWith("epic-")
     ? `/epic/${encodeURIComponent(doc.scope)}`

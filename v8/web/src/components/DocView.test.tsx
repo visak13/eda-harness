@@ -214,3 +214,17 @@ describe("DocView side pane (Astra #36 item 2)", () => {
     expect(pane.compareDocumentPosition(outline) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
+
+// The sign-off pane stays mounted after the ruling removes the criterion from the doc's list
+// (DocView latch; c-a0b2f8ddda "Passed" without a navigation).
+it("keeps the sign-off pane mounted when a refetched doc no longer lists the criterion", async () => {
+  let serve = doc({ signoff_criteria: [{ id: "c-1", text: "Looks right", ticket_id: "s-1", checked_by: "owner" }] } as Partial<DocHtml>);
+  server.use(http.get("/v1/docs/design-1/html", () => okJson(serve)));
+  const { qc } = renderRoute("/x", "/x", <DocView docId="design-1" />);
+  expect(await screen.findByTestId("signoff-pane")).toBeInTheDocument();
+  serve = doc({ signoff_criteria: [] } as Partial<DocHtml>);
+  await qc.invalidateQueries();
+  await waitFor(() => expect(screen.getByTestId("doc-view")).toBeInTheDocument());
+  await new Promise((r) => setTimeout(r, 50));
+  expect(screen.getByTestId("signoff-pane")).toBeInTheDocument();
+});

@@ -10,6 +10,7 @@ test.use({ boardFile: "g3a-fidelity" }); // one fresh board per spec file (fixtu
 // directive, 3px tab underline, 40px steer button), and every destination is axe-clean across the
 // four themes.
 const ACCENTINK = "rgb(135, 63, 56)"; // #873F38
+const ACCENT = "rgb(241, 162, 149)"; // #F1A295 — the owner-words callout rule (Astra #36 item 1)
 const THEMES = ["folio", "dusk", "ember", "folio-hc"] as const;
 let fx: G3aFixture;
 
@@ -45,10 +46,14 @@ test.describe("epic page fidelity @ 1440×900", () => {
     expect(await style(quote, "font-family")).toContain(GEOMETRY.type.h1.family);
     expect(await style(quote, "font-size")).toBe("26px");
 
-    // Directive callout: accentwash ground + 3px accentink left rule.
+    // The 3px accent left rule now belongs to the owner's-words callout (Astra #36 item 1); the
+    // directive ("Latest steer") is the quiet 1px card of human #33 (c-a23e72f460's "3px accentink
+    // rule on the directive" awaits the architect's reword alongside the 22→26px quote).
+    const owner = page.getByTestId("owner-words");
+    expect(await style(owner, "border-left-width")).toBe("3px");
     const directive = page.getByTestId("directive");
-    expect(await style(directive, "border-left-width")).toBe("3px");
-    expect(await style(directive, "border-left-color")).toBe(ACCENTINK);
+    expect(await style(directive, "border-left-width")).toBe("1px");
+    expect(await style(owner, "border-left-color")).toBe(ACCENT); // salmon accent, not accentink
 
     // Active tab underline: a 3px accentink ::after rule.
     const under = await page.evaluate(() => {

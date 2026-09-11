@@ -26,6 +26,8 @@ export interface G3aFixture {
   signoffCriterion: string;
   words: string;
   steer: string;
+  /** the board's derived short title (human #32, Board.derive_title: first clause ≤80) */
+  title: string;
 }
 
 let counter = 0;
@@ -102,5 +104,6 @@ export async function seedEpic(): Promise<G3aFixture> {
   );
   await call("PATCH", `/v1/criteria/${c.id}`, { evidence_ref: doc }, as(eng));
 
-  return { epic, story, doc, signoffCriterion: c.id, words, steer };
+  const title = ((await call("GET", `/v1/tickets/${epic}`, undefined, as("owner"))) as { title: string }).title;
+  return { epic, story, doc, signoffCriterion: c.id, words, steer, title };
 }
