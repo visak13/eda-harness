@@ -116,19 +116,20 @@ export async function startBoard(): Promise<Seeded> {
   };
 
   // A CREDENTIALLED participant for the wrong-token deep-link test (deeplink.spec.ts, design §4.1).
-  // Writing a tokens.json makes ONLY `tokuser` require a matching X-Token; every other seeded handle
-  // (owner/arch/alice/eng) has no secret, so it stays header-only in trusted mode (public=false) and
-  // no other spec is affected. The board reads tokens.json lazily (mtime-cached), so writing it after
-  // the board is healthy is fine. Path = EDP8_HOME/tokens.json (service.tokens_file_path default).
+  // Human #34 (c7c52df): once a tokens.json EXISTS the board is in token mode and refuses every
+  // unminted human — so the harness no longer writes one here (it would 401 every `as=owner` seed
+  // and page across the suite). deeplink.spec.ts writes {tokuser: token} under EDP8_E2E_HOME for
+  // its own describe and removes it after; the board reads the file lazily (mtime-cached) and an
+  // absent file is trusted single-machine mode again.
   const E2E_TOKEN = "e2e-good-token";
   await post(base, "/v1/participants", { type: "human", role: "owner", handle: "tokuser", id: "tokuser" }, { "X-Admin": ADMIN });
-  fs.writeFileSync(path.join(tmpHome, "tokens.json"), JSON.stringify({ tokuser: E2E_TOKEN }), "utf8");
 
   // Expose for the spec + config baseURL (workers spawn after globalSetup, inheriting env).
   process.env.EDP8_E2E_BASE = base;
   process.env.EDP8_E2E_EPIC = epic.id;
   process.env.EDP8_ADMIN_TOKEN = ADMIN;
   process.env.EDP8_E2E_TOKEN = E2E_TOKEN;
+  process.env.EDP8_E2E_HOME = tmpHome;
   return { base, epic: epic.id };
 }
 

@@ -15,7 +15,9 @@
   box-sizing: border-box;
   width: 650px;
   min-width: 0;
-  padding: 24px 32px 32px;
+  /* 22 (not 24) on top: with the Drawer's 73px header + 1px border, meta 12 and a 12 gap the title's
+     line box starts 120px under the drawer top (Astra round 2 measured 128; the cap is ≤120). */
+  padding: 22px 32px 32px;
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -52,6 +54,7 @@
   margin: 0;
   font-size: 12px;
   line-height: 12px;
+  height: 12px; /* the versions disclosure inside must not grow the line */
   color: var(--muted);
 }
 .versionNow {

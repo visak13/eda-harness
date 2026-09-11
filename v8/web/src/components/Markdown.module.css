@@ -21,14 +21,16 @@
   font-size: 24px;
   line-height: 30px;
 }
+/* Astra round 2 (run 20260911T014112Z-176b4a2e): the doc's numbered section headings are its own
+   h2s, demoted to h3 by <Markdown> — they read at 24/30 like the sections bar; h4 is the third tier. */
 .docMd :global(h3) {
-  font-size: 18px;
-  line-height: 24px;
+  font-size: 24px;
+  line-height: 30px;
 }
 .docMd :global(h4) {
-  font-size: 16px;
-  line-height: 22px;
-  font-weight: 600;
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 400;
 }
 .docMd > :global(*:first-child) {
   margin-top: 0;

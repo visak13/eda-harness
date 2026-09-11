@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { expect, test, BASE } from "./fixtures";
 import { seedEpic, type G3aFixture } from "./g3a.seed";
 
@@ -94,6 +96,11 @@ test.describe("legacy paths redirect into Folio with the filter intact", () => {
 // (src/components/IdentityPanel.tsx) instead of silently falling back to `as`.
 test.describe("wrong token + tokens.json → the SPA inline identity panel", () => {
   const TOKEN = () => process.env.EDP8_E2E_TOKEN ?? "e2e-good-token";
+  // Human #34: a tokens.json puts the board in token mode for EVERY human, so it exists only for
+  // this describe (written under the private board's EDP8_HOME, removed after).
+  const tokensPath = () => path.join(process.env.EDP8_E2E_HOME ?? "", "tokens.json");
+  test.beforeAll(() => fs.writeFileSync(tokensPath(), JSON.stringify({ tokuser: TOKEN() }), "utf8"));
+  test.afterAll(() => fs.rmSync(tokensPath(), { force: true }));
 
   test("a wrong token for a credentialled participant shows the identity panel, not the shell", async ({ page }) => {
     await page.goto(`${BASE()}/ui/me?as=tokuser&token=definitely-the-wrong-token`);
