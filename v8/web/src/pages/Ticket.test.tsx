@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import { uploadArtifact } from "../api/endpoints";
 import { screen, within, waitFor, fireEvent } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { useLocation } from "react-router";
@@ -6,6 +7,14 @@ import { server } from "../test/setup";
 import { http, okJson, renderRoute } from "./testUtils";
 import { TicketPage } from "./Ticket";
 import type { TicketPage as TicketPageData } from "../api/types";
+
+// The upload's multipart body cannot be read back in an msw handler under jsdom (request.text() /
+// formData() never resolve), so the ticket the drop uploads against is asserted on the endpoint
+// call itself: a pass-through spy on uploadArtifact.
+vi.mock("../api/endpoints", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../api/endpoints")>();
+  return { ...orig, uploadArtifact: vi.fn(orig.uploadArtifact) };
+});
 
 function ticketPage(over: Partial<TicketPageData> = {}): TicketPageData {
   return {
@@ -279,5 +288,40 @@ describe("TicketPage composer Expand (§4.2, promise #15)", () => {
     expect(within(drawer).getByTestId("composer-text")).toBeInTheDocument();
     expect(within(drawer).getByTestId("composer-expand")).toHaveTextContent("Collapse");
     expect(screen.getByTestId("composer-expanded-note")).toBeInTheDocument();
+  });
+});
+
+// Promise #19: the "Linked documents" card is a drop target that uses the composer's upload path.
+describe("TicketPage linked-documents drop target (promise #19)", () => {
+  it("shows a drag-over state, uploads the dropped file, and lists the artifact", async () => {
+    vi.mocked(uploadArtifact).mockClear();
+    server.use(
+      http.get("/v1/me/people", () => okJson([])), // the page's composer
+      // the multipart body is never read back here: request.text()/formData() hang under jsdom
+      http.post("/v1/artifacts/upload", () => okJson({ id: "art-drop01", form: "image" })),
+    );
+    mount(ticketPage());
+    await screen.findByText("Build the epic page", { selector: "h1" });
+    const card = screen.getByTestId("linked-documents");
+    fireEvent.dragOver(card);
+    expect(within(card).getByTestId("drop-veil")).toBeInTheDocument();
+    fireEvent.dragLeave(card);
+    expect(within(card).queryByTestId("drop-veil")).not.toBeInTheDocument();
+
+    fireEvent.drop(card, { dataTransfer: { files: [new File(["x"], "shot.png", { type: "image/png" })] } });
+    const row = await within(card).findByTestId("attached-artifact");
+    expect(row).toHaveTextContent("art-drop01");
+    expect(within(row).getByTestId("artifact-link")).toHaveAttribute("data-artifact", "art-drop01");
+    expect(vi.mocked(uploadArtifact).mock.calls[0]?.[1]).toBe("s-1");
+  });
+
+  it("a refused upload shows the board's reason on the card", async () => {
+    server.use(http.post("/v1/artifacts/upload", () => HttpResponse.json({ ok: false, hint: "disallowed type" }, { status: 415 })));
+    mount(ticketPage());
+    await screen.findByText("Build the epic page", { selector: "h1" });
+    const card = screen.getByTestId("linked-documents");
+    fireEvent.drop(card, { dataTransfer: { files: [new File(["x"], "a.exe", { type: "application/x-msdownload" })] } });
+    expect(await within(card).findByRole("alert")).toHaveTextContent(/Upload failed/);
+    expect(within(card).queryByTestId("attached-artifact")).not.toBeInTheDocument();
   });
 });

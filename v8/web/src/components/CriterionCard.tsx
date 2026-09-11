@@ -35,9 +35,20 @@ export interface CriterionCardProps {
   canReword?: boolean;
   /** Ruling pane: called after a verdict is recorded so the opener can close + refresh. */
   onRuled?: (verdict: "pass" | "fail") => void;
+  /** Ruling pane: artifact ids staged by the host (a file dropped on the ruling drawer, promise #19).
+   *  Shown as chips under the note and appended to the '[sign-off …]' note as `art-…` tokens. */
+  attachments?: string[];
 }
 
-export function CriterionCard({ criterion, ruling, ticketId, onOpenEvidence, canReword, onRuled }: CriterionCardProps): React.JSX.Element {
+export function CriterionCard({
+  criterion,
+  ruling,
+  ticketId,
+  onOpenEvidence,
+  canReword,
+  onRuled,
+  attachments = [],
+}: CriterionCardProps): React.JSX.Element {
   const qc = useQueryClient();
   const [note, setNote] = useState("");
   // A half-typed ruling note is a draft: the feed holds its refreshes ("N new · refresh") instead
@@ -63,7 +74,7 @@ export function CriterionCard({ criterion, ruling, ticketId, onOpenEvidence, can
         criterion_id: criterion.id,
         verdict,
         evidence_version: resolvedVersion!,
-        note: note.trim(),
+        note: [note.trim(), ...attachments].filter(Boolean).join(" "),
         ticket_id: ticketId,
         stale_ok: ruling!.stale ?? false,
       }),
@@ -158,6 +169,16 @@ export function CriterionCard({ criterion, ruling, ticketId, onOpenEvidence, can
             rows={3}
             data-testid="note"
           />
+          {attachments.length > 0 ? (
+            <div className={styles.attachments} data-testid="note-attachments">
+              Attached with the note:{" "}
+              {attachments.map((id) => (
+                <span key={id} className={styles.attachment} data-testid="staged-artifact">
+                  {id}
+                </span>
+              ))}
+            </div>
+          ) : null}
           {error ? (
             <p className={styles.error} role="alert">
               {error} — your note is kept; try again.

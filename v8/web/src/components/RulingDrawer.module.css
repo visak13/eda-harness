@@ -132,3 +132,31 @@
     border-bottom: 1px solid var(--line);
   }
 }
+
+/* Promise #19: the ruling body is a drop target — a dropped file uploads against the ticket and
+   is staged with the note. Drag-over paints a dashed accent frame + a veil over the body. */
+.dropTarget {
+  position: relative;
+}
+.dragging {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+.veil {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accentwash);
+  color: var(--accentink);
+  font-size: 15px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.uploadError {
+  font-size: 13px;
+  color: var(--accentink);
+  margin: 0;
+}

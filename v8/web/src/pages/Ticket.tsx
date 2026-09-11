@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { Link, useLocation, useParams, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { getTicketPage } from "../api/endpoints";
-import type { MessageView, TicketStatus } from "../api/types";
+import type { MessageView, TicketStatus, UploadedArtifact } from "../api/types";
 import { StatusChip } from "../components/StatusChip";
 import { ProcessStrip } from "../components/ProcessStrip";
 import { StatusControl } from "../components/StatusControl";
@@ -21,7 +21,8 @@ import { copyProps } from "../copy/pages";
 import { useDocDrawer } from "../components/DocDrawer";
 import { identity } from "../auth/identity";
 import ui from "../components/ui.module.css";
-import { MessageText } from "../components/ArtifactLink";
+import { ArtifactLink, MessageText } from "../components/ArtifactLink";
+import { useDropUpload } from "../components/useDropUpload";
 import { Clamp } from "../components/Clamp";
 import styles from "./Ticket.module.css";
 
@@ -78,6 +79,13 @@ export function TicketPage(): React.JSX.Element {
       ),
     [setParams],
   );
+
+  // Promise #19: the "Linked documents" card is a drop target. A dropped file goes through the
+  // composer's upload path (POST /v1/artifacts/upload against this ticket) and the new artifact is
+  // listed right there under "Attached files", openable through the authenticated ArtifactLink.
+  const [attached, setAttached] = useState<UploadedArtifact[]>([]);
+  const onAttached = useCallback((art: UploadedArtifact) => setAttached((a) => [...a, art]), []);
+  const docsDrop = useDropUpload(id, onAttached);
 
   // A deep-linked message (#m-…) is always fetched, even outside the newest-100 window (round 2 #5/#13).
   const { hash } = useLocation();
@@ -281,7 +289,17 @@ export function TicketPage(): React.JSX.Element {
             <AskRoleControl ticketId={id} />
           </section>
 
-          <section className={ui.card} {...copyProps("ticket", "documents")}>
+          <section
+            className={`${ui.card} ${styles.dropTarget} ${docsDrop.dragOver ? styles.dragging : ""}`}
+            data-testid="linked-documents"
+            {...copyProps("ticket", "documents")}
+            {...docsDrop.dropProps}
+          >
+            {docsDrop.dragOver ? (
+              <div className={styles.dropVeil} data-testid="drop-veil">
+                Drop to attach to {ticket.id}
+              </div>
+            ) : null}
             <div className={ui.sectionLabel}>Linked documents ({docs.length})</div>
             {docs.length === 0 ? (
               <p className={ui.empty}>No documents linked.</p>
@@ -297,6 +315,24 @@ export function TicketPage(): React.JSX.Element {
                 ))}
               </ul>
             )}
+            {attached.length > 0 ? (
+              <>
+                <div className={`${ui.sectionLabel} ${styles.dropHint}`}>Attached files ({attached.length})</div>
+                <ul className={styles.attachedList} data-testid="attached-artifacts">
+                  {attached.map((a) => (
+                    <li key={a.id} data-testid="attached-artifact">
+                      <span className={ui.tag}>{a.form}</span> <ArtifactLink id={a.id} />
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+            {docsDrop.error ? (
+              <p className={styles.uploadError} role="alert">
+                Upload failed: {docsDrop.error}.
+              </p>
+            ) : null}
+            <p className={styles.dropHint}>Drop a file here to attach it to this ticket.</p>
           </section>
 
           <section className={ui.card}>

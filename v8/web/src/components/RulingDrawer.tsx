@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import type { SignoffRow } from "../api/types";
+import type { SignoffRow, UploadedArtifact } from "../api/types";
 import { getDocHtml } from "../api/endpoints";
 import { Drawer } from "./Drawer";
 import { Markdown } from "./Markdown";
 import { CriterionCard } from "./CriterionCard";
+import { useDropUpload } from "./useDropUpload";
 import { identity } from "../auth/identity";
 import styles from "./RulingDrawer.module.css";
 
@@ -31,9 +32,16 @@ export function RulingDrawer({ signoff, kOfN, onClose, onRuled, returnFocusTo }:
   // "Rule on vN anyway" is an acknowledgement of ONE document's newer version — it never carries
   // over to the next sign-off (adversary finding #3, 2026-09-10).
   const signoffKey = signoff?.criterion.id ?? null;
+  // Promise #19: a file dropped anywhere on the ruling body uploads against the sign-off's ticket
+  // (the composer's one upload path) and is staged with the ruling note — never carried over to
+  // the next sign-off.
+  const [staged, setStaged] = useState<string[]>([]);
   useEffect(() => {
     setStaleAck(false);
+    setStaged([]);
   }, [signoffKey]);
+  const onUploaded = useCallback((art: UploadedArtifact) => setStaged((s) => [...s, art.id]), []);
+  const drop = useDropUpload(signoff?.ticket.id ?? "", onUploaded);
   const frozen = signoff?.doc?.version ?? 0;
 
   // Freeze: fetch exactly the version this ruling opened. `versions` still lists ALL versions, so
@@ -60,7 +68,16 @@ export function RulingDrawer({ signoff, kOfN, onClose, onRuled, returnFocusTo }:
   return (
     <Drawer open={Boolean(signoff)} onClose={onClose} title={title} returnFocusTo={returnFocusTo}>
       {signoff ? (
-        <div className={styles.grid} data-testid="ruling-grid">
+        <div
+          className={`${styles.grid} ${styles.dropTarget} ${drop.dragOver ? styles.dragging : ""}`}
+          data-testid="ruling-grid"
+          {...drop.dropProps}
+        >
+          {drop.dragOver ? (
+            <div className={styles.veil} data-testid="drop-veil">
+              Drop to attach to your ruling
+            </div>
+          ) : null}
           <div className={styles.evidence} data-testid="ruling-evidence">
             <div className={styles.evLabel}>
               EVIDENCE · {signoff.doc?.doc_type?.toUpperCase() ?? "REPORT"}
@@ -96,9 +113,15 @@ export function RulingDrawer({ signoff, kOfN, onClose, onRuled, returnFocusTo }:
                 ) : null}
               </div>
             ) : null}
+            {drop.error ? (
+              <p className={styles.uploadError} role="alert">
+                Upload failed: {drop.error}. Your note is kept.
+              </p>
+            ) : null}
             <CriterionCard
               criterion={signoff.criterion}
               ticketId={signoff.ticket.id}
+              attachments={staged}
               ruling={canRule ? { evidenceVersion: frozen, stale: newer } : undefined}
               onRuled={() => {
                 onRuled?.();

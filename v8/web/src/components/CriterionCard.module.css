@@ -151,3 +151,21 @@
   color: var(--muted);
   margin: 0;
 }
+
+/* Promise #19: artifacts staged by a drop on the ruling drawer ride along with the note. */
+.attachments {
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.attachment {
+  font: 12px/18px Consolas, monospace;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--accentwash);
+  color: var(--accentink);
+}

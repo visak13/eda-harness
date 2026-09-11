@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { MessageSent, PersonRow } from "../api/types";
+import type { MessageSent, PersonRow, UploadedArtifact } from "../api/types";
 import type { MessageKind } from "../api/types";
-import { getPeople, resolveMessage, sendMessage, uploadArtifact } from "../api/endpoints";
+import { getPeople, resolveMessage, sendMessage } from "../api/endpoints";
 import { useDirtyGuard } from "../live/useDraftGuard";
+import { useDropUpload } from "./useDropUpload";
 import { useMentions } from "./useMentions";
 import { mentionedHandles } from "./mentions";
 import styles from "./Composer.module.css";
@@ -142,8 +143,6 @@ export function Composer({
   const [toPicked, setToPicked] = useState<boolean>(toProp != null);
   const [artifacts, setArtifacts] = useState<string[]>(initialArtifacts ?? []);
   useEffect(() => onArtifactsChange?.(artifacts), [artifacts, onArtifactsChange]);
-  const [dragOver, setDragOver] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const helpBtnRef = useRef<HTMLButtonElement>(null);
@@ -246,20 +245,15 @@ export function Composer({
     // plain Enter falls through → a newline (design §4.2: Enter never sends)
   }
 
-  async function ingestFiles(files: FileList | File[]) {
-    setUploadError(null);
-    for (const file of Array.from(files)) {
-      try {
-        const art = await uploadArtifact(file, ticketId);
-        setArtifacts((a) => [...a, art.id]);
-        // The artifact id is already `art-…`; insert it verbatim as the token the message parser
-        // resolves to a thumbnail/chip (design §18.1). Do NOT prefix another "art-".
-        setText((t) => `${t}${t && !t.endsWith(" ") ? " " : ""}${art.id} `);
-      } catch (err) {
-        setUploadError(err instanceof Error ? err.message : String(err)); // draft is left intact
-      }
-    }
-  }
+  // Drop / paste attach through the shared upload path (promise #19: the Ticket page's documents
+  // card and the ruling drawer attach the same way). A refused upload leaves the draft intact.
+  const onUploaded = useCallback((art: UploadedArtifact) => {
+    setArtifacts((a) => [...a, art.id]);
+    // The artifact id is already `art-…`; insert it verbatim as the token the message parser
+    // resolves to a thumbnail/chip (design §18.1). Do NOT prefix another "art-".
+    setText((t) => `${t}${t && !t.endsWith(" ") ? " " : ""}${art.id} `);
+  }, []);
+  const { dragOver, error: uploadError, ingestFiles, dropProps } = useDropUpload(ticketId, onUploaded);
 
   const kindFixed = kinds.length <= 1;
   const glossFor = (v: string) => (ROLE_GLOSS[v] ? ` — ${ROLE_GLOSS[v]}` : "");
@@ -268,16 +262,7 @@ export function Composer({
     <section
       className={`${styles.composer} ${dragOver ? styles.dragging : ""}`}
       data-testid="composer"
-      onDragOver={(e) => {
-        e.preventDefault();
-        setDragOver(true);
-      }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={(e) => {
-        e.preventDefault();
-        setDragOver(false);
-        if (e.dataTransfer.files.length) void ingestFiles(e.dataTransfer.files);
-      }}
+      {...dropProps}
     >
       {dragOver ? <div className={styles.veil} data-testid="drop-veil">Drop to attach</div> : null}
 
