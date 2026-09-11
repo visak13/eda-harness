@@ -265,17 +265,23 @@
   padding: 0;
 }
 .helpText {
-  white-space: nowrap;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
 }
 .q {
-  width: 34px;
-  height: 34px;
+  width: 40px;
+  height: 40px;
   display: grid;
   place-items: center;
   border: 1px solid var(--line);
   border-radius: 6px;
-  color: var(--ink);
   font-weight: 600;
+  color: var(--ink);
 }
 .helpBtn:hover .q {
   background: var(--secondary);
@@ -285,17 +291,7 @@
   outline-offset: 3px;
   border-radius: 6px;
 }
-@media (max-width: 1023px) {
-  .helpText {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-  }
-}
+
 
 /* The framing landmark is a real sentence for screen readers and tests; the visible copy lives in
    each page's heading block, so this one is clipped to avoid a duplicate line on screen. */
@@ -313,15 +309,19 @@
 .btnPrimary {
   height: 40px;
   padding: 0 16px;
-  border: 1px solid var(--accent);
+  border: 1px solid var(--strongline);
   border-radius: 6px;
-  background: var(--accent);
-  color: var(--buttonink);
+  background: var(--panel);
+  color: var(--ink);
   font-size: 13px;
   font-weight: 600;
   display: inline-flex;
   align-items: center;
   gap: 10px;
+}
+
+.btnPrimary:hover {
+  background: var(--secondary);
 }
 
 .btnPrimary:focus-visible {

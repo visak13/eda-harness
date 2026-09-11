@@ -257,6 +257,7 @@ function AppShellChrome(): React.JSX.Element {
             className={styles.helpBtn}
             type="button"
             data-testid="glossary-open"
+            aria-label="What am I looking at?"
             aria-haspopup="dialog"
             aria-expanded={helpOpen}
             onClick={() => setHelpOpen((o) => !o)}
