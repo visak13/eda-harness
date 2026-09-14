@@ -6,7 +6,13 @@
  * Prints one JSON line per check: {"check":..., "ok":..., ...}. Exit 1 if any check fails.
  */
 import { pathToFileURL } from "node:url";
-import { resolve } from "node:path";
+import { resolve, join } from "node:path";
+import { existsSync, readFileSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { spawn, execFileSync } from "node:child_process";
+process.env.EDP8_LANE_DIR = mkdtempSync(join(tmpdir(), "edp8-lane-"));
+process.env.EDP8_LANE_REPORT = "0";
+process.env.EDP8_LANE_WAIT_S = "20";
 
 type Handler = (e: any, ctx: any) => Promise<any>;
 const tools = new Map<string, any>();
@@ -113,6 +119,32 @@ idle = true;
 await emit("agent_settled", { type: "agent_settled" });
 await sleep(200);
 check("cron deferred fire at settle, bare prompt", userMessages.some((m) => m.content === "DUE-PROBE"), { msgs: userMessages.map((m) => m.content.slice(0, 40)) });
+
+
+// ---- S8 admission lane: shared with v8/src/edp8/admission.py (cross-language contention)
+const LANE = process.env.EDP8_LANE_DIR!;
+const LANE_PY = LANE.split(String.fromCharCode(92)).join(String.fromCharCode(92, 92));
+const PY = process.platform === "win32" ? resolve(process.cwd(), ".venv/Scripts/python.exe") : resolve(process.cwd(), ".venv/bin/python");
+const pyLane = (code: string, timeoutMs = 15000) => execFileSync(PY, ["-c", code], { env: { ...process.env, PYTHONPATH: resolve(process.cwd(), "src") }, timeout: timeoutMs }).toString().trim();
+await emit("before_provider_request", { type: "before_provider_request", payload: {} });
+check("lane held during provider request", existsSync(join(LANE, "lane.lock", "holder.json")) && JSON.parse(readFileSync(join(LANE, "lane.lock", "holder.json"), "utf8")).holder.startsWith("seat:"));
+check("python consult() cannot enter while the seat holds the lane", pyLane(`from edp8.admission import Lane;print(Lane(r'${LANE_PY}').acquire('consult:test',max_wait_s=0.6))`) === "None");
+await emit("after_provider_response", { type: "after_provider_response", status: 200, headers: {} });
+check("lane released after provider response", !existsSync(join(LANE, "lane.lock")));
+// python holds → the seat's request waits for the release
+const holder = spawn(PY, ["-c", `import time;from edp8.admission import Lane;l=Lane(r'${LANE_PY}');x=l.acquire('consult:hold',max_wait_s=5);print('got',flush=True);time.sleep(1.5);x.release();print('rel',time.time(),flush=True)`], { env: { ...process.env, PYTHONPATH: resolve(process.cwd(), "src") } });
+let holderOut = "";
+holder.stdout.on("data", (d) => (holderOut += d.toString()));
+await sleep(900);
+const t0 = Date.now();
+await emit("before_provider_request", { type: "before_provider_request", payload: {} });
+const waited = Date.now() - t0;
+check("seat waits behind a python consult holder", waited >= 400 && existsSync(join(LANE, "lane.lock")), { waited_ms: waited, holder: holderOut.trim().split("\n")[0] });
+await emit("after_provider_response", { type: "after_provider_response", status: 429, headers: { "retry-after": "7" } });
+const q = JSON.parse(readFileSync(join(LANE, "quota.json"), "utf8"));
+check("429 writes quota.json in consult.py's format", typeof q.blocked_until === "string" && Date.parse(q.blocked_until) - Date.now() > 3000 && Date.parse(q.blocked_until) - Date.now() <= 8000 && q.evidence.includes("HTTP 429"), q);
+check("python consult() sees the seat's quota block", pyLane(`import os;os.environ['EDP8_SOL_LOG_DIR']=r'${LANE_PY}';from edp8 import consult;print(bool(consult.quota_block()))`) === "True");
+check("lane released after 429", !existsSync(join(LANE, "lane.lock")));
 
 const bad = checks.filter((c) => !c.ok);
 console.log(JSON.stringify({ summary: `${checks.length - bad.length}/${checks.length} ok`, failed: bad.map((b) => b.check) }));

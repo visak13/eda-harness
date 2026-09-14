@@ -10,7 +10,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Type } from "typebox";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, appendFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, appendFileSync, writeFileSync, readdirSync, statSync, rmSync, utimesSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 // ---------------------------------------------------------------- config
@@ -450,6 +450,121 @@ export default async function edp8(pi: ExtensionAPI) {
 	} catch (e) {
 		log(`mcp bridge FAILED: ${(e as Error).message}`);
 	}
+
+	// ------------------------------------------------------------ S8 shared inference admission lane (v8/src/edp8/admission.py, same protocol)
+	// One OpenAI login is shared with consult(). The seat holds the lane PER PROVIDER REQUEST (never for
+	// its lifetime): mkdir-atomic lane.lock with holder.json + mtime TTL, FIFO tickets in lane.queue
+	// ordered by "<prio>-<ts>-<id>". A quota/rate-limit response writes quota.json in consult.py's
+	// format and posts record_status(blocked) with the reset time through the MCP bridge.
+	const LANE_DIR = process.env.EDP8_LANE_DIR ?? resolve(process.env.EDP8_HOME ?? CWD, ".sol");
+	const LANE_TTL_S = Number(process.env.EDP8_LANE_TTL_S ?? 900);
+	const LANE_WAIT_S = Number(process.env.EDP8_LANE_WAIT_S ?? 900);
+	const LANE_HOLDER = `seat:${process.env.EDP_HANDLE ?? "pi"}`;
+	const laneQueue = join(LANE_DIR, "lane.queue");
+	const laneLock = join(LANE_DIR, "lane.lock");
+	let laneHeld = false;
+	let laneTouch: NodeJS.Timeout | undefined;
+
+	function laneWaiting(): string[] {
+		try {
+			return readdirSync(laneQueue).filter((n) => n.endsWith(".json")).sort();
+		} catch {
+			return [];
+		}
+	}
+	function laneStale(): boolean {
+		try {
+			return Date.now() - statSync(laneLock).mtimeMs > LANE_TTL_S * 1000;
+		} catch {
+			return false;
+		}
+	}
+	async function laneAcquire(priority = 1): Promise<boolean> {
+		mkdirSync(laneQueue, { recursive: true });
+		const ticket = join(laneQueue, `${priority}-${String(Date.now()).padStart(13, "0")}-${taskId().slice(0, 6)}.json`);
+		writeFileSync(ticket, JSON.stringify({ holder: LANE_HOLDER, priority, queued_at: new Date().toISOString() }));
+		const deadline = Date.now() + LANE_WAIT_S * 1000;
+		try {
+			for (;;) {
+				const first = laneWaiting()[0];
+				if (first === ticket.split(/[\\/]/).pop()) {
+					if (existsSync(laneLock) && laneStale()) rmSync(laneLock, { recursive: true, force: true });
+					try {
+						mkdirSync(laneLock);
+						writeFileSync(join(laneLock, "holder.json"), JSON.stringify({ holder: LANE_HOLDER, priority, since: new Date().toISOString(), pid: process.pid }));
+						laneHeld = true;
+						laneTouch = setInterval(() => {
+							try {
+								const t = new Date();
+								utimesSync(laneLock, t, t);
+							} catch {}
+						}, 30_000);
+						laneTouch.unref();
+						return true;
+					} catch {
+						/* held by someone else */
+					}
+				}
+				if (Date.now() >= deadline) return false;
+				await sleep(250);
+			}
+		} finally {
+			try {
+				rmSync(ticket, { force: true });
+			} catch {}
+		}
+	}
+	function laneRelease() {
+		if (!laneHeld) return;
+		laneHeld = false;
+		if (laneTouch) clearInterval(laneTouch);
+		try {
+			const info = JSON.parse(readFileSync(join(laneLock, "holder.json"), "utf8"));
+			if (info.holder !== LANE_HOLDER) return; // reclaimed as stale by someone else — never remove theirs
+		} catch {}
+		rmSync(laneLock, { recursive: true, force: true });
+	}
+	function quotaBlock(): { blocked_until: string } | null {
+		try {
+			const d = JSON.parse(readFileSync(join(LANE_DIR, "quota.json"), "utf8"));
+			return d.blocked_until && Date.parse(d.blocked_until) > Date.now() ? d : null;
+		} catch {
+			return null;
+		}
+	}
+	async function noteQuota(status: number, headers: Record<string, string>) {
+		const backoff = Number(process.env.EDP8_CONSULT_QUOTA_BACKOFF_S ?? 1800);
+		const retryAfter = Number(headers["retry-after"] ?? headers["Retry-After"] ?? 0);
+		const untilMs = Date.now() + (retryAfter > 0 ? retryAfter : backoff) * 1000;
+		const until = new Date(untilMs).toISOString().replace(/\.\d{3}Z$/, "Z");
+		const rec = { blocked_until: until, evidence: `HTTP ${status} from the provider (seat ${LANE_HOLDER})`, try_again: retryAfter > 0 ? `${retryAfter}s` : null, seen_at: new Date().toISOString().replace(/\.\d{3}Z$/, "Z") };
+		try {
+			mkdirSync(LANE_DIR, { recursive: true });
+			writeFileSync(join(LANE_DIR, "quota.json"), JSON.stringify(rec, null, 2));
+		} catch {}
+		log(`quota: ${JSON.stringify(rec)}`);
+		// the HARNESS publishes the block, not the capped model [Astra, design §7 S8]
+		if (process.env.EDP8_LANE_REPORT === "0") return; // tests: no board post
+		try {
+			await mcp("tools/call", { name: "record_status", arguments: { status: "blocked", text: `inference capped (HTTP ${status}); seat resumes after ${until}` } }, 999_000 + status);
+		} catch (e) {
+			log(`record_status(blocked) failed: ${(e as Error).message}`);
+		}
+	}
+	pi.on("before_provider_request", async () => {
+		const q = quotaBlock();
+		if (q) log(`provider request while quota-blocked until ${q.blocked_until}`);
+		const ok = await laneAcquire(1);
+		log(ok ? "lane acquired" : "lane NOT acquired (bounded wait elapsed) — request proceeds unguarded");
+	});
+	pi.on("after_provider_response", async (event) => {
+		laneRelease();
+		if (event.status === 429 || event.status === 402) await noteQuota(event.status, event.headers ?? {});
+	});
+	pi.on("agent_end", async () => laneRelease());
+	pi.on("session_shutdown", async () => laneRelease());
+	const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+	(pi as any).__edp8_test = { laneAcquire, laneRelease, quotaBlock, noteQuota, LANE_DIR };
 
 	pi.registerCommand("edp8", {
 		description: "edp8 seat status: monitors, cron jobs, bridged tools",

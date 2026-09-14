@@ -1043,6 +1043,11 @@ def lane_status() -> dict[str, Any]:
     with _LANE_STATE_LOCK:
         st = dict(_LANE_STATE)
     st["quota_block"] = quota_block()
+    try:
+        from edp8.admission import Lane, lane_dir_from_env
+        st["file_lane"] = Lane(lane_dir_from_env(_log_dir())).status()
+    except Exception:  # noqa: BLE001 — status must never fail on a lane read
+        st["file_lane"] = None
     st["free_mb"] = free_mb()
     return st
 
@@ -1221,6 +1226,19 @@ def consult(purpose: Purpose, question: str, context: str = "",
     _LANE.acquire()
     with _LANE_STATE_LOCK:
         _LANE_STATE["queued"] -= 1
+    # S8 (epic-6a8a6020fd): the login is shared with resident non-Claude seats, which acquire the
+    # same FILE lane per provider request; the thread lock above keeps this process FIFO, the file
+    # lane makes it fleet-wide. Bounded wait; a full lane is an honest error, not a hang.
+    from edp8.admission import PRIO_HUMAN, Lane, lane_dir_from_env
+    lease = Lane(lane_dir_from_env(_log_dir())).acquire(f"consult:{purpose}", priority=PRIO_HUMAN,
+                                                       max_wait_s=float(os.environ.get("EDP8_LANE_WAIT_S", "900")))
+    if lease is None:
+        with _LANE_STATE_LOCK:
+            _LANE_STATE["entered"] -= 1
+        _LANE.release()
+        return {"ok": False, "error": {"code": "lane_busy",
+                                       "message": "the inference lane is held by another seat/consult beyond EDP8_LANE_WAIT_S"},
+                "hint": "preflight() shows the holder; retry later"}
     try:
         return _consult_locked(purpose, question, context=context, files=files, timeout_s=timeout_s,
                                write_dir=write_dir, images=images, thread_id=thread_id,
@@ -1228,6 +1246,7 @@ def consult(purpose: Purpose, question: str, context: str = "",
                                img_records=img_records, codex=codex, queued_behind=queued_behind,
                                on_run_id=on_run_id)
     finally:
+        lease.release()
         with _LANE_STATE_LOCK:
             _LANE_STATE["in_flight"] = None
             _LANE_STATE["started_at"] = None
