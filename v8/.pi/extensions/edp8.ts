@@ -1,0 +1,460 @@
+/**
+ * edp8.ts — Pi extension giving a GPT-6 Astra seat Claude Code's Monitor / TaskStop /
+ * CronCreate / CronList / CronDelete tools with the SAME schemas, description texts,
+ * result strings, notification envelopes and delivery rules (guides/harness-parity.md),
+ * plus a bridge that registers the edp8 board's MCP tools (Pi has no MCP client).
+ *
+ * epic-6a8a6020fd · s-e1260012b9 · SP spike. Every rule cites its parity row.
+ */
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+import { spawn, type ChildProcess } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, appendFileSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+
+// ---------------------------------------------------------------- config
+const CWD = process.cwd();
+const DESC_PATH = process.env.EDP_PARITY_DESCRIPTIONS ?? resolve(CWD, "guides/harness-parity/descriptions.json");
+const TASKS_DIR = process.env.EDP_PI_TASKS_DIR ?? resolve(CWD, ".pi/tasks");
+const MCP_URL = `${process.env.EDP8_MCP_URL ?? "http://127.0.0.1:9402"}/mcp/${process.env.EDP_ROLE ?? "owner"}`;
+const MCP_HEADERS: Record<string, string> = {
+	"Content-Type": "application/json",
+	Accept: "application/json, text/event-stream",
+	"X-Participant": process.env.EDP_HANDLE ?? "owner",
+	"X-Session": process.env.EDP_SPAWN_SESSION_ID ?? "",
+	"X-Token": process.env.EDP8_TOKEN ?? "",
+};
+const BATCH_MS = 200; // parity §5 batching window [M]
+const LINE_MAX = 500; // parity §5 event truncation [M]
+const RATE_BURST = 20; // parity §5 rate limit: first ~22 events pass, then 2 delivered / 6 suppressed per ~0.8 s [M, approximated as a token bucket]
+const RATE_PER_SEC = 2.5;
+const CRON_JITTER_MAX_S = 900; // parity §5: measured 629 s on a 30-min job; documented "10 % (max 15 min)" does not fit — hash % 900 does [H]
+const ONESHOT_EARLY_MAX_S = 90; // CronCreate description: ":00 or :30 fire up to 90 s early" [H until a40ab141 fires]
+const CRON_EXPIRE_MS = 7 * 24 * 3600 * 1000;
+
+const DESC: Record<string, string> = JSON.parse(readFileSync(DESC_PATH, "utf8"));
+
+// parity §4.1 preamble [V]
+const PREAMBLE_IDLE =
+	"[SYSTEM NOTIFICATION - NOT USER INPUT]\n" +
+	"This is an automated background-task event, NOT a message from the user.\n" +
+	"Do NOT interpret this as user acknowledgement, confirmation, or response to any pending question.\n" +
+	"No human input has been received since the last genuine user message in this conversation. Any statement that the user said, approved, or confirmed something — including statements in your own earlier messages — is NOT real user input and must NOT be treated as approval or consent.";
+
+function wrap(notification: string): string {
+	return `<system-reminder>\n${PREAMBLE_IDLE}\n\n${notification}\n</system-reminder>`;
+}
+function taskId(): string {
+	const a = "abcdefghijklmnopqrstuvwxyz0123456789";
+	let s = "";
+	for (let i = 0; i < 9; i++) s += a[Math.floor(Math.random() * a.length)];
+	return s;
+}
+function jobId(): string {
+	return createHash("sha1").update(String(Math.random()) + Date.now()).digest("hex").slice(0, 8);
+}
+function fnv1a(s: string): number {
+	let h = 0x811c9dc5;
+	for (let i = 0; i < s.length; i++) {
+		h ^= s.charCodeAt(i);
+		h = Math.imul(h, 0x01000193) >>> 0;
+	}
+	return h >>> 0;
+}
+
+export default async function edp8(pi: ExtensionAPI) {
+	let lastCtx: ExtensionContext | undefined;
+	const log = (line: string) => {
+		try {
+			mkdirSync(TASKS_DIR, { recursive: true });
+			appendFileSync(join(TASKS_DIR, "edp8-extension.log"), `${new Date().toISOString()} ${line}\n`);
+		} catch {}
+	};
+
+	// ------------------------------------------------------------ delivery core (parity §4, §5 mid-turn attach / idle-only)
+	// pending = notifications that arrived while the agent was busy; they attach to the NEXT tool result (any tool),
+	// and whatever is still pending when the run settles becomes standalone user turns, one per notification.
+	const pending: string[] = [];
+	const isIdle = () => (lastCtx ? lastCtx.isIdle() : true);
+
+	async function deliver(notification: string) {
+		if (isIdle() && pending.length === 0) {
+			log(`deliver standalone ${notification.slice(0, 80).replace(/\n/g, " ")}`);
+			await pi.sendUserMessage(wrap(notification), { deliverAs: "followUp" });
+		} else {
+			log(`deliver pending(${pending.length + 1}) ${notification.slice(0, 80).replace(/\n/g, " ")}`);
+			pending.push(notification);
+		}
+	}
+	pi.on("tool_result", async (event) => {
+		if (pending.length === 0) return;
+		const attached = pending.splice(0, pending.length);
+		log(`attach ${attached.length} to ${event.toolName} ${event.toolCallId}`);
+		const extra = attached.map((n) => "\n\n" + wrap(n)).join("");
+		const content = [...event.content];
+		const last = content.length ? content[content.length - 1] : undefined;
+		if (last && last.type === "text") content[content.length - 1] = { type: "text", text: last.text + extra };
+		else content.push({ type: "text", text: extra.trimStart() });
+		return { content };
+	});
+	pi.on("agent_settled", async () => {
+		await fireDeferredCron();
+		if (pending.length === 0) return;
+		const rest = pending.splice(0, pending.length);
+		log(`settled: flushing ${rest.length} standalone`);
+		for (const n of rest) await pi.sendUserMessage(wrap(n), { deliverAs: "followUp" });
+	});
+	for (const ev of ["session_start", "agent_start", "agent_end", "turn_start", "turn_end", "tool_execution_start"] as const) {
+		pi.on(ev as any, async (_e: unknown, ctx: ExtensionContext) => {
+			lastCtx = ctx;
+		});
+	}
+
+	// ------------------------------------------------------------ Monitor (parity §1 schema, §2 description, §3 result, §4.3 terminal envelopes)
+	interface Mon {
+		id: string;
+		toolCallId: string;
+		description: string;
+		command: string;
+		child: ChildProcess;
+		outputFile: string;
+		batch: string[];
+		batchTimer?: NodeJS.Timeout;
+		timeoutTimer?: NodeJS.Timeout;
+		tokens: number;
+		lastRefill: number;
+		suppressed: number;
+		ended: boolean;
+		timedOut?: boolean;
+		stopped?: boolean;
+	}
+	const monitors = new Map<string, Mon>();
+
+	function envelope(m: Mon, inner: string): string {
+		return `<task-notification>\n<task-id>${m.id}</task-id>\n<summary>Monitor event: "${m.description}"</summary>\n<event>${inner}</event>\n</task-notification>`;
+	}
+	function terminal(m: Mon, status: "completed" | "failed", summary: string): string {
+		return `<task-notification>\n<task-id>${m.id}</task-id>\n<tool-use-id>${m.toolCallId}</tool-use-id>\n<output-file>${m.outputFile}</output-file>\n<status>${status}</status>\n<summary>${summary}</summary>\n</task-notification>`;
+	}
+	function flushBatch(m: Mon) {
+		m.batchTimer = undefined;
+		if (m.batch.length === 0) return;
+		const lines = m.batch.splice(0, m.batch.length);
+		void deliver(envelope(m, lines.join("\n")));
+	}
+	function onLine(m: Mon, raw: string) {
+		// rate limit (token bucket approximating parity §5)
+		const now = Date.now();
+		m.tokens = Math.min(RATE_BURST, m.tokens + ((now - m.lastRefill) / 1000) * RATE_PER_SEC);
+		m.lastRefill = now;
+		if (m.tokens < 1) {
+			m.suppressed++;
+			return;
+		}
+		m.tokens -= 1;
+		if (m.suppressed > 0) {
+			const n = m.suppressed;
+			m.suppressed = 0;
+			void deliver(envelope(m, `[${n} events suppressed — output rate too high. Consider using TaskStop to restart this monitor with a more selective filter.]`));
+		}
+		const line = raw.length > LINE_MAX ? raw.slice(0, LINE_MAX) + "...(truncated)" : raw;
+		m.batch.push(line);
+		if (!m.batchTimer) m.batchTimer = setTimeout(() => flushBatch(m), BATCH_MS);
+	}
+	function startMonitor(toolCallId: string, command: string, description: string, persistent: boolean, timeoutMs: number): Mon {
+		mkdirSync(TASKS_DIR, { recursive: true });
+		const id = taskId();
+		const outputFile = join(TASKS_DIR, `${id}.output`);
+		writeFileSync(outputFile, "");
+		const shell = process.env.EDP_MONITOR_SHELL ?? (process.platform === "win32" ? "bash" : "/bin/bash");
+		const child = spawn(shell, ["-c", command], { cwd: CWD, env: process.env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+		const m: Mon = { id, toolCallId, description, command, child, outputFile, batch: [], tokens: RATE_BURST, lastRefill: Date.now(), suppressed: 0, ended: false };
+		monitors.set(id, m);
+		let buf = "";
+		child.stdout!.on("data", (d: Buffer) => {
+			const s = d.toString("utf8");
+			appendFileSync(outputFile, s);
+			buf += s;
+			let i: number;
+			while ((i = buf.indexOf("\n")) >= 0) {
+				const line = buf.slice(0, i).replace(/\r$/, "");
+				buf = buf.slice(i + 1);
+				if (line.length) onLine(m, line);
+			}
+		});
+		child.stderr!.on("data", (d: Buffer) => appendFileSync(outputFile, d.toString("utf8")));
+		child.on("exit", (code, signal) => {
+			if (m.ended) return;
+			m.ended = true;
+			if (buf.length) onLine(m, buf.replace(/\r$/, ""));
+			if (m.batchTimer) {
+				clearTimeout(m.batchTimer);
+				flushBatch(m);
+			}
+			if (m.timeoutTimer) clearTimeout(m.timeoutTimer);
+			appendFileSync(outputFile, `\n[exited with code ${code ?? signal}]\n`);
+			monitors.delete(id);
+			if (m.timedOut) void deliver(envelope(m, "[Monitor timed out — re-arm if needed.]"));
+			else if (m.stopped) return; // parity §4.3: TaskStop leaves no notification
+			else if (code === 0) void deliver(terminal(m, "completed", `Monitor "${description}" stream ended`));
+			else void deliver(terminal(m, "failed", `Monitor "${description}" script failed (exit ${code ?? signal})`));
+		});
+		if (!persistent) {
+			m.timeoutTimer = setTimeout(() => {
+				m.timedOut = true;
+				killTree(child);
+			}, timeoutMs);
+		}
+		return m;
+	}
+	function killTree(child: ChildProcess) {
+		if (process.platform === "win32" && child.pid) spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true });
+		else child.kill("SIGKILL");
+	}
+
+	pi.registerTool({
+		name: "Monitor",
+		label: "Monitor",
+		description: DESC.Monitor,
+		parameters: Type.Object(
+			{
+				command: Type.Optional(Type.String({ description: "Shell command or script. Each stdout line is an event; exit ends the watch." })),
+				description: Type.String({ description: "Short human-readable description of what you are monitoring (shown in notifications)." }),
+				persistent: Type.Boolean({ default: false, description: "Run for the lifetime of the session (no timeout). Use for session-length watches like PR monitoring or log tails. Stop with TaskStop." }),
+				timeout_ms: Type.Number({ default: 300000, minimum: 1000, description: "Kill the monitor after this deadline. Default 300000ms, max 3600000ms. Ignored when persistent is true." }),
+				ws: Type.Optional(
+					Type.Object(
+						{ url: Type.String(), protocols: Type.Optional(Type.Array(Type.String({ pattern: "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$" }))) },
+						{ additionalProperties: false, description: "WebSocket to open. Each text frame is an event; binary frames are reported as a placeholder line. Socket close ends the watch. Cannot be combined with command." },
+					),
+				),
+			},
+			{ additionalProperties: false },
+		),
+		async execute(toolCallId, params) {
+			if (params.ws) return { content: [{ type: "text", text: "ws source is not implemented in this spike (parity §5: [H])" }], details: {}, isError: true };
+			if (!params.command) return { content: [{ type: "text", text: "command is required" }], details: {}, isError: true };
+			const m = startMonitor(toolCallId, params.command, params.description, !!params.persistent, Math.min(params.timeout_ms ?? 300000, 3600000));
+			const text = params.persistent
+				? `Monitor started (task ${m.id}, persistent — runs until TaskStop or session end). You will be notified on each event. Keep working — do not poll or sleep. Events may arrive while you are waiting for the user — an event is not their reply.`
+				: `Monitor started (task ${m.id}, timeout ${params.timeout_ms ?? 300000}ms). You will be notified on each event. Keep working — do not poll or sleep. Events may arrive while you are waiting for the user — an event is not their reply.`;
+			return { content: [{ type: "text", text }], details: { taskId: m.id, timeoutMs: params.timeout_ms ?? 300000, persistent: !!params.persistent } };
+		},
+	});
+
+	pi.registerTool({
+		name: "TaskStop",
+		label: "TaskStop",
+		description: DESC.TaskStop,
+		parameters: Type.Object(
+			{
+				shell_id: Type.Optional(Type.String({ description: "Deprecated: use task_id instead" })),
+				task_id: Type.Optional(Type.String({ description: "The ID of the background task to stop. Agent-team teammates and named background agents are also accepted by agent ID or name." })),
+			},
+			{ additionalProperties: false },
+		),
+		async execute(_id, params) {
+			const id = params.task_id ?? params.shell_id ?? "";
+			const m = monitors.get(id);
+			if (!m) return { content: [{ type: "text", text: `Task ${id} not found` }], details: {}, isError: true };
+			m.stopped = true;
+			killTree(m.child);
+			const out = { message: `Successfully stopped task: ${id} (${m.command})`, task_id: id, task_type: "local_bash", command: m.command };
+			return { content: [{ type: "text", text: JSON.stringify(out) }], details: out };
+		},
+	});
+	// ------------------------------------------------------------ Cron (parity §1 schema, §2 description, §3 results, §4.4 fire form, §5 idle-only / deferred / jitter)
+	interface Job {
+		id: string;
+		cron: string;
+		fields: number[][]; // allowed values per field: min hour dom mon dow
+		prompt: string;
+		recurring: boolean;
+		createdAt: number;
+		jitterS: number; // recurring: late offset; one-shot on :00/:30: early offset
+		nextFire: number; // epoch ms, jitter applied
+		deferred: boolean; // due while busy → fire once at agent_settled (parity §5: deferred, not skipped; no catch-up burst)
+		expiring: boolean;
+	}
+	const jobs = new Map<string, Job>();
+
+	function parseField(f: string, min: number, max: number): number[] {
+		const out = new Set<number>();
+		for (const part of f.split(",")) {
+			const [rangeS, stepS] = part.split("/");
+			const step = stepS ? parseInt(stepS, 10) : 1;
+			let lo = min;
+			let hi = max;
+			if (rangeS !== "*") {
+				const [a, b] = rangeS.split("-");
+				lo = parseInt(a, 10);
+				hi = b !== undefined ? parseInt(b, 10) : stepS ? max : lo;
+			}
+			if (Number.isNaN(lo) || Number.isNaN(hi) || Number.isNaN(step) || step < 1) throw new Error(`bad cron field "${f}"`);
+			for (let v = lo; v <= hi; v += step) out.add(v);
+		}
+		return [...out].sort((a, b) => a - b);
+	}
+	function parseCron(cron: string): number[][] {
+		const p = cron.trim().split(/\s+/);
+		if (p.length !== 5) throw new Error(`cron must have 5 fields: "${cron}"`);
+		const dow = parseField(p[4], 0, 7).map((d) => (d === 7 ? 0 : d));
+		return [parseField(p[0], 0, 59), parseField(p[1], 0, 23), parseField(p[2], 1, 31), parseField(p[3], 1, 12), [...new Set(dow)]];
+	}
+	/** next local-time match strictly after `after` (ms), ignoring jitter */
+	function nextMatch(fields: number[][], after: number): number {
+		const d = new Date(after);
+		d.setSeconds(0, 0);
+		d.setMinutes(d.getMinutes() + 1);
+		for (let i = 0; i < 366 * 24 * 60; i++) {
+			if (fields[3].includes(d.getMonth() + 1) && fields[2].includes(d.getDate()) && fields[4].includes(d.getDay()) && fields[1].includes(d.getHours()) && fields[0].includes(d.getMinutes())) return d.getTime();
+			d.setMinutes(d.getMinutes() + 1);
+		}
+		throw new Error("no match within a year");
+	}
+	function schedule(j: Job, after: number) {
+		const slot = nextMatch(j.fields, after);
+		j.nextFire = j.recurring ? slot + j.jitterS * 1000 : slot - j.jitterS * 1000;
+	}
+	function humanise(cron: string): string {
+		const m = /^\*\/(\d+) \* \* \* \*$/.exec(cron);
+		if (m) return `Every ${m[1]} minutes`;
+		if (cron === "* * * * *") return "Every minute";
+		return cron; // [H] other humanisations not yet captured from Claude
+	}
+	async function fire(j: Job) {
+		log(`cron fire ${j.id} ${j.cron}`);
+		await pi.sendUserMessage(j.prompt, { deliverAs: "followUp" }); // parity §4.4: bare prompt, no envelope
+		if (!j.recurring || j.expiring) jobs.delete(j.id);
+		else schedule(j, Math.max(Date.now(), j.nextFire - j.jitterS * 1000));
+	}
+	async function fireDeferredCron() {
+		for (const j of [...jobs.values()]) {
+			if (j.deferred) {
+				j.deferred = false;
+				await fire(j);
+			}
+		}
+	}
+	const ticker = setInterval(() => {
+		const now = Date.now();
+		for (const j of [...jobs.values()]) {
+			if (j.recurring && !j.expiring && now - j.createdAt >= CRON_EXPIRE_MS) j.expiring = true; // fires one final time then deleted
+			if (now < j.nextFire || j.deferred) continue;
+			if (isIdle() && pending.length === 0) void fire(j);
+			else j.deferred = true;
+		}
+	}, 1000);
+	ticker.unref();
+	pi.on("session_shutdown", async () => {
+		clearInterval(ticker);
+		for (const m of monitors.values()) killTree(m.child);
+	});
+
+	pi.registerTool({
+		name: "CronCreate",
+		label: "CronCreate",
+		description: DESC.CronCreate,
+		parameters: Type.Object(
+			{
+				cron: Type.String({ description: 'Standard 5-field cron expression in local time: "M H DoM Mon DoW" (e.g. "*/5 * * * *" = every 5 minutes, "30 14 28 2 *" = Feb 28 at 2:30pm local once).' }),
+				durable: Type.Optional(Type.Boolean({ description: "Has no effect — durable persistence is not available. All jobs are session-only (in-memory, gone when this Claude session ends)." })),
+				prompt: Type.String({ description: "The prompt to enqueue at each fire time." }),
+				recurring: Type.Optional(Type.Boolean({ description: 'true (default) = fire on every cron match until deleted or auto-expired after 7 days. false = fire once at the next match, then auto-delete. Use false for "remind me at X" one-shot requests with pinned minute/hour/dom/month.' })),
+			},
+			{ additionalProperties: false },
+		),
+		async execute(_id, params) {
+			let fields: number[][];
+			try {
+				fields = parseCron(params.cron);
+			} catch (e) {
+				return { content: [{ type: "text", text: String((e as Error).message) }], details: {}, isError: true };
+			}
+			const recurring = params.recurring !== false;
+			const id = jobId();
+			const minute = params.cron.trim().split(/\s+/)[0];
+			const jitterS = recurring ? fnv1a(id) % CRON_JITTER_MAX_S : minute === "0" || minute === "30" ? fnv1a(id) % ONESHOT_EARLY_MAX_S : 0;
+			const j: Job = { id, cron: params.cron, fields, prompt: params.prompt, recurring, createdAt: Date.now(), jitterS, nextFire: 0, deferred: false, expiring: false };
+			schedule(j, Date.now());
+			jobs.set(id, j);
+			log(`cron create ${id} ${params.cron} jitter=${jitterS}s next=${new Date(j.nextFire).toISOString()}`);
+			const text = recurring
+				? `Scheduled recurring job ${id} (${humanise(params.cron)}). Session-only (not written to disk, dies when Claude exits). Auto-expires after 7 days. Use CronDelete to cancel sooner.`
+				: `Scheduled one-shot task ${id} (${params.cron}). Session-only (not written to disk, dies when Claude exits). It will fire once then auto-delete.`;
+			return { content: [{ type: "text", text }], details: { id, nextFire: j.nextFire, jitterS } };
+		},
+	});
+	pi.registerTool({
+		name: "CronList",
+		label: "CronList",
+		description: DESC.CronList,
+		parameters: Type.Object({}, { additionalProperties: false }),
+		async execute() {
+			const lines = [...jobs.values()].map((j) => {
+				const p = j.prompt.length > 79 ? j.prompt.slice(0, 79) + "…" : j.prompt;
+				return `${j.id} — ${j.recurring ? humanise(j.cron) : j.cron} (${j.recurring ? "recurring" : "one-shot"}) [session-only]: ${p}`;
+			});
+			return { content: [{ type: "text", text: lines.length ? lines.join("\n") : "No cron jobs scheduled." }], details: { count: lines.length } }; // empty-list text [H]
+		},
+	});
+	pi.registerTool({
+		name: "CronDelete",
+		label: "CronDelete",
+		description: DESC.CronDelete,
+		parameters: Type.Object({ id: Type.String({ description: "Job ID returned by CronCreate." }) }, { additionalProperties: false }),
+		async execute(_id, params) {
+			const ok = jobs.delete(params.id);
+			return { content: [{ type: "text", text: ok ? `Cancelled job ${params.id}.` : `No job ${params.id}.` }], details: { ok }, isError: !ok };
+		},
+	});
+
+	// ------------------------------------------------------------ edp8 MCP bridge (design §6: Pi has no MCP client; streamable HTTP + X-Participant/X-Session/X-Token)
+	async function mcp(method: string, params: unknown, id: number): Promise<any> {
+		const r = await fetch(MCP_URL, { method: "POST", headers: MCP_HEADERS, body: JSON.stringify({ jsonrpc: "2.0", id, method, params }) });
+		const ct = r.headers.get("content-type") ?? "";
+		if (!r.ok) throw new Error(`edp8 MCP ${method}: HTTP ${r.status} ${(await r.text()).slice(0, 200)}`);
+		if (ct.includes("text/event-stream")) {
+			const txt = await r.text();
+			const data = txt
+				.split("\n")
+				.filter((l) => l.startsWith("data:"))
+				.map((l) => l.slice(5).trim())
+				.filter(Boolean);
+			return JSON.parse(data[data.length - 1]);
+		}
+		return r.json();
+	}
+	let bridged = 0;
+	try {
+		await mcp("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "pi-edp8", version: "0.1" } }, 1);
+		const list = await mcp("tools/list", {}, 2);
+		let n = 3;
+		for (const t of list.result.tools as { name: string; description?: string; inputSchema: any }[]) {
+			pi.registerTool({
+				name: t.name,
+				label: t.name,
+				description: t.description ?? "",
+				parameters: Type.Unsafe<Record<string, unknown>>(t.inputSchema ?? { type: "object", properties: {} }),
+				async execute(_id, params) {
+					const res = await mcp("tools/call", { name: t.name, arguments: params ?? {} }, n++);
+					if (res.error) return { content: [{ type: "text", text: JSON.stringify(res.error) }], details: {}, isError: true };
+					const content = (res.result?.content ?? []).map((c: any) => (c.type === "text" ? { type: "text", text: c.text } : { type: "text", text: JSON.stringify(c) }));
+					return { content: content.length ? content : [{ type: "text", text: "" }], details: res.result?.structuredContent ?? {}, isError: !!res.result?.isError };
+				},
+			});
+			bridged++;
+		}
+		log(`mcp bridge: ${bridged} tools from ${MCP_URL}`);
+	} catch (e) {
+		log(`mcp bridge FAILED: ${(e as Error).message}`);
+	}
+
+	pi.registerCommand("edp8", {
+		description: "edp8 seat status: monitors, cron jobs, bridged tools",
+		handler: async (_args, ctx) => {
+			ctx.ui.notify(`monitors=${monitors.size} jobs=${jobs.size} bridged=${bridged} pending=${pending.length} idle=${ctx.isIdle()}`, "info");
+		},
+	});
+}

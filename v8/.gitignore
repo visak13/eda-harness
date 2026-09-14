@@ -14,3 +14,5 @@ docs/ui-concepts/**/.render-profile/
 # into the wheel (pyproject [tool.hatch.build.targets.wheel.force-include]), never committed.
 src/edp8/webapp/dist/
 web/node_modules/
+.pi/tasks/
+node_modules/
