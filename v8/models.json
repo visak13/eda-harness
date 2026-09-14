@@ -1,6 +1,6 @@
 {
   "_doc": "v7 seat registry (edp_contracts/seats.py). ONE file remixes the fleet: seats bind EXACT model ids (never aliases); roles bind seats. Claude effort is capped at medium fleet-wide (validator-enforced). auto_compact sits below the window so compaction is planned, never mid-work. Edit + pass doctor; no code changes.",
-  "_model_note": "2026-08-13 user direction (supersedes 2026-08-12/2026-08-06): Claude seats move to claude-opus-4-8 \u2014 the operator's only configuration that historically produced thoroughly-tested, reviewed work was 4.8-at-all-levels; 4.8 also supports Claude Code fast mode (orchestrating shells live in the drive loop, so output speed is felt directly); and the old 4.6-economics rationale lived in the deleted MODEL_TIERS comments with no current data behind it. Per-session model provenance is now recorded, so this fleet can be evaluated honestly against the 4.6 era. Still NO Sonnet and NO Opus 5 anywhere; claude-fable-5 stays the ADVISOR (curiosity) seat only.",
+  "_model_note": "2026-08-13 user direction (supersedes 2026-08-12/2026-08-06): Claude seats move to claude-opus-4-8 — the operator's only configuration that historically produced thoroughly-tested, reviewed work was 4.8-at-all-levels; 4.8 also supports Claude Code fast mode (orchestrating shells live in the drive loop, so output speed is felt directly); and the old 4.6-economics rationale lived in the deleted MODEL_TIERS comments with no current data behind it. Per-session model provenance is now recorded, so this fleet can be evaluated honestly against the 4.6 era. Still NO Sonnet and NO Opus 5 anywhere; claude-fable-5 stays the ADVISOR (curiosity) seat only.",
   "seats": {
     "judgment": {
       "model": "claude-opus-4-8",
@@ -28,6 +28,14 @@
       "context_window": 1000000,
       "auto_compact": 350000,
       "max_output": 12000
+    },
+    "astra": {
+      "model": "openai-codex/gpt-6-astra",
+      "effort": "medium",
+      "harness": "pi",
+      "thinking": "medium",
+      "context_window": 272000,
+      "auto_compact": 200000
     }
   },
   "roles": {
@@ -39,6 +47,16 @@
     "adversary": "checker",
     "qa": "advisor"
   },
-  "_window_note": "2026-08-06 user ruling: auto_compact is 350k on EVERY seat \u2014 one number, no per-seat window tuning. The rule stands: compaction must land at turn boundaries; a role that ROUTINELY nears its window is a scoping defect to split.",
-  "_v8_note": "2026-08-27 v8 role names: architect/sme/engineer/reviewer/adversary/qa (coordinator retired — the owner shell orchestrates); architect + qa on the advisor (Fable) seat; engineer builder; reviewer + adversary checker; others judgment."
+  "_window_note": "2026-08-06 user ruling: auto_compact is 350k on EVERY seat — one number, no per-seat window tuning. The rule stands: compaction must land at turn boundaries; a role that ROUTINELY nears its window is a scoping defect to split.",
+  "_v8_note": "2026-08-27 v8 role names: architect/sme/engineer/reviewer/adversary/qa (coordinator retired — the owner shell orchestrates); architect + qa on the advisor (Fable) seat; engineer builder; reviewer + adversary checker; others judgment.",
+  "roles_openai": {
+    "owner": "astra",
+    "architect": "astra",
+    "sme": "astra",
+    "engineer": "astra",
+    "reviewer": "astra",
+    "adversary": "astra",
+    "qa": "astra"
+  },
+  "_openai_note": "2026-09-14 owner (m-96cbd61919, m-e6ef892737): roles_openai is an OPTION next to roles, not a replacement — every role maps to gpt-6-astra at thinking medium for now. A role runs on it when the pool routes that role to the Pi harness (EDP_PI_ROLES); the Claude column stays authoritative for every other seat. Model ids are Pi ids: openai-codex/<id> = Codex subscription login, openai/<id> = OPENAI_API_KEY."
 }

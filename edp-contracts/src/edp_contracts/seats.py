@@ -50,6 +50,10 @@ class Seat:
     # only at gates — everything else is written for no reader). Stamped as
     # CLAUDE_CODE_MAX_OUTPUT_TOKENS at spawn; None = don't stamp (legacy).
     max_output: int | None = None
+    # epic-6a8a6020fd (owner m-96cbd61919/m-e6ef892737, 2026-09-14): non-Claude seats carry the
+    # harness that runs them and its thinking level; Claude seats leave both None.
+    harness: str | None = None
+    thinking: str | None = None
 
 
 def config_path(agent_home: str | os.PathLike) -> Path:
@@ -95,7 +99,9 @@ def parse(raw: dict) -> tuple[dict[str, Seat], dict[str, str]]:
                     f"omit it.")
         seats[name] = Seat(name=name, model=model, effort=effort,
                            context_window=cw, auto_compact=ac,
-                           max_output=mo)
+                           max_output=mo,
+                           harness=(str(row["harness"]) if row.get("harness") else None),
+                           thinking=(str(row["thinking"]) if row.get("thinking") else None))
     roles: dict[str, str] = {}
     for role, seat in (raw.get("roles") or {}).items():
         if seat not in seats:
@@ -103,6 +109,15 @@ def parse(raw: dict) -> tuple[dict[str, Seat], dict[str, str]]:
                 f"role {role!r} maps to unknown seat {seat!r} "
                 f"(declared: {sorted(seats)})")
         roles[role] = seat
+    # optional harness columns ("roles_openai", "roles_pi", …) are validated the same way; they are
+    # OPTIONS next to the Claude column, never a replacement (owner m-e6ef892737)
+    for col, table in raw.items():
+        if col.startswith("roles_") and isinstance(table, dict):
+            for role, seat in table.items():
+                if seat not in seats:
+                    raise SeatsError(
+                        f"{col}: role {role!r} maps to unknown seat {seat!r} "
+                        f"(declared: {sorted(seats)})")
     return seats, roles
 
 
@@ -121,13 +136,22 @@ def load(agent_home: str | os.PathLike
     return parse(raw)
 
 
-def seat_for_role(agent_home: str | os.PathLike, role: str) -> Seat | None:
+def seat_for_role(agent_home: str | os.PathLike, role: str,
+                  column: str = "roles") -> Seat | None:
     """The seat bound to `role`, or None when no registry / unmapped role
     (both = legacy behavior; an unmapped role is NOT an error so partial
-    adoption works — map roles as their boot docs land)."""
-    loaded = load(agent_home)
-    if loaded is None:
+    adoption works — map roles as their boot docs land).
+    `column` selects an alternative role table: "roles" (Claude, default) or a
+    harness column such as "roles_openai" — an OPTION, so an unmapped role in a
+    harness column is None (the caller falls back), never the Claude seat."""
+    f = config_path(agent_home)
+    if not f.is_file():
         return None
-    seats, roles = loaded
-    name = roles.get(role)
+    try:
+        raw = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        raise SeatsError(f"models.json at {f} unreadable: {e}") from e
+    seats, roles = parse(raw)
+    table = roles if column == "roles" else (raw.get(column) or {})
+    name = table.get(role)
     return seats.get(name) if name else None

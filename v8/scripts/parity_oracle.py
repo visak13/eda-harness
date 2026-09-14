@@ -60,10 +60,16 @@ def normalise(text: str) -> str:
 
 
 # ---------------------------------------------------------------- Claude side (session JSONL)
-def capture_claude(path: Path) -> list[dict]:
-    """Model-input events from a Claude Code session JSONL (parity guide §4 record shapes)."""
+DRIVER_PREFIX = "ORACLE-DRIVER"  # the Claude side wakes itself per case with one-shot crons carrying this prefix
+
+
+def capture_claude(path: Path, since: str | None = None, until: str | None = None) -> list[dict]:
+    """Model-input events from a Claude Code session JSONL (parity guide §4 record shapes).
+    `since`/`until` are ISO timestamps bounding the capture window; driver crons (prefix
+    DRIVER_PREFIX) and their fires are excluded — they are the Claude-side case runner, not a case."""
     out: list[dict] = []
     tool_names: dict[str, str] = {}
+    driver_ids: set[str] = set()
     for raw in path.read_text(encoding="utf-8").splitlines():
         if not raw.strip():
             continue
@@ -71,16 +77,24 @@ def capture_claude(path: Path) -> list[dict]:
             o = json.loads(raw)
         except ValueError:
             continue
+        ts = o.get("timestamp") or ""
+        if (since and ts and ts < since) or (until and ts and ts > until):
+            continue
         t = o.get("type")
         if t == "assistant":
             for b in (o.get("message") or {}).get("content") or []:
                 if b.get("type") == "tool_use" and b.get("name") in PARITY_TOOLS:
+                    if b["name"] == "CronCreate" and str((b.get("input") or {}).get("prompt", "")).startswith(DRIVER_PREFIX):
+                        driver_ids.add(b["id"])
+                        continue
                     tool_names[b["id"]] = b["name"]
                     out.append({"kind": "tool_use", "tool": b["name"], "input": b.get("input"), "ts": o.get("timestamp")})
         elif t == "user":
             c = (o.get("message") or {}).get("content")
             if isinstance(c, str):
                 if o.get("scheduledTaskId"):
+                    if c.startswith(DRIVER_PREFIX):
+                        continue
                     out.append({"kind": "cron_fire", "text": c, "ts": o.get("timestamp"), "meta": {"isMeta": o.get("isMeta"), "queuePriority": o.get("queuePriority")}})
                 elif (o.get("origin") or {}).get("kind") == "task-notification" and "Monitor event" in c or "<task-notification>" in c and "Monitor" in c:
                     out.append({"kind": "notification_standalone", "text": c, "ts": o.get("timestamp")})
@@ -99,41 +113,53 @@ def capture_claude(path: Path) -> list[dict]:
 
 
 # ---------------------------------------------------------------- Pi side (driver's mirrored RPC events)
-def capture_pi(path: Path) -> list[dict]:
-    """Model-input events from `pi-seat.<handle>.jsonl` (edp8.pi_seat.driver mirror of `pi --mode rpc` stdout).
-    Shapes per pi.dev RPC docs: tool_execution_start{toolName,args}, tool_execution_end{toolName,result},
-    message_end{message:{role,content}} for user messages the extension injected (standalone
-    notifications, cron fires). Attached notifications ride inside the tool result content. SCHEMA TO PIN
-    on the first live run (SP live checks) — a field mismatch raises rather than silently capturing nothing."""
+def capture_pi(path: Path, since: float | None = None, until: float | None = None,
+               exclude_prefix: str = "You are running a parity probe") -> list[dict]:
+    """Model-input events from `pi-seat.<handle>.jsonl` (edp8.pi_seat.driver mirror of `pi --mode rpc`
+    stdout). SCHEMA PINNED on the live run of 2026-09-14 (Pi 0.85.1, openai-codex/gpt-6-astra):
+      tool_execution_start {toolName, args}            → tool_use
+      tool_execution_end   {toolName, result.content[]} → tool_result (+ notification_attached when the
+                                                          extension appended a <system-reminder> block)
+      message_end {message:{role:"user", content:[{text}]}} → the extension's injected user turns:
+          text starting "<system-reminder>" = notification_standalone; any other user text that is not a
+          driver prompt (exclude_prefix) = cron_fire (the bare cron prompt, like Claude's).
+    `since`/`until` bound the window on the driver's epoch `ts`."""
     out: list[dict] = []
-    seen = 0
     for raw in path.read_text(encoding="utf-8").splitlines():
         if not raw.strip():
             continue
         o = json.loads(raw)
+        ts = o.get("ts")
+        if (since is not None and ts is not None and ts < since) or (until is not None and ts is not None and ts > until):
+            continue
         t = o.get("type")
         if t == "tool_execution_start" and o.get("toolName") in PARITY_TOOLS:
-            seen += 1
-            out.append({"kind": "tool_use", "tool": o["toolName"], "input": o.get("args"), "ts": o.get("ts")})
+            out.append({"kind": "tool_use", "tool": o["toolName"], "input": o.get("args"), "ts": ts})
         elif t == "tool_execution_end":
             res = o.get("result") or {}
             content = res.get("content") or []
             text = "\n".join(c.get("text", "") for c in content if isinstance(c, dict))
+            att = text.find("<system-reminder>")
+            own = text if att < 0 else text[:att].rstrip()
             if o.get("toolName") in PARITY_TOOLS:
-                out.append({"kind": "tool_result", "tool": o["toolName"], "text": text, "ts": o.get("ts")})
-            if "<task-notification>" in text and "<system-reminder>" in text:
-                out.append({"kind": "notification_attached", "text": text[text.index("<system-reminder>"):], "ts": o.get("ts")})
+                out.append({"kind": "tool_result", "tool": o["toolName"], "text": own, "ts": ts})
+            if att >= 0:
+                for block in text[att:].split("\n\n<system-reminder>"):
+                    block = block if block.startswith("<system-reminder>") else "<system-reminder>" + block
+                    out.append({"kind": "notification_attached", "text": block, "ts": ts})
         elif t == "message_end":
             m = o.get("message") or {}
             if m.get("role") == "user":
                 c = m.get("content")
                 text = c if isinstance(c, str) else "\n".join(x.get("text", "") for x in (c or []) if isinstance(x, dict))
-                if text.startswith("<system-reminder>") and "<task-notification>" in text:
-                    out.append({"kind": "notification_standalone", "text": text, "ts": o.get("ts")})
-                elif m.get("customType") == "cron" or o.get("edp8_cron"):
-                    out.append({"kind": "cron_fire", "text": text, "ts": o.get("ts")})
+                if text.startswith("<system-reminder>"):
+                    out.append({"kind": "notification_standalone", "text": text, "ts": ts})
+                elif exclude_prefix and text.startswith(exclude_prefix):
+                    continue
+                else:
+                    out.append({"kind": "cron_fire", "text": text, "ts": ts})
     if not out:
-        raise SystemExit("pi capture: no parity events found — RPC schema drift? pin it against a live run")
+        raise SystemExit("pi capture: no parity events found — RPC schema drift? re-pin against a live run")
     return out
 
 
@@ -160,13 +186,19 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--both", action="store_true")
     ap.add_argument("--cases", action="store_true")
     ap.add_argument("-o", "--out")
+    ap.add_argument("--since", help="capture window start (ISO for Claude, epoch seconds for Pi)")
+    ap.add_argument("--until", help="capture window end (ISO for Claude, epoch seconds for Pi)")
     a = ap.parse_args(argv)
     if a.cases:
         for name, prompt in CASES:
             print(f"{name}: {prompt}")
         return 0
     if a.capture_claude or a.capture_pi:
-        trace = capture_claude(Path(a.capture_claude)) if a.capture_claude else capture_pi(Path(a.capture_pi))
+        if a.capture_claude:
+            trace = capture_claude(Path(a.capture_claude), since=a.since, until=a.until)
+        else:
+            trace = capture_pi(Path(a.capture_pi), since=float(a.since) if a.since else None,
+                               until=float(a.until) if a.until else None)
         s = json.dumps(trace, indent=1, ensure_ascii=False)
         if a.out:
             Path(a.out).write_text(s, encoding="utf-8")

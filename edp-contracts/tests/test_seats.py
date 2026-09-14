@@ -74,3 +74,26 @@ def test_load_absent_is_none_invalid_raises(tmp_path, monkeypatch):
     seat = seat_for_role(tmp_path, "worker")
     assert isinstance(seat, Seat) and seat.model == "claude-sonnet-5"
     assert seat_for_role(tmp_path, "unmapped-role") is None
+
+
+def test_harness_columns_are_options_next_to_the_claude_column(tmp_path):
+    """epic-6a8a6020fd (owner m-96cbd61919/m-e6ef892737): roles_openai maps roles to a Pi-run
+    seat WITHOUT touching the Claude `roles` column; unknown seats in a harness column are refused;
+    an unmapped role in a harness column is None (caller falls back), never the Claude seat."""
+    import json
+    from edp_contracts import seats as s
+    raw = {"seats": {"advisor": {"model": "claude-fable-5-1"},
+                     "astra": {"model": "openai-codex/gpt-6-astra", "harness": "pi", "thinking": "medium"}},
+           "roles": {"architect": "advisor", "qa": "advisor"},
+           "roles_openai": {"architect": "astra"}}
+    (tmp_path / "models.json").write_text(json.dumps(raw), encoding="utf-8")
+    assert s.seat_for_role(tmp_path, "architect").model == "claude-fable-5-1"
+    a = s.seat_for_role(tmp_path, "architect", column="roles_openai")
+    assert a.model == "openai-codex/gpt-6-astra" and a.harness == "pi" and a.thinking == "medium"
+    assert s.seat_for_role(tmp_path, "qa", column="roles_openai") is None
+    assert s.seat_for_role(tmp_path, "architect").harness is None
+    raw["roles_openai"]["qa"] = "nope"
+    (tmp_path / "models.json").write_text(json.dumps(raw), encoding="utf-8")
+    import pytest
+    with pytest.raises(s.SeatsError):
+        s.load(tmp_path)

@@ -76,12 +76,31 @@ export default async function edp8(pi: ExtensionAPI) {
 	// pending = notifications that arrived while the agent was busy; they attach to the NEXT tool result (any tool),
 	// and whatever is still pending when the run settles becomes standalone user turns, one per notification.
 	const pending: string[] = [];
+	const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+	// SP live check (2026-09-14, run 16:45Z): flushing several standalone notifications at settle
+	// raced Pi's own agent start — the 2nd sendUserMessage threw "Agent is already processing a
+	// prompt" between agent_start and the queue becoming active, and that notification was LOST.
+	// Never lose one: retry the follow-up before giving up loudly.
+	async function sendFollowUp(text: string) {
+		for (let attempt = 0; ; attempt++) {
+			try {
+				await pi.sendUserMessage(text, { deliverAs: "followUp" });
+				return;
+			} catch (e) {
+				if (attempt >= 40) {
+					log(`follow-up delivery FAILED after ${attempt} attempts: ${String(e)}`);
+					throw e;
+				}
+				await sleep(50);
+			}
+		}
+	}
 	const isIdle = () => (lastCtx ? lastCtx.isIdle() : true);
 
 	async function deliver(notification: string) {
 		if (isIdle() && pending.length === 0) {
 			log(`deliver standalone ${notification.slice(0, 80).replace(/\n/g, " ")}`);
-			await pi.sendUserMessage(wrap(notification), { deliverAs: "followUp" });
+			await sendFollowUp(wrap(notification));
 		} else {
 			log(`deliver pending(${pending.length + 1}) ${notification.slice(0, 80).replace(/\n/g, " ")}`);
 			pending.push(notification);
@@ -103,7 +122,7 @@ export default async function edp8(pi: ExtensionAPI) {
 		if (pending.length === 0) return;
 		const rest = pending.splice(0, pending.length);
 		log(`settled: flushing ${rest.length} standalone`);
-		for (const n of rest) await pi.sendUserMessage(wrap(n), { deliverAs: "followUp" });
+		for (const n of rest) await sendFollowUp(wrap(n));
 	});
 	for (const ev of ["session_start", "agent_start", "agent_end", "turn_start", "turn_end", "tool_execution_start"] as const) {
 		pi.on(ev as any, async (_e: unknown, ctx: ExtensionContext) => {
@@ -325,7 +344,7 @@ export default async function edp8(pi: ExtensionAPI) {
 	}
 	async function fire(j: Job) {
 		log(`cron fire ${j.id} ${j.cron}`);
-		await pi.sendUserMessage(j.prompt, { deliverAs: "followUp" }); // parity §4.4: bare prompt, no envelope
+		await sendFollowUp(j.prompt); // parity §4.4: bare prompt, no envelope
 		if (!j.recurring || j.expiring) jobs.delete(j.id);
 		else schedule(j, Math.max(Date.now(), j.nextFire - j.jitterS * 1000));
 	}
@@ -336,7 +355,7 @@ export default async function edp8(pi: ExtensionAPI) {
 		if (due.length === 0) return;
 		for (const j of due) j.deferred = false;
 		log(`cron deferred fire x${due.length}: ${due.map((j) => j.id).join(",")}`);
-		await pi.sendUserMessage(due.map((j) => j.prompt).join("\n"), { deliverAs: "followUp" });
+		await sendFollowUp(due.map((j) => j.prompt).join("\n"));
 		for (const j of due) {
 			if (!j.recurring || j.expiring) jobs.delete(j.id);
 			else schedule(j, Math.max(Date.now(), j.nextFire - j.jitterS * 1000));
@@ -556,7 +575,17 @@ export default async function edp8(pi: ExtensionAPI) {
 			log(`record_status(blocked) failed: ${(e as Error).message}`);
 		}
 	}
-	pi.on("before_provider_request", async () => {
+	pi.on("before_provider_request", async (event) => {
+		// parity oracle (design §7 [Astra]): record the PROVIDER-BOUND payload — the real model-input
+		// boundary — when EDP_PARITY_CAPTURE=1. Tool definitions + input items, never headers/tokens.
+		if (process.env.EDP_PARITY_CAPTURE === "1") {
+			try {
+				const b: any = event.payload ?? {};
+				appendFileSync(join(TASKS_DIR, "provider-payloads.jsonl"), JSON.stringify({ ts: new Date().toISOString(), model: b.model, instructions: b.instructions, tools: b.tools, input: b.input }) + "\n");
+			} catch (e) {
+				log(`payload capture failed: ${String(e)}`);
+			}
+		}
 		const q = quotaBlock();
 		if (q) log(`provider request while quota-blocked until ${q.blocked_until}`);
 		const ok = await laneAcquire(1);
@@ -566,9 +595,15 @@ export default async function edp8(pi: ExtensionAPI) {
 		laneRelease();
 		if (event.status === 429 || event.status === 402) await noteQuota(event.status, event.headers ?? {});
 	});
+	// SP live check (2026-09-14): Pi's openai-codex provider tries the WebSocket transport first and
+	// `after_provider_response` only fires on the SSE path — the lane stayed held across the whole turn
+	// and the second request of the turn waited on its own lock. The assistant message_end is the end
+	// of the model stream on every transport, so release there too (idempotent).
+	pi.on("message_end", async (event) => {
+		if ((event.message as any)?.role === "assistant") laneRelease();
+	});
 	pi.on("agent_end", async () => laneRelease());
 	pi.on("session_shutdown", async () => laneRelease());
-	const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 	(pi as any).__edp8_test = { laneAcquire, laneRelease, quotaBlock, noteQuota, LANE_DIR };
 
 	pi.registerCommand("edp8", {
