@@ -66,14 +66,15 @@ check("failed envelope exit 3", evs.some((c) => c.includes(`<tool-use-id>toolu_t
 userMessages.length = 0;
 idle = false;
 await call("Monitor", { command: "echo A; sleep 0.5; echo B", description: "attach probe", persistent: false, timeout_ms: 30000 });
-await sleep(400);
+// the Monitor result itself is held MONITOR_START_GRACE_MS (§5); the next tool result lands before B (t≈520 ms)
+await sleep(100);
 const tr = await emit("tool_result", { type: "tool_result", toolName: "bash", toolCallId: "tc1", input: {}, content: [{ type: "text", text: "ls output" }], isError: false });
 check("attach to next tool_result", !!tr && tr.content[0].text.startsWith("ls output\n\n<system-reminder>") && tr.content[0].text.includes("<event>A</event>"), { head: tr?.content?.[0]?.text?.slice(0, 120) });
 check("nothing standalone while busy", userMessages.length === 0);
 await sleep(1500);
 idle = true;
 await emit("agent_settled", { type: "agent_settled" });
-check("settled flushes pending standalone", userMessages.some((m) => m.content.includes("<event>B</event>")) && userMessages.some((m) => m.content.includes("<status>completed</status>")), { n: userMessages.length });
+check("settled flushes pending standalone as ONE turn", userMessages.length === 1 && userMessages[0].content.includes("<event>B</event>") && userMessages[0].content.includes("<status>completed</status>") && userMessages[0].content.includes("</system-reminder>\n<system-reminder>"), { n: userMessages.length, msgs: userMessages.map((m) => m.content.slice(0, 60)) });
 
 // ---- truncation + rate limit + timeout + TaskStop
 userMessages.length = 0;
