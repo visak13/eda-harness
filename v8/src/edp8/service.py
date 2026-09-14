@@ -860,6 +860,14 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         cached = _idem_get(a, idempotency_key)
         if cached is not None:
             return {**cached, "hint": "idempotent replay: same session, no second shell"}
+        # pain p-9ba7b6b6: the seat must EXIST on the board before its token is minted, or every
+        # MCP call from the new shell 401s "participant X is not registered". Same idempotent step
+        # as the board's pairing path (Board._spawn_seat); a handle race is fine.
+        if board.store.get("participant", b.participant_id) is None:
+            try:
+                board.participant_create("agent", b.role, b.participant_id, id_=b.participant_id, model=b.model)
+            except BoardError:
+                pass
         token = _mint_agent_token(b.participant_id)
         env = {"EDP8_TOKEN": token} if token else None
         out = pool_adapter.spawn(b.role.value, b.participant_id, parent_session=b.parent_session,

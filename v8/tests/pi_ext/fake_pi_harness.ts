@@ -119,6 +119,18 @@ idle = true;
 await emit("agent_settled", { type: "agent_settled" });
 await sleep(200);
 check("cron deferred fire at settle, bare prompt", userMessages.some((m) => m.content === "DUE-PROBE"), { msgs: userMessages.map((m) => m.content.slice(0, 40)) });
+// parity §5 (measured 15:57:31Z): several jobs due while busy → ONE user turn, prompts joined by "\n", creation order
+userMessages.length = 0;
+const n2 = new Date(Date.now() + 61000);
+const dA = await call("CronCreate", { cron: `${n2.getMinutes()} ${n2.getHours()} * * *`, prompt: "COAL-A", recurring: false });
+const dB = await call("CronCreate", { cron: `${n2.getMinutes()} ${n2.getHours()} * * *`, prompt: "COAL-B", recurring: false });
+idle = false;
+await sleep(Math.max(Math.max(dA.details.nextFire, dB.details.nextFire) - Date.now() + 1500, 0));
+idle = true;
+await emit("agent_settled", { type: "agent_settled" });
+await sleep(200);
+check("coalesced deferred fires: one turn, joined prompts", userMessages.length === 1 && userMessages[0].content === "COAL-A\nCOAL-B", { msgs: userMessages.map((m) => m.content) });
+check("one-shots auto-deleted after coalesced fire", !(await call("CronList", {})).content[0].text.includes("COAL-"));
 
 
 // ---- S8 admission lane: shared with v8/src/edp8/admission.py (cross-language contention)

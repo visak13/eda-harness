@@ -89,6 +89,25 @@ def test_owner_may_spawn_any_seat(client, rig, monkeypatch):
     assert r.json()["value"]["session_id"] == "sess-1"
 
 
+def test_spawn_registers_the_seat_before_minting(client, rig, monkeypatch):
+    """pain p-9ba7b6b6: REST spawn of an unregistered handle registers it (idempotently), so the
+    new shell's first MCP call authenticates instead of 401 "participant X is not registered"."""
+    calls = _stub_spawn(monkeypatch)
+    pid = f"engineer.{rig['story']}"
+    assert client.get(f"/v1/participants/{pid}", headers={"X-Participant": "owner"}).status_code != 200
+    r = client.post("/v1/sessions/spawn", json={"role": "engineer", "participant_id": pid, "ticket_id": rig["story"]},
+                    headers={"X-Participant": "owner"})
+    assert r.status_code == 200, r.text
+    p = client.get(f"/v1/participants/{pid}", headers={"X-Participant": "owner"})
+    assert p.status_code == 200 and p.json()["value"]["role"] == "engineer" and p.json()["value"]["type"] == "agent"
+    # the seat can now act as itself (header-only trusted mode in this rig)
+    assert client.get("/v1/whoami", headers={"X-Participant": pid}).status_code == 200
+    # a second spawn of an already-registered handle is not a conflict
+    r2 = client.post("/v1/sessions/spawn", json={"role": "engineer", "participant_id": pid, "ticket_id": rig["story"]},
+                     headers={"X-Participant": "owner"})
+    assert r2.status_code == 200 and len(calls) == 2
+
+
 def test_architect_may_spawn_in_own_epic(client, rig, monkeypatch):
     _stub_spawn(monkeypatch)
     r = client.post("/v1/sessions/spawn",

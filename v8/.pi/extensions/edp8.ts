@@ -330,11 +330,16 @@ export default async function edp8(pi: ExtensionAPI) {
 		else schedule(j, Math.max(Date.now(), j.nextFire - j.jitterS * 1000));
 	}
 	async function fireDeferredCron() {
-		for (const j of [...jobs.values()]) {
-			if (j.deferred) {
-				j.deferred = false;
-				await fire(j);
-			}
+		// parity §5: every job due while busy fires ONCE at settle, all of them as ONE user turn
+		// (prompts joined by a newline, creation order), no catch-up for missed periods
+		const due = [...jobs.values()].filter((j) => j.deferred).sort((a, b) => a.createdAt - b.createdAt);
+		if (due.length === 0) return;
+		for (const j of due) j.deferred = false;
+		log(`cron deferred fire x${due.length}: ${due.map((j) => j.id).join(",")}`);
+		await pi.sendUserMessage(due.map((j) => j.prompt).join("\n"), { deliverAs: "followUp" });
+		for (const j of due) {
+			if (!j.recurring || j.expiring) jobs.delete(j.id);
+			else schedule(j, Math.max(Date.now(), j.nextFire - j.jitterS * 1000));
 		}
 	}
 	const ticker = setInterval(() => {
