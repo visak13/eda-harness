@@ -73,6 +73,27 @@ if _oc_roles:
               roles=sorted(_oc_roles))
 else:
     _spawner = _claude_spawner
+# epic-6a8a6020fd S2 — resident GPT-6 Astra seats under pi.dev. EDP_PI_ROLES names the roles
+# routed to the Pi backend (e.g. "reviewer"); EMPTY (the default) = zero behaviour change.
+# CompositeSpawner is backend-agnostic despite its parameter name (it only uses the Spawner
+# surface + the getattr hooks), so it stacks on whatever _spawner already is.
+_pi_roles = {r.strip() for r in
+             os.environ.get("EDP_PI_ROLES", "").split(",") if r.strip()}
+if _pi_roles:
+    from .opencode_launcher import CompositeSpawner
+    from .pi_launcher import PiSpawner
+    _spawner = CompositeSpawner(
+        _spawner,
+        PiSpawner(
+            log_dir=str(_root / ".logs" / "pi"),
+            broker_url=_broker_url,
+            pool_url=_pool_url,
+            agent_home=_agent_home,
+        ),
+        opencode_roles=_pi_roles,
+    )
+    _log.info("pi_backend_armed", "mixed fleet: roles routed to pi (GPT-6 Astra)",
+              roles=sorted(_pi_roles))
 
 # WS7 (SHADOW.md): every spawn gets a per-shell shadow (wake plane,
 # brief injection, observed close) — Spawner-compatible wrapper, so the
