@@ -194,6 +194,7 @@ userMessages.length = 0;
 	delete process.env.EDP_MONITOR_SHELL;
 	const sh = T.monitorShell();
 	check("monitor shell never resolves to the WSL relay", !/System32/i.test(sh) && (process.platform !== "win32" || /Git/i.test(sh) || sh === "bash"));
+	check("monitor shell is the Git wrapper bash (coreutils on PATH), not usr/bin directly", process.platform !== "win32" || !/usr[\/]bin/i.test(sh));
 	process.env.EDP_MONITOR_SHELL = "Q:\\custom\\bash.exe";
 	check("EDP_MONITOR_SHELL overrides the Monitor shell", T.monitorShell() === "Q:\\custom\\bash.exe");
 	if (saved === undefined) delete process.env.EDP_MONITOR_SHELL; else process.env.EDP_MONITOR_SHELL = saved;

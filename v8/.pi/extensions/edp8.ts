@@ -244,14 +244,19 @@ export default async function edp8(pi: ExtensionAPI) {
 	}
 	// Monitor runs `command` under bash like Claude Code does on Windows (Git's bash, never WSL's): a
 	// pool-spawned seat inherits a PATH where System32\bash.exe (the WSL relay) wins, and the first live
+	// GPT seat's feed Monitor died. Git\bin\bash.exe is the WRAPPER that puts /usr/bin on PATH (sleep,
+	// printf…); usr\bin\bash.exe launched directly has no coreutils: qa.s-174f83c926 got `sleep: command
+	// not found` (task z6tapf7pa, 14:12Z). Claude Code itself runs Git\bin\bash.exe. The first
 	// GPT seat's feed Monitor died with "execvpe(/bin/bash) No such file or directory" (s-174f83c926,
-	// 2026-09-17). EDP_MONITOR_SHELL overrides; else the first existing Git bash; else PATH `bash`.
+	// 2026-09-17). Git\\bin\\bash.exe is the WRAPPER that puts /usr/bin (sleep, printf…) on PATH — the one
+	// Claude Code runs; usr\\bin\\bash.exe launched directly has no coreutils (qa.s-174f83c926: `sleep:
+	// command not found`, task z6tapf7pa). EDP_MONITOR_SHELL overrides; else the wrapper; else PATH `bash`.
 	function monitorShell(): string {
 		if (process.env.EDP_MONITOR_SHELL) return process.env.EDP_MONITOR_SHELL;
 		if (process.platform !== "win32") return "/bin/bash";
 		const roots = [process.env.ProgramFiles, process.env["ProgramFiles(x86)"], process.env.ProgramW6432,
 			process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, "Programs") : undefined].filter(Boolean) as string[];
-		for (const r of roots) for (const sub of ["Git\\usr\\bin\\bash.exe", "Git\\bin\\bash.exe"]) {
+		for (const r of roots) for (const sub of ["Git\\bin\\bash.exe", "Git\\usr\\bin\\bash.exe"]) {
 			const c = join(r, sub);
 			if (existsSync(c)) return c;
 		}
