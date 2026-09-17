@@ -27,8 +27,9 @@ const MCP_HEADERS: Record<string, string> = {
 };
 const BATCH_MS = 200; // parity §5 batching window [M]
 const LINE_MAX = 500; // parity §5 event truncation [M]
-const RATE_BURST = 20; // parity §5 rate limit: first ~22 events pass, then 2 delivered / 6 suppressed per ~0.8 s [M, approximated as a token bucket]
-const RATE_PER_SEC = 2.5;
+const RATE_BURST = 20; // parity §5 rate limit: first ~22 events pass, then 2 delivered / 6 suppressed per ~0.8 s [M]
+const RATE_WINDOW_MS = 800; // refill is DISCRETE: +RATE_PER_WINDOW tokens per elapsed window, so at 10 lines/s the steady
+const RATE_PER_WINDOW = 2; // state is exactly 2 delivered then "[6 events suppressed]" — a continuous 2.5/s bucket gave 1/3 (qa A11, drill c-6dbfeaf428)
 const CRON_JITTER_MAX_S = 900; // parity §5: measured 629 s on a 30-min job; documented "10 % (max 15 min)" does not fit — hash % 900 does [H]
 const ONESHOT_EARLY_MAX_S = 90; // CronCreate description: ":00 or :30 fire up to 90 s early" [H until a40ab141 fires]
 const CRON_EXPIRE_MS = 7 * 24 * 3600 * 1000;
@@ -223,21 +224,27 @@ export default async function edp8(pi: ExtensionAPI) {
 		const lines = m.batch.splice(0, m.batch.length);
 		void deliver(envelope(m, lines.join("\n")));
 	}
+	const SUPPRESSED = (n: number) => `[${n} events suppressed — output rate too high. Consider using TaskStop to restart this monitor with a more selective filter.]`;
+	/** rate gate (parity §5): null = suppress this line; else the number of suppressed lines to announce before it (0 = none) */
+	function rateGate(s: { tokens: number; lastRefill: number; suppressed: number }, now: number): number | null {
+		const windows = Math.floor((now - s.lastRefill) / RATE_WINDOW_MS);
+		if (windows > 0) {
+			s.tokens = Math.min(RATE_BURST, s.tokens + windows * RATE_PER_WINDOW);
+			s.lastRefill += windows * RATE_WINDOW_MS;
+		}
+		if (s.tokens < 1) {
+			s.suppressed++;
+			return null;
+		}
+		s.tokens -= 1;
+		const n = s.suppressed;
+		s.suppressed = 0;
+		return n;
+	}
 	function onLine(m: Mon, raw: string) {
-		// rate limit (token bucket approximating parity §5)
-		const now = Date.now();
-		m.tokens = Math.min(RATE_BURST, m.tokens + ((now - m.lastRefill) / 1000) * RATE_PER_SEC);
-		m.lastRefill = now;
-		if (m.tokens < 1) {
-			m.suppressed++;
-			return;
-		}
-		m.tokens -= 1;
-		if (m.suppressed > 0) {
-			const n = m.suppressed;
-			m.suppressed = 0;
-			void deliver(envelope(m, `[${n} events suppressed — output rate too high. Consider using TaskStop to restart this monitor with a more selective filter.]`));
-		}
+		const n = rateGate(m, nowMs());
+		if (n === null) return;
+		if (n > 0) void deliver(envelope(m, SUPPRESSED(n)));
 		const line = raw.length > LINE_MAX ? raw.slice(0, LINE_MAX) + "...(truncated)" : raw;
 		m.batch.push(line);
 		if (!m.batchTimer) m.batchTimer = setTimeout(() => flushBatch(m), BATCH_MS);
@@ -299,6 +306,11 @@ export default async function edp8(pi: ExtensionAPI) {
 		if (m.batchTimer) {
 			clearTimeout(m.batchTimer);
 			flushBatch(m);
+		}
+		if (m.suppressed > 0) { // lines suppressed after the last delivered one are still accounted for at the end [H] (drill c-6dbfeaf428)
+			const n = m.suppressed;
+			m.suppressed = 0;
+			void deliver(envelope(m, SUPPRESSED(n)));
 		}
 		if (m.timeoutTimer) clearTimeout(m.timeoutTimer);
 		try {
@@ -833,7 +845,7 @@ export default async function edp8(pi: ExtensionAPI) {
 	});
 	pi.on("agent_end", async () => laneRelease());
 	pi.on("session_shutdown", async () => laneRelease());
-	(pi as any).__edp8_test = { laneAcquire, laneRelease, quotaBlock, noteQuota, LANE_DIR, setClockScale, nowMs, monitorShell, setLaneWait: (s: number) => (LANE_WAIT_S = s), pendingCount: () => pending.length, jobCount: () => jobs.size };
+	(pi as any).__edp8_test = { laneAcquire, laneRelease, quotaBlock, noteQuota, LANE_DIR, setClockScale, nowMs, monitorShell, rateGate, setLaneWait: (s: number) => (LANE_WAIT_S = s), pendingCount: () => pending.length, jobCount: () => jobs.size };
 
 	pi.registerCommand("edp8", {
 		description: "edp8 seat status: monitors, cron jobs, bridged tools",

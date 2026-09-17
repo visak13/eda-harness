@@ -161,6 +161,17 @@ check("lane released after 429", !existsSync(join(LANE, "lane.lock")));
 
 // ---- qa report-fb5ff85cd9 adversary round (m-527660cbce): defects fixed in edp8.ts, each pinned here
 const T = (fakePi as any).__edp8_test;
+{
+	// steady-state pattern at 10 lines/s (parity §5): after the burst, 2 delivered then "[6 suppressed]" per 800 ms
+	const st = { tokens: 20, lastRefill: 0, suppressed: 0 };
+	const seq: (number | null)[] = [];
+	for (let i = 0; i < 150; i++) seq.push(T.rateGate(st, i * 100));
+	const passed = seq.filter((x) => x !== null).length;
+	const notices = seq.filter((x) => typeof x === "number" && x > 0) as number[];
+	const steady = seq.slice(32); // window starts fall on multiples of 8 (800 ms at 100 ms/line)
+	const sixes = notices.filter((n) => n === 6).length;
+	check("rate gate: ~22 pass first, then 2 delivered / [6 suppressed] per window", passed >= 50 && passed <= 56 && sixes >= 12 && steady.every((x, k) => (k % 8 === 0 ? x === 6 : k % 8 === 1 ? x === 0 : x === null)), { passed, notices: notices.slice(0, 6), tail: st.suppressed });
+}
 // A5: cron fields are bounded and junk is rejected (no unbounded loop)
 for (const bad of ["9007199254740992 * * * *", "1oops * * * *", "99 * * * *", "* 24 * * *", "* * 0 * *", "* * * 13 *", "5-3 * * * *"]) {
 	const r = await call("CronCreate", { cron: bad, prompt: "junk" });
