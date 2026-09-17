@@ -1231,7 +1231,8 @@ def consult(purpose: Purpose, question: str, context: str = "",
     # lane makes it fleet-wide. Bounded wait; a full lane is an honest error, not a hang.
     from edp8.admission import PRIO_HUMAN, Lane, lane_dir_from_env
     lease = Lane(lane_dir_from_env(_log_dir())).acquire(f"consult:{purpose}", priority=PRIO_HUMAN,
-                                                       max_wait_s=float(os.environ.get("EDP8_LANE_WAIT_S", "900")))
+                                                       max_wait_s=float(os.environ.get("EDP8_LANE_WAIT_S", "900")),
+                                                       ttl_s=float(timeout_s) + 120)  # qa A4: never reclaimed under a live run
     if lease is None:
         with _LANE_STATE_LOCK:
             _LANE_STATE["entered"] -= 1

@@ -36,10 +36,31 @@ def find_pi(explicit: str | None = None) -> list[str]:
         if p.suffix == ".js":
             return ["node", str(p)]
         return [str(p)]
+    for cli in default_pi_cli_candidates():
+        if cli.is_file():
+            return ["node", str(cli)]
     exe = shutil.which("pi")
     if not exe:
-        raise FileNotFoundError("pi not found: set EDP_PI_BIN to <pi-coding-agent>/dist/cli.js or put pi on PATH")
+        raise FileNotFoundError("pi not found: install it under edp-pool/.pi-harness (npm install --ignore-scripts), "
+                                "set EDP_PI_BIN to <pi-coding-agent>/dist/cli.js, or put pi on PATH")
     return [exe]
+
+
+PI_CLI_REL = Path("node_modules") / "@earendil-works" / "pi-coding-agent" / "dist" / "cli.js"
+
+
+def default_pi_cli_candidates() -> list[Path]:
+    """Durable install locations (qa report-fb5ff85cd9 §1): `<repo>/edp-pool/.pi-harness` — package.json +
+    lockfile committed, node_modules ignored — next to the agent home, or EDP_PI_HARNESS."""
+    out: list[Path] = []
+    env = os.environ.get("EDP_PI_HARNESS", "").strip()
+    if env:
+        out.append(Path(env) / PI_CLI_REL)
+    here = Path(__file__).resolve()
+    for base in [Path.cwd(), *here.parents]:
+        out.append(base / "edp-pool" / ".pi-harness" / PI_CLI_REL)
+        out.append(base.parent / "edp-pool" / ".pi-harness" / PI_CLI_REL)
+    return out
 
 
 class PiSeat:

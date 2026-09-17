@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import difflib
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -51,7 +52,7 @@ _ID_RX = [
     (re.compile(r'"task_id":\s*"[a-z0-9]{9}"'), '"task_id": "<task-id>"'),  # TaskStop input + result JSON
     (re.compile(r'"id":\s*"[0-9a-f]{8}"'), '"id": "<job-id>"'),  # CronDelete input
     (re.compile(r"Successfully stopped task: [a-z0-9]{9} "), "Successfully stopped task: <task-id> "),
-    (re.compile(r"(?:[A-Za-z]:)?[\\/][^\s<>\"']*[\\/]tasks[\\/][a-z0-9]{9}\.output"), "<output-file>"),
+    (re.compile(r"(?:[A-Za-z]:)?[^\s<>\"']*[\\/]tasks[\\/][a-z0-9]{9}\.output"), "<output-file>"),  # absolute or relative tasks dir
     (re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?"), "<ts>"),
     (re.compile(r"\b\d{2}:\d{2}:\d{2}\b"), "<hms>"),
 ]
@@ -89,6 +90,8 @@ def capture_claude(path: Path, since: str | None = None, until: str | None = Non
     DRIVER_PREFIX) and their fires are excluded — they are the Claude-side case runner, not a case."""
     out: list[dict] = []
     tool_names: dict[str, str] = {}
+    all_tools: dict[str, str] = {}  # every tool_use id → name: an attached notification names the tool that carried it
+    last_tool = ""
     driver_ids: set[str] = set()
     for raw in path.read_text(encoding="utf-8").splitlines():
         if not raw.strip():
@@ -103,6 +106,8 @@ def capture_claude(path: Path, since: str | None = None, until: str | None = Non
         t = o.get("type")
         if t == "assistant":
             for b in (o.get("message") or {}).get("content") or []:
+                if b.get("type") == "tool_use":
+                    all_tools[b["id"]] = b.get("name", "")
                 if b.get("type") == "tool_use" and b.get("name") in PARITY_TOOLS:
                     if b["name"] == "CronCreate" and str((b.get("input") or {}).get("prompt", "")).startswith(DRIVER_PREFIX):
                         driver_ids.add(b["id"])
@@ -120,15 +125,19 @@ def capture_claude(path: Path, since: str | None = None, until: str | None = Non
                     out.append({"kind": "notification_standalone", "text": wrap_idle(c), "ts": o.get("timestamp")})
             elif isinstance(c, list):
                 for b in c:
+                    if b.get("type") == "tool_result":
+                        last_tool = all_tools.get(b.get("tool_use_id", ""), "")
                     if b.get("type") == "tool_result" and b.get("tool_use_id") in tool_names:
                         cc = b.get("content")
                         text = cc if isinstance(cc, str) else "\n".join(x.get("text", "") for x in cc if isinstance(x, dict))
-                        out.append({"kind": "tool_result", "tool": tool_names[b["tool_use_id"]], "text": text, "ts": o.get("timestamp")})
+                        out.append({"kind": "tool_result", "tool": tool_names[b["tool_use_id"]], "text": text, "ts": o.get("timestamp"),
+                                    "is_error": bool(b.get("is_error"))})
         elif t == "attachment":
             a = o.get("attachment") or {}
             if a.get("type") == "queued_command" and a.get("commandMode") == "task-notification" and "Monitor" in (a.get("prompt") or ""):
                 rendered = (o.get("rendered") or [{}])[0].get("content", "")
-                out.append({"kind": "notification_attached", "text": rendered, "ts": o.get("timestamp")})
+                # the attachment record follows the tool_result it was appended to (guide §4.2)
+                out.append({"kind": "notification_attached", "text": rendered, "ts": o.get("timestamp"), "attached_to": last_tool})
     return out
 
 
@@ -162,11 +171,11 @@ def capture_pi(path: Path, since: float | None = None, until: float | None = Non
             att = text.find("<system-reminder>")
             own = text if att < 0 else text[:att].rstrip()
             if o.get("toolName") in PARITY_TOOLS:
-                out.append({"kind": "tool_result", "tool": o["toolName"], "text": own, "ts": ts})
+                out.append({"kind": "tool_result", "tool": o["toolName"], "text": own, "ts": ts, "is_error": bool(o.get("isError") or res.get("isError"))})
             if att >= 0:
                 for block in text[att:].split("\n\n<system-reminder>"):
                     block = block if block.startswith("<system-reminder>") else "<system-reminder>" + block
-                    out.append({"kind": "notification_attached", "text": block, "ts": ts})
+                    out.append({"kind": "notification_attached", "text": block, "ts": ts, "attached_to": o.get("toolName", "")})
         elif t == "message_end":
             m = o.get("message") or {}
             if m.get("role") == "user":
@@ -216,6 +225,7 @@ def case_only(trace: list[dict]) -> list[dict]:
 
 
 # ---------------------------------------------------------------- diff
+_JOB_LINE = re.compile(r"^[0-9a-f]{8} — ")
 CASE_MARK = "ORACLE"  # cron prompts of the case list carry it; CronList lines are filtered to them
 
 
@@ -225,18 +235,53 @@ def project(ev: dict) -> str:
     if ev["kind"] == "tool_result":
         text = ev["text"]
         if ev["tool"] == "CronList":
-            # a live seat has jobs of its own (heartbeat, the Claude-side driver crons); compare only the
-            # case's jobs, and an empty list projects as Claude's empty-list text
-            lines = [ln for ln in text.splitlines() if CASE_MARK in ln and DRIVER_PREFIX not in ln]
-            text = "\n".join(lines) if lines else "No cron jobs scheduled."
-        return f"TOOL_RESULT {ev['tool']}\n{normalise(text)}"
+            # a live seat has jobs of its own (heartbeat, the Claude-side driver crons): drop only JOB LINES that are
+            # not the case's; any other text (an error, a different empty-list wording) stays and diffs
+            job_lines = [ln for ln in text.splitlines() if _JOB_LINE.match(ln)]
+            other = [ln for ln in text.splitlines() if not _JOB_LINE.match(ln) and ln.strip() != "No cron jobs scheduled."]
+            kept = [ln for ln in job_lines if CASE_MARK in ln and DRIVER_PREFIX not in ln]
+            text = "\n".join(other + kept) if (other or kept) else "No cron jobs scheduled."
+        flag = " [error]" if ev.get("is_error") else ""
+        return f"TOOL_RESULT {ev['tool']}{flag}\n{normalise(text)}"
+    if ev["kind"] == "notification_attached":
+        # Claude's built-in tools are capitalised (Bash), Pi's are not (bash): compare the receiving tool case-insensitively
+        return f"NOTIFICATION_ATTACHED to={str(ev.get('attached_to') or '?').lower()}\n{normalise(ev['text'])}"
     return f"{ev['kind'].upper()}\n{normalise(ev['text'])}"
 
 
 def diff(a: list[dict], b: list[dict]) -> list[str]:
-    pa = [project(e) for e in case_only(a)]
-    pb = [project(e) for e in case_only(b)]
+    ca, cb = case_only(a), case_only(b)
+    if not ca or not cb:
+        return [f"EMPTY TRACE: claude={len(ca)} pi={len(cb)} case events — a capture with nothing to compare is a failure"]
+    pa = [project(e) for e in ca]
+    pb = [project(e) for e in cb]
     return list(difflib.unified_diff(pa, pb, "claude", "pi", lineterm="", n=1))
+
+
+def run_both(claude_ref: Path, out_dir: Path | None) -> int:
+    """`--both`: the Pi side is driven live (scripts/parity_live_pi.py: one Pi RPC session, the CASES one turn each,
+    seeded ids, wall clock for Monitor timings), captured, and diffed against the checked-in Claude reference.
+    Exit 0 = zero diffs; 1 = diffs; 2 = the Pi seat cannot start (no install / no credentials)."""
+    import subprocess
+    import tempfile
+    if not claude_ref.is_file():
+        print(f"claude reference missing: {claude_ref}", file=sys.stderr)
+        return 2
+    work = out_dir or Path(tempfile.mkdtemp(prefix="parity-both-"))
+    work.mkdir(parents=True, exist_ok=True)
+    runner = Path(__file__).resolve().parent / "parity_live_pi.py"
+    env = {**os.environ, "EDP_PARITY_SEED": os.environ.get("EDP_PARITY_SEED", "oracle")}
+    proc = subprocess.run([sys.executable, str(runner), "--log-dir", str(work)], env=env, text=True,
+                          capture_output=True, timeout=float(os.environ.get("EDP_PARITY_BOTH_TIMEOUT_S", "1800")))
+    sys.stderr.write(proc.stdout[-4000:] + proc.stderr[-2000:])
+    if proc.returncode != 0:
+        print(f"pi runner exit {proc.returncode} — see {work}", file=sys.stderr)
+        return 2
+    pi_trace = capture_pi(work / "pi-seat.cases.jsonl")
+    (work / "pi_trace.json").write_text(json.dumps(pi_trace, indent=1), encoding="utf-8")
+    d = diff(json.loads(claude_ref.read_text(encoding="utf-8")), pi_trace)
+    print("\n".join(d) if d else f"0 diffs ({work})")
+    return 1 if d else 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -244,7 +289,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--capture-claude", metavar="SESSION_JSONL")
     ap.add_argument("--capture-pi", metavar="PI_SEAT_JSONL")
     ap.add_argument("--diff", nargs=2, metavar=("CLAUDE_JSON", "PI_JSON"))
-    ap.add_argument("--both", action="store_true")
+    ap.add_argument("--both", action="store_true", help="run the CASES on a live Pi/Astra seat and diff against --claude-ref")
+    ap.add_argument("--claude-ref", default=str(Path(__file__).resolve().parents[1] / "tests" / "pi_ext" / "oracle_traces" / "claude_trace_final.json"),
+                    help="the Claude-side reference trace (a Claude seat is interactive and cannot be driven from here; "
+                         "re-capture it with --capture-claude from a session JSONL when Claude Code moves)")
     ap.add_argument("--cases", action="store_true")
     ap.add_argument("-o", "--out")
     ap.add_argument("--since", help="capture window start (ISO for Claude, epoch seconds for Pi)")
@@ -273,9 +321,7 @@ def main(argv: list[str] | None = None) -> int:
         print("\n".join(d) if d else "0 diffs")
         return 1 if d else 0
     if a.both:
-        print("--both needs a live Claude seat and a live Astra seat (credentials: design G1 / m-7fe3c34fac); "
-              "run the CASES through both drivers, capture, then --diff. Not runnable yet.", file=sys.stderr)
-        return 2
+        return run_both(Path(a.claude_ref), Path(a.out) if a.out else None)
     ap.print_help()
     return 2
 

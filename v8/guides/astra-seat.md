@@ -83,7 +83,7 @@ Fleet wiring is identical for every non-Claude path: a third `Spawner` in edp-po
 
 ## 6. Spike results (SP · Pi) — 2026-09-14, architect seat, session 7edf0320
 
-Pinned: Pi `@earendil-works/pi-coding-agent@0.85.1` (installed in the seat scratchpad with `npm install --ignore-scripts`), Node v25.1.0, Claude Code 2.1.270 as the reference. Extension: `v8/.pi/extensions/edp8.ts`. Driver: `v8/src/edp8/pi_seat/driver.py`. Harness: `v8/tests/pi_ext/fake_pi_harness.ts` (run `node --experimental-strip-types tests/pi_ext/fake_pi_harness.ts` from `v8` with `node_modules/typebox` junctioned to Pi's bundled typebox 1.3.7).
+Pinned: Pi `@earendil-works/pi-coding-agent@0.85.1` — installed durably at `edp-pool/.pi-harness` (`package.json` + `package-lock.json` committed, `npm install --ignore-scripts`; `node_modules` ignored) and found by `edp8.pi_seat.driver.find_pi` / edp-pool `pi_bin_argv` without any env (override: `EDP_PI_HARNESS` or `EDP_PI_BIN`), Node v25.1.0, Claude Code 2.1.270 as the reference. Extension: `v8/.pi/extensions/edp8.ts`. Driver: `v8/src/edp8/pi_seat/driver.py`. Harness: `v8/tests/pi_ext/fake_pi_harness.ts` (run `node --experimental-strip-types tests/pi_ext/fake_pi_harness.ts` from `v8` with `node_modules/typebox` junctioned to Pi's bundled typebox 1.3.7).
 
 | check | result | evidence |
 |---|---|---|
@@ -115,6 +115,18 @@ Auth: owner chose Pi's own ChatGPT/Codex device-code login (`~/.pi/agent/auth.js
 | Case pins ruled by the architect | case 4 uses a builtin-only 700-char echo (a `head\|tr` pipeline raced the ~270 ms window: attached on Claude, standalone on Pi — a shell-speed artefact, not a semantic gap); case 7 prescribes `* * * * *` one-shot (model-chosen specs differed) | `parity_oracle.py` CASES |
 | Claude-side anomaly, NOT mirrored | a one-shot whose slot passes while the seat is idle may never fire (af5e71f3) or fires at the next idle minute after another job took the slot (26a68cfa); Pi fires at the first settle after due. Recorded as a deviation for G1 (parity §5 "one-shot due while IDLE") | CronList 22:53 IST; fire 17:42Z |
 | Boot-time tool list | deviation (unchanged): Claude defers the five tools until `ToolSearch`; Pi registers them at boot; built-in tool names differ (`Bash` vs `bash`) | G1 |
+| qa adversary round (report-fb5ff85cd9, m-527660cbce) | 13 reproduced defects fixed and pinned in the fake harness (47/47): A2 admission fails CLOSED (quota block / lane busy → abort + error), A3 dead queue tickets skipped (ticket liveness by touch, 10 s) + aging (120 s) against consult starvation, A4 unique lease ids + consult TTL = its own timeout, A5 bounded cron fields, A6 oracle (empty trace = failure, CronList errors kept, `[error]` flag, receiving tool on attached notifications), A7 `--both` runs the live Pi seat against the checked-in Claude reference + `EDP_PARITY_CLOCK_SCALE`/`EDP_PARITY_SEED` + accelerated 7-day expiry check, A8 failed sends re-queue, A9 fire committed before the send, A10 reschedule from the slot, A12 `ws` source, A13 spawn error → failed envelope, #16 idle deliveries coalesce (20 ms). Not fixed, recorded: A1 (proxy role endpoint — owner finding), A11 rate-limit pattern [H], A14 parallel-attach/abort (S6 live probe), A15 containment posture (= a Claude seat's) | `tests/pi_ext/fake_pi_harness.ts`, `tests/test_admission_lane.py` (9), `tests/test_parity_oracle.py` (6), parity §5 rows |
+| Monitor variant | Claude 2.1.270 serves two Monitor tools per seat (parity §5 "Monitor tool VARIANTS"); the seat mirrors `EDP_MONITOR_VARIANT=persistent` (default, this session's reference) or `expiry` (qa's seat) — G1 line 7 | edp8.ts `MONITOR_VARIANT` |
+| Suspended-seat resume | Claude replayed ~80 missed heartbeat fires as one turn after a 3-day suspend; Pi fires each due job once at settle — deviation, G1 line 8 | parity §5 "missed periods while SUSPENDED" |
+| `parity_oracle.py --both` | runs `scripts/parity_live_pi.py` (one Pi RPC session, seeded ids, the 9 live CASES) and diffs against `tests/pi_ext/oracle_traces/claude_trace_final.json`; exit 0/1/2 (2 = the seat cannot start: no install or no login) | run 7 output in `.pi/parity/both-run7.out` (see §6.2) |
+
+### 6.2 `parity_oracle.py --both` — live runs 2026-09-17 (Pi 0.85.1 at edp-pool/.pi-harness, Astra via the Pi login)
+
+| run | result | note |
+|---|---|---|
+| 7 (12:25Z) | all 9 cases ran; diff = `<output-file>` path only (relative tasks dir not normalised) → fixed in the normaliser + runner | `.pi/parity/both-run7.out`; re-diff from its mirror: 0 diffs |
+| 8 (12:31Z) | 1 hunk: case 1 first line attached to the Monitor's own result on Pi (first line +40 ms → batch flush +240 ms < grace 250) — a race Claude does not have | fix: `MONITOR_START_GRACE_MS = BATCH_MS = 200` (parity §5 row) |
+| 9 (12:37Z) | **0 diffs, exit 0** — 37 events per side, 9 cases | `.pi/parity/both-run9.out` |
 
 Deviation noted for the oracle: Claude's five tools are *deferred* (name-only until `ToolSearch`); Pi registers them fully at boot, so the boot-time tool list differs. Claude's `Bash` vs Pi's `bash` (and read/edit/write names) also differ — out of the words' scope (monitor + cron) but visible at the model-input boundary; recorded for G1.
 

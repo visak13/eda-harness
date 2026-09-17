@@ -159,6 +159,94 @@ check("429 writes quota.json in consult.py's format", typeof q.blocked_until ===
 check("python consult() sees the seat's quota block", pyLane(`import os;os.environ['EDP8_SOL_LOG_DIR']=r'${LANE_PY}';from edp8 import consult;print(bool(consult.quota_block()))`) === "True");
 check("lane released after 429", !existsSync(join(LANE, "lane.lock")));
 
+// ---- qa report-fb5ff85cd9 adversary round (m-527660cbce): defects fixed in edp8.ts, each pinned here
+const T = (fakePi as any).__edp8_test;
+// A5: cron fields are bounded and junk is rejected (no unbounded loop)
+for (const bad of ["9007199254740992 * * * *", "1oops * * * *", "99 * * * *", "* 24 * * *", "* * 0 * *", "* * * 13 *", "5-3 * * * *"]) {
+	const r = await call("CronCreate", { cron: bad, prompt: "junk" });
+	check(`CronCreate rejects "${bad}"`, r.isError === true && /bad cron field|out of range/.test(r.content[0].text), { text: r.content[0].text });
+}
+// #16 / parity §5 "queued notifications at idle": two events + the end, all inside one idle interval → ONE user turn
+userMessages.length = 0;
+idle = true;
+await call("Monitor", { command: "printf 'p\\nq\\n'", description: "idle coalesce", persistent: false, timeout_ms: 30000 });
+await sleep(1500);
+check("idle notifications coalesce into one turn", userMessages.length === 1 && userMessages[0].content.includes("<event>p\nq</event>") && userMessages[0].content.includes("</system-reminder>\n<system-reminder>") && userMessages[0].content.includes("<status>completed</status>"), { n: userMessages.length });
+// A8: a failed standalone send keeps the notifications (re-queued to pending, attached to the next tool result)
+userMessages.length = 0;
+const realSend = fakePi.sendUserMessage;
+fakePi.sendUserMessage = async () => {
+	throw new Error("Agent is already processing a prompt");
+};
+await call("Monitor", { command: "echo keepme", description: "lossy", persistent: false, timeout_ms: 30000 });
+await sleep(3500); // 40 × 50 ms retries, twice (event + end)
+fakePi.sendUserMessage = realSend;
+check("failed send re-queues instead of losing", userMessages.length === 0 && T.pendingCount() >= 2, { pending: T.pendingCount() });
+idle = false;
+const tr2 = await emit("tool_result", { type: "tool_result", toolName: "bash", toolCallId: "tc2", input: {}, content: [{ type: "text", text: "next" }], isError: false });
+check("re-queued notifications attach to the next tool result", !!tr2 && tr2.content[0].text.includes("<event>keepme</event>"), { head: tr2?.content?.[0]?.text?.slice(0, 40) });
+idle = true;
+// A13: a bad shell is a failed Monitor, not an unhandled process error
+userMessages.length = 0;
+const shell0 = process.env.EDP_MONITOR_SHELL;
+process.env.EDP_MONITOR_SHELL = "Z:\\nonexistent\\bash.exe";
+const rb = await call("Monitor", { command: "echo probe", description: "bad shell", persistent: false, timeout_ms: 5000 });
+await sleep(800);
+if (shell0 === undefined) delete process.env.EDP_MONITOR_SHELL;
+else process.env.EDP_MONITOR_SHELL = shell0;
+check("spawn error → failed envelope", rb.content[0].text.startsWith("Monitor started") && userMessages.some((m) => m.content.includes("<status>failed</status>") && m.content.includes('Monitor "bad shell" script failed (')), { n: userMessages.length });
+// A12: ws source exists — a refused socket ends the watch with a failed envelope carrying the close code
+userMessages.length = 0;
+const rw = await call("Monitor", { ws: { url: "ws://127.0.0.1:9" }, description: "ws probe", persistent: false, timeout_ms: 5000 });
+await sleep(2500);
+check("ws source: refused socket → failed envelope with close code", rw.content[0].text.startsWith("Monitor started") && userMessages.some((m) => m.content.includes("<status>failed</status>") && /socket closed \(code \d+/.test(m.content)), { n: userMessages.length, last: userMessages[userMessages.length - 1]?.content.slice(-160) });
+// A2: admission fails CLOSED — quota block or a busy lane aborts the provider request
+const quotaPath = join(LANE, "quota.json");
+const { writeFileSync: wf, rmSync: rmf, mkdirSync: mkd } = await import("node:fs");
+wf(quotaPath, JSON.stringify({ blocked_until: new Date(Date.now() + 60000).toISOString(), evidence: "test block" }));
+let threw = "";
+try {
+	await emit("before_provider_request", { type: "before_provider_request", payload: {} });
+} catch (e) {
+	threw = String(e);
+}
+rmf(quotaPath, { force: true });
+check("quota block fails closed", /quota blocked/.test(threw) && !existsSync(join(LANE, "lane.lock")), { threw });
+mkd(join(LANE, "lane.lock"), { recursive: true });
+wf(join(LANE, "lane.lock", "holder.json"), JSON.stringify({ holder: "consult:other", lease_id: "x", ttl_s: 900 }));
+T.setLaneWait(0.6);
+threw = "";
+try {
+	await emit("before_provider_request", { type: "before_provider_request", payload: {} });
+} catch (e) {
+	threw = String(e);
+}
+check("busy lane fails closed after the bounded wait", /lane busy/.test(threw), { threw });
+// A4: releasing never removes a lock this seat does not hold (lease id mismatch)
+await emit("after_provider_response", { type: "after_provider_response", status: 200, headers: {} });
+check("release leaves another lease's lock alone", existsSync(join(LANE, "lane.lock", "holder.json")));
+rmf(join(LANE, "lane.lock"), { recursive: true, force: true });
+T.setLaneWait(20);
+// A3: a dead ticket (untouched) does not block; the seat acquires past it
+wf(join(LANE, "lane.queue", "0-0000000000000-dead.json"), "{}");
+const oldT = new Date(Date.now() - 60000);
+const { utimesSync: ut } = await import("node:fs");
+ut(join(LANE, "lane.queue", "0-0000000000000-dead.json"), oldT, oldT);
+await emit("before_provider_request", { type: "before_provider_request", payload: {} });
+check("dead queue ticket is skipped and removed", existsSync(join(LANE, "lane.lock", "holder.json")) && !existsSync(join(LANE, "lane.queue", "0-0000000000000-dead.json")));
+await emit("after_provider_response", { type: "after_provider_response", status: 200, headers: {} });
+// A7: accelerated 7-day expiry under the controlled clock (cron clock only) — LAST: virtual time moves on
+userMessages.length = 0;
+idle = true;
+const ex = await call("CronCreate", { cron: "* * * * *", prompt: "EXPIRY-PROBE" });
+const exId = /job (\w{8})/.exec(ex.content[0].text)?.[1];
+const before = T.nowMs();
+T.setClockScale(200000); // 1 s real ≈ 2.3 days virtual; the ticker fires at most once per real second (no catch-up)
+await sleep(5200);
+T.setClockScale(1);
+const fired = userMessages.filter((m) => m.content === "EXPIRY-PROBE").length;
+check("7-day expiry: fires while alive, one final time, then deleted", fired >= 2 && fired <= 6 && !(await call("CronList", {})).content[0].text.includes(exId!) && T.nowMs() - before > 7 * 86400000, { fired, virtual_days: Math.round((T.nowMs() - before) / 86400000) });
+
 const bad = checks.filter((c) => !c.ok);
 console.log(JSON.stringify({ summary: `${checks.length - bad.length}/${checks.length} ok`, failed: bad.map((b) => b.check) }));
 await emit("session_shutdown", {});

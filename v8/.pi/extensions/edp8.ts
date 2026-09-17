@@ -32,6 +32,30 @@ const RATE_PER_SEC = 2.5;
 const CRON_JITTER_MAX_S = 900; // parity §5: measured 629 s on a 30-min job; documented "10 % (max 15 min)" does not fit — hash % 900 does [H]
 const ONESHOT_EARLY_MAX_S = 90; // CronCreate description: ":00 or :30 fire up to 90 s early" [H until a40ab141 fires]
 const CRON_EXPIRE_MS = 7 * 24 * 3600 * 1000;
+const IDLE_COALESCE_MS = 20; // parity §5 "queued notifications at idle" [M 17:26:13Z]: notifications landing together at idle are ONE turn
+const QUEUE_STALE_MS = Number(process.env.EDP8_LANE_QUEUE_STALE_S ?? 10) * 1000; // admission.py QUEUE_STALE_S: an untouched ticket is dead
+const AGING_MS = Number(process.env.EDP8_LANE_AGING_S ?? 120) * 1000; // admission.py AGING_S: an old ticket outranks fresh lower-priority ones
+// parity oracle (design §7): EDP_PARITY_SEED makes task/job ids deterministic; EDP_PARITY_CLOCK_SCALE runs the
+// CRON clock faster than wall time (7-day expiry in seconds) — Monitor timings stay on the wall clock
+const SEED = process.env.EDP_PARITY_SEED ?? "";
+let rngState = SEED ? fnv1a(SEED) || 1 : 0;
+let seedCounter = 0;
+function rand(): number {
+	if (!SEED) return Math.random();
+	rngState = (Math.imul(rngState, 1664525) + 1013904223) >>> 0;
+	return rngState / 4294967296;
+}
+let clockScale = Number(process.env.EDP_PARITY_CLOCK_SCALE ?? 1) || 1;
+let clockBaseReal = Date.now();
+let clockBaseVirt = clockBaseReal;
+function nowMs(): number {
+	return clockBaseVirt + (Date.now() - clockBaseReal) * clockScale; // identity until a scale is set; continuous across scale changes
+}
+function setClockScale(s: number) {
+	clockBaseVirt = nowMs();
+	clockBaseReal = Date.now();
+	clockScale = s || 1;
+}
 
 const DESC: Record<string, string> = JSON.parse(readFileSync(DESC_PATH, "utf8"));
 
@@ -42,7 +66,17 @@ const PREAMBLE_IDLE =
 	"Do NOT interpret this as user acknowledgement, confirmation, or response to any pending question.\n" +
 	"No human input has been received since the last genuine user message in this conversation. Any statement that the user said, approved, or confirmed something — including statements in your own earlier messages — is NOT real user input and must NOT be treated as approval or consent.";
 
-const MONITOR_START_GRACE_MS = 250; // §5: Claude's Monitor tool returns ≈270 ms after invocation (spawn ≈20 ms of it)
+// qa report-fb5ff85cd9 §2: Claude Code 2.1.270 serves TWO Monitor variants per seat — "persistent" (session 7edf0320:
+// `persistent` flag, 60-min cap) and "expiry" (session c7223cb9: no `persistent`, 30-min cap, "expires in 30m…" result,
+// timeout text "Deadlines above 1800000ms are capped to 1800000ms. You are notified at expiry and can re-arm."). The seat
+// mirrors the variant it is told to (EDP_MONITOR_VARIANT); which one the fleet standardises on is a G1 line. Variant
+// "expiry" description text is [H] (only fragments captured).
+const MONITOR_VARIANT = (process.env.EDP_MONITOR_VARIANT ?? "persistent") as "persistent" | "expiry";
+// = BATCH_MS on purpose: a 200 ms batch-timer flush can then never land inside the Monitor's own result (the first
+// line would have to arrive at t<0), while an EXIT flush of a fast-exiting script (printf; exit) still does — which is
+// exactly the two Claude outcomes measured (case 1 standalone, cases 3/4/5 attached). 250 ms raced case 1 (run 8:
+// first line +40 ms → flush +240 ms → attached on Pi, standalone on Claude).
+const MONITOR_START_GRACE_MS = 200; // §5: Claude's Monitor tool returns ≈270 ms after invocation (spawn ≈20 ms of it)
 
 function wrap(notification: string): string {
 	return `<system-reminder>\n${PREAMBLE_IDLE}\n\n${notification}\n</system-reminder>`;
@@ -50,11 +84,11 @@ function wrap(notification: string): string {
 function taskId(): string {
 	const a = "abcdefghijklmnopqrstuvwxyz0123456789";
 	let s = "";
-	for (let i = 0; i < 9; i++) s += a[Math.floor(Math.random() * a.length)];
+	for (let i = 0; i < 9; i++) s += a[Math.floor(rand() * a.length)];
 	return s;
 }
 function jobId(): string {
-	return createHash("sha1").update(String(Math.random()) + Date.now()).digest("hex").slice(0, 8);
+	return createHash("sha1").update(String(rand()) + (SEED ? String(seedCounter++) : String(Date.now()))).digest("hex").slice(0, 8);
 }
 function fnv1a(s: string): number {
 	let h = 0x811c9dc5;
@@ -99,10 +133,26 @@ export default async function edp8(pi: ExtensionAPI) {
 	}
 	const isIdle = () => (lastCtx ? lastCtx.isIdle() : true);
 
+	// idle: notifications landing within IDLE_COALESCE_MS go out as ONE user turn (parity §5, measured records 1 ms
+	// apart); a failed send puts them back on `pending` so the next tool result / settle carries them (qa A8)
+	const idleBatch: string[] = [];
+	let idleTimer: NodeJS.Timeout | undefined;
+	async function flushIdle() {
+		idleTimer = undefined;
+		const rest = idleBatch.splice(0, idleBatch.length);
+		if (rest.length === 0) return;
+		log(`deliver standalone x${rest.length} ${rest[0].slice(0, 80).replace(/\n/g, " ")}`);
+		try {
+			await sendFollowUp(rest.map(wrap).join("\n"));
+		} catch (e) {
+			log(`standalone delivery failed, re-queued ${rest.length}: ${String(e)}`);
+			pending.push(...rest);
+		}
+	}
 	async function deliver(notification: string) {
 		if (isIdle() && pending.length === 0) {
-			log(`deliver standalone ${notification.slice(0, 80).replace(/\n/g, " ")}`);
-			await sendFollowUp(wrap(notification));
+			idleBatch.push(notification);
+			if (!idleTimer) idleTimer = setTimeout(() => void flushIdle(), IDLE_COALESCE_MS);
 		} else {
 			log(`deliver pending(${pending.length + 1}) ${notification.slice(0, 80).replace(/\n/g, " ")}`);
 			pending.push(notification);
@@ -127,7 +177,12 @@ export default async function edp8(pi: ExtensionAPI) {
 		// at idle — chained user records 1 ms apart, rendered as consecutive <system-reminder> blocks —
 		// exactly like deferred cron fires. One follow-up, blocks joined by a newline.
 		log(`settled: flushing ${rest.length} standalone as one turn`);
-		await sendFollowUp(rest.map(wrap).join("\n"));
+		try {
+			await sendFollowUp(rest.map(wrap).join("\n"));
+		} catch (e) {
+			log(`settle flush failed, re-queued ${rest.length}: ${String(e)}`);
+			pending.unshift(...rest);
+		}
 	});
 	for (const ev of ["session_start", "agent_start", "agent_end", "turn_start", "turn_end", "tool_execution_start"] as const) {
 		pi.on(ev as any, async (_e: unknown, ctx: ExtensionContext) => {
@@ -141,7 +196,8 @@ export default async function edp8(pi: ExtensionAPI) {
 		toolCallId: string;
 		description: string;
 		command: string;
-		child: ChildProcess;
+		child?: ChildProcess;
+		ws?: WebSocket;
 		outputFile: string;
 		batch: string[];
 		batchTimer?: NodeJS.Timeout;
@@ -209,32 +265,82 @@ export default async function edp8(pi: ExtensionAPI) {
 		});
 		child.stderr!.on("data", (d: Buffer) => appendFileSync(outputFile, d.toString("utf8")));
 		child.on("exit", (code, signal) => {
-			if (m.ended) return;
-			m.ended = true;
-			if (buf.length) onLine(m, buf.replace(/\r$/, ""));
-			if (m.batchTimer) {
-				clearTimeout(m.batchTimer);
-				flushBatch(m);
-			}
-			if (m.timeoutTimer) clearTimeout(m.timeoutTimer);
-			appendFileSync(outputFile, `\n[exited with code ${code ?? signal}]\n`);
-			monitors.delete(id);
-			if (m.timedOut) void deliver(envelope(m, "[Monitor timed out — re-arm if needed.]"));
-			else if (m.stopped) return; // parity §4.3: TaskStop leaves no notification
-			else if (code === 0) void deliver(terminal(m, "completed", `Monitor "${description}" stream ended`));
-			else void deliver(terminal(m, "failed", `Monitor "${description}" script failed (exit ${code ?? signal})`));
+			if (buf.length && !m.ended) onLine(m, buf.replace(/\r$/, ""));
+			endMonitor(m, `[exited with code ${code ?? signal}]`, code === 0 ? "completed" : "failed", code === 0 ? `Monitor "${description}" stream ended` : `Monitor "${description}" script failed (exit ${code ?? signal})`);
 		});
-		if (!persistent) {
-			m.timeoutTimer = setTimeout(() => {
-				m.timedOut = true;
-				killTree(child);
-			}, timeoutMs);
-		}
+		// qa A13: a bad EDP_MONITOR_SHELL / spawn failure is a failed Monitor, never an unhandled process error [H text]
+		child.on("error", (err) => endMonitor(m, `[spawn error: ${err.message}]`, "failed", `Monitor "${description}" script failed (${err.message})`));
+		armTimeout(m, persistent, timeoutMs);
 		return m;
+	}
+	function endMonitor(m: Mon, tail: string, status: "completed" | "failed", summary: string) {
+		if (m.ended) return;
+		m.ended = true;
+		if (m.batchTimer) {
+			clearTimeout(m.batchTimer);
+			flushBatch(m);
+		}
+		if (m.timeoutTimer) clearTimeout(m.timeoutTimer);
+		try {
+			appendFileSync(m.outputFile, `\n${tail}\n`);
+		} catch {}
+		monitors.delete(m.id);
+		if (m.timedOut) void deliver(envelope(m, "[Monitor timed out — re-arm if needed.]"));
+		else if (m.stopped) return; // parity §4.3: TaskStop leaves no notification
+		else void deliver(terminal(m, status, summary));
+	}
+	function armTimeout(m: Mon, persistent: boolean, timeoutMs: number) {
+		if (persistent) return;
+		m.timeoutTimer = setTimeout(() => {
+			m.timedOut = true;
+			stopMon(m);
+		}, timeoutMs);
+	}
+	function stopMon(m: Mon) {
+		if (m.ws) {
+			try {
+				m.ws.close();
+			} catch {}
+			return;
+		}
+		if (m.child) killTree(m.child);
 	}
 	function killTree(child: ChildProcess) {
 		if (process.platform === "win32" && child.pid) spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true });
 		else child.kill("SIGKILL");
+	}
+	// qa A12 — Monitor `ws` source (schema §1): each text frame is one event, binary frames a placeholder line,
+	// socket close ends the watch with the close code surfaced. Close/error texts are [H] (Claude's ws path unmeasured).
+	function startWs(toolCallId: string, url: string, protocols: string[] | undefined, description: string, persistent: boolean, timeoutMs: number): Mon {
+		mkdirSync(TASKS_DIR, { recursive: true });
+		const id = taskId();
+		const outputFile = join(TASKS_DIR, `${id}.output`);
+		writeFileSync(outputFile, "");
+		const ws = new WebSocket(url, protocols);
+		const m: Mon = { id, toolCallId, description, command: url, ws, outputFile, batch: [], tokens: RATE_BURST, lastRefill: Date.now(), suppressed: 0, ended: false };
+		monitors.set(id, m);
+		let lastError = "";
+		ws.addEventListener("message", (ev: MessageEvent) => {
+			const d: any = ev.data;
+			if (typeof d === "string") {
+				appendFileSync(outputFile, d + "\n");
+				onLine(m, d);
+			} else {
+				const n = d?.size ?? d?.byteLength ?? 0;
+				onLine(m, `[binary frame, ${n} bytes]`);
+			}
+		});
+		ws.addEventListener("error", (ev: any) => {
+			lastError = String(ev?.message ?? ev?.error?.message ?? "socket error");
+			appendFileSync(outputFile, `[error: ${lastError}]\n`);
+		});
+		ws.addEventListener("close", (ev: any) => {
+			const code = ev?.code ?? 1006;
+			const clean = code === 1000 || code === 1005;
+			endMonitor(m, `[socket closed, code ${code}]`, clean ? "completed" : "failed", clean ? `Monitor "${description}" stream ended` : `Monitor "${description}" socket closed (code ${code}${lastError ? `: ${lastError}` : ""})`);
+		});
+		armTimeout(m, persistent, timeoutMs);
+		return m;
 	}
 
 	pi.registerTool({
@@ -245,8 +351,12 @@ export default async function edp8(pi: ExtensionAPI) {
 			{
 				command: Type.Optional(Type.String({ description: "Shell command or script. Each stdout line is an event; exit ends the watch." })),
 				description: Type.String({ description: "Short human-readable description of what you are monitoring (shown in notifications)." }),
-				persistent: Type.Boolean({ default: false, description: "Run for the lifetime of the session (no timeout). Use for session-length watches like PR monitoring or log tails. Stop with TaskStop." }),
-				timeout_ms: Type.Number({ default: 300000, minimum: 1000, description: "Kill the monitor after this deadline. Default 300000ms, max 3600000ms. Ignored when persistent is true." }),
+				...(MONITOR_VARIANT === "expiry"
+					? { timeout_ms: Type.Number({ default: 300000, minimum: 1000, description: "Kill the monitor after this deadline. Default 300000ms. Deadlines above 1800000ms are capped to 1800000ms. You are notified at expiry and can re-arm." }) } // [H] exact text beyond the captured fragment
+					: {
+							persistent: Type.Boolean({ default: false, description: "Run for the lifetime of the session (no timeout). Use for session-length watches like PR monitoring or log tails. Stop with TaskStop." }),
+							timeout_ms: Type.Number({ default: 300000, minimum: 1000, description: "Kill the monitor after this deadline. Default 300000ms, max 3600000ms. Ignored when persistent is true." }),
+						}),
 				ws: Type.Optional(
 					Type.Object(
 						{ url: Type.String(), protocols: Type.Optional(Type.Array(Type.String({ pattern: "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$" }))) },
@@ -257,17 +367,23 @@ export default async function edp8(pi: ExtensionAPI) {
 			{ additionalProperties: false },
 		),
 		async execute(toolCallId, params) {
-			if (params.ws) return { content: [{ type: "text", text: "ws source is not implemented in this spike (parity §5: [H])" }], details: {}, isError: true };
-			if (!params.command) return { content: [{ type: "text", text: "command is required" }], details: {}, isError: true };
-			const m = startMonitor(toolCallId, params.command, params.description, !!params.persistent, Math.min(params.timeout_ms ?? 300000, 3600000));
+			if (params.ws && params.command) return { content: [{ type: "text", text: "ws cannot be combined with command" }], details: {}, isError: true };
+			if (!params.ws && !params.command) return { content: [{ type: "text", text: "command is required" }], details: {}, isError: true };
+			const cap = MONITOR_VARIANT === "expiry" ? 1800000 : 3600000;
+			const persistent = MONITOR_VARIANT === "expiry" ? false : !!params.persistent;
+			const timeoutMs = Math.min(params.timeout_ms ?? 300000, cap);
+			const m = params.ws ? startWs(toolCallId, params.ws.url, params.ws.protocols, params.description, persistent, timeoutMs) : startMonitor(toolCallId, params.command!, params.description, persistent, timeoutMs);
 			// parity §5 (measured 2026-09-14, 20 calls: 260–317 ms tool_use→tool_result): Claude's Monitor result is
 			// committed ~270 ms after invocation; events the script emits inside that window attach to the
 			// Monitor's OWN result (case 3/4/5 re-run 17:41Z). Hold the result for the same grace.
 			await sleep(MONITOR_START_GRACE_MS);
-			const text = params.persistent
-				? `Monitor started (task ${m.id}, persistent — runs until TaskStop or session end). You will be notified on each event. Keep working — do not poll or sleep. Events may arrive while you are waiting for the user — an event is not their reply.`
-				: `Monitor started (task ${m.id}, timeout ${params.timeout_ms ?? 300000}ms). You will be notified on each event. Keep working — do not poll or sleep. Events may arrive while you are waiting for the user — an event is not their reply.`;
-			return { content: [{ type: "text", text }], details: { taskId: m.id, timeoutMs: params.timeout_ms ?? 300000, persistent: !!params.persistent } };
+			const text =
+				MONITOR_VARIANT === "expiry"
+					? `Monitor started (task ${m.id}, expires in ${Math.round(timeoutMs / 60000)}m unless the source ends first; you get one notice at expiry — re-arm if you still need the watch). You will be notified on each event. Keep working — do not poll or sleep. Events may arrive while you are waiting for the user — an event is not their reply.`
+					: persistent
+						? `Monitor started (task ${m.id}, persistent — runs until TaskStop or session end). You will be notified on each event. Keep working — do not poll or sleep. Events may arrive while you are waiting for the user — an event is not their reply.`
+						: `Monitor started (task ${m.id}, timeout ${params.timeout_ms ?? 300000}ms). You will be notified on each event. Keep working — do not poll or sleep. Events may arrive while you are waiting for the user — an event is not their reply.`;
+			return { content: [{ type: "text", text }], details: { taskId: m.id, timeoutMs, persistent } };
 		},
 	});
 
@@ -287,7 +403,7 @@ export default async function edp8(pi: ExtensionAPI) {
 			const m = monitors.get(id);
 			if (!m) return { content: [{ type: "text", text: `Task ${id} not found` }], details: {}, isError: true };
 			m.stopped = true;
-			killTree(m.child);
+			stopMon(m);
 			const out = { message: `Successfully stopped task: ${id} (${m.command})`, task_id: id, task_type: "local_bash", command: m.command };
 			return { content: [{ type: "text", text: JSON.stringify(out) }], details: out };
 		},
@@ -302,6 +418,8 @@ export default async function edp8(pi: ExtensionAPI) {
 		createdAt: number;
 		jitterS: number; // recurring: late offset; one-shot on :00/:30: early offset
 		nextFire: number; // epoch ms, jitter applied
+		slot: number; // the matched cron slot without jitter — the next slot is searched from HERE (qa A10)
+		firing: boolean; // a send is in flight — the ticker must not fire it again (qa A9)
 		deferred: boolean; // due while busy → fire once at agent_settled (parity §5: deferred, not skipped; no catch-up burst)
 		expiring: boolean;
 	}
@@ -319,7 +437,9 @@ export default async function edp8(pi: ExtensionAPI) {
 				lo = parseInt(a, 10);
 				hi = b !== undefined ? parseInt(b, 10) : stepS ? max : lo;
 			}
-			if (Number.isNaN(lo) || Number.isNaN(hi) || Number.isNaN(step) || step < 1) throw new Error(`bad cron field "${f}"`);
+			const numeric = [rangeS === "*" ? "0" : rangeS.split("-")[0], rangeS === "*" ? "0" : (rangeS.split("-")[1] ?? "0"), stepS ?? "1"];
+			if (!numeric.every((s) => /^\d{1,4}$/.test(s)) || Number.isNaN(lo) || Number.isNaN(hi) || Number.isNaN(step) || step < 1) throw new Error(`bad cron field "${f}"`);
+			if (lo < min || hi > max || lo > hi) throw new Error(`cron field "${f}" out of range ${min}-${max}`);
 			for (let v = lo; v <= hi; v += step) out.add(v);
 		}
 		return [...out].sort((a, b) => a - b);
@@ -343,7 +463,13 @@ export default async function edp8(pi: ExtensionAPI) {
 	}
 	function schedule(j: Job, after: number) {
 		const slot = nextMatch(j.fields, after);
+		j.slot = slot;
 		j.nextFire = j.recurring ? slot + j.jitterS * 1000 : slot - j.jitterS * 1000;
+	}
+	/** commit the job's post-fire state BEFORE the send so a slow send can never double-fire (qa A9) */
+	function advance(j: Job) {
+		if (!j.recurring || j.expiring) jobs.delete(j.id);
+		else schedule(j, j.slot);
 	}
 	function humanise(cron: string): string {
 		const m = /^\*\/(\d+) \* \* \* \*$/.exec(cron);
@@ -352,29 +478,48 @@ export default async function edp8(pi: ExtensionAPI) {
 		return cron; // [H] other humanisations not yet captured from Claude
 	}
 	async function fire(j: Job) {
+		if (j.firing) return;
+		j.firing = true;
+		advance(j);
 		log(`cron fire ${j.id} ${j.cron}`);
-		await sendFollowUp(j.prompt); // parity §4.4: bare prompt, no envelope
-		if (!j.recurring || j.expiring) jobs.delete(j.id);
-		else schedule(j, Math.max(Date.now(), j.nextFire - j.jitterS * 1000));
+		try {
+			await sendFollowUp(j.prompt); // parity §4.4: bare prompt, no envelope
+		} catch (e) {
+			log(`cron fire ${j.id} delivery failed, deferred to settle: ${String(e)}`);
+			jobs.set(j.id, j);
+			j.deferred = true;
+		} finally {
+			j.firing = false;
+		}
 	}
 	async function fireDeferredCron() {
 		// parity §5: every job due while busy fires ONCE at settle, all of them as ONE user turn
 		// (prompts joined by a newline, creation order), no catch-up for missed periods
 		const due = [...jobs.values()].filter((j) => j.deferred).sort((a, b) => a.createdAt - b.createdAt);
 		if (due.length === 0) return;
-		for (const j of due) j.deferred = false;
-		log(`cron deferred fire x${due.length}: ${due.map((j) => j.id).join(",")}`);
-		await sendFollowUp(due.map((j) => j.prompt).join("\n"));
 		for (const j of due) {
-			if (!j.recurring || j.expiring) jobs.delete(j.id);
-			else schedule(j, Math.max(Date.now(), j.nextFire - j.jitterS * 1000));
+			j.deferred = false;
+			j.firing = true;
+			advance(j);
+		}
+		log(`cron deferred fire x${due.length}: ${due.map((j) => j.id).join(",")}`);
+		try {
+			await sendFollowUp(due.map((j) => j.prompt).join("\n"));
+		} catch (e) {
+			log(`deferred fire delivery failed, kept deferred: ${String(e)}`);
+			for (const j of due) {
+				jobs.set(j.id, j);
+				j.deferred = true;
+			}
+		} finally {
+			for (const j of due) j.firing = false;
 		}
 	}
 	const ticker = setInterval(() => {
-		const now = Date.now();
+		const now = nowMs();
 		for (const j of [...jobs.values()]) {
 			if (j.recurring && !j.expiring && now - j.createdAt >= CRON_EXPIRE_MS) j.expiring = true; // fires one final time then deleted
-			if (now < j.nextFire || j.deferred) continue;
+			if (now < j.nextFire || j.deferred || j.firing) continue;
 			if (isIdle() && pending.length === 0) void fire(j);
 			else j.deferred = true;
 		}
@@ -382,7 +527,7 @@ export default async function edp8(pi: ExtensionAPI) {
 	ticker.unref();
 	pi.on("session_shutdown", async () => {
 		clearInterval(ticker);
-		for (const m of monitors.values()) killTree(m.child);
+		for (const m of monitors.values()) stopMon(m);
 	});
 
 	pi.registerTool({
@@ -409,8 +554,8 @@ export default async function edp8(pi: ExtensionAPI) {
 			const id = jobId();
 			const minute = params.cron.trim().split(/\s+/)[0];
 			const jitterS = recurring ? fnv1a(id) % CRON_JITTER_MAX_S : minute === "0" || minute === "30" ? fnv1a(id) % ONESHOT_EARLY_MAX_S : 0;
-			const j: Job = { id, cron: params.cron, fields, prompt: params.prompt, recurring, createdAt: Date.now(), jitterS, nextFire: 0, deferred: false, expiring: false };
-			schedule(j, Date.now());
+			const j: Job = { id, cron: params.cron, fields, prompt: params.prompt, recurring, createdAt: nowMs(), jitterS, nextFire: 0, slot: 0, firing: false, deferred: false, expiring: false };
+			schedule(j, nowMs());
 			jobs.set(id, j);
 			log(`cron create ${id} ${params.cron} jitter=${jitterS}s next=${new Date(j.nextFire).toISOString()}`);
 			const text = recurring
@@ -491,26 +636,57 @@ export default async function edp8(pi: ExtensionAPI) {
 	// format and posts record_status(blocked) with the reset time through the MCP bridge.
 	const LANE_DIR = process.env.EDP8_LANE_DIR ?? resolve(process.env.EDP8_HOME ?? CWD, ".sol");
 	const LANE_TTL_S = Number(process.env.EDP8_LANE_TTL_S ?? 900);
-	const LANE_WAIT_S = Number(process.env.EDP8_LANE_WAIT_S ?? 900);
+	let LANE_WAIT_S = Number(process.env.EDP8_LANE_WAIT_S ?? 900);
 	const LANE_HOLDER = `seat:${process.env.EDP_HANDLE ?? "pi"}`;
 	const laneQueue = join(LANE_DIR, "lane.queue");
 	const laneLock = join(LANE_DIR, "lane.lock");
 	let laneHeld = false;
+	let laneLeaseId = "";
 	let laneTouch: NodeJS.Timeout | undefined;
 
+	/** live tickets in service order (admission.py `waiting()`): dead tickets (untouched > QUEUE_STALE_MS) are
+	 *  removed; a ticket older than AGING_MS sorts as priority 0; then FIFO by ts */
 	function laneWaiting(): string[] {
+		let names: string[];
 		try {
-			return readdirSync(laneQueue).filter((n) => n.endsWith(".json")).sort();
+			names = readdirSync(laneQueue).filter((n) => n.endsWith(".json"));
 		} catch {
 			return [];
 		}
+		const now = Date.now();
+		const live: { n: string; key: string }[] = [];
+		for (const n of names) {
+			let mtime: number;
+			try {
+				mtime = statSync(join(laneQueue, n)).mtimeMs;
+			} catch {
+				continue;
+			}
+			if (now - mtime > QUEUE_STALE_MS) {
+				try {
+					rmSync(join(laneQueue, n), { force: true });
+				} catch {}
+				continue;
+			}
+			const [prio, ts] = n.split("-");
+			const eff = now - Number(ts) >= AGING_MS ? "0" : prio;
+			live.push({ n, key: `${eff}\u0000${ts}\u0000${n}` });
+		}
+		return live.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)).map((x) => x.n);
 	}
 	function laneStale(): boolean {
+		let mtime: number;
 		try {
-			return Date.now() - statSync(laneLock).mtimeMs > LANE_TTL_S * 1000;
+			mtime = statSync(laneLock).mtimeMs;
 		} catch {
 			return false;
 		}
+		let ttl = LANE_TTL_S;
+		try {
+			const info = JSON.parse(readFileSync(join(laneLock, "holder.json"), "utf8"));
+			if (typeof info.ttl_s === "number") ttl = info.ttl_s;
+		} catch {}
+		return Date.now() - mtime > ttl * 1000;
 	}
 	async function laneAcquire(priority = 1): Promise<boolean> {
 		mkdirSync(laneQueue, { recursive: true });
@@ -519,12 +695,17 @@ export default async function edp8(pi: ExtensionAPI) {
 		const deadline = Date.now() + LANE_WAIT_S * 1000;
 		try {
 			for (;;) {
+				try {
+					const now = new Date();
+					utimesSync(ticket, now, now); // liveness: a ticket that stops being touched is dead
+				} catch {}
 				const first = laneWaiting()[0];
 				if (first === ticket.split(/[\\/]/).pop()) {
 					if (existsSync(laneLock) && laneStale()) rmSync(laneLock, { recursive: true, force: true });
 					try {
 						mkdirSync(laneLock);
-						writeFileSync(join(laneLock, "holder.json"), JSON.stringify({ holder: LANE_HOLDER, priority, since: new Date().toISOString(), pid: process.pid }));
+						laneLeaseId = taskId() + taskId();
+						writeFileSync(join(laneLock, "holder.json"), JSON.stringify({ holder: LANE_HOLDER, lease_id: laneLeaseId, priority, since: new Date().toISOString(), pid: process.pid, ttl_s: LANE_TTL_S }));
 						laneHeld = true;
 						laneTouch = setInterval(() => {
 							try {
@@ -553,8 +734,10 @@ export default async function edp8(pi: ExtensionAPI) {
 		if (laneTouch) clearInterval(laneTouch);
 		try {
 			const info = JSON.parse(readFileSync(join(laneLock, "holder.json"), "utf8"));
-			if (info.holder !== LANE_HOLDER) return; // reclaimed as stale by someone else — never remove theirs
-		} catch {}
+			if (info.lease_id !== laneLeaseId) return; // reclaimed as stale by someone else — never remove theirs (qa A4)
+		} catch {
+			return; // replacement holder mid-write, or gone — leave it to the TTL
+		}
 		rmSync(laneLock, { recursive: true, force: true });
 	}
 	function quotaBlock(): { blocked_until: string } | null {
@@ -595,11 +778,28 @@ export default async function edp8(pi: ExtensionAPI) {
 				log(`payload capture failed: ${String(e)}`);
 			}
 		}
+		// qa A2: the lane FAILS CLOSED — a quota block or a lane that stays busy beyond EDP8_LANE_WAIT_S aborts the
+		// turn (ctx.abort + a thrown error the harness logs) instead of sending unguarded on the shared login.
 		const q = quotaBlock();
-		if (q) log(`provider request while quota-blocked until ${q.blocked_until}`);
+		if (q) await failClosed(`inference quota blocked until ${q.blocked_until} (${q.evidence ?? "quota.json"})`);
 		const ok = await laneAcquire(1);
-		log(ok ? "lane acquired" : "lane NOT acquired (bounded wait elapsed) — request proceeds unguarded");
+		if (!ok) await failClosed(`inference lane busy beyond EDP8_LANE_WAIT_S=${LANE_WAIT_S}s (holder ${JSON.stringify(laneHolderInfo())})`);
+		log("lane acquired");
 	});
+	function laneHolderInfo(): unknown {
+		try {
+			return JSON.parse(readFileSync(join(laneLock, "holder.json"), "utf8"));
+		} catch {
+			return null;
+		}
+	}
+	async function failClosed(reason: string): Promise<never> {
+		log(`fail-closed: ${reason}`);
+		try {
+			(lastCtx as any)?.abort?.();
+		} catch {}
+		throw new Error(`edp8 admission: ${reason}`);
+	}
 	pi.on("after_provider_response", async (event) => {
 		laneRelease();
 		if (event.status === 429 || event.status === 402) await noteQuota(event.status, event.headers ?? {});
@@ -613,7 +813,7 @@ export default async function edp8(pi: ExtensionAPI) {
 	});
 	pi.on("agent_end", async () => laneRelease());
 	pi.on("session_shutdown", async () => laneRelease());
-	(pi as any).__edp8_test = { laneAcquire, laneRelease, quotaBlock, noteQuota, LANE_DIR };
+	(pi as any).__edp8_test = { laneAcquire, laneRelease, quotaBlock, noteQuota, LANE_DIR, setClockScale, nowMs, setLaneWait: (s: number) => (LANE_WAIT_S = s), pendingCount: () => pending.length, jobCount: () => jobs.size };
 
 	pi.registerCommand("edp8", {
 		description: "edp8 seat status: monitors, cron jobs, bridged tools",

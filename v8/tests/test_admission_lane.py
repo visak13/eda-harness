@@ -101,3 +101,68 @@ def test_consult_uses_the_shared_lane(tmp_path, monkeypatch):
     out = consult.consult("second_opinion", "q")
     assert out["ok"] and seen["holder"] and seen["holder"]["holder"].startswith("consult:")
     assert Lane(tmp_path).holder() is None  # released in finally
+
+
+# ---- qa report-fb5ff85cd9 A3/A4 (m-527660cbce)
+def test_dead_ticket_is_skipped_and_removed(tmp_path):
+    lane = Lane(tmp_path)
+    lane.queue.mkdir(parents=True)
+    dead = lane.queue / "0-0000000000000-dead.json"
+    dead.write_text("{}")
+    old = time.time() - 60
+    os.utime(dead, (old, old))
+    lease = lane.acquire("seat", max_wait_s=0.6)
+    assert lease is not None and not dead.exists()
+    lease.release()
+
+
+def test_aged_seat_ticket_outranks_fresh_human_ticket(tmp_path, monkeypatch):
+    monkeypatch.setattr(admission, "AGING_S", 0.5)
+    lane = Lane(tmp_path)
+    hold = lane.acquire("hold", max_wait_s=1)
+    order: list[str] = []
+    import threading
+
+    def waiter(name, prio):
+        lease = lane.acquire(name, priority=prio, max_wait_s=10)
+        order.append(name)
+        time.sleep(0.05)
+        lease.release()
+
+    t_seat = threading.Thread(target=waiter, args=("seat", PRIO_SEAT))
+    t_seat.start()
+    time.sleep(0.8)  # the seat ticket ages past AGING_S
+    t_human = threading.Thread(target=waiter, args=("human", PRIO_HUMAN))
+    t_human.start()
+    time.sleep(0.3)
+    hold.release()
+    t_seat.join(5)
+    t_human.join(5)
+    assert order == ["seat", "human"]
+
+
+def test_release_never_removes_a_replacement_lock(tmp_path, monkeypatch):
+    lane = Lane(tmp_path)
+    a = lane.acquire("consult:second_opinion", max_wait_s=1)
+    assert a
+    old = time.time() - 3600
+    os.utime(lane.lock, (old, old))  # A is stale
+    b = lane.acquire("consult:second_opinion", max_wait_s=1)  # same holder LABEL reclaims it
+    assert b and b.lease_id != a.lease_id
+    a.release()  # A's release must leave B's lock alone (qa A4)
+    assert lane.holder()["lease_id"] == b.lease_id
+    # an unreadable holder.json (replacement mid-write) is left to the TTL
+    (lane.lock / "holder.json").write_text("{not json")
+    b.release()
+    assert lane.lock.is_dir()
+
+
+def test_ttl_follows_the_lease(tmp_path):
+    lane = Lane(tmp_path)
+    a = lane.acquire("consult:build", max_wait_s=1, ttl_s=7200)
+    assert a
+    old = time.time() - 3600  # older than the default 900 s but inside the lease's own 7200 s
+    os.utime(lane.lock, (old, old))
+    assert lane.stale() is False
+    assert lane.acquire("seat", max_wait_s=0.6) is None
+    a.release()

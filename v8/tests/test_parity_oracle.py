@@ -48,7 +48,33 @@ def test_diff_zero_on_identical_and_reports_change():
     assert any(line.startswith("+") and "Canceled" in line for line in po.diff(a, c))
 
 
-def test_cli_cases_and_both(capsys):
+def test_cli_cases_and_both(capsys, tmp_path):
     assert po.main(["--cases"]) == 0
     assert "cron_expiry_accelerated" in capsys.readouterr().out
-    assert po.main(["--both"]) == 2
+    # --both without a Claude reference cannot compare anything → 2 (never a silent pass)
+    assert po.main(["--both", "--claude-ref", str(tmp_path / "missing.json")]) == 2
+
+
+def test_diff_refuses_empty_and_keeps_errors_and_receiving_tool():
+    # qa A6: two empty traces are a failure, not a pass
+    assert po.diff([], []) and po.diff([], [])[0].startswith("EMPTY TRACE")
+    ok = [{"kind": "tool_result", "tool": "CronList", "text": "No cron jobs scheduled."}]
+    err = [{"kind": "tool_result", "tool": "CronList", "text": "INTERNAL ERROR: scheduler unavailable"}]
+    assert any("INTERNAL ERROR" in ln for ln in po.diff(ok, err))
+    flagged = [{"kind": "tool_result", "tool": "CronList", "text": "No cron jobs scheduled.", "is_error": True}]
+    assert any("[error]" in ln for ln in po.diff(ok, flagged))
+    # an attached notification names the tool result that carried it
+    mon = {"kind": "tool_result", "tool": "Monitor", "text": "Monitor started (task abcdefghi, timeout 300000ms)."}
+    a = [mon, {"kind": "notification_attached", "text": "<task-id>abcdefghi</task-id>", "attached_to": "Bash"}]
+    b = [mon, {"kind": "notification_attached", "text": "<task-id>abcdefghi</task-id>", "attached_to": "bash"}]
+    c = [mon, {"kind": "notification_attached", "text": "<task-id>abcdefghi</task-id>", "attached_to": "Monitor"}]
+    assert po.diff(a, b) == []  # Bash vs bash is the harness's naming, not a delivery difference
+    assert any("to=monitor" in ln for ln in po.diff(a, c))
+
+
+def test_stored_reference_traces_carry_identity():
+    ref = Path(__file__).resolve().parents[1] / "tests" / "pi_ext" / "oracle_traces"
+    for name in ("claude_trace_final.json", "pi_trace_final.json"):
+        trace = json.loads((ref / name).read_text(encoding="utf-8"))
+        att = [e for e in trace if e["kind"] == "notification_attached"]
+        assert att and all(e.get("attached_to") for e in att), name

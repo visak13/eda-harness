@@ -51,7 +51,14 @@ def pi_bin_argv() -> list[str]:
     cand = os.environ.get("EDP_PI_BIN", "").strip()
     if cand.lower().endswith(".js"):
         return ["node", cand]
-    return [cand or "pi"]
+    if cand:
+        return [cand]
+    # durable default: <edp-pool>/.pi-harness (package.json + lockfile committed, node_modules ignored)
+    harness = Path(os.environ.get("EDP_PI_HARNESS", "").strip() or Path(__file__).resolve().parents[2] / ".pi-harness")
+    cli = harness / "node_modules" / "@earendil-works" / "pi-coding-agent" / "dist" / "cli.js"
+    if cli.is_file():
+        return ["node", str(cli)]
+    return ["pi"]
 
 
 def build_argv_pi_tui(agent_home: str | None, role: str, handle: str, *, model: str | None,

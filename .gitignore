@@ -90,3 +90,6 @@ claude/.sol_review_out-*.txt
 .sol-run*.jsonl
 v8/.test-tmp/
 review-package/
+
+# Astra seat parity runs (parity_oracle.py --both output)
+v8/.pi/parity/
