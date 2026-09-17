@@ -91,3 +91,25 @@ def test_stored_reference_traces_carry_identity():
         trace = json.loads((ref / name).read_text(encoding="utf-8"))
         att = [e for e in trace if e["kind"] == "notification_attached"]
         assert att and all(e.get("attached_to") for e in att), name
+
+
+def test_wording_equivalence_collapses_claude_and_our_texts():
+    """Owner m-2d7ef9243d: the seat speaks our words; the oracle exempts wording only (guides/harness-parity/wording.json)."""
+    pairs = [
+        ("Monitor started (task bfgghodgn, timeout 60000ms). You will be notified on each event. Keep working — do not poll "
+         "or sleep. Events may arrive while you are waiting for the user — an event is not their reply.",
+         "Watch armed (task bfgghodgn; stops after 60000ms). Each event reaches you as a notification while you carry on; "
+         "no polling, no sleeping. A notification is a background event and never the user's reply, even one that lands "
+         "while you wait for them."),
+        ("Cancelled job 64de3444.", "Job 64de3444 cancelled."),
+        ("Task bfgghodgn not found", "No such task: bfgghodgn"),
+        ("[6 events suppressed — output rate too high. Consider using TaskStop to restart this monitor with a more selective filter.]",
+         "[6 events dropped: this watch emits faster than the limit. Stop it with TaskStop and re-arm it with a narrower filter.]"),
+    ]
+    for claude, ours in pairs:
+        assert po.canon(claude) == po.canon(ours), (po.canon(claude), po.canon(ours))
+    assert po.canon(pairs[0][0]) == "<W:MONITOR_STARTED_TIMEOUT 60000>"
+    # a number or structure change is NOT exempt
+    assert po.canon("Watch armed (task bfgghodgn; stops after 5000ms). Each event reaches you as a notification while you carry on; "
+                    "no polling, no sleeping. A notification is a background event and never the user's reply, even one that lands "
+                    "while you wait for them.") != po.canon(pairs[0][0])

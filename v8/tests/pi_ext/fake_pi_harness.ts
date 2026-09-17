@@ -54,13 +54,13 @@ const call = (name: string, params: any, id = "toolu_test") => tools.get(name).e
 const r1 = await call("Monitor", { command: "echo one; sleep 1; echo two; echo three; exit 3", description: "parity-probe exit-code envelope", persistent: false, timeout_ms: 60000 });
 const t1 = r1.content[0].text as string;
 const id1 = /task (\w{9})/.exec(t1)?.[1];
-check("Monitor result text", /^Monitor started \(task \w{9}, timeout 60000ms\)\. You will be notified on each event\. Keep working — do not poll or sleep\. Events may arrive while you are waiting for the user — an event is not their reply\.$/.test(t1), { text: t1 });
+check("Monitor result text", /^Watch armed \(task \w{9}; stops after 60000ms\)\. Each event reaches you as a notification while you carry on; no polling, no sleeping\. A notification is a background event and never the user's reply, even one that lands while you wait for them\.$/.test(t1), { text: t1 });
 await sleep(2500);
 const evs = userMessages.map((m) => m.content);
 check("standalone envelope 'one'", evs.some((c) => c.includes(`<task-notification>\n<task-id>${id1}</task-id>\n<summary>Monitor event: "parity-probe exit-code envelope"</summary>\n<event>one</event>\n</task-notification>`)));
 check("batched 'two\\nthree'", evs.some((c) => c.includes("<event>two\nthree</event>")));
-check("system-reminder wrapper", evs.every((c) => c.startsWith("<system-reminder>\n[SYSTEM NOTIFICATION - NOT USER INPUT]\n") && c.endsWith("</system-reminder>")));
-check("failed envelope exit 3", evs.some((c) => c.includes(`<tool-use-id>toolu_test</tool-use-id>`) && c.includes("<status>failed</status>") && c.includes(`<summary>Monitor "parity-probe exit-code envelope" script failed (exit 3)</summary>`)), { last: evs[evs.length - 1] });
+check("system-reminder wrapper", evs.every((c) => c.startsWith("<system-reminder>\n[BACKGROUND EVENT - NOT FROM THE USER]\n") && c.endsWith("</system-reminder>")));
+check("failed envelope exit 3", evs.some((c) => c.includes(`<tool-use-id>toolu_test</tool-use-id>`) && c.includes("<status>failed</status>") && c.includes(`<summary>Watch "parity-probe exit-code envelope" ended: script failed (exit 3)</summary>`)), { last: evs[evs.length - 1] });
 
 // ---- mid-turn attach: busy → pending → appended to next tool_result; rest flushed at agent_settled
 userMessages.length = 0;
@@ -84,30 +84,30 @@ check("500-char truncation", userMessages.some((m) => /<event>x{500}\.\.\.\(trun
 userMessages.length = 0;
 await call("Monitor", { command: "for i in $(seq 1 60); do echo burst $i; sleep 0.05; done", description: "rate", persistent: false, timeout_ms: 30000 });
 await sleep(5000);
-check("rate-limit suppression text", userMessages.some((m) => /\[\d+ events suppressed — output rate too high\. Consider using TaskStop to restart this monitor with a more selective filter\.\]/.test(m.content)), { notifications: userMessages.length });
+check("rate-limit suppression text", userMessages.some((m) => /\[\d+ events dropped: this watch emits faster than the limit\. Stop it with TaskStop and re-arm it with a narrower filter\.\]/.test(m.content)), { notifications: userMessages.length });
 userMessages.length = 0;
 const rt = await call("Monitor", { command: "echo start; sleep 30", description: "timeout", persistent: false, timeout_ms: 1500 });
 await sleep(3000);
-check("timeout envelope", userMessages.some((m) => m.content.includes("<event>[Monitor timed out — re-arm if needed.]</event>")), { n: userMessages.length });
+check("timeout envelope", userMessages.some((m) => m.content.includes("<event>[Watch timed out; arm it again if you still need it.]</event>")), { n: userMessages.length });
 userMessages.length = 0;
 const rs = await call("Monitor", { command: "echo armed; sleep 600", description: "stop", persistent: true, timeout_ms: 1000 });
 const ids = /task (\w{9})/.exec(rs.content[0].text)?.[1];
 await sleep(600);
 const st = await call("TaskStop", { task_id: ids });
-check("TaskStop result", st.content[0].text === JSON.stringify({ message: `Successfully stopped task: ${ids} (echo armed; sleep 600)`, task_id: ids, task_type: "local_bash", command: "echo armed; sleep 600" }), { text: st.content[0].text });
+check("TaskStop result", st.content[0].text === JSON.stringify({ message: `Stopped task ${ids} (echo armed; sleep 600)`, task_id: ids, task_type: "local_bash", command: "echo armed; sleep 600" }), { text: st.content[0].text });
 await sleep(1000);
 check("TaskStop leaves no terminal notification", !userMessages.some((m) => m.content.includes("<status>")), { n: userMessages.length });
 
 // ---- Cron
 const cr = await call("CronCreate", { cron: "*/30 * * * *", prompt: "edp8 heartbeat: call context() and act only if something is new; if nothing, end the turn silently" });
-const jid = /job (\w{8})/.exec(cr.content[0].text)?.[1];
-check("CronCreate recurring text", cr.content[0].text === `Scheduled recurring job ${jid} (Every 30 minutes). Session-only (not written to disk, dies when Claude exits). Auto-expires after 7 days. Use CronDelete to cancel sooner.`);
+const jid = /[Jj]ob (\w{8})/.exec(cr.content[0].text)?.[1];
+check("CronCreate recurring text", cr.content[0].text === `Job ${jid} scheduled, recurring (Every 30 minutes). Held in this session's memory only, never on disk, gone when the session ends; expires after 7 days. CronDelete cancels it earlier.`);
 const cl = await call("CronList", {});
 check("CronList text", cl.content[0].text === `${jid} — Every 30 minutes (recurring) [session-only]: edp8 heartbeat: call context() and act only if something is new; if nothing, en…`, { text: cl.content[0].text });
 const co = await call("CronCreate", { cron: "0 21 14 9 *", prompt: "one", recurring: false });
-check("CronCreate one-shot text", /^Scheduled one-shot task \w{8} \(0 21 14 9 \*\)\. Session-only \(not written to disk, dies when Claude exits\)\. It will fire once then auto-delete\.$/.test(co.content[0].text), { jitter: co.details.jitterS });
+check("CronCreate one-shot text", /^Job \w{8} scheduled, fires once \(0 21 14 9 \*\) and then removes itself\. Held in this session's memory only, never on disk, gone when the session ends\.$/.test(co.content[0].text), { jitter: co.details.jitterS });
 const cd = await call("CronDelete", { id: jid });
-check("CronDelete text", cd.content[0].text === `Cancelled job ${jid}.`);
+check("CronDelete text", cd.content[0].text === `Job ${jid} cancelled.`);
 // idle-only + deferred: a job due next minute while busy fires only at settle
 userMessages.length = 0;
 const now = new Date(Date.now() + 61000);
@@ -216,12 +216,12 @@ const rb = await call("Monitor", { command: "echo probe", description: "bad shel
 await sleep(800);
 if (shell0 === undefined) delete process.env.EDP_MONITOR_SHELL;
 else process.env.EDP_MONITOR_SHELL = shell0;
-check("spawn error → failed envelope", rb.content[0].text.startsWith("Monitor started") && userMessages.some((m) => m.content.includes("<status>failed</status>") && m.content.includes('Monitor "bad shell" script failed (')), { n: userMessages.length });
+check("spawn error → failed envelope", rb.content[0].text.startsWith("Watch armed") && userMessages.some((m) => m.content.includes("<status>failed</status>") && m.content.includes('Watch "bad shell" could not start (')), { n: userMessages.length });
 // A12: ws source exists — a refused socket ends the watch with a failed envelope carrying the close code
 userMessages.length = 0;
 const rw = await call("Monitor", { ws: { url: "ws://127.0.0.1:9" }, description: "ws probe", persistent: false, timeout_ms: 5000 });
 await sleep(2500);
-check("ws source: refused socket → failed envelope with close code", rw.content[0].text.startsWith("Monitor started") && userMessages.some((m) => m.content.includes("<status>failed</status>") && /socket closed \(code \d+/.test(m.content)), { n: userMessages.length, last: userMessages[userMessages.length - 1]?.content.slice(-160) });
+check("ws source: refused socket → failed envelope with close code", rw.content[0].text.startsWith("Watch armed") && userMessages.some((m) => m.content.includes("<status>failed</status>") && /ended: socket closed \(code \d+/.test(m.content)), { n: userMessages.length, last: userMessages[userMessages.length - 1]?.content.slice(-160) });
 // A2: admission fails CLOSED — quota block or a busy lane aborts the provider request
 const quotaPath = join(LANE, "quota.json");
 const { writeFileSync: wf, rmSync: rmf, mkdirSync: mkd } = await import("node:fs");

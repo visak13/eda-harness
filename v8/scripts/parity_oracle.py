@@ -48,11 +48,13 @@ _ID_RX = [
     (re.compile(r"\bcall_[A-Za-z0-9]{6,}\|fc_[0-9a-f]{6,}\b"), "<toolu>"),  # Pi/Codex tool-call ids
     (re.compile(r"\btask [a-z0-9]{9}\b"), "task <task-id>"),
     (re.compile(r"<task-id>[a-z0-9]{9}</task-id>"), "<task-id><task-id></task-id>"),
-    (re.compile(r"\b(job|task) [0-9a-f]{8}\b"), r"\1 <job-id>"),
+    (re.compile(r"\b(job|task|Job) [0-9a-f]{8}\b"), r"\1 <job-id>"),
+    (re.compile(r"\bTask [a-z0-9]{9}\b"), "Task <task-id>"),
+    (re.compile(r"\btask: [a-z0-9]{9}\b"), "task: <task-id>"),  # our "No such task: X" + both TaskStop messages
+    (re.compile(r"\bjob: [0-9a-f]{8}\b"), "job: <job-id>"),  # our "No such job: X"
     (re.compile(r"^[0-9a-f]{8} — ", re.M), "<job-id> — "),
     (re.compile(r'"task_id":\s*"[a-z0-9]{9}"'), '"task_id": "<task-id>"'),  # TaskStop input + result JSON
     (re.compile(r'"id":\s*"[0-9a-f]{8}"'), '"id": "<job-id>"'),  # CronDelete input
-    (re.compile(r"Successfully stopped task: [a-z0-9]{9} "), "Successfully stopped task: <task-id> "),
     (re.compile(r"(?:[A-Za-z]:)?[^\s<>\"']*[\\/]tasks[\\/][a-z0-9]{9}\.output"), "<output-file>"),  # absolute or relative tasks dir
     (re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?"), "<ts>"),
     (re.compile(r"\b\d{2}:\d{2}:\d{2}\b"), "<hms>"),
@@ -63,6 +65,39 @@ def normalise(text: str) -> str:
     for rx, rep in _ID_RX:
         text = rx.sub(rep, text)
     return text.replace("\r\n", "\n")
+
+
+# ---------------------------------------------------------------- wording equivalence (owner m-2d7ef9243d, 2026-09-17)
+# The Astra seat speaks OUR words; Claude Code speaks its own. guides/harness-parity/wording.json pairs every
+# reference sentence with ours; both collapse to <W:name …groups> so a diff still catches any change in
+# structure, ids, numbers or timing while the wording itself is exempt. Missing file = no exemption (byte parity).
+WORDING_PATH = Path(os.environ.get("EDP_PARITY_WORDING") or (Path(__file__).resolve().parents[1] / "guides" / "harness-parity" / "wording.json"))
+_WORDING: list[tuple[str, re.Pattern[str], re.Pattern[str]]] | None = None
+
+
+def wording() -> list[tuple[str, re.Pattern[str], re.Pattern[str]]]:
+    global _WORDING
+    if _WORDING is None:
+        _WORDING = []
+        if WORDING_PATH.exists():
+            for e in json.loads(WORDING_PATH.read_text(encoding="utf-8"))["entries"]:
+                _WORDING.append((e["name"], re.compile(e["claude"]), re.compile(e["ours"])))
+    return _WORDING
+
+
+def equivalence(text: str) -> str:
+    """Collapse each known reference sentence AND its counterpart in our wording to the same token."""
+    for name, rx_claude, rx_ours in wording():
+        def sub(m: re.Match[str], _n: str = name) -> str:
+            groups = [g for g in m.groups() if g is not None]
+            return f"<W:{_n}{(' ' + ' '.join(groups)) if groups else ''}>"
+        text = rx_claude.sub(sub, text)
+        text = rx_ours.sub(sub, text)
+    return text
+
+
+def canon(text: str) -> str:
+    return equivalence(normalise(text))
 
 
 # ---------------------------------------------------------------- Claude side (session JSONL)
@@ -239,15 +274,15 @@ def project(ev: dict) -> str:
             # a live seat has jobs of its own (heartbeat, the Claude-side driver crons): drop only JOB LINES that are
             # not the case's; any other text (an error, a different empty-list wording) stays and diffs
             job_lines = [ln for ln in text.splitlines() if _JOB_LINE.match(ln)]
-            other = [ln for ln in text.splitlines() if not _JOB_LINE.match(ln) and ln.strip() != "No cron jobs scheduled."]
+            other = [ln for ln in text.splitlines() if not _JOB_LINE.match(ln) and ln.strip() not in ("No cron jobs scheduled.", "No jobs scheduled.")]
             kept = [ln for ln in job_lines if CASE_MARK in ln and DRIVER_PREFIX not in ln]
-            text = "\n".join(other + kept) if (other or kept) else "No cron jobs scheduled."
+            text = "\n".join(other + kept) if (other or kept) else "No cron jobs scheduled."  # canonical empty text; equivalence maps ours
         flag = " [error]" if ev.get("is_error") else ""
-        return f"TOOL_RESULT {ev['tool']}{flag}\n{normalise(text)}"
+        return f"TOOL_RESULT {ev['tool']}{flag}\n{canon(text)}"
     if ev["kind"] == "notification_attached":
         # Claude's built-in tools are capitalised (Bash), Pi's are not (bash): compare the receiving tool case-insensitively
-        return f"NOTIFICATION_ATTACHED to={str(ev.get('attached_to') or '?').lower()}\n{normalise(ev['text'])}"
-    return f"{ev['kind'].upper()}\n{normalise(ev['text'])}"
+        return f"NOTIFICATION_ATTACHED to={str(ev.get('attached_to') or '?').lower()}\n{canon(ev['text'])}"
+    return f"{ev['kind'].upper()}\n{canon(ev['text'])}"
 
 
 def diff(a: list[dict], b: list[dict]) -> list[str]:

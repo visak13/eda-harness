@@ -23,6 +23,8 @@ Note: in Claude Code 2.1.270 these five are **deferred tools** — the model see
 
 The description strings are stored byte-exact in `guides/harness-parity/descriptions.json` (one key per tool; extracted from the same ToolSearch result; `\n` preserved). Text-copy of these strings into a non-Anthropic harness is the owner's G1 decision (design §7); until then the Astra seat loads them from that file rather than inlining, so the paraphrase switch is one file.
 
+**Owner ruling 2026-09-17 (m-2d7ef9243d): the Astra seat speaks OUR words.** The Claude strings above and in `descriptions.json` are the measurement reference only. The seat loads `guides/harness-parity/descriptions.ours.json` (own wording, same rules and numbers), its result texts, parameter descriptions, notices and the idle preamble are ours (edp8.ts), and `guides/harness-parity/wording.json` pairs every reference sentence with its counterpart. The parity oracle collapses both to `<W:name …captures>` after id/time normalisation, so `--both` still diffs structure, ids, numbers and timing; only the wording is exempt. "Exactly the same" = schema + behaviour + timing from here on; §3/§4 texts below stay as Claude's reference.
+
 ## 3. Tool result texts — verbatim [V] (task bfgghodgn, bneh42buc, begpvef77, bt9dkvrr4; jobs b2c55175, 64de3444, a40ab141, eeaf7ce0)
 
 | call | result string the model receives |
