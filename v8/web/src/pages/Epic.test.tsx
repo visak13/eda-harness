@@ -350,6 +350,12 @@ describe("EpicPage", () => {
     expect(await screen.findByTestId("ask-role-sent")).toHaveTextContent("delivered to reviewer.epic-1");
   });
 
+  it("the assign/spawn card says which model + effort the epic's seats run on (owner m-2d7ef9243d)", async () => {
+    mount(page({ seat_choice: { model: "astra", effort: "high", note: null } }));
+    await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    expect(await screen.findByTestId("seat-choice")).toHaveTextContent("GPT-6 Astra, effort high");
+  });
+
   it("Spawn the architect POSTs the pool spawn with role=architect for the epic and shows the hint (promise #18)", async () => {
     let body: Record<string, unknown> | null = null;
     mount(page());

@@ -276,9 +276,20 @@ export interface DocSummary extends Record<string, unknown> {
   full: string;
 }
 
+/** The seat choice every spawn on an epic inherits (owner m-2d7ef9243d), resolved by the board:
+ *  `model` null = the Claude roles column; `note` says when Claude effort high was capped. */
+export interface SeatChoice {
+  model: string | null;
+  effort: string | null;
+  note: string | null;
+}
+
 export interface EpicPage {
   board: EpicBoard;
   words: string | null;
+  /** The epic ticket's tags (seat-model:/seat-effort: among them); absent on an older board. */
+  tags?: string[];
+  seat_choice?: SeatChoice;
   counts: Record<string, number> | null;
   thread: MessageView[];
   docs: DocSummary[];

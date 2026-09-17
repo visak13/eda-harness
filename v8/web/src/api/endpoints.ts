@@ -185,5 +185,13 @@ export const updateDoc = (id: string, b: { body_md?: string; title?: string }) =
 /** POST /v1/tickets kind=epic — the header "New epic" dialog (human #22). The words go verbatim as
  *  both `title` and `words`: the board keeps `words` immutable and derives the short title (ruling
  *  #32; an older board without `words` simply keeps the title). */
-export const createEpic = (words: string) =>
-  postJson<TicketRecord>("/v1/tickets", { kind: "epic", work_type: "feature", title: words, words });
+export const createEpic = (words: string, choice?: { model: string; effort: string }) =>
+  postJson<TicketRecord>("/v1/tickets", {
+    kind: "epic",
+    work_type: "feature",
+    title: words,
+    words,
+    // owner m-2d7ef9243d: the seat MODEL + EFFORT every spawn on this epic inherits, recorded as
+    // tags on the epic ticket (edp8/seat_choice.py) — chosen before any launch.
+    ...(choice ? { tags: [`seat-model:${choice.model}`, `seat-effort:${choice.effort}`] } : {}),
+  });

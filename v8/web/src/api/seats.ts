@@ -19,11 +19,22 @@ export const resumeSeat = (participantId: string, ticketId?: string | null) =>
     ticket_id: ticketId ?? null,
   });
 
+/** The seat choice a spawn may name (owner m-2d7ef9243d): `model` is a models.json seat name
+ *  ("claude" = the Claude roles column, "astra" = GPT-6 Astra on Pi); `effort` low|medium|high.
+ *  Omitted = the board resolves both from the ticket's EPIC (its seat-model/seat-effort tags). */
+export interface SeatChoiceIn {
+  model?: string | null;
+  effort?: string | null;
+}
+
 /** POST /v1/sessions/spawn — start a fresh seat for a role on a ticket (Seats "Spawn a seat",
- *  design §16). Authorisation + idempotency are the board's; the UI just names the role + ticket. */
-export const spawnSeat = (role: string, participantId: string, ticketId?: string | null) =>
+ *  design §16). Authorisation + idempotency are the board's; the UI just names the role + ticket,
+ *  plus an optional seat choice (sent only when given, so the epic's choice stays the default). */
+export const spawnSeat = (role: string, participantId: string, ticketId?: string | null, choice?: SeatChoiceIn) =>
   postJson<Record<string, unknown>>("/v1/sessions/spawn", {
     role,
     participant_id: participantId,
     ticket_id: ticketId ?? null,
+    ...(choice?.model ? { model: choice.model } : {}),
+    ...(choice?.effort ? { effort: choice.effort } : {}),
   });

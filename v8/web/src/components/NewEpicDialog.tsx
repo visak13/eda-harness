@@ -11,12 +11,33 @@ import styles from "./NewEpicDialog.module.css";
 // Human #22 (2026-09-10): the header "New epic" button was a plate artifact with no handler. It now
 // opens this dialog — the owner card's step 1 without a shell: the words go to the board VERBATIM
 // (POST /v1/tickets kind=epic; the board keeps them in `words` and derives the short title, ruling
-// #32), then, when the box is ticked and the pool can spawn, role=architect is spawned on the new
-// epic (POST /v1/sessions/spawn). The preview says exactly what will happen and who is woken before
-// the reader confirms; the board's hints show verbatim; success navigates to the epic's page.
+// #32), then, ONLY when the box is ticked and the pool can spawn, role=architect is spawned on the
+// new epic (POST /v1/sessions/spawn). The preview says exactly what will happen and who is woken
+// before the reader confirms; the board's hints show verbatim; success navigates to the epic's page.
+//
+// Owner m-2d7ef9243d / m-3238155d2e (2026-09-17): the owner chooses the seat MODEL and EFFORT for
+// every seat of the epic HERE, before any launch — sent as seat-model:/seat-effort: tags on the epic
+// (edp8/seat_choice.py) so every later spawn inherits them — and creating an epic never forces a
+// spawn: the box is UNTICKED by default. Claude effort is capped at medium fleet-wide (ruling
+// 2026-08-04), so "high" is offered for GPT-6 Astra only.
+
+/** The seat models the dialog offers: value = models.json seat name the board understands. */
+export const SEAT_MODELS = [
+  { value: "claude", label: "Claude" },
+  { value: "astra", label: "GPT-6 Astra" },
+] as const;
+export const EFFORTS = ["low", "medium", "high"] as const;
+export type SeatModel = (typeof SEAT_MODELS)[number]["value"];
+export type Effort = (typeof EFFORTS)[number];
+
 export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () => void }): React.JSX.Element | null {
   const [words, setWords] = useState("");
-  const [spawn, setSpawn] = useState(true);
+  const [spawn, setSpawn] = useState(false);
+  const [model, setModel] = useState<SeatModel>("claude");
+  const [effort, setEffort] = useState<Effort>("medium");
+  // Claude seats are capped at medium: choosing Claude while high is selected drops to medium.
+  const effortOptions: readonly Effort[] = model === "claude" ? ["low", "medium"] : EFFORTS;
+  const effectiveEffort: Effort = effortOptions.includes(effort) ? effort : "medium";
   const [done, setDone] = useState<{ id: string; hint: string; spawnHint: string | null } | null>(null);
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -44,10 +65,13 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
   const create = useMutation({
     mutationFn: async () => {
       const text = words.trim();
-      const made = await createEpic(text);
+      const choice = { model, effort: effectiveEffort };
+      const made = await createEpic(text, choice);
       let spawnHint: string | null = null;
       if (spawn && canSpawn) {
-        const res = await spawnSeat("architect", `architect.${made.value.id}`, made.value.id);
+        // the same choice rides the spawn body, so the architect runs on it even on a board that
+        // stored the tags but resolves nothing (belt and braces; the board's resolution is the same)
+        const res = await spawnSeat("architect", `architect.${made.value.id}`, made.value.id, choice);
         spawnHint = res.hint || `Spawned architect.${made.value.id}.`;
       }
       return { id: made.value.id, hint: made.hint, spawnHint };
@@ -92,6 +116,43 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
           placeholder="What you want, in your own words. They are kept verbatim; the board derives a short title."
           data-testid="new-epic-words"
         />
+        <div className={styles.choice} data-testid="new-epic-choice">
+          <label>
+            Seat model
+            <select
+              className={ui.select}
+              value={model}
+              onChange={(e) => setModel(e.target.value as SeatModel)}
+              data-testid="new-epic-model"
+            >
+              {SEAT_MODELS.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Effort
+            <select
+              className={ui.select}
+              value={effectiveEffort}
+              onChange={(e) => setEffort(e.target.value as Effort)}
+              data-testid="new-epic-effort"
+            >
+              {effortOptions.map((e) => (
+                <option key={e} value={e}>
+                  {e}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {model === "claude" ? (
+          <p className={styles.muted} data-testid="new-epic-effort-cap">
+            Claude seats are capped at effort medium fleet-wide; high is available for GPT-6 Astra.
+          </p>
+        ) : null}
         <label className={styles.check}>
           <input
             type="checkbox"
@@ -104,10 +165,12 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
           {!canSpawn ? <span className={styles.muted}> — {caps?.reason ?? "the pool cannot spawn from here"}</span> : null}
         </label>
         <p className={styles.preview} data-testid="new-epic-preview">
-          Creates the epic with your words verbatim; the board derives a short title.
+          Creates the epic with your words verbatim; the board derives a short title. Every seat spawned on
+          it runs on {SEAT_MODELS.find((m) => m.value === model)?.label} at effort {effectiveEffort} unless a
+          spawn names its own model.
           {spawn && canSpawn
-            ? " Then spawns role=architect on it (wakes a new architect shell), which designs it and comes back to you with questions on Decisions."
-            : " No seat is woken; spawn the architect later from the epic page."}
+            ? " Then spawns role=architect on it (wakes a new architect shell on that model), which designs it and comes back to you with questions on Decisions."
+            : " No seat is woken now; spawn the architect later from the epic page."}
         </p>
         {err ? (
           <p className={ui.banner} role="alert" data-testid="new-epic-error">

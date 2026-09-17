@@ -3,8 +3,27 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { patchTicket } from "../api/endpoints";
 import { getPoolCapabilities, spawnSeat } from "../api/seats";
 import { BoardApiError } from "../api/client";
-import type { PoolCapabilities } from "../api/types";
+import type { PoolCapabilities, SeatChoice } from "../api/types";
 import styles from "./AssignControl.module.css";
+
+/** Plain words for a seat choice (owner m-2d7ef9243d): "GPT-6 Astra, effort high" / "Claude, effort
+ *  medium"; a Claude epic that asked for high shows the board's cap note verbatim. */
+export function seatChoiceWords(c: SeatChoice | null | undefined): string {
+  if (!c) return "Claude (the fleet default)";
+  const model = c.model == null || c.model === "claude" ? "Claude" : c.model === "astra" ? "GPT-6 Astra" : c.model;
+  const effort = c.effort ? `, effort ${c.effort}` : "";
+  return `${model}${effort}${c.note ? ` — ${c.note}` : ""}`;
+}
+
+/** Read-only: which model + effort a spawn from here will run on (the epic's choice). */
+export function SeatChoiceLabel({ choice }: { choice: SeatChoice | null | undefined }): React.JSX.Element {
+  return (
+    <p className={styles.note} data-testid="seat-choice">
+      Seats spawned on this epic run on <strong>{seatChoiceWords(choice)}</strong>
+      {choice ? "" : " — no choice recorded on this epic"}.
+    </p>
+  );
+}
 
 // Assign / spawn control (design §16): put a seat on the ticket without leaving the page. Two ways —
 // name an existing participant as the assignee (a plain PATCH), or spawn a fresh engineer seat for
@@ -14,9 +33,12 @@ import styles from "./AssignControl.module.css";
 export function AssignControl({
   ticketId,
   currentAssignee,
+  seatChoice,
 }: {
   ticketId: string;
   currentAssignee: string | null;
+  /** The epic's seat choice, shown read-only above the spawn button (undefined = not shown). */
+  seatChoice?: SeatChoice | null;
 }): React.JSX.Element {
   const qc = useQueryClient();
   const [who, setWho] = useState("");
@@ -75,6 +97,7 @@ export function AssignControl({
         </div>
       </form>
 
+      {seatChoice !== undefined ? <SeatChoiceLabel choice={seatChoice} /> : null}
       {caps?.spawn ? (
         <button
           type="button"

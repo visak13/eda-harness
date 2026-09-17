@@ -268,7 +268,7 @@ export function EpicPage(): React.JSX.Element {
 
           <section className={ui.card} {...copyProps("epic", "assign-spawn")}>
             <div className={ui.sectionLabel}>Assign or spawn a seat</div>
-            <AssignControl ticketId={id} currentAssignee={epic.assignee ?? null} />
+            <AssignControl ticketId={id} currentAssignee={epic.assignee ?? null} seatChoice={data.seat_choice ?? null} />
             <Gloss k="assign-spawn" />
             <SpawnArchitect epicId={id} assignedSeats={row?.assigned_seats ?? []} gloss={<Gloss k="spawn-architect" />} />
           </section>
