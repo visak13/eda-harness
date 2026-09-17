@@ -271,7 +271,7 @@ class OpencodeSpawner:
     # -- Spawner ABC --------------------------------------------------------
     def launch(self, session_id, role, handle, mode="headless",
                claude_session=None, resume_session=None, model=None,
-               activation=None, parent=None) -> None:
+               activation=None, parent=None, extra_env=None) -> None:
         title = f"edp-{session_id}"
         # Identity IN the activation (2026-07-20): a worker probed env
         # with bash syntax in the PowerShell tool ($EDP_ROLE = always
@@ -289,6 +289,8 @@ class OpencodeSpawner:
                                  pool_url=self._pool_url,
                                  agent_home=self._agent_home,
                                  log_dir=self._log_dir)
+        if extra_env:  # S20: per-seat EDP8_TOKEN, merged AFTER the secret strip (env only, never argv)
+            env.update({str(k): str(v) for k, v in extra_env.items()})
         # MONITOR MODE = A REAL TUI WINDOW ON THE SHELL'S SESSION
         # (operator ruling 2026-07-19: "these external shells are opening
         # as a chat in cmd instead of in tui like my main app" + "opens as
@@ -543,16 +545,16 @@ class CompositeSpawner:
 
     def launch(self, session_id, role, handle, mode="headless",
                claude_session=None, resume_session=None, model=None,
-               activation=None, parent=None) -> None:
-        # `parent` (F40#13 lineage stamp) is part of the Spawner ABC; the service passes it on
-        # every spawn, so a composite that dropped it raised TypeError on the FIRST live spawn
-        # (2026-09-17, s-174f83c926 demo). Forwarded verbatim to whichever backend wins.
+               activation=None, parent=None, extra_env=None) -> None:
+        # `parent` (F40#13 lineage) and `extra_env` (S20: the per-seat EDP8_TOKEN) are what the
+        # service passes on EVERY spawn; a composite that dropped either raised TypeError on the
+        # first live spawn (2026-09-17, s-174f83c926 demo). Forwarded verbatim to the backend.
         by_model = bool(self._route_model and model and self._route_model(model))
         backend = self._oc if (role in self._oc_roles or by_model) else self._claude
         backend.launch(session_id, role, handle, mode=mode,
                        claude_session=claude_session,
                        resume_session=resume_session, model=model,
-                       activation=activation, parent=parent)
+                       activation=activation, parent=parent, extra_env=extra_env)
 
     def alive(self, session_id):
         return self._owner(session_id).alive(session_id)

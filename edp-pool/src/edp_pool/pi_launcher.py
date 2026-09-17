@@ -161,11 +161,13 @@ class PiSpawner:
     # -- Spawner ABC --------------------------------------------------------
     def launch(self, session_id, role, handle, mode="headless",
                claude_session=None, resume_session=None, model=None,
-               activation=None, parent=None) -> None:
+               activation=None, parent=None, extra_env=None) -> None:
         env = build_env_pi(session_id, role, handle, self._broker_url,
                            resume=bool(resume_session), activation=activation,
                            pool_url=self._pool_url, agent_home=self._agent_home,
                            log_dir=self._log_dir, parent=parent)
+        if extra_env:  # S20: the per-seat EDP8_TOKEN the service mints — merged AFTER build_env's
+            env.update({str(k): str(v) for k, v in extra_env.items()})  # secret strip; env only
         seat = openai_seat_for(role, self._agent_home)
         if seat is not None and not os.environ.get("EDP_PI_MODEL"):
             env["EDP_PI_MODEL"] = seat.model
