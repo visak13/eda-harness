@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -46,6 +48,17 @@ def test_diff_zero_on_identical_and_reports_change():
     assert po.diff(a, b) == []
     c = [{"kind": "tool_result", "tool": "CronDelete", "text": "Canceled job 1a2b3c4d."}]
     assert any(line.startswith("+") and "Canceled" in line for line in po.diff(a, c))
+
+
+def test_cli_list_cases(tmp_path):
+    result = subprocess.run(
+        [sys.executable, str(Path(po.__file__).resolve()), "--list-cases"],
+        cwd=tmp_path, capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == 0
+    assert result.stdout == "".join(f"{name}\n" for name, _ in po.CASES)
+    assert result.stderr == ""
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_cli_cases_and_both(capsys, tmp_path):

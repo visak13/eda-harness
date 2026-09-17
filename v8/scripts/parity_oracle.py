@@ -5,6 +5,7 @@
     python scripts/parity_oracle.py --diff claude.json pi.json
     python scripts/parity_oracle.py --both            # run the scripted CASES on both seats, then diff (needs creds)
     python scripts/parity_oracle.py --cases           # print the case list
+    python scripts/parity_oracle.py --list-cases      # print case names only, one per line
 
 The boundary (design §7 [Astra]): what the MODEL receives — tool definitions the seat exposes, the
 tool-result text for each parity tool call, and every notification / cron wake as the model sees it
@@ -294,10 +295,15 @@ def main(argv: list[str] | None = None) -> int:
                     help="the Claude-side reference trace (a Claude seat is interactive and cannot be driven from here; "
                          "re-capture it with --capture-claude from a session JSONL when Claude Code moves)")
     ap.add_argument("--cases", action="store_true")
+    ap.add_argument("--list-cases", action="store_true", help="print case names only, one per line, then exit")
     ap.add_argument("-o", "--out")
     ap.add_argument("--since", help="capture window start (ISO for Claude, epoch seconds for Pi)")
     ap.add_argument("--until", help="capture window end (ISO for Claude, epoch seconds for Pi)")
     a = ap.parse_args(argv)
+    if a.list_cases:
+        for name, _ in CASES:
+            print(name)
+        return 0
     if a.cases:
         for name, prompt in CASES:
             print(f"{name}: {prompt}")
