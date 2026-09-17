@@ -93,8 +93,12 @@ def foreign_board_reason() -> str | None:
 
 
 def spawn(role: str, participant_id: str, *, parent_session: str | None = None, model: str | None = None,
-          mode: str | None = None, env: dict[str, str] | None = None) -> dict[str, Any]:
+          mode: str | None = None, env: dict[str, str] | None = None,
+          effort: str | None = None) -> dict[str, Any]:
     """Spawn a shell for `participant_id` running `/<role>`. Returns {session_id}.
+
+    `model`/`effort` are the resolved seat choice (seat_choice.resolve — the epic's tags unless the
+    spawn named its own); the pool maps `effort` to the Pi thinking level, Claude keeps its cap.
 
     `env` is extra environment for the shell (the pool records it as spawn_settings and
     injects it); S20 passes the per-seat `EDP8_TOKEN` here so the shell authenticates.
@@ -111,6 +115,8 @@ def spawn(role: str, participant_id: str, *, parent_session: str | None = None, 
         body["model"] = model
     if mode:
         body["mode"] = mode
+    if effort:
+        body["effort"] = effort
     if env:
         body["env"] = env
     out = _post("/v1/spawn", body)

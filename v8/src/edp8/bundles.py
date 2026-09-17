@@ -27,6 +27,7 @@ from typing import Any, Callable
 
 from pydantic import AliasChoices, BaseModel, Field, ValidationError
 
+from . import seat_choice
 from .client import BoardClient
 from .schemas import (
     ENUMS,
@@ -1008,7 +1009,10 @@ class SpawnArgs(BaseModel):
     assign: bool | None = Field(default=None, description="assign the ticket to the new seat: default only "
                                 "when it is unassigned or its assignee's shell is dead; false = advisor/checker "
                                 "spawn that never touches the assignee; true = take it over explicitly")
-    model: str | None = None
+    model: str | None = Field(default=None, description="a models.json seat name (e.g. 'astra') or exact id; "
+                              "omitted = the epic's seat choice (seat-model tag), else the Claude roles column")
+    effort: str | None = Field(default=None, description="low | medium | high; omitted = the epic's choice "
+                               "(seat-effort tag). Claude seats are capped at medium")
     mode: str | None = None
 
 
@@ -1117,6 +1121,19 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
     args["participant_id"] = pid
     if not args.get("parent_session"):  # lineage: the pool records who spawned this shell
         args["parent_session"] = my_session_id()
+    # owner m-2d7ef9243d: a spawn without its own model/effort inherits the EPIC's seat choice
+    # (seat-model / seat-effort tags on the epic ticket — see seat_choice.py); Claude high → medium.
+    epic_tags: list[str] = []
+    if tk is not None:
+        epic_tk = tk
+        if tk.get("kind") != "epic":
+            eid = _epic_id(c, tk)
+            got_e = c.ticket_read(eid) if eid else None
+            v = (got_e or {}).get("value") if (got_e or {}).get("ok") else None
+            epic_tk = (v.get("ticket", v) if isinstance(v, dict) else {}) or {}
+        epic_tags = list(epic_tk.get("tags") or [])
+    choice = seat_choice.resolve(args.get("model"), args.get("effort"), epic_tags, _edp8_home())
+    args["model"], args["effort"] = choice.model, choice.effort
     out = _pool_call("spawn", args)
     if not out.get("ok") and "lock" in str(out.get("error", "")).lower():
         # board said dead, pool lock says staffed (pain 2026-09-01 11:19) — resolve with the
@@ -1133,6 +1150,7 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
                     "hint": "message the seat instead of spawning; reap it first if it is truly stuck"}
     if out.get("ok") and isinstance(out.get("value"), dict):
         out["value"]["participant_id"] = pid
+        out["value"]["seat_choice"] = choice.as_dict()
         out["value"]["closing"] = "the seat records status to you (record_status) and closes itself (close_self)"
         if assignee_kept:
             out["value"]["assignee_kept"] = assignee_kept

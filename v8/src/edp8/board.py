@@ -53,6 +53,7 @@ from .schemas import (
     WorkType,
     now,
 )
+from . import seat_choice
 from .store import Store, new_id
 
 _MENTION_RX = re.compile(r"@([A-Za-z0-9][A-Za-z0-9_.\-]*)")
@@ -849,8 +850,10 @@ class Board:
                 return False
             if token:  # a present minter returning None is trusted mode (no tokens.json) → header-only
                 env = {"EDP8_TOKEN": token}
+        choice = self.seat_choice_for(ticket_id)  # owner m-2d7ef9243d: the epic's model + effort
         try:
-            res = self._pool_adapter().spawn(role, participant_id, env=env)
+            res = self._pool_adapter().spawn(role, participant_id, env=env,
+                                             model=choice.model, effort=choice.effort)
         except Exception as e:  # noqa: BLE001 — a pool hiccup keeps the seat registered; retry next tick
             _log.warning("pairing spawn for %s failed: %s", participant_id, e)
             return False
@@ -1655,6 +1658,22 @@ class Board:
             return row
 
         return [_ask_row(m) for m in asks if not _is_answered(m.id) and _ask_live(m)]
+
+    def seat_choice_for(self, ticket_id: str | None, *, model: str | None = None,
+                        effort: str | None = None) -> seat_choice.SeatChoice:
+        """The model + effort a spawn on `ticket_id` runs with (owner m-2d7ef9243d): the explicit
+        arguments win, else the EPIC's seat-model / seat-effort tags (seat_choice.py); no ticket
+        or no epic = no choice (the pool's role→seat default). Never raises."""
+        tags: list[str] = []
+        if ticket_id:
+            t = self.store.get("ticket", ticket_id)
+            if t is not None:
+                try:
+                    epic = self.epic_of(t)  # type: ignore[arg-type]
+                    tags = list(epic.tags or [])
+                except Exception:  # noqa: BLE001 — an orphaned chain means no epic choice
+                    tags = []
+        return seat_choice.resolve(model, effort, tags, seat_choice.agent_home())
 
     def _epic_id_of(self, ticket_id: str) -> str | None:
         t = self.store.get("ticket", ticket_id)

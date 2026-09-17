@@ -182,7 +182,8 @@ class SessionSpawnIn(BaseModel):
     participant_id: str
     ticket_id: str | None = None  # for architect authz (target seat's epic); optional for owner
     parent_session: str | None = None
-    model: str | None = None
+    model: str | None = None   # a seat name ("astra") or exact id; omitted = the epic's seat choice
+    effort: str | None = None  # low | medium | high; omitted = the epic's seat choice (Claude capped at medium)
     mode: str | None = None
 
 
@@ -863,16 +864,22 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         # pain p-9ba7b6b6: the seat must EXIST on the board before its token is minted, or every
         # MCP call from the new shell 401s "participant X is not registered". Same idempotent step
         # as the board's pairing path (Board._spawn_seat); a handle race is fine.
+        # owner m-2d7ef9243d: the spawn inherits the EPIC's seat choice (seat-model/seat-effort tags)
+        # unless the body names its own model/effort; Claude effort high is capped to medium.
+        choice = board.seat_choice_for(b.ticket_id, model=b.model, effort=b.effort)
         if board.store.get("participant", b.participant_id) is None:
             try:
-                board.participant_create("agent", b.role, b.participant_id, id_=b.participant_id, model=b.model)
+                board.participant_create("agent", b.role, b.participant_id, id_=b.participant_id,
+                                         model=choice.model)
             except BoardError:
                 pass
         token = _mint_agent_token(b.participant_id)
         env = {"EDP8_TOKEN": token} if token else None
         out = pool_adapter.spawn(b.role.value, b.participant_id, parent_session=b.parent_session,
-                                 model=b.model, mode=b.mode, env=env)
+                                 model=choice.model, mode=b.mode, env=env, effort=choice.effort)
         if out.get("ok"):
+            if isinstance(out.get("value"), dict):
+                out["value"]["seat_choice"] = choice.as_dict()
             _idem_put(a, idempotency_key, out)
             return out
         return _pool_result(out)

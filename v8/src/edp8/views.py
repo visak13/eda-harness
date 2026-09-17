@@ -588,6 +588,9 @@ def epic_page(board: Board, epic_id: str, include: str | None = None) -> dict[st
     # Ruling #32/#33: `words` are the owner's verbatim request, `title` the short human title, and
     # `description` the architect's brief (the SPA's "Architect's brief" card).
     return {"board": bd, "words": bd.get("words"), "title": epic.title, "description": epic.description,
+            "tags": list(epic.tags or []),
+            # owner m-2d7ef9243d: the seat choice every spawn on this epic inherits (read-only label)
+            "seat_choice": board.seat_choice_for(epic_id).as_dict(),
             "counts": bd.get("counts"),
             "thread": thread, "docs": docs, "open_gates": bd.get("open_gates", []),
             "answerable_gates": answerable_gates,
