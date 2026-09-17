@@ -419,3 +419,20 @@ def test_wp2_provenance_resolves_from_spawner_pin(tmp_path, monkeypatch):
     svc = PoolService(sp)
     sid = svc.spawn("curiosity", "curiosity-x1", None)
     assert svc.sessions[sid]["model"] == "claude-fable-5"
+
+
+def test_spawn_effort_rides_the_shell_env_and_spawn_settings(client):
+    """epic-6a8a6020fd seat-choice: POST /v1/spawn accepts `effort`; it reaches the backend as
+    EDP_SEAT_EFFORT in extra_env (next to the seat token) and is recorded in spawn_settings.env so a
+    resume-from-closed re-applies it. No `effort` → no key."""
+    r = client.post("/v1/spawn", json={"role": "planner", "handle": "r:eff", "effort": "high",
+                                       "env": {"EDP8_TOKEN": "tok-1"}, "model": "astra"})
+    assert r.status_code == 200, r.text
+    svc = client.app.state.svc
+    launched = svc.spawner.launched[-1]
+    assert launched["extra_env"] == {"EDP8_TOKEN": "tok-1", "EDP_SEAT_EFFORT": "high"}
+    row = svc.sessions[r.json()["session_id"]]
+    assert row["spawn_settings"]["env"]["EDP_SEAT_EFFORT"] == "high"
+    r = client.post("/v1/spawn", json={"role": "planner", "handle": "r:noeff"})
+    assert r.status_code == 200
+    assert not (svc.spawner.launched[-1]["extra_env"] or {})

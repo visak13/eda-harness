@@ -61,6 +61,10 @@ def pi_bin_argv() -> list[str]:
     return ["pi"]
 
 
+#: Pi thinking levels a spawn's `effort` may select (seat_choice: Claude is capped at medium upstream).
+PI_THINKING_LEVELS = ("low", "medium", "high")
+
+
 def build_argv_pi_tui(agent_home: str | None, role: str, handle: str, *, model: str | None,
                       session_file: str, first_message: str | None, thinking: str | None = None) -> list[str]:
     """Interactive Pi in a visible console: extension + session file + the role card (or the
@@ -180,6 +184,12 @@ class PiSpawner:
             env["EDP_PI_MODEL"] = named.model
             if named.thinking:
                 env["EDP_PI_THINKING"] = named.thinking
+        # epic-6a8a6020fd seat-choice (owner m-2d7ef9243d): the spawn's own effort (the epic's
+        # choice, carried as EDP_SEAT_EFFORT by the pool route) IS the Pi thinking level and wins
+        # over the seat's default; anything but low/medium/high is ignored.
+        effort = str((extra_env or {}).get("EDP_SEAT_EFFORT") or "").strip().lower()
+        if effort in PI_THINKING_LEVELS:
+            env["EDP_PI_THINKING"] = effort
         log_path = None
         if self._log_dir:
             Path(self._log_dir).mkdir(parents=True, exist_ok=True)

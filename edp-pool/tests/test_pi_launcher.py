@@ -169,3 +169,37 @@ def test_launch_merges_the_seat_token_into_env_not_argv(monkeypatch, tmp_path):
     sp.launch("sid-t", "engineer", "engineer.t", extra_env={"EDP8_TOKEN": "sekret-seat"}, parent="architect:p")
     assert seen["env"]["EDP8_TOKEN"] == "sekret-seat" and seen["env"]["EDP_PARENT"] == "architect:p"
     assert not any("sekret" in a for a in seen["argv"])
+
+
+def test_spawn_effort_selects_the_pi_thinking_level(monkeypatch, tmp_path):
+    """epic-6a8a6020fd seat-choice (owner m-2d7ef9243d): the epic's effort reaches the Pi seat as
+    EDP_SEAT_EFFORT (pool route → extra_env) and becomes the thinking level, beating the seat's
+    models.json default (astra thinking=medium) in both headless env and the TUI argv."""
+    (tmp_path / "models.json").write_text(json.dumps({
+        "seats": {"astra": {"model": "openai-codex/gpt-6-astra", "harness": "pi", "thinking": "medium"}},
+        "roles": {}, "roles_openai": {"engineer": "astra"}}), encoding="utf-8")
+    monkeypatch.delenv("EDP_PI_MODEL", raising=False)
+    monkeypatch.delenv("EDP_PI_THINKING", raising=False)
+    monkeypatch.setenv("EDP_PI_BIN", "C:/pi/dist/cli.js")
+    monkeypatch.setattr(pl, "build_argv_pi", lambda _h: [sys.executable, "-c", "import time; time.sleep(30)"])
+    seen = {}
+
+    class FakeProc:
+        pid = 1
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(pl.subprocess, "Popen", lambda argv, **kw: seen.update(argv=argv, kw=kw) or FakeProc())
+    sp = pl.PiSpawner(log_dir=str(tmp_path / "logs"), agent_home=str(tmp_path))
+    sp.launch("s1", "engineer", "engineer.1", mode="headless", model="astra",
+              extra_env={"EDP8_TOKEN": "tok", "EDP_SEAT_EFFORT": "high"})
+    assert seen["kw"]["env"]["EDP_PI_MODEL"] == "openai-codex/gpt-6-astra"
+    assert seen["kw"]["env"]["EDP_PI_THINKING"] == "high"
+    sp.launch("s2", "engineer", "engineer.2", mode="monitor", model="astra", extra_env={"EDP_SEAT_EFFORT": "low"})
+    argv = seen["argv"]
+    assert argv[argv.index("--thinking") + 1] == "low"
+    sp.launch("s3", "engineer", "engineer.3", mode="headless", model="astra", extra_env={"EDP_SEAT_EFFORT": "xhigh"})
+    assert seen["kw"]["env"]["EDP_PI_THINKING"] == "medium"  # junk effort → the seat default stands
+    sp.launch("s4", "engineer", "engineer.4", mode="headless", model="astra")
+    assert seen["kw"]["env"]["EDP_PI_THINKING"] == "medium"

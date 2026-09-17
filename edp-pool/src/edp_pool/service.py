@@ -2264,6 +2264,15 @@ def create_app(
         from .spawn_defaults import load_spawn_defaults
         mode = b.get("mode") or load_spawn_defaults().get(
             "spawn_mode") or os.environ.get("EDP_SPAWN_MODE", "monitor")
+        # epic-6a8a6020fd seat-choice (owner m-2d7ef9243d): optional `effort` (low|medium|high)
+        # rides the shell env as EDP_SEAT_EFFORT — so it is recorded in spawn_settings.env and a
+        # resume-from-closed re-applies it. The Pi backend maps it to the thinking level
+        # (pi_launcher); the Claude backend leaves it informational (effort is not an argv/env
+        # knob of a Claude shell, and the fleet cap is medium anyway).
+        env = b.get("env")
+        effort = b.get("effort")
+        if effort:
+            env = {**(env or {}), "EDP_SEAT_EFFORT": str(effort)}
         # 2026-05-25 concurrency fix: svc.spawn does a BLOCKING PTY launch
         # (spawn + wait_ready, up to 30s, longer if a shell is slow). Run
         # it OFF the event loop so concurrent pool calls from other shells
@@ -2279,7 +2288,7 @@ def create_app(
             model=b.get("model"),
             # S20 (v8): optional extra shell env (the board passes the per-seat
             # EDP8_TOKEN here); recorded as spawn_settings.env and injected.
-            env=b.get("env"),
+            env=env,
         )
         if not isinstance(res, str):  # ToolError
             return _envelope(res)
