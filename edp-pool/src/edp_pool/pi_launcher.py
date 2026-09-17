@@ -89,6 +89,26 @@ def openai_seat_for(role: str, agent_home: str | None):
         return None
 
 
+def pi_seat_named(name: str | None, agent_home: str | None):
+    """A models.json SEAT NAME whose harness is `pi` (e.g. "astra") → that Seat; else None."""
+    if not name or not agent_home:
+        return None
+    try:
+        from edp_contracts.seats import load
+        seats, _roles = load(agent_home)
+        seat = seats.get(name)
+        return seat if seat is not None and getattr(seat, "harness", None) == "pi" else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def is_pi_model(model: str | None, agent_home: str | None) -> bool:
+    """Routing predicate for CompositeSpawner: an openai/openai-codex model id, or a `harness: pi` seat name."""
+    if not model:
+        return False
+    return model.startswith(("openai/", "openai-codex/")) or pi_seat_named(model, agent_home) is not None
+
+
 def role_card_text(agent_home: str | None, role: str) -> str:
     p = Path(agent_home or os.getcwd()) / ".claude" / "commands" / f"{role}.md"
     return p.read_text(encoding="utf-8") if p.is_file() else f"/{role}"
@@ -153,6 +173,11 @@ class PiSpawner:
                 env["EDP_PI_THINKING"] = seat.thinking
         if model and model.startswith(("openai/", "openai-codex/")):  # explicit per-spawn override wins
             env["EDP_PI_MODEL"] = model
+        named = pi_seat_named(model, self._agent_home)  # spawn(model="astra"): the seat name binds model + thinking
+        if named is not None:
+            env["EDP_PI_MODEL"] = named.model
+            if named.thinking:
+                env["EDP_PI_THINKING"] = named.thinking
         log_path = None
         if self._log_dir:
             Path(self._log_dir).mkdir(parents=True, exist_ok=True)

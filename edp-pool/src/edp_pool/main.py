@@ -79,7 +79,13 @@ else:
 # surface + the getattr hooks), so it stacks on whatever _spawner already is.
 _pi_roles = {r.strip() for r in
              os.environ.get("EDP_PI_ROLES", "").split(",") if r.strip()}
-if _pi_roles:
+# Per-spawn routing (owner m-8642d551fc): with the Pi harness installed (edp-pool/.pi-harness or
+# EDP_PI_BIN) the backend is ALWAYS armed, and a spawn whose requested model is a `harness: pi`
+# seat name ("astra") or an openai/… id lands on it — no role re-arming needed. Roles listed in
+# EDP_PI_ROLES route there unconditionally as before.
+from .pi_launcher import is_pi_model, pi_bin_argv  # noqa: E402
+_pi_available = pi_bin_argv()[0] != "pi" or bool(os.environ.get("EDP_PI_BIN"))
+if _pi_roles or _pi_available:
     from .opencode_launcher import CompositeSpawner
     from .pi_launcher import PiSpawner
     _spawner = CompositeSpawner(
@@ -91,9 +97,10 @@ if _pi_roles:
             agent_home=_agent_home,
         ),
         opencode_roles=_pi_roles,
+        route_model=lambda m: is_pi_model(m, _agent_home),
     )
-    _log.info("pi_backend_armed", "mixed fleet: roles routed to pi (GPT-6 Astra)",
-              roles=sorted(_pi_roles))
+    _log.info("pi_backend_armed", "mixed fleet: roles + pi-seat models routed to pi (GPT-6 Astra)",
+              roles=sorted(_pi_roles), by_model=True)
 
 # WS7 (SHADOW.md): every spawn gets a per-shell shadow (wake plane,
 # brief injection, observed close) — Spawner-compatible wrapper, so the

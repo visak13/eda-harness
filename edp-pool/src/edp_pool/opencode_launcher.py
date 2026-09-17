@@ -522,13 +522,19 @@ class CompositeSpawner:
     'worker'), delegates lifecycle calls to whichever backend knows the id."""
 
     def __init__(self, claude_spawner, opencode_spawner,
-                 opencode_roles: set[str] | None = None):
+                 opencode_roles: set[str] | None = None,
+                 route_model=None):
         self._claude = claude_spawner
         self._oc = opencode_spawner
         roles = opencode_roles if opencode_roles is not None else {
             r.strip() for r in os.environ.get(
                 "EDP_OPENCODE_ROLES", "worker").split(",") if r.strip()}
         self._oc_roles = roles
+        # epic-6a8a6020fd (owner m-8642d551fc: "launch one small ticket which GPT drives"): a
+        # per-spawn choice — `route_model(model) -> bool` says whether the REQUESTED model belongs
+        # to the second backend (a `harness: pi` seat name such as "astra", or an openai/… id),
+        # so spawn(role=engineer, model="astra") lands there without re-arming the pool by role.
+        self._route_model = route_model
 
     def _owner(self, session_id):
         if self._oc.knows(session_id):
@@ -538,7 +544,8 @@ class CompositeSpawner:
     def launch(self, session_id, role, handle, mode="headless",
                claude_session=None, resume_session=None, model=None,
                activation=None) -> None:
-        backend = self._oc if role in self._oc_roles else self._claude
+        by_model = bool(self._route_model and model and self._route_model(model))
+        backend = self._oc if (role in self._oc_roles or by_model) else self._claude
         backend.launch(session_id, role, handle, mode=mode,
                        claude_session=claude_session,
                        resume_session=resume_session, model=model,

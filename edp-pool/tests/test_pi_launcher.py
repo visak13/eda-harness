@@ -1,3 +1,4 @@
+import json
 """PiSpawner unit surface (epic-6a8a6020fd S2): env overlay, argv hygiene, lifecycle."""
 
 import os
@@ -113,3 +114,34 @@ def test_openai_column_binds_model_and_thinking_at_the_spawn_seam(monkeypatch, t
     assert seen["kw"]["env"]["EDP_PI_MODEL"] == "openai/gpt-6-astra-fast"
     sp.launch("s3", "qa", "qa.1", mode="headless")  # unmapped in the openai column → launcher default
     assert seen["kw"]["env"]["EDP_PI_MODEL"] == "openai-codex/gpt-6-astra"
+
+
+def test_spawn_model_astra_routes_to_the_pi_backend(monkeypatch, tmp_path):
+    """owner m-8642d551fc: spawn(role=engineer, model="astra") lands on the GPT backend without EDP_PI_ROLES."""
+    from edp_pool.opencode_launcher import CompositeSpawner
+    from edp_pool.pi_launcher import is_pi_model
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "models.json").write_text(json.dumps({
+        "seats": {"astra": {"model": "openai-codex/gpt-6-astra", "effort": "medium", "harness": "pi", "thinking": "medium"},
+                  "opus": {"model": "claude-opus-5", "effort": "medium"}},
+        "roles": {"engineer": "opus"}, "roles_openai": {"engineer": "astra"}}), encoding="utf-8")
+    calls = []
+
+    class Fake:
+        def __init__(self, name):
+            self.name = name
+
+        def launch(self, sid, role, handle, **kw):
+            calls.append((self.name, role, kw.get("model")))
+
+        def knows(self, sid):
+            return False
+
+    comp = CompositeSpawner(Fake("claude"), Fake("pi"), opencode_roles=set(), route_model=lambda m: is_pi_model(m, str(home)))
+    comp.launch("s1", "engineer", "engineer.t1", model="astra")
+    comp.launch("s2", "engineer", "engineer.t2", model="openai/gpt-6-astra")
+    comp.launch("s3", "engineer", "engineer.t3", model="opus")
+    comp.launch("s4", "engineer", "engineer.t4", model=None)
+    assert [c[0] for c in calls] == ["pi", "pi", "claude", "claude"]
+    assert is_pi_model("astra", str(home)) and not is_pi_model("opus", str(home)) and not is_pi_model(None, str(home))
