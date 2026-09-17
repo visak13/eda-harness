@@ -132,5 +132,5 @@ Auth: owner chose Pi's own ChatGPT/Codex device-code login (`~/.pi/agent/auth.js
 
 Deviation noted for the oracle: Claude's five tools are *deferred* (name-only until `ToolSearch`); Pi registers them fully at boot, so the boot-time tool list differs. Claude's `Bash` vs Pi's `bash` (and read/edit/write names) also differ — out of the words' scope (monitor + cron) but visible at the model-input boundary; recorded for G1.
 
-## 7. Spike SA (Claude Code + local proxy + OpenAI API key) — NOT STARTED, blocked at G1
+## 7. Spike SA (Claude Code + local proxy + OpenAI API key) — SKIPPED by owner ruling at G1 (m-2af1bb3bca, 2026-09-17: "we dont need a proxy if the pi harness works 1:1"); every SA check = not run
 Blocked on an `OPENAI_API_KEY` (the ChatGPT login the owner chose does not serve route A1): needs `OPENAI_API_KEY` (route A1 is API-key by design §7). Plan: claudex or raine/claude-code-proxy on 127.0.0.1, `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`/`ANTHROPIC_MODEL=gpt-6-astra`, a normal v8 seat under the pool, the same check list at the JSONL boundary, plus the list of features that still call api.anthropic.com.
