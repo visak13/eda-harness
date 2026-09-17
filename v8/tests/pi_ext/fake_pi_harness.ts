@@ -188,6 +188,16 @@ check("re-queued notifications attach to the next tool result", !!tr2 && tr2.con
 idle = true;
 // A13: a bad shell is a failed Monitor, not an unhandled process error
 userMessages.length = 0;
+// Monitor shell = Git's bash on Windows (never the WSL relay in System32), env override wins
+{
+	const saved = process.env.EDP_MONITOR_SHELL;
+	delete process.env.EDP_MONITOR_SHELL;
+	const sh = T.monitorShell();
+	check("monitor shell never resolves to the WSL relay", !/System32/i.test(sh) && (process.platform !== "win32" || /Git/i.test(sh) || sh === "bash"));
+	process.env.EDP_MONITOR_SHELL = "Q:\\custom\\bash.exe";
+	check("EDP_MONITOR_SHELL overrides the Monitor shell", T.monitorShell() === "Q:\\custom\\bash.exe");
+	if (saved === undefined) delete process.env.EDP_MONITOR_SHELL; else process.env.EDP_MONITOR_SHELL = saved;
+}
 const shell0 = process.env.EDP_MONITOR_SHELL;
 process.env.EDP_MONITOR_SHELL = "Z:\\nonexistent\\bash.exe";
 const rb = await call("Monitor", { command: "echo probe", description: "bad shell", persistent: false, timeout_ms: 5000 });

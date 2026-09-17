@@ -242,12 +242,27 @@ export default async function edp8(pi: ExtensionAPI) {
 		m.batch.push(line);
 		if (!m.batchTimer) m.batchTimer = setTimeout(() => flushBatch(m), BATCH_MS);
 	}
+	// Monitor runs `command` under bash like Claude Code does on Windows (Git's bash, never WSL's): a
+	// pool-spawned seat inherits a PATH where System32\bash.exe (the WSL relay) wins, and the first live
+	// GPT seat's feed Monitor died with "execvpe(/bin/bash) No such file or directory" (s-174f83c926,
+	// 2026-09-17). EDP_MONITOR_SHELL overrides; else the first existing Git bash; else PATH `bash`.
+	function monitorShell(): string {
+		if (process.env.EDP_MONITOR_SHELL) return process.env.EDP_MONITOR_SHELL;
+		if (process.platform !== "win32") return "/bin/bash";
+		const roots = [process.env.ProgramFiles, process.env["ProgramFiles(x86)"], process.env.ProgramW6432,
+			process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, "Programs") : undefined].filter(Boolean) as string[];
+		for (const r of roots) for (const sub of ["Git\\usr\\bin\\bash.exe", "Git\\bin\\bash.exe"]) {
+			const c = join(r, sub);
+			if (existsSync(c)) return c;
+		}
+		return "bash";
+	}
 	function startMonitor(toolCallId: string, command: string, description: string, persistent: boolean, timeoutMs: number): Mon {
 		mkdirSync(TASKS_DIR, { recursive: true });
 		const id = taskId();
 		const outputFile = join(TASKS_DIR, `${id}.output`);
 		writeFileSync(outputFile, "");
-		const shell = process.env.EDP_MONITOR_SHELL ?? (process.platform === "win32" ? "bash" : "/bin/bash");
+		const shell = monitorShell();
 		const child = spawn(shell, ["-c", command], { cwd: CWD, env: process.env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
 		const m: Mon = { id, toolCallId, description, command, child, outputFile, batch: [], tokens: RATE_BURST, lastRefill: Date.now(), suppressed: 0, ended: false };
 		monitors.set(id, m);
@@ -813,7 +828,7 @@ export default async function edp8(pi: ExtensionAPI) {
 	});
 	pi.on("agent_end", async () => laneRelease());
 	pi.on("session_shutdown", async () => laneRelease());
-	(pi as any).__edp8_test = { laneAcquire, laneRelease, quotaBlock, noteQuota, LANE_DIR, setClockScale, nowMs, setLaneWait: (s: number) => (LANE_WAIT_S = s), pendingCount: () => pending.length, jobCount: () => jobs.size };
+	(pi as any).__edp8_test = { laneAcquire, laneRelease, quotaBlock, noteQuota, LANE_DIR, setClockScale, nowMs, monitorShell, setLaneWait: (s: number) => (LANE_WAIT_S = s), pendingCount: () => pending.length, jobCount: () => jobs.size };
 
 	pi.registerCommand("edp8", {
 		description: "edp8 seat status: monitors, cron jobs, bridged tools",
