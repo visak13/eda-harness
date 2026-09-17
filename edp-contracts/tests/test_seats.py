@@ -35,6 +35,20 @@ def test_effort_above_medium_refused():
         parse(raw)
 
 
+def test_pi_seat_may_ask_high_effort_claude_may_not():
+    """owner 2026-09-17 (m-2d7ef9243d): "include effort high as well" — for a harness seat (Pi/Astra)
+    high is a thinking level, not the Claude cap; a Claude seat asking high is still refused."""
+    raw = _raw()
+    raw["seats"]["astra"] = {"model": "openai-codex/gpt-6-astra", "effort": "high",
+                             "harness": "pi", "thinking": "high", "context_window": 272000,
+                             "auto_compact": 200000}
+    seats, _ = parse(raw)
+    assert seats["astra"].effort == "high" and seats["astra"].harness == "pi"
+    raw["seats"]["judgment"]["effort"] = "high"
+    with pytest.raises(SeatsError, match="MEDIUM cap"):
+        parse(raw)
+
+
 def test_alias_model_ids_refused():
     raw = _raw()
     raw["seats"]["judgment"]["model"] = "claude-fable-latest"

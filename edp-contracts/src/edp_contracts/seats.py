@@ -32,6 +32,9 @@ _CONFIG_ENV = "EDP_MODELS_CONFIG"
 
 #: The fleet-wide Claude effort cap (user ruling 2026-08-04).
 ALLOWED_EFFORT = ("low", "medium")
+#: Non-Claude seats (a `harness` such as `pi`) may ask for high — the Claude cap is a ruling about
+#: Claude models, not about GPT thinking levels (owner 2026-09-17: "include effort high as well").
+HARNESS_EFFORT = ("low", "medium", "high")
 
 
 class SeatsError(ValueError):
@@ -77,11 +80,13 @@ def parse(raw: dict) -> tuple[dict[str, Seat], dict[str, str]]:
                 f"the EXACT id (doctrine: never date-suffixed aliases, never "
                 f"'latest'); remixing later is editing this file.")
         effort = str(row.get("effort", "medium"))
-        if effort not in ALLOWED_EFFORT:
+        harness = str(row["harness"]) if row.get("harness") else None
+        allowed = HARNESS_EFFORT if harness else ALLOWED_EFFORT
+        if effort not in allowed:
             raise SeatsError(
                 f"seat {name!r}: effort {effort!r} exceeds the fleet-wide "
                 f"MEDIUM cap (user ruling 2026-08-04: higher is waste on "
-                f"Claude models). Allowed: {ALLOWED_EFFORT}.")
+                f"Claude models). Allowed: {allowed}.")
         cw = int(row.get("context_window", 1_000_000))
         ac = int(row.get("auto_compact", 350_000))
         if ac >= cw:
@@ -100,7 +105,7 @@ def parse(raw: dict) -> tuple[dict[str, Seat], dict[str, str]]:
         seats[name] = Seat(name=name, model=model, effort=effort,
                            context_window=cw, auto_compact=ac,
                            max_output=mo,
-                           harness=(str(row["harness"]) if row.get("harness") else None),
+                           harness=harness,
                            thinking=(str(row["thinking"]) if row.get("thinking") else None))
     roles: dict[str, str] = {}
     for role, seat in (raw.get("roles") or {}).items():
