@@ -133,15 +133,16 @@ def test_spawn_model_astra_routes_to_the_pi_backend(monkeypatch, tmp_path):
             self.name = name
 
         def launch(self, sid, role, handle, **kw):
-            calls.append((self.name, role, kw.get("model")))
+            calls.append((self.name, role, kw.get("model"), kw.get("parent")))
 
         def knows(self, sid):
             return False
 
     comp = CompositeSpawner(Fake("claude"), Fake("pi"), opencode_roles=set(), route_model=lambda m: is_pi_model(m, str(home)))
-    comp.launch("s1", "engineer", "engineer.t1", model="astra")
+    comp.launch("s1", "engineer", "engineer.t1", model="astra", parent="architect:abc")  # the service passes parent=
     comp.launch("s2", "engineer", "engineer.t2", model="openai/gpt-6-astra")
     comp.launch("s3", "engineer", "engineer.t3", model="opus")
     comp.launch("s4", "engineer", "engineer.t4", model=None)
     assert [c[0] for c in calls] == ["pi", "pi", "claude", "claude"]
+    assert calls[0][3] == "architect:abc"  # lineage forwarded (the live pool raised TypeError without it)
     assert is_pi_model("astra", str(home)) and not is_pi_model("opus", str(home)) and not is_pi_model(None, str(home))
