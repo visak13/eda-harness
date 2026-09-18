@@ -1,7 +1,7 @@
 """Direct-ticket history and linked records; never silently substitute an epic subtree."""
 from typing import Literal
 from .board import Board
-from .schemas import EventKind
+from .schemas import EventKind, MessageKind, TicketStatus
 
 HistoryCategory = Literal["all", "conversation", "decisions", "status", "documents", "activity"]
 CATEGORIES = {
@@ -40,9 +40,17 @@ def contextual_work(board: Board, ticket_id: str, category: HistoryCategory = "a
         named = set().union(*CATEGORIES.values())
         events = [e for e in events if e.kind not in named]
     events.sort(key=lambda e: e.created_at, reverse=True)
+    # Source-wide outstanding directed asks, not an invented wake/recipient count.
+    # Match inbox answer/lifecycle semantics, without its per-recipient 100-row cap.
+    asks = []
+    if ticket.status != TicketStatus.dropped and board.epic_of(ticket).status not in {TicketStatus.done, TicketStatus.partial, TicketStatus.dropped}:
+        for message in board.store.query("message", {"ticket_id": ticket_id, "kind": [MessageKind.question, MessageKind.steer]}, limit=100000):
+            if message.to and not board.store.query("message", {"reply_to": message.id, "kind": MessageKind.answer}, limit=1):
+                asks.append({"id": message.id, "kind": message.kind.value, "to": message.to})
     return {"ticket_id": ticket_id, "title": ticket.title, "kind": ticket.kind, "status": ticket.status,
             "owner": board.epic_owner(ticket_id), "requester": ticket.created_by, "assignee": ticket.assignee,
             "blockers": [{"id": t.id, "title": t.title, "status": t.status} for t in board.blockers(ticket_id) if t.status.value != "done"],
+            "unresolved_asks": asks,
             "design_ref": ticket.design_ref, "gates": [e.model_dump(mode="json") for e in board.open_gates(ticket_id)],
             "scope": "Direct source only; linked document version events included", "category": category,
             "records": records, "events": [e.model_dump(mode="json") for e in events[:200]],

@@ -194,6 +194,35 @@ def test_legacy_gate_answer_remains_acceptance_only(rig):
     assert b.ticket(body.ticket_id).status == TicketStatus.signed_off
 
 
+def test_legacy_design_owner_boundary_is_atomic(rig):
+    b, owner, _, other, body = rig
+    before = b.store.max_seq()
+    with pytest.raises(BoardError, match="matching human owner"):
+        b.gate_answer(other, body.ticket_id, Gate.design_signoff, "Approved")
+    assert b.store.max_seq() == before
+    assert b.open_gates(body.ticket_id)
+    assert b.ticket(body.ticket_id).status == TicketStatus.designed
+    b.gate_answer(owner, body.ticket_id, Gate.design_signoff, "Approved")
+    assert b.ticket(body.ticket_id).status == TicketStatus.signed_off
+
+
+@pytest.mark.parametrize("kind", [TicketKind.epic, TicketKind.story])
+def test_contextual_unanswered_attention_and_answer_transition(rig, kind):
+    from edp8.schemas import MessageKind
+    b, owner, architect, _, body = rig
+    ticket = b.ticket_create(owner if kind == TicketKind.epic else architect, kind=kind,
+                            work_type=WorkType.feature, title="Attention", parent_id=body.ticket_id if kind == TicketKind.story else None)
+    ask = b.message_send(architect, ticket_id=ticket.id, to=owner.id, kind=MessageKind.question, text="Please answer")
+    assert contextual_work(b, ticket.id)["unresolved_asks"] == [{"id": ask.id, "kind": "question", "to": owner.id}]
+    client = TestClient(create_app(b))
+    assert client.get(f"/v1/tickets/{ticket.id}/contextual").status_code == 401
+    response = client.get(f"/v1/tickets/{ticket.id}/contextual", headers={"X-Participant": owner.id})
+    assert response.status_code == 200
+    assert response.json()["value"]["unresolved_asks"][0]["id"] == ask.id
+    b.message_send(owner, ticket_id=ticket.id, to=architect.id, kind=MessageKind.answer, text="Answered", reply_to=ask.id)
+    assert contextual_work(b, ticket.id)["unresolved_asks"] == []
+
+
 def test_http_requires_actor_and_returns_typed_conflict(rig):
     b, owner, architect, _, body = rig
     client = TestClient(create_app(b))

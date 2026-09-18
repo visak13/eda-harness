@@ -12,6 +12,7 @@ interface WorkContext {
   ticket_id: string; title: string; kind: string; status: string; owner: string | null; requester: string; assignee: string | null;
   design_ref: string | null; scope: string; truncated: boolean;
   blockers?: { id: string; title: string; status: string }[];
+  unresolved_asks?: { id: string; kind: string; to: string }[];
   gates: { id: string; data: { gate: string } }[];
   records: { type: string; group: string; relation: string; record: { id: string; title?: string; note?: string; version?: number; scope?: string } }[];
   events: { id: string; created_at: string; created_by: string; kind: string; data: Record<string, unknown> }[];
@@ -48,6 +49,11 @@ export function ContextualWork({ ticketId, dedicated = false }: { ticketId: stri
   if (query.isPending) return <p>Loading context…</p>;
   if (query.isError) return <p role="alert">Could not load context: {query.error.message}</p>;
   const data = query.data;
+  const attention = [
+    ...data.gates.map((g) => g.data.gate.replaceAll("_", " ")),
+    data.unresolved_asks?.length ? `${data.unresolved_asks.length} unanswered request${data.unresolved_asks.length === 1 ? "" : "s"}` : "",
+    data.blockers?.length ? `Blocked by: ${data.blockers.map((b) => b.title).join(", ")}` : data.status === "blocked" ? "Blocked" : "",
+  ].filter(Boolean).join(" · ") || (data.unresolved_asks ? "No open requests" : "No open gates");
   const source = `/${data.kind === "epic" ? "epic" : "ticket"}/${encodeURIComponent(ticketId)}`;
   const content = <div className={styles.content}>
     <p>{data.scope}</p>
@@ -73,7 +79,7 @@ export function ContextualWork({ ticketId, dedicated = false }: { ticketId: stri
   </div>;
   if (dedicated) return <section><h1>{view === "history" ? "History" : "Files & evidence"} · {data.title}</h1>{content}</section>;
   return <>
-    <dl className={styles.meta}><div><dt>Owner</dt><dd>{data.owner ?? "Unknown"}</dd></div><div><dt>Requester</dt><dd>{data.requester || "Unknown"}</dd></div><div><dt>Assigned</dt><dd>{data.assignee ?? "Unassigned"}</dd></div><div><dt>Attention</dt><dd>{data.gates.length ? data.gates.map((g) => g.data.gate.replaceAll("_", " ")).join(", ") : data.blockers?.length ? `Blocked by: ${data.blockers.map((b) => b.title).join(", ")}` : data.status === "blocked" ? "Blocked" : "No open requests"}</dd></div></dl>
+    <dl className={styles.meta}><div><dt>Owner</dt><dd>{data.owner ?? "Unknown"}</dd></div><div><dt>Requester</dt><dd>{data.requester || "Unknown"}</dd></div><div><dt>Assigned</dt><dd>{data.assignee ?? "Unassigned"}</dd></div><div><dt>Attention</dt><dd>{attention}</dd></div></dl>
     <nav className={styles.links} aria-label="Work context">
       {data.design_ref ? <button className={ui.button} onClick={() => openDoc(data.design_ref!)}><Icon name="design" /> Design {data.gates.some((g) => g.data.gate === "design_signoff") ? "· review requested" : ""}</button> : null}
       <button className={ui.button} onClick={() => choose("files")}>Files & evidence</button>

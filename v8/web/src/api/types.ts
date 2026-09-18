@@ -111,6 +111,7 @@ export interface QuestionRow {
 }
 
 export interface GateRow {
+  event_id?: string;
   ticket_id: string;
   gate: string;
   by: string;

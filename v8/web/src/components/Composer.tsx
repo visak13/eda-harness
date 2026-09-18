@@ -302,7 +302,7 @@ function ComposerInstance({
   }, [pendingUploads, send.isPending]);
 
   const kindFixed = kinds.length <= 1;
-  const glossFor = (v: string) => (ROLE_GLOSS[v] ? ` — ${ROLE_GLOSS[v]}` : "");
+
 
   return (
     <section
@@ -331,13 +331,12 @@ function ComposerInstance({
             <select value={kind} onChange={(e) => setKind(e.target.value as MessageKind)} aria-label="Message kind">
               {kinds.map((k) => (
                 <option key={k} value={k} title={KIND_GLOSS[k]}>
-                  {k}
-                  {KIND_GLOSS[k] ? ` — ${KIND_GLOSS[k]}` : ""}
+                  {k}{KIND_GLOSS[k] ? ` — ${KIND_GLOSS[k]}` : ""}
                 </option>
               ))}
             </select>
             {KIND_GLOSS[kind] ? (
-              <span className={styles.gloss} data-testid="kind-gloss">
+              <span className={styles.gloss} data-testid="kind-gloss" hidden={!helpOpen}>
                 {KIND_GLOSS[kind]}
               </span>
             ) : null}
@@ -356,7 +355,7 @@ function ComposerInstance({
               aria-label="Recipient"
               data-testid="to-picker"
             >
-              <option value="">Note on this ticket — reaches the seats working it</option>
+              <option value="">This conversation</option>
               <ToGroups people={people.data ?? []} />
             </select>
           </label>
@@ -441,7 +440,7 @@ function ComposerInstance({
         <button type="button" className={styles.expand} onClick={() => fileRef.current?.click()}><Icon name="attach" /> Attach</button>
         <button type="button" className={styles.expand} onClick={() => { const at = taRef.current?.selectionStart ?? text.length; setText((t) => `${t.slice(0, at)}@${t.slice(at)}`); taRef.current?.focus(); requestAnimationFrame(() => { taRef.current?.setSelectionRange(at + 1, at + 1); mentions.refresh(); }); }}><Icon name="mention" /> Mention</button>
         <span className={styles.hint}>
-          Ctrl/Cmd+Enter sends · Enter for a newline · @ to notify
+          <span hidden={!helpOpen}>Ctrl/Cmd+Enter sends · Enter for a newline · @ to notify</span>
           <button
             ref={helpBtnRef}
             type="button"
@@ -534,8 +533,8 @@ function ComposerInstance({
         <optgroup label="Roles on this epic">
           {ROLES.map((r) => (
             <option key={r} value={r} title={ROLE_GLOSS[r]}>
-              {r} · {liveRoles.has(r) ? "seat live" : "no seat yet"}
-              {glossFor(r)}
+              {r} · {liveRoles.has(r) ? "seat live" : "no seat yet"}{ROLE_GLOSS[r] ? ` — ${ROLE_GLOSS[r]}` : ""}
+
             </option>
           ))}
         </optgroup>

@@ -469,7 +469,7 @@ function Conversations({ rows, people }: { rows: ConversationRow[]; people: Pers
               ))}
             </select>
           </label>
-          <Composer ticketId={composeTicket} kinds={["note", "question"]} showTo onSent={() => setComposing(false)} />
+          {composeTicket ? <Composer ticketId={composeTicket} kinds={["note", "question"]} showTo onSent={() => setComposing(false)} /> : <p>Select a conversation ticket before composing.</p>}
         </div>
       ) : null}
 

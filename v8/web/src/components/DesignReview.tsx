@@ -32,7 +32,7 @@ export function DesignReview({ docId, version, source, request, children, onLate
   }
   const approve = useMutation({
     mutationFn: () => decideDesign({ ticket_id: source, design_ref: docId, reviewed_version: version,
-      gate_event_id: context.data!.gate_event_id!, decision: "approve", idempotency_key: idempotency("approve") }),
+      gate_event_id: context.data!.gate_event_id!, decision: "approve", idempotency_key: idempotency(`approve:${context.data!.gate_event_id}`) }),
     onSuccess: () => { setSent(true); void context.refetch(); void qc.invalidateQueries({ queryKey: ["epic", source] }); },
     onError: () => { void context.refetch(); },
   });
@@ -42,7 +42,8 @@ export function DesignReview({ docId, version, source, request, children, onLate
     const result = await (mode === "request_changes"
       ? decideDesign({ ...common, gate_event_id: context.data!.gate_event_id!, decision: "request_changes", feedback: body.text })
       : commentDocument({ ...common, text: body.text })).catch((error) => { void context.refetch(); throw error; });
-    setSent(true); action.current = null;
+    setSent(mode === "request_changes"); action.current = null;
+    void context.refetch();
     delete draft.current.pendingAction;
     writeDraft(key, draft.current);
     return { ...result, value: { id: result.value.message_id, unresolved_mentions: result.value.unresolved_mentions ?? [] } as unknown as MessageSent,

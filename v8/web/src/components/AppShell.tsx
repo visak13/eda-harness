@@ -283,6 +283,7 @@ function AppShellChrome(): React.JSX.Element {
             </button>
           )}
         </div>
+        {whoami.data ? <NotificationCenter key={whoami.data.participant.id} actor={whoami.data.participant.id} /> : null}
       </header>
 
       <main className={styles.main}>
@@ -292,7 +293,6 @@ function AppShellChrome(): React.JSX.Element {
         <p className={styles.pageFraming} data-testid="page-framing" data-route={location.pathname}>
           {pageFraming}
         </p>
-        {whoami.data ? <NotificationCenter key={whoami.data.participant.id} actor={whoami.data.participant.id} /> : null}
         <DocDrawerProvider>
           <Outlet />
         </DocDrawerProvider>

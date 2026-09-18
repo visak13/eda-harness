@@ -37,9 +37,9 @@ test('populated 235-message history keeps total, draft and viewport anchor', asy
   await expect(draft).toHaveValue('QA KEEP independent source draft');
   await expect(page.getByRole('button', { name: 'Load older messages', exact: true })).toHaveCount(0);
   await page.evaluate(() => scrollTo(0, 0));
-  fs.mkdirSync('e2e/evidence/qa-ui', { recursive: true });
-  await page.screenshot({ path: 'e2e/evidence/qa-ui/populated-1440.png', fullPage: true });
-  await page.screenshot({ path: 'e2e/evidence/qa-ui/populated-viewport.png' });
+  fs.mkdirSync('e2e/evidence/s3-remediation', { recursive: true });
+  await page.screenshot({ path: 'e2e/evidence/s3-remediation/populated-1440.png', fullPage: true });
+  await page.screenshot({ path: 'e2e/evidence/s3-remediation/populated-viewport.png' });
   console.log('QA composer geometry', await draft.boundingBox());
 });
 
@@ -56,14 +56,59 @@ async function setupReview(request: import('@playwright/test').APIRequestContext
   return { epic, doc, gate, post };
 }
 
+test('representative three-message conversation comparison', async ({ page, request }) => {
+  const { epic, post } = await setupReview(request);
+  await post(`/v1/tickets/${epic.id}`, { title: 'Board improvements' }, 'arch', 'PATCH');
+  await post('/v1/messages', { ticket_id: epic.id, to: 'arch', kind: 'note', text: 'Keep the conversation central. A little personality is welcome — without making the board harder to use.' }, 'owner');
+  const upload = await request.post(`${BASE()}/v1/artifacts/upload`, { headers: { 'X-Participant': 'arch' }, multipart: { file: { name: 'board-layout-sketch.png', mimeType: 'image/png', buffer: fs.readFileSync('../docs/ui-redesign-concepts/s1-assets/final/packet-epic.png') } } });
+  expect(upload.ok(), await upload.text()).toBe(true);
+  const artifact = (await upload.json()).value;
+  await post('/v1/messages', { ticket_id: epic.id, to: 'owner', kind: 'note', text: `Here is the revised design. The review stays beside the conversation; your feedback returns to this thread. ${artifact.id}`, artifacts: [artifact.id] });
+  await post('/v1/messages', { ticket_id: epic.id, to: 'arch', kind: 'note', text: 'Keep image replies, mentions and message types. Show status clearly without relying on color alone.' }, 'owner');
+  await page.goto(`/ui/epic/${epic.id}?as=owner`);
+  await expect(page.getByTestId('thread').locator(':scope > li')).toHaveCount(3);
+  await expect(page.getByRole('button', { name: /Design · review requested/ })).toBeVisible();
+  await page.getByTestId('order-toggle').click();
+  await expect(page.getByTestId('thread').getByRole('img', { name: artifact.id, exact: true })).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  fs.mkdirSync('e2e/evidence/s3-remediation', { recursive: true });
+  await page.screenshot({ path: 'e2e/evidence/s3-remediation/representative-1440.png' });
+  const composer = await page.getByTestId('composer').boundingBox();
+  console.log('Representative composer geometry', composer);
+  expect(composer!.y).toBeLessThan(780);
+  await page.setViewportSize({ width: 320, height: 568 });
+  await expect(page.getByTestId('composer-send')).toBeDisabled();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await page.screenshot({ path: 'e2e/evidence/s3-remediation/representative-320.png', fullPage: true });
+});
+
 test('Needs you negative ruling must not sign off a design', async ({ page, request }) => {
-  const { epic } = await setupReview(request);
+  const { epic, doc, gate } = await setupReview(request);
+  const legacyPosts: string[] = [];
+  page.on('request', r => { if (r.method() === 'POST' && r.url().includes('/design_signoff/answer')) legacyPosts.push(r.url()); });
   await page.goto('/ui/me?as=owner');
   await page.getByRole('tab', { name: /^Gates/ }).click();
   const form = page.getByTestId('gate-form').filter({ hasText: epic.id });
-  await form.getByTestId('gate-answer').fill('Do not approve; changes required');
-  const sent = page.waitForResponse(r => r.url().includes('/design_signoff/answer'));
-  await form.getByTestId('gate-submit').click(); await sent;
+  await expect(form.getByTestId('gate-answer')).toHaveCount(0);
+  await expect(form.getByTestId('gate-submit')).toHaveCount(0);
+  await form.getByRole('link', { name: 'Review design at source' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Drawer', exact: true });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Request changes', exact: true }).click();
+  await dialog.getByRole('textbox', { name: 'Message', exact: true }).fill('Do not approve; changes required');
+  const sent = page.waitForResponse(r => r.url().endsWith('/v1/gates/decide'));
+  await dialog.getByRole('button', { name: 'Send', exact: true }).click();
+  const response = await sent;
+  expect(response.ok()).toBe(true);
+  expect(response.request().postDataJSON()).toMatchObject({ ticket_id: epic.id, design_ref: doc.id, gate_event_id: gate.id, reviewed_version: 1, decision: 'request_changes' });
+  await expect(dialog).toBeVisible();
+  expect(legacyPosts).toEqual([]);
+  const context = await request.get(`${BASE()}/v1/tickets/${epic.id}/contextual`, { headers: { 'X-Participant': 'owner' } });
+  const value = (await context.json()).value;
+  expect(value.events.some((e: { kind: string }) => e.kind === 'gate_answered')).toBe(false);
+  expect(value.gates.some((g: { id: string }) => g.id === gate.id)).toBe(true);
+  const messages = await request.get(`${BASE()}/v1/messages?ticket_id=${epic.id}`, { headers: { 'X-Participant': 'owner' } });
+  expect(JSON.stringify((await messages.json()).value)).toContain('Do not approve; changes required');
   const r = await request.get(`${BASE()}/v1/tickets/${epic.id}`, { headers: { 'X-Participant': 'owner' } });
   expect((await r.json()).value.status).not.toBe('signed_off');
 });
@@ -116,6 +161,26 @@ test('ticket Expand retains failed attachment retry', async ({ page, request }) 
   await page.getByTestId('composer-expand').click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Retry upload' })).toBeVisible();
+});
+
+for (const action of ['dismiss', 'navigate'] as const) test(`delayed authorization respects later ${action}`, async ({ page, request }) => {
+  const { epic, gate } = await setupReview(request);
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/v1/me/notifications?*', async route => {
+    if (new URL(route.request().url()).searchParams.has('request')) await held;
+    await route.continue();
+  });
+  await page.goto(`/ui/epic/${epic.id}?as=owner&request=${gate.id}`);
+  const dialog = page.getByRole('dialog', { name: 'Drawer', exact: true });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  if (action === 'navigate') await page.getByRole('link', { name: 'Epics', exact: true }).first().click();
+  const current = page.url();
+  const response = page.waitForResponse(r => r.url().includes('/v1/me/notifications') && new URL(r.url()).searchParams.has('request'));
+  release(); await response;
+  await expect(dialog).toHaveCount(0);
+  await expect(page).toHaveURL(current);
 });
 
 test('approval deep link keeps its viewer after delayed notification authorization', async ({ page, request }) => {

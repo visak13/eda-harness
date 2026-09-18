@@ -18,6 +18,7 @@ import { CriterionCard } from "../components/CriterionCard";
 import { AddCriterion } from "../components/CriterionControls";
 import { Tabs } from "../components/Tabs";
 import { Composer } from "../components/Composer";
+import { ExpandableComposer } from "../components/ExpandableComposer";
 import { useScrollToHash } from "../components/useScrollToHash";
 import { copyItem, copyProps } from "../copy/pages";
 import { AgentLine } from "../components/AgentLine";
@@ -138,7 +139,8 @@ export function EpicPage(): React.JSX.Element {
       <nav className={styles.crumb} aria-label="Breadcrumb">
         <Link to="/epics">Epics</Link>
         <span aria-hidden="true"> › </span>
-        <span className={styles.crumbHere}>{epic.title}</span>
+        <span className={ui.idMono}>{epic.id}</span>
+        <span className={styles.badge} data-testid="epic-status-badge"><StatusChip status={epic.status} /></span>
       </nav>
 
       {/* Astra #36 (1): meta line (id + ONE 24px status badge) → Georgia 38/44 short title → the
@@ -146,19 +148,12 @@ export function EpicPage(): React.JSX.Element {
           same 744/336 grid as the body so the rail column (the Steer control) starts beside the
           title row, not below the words. */}
       <div className={styles.head}>
-        <div className={styles.idline}>
-          <span className={ui.idMono}>{epic.id}</span>
-          <span className={styles.badge} data-testid="epic-status-badge">
-            <StatusChip status={epic.status} />
-          </span>
-        </div>
         <h1 className={styles.title} {...copyProps("epic", "title")}>{heading}</h1>
         <details className={styles.steerWrap}><summary>Actions</summary>
           <button type="button" className={styles.steer} onClick={steer} {...copyProps("epic", "steer")}>
             Steer this epic
           </button>
           <Gloss k="steer" />
-        </details>
 
         {showWords ? (
           <details><summary>Original request</summary><figure className={styles.words} data-testid="owner-words">
@@ -166,6 +161,7 @@ export function EpicPage(): React.JSX.Element {
             <Clamp className={styles.wordsText} text={words} lines={2} testId="owner-words-text" />
           </figure></details>
         ) : null}
+        </details>
       </div>
 
       <ContextualWork ticketId={id} />
@@ -714,19 +710,16 @@ function ThreadTab({
 }): React.JSX.Element {
   const ordered = order === "newest" ? [...thread].reverse() : thread;
   const [reply, setReply] = useState<{ id: string; by: string } | null>(null);
-  const [expanded, setExpanded] = useState(false);
   useScrollToHash(Boolean(thread.length));
   return (
     <div className={styles.thread}>
-      <div className={expanded ? styles.expandedComposer : undefined}>
-      <Composer
+      <ExpandableComposer title={`Message ${epicId}`}>{(expand) => <Composer
         ticketId={epicId}
         kinds={reply ? ["answer", "note", "question", "steer", "status", "finding", "deviation"] : composerKind === "steer" ? ["steer", "note", "question", "status", "finding", "deviation", "answer"] : ["note", "question", "steer", "status", "finding", "deviation", "answer"]}
         showTo to={reply?.by} replyTo={reply?.id} replyToBy={reply?.by} onCancelReply={() => setReply(null)}
-        expand={{ expanded, onToggle: () => setExpanded((x) => !x) }}
+        expand={expand}
         placeholder={composerKind === "steer" ? "Steer this epic — this posts as a steer" : undefined}
-      />
-      </div>
+      />}</ExpandableComposer>
       <div className={styles.threadHead}>
         <span className={ui.sectionLabel}>Conversation</span>
         <button type="button" className={styles.orderToggle} onClick={onToggleOrder} data-testid="order-toggle">

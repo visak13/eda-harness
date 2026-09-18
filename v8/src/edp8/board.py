@@ -1499,6 +1499,8 @@ class Board:
         if not self.open_gates(ticket_id, gate):
             raise BoardError("transition", f"no open {gate} gate on {ticket_id}")
         if gate == Gate.design_signoff:
+            if actor.type != "human" or self.epic_owner(ticket_id) != actor.id:
+                raise BoardError("scope", "this review has no matching human owner")
             # finding 5 (second-opinion 2026-09-08): design_signoff is answered on the EPIC itself,
             # in the `designed` phase — never on a child story, and never on an epic with no design
             # (a drafted, criterion-less epic could otherwise be carried straight to signed_off,

@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Link } from "react-router";
+import { identity } from "../auth/identity";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { GateRow } from "../api/types";
 import { answerGate } from "../api/endpoints";
@@ -16,7 +18,19 @@ export interface GateFormProps {
   onAnswered?: () => void;
 }
 
-export function GateForm({ gate, onAnswered }: GateFormProps): React.JSX.Element {
+export function GateForm(props: GateFormProps): React.JSX.Element {
+  const { gate } = props;
+  if (gate.gate === "design_signoff") return <section className={styles.gate} data-testid="gate-form" aria-label="Gate design_signoff">
+    <h3>Design review · {gate.ticket_id}</h3>
+    <p>{gate.note}</p>
+    <Link to={`/${gate.ticket_id === gate.epic ? "epic" : "ticket"}/${encodeURIComponent(gate.ticket_id)}?${new URLSearchParams({ as: identity(), ...(gate.event_id ? { request: gate.event_id } : {}) })}`}>
+      Review design at source
+    </Link>
+  </section>;
+  return <AcceptanceGateForm {...props} />;
+}
+
+function AcceptanceGateForm({ gate, onAnswered }: GateFormProps): React.JSX.Element {
   const qc = useQueryClient();
   const [answer, setAnswer] = useState("");
   // §16.1: while a ruling is being typed the feed holds its events ("N new · refresh") instead of

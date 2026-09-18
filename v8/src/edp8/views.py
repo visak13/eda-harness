@@ -406,7 +406,7 @@ def decisions_for(board: Board, viewer: Participant) -> dict[str, Any]:
             "note": _asker_note(board, m["created_by"])}})
     gates = []
     for tid, ev in _owner_gates(board, viewer):
-        gates.append({"ticket_id": tid, "gate": ev.data.get("gate"), "by": ev.data.get("by"),
+        gates.append({"event_id": ev.id, "ticket_id": tid, "gate": ev.data.get("gate"), "by": ev.data.get("by"),
                       "note": ev.data.get("note"), "opened_at": ev.created_at.isoformat(),
                       "epic": board.epic_of(board.ticket(tid)).id})
     return {"signoffs": signoffs, "questions": questions, "gates": gates,
@@ -605,7 +605,7 @@ def epic_page(board: Board, epic_id: str, include: str | None = None) -> dict[st
     # The epic's OWN open gates as answerable rows (design §16 "Epic page: Answer gate"); child-ticket
     # gates are answered on their own ticket pages. `open_gates` (the [tid,gate] tree aggregate from
     # board()) stays as-is for the at-a-glance count.
-    answerable_gates = [{"ticket_id": epic_id, "gate": ev.data.get("gate"), "by": ev.data.get("by"),
+    answerable_gates = [{"event_id": ev.id, "ticket_id": epic_id, "gate": ev.data.get("gate"), "by": ev.data.get("by"),
                          "note": ev.data.get("note"), "opened_at": ev.created_at.isoformat(), "epic": epic_id}
                         for ev in board.open_gates(epic_id)]
     crits = board.criteria(epic_id)
@@ -639,7 +639,7 @@ def ticket_page(board: Board, ticket_id: str, include: str | None = None) -> dic
     epic_id = board.epic_of(t).id
     # Open gates on THIS ticket, so the page can close the loop by answering them (design §16,
     # c-eb4300f7b2 "answer gate"). Shape matches GateRow so the same GateForm renders them.
-    open_gates = [{"ticket_id": ticket_id, "gate": ev.data.get("gate"), "by": ev.data.get("by"),
+    open_gates = [{"event_id": ev.id, "ticket_id": ticket_id, "gate": ev.data.get("gate"), "by": ev.data.get("by"),
                    "note": ev.data.get("note"), "opened_at": ev.created_at.isoformat(), "epic": epic_id}
                   for ev in board.open_gates(ticket_id)]
     return {"ticket": t.model_dump(mode="json"), "epic_id": epic_id,

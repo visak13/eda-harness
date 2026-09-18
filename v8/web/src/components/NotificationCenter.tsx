@@ -64,12 +64,23 @@ export function NotificationCenter({ actor }: { actor: string }): React.JSX.Elem
     enabledRef.current = value; authorizationGeneration.current += 1; setEnabled(value);
   }, []);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
-  const open = useCallback(async (request: string) => {
+  const open = useCallback(async (request: string, initial = false) => {
+    const landing = new URL(window.location.href);
     try {
       const value = await attention(-1, request);
       if (!alive.current || value.participant !== actor) return;
       const row = value.requests.find(item => item.request === request);
       if (!row) { setPending(null); setStatus('This request is resolved or unavailable to this participant. Use Needs you.'); return; }
+      const current = new URL(window.location.href);
+      const destination = new URL(row.url, window.location.origin);
+      if (initial) {
+        // Authorization validates the landing; it must not replay navigation over a
+        // viewer opened meanwhile, a dismissed viewer, or a later user destination.
+        if (current.pathname !== landing.pathname || current.searchParams.get('request') !== request) return;
+        if (current.pathname === destination.pathname && current.searchParams.get('request') === destination.searchParams.get('request')) {
+          setStatus('Request opened in this tab.'); return;
+        }
+      }
       if (hasDirty() || pendingWork()) {
         setPending(row); setStatus('Request ready. Finish or save your current draft, then open it here. Your draft has not moved.');
       } else { setPending(null); setStatus('Request opened in this tab.'); navigate(row.url.replace(/^\/ui/, '')); }
@@ -107,7 +118,7 @@ export function NotificationCenter({ actor }: { actor: string }): React.JSX.Elem
   // A toast whose original client disappeared opens a fresh shell without credentials.
   useEffect(() => {
     const request = new URL(location.href).searchParams.get('request');
-    if (request) void open(request);
+    if (request) void open(request, true);
   }, []); // only initial load; normal source navigation remains S3's responsibility
   useEffect(() => {
     let stopped = false;
@@ -184,8 +195,9 @@ export function NotificationCenter({ actor }: { actor: string }): React.JSX.Elem
         </>}
         <Link to="/me">Needs you</Link>
       </div>
+      {!(status.startsWith('Request ') || status.startsWith('Could not') || status.startsWith('This request')) ? <p role="status">{status}</p> : null}
     </details>
-    <p role="status">{status}</p>
+    {status.startsWith('Request ') || status.startsWith('Could not') || status.startsWith('This request') ? <p role="status">{status}</p> : null}
     {pending ? <div className={styles.actions}><button onClick={() => void open(pending.request)}>Open waiting request</button><button onClick={() => { setPending(null); setStatus(notificationState(enabled)); }}>Dismiss destination</button></div> : null}
   </section>;
 }
