@@ -1,5 +1,7 @@
 # Contextual revision for architect inspection — not approved
 
+Updated after internal pass m-df7822fdab: play circle removed in favor of static activity ring; feedback Expand labelled; dark/narrow compositions added. Current remaining-status and bot proposal is remaining-semantics.md.
+
 Read exact epic/review/Usage renders from design-8434ebac74 before preparing this small sample. Owner m-bf2f47dbd2 rejects prior standalone family; m-027bb87c0d asks architect+engineer to finalize together before bringing it back. No new generated sheet, no production integration.
 
 ## What went wrong
@@ -15,7 +17,7 @@ Keep the exact epic/review composition, labels, typography, existing human and a
 |Design contextual link/viewer breadcrumb|Keep reference folded document with text lines, v3/review-requested words|The thing opened is the actual versioned document. Do not use a ruler for the concept of design or an eye that means show/hide.|
 |Files & evidence|Folder + words|Collected linked files/evidence, distinct from Attach (paperclip adds a file to a message).|
 |History|Backward clock + History|Earlier events, not work actively running.|
-|In progress status|Circle with play/start triangle + words|Work started; no implied 50% complete and no clock confused with History. No animation.|
+|In progress status|Static unfilled activity ring + words|Ongoing activity; no implied 50% complete, no Start/play action and no clock confused with History. No animation.|
 |Review requested attention|Conversation bubble with lines + words|An explicit request for feedback, not generic hazard/blocked warning. This is attention, NOT automatic mapping of every in_review status.|
 |Reply / Attach|Keep reference bent reply arrow / paperclip beside words|Established action semantics. No visual novelty needed.|
 |Approve design|Keep simple check beside exact action words|Affirmative review decision, not a completion badge for the whole epic. Request changes stays text so it cannot resemble an approving check.|
@@ -25,7 +27,7 @@ No new state mappings beyond representative in-progress/attention treatment. Oth
 
 ## Review questions for architect (before owner)
 - Are Epics collection and Work task list now distinct in this exact composition?
-- Does the status/History distinction reduce ambiguity? Would an unfilled started-work ring be clearer than play, without implying playback? Keep literal label either way.
+- Does the revised activity-ring/History distinction reduce ambiguity? Keep literal In progress label; do not animate or infer a numeric fraction.
 - Does review-request bubble imply feedback without conflating it with the document link or blocked warning?
 - Is preserving existing avatars the right identity continuity anchor? No arbitrary role mascots in this proposal.
 
