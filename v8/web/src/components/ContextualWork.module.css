@@ -1,0 +1,10 @@
+.meta { display: flex; flex-wrap: wrap; gap: 20px 40px; margin-block: 16px; font-size: 14px; }
+.meta div { min-width: 0; max-width: 100%; }
+.meta dt { font-weight: bold; }
+.meta dd { margin: 4px 0; overflow-wrap: anywhere; }
+.links { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding-block: 12px; border-bottom: 1px solid var(--strongline); }
+.content { min-width: 0; padding: 16px; overflow-wrap: anywhere; }
+.content a { margin-right: 16px; }
+.content li { margin-block: 12px; }
+.content select { max-width: 100%; }
+.content pre { overflow: auto; max-width: 100%; }

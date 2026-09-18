@@ -8,7 +8,10 @@ import { handlers } from "./handlers";
 export const server = setupServer(...handlers);
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
-afterEach(() => server.resetHandlers());
+afterEach(() => {
+  server.resetHandlers();
+  Object.keys(sessionStorage).filter((key) => key.startsWith("edp8.draft.")).forEach((key) => sessionStorage.removeItem(key));
+});
 afterAll(() => server.close());
 
 // jsdom has no matchMedia. Provide a stub that reports no preference by default; the OS

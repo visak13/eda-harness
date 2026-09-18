@@ -210,7 +210,7 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
         ) : null}
         {done ? (
           <p className={styles.muted} role="status">
-            Epic created. {err ? "The architect could not start. Retry uses this same epic." : done.hint} <Link to={`/epic/${encodeURIComponent(done.id)}`}>Open existing epic</Link>
+            Epic created. {err ? "The architect could not start. Retry uses this same epic." : done.hint} <Link to={`/epic/${encodeURIComponent(done.id)}`} aria-disabled={create.isPending} onClick={(e) => { if (busy.current) { e.preventDefault(); return; } committed.current = null; setDone(null); setTitle(""); setWords(""); setSpawn(false); onClose(); }}>Open existing epic</Link>
           </p>
         ) : null}
         <div className={styles.actions}>

@@ -105,9 +105,9 @@ describe("DocDrawer toolbar (Astra #36 item 2)", () => {
     expect(within(panel).getByRole("heading", { level: 1, name: "Doc d1" })).toBeInTheDocument();
     const header = panel.querySelector("header")!;
     expect(within(header).getByText("design")).toBeInTheDocument(); // the toolbar's doc type
-    expect(within(panel).getByRole("link", { name: "Open as page" })).toHaveAttribute(
+    expect(within(panel).getByRole("link", { name: "Open in tab" })).toHaveAttribute(
       "href",
-      expect.stringContaining("/doc/d1?version=2&as="),
+      expect.stringContaining("/doc/d1?version=2&source=epic-1&as="),
     );
     // Exactly one "Versions"-labelled container in the drawer; it holds every entry.
     const menu = within(panel).getByLabelText("Versions");
@@ -122,9 +122,9 @@ describe("DocDrawer toolbar (Astra #36 item 2)", () => {
     await within(panel).findByText("body v1");
     expect(within(panel).getByTestId("version-now")).toHaveTextContent("v1 · pinned (latest v2)");
     expect(menu.querySelector("summary")?.textContent).toContain("v1 · Pinned");
-    expect(within(panel).getByRole("link", { name: "Open as page" })).toHaveAttribute(
+    expect(within(panel).getByRole("link", { name: "Open in tab" })).toHaveAttribute(
       "href",
-      expect.stringContaining("/doc/d1?version=1&as="),
+      expect.stringContaining("/doc/d1?version=1&source=epic-1&as="),
     );
   });
 });

@@ -129,6 +129,7 @@ describe("EpicPage", () => {
       }),
     );
     await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    fireEvent.click(screen.getByRole("tab", { name: /Overview/ }));
     expect(await screen.findByText("the epic is accepted")).toBeInTheDocument();
     // pending + evidence → the one-click ruling pane is on the epic page itself
     expect(screen.getByTestId("approve")).toBeInTheDocument();
@@ -156,6 +157,7 @@ describe("EpicPage", () => {
     data.board.epic.children = [node({ id: "s-1" }), node({ id: "s-2", title: "Second story" })];
     mount(data);
     await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    fireEvent.click(screen.getByRole("tab", { name: /Overview/ }));
     // pulse sentence pluralises stories and shows the criteria + open gate tally
     expect(screen.getByText(/2 stories ·/)).toBeInTheDocument();
     expect(screen.getByText(/passed ·/)).toBeInTheDocument();
@@ -168,6 +170,7 @@ describe("EpicPage", () => {
     data.board.epic.children = [];
     mount(data);
     await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    fireEvent.click(screen.getByRole("tab", { name: /Overview/ }));
     expect(screen.getByText(/No stories yet — this epic is still being shaped/)).toBeInTheDocument();
   });
 
@@ -197,6 +200,7 @@ describe("EpicPage", () => {
   it("Steer this epic jumps to the Thread tab with the steer composer", async () => {
     mount(page({}, []));
     await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    fireEvent.click(screen.getByText("Actions", { exact: true }));
     fireEvent.click(screen.getByRole("button", { name: "Steer this epic" }));
     expect(await screen.findByTestId("order-toggle")).toBeInTheDocument();
   });
@@ -411,6 +415,8 @@ describe("EpicPage", () => {
       }),
     );
     await screen.findByText("Upgrade the board UI", { selector: "h1" });
+    fireEvent.click(screen.getByText("Actions", { exact: true }));
+    fireEvent.click(screen.getByText("Actions & work details"));
     // the spawn-architect gloss renders with its button once capabilities resolve
     await screen.findByTestId("spawn-architect-btn");
     for (const k of ["steer", "change-status", "answer-decision", "raise-decision", "assign-spawn", "spawn-architect", "ask-role", "assigned-seats"]) {

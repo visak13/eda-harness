@@ -14,7 +14,11 @@ function initIdentity(): string {
   };
   try {
     const url = new URL(location.href);
-    const as = url.searchParams.get("as") ?? fallback();
+    const previous = fallback();
+    const as = url.searchParams.get("as") ?? previous;
+    if (as !== previous) {
+      Object.keys(sessionStorage).filter((key) => key.startsWith("edp8.draft.")).forEach((key) => sessionStorage.removeItem(key));
+    }
     const token = url.searchParams.get("token");
     if (token) {
       sessionStorage.setItem("edp8.token", token);

@@ -16,6 +16,7 @@ import { GlossaryPanel } from "./GlossaryPanel";
 import { CommandPalette } from "./CommandPalette";
 import { CopyDescriptions } from "./CopyDescriptions";
 import { NewEpicDialog } from "./NewEpicDialog";
+import { PendingNavigation } from "./PendingNavigation";
 import { copyProps, pageKeyFor } from "../copy/pages";
 import styles from "./AppShell.module.css";
 
@@ -66,6 +67,7 @@ export function AppShell(): React.JSX.Element {
   return (
     <DraftGuardProvider>
       <PageFrameProvider>
+        <PendingNavigation />
         <AppShellChrome />
       </PageFrameProvider>
     </DraftGuardProvider>

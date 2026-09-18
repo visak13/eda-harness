@@ -29,22 +29,24 @@ describe("DocView", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/Could not load design-1/);
   });
 
-  it("renders the comment box for a ticket-scoped doc and posts a comment", async () => {
+  it("requires explicit source selection and posts a structured local document comment", async () => {
     let body: Record<string, unknown> | null = null;
     server.use(http.get("/v1/docs/design-1/html", () => okJson(doc({ scope: "s-1" }))));
     server.use(
-      http.post("/v1/messages", async ({ request }) => {
+      http.post("/v1/docs/comments", async ({ request }) => {
         body = (await request.json()) as Record<string, unknown>;
-        return okJson({ id: "m1", unresolved_mentions: [] }, "");
+        return okJson({ message_id: "m1" }, "");
       }),
     );
     renderRoute("/x", "/x", <DocView docId="design-1" />);
-    const box = await screen.findByLabelText("Comment");
-    fireEvent.change(box, { target: { value: "looks good" } });
-    fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+    await screen.findByRole("option", { name: "Source work · epic-1" });
+    fireEvent.change(screen.getByLabelText("Conversation source"), { target: { value: "epic-1" } });
+    fireEvent.click(await screen.findByRole("button", { name: "Comment without requesting changes" }));
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "looks good" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => expect(body).not.toBeNull());
-    expect(String(body!.text)).toContain("[doc design-1 v2] looks good");
-    expect(await screen.findByText("Comment posted to the thread.")).toBeInTheDocument();
+    expect(body).toMatchObject({ text: "looks good", ticket_id: "epic-1", design_ref: "design-1", reviewed_version: 2 });
+    expect(await screen.findByText("Comment posted to the source conversation.")).toBeInTheDocument();
   });
 
   it("hides the comment box and request-review for a global-scoped doc", async () => {

@@ -73,6 +73,15 @@ def test_explicit_words_kwarg_keeps_both(board, rig):
     assert e.words == LONG
 
 
+def test_explicit_title_and_raw_words_validation(board, rig):
+    raw = "  first line\nsecond line  "
+    e = _epic(board, rig, title="  Explicit title  ", words=raw)
+    assert e.title == "Explicit title" and e.words == raw
+    for title, words in [(" ", raw), ("Title", "  \n "), ("x" * 81, raw)]:
+        with pytest.raises(BoardError):
+            _epic(board, rig, title=title, words=words)
+
+
 def test_story_and_task_carry_no_words(board, rig):
     e = _epic(board, rig)
     s = _story(board, rig, e)

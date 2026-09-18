@@ -21,7 +21,7 @@ import { Icon } from "../components/Icon";
 export function ArtifactPage(): React.JSX.Element {
   const { id = "" } = useParams();
   const art = useQuery({ queryKey: ["artifact", id], queryFn: () => getArtifact(id), retry: false, enabled: !!id });
-  const stored = art.data?.form === "image" || art.data?.form === "file";
+  const stored = (art.data?.form === "image" || art.data?.form === "file") && (art.data?.has_content ?? Boolean(art.data?.content_type));
   const previewable = stored && PREVIEW_TYPES.has((art.data?.content_type ?? "").toLowerCase());
   const [preview, setPreview] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);

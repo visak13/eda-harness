@@ -26,6 +26,8 @@ import { useDropUpload } from "../components/useDropUpload";
 import { Clamp } from "../components/Clamp";
 import styles from "./Ticket.module.css";
 import { Icon } from "../components/Icon";
+import { ContextualWork } from "../components/ContextualWork";
+import { pendingWork } from "../components/PendingNavigation";
 
 // Ticket page (design §4.2, criteria c-d2dbb34b06 / c-e0b24cd134): crumb to the epic, id + status
 // chip, title, description, tags, the resolved assignee with its seat state, the criteria as
@@ -59,14 +61,7 @@ export function TicketPage(): React.JSX.Element {
   // its initial state, so it moves out on Expand and back on Collapse. `?compose=1` carries the
   // expanded state, so a refresh or a shared link reopens the drawer with the composer in it.
   const [params, setParams] = useSearchParams();
-  const composeExpanded = params.get("compose") === "1";
-  const draft = useRef<{ text: string; artifacts: string[] }>({ text: "", artifacts: [] });
-  const onDraftText = useCallback((text: string) => {
-    draft.current.text = text;
-  }, []);
-  const onDraftArtifacts = useCallback((ids: string[]) => {
-    draft.current.artifacts = ids;
-  }, []);
+  const composeExpanded = params.get("compose") === "1" && !params.get("doc");
   const setComposeExpanded = useCallback(
     (on: boolean) =>
       setParams(
@@ -115,17 +110,13 @@ export function TicketPage(): React.JSX.Element {
     <Composer
       key={`${reply?.id ?? "new"}:${expanded ? "drawer" : "inline"}`}
       ticketId={id}
-      kinds={reply ? ["answer", "note"] : ["note", "question"]}
+      kinds={reply ? ["answer", "note", "question", "steer", "finding", "status", "deviation"] : ["note", "question", "steer", "finding", "status", "deviation", "answer"]}
       showTo
       to={reply ? reply.by : null}
       replyTo={reply?.id ?? null}
       replyToBy={reply?.by ?? null}
       onCancelReply={() => setReply(null)}
       placeholder={reply ? `Reply to @${reply.by}` : `Message this conversation as @${as}`}
-      initialText={draft.current.text}
-      initialArtifacts={draft.current.artifacts}
-      onTextChange={onDraftText}
-      onArtifactsChange={onDraftArtifacts}
       expand={{ expanded, onToggle: () => setComposeExpanded(!expanded) }}
     />
   );
@@ -141,6 +132,8 @@ export function TicketPage(): React.JSX.Element {
         <StatusChip status={ticket.status} />
       </div>
       <h1 className={`${styles.title} ${ticket.title.length > 90 ? styles.titleLong : ""}`}>{ticket.title}</h1>
+      <ContextualWork ticketId={id} />
+      <details id="work-details"><summary>Work description, tags and process</summary>
       {ticket.description ? <Clamp className={styles.desc} text={ticket.description} lines={4} testId="description" /> : null}
       {ticket.tags.length > 0 ? (
         <div className={styles.tags}>
@@ -165,8 +158,10 @@ export function TicketPage(): React.JSX.Element {
         nextAction={<a href="#change-status">{nextActionLink(ticket.status)}</a>}
       />
 
+      </details>
       <div className={styles.layout}>
         <div className={styles.mainCol}>
+          <details><summary>Acceptance criteria & evidence ({criteria.length})</summary>
           <div className={ui.sectionLabel}>Acceptance criteria ({criteria.length})</div>
           {criteria.length === 0 ? (
             <p className={ui.empty}>No acceptance criteria have been added.</p>
@@ -198,6 +193,7 @@ export function TicketPage(): React.JSX.Element {
             <AddCriterion ticketId={id} />
           </details>
 
+          </details>
           <div className={styles.threadHead} {...copyProps("ticket", "thread")}>
             <span className={ui.sectionLabel}>Conversation ({thread.length})</span>
             <button
@@ -227,7 +223,7 @@ export function TicketPage(): React.JSX.Element {
           {ordered.length === 0 ? (
             <p className={ui.empty}>No messages on this ticket yet.</p>
           ) : (
-            <ul className={styles.messages} data-testid="thread">
+            <ul className={styles.messages} data-testid="thread" tabIndex={0} aria-label="Conversation messages">
               {ordered.map((m: MessageView) => (
                 <li key={m.id} id={m.id} className={styles.message} data-testid="thread-message" data-reply-to={m.reply_to ?? undefined}>
                   <AgentLine by={m.by} kind={m.kind} to={m.to} viewer={as} at={m.at} />
@@ -245,6 +241,7 @@ export function TicketPage(): React.JSX.Element {
                     className={styles.replyBtn}
                     data-testid="thread-reply"
                     onClick={() => {
+                      if (pendingWork()) return;
                       setReply({ id: m.id, by: m.by });
                       composerRef.current?.scrollIntoView({ block: "nearest" });
                       composerRef.current?.querySelector("textarea")?.focus();
@@ -258,7 +255,7 @@ export function TicketPage(): React.JSX.Element {
           )}
         </div>
 
-        <aside className={styles.rail} aria-label="Ticket details">
+        <details><summary>Actions & ticket details</summary><aside className={styles.rail} aria-label="Ticket details">
           <section className={ui.card} id="change-status" {...copyProps("ticket", "process-strip")}>
             <div className={ui.sectionLabel}>Change status</div>
             <StatusControl ticketId={id} currentStatus={ticket.status as TicketStatus} />
@@ -272,7 +269,7 @@ export function TicketPage(): React.JSX.Element {
           {open_gates.length > 0 ? (
             <section className={ui.card} data-testid="answer-gates">
               <div className={ui.sectionLabel}>Answer a decision ({open_gates.length})</div>
-              {open_gates.map((g) => (
+              {open_gates.filter((g) => g.gate !== "design_signoff").map((g) => (
                 <GateForm key={`${g.ticket_id}:${g.gate}`} gate={g} />
               ))}
             </section>
@@ -360,7 +357,7 @@ export function TicketPage(): React.JSX.Element {
               <span>{waiting_reason.reason || "—"}</span>
             </div>
           </section>
-        </aside>
+        </aside></details>
       </div>
     </div>
   );

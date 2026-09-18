@@ -8,6 +8,8 @@ is process-local and the service is the single writer.
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
+from collections.abc import Callable, Iterator
 import re
 import sqlite3
 import threading
@@ -45,10 +47,43 @@ class Store:
     def __init__(self, path: str | Path = ":memory:"):
         self.path = str(path)
         self._lock = threading.RLock()
+        self._transaction_depth = 0
+        self._after_commit: list[Callable[[], None]] = []
         self._conn = sqlite3.connect(self.path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL") if self.path != ":memory:" else None
         self._init()
+
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        """Nest writes in one atomic unit; publish notifications only after durable commit."""
+        with self._lock:
+            outer = self._transaction_depth == 0
+            self._transaction_depth += 1
+            try:
+                yield
+                if outer:
+                    self._conn.commit()
+            except BaseException:
+                if outer:
+                    self._conn.rollback()
+                    self._after_commit.clear()
+                raise
+            finally:
+                self._transaction_depth -= 1
+            callbacks = []
+            if outer:
+                callbacks, self._after_commit = self._after_commit, []
+        # Board callbacks take the Board lock. Never invert Board -> Store ordering.
+        for callback in callbacks:
+            callback()
+
+    def after_commit(self, callback: Callable[[], None]) -> None:
+        with self._lock:
+            if self._transaction_depth:
+                self._after_commit.append(callback)
+                return
+        callback()
 
     # ------------------------------------------------------------------ schema
     def _init(self) -> None:
@@ -148,7 +183,7 @@ class Store:
             raise TypeError(f"{type_} expects {model.__name__}")
         cols = _INDEXED[type_]
         data = obj.model_dump(mode="json")
-        with self._lock, self._conn:
+        with self.transaction():
             exists = self._conn.execute(f"SELECT 1 FROM {type_} WHERE id=?", (obj.id,)).fetchone()
             vals = [data.get(c) for c in cols]
             if exists:
@@ -251,7 +286,7 @@ class Store:
         return [model.model_validate_json(r["body"]) for r in rows]
 
     def delete(self, type_: str, id_: str) -> bool:
-        with self._lock, self._conn:
+        with self.transaction():
             cur = self._conn.execute(f"DELETE FROM {type_} WHERE id=?", (id_,))
         return cur.rowcount > 0
 

@@ -1,11 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import type { DocHtml } from "../api/types";
 import { identity } from "../auth/identity";
 import { Drawer } from "./Drawer";
 import { DocView } from "./DocView";
 import styles from "./DocDrawer.module.css";
 import { Icon } from "./Icon";
+import { pendingWork } from "./PendingNavigation";
 
 // §17 "related docs open in place": any doc reference on the ticket/epic/Decisions pages opens
 // in the §6 Drawer without the page navigating or losing scroll/draft/composer state. The
@@ -32,8 +33,9 @@ export function useDocDrawer(): DocDrawerApi {
 export function DocDrawerProvider({ children }: { children: React.ReactNode }): React.JSX.Element {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const source = /^\/(?:epic|ticket|records)\/([^/]+)/.exec(location.pathname)?.[1] ?? params.get("source");
   const [stack, setStack] = useState<string[]>([]);
-  const [topVersion, setTopVersion] = useState<number | null>(null); // what the reader shows (finding #2)
   const [topDoc, setTopDoc] = useState<DocHtml | null>(null); // what the reader shows (toolbar menu)
   // A version picked from the toolbar, keyed by doc so a stale pick never leaks onto the next doc.
   const [picked, setPicked] = useState<{ id: string; v: number } | null>(null);
@@ -54,6 +56,7 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
 
   const setTop = useCallback(
     (next: string[]) => {
+      if (pendingWork()) return;
       setStack(next);
       const top = next[next.length - 1];
       const p = new URLSearchParams(params);
@@ -66,6 +69,7 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
 
   const openDoc = useCallback(
     (id: string) => {
+      if (pendingWork()) return;
       returnFocus.current = (document.activeElement as HTMLElement) ?? null;
       setStack((s) => {
         if (s.length >= MAX_DEPTH) {
@@ -75,6 +79,8 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
         const next = [...s, id];
         const p = new URLSearchParams(params);
         p.set("doc", id);
+        p.delete("view");
+        p.delete("compose");
         setParams(p, { replace: true });
         return next;
       });
@@ -99,7 +105,6 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
   // with a switch made from the History block, so re-picking the toolbar entry always applies.
   const onVersion = useCallback(
     (v: number) => {
-      setTopVersion(v);
       if (top) setPicked({ id: top, v });
     },
     [top],
@@ -119,9 +124,10 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
       {top ? (
         <Link
           className={styles.asPage}
-          to={`/doc/${encodeURIComponent(top)}?${topVersion != null ? `version=${topVersion}&` : ""}as=${encodeURIComponent(identity())}`}
+          target="_blank" rel="noopener"
+          to={`/doc/${encodeURIComponent(top)}?${new URLSearchParams({ ...(shownDoc ? { version: String(shownDoc.version) } : {}), ...(source ? { source } : {}), ...(params.get("request") ? { request: params.get("request")! } : {}), as: identity() })}`}
         >
-          Open as page
+          Open in tab
         </Link>
       ) : null}
       {shownDoc && top ? (
@@ -138,6 +144,7 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
                 aria-pressed={v === shownDoc.version}
                 data-testid="version-entry"
                 onClick={() => {
+                  if (pendingWork()) return;
                   setPicked({ id: top, v });
                   if (menuRef.current) menuRef.current.open = false;
                 }}
@@ -165,7 +172,9 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
           <DocView
             key={top}
             docId={top}
-            version={pickedVersion}
+            version={pickedVersion ?? (params.get("v") ? Number(params.get("v")) : undefined)}
+            source={source}
+            request={params.get("request")}
             onOpenDoc={openDoc}
             onOpenTicket={openTicket}
             onVersion={onVersion}

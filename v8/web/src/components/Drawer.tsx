@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import styles from "./Drawer.module.css";
 import { Icon } from "./Icon";
 
@@ -24,6 +25,21 @@ export function Drawer({
 }): React.JSX.Element | null {
   const panelRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
+  const [held, setHeld] = useState(false);
+  function requestClose() {
+    if (panelRef.current?.querySelector('[data-busy="true"]')) { setHeld(true); return; }
+    setHeld(false); onClose();
+  }
+
+  useEffect(() => {
+    if (!held || !open || !panelRef.current) return;
+    const panel = panelRef.current;
+    const check = () => { if (!panel.querySelector('[data-busy="true"]')) setHeld(false); };
+    const observer = new MutationObserver(check);
+    observer.observe(panel, { subtree: true, attributes: true, childList: true, attributeFilter: ["data-busy"] });
+    check();
+    return () => observer.disconnect();
+  }, [held, open]);
 
   // Remember what to restore focus to (the element focused at open time), and move focus in.
   useEffect(() => {
@@ -46,8 +62,12 @@ export function Drawer({
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
+    const siblings = Array.from(document.body.children).filter((el): el is HTMLElement => el instanceof HTMLElement && !el.contains(panelRef.current));
+    const prior = siblings.map((el) => el.inert);
+    siblings.forEach((el) => { el.inert = true; });
     document.body.style.overflow = "hidden";
     return () => {
+      siblings.forEach((el, i) => { el.inert = prior[i]; });
       document.body.style.overflow = prev;
     };
   }, [open]);
@@ -56,7 +76,7 @@ export function Drawer({
   function onKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Escape") {
       e.stopPropagation();
-      onClose();
+      requestClose();
       return;
     }
     if (e.key !== "Tab") return;
@@ -86,8 +106,8 @@ export function Drawer({
 
   if (!open) return null;
 
-  return (
-    <div className={styles.scrim} onMouseDown={onClose} data-testid="drawer-scrim">
+  return createPortal(
+    <div className={styles.scrim} onMouseDown={requestClose} data-testid="drawer-scrim">
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <div
         ref={panelRef}
@@ -103,12 +123,12 @@ export function Drawer({
       >
         <header className={styles.header}>
           <div className={styles.title}>{title}</div>
-          <button type="button" className={styles.close} aria-label="Close" onClick={onClose}>
+          <button type="button" className={styles.close} aria-label="Close" onClick={requestClose}>
             <Icon name="close" />
           </button>
         </header>
-        <div className={styles.body}>{children}</div>
+        <div className={styles.body}>{held ? <p role="status">Wait for the pending upload or send before closing. Your draft is kept.</p> : null}{children}</div>
       </div>
-    </div>
+    </div>, document.body,
   );
 }

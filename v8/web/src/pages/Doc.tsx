@@ -31,7 +31,7 @@ export function DocPage(): React.JSX.Element {
         )}
       </nav>
       <div className={styles.reader}>
-        <DocView docId={id} version={version} onDoc={setDoc} />
+        <DocView docId={id} version={version} onDoc={setDoc} source={params.get("source")} request={params.get("request")} />
       </div>
     </div>
   );

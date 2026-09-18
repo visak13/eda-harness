@@ -1,0 +1,10 @@
+.review { min-width: 0; padding: 16px; background: var(--panel); border-bottom: 1px solid var(--strongline); }
+.actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; position: sticky; top: 0; z-index: 2; background: var(--panel); padding: 8px 0; }
+.feedback { min-width: 0; margin-block: 16px; padding: 16px; background: var(--rail); border-left: 1px solid var(--strongline); }
+.split { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; }
+.reading { min-width: 0; }
+.split .reading [data-testid="doc-side"] { display: none; }
+.split .reading [data-testid="doc-view"] { display: block; }
+@media (max-width: 850px) { .split { grid-template-columns: minmax(0, 1fr); } .feedback { border-left: 0; } }
+.expanded { width: 100%; margin-block: 16px; }
+.review p, .review a { overflow-wrap: anywhere; }

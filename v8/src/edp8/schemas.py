@@ -148,6 +148,7 @@ class EventKind(StrEnum):
     status_changed = "status_changed"
     gate_opened = "gate_opened"
     gate_answered = "gate_answered"
+    design_reviewed = "design_reviewed"
     gate_closed = "gate_closed"  # a gate retired without a human answer (§24.1(a): its epic dropped/closed)
     assigned = "assigned"
     doc_updated = "doc_updated"
@@ -265,12 +266,18 @@ class Link(Obj):
     relation: Relation
 
 
+class DocumentContext(BaseModel):
+    design_ref: str
+    reviewed_version: int = Field(ge=1)
+
+
 class Message(Obj):
     ticket_id: str
     to: str | None = None  # participant id | role | @handle | None (thread note)
     kind: MessageKind
     text: str
     reply_to: str | None = None
+    document_context: DocumentContext | None = None
     status: StatusValue | None = None  # set on kind=status messages written by record_status
 
 

@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getDocHtml, sendMessage } from "../api/endpoints";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { getDocHtml } from "../api/endpoints";
 import type { DocHtml } from "../api/types";
-import { identity } from "../auth/identity";
+import { DocumentSource } from "./DocumentSource";
 import { Markdown } from "./Markdown";
 import { SignoffPane } from "./SignoffPane";
 import { DocControls } from "./DocControls";
+import { DesignReview } from "./DesignReview";
+import { pendingWork } from "./PendingNavigation";
 import ui from "./ui.module.css";
 import styles from "./DocView.module.css";
 
@@ -45,7 +47,11 @@ export function DocView({
   onVersion,
   onDoc,
   versionsHosted,
+  source,
+  request,
 }: {
+  source?: string | null;
+  request?: string | null;
   docId: string;
   version?: number | null;
   onOpenDoc?: (id: string) => void;
@@ -101,15 +107,14 @@ export function DocView({
         Could not load {docId}: {(q.error as Error).message}
       </p>
     );
-  return (
-    <DocBody
+  const content = <DocBody
       doc={q.data}
       onOpenDoc={onOpenDoc}
       onOpenTicket={onOpenTicket}
-      onPickVersion={setRequested}
+      onPickVersion={(v) => { if (!pendingWork()) setRequested(v); }}
       versionsHosted={versionsHosted}
-    />
-  );
+    />;
+  return source ? <DesignReview key={`${docId}:${source}:${q.data.version}`} docId={docId} source={source} version={q.data.version} title={q.data.title} request={request} onLatest={(v) => { if (!pendingWork()) setRequested(v); }}>{content}</DesignReview> : <><DocumentSource key={docId} docId={docId} version={q.data.version} />{content}</>;
 }
 
 function DocBody({
@@ -125,11 +130,7 @@ function DocBody({
   onPickVersion?: (v: number) => void;
   versionsHosted?: boolean;
 }): React.JSX.Element {
-  const as = identity();
-  const qc = useQueryClient();
   const latest = doc.versions.length ? Math.max(...doc.versions) : doc.version;
-  const [comment, setComment] = useState("");
-  const [posted, setPosted] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const outline = useMemo(() => outlineOf(doc.html), [doc.html]);
 
@@ -137,19 +138,6 @@ function DocBody({
   // a comment posts "[doc id vN] text" to that ticket's thread.
   const scopeIsTicket = !doc.scope.includes(":") && doc.scope !== "global";
 
-  const commentMut = useMutation({
-    mutationFn: () =>
-      sendMessage({
-        ticket_id: doc.scope,
-        kind: "note",
-        text: `[doc ${doc.id} v${doc.version}] ${comment}`,
-      }),
-    onSuccess: () => {
-      setComment("");
-      setPosted(true);
-      void qc.invalidateQueries();
-    },
-  });
 
   // Intercept nested doc/ticket links (design §17: they open in the same drawer, no page load).
   function onBodyClick(e: React.MouseEvent) {
@@ -207,32 +195,6 @@ function DocBody({
           <Markdown html={doc.html} />
         </div>
 
-        {scopeIsTicket ? (
-          <div className={styles.commentBox}>
-            <div className={ui.sectionLabel}>Comment on this document</div>
-            <textarea
-              className={ui.textarea}
-              aria-label="Comment"
-              value={comment}
-              placeholder={`Comment as @${as} — posts to ${doc.scope}`}
-              onChange={(e) => {
-                setComment(e.target.value);
-                setPosted(false);
-              }}
-            />
-            {posted ? <p className={styles.posted}>Comment posted to the thread.</p> : null}
-            <div className={styles.commentActions}>
-              <button
-                type="button"
-                className={`${ui.button} ${ui.buttonPrimary}`}
-                disabled={commentMut.isPending || comment.trim() === ""}
-                onClick={() => commentMut.mutate()}
-              >
-                Comment
-              </button>
-            </div>
-          </div>
-        ) : null}
 
         <DocControls docId={doc.id} scope={doc.scope} version={doc.version} scopeIsThread={scopeIsTicket} />
       </div>

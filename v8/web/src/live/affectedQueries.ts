@@ -1,7 +1,7 @@
 import type { Query } from "@tanstack/react-query";
 import type { FeedEvent } from "./feed";
 
-const ticketEvents = new Set(["message_sent", "status_recorded", "status_changed", "gate_opened", "gate_answered", "gate_closed", "assigned", "ticket_created", "ticket_updated", "criterion_checked", "criterion_checker_overridden"]);
+const ticketEvents = new Set(["message_sent", "status_recorded", "status_changed", "gate_opened", "gate_answered", "gate_closed", "design_reviewed", "assigned", "ticket_created", "ticket_updated", "criterion_checked", "criterion_checker_overridden"]);
 const presenceEvents = new Set(["shell_dead", "shell_stalled"]);
 const stable = new Set(["avatar", "whoami", "resolve", "pool", "doc-frozen"]);
 
@@ -11,7 +11,7 @@ function containsId(value: unknown, id: string): boolean {
   if (Array.isArray(value)) return value.some((item) => containsId(item, id));
   const v = value as Record<string, unknown>;
   return v.id === id || v.epic_id === id || v.ticket_id === id ||
-    ["board", "epic", "ticket", "children", "docs", "artifacts", "links", "rows"].some((key) => containsId(v[key], id));
+    ["board", "epic", "ticket", "children", "docs", "artifacts", "links", "rows", "record"].some((key) => containsId(v[key], id));
 }
 
 export function affectedBy(event: FeedEvent, query: Query, cache: Query[] = []): boolean {
@@ -32,6 +32,9 @@ export function affectedBy(event: FeedEvent, query: Query, cache: Query[] = []):
     return cache.some((entry) => entry.queryKey[0] === "epic" && entry.queryKey[1] === scope &&
       [subject, data.parent_id, data.ticket].some((id) => typeof id === "string" && containsId(entry.state.data, id)));
   };
+  if (family === "review-context") return id === subject || (kind === "doc_updated" && query.queryKey[2] === subject);
+  if (family === "contextual") return id === subject || id === data.scope || (kind === "doc_updated" && containsId((query.state.data as { records?: unknown })?.records, subject ?? ""));
+  if (family === "doc-sources") return kind === "doc_updated" || kind === "ticket_updated";
   if (family === "library") {
     // Messages cannot change an archive's docs/artifact/link inventory.
     return kind === "doc_updated" && related(query.queryKey[2]);

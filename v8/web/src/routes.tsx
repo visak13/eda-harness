@@ -1,6 +1,7 @@
 import { Navigate, useLocation } from "react-router";
 import type { RouteObject } from "react-router";
 import { AppShell } from "./components/AppShell";
+import { RecordsPage } from "./pages/Records";
 import {
   ArtifactPage,
   DecisionsPage,
@@ -32,6 +33,7 @@ export const appRoutes: RouteObject[] = [
       { path: "epic/:id", element: <EpicPage /> },
       { path: "ticket/:id", element: <TicketPage /> },
       { path: "doc/:id", element: <DocPage /> },
+      { path: "records/:id", element: <RecordsPage /> },
       { path: "artifact/:id", element: <ArtifactPage /> },
       { path: "seats", element: <SeatsPage /> },
       { path: "library", element: <RedirectTo to="/library/tickets" /> },

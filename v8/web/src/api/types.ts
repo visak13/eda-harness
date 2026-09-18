@@ -440,6 +440,7 @@ export interface ArtifactRecord {
   created_by: string;
   created_at: ISODateString;
   content_type?: string;
+  has_content?: boolean;
   filename?: string;
   [k: string]: unknown;
 }

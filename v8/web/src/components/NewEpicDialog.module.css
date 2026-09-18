@@ -22,6 +22,8 @@
   border-radius: 12px;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.18);
 }
+.dialog input:not([type="checkbox"]), .dialog select { min-height: 44px; max-width: 100%; padding: 8px; font: inherit; }
+.dialog button { min-height: 44px; overflow-wrap: anywhere; }
 .title {
   margin: 0;
   font: 400 26px/32px Georgia, serif;

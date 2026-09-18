@@ -23,6 +23,8 @@ from pydantic import BaseModel
 
 from . import pool_adapter
 from .board import Board, BoardError
+from .design_review import ReviewDecision, DocumentComment, decide, comment, source_context
+from .contextual_work import HistoryCategory, contextual_work
 from .doc_tools import DocEdit
 from .schemas import (
     DESCRIBE,
@@ -737,7 +739,9 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         art = board._get("artifact", id_, "artifact")
         if getattr(art, "staged", False) and art.created_by != a.id:  # §18.1 finding 4: staged uploads
             raise HTTPException(404, f"{id_!r} is not an artifact")  # are invisible to everyone but the uploader
-        return ok(_dump(art))
+        from . import uploads
+        content_path = uploads.uploads_dir() / f"{id_}.{uploads.ext_for(art.content_type or 'application/octet-stream')}"
+        return ok({**_dump(art), "has_content": content_path.is_file()})
 
     # messages / gates -----------------------------------------------------------
     # Addressed traffic and @mentions are mirrored into edp-broker inboxes
@@ -805,6 +809,43 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     @app.get("/v1/messages/{id_}")
     def message_get(id_: str, a: Participant = Depends(actor)):
         return ok(board.message_read(id_))
+
+    @app.get("/v1/tickets/{id_}/contextual")
+    def ticket_contextual(id_: str, category: HistoryCategory = "all", a: Participant = Depends(actor)):
+        return ok(contextual_work(board, id_, category))
+
+    @app.get("/v1/docs/{id_}/sources")
+    def document_sources(id_: str, a: Participant = Depends(actor)):
+        board.doc(id_)
+        ids = {link.from_id for link in board.store.query("link", {"to_id": id_}, limit=100000)
+               if board.store.get("ticket", link.from_id)}
+        ids.update(t.id for t in board.store.query("ticket", limit=100000) if t.design_ref == id_)
+        ids.update(c.ticket_id for c in board.store.query("criterion", limit=100000) if c.evidence_ref == id_)
+        return ok([{"id": ident, "title": board.ticket(ident).title} for ident in sorted(ids)])
+
+    @app.get("/v1/docs/{id_}/context")
+    def document_context(id_: str, source: str, version: int, request: str | None = None,
+                         a: Participant = Depends(actor)):
+        with board._lock, board.store._lock:
+            return ok(source_context(board, a, source, id_, version, request))
+
+    @app.post("/v1/gates/decide")
+    def review_decide(b: ReviewDecision, a: Participant = Depends(actor)):
+        result, fresh = decide(board, a, b)
+        if fresh:
+            if b.decision == "approve":
+                delivery.after_gate_answer(board, a.id, b.ticket_id, Gate.design_signoff.value,
+                                           f"Approved {b.design_ref} v{b.reviewed_version}")
+            else:
+                delivery.after_message(board, a.id, board._get("message", result["message_id"]))
+        return ok(result)
+
+    @app.post("/v1/docs/comments")
+    def document_comment(b: DocumentComment, a: Participant = Depends(actor)):
+        result, fresh = comment(board, a, b)
+        if fresh:
+            delivery.after_message(board, a.id, board._get("message", result["message_id"]))
+        return ok(result)
 
     @app.post("/v1/gates/{ticket_id}/{gate}/open")
     def gate_open(ticket_id: str, gate: Gate, b: GateOpenIn, a: Participant = Depends(actor)):

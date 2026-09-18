@@ -28,6 +28,8 @@ import { MessageText } from "../components/ArtifactLink";
 import { Clamp } from "../components/Clamp";
 import styles from "./Epic.module.css";
 import { Icon } from "../components/Icon";
+import { ContextualWork } from "../components/ContextualWork";
+import { pendingWork } from "../components/PendingNavigation";
 
 // Epic page (design §4.2): crumb, id + status chip, Georgia 38 title, the owner's words verbatim,
 // a directive callout when the thread carries an owner steer, tabs Overview/Work/Documents/Thread,
@@ -81,7 +83,7 @@ const KANBAN: [string, string[]][] = [
 
 export function EpicPage(): React.JSX.Element {
   const { id = "" } = useParams();
-  const [tab, setTab] = useState<"overview" | "work" | "documents" | "thread">("overview");
+  const [tab, setTab] = useState<"overview" | "work" | "documents" | "thread">("thread");
   const [composerKind, setComposerKind] = useState<"note" | "steer">("note");
   const [order, setOrder] = useState<"newest" | "oldest">("newest");
   const [statusOpen, setStatusOpen] = useState(false);
@@ -149,21 +151,23 @@ export function EpicPage(): React.JSX.Element {
           </span>
         </div>
         <h1 className={styles.title} {...copyProps("epic", "title")}>{heading}</h1>
-        <div className={styles.steerWrap}>
+        <details className={styles.steerWrap}><summary>Actions</summary>
           <button type="button" className={styles.steer} onClick={steer} {...copyProps("epic", "steer")}>
             Steer this epic
           </button>
           <Gloss k="steer" />
-        </div>
+        </details>
 
         {showWords ? (
-          <figure className={styles.words} data-testid="owner-words">
+          <details><summary>Original request</summary><figure className={styles.words} data-testid="owner-words">
             <figcaption className={styles.wordsLabel}>Owner&rsquo;s words · original request</figcaption>
             <Clamp className={styles.wordsText} text={words} lines={2} testId="owner-words-text" />
-          </figure>
+          </figure></details>
         ) : null}
       </div>
 
+      <ContextualWork ticketId={id} />
+      <details id="work-details"><summary>Brief, latest steer and process</summary>
       {/* Human #33: the description is the architect's brief — a quiet card, first paragraph
           shown, "Show all" expands; never an alert. */}
       {data.description?.trim() ? (
@@ -183,6 +187,7 @@ export function EpicPage(): React.JSX.Element {
       {/* Astra #36 (4): the strip keeps its step chips; its "Next:" sentence was a duplicate of
           the Status history fold in the rail, so the epic page drops it. */}
       <ProcessStrip status={epic.status} ariaLabel="Epic process" showNext={false} />
+      </details>
 
       <div className={styles.layout}>
         <div className={styles.mainCol}>
@@ -203,7 +208,7 @@ export function EpicPage(): React.JSX.Element {
 
           {tab === "documents" ? <DocumentsTab docs={data.docs} /> : null}
 
-          {tab === "thread" ? (
+          <div hidden={tab !== "thread"}>
             <ThreadTab
               epicId={id}
               thread={data.thread}
@@ -211,10 +216,10 @@ export function EpicPage(): React.JSX.Element {
               onToggleOrder={() => setOrder((o) => (o === "newest" ? "oldest" : "newest"))}
               composerKind={composerKind}
             />
-          ) : null}
+          </div>
         </div>
 
-        <aside className={styles.rail} aria-label="Epic details">
+        <details className={styles.rail}><summary>Actions & work details</summary><aside aria-label="Epic details">
           {/* Astra #36 (4): status = the one badge beside the id; a 40px outlined "Change status"
               button reveals the control; the lifecycle text lives in a "Status history" fold. */}
           <section className={ui.card} id="epic-status">
@@ -254,7 +259,7 @@ export function EpicPage(): React.JSX.Element {
           {data.answerable_gates.length > 0 ? (
             <section className={ui.card} data-testid="epic-answer-gates" {...copyProps("epic", "answer-decision")}>
               <div className={ui.sectionLabel}>Answer a decision ({data.answerable_gates.length})</div>
-              {data.answerable_gates.map((g) => (
+              {data.answerable_gates.filter((g) => g.gate !== "design_signoff").map((g) => (
                 <GateForm key={`${g.ticket_id}:${g.gate}`} gate={g} />
               ))}
               <Gloss k="answer-decision" />
@@ -354,7 +359,7 @@ export function EpicPage(): React.JSX.Element {
               </p>
             </details>
           </section>
-        </aside>
+        </aside></details>
       </div>
     </div>
   );
@@ -703,17 +708,22 @@ function ThreadTab({
   composerKind: "note" | "steer";
 }): React.JSX.Element {
   const ordered = order === "newest" ? [...thread].reverse() : thread;
+  const [reply, setReply] = useState<{ id: string; by: string } | null>(null);
+  const [expanded, setExpanded] = useState(false);
   useScrollToHash(thread.length);
   return (
     <div className={styles.thread}>
+      <div className={expanded ? styles.expandedComposer : undefined}>
       <Composer
         ticketId={epicId}
-        kinds={composerKind === "steer" ? ["steer", "note"] : ["note", "steer"]}
-        key={composerKind}
+        kinds={reply ? ["answer", "note", "question", "steer", "status", "finding", "deviation"] : composerKind === "steer" ? ["steer", "note", "question", "status", "finding", "deviation", "answer"] : ["note", "question", "steer", "status", "finding", "deviation", "answer"]}
+        showTo to={reply?.by} replyTo={reply?.id} replyToBy={reply?.by} onCancelReply={() => setReply(null)}
+        expand={{ expanded, onToggle: () => setExpanded((x) => !x) }}
         placeholder={composerKind === "steer" ? "Steer this epic — this posts as a steer" : undefined}
       />
+      </div>
       <div className={styles.threadHead}>
-        <span className={ui.sectionLabel}>Thread</span>
+        <span className={ui.sectionLabel}>Conversation</span>
         <button type="button" className={styles.orderToggle} onClick={onToggleOrder} data-testid="order-toggle">
           {order === "newest" ? "Newest first" : "Oldest first"}
         </button>
@@ -721,11 +731,12 @@ function ThreadTab({
       {ordered.length === 0 ? (
         <p className={ui.empty}>No messages on this epic yet.</p>
       ) : (
-        <ul className={styles.messages} data-testid="thread">
+        <ul className={styles.messages} data-testid="thread" tabIndex={0} aria-label="Conversation messages">
           {ordered.map((m) => (
             <li key={m.id} id={m.id} className={styles.message}>
               <AgentLine by={m.by} kind={m.kind} to={m.to} viewer={identity()} at={m.at} />
               <MessageText className={styles.messageText} text={m.text} />
+              <button className={ui.button} onClick={() => { if (!pendingWork()) setReply({ id: m.id, by: m.by }); }}><Icon name="reply" /> Reply</button>
             </li>
           ))}
         </ul>

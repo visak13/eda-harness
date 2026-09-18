@@ -88,8 +88,8 @@ describe("ArtifactPage", () => {
     expect(artifactShareUrl("art-abc123")).toMatch(/\/ui\/artifact\/art-abc123$/);
   });
 
-  it.each(["repo_ref", "url", "app"])("%s is a navigable reference, never a byte download", async (form) => {
-    server.use(http.get("/v1/artifacts/art-abc123", () => okJson(record({ form, uri: "https://example.org/evidence", content_type: "image/png" }))));
+  it.each(["repo_ref", "url", "app", "image", "file"])("%s is a navigable reference, never a byte download", async (form) => {
+    server.use(http.get("/v1/artifacts/art-abc123", () => okJson(record({ form, uri: "https://example.org/evidence", content_type: "image/png", has_content: false }))));
     renderRoute("/artifact/art-abc123", "/artifact/:id", <ArtifactPage />);
     expect(await screen.findByRole("link", { name: "Open reference" })).toHaveAttribute("href", "https://example.org/evidence");
     expect(screen.queryByTestId("artifact-download")).toBeNull();

@@ -1,4 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { getArtifact } from "../api/endpoints";
+import { Link, useInRouterContext } from "react-router";
 import { authHeaders } from "../auth/identity";
 import styles from "./ArtifactLink.module.css";
 
@@ -82,11 +85,31 @@ export function CopyArtifactLink({ id, className }: { id: string; className?: st
   );
 }
 
+function ArtifactThumbnail({ id }: { id: string }): React.JSX.Element | null {
+  const record = useQuery({ queryKey: ["artifact", id], queryFn: () => getArtifact(id), retry: false });
+  const [url, setUrl] = useState<string | null>(null);
+  const image = record.data?.has_content !== false && record.data?.form === "image" && PREVIEW_TYPES.has(record.data.content_type ?? "");
+  useEffect(() => {
+    if (!image) return;
+    let cancelled = false, blobUrl: string | null = null;
+    void fetchArtifactContent(id).then(async (res) => {
+      if (!dispositionOf(res).inline) return;
+      const blob = await res.blob();
+      if (cancelled) return;
+      blobUrl = URL.createObjectURL(blob); setUrl(blobUrl);
+    }).catch(() => {}); // the linked full viewer displays the authenticated error
+    return () => { cancelled = true; if (blobUrl) URL.revokeObjectURL(blobUrl); };
+  }, [id, image]);
+  return url ? <Link to={`/artifact/${encodeURIComponent(id)}`}><img loading="lazy" src={url} alt={record.data?.note || id} style={{ maxHeight: 240, maxWidth: "100%", display: "block" }} /></Link> : null;
+}
+
 export function ArtifactLink({ id, label }: { id: string; label?: string }): React.JSX.Element {
+  const routed = useInRouterContext();
   return (
     <>
-      <a className={styles.link} data-testid="artifact-link" data-artifact={id} href={artifactShareUrl(id)}>{label ?? id}</a>
+      {routed ? <Link className={styles.link} data-testid="artifact-link" data-artifact={id} to={`/artifact/${encodeURIComponent(id)}`}>{label ?? id}</Link> : <a className={styles.link} data-testid="artifact-link" data-artifact={id} href={artifactShareUrl(id)}>{label ?? id}</a>}
       <CopyArtifactLink id={id} />
+      {routed ? <ArtifactThumbnail id={id} /> : null}
     </>
   );
 }
@@ -95,11 +118,22 @@ const TOKEN = /(art-[0-9a-f]{6,}|https?:\/\/[^\s<>"']+)/g;
 
 /** Message text with artifact tokens (`art-…`) and bare URLs rendered as links (finding #5). */
 export function MessageText({ text, className }: { text: string; className?: string }): React.JSX.Element {
+  const routed = useInRouterContext();
   const parts = text.split(TOKEN);
   return (
     <div className={className}>
       {parts.map((p, i) => {
         if (/^art-[0-9a-f]{6,}$/.test(p)) return <ArtifactLink key={i} id={p} />;
+        if (/^https?:\/\//.test(p) && routed) {
+          try {
+          const url = new URL(p);
+          const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+          if (url.origin === window.location.origin && url.pathname.startsWith(`${base}/`) && /\/(artifact|doc|epic|ticket)\//.test(url.pathname)) {
+            url.searchParams.delete("token");
+            return <Link key={i} to={`${url.pathname.slice(base.length)}${url.search}${url.hash}`}>{p}</Link>;
+          }
+          } catch { /* Malformed URL tokens remain inert text/link labels, never executable markup. */ }
+        }
         if (/^https?:\/\//.test(p))
           return (
             <a key={i} href={p} target="_blank" rel="noreferrer">

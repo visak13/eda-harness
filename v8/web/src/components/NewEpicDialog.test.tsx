@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -9,14 +9,14 @@ import { NewEpicDialog } from "./NewEpicDialog";
 // Human #22: the dialog posts the words verbatim as an epic, spawns the architect when asked, and
 // navigates to the new epic's page. Both POST bodies are asserted. Owner m-2d7ef9243d: the seat
 // model + effort chosen here ride the epic as tags and the (opt-in, unticked by default) spawn body.
-function mount(caps = { resume_parked: true, resume_closed: false, park: true, spawn: true }) {
+function mount(caps = { resume_parked: true, resume_closed: false, park: true, spawn: true }, onClose = () => {}) {
   server.use(http.get("/v1/pool/capabilities", () => HttpResponse.json({ ok: true, value: caps })));
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={["/me"]}>
         <Routes>
-          <Route path="/me" element={<NewEpicDialog open onClose={() => {}} />} />
+          <Route path="/me" element={<NewEpicDialog open onClose={onClose} />} />
           <Route path="/epic/:id" element={<div data-testid="landed">epic page</div>} />
         </Routes>
       </MemoryRouter>
@@ -166,6 +166,27 @@ describe("NewEpicDialog (human #22)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry architect" }));
     expect(await screen.findByTestId("landed")).toBeInTheDocument();
     expect(creates).toBe(1); expect(spawns).toBe(2);
+  });
+
+  it("blocks duplicate pending submits and dismissal, then keeps failed drafts", async () => {
+    let finish!: () => void;
+    const wait = new Promise<void>((resolve) => { finish = resolve; });
+    let posts = 0;
+    server.use(http.post("/v1/tickets", async () => { posts++; await wait; return HttpResponse.json({ ok: false, hint: "Create failed" }, { status: 503 }); }));
+    const close = vi.fn();
+    mount(undefined, close);
+    fireEvent.change(screen.getByTestId("new-epic-title"), { target: { value: "Title" } });
+    fireEvent.change(screen.getByTestId("new-epic-words"), { target: { value: "  raw request  " } });
+    fireEvent.submit(screen.getByTestId("new-epic-dialog"));
+    fireEvent.submit(screen.getByTestId("new-epic-dialog"));
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.mouseDown(screen.getByTestId("new-epic-scrim"));
+    await waitFor(() => expect(posts).toBe(1));
+    expect(close).not.toHaveBeenCalled();
+    finish();
+    await screen.findByText("Create failed");
+    expect(screen.getByTestId("new-epic-title")).toHaveValue("Title");
+    expect(screen.getByTestId("new-epic-words")).toHaveValue("  raw request  ");
   });
 
   it("when the pool cannot spawn, the checkbox is disabled and says why", async () => {

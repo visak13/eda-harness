@@ -2,13 +2,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { MessageSent, PersonRow, UploadedArtifact } from "../api/types";
 import type { MessageKind } from "../api/types";
-import { getPeople, resolveMessage, sendMessage } from "../api/endpoints";
+import { getPeople, resolveMessage, sendMessage, type SendMessage } from "../api/endpoints";
 import { useDirtyGuard } from "../live/useDraftGuard";
 import { useDropUpload } from "./useDropUpload";
 import { useMentions } from "./useMentions";
 import { mentionedHandles } from "./mentions";
 import styles from "./Composer.module.css";
 import { Icon } from "./Icon";
+import { identity } from "../auth/identity";
+import { readDraft, writeDraft } from "./draftStorage";
+const draftStores = new WeakMap<object, Map<string, import("./draftStorage").StoredDraft>>();
 
 // The object-attached composer (design §4.2/§13/§16.1/§18.1). The conversation is IMPLICIT — the
 // object it sits on (a ticket) — so the composer carries only kind / to / text (+ staged
@@ -85,6 +88,9 @@ export function firstMentionedHandle(text: string, people: PersonRow[]): string 
 
 export interface ComposerProps {
   ticketId: string;
+  /** Typed document feedback keeps the full composer while replacing only the write endpoint. */
+  submit?: (body: SendMessage) => ReturnType<typeof sendMessage>;
+  lockRecipient?: boolean;
   /** Selectable message kinds; when one, the kind is fixed and no selector shows. Default ['note']. */
   kinds?: MessageKind[];
   placeholder?: string;
@@ -114,8 +120,14 @@ export interface ComposerProps {
   expand?: { expanded: boolean; onToggle: () => void };
 }
 
-export function Composer({
+export function Composer(props: ComposerProps): React.JSX.Element {
+  return <ComposerInstance key={`${props.ticketId}:${props.replyTo ?? "new"}`} {...props} />;
+}
+
+function ComposerInstance({
   ticketId,
+  submit = sendMessage,
+  lockRecipient = false,
   kinds = ["note"],
   placeholder,
   onSent,
@@ -132,17 +144,23 @@ export function Composer({
   expand,
 }: ComposerProps): React.JSX.Element {
   const qc = useQueryClient();
-  const [text, setText] = useState(initialText);
+  if (!draftStores.has(qc)) draftStores.set(qc, new Map());
+  const conversationDrafts = draftStores.get(qc)!;
+  const draftKey = submit === sendMessage ? `${identity()}:${ticketId}:${replyTo ?? "new"}` : null;
+  const saved = draftKey ? conversationDrafts.get(draftKey) ?? readDraft(draftKey) : undefined;
+  const [text, setText] = useState(saved?.text ?? initialText);
+  const selection = useRef(saved?.selection);
   useEffect(() => onTextChange?.(text), [text, onTextChange]);
-  const [kind, setKind] = useState<MessageKind>(kinds[0]);
-  const [to, setTo] = useState<string | null>(toProp);
+  const [kind, setKind] = useState<MessageKind>(saved?.kind && kinds.includes(saved.kind as MessageKind) ? saved.kind as MessageKind : kinds[0]);
+  const [to, setTo] = useState<string | null>(saved?.to !== undefined ? saved.to : toProp);
   // Human defect #9 (m-a7e74d81b0, 2026-09-10): an @tagged note used to go out with to=None, so
   // the board woke every seat on the ticket instead of the tagged one. The recipient is derived
   // from the FIRST @handle in the text (a known participant), shown pre-filled in the picker and
   // editable; once the writer picks a recipient by hand the text no longer overrides it. A note
   // with no tag stays a ticket broadcast (to=null).
-  const [toPicked, setToPicked] = useState<boolean>(toProp != null);
-  const [artifacts, setArtifacts] = useState<string[]>(initialArtifacts ?? []);
+  const [toPicked, setToPicked] = useState<boolean>(saved?.toPicked ?? (toProp != null));
+  const [artifacts, setArtifacts] = useState<string[]>(saved?.artifacts ?? initialArtifacts ?? []);
+  useEffect(() => { if (draftKey) { const value = { text, artifacts, kind, to, toPicked, selection: selection.current }; conversationDrafts.set(draftKey, value); writeDraft(draftKey, value); } }, [draftKey, text, artifacts, kind, to, toPicked, conversationDrafts]);
   useEffect(() => onArtifactsChange?.(artifacts), [artifacts, onArtifactsChange]);
   const [confirming, setConfirming] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -150,10 +168,20 @@ export function Composer({
   const [sentNote, setSentNote] = useState<string | null>(null);
   const [unresolved, setUnresolved] = useState<string[]>([]);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const prior = selection.current;
+    if (prior && taRef.current) { taRef.current.focus(); taRef.current.setSelectionRange(prior.start, prior.end); taRef.current.scrollTop = prior.scroll; }
+  }, []);
+  const firstKind = useRef(kinds[0]);
+  useEffect(() => { if (firstKind.current !== kinds[0]) { setKind(kinds[0]); firstKind.current = kinds[0]; } }, [kinds[0]]);
   const idRef = useRef(`composer-${Math.random().toString(36).slice(2)}`);
   const dirty = text.trim().length > 0 || artifacts.length > 0;
 
+  const previousTo = useRef(toProp);
   useEffect(() => {
+    if (previousTo.current === toProp) return;
+    previousTo.current = toProp;
     setTo(toProp);
     setToPicked(toProp != null);
   }, [toProp]);
@@ -204,7 +232,7 @@ export function Composer({
   // text typed while the post was in flight survives — and a second Ctrl+Enter while pending is a no-op.
   const send = useMutation({
     mutationFn: (draft: { text: string; artifacts: string[] }) =>
-      sendMessage({
+      submit({
         ticket_id: ticketId,
         kind,
         text: draft.text,
@@ -218,6 +246,10 @@ export function Composer({
       setText((t) => (t.trim() === draft.text ? "" : t));
       setArtifacts((a) => a.filter((id) => !draft.artifacts.includes(id)));
       setConfirming(false);
+      if (draftKey) {
+        const remaining = { text: text.trim() === draft.text ? "" : text, artifacts: artifacts.filter((id) => !draft.artifacts.includes(id)), kind, to, toPicked };
+        conversationDrafts.set(draftKey, remaining); writeDraft(draftKey, remaining);
+      }
       onDirtyChange?.(false);
       onCancelReply?.();
       onSent?.(value);
@@ -229,7 +261,7 @@ export function Composer({
 
   const inFlight = useRef(false); // synchronous guard: isPending flips only on the next render
   function trySend() {
-    if (send.isPending || inFlight.current) return;
+    if (send.isPending || inFlight.current || pendingUploads > 0) return;
     if (text.trim().length === 0 && artifacts.length === 0) return;
     if (needsConfirm && !confirming) {
       setConfirming(true); // one confirm step when a question/deviation would wake nobody
@@ -254,9 +286,20 @@ export function Composer({
     setArtifacts((a) => [...a, art.id]);
     // The artifact id is already `art-…`; insert it verbatim as the token the message parser
     // resolves to a thumbnail/chip (design §18.1). Do NOT prefix another "art-".
-    setText((t) => `${t}${t && !t.endsWith(" ") ? " " : ""}${art.id} `);
+    const caret = taRef.current?.selectionStart;
+    setText((t) => {
+      const at = caret ?? t.length;
+      const token = `${at > 0 && !/\\s/.test(t[at - 1]) ? " " : ""}${art.id} `;
+      return `${t.slice(0, at)}${token}${t.slice(at)}`;
+    });
   }, []);
-  const { dragOver, error: uploadError, ingestFiles, dropProps } = useDropUpload(ticketId, onUploaded);
+  const { dragOver, error: uploadError, pending: pendingUploads, retry: retryUpload, clearError: clearUploadError, ingestFiles, dropProps } = useDropUpload(ticketId, onUploaded);
+  useEffect(() => {
+    if (!pendingUploads && !send.isPending) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [pendingUploads, send.isPending]);
 
   const kindFixed = kinds.length <= 1;
   const glossFor = (v: string) => (ROLE_GLOSS[v] ? ` — ${ROLE_GLOSS[v]}` : "");
@@ -265,6 +308,7 @@ export function Composer({
     <section
       className={`${styles.composer} ${dragOver ? styles.dragging : ""}`}
       data-testid="composer"
+      data-busy={pendingUploads > 0 || send.isPending ? "true" : undefined}
       {...dropProps}
     >
       {dragOver ? <div className={styles.veil} data-testid="drop-veil">Drop to attach</div> : null}
@@ -273,7 +317,7 @@ export function Composer({
         <div className={styles.replyChip} data-testid="reply-chip">
           Replying to {replyToBy ? `@${replyToBy}` : replyTo}
           {onCancelReply ? (
-            <button type="button" className={styles.replyCancel} onClick={onCancelReply} aria-label="Stop replying">
+            <button type="button" className={styles.replyCancel} onClick={onCancelReply} aria-label="Stop replying" disabled={pendingUploads > 0 || send.isPending}>
               <Icon name="close" />
             </button>
           ) : null}
@@ -283,7 +327,7 @@ export function Composer({
       <div className={styles.controls}>
         {kindFixed ? null : (
           <label className={styles.field}>
-            <span className={styles.fieldLabel}>Kind</span>
+            <span className={styles.fieldLabel}>Type</span>
             <select value={kind} onChange={(e) => setKind(e.target.value as MessageKind)} aria-label="Message kind">
               {kinds.map((k) => (
                 <option key={k} value={k} title={KIND_GLOSS[k]}>
@@ -303,6 +347,7 @@ export function Composer({
           <label className={styles.field}>
             <span className={styles.fieldLabel}>To</span>
             <select
+              disabled={lockRecipient}
               value={to ?? ""}
               onChange={(e) => {
                 setTo(e.target.value || null);
@@ -335,6 +380,10 @@ export function Composer({
             e.preventDefault();
             void ingestFiles(files);
           }
+        }}
+        onSelect={(e) => {
+          selection.current = { start: e.currentTarget.selectionStart, end: e.currentTarget.selectionEnd, scroll: e.currentTarget.scrollTop };
+          if (draftKey) { const value = { text, artifacts, kind, to, toPicked, selection: selection.current }; conversationDrafts.set(draftKey, value); writeDraft(draftKey, value); }
         }}
         onKeyUp={mentions.refresh}
         onClick={mentions.refresh}
@@ -378,13 +427,19 @@ export function Composer({
         </div>
       ) : null}
 
+      {pendingUploads > 0 ? <p role="status">Uploading {pendingUploads} attachment(s)… Keep this view open.</p> : null}
       {uploadError ? (
         <p className={styles.error} role="alert">
           Upload failed: {uploadError}. Your draft is kept.
+          <button type="button" onClick={retryUpload}>Retry upload</button>
+          <button type="button" onClick={clearUploadError}>Remove failed upload</button>
         </p>
       ) : null}
 
       <div className={styles.footer}>
+        <input ref={fileRef} type="file" multiple hidden onChange={(e) => { void ingestFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} />
+        <button type="button" className={styles.expand} onClick={() => fileRef.current?.click()}><Icon name="attach" /> Attach</button>
+        <button type="button" className={styles.expand} onClick={() => { const at = taRef.current?.selectionStart ?? text.length; setText((t) => `${t.slice(0, at)}@${t.slice(at)}`); taRef.current?.focus(); requestAnimationFrame(() => { taRef.current?.setSelectionRange(at + 1, at + 1); mentions.refresh(); }); }}><Icon name="mention" /> Mention</button>
         <span className={styles.hint}>
           Ctrl/Cmd+Enter sends · Enter for a newline · @ to notify
           <button
@@ -404,6 +459,7 @@ export function Composer({
           <button
             type="button"
             className={styles.expand}
+            disabled={pendingUploads > 0 || send.isPending}
             onClick={expand.onToggle}
             aria-label={expand.expanded ? "Collapse the composer back into the page" : "Expand the composer into the drawer"}
             data-testid="composer-expand"
@@ -414,7 +470,7 @@ export function Composer({
         <button
           className={styles.send}
           type="button"
-          disabled={send.isPending || (text.trim().length === 0 && artifacts.length === 0)}
+          disabled={send.isPending || pendingUploads > 0 || (text.trim().length === 0 && artifacts.length === 0)}
           onClick={trySend}
           data-testid="composer-send"
         >

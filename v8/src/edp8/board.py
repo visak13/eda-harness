@@ -142,10 +142,13 @@ class Board:
     def _emit(self, subject_id: str, kind: EventKind, data: dict[str, Any] | None = None) -> Event:
         ev = Event(id=new_id("ev"), subject_id=subject_id, kind=kind, data=data or {})
         self.store.put("event", ev)
-        self._fanout(ev)
+        self.store.after_commit(lambda: self._fanout(ev))
         return ev
 
     def _index(self, type_: str, id_: str, text: str) -> None:
+        self.store.after_commit(lambda: self._index_committed(type_, id_, text))
+
+    def _index_committed(self, type_: str, id_: str, text: str) -> None:
         if self.index is not None:
             try:
                 self.index.upsert(type_, id_, text)
@@ -212,7 +215,11 @@ class Board:
         # `title` is a short human title. A caller may pass both; passing only `title` (the historical
         # shape — the words verbatim) stores them as `words` and derives the title when they run long.
         if kind == TicketKind.epic:
-            words = words if words is not None and words.strip() else title
+            if words is not None and not words.strip():
+                raise BoardError("schema", "request words are empty")
+            if words is not None and words != title and len(title.strip()) > self.TITLE_MAX:
+                raise BoardError("schema", f"explicit title is at most {self.TITLE_MAX} characters")
+            words = words if words is not None else title
             if len(title.strip()) > self.TITLE_MAX:
                 title = self.derive_title(title)
             else:
@@ -1482,6 +1489,11 @@ class Board:
         return None
 
     def gate_answer(self, actor: Participant, ticket_id: str, gate: Gate, answer: str) -> Event:
+        """Legacy acceptance-only path; negative feedback must use typed review decisions."""
+        with self._lock, self.store.transaction():
+            return self._gate_answer_locked(actor, ticket_id, gate, answer)
+
+    def _gate_answer_locked(self, actor: Participant, ticket_id: str, gate: Gate, answer: str) -> Event:
         if actor.role not in HUMAN_GATE_ANSWERERS:
             raise BoardError("scope", f"gate {gate} is answered by a human owner, not {actor.role}")
         if not self.open_gates(ticket_id, gate):

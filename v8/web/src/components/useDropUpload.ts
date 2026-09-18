@@ -12,6 +12,9 @@ export interface DropUpload {
   dragOver: boolean;
   /** The last refused upload's reason (the board's hint), else null. */
   error: string | null;
+  pending: number;
+  retry: () => void;
+  clearError: () => void;
   /** Upload each file in turn; `onUploaded` fires per success. Safe to call from a paste too. */
   ingestFiles: (files: FileList | File[]) => Promise<void>;
   /** Spread onto the drop target element. */
@@ -25,16 +28,22 @@ export interface DropUpload {
 export function useDropUpload(ticketId: string, onUploaded: (art: UploadedArtifact) => void): DropUpload {
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(0);
+  const [failed, setFailed] = useState<File[]>([]);
 
   const ingestFiles = useCallback(
     async (files: FileList | File[]) => {
       setError(null);
-      for (const file of Array.from(files)) {
+      const list = Array.from(files);
+      setPending((n) => n + list.length);
+      for (const file of list) {
         try {
+          if (file.size > 25 * 1024 * 1024) throw new Error("File exceeds the 25 MB limit");
           onUploaded(await uploadArtifact(file, ticketId));
         } catch (err) {
+          setFailed((old) => [...old, file]);
           setError(err instanceof Error ? err.message : String(err));
-        }
+        } finally { setPending((n) => n - 1); }
       }
     },
     [ticketId, onUploaded],
@@ -54,5 +63,5 @@ export function useDropUpload(ticketId: string, onUploaded: (art: UploadedArtifa
     [ingestFiles],
   );
 
-  return { dragOver, error, ingestFiles, dropProps: { onDragOver, onDragLeave, onDrop } };
+  return { dragOver, error, pending, retry: () => { const files = failed; setFailed([]); void ingestFiles(files); }, clearError: () => { setFailed([]); setError(null); }, ingestFiles, dropProps: { onDragOver, onDragLeave, onDrop } };
 }
