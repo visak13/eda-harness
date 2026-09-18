@@ -17,6 +17,7 @@ import { CommandPalette } from "./CommandPalette";
 import { CopyDescriptions } from "./CopyDescriptions";
 import { NewEpicDialog } from "./NewEpicDialog";
 import { PendingNavigation } from "./PendingNavigation";
+import { NotificationCenter } from "./NotificationCenter";
 import { copyProps, pageKeyFor } from "../copy/pages";
 import styles from "./AppShell.module.css";
 
@@ -289,6 +290,7 @@ function AppShellChrome(): React.JSX.Element {
         <p className={styles.pageFraming} data-testid="page-framing" data-route={location.pathname}>
           {pageFraming}
         </p>
+        {whoami.data ? <NotificationCenter key={whoami.data.participant.id} actor={whoami.data.participant.id} /> : null}
         <DocDrawerProvider>
           <Outlet />
         </DocDrawerProvider>

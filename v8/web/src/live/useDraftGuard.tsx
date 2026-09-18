@@ -2,9 +2,11 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { subscribeFeed } from "./feed";
 import { affectedBy } from "./affectedQueries";
+import { attentionChanged } from "./notificationEvents";
 
 interface DraftGuardValue {
   pending: number;
+  hasDirty: () => boolean;
   flush: () => void;
   setDirty: (id: string, dirty: boolean, subject?: string) => void;
 }
@@ -53,6 +55,7 @@ export function DraftGuardProvider({ children }: { children: React.ReactNode }):
   }, [schedule]);
   useEffect(() => {
     const stop = subscribeFeed((event) => {
+      if (event.kind === 'message_sent' || event.kind === 'gate_opened') attentionChanged();
       let withheld = false;
       const cache = qc.getQueryCache().getAll();
       for (const query of cache) {
@@ -66,11 +69,12 @@ export function DraftGuardProvider({ children }: { children: React.ReactNode }):
     });
     return () => { stop(); if (timer.current) clearTimeout(timer.current); timer.current = null; };
   }, [qc, schedule]);
-  const value = useMemo(() => ({ pending, flush, setDirty }), [pending, flush, setDirty]);
+  const hasDirty = useCallback(() => dirty.current.size > 0, []);
+  const value = useMemo(() => ({ pending, flush, setDirty, hasDirty }), [pending, flush, setDirty, hasDirty]);
   return <DraftGuardContext.Provider value={value}>{children}</DraftGuardContext.Provider>;
 }
 export function useDraftGuard(): DraftGuardValue { return useContext(DraftGuardContext) ?? NOOP; }
-const NOOP: DraftGuardValue = { pending: 0, flush: () => {}, setDirty: () => {} };
+const NOOP: DraftGuardValue = { pending: 0, hasDirty: () => false, flush: () => {}, setDirty: () => {} };
 export function useDirtyGuard(id: string, isDirty: boolean, subject?: string): void {
   const { setDirty } = useDraftGuard();
   useEffect(() => { setDirty(id, isDirty, subject); }, [id, isDirty, subject, setDirty]);

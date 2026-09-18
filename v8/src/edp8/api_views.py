@@ -64,6 +64,12 @@ def _catalog() -> list[dict[str, str]]:
 def views_router(board: Board, actor: Callable[..., Participant]) -> APIRouter:
     r = APIRouter()
 
+    @r.get("/v1/me/notifications")
+    def me_notifications(since: int = Query(default=-1, ge=-1), request: str | None = None,
+                         a: Participant = Depends(actor)):
+        from .notifications import attention
+        return ok(attention(board, a, since=since, request=request))
+
     # -------------------------------------------------------------- me (Decisions home)
     @r.get("/v1/me/decisions")
     def me_decisions(a: Participant = Depends(actor)):

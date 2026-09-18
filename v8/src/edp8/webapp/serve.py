@@ -76,6 +76,12 @@ def mount_spa(app: FastAPI, prefix: str, dist: str | Path | None = None) -> bool
         # catch-all so `{prefix}/assets/*` is served as static, not rewritten to index.
         app.mount(prefix + "/assets", _ImmutableStatic(directory=str(assets)), name="spa-assets")
 
+    @app.get(prefix + "/notifications-worker.js", include_in_schema=False)
+    async def notification_worker() -> FileResponse:
+        # An unfingerprinted worker must revalidate, never receive the HTML fallback.
+        return FileResponse(dist_dir / "notifications-worker.js", media_type="application/javascript",
+                            headers={"Cache-Control": "no-store"})
+
     async def spa_index(path: str = "") -> FileResponse:
         # SPA fallback: any non-asset path under prefix returns index.html (client routes).
         return FileResponse(index, media_type="text/html", headers={"Cache-Control": "no-store"})

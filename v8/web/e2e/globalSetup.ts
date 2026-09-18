@@ -24,6 +24,8 @@ function newestMtime(dir: string): number {
 /** The newest source mtime the bundle depends on (web/src + the build inputs beside it). */
 export function newestSourceMtime(): number {
   let newest = newestMtime(path.join(WEB_DIR, "src"));
+  const publicDir = path.join(WEB_DIR, "public");
+  if (fs.existsSync(publicDir)) newest = Math.max(newest, newestMtime(publicDir));
   for (const f of ["index.html", "vite.config.ts", "package.json", "tsconfig.json"]) {
     const p = path.join(WEB_DIR, f);
     if (fs.existsSync(p)) newest = Math.max(newest, fs.statSync(p).mtimeMs);
