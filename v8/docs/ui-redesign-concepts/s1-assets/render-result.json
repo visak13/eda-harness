@@ -1,0 +1,17 @@
+{
+  "method": "Static local-file SVG specimen, not application evidence",
+  "glyphs": 45,
+  "bots": 11,
+  "sizes": [
+    16,
+    18,
+    24
+  ],
+  "themes": [
+    "light",
+    "dark",
+    "hc"
+  ],
+  "narrow_specimen_overflow": false,
+  "date": "2026-09-18T09:42:42.495Z"
+}

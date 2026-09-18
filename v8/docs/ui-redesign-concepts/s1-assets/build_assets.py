@@ -36,7 +36,7 @@ PATHS = {
     'edit': 'm3 21 2-7L16 3q2-2 5 1l-1 3L9 19ZM5 14l4 5M14 5l5 5',
     'check': 'm4 12 5 5L20 6',
     'warning': 'M10 4q2-3 4 0l8 15q1 2-2 2H4q-3 0-2-2ZM12 9v5m0 4h.01',
-    'more': 'M5 12h.01M12 12h.01M19 12h.01',
+    'more': 'M4 12a1 1 0 1 0 2 0 1 1 0 0 0-2 0ZM11 12a1 1 0 1 0 2 0 1 1 0 0 0-2 0ZM18 12a1 1 0 1 0 2 0 1 1 0 0 0-2 0Z',
     'download': 'M12 3v12m-5-5 5 5 5-5M3 16v5h18v-5',
     'link': 'm9 15 6-6M9 7l3-3a5 5 0 0 1 8 6l-4 4M8 10l-4 4a5 5 0 0 0 7 7l4-4',
     'play': 'M6 3 21 12 6 21Z',
@@ -77,7 +77,7 @@ def icon_svg(key):
 def bot_svg(key):
     color, body = BOTS[key]
     eyes = '' if key in ('system', 'unknown') else '<circle cx="13" cy="23" r="1.8" fill="#242323" stroke="none"/><circle cx="23" cy="23" r="1.8" fill="#242323" stroke="none"/>'
-    return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="36" height="36" role="img" aria-label="{key.title()} avatar"><g fill="{color}" stroke="#242323" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{body}{eyes}</g></svg>'
+    return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="36" height="36" role="img" aria-label="{key.title()} avatar"><rect width="36" height="36" rx="6" fill="#F5EFDE"/><g fill="{color}" stroke="#242323" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{body}{eyes}</g></svg>'
 
 def main():
     for kind, values, renderer in [('icons', PATHS, icon_svg), ('bots', BOTS, bot_svg)]:
