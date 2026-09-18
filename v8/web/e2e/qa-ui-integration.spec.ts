@@ -90,7 +90,9 @@ test('same-version new gate has a new approval operation', async ({ page, reques
   await post(`/v1/gates/${epic.id}/design_signoff/open`, {});
   await page.goto(url);
   await expect(page.getByRole('button', { name: 'Approve design', exact: true })).toBeEnabled();
+  const second = page.waitForResponse(r => r.url().endsWith('/v1/gates/decide'));
   await page.getByRole('button', { name: 'Approve design', exact: true }).click();
+  console.log('QA second gate response', await (await second).text());
   await expect(page.getByText('Design approved at v1.', { exact: true })).toBeVisible();
 });
 
