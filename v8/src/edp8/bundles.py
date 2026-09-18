@@ -504,9 +504,9 @@ def _resume_self(_: ResumeSelfArgs) -> dict[str, Any]:
         "`cron` once (both below). Without them nothing wakes you; the old ones died with the old process.",
         f"2. Answer the {len(rows)} open ask(s) below, oldest first, each with its answer_with call; a steer "
         "changes your plan, a human message is a person waiting.",
-        "3. context(ticket_id=<your ticket>) to reload the current state of your work, then continue your "
-        "plan from its next unbuilt item. Your earlier hand-off or close is history: this session is live "
-        "until you close it again.",
+        "3. context(ticket_id=<your ticket>) to reload the current state of your work (this is your resync; "
+        "save its cursor for the heartbeat's context_delta), then continue your plan from its next unbuilt "
+        "item. Your earlier hand-off or close is history: this session is live until you close it again.",
         "4. record_status at your next milestone so the resume is visible as progress; never end a turn "
         "silently while asks are open or your story is in_progress.",
     ]

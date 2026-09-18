@@ -30,12 +30,15 @@ It is idempotent: call it again after compaction or whenever you are unsure you 
    A message with `from_type=human` is a person waiting.
 3. `context(ticket_id=<your ticket>)` to reload the current state of your work; continue your plan
    from its next unbuilt item (plan doc + story thread are the durable memory, not the transcript).
+   A resumed seat never trusts an old cursor: this full `context()` is the resync, and its `cursor` seeds
+   every later heartbeat `context_delta(cursor=…)` (`get_guide('context-refresh')`).
 4. `record_status` at the next milestone. Never end a turn silently while asks are open or your story is
    in_progress.
 
 ## What resume_self is not
 - Not `context()`: context loads your tickets; resume_self re-arms you and lists the asks. Call both, in
-  that order (resume_self, then context).
+  that order (resume_self, then context). Not `context_delta()` either: a delta needs a cursor you can
+  trust, and a resumed seat has none until its fresh `context()` returns one.
 - Not `resume(participant_id)`: that is the SPAWNER's tool, which asks the pool to bring a parked or
   closed seat back. resume_self is what the brought-back seat calls.
 - Not the fresh-boot sequence: a fresh shell still runs whoami → subscribe → Monitor once, cron once →

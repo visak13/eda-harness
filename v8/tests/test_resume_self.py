@@ -50,4 +50,7 @@ def test_resume_guide_exists_and_every_role_card_points_at_it():
     home = Path(bundles.__file__).resolve().parents[2]
     assert (home / "guides" / "resume.md").is_file()
     for card in (home / ".claude" / "commands").glob("*.md"):
-        assert "resume_self()" in card.read_text(encoding="utf-8"), card.name
+        body = card.read_text(encoding="utf-8")
+        assert "resume_self()" in body, card.name
+        # owner m-976c2a95f1 (2026-09-18): context_delta lives in every role card, not in a steer
+        assert "context_delta(cursor=" in body and "get_guide('context-refresh')" in body, card.name

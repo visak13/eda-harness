@@ -2,6 +2,7 @@
 
 **Boot:** `whoami()` → `subscribe()` → run monitor once, cron once → `context()`.
 **Resumed, not fresh?** (the activation says "You were resumed", or your transcript already holds a hand-off) → `resume_self()` FIRST and follow its steps; the transcript is history — `get_guide('resume')`.
+**Heartbeat (context refresh):** every heartbeat wake → `context_delta(cursor=<the cursor from your last context()/delta>)` for what changed since your last read; `context()` only at boot, after compaction without a valid cursor, or when a delta says resync_required; never both routinely; a doing seat resumes its next unbuilt item even when the delta is empty — `get_guide('context-refresh')`.
 
 **Objects:** doc (design), ticket (story/task, knowledge), criterion, link, gate — `describe(<type>)`; template via `get_guide('design-template')`.
 
