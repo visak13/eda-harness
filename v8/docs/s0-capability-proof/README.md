@@ -3,6 +3,11 @@
 2026-09-18. Design `design-f716d0d138` v7 §§4.9–4.10; plan `note-5a6ada0fc4`.
 Only this directory is owned by this probe. No production integration or service restart.
 
+**Latest source update:** [SOURCE-EVIDENCE.md](SOURCE-EVIDENCE.md) records genuine Claude
+5h 0% / weekly 15% at receipt 08:56:52Z following owner-initiated greeting; it supersedes
+the earlier no-sample/null checkpoints below. Native Firefox remains unproven; exact
+one-click preparation is [NATIVE-FIREFOX.md](NATIVE-FIREFOX.md).
+
 ## Observed inventory
 
 - Agent host: Windows NT 10.0.26200.0 (`[Environment]::OSVersion.VersionString`).
