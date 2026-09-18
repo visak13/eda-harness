@@ -22,7 +22,7 @@ export function GateForm({ gate, onAnswered }: GateFormProps): React.JSX.Element
   // §16.1: while a ruling is being typed the feed holds its events ("N new · refresh") instead of
   // refetching under the form — otherwise answering the gate elsewhere unmounted this form and the
   // draft with it (adversary finding #4, 2026-09-10).
-  useDirtyGuard(`gate:${gate.ticket_id}:${gate.gate}`, answer.trim().length > 0);
+  useDirtyGuard(`gate:${gate.ticket_id}:${gate.gate}`, answer.trim().length > 0, gate.ticket_id);
 
   const submit = useMutation({
     mutationFn: () => answerGate(gate.ticket_id, gate.gate, answer.trim()),

@@ -199,7 +199,7 @@ describe("CommandPalette keyboard + data edges", () => {
     // seats/epics resolve before the find hits: wait for the full ranked set (4 hits + 1 seat)
     await waitFor(() => expect(screen.getAllByTestId("find-row").length).toBe(5));
     const rows = screen.getAllByTestId("find-row");
-    const last = rows[rows.length - 1];
+    const last = screen.getByRole("button", { name: "Browse all records" });
     input.focus();
     fireEvent.keyDown(input, { key: "Tab", shiftKey: true });
     expect(document.activeElement).toBe(last);

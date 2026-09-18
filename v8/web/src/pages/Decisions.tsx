@@ -34,6 +34,7 @@ import { copyProps } from "../copy/pages";
 import { useDraftGuard } from "../live/useDraftGuard";
 import { MessageText } from "../components/ArtifactLink";
 import styles from "./Decisions.module.css";
+import { Icon } from "../components/Icon";
 
 // Decisions home (design §4.2 / §16.1 / §18.2, folded S5). The owner's one place to see what needs
 // them: ONE featured sign-off, calm queues (Sign-offs / Questions / Gates / Resolved), their
@@ -591,7 +592,7 @@ function SeatNowCard({ seat, caps }: { seat: SeatRow; caps: PoolCapabilities | u
         <p className={styles.seatNowStatus} data-testid="no-status">Last work update unavailable</p>
       )}
       <Link className={styles.seatNowOpen} to="/seats">
-        Open seat →
+        Open seat <Icon name="forward" />
       </Link>
     </li>
   );

@@ -6,6 +6,7 @@ import { BoardApiError } from "../api/client";
 import { RewordCriterion } from "./CriterionControls";
 import { useDirtyGuard } from "../live/useDraftGuard";
 import styles from "./CriterionCard.module.css";
+import { Icon } from "./Icon";
 
 // The owner's criterion, typeset to be read (design §14): text verbatim at 14/22 ≤72ch, the id in
 // the mono face and NEVER inline in the sentence, the check + checker as small labelled words.
@@ -53,7 +54,7 @@ export function CriterionCard({
   const [note, setNote] = useState("");
   // A half-typed ruling note is a draft: the feed holds its refreshes ("N new · refresh") instead
   // of refetching the doc/list under the card (adversary finding #2, 2026-09-10).
-  useDirtyGuard(`note:${criterion.id}`, note.trim().length > 0);
+  useDirtyGuard(`note:${criterion.id}`, note.trim().length > 0, ticketId);
   const [decided, setDecided] = useState<"pass" | "fail" | null>(null);
   const [rewording, setRewording] = useState(false);
 
@@ -124,7 +125,7 @@ export function CriterionCard({
               type="button"
               onClick={() => onOpenEvidence?.(criterion.evidence_ref!)}
             >
-              Open evidence ↗
+              Open evidence <Icon name="external" />
             </button>
           ) : null}
           {canReword && ticketId && criterion.verdict === "pending" ? (

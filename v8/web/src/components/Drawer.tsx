@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import styles from "./Drawer.module.css";
+import { Icon } from "./Icon";
 
 // The one right-side drawer (design §6/§17): a fixed 1112px panel that hosts three bodies —
 // the ruling (G2), the doc reader (DocDrawer, this story) and the expanded composer (G2). It is
@@ -103,7 +104,7 @@ export function Drawer({
         <header className={styles.header}>
           <div className={styles.title}>{title}</div>
           <button type="button" className={styles.close} aria-label="Close" onClick={onClose}>
-            ✕
+            <Icon name="close" />
           </button>
         </header>
         <div className={styles.body}>{children}</div>

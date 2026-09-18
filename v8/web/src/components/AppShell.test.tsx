@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -26,22 +26,23 @@ function renderShell(initial = "/me") {
 }
 
 beforeEach(() => {
+  vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+  server.use(http.get("/v1/me/avatar", () => HttpResponse.json({ ok: true, value: { catalog: [] } })));
   localStorage.clear();
   delete document.documentElement.dataset.theme;
 });
 
 describe("AppShell", () => {
-  it("renders the four nav sections in order with the current route active", async () => {
+  it("renders Epics, Seats and Needs you without duplicate Library destination", async () => {
     renderShell("/me");
     const links = screen.getAllByRole("link");
     expect(links.map((l) => l.textContent?.replace(/\d+$/, "").trim())).toEqual([
-      "Decisions",
       "Epics",
       "Seats",
-      "Library",
+      "Needs you",
     ]);
     // NavLink marks the active route with aria-current=page.
-    expect(screen.getByRole("link", { name: /Decisions/ })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: /Needs you/ })).toHaveAttribute("aria-current", "page");
   });
 
   it("renders nav counts when /v1/me/summary provides them", async () => {
@@ -59,7 +60,7 @@ describe("AppShell", () => {
     server.use(http.get("/v1/me/summary", () => HttpResponse.json({ ok: false, hint: "no route" }, { status: 404 })));
     renderShell("/me");
     // The shell still renders its nav; counts are simply absent.
-    expect(screen.getByRole("link", { name: /Decisions/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Needs you/ })).toBeInTheDocument();
   });
 
   it("shows identity (as) and the whoami handle", async () => {
@@ -81,7 +82,7 @@ describe("AppShell", () => {
     expect(await screen.findByTestId("identity-panel")).toBeInTheDocument();
     expect(screen.getByTestId("identity-hint")).toHaveTextContent("check your token");
     // The shell chrome is NOT rendered while identity is unresolved (no silent `as` fallback).
-    expect(screen.queryByRole("link", { name: /Decisions/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Needs you/ })).not.toBeInTheDocument();
   });
 
   it("opens the identity popover to the ThemePicker and can switch theme", async () => {
@@ -136,17 +137,13 @@ describe("AppShell nav route families (human #38)", () => {
     );
   }
   const cases: Array<[string, string]> = [
-    ["/me", "Decisions"],
+    ["/me", "Needs you"],
     ["/epics", "Epics"],
     ["/epic/epic-1b289d63f9", "Epics"],
     ["/ticket/s-abc", "Epics"],
     ["/seats", "Seats"],
     ["/seats#engineer.s-1", "Seats"],
-    ["/library/tickets", "Library"],
-    ["/library/docs", "Library"],
-    ["/library/artifacts", "Library"],
-    ["/doc/d-1", "Library"],
-    ["/artifact/art-1", "Library"],
+
   ];
   for (const [path, label] of cases) {
     it(`${path} lights ${label} only`, async () => {
@@ -158,7 +155,7 @@ describe("AppShell nav route families (human #38)", () => {
   }
   it("/unknown lights nothing", async () => {
     renderAt("/nowhere");
-    await screen.findByRole("link", { name: /Decisions/ });
+    await screen.findByRole("link", { name: /Needs you/ });
     expect(screen.getAllByRole("link").filter((l) => l.getAttribute("aria-current") === "page")).toEqual([]);
   });
 });

@@ -8,6 +8,7 @@ import { DraftGuardProvider, useDraftGuard } from "../live/useDraftGuard";
 import { DocDrawerProvider } from "./DocDrawer";
 import { ThemePicker } from "../theme/ThemePicker";
 import { AvatarPicker } from "./AvatarPicker";
+import { AnchoredPanel } from "./AnchoredPanel";
 import { Avatar } from "./Avatar";
 import { Icon } from "./Icon";
 import { PageFrameProvider, usePageFrameCtx, defaultFraming } from "./PageFrame";
@@ -28,14 +29,12 @@ interface Summary {
   library?: number;
 }
 
-// Nav order is fixed (design §4.2): Decisions, Epics, Seats, Library. `count` names the
-// key read from /v1/me/summary; that endpoint belongs to G1a, so counts render only when
-// present — the shell works (and fidelity holds) whether or not it has landed.
+// S2/v7: everyday destinations plus compact attention; archive stays under Find.
+// Counts render only when the summary endpoint actually supplies them.
 const NAV = [
-  { to: "/me", label: "Decisions", icon: "decisions", count: "decisions" as const, copy: "decisions" },
   { to: "/epics", label: "Epics", icon: "epics", count: "epics" as const, copy: "epics" },
   { to: "/seats", label: "Seats", icon: "seats", count: "seats" as const, copy: "seats" },
-  { to: "/library/tickets", label: "Library", icon: "library", count: "library" as const, copy: "library" },
+  { to: "/me", label: "Needs you", icon: "decisions", count: "decisions" as const, copy: "decisions" },
 ] as const;
 
 // Human #38 (m-4e303d7b27, 2026-09-11): the sidebar highlight is by ROUTE FAMILY, not by exact
@@ -89,7 +88,8 @@ function AppShellChrome(): React.JSX.Element {
   }, []);
   const { pending, flush } = useDraftGuard();
   const { framing, terms } = usePageFrameCtx();
-  const identityRef = useRef<HTMLDivElement>(null);
+  const identityRef = useRef<HTMLButtonElement>(null);
+  const closePreferences = useCallback(() => setPopoverOpen(false), []);
   const helpBtnRef = useRef<HTMLButtonElement>(null);
   const pageFraming = framing ?? defaultFraming(location.pathname);
   const pageKey = pageKeyFor(location.pathname);
@@ -133,22 +133,6 @@ function AppShellChrome(): React.JSX.Element {
   // reflects its `pending` count and flushes on click — held while a composer is dirty so a
   // half-typed reply is never wiped (design §4.2).
 
-  // Close the identity popover on outside click / Escape.
-  useEffect(() => {
-    if (!popoverOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (identityRef.current && !identityRef.current.contains(e.target as Node)) setPopoverOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setPopoverOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [popoverOpen]);
 
   const handle = whoami.data?.participant.handle ?? as;
   const role = whoami.data?.participant.role ?? "";
@@ -193,6 +177,8 @@ function AppShellChrome(): React.JSX.Element {
           ))}
         </nav>
 
+        {/* S6 mounts its Usage trigger here; no placeholder telemetry or duplicate destination. */}
+        <div id="shell-usage-slot" data-testid="usage-slot" />
         <button
           ref={findBtnRef}
           className={styles.find}
@@ -214,8 +200,9 @@ function AppShellChrome(): React.JSX.Element {
         {/* The former "In view" block (recent epic words) is gone: it was not navigation, it printed
             whole epic texts, overflowed the rail and pushed the identity/preferences button off
             screen (human report m-16b1efc68f, 2026-09-10). */}
-        <div className={styles.identity} ref={identityRef}>
+        <div className={styles.identity}>
           <button
+            ref={identityRef}
             className={styles.identityBtn}
             type="button"
             aria-label="Account and preferences"
@@ -237,10 +224,10 @@ function AppShellChrome(): React.JSX.Element {
             </span>
           </button>
           {popoverOpen ? (
-            <div className={styles.popover} role="dialog" aria-label="Preferences">
+            <AnchoredPanel anchor={identityRef} label="Preferences" onClose={closePreferences}>
               <ThemePicker />
               <AvatarPicker />
-            </div>
+            </AnchoredPanel>
           ) : null}
         </div>
       </aside>
@@ -264,7 +251,7 @@ function AppShellChrome(): React.JSX.Element {
           >
             <span className={styles.helpText}>What am I looking at?</span>
             <span className={styles.q} aria-hidden="true">
-              ?
+              <Icon name="help" />
             </span>
           </button>
           {pending > 0 ? (

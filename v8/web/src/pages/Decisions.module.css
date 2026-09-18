@@ -1,7 +1,7 @@
 /* Home split 744 / 336, gap 64 (design §4.2, criterion c-f7b9e7983c). */
 .grid {
   display: grid;
-  grid-template-columns: 744px 336px;
+  grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr);
   gap: 64px;
   align-items: start;
 }
@@ -30,6 +30,7 @@
 /* Tabs: 3px accentink underline on the active tab (criterion c-f7b9e7983c). */
 .tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 20px;
   border-bottom: 1px solid var(--line);
   margin-bottom: 20px;
@@ -81,6 +82,7 @@
 }
 .featuredCrumb {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   font-size: 13px;
@@ -502,9 +504,9 @@
 /* At/below 1024 the split becomes one column, right rail below (design §4.2 viewport rule,
    amended breakpoint: "stacks to one column at ≤1024px (was <960)" — the 56px icon rail applies
    <1280, so the content must stack by 1024 or the rail zone overflows at the S11 1024×768 e2e). */
-@media (max-width: 1024px) {
+@media (max-width: 1100px) {
   .grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 32px;
   }
 }

@@ -105,7 +105,7 @@ function LinksSection(): React.JSX.Element {
   if (q.isError) return <p className={ui.banner} role="alert">{(q.error as Error).message}</p>;
   if (q.data.links.length === 0) return <p className={ui.empty}>No links.</p>;
   return (
-    <table className={styles.table}>
+    <table className={styles.table} tabIndex={0} aria-label="Records (scroll horizontally)">
       <thead>
         <tr>
           <th>from</th>
@@ -200,7 +200,7 @@ function TicketsSection(): React.JSX.Element {
       ) : q.data.rows.length === 0 ? (
         <p className={ui.empty}>No tickets match these filters.</p>
       ) : (
-        <table className={styles.table} data-testid="tickets-table">
+        <table className={styles.table} tabIndex={0} aria-label="Tickets (scroll horizontally)" data-testid="tickets-table">
           <thead>
             <tr>
               <th>id</th>

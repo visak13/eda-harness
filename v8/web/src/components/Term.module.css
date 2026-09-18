@@ -17,15 +17,17 @@
   outline: 2px solid var(--accentink);
 }
 
-/* The tooltip stays in the DOM (so aria-describedby always resolves) but is only shown on
-   hover/focus. Not display:none — hidden via clip so assistive tech can still read it. */
+/* Hidden descriptions still resolve through aria-describedby. A viewport-bounded help
+   bubble cannot extend the document width when a trigger is near the right edge. */
 .tip {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 0;
+  position: fixed;
+  bottom: 12px;
+  left: 12px;
+  display: none;
   z-index: 40;
   width: max-content;
-  max-width: 260px;
+  max-width: min(260px, calc(100vw - 24px));
+  overflow-wrap: anywhere;
   padding: 8px 10px;
   background: var(--panel);
   color: var(--ink);
@@ -40,7 +42,7 @@
 }
 
 .wrap:hover .tip,
-.trigger:focus-visible + .tip,
-.trigger:focus + .tip {
+.wrap:focus-within .tip {
+  display: block;
   opacity: 1;
 }

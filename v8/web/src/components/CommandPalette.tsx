@@ -281,6 +281,9 @@ export function CommandPalette({
             ))
           )}
         </div>
+        <button type="button" className={styles.row} onClick={() => { onClose(); navigate("/library/tickets"); }}>
+          Browse all records
+        </button>
       </div>
     </>
   );

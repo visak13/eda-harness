@@ -14,8 +14,9 @@ export function AvatarPicker(): React.JSX.Element | null {
   const save = useMutation({
     mutationFn: (avatar_id: string) => postJson<{ avatar_id: string }>("/v1/me/avatar", { avatar_id }, "PUT"),
     onSuccess: () => {
-      bumpAvatarVersion(); // every <Avatar> on the page re-fetches past the server's 5-minute cache
-      void qc.invalidateQueries({ queryKey: ["me"] });
+      const viewer = qc.getQueryData<{ participant: { id: string } }>(["whoami"]);
+      bumpAvatarVersion(viewer?.participant.id); // canonical id AND login handle alias
+      void qc.invalidateQueries({ queryKey: ["me", "avatar"] });
     },
   });
   const catalog = q.data?.catalog ?? [];
@@ -24,7 +25,7 @@ export function AvatarPicker(): React.JSX.Element | null {
     <fieldset className={styles.picker} data-testid="avatar-picker">
       <legend className={styles.legend}>Avatar</legend>
       <div className={styles.grid} role="radiogroup" aria-label="Avatar">
-        {catalog.map((a) => {
+        {catalog.map((a, index) => {
           const chosen = a.id === q.data?.avatar_id;
           return (
             <button
@@ -32,11 +33,20 @@ export function AvatarPicker(): React.JSX.Element | null {
               type="button"
               role="radio"
               aria-checked={chosen}
+              tabIndex={chosen || (!q.data?.avatar_id && index === 0) ? 0 : -1}
+              onKeyDown={(e) => {
+                const delta = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+                if (!delta || save.isPending) return;
+                e.preventDefault();
+                const next = (index + delta + catalog.length) % catalog.length;
+                (e.currentTarget.parentElement?.children[next] as HTMLElement)?.focus();
+                save.mutate(catalog[next].id);
+              }}
               aria-label={a.name}
               title={a.name}
               className={`${styles.cell} ${chosen ? styles.chosen : ""}`}
-              disabled={save.isPending}
-              onClick={() => save.mutate(a.id)}
+              aria-disabled={save.isPending}
+              onClick={() => { if (!save.isPending) save.mutate(a.id); }}
               // The catalog SVG comes from the board's own avatars module (not user content).
               // eslint-disable-next-line react/no-danger
               dangerouslySetInnerHTML={{ __html: a.svg }}

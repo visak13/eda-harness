@@ -19,6 +19,8 @@
 
 .tabsRow {
   display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
   justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid var(--line);
@@ -244,6 +246,8 @@
 
 /* Find a seat (human report m-a398600978) */
 .find {
+  max-width: 100%;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -264,7 +268,8 @@
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 6px 10px;
-  min-width: 220px;
+  min-width: 0;
+  width: 220px;
   min-height: 32px;
 }
 

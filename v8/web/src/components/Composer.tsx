@@ -8,6 +8,7 @@ import { useDropUpload } from "./useDropUpload";
 import { useMentions } from "./useMentions";
 import { mentionedHandles } from "./mentions";
 import styles from "./Composer.module.css";
+import { Icon } from "./Icon";
 
 // The object-attached composer (design §4.2/§13/§16.1/§18.1). The conversation is IMPLICIT — the
 // object it sits on (a ticket) — so the composer carries only kind / to / text (+ staged
@@ -56,7 +57,7 @@ function ComposerHelp({ onClose }: { onClose: () => void }): React.JSX.Element {
       <div className={styles.helpHead}>
         <strong>How sending works</strong>
         <button ref={closeRef} type="button" className={styles.helpClose} aria-label="Close help" onClick={onClose}>
-          ✕
+          <Icon name="close" />
         </button>
       </div>
       <p>
@@ -158,7 +159,7 @@ export function Composer({
   }, [toProp]);
   // Hold the app's live refresh while this composer has an unsent draft (design §4.2 draft guard),
   // and surface the same flag to a parent that wants it.
-  useDirtyGuard(idRef.current, dirty);
+  useDirtyGuard(idRef.current, dirty, ticketId);
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
 
   const people = useQuery({ queryKey: ["me", "people"], queryFn: getPeople, retry: false });
@@ -220,7 +221,9 @@ export function Composer({
       onDirtyChange?.(false);
       onCancelReply?.();
       onSent?.(value);
-      void qc.invalidateQueries();
+      for (const queryKey of [["ticket", ticketId], ["epic", ticketId], ["messages", ticketId], ["me", "conversations"], ["me", "replies"], ["me", "summary"]]) {
+        void qc.invalidateQueries({ queryKey });
+      }
     },
   });
 
@@ -271,7 +274,7 @@ export function Composer({
           Replying to {replyToBy ? `@${replyToBy}` : replyTo}
           {onCancelReply ? (
             <button type="button" className={styles.replyCancel} onClick={onCancelReply} aria-label="Stop replying">
-              ✕
+              <Icon name="close" />
             </button>
           ) : null}
         </div>
@@ -405,7 +408,7 @@ export function Composer({
             aria-label={expand.expanded ? "Collapse the composer back into the page" : "Expand the composer into the drawer"}
             data-testid="composer-expand"
           >
-            {expand.expanded ? "Collapse" : "Expand"}
+            <Icon name={expand.expanded ? "collapse" : "expand"} /> {expand.expanded ? "Collapse" : "Expand"}
           </button>
         ) : null}
         <button

@@ -15,7 +15,7 @@
     <script>
       try {
         var t = localStorage.getItem("edp8.theme");
-        if (t !== "folio" && t !== "dusk" && t !== "ember" && t !== "folio-hc") {
+        if (!["folio", "dusk", "ember", "folio-hc", "sage", "slate", "midnight", "obsidian"].includes(t)) {
           t = matchMedia("(prefers-contrast: more)").matches
             ? "folio-hc"
             : matchMedia("(prefers-color-scheme: dark)").matches

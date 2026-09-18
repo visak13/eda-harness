@@ -3,6 +3,7 @@ import { GLOSSARY, type GlossaryCategory } from "../copy/glossary";
 import { PAGES, RULES, SIDEBAR } from "../copy/pages";
 import type { TermRef } from "./PageFrame";
 import styles from "./GlossaryPanel.module.css";
+import { Icon } from "./Icon";
 
 // "What am I looking at?" (design §15, criterion c-cccc3183db). A panel that explains, in plain
 // words, the terms visible on the CURRENT page: the page's framing sentence, then each glossary
@@ -92,7 +93,7 @@ export function GlossaryPanel({
         <div className={styles.head}>
           <h2 className={styles.title}>What am I looking at?</h2>
           <button ref={closeRef} type="button" className={styles.close} aria-label="Close" onClick={onClose}>
-            ✕
+            <Icon name="close" />
           </button>
         </div>
         <p className={styles.framing}>{copy?.framing || framing}</p>

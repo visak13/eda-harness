@@ -25,6 +25,7 @@ import { ArtifactLink, MessageText } from "../components/ArtifactLink";
 import { useDropUpload } from "../components/useDropUpload";
 import { Clamp } from "../components/Clamp";
 import styles from "./Ticket.module.css";
+import { Icon } from "../components/Icon";
 
 // Ticket page (design §4.2, criteria c-d2dbb34b06 / c-e0b24cd134): crumb to the epic, id + status
 // chip, title, description, tags, the resolved assignee with its seat state, the criteria as
@@ -132,7 +133,7 @@ export function TicketPage(): React.JSX.Element {
   return (
     <div>
       <nav className={styles.crumb} aria-label="Breadcrumb">
-        <Link to={`/epic/${encodeURIComponent(epic_id)}`}>← Epic {epic_id}</Link>
+        <Link to={`/epic/${encodeURIComponent(epic_id)}`}><Icon name="back" /> Epic {epic_id}</Link>
       </nav>
 
       <div className={styles.idline}>

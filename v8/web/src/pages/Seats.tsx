@@ -122,7 +122,7 @@ export function SeatsPage(): React.JSX.Element {
       {shown.length === 0 ? (
         <p className={styles.empty}>{needle ? `No seat matches “${find.trim()}”.` : "No seats in this group."}</p>
       ) : (
-        <table className={styles.table}>
+        <table className={styles.table} tabIndex={0} aria-label="Seats (scroll horizontally)">
           <thead>
             <tr>
               <th>Seat / shell state</th>

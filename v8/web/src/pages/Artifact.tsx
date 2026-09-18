@@ -11,6 +11,7 @@ import {
   openArtifact,
 } from "../components/ArtifactLink";
 import styles from "./Artifact.module.css";
+import { Icon } from "../components/Icon";
 
 // The shareable artifact page (promise #20): /ui/artifact/:id resolves GET /v1/artifacts/{id} and
 // shows the uploaded thing in place — an inline preview for the four safe image types (the SAME
@@ -59,7 +60,7 @@ export function ArtifactPage(): React.JSX.Element {
         <p className={styles.calm} data-testid="artifact-error">
           {hint}
         </p>
-        <Link to="/library/artifacts">← Library</Link>
+        <Link to="/library/artifacts"><Icon name="back" /> Library</Link>
       </div>
     );
   }
@@ -68,7 +69,7 @@ export function ArtifactPage(): React.JSX.Element {
   return (
     <div className={styles.page} data-testid="artifact-page" data-artifact={a.id}>
       <nav className={styles.crumb} aria-label="Breadcrumb">
-        <Link to="/library/artifacts">← Library</Link>
+        <Link to="/library/artifacts"><Icon name="back" /> Library</Link>
       </nav>
       <h1 className={styles.title}>{name}</h1>
       <dl className={styles.meta}>

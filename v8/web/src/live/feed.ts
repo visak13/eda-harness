@@ -62,7 +62,7 @@ export function subscribeFeed(onEvent: (e: FeedEvent) => void, opts: FeedOptions
         if (res.ok) {
           const body = (await res.json()) as { value?: FeedEvent[] };
           for (const ev of body.value ?? []) {
-            if (typeof ev.seq === "number" && ev.seq > since) {
+            if (!stopped && typeof ev.seq === "number" && ev.seq > since) {
               since = ev.seq;
               onEvent(ev);
             }
@@ -115,7 +115,10 @@ export function subscribeFeed(onEvent: (e: FeedEvent) => void, opts: FeedOptions
             if (!data) continue; // comment frame (: ready / : ping)
             try {
               const ev = JSON.parse(data) as FeedEvent;
-              if (typeof ev.seq === "number") since = ev.seq;
+              if (typeof ev.seq === "number") {
+                if (ev.seq <= since) continue; // reconnect replay cannot invalidate twice
+                since = ev.seq;
+              }
               onEvent(ev);
             } catch (e) {
               opts.onError?.(e);

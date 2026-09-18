@@ -1,4 +1,6 @@
 import { useId } from "react";
+import { Icon } from "./Icon";
+import { STATUS_ICONS } from "./iconPaths";
 import { label as glossLabel, meaning as glossMeaning } from "../copy/glossary";
 import ui from "./ui.module.css";
 import term from "./Term.module.css";
@@ -28,7 +30,7 @@ export function StatusChip({ status }: { status: string }): React.JSX.Element {
         tabIndex={meaning ? 0 : undefined}
         aria-describedby={meaning ? id : undefined}
       >
-        <span className={ui.chipDot} aria-hidden="true" />
+        {Object.hasOwn(STATUS_ICONS, status) ? <Icon name={STATUS_ICONS[status as keyof typeof STATUS_ICONS]} size={16} /> : null}
         {word}
       </span>
       {meaning ? (

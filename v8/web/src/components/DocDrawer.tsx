@@ -5,6 +5,7 @@ import { identity } from "../auth/identity";
 import { Drawer } from "./Drawer";
 import { DocView } from "./DocView";
 import styles from "./DocDrawer.module.css";
+import { Icon } from "./Icon";
 
 // §17 "related docs open in place": any doc reference on the ticket/epic/Decisions pages opens
 // in the §6 Drawer without the page navigating or losing scroll/draft/composer state. The
@@ -126,7 +127,7 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
       {shownDoc && top ? (
         <details ref={menuRef} className={styles.versionsMenu} aria-label="Versions" data-testid="doc-versions-menu">
           <summary className={styles.versionsSummary}>
-            v{shownDoc.version} · {shownDoc.version === latest ? "Latest" : "Pinned"} ▾
+            v{shownDoc.version} · {shownDoc.version === latest ? "Latest" : "Pinned"} <Icon name="chevron" />
           </summary>
           <div className={styles.versionsList}>
             {shownDoc.versions.map((v) => (

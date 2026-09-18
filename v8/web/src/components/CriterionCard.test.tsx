@@ -122,7 +122,7 @@ describe("CriterionCard", () => {
     const onOpenEvidence = vi.fn();
     renderCard({ criterion: { ...crit, verdict: "pass" }, onOpenEvidence });
     expect(screen.getByTestId("verdict-chip")).toHaveTextContent("Passed");
-    fireEvent.click(screen.getByText("Open evidence ↗"));
+    fireEvent.click(screen.getByRole("button", { name: "Open evidence" }));
     expect(onOpenEvidence).toHaveBeenCalledWith("report-1");
   });
 });

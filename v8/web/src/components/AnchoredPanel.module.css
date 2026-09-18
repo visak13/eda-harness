@@ -1,0 +1,17 @@
+.panel {
+  position: fixed;
+  z-index: 30;
+  width: min(320px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 12px;
+  border: 1px solid var(--strongline);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 12px 32px #0003;
+  overflow-wrap: anywhere;
+}
+.heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.heading button { min-height: 44px; border: 1px solid var(--strongline); border-radius: 6px; color: var(--ink); background: var(--panel); }

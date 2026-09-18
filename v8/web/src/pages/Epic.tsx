@@ -27,6 +27,7 @@ import ui from "../components/ui.module.css";
 import { MessageText } from "../components/ArtifactLink";
 import { Clamp } from "../components/Clamp";
 import styles from "./Epic.module.css";
+import { Icon } from "../components/Icon";
 
 // Epic page (design §4.2): crumb, id + status chip, Georgia 38 title, the owner's words verbatim,
 // a directive callout when the thread carries an owner steer, tabs Overview/Work/Documents/Thread,
@@ -245,7 +246,7 @@ export function EpicPage(): React.JSX.Element {
                 <strong>Next:</strong> {nextActionFor(epic.status)}
               </p>
               <p className={ui.empty}>
-                <Link to="/library/history">Open the full history →</Link>
+                <Link to="/library/history">Open the full history <Icon name="forward" /></Link>
               </p>
             </details>
           </section>
@@ -343,13 +344,13 @@ export function EpicPage(): React.JSX.Element {
             <details className={ui.fold}>
               <summary>Activity history</summary>
               <p className={ui.empty}>
-                <Link to="/library/history">Open the full history →</Link>
+                <Link to="/library/history">Open the full history <Icon name="forward" /></Link>
               </p>
             </details>
             <details className={ui.fold}>
               <summary>Links &amp; artifacts</summary>
               <p className={ui.empty}>
-                <Link to={`/library/links?epic=${encodeURIComponent(id)}`}>Open links →</Link>
+                <Link to={`/library/links?epic=${encodeURIComponent(id)}`}>Open links <Icon name="forward" /></Link>
               </p>
             </details>
           </section>

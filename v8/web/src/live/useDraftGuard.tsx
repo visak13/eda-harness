@@ -1,89 +1,78 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { subscribeFeed } from "./feed";
-
-// SEAM (live plane, draft guard). One feed subscription for the whole app. A feed event
-// normally invalidates every server-state query so the lists refresh; but invalidating a list
-// UNDER a half-typed reply would wipe the draft and reorder the row the user is answering. So
-// while ANY composer is dirty we DEFER: we count the held events and surface "N new — refresh"
-// (parity with the legacy live pill), and only flush — invalidate + reset — when the user asks
-// or the last dirty composer clears. This is strategy_ll's `useDraftGuard` bar (design §4.2:
-// "with a dirty composer show 'N new — refresh' instead of reordering").
+import { affectedBy } from "./affectedQueries";
 
 interface DraftGuardValue {
-  /** Held feed events while a composer was dirty — the "N new" count; 0 when nothing is pending. */
   pending: number;
-  /** Invalidate all server-state queries now and reset the pending count (the "refresh" click). */
   flush: () => void;
-  /** Register/unregister this composer's dirty state by a stable id. */
-  setDirty: (id: string, dirty: boolean) => void;
+  setDirty: (id: string, dirty: boolean, subject?: string) => void;
 }
-
 const DraftGuardContext = createContext<DraftGuardValue | null>(null);
 
+/** One feed and one 250ms window; hold affected draft keys rather than global invalidation.
+ * Explicit flush updates data without clearing drafts or remounting their owners. */
 export function DraftGuardProvider({ children }: { children: React.ReactNode }): React.JSX.Element {
   const qc = useQueryClient();
   const [pending, setPending] = useState(0);
-  // A ref, not state: the feed callback closes over it and must read the LIVE dirty set without
-  // being re-created (re-creating the callback would tear down and rebuild the subscription).
-  const dirty = useRef<Set<string>>(new Set());
-
+  const dirty = useRef(new Map<string, string | undefined>());
+  const queued = useRef(new Map<string, QueryKey>());
+  const held = useRef(new Map<string, QueryKey>());
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const drain = useCallback(() => {
+    timer.current = null;
+    for (const [hash, queryKey] of queued.current) {
+      // A draft may become dirty AFTER an event queued, before the window closes.
+      const blocked = [...dirty.current.values()].some((subject) => !subject || queryKey.includes(subject) || queryKey[0] === "me");
+      if (blocked) { held.current.set(hash, queryKey); setPending((n) => n || 1); }
+      else void qc.invalidateQueries({ queryKey, exact: true });
+    }
+    queued.current.clear();
+  }, [qc]);
+  const schedule = useCallback(() => {
+    if (!timer.current && queued.current.size) timer.current = setTimeout(drain, 250);
+  }, [drain]);
   const flush = useCallback(() => {
-    setPending(0);
-    void qc.invalidateQueries();
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    const keys = new Map([...queued.current, ...held.current]);
+    queued.current.clear(); held.current.clear(); setPending(0);
+    for (const queryKey of keys.values()) void qc.invalidateQueries({ queryKey, exact: true });
   }, [qc]);
-
-  const setDirty = useCallback(
-    (id: string, isDirty: boolean) => {
-      if (isDirty) {
-        dirty.current.add(id);
-        return;
-      }
+  const setDirty = useCallback((id: string, value: boolean, subject?: string) => {
+    if (value) dirty.current.set(id, subject);
+    else {
       dirty.current.delete(id);
-      // When the last dirty composer clears, deliver whatever was held so the user is never left
-      // looking at stale rows with no way to know (they cleared the draft, so nothing is at risk).
-      if (dirty.current.size === 0) {
-        setPending((n) => {
-          if (n > 0) void qc.invalidateQueries();
-          return 0;
-        });
+      for (const [hash, key] of held.current) {
+        const blocked = [...dirty.current.values()].some((scope) => !scope || key.includes(scope) || key[0] === "me");
+        if (!blocked) { queued.current.set(hash, key); held.current.delete(hash); }
       }
-    },
-    [qc],
-  );
-
+      if (!held.current.size) setPending(0);
+      schedule();
+    }
+  }, [schedule]);
   useEffect(() => {
-    const stop = subscribeFeed(
-      () => {
-        if (dirty.current.size > 0) {
-          setPending((n) => n + 1); // hold — a dirty composer is open; show "N new — refresh"
-        } else {
-          void qc.invalidateQueries(); // safe to refresh; nothing is being typed
-        }
-      },
-      { onError: () => void 0 },
-    );
-    return stop;
-  }, [qc]);
-
-  const value = useMemo<DraftGuardValue>(() => ({ pending, flush, setDirty }), [pending, flush, setDirty]);
+    const stop = subscribeFeed((event) => {
+      let withheld = false;
+      const cache = qc.getQueryCache().getAll();
+      for (const query of cache) {
+        if (!affectedBy(event, query, cache)) continue;
+        const blocked = [...dirty.current.values()].some((subject) => !subject || query.queryKey.includes(subject) || query.queryKey[0] === "me");
+        if (blocked) { held.current.set(query.queryHash, query.queryKey); withheld = true; }
+        else queued.current.set(query.queryHash, query.queryKey);
+      }
+      if (withheld) setPending((n) => n + 1);
+      schedule();
+    });
+    return () => { stop(); if (timer.current) clearTimeout(timer.current); timer.current = null; };
+  }, [qc, schedule]);
+  const value = useMemo(() => ({ pending, flush, setDirty }), [pending, flush, setDirty]);
   return <DraftGuardContext.Provider value={value}>{children}</DraftGuardContext.Provider>;
 }
-
-/** Read the guard (pending count + flush). Safe outside a provider: returns a no-op guard so a
- *  component (or a test) can render without one — pending stays 0 and flush does nothing. */
-export function useDraftGuard(): DraftGuardValue {
-  return useContext(DraftGuardContext) ?? NOOP;
-}
-
+export function useDraftGuard(): DraftGuardValue { return useContext(DraftGuardContext) ?? NOOP; }
 const NOOP: DraftGuardValue = { pending: 0, flush: () => {}, setDirty: () => {} };
-
-/** A composer calls this with its dirty flag; the guard holds feed refreshes while it is true.
- *  Unmounting clears the flag so a closed composer never keeps the list frozen. */
-export function useDirtyGuard(id: string, isDirty: boolean): void {
+export function useDirtyGuard(id: string, isDirty: boolean, subject?: string): void {
   const { setDirty } = useDraftGuard();
-  useEffect(() => {
-    setDirty(id, isDirty);
-  }, [id, isDirty, setDirty]);
+  useEffect(() => { setDirty(id, isDirty, subject); }, [id, isDirty, subject, setDirty]);
   useEffect(() => () => setDirty(id, false), [id, setDirty]);
 }

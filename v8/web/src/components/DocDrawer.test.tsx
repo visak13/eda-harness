@@ -112,7 +112,7 @@ describe("DocDrawer toolbar (Astra #36 item 2)", () => {
     // Exactly one "Versions"-labelled container in the drawer; it holds every entry.
     const menu = within(panel).getByLabelText("Versions");
     expect(menu.tagName).toBe("DETAILS");
-    expect(menu.querySelector("summary")?.textContent).toContain("v2 · Latest ▾");
+    expect(menu.querySelector("summary")?.textContent).toContain("v2 · Latest");
     const entries = within(menu).getAllByTestId("version-entry");
     expect(entries.map((e) => e.textContent)).toEqual(["v1", "v2 · latest"]);
     // The History block keeps its own label so the toolbar menu is the one "Versions" element.
@@ -121,7 +121,7 @@ describe("DocDrawer toolbar (Astra #36 item 2)", () => {
     fireEvent.click(entries[0]);
     await within(panel).findByText("body v1");
     expect(within(panel).getByTestId("version-now")).toHaveTextContent("v1 · pinned (latest v2)");
-    expect(menu.querySelector("summary")?.textContent).toContain("v1 · Pinned ▾");
+    expect(menu.querySelector("summary")?.textContent).toContain("v1 · Pinned");
     expect(within(panel).getByRole("link", { name: "Open as page" })).toHaveAttribute(
       "href",
       expect.stringContaining("/doc/d1?version=1&as="),

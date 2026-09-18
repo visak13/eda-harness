@@ -18,8 +18,8 @@
    then the owner's-words callout under the title in col 1. */
 .head {
   display: grid;
-  grid-template-columns: 744px 336px;
-  column-gap: 64px;
+  grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr);
+  column-gap: 24px;
   row-gap: 16px;
   align-items: start;
 }
@@ -126,8 +126,8 @@
 /* Two-column split: 744 / 336, gap 64 (fidelity criterion c-a23e72f460). */
 .layout {
   display: grid;
-  grid-template-columns: 744px 336px;
-  gap: 64px;
+  grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr);
+  gap: 24px;
   margin-top: 24px;
   align-items: start;
 }
@@ -348,7 +348,7 @@
 
 .kanban {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
   gap: 10px;
 }
 .kanbanCol {
@@ -481,20 +481,20 @@
 
 /* At/below 1024 the split stacks (design §4.2 viewport rule, amended breakpoint ≤1024px, was <960;
    parity, not a plate). Aligns with the 1024×768 S11 reflow e2e (the 56px rail applies <1280). */
-@media (max-width: 1024px) {
+@media (max-width: 1100px) {
   .layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 32px;
   }
   .head {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .steerWrap {
     grid-column: 1;
     grid-row: auto;
   }
   .kanban {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

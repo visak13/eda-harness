@@ -15,8 +15,8 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: "Segoe UI", system-ui, sans-serif;
-  font-size: 14px;
-  line-height: 22px;
+  font-size: 16px;
+  line-height: 24px;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -26,6 +26,21 @@ h3,
 p {
   margin: 0;
 }
+
+/* Reflow is intrinsic, never hidden at the page boundary. Code/tables scroll locally. */
+main, section, article, form, fieldset, details { min-width: 0; }
+p, h1, h2, h3, li, dd, dt, label, a { overflow-wrap: anywhere; }
+img, video { max-width: 100%; }
+input, textarea, select { max-width: 100%; min-width: 0; }
+/* Essential form boundaries use the contrast-audited token, not decorative separators.
+   Root specificity overrides legacy CSS-module input rules without changing border widths. */
+:root :is(input:not([type="radio"]):not([type="checkbox"]), textarea, select) {
+  border-color: var(--strongline);
+}
+pre { max-width: 100%; overflow: auto; }
+main table { display: block; max-width: 100%; overflow-x: auto; }
+main table td, main table th { overflow-wrap: anywhere; }
+:focus-visible { outline: 2px solid var(--accentink); outline-offset: 3px; }
 
 a {
   color: inherit;

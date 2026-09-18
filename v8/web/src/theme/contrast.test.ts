@@ -17,6 +17,12 @@ interface Pair {
 }
 
 const PAIRS: Pair[] = [
+  ...(["bg", "panel", "rail", "secondary", "accentwash", "successwash"] as TokenKey[]).flatMap((bg): Pair[] => [
+    { fg: "ink", bg, kind: "text", what: "body/status/control text" },
+    { fg: "muted", bg, kind: "text", what: "metadata and secondary labels" },
+    { fg: "accentink", bg, kind: "nontext", what: "focus and functional icons" },
+    { fg: "strongline", bg, kind: "nontext", what: "essential control boundary" },
+  ]),
   { fg: "ink", bg: "bg", kind: "text", what: "body text on page" },
   { fg: "ink", bg: "panel", kind: "text", what: "body text on panel" },
   { fg: "ink", bg: "rail", kind: "text", what: "text on sidebar rail" },
@@ -72,8 +78,8 @@ describe("sanity anchors (Folio)", () => {
   it("ink/bg ≈ 12.4:1", () => {
     expect(contrastRatio(folio.tokens.ink, folio.tokens.bg)).toBeCloseTo(12.4, 1);
   });
-  it("muted/bg ≈ 5.08:1", () => {
-    expect(contrastRatio(folio.tokens.muted, folio.tokens.bg)).toBeCloseTo(5.08, 1);
+  it("muted/bg retains at least the original 5.08:1", () => {
+    expect(contrastRatio(folio.tokens.muted, folio.tokens.bg)).toBeGreaterThanOrEqual(5.08);
   });
   it("buttonink/accent (ink on salmon) ≈ 6.81:1", () => {
     expect(contrastRatio(folio.tokens.buttonink, folio.tokens.accent)).toBeCloseTo(6.81, 1);

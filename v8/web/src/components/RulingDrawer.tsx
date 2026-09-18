@@ -9,6 +9,7 @@ import { CriterionCard } from "./CriterionCard";
 import { useDropUpload } from "./useDropUpload";
 import { identity } from "../auth/identity";
 import styles from "./RulingDrawer.module.css";
+import { Icon } from "./Icon";
 
 // The ruling body (design §6/§14, folded S6). It is the `children` of the shared Drawer (G3a):
 // evidence on the left (the engineer's report, at the version this ruling froze) and the owner's
@@ -96,7 +97,7 @@ export function RulingDrawer({ signoff, kOfN, onClose, onRuled, returnFocusTo }:
                 className={styles.fullReport}
                 to={`/doc/${encodeURIComponent(signoff.doc.id)}?version=${frozen}&as=${encodeURIComponent(identity())}`}
               >
-                Full report ↗
+                Full report <Icon name="external" />
               </Link>
             ) : null}
           </div>
