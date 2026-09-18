@@ -1,0 +1,32 @@
+/* Proposal tokens only. Not connected to application code.
+   Generated pixels are illustrative; these values define the intended colors. */
+:root {
+  --board-paper: #f8f5ee;
+  --board-rail: #eee7da;
+  --board-ink: #26231e;
+  --board-muted: #655f56;
+  --board-accent: #a84022;
+  --board-on-accent: #ffffff;
+  --board-rule: #d7cdbf;
+  --board-heading-font: Georgia, 'Times New Roman', serif;
+  --board-body-font: 'Segoe UI', Arial, sans-serif;
+  --board-body-size: 16px;
+  --board-body-leading: 1.5;
+  --board-title-size: 36px;
+  --board-section-size: 24px;
+  --board-meta-size: 14px;
+  --board-radius: 6px;
+  --board-target-min: 44px;
+  --board-icon-size: 20px;
+  --board-icon-stroke: 1.75px;
+}
+[data-board-theme='obsidian'] {
+  --board-paper: #000000;
+  --board-rail: #000000;
+  --board-surface: #111111;
+  --board-ink: #f4efe6;
+  --board-muted: #b8b0a5;
+  --board-accent: #f09265;
+  --board-on-accent: #26231e;
+  --board-rule: #393530;
+}
