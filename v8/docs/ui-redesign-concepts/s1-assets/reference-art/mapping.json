@@ -1,0 +1,469 @@
+{
+  "artifactType": "reference mapping; no runtime integration",
+  "source": "../inventory.md",
+  "counts": {
+    "controls": 35,
+    "ticketStates": 10,
+    "identities": 11,
+    "total": 56
+  },
+  "controls": [
+    {
+      "key": "decisions",
+      "motif": "diamond with exclamation",
+      "section": "controls",
+      "row": 1,
+      "column": 1
+    },
+    {
+      "key": "epics",
+      "motif": "rounded checklist square",
+      "section": "controls",
+      "row": 1,
+      "column": 2
+    },
+    {
+      "key": "seats",
+      "motif": "paired seat/person outlines",
+      "section": "controls",
+      "row": 1,
+      "column": 3
+    },
+    {
+      "key": "library",
+      "motif": "archive box",
+      "section": "controls",
+      "row": 1,
+      "column": 4
+    },
+    {
+      "key": "find",
+      "motif": "magnifier",
+      "section": "controls",
+      "row": 1,
+      "column": 5
+    },
+    {
+      "key": "add",
+      "motif": "plus",
+      "section": "controls",
+      "row": 1,
+      "column": 6
+    },
+    {
+      "key": "close",
+      "motif": "diagonal cross",
+      "section": "controls",
+      "row": 1,
+      "column": 7
+    },
+    {
+      "key": "chevron",
+      "motif": "down chevron; rotate for disclosure",
+      "section": "controls",
+      "row": 2,
+      "column": 1
+    },
+    {
+      "key": "copy",
+      "motif": "overlapping sheets",
+      "section": "controls",
+      "row": 2,
+      "column": 2
+    },
+    {
+      "key": "external",
+      "motif": "arrow exiting open square",
+      "section": "controls",
+      "row": 2,
+      "column": 3
+    },
+    {
+      "key": "back",
+      "motif": "left arrow",
+      "section": "controls",
+      "row": 2,
+      "column": 4
+    },
+    {
+      "key": "forward",
+      "motif": "right arrow",
+      "section": "controls",
+      "row": 2,
+      "column": 5
+    },
+    {
+      "key": "history",
+      "motif": "clock with backward arrow",
+      "section": "controls",
+      "row": 2,
+      "column": 6
+    },
+    {
+      "key": "files",
+      "motif": "folder",
+      "section": "controls",
+      "row": 2,
+      "column": 7
+    },
+    {
+      "key": "design",
+      "motif": "folded-corner document",
+      "section": "controls",
+      "row": 3,
+      "column": 1
+    },
+    {
+      "key": "work",
+      "motif": "tray with check",
+      "section": "controls",
+      "row": 3,
+      "column": 2
+    },
+    {
+      "key": "reply",
+      "motif": "bent return arrow",
+      "section": "controls",
+      "row": 3,
+      "column": 3
+    },
+    {
+      "key": "expand",
+      "motif": "two outward diagonal arrows",
+      "section": "controls",
+      "row": 3,
+      "column": 4
+    },
+    {
+      "key": "collapse",
+      "motif": "two inward diagonal arrows; simplify four-arrow generated reference",
+      "section": "controls",
+      "row": 3,
+      "column": 5
+    },
+    {
+      "key": "attach",
+      "motif": "paperclip",
+      "section": "controls",
+      "row": 3,
+      "column": 6
+    },
+    {
+      "key": "mention",
+      "motif": "at sign",
+      "section": "controls",
+      "row": 3,
+      "column": 7
+    },
+    {
+      "key": "help",
+      "motif": "question mark in circle",
+      "section": "controls",
+      "row": 4,
+      "column": 1
+    },
+    {
+      "key": "send",
+      "motif": "paper plane",
+      "section": "controls",
+      "row": 4,
+      "column": 2
+    },
+    {
+      "key": "preferences",
+      "motif": "gear",
+      "section": "controls",
+      "row": 4,
+      "column": 3
+    },
+    {
+      "key": "usage",
+      "motif": "three outlined bars",
+      "section": "controls",
+      "row": 4,
+      "column": 4
+    },
+    {
+      "key": "refresh",
+      "motif": "two circular arrows",
+      "section": "controls",
+      "row": 4,
+      "column": 5
+    },
+    {
+      "key": "filter",
+      "motif": "funnel",
+      "section": "controls",
+      "row": 4,
+      "column": 6
+    },
+    {
+      "key": "sort",
+      "motif": "opposed vertical arrows",
+      "section": "controls",
+      "row": 4,
+      "column": 7
+    },
+    {
+      "key": "edit",
+      "motif": "pencil",
+      "section": "controls",
+      "row": 5,
+      "column": 1
+    },
+    {
+      "key": "check",
+      "motif": "checkmark",
+      "section": "controls",
+      "row": 5,
+      "column": 2
+    },
+    {
+      "key": "warning",
+      "motif": "triangle with exclamation",
+      "section": "controls",
+      "row": 5,
+      "column": 3
+    },
+    {
+      "key": "more",
+      "motif": "three horizontal dots",
+      "section": "controls",
+      "row": 5,
+      "column": 4
+    },
+    {
+      "key": "download",
+      "motif": "down arrow into tray",
+      "section": "controls",
+      "row": 5,
+      "column": 5
+    },
+    {
+      "key": "link",
+      "motif": "chain links",
+      "section": "controls",
+      "row": 5,
+      "column": 6
+    },
+    {
+      "key": "play",
+      "motif": "right-facing triangle; existing spawn/resume only",
+      "section": "controls",
+      "row": 5,
+      "column": 7
+    }
+  ],
+  "ticketStates": [
+    {
+      "key": "drafted",
+      "label": "Drafted",
+      "motif": "paper and pencil",
+      "section": "ticket_states",
+      "row": 1,
+      "column": 1
+    },
+    {
+      "key": "designed",
+      "label": "Designed",
+      "motif": "set square",
+      "section": "ticket_states",
+      "row": 1,
+      "column": 2
+    },
+    {
+      "key": "signed_off",
+      "label": "Signed off",
+      "motif": "scalloped seal with check",
+      "section": "ticket_states",
+      "row": 1,
+      "column": 3
+    },
+    {
+      "key": "ready",
+      "label": "Ready",
+      "motif": "flag",
+      "section": "ticket_states",
+      "row": 1,
+      "column": 4
+    },
+    {
+      "key": "in_progress",
+      "label": "In progress",
+      "motif": "clock hands",
+      "section": "ticket_states",
+      "row": 1,
+      "column": 5
+    },
+    {
+      "key": "in_review",
+      "label": "In review",
+      "motif": "eye",
+      "section": "ticket_states",
+      "row": 2,
+      "column": 1
+    },
+    {
+      "key": "blocked",
+      "label": "Blocked",
+      "motif": "octagon with horizontal bar",
+      "section": "ticket_states",
+      "row": 2,
+      "column": 2
+    },
+    {
+      "key": "done",
+      "label": "Done",
+      "motif": "circle with check",
+      "section": "ticket_states",
+      "row": 2,
+      "column": 3
+    },
+    {
+      "key": "partial",
+      "label": "Partial",
+      "motif": "half-filled circle",
+      "section": "ticket_states",
+      "row": 2,
+      "column": 4
+    },
+    {
+      "key": "dropped",
+      "label": "Dropped",
+      "motif": "square with diagonal cross",
+      "section": "ticket_states",
+      "row": 2,
+      "column": 5
+    }
+  ],
+  "identities": [
+    {
+      "key": "owner",
+      "motif": "rounded square with key-shaped antenna",
+      "adaptationNote": "Generated antenna is a plain stem and circle; add one key tooth.",
+      "section": "bot_identities",
+      "row": 1,
+      "column": 1
+    },
+    {
+      "key": "coordinator",
+      "motif": "horizontal capsule with three-node bridge",
+      "adaptationNote": null,
+      "section": "bot_identities",
+      "row": 1,
+      "column": 2
+    },
+    {
+      "key": "architect",
+      "motif": "square head with triangular roof brow",
+      "adaptationNote": null,
+      "section": "bot_identities",
+      "row": 1,
+      "column": 3
+    },
+    {
+      "key": "engineer",
+      "motif": "hexagon with wrench-jaw top notch",
+      "adaptationNote": "Generated top reads as a U-shaped socket; clarify open wrench jaws.",
+      "section": "bot_identities",
+      "row": 1,
+      "column": 4
+    },
+    {
+      "key": "reviewer",
+      "motif": "round head with single lens and dot eye",
+      "adaptationNote": "Remove incidental antenna to improve distinction from owner.",
+      "section": "bot_identities",
+      "row": 1,
+      "column": 5
+    },
+    {
+      "key": "adversary",
+      "motif": "shield head with split V brow",
+      "adaptationNote": "Keep curious/firm, not hostile.",
+      "section": "bot_identities",
+      "row": 1,
+      "column": 6
+    },
+    {
+      "key": "qa",
+      "motif": "rectangle with integrated check tab",
+      "adaptationNote": "Simplify check junction for 32px.",
+      "section": "bot_identities",
+      "row": 2,
+      "column": 1
+    },
+    {
+      "key": "sme",
+      "motif": "open-book head and central spine",
+      "adaptationNote": null,
+      "section": "bot_identities",
+      "row": 2,
+      "column": 2
+    },
+    {
+      "key": "consultant",
+      "motif": "speech-bubble head with tail",
+      "adaptationNote": null,
+      "section": "bot_identities",
+      "row": 2,
+      "column": 3
+    },
+    {
+      "key": "system",
+      "motif": "stacked slabs with one indicator",
+      "adaptationNote": "No face; not a person.",
+      "section": "bot_identities",
+      "row": 2,
+      "column": 4
+    },
+    {
+      "key": "unknown",
+      "motif": "dashed device outline and question mark",
+      "adaptationNote": "No face; not a person.",
+      "section": "bot_identities",
+      "row": 2,
+      "column": 5
+    }
+  ],
+  "dispatch": {
+    "priorityRule": "consultant role OR model containing gpt -> consultant illustration; preserve existing backend matching semantics",
+    "identityText": "Always retain actual role/model text; artwork does not infer identity.",
+    "otherwise": "Use explicit supported role identity; unsupported identity uses unknown.",
+    "unknownControl": "Explicit unresolved/unknown treatment; never silently map to decisions."
+  },
+  "preservation": {
+    "humanIds": [
+      "human-01",
+      "human-02",
+      "human-03",
+      "human-04",
+      "human-05",
+      "human-06",
+      "human-07",
+      "human-08"
+    ],
+    "names": [
+      "Rowan",
+      "Mira",
+      "Dev",
+      "June",
+      "Sam",
+      "Noor",
+      "Eli",
+      "Aya"
+    ],
+    "invariants": "Keep human SVG functions, deterministic fallback, preference storage and selections unchanged.",
+    "presence": [
+      "Alive",
+      "Parked",
+      "Stalled",
+      "Closed",
+      "Availability unknown"
+    ],
+    "presenceRule": "Separate from ticket states; no invented progress mapping.",
+    "nativeSelects": "Keep platform arrows.",
+    "proseArrows": "Preserve meaningful prose/test/status-history arrows.",
+    "principalActionTarget": "At least 44 x 44 CSS px independently of glyph size."
+  }
+}

@@ -1,0 +1,99 @@
+﻿{
+    "file":  "board-family-contact-sheet.png",
+    "dimensions":  [
+                       1122,
+                       1402
+                   ],
+    "bytes":  1446936,
+    "sha256":  "a442519ba9666bbdebe1d89cc8e14a4e3c1dbb721ee1b41ad5b1440c59e43ed1",
+    "background_samples":  [
+                               {
+                                   "xy":  [
+                                              10,
+                                              100
+                                          ],
+                                   "rgb":  [
+                                               247,
+                                               240,
+                                               229
+                                           ]
+                               },
+                               {
+                                   "xy":  [
+                                              10,
+                                              300
+                                          ],
+                                   "rgb":  [
+                                               246,
+                                               241,
+                                               230
+                                           ]
+                               },
+                               {
+                                   "xy":  [
+                                              10,
+                                              500
+                                          ],
+                                   "rgb":  [
+                                               246,
+                                               241,
+                                               229
+                                           ]
+                               },
+                               {
+                                   "xy":  [
+                                              10,
+                                              700
+                                          ],
+                                   "rgb":  [
+                                               247,
+                                               242,
+                                               230
+                                           ]
+                               },
+                               {
+                                   "xy":  [
+                                              10,
+                                              900
+                                          ],
+                                   "rgb":  [
+                                               246,
+                                               241,
+                                               229
+                                           ]
+                               },
+                               {
+                                   "xy":  [
+                                              10,
+                                              1100
+                                          ],
+                                   "rgb":  [
+                                               247,
+                                               241,
+                                               229
+                                           ]
+                               },
+                               {
+                                   "xy":  [
+                                              10,
+                                              1300
+                                          ],
+                                   "rgb":  [
+                                               247,
+                                               241,
+                                               228
+                                           ]
+                               }
+                           ],
+    "left_blank_margin_channel_min":  [
+                                          245,
+                                          239,
+                                          228
+                                      ],
+    "left_blank_margin_channel_max":  [
+                                          248,
+                                          242,
+                                          231
+                                      ],
+    "left_blank_margin_unique_rgb":  30
+}
