@@ -1,8 +1,13 @@
-.meta { display: flex; flex-wrap: wrap; gap: 12px 40px; margin-block: 10px; font-size: 14px; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 24px; margin-block: 10px; font-size: 14px; }
 .meta div { min-width: 0; max-width: 100%; }
-.meta dt { font-weight: bold; }
-.meta dd { margin: 4px 0; overflow-wrap: anywhere; }
+.meta dt { display: inline; font-weight: bold; margin-right: 6px; }
+.meta dd { display: inline; margin: 0; overflow-wrap: anywhere; }
 .links { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding-block: 8px; border-bottom: 1px solid var(--strongline); }
+@media (max-width: 600px) {
+  .meta { display: grid; gap: 4px; }
+  .links { gap: 6px; padding-block: 6px; }
+  .links a { min-height: 44px; display: inline-flex; align-items: center; padding-inline: 8px; }
+}
 .content { min-width: 0; padding: 16px; overflow-wrap: anywhere; }
 .content a { margin-right: 16px; }
 .content li { margin-block: 12px; }

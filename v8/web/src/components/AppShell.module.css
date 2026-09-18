@@ -28,15 +28,20 @@
 .helpBtn:hover .q, .btnPrimary:hover { background: var(--secondary); }
 .btnPrimary { min-height: 44px; padding: 8px 16px; border: 1px solid var(--strongline); border-radius: 6px; background: var(--panel); color: var(--ink); font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; gap: 10px; }
 .main { margin-left: 192px; padding: 28px 32px 64px; min-width: 0; }
+.menuToggle { display: none; }
+.headerRight { margin-left: auto; }
 @media (max-width: 767px) {
-  .sidebar { position: static; width: auto; padding: 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; border-right: 0; border-bottom: 1px solid var(--line); }
-  .brand { font-size: 18px; }
-  .workspaceName, .find .key { display: none; }
-  .nav { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; order: 2; }
+  .shell { display: flex; flex-direction: column; }
+  .header { order: -2; position: static; margin: 0; min-height: 60px; padding: 8px 12px; gap: 8px; }
+  .sidebar { display: none; position: static; width: auto; padding: 12px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .sidebar[data-open="true"] { display: flex; }
+  .brand, .workspaceName, .breadcrumb, .find .key { display: none; }
+  .nav { flex-direction: row; flex-wrap: wrap; }
   .navItem { flex: 1; }
-  .find { width: auto; }
-  .identity { margin: 0; padding: 0; border: 0; grid-column: 1 / -1; }
-  .identityBtn { width: auto; }
-  .header { position: static; margin: 0; padding: 12px; flex-wrap: wrap; }
-  .main { margin: 0; padding: 20px 12px 40px; }
+  .identity { margin: 0; padding: 0; border: 0; }
+  .menuToggle { display: inline-flex; align-items: center; min-height: 44px; padding: 8px; border: 1px solid var(--strongline); border-radius: 6px; color: var(--ink); background: var(--panel); }
+  .headerRight { gap: 6px; }
+  .header button { font-size: 12px; }
+  .btnPrimary { padding: 8px; }
+  .main { margin: 0; padding: 12px 12px 40px; }
 }

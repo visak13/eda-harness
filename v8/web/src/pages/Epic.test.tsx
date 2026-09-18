@@ -50,6 +50,11 @@ function page(over: Partial<EpicPageData> = {}, thread: MessageView[] = []): Epi
 
 function mount(data: EpicPageData, summary: Record<string, unknown>[] = []) {
   server.use(http.get("/v1/epics/epic-1/page", () => okJson(data)));
+  server.use(http.get("/v1/tickets/epic-1/contextual", () => okJson({
+    ticket_id: "epic-1", title: data.title, kind: "epic", status: data.board.epic.status,
+    owner: "owner", requester: "owner", assignee: null, design_ref: null, gates: [], scope: "epic-1", events: [],
+    records: data.docs.map((record) => ({ type: "doc", group: "Other", relation: record.doc_type.replaceAll("_", " "), record })),
+  })));
   // summary is queried for the assigned-seat rail (fired inside render's act — install rows here)
   server.use(http.get("/v1/epics/summary", () => okJson(summary)));
   // the epic's status control reads its legal moves (epics are tickets → same route)
@@ -76,7 +81,7 @@ describe("EpicPage", () => {
       return okJson({ thread: rows, thread_total: 235, thread_before: older.length > 100 ? rows[0].seq : null });
     }));
     mount(page({ thread_total: 235, thread_before: 136 }, messages.slice(-100)));
-    expect(await screen.findByRole("tab", { name: /Thread/ })).toHaveTextContent("235");
+    expect(await screen.findByTestId("conversation-total")).toHaveTextContent("235");
     const draft = screen.getByRole("textbox", { name: "Message" });
     fireEvent.change(draft, { target: { value: "Keep my unsent draft" } });
     const list = screen.getByTestId("thread"); list.scrollTop = 42;
@@ -93,12 +98,12 @@ describe("EpicPage", () => {
     expect(screen.getByRole("textbox", { name: "Message" })).toBe(draft);
     expect(draft).toHaveValue("Keep my unsent draft");
     expect(screen.queryByRole("button", { name: "Load older messages" })).toBeNull();
-    expect(screen.getByRole("tab", { name: /Thread/ })).toHaveTextContent("235");
+    expect(screen.getByTestId("conversation-total")).toHaveTextContent("235");
   });
   it("shows the id + status word chip and the owner's words verbatim", async () => {
     mount(page());
     await screen.findByText("Upgrade the board UI", { selector: "h1" });
-    expect(screen.getByTestId("status-chip")).toHaveTextContent("In progress");
+    expect(screen.getByTestId("epic-status-badge")).toHaveTextContent("In progress");
     expect(screen.getByText(/Owner.s words/i)).toBeInTheDocument();
     // the words quote carries the request verbatim, once, under the short title (human #32)
     expect(screen.getByTestId("owner-words")).toHaveTextContent("without a shell");
@@ -124,7 +129,7 @@ describe("EpicPage", () => {
   it("Work tab shows a filter bar (status/work-type/assignee/q) mirroring the legacy epic filters", async () => {
     mount(page());
     await screen.findByText("Upgrade the board UI", { selector: "h1" });
-    fireEvent.click(screen.getByRole("tab", { name: /Work/ }));
+    fireEvent.click(screen.getByText("Work, acceptance & process"));
     const bar = await screen.findByTestId("work-filters");
     expect(bar).toBeInTheDocument();
     expect(screen.getByLabelText("Status")).toBeInTheDocument();
@@ -140,7 +145,7 @@ describe("EpicPage", () => {
     data.board.epic.children = [];
     mount(data);
     await screen.findByText("Upgrade the board UI", { selector: "h1" });
-    fireEvent.click(screen.getByRole("tab", { name: /Work/ }));
+    fireEvent.click(screen.getByText("Work, acceptance & process"));
     expect(await screen.findByText("This epic has no stories yet.")).toBeInTheDocument();
     expect(screen.queryByTestId("kanban")).not.toBeInTheDocument();
   });
@@ -160,7 +165,7 @@ describe("EpicPage", () => {
       }),
     );
     await screen.findByText("Upgrade the board UI", { selector: "h1" });
-    fireEvent.click(screen.getByRole("tab", { name: /Overview/ }));
+    fireEvent.click(screen.getByText("Work, acceptance & process"));
     expect(await screen.findByText("the epic is accepted")).toBeInTheDocument();
     // pending + evidence → the one-click ruling pane is on the epic page itself
     expect(screen.getByTestId("approve")).toBeInTheDocument();
@@ -171,16 +176,16 @@ describe("EpicPage", () => {
   it("Documents tab lists linked docs; empty epic shows the no-docs sentence", async () => {
     mount(page({ docs: [{ id: "design-1", doc_type: "design_note", title: "The design", version: 1, scope: "epic-1", summary: "", full: "" }] }));
     await screen.findByText("Upgrade the board UI", { selector: "h1" });
-    fireEvent.click(screen.getByRole("tab", { name: /Documents/ }));
-    expect(await screen.findByText("The design")).toBeInTheDocument();
-    expect(screen.getByText("design note")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Files & evidence" }));
+    expect(await screen.findByText(/The design/, { selector: "button" })).toBeInTheDocument();
+    expect(screen.getByText(/doc · design note/)).toBeInTheDocument();
   });
 
   it("Documents tab shows an empty sentence when no docs are linked", async () => {
     mount(page({ docs: [] }));
     await screen.findByText("Upgrade the board UI", { selector: "h1" });
-    fireEvent.click(screen.getByRole("tab", { name: /Documents/ }));
-    expect(await screen.findByText("No documents are linked to this epic yet.")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Files & evidence" }));
+    expect(await screen.findByText("No files or documents are linked to this work yet.")).toBeInTheDocument();
   });
 
   it("Overview shows a design link and the multi-story pulse sentence", async () => {
@@ -188,7 +193,7 @@ describe("EpicPage", () => {
     data.board.epic.children = [node({ id: "s-1" }), node({ id: "s-2", title: "Second story" })];
     mount(data);
     await screen.findByText("Upgrade the board UI", { selector: "h1" });
-    fireEvent.click(screen.getByRole("tab", { name: /Overview/ }));
+    fireEvent.click(screen.getByText("Work, acceptance & process"));
     // pulse sentence pluralises stories and shows the criteria + open gate tally
     expect(screen.getByText(/2 stories ·/)).toBeInTheDocument();
     expect(screen.getByText(/passed ·/)).toBeInTheDocument();
@@ -201,7 +206,7 @@ describe("EpicPage", () => {
     data.board.epic.children = [];
     mount(data);
     await screen.findByText("Upgrade the board UI", { selector: "h1" });
-    fireEvent.click(screen.getByRole("tab", { name: /Overview/ }));
+    fireEvent.click(screen.getByText("Work, acceptance & process"));
     expect(screen.getByText(/No stories yet — this epic is still being shaped/)).toBeInTheDocument();
   });
 
@@ -213,7 +218,7 @@ describe("EpicPage", () => {
       ]),
     );
     await screen.findByText("Upgrade the board UI", { selector: "h1" });
-    fireEvent.click(screen.getByRole("tab", { name: /Thread/ }));
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
     const toggle = await screen.findByTestId("order-toggle");
     expect(toggle).toHaveTextContent("Newest first");
     fireEvent.click(toggle);
@@ -224,7 +229,7 @@ describe("EpicPage", () => {
   it("Thread tab shows the empty state when there are no messages", async () => {
     mount(page({}, []));
     await screen.findByText("Upgrade the board UI", { selector: "h1" });
-    fireEvent.click(screen.getByRole("tab", { name: /Thread/ }));
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
     expect(await screen.findByText("No messages on this epic yet.")).toBeInTheDocument();
   });
 
@@ -244,7 +249,7 @@ describe("EpicPage", () => {
     ];
     mount(data);
     await screen.findByText("Upgrade the board UI", { selector: "h1" });
-    fireEvent.click(screen.getByRole("tab", { name: /Work/ }));
+    fireEvent.click(screen.getByText("Work, acceptance & process"));
     await screen.findByTestId("work-filters");
     // titles appear in both the tree and the kanban → use queryAll
     expect(screen.queryAllByText("Alpha").length).toBeGreaterThan(0);
@@ -270,7 +275,7 @@ describe("EpicPage", () => {
     data.board.epic.children = [node({ id: "s-1", title: "Alpha", status: "in_progress" })];
     mount(data);
     await screen.findByText("Upgrade the board UI", { selector: "h1" });
-    fireEvent.click(screen.getByRole("tab", { name: /Work/ }));
+    fireEvent.click(screen.getByText("Work, acceptance & process"));
     await screen.findByTestId("work-filters");
     fireEvent.change(screen.getByLabelText("Status"), { target: { value: "done" } });
     expect(await screen.findByText("No tickets match these filters.")).toBeInTheDocument();
@@ -289,7 +294,7 @@ describe("EpicPage", () => {
     ];
     mount(data);
     await screen.findByText("Upgrade the board UI", { selector: "h1" });
-    fireEvent.click(screen.getByRole("tab", { name: /Work/ }));
+    fireEvent.click(screen.getByText("Work, acceptance & process"));
     await screen.findByTestId("work-filters");
     fireEvent.change(screen.getByLabelText("Search words"), { target: { value: "Alpha" } });
     const { waitFor } = await import("@testing-library/react");
@@ -497,7 +502,8 @@ describe("EpicPage", () => {
     const badge = screen.getByTestId("epic-status-badge");
     expect(badge).toHaveTextContent("In progress");
     // exactly one status chip in the header (the rail shows the change button, not a second chip)
-    expect(screen.getAllByTestId("status-chip")).toHaveLength(1);
+    expect(badge.parentElement!.querySelectorAll('[data-testid="status-chip"]')).toHaveLength(1);
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
   });
 
   it("#36 (1): the owner's words sit in a callout with a two-line preview and a Show all / Show less disclosure", async () => {
@@ -534,7 +540,7 @@ describe("EpicPage", () => {
     ];
     mount(data);
     await screen.findByText("Upgrade the board UI", { selector: "h1" });
-    fireEvent.click(screen.getByRole("tab", { name: /Work/ }));
+    fireEvent.click(screen.getByText("Work, acceptance & process"));
     expect(await screen.findAllByTestId("work-row")).toHaveLength(2);
     const fold = screen.getByTestId("work-filters-fold");
     expect(fold.tagName).toBe("DETAILS");

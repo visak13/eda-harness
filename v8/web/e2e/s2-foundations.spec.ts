@@ -9,6 +9,7 @@ for (const [width,height] of sizes) test(`preferences bounded and keyboard usabl
   await page.setViewportSize({ width, height });
   await page.goto("/ui/epics?as=owner");
   const trigger = page.getByRole("button", { name: "Account and preferences", exact: true });
+  if (width < 768) await page.getByRole("button", { name: "Workspace navigation", exact: true }).click();
   await trigger.click();
   const dialog = page.getByRole("dialog", { name: "Preferences", exact: true });
   await expect(dialog).toBeVisible();
@@ -21,6 +22,7 @@ for (const [width,height] of sizes) test(`preferences bounded and keyboard usabl
   await avatars.last().click(); await expect(avatars.last()).toHaveAttribute("aria-checked", "true");
   await page.keyboard.press("Escape"); await expect(dialog).toHaveCount(0); await expect(trigger).toBeFocused();
   await page.reload(); await expect(page.locator("html")).toHaveAttribute("data-theme", "obsidian");
+  if (width < 768) await page.getByRole("button", { name: "Workspace navigation", exact: true }).click();
   await trigger.click(); await expect(avatars.last()).toHaveAttribute("aria-checked", "true");
   await dialog.getByRole("radio", { name: "Obsidian", exact: true }).focus();
   await page.keyboard.press("ArrowLeft"); await expect(page.locator("html")).toHaveAttribute("data-theme", "midnight");

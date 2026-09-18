@@ -80,6 +80,9 @@ function AppShellChrome(): React.JSX.Element {
   const location = useLocation();
   const as = identity();
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => { setMenuOpen(false); setPopoverOpen(false); }, [location.pathname]);
   const [helpOpen, setHelpOpen] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
   const [newEpicOpen, setNewEpicOpen] = useState(false);
@@ -88,7 +91,8 @@ function AppShellChrome(): React.JSX.Element {
   const findBtnRef = useRef<HTMLButtonElement>(null);
   const closeFind = useCallback(() => {
     setFindOpen(false);
-    findBtnRef.current?.focus();
+    if (findBtnRef.current?.getClientRects().length) findBtnRef.current.focus();
+    else menuRef.current?.focus();
   }, []);
   const { pending, flush } = useDraftGuard();
   const { framing, terms } = usePageFrameCtx();
@@ -142,6 +146,30 @@ function AppShellChrome(): React.JSX.Element {
   const role = whoami.data?.participant.role ?? "";
   const counts = summary.data;
 
+  const header = <header className={styles.header} data-testid="app-header">
+    <button ref={menuRef} type="button" className={styles.menuToggle} aria-label="Workspace navigation"
+      aria-expanded={menuOpen} aria-controls="workspace-navigation" onClick={() => setMenuOpen((open) => !open)}>
+      Menu
+    </button>
+    {!/^\/(epic|ticket)\//.test(location.pathname) ? <div className={styles.breadcrumb}>
+      <span className={styles.here}>{crumbFor(location.pathname)}</span>
+    </div> : null}
+    <div className={styles.headerRight}>
+      <button ref={helpBtnRef} className={styles.helpBtn} type="button" data-testid="glossary-open"
+        aria-label="What am I looking at?" aria-haspopup="dialog" aria-expanded={helpOpen} onClick={() => setHelpOpen((o) => !o)}>
+        <span className={styles.helpText}>What am I looking at?</span>
+        <span className={styles.q} aria-hidden="true"><Icon name="help" /></span>
+      </button>
+      {pending > 0 ? <button className={styles.btnPrimary} type="button" data-testid="live-new" aria-live="polite" onClick={flush}>
+        {pending} new · refresh
+      </button> : <button className={styles.btnPrimary} type="button" data-testid="new-epic-open"
+        aria-haspopup="dialog" aria-expanded={newEpicOpen} onClick={() => setNewEpicOpen(true)} {...copyProps("sidebar", "new-epic")}>
+        New epic
+      </button>}
+    </div>
+    {whoami.data ? <NotificationCenter key={whoami.data.participant.id} actor={whoami.data.participant.id} /> : null}
+  </header>;
+
   // Design §4.1: a 401 from the identity probe (a wrong token against a board with a tokens.json, or
   // an unknown participant) is NOT silently downgraded to showing `as` — render the inline identity
   // panel so the reader can re-enter a participant id / token. (second-opinion 2026-09-08)
@@ -152,7 +180,14 @@ function AppShellChrome(): React.JSX.Element {
 
   return (
     <div className={styles.shell}>
-      <aside className={styles.sidebar} aria-label="Primary">
+      {header}
+      <aside id="workspace-navigation" className={styles.sidebar} data-open={menuOpen} aria-label="Primary"
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && menuRef.current?.getClientRects().length && !document.querySelector('[role="dialog"]')) {
+            setMenuOpen(false);
+            menuRef.current?.focus();
+          }
+        }}>
         <div className={styles.brand}>
           <span className={styles.brandmark} aria-hidden="true">
             e
@@ -214,7 +249,7 @@ function AppShellChrome(): React.JSX.Element {
             {...copyProps("sidebar", "identity")}
             aria-haspopup="dialog"
             aria-expanded={popoverOpen}
-            onClick={() => setPopoverOpen((o) => !o)}
+            onClick={() => { setMenuOpen(true); setPopoverOpen((o) => !o); }}
           >
             <Avatar id={as} size={32} className={styles.avatar} />
             <span>
@@ -236,55 +271,6 @@ function AppShellChrome(): React.JSX.Element {
           ) : null}
         </div>
       </aside>
-
-      <header className={styles.header} data-testid="app-header">
-        <div className={styles.breadcrumb}>
-          <span>Workspace</span>
-          <span aria-hidden="true">/</span>
-          <span className={styles.here}>{crumbFor(location.pathname)}</span>
-        </div>
-        <div className={styles.headerRight}>
-          <button
-            ref={helpBtnRef}
-            className={styles.helpBtn}
-            type="button"
-            data-testid="glossary-open"
-            aria-label="What am I looking at?"
-            aria-haspopup="dialog"
-            aria-expanded={helpOpen}
-            onClick={() => setHelpOpen((o) => !o)}
-          >
-            <span className={styles.helpText}>What am I looking at?</span>
-            <span className={styles.q} aria-hidden="true">
-              <Icon name="help" />
-            </span>
-          </button>
-          {pending > 0 ? (
-            <button
-              className={styles.btnPrimary}
-              type="button"
-              data-testid="live-new"
-              aria-live="polite"
-              onClick={flush}
-            >
-              {pending} new · refresh
-            </button>
-          ) : (
-            <button
-              className={styles.btnPrimary}
-              type="button"
-              data-testid="new-epic-open"
-              aria-haspopup="dialog"
-              aria-expanded={newEpicOpen}
-              onClick={() => setNewEpicOpen(true)}
-              {...copyProps("sidebar", "new-epic")}
-            >
-              New epic
-            </button>
-          )}
-        </div>
-        {whoami.data ? <NotificationCenter key={whoami.data.participant.id} actor={whoami.data.participant.id} /> : null}
-      </header>
 
       <main className={styles.main}>
         {/* The page-framing sentence, in the main landmark (design §15): one sentence per route,

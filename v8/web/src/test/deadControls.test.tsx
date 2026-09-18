@@ -256,6 +256,11 @@ function installBoard(): void {
     http.get("/v1/epics/epic-1/page", () => ok(EPIC_PAGE)),
     http.get("/v1/tickets/table", () => ok(TABLE)),
     http.get("/v1/tickets/s-1/page", () => ok(TICKET_PAGE)),
+    http.get("/v1/tickets/:id/contextual", ({ params }) => ok({
+      ticket_id: params.id, title: "Work context", kind: params.id === "epic-1" ? "epic" : "story",
+      status: "in_progress", owner: "owner", requester: "owner", assignee: null,
+      design_ref: null, scope: "epic-1", gates: [], blockers: [], unresolved_asks: [], records: [], events: [],
+    })),
     http.get("/v1/tickets/:id/transitions", () =>
       ok({ status: "in_progress", transitions: [{ to: "done", allowed: true, reason: null }] }),
     ),

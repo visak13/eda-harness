@@ -69,13 +69,13 @@ export function ContextualWork({ ticketId, dedicated = false }: { ticketId: stri
         {outcome(event.data) ? <p>{outcome(event.data)}</p> : null}
         <details><summary>Technical details</summary><pre>{JSON.stringify(event.data, null, 2)}</pre></details>
       </li>)}</ul>
-    </> : ["Design", "References", "Evidence", "Deliverables", "Other"].map((group) => <section key={group}>
+    </> : <>{data.records.length === 0 ? <p>No files or documents are linked to this work yet.</p> : null}{["Design", "References", "Evidence", "Deliverables", "Other"].map((group) => <section key={group}>
       <h2>{group}</h2>
       <ul>{data.records.filter((r) => r.group === group).map((r, i) => <li key={`${r.record.id}:${i}`}>
         {r.type === "doc" ? <button className={ui.button} onClick={() => openDoc(r.record.id)}>{r.record.title ?? r.record.id} {r.record.version ? `v${r.record.version}` : ""}</button> : <Link to={`/artifact/${encodeURIComponent(r.record.id)}`}>{r.record.note || r.record.id}</Link>}
         <span> {r.type} · {r.relation} · {r.record.scope === "global" || r.record.scope?.startsWith("domain:") ? "Shared/global" : ticketId}</span>
       </li>)}</ul>
-    </section>)}
+    </section>)}</>}
   </div>;
   if (dedicated) return <section><h1>{view === "history" ? "History" : "Files & evidence"} · {data.title}</h1>{content}</section>;
   return <>
@@ -84,7 +84,10 @@ export function ContextualWork({ ticketId, dedicated = false }: { ticketId: stri
       {data.design_ref ? <button className={ui.button} onClick={() => openDoc(data.design_ref!)}><Icon name="design" /> Design {data.gates.some((g) => g.data.gate === "design_signoff") ? "· review requested" : ""}</button> : null}
       <button className={ui.button} onClick={() => choose("files")}>Files & evidence</button>
       <button className={ui.button} onClick={() => choose("history")}>History</button>
-      <a href="#work-details">Work</a>
+      <a href="#work-details" onClick={() => {
+        const details = document.getElementById("work-details");
+        if (details instanceof HTMLDetailsElement) details.open = true;
+      }}>Work</a>
     </nav>
     <Drawer open={!params.get("doc") && !params.get("compose") && (view === "files" || view === "history")} title={view === "history" ? "History" : "Files & evidence"} onClose={() => choose(null)}>{content}</Drawer>
   </>;

@@ -40,6 +40,7 @@ for (const [width, height] of [[1440, 900], [320, 568], [844, 390]]) test(`synth
   await draft.fill("Synthetic source draft stays intact");
   await draft.evaluate((el) => (el as HTMLTextAreaElement).setSelectionRange(9, 15));
   const trigger = page.getByRole("button", { name: "Usage", exact: true });
+  if (width < 768) await page.getByRole("button", { name: "Workspace navigation", exact: true }).click();
   await trigger.click();
   const dialog = page.getByRole("dialog", { name: "Subscription usage" });
   await expect(dialog.getByText("0% used", { exact: true })).toBeVisible();

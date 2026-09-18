@@ -141,6 +141,12 @@
 .mainCol {
   min-width: 0;
 }
+.workDetails { margin-top: 20px; scroll-margin-top: 88px; }
+.workDetails > summary { min-height: 44px; align-content: center; }
+@media (max-width: 600px) {
+  .title { font-size: 26px; line-height: 32px; }
+  .workDetails { scroll-margin-top: 12px; }
+}
 
 .rail { min-width: 0; }
 .rail > aside { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 16px; margin-top: 16px; }

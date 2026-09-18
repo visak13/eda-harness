@@ -10,7 +10,8 @@ test('populated 235-message history keeps total, draft and viewport anchor', asy
     expect(r.ok()).toBe(true);
   }
   await page.goto(`/ui/epic/${epic.id}?as=owner`);
-  await expect(page.getByRole('tab', { name: 'Thread 235', exact: true })).toBeVisible();
+  await expect(page.getByTestId('conversation-total')).toHaveText('Conversation (235)');
+  await expect(page.getByRole('tablist')).toHaveCount(0);
   const draft = page.getByRole('textbox', { name: 'Message', exact: true });
   await draft.fill('QA KEEP independent source draft');
   const list = page.getByTestId('thread');
@@ -37,9 +38,9 @@ test('populated 235-message history keeps total, draft and viewport anchor', asy
   await expect(draft).toHaveValue('QA KEEP independent source draft');
   await expect(page.getByRole('button', { name: 'Load older messages', exact: true })).toHaveCount(0);
   await page.evaluate(() => scrollTo(0, 0));
-  fs.mkdirSync('e2e/evidence/s3-remediation', { recursive: true });
-  await page.screenshot({ path: 'e2e/evidence/s3-remediation/populated-1440.png', fullPage: true });
-  await page.screenshot({ path: 'e2e/evidence/s3-remediation/populated-viewport.png' });
+  fs.mkdirSync('e2e/evidence/s3-final-layout', { recursive: true });
+  await page.screenshot({ path: 'e2e/evidence/s3-final-layout/populated-1440.png', fullPage: true });
+  await page.screenshot({ path: 'e2e/evidence/s3-final-layout/populated-viewport.png' });
   console.log('QA composer geometry', await draft.boundingBox());
 });
 
@@ -71,15 +72,23 @@ test('representative three-message conversation comparison', async ({ page, requ
   await page.getByTestId('order-toggle').click();
   await expect(page.getByTestId('thread').getByRole('img', { name: artifact.id, exact: true })).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
-  fs.mkdirSync('e2e/evidence/s3-remediation', { recursive: true });
-  await page.screenshot({ path: 'e2e/evidence/s3-remediation/representative-1440.png' });
+  fs.mkdirSync('e2e/evidence/s3-final-layout', { recursive: true });
+  await page.screenshot({ path: 'e2e/evidence/s3-final-layout/representative-1440.png' });
   const composer = await page.getByTestId('composer').boundingBox();
   console.log('Representative composer geometry', composer);
   expect(composer!.y).toBeLessThan(780);
   await page.setViewportSize({ width: 320, height: 568 });
   await expect(page.getByTestId('composer-send')).toBeDisabled();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-  await page.screenshot({ path: 'e2e/evidence/s3-remediation/representative-320.png', fullPage: true });
+  await page.evaluate(() => scrollTo(0, 0));
+  const first = await page.getByTestId('thread').boundingBox();
+  console.log('Narrow conversation geometry', first);
+  expect(first!.y).toBeLessThan(568); // representative conversation starts in the initial narrow viewport
+  expect((await page.getByTestId('app-header').boundingBox())!.height).toBeLessThan(90);
+  await expect(page.getByRole('navigation', { name: 'Sections' })).toBeHidden();
+  await expect(page.getByRole('tablist')).toHaveCount(0);
+  await page.screenshot({ path: 'e2e/evidence/s3-final-layout/representative-320.png', fullPage: true });
+  await page.screenshot({ path: 'e2e/evidence/s3-final-layout/representative-320-viewport.png' });
 });
 
 test('Needs you negative ruling must not sign off a design', async ({ page, request }) => {

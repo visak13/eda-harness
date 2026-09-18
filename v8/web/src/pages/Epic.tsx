@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useParams } from "react-router";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useLocation, useParams, useSearchParams, useNavigate } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getEpicPage, getEpicsSummary, getTicketsTable } from "../api/endpoints";
 import { getPoolCapabilities, resumeSeat } from "../api/seats";
@@ -16,7 +16,6 @@ import { AskRoleControl } from "../components/AskRole";
 import { SpawnArchitect } from "../components/SpawnArchitect";
 import { CriterionCard } from "../components/CriterionCard";
 import { AddCriterion } from "../components/CriterionControls";
-import { Tabs } from "../components/Tabs";
 import { Composer } from "../components/Composer";
 import { ExpandableComposer } from "../components/ExpandableComposer";
 import { useScrollToHash } from "../components/useScrollToHash";
@@ -33,10 +32,9 @@ import { ContextualWork } from "../components/ContextualWork";
 import { useThreadHistory, ThreadHistoryControls } from "../components/useThreadHistory";
 import { pendingWork } from "../components/PendingNavigation";
 
-// Epic page (design §4.2): crumb, id + status chip, Georgia 38 title, the owner's words verbatim,
-// a directive callout when the thread carries an owner steer, tabs Overview/Work/Documents/Thread,
-// a 744/336 gap-64 split with At a glance / Assigned seat / Records on demand, and a 'Steer this
-// epic' action that opens the composer with kind=steer.
+// Conversation-first epic: one contextual destination row, always-mounted conversation/composer,
+// and secondary work/acceptance/process details below it. Files and History use source-bound
+// viewers; former tab links are mapped to these destinations rather than duplicated in the UI.
 
 function roleOf(assignee: string | null): string {
   if (!assignee) return "unassigned";
@@ -85,20 +83,33 @@ const KANBAN: [string, string[]][] = [
 
 export function EpicPage(): React.JSX.Element {
   const { id = "" } = useParams();
-  const [tab, setTab] = useState<"overview" | "work" | "documents" | "thread">("thread");
+  const workRef = useRef<HTMLDetailsElement>(null);
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
   const [composerKind, setComposerKind] = useState<"note" | "steer">("note");
   const [order, setOrder] = useState<"newest" | "oldest">("newest");
   const [statusOpen, setStatusOpen] = useState(false);
 
-  // Round 2 #13: a Find hit on an epic message lands at /epic/:id#m-…; the hash picks the Thread
-  // tab (the hook that scrolls lives inside it) and the message is fetched even outside the window.
+  // Find message links fetch outside the newest-page window and scroll the mounted conversation.
   const { hash } = useLocation();
   const include = hash.startsWith("#m-") ? hash.slice(1) : null;
-  useEffect(() => {
-    if (include) setTab("thread");
-  }, [include]);
+
   const page = useQuery({ queryKey: ["epic", id, include], queryFn: () => getEpicPage(id, include) });
   const history = useThreadHistory(id, page.data);
+  // Legacy tab/hash links keep their destination without retaining a second tab system.
+  const legacyTab = include ? "thread" : params.get("tab") ?? hash.slice(1);
+  useEffect(() => {
+    if (!page.data) return;
+    if (["work", "overview", "work-details"].includes(legacyTab) && workRef.current) {
+      workRef.current.open = true;
+      workRef.current.scrollIntoView?.({ block: "start" });
+    }
+    if (legacyTab === "documents" && params.get("view") !== "files") {
+      const next = new URLSearchParams(params);
+      next.delete("tab"); next.set("view", "files");
+      void navigate({ search: next.toString(), hash: "" }, { replace: true });
+    }
+  }, [legacyTab, Boolean(page.data), navigate]);
   const summary = useQuery({ queryKey: ["epics", "summary", "", ""], queryFn: () => getEpicsSummary() });
 
   if (page.isPending) return <p className={ui.empty}>Loading epic…</p>;
@@ -121,18 +132,25 @@ export function EpicPage(): React.JSX.Element {
   const row = summary.data?.find((r: EpicSummaryRow) => r.id === id) ?? null;
   const totals = tallyTotals(epic);
   const workCount = flatten(epic).filter((n) => n.kind !== "epic").length;
-
-  const tabs = [
-    { key: "overview", label: "Overview", copy: copyProps("epic", "overview") },
-    { key: "work", label: "Work", count: workCount, copy: copyProps("epic", "work") },
-    { key: "documents", label: "Documents", count: data.docs.length, copy: copyProps("epic", "documents") },
-    { key: "thread", label: "Thread", count: history.total, copy: copyProps("epic", "thread") },
-  ];
-
   function steer() {
     setComposerKind("steer");
-    setTab("thread");
+    document.querySelector<HTMLTextAreaElement>('[data-testid="composer-text"]')?.focus();
   }
+
+  const workDetails = <details ref={workRef} id="work-details" className={styles.workDetails}>
+    <summary>Work, acceptance & process</summary>
+    {data.description?.trim() ? <section className={`${ui.card} ${styles.brief}`} data-testid="architect-brief" {...copyProps("epic", "directive")}>
+      <div className={ui.sectionLabel}>Architect&rsquo;s brief</div>
+      <Clamp className={styles.briefText} text={data.description} lines={briefLines(data.description)} />
+    </section> : null}
+    {directive ? <section className={`${ui.card} ${styles.brief}`} data-testid="directive">
+      <div className={ui.sectionLabel}>Latest steer · {directive.by}</div>
+      <Clamp className={styles.briefText} text={directive.text} lines={3} />
+    </section> : null}
+    <ProcessStrip status={epic.status} ariaLabel="Epic process" showNext={false} />
+    <OverviewTab epicId={id} storyCount={stories.length} totals={totals} openGates={data.open_gates.length} docs={data.docs} criteria={data.criteria} />
+    <WorkTab epicId={id} epic={epic} stories={stories} />
+  </details>;
 
   return (
     <div>
@@ -165,48 +183,9 @@ export function EpicPage(): React.JSX.Element {
       </div>
 
       <ContextualWork ticketId={id} />
-      <details id="work-details"><summary>Brief, latest steer and process</summary>
-      {/* Human #33: the description is the architect's brief — a quiet card, first paragraph
-          shown, "Show all" expands; never an alert. */}
-      {data.description?.trim() ? (
-        <section className={`${ui.card} ${styles.brief}`} data-testid="architect-brief" {...copyProps("epic", "directive")}>
-          <div className={ui.sectionLabel}>Architect&rsquo;s brief</div>
-          <Clamp className={styles.briefText} text={data.description} lines={briefLines(data.description)} />
-        </section>
-      ) : null}
-
-      {directive ? (
-        <section className={`${ui.card} ${styles.brief}`} data-testid="directive">
-          <div className={ui.sectionLabel}>Latest steer · {directive.by}</div>
-          <Clamp className={styles.briefText} text={directive.text} lines={3} />
-        </section>
-      ) : null}
-
-      {/* Astra #36 (4): the strip keeps its step chips; its "Next:" sentence was a duplicate of
-          the Status history fold in the rail, so the epic page drops it. */}
-      <ProcessStrip status={epic.status} ariaLabel="Epic process" showNext={false} />
-      </details>
-
       <div className={styles.layout}>
         <div className={styles.mainCol}>
-          <Tabs tabs={tabs} active={tab} onChange={(k) => setTab(k as typeof tab)} />
-
-          {tab === "overview" ? (
-            <OverviewTab
-              epicId={id}
-              storyCount={stories.length}
-              totals={totals}
-              openGates={data.open_gates.length}
-              docs={data.docs}
-              criteria={data.criteria}
-            />
-          ) : null}
-
-          {tab === "work" ? <WorkTab epicId={id} epic={epic} stories={stories} /> : null}
-
-          {tab === "documents" ? <DocumentsTab docs={data.docs} /> : null}
-
-          <div hidden={tab !== "thread"}>
+          <div>
             <ThreadTab
               epicId={id}
               thread={history.messages}
@@ -216,6 +195,7 @@ export function EpicPage(): React.JSX.Element {
               composerKind={composerKind}
             />
           </div>
+          {workDetails}
         </div>
 
         <details className={styles.rail}><summary>Actions & work details</summary><aside aria-label="Epic details">
@@ -671,28 +651,6 @@ function TreeNode({
   );
 }
 
-function DocumentsTab({
-  docs,
-}: {
-  docs: { id: string; doc_type: string; title: string }[];
-}): React.JSX.Element {
-  const drawer = useDocDrawer();
-  if (docs.length === 0) return <p className={ui.empty}>No documents are linked to this epic yet.</p>;
-  return (
-    <ul className={styles.docList}>
-      {docs.map((d) => (
-        <li key={d.id}>
-          <button type="button" className={styles.docRow} onClick={() => drawer.openDoc(d.id)}>
-            <span className={ui.tag}>{d.doc_type.replace(/_/g, " ")}</span>
-            <span className={styles.docTitle}>{d.title}</span>
-            <span className={ui.idMono}>{d.id}</span>
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 function ThreadTab({
   epicId,
   thread,
@@ -721,7 +679,7 @@ function ThreadTab({
         placeholder={composerKind === "steer" ? "Steer this epic — this posts as a steer" : undefined}
       />}</ExpandableComposer>
       <div className={styles.threadHead}>
-        <span className={ui.sectionLabel}>Conversation</span>
+        <span className={ui.sectionLabel} data-testid="conversation-total">Conversation ({history.total})</span>
         <button type="button" className={styles.orderToggle} onClick={onToggleOrder} data-testid="order-toggle">
           {order === "newest" ? "Newest first" : "Oldest first"}
         </button>
