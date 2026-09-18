@@ -6,6 +6,7 @@ import { useDraftGuard } from '../live/useDraftGuard';
 import { onAttentionChanged } from '../live/notificationEvents';
 import { pendingWork } from './PendingNavigation';
 import styles from './NotificationCenter.module.css';
+import { Icon } from './Icon';
 
 const protocol = 'edp8-notifications-v1';
 const supported = () => window.isSecureContext && 'Notification' in window && 'serviceWorker' in navigator;
@@ -186,7 +187,7 @@ export function NotificationCenter({ actor }: { actor: string }): React.JSX.Elem
     finally { setBusy(false); }
   };
   return <section className={styles.root} aria-label="Board notifications">
-    <details><summary>Notifications</summary>
+    <details><summary><Icon name="warning" size={18} />Notifications</summary>
       <p>Private alerts for new questions and approval requests. Keep a board tab open; no delivery when the browser is closed.</p>
       <div className={styles.actions}>
         {!enabled ? <button disabled={busy || !supported()} onClick={() => void enable()}>Enable notifications</button> : <>

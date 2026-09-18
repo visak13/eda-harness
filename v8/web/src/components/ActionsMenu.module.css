@@ -1,0 +1,19 @@
+.trigger {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 3px 10px;
+  border: 1.5px solid var(--strongline); border-radius: 8px; background: var(--panel); color: var(--ink);
+  font: inherit; font-size: 14px; cursor: pointer;
+}
+.trigger:hover { background: var(--secondary); }
+.trigger[aria-expanded="true"] { background: var(--accentwash); }
+.trigger:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
+.menu { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.item {
+  width: 100%; text-align: left; display: grid; gap: 2px; padding: 8px 10px; min-height: 44px;
+  border: 1.5px solid transparent; border-radius: 8px; background: transparent; color: var(--ink); font: inherit; cursor: pointer;
+}
+.item:hover, .item:focus-visible { background: var(--secondary); border-color: var(--strongline); outline: none; }
+.itemLabel { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.count { background: var(--accentwash); border: 1px solid var(--strongline); border-radius: 50%; min-width: 22px; height: 22px; display: inline-grid; place-items: center; font-size: 12px; }
+.itemGloss { font-size: 12px; color: var(--muted); line-height: 16px; }
+.body { display: flex; flex-direction: column; gap: 16px; }
+.drawerGloss { margin: 0; font-size: 13px; color: var(--muted); line-height: 20px; }

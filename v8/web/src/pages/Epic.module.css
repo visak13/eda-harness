@@ -1,167 +1,18 @@
-.crumb {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  font-size: 13px;
-  color: var(--muted);
-  margin-bottom: 8px;
-}
-.crumb a {
-  color: var(--accentink);
-  /* Persistent underline so the link is distinguishable without relying on colour (WCAG 1.4.1 /
-     axe link-in-text-block): the accentink-on-muted crumb is below 3:1 against its neighbour text. */
-  text-decoration: underline;
-}
-.crumbHere {
-  color: var(--ink);
-}
-
-/* Astra #36 (1): the header is the same 744/336 grid as the body — meta line across both columns,
-   then title (col 1) beside the Steer control (col 2, the rail column starts at the title row),
-   then the owner's-words callout under the title in col 1. */
-.head {
-  display: grid;
-  grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr);
-  column-gap: 24px;
-  row-gap: 8px;
-  align-items: start;
-}
-
-.idline {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-/* ONE 24px status badge beside the id (the chip's word + dot, sized to the ruling). */
-.badge {
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-}
-.badge [data-status] {
-  height: 24px;
-  border-radius: 12px;
-}
-
-/* Georgia 400 38px/44px short title (Astra #36; design §4.2 / criterion c-a23e72f460). */
-.title {
-  grid-column: 1;
-  font: 700 34px/40px "Segoe UI", system-ui, sans-serif;
-  letter-spacing: -0.5px;
-  color: var(--ink);
-  margin: 0;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-/* 'Steer this epic' control: 40px tall (criterion c-a23e72f460). */
-/* Astra #36 (5): Steer is outlined 40px — the salmon fill is reserved for the committing action
-   (Send inside the composer). */
-.steer {
-  height: 40px;
-  padding: 0 16px;
-  flex: none;
-  border: 1px solid var(--strongline);
-  border-radius: 6px;
-  background: var(--panel);
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 600;
-}
-.steer:hover {
-  background: var(--secondary);
-}
-.steer:focus-visible {
-  outline: 2px solid var(--accentink);
-  outline-offset: 3px;
-}
-.steerWrap {
-  grid-column: 2;
-  grid-row: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-}
-
-/* Human #23: the visible one-line gloss under every control — what it does, who is woken. */
-.gloss {
-  margin: 8px 0 0;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--muted);
-}
-
-/* Owner's words callout (Astra #36 (1)): 3px accent left rule, 16px padding, label 11/16 uppercase
-   1.2px tracking, the request in Georgia 26/32 — two lines previewed, "Show all" reveals the rest. */
-.words {
-  grid-column: 1;
-  margin: 0;
-  padding: 16px;
-  border-left: 3px solid var(--accent);
-  background: var(--panel);
-  min-width: 0;
-}
-.wordsLabel {
-  font: 600 11px/16px "Segoe UI", system-ui, sans-serif;
-  text-transform: uppercase;
-  letter-spacing: 1.2px;
-  color: var(--muted);
-  margin-bottom: 8px;
-}
-.wordsText {
-  font: 26px/32px Georgia, serif;
-  color: var(--ink);
-}
-
-/* Astra #36 (4): the revealed status control and the lifecycle lines in the Status history fold. */
-.statusControl {
-  margin-top: 12px;
-}
-.lifecycle {
-  margin: 0 0 8px;
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--ink);
-}
-
-/* Two-column split: 744 / 336, gap 64 (fidelity criterion c-a23e72f460). */
-.expandedComposer { padding: 20px; border: 2px solid var(--strongline); background: var(--panel); }
-
-.layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 24px;
-  margin-top: 12px;
-  align-items: start;
-}
-
-.mainCol {
-  min-width: 0;
-}
-.workDetails { margin-top: 20px; scroll-margin-top: 88px; }
-.workDetails > summary { min-height: 44px; align-content: center; }
-@media (max-width: 600px) {
-  .title { font-size: 26px; line-height: 32px; }
-  .workDetails { scroll-margin-top: 12px; }
-}
-
-.rail { min-width: 0; }
-.rail > aside { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 16px; margin-top: 16px; }
-
-.overview {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.pulse {
-  font-size: 15px;
-  line-height: 24px;
-  color: var(--ink);
-}
-
+/* Epic page per revision3-clean-epic.png: WorkHeader → Conversation → composer. The blocks below
+   dress the Actions drawers (owner's words, record ids, assigned seats) and the Work viewer
+   (brief, process, criteria, stories tree + kanban). */
+.page { display: flex; flex-direction: column; min-width: 0; }
+.work { display: flex; flex-direction: column; gap: 24px; }
+.gloss { margin: 8px 0 0; font-size: 12px; line-height: 18px; color: var(--muted); }
+.words { margin: 0; padding: 16px; border-left: 3px solid var(--accent); background: var(--rail); min-width: 0; }
+.wordsLabel { font: 600 11px/16px "Segoe UI", system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); margin-bottom: 8px; }
+.wordsText { font: 22px/32px Georgia, serif; color: var(--ink); margin: 0; white-space: pre-wrap; }
+.record { margin: 0; display: grid; gap: 8px; font-size: 14px; }
+.record > div { display: flex; justify-content: space-between; gap: 16px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.record dt { color: var(--muted); }
+.record dd { margin: 0; }
+.seats { margin-top: 16px; }
+.briefText { font-size: 14px; line-height: 22px; color: var(--ink); white-space: pre-wrap; }
 .docLink {
   border: 0;
   background: transparent;
@@ -433,91 +284,8 @@
   color: var(--ink);
 }
 
-.thread {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.thread > :first-child { order: 2; }
-.threadHead {
-  order: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.orderToggle {
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 12px;
-  height: 28px;
-  padding: 0 10px;
-}
-.orderToggle:focus-visible {
-  outline: 2px solid var(--accentink);
-  outline-offset: 2px;
-}
-.messages {
-  order: 1;
-  max-height: 34vh;
-  overflow-y: auto;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.message {
-  position: relative;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 8px 12px;
-  background: var(--panel);
-}
-.message > button { position: absolute; right: 12px; top: 34px; }
-.messageText { padding-right: 100px; }
-@media (max-width: 600px) { .message > button { position: static; } .messageText { padding-right: 0; } }
-.messageMeta {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 6px;
-}
-.messageBy {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink);
-}
-.messageText {
-  margin-block: 6px;
-  font-size: 16px;
-  line-height: 22px;
-  color: var(--ink);
-  white-space: pre-wrap;
-}
-
-/* At/below 1024 the split stacks (design §4.2 viewport rule, amended breakpoint ≤1024px, was <960;
-   parity, not a plate). Aligns with the 1024×768 S11 reflow e2e (the 56px rail applies <1280). */
-@media (max-width: 1100px) {
-  .layout {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 32px;
-  }
-  .head {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .steerWrap {
-    grid-column: 1;
-    grid-row: auto;
-  }
-  .kanban {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
+@media (max-width: 600px) { }
+@media (max-width: 1100px) { .kanban { grid-template-columns: minmax(0, 1fr); } }
 /* Epic-page acceptance criteria (§16 add/verdict on the epic itself). */
 .epicCriteria {
   display: flex;
@@ -534,11 +302,6 @@
   color: var(--accentink);
 }
 
-/* Human #33: the architect's brief is a quiet card, not an alert */
-.brief {
-  margin: 16px 0;
-  padding: 14px 18px;
-}
 .briefText {
   font-size: 14px;
   line-height: 22px;

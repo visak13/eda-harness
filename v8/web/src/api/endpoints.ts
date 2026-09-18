@@ -26,6 +26,7 @@ import type {
   TicketTransitions,
   UploadedArtifact,
   ArtifactRecord,
+  UserSettings,
 } from "./types";
 
 function qs(params: Record<string, string | number | null | undefined>): string {
@@ -185,6 +186,10 @@ export const createLink = (b: { from_id: string; to_id: string; relation: string
 /** PATCH /v1/docs/{id} — revise a doc's body/title; the board records it as a new version. */
 export const updateDoc = (id: string, b: { body_md?: string; title?: string }) =>
   postJson<Record<string, unknown>>(`/v1/docs/${encodeURIComponent(id)}`, b, "PATCH");
+
+/** GET / PUT /v1/me/settings — the Settings page (s-7f663c6322). Humans only; the board 403s a seat. */
+export const getSettings = () => api<UserSettings>("/v1/me/settings");
+export const putSettings = (b: UserSettings) => postJson<UserSettings>("/v1/me/settings", b, "PUT");
 
 /** Atomic explicit title + exact raw words. Omitting title preserves legacy caller behavior. */
 export const createEpic = (words: string, choice?: { model: string; effort: string }, title?: string) =>

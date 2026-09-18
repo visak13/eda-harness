@@ -1,3 +1,7 @@
+.head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.newEpic { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 7px 13px; border: 1.5px solid var(--strongline); border-radius: 8px; background: var(--panel); color: var(--ink); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 4px; }
+.newEpic:hover { background: var(--secondary); }
+.newEpic:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
 .filters {
   display: flex;
   gap: 10px;

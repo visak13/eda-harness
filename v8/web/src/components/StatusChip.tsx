@@ -2,8 +2,8 @@ import { useId } from "react";
 import { Icon } from "./Icon";
 import { STATUS_ICONS } from "./iconPaths";
 import { label as glossLabel, meaning as glossMeaning } from "../copy/glossary";
+import { Tip } from "./Term";
 import ui from "./ui.module.css";
-import term from "./Term.module.css";
 
 // Every state carries a WORD, never colour alone (design §4.2). The word and its one-line meaning
 // both come from the shared glossary (design §15), so the chip a person sees and the tooltip they
@@ -17,27 +17,22 @@ function variant(status: string): string {
   return "";
 }
 
-export function StatusChip({ status }: { status: string }): React.JSX.Element {
+export function StatusChip({ status, size = "chip" }: { status: string; size?: "chip" | "badge" }): React.JSX.Element {
   const id = useId();
   const word = glossLabel("ticket_status", status);
   const meaning = glossMeaning("ticket_status", status);
-  return (
-    <span className={term.wrap}>
-      <span
-        className={`${ui.chip} ${variant(status)}`}
-        data-testid="status-chip"
-        data-status={status}
-        tabIndex={meaning ? 0 : undefined}
-        aria-describedby={meaning ? id : undefined}
-      >
-        {Object.hasOwn(STATUS_ICONS, status) ? <Icon name={STATUS_ICONS[status as keyof typeof STATUS_ICONS]} size={16} /> : null}
-        {word}
-      </span>
-      {meaning ? (
-        <span role="tooltip" id={id} className={term.tip}>
-          {meaning}
-        </span>
-      ) : null}
+  const chip = (
+    <span
+      className={`${size === "badge" ? ui.badge : ui.chip} ${variant(status)}`}
+      data-testid="status-chip"
+      data-status={status}
+      tabIndex={meaning ? 0 : undefined}
+      aria-describedby={meaning ? id : undefined}
+    >
+      {Object.hasOwn(STATUS_ICONS, status) ? <Icon name={STATUS_ICONS[status as keyof typeof STATUS_ICONS]} size={size === "badge" ? 18 : 16} /> : null}
+      {word}
     </span>
   );
+  if (!meaning) return chip;
+  return <Tip meaning={meaning} id={id}>{chip}</Tip>;
 }

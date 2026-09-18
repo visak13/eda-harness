@@ -53,11 +53,17 @@ describe("page framing landmark", () => {
   });
 });
 
+// The ? lives in the account menu now (design-a2e5369133: no global header).
+function openGlossary() {
+  fireEvent.click(screen.getByTestId("account-open"));
+  fireEvent.click(screen.getByTestId("glossary-open"));
+}
+
 describe("What am I looking at? panel", () => {
-  it("opens from the header ? button and closes on its close button", () => {
+  it("opens from the account menu's ? item and closes on its close button", () => {
     renderShell("/me");
     expect(screen.queryByRole("dialog", { name: "What am I looking at?" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId("glossary-open"));
+    openGlossary();
     const dialog = screen.getByRole("dialog", { name: "What am I looking at?" });
     expect(dialog).toBeInTheDocument();
     // Fallback (no page terms) lists the full glossary — ticket stages present.
@@ -75,10 +81,10 @@ describe("What am I looking at? panel", () => {
     expect(screen.queryByRole("dialog", { name: "What am I looking at?" })).not.toBeInTheDocument();
   });
 
-  it("Esc closes the panel and restores focus to the opener", () => {
+  it("Esc closes the panel and restores focus to the account row that opened it", () => {
     renderShell("/me");
-    const opener = screen.getByTestId("glossary-open");
-    fireEvent.click(opener);
+    openGlossary();
+    const opener = screen.getByTestId("account-open");
     expect(screen.getByRole("dialog", { name: "What am I looking at?" })).toBeInTheDocument();
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "What am I looking at?" })).not.toBeInTheDocument();
@@ -87,7 +93,7 @@ describe("What am I looking at? panel", () => {
 
   it("lists ONLY the terms the current page declares", () => {
     renderShell("/seats", <SeatsLikeBody />);
-    fireEvent.click(screen.getByTestId("glossary-open"));
+    openGlossary();
     const dialog = screen.getByRole("dialog", { name: "What am I looking at?" });
     // Declared: role engineer + concept seat/presence. Present:
     expect(within(dialog).getByText("Engineer")).toBeInTheDocument();

@@ -1,5 +1,6 @@
-/* A glossary term: the label, with its meaning revealed on hover/focus. Flat Folio styling — no
-   shadow; a hairline border and the panel ground, positioned above the trigger. */
+/* A glossary term: the label, with its meaning revealed on hover/focus in a bubble ANCHORED to the
+   trigger (above it, flipped below near the top edge, shifted inside the viewport). Flat Folio
+   styling — a hairline border on the panel ground. */
 
 .wrap {
   position: relative;
@@ -17,12 +18,11 @@
   outline: 2px solid var(--accentink);
 }
 
-/* Hidden descriptions still resolve through aria-describedby. A viewport-bounded help
-   bubble cannot extend the document width when a trigger is near the right edge. */
+/* Hidden descriptions still resolve through aria-describedby. */
 .tip {
-  position: fixed;
-  bottom: 12px;
-  left: 12px;
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
   display: none;
   z-index: 40;
   width: max-content;
@@ -36,9 +36,16 @@
   font: 13px/18px "Segoe UI", system-ui, sans-serif;
   font-weight: 400;
   text-decoration: none;
+  text-transform: none;
+  letter-spacing: 0;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.08s ease;
+  white-space: normal;
+}
+.tip[data-placement="below"] {
+  bottom: auto;
+  top: calc(100% + 8px);
 }
 
 .wrap:hover .tip,

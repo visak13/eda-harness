@@ -1,0 +1,12 @@
+.page { display: flex; flex-direction: column; gap: 16px; max-width: 720px; }
+.form { display: flex; flex-direction: column; gap: 20px; }
+.section { display: flex; flex-direction: column; gap: 14px; }
+.field { display: grid; gap: 6px; font-size: 14px; }
+.field > span:first-child { font-weight: 600; }
+.field input { max-width: 420px; height: 40px; }
+.check { display: flex; align-items: center; gap: 10px; font-size: 14px; min-height: 40px; }
+.fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; display: grid; gap: 8px; }
+.legend { font-weight: 600; font-size: 14px; padding: 0 4px; }
+.row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 14px; }
+.row input { width: 72px; margin-left: 6px; }
+.actions { display: flex; align-items: center; gap: 12px; }

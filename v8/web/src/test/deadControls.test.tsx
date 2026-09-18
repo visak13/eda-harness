@@ -2,7 +2,7 @@
 // rendered control that does nothing — an <a> without href, or a button with no click handler and
 // no submitting form. React props are read off the fiber (`__reactProps$…`) so a handler wired in
 // JSX counts even though jsdom cannot see it as an attribute. The historical proof cases were the
-// header "New epic" (data-testid=new-epic-open) and the sidebar Find (data-testid=find-open).
+// Epics-page "New epic" (data-testid=new-epic-open) and the rail Find (data-testid=find-open).
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, waitFor, cleanup } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
@@ -362,10 +362,8 @@ describe("dead-control lint over the real route table (human #26)", () => {
     await walk("/me");
     await screen.findByTestId("featured-signoff");
     await settle();
-    expect(screen.getByTestId("new-epic-open")).toBeInTheDocument();
     expect(screen.getByTestId("find-open")).toBeInTheDocument();
     const dead = findDeadControls(document.body);
-    expect(dead.some((d) => d.includes("#new-epic-open"))).toBe(false);
     expect(dead.some((d) => d.includes("#find-open"))).toBe(false);
     expectNoDead();
   });
@@ -374,6 +372,9 @@ describe("dead-control lint over the real route table (human #26)", () => {
     await walk("/epics");
     await screen.findByTestId("epic-list");
     await settle();
+    // New epic moved here from the old header (design-a2e5369133); it stays a live proof case
+    expect(screen.getByTestId("new-epic-open")).toBeInTheDocument();
+    expect(findDeadControls(document.body).some((d) => d.includes("#new-epic-open"))).toBe(false);
     expectNoDead();
   });
 

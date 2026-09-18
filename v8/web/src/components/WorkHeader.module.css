@@ -1,0 +1,29 @@
+/* revision3-clean header anatomy: topline 14px muted, h1 32/1.2 -0.7px 800, purpose muted,
+   metadata grid 180/170/200/1fr, links row with a hairline under it. */
+.header { display: flex; flex-direction: column; min-width: 0; }
+.topline { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 14px; flex-wrap: wrap; }
+.crumb { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; min-width: 0; }
+.crumb a { color: var(--muted); text-decoration: underline; }
+.crumb a:hover { color: var(--ink); }
+.here { color: var(--ink); }
+.title { font-size: 32px; line-height: 1.2; letter-spacing: -0.7px; margin: 7px 0 6px; font-weight: 800; color: var(--ink); overflow-wrap: anywhere; }
+.purpose { color: var(--muted); margin: 0 0 17px; font-size: 16px; line-height: 1.5; }
+.metadata { display: grid; grid-template-columns: 180px 170px 200px 1fr; gap: 22px; margin: 0; }
+.metadata > div { min-width: 0; }
+.label { font-size: 12px; text-transform: uppercase; font-weight: 650; letter-spacing: 0.7px; color: var(--muted); margin-bottom: 7px; }
+.value { display: flex; align-items: center; gap: 8px; min-height: 34px; margin: 0; font-size: 16px; flex-wrap: wrap; }
+.muted { color: var(--muted); }
+.coral { display: inline-flex; align-items: center; gap: 7px; padding: 3px 9px; border: 1px solid var(--strongline); border-radius: 7px; font-size: 14px; font-weight: 600; background: var(--accentwash); color: var(--accentink); }
+.links { display: flex; gap: 10px; margin: 18px 0 0; padding-bottom: 17px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.link {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 38px; padding: 7px 13px; font: inherit; font-size: 14px;
+  border: 1.5px solid transparent; border-radius: 8px; background: transparent; color: var(--ink); cursor: pointer;
+}
+.link:hover { background: var(--secondary); border-color: var(--strongline); }
+.link:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
+.design { background: var(--accentwash); border-color: var(--accentink); }
+.design:hover { background: var(--accentwash); filter: brightness(0.97); }
+.drawerTitle { display: flex; align-items: center; gap: 16px; flex: 1; min-width: 0; }
+.openTab { margin-left: auto; font: inherit; font-size: 14px; color: var(--ink); display: inline-flex; align-items: center; gap: 6px; text-decoration: underline; }
+@media (max-width: 1100px) { .metadata { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .metadata { grid-template-columns: minmax(0, 1fr); } .title { font-size: 26px; } }

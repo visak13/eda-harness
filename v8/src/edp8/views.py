@@ -591,7 +591,8 @@ def thread_page(board: Board, ticket_id: str, *, before: int | None = None,
             if m is not None and seq is not None and m.ticket_id == ticket_id:
                 rows.append((seq, m))
         rows.sort(key=lambda row: row[0])
-        return {"thread": [{**_msg(m), "seq": seq} for seq, m in rows],
+        return {"thread": [{**_msg(m), "seq": seq, "attachments": _attachments(board, list(getattr(m, "artifacts", None) or []))}
+                           for seq, m in rows],
                 "thread_total": total, "thread_before": cursor}
 
 
@@ -656,7 +657,20 @@ def ticket_page(board: Board, ticket_id: str, include: str | None = None) -> dic
 
 def _msg(m: Any) -> dict[str, Any]:
     return {"id": m.id, "by": m.created_by, "to": m.to, "kind": m.kind.value, "text": m.text,
-            "at": m.created_at.isoformat(), "reply_to": m.reply_to}
+            "at": m.created_at.isoformat(), "reply_to": m.reply_to,
+            "artifacts": list(getattr(m, "artifacts", None) or [])}
+
+
+def _attachments(board: Board, ids: list[str]) -> list[dict[str, Any]]:
+    """Attachment cards for a thread row (R1): id, form, filename, content type, note — never bytes."""
+    out = []
+    for aid in ids:
+        a = board.store.get("artifact", aid)
+        if a is None or getattr(a, "staged", False):
+            continue
+        out.append({"id": a.id, "form": a.form.value, "filename": getattr(a, "filename", "") or "",
+                    "content_type": getattr(a, "content_type", "") or "", "note": a.note})
+    return out
 
 
 # ------------------------------------------------------------------ doc / activity / library

@@ -39,6 +39,24 @@
   white-space: nowrap;
 }
 
+/* Render metadata badge (revision3-clean): outlined, 34px value row, icon 18px, wash ground. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 9px;
+  border: 1px solid var(--strongline);
+  border-radius: 7px;
+  font-size: 14px;
+  font-weight: 600;
+  background: var(--accentwash);
+  color: var(--ink);
+  white-space: nowrap;
+}
+.badge.done { background: var(--successwash); color: var(--success); border-color: var(--strongline); }
+.badge.active { background: var(--accentwash); color: var(--ink); border-color: var(--strongline); }
+.badge.blocked { background: var(--accentwash); color: var(--accentink); border-color: var(--strongline); }
+
 .chipDot {
   width: 6px;
   height: 6px;

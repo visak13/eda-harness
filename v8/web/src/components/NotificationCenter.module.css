@@ -1,9 +1,16 @@
-.root { position: relative; min-width: 0; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
-.root details[open] { position: absolute; right: 0; top: 0; width: min(420px, calc(100vw - 40px)); max-height: 75vh; overflow: auto; z-index: 30; padding: 12px; background: var(--panel); border: 1px solid var(--strongline); border-radius: 8px; }
-.root > p { position: absolute; right: 0; top: 44px; width: min(340px, calc(100vw - 40px)); background: var(--panel); padding: 8px; border: 1px solid var(--line); z-index: 20; }
-.root summary { cursor: pointer; min-height: 44px; display: list-item; align-content: center; color: var(--ink); }
-.root p { margin: 4px 0 8px; }
-.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.actions button, .actions a { min-height: 44px; padding: 8px 12px; white-space: normal; overflow-wrap: anywhere; max-width: 100%; }
-.actions button { color: var(--ink); background: var(--panel); border: 1px solid var(--strongline); border-radius: 6px; cursor: pointer; }
-.actions button:disabled { cursor: not-allowed; }
+/* Rail row per design-a2e5369133: a 46px "Notifications" row; its body opens IN FLOW below the row
+   (no absolute overlay over the page — QA report-ce50ae1454), the pending-request line inline. */
+.root { min-width: 0; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+.root details { border: 1.5px solid transparent; border-radius: 8px; }
+.root details[open] { background: var(--panel); border-color: var(--strongline); padding: 0 7px 8px; }
+.root summary { cursor: pointer; min-height: 46px; display: flex; align-items: center; gap: 10px; padding: 7px; color: var(--ink); list-style: none; border-radius: 8px; }
+.root summary::-webkit-details-marker { display: none; }
+.root summary:hover { background: var(--secondary); }
+.root details[open] summary { padding-left: 0; }
+.root details[open] summary:hover { background: transparent; }
+.root p { margin: 4px 0 8px; font-size: 13px; line-height: 18px; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.actions button, .actions a { min-height: 34px; padding: 4px 8px; white-space: normal; overflow-wrap: anywhere; max-width: 100%; font: inherit; font-size: 13px; }
+.actions button { color: var(--ink); background: var(--panel); border: 1.5px solid var(--strongline); border-radius: 8px; cursor: pointer; }
+.actions button:hover:not(:disabled) { background: var(--secondary); }
+.actions button:disabled { cursor: not-allowed; opacity: 0.6; }

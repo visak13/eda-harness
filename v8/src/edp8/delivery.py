@@ -64,7 +64,9 @@ def after_message(board: Board, actor_id: str, m: Message) -> None:
         targets.append(pid)
     for to in targets:
         broker_adapter.publish(actor_id, to, m.kind.value,
-                               {"ticket_id": m.ticket_id, "text": m.text, "board_msg_id": m.id})
+                               {"ticket_id": m.ticket_id, "text": m.text, "board_msg_id": m.id,
+                                # attachment refs only (R1): the recipient fetches bytes with its own identity
+                                **({"artifacts": list(m.artifacts)} if m.artifacts else {})})
         try:
             p = board.participant(to)
         except BoardError:

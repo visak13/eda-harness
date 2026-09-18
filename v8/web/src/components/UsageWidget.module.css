@@ -1,20 +1,26 @@
+/* Usage popover per revision3-clean-usage.png (304px; heading + close come from AnchoredPanel). */
 .trigger {
-  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px;
-  padding: 8px 14px; border: 1px solid var(--strongline); border-radius: 8px;
-  background: var(--rail); color: var(--ink); text-align: left; cursor: pointer;
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 46px;
+  padding: 7px; border: 1.5px solid transparent; border-radius: 8px;
+  background: transparent; color: var(--ink); text-align: left; cursor: pointer; font: inherit; font-size: 14px;
 }
-.trigger:hover { background: var(--accentwash); }
+.trigger:hover { background: var(--secondary); border-color: var(--strongline); }
+.trigger[aria-expanded="true"] { background: var(--accentwash); border-color: var(--strongline); }
+.trigger:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
 .trigger svg { flex: 0 0 20px; }
-.intro, .meta { font-size: 14px; line-height: 20px; color: var(--muted); overflow-wrap: anywhere; }
-.intro { margin: 10px 0; }
-.provider { min-width: 0; margin-block: 14px; }
-.provider h3 { margin: 0; font-size: 16px; }
-.provider p { margin: 4px 0; }
-.provider ul { list-style: none; padding: 0; margin: 8px 0; }
-.bucket { padding-block: 8px; border-top: 1px solid var(--line); font-size: 14px; line-height: 20px; }
-.row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; }
-.meter { width: 100%; height: 10px; margin-block: 4px; border: 1px solid var(--strongline); background: var(--panel); }
-.meter span { display: block; height: 100%; background: var(--accentink); }
-.refresh { min-height: 44px; padding: 8px 12px; border: 1px solid var(--strongline); border-radius: 6px;
+.fresh { font-size: 12px; color: var(--muted); margin: 0 0 12px; line-height: 18px; }
+.alert { font-size: 13px; color: var(--accentink); margin: 8px 0; }
+.provider { min-width: 0; }
+.provider h3 { margin: 11px 0 0; font-size: 16px; font-weight: 700; }
+.provider ul { list-style: none; padding: 0; margin: 0; }
+.meter { font-size: 13px; margin: 8px 0 11px; }
+.meterTop { display: flex; justify-content: space-between; gap: 8px; }
+.bar { height: 7px; border-radius: 4px; background: var(--secondary); margin: 5px 0; overflow: hidden; }
+.bar b { display: block; background: var(--accentink); height: 100%; border-radius: 4px; }
+.meter small { color: var(--muted); font-size: 12px; display: block; }
+.note { font-size: 12px; border-left: 2px solid var(--line); padding-left: 8px; color: var(--muted); margin: 8px 0; display: grid; gap: 2px; }
+.divider { height: 1px; background: var(--line); margin: 12px 0 2px; }
+.refresh { font: inherit; font-size: 12px; width: 100%; min-height: 30px; margin-top: 15px; border: 1.5px solid var(--strongline); border-radius: 8px;
   background: var(--panel); color: var(--ink); cursor: pointer; }
-.refresh:disabled { cursor: default; }
+.refresh:hover:not(:disabled) { background: var(--secondary); }
+.refresh:disabled { cursor: default; opacity: 0.6; }

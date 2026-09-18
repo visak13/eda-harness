@@ -1,13 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { http, HttpResponse } from "msw";
 import { server } from "../test/setup";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { AppShell } from "./AppShell";
+import { EpicsPage } from "../pages/Epics";
 
-function renderShell(initial = "/me") {
+function renderShell(initial = "/me", epicsBody: React.ReactNode = <div>epics body</div>) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
@@ -16,7 +17,7 @@ function renderShell(initial = "/me") {
           <Routes>
             <Route element={<AppShell />}>
               <Route path="me" element={<div>decisions body</div>} />
-              <Route path="epics" element={<div>epics body</div>} />
+              <Route path="epics" element={epicsBody} />
             </Route>
           </Routes>
         </MemoryRouter>
@@ -63,10 +64,12 @@ describe("AppShell", () => {
     expect(screen.getByRole("link", { name: /Needs you/ })).toBeInTheDocument();
   });
 
-  it("shows identity (as) and the whoami handle", async () => {
+  it("shows identity (as) on the account row; the whoami role sits under it once resolved", async () => {
     renderShell("/me");
     expect(screen.getByTestId("identity")).toHaveTextContent("owner");
-    expect(await screen.findByTestId("whoami-handle")).toHaveTextContent("owner");
+    // whoami resolves handle=owner (same as ?as=) → the row shows the role rather than repeating the handle
+    await waitFor(() => expect(screen.getByTestId("whoami-handle")).toHaveTextContent(/owner|member/));
+    expect(screen.getByTestId("account-open")).toHaveTextContent("Preferences");
   });
 
   it("shows the inline identity panel when whoami returns 401 (design §4.1)", async () => {
@@ -85,12 +88,15 @@ describe("AppShell", () => {
     expect(screen.queryByRole("link", { name: /Needs you/ })).not.toBeInTheDocument();
   });
 
-  it("opens the identity popover to the ThemePicker and can switch theme", async () => {
+  it("opens the account menu (Settings, help, ThemePicker) from the rail's account row and can switch theme", async () => {
     renderShell("/me");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Account and preferences" }));
-    const dialog = screen.getByRole("dialog", { name: "Preferences" });
+    const dialog = screen.getByRole("dialog", { name: "Account and preferences" });
     expect(dialog).toBeInTheDocument();
+    // the Settings page (s-7f663c6322) launches from this menu
+    expect(within(dialog).getByTestId("settings-open")).toHaveAttribute("href", "/settings");
+    expect(within(dialog).getByTestId("glossary-open")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("radio", { name: "Ember" }));
     expect(document.documentElement.dataset.theme).toBe("ember");
   });
@@ -160,11 +166,13 @@ describe("AppShell nav route families (human #38)", () => {
   });
 });
 
-// Human #22: the header "New epic" button opens the dialog (it used to be a dead plate control).
+// Human #22: the "New epic" button opens the dialog (it used to be a dead plate control). It now
+// lives on the Epics page (design-a2e5369133: no global header), reached through the shell's Outlet.
 describe("AppShell New epic (human #22)", () => {
-  it("opens the New epic dialog from the header button", async () => {
+  it("opens the New epic dialog from the Epics page button", async () => {
     server.use(http.get("/v1/pool/capabilities", () => HttpResponse.json({ ok: true, value: { spawn: true } })));
-    renderShell("/me");
+    server.use(http.get("/v1/epics/summary", () => HttpResponse.json({ ok: true, value: [] })));
+    renderShell("/epics", <EpicsPage />);
     const btn = await screen.findByTestId("new-epic-open");
     expect(btn).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(btn);

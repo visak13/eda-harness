@@ -1,10 +1,13 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import styles from "./AnchoredPanel.module.css";
+import { Icon } from "./Icon";
 
 /** Shared nonmodal preferences/Usage foundation. Mount only while open. */
-export function AnchoredPanel({ anchor, label, onClose, children, width = 320, maxHeight = Infinity }: {
+export function AnchoredPanel({ anchor, label, heading, onClose, children, width = 320, maxHeight = Infinity }: {
   anchor: RefObject<HTMLElement | null>; label: string;
+  /** The visible heading when it should differ from the accessible label (render: "Usage"). */
+  heading?: React.ReactNode;
   onClose: () => void; children: React.ReactNode; width?: number; maxHeight?: number;
 }): React.JSX.Element {
   const panel = useRef<HTMLDivElement>(null);
@@ -57,9 +60,9 @@ export function AnchoredPanel({ anchor, label, onClose, children, width = 320, m
   }, [anchor, onClose, width, maxHeight]);
   return createPortal(<div ref={panel} role="dialog" aria-label={label} tabIndex={-1}
     className={styles.panel} style={position}>
-    <div className={styles.heading}><strong>{label}</strong><button type="button" onClick={() => {
+    <div className={styles.heading}><h2>{heading ?? label}</h2><button type="button" onClick={() => {
       onClose(); anchor.current?.focus();
-    }} aria-label={`Close ${label}`}>Close</button></div>
+    }} aria-label={`Close ${label}`}><Icon name="close" /></button></div>
     {children}
   </div>, document.body);
 }

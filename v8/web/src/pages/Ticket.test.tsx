@@ -60,6 +60,19 @@ function mount(data: TicketPageData) {
   renderRoute("/ticket/s-1?as=owner", "/ticket/:id", <TicketPage />);
 }
 
+const title = () => screen.findByText("Build the epic page", { selector: "h1" });
+// design-a2e5369133: controls live under Actions ▾ (one drawer per item); the description, seat,
+// process ladder, criteria and linked documents live behind the header's Work link.
+async function openAction(key: string) {
+  fireEvent.click(screen.getByTestId("actions-open"));
+  fireEvent.click(await screen.findByTestId(`action-${key}`));
+  return screen.findByTestId(`action-drawer-${key}`);
+}
+async function openWork() {
+  fireEvent.click(screen.getByTestId("work-work"));
+  return screen.findByTestId("ticket-work");
+}
+
 describe("TicketPage", () => {
   it("reports total beyond100 and keeps draft/rows on older-page failure and retry", async () => {
     const rows = Array.from({ length: 101 }, (_, i) => ({ id: `m-${i + 1}`, seq: i + 1, by: "owner", to: null, kind: "note", text: `Older row ${i + 1}`, at: "2026-09-02T10:00:00Z", reply_to: null }));
@@ -68,7 +81,7 @@ describe("TicketPage", () => {
       ? HttpResponse.json({ ok: false, error: "offline", hint: "try again" }, { status: 503 })
       : okJson({ thread: rows.slice(0, 1), thread_total: 101, thread_before: null })));
     mount(ticketPage({ thread: rows.slice(1), thread_total: 101, thread_before: 2 }));
-    await screen.findByText("Conversation (101)");
+    expect(await screen.findByTestId("conversation-total")).toHaveTextContent("101 messages");
     const draft = screen.getByRole("textbox", { name: "Message" });
     fireEvent.change(draft, { target: { value: "Do not lose me" } });
     fireEvent.click(screen.getByRole("button", { name: "Load older messages" }));
@@ -84,24 +97,26 @@ describe("TicketPage", () => {
   });
   it("shows the status word, assignee, criteria with verdicts, docs and thread", async () => {
     mount(ticketPage());
-    await screen.findByText("Build the epic page", { selector: "h1" });
-    expect(screen.getByTestId("status-chip")).toHaveTextContent("In review");
-    expect(screen.getByTestId("assignee")).toHaveTextContent("engineer.s-99");
-
-    // criteria with verdict words (pass → "Passed"), rendered by the shared CriterionCard
-    expect(screen.getByText("RTL is green")).toBeInTheDocument();
-    expect(screen.getByText("e2e is green")).toBeInTheDocument();
-    expect(screen.getByText("Passed")).toBeInTheDocument();
-
-    // linked doc with its relation label
-    expect(screen.getByText(/designed by/i)).toBeInTheDocument();
-    // thread message
+    await title();
+    expect(screen.getByTestId("work-status")).toHaveTextContent("In review");
+    expect(screen.getByTestId("work-assigned")).toHaveTextContent("engineer");
+    expect(screen.getByTestId("work-purpose")).toHaveTextContent("Render the epic destination.");
+    // thread message on the conversation canvas
     expect(screen.getByTestId("thread")).toHaveTextContent("working on it");
+    const work = await openWork();
+    expect(within(work).getByTestId("assignee")).toHaveTextContent("engineer.s-99");
+    // criteria with verdict words (pass → "Passed"), rendered by the shared CriterionCard
+    expect(within(work).getByText("RTL is green")).toBeInTheDocument();
+    expect(within(work).getByText("e2e is green")).toBeInTheDocument();
+    expect(within(work).getByText("Passed")).toBeInTheDocument();
+    // linked doc with its relation label
+    expect(within(work).getByText(/designed by/i)).toBeInTheDocument();
   });
 
   it("crumb links back to the epic", async () => {
     mount(ticketPage());
-    const crumb = await screen.findByRole("link", { name: /Epic epic-1/ });
+    await title();
+    const crumb = within(screen.getByRole("navigation", { name: "Breadcrumb" })).getByRole("link", { name: "epic-1" });
     expect(crumb).toHaveAttribute("href", "/epic/epic-1");
   });
 
@@ -113,10 +128,12 @@ describe("TicketPage", () => {
         ],
       }),
     );
-    await screen.findByText("the report proves it");
+    await title();
+    const work = await openWork();
+    expect(within(work).getByText("the report proves it")).toBeInTheDocument();
     // ruling mode → the Approve / Needs work buttons are present on the ticket page itself
-    expect(screen.getByTestId("approve")).toBeInTheDocument();
-    expect(screen.getByTestId("needs-work")).toBeInTheDocument();
+    expect(within(work).getByTestId("approve")).toBeInTheDocument();
+    expect(within(work).getByTestId("needs-work")).toBeInTheDocument();
   });
 
   it("closes the OTHER half of the gate loop: an open gate on the ticket can be answered from the page", async () => {
@@ -134,7 +151,8 @@ describe("TicketPage", () => {
         return okJson({ ok: true });
       }),
     );
-    const form = await screen.findByTestId("gate-form");
+    await title();
+    const form = within(await openAction("answer-decision")).getByTestId("gate-form");
     fireEvent.change(within(form).getByTestId("gate-answer"), { target: { value: "looks good, shipping" } });
     fireEvent.click(within(form).getByTestId("gate-submit"));
     await waitFor(() => expect(answered).not.toBeNull());
@@ -164,24 +182,37 @@ describe("TicketPage", () => {
       }),
     );
     await screen.findByText("Bare ticket", { selector: "h1" });
-    expect(screen.getByText("No acceptance criteria have been added.")).toBeInTheDocument();
-    expect(screen.getByText("No documents linked.")).toBeInTheDocument();
-    expect(screen.getByText("No messages on this ticket yet.")).toBeInTheDocument();
-    // no live shell state, unassigned seat label, design not linked, waiting "—"
-    expect(screen.getByText("no live shell")).toBeInTheDocument();
-    expect(screen.getByTestId("assignee")).toHaveTextContent("unassigned");
-    expect(screen.getByText("Not linked")).toBeInTheDocument();
+    expect(screen.queryByTestId("work-purpose")).toBeNull();
+    expect(screen.queryByTestId("work-design")).toBeNull(); // design not linked → no Design link
+    expect(screen.getByTestId("work-assigned")).toHaveTextContent("Unassigned");
+    expect(screen.getByText(/No messages yet/)).toBeInTheDocument();
+    const work = await openWork();
+    expect(within(work).queryByTestId("description")).toBeNull();
+    expect(within(work).getByText(/No acceptance criteria have been added/)).toBeInTheDocument();
+    expect(within(work).getByText("No documents linked.")).toBeInTheDocument();
+    expect(within(work).getByText("no live shell")).toBeInTheDocument();
+    expect(within(work).getByTestId("assignee")).toHaveTextContent("unassigned");
   });
 
   it.each([
-    ["in_review", "Review the evidence, then change the status →"],
-    ["in_progress", "Attach evidence, then move it to In review →"],
-    ["ready", "Assign or spawn a seat, then start it →"],
-    ["done", "Complete — see the status below."],
-    ["blocked", "Change the status →"],
-  ] as const)("process strip next action for status %s", async (status, text) => {
+    ["in_review", /Review the evidence, record the checks, then mark it Done/],
+    ["in_progress", /Do the work and attach evidence, then move it to In review/],
+    ["ready", /Assign or spawn a seat, then start the work/],
+    ["done", /Complete — nothing more is needed/],
+    ["blocked", /Clear what blocks it, then return it to In progress/],
+  ] as const)("process strip next action for status %s (under Work)", async (status, text) => {
     mount(ticketPage({ ticket: { ...ticketPage().ticket, status } }));
-    expect(await screen.findByText(text)).toBeInTheDocument();
+    await title();
+    const work = await openWork();
+    const next = within(work).getByTestId("next-action");
+    expect(next).toHaveTextContent(text);
+    expect(next).toHaveTextContent("Actions → Change status");
+  });
+
+  it("Change status opens the existing StatusControl under Actions", async () => {
+    mount(ticketPage());
+    await title();
+    expect(await within(await openAction("change-status")).findByTestId("status-control")).toBeInTheDocument();
   });
 
   it("toggles the conversation order", async () => {
@@ -202,8 +233,8 @@ describe("TicketPage", () => {
         return okJson({ ok: true });
       }),
     );
-    await screen.findByText("Build the epic page", { selector: "h1" });
-    const form = screen.getByTestId("link-doc");
+    await title();
+    const form = within(await openAction("link-doc")).getByTestId("link-doc");
     fireEvent.change(within(form).getByPlaceholderText("document id"), { target: { value: "design-9" } });
     fireEvent.change(within(form).getByLabelText("Relation"), { target: { value: "supersedes" } });
     fireEvent.submit(form);
@@ -221,8 +252,8 @@ describe("TicketPage", () => {
         return okJson({ id: "m9", unresolved_mentions: [] }, "asked");
       }),
     );
-    await screen.findByText("Build the epic page", { selector: "h1" });
-    const form = screen.getByTestId("ask-role");
+    await title();
+    const form = within(await openAction("ask-role")).getByTestId("ask-role");
     fireEvent.change(within(form).getByLabelText("Question"), { target: { value: "what is the scope?" } });
     fireEvent.submit(form);
     await waitFor(() => expect(asked).not.toBeNull());
@@ -322,8 +353,8 @@ describe("TicketPage linked-documents drop target (promise #19)", () => {
       http.post("/v1/artifacts/upload", () => okJson({ id: "art-drop01", form: "image" })),
     );
     mount(ticketPage());
-    await screen.findByText("Build the epic page", { selector: "h1" });
-    const card = screen.getByTestId("linked-documents");
+    await title();
+    const card = within(await openWork()).getByTestId("linked-documents");
     fireEvent.dragOver(card);
     expect(within(card).getByTestId("drop-veil")).toBeInTheDocument();
     fireEvent.dragLeave(card);
@@ -339,8 +370,8 @@ describe("TicketPage linked-documents drop target (promise #19)", () => {
   it("a refused upload shows the board's reason on the card", async () => {
     server.use(http.post("/v1/artifacts/upload", () => HttpResponse.json({ ok: false, hint: "disallowed type" }, { status: 415 })));
     mount(ticketPage());
-    await screen.findByText("Build the epic page", { selector: "h1" });
-    const card = screen.getByTestId("linked-documents");
+    await title();
+    const card = within(await openWork()).getByTestId("linked-documents");
     fireEvent.drop(card, { dataTransfer: { files: [new File(["x"], "a.exe", { type: "application/x-msdownload" })] } });
     expect(await within(card).findByRole("alert")).toHaveTextContent(/Upload failed/);
     expect(within(card).queryByTestId("attached-artifact")).not.toBeInTheDocument();

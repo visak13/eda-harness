@@ -71,6 +71,16 @@ export interface CritCounts {
   total: number;
 }
 
+/** One attachment card on a message (R1, epic-44a0576511): the artifact's id, form, original
+ *  filename and sniffed type — never bytes; the card fetches content with the viewer's identity. */
+export interface MessageAttachment {
+  id: string;
+  form: string;
+  filename: string;
+  content_type: string;
+  note: string;
+}
+
 export interface MessageView {
   seq?: number;
   id: string;
@@ -80,6 +90,18 @@ export interface MessageView {
   text: string;
   at: ISODateString;
   reply_to: string | null;
+  /** Finalised artifact ids carried by the message (absent on an older board). */
+  artifacts?: string[];
+  /** Attachment cards resolved by the board (absent on an older board). */
+  attachments?: MessageAttachment[];
+}
+
+/** GET/PUT /v1/me/settings (s-7f663c6322): a person's profile, notification and Slack settings.
+ *  The webhook comes back MASKED (`https://***host/…`); echoing the mask keeps the stored secret. */
+export interface UserSettings {
+  profile: { display_name: string; timezone: string };
+  notifications: { browser: boolean; quiet: [number, number] | null };
+  slack: { enabled: boolean; slack_id: string; webhook_url: string; webhook_set?: boolean; quiet: [number, number] | null };
 }
 
 export interface WaitingReason {

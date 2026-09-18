@@ -2,6 +2,7 @@ import { Navigate, useLocation } from "react-router";
 import type { RouteObject } from "react-router";
 import { AppShell } from "./components/AppShell";
 import { RecordsPage } from "./pages/Records";
+import { SettingsPage } from "./pages/Settings";
 import {
   ArtifactPage,
   DecisionsPage,
@@ -36,6 +37,7 @@ export const appRoutes: RouteObject[] = [
       { path: "records/:id", element: <RecordsPage /> },
       { path: "artifact/:id", element: <ArtifactPage /> },
       { path: "seats", element: <SeatsPage /> },
+      { path: "settings", element: <SettingsPage /> },
       { path: "library", element: <RedirectTo to="/library/tickets" /> },
       { path: "library/:section", element: <LibraryPage /> },
       // Legacy paths keep their shape but redirect to Library (preserving ?as=).

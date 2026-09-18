@@ -145,21 +145,45 @@ def _lock_or_exit() -> Path:
     return lock
 
 
+def _merge_people(people: dict) -> list[str]:
+    """Fold the board's per-person settings (Settings tab, `ui-settings.json`) over the static
+    map: a person who switched Slack on appears, or updates in place so a running watcher
+    thread sees the new destination / quiet hours on its next ping. Returns handles added."""
+    from .user_settings import bridge_people
+    added: list[str] = []
+    for handle, person in bridge_people().items():
+        current = people.get(handle)
+        if current is None:
+            people[handle] = dict(person)
+            added.append(handle)
+        else:
+            current.update({k: v for k, v in person.items() if v is not None})
+    return added
+
+
 def run() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     _lock_or_exit()
     cfg = _config()
     stop = threading.Event()
-    people = cfg.get("people") or {}
+    people: dict = cfg.get("people") or {}
+    _merge_people(people)
     if not people:
-        raise SystemExit("slack_map.json has no people; nothing to watch")
-    for handle, person in people.items():
+        raise SystemExit("slack_map.json has no people and nobody switched Slack on; nothing to watch")
+
+    def _start(handle: str, person: dict) -> None:
         threading.Thread(target=_watch, args=(cfg, handle, person, stop),
                          name=f"slack-{handle}", daemon=True).start()
+
+    for handle, person in people.items():
+        _start(handle, person)
     log.info("slack bridge up: watching %s", ", ".join(people))
     try:
         while True:
             time.sleep(60)
+            for handle in _merge_people(people):
+                log.info("slack: %s switched Slack on; watching", handle)
+                _start(handle, people[handle])
     except KeyboardInterrupt:
         stop.set()
 

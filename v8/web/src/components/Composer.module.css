@@ -1,12 +1,17 @@
+/* The composer per revision3-clean: a bordered card with a hard offset shadow; a top row
+   "To [avatar select] · Type [select] · Expand"; the textarea (user-resizable); a foot row
+   "Mention · Attach · ? · Will notify … · Send" with Send dark and right-aligned. */
 .composer {
   position: relative;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 14px;
+  border: 1.5px solid var(--strongline);
+  border-radius: 10px;
+  padding: 12px;
   background: var(--panel);
+  box-shadow: 2px 2px 0 var(--line);
   display: flex;
   flex-direction: column;
   gap: 10px;
+  flex: none;
 }
 .composer.dragging {
   border-color: var(--accent);
@@ -28,49 +33,52 @@
 }
 .controls {
   display: flex;
-  gap: 12px;
+  align-items: center;
+  gap: 10px;
   flex-wrap: wrap;
+  font-size: 14px;
 }
 .field {
   min-width: 0;
   max-width: 100%;
   display: flex;
-  flex-direction: row;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   font-size: 14px;
-  color: var(--muted);
+  color: var(--ink);
 }
+.fieldLabel { color: var(--muted); }
+.selectWrap { position: relative; display: inline-flex; align-items: center; }
+.toAvatar { position: absolute; left: 8px; pointer-events: none; }
 .field select {
-  width: 260px;
-  min-height: 44px;
-  max-width: 100%;
-  border: 1px solid var(--strongline);
-  border-radius: 6px;
-  background: var(--bg);
+  max-width: 260px;
+  min-height: 34px;
+  border: 1.5px solid var(--strongline);
+  border-radius: 8px;
+  background: var(--panel);
   color: var(--ink);
   font: inherit;
-  font-size: 13px;
-  padding: 0 8px;
+  font-size: 14px;
+  padding: 4px 9px;
 }
-.fieldLabel {
-  letter-spacing: 0.06em;
-}
-/* Textarea: full column width, body 14/22, min 4 rows auto-growing to 14 (design §4.2). */
+.field select.withAvatar { padding-left: 36px; }
+.field select:hover { background: var(--secondary); }
+.field select:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
+/* Textarea: full width, body 14/22, 4 rows auto-growing to 14, AND user-resizable (owner
+   defect: "no resize option"). Inside the drawer it fills the panel (see Drawer.module.css). */
 .text {
   width: 100%;
   box-sizing: border-box;
   min-height: 104px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--strongline);
   border-radius: 6px;
-  padding: 8px 10px;
+  padding: 10px 12px;
   font: inherit;
   font-size: 14px;
   line-height: 22px;
   background: var(--bg);
   color: var(--ink);
-  resize: none;
+  resize: vertical;
   overflow-y: auto;
 }
 .text:focus-visible {
@@ -96,89 +104,65 @@
   border-radius: 4px;
   cursor: pointer;
 }
-.mentionActive {
-  background: var(--accentwash);
+.mentionActive { background: var(--accentwash); }
+.mentionHandle { font-weight: 600; color: var(--ink); font-size: 13px; }
+.mentionLabel { font-size: 12px; color: var(--muted); }
+
+/* Attachment chips (R1): filename + remove, in place of a raw token in the draft. */
+.chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+  padding: 3px 6px 3px 9px; border: 1px solid var(--strongline); border-radius: 7px;
+  background: var(--accentwash); color: var(--ink); font-size: 13px;
 }
-.mentionHandle {
-  font-weight: 600;
-  color: var(--ink);
-  font-size: 13px;
-}
-.mentionLabel {
-  font-size: 12px;
-  color: var(--muted);
-}
-.preview {
-  font-size: 13px;
-  color: var(--muted);
-  background: var(--rail);
-  border-radius: 6px;
-  padding: 4px 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.previewLine strong {
-  color: var(--ink);
-}
+.chipName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 28ch; }
+.chipRemove { border: 0; background: transparent; color: var(--muted); padding: 2px; display: inline-flex; cursor: pointer; border-radius: 4px; }
+.chipRemove:hover { color: var(--ink); background: var(--secondary); }
+
 .footer {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
 }
-.hint {
-  flex: 1 1 180px;
-  min-width: 0;
-  font-size: 12px;
-  color: var(--muted);
-}
-/* §4.2 Expand: the same composer opens in the right Drawer; the draft moves with it. */
-.expand {
-  margin-left: auto;
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 6px;
-  border: 1px solid var(--line);
+.tool, .expand {
+  min-height: 34px;
+  padding: 4px 7px;
+  border-radius: 8px;
+  border: 1.5px solid transparent;
   background: transparent;
-  color: var(--muted);
-  font-size: 13px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   cursor: pointer;
 }
-.expand:hover {
-  color: var(--ink);
-  border-color: var(--ink);
-}
-.expand:focus-visible {
-  outline: 2px solid var(--accentink);
-  outline-offset: 2px;
-}
+.expand { margin-left: auto; }
+.tool:hover:not(:disabled), .expand:hover:not(:disabled) { background: var(--secondary); border-color: var(--strongline); }
+.tool:focus-visible, .expand:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
+.tool[aria-expanded="true"] { border-color: var(--strongline); background: var(--accentwash); }
+.delivery { margin-left: auto; font-size: 12px; color: var(--muted); text-align: right; min-width: 0; overflow-wrap: anywhere; }
 .send {
-  height: 40px;
-  padding: 0 18px;
-  border-radius: 6px;
-  border: 1px solid var(--accent);
-  background: var(--accent);
-  color: var(--buttonink);
+  min-height: 34px;
+  min-width: 84px;
+  padding: 5px 14px;
+  border-radius: 8px;
+  border: 1.5px solid var(--ink);
+  background: var(--ink);
+  color: var(--bg);
+  font: inherit;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
 }
-.send:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.error {
-  font-size: 13px;
-  color: var(--accentink);
-  margin: 0;
-}
-.sent {
-  font-size: 13px;
-  color: var(--success);
-  margin: 0;
-}
+.send:hover:not(:disabled) { filter: brightness(1.15); }
+.send:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
+.send:disabled { opacity: 0.45; cursor: not-allowed; }
+.error { font-size: 13px; color: var(--accentink); margin: 0; }
+.error button { margin-left: 8px; }
+.sent { font-size: 13px; color: var(--success); margin: 0; }
 .unresolved {
   font-size: 13px;
   color: var(--accentink);
@@ -186,60 +170,22 @@
   border-radius: 6px;
   padding: 8px 10px;
 }
-
-/* Round 2 #16: the reply target chip */
 .replyChip {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 8px;
+  align-self: flex-start;
   padding: 2px 8px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--strongline);
   border-radius: 999px;
   background: var(--accentwash);
-  color: var(--accentink);
+  color: var(--ink);
   font-size: 12px;
 }
-.replyCancel {
-  border: 0;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  padding: 0 2px;
-  line-height: 1;
-}
-
-/* Promise #16: one-line "who it wakes" gloss under the Kind select, and the "?" help popover. */
-.gloss {
-  font-size: 12px;
-  color: var(--muted);
-  max-width: 48ch;
-}
-.helpBtn {
-  margin-left: 8px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  border: 1px solid var(--line);
-  background: transparent;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-  cursor: pointer;
-  vertical-align: middle;
-}
-.helpBtn:hover,
-.helpBtn[aria-expanded="true"] {
-  color: var(--accentink);
-  border-color: var(--accentink);
-}
-.helpBtn:focus-visible {
-  outline: 2px solid var(--accentink);
-  outline-offset: 2px;
-}
+.replyCancel { border: 0; background: transparent; color: inherit; cursor: pointer; padding: 0 2px; line-height: 1; display: inline-flex; }
+.gloss { font-size: 12px; color: var(--muted); max-width: 48ch; }
 .help {
-  border: 1px solid var(--line);
+  border: 1px solid var(--strongline);
   border-radius: 8px;
   background: var(--rail);
   padding: 12px 14px;
@@ -250,22 +196,7 @@
   flex-direction: column;
   gap: 6px;
 }
-.help p {
-  margin: 0;
-}
-.help code {
-  font: 12px/18px Consolas, monospace;
-}
-.helpHead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.helpClose {
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  padding: 0 2px;
-  line-height: 1;
-}
+.help p { margin: 0; }
+.help code { font: 12px/18px Consolas, monospace; }
+.helpHead { display: flex; align-items: center; justify-content: space-between; }
+.helpClose { border: 0; background: transparent; color: var(--muted); cursor: pointer; padding: 0 2px; line-height: 1; display: inline-flex; }

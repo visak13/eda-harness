@@ -30,8 +30,10 @@ export const SIDEBAR: PageCopy = {
     { key: "seats", label: "Seats", text: "every agent shell, alive or closed, and what it last said. Source: pool sessions mirrored into the board.", control: true },
     { key: "library", label: "Library", text: "every document, artifact and ticket, searchable. Source: the board's records.", control: true },
     { key: "find", label: "Find (Ctrl K)", text: "full-text search across tickets, documents, messages and seats; Enter opens the hit.", control: true },
-    { key: "identity", label: "Identity (bottom)", text: "who you are on this board; opens preferences: theme, avatar. Source: /v1/whoami.", control: true },
-    { key: "new-epic", label: "New epic", text: "records your words verbatim as a new epic and offers to spawn its architect; the preview lists who is woken before you confirm.", control: true },
+    { key: "identity", label: "Account (bottom)", text: "who you are on this board; opens the account menu: Settings, What am I looking at?, theme, avatar. Source: /v1/whoami.", control: true },
+    { key: "new-epic", label: "New epic", text: "on the Epics page: records your words verbatim as a new epic and offers to spawn its architect; the preview lists who is woken before you confirm.", control: true },
+    { key: "usage", label: "Usage", text: "your subscription windows per provider (5-hour, weekly), read from cached receipts; Refresh re-reads them, it never runs a prompt.", control: true },
+    { key: "notifications", label: "Notifications", text: "browser alerts for questions and approval requests while a board tab stays open; enable, test or disable them here.", control: true },
   ],
 };
 
@@ -70,7 +72,9 @@ export const PAGES: Record<string, PageCopy> = {
       { key: "title", label: "Title", text: "the owner's words verbatim (never edited by agents)." },
       { key: "directive", label: "Architect's brief", text: "the architect's fold of the flow and current rulings; \"Show all\" expands." },
       { key: "process-strip", label: "Process strip", text: "the phase ladder; the current step is the epic's status; the next expected move and who makes it live in the rail's Status history fold (Astra #36)." },
-      { key: "steer", label: "Steer this epic", text: "posts a steer on the epic thread; the composer resolves who is reached via POST /v1/messages/resolve before you send. Wakes: the architect always, plus the seat you address.", control: true },
+      { key: "steer", label: "Steer this epic", text: "pick Type = Steer in the composer; the composer resolves who is reached via POST /v1/messages/resolve before you send. Wakes: the architect always, plus the seat you address.", control: true },
+      { key: "actions", label: "Actions", text: "the menu holding every control on this page: change status, decisions, assign or spawn, ask a role, add a criterion, the original request and record ids; each opens in the drawer.", control: true },
+      { key: "links", label: "Design · Files & evidence · History · Work", text: "the source-bound viewers: the design opens in the reader; files, history and the work breakdown (stories, kanban, criteria, process) open in the drawer.", control: true },
       { key: "overview", label: "Overview", text: "design link, criteria (acceptance) with checker and verdict, gates.", control: true },
       { key: "work", label: "Work", text: "the stories/tasks table: id, title, assignee role, status, criteria passed/total. Click → Ticket page.", control: true },
       { key: "documents", label: "Documents", text: "every doc linked to this epic or its stories with its relation (design / strategy / evidence for / note); click opens the reader.", control: true },
@@ -110,6 +114,15 @@ export const PAGES: Record<string, PageCopy> = {
     framing: "Every record on the board: documents, artifacts, links, tickets; seven filters.",
     items: [{ key: "filters", label: "Filters", text: "type, epic, author, status, date, tag, text. Row click opens the record.", control: true }],
   },
+  settings: {
+    key: "settings",
+    title: "Settings",
+    framing: "Who you are on this board and where its pings reach you: profile, notifications, Slack.",
+    items: [
+      { key: "tabs", label: "Profile · Notifications · Slack", text: "display name and time zone; browser notification preference and quiet hours; Slack member id / webhook and quiet hours for the bridge.", control: true },
+      { key: "save", label: "Save", text: "writes your settings to the board (PUT /v1/me/settings); the Slack bridge picks the change up within a minute. Wakes nobody.", control: true },
+    ],
+  },
   seats: {
     key: "seats",
     title: "Seats",
@@ -129,6 +142,8 @@ export function pageKeyFor(pathname: string): string {
   if (pathname.startsWith("/ticket/")) return "ticket";
   if (pathname.startsWith("/doc/")) return "doc";
   if (pathname.startsWith("/seats")) return "seats";
+  if (pathname.startsWith("/settings")) return "settings";
+  if (pathname.startsWith("/records/")) return "epic";
   if (pathname.startsWith("/library") || pathname.startsWith("/tickets") || pathname.startsWith("/activity")) return "library";
   return "decisions";
 }

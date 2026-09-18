@@ -11,6 +11,7 @@ import styles from "./Composer.module.css";
 import { Icon } from "./Icon";
 import { identity } from "../auth/identity";
 import { readDraft, writeDraft } from "./draftStorage";
+import { Avatar } from "./Avatar";
 const draftStores = new WeakMap<object, Map<string, import("./draftStorage").StoredDraft>>();
 
 // The object-attached composer (design §4.2/§13/§16.1/§18.1). The conversation is IMPLICIT — the
@@ -160,6 +161,9 @@ function ComposerInstance({
   // with no tag stays a ticket broadcast (to=null).
   const [toPicked, setToPicked] = useState<boolean>(saved?.toPicked ?? (toProp != null));
   const [artifacts, setArtifacts] = useState<string[]>(saved?.artifacts ?? initialArtifacts ?? []);
+  // R1 (epic-44a0576511): an upload becomes a CHIP under the textarea — filename + remove — never a
+  // raw `art-…` token typed into the draft. Names live for the session; a reloaded draft shows ids.
+  const names = useRef<Map<string, string>>(new Map());
   useEffect(() => { if (draftKey) { const value = { text, artifacts, kind, to, toPicked, selection: selection.current }; conversationDrafts.set(draftKey, value); writeDraft(draftKey, value); } }, [draftKey, text, artifacts, kind, to, toPicked, conversationDrafts]);
   useEffect(() => onArtifactsChange?.(artifacts), [artifacts, onArtifactsChange]);
   const [confirming, setConfirming] = useState(false);
@@ -282,16 +286,9 @@ function ComposerInstance({
 
   // Drop / paste attach through the shared upload path (promise #19: the Ticket page's documents
   // card and the ruling drawer attach the same way). A refused upload leaves the draft intact.
-  const onUploaded = useCallback((art: UploadedArtifact) => {
-    setArtifacts((a) => [...a, art.id]);
-    // The artifact id is already `art-…`; insert it verbatim as the token the message parser
-    // resolves to a thumbnail/chip (design §18.1). Do NOT prefix another "art-".
-    const caret = taRef.current?.selectionStart;
-    setText((t) => {
-      const at = caret ?? t.length;
-      const token = `${at > 0 && !/\\s/.test(t[at - 1]) ? " " : ""}${art.id} `;
-      return `${t.slice(0, at)}${token}${t.slice(at)}`;
-    });
+  const onUploaded = useCallback((art: UploadedArtifact, file?: File) => {
+    if (file?.name) names.current.set(art.id, file.name);
+    setArtifacts((a) => (a.includes(art.id) ? a : [...a, art.id]));
   }, []);
   const { dragOver, error: uploadError, pending: pendingUploads, retry: retryUpload, clearError: clearUploadError, ingestFiles, dropProps } = useDropUpload(ticketId, onUploaded);
   useEffect(() => {
@@ -325,13 +322,35 @@ function ComposerInstance({
       ) : null}
 
       <div className={styles.controls}>
+        {showTo || to != null ? (
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>To</span>
+            <span className={styles.selectWrap}>
+              {to ? <Avatar id={to} size={22} className={styles.toAvatar} /> : null}
+              <select
+                className={to ? styles.withAvatar : undefined}
+                disabled={lockRecipient}
+                value={to ?? ""}
+                onChange={(e) => {
+                  setTo(e.target.value || null);
+                  setToPicked(e.target.value !== "");
+                }}
+                aria-label="Recipient"
+                data-testid="to-picker"
+              >
+                <option value="">This conversation</option>
+                <ToGroups people={people.data ?? []} />
+              </select>
+            </span>
+          </label>
+        ) : null}
         {kindFixed ? null : (
           <label className={styles.field}>
             <span className={styles.fieldLabel}>Type</span>
-            <select value={kind} onChange={(e) => setKind(e.target.value as MessageKind)} aria-label="Message kind">
+            <select value={kind} onChange={(e) => setKind(e.target.value as MessageKind)} aria-label="Message kind" data-testid="kind-picker">
               {kinds.map((k) => (
                 <option key={k} value={k} title={KIND_GLOSS[k]}>
-                  {k}{KIND_GLOSS[k] ? ` — ${KIND_GLOSS[k]}` : ""}
+                  {k === "note" ? "Message" : k[0].toUpperCase() + k.slice(1)}
                 </option>
               ))}
             </select>
@@ -342,23 +361,17 @@ function ComposerInstance({
             ) : null}
           </label>
         )}
-        {showTo || to != null ? (
-          <label className={styles.field}>
-            <span className={styles.fieldLabel}>To</span>
-            <select
-              disabled={lockRecipient}
-              value={to ?? ""}
-              onChange={(e) => {
-                setTo(e.target.value || null);
-                setToPicked(e.target.value !== "");
-              }}
-              aria-label="Recipient"
-              data-testid="to-picker"
-            >
-              <option value="">This conversation</option>
-              <ToGroups people={people.data ?? []} />
-            </select>
-          </label>
+        {expand ? (
+          <button
+            type="button"
+            className={styles.expand}
+            disabled={pendingUploads > 0 || send.isPending}
+            onClick={expand.onToggle}
+            aria-label={expand.expanded ? "Collapse the composer back into the page" : "Expand the composer into the drawer"}
+            data-testid="composer-expand"
+          >
+            <Icon name={expand.expanded ? "collapse" : "expand"} /> {expand.expanded ? "Collapse" : "Expand"}
+          </button>
         ) : null}
       </div>
 
@@ -410,20 +423,19 @@ function ComposerInstance({
         </ul>
       ) : null}
 
-      {/* Wake preview — the board's plan, verbatim; the preview cannot drift from delivery. */}
-      {preview.data ? (
-        <div className={styles.preview} data-testid="wake-preview">
-          {preview.data.plan.length > 0 ? (
-            preview.data.plan.map((w) => (
-              <div key={w.recipient} className={styles.previewLine}>
-                Wakes <strong>{w.recipient}</strong>
-                {w.alive === true ? " (alive)" : w.alive === false ? " (not alive)" : ""} — {w.why}
-              </div>
-            ))
-          ) : (
-            <div className={styles.previewLine}>{preview.data.note || "Nobody will be woken."}</div>
-          )}
-        </div>
+      {artifacts.length > 0 ? (
+        <ul className={styles.chips} data-testid="attachment-chips" aria-label="Attachments">
+          {artifacts.map((id) => (
+            <li key={id} className={styles.chip} data-testid="attachment-chip" data-artifact={id}>
+              <Icon name="attach" size={16} />
+              <span className={styles.chipName}>{names.current.get(id) ?? id}</span>
+              <button type="button" className={styles.chipRemove} aria-label={`Remove ${names.current.get(id) ?? id}`}
+                disabled={send.isPending} onClick={() => setArtifacts((a) => a.filter((x) => x !== id))}>
+                <Icon name="close" size={16} />
+              </button>
+            </li>
+          ))}
+        </ul>
       ) : null}
 
       {pendingUploads > 0 ? <p role="status">Uploading {pendingUploads} attachment(s)… Keep this view open.</p> : null}
@@ -437,35 +449,30 @@ function ComposerInstance({
 
       <div className={styles.footer}>
         <input ref={fileRef} type="file" multiple hidden onChange={(e) => { void ingestFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} />
-        <button type="button" className={styles.expand} onClick={() => fileRef.current?.click()}><Icon name="attach" /> Attach</button>
-        <button type="button" className={styles.expand} onClick={() => { const at = taRef.current?.selectionStart ?? text.length; setText((t) => `${t.slice(0, at)}@${t.slice(at)}`); taRef.current?.focus(); requestAnimationFrame(() => { taRef.current?.setSelectionRange(at + 1, at + 1); mentions.refresh(); }); }}><Icon name="mention" /> Mention</button>
-        <span className={styles.hint}>
-          <span hidden={!helpOpen}>Ctrl/Cmd+Enter sends · Enter for a newline · @ to notify</span>
-          <button
-            ref={helpBtnRef}
-            type="button"
-            className={styles.helpBtn}
-            aria-label="How sending works"
-            aria-haspopup="dialog"
-            aria-expanded={helpOpen}
-            onClick={() => setHelpOpen((o) => !o)}
-            data-testid="composer-help-toggle"
-          >
-            ?
-          </button>
-        </span>
-        {expand ? (
-          <button
-            type="button"
-            className={styles.expand}
-            disabled={pendingUploads > 0 || send.isPending}
-            onClick={expand.onToggle}
-            aria-label={expand.expanded ? "Collapse the composer back into the page" : "Expand the composer into the drawer"}
-            data-testid="composer-expand"
-          >
-            <Icon name={expand.expanded ? "collapse" : "expand"} /> {expand.expanded ? "Collapse" : "Expand"}
-          </button>
-        ) : null}
+        <button type="button" className={styles.tool} onClick={() => { const at = taRef.current?.selectionStart ?? text.length; setText((t) => `${t.slice(0, at)}@${t.slice(at)}`); taRef.current?.focus(); requestAnimationFrame(() => { taRef.current?.setSelectionRange(at + 1, at + 1); mentions.refresh(); }); }}><Icon name="mention" /> Mention</button>
+        <button type="button" className={styles.tool} onClick={() => fileRef.current?.click()} data-testid="composer-attach"><Icon name="attach" /> Attach</button>
+        <button
+          ref={helpBtnRef}
+          type="button"
+          className={styles.tool}
+          aria-label="How sending works"
+          aria-haspopup="dialog"
+          aria-expanded={helpOpen}
+          onClick={() => setHelpOpen((o) => !o)}
+          data-testid="composer-help-toggle"
+        >
+          <Icon name="help" />
+        </button>
+        {/* Wake preview — the board's plan, verbatim, as the render's one delivery line; every
+            per-recipient reason sits in its title. The preview cannot drift from delivery. */}
+        {preview.data ? (
+          <span className={styles.delivery} data-testid="wake-preview"
+            title={preview.data.plan.map((w) => `${w.recipient}${w.alive === false ? " (not alive)" : ""} — ${w.why}`).join("\n") || preview.data.note}>
+            {preview.data.plan.length > 0
+              ? `Will notify ${preview.data.plan.map((w) => w.recipient).join(", ")}`
+              : preview.data.note || "Nobody will be woken."}
+          </span>
+        ) : <span className={styles.delivery} />}
         <button
           className={styles.send}
           type="button"

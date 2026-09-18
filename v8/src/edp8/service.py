@@ -476,6 +476,8 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     app.include_router(views_router(board, actor))
     from .api_usage import usage_router
+    from .api_settings import settings_router
+    app.include_router(settings_router(actor))
 
     app.include_router(usage_router(actor))
 
@@ -762,7 +764,8 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         if b.artifacts:
             board.artifact_finalise(a, artifact_ids=b.artifacts, ticket_id=b.ticket_id)
         try:
-            m = board.message_send(a, ticket_id=b.ticket_id, to=b.to, kind=b.kind, text=b.text, reply_to=b.reply_to)
+            m = board.message_send(a, ticket_id=b.ticket_id, to=b.to, kind=b.kind, text=b.text, reply_to=b.reply_to,
+                                   artifacts=b.artifacts)
         except Exception:
             if was_staged:  # all-or-nothing: the message failed, so nothing it carried becomes visible
                 board.artifact_unfinalise(artifact_ids=was_staged, ticket_id=b.ticket_id)

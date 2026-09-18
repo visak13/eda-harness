@@ -50,7 +50,7 @@ describe("subscription Usage widget", () => {
     expect(screen.getAllByRole("meter")).toHaveLength(3);
     expect(screen.getByRole("button", { name: /Refresh in/ })).toBeDisabled();
     expect(request).toHaveBeenCalledTimes(1);
-    expect(screen.getByText(/Times are local/)).toBeInTheDocument();
+    expect(screen.getByText(/times are local/i)).toBeInTheDocument();
   });
 
   it("Escape and Close return trigger focus without altering draft or URL; outside focus leaves freely", async () => {

@@ -1,9 +1,13 @@
+import { useCallback, useState } from "react";
 import { useSearchParams } from "react-router";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { getEpicsSummary } from "../api/endpoints";
 import type { EpicSummaryRow } from "../api/types";
 import { PageHeader } from "../components/PageHeader";
+import { copyProps } from "../copy/pages";
+import { NewEpicDialog } from "../components/NewEpicDialog";
+import { Icon } from "../components/Icon";
 import { StatusChip } from "../components/StatusChip";
 import ui from "../components/ui.module.css";
 import styles from "./Epics.module.css";
@@ -33,6 +37,8 @@ function tally(row: EpicSummaryRow): { text: string; pct: number | null } {
 }
 
 export function EpicsPage(): React.JSX.Element {
+  const [newEpicOpen, setNewEpicOpen] = useState(false);
+  const closeNewEpic = useCallback(() => setNewEpicOpen(false), []);
   const [params, setParams] = useSearchParams();
   const status = params.get("status") ?? "";
   const q = params.get("q") ?? "";
@@ -51,7 +57,14 @@ export function EpicsPage(): React.JSX.Element {
 
   return (
     <>
-      <PageHeader title="Epics" subtitle="Every epic on the board and its pulse." />
+      <div className={styles.head}>
+        <PageHeader title="Epics" subtitle="Every epic on the board and its pulse." />
+        <button type="button" className={styles.newEpic} data-testid="new-epic-open" aria-haspopup="dialog"
+          aria-expanded={newEpicOpen} onClick={() => setNewEpicOpen(true)} {...copyProps("sidebar", "new-epic")}>
+          <Icon name="add" size={18} /> New epic
+        </button>
+      </div>
+      <NewEpicDialog open={newEpicOpen} onClose={closeNewEpic} />
 
       <form className={styles.filters} role="search" onSubmit={(e) => e.preventDefault()}>
         <select

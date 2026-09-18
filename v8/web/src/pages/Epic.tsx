@@ -1,13 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation, useParams, useSearchParams, useNavigate } from "react-router";
+import { useMemo, useState } from "react";
+import { Link, useLocation, useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getEpicPage, getEpicsSummary, getTicketsTable } from "../api/endpoints";
 import { getPoolCapabilities, resumeSeat } from "../api/seats";
 import { BoardApiError } from "../api/client";
 import type { CriterionView, EpicSummaryRow, EpicTreeNode, MessageView, PoolCapabilities, TicketStatus } from "../api/types";
 import { StatusChip } from "../components/StatusChip";
-import { ProcessStrip, nextActionFor } from "../components/ProcessStrip";
-import { label as glossLabel, meaning as glossMeaning } from "../copy/glossary";
+import { ProcessStrip } from "../components/ProcessStrip";
 import { StatusControl } from "../components/StatusControl";
 import { GateOpenControl } from "../components/GateOpenControl";
 import { GateForm } from "../components/GateForm";
@@ -18,23 +17,21 @@ import { CriterionCard } from "../components/CriterionCard";
 import { AddCriterion } from "../components/CriterionControls";
 import { Composer } from "../components/Composer";
 import { ExpandableComposer } from "../components/ExpandableComposer";
-import { useScrollToHash } from "../components/useScrollToHash";
 import { copyItem, copyProps } from "../copy/pages";
-import { AgentLine } from "../components/AgentLine";
 import { useDocDrawer } from "../components/DocDrawer";
 import { identity } from "../auth/identity";
 import ui from "../components/ui.module.css";
-import { MessageText } from "../components/ArtifactLink";
 import { Clamp } from "../components/Clamp";
 import styles from "./Epic.module.css";
-import { Icon } from "../components/Icon";
-import { ContextualWork } from "../components/ContextualWork";
-import { useThreadHistory, ThreadHistoryControls } from "../components/useThreadHistory";
-import { pendingWork } from "../components/PendingNavigation";
+import { useThreadHistory } from "../components/useThreadHistory";
+import { WorkHeader } from "../components/WorkHeader";
+import { ActionsMenu, type ActionItem } from "../components/ActionsMenu";
+import { Conversation } from "../components/Conversation";
 
-// Conversation-first epic: one contextual destination row, always-mounted conversation/composer,
-// and secondary work/acceptance/process details below it. Files and History use source-bound
-// viewers; former tab links are mapped to these destinations rather than duplicated in the UI.
+// The epic page per revision3-clean-epic.png (design-a2e5369133): WorkHeader (topline + Actions ▾,
+// title, purpose, metadata, links) over the conversation canvas with the composer under it. Every
+// control that used to be a rail card lives under Actions ▾; the stories/kanban/criteria/process
+// ladder live behind the Work link. "Steer" is a Type in the composer, not a button.
 
 function roleOf(assignee: string | null): string {
   if (!assignee) return "unassigned";
@@ -48,29 +45,10 @@ function flatten(node: EpicTreeNode): EpicTreeNode[] {
 function tallyTotals(node: EpicTreeNode): { passed: number; total: number } {
   return flatten(node)
     .filter((n) => n.kind !== "epic")
-    .reduce(
-      (acc, n) => {
-        const [p, t] = n.criteria.split("/").map(Number);
-        return { passed: acc.passed + (p || 0), total: acc.total + (t || 0) };
-      },
-      { passed: 0, total: 0 },
-    );
-}
-
-/** Lines to show of the brief before "Show all": its first paragraph (human #33). */
-function briefLines(text: string): number {
-  const first = text.trim().split(/\n\s*\n/)[0] ?? "";
-  return Math.max(2, Math.min(6, Math.ceil(first.length / 90)));
-}
-
-/** Human #23: every epic-page control carries a VISIBLE one-line gloss — what it does and who is
- *  woken — from the copy contract (the same text copyProps puts in the tooltip / aria-describedby). */
-function Gloss({ k }: { k: string }): React.JSX.Element {
-  return (
-    <p className={styles.gloss} data-testid={`gloss-${k}`}>
-      {copyItem("epic", k).text}
-    </p>
-  );
+    .reduce((acc, n) => {
+      const [p, t] = n.criteria.split("/").map(Number);
+      return { passed: acc.passed + (p || 0), total: acc.total + (t || 0) };
+    }, { passed: 0, total: 0 });
 }
 
 const KANBAN: [string, string[]][] = [
@@ -81,35 +59,18 @@ const KANBAN: [string, string[]][] = [
   ["Done", ["done", "partial"]],
 ];
 
+const KINDS_DEFAULT = ["note", "steer", "question", "status", "finding", "deviation", "answer"] as const;
+const KINDS_REPLY = ["answer", "note", "question", "steer", "status", "finding", "deviation"] as const;
+
 export function EpicPage(): React.JSX.Element {
   const { id = "" } = useParams();
-  const workRef = useRef<HTMLDetailsElement>(null);
-  const [params] = useSearchParams();
-  const navigate = useNavigate();
-  const [composerKind, setComposerKind] = useState<"note" | "steer">("note");
   const [order, setOrder] = useState<"newest" | "oldest">("newest");
-  const [statusOpen, setStatusOpen] = useState(false);
-
-  // Find message links fetch outside the newest-page window and scroll the mounted conversation.
+  const [reply, setReply] = useState<{ id: string; by: string } | null>(null);
   const { hash } = useLocation();
   const include = hash.startsWith("#m-") ? hash.slice(1) : null;
 
   const page = useQuery({ queryKey: ["epic", id, include], queryFn: () => getEpicPage(id, include) });
   const history = useThreadHistory(id, page.data);
-  // Legacy tab/hash links keep their destination without retaining a second tab system.
-  const legacyTab = include ? "thread" : params.get("tab") ?? hash.slice(1);
-  useEffect(() => {
-    if (!page.data) return;
-    if (["work", "overview", "work-details"].includes(legacyTab) && workRef.current) {
-      workRef.current.open = true;
-      workRef.current.scrollIntoView?.({ block: "start" });
-    }
-    if (legacyTab === "documents" && params.get("view") !== "files") {
-      const next = new URLSearchParams(params);
-      next.delete("tab"); next.set("view", "files");
-      void navigate({ search: next.toString(), hash: "" }, { replace: true });
-    }
-  }, [legacyTab, Boolean(page.data), navigate]);
   const summary = useQuery({ queryKey: ["epics", "summary", "", ""], queryFn: () => getEpicsSummary() });
 
   if (page.isPending) return <p className={ui.empty}>Loading epic…</p>;
@@ -123,232 +84,96 @@ export function EpicPage(): React.JSX.Element {
   const data = page.data;
   const epic = data.board.epic;
   const words = data.words ?? epic.title;
-  // Human #32 (2026-09-10): title ≠ words. The heading is the epic's short title; the owner's words
-  // render ONCE as a quoted block under it (omitted only when they are the same text).
   const heading = data.title ?? epic.title;
-  const showWords = words.trim() !== heading.trim();
   const stories = epic.children;
   const directive = [...data.thread].reverse().find((m) => m.kind === "steer") ?? null;
   const row = summary.data?.find((r: EpicSummaryRow) => r.id === id) ?? null;
   const totals = tallyTotals(epic);
-  const workCount = flatten(epic).filter((n) => n.kind !== "epic").length;
-  function steer() {
-    setComposerKind("steer");
-    document.querySelector<HTMLTextAreaElement>('[data-testid="composer-text"]')?.focus();
-  }
+  const design = data.docs.find((d) => d.doc_type === "design") ?? null;
+  const gates = data.answerable_gates.filter((g) => g.gate !== "design_signoff");
+  const gloss = (k: string) => copyItem("epic", k).text;
 
-  const workDetails = <details ref={workRef} id="work-details" className={styles.workDetails}>
-    <summary>Work, acceptance & process</summary>
-    {data.description?.trim() ? <section className={`${ui.card} ${styles.brief}`} data-testid="architect-brief" {...copyProps("epic", "directive")}>
-      <div className={ui.sectionLabel}>Architect&rsquo;s brief</div>
-      <Clamp className={styles.briefText} text={data.description} lines={briefLines(data.description)} />
-    </section> : null}
-    {directive ? <section className={`${ui.card} ${styles.brief}`} data-testid="directive">
-      <div className={ui.sectionLabel}>Latest steer · {directive.by}</div>
-      <Clamp className={styles.briefText} text={directive.text} lines={3} />
-    </section> : null}
-    <ProcessStrip status={epic.status} ariaLabel="Epic process" showNext={false} />
-    <OverviewTab epicId={id} storyCount={stories.length} totals={totals} openGates={data.open_gates.length} docs={data.docs} criteria={data.criteria} />
-    <WorkTab epicId={id} epic={epic} stories={stories} />
-  </details>;
+  const actions: ActionItem[] = [
+    { key: "change-status", label: "Change status", gloss: gloss("change-status"), copy: copyProps("epic", "change-status"),
+      render: () => <StatusControl ticketId={id} currentStatus={epic.status as TicketStatus} /> },
+    ...(gates.length ? [{ key: "answer-decision", label: "Answer a decision", count: gates.length, gloss: gloss("answer-decision"), copy: copyProps("epic", "answer-decision"),
+      render: () => <>{gates.map((g) => <GateForm key={`${g.ticket_id}:${g.gate}`} gate={g} />)}</> } as ActionItem] : []),
+    { key: "raise-decision", label: "Raise a decision", gloss: gloss("raise-decision"), copy: copyProps("epic", "raise-decision"),
+      render: () => <GateOpenControl ticketId={id} /> },
+    { key: "assign-spawn", label: "Assign or spawn a seat", gloss: gloss("assign-spawn"), copy: copyProps("epic", "assign-spawn"),
+      render: () => <>
+        <AssignControl ticketId={id} currentAssignee={epic.assignee ?? null} seatChoice={data.seat_choice ?? null} />
+        <SpawnArchitect epicId={id} assignedSeats={row?.assigned_seats ?? []} gloss={<p className={styles.gloss}>{gloss("spawn-architect")}</p>} />
+        {row && row.assigned_seats.length > 0 ? <div className={styles.seats}>
+          <div className={ui.sectionLabel}>Assigned seats</div>
+          {row.assigned_seats.map((s) => <AssignedSeatRow key={s} seatId={s} epicId={id} />)}
+        </div> : null}
+      </> },
+    { key: "ask-role", label: "Ask a role", gloss: gloss("ask-role"), copy: copyProps("epic", "ask-role"),
+      render: () => <AskRoleControl ticketId={id} /> },
+    { key: "add-criterion", label: "Add an acceptance criterion", gloss: gloss("overview"), copy: copyProps("epic", "overview"),
+      render: () => <AddCriterion ticketId={id} /> },
+    { key: "original-request", label: "Original request", gloss: gloss("title"),
+      render: () => <figure className={styles.words} data-testid="owner-words">
+        <figcaption className={styles.wordsLabel}>Owner&rsquo;s words · original request</figcaption>
+        <blockquote className={styles.wordsText} data-testid="owner-words-text">{words}</blockquote>
+      </figure> },
+    { key: "record", label: "Record ids", gloss: "the epic's id, kind and raw status, for a message or a shell.",
+      render: () => <dl className={styles.record}>
+        <div><dt>Id</dt><dd className={ui.idMono}>{epic.id}</dd></div>
+        <div><dt>Kind</dt><dd>{epic.kind}</dd></div>
+        <div><dt>Status</dt><dd>{epic.status}</dd></div>
+        <div><dt>Design</dt><dd>{design ? <DocLink id={design.id} /> : "Not linked"}</dd></div>
+      </dl> },
+  ];
+
+  const work = (
+    <div className={styles.work} data-testid="epic-work">
+      {data.description?.trim() ? <section data-testid="architect-brief" {...copyProps("epic", "directive")}>
+        <div className={ui.sectionLabel}>Architect&rsquo;s brief</div>
+        <Clamp className={styles.briefText} text={data.description} lines={6} />
+      </section> : null}
+      {directive ? <section data-testid="directive">
+        <div className={ui.sectionLabel}>Latest steer · {directive.by}</div>
+        <Clamp className={styles.briefText} text={directive.text} lines={3} />
+      </section> : null}
+      <section>
+        <div className={ui.sectionLabel}>Process</div>
+        <ProcessStrip status={epic.status} ariaLabel="Epic process" />
+      </section>
+      <OverviewTab epicId={id} storyCount={stories.length} totals={totals} openGates={data.open_gates.length} docs={data.docs} criteria={data.criteria} />
+      <WorkTab epicId={id} epic={epic} stories={stories} />
+    </div>
+  );
+
+  const composer = (
+    <ExpandableComposer title={`Message ${id}`}>{(expand) => <Composer
+      ticketId={id}
+      kinds={[...(reply ? KINDS_REPLY : KINDS_DEFAULT)]}
+      showTo to={reply?.by} replyTo={reply?.id} replyToBy={reply?.by} onCancelReply={() => setReply(null)}
+      expand={expand}
+      placeholder="Write a message… use @ to mention someone. Type = Steer to steer this epic."
+    />}</ExpandableComposer>
+  );
 
   return (
-    <div>
-      <nav className={styles.crumb} aria-label="Breadcrumb">
-        <Link to="/epics">Epics</Link>
-        <span aria-hidden="true"> › </span>
-        <span className={ui.idMono}>{epic.id}</span>
-        <span className={styles.badge} data-testid="epic-status-badge"><StatusChip status={epic.status} /></span>
-      </nav>
-
-      {/* Astra #36 (1): meta line (id + ONE 24px status badge) → Georgia 38/44 short title → the
-          owner's words in a 3px-accent callout, two-line preview with Show all. The header is the
-          same 744/336 grid as the body so the rail column (the Steer control) starts beside the
-          title row, not below the words. */}
-      <div className={styles.head}>
-        <h1 className={styles.title} {...copyProps("epic", "title")}>{heading}</h1>
-        <details className={styles.steerWrap}><summary>Actions</summary>
-          <button type="button" className={styles.steer} onClick={steer} {...copyProps("epic", "steer")}>
-            Steer this epic
-          </button>
-          <Gloss k="steer" />
-
-        {showWords ? (
-          <details><summary>Original request</summary><figure className={styles.words} data-testid="owner-words">
-            <figcaption className={styles.wordsLabel}>Owner&rsquo;s words · original request</figcaption>
-            <Clamp className={styles.wordsText} text={words} lines={2} testId="owner-words-text" />
-          </figure></details>
-        ) : null}
-        </details>
-      </div>
-
-      <ContextualWork ticketId={id} />
-      <div className={styles.layout}>
-        <div className={styles.mainCol}>
-          <div>
-            <ThreadTab
-              epicId={id}
-              thread={history.messages}
-              history={history}
-              order={order}
-              onToggleOrder={() => setOrder((o) => (o === "newest" ? "oldest" : "newest"))}
-              composerKind={composerKind}
-            />
-          </div>
-          {workDetails}
-        </div>
-
-        <details className={styles.rail}><summary>Actions & work details</summary><aside aria-label="Epic details">
-          {/* Astra #36 (4): status = the one badge beside the id; a 40px outlined "Change status"
-              button reveals the control; the lifecycle text lives in a "Status history" fold. */}
-          <section className={ui.card} id="epic-status">
-            <div className={ui.sectionLabel}>Status</div>
-            <button
-              type="button"
-              className={ui.button}
-              aria-expanded={statusOpen}
-              aria-controls="epic-status-control"
-              data-testid="change-status-toggle"
-              onClick={() => setStatusOpen((o) => !o)}
-              {...copyProps("epic", "change-status")}
-            >
-              {statusOpen ? "Hide status control" : "Change status"}
-            </button>
-            {statusOpen ? (
-              <div id="epic-status-control" className={styles.statusControl} data-testid="epic-status-control">
-                <StatusControl ticketId={id} currentStatus={epic.status as TicketStatus} />
-              </div>
-            ) : null}
-            <Gloss k="change-status" />
-            <details className={ui.fold} data-testid="status-history">
-              <summary>Status history</summary>
-              <p className={styles.lifecycle}>
-                Now <strong>{glossLabel("ticket_status", epic.status)}</strong>
-                {glossMeaning("ticket_status", epic.status) ? ` — ${glossMeaning("ticket_status", epic.status)}` : ""}
-              </p>
-              <p className={styles.lifecycle}>
-                <strong>Next:</strong> {nextActionFor(epic.status)}
-              </p>
-              <p className={ui.empty}>
-                <Link to="/library/history">Open the full history <Icon name="forward" /></Link>
-              </p>
-            </details>
-          </section>
-
-          {data.answerable_gates.length > 0 ? (
-            <section className={ui.card} data-testid="epic-answer-gates" {...copyProps("epic", "answer-decision")}>
-              <div className={ui.sectionLabel}>Answer a decision ({data.answerable_gates.length})</div>
-              {data.answerable_gates.filter((g) => g.gate !== "design_signoff").map((g) => (
-                <GateForm key={`${g.ticket_id}:${g.gate}`} gate={g} />
-              ))}
-              <Gloss k="answer-decision" />
-            </section>
-          ) : null}
-
-          <section className={ui.card} {...copyProps("epic", "raise-decision")}>
-            <div className={ui.sectionLabel}>Raise a decision</div>
-            <GateOpenControl ticketId={id} />
-            <Gloss k="raise-decision" />
-          </section>
-
-          <section className={ui.card} {...copyProps("epic", "assign-spawn")}>
-            <div className={ui.sectionLabel}>Assign or spawn a seat</div>
-            <AssignControl ticketId={id} currentAssignee={epic.assignee ?? null} seatChoice={data.seat_choice ?? null} />
-            <Gloss k="assign-spawn" />
-            <SpawnArchitect epicId={id} assignedSeats={row?.assigned_seats ?? []} gloss={<Gloss k="spawn-architect" />} />
-          </section>
-
-          <section className={ui.card} data-testid="epic-ask-role">
-            <div className={ui.sectionLabel}>Ask a role</div>
-            <AskRoleControl ticketId={id} />
-            <Gloss k="ask-role" />
-          </section>
-
-          <section className={ui.card}>
-            <div className={ui.sectionLabel}>At a glance</div>
-            <div className={ui.metaRow}>
-              <span>Open gates</span>
-              <span>{data.open_gates.length}</span>
-            </div>
-            <div className={ui.metaRow}>
-              <span>Criteria</span>
-              <span>
-                {totals.total === 0 ? "None defined" : `${totals.passed} of ${totals.total} passed`}
-              </span>
-            </div>
-            <div className={ui.metaRow}>
-              <span>Work</span>
-              <span>{workCount} tickets</span>
-            </div>
-            <div className={ui.metaRow}>
-              <span>Design</span>
-              <DocLink id={epic.id === id ? findDesign(data.docs) : null} />
-            </div>
-          </section>
-
-          <section className={ui.card} {...copyProps("epic", "assigned-seats")}>
-            <div className={ui.sectionLabel}>Assigned seat</div>
-            {row && row.assigned_seats.length > 0 ? (
-              <>
-                {row.assigned_seats.map((s) => (
-                  <AssignedSeatRow key={s} seatId={s} epicId={id} />
-                ))}
-                <div className={ui.metaRow}>
-                  <span>Presence</span>
-                  <span>{row.waiting_reason.presence ?? "—"}</span>
-                </div>
-                <div className={ui.metaRow}>
-                  <span>Latest status</span>
-                  <span>{row.latest_status ?? "—"}</span>
-                </div>
-              </>
-            ) : (
-              <p className={ui.empty}>No seat is assigned to this epic directly.</p>
-            )}
-            <Gloss k="assigned-seats" />
-          </section>
-
-          <section className={ui.card}>
-            <div className={ui.sectionLabel}>Records on demand</div>
-            <details className={ui.fold}>
-              <summary>Ticket details</summary>
-              <div className={ui.metaRow}>
-                <span>Id</span>
-                <span className={ui.idMono}>{epic.id}</span>
-              </div>
-              <div className={ui.metaRow}>
-                <span>Kind</span>
-                <span>{epic.kind}</span>
-              </div>
-              <div className={ui.metaRow}>
-                <span>Status</span>
-                <span>{epic.status}</span>
-              </div>
-            </details>
-            <details className={ui.fold}>
-              <summary>Activity history</summary>
-              <p className={ui.empty}>
-                <Link to="/library/history">Open the full history <Icon name="forward" /></Link>
-              </p>
-            </details>
-            <details className={ui.fold}>
-              <summary>Links &amp; artifacts</summary>
-              <p className={ui.empty}>
-                <Link to={`/library/links?epic=${encodeURIComponent(id)}`}>Open links <Icon name="forward" /></Link>
-              </p>
-            </details>
-          </section>
-        </aside></details>
-      </div>
+    <div className={styles.page}>
+      <WorkHeader
+        ticketId={id} kind="epic" title={heading} purpose={data.description || (words !== heading ? words : null)}
+        status={epic.status} assignee={epic.assignee ?? row?.assigned_seats[0] ?? null} designRef={design?.id ?? null}
+        reviewRequested={data.answerable_gates.some((g) => g.gate === "design_signoff") || undefined}
+        actions={<ActionsMenu items={actions} subject={heading} />}
+        work={work}
+      />
+      <Conversation ticketId={id} history={history} order={order} viewer={identity()}
+        onToggleOrder={() => setOrder((o) => (o === "newest" ? "oldest" : "newest"))}
+        onReply={(m: MessageView) => setReply({ id: m.id, by: m.by })}
+        composer={composer} />
     </div>
   );
 }
 
-/** Human #24: an assigned seat is a link to its row on Seats (/seats#<seat-id>, the id Seats.tsx
- *  puts on the <tr> and reads back from the hash), with the row's two actions inline — Message
- *  lands on that row with the composer open (?message=<seat-id>), Resume is the same
- *  POST /v1/sessions/resume Seats.tsx sends. The seat's own ticket is the tail of its id
- *  (role.<ticket>); the board's hint is shown verbatim either way. */
+/** Human #24: an assigned seat links to its row on Seats with Message / Resume inline. */
 function AssignedSeatRow({ seatId, epicId }: { seatId: string; epicId: string }): React.JSX.Element {
   const qc = useQueryClient();
   const [hint, setHint] = useState<string | null>(null);
@@ -357,8 +182,6 @@ function AssignedSeatRow({ seatId, epicId }: { seatId: string; epicId: string })
   const canResume = !!(caps?.resume_parked || caps?.resume_closed);
   const dot = seatId.indexOf(".");
   const seatTicket = dot > 0 ? seatId.slice(dot + 1) : epicId;
-  const anchor = `/seats#${encodeURIComponent(seatId)}`;
-
   const resume = useMutation({
     mutationFn: () => resumeSeat(seatId, seatTicket),
     onSuccess: (res) => {
@@ -368,83 +191,39 @@ function AssignedSeatRow({ seatId, epicId }: { seatId: string; epicId: string })
     },
   });
   const err = resume.error as BoardApiError | undefined;
-
   return (
     <div className={styles.seat} data-testid="assigned-seat" data-seat={seatId}>
       <div className={styles.seatRow}>
-        <Link to={anchor} className={`${ui.idMono} ${styles.seatLink}`} data-testid="assigned-seat-link">
-          {seatId}
-        </Link>
+        <Link to={`/seats#${encodeURIComponent(seatId)}`} className={`${ui.idMono} ${styles.seatLink}`} data-testid="assigned-seat-link">{seatId}</Link>
         <div className={styles.seatActions}>
-          <Link
-            to={`/seats?message=${encodeURIComponent(seatId)}#${encodeURIComponent(seatId)}`}
-            className={styles.seatAction}
-            data-testid="assigned-seat-message"
-            {...copyProps("seats", "message")}
-          >
-            Message
-          </Link>
+          <Link to={`/seats?message=${encodeURIComponent(seatId)}#${encodeURIComponent(seatId)}`} className={styles.seatAction} data-testid="assigned-seat-message" {...copyProps("seats", "message")}>Message</Link>
           {canResume ? (
-            <button
-              type="button"
-              className={styles.seatAction}
-              data-testid="assigned-seat-resume"
-              disabled={resume.isPending}
-              onClick={() => resume.mutate()}
-              {...copyProps("seats", "resume")}
-            >
+            <button type="button" className={styles.seatAction} data-testid="assigned-seat-resume" disabled={resume.isPending} onClick={() => resume.mutate()} {...copyProps("seats", "resume")}>
               {resume.isPending ? "Resuming…" : "Resume"}
             </button>
           ) : null}
         </div>
       </div>
-      {hint ? (
-        <p className={styles.gloss} role="status" data-testid="assigned-seat-hint">
-          {hint}
-        </p>
-      ) : null}
-      {err ? (
-        <p className={styles.seatError} role="alert" data-testid="assigned-seat-error">
-          {err.hint ?? err.message}
-        </p>
-      ) : null}
+      {hint ? <p className={styles.gloss} role="status" data-testid="assigned-seat-hint">{hint}</p> : null}
+      {err ? <p className={styles.seatError} role="alert" data-testid="assigned-seat-error">{err.hint ?? err.message}</p> : null}
     </div>
   );
-}
-
-function findDesign(docs: { id: string; doc_type: string }[]): string | null {
-  return docs.find((d) => d.doc_type === "design")?.id ?? null;
 }
 
 function DocLink({ id }: { id: string | null }): React.JSX.Element {
   const drawer = useDocDrawer();
   if (!id) return <span>Not linked</span>;
-  return (
-    <button type="button" className={styles.docLink} onClick={() => drawer.openDoc(id)}>
-      {id}
-    </button>
-  );
+  return <button type="button" className={styles.docLink} onClick={() => drawer.openDoc(id)}>{id}</button>;
 }
 
-function OverviewTab({
-  epicId,
-  storyCount,
-  totals,
-  openGates,
-  docs,
-  criteria,
-}: {
-  epicId: string;
-  storyCount: number;
-  totals: { passed: number; total: number };
-  openGates: number;
-  docs: { id: string; doc_type: string; title: string }[];
-  criteria: CriterionView[];
+function OverviewTab({ epicId, storyCount, totals, openGates, docs, criteria }: {
+  epicId: string; storyCount: number; totals: { passed: number; total: number }; openGates: number;
+  docs: { id: string; doc_type: string; title: string }[]; criteria: CriterionView[];
 }): React.JSX.Element {
   const drawer = useDocDrawer();
   const design = docs.find((d) => d.doc_type === "design");
   return (
-    <div className={styles.overview}>
+    <section className={styles.overview}>
       <p className={styles.pulse}>
         {storyCount === 0
           ? "No stories yet — this epic is still being shaped."
@@ -452,147 +231,77 @@ function OverviewTab({
             `${totals.total === 0 ? "no criteria yet" : `${totals.passed} of ${totals.total} criteria passed`} · ` +
             `${openGates} open ${openGates === 1 ? "gate" : "gates"}`}
       </p>
-      {design ? (
-        <p className={ui.empty}>
-          Design:{" "}
-          <button type="button" className={styles.docLink} onClick={() => drawer.openDoc(design.id)}>
-            {design.title}
-          </button>
-        </p>
-      ) : null}
-
-      {/* The epic's OWN acceptance criteria, with the same verdict + reword + add controls as a
-          ticket (design §16 epic "criteria list with add/verdict"), not just a tally. */}
+      {design ? <p className={ui.empty}>Design: <button type="button" className={styles.docLink} onClick={() => drawer.openDoc(design.id)}>{design.title}</button></p> : null}
       <div className={ui.sectionLabel}>Acceptance criteria ({criteria.length})</div>
       {criteria.length === 0 ? (
-        <p className={ui.empty}>No acceptance criteria on the epic itself.</p>
+        <p className={ui.empty}>No acceptance criteria on the epic itself. Add one under Actions.</p>
       ) : (
         <div className={styles.epicCriteria}>
           {criteria.map((c) => (
-            <CriterionCard
-              key={c.id}
-              criterion={c}
-              ticketId={epicId}
-              ruling={
-                c.verdict === "pending" && c.evidence_ref ? { evidenceVersion: c.evidence_version ?? null } : undefined
-              }
-              canReword={c.verdict === "pending"}
-              onOpenEvidence={(docId) => drawer.openDoc(docId)}
-            />
+            <CriterionCard key={c.id} criterion={c} ticketId={epicId}
+              ruling={c.verdict === "pending" && c.evidence_ref ? { evidenceVersion: c.evidence_version ?? null } : undefined}
+              canReword={c.verdict === "pending"} onOpenEvidence={(docId) => drawer.openDoc(docId)} />
           ))}
         </div>
       )}
-      <details className={styles.addCrit}>
-        <summary className={styles.addCritSummary}>Add an acceptance criterion</summary>
-        <AddCriterion ticketId={epicId} />
-      </details>
-    </div>
+    </section>
   );
 }
 
-function WorkTab({
-  epicId,
-  epic,
-  stories,
-}: {
-  epicId: string;
-  epic: EpicTreeNode;
-  stories: EpicTreeNode[];
-}): React.JSX.Element {
+function WorkTab({ epicId, epic, stories }: { epicId: string; epic: EpicTreeNode; stories: EpicTreeNode[] }): React.JSX.Element {
   const [status, setStatus] = useState("");
   const [workType, setWorkType] = useState("");
   const [assignee, setAssignee] = useState("");
   const [q, setQ] = useState("");
-
-  // q needs the board's search — resolve to matching ids via the tickets table (epic-scoped).
   const search = useQuery({
     queryKey: ["tickets", "table", epicId, "q", q],
     queryFn: () => getTicketsTable({ epic: epicId, q }),
     enabled: q.trim().length > 0,
   });
-  const qHits = useMemo(
-    () => (q.trim() ? new Set((search.data?.rows ?? []).map((r) => r.id)) : null),
-    [q, search.data],
-  );
-
+  const qHits = useMemo(() => (q.trim() ? new Set((search.data?.rows ?? []).map((r) => r.id)) : null), [q, search.data]);
   const all = flatten(epic).filter((n) => n.kind !== "epic");
-  // Astra #36 (3): the search box narrows rows by their title / id text at once (no round trip);
-  // the board's search adds description/tag hits when it answers.
   const needle = q.trim().toLowerCase();
   const textHit = (n: EpicTreeNode) =>
     !needle || n.title.toLowerCase().includes(needle) || n.id.toLowerCase().includes(needle) || !!qHits?.has(n.id);
   const match = (n: EpicTreeNode) =>
-    (!status || n.status === status) &&
-    (!workType || n.work_type === workType) &&
-    (!assignee || (n.assignee ?? "").includes(assignee)) &&
-    textHit(n);
+    (!status || n.status === status) && (!workType || n.work_type === workType) &&
+    (!assignee || (n.assignee ?? "").includes(assignee)) && textHit(n);
   const filtered = all.filter(match);
   const filterCount = [status, workType, assignee].filter(Boolean).length;
 
-  if (stories.length === 0) {
-    return <p className={ui.empty}>This epic has no stories yet.</p>;
-  }
+  if (stories.length === 0) return <p className={ui.empty}>This epic has no stories yet.</p>;
 
   return (
-    <div>
-      {/* Astra #36 (3): a 40px search input, then a 40px "Filters" disclosure holding the
-          status / work-type / assignee controls, above the rows. */}
+    <section>
+      <div className={ui.sectionLabel}>Stories and tasks ({all.length})</div>
       <div className={styles.workTools}>
-        <input
-          className={`${ui.input} ${styles.workSearch}`}
-          type="search"
-          aria-label="Search words"
-          placeholder="Search by title or id…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          data-testid="work-search"
-        />
+        <input className={`${ui.input} ${styles.workSearch}`} type="search" aria-label="Search words"
+          placeholder="Search by title or id…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="work-search" />
         <details className={styles.filters} data-testid="work-filters-fold">
-          <summary className={styles.filtersSummary}>
-            Filters{filterCount > 0 ? ` (${filterCount})` : ""}
-          </summary>
+          <summary className={styles.filtersSummary}>Filters{filterCount > 0 ? ` (${filterCount})` : ""}</summary>
           <form className={styles.filterBar} onSubmit={(e) => e.preventDefault()} data-testid="work-filters">
             <select className={ui.select} aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="">any status</option>
-              {["drafted", "designed", "signed_off", "ready", "in_progress", "in_review", "blocked", "done", "partial", "dropped"].map(
-                (s) => (
-                  <option key={s} value={s}>
-                    {s.replace(/_/g, " ")}
-                  </option>
-                ),
-              )}
+              {["drafted", "designed", "signed_off", "ready", "in_progress", "in_review", "blocked", "done", "partial", "dropped"].map((s) => (
+                <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
+              ))}
             </select>
             <select className={ui.select} aria-label="Work type" value={workType} onChange={(e) => setWorkType(e.target.value)}>
               <option value="">any work type</option>
-              {["feature", "bug", "rnd", "creative"].map((w) => (
-                <option key={w} value={w}>
-                  {w}
-                </option>
-              ))}
+              {["feature", "bug", "rnd", "creative"].map((w) => <option key={w} value={w}>{w}</option>)}
             </select>
-            <input
-              className={ui.input}
-              aria-label="Assignee contains"
-              placeholder="assignee contains…"
-              value={assignee}
-              onChange={(e) => setAssignee(e.target.value)}
-            />
+            <input className={ui.input} aria-label="Assignee contains" placeholder="assignee contains…" value={assignee} onChange={(e) => setAssignee(e.target.value)} />
           </form>
         </details>
       </div>
 
       <div className={styles.tree} data-testid="work-tree">
         <div className={styles.treeHead} aria-hidden="true">
-          <span>Ticket</span>
-          <span>Role</span>
-          <span>Status</span>
-          <span className={styles.treeHeadRight}>Criteria</span>
+          <span>Ticket</span><span>Role</span><span>Status</span><span className={styles.treeHeadRight}>Criteria</span>
         </div>
-        {stories.filter(match).length === 0 && filtered.length === 0 ? (
-          <p className={ui.empty}>No tickets match these filters.</p>
-        ) : (
-          stories.map((s) => <TreeNode key={s.id} node={s} match={match} depth={0} />)
-        )}
+        {stories.filter(match).length === 0 && filtered.length === 0
+          ? <p className={ui.empty}>No tickets match these filters.</p>
+          : stories.map((s) => <TreeNode key={s.id} node={s} match={match} depth={0} />)}
       </div>
 
       <div className={styles.kanban} data-testid="kanban">
@@ -600,12 +309,9 @@ function WorkTab({
           const cards = filtered.filter((n) => states.includes(n.status));
           return (
             <div key={label} className={styles.kanbanCol}>
-              <div className={styles.kanbanHead}>
-                {label} <span className={styles.kanbanCount}>{cards.length}</span>
-              </div>
+              <div className={styles.kanbanHead}>{label} <span className={styles.kanbanCount}>{cards.length}</span></div>
               {cards.map((n) => (
                 <Link key={n.id} to={`/ticket/${encodeURIComponent(n.id)}`} className={styles.kanbanCard}>
-                  {/* Name first (§15): the story title leads; its id is secondary, in mono after. */}
                   <span className={styles.kanbanTitle}>{n.title}</span>
                   <span className={ui.idMono}>{n.id}</span>
                 </Link>
@@ -614,19 +320,11 @@ function WorkTab({
           );
         })}
       </div>
-    </div>
+    </section>
   );
 }
 
-function TreeNode({
-  node,
-  match,
-  depth,
-}: {
-  node: EpicTreeNode;
-  match: (n: EpicTreeNode) => boolean;
-  depth: number;
-}): React.JSX.Element | null {
+function TreeNode({ node, match, depth }: { node: EpicTreeNode; match: (n: EpicTreeNode) => boolean; depth: number }): React.JSX.Element | null {
   const selfShown = match(node);
   const kids = node.children.map((k) => <TreeNode key={k.id} node={k} match={match} depth={depth + 1} />).filter(Boolean);
   if (!selfShown && kids.length === 0) return null;
@@ -634,70 +332,16 @@ function TreeNode({
     <>
       {selfShown ? (
         <div className={styles.treeRow} style={{ paddingLeft: 16 + depth * 20 }} data-testid="work-row">
-          {/* Astra #36 (3): title first and wrapping; the id UNDER it in Consolas 12/18, one line. */}
           <Link to={`/ticket/${encodeURIComponent(node.id)}`} className={styles.treeLink}>
             <span className={styles.treeTitle}>{node.title}</span>
             <span className={styles.treeId}>{node.id}</span>
           </Link>
           <span className={styles.treeRole}>{roleOf(node.assignee)}</span>
-          <span className={styles.treeStatus}>
-            <StatusChip status={node.status} />
-          </span>
+          <span className={styles.treeStatus}><StatusChip status={node.status} /></span>
           <span className={styles.treeTally}>{node.criteria}</span>
         </div>
       ) : null}
       {kids}
     </>
-  );
-}
-
-function ThreadTab({
-  epicId,
-  thread,
-  order,
-  onToggleOrder,
-  composerKind,
-  history,
-}: {
-  epicId: string;
-  thread: MessageView[];
-  history: ReturnType<typeof useThreadHistory>;
-  order: "newest" | "oldest";
-  onToggleOrder: () => void;
-  composerKind: "note" | "steer";
-}): React.JSX.Element {
-  const ordered = order === "newest" ? [...thread].reverse() : thread;
-  const [reply, setReply] = useState<{ id: string; by: string } | null>(null);
-  useScrollToHash(Boolean(thread.length));
-  return (
-    <div className={styles.thread}>
-      <ExpandableComposer title={`Message ${epicId}`}>{(expand) => <Composer
-        ticketId={epicId}
-        kinds={reply ? ["answer", "note", "question", "steer", "status", "finding", "deviation"] : composerKind === "steer" ? ["steer", "note", "question", "status", "finding", "deviation", "answer"] : ["note", "question", "steer", "status", "finding", "deviation", "answer"]}
-        showTo to={reply?.by} replyTo={reply?.id} replyToBy={reply?.by} onCancelReply={() => setReply(null)}
-        expand={expand}
-        placeholder={composerKind === "steer" ? "Steer this epic — this posts as a steer" : undefined}
-      />}</ExpandableComposer>
-      <div className={styles.threadHead}>
-        <span className={ui.sectionLabel} data-testid="conversation-total">Conversation ({history.total})</span>
-        <button type="button" className={styles.orderToggle} onClick={onToggleOrder} data-testid="order-toggle">
-          {order === "newest" ? "Newest first" : "Oldest first"}
-        </button>
-      </div>
-      <ThreadHistoryControls history={history} />
-      {ordered.length === 0 ? (
-        <p className={ui.empty}>No messages on this epic yet.</p>
-      ) : (
-        <ul ref={history.listRef} className={styles.messages} data-testid="thread" tabIndex={0} aria-label="Conversation messages">
-          {ordered.map((m) => (
-            <li key={m.id} id={m.id} className={styles.message}>
-              <AgentLine by={m.by} kind={m.kind} to={m.to} viewer={identity()} at={m.at} />
-              <MessageText className={styles.messageText} text={m.text} />
-              <button className={ui.button} onClick={() => { if (!pendingWork()) setReply({ id: m.id, by: m.by }); }}><Icon name="reply" /> Reply</button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
   );
 }

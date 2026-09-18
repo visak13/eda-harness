@@ -107,7 +107,7 @@ export function Drawer({
   if (!open) return null;
 
   return createPortal(
-    <div className={styles.scrim} onMouseDown={requestClose} data-testid="drawer-scrim">
+    <div className={styles.scrim} onMouseDown={requestClose} data-testid="drawer-scrim" data-drawer-width={width}>
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <div
         ref={panelRef}

@@ -25,7 +25,7 @@ export interface DropUpload {
   };
 }
 
-export function useDropUpload(ticketId: string, onUploaded: (art: UploadedArtifact) => void): DropUpload {
+export function useDropUpload(ticketId: string, onUploaded: (art: UploadedArtifact, file?: File) => void): DropUpload {
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(0);
@@ -39,7 +39,7 @@ export function useDropUpload(ticketId: string, onUploaded: (art: UploadedArtifa
       for (const file of list) {
         try {
           if (file.size > 25 * 1024 * 1024) throw new Error("File exceeds the 25 MB limit");
-          onUploaded(await uploadArtifact(file, ticketId));
+          onUploaded(await uploadArtifact(file, ticketId), file);
         } catch (err) {
           setFailed((old) => [...old, file]);
           setError(err instanceof Error ? err.message : String(err));

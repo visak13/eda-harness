@@ -1375,20 +1375,21 @@ class Board:
         return {"to": resolved, "wakes": wakes, "plan": wakes, "note": note}
 
     def message_send(self, actor: Participant, *, ticket_id: str, to: str | None, kind: MessageKind,
-                     text: str, reply_to: str | None = None) -> Message:
+                     text: str, reply_to: str | None = None, artifacts: list[str] | None = None) -> Message:
         t = self.ticket(ticket_id)
         asked = to
         to, note = self.resolve_recipient(to, t)
         if reply_to:
             self._get("message", reply_to, "message")
         m = Message(id=new_id("m"), ticket_id=ticket_id, to=to, kind=kind, text=text, reply_to=reply_to,
-                    created_by=actor.id)
+                    created_by=actor.id, artifacts=list(artifacts or []))
         self.store.put("message", m)
         self._index("message", m.id, text)
         mentioned = self.mentions(text, exclude={actor.id, to} if to else {actor.id})
         self._emit(t.id, EventKind.message_sent, {"message": m.id, "to": to, "kind": kind, "from": actor.id,
                                                   "from_type": actor.type, "from_role": actor.role.value,
                                                   "text": text[:280], "mentions": mentioned,
+                                                  **({"artifacts": m.artifacts} if m.artifacts else {}),
                                                   **({"asked": asked, "note": note} if note else {})})
         self.last_send_note = note
         if t.status in (TicketStatus.ready, TicketStatus.in_progress):

@@ -279,6 +279,9 @@ class Message(Obj):
     reply_to: str | None = None
     document_context: DocumentContext | None = None
     status: StatusValue | None = None  # set on kind=status messages written by record_status
+    # finalised upload artifacts this message carries (R1): ids only, bytes stay behind the
+    # authenticated /v1/artifacts/{id}/content route; older rows have none.
+    artifacts: list[str] = Field(default_factory=list)
 
 
 class Event(Obj):

@@ -30,3 +30,8 @@ if (typeof window !== "undefined" && !window.matchMedia) {
       dispatchEvent: () => false,
     }) as unknown as MediaQueryList;
 }
+
+// jsdom has no ResizeObserver; AnchoredPanel (usage, account, actions menus) observes its anchor.
+if (typeof window !== "undefined" && !("ResizeObserver" in window)) {
+  (window as unknown as { ResizeObserver: unknown }).ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
+}

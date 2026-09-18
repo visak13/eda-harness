@@ -120,7 +120,7 @@ describe("Composer send", () => {
 });
 
 describe("Composer wake preview + addressing", () => {
-  it("shows the board's wake plan verbatim ('Wakes … (alive)')", async () => {
+  it("shows the board's wake plan as 'Will notify …' with the per-recipient reasons in the title", async () => {
     server.use(
       http.post("/v1/messages/resolve", () =>
         HttpResponse.json({
@@ -135,7 +135,8 @@ describe("Composer wake preview + addressing", () => {
       ),
     );
     mountComposer({ to: "engineer.s-1" });
-    await waitFor(() => expect(screen.getByTestId("wake-preview")).toHaveTextContent("Wakes engineer.s-1 (alive)"));
+    await waitFor(() => expect(screen.getByTestId("wake-preview")).toHaveTextContent("Will notify engineer.s-1"));
+    expect(screen.getByTestId("wake-preview").getAttribute("title")).toMatch(/engineer\.s-1 — addressed to you/);
   });
 
   it("To picker groups People / Live seats / Roles on this epic and never a closed seat", async () => {
@@ -149,7 +150,7 @@ describe("Composer wake preview + addressing", () => {
 });
 
 describe("Composer drop/paste upload", () => {
-  it("uploads a dropped file and inserts its art- token; a refused upload keeps the draft", async () => {
+  it("uploads a dropped file as an attachment chip (never a raw art- token in the text); a refused upload keeps the draft", async () => {
     let call = 0;
     server.use(
       http.post("/v1/artifacts/upload", () => {
@@ -162,15 +163,17 @@ describe("Composer drop/paste upload", () => {
     mountComposer();
     const composer = screen.getByTestId("composer");
     const png = new File(["x"], "a.png", { type: "image/png" });
+    fireEvent.change(screen.getByTestId("composer-text"), { target: { value: "see the shot" } });
     fireEvent.drop(composer, { dataTransfer: { files: [png] } });
-    await waitFor(() =>
-      expect((screen.getByTestId("composer-text") as HTMLTextAreaElement).value).toContain("art-xyz"),
-    );
-    // A refused upload leaves the draft intact and shows the reason.
+    const chip = await screen.findByTestId("attachment-chip");
+    expect(chip).toHaveTextContent("a.png");
+    expect((screen.getByTestId("composer-text") as HTMLTextAreaElement).value).toBe("see the shot");
+    // A refused upload leaves the draft and the chip intact and shows the reason.
     const bad = new File(["x"], "a.exe", { type: "application/x-msdownload" });
     fireEvent.drop(composer, { dataTransfer: { files: [bad] } });
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/Upload failed/));
-    expect((screen.getByTestId("composer-text") as HTMLTextAreaElement).value).toContain("art-xyz");
+    expect((screen.getByTestId("composer-text") as HTMLTextAreaElement).value).toBe("see the shot");
+    expect(screen.getAllByTestId("attachment-chip")).toHaveLength(1);
   });
 });
 
@@ -284,13 +287,14 @@ describe("Composer help (promise #16)", () => {
     expect(toggle).toHaveAttribute("aria-expanded", "false");
   });
 
-  it("kind and role options say who they wake (title + visible sub-label)", async () => {
+  it("kind and role options say who they wake (title; the kind gloss shows with the ? help)", async () => {
     mountComposer({ kinds: ["note", "question"], showTo: true });
     await screen.findByRole("option", { name: /architect seat/ });
     const kindSel = screen.getByLabelText("Message kind") as HTMLSelectElement;
     const note = [...kindSel.options].find((o) => o.value === "note")!;
     expect(note.title).toMatch(/wakes the seats working this ticket/);
-    expect(note.textContent).toMatch(/wakes/);
+    expect(note.textContent).toBe("Message"); // the render's Type: Message; the gloss is the title + help line
+    fireEvent.click(screen.getByRole("button", { name: "How sending works" }));
     expect(screen.getByTestId("kind-gloss")).toHaveTextContent(/wakes the seats working this ticket/);
     fireEvent.change(kindSel, { target: { value: "question" } });
     expect(screen.getByTestId("kind-gloss")).toHaveTextContent(/wakes the seat or role you address/);
