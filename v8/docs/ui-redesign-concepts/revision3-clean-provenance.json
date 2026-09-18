@@ -1,0 +1,26 @@
+{
+  "method": "Authored static HTML/CSS and Chromium screenshots; NOT image_gen output or running application",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "generated_style_reference": "revision3-retro-epic.png (finish rejected; provenance separately retained)",
+  "avatars": "Read-only exports of existing edp8.avatars human-01 and architect SVG functions; not new generated artwork",
+  "icons": "Hand-authored specimen SVG placeholders only; final generated/runtime icon family remains S1 work",
+  "content": "Synthetic illustrative content; no server/API interactions; controls are static",
+  "limitations": "Desktop visual specimen only; no interaction, responsiveness, accessibility or provider proof",
+  "images": [
+    {
+      "file": "revision3-clean-epic.png",
+      "sha256": "9c15919f455969ebec1d87a6f6dcc3cf5a57b72c6389f23b6d98960e4a4d8c6e"
+    },
+    {
+      "file": "revision3-clean-usage.png",
+      "sha256": "4f88247ee331570a2154b9bff2bf510162a7b171e75a8b3ebf550ff68e36255b"
+    },
+    {
+      "file": "revision3-clean-review.png",
+      "sha256": "5fd0a1fc2bceb7726406b282dcd1dc6a71bba42833e36c0faf896c2c8097650e"
+    }
+  ]
+}
