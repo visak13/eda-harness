@@ -29,6 +29,7 @@ from pydantic import AliasChoices, BaseModel, Field, ValidationError
 
 from . import seat_choice
 from .client import BoardClient
+from .doc_tools import DocEdit
 from .schemas import (
     ENUMS,
     ArtifactForm,
@@ -43,6 +44,9 @@ from .schemas import (
     Relation,
     Role,
     StatusValue,
+    SessionState,
+    SeatEffort,
+    SpawnMode,
     TicketKind,
     TicketStatus,
     Verdict,
@@ -312,6 +316,15 @@ class ContextArgs(BaseModel):
     ticket_id: str | None = Field(default=None, description="a specific ticket id, or omit for all your tickets")
 
 
+class ContextDeltaArgs(ContextArgs):
+    cursor: str = Field(description="last consumed snapshot/delta cursor for this participant and scope; not a credential")
+    limit: int = Field(default=50, ge=1, le=100, description="maximum change envelopes per page; continue if has_more")
+
+
+class DescribeObjectsArgs(BaseModel):
+    type: str | None = Field(default=None, description="omit for discovery; object name, ContextSnapshot/ContextDelta/ContextChange, enums or enum:<Name>")
+
+
 class DescribeArgs(BaseModel):
     type: str = Field(description="object type (participant|ticket|criterion|doc|link|message|event|artifact|"
                       "session), or 'enums' to list every enum, or 'enum:<Name>' for one enum's allowed values")
@@ -427,10 +440,12 @@ def _heartbeat_prompt(participant: str) -> str:
     seat resumes its plan. (2026-09-08: a role-blind "act only if new" prompt made an engineer
     with an unbuilt plan end every idle wake — m-0743c493b2.)"""
     role = participant.split(".", 1)[0]
+    choice = ("edp8 heartbeat: choose context_delta(cursor=your last valid cursor) for changes since your last read. "
+              "Use context() at boot, after compaction if you lack sufficient context/a valid cursor, or when a delta "
+              "explicitly requires resynchronization. Do not call both routinely. ")
     if role in _LISTENING_ROLES:
-        return ("edp8 heartbeat: call context() and act only if something is new; "
-                "if nothing, end the turn silently")
-    return ("edp8 heartbeat: call context(); answer anything new, then RESUME THE NEXT UNBUILT ITEM of "
+        return choice + "Act only on new actionable information; otherwise end silently."
+    return (choice + "Answer anything new, then RESUME THE NEXT UNBUILT ITEM of "
             "your plan doc — a quiet board is not a reason to stop. End the turn silently only when your "
             "ticket is in_review/done or you are blocked (post kind=blocked or deviation first).")
 
@@ -471,18 +486,33 @@ def _context(args: ContextArgs) -> dict[str, Any]:
 _TOOLS_BY_TYPE: dict[str, list[str]] = {
     "ticket": ["ticket_create", "ticket_read", "ticket_query", "ticket_update", "find", "board", "spawn"],
     "criterion": ["criterion_create", "criterion_query", "criterion_update", "ticket_read"],
-    "doc": ["doc_create", "doc_read", "doc_query", "doc_update", "link_create", "assemble_ruleset", "find"],
+    "doc": ["doc_create", "doc_read", "doc_query", "doc_update", "doc_edit", "link_create", "assemble_ruleset", "find"],
     "link": ["link_create", "link_query", "link_delete", "ticket_read"],
     "message": ["message_send", "message_query", "message_read", "inbox", "record_status", "find"],
     "event": ["events_query", "subscribe"],
-    "artifact": ["artifact_create", "artifact_read"],
+    "artifact": ["artifact_create", "artifact_read", "artifact_upload"],
     "session": ["session_query", "spawn", "reap", "resume", "close_self"],
     "participant": ["participants", "whoami", "spawn"],
 }
 
 
+def _describe_objects(args: DescribeObjectsArgs) -> dict[str, Any]:
+    from .context_contracts import CONTEXT_TYPES
+    if args.type is None:
+        return {"ok": True, "value": {"objects": sorted(_TOOLS_BY_TYPE) + sorted(CONTEXT_TYPES),
+                "enums": sorted(ENUMS), "guides": ["context-refresh", "agent-tools"]},
+                "hint": "describe_objects(type=<name>) for schema, relationships and skill references"}
+    return _describe(DescribeArgs(type=args.type))
+
+
 def _describe(args: DescribeArgs) -> dict[str, Any]:
+    from .context_contracts import CONTEXT_TYPES
     t = args.type
+    if t in CONTEXT_TYPES:
+        return {"ok": True, "value": {"schema": CONTEXT_TYPES[t].model_json_schema(),
+                "relationships": ["ticket", "doc", "message", "event"],
+                "guides": ["context-refresh"], "tools": ["context", "context_delta"],
+                "contract": "Full orientation or bounded reference changes; signed cursors are caller-owned, resync_required means context()."}, "hint": "get_guide('context-refresh')"}
     # Enums are answered from the schema registry (§19 rule 3): describe('enums') lists them
     # all, describe('enum:<Name>') returns one — no board round-trip, so every seat can look
     # up a strict argument's allowed values without a network call.
@@ -503,6 +533,11 @@ def _describe(args: DescribeArgs) -> dict[str, Any]:
     out = get_client().describe(t)
     if out.get("ok"):
         out["value"]["tools"] = _TOOLS_BY_TYPE.get(t, [])
+        out["value"]["relationships"] = {"ticket": ["criterion", "doc", "message", "link"],
+            "doc": ["ticket", "link", "criterion"], "artifact": ["message", "ticket", "link"]}.get(t, ["ticket"])
+        out["value"]["skills"] = {"doc": ["methodology", "verify"], "artifact": ["demo"],
+            "criterion": ["verify"], "ticket": ["methodology", "handoff"]}.get(t, [])
+        out["value"]["guides"] = ["agent-tools"]
     return out
 
 
@@ -519,6 +554,14 @@ def _get_guide(args: GetGuideArgs) -> dict[str, Any]:
 
 
 IDENTITY_TOOLS = [
+    ToolDef("describe_objects", "Discover object/enum names or inspect a schema with relationships and linked skills",
+            "before choosing a tool or when unsure of an object's contract; omit type to list names",
+            "discovery index or the describe-compatible schema; get_guide('agent-tools') for workflow",
+            DescribeObjectsArgs, _describe_objects, "identity"),
+    ToolDef("context_delta", "Read bounded participant-relevant changes from a caller-owned context cursor",
+            "on routine heartbeat with sufficient retained context; e.g. context_delta(cursor=last_cursor); not alongside context routinely",
+            "ContextDelta: changed, next_cursor, has_more and optional ContextChange references; resync_required means context(); see get_guide('context-refresh')",
+            ContextDeltaArgs, lambda a: get_client().context_delta(a.cursor, a.ticket_id, a.limit), "identity"),
     ToolDef("whoami",
             "Report your registered identity and which tool bundles your role has",
             "at boot, or whenever you need your handle, role, open tickets or lineage",
@@ -537,8 +580,8 @@ IDENTITY_TOOLS = [
             SubscribeArgs, _subscribe, "identity"),
     ToolDef("context",
             "Load everything needed to act on your ticket(s): chain, criteria, docs, thread, open asks",
-            "at boot after subscribe, and whenever a feed event says your ticket changed",
-            "one context block per ticket, plus any unanswered questions addressed to you",
+            "at boot after subscribe, after compaction without sufficient context/cursor, or when context_delta requires resynchronization",
+            "ContextSnapshot: existing ticket/doc/message orientation and asks plus a safe cursor for context_delta; see get_guide('context-refresh')",
             ContextArgs, _context, "identity"),
     ToolDef("describe",
             "Look up an object type's shape and one-line contract, or an enum's allowed values "
@@ -694,7 +737,7 @@ TICKET_TOOLS = [
             "Change a ticket's status/assignee/design_ref/description/tags/title, guarded by the transition rules "
             "(e.g. done needs every criterion passed). title: a short human title (<=80 chars) on an epic or "
             "story, architect/owner only — an epic's words stay verbatim",
-            "to move your ticket to its next status, (re)assign it, or attach its design",
+            "to move your ticket to its next status, (re)assign it, or attach its design; explicitly set in_review only after verification and consult finish (evidence refs alone never hand off)",
             "the updated ticket, or a transition/scope error naming what is missing",
             TicketUpdateArgs, _ticket_update, "ticket"),
     ToolDef("criterion_create",
@@ -731,7 +774,14 @@ class DocCreateArgs(BaseModel):
 
 class DocReadArgs(BaseModel):
     id: str = Field(description="doc id")
-    version: int | None = Field(default=None, description="a specific version, or omit for latest")
+    version: int | None = Field(default=None, description="a specific version, or omit for latest; reuse returned version for continuation")
+    offset: int | None = Field(default=None, ge=0, description="zero-based character offset; opts into bounded output")
+    limit: int | None = Field(default=None, ge=1, le=32768, description="character bound, default 8192 when bounded")
+    section: str | None = Field(default=None, description="unique exact Markdown heading line; offset is relative to this section")
+
+
+class DocEditArgs(DocEdit):
+    id: str = Field(description="doc id")
 
 
 class DocQueryArgs(BaseModel):
@@ -744,6 +794,7 @@ class DocUpdateArgs(BaseModel):
     id: str = Field(description="doc id")
     body_md: str | None = None
     title: str | None = None
+    compact: bool = Field(default=False, description="return only id/version/changed_fields/read_ref")
 
 
 class LinkCreateArgs(BaseModel):
@@ -769,7 +820,7 @@ def _doc_create(a: DocCreateArgs) -> dict[str, Any]:
 
 
 def _doc_read(a: DocReadArgs) -> dict[str, Any]:
-    return get_client().doc_read(a.id, version=a.version)
+    return get_client().doc_read(a.id, version=a.version, offset=a.offset, limit=a.limit, section=a.section)
 
 
 def _doc_query(a: DocQueryArgs) -> dict[str, Any]:
@@ -777,7 +828,11 @@ def _doc_query(a: DocQueryArgs) -> dict[str, Any]:
 
 
 def _doc_update(a: DocUpdateArgs) -> dict[str, Any]:
-    return get_client().doc_update(a.id, body_md=a.body_md, title=a.title)
+    return get_client().doc_update(a.id, body_md=a.body_md, title=a.title, compact=a.compact)
+
+
+def _doc_edit(a: DocEditArgs) -> dict[str, Any]:
+    return get_client().doc_edit(a.id, a.expected_version, [e.model_dump() for e in a.edits], a.title)
 
 
 def _link_create(a: LinkCreateArgs) -> dict[str, Any]:
@@ -793,6 +848,10 @@ def _link_delete(a: LinkDeleteArgs) -> dict[str, Any]:
 
 
 DOC_TOOLS = [
+    ToolDef("doc_edit", "Atomically apply unique nonoverlapping exact edits against one expected doc version",
+            "for small revisions after doc_read; match every old_text against the original, not intermediate text",
+            "compact id/version/changed_fields/read_ref receipt, or typed conflict/match error; re-read on conflict",
+            DocEditArgs, _doc_edit, "doc"),
     ToolDef("doc_create",
             "Author a versioned markdown doc — design/strategy_hl/strategy_ll/domain/report/note, per your role",
             "to record a design, strategy, domain guide, evidence report, or a thread-worthy note",
@@ -801,7 +860,7 @@ DOC_TOOLS = [
     ToolDef("doc_read",
             "Read a doc, latest or a specific version",
             "when a ticket's design_ref or a link points at a doc you need to act on",
-            "the doc plus the list of versions",
+            "the full doc and versions by default; offset/limit/section returns a bounded version-pinned range with explicit continuation",
             DocReadArgs, _doc_read, "doc"),
     ToolDef("doc_query",
             "List docs matching doc_type/scope/owner_role filters",
@@ -839,6 +898,7 @@ class MessageSendArgs(BaseModel):
     text: str
     to: str | None = Field(default=None, description="participant id, @handle, role, or omit for a thread note")
     reply_to: str | None = Field(default=None, description="message id this answers")
+    artifacts: list[str] | None = Field(default=None, description="staged artifact IDs owned by you to finalize and attach")
 
 
 class MessageQueryArgs(BaseModel):
@@ -872,7 +932,8 @@ class GatesArgs(BaseModel):
 
 
 def _message_send(a: MessageSendArgs) -> dict[str, Any]:
-    return get_client().message_send(ticket_id=a.ticket_id, kind=a.kind, text=a.text, to=a.to, reply_to=a.reply_to)
+    return get_client().message_send(ticket_id=a.ticket_id, kind=a.kind, text=a.text, to=a.to,
+                                     reply_to=a.reply_to, artifacts=a.artifacts)
 
 
 def _message_query(a: MessageQueryArgs) -> dict[str, Any]:
@@ -1011,9 +1072,9 @@ class SpawnArgs(BaseModel):
                                 "spawn that never touches the assignee; true = take it over explicitly")
     model: str | None = Field(default=None, description="a models.json seat name (e.g. 'astra') or exact id; "
                               "omitted = the epic's seat choice (seat-model tag), else the Claude roles column")
-    effort: str | None = Field(default=None, description="low | medium | high; omitted = the epic's choice "
+    effort: SeatEffort | None = Field(default=None, description="low | medium | high; omitted = the epic's choice "
                                "(seat-effort tag). Claude seats are capped at medium")
-    mode: str | None = None
+    mode: SpawnMode | None = None
 
 
 class ResumeArgs(BaseModel):
@@ -1044,7 +1105,7 @@ class ReapArgs(BaseModel):
 class SessionQueryArgs(BaseModel):
     participant_id: str | None = None
     ticket_id: str | None = None
-    state: str | None = None
+    state: SessionState | None = None
 
 
 def _pool_call(fn_name: str, kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -1571,6 +1632,11 @@ class ArtifactCreateArgs(BaseModel):
     ticket_id: str | None = Field(default=None, description="link this artifact to a ticket (relation=produced)")
 
 
+class ArtifactUploadArgs(BaseModel):
+    path: str = Field(description="seat-local workspace file, resolved by the local adapter, never the shared proxy")
+    note: str = ""
+
+
 class ArtifactReadArgs(BaseModel):
     id: str = Field(description="artifact id")
 
@@ -1584,6 +1650,10 @@ def _artifact_read(a: ArtifactReadArgs) -> dict[str, Any]:
 
 
 ARTIFACT_TOOLS = [
+    ToolDef("artifact_upload", "Stream a workspace file through a seat-local adapter to a staged artifact",
+            "to attach a local file (25 MB cap); unavailable on shared HTTP without a local harness adapter",
+            "staged artifact; message_send(artifacts=[id]) finalizes it; existing MIME/auth rules apply; see get_guide('agent-tools')",
+            ArtifactUploadArgs, lambda a: get_client().artifact_upload(a.path, a.note), "artifact"),
     ToolDef("artifact_create",
             "Record a produced thing by uri (never a machine path); optionally link it to a ticket",
             "when you ship an artifact — an image, file, url, app or repo_ref — the owner should see",
@@ -1638,12 +1708,12 @@ ALL_TOOLS: dict[str, ToolDef] = {
     )
 }
 
-_IDENTITY = ["whoami", "preflight", "subscribe", "context", "describe", "get_guide"]
+_IDENTITY = ["whoami", "preflight", "subscribe", "context", "context_delta", "describe", "describe_objects", "get_guide"]
 _TICKET_RW = ["ticket_create", "ticket_read", "ticket_query", "ticket_update", "criterion_create",
               "criterion_query", "criterion_update"]
 _TICKET_RO = ["ticket_read", "ticket_query", "ticket_update"]  # owner: sign-off only, guarded by the board
 _CHECK = ["criterion_query", "criterion_update"]  # checkers record verdicts (board guards who may)
-_DOC_RW = ["doc_create", "doc_read", "doc_query", "doc_update", "link_create", "link_query", "link_delete"]
+_DOC_RW = ["doc_create", "doc_read", "doc_query", "doc_update", "doc_edit", "link_create", "link_query", "link_delete"]
 _DOC_RO = ["doc_read", "doc_query"]
 _THREAD = ["message_send", "message_query", "message_read", "gate_open", "gate_answer", "gates"]
 _BOARD = ["board", "events_query", "participants"]
@@ -1672,6 +1742,10 @@ ROLE_BUNDLES: dict[str, list[str]] = {
         + ["find", "assemble_ruleset", "consult", "consult_status", "artifact_create", "artifact_read"] + _CLOSING,
 }
 
+
+for _role_tools in ROLE_BUNDLES.values():
+    if "artifact_create" in _role_tools and "artifact_upload" not in _role_tools:
+        _role_tools.append("artifact_upload")
 
 ROLE_BUNDLES[Role.coordinator.value] = list(ROLE_BUNDLES[Role.owner.value])  # retired seat: explicit, not implicit
 ROLE_BUNDLES[Role.consultant.value] = _IDENTITY + ["ticket_read", "ticket_query", "message_send", "message_query",

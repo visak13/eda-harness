@@ -7,7 +7,9 @@ data, not exceptions. Only a connection failure raises, with a clear message.
 
 from __future__ import annotations
 
+import contextlib
 import os
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -22,7 +24,7 @@ class BoardClient:
 
     def __init__(self, base_url: str | None = None, participant: str | None = None,
                  admin_token: str | None = None, client: httpx.Client | None = None,
-                 token: str | None = None):
+                 token: str | None = None, workspace_root: Path | None = None):
         self.base_url = (base_url or os.environ.get("EDP8_BOARD_URL", "http://127.0.0.1:9400")).rstrip("/")
         self.participant = participant or os.environ.get("EDP8_PARTICIPANT") or os.environ.get("EDP_HANDLE")
         self.admin_token = admin_token if admin_token is not None else os.environ.get("EDP8_ADMIN_TOKEN")
@@ -31,6 +33,7 @@ class BoardClient:
         # the caller's X-Token) must win over the env so a minted-token seat authenticates as itself.
         self.token = token
         self._client = client
+        self.workspace_root = workspace_root
 
     # ------------------------------------------------------------------ transport
     def _headers(self, admin: bool = False) -> dict[str, str]:
@@ -69,6 +72,9 @@ class BoardClient:
 
     def context(self, ticket_id: str | None = None) -> dict[str, Any]:
         return self._request("GET", "/v1/context", params={"ticket_id": ticket_id})
+
+    def context_delta(self, cursor: str, ticket_id: str | None = None, limit: int = 50) -> dict[str, Any]:
+        return self._request("GET", "/v1/context_delta", params={"cursor": cursor, "ticket_id": ticket_id, "limit": limit})
 
     def inbox(self) -> dict[str, Any]:
         return self._request("GET", "/v1/inbox")
@@ -146,16 +152,24 @@ class BoardClient:
         return self._request("POST", "/v1/docs",
                              json={"doc_type": doc_type, "title": title, "body_md": body_md, "scope": scope})
 
-    def doc_read(self, id_: str, version: int | None = None) -> dict[str, Any]:
-        return self._request("GET", f"/v1/docs/{id_}", params={"version": version})
+    def doc_read(self, id_: str, version: int | None = None, offset: int | None = None,
+                 limit: int | None = None, section: str | None = None) -> dict[str, Any]:
+        return self._request("GET", f"/v1/docs/{id_}", params={"version": version, "offset": offset,
+                             "limit": limit, "section": section})
+
+    def doc_edit(self, id_: str, expected_version: int, edits: list[dict], title: str | None = None) -> dict[str, Any]:
+        return self._request("POST", f"/v1/docs/{id_}/edit",
+                             json={"expected_version": expected_version, "edits": edits, "title": title})
 
     def doc_query(self, doc_type: str | None = None, scope: str | None = None,
                   owner_role: str | None = None) -> dict[str, Any]:
         return self._request("GET", "/v1/docs", params={"doc_type": doc_type, "scope": scope,
                                                          "owner_role": owner_role})
 
-    def doc_update(self, id_: str, body_md: str | None = None, title: str | None = None) -> dict[str, Any]:
-        return self._request("PATCH", f"/v1/docs/{id_}", json={"body_md": body_md, "title": title})
+    def doc_update(self, id_: str, body_md: str | None = None, title: str | None = None,
+                   compact: bool = False) -> dict[str, Any]:
+        return self._request("PATCH", f"/v1/docs/{id_}",
+                             json={"body_md": body_md, "title": title, "compact": compact})
 
     def link_create(self, from_id: str, to_id: str, relation: str) -> dict[str, Any]:
         return self._request("POST", "/v1/links", json={"from_id": from_id, "to_id": to_id, "relation": relation})
@@ -171,15 +185,34 @@ class BoardClient:
         return self._request("POST", "/v1/artifacts",
                              json={"form": form, "uri": uri, "note": note, "ticket_id": ticket_id})
 
+    def artifact_upload(self, path: str, note: str = "") -> dict[str, Any]:
+        if self.workspace_root is None:
+            return {"ok": False, "error": {"code": "unavailable", "message": "upload requires a seat-local workspace adapter"},
+                    "hint": "use a configured local harness/stdio adapter; shared HTTP never reads proxy-host paths"}
+        from .local_upload import BoundedFile, UploadRefused, workspace_file
+        try:
+            with workspace_file(self.workspace_root, path) as (file, name):
+                files = {"file": (name, BoundedFile(file), "application/octet-stream")}
+                with contextlib.ExitStack() as stack:
+                    transport = self._client or stack.enter_context(httpx.Client(base_url=self.base_url, timeout=60))
+                    response = transport.post("/v1/artifacts/upload", files=files, data={"note": note}, headers=self._headers())
+                    return response.json()
+        except (UploadRefused, OSError, ValueError) as exc:
+            message = str(exc) if isinstance(exc, UploadRefused) else "local file unavailable or invalid board receipt"
+            return {"ok": False, "error": {"code": "upload_refused", "message": message},
+                    "hint": "choose a regular file within your workspace, at most 25 MB"}
+        except httpx.HTTPError as exc:
+            raise BoardUnreachable("board upload connection failed") from exc
+
     def artifact_read(self, id_: str) -> dict[str, Any]:
         return self._request("GET", f"/v1/artifacts/{id_}")
 
     # ------------------------------------------------------------------ messages / gates
     def message_send(self, ticket_id: str, kind: str, text: str, to: str | None = None,
-                     reply_to: str | None = None) -> dict[str, Any]:
+                     reply_to: str | None = None, artifacts: list[str] | None = None) -> dict[str, Any]:
         return self._request("POST", "/v1/messages",
                              json={"ticket_id": ticket_id, "to": to, "kind": kind, "text": text,
-                                   "reply_to": reply_to})
+                                   "reply_to": reply_to, "artifacts": artifacts or []})
 
     def message_query(self, ticket_id: str | None = None, to: str | None = None, kind: str | None = None,
                       limit: int = 50, since_seq: int | None = None, created_by: str | None = None) -> dict[str, Any]:

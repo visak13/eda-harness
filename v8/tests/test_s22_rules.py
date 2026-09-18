@@ -100,7 +100,8 @@ def test_task_criterion_is_self_verdicted_by_its_engineer(board, rig):
     board.ticket_update(rig["engineer"], task.id, assignee=rig["engineer"].id)
     board.ticket_update(rig["engineer"], task.id, status=TicketStatus.in_progress)
     ev = board.doc_create(rig["engineer"], doc_type=DocType.report, title="e", body_md="ok", scope=epic.id)
-    board.criterion_update(rig["engineer"], c.id, evidence_ref=ev.id)  # auto → in_review
+    board.criterion_update(rig["engineer"], c.id, evidence_ref=ev.id)
+    board.ticket_update(rig["engineer"], task.id, status=TicketStatus.in_review)
     assert board.ticket(task.id).status == TicketStatus.in_review
     with pytest.raises(BoardError) as ei:  # qa is not this task's checker
         board.criterion_update(rig["qa"], c.id, verdict=Verdict.passed)
@@ -220,7 +221,9 @@ def test_qa_fail_does_not_reblock_a_released_successor(board, rig):
     crit = board.criteria(blocker.id)[0]
     ev = board.doc_create(rig["engineer"], doc_type=DocType.report, title="e", body_md="ok", scope=epic.id)
     board.criterion_update(rig["engineer"], crit.id, evidence_ref=ev.id)
-    assert board.ticket(blocker.id).status == TicketStatus.in_review  # auto: evidence complete
+    assert board.ticket(blocker.id).status == TicketStatus.in_progress
+    board.ticket_update(rig["engineer"], blocker.id, status=TicketStatus.in_review)
+    assert board.ticket(blocker.id).status == TicketStatus.in_review  # explicit handoff
     assert board.ticket(succ.id).status == TicketStatus.ready         # released before any verdict
     board.criterion_update(rig["qa"], crit.id, verdict=Verdict.failed)
     board.ticket_update(rig["qa"], blocker.id, status=TicketStatus.in_progress)
@@ -325,8 +328,7 @@ def test_design_signoff_refused_when_epic_over_story_cap(board, rig):
     assert ei.value.code == "scope" and "9 open stories" in ei.value.message
 
 def test_auto_advance_and_release_wait_for_the_doers_consult(board, rig, tmp_path, monkeypatch):
-    """A story whose evidence is complete is NOT auto-advanced (and its successor NOT released)
-    while the doer's own consult on it is in flight; the consult's thread note re-evaluates."""
+    """Explicit handoff waits for the doer's consult; a result note alone never releases work."""
     from edp8 import consult as consult_mod
     monkeypatch.setenv("EDP8_SOL_LOG_DIR", str(tmp_path))
     epic = make_epic(board, rig)
@@ -346,10 +348,14 @@ def test_auto_advance_and_release_wait_for_the_doers_consult(board, rig, tmp_pat
     board.criterion_update(rig["engineer"], crit.id, evidence_ref=ev.id)
     assert board.ticket(blocker.id).status == TicketStatus.in_progress   # held
     assert board.ticket(succ.id).status == TicketStatus.signed_off       # not released
+    with pytest.raises(BoardError, match="consult in flight"):
+        board.ticket_update(rig["engineer"], blocker.id, status=TicketStatus.in_review)
     consult_mod.inflight_clear(blocker.id)
     board.message_send(rig["engineer"], ticket_id=blocker.id, to=None, kind=MessageKind.note,
                        text="consultant[second_opinion]: fine")
-    assert board.ticket(blocker.id).status == TicketStatus.in_review     # advanced on the note
+    assert board.ticket(blocker.id).status == TicketStatus.in_progress  # note is not handoff
+    board.ticket_update(rig["engineer"], blocker.id, status=TicketStatus.in_review)
+    assert board.ticket(blocker.id).status == TicketStatus.in_review
     assert board.ticket(succ.id).status == TicketStatus.ready            # released once
 
 

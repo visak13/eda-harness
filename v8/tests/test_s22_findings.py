@@ -50,7 +50,7 @@ def make_board(pool=None, **kw):
 
 
 def story_to_in_review(board, r, epic, *, title="S", tags=("review_required",)):
-    """Walk a story to evidence-complete in_review (auto-advances)."""
+    """Walk a story to evidence-complete in_review (explicit handoff)."""
     story = board.ticket_create(r["architect"], kind=TicketKind.story, work_type=WorkType.feature,
                                 title=title, parent_id=epic.id, tags=list(tags))
     d = board.doc_create(r["architect"], doc_type=DocType.design, title="d", body_md="b", scope=epic.id)
@@ -62,7 +62,8 @@ def story_to_in_review(board, r, epic, *, title="S", tags=("review_required",)):
     board.ticket_update(r["coordinator"], story.id, assignee=r["engineer"].id)
     board.ticket_update(r["engineer"], story.id, status=TicketStatus.in_progress)
     ev = board.doc_create(r["engineer"], doc_type=DocType.report, title="e", body_md="ok", scope=epic.id)
-    board.criterion_update(r["engineer"], crit.id, evidence_ref=ev.id)  # auto → in_review
+    board.criterion_update(r["engineer"], crit.id, evidence_ref=ev.id)
+    board.ticket_update(r["engineer"], story.id, status=TicketStatus.in_review)
     return story, crit
 
 
@@ -121,7 +122,14 @@ def test_finding1_gate_opens_when_child_jumps_ready_to_in_review_under_a_ready_e
     ep.status = TicketStatus.ready
     board.store.put("ticket", ep)
     ev = board.doc_create(r["engineer"], doc_type=DocType.report, title="e", body_md="ok", scope=epic.id)
-    board.criterion_update(r["engineer"], crit.id, evidence_ref=ev.id)  # ready → in_review (no in_progress)
+    board.criterion_update(r["engineer"], crit.id, evidence_ref=ev.id)
+    assert board.ticket(story.id).status == TicketStatus.ready  # evidence no longer implies handoff
+    # Reproduce a lagging ready parent with a working child, then explicitly hand off.
+    child = board.ticket(story.id)
+    child.status = TicketStatus.in_progress
+    child.assignee = r["engineer"].id
+    board.store.put("ticket", child)
+    board.ticket_update(r["engineer"], story.id, status=TicketStatus.in_review)
     assert board.ticket(story.id).status == TicketStatus.in_review
     assert board.ticket(epic.id).status == TicketStatus.in_progress  # active branch moved it
     assert board.open_gates(epic.id, Gate.acceptance)  # ...and the gate STILL opened
@@ -191,7 +199,8 @@ def test_finding6_released_is_story_only_for_in_review():
     board.ticket_update(r["owner"], task.id, status=TicketStatus.signed_off)  # auto-readies (no blocker)
     board.ticket_update(r["engineer"], task.id, status=TicketStatus.in_progress)
     ev = board.doc_create(r["engineer"], doc_type=DocType.report, title="te", body_md="ok", scope=epic.id)
-    board.criterion_update(r["engineer"], tc.id, evidence_ref=ev.id)  # auto → in_review
+    board.criterion_update(r["engineer"], tc.id, evidence_ref=ev.id)
+    board.ticket_update(r["engineer"], task.id, status=TicketStatus.in_review)
     assert board.ticket(task.id).status == TicketStatus.in_review
     assert board._released(board.ticket(task.id)) is False  # a task releases only when done
 

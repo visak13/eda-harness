@@ -67,7 +67,7 @@ def rig(board):
 
 
 def review_story_to_in_review(board, r, epic, tags=("review_required",)):
-    """Walk a review_required story to evidence-complete in_review (auto-advances). A bare drafted
+    """Walk a review_required story to evidence-complete in_review (explicit handoff). A bare drafted
     HOLDING sibling is created first so the single evidence-complete story does not, on its own,
     release the whole epic and open its acceptance gate (§24 finding 1) — these tests isolate the
     reviewer pairing; the qa acceptance spawn has its own test."""
@@ -84,7 +84,8 @@ def review_story_to_in_review(board, r, epic, tags=("review_required",)):
     board.ticket_update(r["coordinator"], story.id, assignee=r["engineer"].id)
     board.ticket_update(r["engineer"], story.id, status=TicketStatus.in_progress)
     ev = board.doc_create(r["engineer"], doc_type=DocType.report, title="e", body_md="ok", scope=epic.id)
-    board.criterion_update(r["engineer"], crit.id, evidence_ref=ev.id)  # auto → in_review
+    board.criterion_update(r["engineer"], crit.id, evidence_ref=ev.id)
+    board.ticket_update(r["engineer"], story.id, status=TicketStatus.in_review)
     return story, crit
 
 

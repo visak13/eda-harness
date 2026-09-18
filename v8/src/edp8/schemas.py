@@ -321,7 +321,20 @@ OBJECT_TYPES: dict[str, type[Obj]] = {
 # `describe('enums')` lists them; `describe('enum:<Name>')` returns one. The description
 # composer (bundles.py) and the error envelopes read allowed values from here so a
 # tool's allowed set can never drift from its schema (design §19 rule 3).
+class SeatEffort(StrEnum):
+    low = 'low'
+    medium = 'medium'
+    high = 'high'
+
+
+class SpawnMode(StrEnum):
+    headless = 'headless'
+    monitor = 'monitor'
+
+
 ENUMS: dict[str, type[StrEnum]] = {
+    'SeatEffort': SeatEffort,
+    'SpawnMode': SpawnMode,
     "Role": Role,
     "TicketKind": TicketKind,
     "WorkType": WorkType,

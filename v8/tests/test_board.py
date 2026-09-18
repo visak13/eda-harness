@@ -663,7 +663,7 @@ def test_gate_answered_reaches_the_gate_opener(board, rig):
 
 
 def test_auto_advance_on_evidence_and_verdicts(board, rig):
-    """Evidence on every criterion walks ready/in_progress -> in_review by the board; a review_required
+    """Explicit handoff walks evidence-complete work to in_review; a review_required
     story's reviewer verdict then walks in_review -> done. §24.1 release rule: the review story is
     released at the blocker's evidence-complete in_review (before the verdict), exactly once."""
     from edp8.schemas import Check, DocType, EventKind, TicketKind, TicketStatus, WorkType
@@ -690,7 +690,10 @@ def test_auto_advance_on_evidence_and_verdicts(board, rig):
     assert board.ticket(r1.id).status == TicketStatus.signed_off
     rep = board.doc_create(eng, doc_type=DocType.report, title="ev", body_md="ran", scope=epic.id)
     board.criterion_update(eng, c1.id, evidence_ref=rep.id)
-    assert board.ticket(s1.id).status == TicketStatus.in_review, "evidence complete must auto-advance to in_review"
+    assert board.ticket(s1.id).status == TicketStatus.ready, "partial evidence is not a handoff"
+    board.ticket_update(eng, s1.id, status=TicketStatus.in_progress)
+    board.ticket_update(eng, s1.id, status=TicketStatus.in_review)
+    assert board.ticket(s1.id).status == TicketStatus.in_review
     # §24.1: the review story is released NOW (evidence-complete in_review), before any verdict
     assert board.ticket(r1.id).status == TicketStatus.ready, "successor released at evidence-complete in_review"
     board.criterion_update(rev, c1.id, verdict="pass")

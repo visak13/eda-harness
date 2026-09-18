@@ -23,6 +23,7 @@ from pydantic import BaseModel
 
 from . import pool_adapter
 from .board import Board, BoardError
+from .doc_tools import DocEdit
 from .schemas import (
     DESCRIBE,
     OBJECT_TYPES,
@@ -120,6 +121,7 @@ class DocIn(BaseModel):
 class DocPatch(BaseModel):
     body_md: str | None = None
     title: str | None = None
+    compact: bool = False
 
 
 class LinkIn(BaseModel):
@@ -489,6 +491,11 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     def context(ticket_id: str | None = None, a: Participant = Depends(actor)):
         return ok(board.context(a, ticket_id))
 
+    @app.get("/v1/context_delta")
+    def context_delta(cursor: str, ticket_id: str | None = None, limit: int = 50,
+                      a: Participant = Depends(actor)):
+        return ok(board.context_delta(a, cursor, ticket_id, limit))
+
     @app.get("/v1/inbox")
     def inbox(a: Participant = Depends(actor)):
         rows = board.inbox(a)
@@ -616,8 +623,14 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         return ok(_dump(d), hint)
 
     @app.get("/v1/docs/{id_}")
-    def doc_get(id_: str, version: int | None = None, a: Participant = Depends(actor)):
+    def doc_get(id_: str, version: int | None = None, offset: int | None = None,
+                limit: int | None = None, section: str | None = None, a: Participant = Depends(actor)):
         d = board.doc(id_, version)
+        if offset is not None or limit is not None or section is not None:
+            from .doc_tools import bounded_read
+            if (offset is not None and offset < 0) or (limit is not None and not 1 <= limit <= 32768):
+                raise BoardError("range", "offset must be >=0 and limit must be 1..32768 characters")
+            return ok(bounded_read(d, offset=offset or 0, limit=limit or 8192, section=section))
         return ok({**_dump(d), "versions": board.store.doc_versions(id_)})
 
     @app.get("/v1/docs")
@@ -628,7 +641,14 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     @app.patch("/v1/docs/{id_}")
     def doc_update(id_: str, b: DocPatch, a: Participant = Depends(actor)):
-        return ok(_dump(board.doc_update(a, id_, body_md=b.body_md, title=b.title)))
+        from .doc_tools import receipt
+        d = board.doc_update(a, id_, body_md=b.body_md, title=b.title)
+        return ok(receipt(d, [k for k in ("body_md", "title") if getattr(b, k) is not None])
+                  if b.compact else _dump(d))
+
+    @app.post("/v1/docs/{id_}/edit")
+    def doc_edit(id_: str, b: DocEdit, a: Participant = Depends(actor)):
+        return ok(board.doc_edit(a, id_, b), "doc_read(id, version) for the resulting body")
 
     @app.post("/v1/links")
     def link_create(b: LinkIn, a: Participant = Depends(actor)):

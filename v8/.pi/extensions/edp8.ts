@@ -12,6 +12,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, appendFileSync, writeFileSync, readdirSync, statSync, rmSync, utimesSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { localArtifactUpload } from "./edp8-upload.ts";
 
 // ---------------------------------------------------------------- config
 const CWD = process.cwd();
@@ -647,7 +648,13 @@ export default async function edp8(pi: ExtensionAPI) {
 				label: t.name,
 				description: t.description ?? "",
 				parameters: Type.Unsafe<Record<string, unknown>>(t.inputSchema ?? { type: "object", properties: {} }),
-				async execute(_id, params) {
+				async execute(_id, params, signal, _onUpdate, ctx) {
+					if (t.name === "artifact_upload") {
+						// Only advertise this when the remote schema supports it, but execute locally.
+						if (t.inputSchema?.properties?.path?.type !== "string") throw new Error("artifact_upload schema unavailable; no proxy fallback");
+						const result = await localArtifactUpload(params ?? {}, ctx.cwd, signal);
+						return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
+					}
 					const res = await mcp("tools/call", { name: t.name, arguments: params ?? {} }, n++);
 					if (res.error) return { content: [{ type: "text", text: JSON.stringify(res.error) }], details: {}, isError: true };
 					const content = (res.result?.content ?? []).map((c: any) => (c.type === "text" ? { type: "text", text: c.text } : { type: "text", text: JSON.stringify(c) }));

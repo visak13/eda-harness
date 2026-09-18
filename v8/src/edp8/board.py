@@ -533,6 +533,9 @@ class Board:
             if not t.assignee:
                 t.assignee = actor.id
         if to == TicketStatus.in_review:
+            if self._consult_inflight(t.id):
+                raise BoardError("transition", "review handoff held: consult in flight",
+                                 "wait for the result, address findings, then ticket_update(status='in_review')")
             if t.assignee and actor.id != t.assignee and r not in (Role.coordinator,):
                 raise BoardError("scope", "only the assignee hands a ticket to review")
             if not crits:
@@ -652,17 +655,15 @@ class Board:
                 self._emit(parent.id, EventKind.status_changed, {"from": "ready", "to": "in_progress", "by": "board"})
             elif active and parent.kind == TicketKind.epic:
                 # finding 4 (second-opinion 2026-09-08): also machine-carry an epic still in `designed`
-                # (or `drafted`) forward when a child starts — an evidence-complete story auto-advances
-                # ready→in_review directly, and a story can be started while its epic is still
-                # `designed`, so the signed_off/ready branch alone left the epic behind at `designed`
+                # (or `drafted`) forward when a child starts. A story can be started while its
+                # epic is still `designed`, so the signed_off/ready branch alone left the epic behind
                 # (reproduced: story=in_progress, epic=designed).
                 self._advance_epic_phase(parent, TicketStatus.in_progress, trigger=f"child {t.id} started")
             # §24 finding 1 (independent `if`, NOT elif — second-opinion 2026-09-08): an epic opens
             # its acceptance gate once every child is dropped OR released (done, or an evidence-
             # complete in_review story), NOT only when every child is `done`. This MUST run even
-            # when the active branch above just moved the epic to in_progress: an evidence-complete
-            # story can auto-advance ready→in_review directly (never in_progress), so the epic is
-            # still ready/signed_off when its last child releases — an `elif` here skipped the gate
+            # when the active branch above just moved the epic to in_progress: a lagging parent
+            # can still be ready/signed_off when its last child explicitly hands off — an `elif` skipped the gate
             # and deadlocked (qa is spawned BY the gate). qa then verdicts the in_review stories,
             # then the epic's own criteria.
             if kids and all(k.status == TicketStatus.dropped or self._released(k) for k in kids):
@@ -1044,27 +1045,14 @@ class Board:
         return inflight_for(ticket_id)
 
     def _auto_advance(self, t: Ticket) -> None:
-        """The board walks a ticket whose facts are already in: evidence on every criterion
-        advances ready/in_progress -> in_review; every verdict passed advances in_review -> done
-        (the substantive done-guards still apply). Removes the doer/coordinator status-walk
-        handshake — a finish before the flip no longer strands the ticket."""
+        """Complete an explicitly handed-off ticket after its checker verdicts pass.
+
+        Evidence references may describe partial/negative results. They are prerequisites,
+        never an assertion that the doer finished. Only ticket_update(in_review) hands off.
+        """
         crits = self.criteria(t.id)
         if not crits:
             return
-        if t.status in (TicketStatus.ready, TicketStatus.in_progress) and all(c.evidence_ref for c in crits):
-            held = self._consult_inflight(t.id)
-            if held:  # the doer's own final read is still running: no advance, no release yet
-                self._emit(t.id, EventKind.doc_updated,
-                           {"note": "auto-advance held: consult in flight", "run": held.get("run_id"),
-                            "by": held.get("participant")})
-                return
-            frm = t.status
-            t.status = TicketStatus.in_review
-            self.store.put("ticket", t)
-            self._emit(t.id, EventKind.status_changed, {"from": frm, "to": "in_review", "by": "board",
-                                                        "note": "auto: evidence complete"})
-            # §24.1 release rule + §24 rule 3 pairing run in _after_status (in_review branch).
-            self._after_status(t)
         if t.status == TicketStatus.in_review and all(c.verdict == Verdict.passed for c in crits):
             if t.kind == TicketKind.epic and not any(c.checked_by == "qa" for c in crits):
                 return
@@ -1087,6 +1075,24 @@ class Board:
         return d
 
     def doc_update(self, actor: Participant, id_: str, *, body_md: str | None = None, title: str | None = None) -> Doc:
+        with self._lock, self.store._lock:
+            return self._doc_update_locked(actor, id_, body_md=body_md, title=title)
+
+    def doc_edit(self, actor: Participant, id_: str, request) -> dict[str, Any]:
+        from .doc_tools import edited_body, receipt
+        with self._lock, self.store._lock:
+            d = self.doc(id_)
+            if actor.role not in DOC_AUTHORS[d.doc_type] and actor.role != d.owner_role:
+                raise BoardError("scope", f"{actor.role} may not update {d.doc_type} docs")
+            if request.expected_version != d.version:
+                raise BoardError("version_conflict", f"expected version {request.expected_version}; current version {d.version}",
+                                 f"doc_read(id={id_!r}) then retry against that version")
+            body = edited_body(d.body_md, request.edits)
+            fields = ["body_md"] + (["title"] if request.title is not None else [])
+            return receipt(self._doc_update_locked(actor, id_, body_md=body, title=request.title), fields)
+
+    def _doc_update_locked(self, actor: Participant, id_: str, *, body_md: str | None = None,
+                           title: str | None = None) -> Doc:
         d: Doc = self._get("doc", id_, "doc")
         if actor.role not in DOC_AUTHORS[d.doc_type] and actor.role != d.owner_role:
             raise BoardError("scope", f"{actor.role} may not update {d.doc_type} docs")
@@ -1602,7 +1608,25 @@ class Board:
         return {"id": d.id, "doc_type": d.doc_type, "title": d.title, "version": d.version, "scope": d.scope,
                 "summary": d.body_md[:n].strip(), "full": "doc_read(id)"}
 
+    def _context_reader(self):
+        from .context_delta import ContextReader
+        if not hasattr(self, '_context_reader_instance'):
+            self._context_reader_instance = ContextReader(self)
+        return self._context_reader_instance
+
     def context(self, p: Participant, ticket_id: str | None = None) -> dict[str, Any]:
+        # Store lock holds the snapshot and its watermark at one read boundary.
+        with self._lock, self.store._lock:
+            out = self._context_snapshot(p, ticket_id)
+            out['cursor'] = self._context_reader().baseline(p, ticket_id)
+            return out
+
+    def context_delta(self, p: Participant, cursor: str, ticket_id: str | None = None,
+                      limit: int = 50) -> dict[str, Any]:
+        with self._lock, self.store._lock:
+            return self._context_reader().delta(p, cursor, ticket_id, limit)
+
+    def _context_snapshot(self, p: Participant, ticket_id: str | None = None) -> dict[str, Any]:
         """Everything a shell needs: identity, its ticket chain, criteria, linked docs, thread, open asks."""
         tickets = [self.ticket(ticket_id)] if ticket_id else self.my_tickets(p)
         out: dict[str, Any] = {"participant": p.model_dump(mode="json"), "tickets": [], "asks_for_me": [],
