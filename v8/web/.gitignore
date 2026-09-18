@@ -10,3 +10,4 @@ coverage/
 !e2e/design-reference/*.png
 !e2e/**/*-snapshots/**/*.png
 !e2e/__screenshots__/**/*.png
+!e2e/evidence/s6-usage-*.png
