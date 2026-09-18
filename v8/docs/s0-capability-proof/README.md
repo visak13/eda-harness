@@ -140,21 +140,44 @@ is distinct from promising delivery with all tabs closed.
 - Unit tests characterize projection/privacy and dynamic bucket replacement only, not
   provider/browser acceptance.
 
-## Claude concrete consent proposal (not activated)
+## Claude one-session capture — prepared, awaiting owner activity
 
 Read-only settings-shape inspection: no statusLine key in user
 `C:/Users/aksou/.claude/settings.json` or project `v8/.claude/settings.json`;
 project settings.local.json and standard `C:/Program Files/ClaudeCode/managed-settings.json`
 absent. No other settings values printed/read into the report.
-Proposed only for a NEW owner-launched interactive session:
-`claude --settings C:/Users/aksou/AppData/Local/Temp/edp8-s0-claude/settings.json`.
-New file would configure a scoped helper `docs/s0-capability-proof/claude_capture.py`
-(not yet created), retaining only both rate-limit windows and receipt time in
-`.../edp8-s0-claude/sample.json`. No existing config edits, no live-session reload, no
-synthesized prompt. Owner uses independently intended normal work. If an unexpected
-launch-specific/managed statusline exists, stop rather than replace it. Revert closes
-only dedicated session and removes only the two temp files; no shared services involved.
-Full exact scope sent for relay/consent in `m-3c7dda5d62`; no approval assumed.
+Owner consent `m-d9522fe9a7` (verified/relayed in `m-f4c8ab8cd7`) authorizes the exact
+one-session helper/temp settings proposal. Subsequent correction `m-3b44080fb8` identifies
+**claude-personal**, not default claude, as subscription-bound. Read-only profile inspection
+verified wrapper sets CLAUDE_CONFIG_DIR to `$HOME/.claude-personal`, invokes `claude @args`,
+and has no statusline override. Personal settings.json also has no statusLine key.
+
+Ready command in owner's normal profile-loaded PowerShell, for a NEW interactive session:
+
+```powershell
+claude-personal --settings C:/Users/aksou/AppData/Local/Temp/edp8-s0-claude/settings.json
+```
+
+Exclusively created temp directory and settings.json; did not overwrite preexisting files.
+Helper `claude_capture.py` reads <=1 MiB stdin, retains only each core window's used_percentage
+and resets_at plus received_at, writes `.../edp8-s0-claude/sample.json` atomically. No raw
+payload/token/session/transcript path stored or printed. Nonfinite/out-of-range/missing
+values become null, not zero; all 13 synthetic unit tests pass. No synthetic sample was
+written to the real capture path. No actual sample existed when prepared; no session was
+launched by the engineer. Receipt is still NOT provider observation time.
+
+No existing config edits, wrapper edits, live-session reload, automatic login or paid test
+prompt. Owner uses independently intended ordinary work. If an unexpected launch-specific/
+managed statusline exists, stop rather than replace it. This is source proof only, not
+consent for a permanent adapter. After capture, close ONLY the dedicated session, then:
+
+```powershell
+Remove-Item -LiteralPath "$env:TEMP/edp8-s0-claude/settings.json"
+Remove-Item -LiteralPath "$env:TEMP/edp8-s0-claude/sample.json" -ErrorAction SilentlyContinue
+```
+
+Leave unrelated files untouched; remove the now-empty dedicated directory optionally.
+A plain subsequent claude-personal invocation has no capture override; no service restart.
 
 ## Independent read
 
