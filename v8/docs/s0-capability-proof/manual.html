@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>S0 isolated Firefox native-click fixture</title>
+<style>body{font:16px/1.5 sans-serif;max-width:850px;margin:24px auto;padding:0 16px}button,select,textarea{font:inherit;margin:6px;padding:8px}textarea{display:block;width:90%;min-height:80px}pre{white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid;padding:10px}button{min-height:44px}</style>
+<h1>S0 Firefox native-click fixture</h1>
+<p><strong>Synthetic test only, not board integration.</strong> No credentials or private text.
+Different origin from the live board; existing board tabs are never touched.</p>
+<p id="environment"></p>
+<label>Synthetic participant <select id="actor"><option>A</option><option>B</option></select></label>
+<label>Case <select id="group"><option>foreground</option><option>background</option><option>minimized</option><option>multiple-tabs</option><option>failure-case</option></select></label>
+<div><button id="enable">Enable notifications</button><button id="notify">Send one test toast</button><button id="clear">Close test toasts</button></div>
+<p>After Send, click the actual Windows toast. For background/minimized cases change only this dedicated Firefox window before clicking. Repeat 20 per group. Open additional copies of this URL manually for multitab and participant B cases.</p>
+<label>Synthetic draft<textarea id="draft" placeholder="Use only the fixed sample: S0 draft KEEP"></textarea></label>
+<button id="pending" hidden>Open pending test destination (keep draft)</button>
+<p>Current destination: <output id="destination">none</output></p>
+<button id="export">Download synthetic trial log</button><pre id="log"></pre>
+<script>
+const $ = id => document.getElementById(id);
+const entries = [];
+let pending = null;
+const incoming = new URLSearchParams(location.search);
+$('actor').value = incoming.get('actor') === 'B' ? 'B' : 'A';
+function log(event) {
+  entries.push({at: new Date().toISOString(), ...event});
+  $('log').textContent = JSON.stringify(entries.slice(-30), null, 2);
+}
+function describe() {
+  $('environment').textContent = `${navigator.userAgent}; origin=${location.origin}; secure=${isSecureContext}; permission=${Notification.permission}; actor=${$('actor').value}`;
+}
+function navigate(destination) {
+  const text = $('draft').value, selection = [$('draft').selectionStart, $('draft').selectionEnd];
+  location.hash = destination;
+  $('destination').textContent = destination;
+  log({kind: 'destination', destination, draftUnchanged: text === $('draft').value,
+       selectionUnchanged: selection[0] === $('draft').selectionStart && selection[1] === $('draft').selectionEnd});
+}
+navigator.serviceWorker.addEventListener('message', event => {
+  if (event.data.type === 'who') {
+    event.ports[0]?.postMessage({actor: $('actor').value});
+  } else if (event.data.type === 'destination') {
+    if (event.data.actor !== $('actor').value) return log({kind: 'identity_changed_rejected'});
+    if ($('draft').value) {
+      pending = event.data.destination; $('pending').hidden = false;
+      log({kind: 'pending_destination', trial: event.data.trial, destination: pending,
+           draftPreserved: true, focused: document.hasFocus(), visible: document.visibilityState});
+    } else navigate(event.data.destination);
+  } else if (event.data.type === 'outcome') log(event.data);
+});
+$('pending').onclick = () => { if (pending) navigate(pending); pending = null; $('pending').hidden = true; };
+$('enable').onclick = async () => {
+  try { log({kind: 'permission', result: await Notification.requestPermission()}); describe(); }
+  catch { log({kind: 'permission_failed'}); }
+};
+$('notify').onclick = async () => {
+  const trial = crypto.randomUUID();
+  try {
+    if (Notification.permission !== 'granted') throw new Error();
+    const registration = await navigator.serviceWorker.ready;
+    const data = {actor: $('actor').value, group: $('group').value, trial, destination: `request-s0-${trial}`};
+    await registration.showNotification('S0 test needs your attention', {body: 'Synthetic Firefox click trial', tag: trial, data});
+    log({kind: 'sent', ...data, dirty: !!$('draft').value});
+  } catch { log({kind: 'notification_failed', permission: Notification.permission, trial}); }
+};
+$('clear').onclick = async () => {
+  const registration = await navigator.serviceWorker.ready;
+  for (const notice of await registration.getNotifications()) notice.close();
+  log({kind: 'test_notifications_closed'});
+};
+$('export').onclick = () => {
+  const blob = new Blob([JSON.stringify({userAgent: navigator.userAgent, origin: location.origin, entries}, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob), link = document.createElement('a');
+  link.href = url; link.download = 's0-native-trials.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+$('actor').onchange = () => { pending = null; $('pending').hidden = true; describe(); log({kind: 'identity_changed', actor: $('actor').value}); };
+(async () => {
+  try {
+    await navigator.serviceWorker.register('/manual-worker.js');
+    await navigator.serviceWorker.ready;
+    describe(); log({kind: 'ready'});
+    const destination = incoming.get('destination');
+    if (/^request-s0-[a-f0-9-]{36}$/.test(destination || '')) navigate(destination);
+  } catch { log({kind: 'worker_failed'}); }
+})();
+</script></html>
