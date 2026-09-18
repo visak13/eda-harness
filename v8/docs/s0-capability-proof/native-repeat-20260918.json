@@ -1,0 +1,115 @@
+{
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:156.0) Gecko/20100101 Firefox/156.0",
+  "origin": "http://127.0.0.1:64988",
+  "entries": [
+    {
+      "at": "2026-09-18T09:44:46.351Z",
+      "kind": "ready"
+    },
+    {
+      "at": "2026-09-18T09:47:45.930Z",
+      "kind": "permission",
+      "result": "granted"
+    },
+    {
+      "at": "2026-09-18T09:47:46.916Z",
+      "kind": "sent",
+      "actor": "A",
+      "group": "foreground",
+      "trial": "d8b960fb-37e4-4581-9753-be2cb8eb6ced",
+      "destination": "request-s0-d8b960fb-37e4-4581-9753-be2cb8eb6ced",
+      "dirty": true
+    },
+    {
+      "at": "2026-09-18T09:47:50.874Z",
+      "kind": "test_notifications_closed"
+    },
+    {
+      "at": "2026-09-18T09:47:57.813Z",
+      "kind": "sent",
+      "actor": "A",
+      "group": "background",
+      "trial": "98e92d8f-c902-4c83-9ac1-94d8a782303d",
+      "destination": "request-s0-98e92d8f-c902-4c83-9ac1-94d8a782303d",
+      "dirty": true
+    },
+    {
+      "at": "2026-09-18T09:47:58.860Z",
+      "kind": "test_notifications_closed"
+    },
+    {
+      "at": "2026-09-18T09:48:00.529Z",
+      "kind": "sent",
+      "actor": "A",
+      "group": "minimized",
+      "trial": "4916e9bb-17ea-4464-ae06-56a376dc5aa6",
+      "destination": "request-s0-4916e9bb-17ea-4464-ae06-56a376dc5aa6",
+      "dirty": true
+    },
+    {
+      "at": "2026-09-18T09:48:01.208Z",
+      "kind": "test_notifications_closed"
+    },
+    {
+      "at": "2026-09-18T09:48:03.259Z",
+      "kind": "sent",
+      "actor": "A",
+      "group": "multiple-tabs",
+      "trial": "ff86b344-10d5-4855-9cf6-a288e9418b20",
+      "destination": "request-s0-ff86b344-10d5-4855-9cf6-a288e9418b20",
+      "dirty": true
+    },
+    {
+      "at": "2026-09-18T09:48:04.358Z",
+      "kind": "test_notifications_closed"
+    },
+    {
+      "at": "2026-09-18T09:48:07.676Z",
+      "kind": "sent",
+      "actor": "A",
+      "group": "failure-case",
+      "trial": "ea633163-8e40-4f58-baec-e7e276dfbed5",
+      "destination": "request-s0-ea633163-8e40-4f58-baec-e7e276dfbed5",
+      "dirty": true
+    },
+    {
+      "at": "2026-09-18T09:48:08.305Z",
+      "kind": "test_notifications_closed"
+    },
+    {
+      "at": "2026-09-18T09:48:10.235Z",
+      "kind": "identity_changed",
+      "actor": "B"
+    },
+    {
+      "at": "2026-09-18T09:48:10.956Z",
+      "kind": "sent",
+      "actor": "B",
+      "group": "failure-case",
+      "trial": "1cc41a0c-356f-49e2-8db2-f7cd4acf6e14",
+      "destination": "request-s0-1cc41a0c-356f-49e2-8db2-f7cd4acf6e14",
+      "dirty": true
+    },
+    {
+      "at": "2026-09-18T09:48:13.167Z",
+      "kind": "pending_destination",
+      "trial": "1cc41a0c-356f-49e2-8db2-f7cd4acf6e14",
+      "destination": "request-s0-1cc41a0c-356f-49e2-8db2-f7cd4acf6e14",
+      "draftPreserved": true,
+      "focused": true,
+      "visible": "visible"
+    },
+    {
+      "at": "2026-09-18T09:48:13.167Z",
+      "type": "outcome",
+      "trial": "1cc41a0c-356f-49e2-8db2-f7cd4acf6e14",
+      "group": "failure-case",
+      "actor": "B",
+      "destination": "request-s0-1cc41a0c-356f-49e2-8db2-f7cd4acf6e14",
+      "synthetic": false,
+      "outcome": "reused",
+      "clientsBefore": 1,
+      "clientsAfter": 1
+    }
+  ]
+}
