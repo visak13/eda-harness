@@ -1,0 +1,51 @@
+{
+  "kind": "STATIC asset/context specimen, not running application",
+  "rendered_at": "2026-09-18T10:24:32.744Z",
+  "size_instances_per_theme": 171,
+  "sizes": [
+    16,
+    18,
+    24
+  ],
+  "narrow_width": 390,
+  "narrow_overflow": false,
+  "work_composer_overlap": false,
+  "shots": [
+    {
+      "file": "packet-epic.png",
+      "sha256": "8015d807afb2c9d74e05e564f504875a5b758c32b7aeb2fe05dc43dccb40048b"
+    },
+    {
+      "file": "packet-review.png",
+      "sha256": "10d5b46a073b8cf110ad0e1bed5b02732dce4bc5b0425498846adfd6f3350080"
+    },
+    {
+      "file": "packet-dark-review.png",
+      "sha256": "4296c47180b972bba5706dca26aaa17806bcc72075d772d4d70cb3f3819ab244"
+    },
+    {
+      "file": "packet-work.png",
+      "sha256": "7913571c0dee929ea8b4125958c54c07443a1ccebc7cf061dec7160e4ad4febe"
+    },
+    {
+      "file": "packet-dark-work.png",
+      "sha256": "5254c2df5e4c6590a1ac7b65f0e856acce2c6798ef5f9e6ab0490a5fb30dedb5"
+    },
+    {
+      "file": "packet-narrow.png",
+      "sha256": "cd6b9b48138942c092931517de06dd8a1ccafde32984ea703e25a7599d60c457"
+    },
+    {
+      "file": "sizes-light.png",
+      "sha256": "9a212188fc9698d23ea2ca55aa7f6b5a8fe448755f64555472ee5faf843ccbac"
+    },
+    {
+      "file": "sizes-dark.png",
+      "sha256": "c2a5d1173c41d55011f3743b6bee116fabe91c6816a251cbd1842a7d6f5b61cb"
+    },
+    {
+      "file": "sizes-hc.png",
+      "sha256": "7ea1a0a494711ee9ae84623c2fabd7fc9d2d7aab1e61c1e1f0e7cfe7f6d8e172"
+    }
+  ]
+}
