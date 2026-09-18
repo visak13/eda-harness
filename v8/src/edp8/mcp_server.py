@@ -27,6 +27,9 @@ import time
 from collections.abc import AsyncIterator
 from typing import Annotated, Any
 from pathlib import Path
+from dataclasses import replace
+
+from .http_upload import HttpUploadPolicy
 
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.streamable_http_manager import StreamableHTTPASGIApp, StreamableHTTPSessionManager
@@ -83,7 +86,8 @@ def _identity_from(ctx: Context | None) -> tuple[str | None, str | None, str | N
             os.environ.get("EDP8_TOKEN") or None)
 
 
-def _wrap(tool: ToolDef, *, board_url: str, admin_token: str | None, workspace_root: Path | None = None):
+def _wrap(tool: ToolDef, *, board_url: str, admin_token: str | None, workspace_root: Path | None = None,
+          http_upload_policy: HttpUploadPolicy | None = None):
     """Build a function whose signature mirrors tool.args_model's fields (flat input schema)
     plus a Context parameter the SDK injects; the request identity binds the BoardClient."""
 
@@ -91,10 +95,21 @@ def _wrap(tool: ToolDef, *, board_url: str, admin_token: str | None, workspace_r
         participant, session, token = _identity_from(ctx)
         client = BoardClient(base_url=board_url, participant=participant, admin_token=admin_token,
                              token=token, workspace_root=workspace_root)
+        request_tool = tool
+        if tool.name == 'artifact_upload' and http_upload_policy is not None:
+            # Transport peer is server request metadata, never a forwarded/header claim.
+            try:
+                request = ctx.request_context.request
+                peer = request.client.host
+                if any(h in request.headers for h in ('forwarded', 'x-forwarded-for', 'x-real-ip')):
+                    peer = None  # proxied topology is not the authorized single-host route
+            except (AttributeError, ValueError):
+                peer = None
+            request_tool = replace(tool, handler=lambda a: http_upload_policy.upload(client, a.path, a.note, peer))
         with bind_request(client, session_id=session, server_version=VERSION):
             # invoke() validates args → envelope on a bad enum (naming field + allowed values),
             # carries the deprecation hint, and counts consecutive failures per seat (§19).
-            result = invoke(tool, kwargs, seat=participant)
+            result = invoke(request_tool, kwargs, seat=participant)
         return json.dumps(result, default=str)
 
     params = [inspect.Parameter("ctx", inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=Context)]
@@ -110,11 +125,13 @@ def _wrap(tool: ToolDef, *, board_url: str, admin_token: str | None, workspace_r
 
 
 def build_role_server(role: str, *, board_url: str, admin_token: str | None,
-                      workspace_root: Path | None = None) -> MCPServer:
+                      workspace_root: Path | None = None,
+                      http_upload_policy: HttpUploadPolicy | None = None) -> MCPServer:
     server = MCPServer("edp8", version="0.8.0",
                        instructions=f"edp8 board tools for role {role!r} (server {VERSION})")
     for tool in tools_for_role(role):
-        server.add_tool(_wrap(tool, board_url=board_url, admin_token=admin_token, workspace_root=workspace_root),
+        server.add_tool(_wrap(tool, board_url=board_url, admin_token=admin_token, workspace_root=workspace_root,
+                              http_upload_policy=http_upload_policy),
                         name=tool.name, description=tool.description)
     return server
 
@@ -128,6 +145,7 @@ def _env() -> tuple[str, str | None]:
 def build_http_app(roles: list[str] | None = None) -> Starlette:
     board_url, admin_token = _env()
     roles = roles or sorted(ROLE_BUNDLES)
+    upload_policy = HttpUploadPolicy.from_environment(board_url)
     security = TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
         allowed_hosts=["127.0.0.1:*", "localhost:*", "[::1]:*"],
@@ -136,7 +154,8 @@ def build_http_app(roles: list[str] | None = None) -> Starlette:
     managers: dict[str, StreamableHTTPSessionManager] = {}
     routes: list[Route] = []
     for role in roles:
-        srv = build_role_server(role, board_url=board_url, admin_token=admin_token)
+        srv = build_role_server(role, board_url=board_url, admin_token=admin_token,
+                                http_upload_policy=upload_policy)
         mgr = StreamableHTTPSessionManager(app=srv._lowlevel_server, json_response=True, stateless=True,
                                            security_settings=security)
         managers[role] = mgr

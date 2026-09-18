@@ -667,6 +667,16 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     def artifact_create(b: ArtifactIn, a: Participant = Depends(actor)):
         return ok(_dump(board.artifact_create(a, form=b.form, uri=b.uri, note=b.note, ticket_id=b.ticket_id)))
 
+    @app.post("/v1/artifacts/upload-authorize")
+    def artifact_upload_authorize(a: Participant = Depends(actor), x_token: str | None = Header(default=None)):
+        """Strict credential probe for opt-in proxy file access; trusted-mode headers are insufficient."""
+        import hmac
+        humans, agents = _tokens()
+        secret = (humans if a.type == 'human' else agents).get(a.handle.lstrip('@'))
+        if not secret or not x_token or not hmac.compare_digest(secret.encode(), x_token.encode()):
+            raise HTTPException(401, 'configured participant credential required for HTTP file access')
+        return ok({'participant_id': a.id})
+
     @app.post("/v1/artifacts/upload")
     async def artifact_upload(file: UploadFile = File(...), note: str = Form(default=""),
                               ticket_id: str | None = Form(default=None), a: Participant = Depends(actor)):

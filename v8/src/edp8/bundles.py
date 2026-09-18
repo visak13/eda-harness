@@ -1633,7 +1633,7 @@ class ArtifactCreateArgs(BaseModel):
 
 
 class ArtifactUploadArgs(BaseModel):
-    path: str = Field(description="seat-local workspace file, resolved by the local adapter, never the shared proxy")
+    path: str = Field(description="local workspace file; opt-in single-host HTTP requires an absolute path inside operator-configured roots")
     note: str = ""
 
 
@@ -1650,8 +1650,8 @@ def _artifact_read(a: ArtifactReadArgs) -> dict[str, Any]:
 
 
 ARTIFACT_TOOLS = [
-    ToolDef("artifact_upload", "Stream a workspace file through a seat-local adapter to a staged artifact",
-            "to attach a local file (25 MB cap); unavailable on shared HTTP without a local harness adapter",
+    ToolDef("artifact_upload", "Stream an allowed workspace file to a staged artifact",
+            "to attach a local file (25 MB cap); use a seat-local adapter or explicitly configured authenticated single-host HTTP policy",
             "staged artifact; message_send(artifacts=[id]) finalizes it; existing MIME/auth rules apply; see get_guide('agent-tools')",
             ArtifactUploadArgs, lambda a: get_client().artifact_upload(a.path, a.note), "artifact"),
     ToolDef("artifact_create",

@@ -30,8 +30,10 @@ in_progress requires a new explicit handoff even when old evidence refs remain.
 - Pi extension: local interception uses per-call trusted ctx.cwd and the installed Python helper;
   bounded multipart directly to the board with seat credentials. No proxy path reads.
 - Seat-local stdio MCP: operator explicitly sets EDP8_UPLOAD_ROOT; same handle-verified boundary.
-- Shared HTTP MCP without local interception (including current Claude clients): typed unavailable.
-  No root inferred from proxy cwd or caller-provided headers. This is an explicit parity limitation.
+- Shared HTTP MCP: default typed unavailable. Operator may explicitly enable the single-host
+  authenticated policy in `guides/http-upload-policy.md`; it supports Claude HTTP clients without
+  a per-seat MCP process. No root inferred from proxy cwd or caller-provided headers. Remote or
+  proxied deployments remain unsupported and fail closed.
 
 Activation requires owner-coordinated board/MCP deployment and new/reloaded Pi sessions. This
 code does not reload services, edit live crons or change active CLI configuration. Old clients

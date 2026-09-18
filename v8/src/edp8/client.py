@@ -185,13 +185,16 @@ class BoardClient:
         return self._request("POST", "/v1/artifacts",
                              json={"form": form, "uri": uri, "note": note, "ticket_id": ticket_id})
 
-    def artifact_upload(self, path: str, note: str = "") -> dict[str, Any]:
+    def upload_authorize(self) -> dict[str, Any]:
+        return self._request("POST", "/v1/artifacts/upload-authorize")
+
+    def artifact_upload(self, path: str, note: str = "", *, _pinned_root: bool = False) -> dict[str, Any]:
         if self.workspace_root is None:
             return {"ok": False, "error": {"code": "unavailable", "message": "upload requires a seat-local workspace adapter"},
-                    "hint": "use a configured local harness/stdio adapter; shared HTTP never reads proxy-host paths"}
+                    "hint": "use a local harness/stdio adapter or the operator-configured single-host HTTP policy"}
         from .local_upload import BoundedFile, UploadRefused, workspace_file
         try:
-            with workspace_file(self.workspace_root, path) as (file, name):
+            with workspace_file(self.workspace_root, path, pinned_root=_pinned_root) as (file, name):
                 files = {"file": (name, BoundedFile(file), "application/octet-stream")}
                 with contextlib.ExitStack() as stack:
                     transport = self._client or stack.enter_context(httpx.Client(base_url=self.base_url, timeout=60))

@@ -1,4 +1,4 @@
-"""Seat-local file upload boundary. Never configure a workspace on the shared proxy.
+"""File upload boundary for seat-local adapters or an explicit single-host policy.
 
 The root is supplied by the local harness, never a model tool argument. Verify the
 opened handle as well as the resolved name to close symlink/junction swap races.
@@ -44,8 +44,11 @@ def _handle_path(file) -> Path:
 
 
 @contextlib.contextmanager
-def workspace_file(root: Path, path: str):
-    root = root.resolve(strict=True)
+def workspace_file(root: Path, path: str, *, pinned_root: bool = False):
+    # HTTP policy roots were canonicalized at startup. Do not re-resolve one to a
+    # different location if its directory/ancestor is later replaced by a junction.
+    if not pinned_root:
+        root = root.resolve(strict=True)
     candidate = (root / path).resolve(strict=True)
     if not candidate.is_relative_to(root):
         raise UploadRefused('file is outside the seat workspace')
