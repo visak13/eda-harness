@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from edp8.board import Board
-from edp8.schemas import (Criterion, Doc, Event, Gate, Participant, Session, Ticket, TicketStatus)
+from edp8.schemas import (Criterion, Doc, Event, Gate, Message, Participant, Session, Ticket, TicketStatus)
 from edp8.store import Store
 
 EPIC = 'epic-44a0576511'
@@ -24,7 +24,7 @@ CHILDREN = {
 }
 
 
-def candidate_restore(conn, *, fail_after_update=False):
+def candidate_restore(conn, *, fail_after_update=False, authorization_message=None, before_image=None):
     """Candidate transaction, to be exercised ONLY on the synthetic fixtures below.
 
     Restores one status + appends an honestly attributed repair event atomically.
@@ -38,6 +38,16 @@ def candidate_restore(conn, *, fail_after_update=False):
             if not row:
                 raise ValueError(f'missing {table} {key}')
             return json.loads(row[0])
+        if (authorization_message is None) != (before_image is None):
+            raise ValueError('authorization and before-image must be supplied together')
+        if authorization_message is not None:
+            if authorization_message != 'm-f5feec237a':
+                raise ValueError('this one-time repair requires its exact authorization')
+            approval = obj('message', authorization_message)
+            owner = obj('participant', approval['created_by'])
+            if (owner['type'], owner['role'], approval['ticket_id'], approval['text']) != (
+                    'human', 'owner', EPIC, '@architect.epic-44a0576511 yes I authorize'):
+                raise ValueError('authorization mismatch')
         epic = obj('ticket', EPIC)
         if (epic['kind'], epic['status'], epic['design_ref'], epic['assignee']) != (
                 'epic', 'in_progress', DESIGN, None):
@@ -68,6 +78,13 @@ def candidate_restore(conn, *, fail_after_update=False):
         if not signoff or signoff[-1]['kind'] != 'gate_opened':
             raise ValueError('design gate not open')
         before = json.dumps(epic, sort_keys=True)
+        if before_image is not None:
+            with Path(before_image).open('x', encoding='utf-8') as backup:
+                json.dump({'ticket': epic, 'authorization_message': authorization_message,
+                           'note': 'Before-image only; not a claim the transaction committed'}, backup, indent=2)
+                backup.flush()
+                import os
+                os.fsync(backup.fileno())
         epic['status'] = 'designed'
         conn.execute('UPDATE ticket SET status=?, body=? WHERE id=? AND status=?',
                      ('designed', json.dumps(epic), EPIC, 'in_progress'))
@@ -78,7 +95,9 @@ def candidate_restore(conn, *, fail_after_update=False):
                       kind='status_changed', data={
                           'from': 'in_progress', 'to': 'designed', 'by': ACTOR,
                           'maintenance_repair': True,
-                          'reason': 'ISOLATED PROOF: restore pre-execution gate eligibility',
+                          'reason': ('Owner-authorized one-time pre-execution lifecycle repair'
+                                     if authorization_message else 'ISOLATED PROOF: restore pre-execution gate eligibility'),
+                          'authorization_message': authorization_message,
                           'approval_not_emitted': True})
         conn.execute("UPDATE seq SET n=n+1 WHERE name='global'")
         seq = conn.execute("SELECT n FROM seq WHERE name='global'").fetchone()[0]
@@ -144,6 +163,23 @@ class RestoreProof(unittest.TestCase):
             candidate_restore(self.conn, fail_after_update=True)
         self.assertEqual(self.store.get('ticket', EPIC).model_dump_json(), old)
         self.assertEqual(self.store.max_seq(), seq)
+
+    def test_authorized_variant_writes_before_image_and_attributed_audit(self):
+        self.store.put('message', Message(id='m-f5feec237a', created_by='owner', ticket_id=EPIC,
+                                         kind='note', text='@architect.epic-44a0576511 yes I authorize'))
+        backup = Path(self.tmp.name) / 'before.json'
+        _, event_id = candidate_restore(self.conn, authorization_message='m-f5feec237a', before_image=backup)
+        self.assertEqual(json.loads(backup.read_text())['ticket']['status'], 'in_progress')
+        event = self.store.get('event', event_id)
+        self.assertEqual(event.data['authorization_message'], 'm-f5feec237a')
+        self.assertEqual(event.created_by, ACTOR)
+        self.assertEqual(event.kind.value, 'status_changed')
+
+    def test_wrong_authorization_refused(self):
+        with self.assertRaisesRegex(ValueError, 'exact authorization'):
+            candidate_restore(self.conn, authorization_message='wrong',
+                              before_image=Path(self.tmp.name) / 'before.json')
+        self.assertEqual(self.store.get('ticket', EPIC).status.value, 'in_progress')
 
     def test_repeat_refused(self):
         candidate_restore(self.conn)
