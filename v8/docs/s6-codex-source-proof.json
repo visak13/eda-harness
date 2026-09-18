@@ -1,0 +1,54 @@
+{
+  "kind": "genuine installed Codex source; bounded owner-approved S6 capture, not synthetic",
+  "received_at": "2026-09-18T14:26:54.571353+00:00",
+  "observed_at": null,
+  "rateLimits": {
+    "primary": {
+      "usedPercent": 79,
+      "windowDurationMins": 10080,
+      "resetsAt": 1790325485
+    }
+  },
+  "rateLimitsByLimitId": {
+    "codex": {
+      "primary": {
+        "usedPercent": 79,
+        "windowDurationMins": 10080,
+        "resetsAt": 1790325485
+      }
+    }
+  },
+  "account_binding_checked": true,
+  "account_identity_retained": false,
+  "owned_process_reaped": true,
+  "normalized_at": "2026-09-18T14:35:37.362099+00:00",
+  "normalized": {
+    "provider": "codex",
+    "account_binding": "Linked account",
+    "source": "Codex App Server",
+    "received_at": "2026-09-18T14:26:54.571353+00:00",
+    "windows": [
+      {
+        "key": "five_hour",
+        "window_minutes": 300,
+        "used_percent": null,
+        "resets_at": null,
+        "observed_at": null,
+        "status": "unavailable",
+        "reason": "Window not reported"
+      },
+      {
+        "key": "seven_day",
+        "window_minutes": 10080,
+        "used_percent": 79,
+        "resets_at": 1790325485,
+        "observed_at": null,
+        "status": "stale",
+        "reason": "Receipt older than five minutes; observation time unknown"
+      }
+    ],
+    "retry_after_seconds": 30
+  },
+  "source_comparison_equal": true,
+  "unmapped_actor_disclosed": false
+}

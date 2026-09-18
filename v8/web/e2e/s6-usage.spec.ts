@@ -30,13 +30,15 @@ test("real endpoint defaults unlinked; Usage directly precedes Find without navi
   await expect(find).toBeVisible();
 });
 
-for (const [width, height] of [[1440, 900], [320, 568], [844, 390]]) test(`synthetic usage all themes bounded, nonmodal, draft-safe ${width}x${height}`, async ({ page }) => {
+for (const [width, height] of [[1440, 900], [320, 568], [844, 390]]) test(`synthetic usage all themes bounded, nonmodal, draft-safe ${width}x${height}`, async ({ page, browserName }) => {
   test.setTimeout(90_000);
+  const suffix = browserName === "firefox" ? "-firefox" : "";
   await page.setViewportSize({ width, height });
   await page.route("**/v1/me/usage", (route) => route.fulfill({ json: { ok: true, value: sample } }));
   await page.goto(`/ui/epic/${EPIC()}?as=owner`);
   const draft = page.getByRole("textbox", { name: /Message/ }).first();
   await draft.fill("Synthetic source draft stays intact");
+  await draft.evaluate((el) => (el as HTMLTextAreaElement).setSelectionRange(9, 15));
   const trigger = page.getByRole("button", { name: "Usage", exact: true });
   await trigger.click();
   const dialog = page.getByRole("dialog", { name: "Subscription usage" });
@@ -55,17 +57,23 @@ for (const [width, height] of [[1440, 900], [320, 568], [844, 390]]) test(`synth
     expect(axe.violations.filter((v) => v.impact === "serious" || v.impact === "critical"), theme.id).toEqual([]);
     if (["folio", "obsidian", "folio-hc"].includes(theme.id)) {
       await dialog.evaluate((el) => { el.scrollTop = 0; });
-      await page.screenshot({ path: `e2e/evidence/s6-usage-${width}-${theme.id}.png` });
+      await page.screenshot({ path: `e2e/evidence/s6-usage-${width}-${theme.id}${suffix}.png` });
     }
     const refresh = dialog.getByRole("button", { name: /Refresh/ });
     await refresh.scrollIntoViewIfNeeded(); await expect(refresh).toBeInViewport();
-    if (theme.id === "folio") await page.screenshot({ path: `e2e/evidence/s6-usage-${width}-bottom.png` });
+    if (theme.id === "folio") await page.screenshot({ path: `e2e/evidence/s6-usage-${width}-bottom${suffix}.png` });
   }
   const close = dialog.getByRole("button", { name: "Close Subscription usage" });
   await close.scrollIntoViewIfNeeded(); await close.focus();
   await page.keyboard.press("Escape"); await expect(trigger).toBeFocused();
   await expect(draft).toHaveValue("Synthetic source draft stays intact");
-  await trigger.click(); await dialog.getByRole("button", { name: "Close Subscription usage" }).click();
+  expect(await draft.evaluate((el) => [(el as HTMLTextAreaElement).selectionStart, (el as HTMLTextAreaElement).selectionEnd])).toEqual([9, 15]);
+  await trigger.click();
+  await dialog.getByRole("button", { name: "Close Subscription usage" }).focus();
+  await page.keyboard.press("Tab");
+  await expect(dialog).toHaveCount(1);
+  await expect(dialog.locator("summary").first()).toBeFocused();
+  await dialog.getByRole("button", { name: "Close Subscription usage" }).click();
   await expect(trigger).toBeFocused();
   await trigger.click(); await draft.focus();
   await expect(dialog).toHaveCount(0); await expect(draft).toBeFocused();

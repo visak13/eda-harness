@@ -25,7 +25,9 @@ from .usage import MAX_BYTES
 
 
 def number(value):
-    return value if type(value) in (int, float) and math.isfinite(value) else None
+    # Bound integers before math.isfinite (huge JSON ints overflow its float conversion).
+    return value if (type(value) in (int, float) and 0 <= value <= 253402300799
+                     and math.isfinite(value)) else None
 
 
 def project(provider: str, payload: dict, binding_id: str, status: str = "available") -> dict:
@@ -97,6 +99,7 @@ class Rpc:
         self.failed = threading.Event()
         self.serial = 0
         self.changed = False
+        self.pending_rates = []
         self.reader = threading.Thread(target=self._receive, daemon=True)
         self.reader.start()
 
@@ -143,12 +146,31 @@ class Rpc:
                 continue
             if message.get("method") == "account/updated":
                 self.changed = True
+            if message.get("method") == "account/rateLimits/updated":
+                if len(self.pending_rates) >= 128:
+                    raise SourceError("notification_overflow")
+                self.pending_rates.append(message.get("params"))
             if message.get("id") != identifier:
                 continue
             if "error" in message or not isinstance(message.get("result"), dict):
                 raise SourceError("source_rejected")
+            if method == "account/rateLimits/read":
+                # This response supersedes earlier notifications in transport order.
+                # Notifications during the following identity RPC remain queued.
+                self.pending_rates.clear()
             return message["result"]
         raise SourceError("source_timeout")
+
+    def latest_rate_update(self, fallback):
+        """Drain deferred notifications in receive order; each replaces the prior snapshot."""
+        result = fallback
+        for payload in self.pending_rates:
+            if not isinstance(payload, dict):
+                self.pending_rates.clear()
+                raise SourceError("invalid_notification")
+            result = payload
+        self.pending_rates.clear()
+        return result
 
     def close(self):
         self.stopped.set()
@@ -202,7 +224,7 @@ def collect_codex(rpc: Rpc, path: Path, binding_id: str, expected: str, *, once:
             if rpc.changed or not authorized():
                 receipt({}, "auth_required")
             else:
-                receipt(payload)
+                receipt(rpc.latest_rate_update(payload))
             failures = 0
             if once:
                 return
@@ -218,7 +240,7 @@ def collect_codex(rpc: Rpc, path: Path, binding_id: str, expected: str, *, once:
                 if method == "account/rateLimits/updated":
                     payload = message.get("params")
                     if isinstance(payload, dict) and authorized():
-                        receipt(payload)
+                        receipt(rpc.latest_rate_update(payload))
                     else:
                         receipt({}, "auth_required")
         except SourceError:
@@ -265,7 +287,7 @@ def main():
                 collect_codex(rpc, args.output, args.binding_id, args.account_fingerprint, once=args.once)
     except KeyboardInterrupt:
         return 0
-    except (OSError, ValueError, TypeError, SourceError, RecursionError):
+    except (OSError, ValueError, TypeError, OverflowError, SourceError, RecursionError):
         if args.output and args.binding_id:
             try:
                 publish(args.output, project(args.provider, {}, args.binding_id, "error"))

@@ -45,7 +45,8 @@ def test_documented_codex_pool_authoritative_even_when_empty():
     assert normalize("codex", raw, NOW).windows[0].used_percent == 44
 
 
-@pytest.mark.parametrize("used", [None, True, "0", -1, 101, float("nan"), float("inf")])
+@pytest.mark.parametrize("used", [None, True, "0", -1, 101, float("nan"), float("inf"), 10**400],
+                         ids=["null", "bool", "string", "negative", "over100", "nan", "inf", "huge_int"])
 def test_invalid_never_zero(used):
     assert normalize("codex", receipt(rateLimits={"primary": codex(used)}), NOW).windows[1].used_percent is None
 
@@ -189,6 +190,8 @@ def test_codex_supported_read_projection(tmp_path):
     account = {"account": {"type": "chatgpt", "email": "synthetic@example.test"}}
     class Fake:
         changed = False
+        def latest_rate_update(self, payload):
+            return payload
         def call(self, method):
             return account if method == "account/read" else {"rateLimits": {"primary": codex(0)}, "token": "NEVER"}
     path = tmp_path / "codex.json"
@@ -206,6 +209,8 @@ def test_codex_events_replace_windows_and_account_change_hides_data(tmp_path, mo
     ]
     class Fake:
         changed = False
+        def latest_rate_update(self, payload):
+            return payload
         def call(self, method):
             return account if method == "account/read" else {"rateLimits": {"primary": codex()}}
         def next(self, timeout):
@@ -272,4 +277,47 @@ def test_source_errors_and_default_off_do_not_disclose(tmp_path, monkeypatch):
     collect_codex(Failed(), path, "approved-binding", fingerprint(account), once=True)
     assert json.loads(path.read_text())["status"] == "error"
     assert "secret" not in path.read_text()
+
+
+def test_huge_integers_project_and_cache_without_overflow(tmp_path):
+    raw = {"rateLimits": {"primary": codex(10**400)}}
+    projected = project("codex", raw, "approved-binding")
+    assert projected["rateLimits"]["primary"]["usedPercent"] is None
+    cache, _, snapshot, _ = setup_cache(tmp_path)
+    snapshot.write_text(json.dumps(receipt(**raw)))
+    assert cache.read("alice")["providers"][1]["windows"][1]["used_percent"] is None
+    path = tmp_path / "claude.json"
+    capture_claude(io.BytesIO(json.dumps({"rate_limits": {"five_hour": {
+        "used_percentage": 10**400, "resets_at": 10**400}}}).encode()), path, "binding-test")
+    assert json.loads(path.read_text())["rate_limits"]["five_hour"]["used_percentage"] is None
+
+
+def test_real_rpc_interleaving_preserves_post_read_removal_in_once_mode(tmp_path):
+    import queue
+    import threading
+    from types import SimpleNamespace
+    account = {"account": {"type": "chatgpt", "email": "synthetic@example.test"}}
+    short = {"rateLimits": {"primary": codex(), "secondary": codex(7, 300)}}
+    absent = {"rateLimits": {"primary": codex()}}
+    rpc = Rpc.__new__(Rpc)
+    rpc.process = SimpleNamespace(stdin=io.StringIO())
+    rpc.serial = 0
+    rpc.changed = False
+    rpc.pending_rates = []
+    rpc.failed = threading.Event()
+    rpc.messages = queue.Queue()
+    for message in [
+        {"method": "account/rateLimits/updated", "params": absent},
+        {"id": 1, "result": account},
+        {"method": "account/rateLimits/updated", "params": absent},
+        {"id": 2, "result": short},
+        {"method": "account/rateLimits/updated", "params": short},
+        {"method": "account/rateLimits/updated", "params": absent},
+        {"id": 3, "result": account},
+    ]:
+        rpc.messages.put(message)
+    path = tmp_path / "codex.json"
+    collect_codex(rpc, path, "approved-binding", fingerprint(account), once=True)
+    assert "secondary" not in json.loads(path.read_text())["rateLimits"]
+    assert rpc.messages.empty() and rpc.pending_rates == []
 

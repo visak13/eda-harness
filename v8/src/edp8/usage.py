@@ -104,7 +104,7 @@ def normalize(provider: Provider, raw: dict, now: float) -> ProviderUsage:
         if window.key == "fable" or not isinstance(candidate, dict):
             continue
         used, reset = candidate.get(used_key), candidate.get(reset_key)
-        if (type(used) not in (int, float) or not math.isfinite(used) or not 0 <= used <= 100
+        if (type(used) not in (int, float) or not 0 <= used <= 100 or not math.isfinite(used)
                 or type(reset) is not int or not 0 < reset <= 253402300799):
             window.reason = "Invalid or missing window values"
             continue
@@ -187,7 +187,7 @@ class UsageCache:
                 result = normalize(provider, raw, now)
         except FileNotFoundError:
             result = empty(provider, "unavailable", "Waiting for authorized source receipt")
-        except (OSError, ValueError, TypeError, RecursionError):
+        except (OSError, ValueError, TypeError, OverflowError, RecursionError):
             result = empty(provider, "error", "Source receipt unreadable")
         failed = all(w.status in ("error", "auth_required", "unavailable") for w in result.windows)
         failures = min(failures + 1, 5) if failed else 0

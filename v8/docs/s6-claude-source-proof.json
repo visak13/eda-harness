@@ -1,0 +1,56 @@
+{
+  "kind": "genuine owner-initiated Claude statusline receipt through S6 collector; not synthetic",
+  "received_at": "2026-09-18T14:35:33.942309+00:00",
+  "observed_at": null,
+  "rate_limits": {
+    "five_hour": {
+      "used_percentage": 2,
+      "resets_at": 1789756200
+    },
+    "seven_day": {
+      "used_percentage": 17,
+      "resets_at": 1790251200
+    }
+  },
+  "normalized_at": "2026-09-18T14:39:14.910437+00:00",
+  "normalized": {
+    "provider": "claude",
+    "account_binding": "Linked account",
+    "source": "Claude Code statusline",
+    "received_at": "2026-09-18T14:35:33.942309+00:00",
+    "windows": [
+      {
+        "key": "five_hour",
+        "window_minutes": 300,
+        "used_percent": 2,
+        "resets_at": 1789756200,
+        "observed_at": null,
+        "status": "stale",
+        "reason": "Observation time unknown; may be stale"
+      },
+      {
+        "key": "seven_day",
+        "window_minutes": 10080,
+        "used_percent": 17,
+        "resets_at": 1790251200,
+        "observed_at": null,
+        "status": "stale",
+        "reason": "Observation time unknown; may be stale"
+      },
+      {
+        "key": "fable",
+        "window_minutes": null,
+        "used_percent": null,
+        "resets_at": null,
+        "observed_at": null,
+        "status": "unavailable",
+        "reason": "Window not reported"
+      }
+    ],
+    "retry_after_seconds": 30
+  },
+  "source_comparison_equal": true,
+  "account_binding": "operator-attested dedicated claude-personal Max session, architect screenshot verification m-d624acc465",
+  "account_identity_retained": false,
+  "agent_prompt_sent": false
+}

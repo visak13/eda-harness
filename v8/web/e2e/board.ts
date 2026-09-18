@@ -69,6 +69,7 @@ export interface Seeded {
 const FLEET_ONLY_ENV = [
   "EDP_POOL_URL", "EDP8_POOL_WATCH", "EDP_BROKER_URL", "EDP8_BOARD_URL", "EDP8_PUBLIC_URL",
   "EDP8_TOKEN", "EDP_HANDLE", "EDP8_PARTICIPANT", "EDP_ROLE", "EDP_SPAWN_SESSION_ID", "EDP8_ADMIN_TOKEN",
+  "EDP8_USAGE_CONFIG",
 ];
 function hermeticEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const out: NodeJS.ProcessEnv = { ...env };
@@ -98,6 +99,8 @@ export async function startBoard(): Promise<Seeded> {
       EDP8_EMBEDDER: "none",
       EDP8_ADMIN_TOKEN: ADMIN,
       EDP8_LOG: "warning",
+      // Explicit opt-in only for the bounded source-validation spec; never inherit fleet mapping.
+      EDP8_USAGE_CONFIG: process.env.EDP8_E2E_USAGE_CONFIG ?? "",
       // Hermetic cutover: the e2e suite exercises the Folio SPA at /ui (EDP8_UI=folio, the default),
       // pinned here so a stray EDP8_UI=legacy in the launching shell can't flip the board to serve
       // the SPA at /app and 404 every spec's /ui/* navigation.
