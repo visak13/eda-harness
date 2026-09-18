@@ -87,6 +87,37 @@ def test_visible_mode_opens_pi_tui_with_role_card(monkeypatch, tmp_path):
     assert seen["argv"][1:] == ["-m", "edp8.pi_seat.run"]
 
 
+def test_fresh_spawn_rotates_a_closed_session_file(monkeypatch, tmp_path):
+    """owner m-a0ca5fea16 (2026-09-18): a respawn WITHOUT resume_session must start a new Pi
+    conversation. Pi's --session continues an existing file, so the previous (close_self) history
+    made Astra read the role card as a re-prompt and never boot. The old file is kept aside."""
+    (tmp_path / ".claude" / "commands").mkdir(parents=True)
+    (tmp_path / ".claude" / "commands" / "engineer.md").write_text("# /engineer card", encoding="utf-8")
+    monkeypatch.setenv("EDP_PI_BIN", "C:/pi/dist/cli.js")
+    seen = {}
+
+    class FakeProc:
+        pid = 4343
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(pl.subprocess, "Popen", lambda argv, **kw: (seen.__setitem__("argv", argv), FakeProc())[1])
+    sp = pl.PiSpawner(log_dir=str(tmp_path / "logs"), agent_home=str(tmp_path))
+    sess = tmp_path / "logs" / "pi-sessions" / "engineer.x.jsonl"
+    sess.parent.mkdir(parents=True)
+    sess.write_text('{"type":"session"}', encoding="utf-8")
+    sp.launch("sid-f", "engineer", "engineer.x", mode="monitor")  # fresh: no resume_session
+    assert not sess.exists(), "the closed conversation must not be continued"
+    kept = list(sess.parent.glob("engineer.x.*.jsonl"))
+    assert len(kept) == 1 and kept[0].read_text(encoding="utf-8").startswith('{"type":"session"}')
+    assert seen["argv"][-2:] == ["--", "# /engineer card"]
+    # a real resume keeps the file and sends no first message
+    sess.write_text('{"type":"session"}', encoding="utf-8")
+    sp.launch("sid-r", "engineer", "engineer.x", mode="monitor", resume_session="tok")
+    assert sess.exists() and "--" not in seen["argv"] and len(list(sess.parent.glob("engineer.x.*.jsonl"))) == 1
+
+
 def test_openai_column_binds_model_and_thinking_at_the_spawn_seam(monkeypatch, tmp_path):
     """owner m-96cbd61919: every role → gpt-6-astra, thinking medium, from models.json's
     roles_openai column; an explicit openai model per spawn still overrides."""

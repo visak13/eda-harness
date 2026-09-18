@@ -41,6 +41,11 @@ def main(argv: list[str] | None = None) -> int:
     session_dir.mkdir(parents=True, exist_ok=True)
     session_file = session_dir / f"{handle}.jsonl"
     resume = env.get("EDP_PI_RESUME") == "1" and session_file.is_file()
+    if not resume and session_file.is_file():
+        # a fresh boot must not continue the previous (closed) conversation — Pi's --session
+        # resumes an existing file; keep the history aside under a timestamped name
+        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        session_file.rename(session_file.with_name(f"{handle}.{stamp}.jsonl"))
 
     seat = PiSeat(
         cwd=agent_home,

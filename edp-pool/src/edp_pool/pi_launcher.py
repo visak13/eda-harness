@@ -113,6 +113,26 @@ def is_pi_model(model: str | None, agent_home: str | None) -> bool:
     return model.startswith(("openai/", "openai-codex/")) or pi_seat_named(model, agent_home) is not None
 
 
+def rotate_stale_session(session_file: str | Path) -> Path | None:
+    """A FRESH spawn (no resume_session) must not inherit the seat's previous conversation: Pi's
+    `--session <path>` CONTINUES an existing file, and a seat respawned after `close_self` then
+    reads the role card as a re-prompt on a finished conversation, answers with a one-line
+    summary and never boots (no Monitor, no cron, unreachable — owner m-a0ca5fea16,
+    2026-09-18, engineer.s-4983df7e94). Move the old file aside (history kept for the oracle and
+    the logs) and return its new path; None when there was nothing to rotate."""
+    f = Path(session_file)
+    if not f.is_file():
+        return None
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    dst = f.with_name(f"{f.stem}.{stamp}.jsonl")
+    n = 1
+    while dst.exists():
+        dst = f.with_name(f"{f.stem}.{stamp}-{n}.jsonl")
+        n += 1
+    f.rename(dst)
+    return dst
+
+
 def role_card_text(agent_home: str | None, role: str) -> str:
     p = Path(agent_home or os.getcwd()) / ".claude" / "commands" / f"{role}.md"
     return p.read_text(encoding="utf-8") if p.is_file() else f"/{role}"
@@ -207,8 +227,10 @@ class PiSpawner:
             sess_dir = Path(self._log_dir or self._agent_home or os.getcwd()) / "pi-sessions"
             sess_dir.mkdir(parents=True, exist_ok=True)
             session_file = str(sess_dir / f"{handle}.jsonl")
-            first = activation or (None if (resume_session and Path(session_file).is_file())
-                                   else role_card_text(self._agent_home, role))
+            resuming = bool(resume_session) and Path(session_file).is_file()
+            if not resuming:
+                rotate_stale_session(session_file)  # fresh spawn = fresh conversation, like a Claude shell
+            first = activation or (None if resuming else role_card_text(self._agent_home, role))
             argv = build_argv_pi_tui(self._agent_home, role, handle, model=env.get("EDP_PI_MODEL"),
                                      session_file=session_file, first_message=first,
                                      thinking=env.get("EDP_PI_THINKING") or None)
