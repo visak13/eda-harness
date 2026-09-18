@@ -25,7 +25,12 @@ for (const [width,height] of [[1440,900],[1280,800],[1100,768],[1024,768],[768,6
     for (const route of routes) {
       await page.goto(`/ui/${route}${route.includes("?") ? "&" : "?"}as=owner`);
       await expect(page.locator("main")).toBeVisible();
-      if (route.startsWith("epic/")) await page.getByRole("tab", { name: /Thread/ }).click();
+      if (route.startsWith("epic/")) {
+        // Conversation is now always mounted; legacy tabs were intentionally removed.
+        await expect(page.getByRole("tablist")).toHaveCount(0);
+        await expect(page.getByTestId("conversation-total")).toBeVisible();
+        await expect(page.getByTestId("thread")).toContainText(token);
+      }
       await page.waitForTimeout(150);
       const overflow = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, viewport: innerWidth,
         offenders: [...document.querySelectorAll("main *")].filter((el) => el.getBoundingClientRect().right > innerWidth + 1).slice(0,12).map((el) => `${el.tagName}.${el.className}`) }));
