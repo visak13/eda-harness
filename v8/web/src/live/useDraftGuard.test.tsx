@@ -54,6 +54,15 @@ describe("useDraftGuard", () => {
     expect(screen.getByTestId("pending")).toHaveTextContent("0");
   });
 
+  it("characterizes the pre-S2 burst: one global invalidation per event, stable child DOM", () => {
+    mount();
+    const node = screen.getByTestId("pending");
+    act(() => { for (let seq = 1; seq <= 20; seq++) fire!({ seq, kind: "message_sent", subject_id: "other" }); });
+    expect(invalidate).toHaveBeenCalledTimes(20);
+    expect(invalidate.mock.calls.every((args) => args.length === 0)).toBe(true);
+    expect(screen.getByTestId("pending")).toBe(node);
+  });
+
   it("holds the refresh while a composer is dirty and counts 'N new'", () => {
     mount();
     fireEvent.click(screen.getByText("dirty"));
