@@ -58,6 +58,29 @@ def test_resume_closed_forks_from_stored_session_and_retakes_lock():
     assert svc.sessions[sid]["state"] == "active"
 
 
+def test_resume_closed_continues_a_file_resuming_backend(tmp_path):
+    """owner m-a70e85dc0b (2026-09-18): a closed Pi seat has no claude_session_id but does have a
+    session file; resume_closed continues it with the CLOSED_RESUME_ACTIVATION so the seat boots
+    again (whoami/subscribe/Monitor/cron) instead of reading the role card as a re-prompt."""
+
+    class FileSpawner(FakeSpawner):
+        def closed_session_token(self, session_id, handle):
+            return str(tmp_path / f"{handle}.jsonl")
+
+    svc = PoolService(FileSpawner())
+    h = "engineer.s-pi"
+    sid = svc.spawn("engineer", h, None, "monitor", model="astra")
+    svc.release(sid, reason="closed by self: handed_off")
+    assert svc.sessions[sid].get("claude_session_id") is None
+    out = svc.resume_closed(h)
+    assert out["resumed"] is True, out
+    launched = svc.spawner.launched[-1]
+    assert launched["resume_session"] == str(tmp_path / f"{h}.jsonl")
+    assert launched["model"] == "astra"
+    assert "Boot again now" in launched["activation"]
+    assert svc.sessions[sid]["state"] == "active" and svc.locks.get(h) == sid
+
+
 def test_resume_closed_refuses_when_no_done_row():
     svc = PoolService(FakeSpawner())
     out = svc.resume_closed("engineer.s-never")

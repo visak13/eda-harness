@@ -590,3 +590,12 @@ class CompositeSpawner:
         # opencode store anyway — a hit means it was an opencode shell.
         return self._oc.session_token(session_id) if not self._claude.knows(
             session_id) else None
+
+    def closed_session_token(self, session_id, handle):
+        """resume_closed seam for backends that resume from a file, not an id (Pi)."""
+        for b in (self._oc, self._claude):
+            f = getattr(b, "closed_session_token", None)
+            tok = f(session_id, handle) if f else None
+            if tok:
+                return tok
+        return None

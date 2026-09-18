@@ -279,3 +279,10 @@ class PiSpawner:
         """Pi resumes from the seat's own session file (`<log_dir>/pi-sessions/<handle>.jsonl`),
         selected by EDP_PI_RESUME=1 on relaunch — no token to hand back."""
         return None
+
+    def closed_session_token(self, session_id, handle) -> str | None:
+        """resume_closed seam (owner m-a70e85dc0b, 2026-09-18): a closed Pi seat resumes from its
+        own session file; return its path when it exists so the service can continue that
+        conversation instead of refusing for want of a claude_session_id."""
+        f = Path(self._log_dir or self._agent_home or os.getcwd()) / "pi-sessions" / f"{handle}.jsonl"
+        return str(f) if f.is_file() else None

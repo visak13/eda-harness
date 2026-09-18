@@ -112,6 +112,8 @@ def test_fresh_spawn_rotates_a_closed_session_file(monkeypatch, tmp_path):
     kept = list(sess.parent.glob("engineer.x.*.jsonl"))
     assert len(kept) == 1 and kept[0].read_text(encoding="utf-8").startswith('{"type":"session"}')
     assert seen["argv"][-2:] == ["--", "# /engineer card"]
+    # the resume_closed seam: the session file is the token when it exists
+    assert sp.closed_session_token("sid-any", "engineer.x") is None
     # a real resume keeps the file and sends no first message
     sess.write_text('{"type":"session"}', encoding="utf-8")
     sp.launch("sid-r", "engineer", "engineer.x", mode="monitor", resume_session="tok")

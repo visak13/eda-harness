@@ -1308,6 +1308,16 @@ class PoolService(Microservice):
         "then continue driving your plan."
     )
 
+    #: Activation for a CLOSED seat resumed on top of its own conversation file (Pi seats, owner
+    #: m-a70e85dc0b 2026-09-18). Its Monitor/cron died with the process, and the transcript ends
+    #: in close_self — without this line the role card reads as a re-prompt and the seat never boots.
+    CLOSED_RESUME_ACTIVATION = (
+        "You were closed and respawned on top of your previous conversation; that hand-off does "
+        "not end this session. Boot again now per your role card: whoami(), subscribe(), Monitor "
+        "once, cron once, context(), inbox(). Then act on the newest steers and inbox items on "
+        "your story and continue your plan."
+    )
+
     def _ensure_channel(self, name: str, members: list[str]) -> None:
         """Merge-create a channel row (existing members/topic kept).
 
@@ -1784,6 +1794,11 @@ class PoolService(Microservice):
                         "reason": f"no closed (done) session for {handle!r} to resume"}
             s = max(done, key=lambda r: r.get("resumed_at") or r.get("spawned_at") or "")
             base = s.get("claude_session_id")
+            file_resume = False
+            if not base:  # a file-resuming backend (Pi) has no session id; its session file is the base
+                f = getattr(self.spawner, "closed_session_token", None)
+                base = f(s["session_id"], handle) if f else None
+                file_resume = bool(base)
             if not base:
                 return {"resumed": False, "handle": handle,
                         "reason": "the closed row has no claude_session_id — nothing to fork-resume"}
@@ -1806,10 +1821,10 @@ class PoolService(Microservice):
             self.spawner.launch(
                 sid, role, handle, mode,
                 claude_session=fork, resume_session=base, model=model,
-                activation=self.PARK_RESUME_ACTIVATION,
+                activation=(self.CLOSED_RESUME_ACTIVATION if file_resume else self.PARK_RESUME_ACTIVATION),
                 parent=parent, extra_env=extra_env)
             new_claude_session = (getattr(self.spawner, "session_token",
-                                          lambda _sid: None)(sid) or fork)
+                                          lambda _sid: None)(sid) or (None if file_resume else fork))
         except Exception as exc:  # noqa: BLE001 — leave the row closed & the lock free for a retry
             with self._transition_lock:
                 s["state"] = "done"
