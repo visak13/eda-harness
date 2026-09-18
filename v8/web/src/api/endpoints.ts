@@ -19,6 +19,7 @@ import type {
   ResolvedRow,
   ResolveResult,
   TicketPage,
+  ThreadPage,
   TicketRecord,
   TicketsTable,
   TicketStatus,
@@ -57,6 +58,9 @@ export const getTicketsTable = (f: TicketsFilter = {}) =>
 
 export const getTicketPage = (id: string, include?: string | null) =>
   api<TicketPage>(`/v1/tickets/${encodeURIComponent(id)}/page${qs({ include })}`);
+
+export const getThreadPage = (id: string, before: number) =>
+  api<ThreadPage>(`/v1/tickets/${encodeURIComponent(id)}/thread${qs({ before })}`);
 
 export const getDocHtml = (id: string, version?: number | null) =>
   api<DocHtml>(`/v1/docs/${encodeURIComponent(id)}/html${qs({ version })}`);

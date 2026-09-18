@@ -1,5 +1,7 @@
 # S3 engineering handoff — 2026-09-18
 
+**Follow-up:** Owner-reported thread-count cap at100 is addressed in [s3-thread-count-report.md](s3-thread-count-report.md): authoritative full totals, bounded older-message pagination,235/601-message backend and235→400-message client regressions. This follow-up's browser geometry remains for canonical epic QA; no shared deployment performed.
+
 Story `s-4983df7e94`, governing `design-f716d0d138` v7 and approved revision-3 visual addendum. Engineering evidence, **not QA verdicts or owner acceptance**. No shared service restart/deployment or full web e2e performed.
 
 ## Delivered

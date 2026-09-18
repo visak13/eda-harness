@@ -182,6 +182,11 @@ def views_router(board: Board, actor: Callable[..., Participant]) -> APIRouter:
         # ?include=m-… keeps a deep-linked message in the thread even outside the newest-100 window
         return ok(views.ticket_page(board, ticket_id, include=include))
 
+    @r.get("/v1/tickets/{ticket_id}/thread")
+    def ticket_thread(ticket_id: str, before: int | None = Query(default=None, ge=1, le=9223372036854775807),
+                      a: Participant = Depends(actor)):
+        return ok(views.thread_page(board, ticket_id, before=before))
+
     @r.get("/v1/tickets/{ticket_id}/transitions")
     def ticket_transitions(ticket_id: str, a: Participant = Depends(actor)):
         # The status edges offered to THIS viewer, each allowed/blocked with the board's own reason

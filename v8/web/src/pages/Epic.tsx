@@ -29,6 +29,7 @@ import { Clamp } from "../components/Clamp";
 import styles from "./Epic.module.css";
 import { Icon } from "../components/Icon";
 import { ContextualWork } from "../components/ContextualWork";
+import { useThreadHistory, ThreadHistoryControls } from "../components/useThreadHistory";
 import { pendingWork } from "../components/PendingNavigation";
 
 // Epic page (design §4.2): crumb, id + status chip, Georgia 38 title, the owner's words verbatim,
@@ -96,6 +97,7 @@ export function EpicPage(): React.JSX.Element {
     if (include) setTab("thread");
   }, [include]);
   const page = useQuery({ queryKey: ["epic", id, include], queryFn: () => getEpicPage(id, include) });
+  const history = useThreadHistory(id, page.data);
   const summary = useQuery({ queryKey: ["epics", "summary", "", ""], queryFn: () => getEpicsSummary() });
 
   if (page.isPending) return <p className={ui.empty}>Loading epic…</p>;
@@ -123,7 +125,7 @@ export function EpicPage(): React.JSX.Element {
     { key: "overview", label: "Overview", copy: copyProps("epic", "overview") },
     { key: "work", label: "Work", count: workCount, copy: copyProps("epic", "work") },
     { key: "documents", label: "Documents", count: data.docs.length, copy: copyProps("epic", "documents") },
-    { key: "thread", label: "Thread", count: data.thread.length, copy: copyProps("epic", "thread") },
+    { key: "thread", label: "Thread", count: history.total, copy: copyProps("epic", "thread") },
   ];
 
   function steer() {
@@ -211,7 +213,8 @@ export function EpicPage(): React.JSX.Element {
           <div hidden={tab !== "thread"}>
             <ThreadTab
               epicId={id}
-              thread={data.thread}
+              thread={history.messages}
+              history={history}
               order={order}
               onToggleOrder={() => setOrder((o) => (o === "newest" ? "oldest" : "newest"))}
               composerKind={composerKind}
@@ -700,9 +703,11 @@ function ThreadTab({
   order,
   onToggleOrder,
   composerKind,
+  history,
 }: {
   epicId: string;
   thread: MessageView[];
+  history: ReturnType<typeof useThreadHistory>;
   order: "newest" | "oldest";
   onToggleOrder: () => void;
   composerKind: "note" | "steer";
@@ -710,7 +715,7 @@ function ThreadTab({
   const ordered = order === "newest" ? [...thread].reverse() : thread;
   const [reply, setReply] = useState<{ id: string; by: string } | null>(null);
   const [expanded, setExpanded] = useState(false);
-  useScrollToHash(thread.length);
+  useScrollToHash(Boolean(thread.length));
   return (
     <div className={styles.thread}>
       <div className={expanded ? styles.expandedComposer : undefined}>
@@ -728,10 +733,11 @@ function ThreadTab({
           {order === "newest" ? "Newest first" : "Oldest first"}
         </button>
       </div>
+      <ThreadHistoryControls history={history} />
       {ordered.length === 0 ? (
         <p className={ui.empty}>No messages on this epic yet.</p>
       ) : (
-        <ul className={styles.messages} data-testid="thread" tabIndex={0} aria-label="Conversation messages">
+        <ul ref={history.listRef} className={styles.messages} data-testid="thread" tabIndex={0} aria-label="Conversation messages">
           {ordered.map((m) => (
             <li key={m.id} id={m.id} className={styles.message}>
               <AgentLine by={m.by} kind={m.kind} to={m.to} viewer={identity()} at={m.at} />

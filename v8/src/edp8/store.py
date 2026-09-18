@@ -212,7 +212,7 @@ class Store:
         return obj
 
     def query_seq(self, type_: str, filters: dict[str, Any] | None = None, *, since_seq: int | None = None,
-                  limit: int = 500, newest_first: bool = False) -> list[tuple[int, Obj]]:
+                  limit: int = 500, newest_first: bool = False, before_seq: int | None = None) -> list[tuple[int, Obj]]:
         """Like query(), with each row's global seq — so a caller can ask 'what is new since'.
         `newest_first=True` selects the LAST `limit` rows (ORDER BY seq DESC) — rows come back
         newest first; reverse for chronological display."""
@@ -231,6 +231,9 @@ class Store:
         if since_seq is not None:
             where.append("seq>?")
             args.append(since_seq)
+        if before_seq is not None:
+            where.append("seq<?")
+            args.append(before_seq)
         sql = f"SELECT seq, body FROM {type_}"
         if where:
             sql += " WHERE " + " AND ".join(where)
@@ -240,6 +243,11 @@ class Store:
             rows = self._conn.execute(sql, args).fetchall()
         model = OBJECT_TYPES[type_]
         return [(r["seq"], model.model_validate_json(r["body"])) for r in rows]
+
+    def thread_count(self, ticket_id: str) -> int:
+        """Full direct-source total without fetching/deserializing message bodies."""
+        with self._lock:
+            return self._conn.execute("SELECT COUNT(*) FROM message WHERE ticket_id=?", (ticket_id,)).fetchone()[0]
 
     def get(self, type_: str, id_: str) -> Obj | None:
         with self._lock:

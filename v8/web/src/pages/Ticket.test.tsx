@@ -61,6 +61,27 @@ function mount(data: TicketPageData) {
 }
 
 describe("TicketPage", () => {
+  it("reports total beyond100 and keeps draft/rows on older-page failure and retry", async () => {
+    const rows = Array.from({ length: 101 }, (_, i) => ({ id: `m-${i + 1}`, seq: i + 1, by: "owner", to: null, kind: "note", text: `Older row ${i + 1}`, at: "2026-09-02T10:00:00Z", reply_to: null }));
+    let fail = true;
+    server.use(http.get("/v1/tickets/s-1/thread", () => fail
+      ? HttpResponse.json({ ok: false, error: "offline", hint: "try again" }, { status: 503 })
+      : okJson({ thread: rows.slice(0, 1), thread_total: 101, thread_before: null })));
+    mount(ticketPage({ thread: rows.slice(1), thread_total: 101, thread_before: 2 }));
+    await screen.findByText("Conversation (101)");
+    const draft = screen.getByRole("textbox", { name: "Message" });
+    fireEvent.change(draft, { target: { value: "Do not lose me" } });
+    fireEvent.click(screen.getByRole("button", { name: "Load older messages" }));
+    await screen.findByRole("alert");
+    expect(screen.getByTestId("thread").children).toHaveLength(100);
+    expect(draft).toHaveValue("Do not lose me");
+    fail = false;
+    fireEvent.click(screen.getByRole("button", { name: "Load older messages" }));
+    await screen.findByText("Older row 1");
+    expect(screen.getByTestId("thread").children).toHaveLength(101);
+    expect(screen.getByRole("textbox", { name: "Message" })).toBe(draft);
+    expect(screen.queryByRole("button", { name: "Load older messages" })).toBeNull();
+  });
   it("shows the status word, assignee, criteria with verdicts, docs and thread", async () => {
     mount(ticketPage());
     await screen.findByText("Build the epic page", { selector: "h1" });

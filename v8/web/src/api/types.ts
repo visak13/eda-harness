@@ -72,6 +72,7 @@ export interface CritCounts {
 }
 
 export interface MessageView {
+  seq?: number;
   id: string;
   by: string;
   to: string | null;
@@ -284,7 +285,13 @@ export interface SeatChoice {
   note: string | null;
 }
 
-export interface EpicPage {
+export interface ThreadPage {
+  thread: MessageView[];
+  thread_total?: number;
+  thread_before?: number | null;
+}
+
+export interface EpicPage extends ThreadPage {
   board: EpicBoard;
   words: string | null;
   /** The epic ticket's tags (seat-model:/seat-effort: among them); absent on an older board. */
@@ -321,7 +328,7 @@ export interface TicketRecord extends Record<string, unknown> {
   epic_id: string | null;
 }
 
-export interface TicketPage {
+export interface TicketPage extends ThreadPage {
   ticket: TicketRecord;
   epic_id: string;
   criteria: CriterionView[];

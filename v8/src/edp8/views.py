@@ -570,12 +570,37 @@ def tickets_table(board: Board, *, epic: str | None = None, status: str | None =
     return {"rows": out, "count": len(rows)}
 
 
+def thread_page(board: Board, ticket_id: str, *, before: int | None = None,
+                include: str | None = None) -> dict[str, Any]:
+    """Bounded direct-source history; cursor uses storage sequence, never timestamps/offsets.
+
+    Deep-link extras must not advance the cursor past unread messages. Count and window share
+    a read snapshot; new arrivals cannot shift older pages or expose another source's messages.
+    """
+    board.ticket(ticket_id)
+    with board.store.transaction():
+        total = board.store.thread_count(ticket_id)
+        rows = board.store.query_seq("message", {"ticket_id": ticket_id}, before_seq=before,
+                                     limit=101, newest_first=True)
+        more = len(rows) > 100
+        rows = rows[:100]
+        cursor = rows[-1][0] if more else None
+        if include and all(m.id != include for _, m in rows):
+            m = board.store.get("message", include)
+            seq = board.store.seq_of("message", include)
+            if m is not None and seq is not None and m.ticket_id == ticket_id:
+                rows.append((seq, m))
+        rows.sort(key=lambda row: row[0])
+        return {"thread": [{**_msg(m), "seq": seq} for seq, m in rows],
+                "thread_total": total, "thread_before": cursor}
+
+
 def epic_page(board: Board, epic_id: str, include: str | None = None) -> dict[str, Any]:
     """One epic's board view (design §4.1): the kanban tree, counts, thread, linked docs and
     open gates — the data behind /ui/epic and /v1/epics/{id}/page. `include` is a message id
     (a deep link) that is always in the thread, even outside the newest-100 window."""
     bd = board.board(epic_id)
-    thread = [_msg(m) for m in board.thread(epic_id, limit=100, include=include)]
+    thread = thread_page(board, epic_id, include=include)
     docs = [board._doc_summary(d) for d in board.store.query("doc", {"scope": epic_id}, limit=100)]
     # The epic's OWN open gates as answerable rows (design §16 "Epic page: Answer gate"); child-ticket
     # gates are answered on their own ticket pages. `open_gates` (the [tid,gate] tree aggregate from
@@ -592,7 +617,7 @@ def epic_page(board: Board, epic_id: str, include: str | None = None) -> dict[st
             # owner m-2d7ef9243d: the seat choice every spawn on this epic inherits (read-only label)
             "seat_choice": board.seat_choice_for(epic_id).as_dict(),
             "counts": bd.get("counts"),
-            "thread": thread, "docs": docs, "open_gates": bd.get("open_gates", []),
+            **thread, "docs": docs, "open_gates": bd.get("open_gates", []),
             "answerable_gates": answerable_gates,
             "criteria": [{"id": c.id, "text": c.text, "check": c.check.value,
                           "checked_by": c.checked_by, "verdict": c.verdict.value,
@@ -622,7 +647,7 @@ def ticket_page(board: Board, ticket_id: str, include: str | None = None) -> dic
                           "checked_by": c.checked_by, "verdict": c.verdict.value,
                           "evidence_ref": c.evidence_ref,
                           "evidence_version": getattr(c, "evidence_version", None)} for c in crits],
-            "docs": docs, "thread": [_msg(m) for m in board.thread(ticket_id, limit=100, include=include)],
+            "docs": docs, **thread_page(board, ticket_id, include=include),
             "open_gates": open_gates,
             "assignee": {"id": t.assignee, "handle": getattr(assignee, "handle", None),
                          "role": getattr(getattr(assignee, "role", None), "value", None)},

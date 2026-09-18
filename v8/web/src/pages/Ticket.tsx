@@ -27,6 +27,7 @@ import { Clamp } from "../components/Clamp";
 import styles from "./Ticket.module.css";
 import { Icon } from "../components/Icon";
 import { ContextualWork } from "../components/ContextualWork";
+import { useThreadHistory, ThreadHistoryControls } from "../components/useThreadHistory";
 import { pendingWork } from "../components/PendingNavigation";
 
 // Ticket page (design §4.2, criteria c-d2dbb34b06 / c-e0b24cd134): crumb to the epic, id + status
@@ -87,7 +88,8 @@ export function TicketPage(): React.JSX.Element {
   const { hash } = useLocation();
   const include = hash.startsWith("#m-") ? hash.slice(1) : null;
   const page = useQuery({ queryKey: ["ticket", id, include], queryFn: () => getTicketPage(id, include) });
-  useScrollToHash(page.data?.thread.length ?? 0); // before the early returns: hooks run every render
+  const history = useThreadHistory(id, page.data);
+  useScrollToHash(Boolean(page.data?.thread.length)); // before the early returns: hooks run every render
 
   if (page.isPending) return <p className={ui.empty}>Loading ticket…</p>;
   if (page.isError)
@@ -97,7 +99,8 @@ export function TicketPage(): React.JSX.Element {
       </p>
     );
 
-  const { ticket, epic_id, criteria, docs, thread, assignee, waiting_reason, open_gates } = page.data;
+  const { ticket, epic_id, criteria, docs, assignee, waiting_reason, open_gates } = page.data;
+  const thread = history.messages;
   const ordered = order === "newest" ? [...thread].reverse() : thread;
   // A reply is shown attached to the message it answers (human #3 widened, 2026-09-10): the
   // thread is flat on the wire (reply_to), so the parent is quoted above the reply in one line.
@@ -194,8 +197,9 @@ export function TicketPage(): React.JSX.Element {
           </details>
 
           </details>
+          <ThreadHistoryControls history={history} />
           <div className={styles.threadHead} {...copyProps("ticket", "thread")}>
-            <span className={ui.sectionLabel}>Conversation ({thread.length})</span>
+            <span className={ui.sectionLabel}>Conversation ({history.total})</span>
             <button
               type="button"
               className={styles.orderToggle}
@@ -223,7 +227,7 @@ export function TicketPage(): React.JSX.Element {
           {ordered.length === 0 ? (
             <p className={ui.empty}>No messages on this ticket yet.</p>
           ) : (
-            <ul className={styles.messages} data-testid="thread" tabIndex={0} aria-label="Conversation messages">
+            <ul ref={history.listRef} className={styles.messages} data-testid="thread" tabIndex={0} aria-label="Conversation messages">
               {ordered.map((m: MessageView) => (
                 <li key={m.id} id={m.id} className={styles.message} data-testid="thread-message" data-reply-to={m.reply_to ?? undefined}>
                   <AgentLine by={m.by} kind={m.kind} to={m.to} viewer={as} at={m.at} />

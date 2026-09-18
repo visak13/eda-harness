@@ -64,6 +64,37 @@ function mount(data: EpicPageData, summary: Record<string, unknown>[] = []) {
 }
 
 describe("EpicPage", () => {
+  it("shows the full >100 total and loads every older page without replacing the draft", async () => {
+    const messages: MessageView[] = Array.from({ length: 235 }, (_, i) => ({ id: `m-${i + 1}`, seq: i + 1, by: "owner", to: null, kind: "note", text: `History row ${i + 1}`, at: "2026-09-01T10:00:00Z", reply_to: null }));
+    const cursors: number[] = [];
+    server.use(http.get("/v1/me/people", () => okJson([])), http.post("/v1/messages/resolve", () => okJson({ to: null, wakes: [], plan: [], note: "" })));
+    server.use(http.get("/v1/tickets/epic-1/thread", ({ request }) => {
+      expect(request.headers.get("X-Participant")).toBeTruthy();
+      const before = Number(new URL(request.url).searchParams.get("before")); cursors.push(before);
+      const older = messages.filter((m) => m.seq! < before);
+      const rows = older.slice(-100);
+      return okJson({ thread: rows, thread_total: 235, thread_before: older.length > 100 ? rows[0].seq : null });
+    }));
+    mount(page({ thread_total: 235, thread_before: 136 }, messages.slice(-100)));
+    expect(await screen.findByRole("tab", { name: /Thread/ })).toHaveTextContent("235");
+    const draft = screen.getByRole("textbox", { name: "Message" });
+    fireEvent.change(draft, { target: { value: "Keep my unsent draft" } });
+    const list = screen.getByTestId("thread"); list.scrollTop = 42;
+    fireEvent.click(screen.getByRole("button", { name: "Load older messages" }));
+    await screen.findByText("History row 36");
+    fireEvent.click(screen.getByRole("button", { name: "Load older messages" }));
+    await screen.findByText("History row 1");
+    expect(cursors).toEqual([136, 36]);
+    expect(list.children).toHaveLength(235);
+    expect(list.firstElementChild).toHaveAttribute("id", "m-235");
+    expect(list.scrollTop).toBe(42);
+    fireEvent.click(screen.getByTestId("order-toggle"));
+    expect(list.firstElementChild).toHaveAttribute("id", "m-1");
+    expect(screen.getByRole("textbox", { name: "Message" })).toBe(draft);
+    expect(draft).toHaveValue("Keep my unsent draft");
+    expect(screen.queryByRole("button", { name: "Load older messages" })).toBeNull();
+    expect(screen.getByRole("tab", { name: /Thread/ })).toHaveTextContent("235");
+  });
   it("shows the id + status word chip and the owner's words verbatim", async () => {
     mount(page());
     await screen.findByText("Upgrade the board UI", { selector: "h1" });
