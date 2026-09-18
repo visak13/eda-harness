@@ -83,23 +83,10 @@ export function CopyArtifactLink({ id, className }: { id: string; className?: st
 }
 
 export function ArtifactLink({ id, label }: { id: string; label?: string }): React.JSX.Element {
-  const [err, setErr] = useState<string | null>(null);
   return (
     <>
-      <button
-        type="button"
-        className={styles.link}
-        data-testid="artifact-link"
-        data-artifact={id}
-        onClick={() => {
-          setErr(null);
-          openArtifact(id).catch((e: unknown) => setErr(e instanceof Error ? e.message : String(e)));
-        }}
-      >
-        {label ?? id}
-      </button>
+      <a className={styles.link} data-testid="artifact-link" data-artifact={id} href={artifactShareUrl(id)}>{label ?? id}</a>
       <CopyArtifactLink id={id} />
-      {err ? <span className={styles.err}>{err}</span> : null}
     </>
   );
 }

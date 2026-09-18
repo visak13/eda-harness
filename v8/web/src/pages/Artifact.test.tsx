@@ -88,6 +88,21 @@ describe("ArtifactPage", () => {
     expect(artifactShareUrl("art-abc123")).toMatch(/\/ui\/artifact\/art-abc123$/);
   });
 
+  it.each(["repo_ref", "url", "app"])("%s is a navigable reference, never a byte download", async (form) => {
+    server.use(http.get("/v1/artifacts/art-abc123", () => okJson(record({ form, uri: "https://example.org/evidence", content_type: "image/png" }))));
+    renderRoute("/artifact/art-abc123", "/artifact/:id", <ArtifactPage />);
+    expect(await screen.findByRole("link", { name: "Open reference" })).toHaveAttribute("href", "https://example.org/evidence");
+    expect(screen.queryByTestId("artifact-download")).toBeNull();
+    expect(screen.queryByTestId("artifact-preview")).toBeNull();
+  });
+
+  it("does not navigate executable or local reference schemes", async () => {
+    server.use(http.get("/v1/artifacts/art-abc123", () => okJson(record({ form: "repo_ref", uri: "javascript:alert(1)" }))));
+    renderRoute("/artifact/art-abc123", "/artifact/:id", <ArtifactPage />);
+    expect(await screen.findByText("Reference: javascript:alert(1)")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Open reference" })).toBeNull();
+  });
+
   it("shows the board's hint verbatim when the artifact is unknown", async () => {
     server.use(
       http.get("/v1/artifacts/art-nope", () =>

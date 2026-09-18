@@ -42,6 +42,7 @@ describe("NewEpicDialog (human #22)", () => {
     const dialog = await screen.findByRole("dialog", { name: "New epic" });
     expect(dialog).toBeInTheDocument();
     expect(screen.getByTestId("new-epic-create")).toBeDisabled();
+    fireEvent.change(screen.getByTestId("new-epic-title"), { target: { value: "  Readable board  " } });
     fireEvent.change(screen.getByTestId("new-epic-words"), {
       target: { value: "Make the board readable for a first-time human. No jargon." },
     });
@@ -58,7 +59,7 @@ describe("NewEpicDialog (human #22)", () => {
     expect(ticketBody).toEqual({
       kind: "epic",
       work_type: "feature",
-      title: "Make the board readable for a first-time human. No jargon.",
+      title: "Readable board",
       words: "Make the board readable for a first-time human. No jargon.",
       tags: ["seat-model:claude", "seat-effort:medium"],
     });
@@ -101,6 +102,7 @@ describe("NewEpicDialog (human #22)", () => {
     expect((screen.getByTestId("new-epic-effort") as HTMLSelectElement).value).toBe("medium");
     fireEvent.change(screen.getByTestId("new-epic-model"), { target: { value: "astra" } });
     fireEvent.change(screen.getByTestId("new-epic-effort"), { target: { value: "high" } });
+    fireEvent.change(screen.getByTestId("new-epic-title"), { target: { value: "Astra" } });
     fireEvent.change(screen.getByTestId("new-epic-words"), { target: { value: "Ship it on Astra." } });
     await waitFor(() => expect(screen.getByTestId("new-epic-spawn")).not.toBeDisabled());
     fireEvent.click(screen.getByTestId("new-epic-spawn"));
@@ -127,6 +129,7 @@ describe("NewEpicDialog (human #22)", () => {
     );
     mount();
     await screen.findByRole("dialog", { name: "New epic" });
+    fireEvent.change(screen.getByTestId("new-epic-title"), { target: { value: "Title" } });
     fireEvent.change(screen.getByTestId("new-epic-words"), { target: { value: "words" } });
     await waitFor(() => expect(screen.getByTestId("new-epic-spawn")).not.toBeDisabled());
     expect(screen.getByTestId("new-epic-spawn")).not.toBeChecked(); // unticked by default: no spawn
@@ -134,6 +137,35 @@ describe("NewEpicDialog (human #22)", () => {
     fireEvent.click(screen.getByTestId("new-epic-create"));
     expect(await screen.findByTestId("new-epic-error")).toHaveTextContent("owner may not create a epic here");
     expect(spawns).toBe(0);
+  });
+
+  it("preserves exact raw words and retries a failed spawn without creating twice", async () => {
+    let creates = 0, spawns = 0;
+    const raw = "  first line\nsecond line  ";
+    server.use(
+      http.post("/v1/tickets", async ({ request }) => {
+        creates++;
+        expect(await request.json()).toMatchObject({ title: "Explicit", words: raw });
+        return HttpResponse.json({ ok: true, value: { id: "epic-retry" }, hint: "Created" });
+      }),
+      http.post("/v1/sessions/spawn", async ({ request }) => {
+        spawns++;
+        expect(await request.json()).toMatchObject({ ticket_id: "epic-retry" });
+        return spawns === 1 ? HttpResponse.json({ ok: false, hint: "Pool offline" }, { status: 503 }) : HttpResponse.json({ ok: true, value: {} });
+      }),
+    );
+    mount();
+    expect(screen.getByTestId("new-epic-title")).toHaveFocus();
+    fireEvent.change(screen.getByTestId("new-epic-title"), { target: { value: " Explicit " } });
+    fireEvent.change(screen.getByTestId("new-epic-words"), { target: { value: raw } });
+    await waitFor(() => expect(screen.getByTestId("new-epic-spawn")).not.toBeDisabled());
+    fireEvent.click(screen.getByTestId("new-epic-spawn"));
+    fireEvent.click(screen.getByTestId("new-epic-create"));
+    expect(await screen.findByText(/The architect could not start/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open existing epic" })).toHaveAttribute("href", "/epic/epic-retry");
+    fireEvent.click(screen.getByRole("button", { name: "Retry architect" }));
+    expect(await screen.findByTestId("landed")).toBeInTheDocument();
+    expect(creates).toBe(1); expect(spawns).toBe(2);
   });
 
   it("when the pool cannot spawn, the checkbox is disabled and says why", async () => {

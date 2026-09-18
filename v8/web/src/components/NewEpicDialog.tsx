@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { createEpic } from "../api/endpoints";
@@ -32,6 +34,12 @@ export type Effort = (typeof EFFORTS)[number];
 
 export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () => void }): React.JSX.Element | null {
   const [words, setWords] = useState("");
+  const [title, setTitle] = useState("");
+  const committed = useRef<{ id: string; hint: string; choice: { model: SeatModel; effort: Effort } } | null>(null);
+  const busy = useRef(false);
+  const panelRef = useRef<HTMLFormElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   const [spawn, setSpawn] = useState(false);
   const [model, setModel] = useState<SeatModel>("claude");
   const [effort, setEffort] = useState<Effort>("medium");
@@ -41,79 +49,100 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
   const [done, setDone] = useState<{ id: string; hint: string; spawnHint: string | null } | null>(null);
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const textRef = useRef<HTMLTextAreaElement>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
   const capsQ = useQuery({ queryKey: ["pool", "capabilities"], queryFn: getPoolCapabilities, retry: false, enabled: open });
   const caps = capsQ.data as PoolCapabilities | undefined;
   const canSpawn = Boolean(caps?.spawn);
 
   useEffect(() => {
-    if (open) {
-      setDone(null);
-      textRef.current?.focus();
-    }
-  }, [open]);
-
-  useEffect(() => {
     if (!open) return;
+    const opener = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    const siblings = Array.from(document.body.children).filter((el): el is HTMLElement => el instanceof HTMLElement && !el.contains(panelRef.current));
+    const previousInert = siblings.map((el) => el.inert);
+    siblings.forEach((el) => { el.inert = true; });
+    document.body.style.overflow = "hidden";
+    titleRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") { e.preventDefault(); if (!busy.current) closeRef.current(); }
+      if (e.key !== "Tab") return;
+      const items = Array.from(panelRef.current?.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled])') ?? []);
+      const first = items[0], last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
     };
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      siblings.forEach((el, i) => { el.inert = previousInert[i]; });
+      document.body.style.overflow = previousOverflow;
+      opener?.focus();
+    };
+  }, [open]);
 
   const create = useMutation({
     mutationFn: async () => {
-      const text = words.trim();
-      const choice = { model, effort: effectiveEffort };
-      const made = await createEpic(text, choice);
+      const choice = committed.current?.choice ?? { model, effort: effectiveEffort };
+      if (!committed.current) {
+        const made = await createEpic(words, choice, title);
+        committed.current = { id: made.value.id, hint: made.hint, choice };
+      }
+      const made = committed.current;
+      setDone({ id: made.id, hint: made.hint, spawnHint: null });
       let spawnHint: string | null = null;
       if (spawn && canSpawn) {
         // the same choice rides the spawn body, so the architect runs on it even on a board that
         // stored the tags but resolves nothing (belt and braces; the board's resolution is the same)
-        const res = await spawnSeat("architect", `architect.${made.value.id}`, made.value.id, choice);
-        spawnHint = res.hint || `Spawned architect.${made.value.id}.`;
+        const res = await spawnSeat("architect", `architect.${made.id}`, made.id, choice);
+        spawnHint = res.hint || `Spawned architect.${made.id}.`;
       }
-      return { id: made.value.id, hint: made.hint, spawnHint };
+      return { id: made.id, hint: made.hint, spawnHint };
     },
     onSuccess: (res) => {
       setDone(res);
       void qc.invalidateQueries({ queryKey: ["epics", "summary"] });
       void qc.invalidateQueries({ queryKey: ["me", "summary"] });
       void qc.invalidateQueries({ queryKey: ["seats"] });
+      setWords(""); setTitle(""); setSpawn(false); setDone(null);
+      committed.current = null;
       navigate(`/epic/${encodeURIComponent(res.id)}`);
       onClose();
     },
+    onSettled: () => { busy.current = false; },
   });
   const err = create.error as BoardApiError | undefined;
 
   if (!open) return null;
   const text = words.trim();
-  return (
-    <div className={styles.scrim} onMouseDown={(e) => e.target === e.currentTarget && onClose()} data-testid="new-epic-scrim">
+  return createPortal(
+    <div className={styles.scrim} onMouseDown={(e) => e.target === e.currentTarget && !busy.current && onClose()} data-testid="new-epic-scrim">
       <form
         className={styles.dialog}
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-label="New epic"
         data-testid="new-epic-dialog"
         onSubmit={(e) => {
           e.preventDefault();
-          if (text && !create.isPending) create.mutate();
+          if (text && title.trim() && title.trim().length <= 80 && !busy.current) { busy.current = true; create.mutate(); }
         }}
       >
         <h2 className={styles.title}>New epic</h2>
+        <label className={ui.sectionLabel} htmlFor="new-epic-title">Title</label>
+        <input id="new-epic-title" data-testid="new-epic-title" ref={titleRef} className={ui.input} maxLength={80} value={title} disabled={create.isPending || Boolean(done)} onChange={(e) => setTitle(e.target.value)} aria-describedby="new-epic-title-count" />
+        <p id="new-epic-title-count" className={styles.muted}>{title.length}/80 — required</p>
         <label className={ui.sectionLabel} htmlFor="new-epic-words">
           Your words
         </label>
         <textarea
           id="new-epic-words"
-          ref={textRef}
+          disabled={create.isPending || Boolean(done)}
           className={ui.textarea}
           rows={5}
           value={words}
           onChange={(e) => setWords(e.target.value)}
-          placeholder="What you want, in your own words. They are kept verbatim; the board derives a short title."
+          placeholder="What you want, in your own words. They are kept verbatim, separately from your title."
           data-testid="new-epic-words"
         />
         <div className={styles.choice} data-testid="new-epic-choice">
@@ -121,6 +150,7 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
             Seat model
             <select
               className={ui.select}
+              disabled={create.isPending || Boolean(done)}
               value={model}
               onChange={(e) => setModel(e.target.value as SeatModel)}
               data-testid="new-epic-model"
@@ -136,6 +166,7 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
             Effort
             <select
               className={ui.select}
+              disabled={create.isPending || Boolean(done)}
               value={effectiveEffort}
               onChange={(e) => setEffort(e.target.value as Effort)}
               data-testid="new-epic-effort"
@@ -157,7 +188,7 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
           <input
             type="checkbox"
             checked={spawn}
-            disabled={!canSpawn}
+            disabled={!canSpawn || create.isPending || Boolean(done)}
             onChange={(e) => setSpawn(e.target.checked)}
             data-testid="new-epic-spawn"
           />
@@ -165,7 +196,7 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
           {!canSpawn ? <span className={styles.muted}> — {caps?.reason ?? "the pool cannot spawn from here"}</span> : null}
         </label>
         <p className={styles.preview} data-testid="new-epic-preview">
-          Creates the epic with your words verbatim; the board derives a short title. Every seat spawned on
+          Creates the epic with your words verbatim and your explicit title. Every seat spawned on
           it runs on {SEAT_MODELS.find((m) => m.value === model)?.label} at effort {effectiveEffort} unless a
           spawn names its own model.
           {spawn && canSpawn
@@ -179,23 +210,23 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
         ) : null}
         {done ? (
           <p className={styles.muted} role="status">
-            {done.hint} {done.spawnHint ?? ""}
+            Epic created. {err ? "The architect could not start. Retry uses this same epic." : done.hint} <Link to={`/epic/${encodeURIComponent(done.id)}`}>Open existing epic</Link>
           </p>
         ) : null}
         <div className={styles.actions}>
-          <button type="button" className={ui.button} onClick={onClose}>
-            Cancel
+          <button type="button" className={ui.button} onClick={onClose} disabled={create.isPending}>
+            {done ? "Close" : "Cancel"}
           </button>
           <button
             type="submit"
             className={`${ui.button} ${ui.buttonPrimary}`}
-            disabled={!text || create.isPending}
+            disabled={!text || !title.trim() || title.trim().length > 80 || create.isPending || (Boolean(done) && !canSpawn)}
             data-testid="new-epic-create"
           >
-            {create.isPending ? "Creating…" : spawn && canSpawn ? "Create and spawn the architect" : "Create the epic"}
+            {create.isPending ? "Saving…" : done ? "Retry architect" : spawn && canSpawn ? "Create and spawn the architect" : "Create the epic"}
           </button>
         </div>
       </form>
-    </div>
+    </div>, document.body,
   );
 }

@@ -21,11 +21,13 @@ import { Icon } from "../components/Icon";
 export function ArtifactPage(): React.JSX.Element {
   const { id = "" } = useParams();
   const art = useQuery({ queryKey: ["artifact", id], queryFn: () => getArtifact(id), retry: false, enabled: !!id });
-  const previewable = PREVIEW_TYPES.has((art.data?.content_type ?? "").toLowerCase());
+  const stored = art.data?.form === "image" || art.data?.form === "file";
+  const previewable = stored && PREVIEW_TYPES.has((art.data?.content_type ?? "").toLowerCase());
   const [preview, setPreview] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
+    setPreview(null); setErr(null);
     if (!previewable || !id) return;
     let url: string | null = null;
     let cancelled = false;
@@ -93,7 +95,9 @@ export function ArtifactPage(): React.JSX.Element {
         <img className={styles.preview} src={preview} alt={a.note || name} data-testid="artifact-preview" />
       ) : null}
       <div className={styles.actions}>
-        {!preview ? (
+        {!stored ? (
+          /^https?:\/\//i.test(a.uri) ? <a className={styles.button} href={a.uri} target="_blank" rel="noopener noreferrer">Open reference</a> : <p className={styles.note}>Reference: {a.uri}</p>
+        ) : !preview ? (
           <button
             type="button"
             className={styles.button}
