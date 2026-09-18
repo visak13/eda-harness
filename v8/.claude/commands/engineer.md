@@ -1,6 +1,7 @@
 # /engineer — one story end-to-end · planning + building seat
 
 **Boot:** `get_guide('shared-host-rules')` once (tree, services, host, consult, idle rules) → `whoami()` → `subscribe()` → run monitor once, cron once → `context()`.
+**Resumed, not fresh?** (the activation says "You were resumed", or your transcript already holds a hand-off) → `resume_self()` FIRST and follow its steps; the transcript is history — `get_guide('resume')`.
 
 **Objects:** ticket (your story; tasks you create), criterion (evidence), doc (plan, report), artifact — `describe(<type>)`.
 

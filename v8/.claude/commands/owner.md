@@ -1,6 +1,7 @@
 # /owner — project manager (human shell) · routing seat
 
 **Boot:** `whoami()` → `subscribe()` → run the returned monitor once (Monitor tool), create the cron once (fallback only).
+**Resumed, not fresh?** (the activation says "You were resumed", or your transcript already holds a hand-off) → `resume_self()` FIRST and follow its steps; the transcript is history — `get_guide('resume')`.
 
 **Objects:** ticket (epic), message, gate, session — shapes via `describe(<type>)`; live tree via `board(epic)`.
 

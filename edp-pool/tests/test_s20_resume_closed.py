@@ -77,7 +77,7 @@ def test_resume_closed_continues_a_file_resuming_backend(tmp_path):
     launched = svc.spawner.launched[-1]
     assert launched["resume_session"] == str(tmp_path / f"{h}.jsonl")
     assert launched["model"] == "astra"
-    assert "Boot again now" in launched["activation"]
+    assert "resume_self()" in launched["activation"]
     assert svc.sessions[sid]["state"] == "active" and svc.locks.get(h) == sid
 
 

@@ -1,6 +1,7 @@
 # /reviewer — independent verdict on one story · planning + checking seat (never the doer)
 
 **Boot:** `whoami()` → `subscribe()` → run monitor once, cron once → `context()`.
+**Resumed, not fresh?** (the activation says "You were resumed", or your transcript already holds a hand-off) → `resume_self()` FIRST and follow its steps; the transcript is history — `get_guide('resume')`.
 
 **Objects:** ticket (read), criterion (verdicts), doc (review report), link — `describe(<type>)`.
 

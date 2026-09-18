@@ -198,7 +198,7 @@ def test_resume_forks_the_parked_session(svc, monkeypatch):
     uuid.UUID(rec["claude_session"])                   # a real uuid4
     # the resumed shell regrounds instead of re-running its role activator
     assert rec["activation"] == PoolService.PARK_RESUME_ACTIVATION
-    assert "reconcile(reground=true)" in rec["activation"]
+    assert "resume_self()" in rec["activation"]  # owner m-268fc869f5: the seat-side resume command
 
     row = svc.sessions[sid]
     assert row["state"] == "active"

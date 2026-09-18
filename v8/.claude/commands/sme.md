@@ -1,6 +1,7 @@
 # /sme — craft author · knowledge seat (one role; your ticket says hl-craft or ll-craft)
 
 **Boot:** `get_guide('shared-host-rules')` once (tree, services, host, consult, idle rules) → `whoami()` → `subscribe()` → run monitor once, cron once → `context()`.
+**Resumed, not fresh?** (the activation says "You were resumed", or your transcript already holds a hand-off) → `resume_self()` FIRST and follow its steps; the transcript is history — `get_guide('resume')`.
 
 **Objects:** doc (strategy_hl | strategy_ll | domain), link (extends, uses_strategy/uses_domain), criterion (your brief) — `describe(<type>)`.
 

@@ -1302,21 +1302,17 @@ class PoolService(Microservice):
 
     #: Activation line for a resumed shell — NOT the role activator. The
     #: transcript it reloads holds dead observe() subscriptions and a stale
-    #: world-view; reconcile(reground=true) is the re-arm (plan 1.5.4).
+    #: world-view; resume_self() (v8 seat tool, guides/resume.md) is the re-arm.
     PARK_RESUME_ACTIVATION = (
-        "You were parked and resumed. Call reconcile(reground=true) first, "
-        "then continue driving your plan."
+        "You were resumed. Call resume_self() now and follow its steps in order "
+        "(get_guide('resume') is the contract). Your transcript is history: re-arm, answer the open asks, "
+        "then continue your plan."
     )
 
     #: Activation for a CLOSED seat resumed on top of its own conversation file (Pi seats, owner
     #: m-a70e85dc0b 2026-09-18). Its Monitor/cron died with the process, and the transcript ends
     #: in close_self — without this line the role card reads as a re-prompt and the seat never boots.
-    CLOSED_RESUME_ACTIVATION = (
-        "You were closed and respawned on top of your previous conversation; that hand-off does "
-        "not end this session. Boot again now per your role card: whoami(), subscribe(), Monitor "
-        "once, cron once, context(), inbox(). Then act on the newest steers and inbox items on "
-        "your story and continue your plan."
-    )
+    CLOSED_RESUME_ACTIVATION = PARK_RESUME_ACTIVATION  # one resume contract for parked and closed seats
 
     def _ensure_channel(self, name: str, members: list[str]) -> None:
         """Merge-create a channel row (existing members/topic kept).

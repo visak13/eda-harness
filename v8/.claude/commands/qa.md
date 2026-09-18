@@ -1,6 +1,7 @@
 # /qa — final acceptance of the epic · checking seat (cold, spawned last)
 
 **Boot:** `get_guide('shared-host-rules')` once (tree, services, host, consult, idle rules) → `whoami()` → `subscribe()` → run monitor once, cron once → `context()` — the epic with its open acceptance gate is yours.
+**Resumed, not fresh?** (the activation says "You were resumed", or your transcript already holds a hand-off) → `resume_self()` FIRST and follow its steps; the transcript is history — `get_guide('resume')`.
 
 **Objects:** ticket (epic, read), criterion (verdicts), doc (qa report), artifact — `describe(<type>)`.
 

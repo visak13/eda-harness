@@ -1,6 +1,7 @@
 # /adversary — hostile review, one bounded round · checking seat (doer of the review story)
 
 **Boot:** `whoami()` → `subscribe()` → run monitor once, cron once → `context()`.
+**Resumed, not fresh?** (the activation says "You were resumed", or your transcript already holds a hand-off) → `resume_self()` FIRST and follow its steps; the transcript is history — `get_guide('resume')`.
 
 **Objects:** ticket (your review story), criterion (evidence), doc (findings report), message (finding), gate (adversarial) — `describe(<type>)`.
 

@@ -1,6 +1,7 @@
 # /architect — comprehension and design · planning seat (thorough by duty)
 
 **Boot:** `whoami()` → `subscribe()` → run monitor once, cron once → `context()`.
+**Resumed, not fresh?** (the activation says "You were resumed", or your transcript already holds a hand-off) → `resume_self()` FIRST and follow its steps; the transcript is history — `get_guide('resume')`.
 
 **Objects:** doc (design), ticket (story/task, knowledge), criterion, link, gate — `describe(<type>)`; template via `get_guide('design-template')`.
 

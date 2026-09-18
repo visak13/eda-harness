@@ -312,6 +312,10 @@ class SubscribeArgs(BaseModel):
     pass
 
 
+class ResumeSelfArgs(BaseModel):
+    pass
+
+
 class ContextArgs(BaseModel):
     ticket_id: str | None = Field(default=None, description="a specific ticket id, or omit for all your tickets")
 
@@ -483,6 +487,48 @@ def _context(args: ContextArgs) -> dict[str, Any]:
     return get_client().context(ticket_id=args.ticket_id)
 
 
+def _resume_self(_: ResumeSelfArgs) -> dict[str, Any]:
+    """The seat-side resume command (owner m-268fc869f5, 2026-09-18). A resumed shell holds a
+    transcript whose Monitor and cron died with the old process and that may end in a hand-off;
+    nothing in it can be trusted as "current". This tool regenerates, from the board, everything
+    the seat must do next, in order, and records the resume on the seat's thread so the spawner
+    and the owner see it happened. Guide: get_guide('resume')."""
+    client = get_client()
+    who = client.whoami()
+    armed = _subscribe(SubscribeArgs())
+    asks = client.inbox()
+    rows = (asks.get("value") or []) if asks.get("ok") else []
+    identity = who.get("value") if who.get("ok") else {"id": client.participant}
+    steps = [
+        "1. Arm your wake plane NOW: run `monitor_cmd` under the Monitor tool once, then CronCreate the "
+        "`cron` once (both below). Without them nothing wakes you; the old ones died with the old process.",
+        f"2. Answer the {len(rows)} open ask(s) below, oldest first, each with its answer_with call; a steer "
+        "changes your plan, a human message is a person waiting.",
+        "3. context(ticket_id=<your ticket>) to reload the current state of your work, then continue your "
+        "plan from its next unbuilt item. Your earlier hand-off or close is history: this session is live "
+        "until you close it again.",
+        "4. record_status at your next milestone so the resume is visible as progress; never end a turn "
+        "silently while asks are open or your story is in_progress.",
+    ]
+    try:  # transparency: the spawner and the owner see the resume on the seat's thread (best effort)
+        client.record_status("deferred", note=f"[resumed] re-arming wake plane; {len(rows)} open ask(s) to answer first")
+    except Exception:  # noqa: BLE001 — a failed receipt must not block the resume itself
+        pass
+    return {
+        "ok": True,
+        "value": {
+            "identity": identity,
+            "steps": steps,
+            "monitor_cmd": (armed.get("value") or {}).get("monitor_cmd"),
+            "cron": (armed.get("value") or {}).get("cron"),
+            "listening": (armed.get("value") or {}).get("listening"),
+            "open_asks": rows,
+        },
+        "hint": "follow `steps` in order; get_guide('resume') is the full contract. resume_self is idempotent: "
+                "call it again after compaction or whenever you are unsure whether you are armed",
+    }
+
+
 _TOOLS_BY_TYPE: dict[str, list[str]] = {
     "ticket": ["ticket_create", "ticket_read", "ticket_query", "ticket_update", "find", "board", "spawn"],
     "criterion": ["criterion_create", "criterion_query", "criterion_update", "ticket_read"],
@@ -491,7 +537,7 @@ _TOOLS_BY_TYPE: dict[str, list[str]] = {
     "message": ["message_send", "message_query", "message_read", "inbox", "record_status", "find"],
     "event": ["events_query", "subscribe"],
     "artifact": ["artifact_create", "artifact_read", "artifact_upload"],
-    "session": ["session_query", "spawn", "reap", "resume", "close_self"],
+    "session": ["session_query", "spawn", "reap", "resume", "resume_self", "close_self"],
     "participant": ["participants", "whoami", "spawn"],
 }
 
@@ -578,6 +624,14 @@ IDENTITY_TOOLS = [
             "once, at boot, right after whoami",
             "the monitor command to run and the heartbeat cron to create",
             SubscribeArgs, _subscribe, "identity"),
+    ToolDef("resume_self",
+            "Resume this seat after a park, a reap, a crash or a respawn: re-arm the wake plane, list the "
+            "open asks and the ordered steps to get back to work (the transcript is history)",
+            "first call of a RESUMED shell (the activation says so), after compaction, or whenever you are unsure "
+            "whether your Monitor/cron are alive; never instead of the fresh-boot sequence",
+            "identity, ordered steps, monitor_cmd + cron to arm, listening contract, open asks with answer_with; "
+            "see get_guide('resume')",
+            ResumeSelfArgs, _resume_self, "identity"),
     ToolDef("context",
             "Load everything needed to act on your ticket(s): chain, criteria, docs, thread, open asks",
             "at boot after subscribe, after compaction without sufficient context/cursor, or when context_delta requires resynchronization",
@@ -1708,7 +1762,7 @@ ALL_TOOLS: dict[str, ToolDef] = {
     )
 }
 
-_IDENTITY = ["whoami", "preflight", "subscribe", "context", "context_delta", "describe", "describe_objects", "get_guide"]
+_IDENTITY = ["whoami", "preflight", "subscribe", "resume_self", "context", "context_delta", "describe", "describe_objects", "get_guide"]
 _TICKET_RW = ["ticket_create", "ticket_read", "ticket_query", "ticket_update", "criterion_create",
               "criterion_query", "criterion_update"]
 _TICKET_RO = ["ticket_read", "ticket_query", "ticket_update"]  # owner: sign-off only, guarded by the board
@@ -1728,7 +1782,10 @@ ROLE_BUNDLES: dict[str, list[str]] = {
     Role.owner.value: _IDENTITY + _THREAD + _BOARD + _DOC_RO + _TICKET_RO + _CHECK
         + ["find", "ticket_create", "inbox", "spawn", "resume", "reap", "session_query", "close"],
     Role.architect.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD + _BOARD
-        + ["find", "consult", "consult_status", "artifact_create", "artifact_read", "spawn", "inbox", "record_status"],
+        + ["find", "consult", "consult_status", "artifact_create", "artifact_read", "spawn", "inbox", "record_status",
+           # owner m-268fc869f5 / m-faf46d284a (2026-09-18): the spawner decides and executes recovery of its
+           # own seats (the board already scopes these to the architect's own epic, service._authorize_pool_op)
+           "reap", "resume", "session_query"],
     Role.sme.value: _IDENTITY + _TICKET_RO + _DOC_RW + _THREAD
         + ["find", "participants", "assemble_ruleset", "criterion_query", "criterion_update",
            "artifact_create", "artifact_read"] + _CLOSING,
