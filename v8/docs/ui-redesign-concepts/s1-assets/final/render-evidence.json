@@ -1,7 +1,11 @@
 {
   "kind": "STATIC asset/context specimen, not running application",
-  "rendered_at": "2026-09-18T10:24:32.744Z",
-  "size_instances_per_theme": 171,
+  "rendered_at": "2026-09-18T10:33:28.987Z",
+  "size_instances_per_theme": {
+    "light": 171,
+    "dark": 171,
+    "hc": 171
+  },
   "sizes": [
     16,
     18,

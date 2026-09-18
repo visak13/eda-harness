@@ -3,14 +3,24 @@ from pathlib import Path
 import ast
 import hashlib
 import json
+import re
 import xml.etree.ElementTree as ET
 import build_final as a
 ROOT=Path(__file__).resolve().parent
 mapping=json.loads((ROOT/'runtime-mapping.json').read_text())
 assert set(mapping['statuses'])=={'drafted','designed','signed_off','ready','in_progress','in_review','blocked','done','partial','dropped'}
 assert len(set(mapping['statuses'].values()))==10
-assert set(mapping['icons'])==set(a.PATHS)
-assert set(mapping['bots'])==set(a.BOTS)
+assert mapping['icons']=={k:f'icons/{k}.svg' for k in a.PATHS}
+assert mapping['bots']=={k:f'bots/{k}.svg' for k in a.BOTS}
+assert mapping['statuses']==a.STATUS
+assert mapping['status_labels']==a.LABELS
+assert json.loads((ROOT/'bot-templates.json').read_text())=={k:{'body':a.bot_body(k),'label':a.avatar_label(k)} for k in a.BOTS}
+ts=(ROOT/'icon-paths.ts').read_text()
+for name, expected in [('ICON_PATHS',a.PATHS),('STATUS_ICONS',a.STATUS),('STATUS_LABELS',a.LABELS)]:
+ match=re.search(r'export const '+name+r' = (\{.*?\}) as const;',ts,re.S)
+ assert match is not None,(name,'missing typed export')
+ assert json.loads(match.group(1))==expected,(name,'typed export drift')
+assert 'export type IconName = keyof typeof ICON_PATHS;' in ts
 assert mapping['human_ids_preserved']==[f'human-{i:02}' for i in range(1,9)]
 for family,expected,render in [('icons',a.PATHS,a.icon),('bots',a.BOTS,a.bot)]:
  for key in expected:

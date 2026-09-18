@@ -17,8 +17,12 @@ const {chromium}=createRequire(resolve(__dirname,'../../../../web/package.json')
  await p.setViewportSize({width:390,height:844});await p.evaluate(()=>document.body.className='');
  if(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Narrow overflow');await shot('packet-narrow.png');
  await p.setViewportSize({width:1440,height:1000});await p.goto(pathToFileURL(resolve(__dirname,'sizes.html')).href);
- for(const t of ['light','dark','hc'])await shot(`sizes-${t}.png`,p.locator(`section.${t}`));
- const dims=await p.locator('section.light .sizes svg').evaluateAll(els=>els.map(e=>({w:e.getBoundingClientRect().width,h:e.getBoundingClientRect().height})));
- if(dims.length!==171||dims.some((d,i)=>d.w!==[16,18,24][i%3]||d.h!==d.w))throw Error('size mismatch');
- fs.writeFileSync(resolve(__dirname,'render-evidence.json'),JSON.stringify({kind:'STATIC asset/context specimen, not running application',rendered_at:new Date().toISOString(),size_instances_per_theme:dims.length,sizes:[16,18,24],narrow_width:390,narrow_overflow:false,work_composer_overlap:false,shots},null,2)+'\n');console.log('PASS 9 local screenshots, all171 sizes/theme, no Work/composer overlap or narrow horizontal overflow. Browser closes in finally.');
+ const sizeCounts={};
+ for(const t of ['light','dark','hc']){
+  await shot(`sizes-${t}.png`,p.locator(`section.${t}`));
+  const dims=await p.locator(`section.${t} .sizes svg`).evaluateAll(els=>els.map(e=>({w:e.getBoundingClientRect().width,h:e.getBoundingClientRect().height})));
+  if(dims.length!==171||dims.some((d,i)=>d.w!==[16,18,24][i%3]||d.h!==d.w))throw Error(`${t} size mismatch`);
+  sizeCounts[t]=dims.length;
+ }
+ fs.writeFileSync(resolve(__dirname,'render-evidence.json'),JSON.stringify({kind:'STATIC asset/context specimen, not running application',rendered_at:new Date().toISOString(),size_instances_per_theme:sizeCounts,sizes:[16,18,24],narrow_width:390,narrow_overflow:false,work_composer_overlap:false,shots},null,2)+'\n');console.log('PASS 9 local screenshots, all171 sizes/theme, no Work/composer overlap or narrow horizontal overflow. Browser closes in finally.');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -27,7 +27,7 @@
 .venv/Scripts/python.exe docs/ui-redesign-concepts/s1-assets/final/check_final.py
 node docs/ui-redesign-concepts/s1-assets/final/render.cjs
 ```
-Existing installed Playwright Chromium required for renderer. One owned browser with finally-close; local files only, no board/server or full e2e. Renderer checks17116/18/24 instances per theme, all referenced avatar images loaded, Work/composer non-overlap,390px no horizontal overflow. render-evidence.json records screenshot hashes. Human-preservation.json pins ASTs for human functions/constants, not unrelated backend code. DO NOT auto-bless fingerprints if a human behavior changes.
+Existing installed Playwright Chromium required for renderer. One owned browser with finally-close; local files only, no board/server or full e2e. Renderer checks 171 instances at 16/18/24px in each theme, all referenced avatar images loaded, Work/composer non-overlap,390px no horizontal overflow. render-evidence.json records screenshot hashes. Human-preservation.json pins ASTs for human functions/constants, not unrelated backend code. DO NOT auto-bless fingerprints if a human behavior changes.
 
 ## Actual verification to date
 All commands above passed. Read all nine PNGs. Designed detail and Partial checked/open rows remain differentiated at16px with labels; same-family spark roles intentionally rely on real role text rather than arbitrary pictures. SVG XML allowlist/exhaustive state map/human AST checks passed. Specimen ink/ground13.90(light),14.94(dark),21(HC); spark/background3.38–5.17. Not proof of all eight actual runtime theme pairs.
@@ -35,5 +35,5 @@ All commands above passed. Read all nine PNGs. Designed detail and Partial check
 ## Reference scope carried forward
 ../integration.md specifies conversation-first, contextual design/history/files, compact Usage immediately above Find (Fable within Claude), narrow layout, true-black Obsidian, no garden/shading/invented operations. Its old asset-specific45/11 and half-circle instructions are SUPERSEDED by this README/runtime mapping. Exact prior clean reference images remain composition anchors, not implementation proof.
 
-## Outstanding before final handoff
-One required independent second_opinion adherence read; architect inspection of coherent final packet, coordinated owner publication/reaction. QA owns verdicts. S2 owns built integration and actual theme, identity/auth, accessibility/interaction/zoom checks. S1 touches no runtime files, shared services or dependencies. No assertion of production delivery.
+## Adherence / remaining acceptance
+Required independent second_opinion run 20260918T102902Z-d8c9e746 completed and read. Both verification gaps fixed and rerun; see adherence.md for findings and explicit evidence limits (earlier Usage reference, written History, unrendered narrow review). Architect inspection of coherent final packet and coordinated owner publication/reaction remain. QA owns verdicts. S2 owns built integration and actual theme, identity/auth, accessibility/interaction/zoom checks. S1 touches no runtime files, shared services or dependencies. No assertion of production delivery.
