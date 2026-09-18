@@ -475,6 +475,9 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     from .api_views import views_router
 
     app.include_router(views_router(board, actor))
+    from .api_usage import usage_router
+
+    app.include_router(usage_router(actor))
 
     # identity -----------------------------------------------------------------
     @app.get("/v1/whoami")

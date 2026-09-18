@@ -18,6 +18,7 @@ import { CopyDescriptions } from "./CopyDescriptions";
 import { NewEpicDialog } from "./NewEpicDialog";
 import { PendingNavigation } from "./PendingNavigation";
 import { NotificationCenter } from "./NotificationCenter";
+import { UsageWidget } from "./UsageWidget";
 import { copyProps, pageKeyFor } from "../copy/pages";
 import styles from "./AppShell.module.css";
 
@@ -180,8 +181,9 @@ function AppShellChrome(): React.JSX.Element {
           ))}
         </nav>
 
-        {/* S6 mounts its Usage trigger here; no placeholder telemetry or duplicate destination. */}
-        <div id="shell-usage-slot" data-testid="usage-slot" />
+        <div id="shell-usage-slot" data-testid="usage-slot">
+          {whoami.data ? <UsageWidget key={whoami.data.participant.id} actor={whoami.data.participant.id} /> : null}
+        </div>
         <button
           ref={findBtnRef}
           className={styles.find}

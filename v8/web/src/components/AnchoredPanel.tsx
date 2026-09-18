@@ -3,9 +3,9 @@ import { createPortal } from "react-dom";
 import styles from "./AnchoredPanel.module.css";
 
 /** Shared nonmodal preferences/Usage foundation. Mount only while open. */
-export function AnchoredPanel({ anchor, label, onClose, children, width = 320 }: {
+export function AnchoredPanel({ anchor, label, onClose, children, width = 320, maxHeight = Infinity }: {
   anchor: RefObject<HTMLElement | null>; label: string;
-  onClose: () => void; children: React.ReactNode; width?: number;
+  onClose: () => void; children: React.ReactNode; width?: number; maxHeight?: number;
 }): React.JSX.Element {
   const panel = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ left: 12, top: 12 });
@@ -18,7 +18,7 @@ export function AnchoredPanel({ anchor, label, onClose, children, width = 320 }:
       const view = window.visualViewport;
       const x = view?.offsetLeft ?? 0, y = view?.offsetTop ?? 0;
       const vw = view?.width ?? innerWidth, vh = view?.height ?? innerHeight;
-      el.style.maxHeight = `${Math.max(0, vh - 24)}px`;
+      el.style.maxHeight = `${Math.max(0, Math.min(maxHeight, vh - 24))}px`;
       el.style.width = `${Math.max(0, Math.min(width, vw - 24))}px`;
       const h = el.getBoundingClientRect().height;
       setPosition({
@@ -54,7 +54,7 @@ export function AnchoredPanel({ anchor, label, onClose, children, width = 320 }:
       document.removeEventListener("focusin", outside);
       el.removeEventListener("keydown", key);
     };
-  }, [anchor, onClose, width]);
+  }, [anchor, onClose, width, maxHeight]);
   return createPortal(<div ref={panel} role="dialog" aria-label={label} tabIndex={-1}
     className={styles.panel} style={position}>
     <div className={styles.heading}><strong>{label}</strong><button type="button" onClick={() => {

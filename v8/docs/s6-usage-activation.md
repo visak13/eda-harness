@@ -1,0 +1,36 @@
+# S6 subscription telemetry — operator activation proposal (not executed)
+
+Default off. Installing the widget does not authorize source collection, login, paid prompts, active CLI configuration changes, or restarting the shared board. No provider network requests occur on widget open/refresh. The endpoint only reads approved local allowlisted receipts.
+
+## Trust and binding
+- The existing board actor/token gate authenticates `/v1/me/usage`; only the **canonical participant ID** in the private operator config is mapped. No fallback to fleet owner/account, role, handle, caller-supplied path or participant selector. Trusted/header-only board mode remains trusted; use existing token/public-mode protection when exposing beyond the local machine.
+- Operator approves which subscription a human may see and creates a private, user-owned directory outside the repo. Restrict its ACL to the collector/board service operator. Other local writers to that directory/config are trusted administrators, not API users. No config write/upload endpoint exists.
+- Unique opaque `binding_id` per provider/session binding (8–80 alphanumeric/underscore/hyphen characters). Receipt must match it and provider. API exports only `Linked account`, never the binding ID, account hash/email, local paths, raw source payload/errors or credentials.
+- Codex additionally compares SHA256 of supported `account/read` ChatGPT account email (trimmed/case-folded; never persisted or exported) to an explicitly approved fingerprint before/after collection and on rate-limit events. API-key accounts and account changes fail closed. This hash is a private correlation value, not an authentication credential and not UI telemetry.
+- Claude's documented statusline contains no verified account identifier or observation timestamp. Its binding is an **operator-attested dedicated session**, using the explicitly chosen account wrapper (S0 used `claude-personal`). Do not wire multiple account sessions to one receipt. A new session/account needs a new binding and cleared old receipt. We cannot cryptographically attest Claude account identity from that statusline; no OAuth extraction to compensate.
+
+## Proposed steps requiring explicit owner/operator consent
+1. Create private directory, e.g. `C:\Users\<operator>\AppData\Local\edp8-usage`, with private ACL. Do not use an existing S0 historical sample as live source.
+2. Owner approves participant IDs, provider accounts, collector process and chosen dedicated Claude session. Operator creates `usage.json` below with absolute paths; it contains **no secrets**. Replace synthetic values only locally:
+
+```json
+{"participants":{"<canonical-human-participant-id>":{
+  "claude":{"binding_id":"<unique-claude-session-binding>","snapshot":"C:\\...\\edp8-usage\\claude.json"},
+  "codex":{"binding_id":"<unique-codex-binding>","snapshot":"C:\\...\\edp8-usage\\codex.json"}
+}}}
+```
+
+3. Claude: only in a NEW owner-selected session, use additive session-only `--settings <dedicated-settings.json>` (forwarded through approved account wrapper). Settings `statusLine.type=command`, command is the quoted absolute venv Python invocation `-m edp8.usage_sources claude --output <absolute claude.json> --binding-id <unique binding>`. Run from installed package/repo environment so module resolves. No global/project settings or wrapper edit. This replaces the statusline in that dedicated session only, not other sessions. Owner initiates ordinary work; agents must not send test/paid prompts or log in. Missing statusline data is unavailable, valid zero is zero. Incomplete malformed captures publish an error receipt rather than retaining apparently fresh data. Remove binding/receipt on session retirement; restore prior statusline by ending the dedicated session.
+4. Codex: approve supported read-only App Server process for the selected existing CLI account. Obtain local fingerprint with `.venv\Scripts\python.exe -m edp8.usage_sources codex --codex-exe <absolute native codex.exe> --print-account-fingerprint`. No login/token file reads/model turns. Then run `... codex --codex-exe <exe> --account-fingerprint <approved hash> --output <absolute codex.json> --binding-id <unique binding>` in an operator-owned terminal. `--once` performs one read and exits; default stays running, consumes `account/rateLimits/updated`, checks identity on events and reads every 60s for recovery. Ctrl-C closes/reaps only its own stdio child. No daemon/autostart/service installation; unexpected transport exit publishes error and exits. Restart only this owned collector after investigating.
+5. Owner-managed deployment sets `EDP8_USAGE_CONFIG=<absolute usage.json>` for the board. Initial environment/backend deployment requires the owner's normal selective maintenance plan, **not engineer restart authority**. Config itself is re-read per request so mapping revocation/change and ordinary receipt/window changes require no code/restart/new ticket.
+6. Validate as approved human: compare widget numbers/reset to fresh legitimate source receipt, check another participant sees unlinked, then remove mapping and verify immediate disappearance. The endpoint returns `Cache-Control: private, no-store`. No telemetry goes to analytics/logs/worker/cache storage.
+
+## Timing and states
+Server snapshot reads are shared per actor/provider and limited to >=30s, with error/missing/auth backoff 30/60/120/240/300s. Reopening the widget cannot bypass this. Browser automatically rechecks while open (>=60s, extending with backoff); manual refresh is debounced >=30s. Ordinary updates replace, not merge; duration 300/10080 minutes drives Codex labels regardless of primary/secondary position, including absent→present→absent.
+
+Both documented sources lack original observation time. `observed_at=null` **always** for these adapters, even if input contains an invented timestamp. Valid samples display numbers with `May be stale · Observation time unknown`; receipt time is separate and never advertised as refreshed provider observation. >5-minute receipt labelled old; elapsed reset removes utilization rather than inventing new-period zero. Missing/invalid, auth-required, error, unlinked are explicit distinct states. Fable stays unavailable under Claude. No token counts, API-spend substitutes or fake provider logos.
+
+## Proof boundaries
+S0 `docs/s0-capability-proof/SOURCE-EVIDENCE.md` contains genuine historical installed-source shapes/numbers (Claude 0/15%, Codex weekly92%; short window absent); S6 unit tests replay them at historical time. This is not live S6 deployment/freshness/account-binding proof. New adapter tests use synthetic accounts/receipts in temporary paths; no real credentials are needed. Final live source comparison and activation require operator consent and independent QA. Current sources cannot truthfully produce the `available` freshness state; future verified adapters could, without redefining unknown as fresh.
+
+Rollback: remove participant mapping (immediate fail-closed on next request), stop only owned collector, retire dedicated Claude session/settings, remove board env in owner maintenance window if desired. No DB schema/data migration.

@@ -1,0 +1,20 @@
+.trigger {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px;
+  padding: 8px 14px; border: 1px solid var(--strongline); border-radius: 8px;
+  background: var(--rail); color: var(--ink); text-align: left; cursor: pointer;
+}
+.trigger:hover { background: var(--accentwash); }
+.trigger svg { flex: 0 0 20px; }
+.intro, .meta { font-size: 14px; line-height: 20px; color: var(--muted); overflow-wrap: anywhere; }
+.intro { margin: 10px 0; }
+.provider { min-width: 0; margin-block: 14px; }
+.provider h3 { margin: 0; font-size: 16px; }
+.provider p { margin: 4px 0; }
+.provider ul { list-style: none; padding: 0; margin: 8px 0; }
+.bucket { padding-block: 8px; border-top: 1px solid var(--line); font-size: 14px; line-height: 20px; }
+.row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; }
+.meter { width: 100%; height: 10px; margin-block: 4px; border: 1px solid var(--strongline); background: var(--panel); }
+.meter span { display: block; height: 100%; background: var(--accentink); }
+.refresh { min-height: 44px; padding: 8px 12px; border: 1px solid var(--strongline); border-radius: 6px;
+  background: var(--panel); color: var(--ink); cursor: pointer; }
+.refresh:disabled { cursor: default; }
