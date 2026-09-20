@@ -43,6 +43,36 @@ def test_bad_quiet_and_http_webhook_are_dropped(tmp_path):
     assert stored["slack"]["webhook_url"] == ""
 
 
+def test_concurrent_saves_lose_no_one(tmp_path):
+    """Finding 12: two people saving at the same time must both survive — no PermissionError/500
+    (the Windows atomic-replace race) and no dropped person (the read-merge-write race)."""
+    import threading
+
+    f = tmp_path / "ui-settings.json"
+    handles = [f"p{i}" for i in range(24)]
+    errors: list[Exception] = []
+    barrier = threading.Barrier(len(handles))
+
+    def save(h: str) -> None:
+        try:
+            barrier.wait()  # release every thread into the read-merge-write at once
+            user_settings.save_settings(h, {"profile": {"display_name": h}}, path=f)
+        except Exception as exc:  # noqa: BLE001 — a PermissionError here is the finding
+            errors.append(exc)
+
+    threads = [threading.Thread(target=save, args=(h,)) for h in handles]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"concurrent saves raised: {errors!r}"
+    on_disk = user_settings.load_all(f)
+    assert set(on_disk) == set(handles)  # nobody was lost
+    for h in handles:
+        assert on_disk[h]["profile"]["display_name"] == h
+
+
 def test_bridge_people_only_lists_enabled_reachable(tmp_path):
     f = tmp_path / "s.json"
     user_settings.save_settings("on", {"slack": {"enabled": True, "slack_id": "U1", "quiet": [22, 7]}}, path=f)

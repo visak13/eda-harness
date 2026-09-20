@@ -13,9 +13,17 @@ import ipaddress
 import json
 import os
 import tempfile
+import threading
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
+
+# Finding 12: save_settings is read-merge-write against one shared JSON file. Two people (two
+# request threads) saving at once raced — on Windows one hit PermissionError (the atomic replace
+# lost to the other's open temp handle → a 500) and only one person's settings survived. Serialise
+# the whole read-merge-write so concurrent saves are last-writer-wins per field but never lose a
+# person or 500. One process owns the file (single board), so a threading.Lock is sufficient.
+_SAVE_LOCK = threading.Lock()
 
 _MAX_NAME = 80
 _MAX_URL = 400
@@ -127,34 +135,38 @@ def load_settings(handle: str, path: str | Path | None = None) -> dict[str, Any]
 
 
 def save_settings(handle: str, raw: Any, path: str | Path | None = None) -> dict[str, Any]:
-    """Atomically replace one person's settings; returns the stored (normalised) blob."""
+    """Atomically replace one person's settings; returns the stored (normalised) blob.
+
+    Finding 12: the read-merge-write is serialised under `_SAVE_LOCK` so two people saving at the
+    same time cannot lose a person or trip a Windows PermissionError during the atomic replace."""
     target = Path(path) if path is not None else settings_path()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    everything = load_all(target)
-    stored = normalise(raw)
-    # the SPA echoes the masked webhook back on every save: keep the one on disk
-    submitted = str(((raw or {}).get("slack") or {}).get("webhook_url") or "") if isinstance(raw, dict) else ""
-    if is_masked_webhook(submitted):
-        previous = everything.get(str(handle)) or default_settings()
-        stored["slack"]["webhook_url"] = previous["slack"]["webhook_url"]
-    everything[str(handle)] = stored
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=target.parent,
-                                         prefix=f".{target.name}.", suffix=".tmp",
-                                         delete=False) as stream:
-            json.dump(everything, stream, indent=2, sort_keys=True)
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-            temporary = Path(stream.name)
-        temporary.replace(target)
-    finally:
-        if temporary is not None and temporary.exists():
-            try:
-                temporary.unlink()
-            except OSError:
-                pass
+    with _SAVE_LOCK:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        everything = load_all(target)
+        stored = normalise(raw)
+        # the SPA echoes the masked webhook back on every save: keep the one on disk
+        submitted = str(((raw or {}).get("slack") or {}).get("webhook_url") or "") if isinstance(raw, dict) else ""
+        if is_masked_webhook(submitted):
+            previous = everything.get(str(handle)) or default_settings()
+            stored["slack"]["webhook_url"] = previous["slack"]["webhook_url"]
+        everything[str(handle)] = stored
+        temporary: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=target.parent,
+                                             prefix=f".{target.name}.", suffix=".tmp",
+                                             delete=False) as stream:
+                json.dump(everything, stream, indent=2, sort_keys=True)
+                stream.write("\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+                temporary = Path(stream.name)
+            temporary.replace(target)
+        finally:
+            if temporary is not None and temporary.exists():
+                try:
+                    temporary.unlink()
+                except OSError:
+                    pass
     return stored
 
 
