@@ -1,0 +1,9 @@
+{
+  "threadReqsOnOpen": [],
+  "threadReqsAfterOlder": [
+    "GET /v1/tickets/epic-78a6fd6ff2/thread?before=84"
+  ],
+  "fullThreadFetchOnOpen": false,
+  "indicatorOnOpen": "older 33-132 of 132",
+  "indicatorAfterOlder": null
+}

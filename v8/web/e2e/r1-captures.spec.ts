@@ -35,8 +35,18 @@ test("captures", async ({ page }) => {
   await call("PATCH", `/v1/tickets/${f.epic}`, { design_ref: f.doc }, { "X-Participant": "architect.g3a-1" });
   const errors: string[] = [];
   page.on("pageerror", (e: Error) => errors.push(e.message));
+  // c-d83b97253a: prove opening fetches only the NEWEST page — the epic page
+  // endpoint embeds the newest 100, and the /thread cursor endpoint is hit
+  // ONLY when "Load older" is clicked (never a full-thread fetch on open).
+  const threadReqs: string[] = [];
+  page.on("request", (r: any) => { const u = r.url().replace(BASE(), ""); if (/\/thread(\?|$)/.test(u)) threadReqs.push(`${r.method()} ${u}`); });
   await page.goto(`/ui/epic/${f.epic}?as=owner`);
   await expect(page.getByTestId("conversation")).toBeVisible();
+  await page.waitForTimeout(400);
+  const threadReqsOnOpen = [...threadReqs];
+  // The indicator is present while older pages remain; a short timeout keeps a legitimately
+  // absent indicator (all pages loaded) from auto-waiting the whole test budget.
+  const indicatorOnOpen = await page.getByTestId("thread-page-indicator").textContent({ timeout: 2_000 }).catch(() => null);
   await shot(page, "01-epic-top");
   await shot(page, "01-epic-full", true);
   // Is the composer visible without scrolling? Record its box.
@@ -47,6 +57,13 @@ test("captures", async ({ page }) => {
   // Load older
   const older = page.getByRole("button", { name: /Load older/ });
   if (await older.count()) { await older.scrollIntoViewIfNeeded(); await shot(page, "02-load-older-before"); await older.click(); await page.waitForTimeout(800); await shot(page, "02-load-older-after"); }
+  const indicatorAfterOlder = await page.getByTestId("thread-page-indicator").textContent({ timeout: 2_000 }).catch(() => null);
+  // Evidence for c-d83b97253a: no /thread fetch on open, one after Load older; page indicator "older N-M of T".
+  fs.writeFileSync(path.join(OUT, "thread-pagination.json"), JSON.stringify({
+    threadReqsOnOpen, threadReqsAfterOlder: threadReqs, fullThreadFetchOnOpen: threadReqsOnOpen.length > 0,
+    indicatorOnOpen, indicatorAfterOlder,
+  }, null, 2));
+  expect(threadReqsOnOpen, "opening the epic must not fetch the thread — the newest page is embedded in the epic page").toEqual([]);
   // Reply
   const reply = page.getByTestId("thread-reply").first();
   await reply.scrollIntoViewIfNeeded(); await reply.click(); await page.waitForTimeout(600);
@@ -80,10 +97,14 @@ test("captures", async ({ page }) => {
   await docTab.waitForLoadState(); await docTab.waitForTimeout(800); await docTab.screenshot({ path: path.join(OUT, "04b-design-open-in-tab.png") });
   fs.writeFileSync(path.join(OUT, "design-open-in-tab.json"), JSON.stringify({ url: docTab.url(), excerpt: (await docTab.locator("body").innerText()).slice(0, 200) }));
   await docTab.close();
-  // Usage widget
+  // Usage widget — wait for the rail widget to mount (it renders once whoami resolves) so the
+  // capture is deterministic rather than racing the navigation.
   await page.goto(`/ui/epic/${f.epic}?as=owner`);
   const usage = page.getByTestId("usage-open");
-  if (await usage.count()) { await usage.click(); await page.waitForTimeout(600); await shot(page, "05-usage"); }
+  await usage.waitFor({ state: "visible", timeout: 15_000 });
+  await usage.click();
+  await page.getByTestId("usage-freshness").waitFor({ timeout: 10_000 }).catch(() => {});
+  await page.waitForTimeout(600); await shot(page, "05-usage");
   // Ticket page
   await page.goto(`/ui/ticket/${f.story}?as=owner`); await page.waitForTimeout(800); await shot(page, "06-ticket"); await shot(page, "06-ticket-full", true);
   // Settings
