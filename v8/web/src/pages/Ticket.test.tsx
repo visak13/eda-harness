@@ -57,7 +57,7 @@ function mount(data: TicketPageData) {
     ),
   );
   server.use(http.post("/v1/messages/resolve", () => okJson({ to: null, wakes: [], plan: [], note: "" })));
-  renderRoute("/ticket/s-1?as=owner", "/ticket/:id", <TicketPage />);
+  return renderRoute("/ticket/s-1?as=owner", "/ticket/:id", <TicketPage />);
 }
 
 const title = () => screen.findByText("Build the epic page", { selector: "h1" });
@@ -360,7 +360,8 @@ describe("TicketPage linked-documents drop target (promise #19)", () => {
         return okJson([{ id: "art-drop01", form: "image", staged: false }], "attached to the ticket");
       }),
     );
-    mount(ticketPage());
+    const { qc } = mount(ticketPage());
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
     await title();
     const card = within(await openWork()).getByTestId("linked-documents");
     fireEvent.dragOver(card);
@@ -376,6 +377,9 @@ describe("TicketPage linked-documents drop target (promise #19)", () => {
     // the finalise really happened: the staged id was attached onto this exact ticket
     await waitFor(() => expect(finalized).not.toBeNull());
     expect(finalized!.body).toMatchObject({ artifact_ids: ["art-drop01"], ticket_id: "s-1" });
+    // consult claim 6: the open Files & evidence pane is refreshed from the board's truth, not left
+    // to the optimistic row alone — the contextual query for this ticket is invalidated.
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ["contextual", "s-1"] }));
   });
 
   it("a refused upload shows the board's reason on the card", async () => {

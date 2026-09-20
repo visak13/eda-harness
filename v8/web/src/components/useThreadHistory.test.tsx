@@ -34,6 +34,20 @@ it("deduplicates pinned messages and reopens the gap after a >100-arrival head c
   expect(result.current.more).toBe(false);
 });
 
+it("does not offer '0 older' when a cursor survives but every row is already loaded (consult claim 7)", () => {
+  // The head page still carries a thread_before cursor, yet the merged thread already holds every
+  // row the total names. Gating `more` on the cursor alone showed a "Load older" affordance that
+  // fetched nothing; it must be gated on the count too.
+  const rows: MessageView[] = Array.from({ length: 100 }, (_, i) => ({ id: `m-${i + 1}`, seq: i + 1, by: "owner", kind: "note", to: null, reply_to: null, text: String(i + 1), at: "2026-09-18T00:00:00Z" }));
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const wrapper = ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+  const page: ThreadPage = { thread: rows, thread_total: 100, thread_before: 1 };  // cursor set, but all 100 present
+  const { result } = renderHook(() => useThreadHistory("t-full", page), { wrapper });
+  expect(result.current.messages).toHaveLength(100);
+  expect(result.current.total).toBe(100);
+  expect(result.current.more).toBe(false);  // nothing older to load, despite the live cursor
+});
+
 it("keeps a row that falls off the sliding head window on an already-loaded thread (finding 13)", async () => {
   // qa's case: the head window is the newest 100. A new message arrives at the head, pushing the
   // oldest head row off the page. Before the fix that row vanished from the loaded thread until

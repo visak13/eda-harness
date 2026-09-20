@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { getThreadPage } from "../api/endpoints";
 import type { MessageView, ThreadPage } from "../api/types";
@@ -16,18 +16,25 @@ export function useThreadHistory(id: string, page?: ThreadPage) {
   const listRef = useRef<HTMLUListElement>(null);
   const anchor = useRef<{ id: string; top: number } | null>(null);
   const currentId = useRef(id); currentId.current = id;
-  // Every head row ever seen for THIS thread (finding 13). Rebuilt on an id change; accumulated on
-  // each render as the head window slides. A cache write during render is idempotent (set by id).
+  // Every head row ever seen for THIS thread (finding 13): a row that slides off the head window
+  // stays in an already-loaded thread instead of vanishing. Consult claim 5: the cache is only
+  // READ during render (gated by id — a stale-thread cache is treated as empty); it is MUTATED in
+  // a commit-time effect below, never during render, so a speculative/thrown-away render can never
+  // drop a head row. The current page's rows are merged directly here regardless, so the newest
+  // head is always shown; the cache only carries rows that have already fallen off the window.
   const seen = useRef<{ id: string; rows: Map<string, MessageView> }>({ id, rows: new Map() });
-  if (seen.current.id !== id) seen.current = { id, rows: new Map() };
-  for (const m of page?.thread ?? []) seen.current.rows.set(m.id, m);
+  const seenRows = seen.current.id === id ? seen.current.rows : new Map<string, MessageView>();
   const rows = older?.id === id ? older.rows : [];
   const merged = new Map(rows.map((m) => [m.id, m]));
-  for (const [mid, m] of seen.current.rows) merged.set(mid, m);
+  for (const [mid, m] of seenRows) merged.set(mid, m);
   for (const m of page?.thread ?? []) merged.set(m.id, m);
   const messages = [...merged.values()].sort((a, b) => a.seq != null && b.seq != null ? a.seq - b.seq : a.at.localeCompare(b.at));
   const before = older?.id === id && older.head === page?.thread_before ? older.next : page?.thread_before;
   const total = Math.max(page?.thread_total ?? messages.length, older?.id === id ? older.total ?? 0 : 0);
+  useEffect(() => {
+    if (seen.current.id !== id) seen.current = { id, rows: new Map() };
+    for (const m of page?.thread ?? []) seen.current.rows.set(m.id, m);
+  }, [id, page]);
   const load = useMutation({
     mutationFn: ({ source, cursor }: { source: string; cursor: number; head: number | null | undefined }) => qc.fetchQuery({ queryKey: ["thread", source, cursor], queryFn: () => getThreadPage(source, cursor) }),
     onSuccess: (data, variables) => {
@@ -46,7 +53,9 @@ export function useThreadHistory(id: string, page?: ThreadPage) {
     if (item) listRef.current.scrollTop += item.getBoundingClientRect().top - saved.top;
     anchor.current = null;
   }, [older]);
-  return { messages, total, listRef, more: before != null, loading: load.isPending,
+  // Consult claim 7: guard `more` by the count too — a cursor can survive after every older row is
+  // already merged in, which showed a "0 older" affordance that loaded nothing.
+  return { messages, total, listRef, more: before != null && messages.length < total, loading: load.isPending,
     error: load.variables?.source === id ? load.error : null,
     load: () => { if (before != null && !load.isPending) load.mutate({ source: id, cursor: before, head: page?.thread_before }); } };
 }
