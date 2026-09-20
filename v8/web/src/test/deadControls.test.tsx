@@ -306,8 +306,9 @@ async function settle(ms = 50): Promise<void> {
 }
 
 function expectNoDead(): void {
-  // Never vacuously green: the shell alone carries 4 nav links + Find + identity + help + New epic.
-  expect(document.body.querySelectorAll('a, button, [role="button"]').length).toBeGreaterThanOrEqual(8);
+  // Never vacuously green: the shell alone carries its nav links + Usage + Find + identity. The floor is 7
+  // since Notifications left the rail for the account menu (c-1165c735b6, 8ed7ffa).
+  expect(document.body.querySelectorAll('a, button, [role="button"]').length).toBeGreaterThanOrEqual(7);
   const dead = findDeadControls(document.body);
   expect(dead, `dead controls on ${window.location.pathname}: ${dead.join(", ")}`).toEqual([]);
 }
