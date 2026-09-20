@@ -102,6 +102,9 @@ export interface ComposerProps {
   replyTo?: string | null;
   /** Show the People / Live seats / Roles "To" picker. Off for a fixed-recipient reply. */
   showTo?: boolean;
+  /** Suppress the To row entirely — the host already shows the single recipient (e.g. the
+   *  design-review panel's chip); `to` is kept for the send target. Avoids a duplicate recipient. */
+  hideRecipient?: boolean;
   /** Report dirty (non-empty draft) so the draft guard holds live refreshes while typing. */
   onDirtyChange?: (dirty: boolean) => void;
   /** Who `replyTo` was written by — shown on the "Replying to" chip (round 2 #16). */
@@ -135,6 +138,7 @@ function ComposerInstance({
   to: toProp = null,
   replyTo = null,
   showTo = false,
+  hideRecipient = false,
   onDirtyChange,
   replyToBy = null,
   onCancelReply,
@@ -325,7 +329,7 @@ function ComposerInstance({
       ) : null}
 
       <div className={styles.controls}>
-        {showTo || to != null ? (
+        {(showTo || to != null) && !hideRecipient ? (
           <label className={styles.field}>
             <span className={styles.fieldLabel}>To</span>
             <span className={styles.selectWrap}>

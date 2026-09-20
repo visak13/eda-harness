@@ -47,4 +47,14 @@ describe("source-bound design review", () => {
     await waitFor(() => expect(bodies).toHaveLength(2));
     expect(bodies[0].idempotency_key).toBe(bodies[1].idempotency_key);
   });
+
+  it("shows the recipient once — the panel chip, never the composer's own To picker (finding 5)", async () => {
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Request changes" }));
+    await screen.findByRole("textbox");
+    // the composer must NOT render its own recipient selector (that was the duplication)
+    expect(screen.queryByTestId("to-picker")).toBeNull();
+    // the recipient appears exactly once, as the panel's "To architect" chip
+    expect(screen.getAllByText("architect")).toHaveLength(1);
+  });
 });

@@ -59,6 +59,27 @@ describe("DocView", () => {
     expect(screen.queryByLabelText("Versions")).not.toBeInTheDocument();
   });
 
+  it("hides the author controls on the review surface — a reviewing owner is not the author (finding 5)", async () => {
+    server.use(
+      http.get("/v1/docs/design-1/html", () => okJson(doc({ scope: "s-1" }))),
+      http.get("/v1/docs/design-1/context", () => okJson({ ticket_id: "s-1", source_title: "Story one", source_kind: "ticket", design_ref: "design-1", reviewed_version: 2, current_version: 2, gate_event_id: "ev-gate", can_review: true, can_approve: true })),
+      http.get("/v1/me/people", () => okJson([])),
+    );
+    renderRoute("/ticket/s-1?request=ev-gate", "/ticket/:id", <DocView docId="design-1" source="s-1" request="ev-gate" />);
+    await screen.findByTestId("review-state");
+    // no author actions embedded in the reviewer's reading pane
+    expect(screen.queryByTestId("doc-controls")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Publish a new version" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Ask for a review/ })).toBeNull();
+  });
+
+  it("keeps the author controls when the doc is read outside a review", async () => {
+    server.use(http.get("/v1/docs/design-1/html", () => okJson(doc({ scope: "s-1" }))));
+    renderRoute("/x", "/x", <DocView docId="design-1" />);
+    expect(await screen.findByTestId("doc-controls")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Publish a new version" })).toBeInTheDocument();
+  });
+
   it("intercepts a nested doc link so it opens in the same surface", async () => {
     const opened: string[] = [];
     server.use(

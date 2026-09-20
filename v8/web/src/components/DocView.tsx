@@ -114,6 +114,7 @@ export function DocView({
       onPickVersion={(v) => { if (!pendingWork()) setRequested(v); }}
       versionsHosted={versionsHosted}
       hideTitle={!!source}
+      reviewing={!!source}
     />;
   return source ? <DesignReview key={`${docId}:${source}:${q.data.version}`} docId={docId} source={source} version={q.data.version} title={q.data.title} request={request} onLatest={(v) => { if (!pendingWork()) setRequested(v); }}>{content}</DesignReview> : <><DocumentSource key={docId} docId={docId} version={q.data.version} />{content}</>;
 }
@@ -125,6 +126,7 @@ function DocBody({
   onPickVersion,
   versionsHosted,
   hideTitle,
+  reviewing,
 }: {
   doc: DocHtml;
   onOpenDoc?: (id: string) => void;
@@ -133,6 +135,9 @@ function DocBody({
   versionsHosted?: boolean;
   /** Inside a design review the header already names the doc (review-title). */
   hideTitle?: boolean;
+  /** Inside a design review the reader is the reviewer, not the author: the author actions
+   *  (Ask for a review / Publish a new version) do not belong on the review surface (finding 5). */
+  reviewing?: boolean;
 }): React.JSX.Element {
   const latest = doc.versions.length ? Math.max(...doc.versions) : doc.version;
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -202,7 +207,7 @@ function DocBody({
         </div>
 
 
-        <DocControls docId={doc.id} scope={doc.scope} version={doc.version} scopeIsThread={scopeIsTicket} />
+        {reviewing ? null : <DocControls docId={doc.id} scope={doc.scope} version={doc.version} scopeIsThread={scopeIsTicket} />}
       </div>
 
       <aside className={styles.side} data-testid="doc-side">

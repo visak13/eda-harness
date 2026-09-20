@@ -91,7 +91,7 @@ export function DesignReview({ docId, version, source, request, children, onLate
       <p className={styles.feedbackMeta}>To the {ctx.source_title} conversation<br />Regarding: {title ?? docId} · v{version}</p>
       <p className={styles.feedbackTo}><span>To</span> <span className={styles.toChip}><Avatar id="architect" size={20} /> architect</span></p>
       <p className={styles.feedbackAction}><span>Action</span> <strong>{mode === "request_changes" ? "Request changes" : "Comment"}</strong></p>
-      <Composer ticketId={source} to="architect" lockRecipient kinds={mode === "request_changes" ? ["steer"] : ["note"]}
+      <Composer ticketId={source} to="architect" lockRecipient hideRecipient kinds={mode === "request_changes" ? ["steer"] : ["note"]}
         submit={submit} initialText={draft.current.text} initialArtifacts={draft.current.artifacts}
         onDirtyChange={setDirty}
         onTextChange={(text) => { draft.current.text = text; writeDraft(key, { ...draft.current, mode: mode ?? undefined }); }}
