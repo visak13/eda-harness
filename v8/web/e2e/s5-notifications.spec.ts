@@ -18,8 +18,11 @@ test('integrated feed, real IDB multitab ledger, private display and draft-safe 
   await panel.getByRole('button', { name: 'Enable notifications' }).click();
   await baseline;
   await expect(panel.getByRole('status')).toContainText('enabled while');
-  // Close the account menu so its overlay does not cover the conversation the test drives next.
-  await page.getByTestId('account-open').click();
+  // Close the account menu so its overlay does not cover the conversation driven next. AnchoredPanel's
+  // Escape handler is on the panel element, so a child must hold focus (the Enable button unmounts on
+  // enable) — focus the always-present "Needs you" link, then Escape.
+  await panel.getByRole('link', { name: 'Needs you' }).focus();
+  await page.keyboard.press('Escape');
   await expect(panel).toBeHidden();
   const worker = context.serviceWorkers()[0]; expect(worker).toBeTruthy();
   // Suppress desktop UI only inside this owned test worker; exercise real ledger + handshake.
