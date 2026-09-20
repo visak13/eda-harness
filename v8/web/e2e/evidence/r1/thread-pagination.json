@@ -1,9 +1,12 @@
 {
   "threadReqsOnOpen": [],
   "threadReqsAfterOlder": [
-    "GET /v1/tickets/epic-78a6fd6ff2/thread?before=84"
+    "GET /v1/tickets/epic-f720c5778b/thread?before=84"
   ],
   "fullThreadFetchOnOpen": false,
-  "indicatorOnOpen": "older 33-132 of 132",
-  "indicatorAfterOlder": null
+  "indicatorOnOpen": "Showing 100 of 132 · 32 older",
+  "indicatorAfterOlder": "Showing 132 of 132",
+  "scrollBefore": 120,
+  "scrollAfter": 112,
+  "scrollPreserved": true
 }

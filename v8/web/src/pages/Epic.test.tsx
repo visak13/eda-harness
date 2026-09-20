@@ -61,15 +61,15 @@ describe("EpicPage", () => {
     }));
     mount(page({ thread_total: 235, thread_before: 136 }, messages.slice(-100)));
     expect(await screen.findByTestId("conversation-total")).toHaveTextContent("235 messages");
-    // Page indicator (newest first): the newest 100 loaded are positions 136-235 of 235.
-    expect(screen.getByTestId("thread-page-indicator")).toHaveTextContent("older 136-235 of 235");
+    // Page indicator states what is shown and how many older remain.
+    expect(screen.getByTestId("thread-page-indicator")).toHaveTextContent("Showing 100 of 235 · 135 older");
     const draft = screen.getByRole("textbox", { name: "Message" });
     fireEvent.change(draft, { target: { value: "Keep my unsent draft" } });
     const list = screen.getByTestId("thread"); list.scrollTop = 42;
     fireEvent.click(screen.getByRole("button", { name: "Load older messages" }));
     await screen.findByText("History row 36");
-    // Prepending a page advances the indicator's older bound.
-    expect(screen.getByTestId("thread-page-indicator")).toHaveTextContent("older 36-235 of 235");
+    // Prepending a page reduces the older count.
+    expect(screen.getByTestId("thread-page-indicator")).toHaveTextContent("Showing 200 of 235 · 35 older");
     fireEvent.click(screen.getByRole("button", { name: "Load older messages" }));
     await screen.findByText("History row 1");
     expect(cursors).toEqual([136, 36]);
@@ -81,6 +81,9 @@ describe("EpicPage", () => {
     expect(screen.getByRole("textbox", { name: "Message" })).toBe(draft);
     expect(draft).toHaveValue("Keep my unsent draft");
     expect(screen.queryByRole("button", { name: "Load older messages" })).toBeNull();
+    // All loaded: the indicator confirms the full count, the "older" suffix is gone.
+    expect(screen.getByTestId("thread-page-indicator")).toHaveTextContent("Showing 235 of 235");
+    expect(screen.getByTestId("thread-page-indicator")).not.toHaveTextContent("older");
   });
 
   it("header: title, purpose from the owner's words, ONE status badge, owner and assigned from the board", async () => {

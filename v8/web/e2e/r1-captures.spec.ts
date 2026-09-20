@@ -33,6 +33,14 @@ test("captures", async ({ page }) => {
   await call("POST", "/v1/messages", { ticket_id: f.epic, kind: "note", to: "owner", text: "Here is a compact sketch. Your design review stays one click away, and feedback comes back to this thread.", artifacts: [staged.value.id] }, { "X-Participant": "architect.g3a-1" });
   // The doc is the epic's design (design_ref) so the viewer opens in review mode, as on a real epic.
   await call("PATCH", `/v1/tickets/${f.epic}`, { design_ref: f.doc }, { "X-Participant": "architect.g3a-1" });
+  // A SEPARATE attachment on the STORY (c-acd513e457 asks for ticket attachments in the Files card,
+  // distinct from the epic's message attachment above).
+  const sform = new FormData();
+  sform.append("file", new Blob([png], { type: "image/png" }), "story-evidence.png");
+  sform.append("ticket_id", f.story); sform.append("note", "Story evidence capture");
+  const sup = await fetch(`${BASE()}/v1/artifacts/upload`, { method: "POST", headers: { "X-Participant": "engineer.g3a-1" }, body: sform });
+  const sstaged = (await sup.json()) as any; if (!sstaged.ok) throw new Error(JSON.stringify(sstaged));
+  await call("POST", "/v1/messages", { ticket_id: f.story, kind: "note", to: "owner", text: "Attaching the story evidence.", artifacts: [sstaged.value.id] }, { "X-Participant": "engineer.g3a-1" });
   const errors: string[] = [];
   page.on("pageerror", (e: Error) => errors.push(e.message));
   // c-d83b97253a: prove opening fetches only the NEWEST page — the epic page
@@ -44,8 +52,8 @@ test("captures", async ({ page }) => {
   await expect(page.getByTestId("conversation")).toBeVisible();
   await page.waitForTimeout(400);
   const threadReqsOnOpen = [...threadReqs];
-  // The indicator is present while older pages remain; a short timeout keeps a legitimately
-  // absent indicator (all pages loaded) from auto-waiting the whole test budget.
+  // Page indicator ("Showing X of Y · Z older"); the short timeout keeps a legitimately absent
+  // indicator (a thread that never paged) from auto-waiting the whole test budget.
   const indicatorOnOpen = await page.getByTestId("thread-page-indicator").textContent({ timeout: 2_000 }).catch(() => null);
   await shot(page, "01-epic-top");
   await shot(page, "01-epic-full", true);
@@ -54,16 +62,27 @@ test("captures", async ({ page }) => {
   const box = await composer.boundingBox();
   const vh = page.viewportSize()!.height;
   fs.writeFileSync(path.join(OUT, "composer-box.json"), JSON.stringify({ box, vh, visibleInViewport: !!box && box.y < vh }, null, 2));
-  // Load older
+  // Load older. Scroll the reader mid-thread first, then record scrollTop across the prepend:
+  // the anchor logic in useThreadHistory must keep the reader's position (c-d83b97253a).
+  const list = page.getByTestId("thread");
+  await list.evaluate((el) => { (el as HTMLElement).scrollTop = 120; });
+  const scrollBefore = await list.evaluate((el) => (el as HTMLElement).scrollTop);
   const older = page.getByRole("button", { name: /Load older/ });
-  if (await older.count()) { await older.scrollIntoViewIfNeeded(); await shot(page, "02-load-older-before"); await older.click(); await page.waitForTimeout(800); await shot(page, "02-load-older-after"); }
+  let scrollAfter = scrollBefore;
+  if (await older.count()) {
+    await older.scrollIntoViewIfNeeded(); await shot(page, "02-load-older-before");
+    await older.click(); await page.waitForTimeout(800); await shot(page, "02-load-older-after");
+    scrollAfter = await list.evaluate((el) => (el as HTMLElement).scrollTop);
+  }
   const indicatorAfterOlder = await page.getByTestId("thread-page-indicator").textContent({ timeout: 2_000 }).catch(() => null);
-  // Evidence for c-d83b97253a: no /thread fetch on open, one after Load older; page indicator "older N-M of T".
+  // Evidence for c-d83b97253a: no /thread fetch on open, one after Load older; page indicator; scroll kept.
   fs.writeFileSync(path.join(OUT, "thread-pagination.json"), JSON.stringify({
     threadReqsOnOpen, threadReqsAfterOlder: threadReqs, fullThreadFetchOnOpen: threadReqsOnOpen.length > 0,
-    indicatorOnOpen, indicatorAfterOlder,
+    indicatorOnOpen, indicatorAfterOlder, scrollBefore, scrollAfter, scrollPreserved: Math.abs(scrollAfter - scrollBefore) <= 24,
   }, null, 2));
   expect(threadReqsOnOpen, "opening the epic must not fetch the thread — the newest page is embedded in the epic page").toEqual([]);
+  // Preserved = the reader stayed put (within ~one line), not reset to the top after the prepend.
+  expect(Math.abs(scrollAfter - scrollBefore), "prepending an older page must keep the reader's scroll position").toBeLessThanOrEqual(24);
   // Reply
   const reply = page.getByTestId("thread-reply").first();
   await reply.scrollIntoViewIfNeeded(); await reply.click(); await page.waitForTimeout(600);
@@ -105,8 +124,12 @@ test("captures", async ({ page }) => {
   await usage.click();
   await page.getByTestId("usage-freshness").waitFor({ timeout: 10_000 }).catch(() => {});
   await page.waitForTimeout(600); await shot(page, "05-usage");
-  // Ticket page
+  // Ticket page + its Files & evidence card (ticket attachment, c-acd513e457).
   await page.goto(`/ui/ticket/${f.story}?as=owner`); await page.waitForTimeout(800); await shot(page, "06-ticket"); await shot(page, "06-ticket-full", true);
+  await page.getByTestId("work-files").click(); await page.waitForTimeout(600); await shot(page, "06b-ticket-files");
+  const ticketFilesText = await page.getByText("story-evidence.png").first().isVisible().catch(() => false);
+  fs.writeFileSync(path.join(OUT, "ticket-files.json"), JSON.stringify({ storyAttachmentInFilesCard: ticketFilesText, ticket: f.story }, null, 2));
+  await page.keyboard.press("Escape");
   // Settings
   await page.goto(`/ui/settings?as=owner`); await page.waitForTimeout(800); await shot(page, "07-settings-profile");
   await page.goto(`/ui/settings?as=owner&tab=slack`); await page.waitForTimeout(600); await shot(page, "07-settings-slack");

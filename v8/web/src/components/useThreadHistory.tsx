@@ -42,11 +42,17 @@ export function useThreadHistory(id: string, page?: ThreadPage) {
     load: () => { if (before != null && !load.isPending) load.mutate({ source: id, cursor: before, head: page?.thread_before }); } };
 }
 
+/** Page size the backend serves (views.thread_page). A thread larger than one page shows the
+ * indicator; a thread that never paged (nothing older) shows nothing. */
+const THREAD_PAGE_SIZE = 100;
+
 export function ThreadHistoryControls({ history }: { history: ReturnType<typeof useThreadHistory> }) {
+  const paged = history.total > THREAD_PAGE_SIZE;
+  const remaining = history.total - history.messages.length;
   return <>
-    {history.more ? <div className={styles.history} data-testid="thread-history">
-      <span data-testid="thread-page-indicator">older {history.total - history.messages.length + 1}-{history.total} of {history.total}</span>
-      <button type="button" className={styles.historyButton} onClick={history.load} disabled={history.loading}><Icon name="history" size={16} /> {history.loading ? "Loading older messages…" : "Load older messages"}</button></div> : null}
+    {paged ? <div className={styles.history} data-testid="thread-history">
+      <span data-testid="thread-page-indicator">Showing {history.messages.length} of {history.total}{history.more ? ` · ${remaining} older` : ""}</span>
+      {history.more ? <button type="button" className={styles.historyButton} onClick={history.load} disabled={history.loading}><Icon name="history" size={16} /> {history.loading ? "Loading older messages…" : "Load older messages"}</button> : null}</div> : null}
     {history.error ? <p role="alert" className={styles.historyError}>Could not load older messages: {(history.error as Error).message}. Your conversation and draft are kept; try again.</p> : null}
   </>;
 }
