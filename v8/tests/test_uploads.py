@@ -201,17 +201,29 @@ def test_content_disposition_helper_rfc6266():
     assert uploads.content_disposition("inline", "").startswith('inline; filename="download"')
 
 
-def test_content_disposition_strips_control_chars():
-    """Consult claim 3: a filename carrying ASCII control bytes (NUL/CR/LF/DEL) must not survive
-    into the fallback — left there they raise h11 LocalProtocolError (500) and a CR/LF is a
-    header-injection vector. They are replaced with `_`; the real name still rides in filename*."""
-    v = uploads.content_disposition("attachment", "a\r\nb\x00c\x7fd.txt")
+def test_content_disposition_strips_control_chars_from_both_parts():
+    """Consult claim 3 + qa m-97e15d2c0b: ASCII control bytes (NUL/CR/LF/DEL) must not survive into
+    EITHER part. In the fallback they raise h11 LocalProtocolError (500) and a CR/LF is a header
+    injection; percent-encoded in filename* they would still land control chars in a saved filename.
+    They are dropped outright, from the one sanitised name both parts are built from."""
+    v = uploads.content_disposition("attachment", "x\r\nSet-Cookie: a=b\x00\x7f.txt")
     disp, _, star = v.partition("; filename*=")
-    assert disp == 'attachment; filename="a__b_c_d.txt"'
+    assert disp == 'attachment; filename="xSet-Cookie: a=b.txt"'
+    assert star == "UTF-8''xSet-Cookie%3A%20a%3Db.txt"      # no %0D/%0A/%00/%7F anywhere
     v.encode("latin-1")  # header-safe
-    assert "\r" not in v and "\n" not in v and "\x00" not in v
-    # the untouched name is still recoverable, percent-encoded, in filename*
-    assert star == "UTF-8''a%0D%0Ab%00c%7Fd.txt"
+    for bad in ("\r", "\n", "\x00", "%0D", "%0A", "%00", "%7F"):
+        assert bad not in v
+
+
+def test_content_disposition_reduces_a_path_to_its_basename():
+    """qa m-97e15d2c0b: path separators must not pass through — a download filename carrying
+    ../../etc/passwd (or a Windows path) is reduced to the basename in both parts."""
+    assert uploads.content_disposition("attachment", "../../etc/passwd") == \
+        'attachment; filename="passwd"; filename*=UTF-8\'\'passwd'
+    assert uploads.content_disposition("attachment", "..\\..\\Windows\\System32\\evil.txt") == \
+        'attachment; filename="evil.txt"; filename*=UTF-8\'\'evil.txt'
+    # a name that is only separators falls back to the safe default
+    assert uploads.content_disposition("inline", "/").startswith('inline; filename="download"')
 
 
 def test_download_non_latin_filename_is_200_not_500(board_app):
