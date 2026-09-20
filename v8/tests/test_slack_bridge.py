@@ -159,3 +159,31 @@ def test_merge_people_keeps_static_map_person(tmp_path, monkeypatch):
     people = {"boss": {"slack_id": "U9", "webhook_url": None, "quiet": None}}
     added, removed = slack_bridge._merge_people(people, static=frozenset({"boss"}))
     assert added == [] and removed == [] and people["boss"]["slack_id"] == "U9"
+
+
+def test_board_opt_out_beats_a_static_map_person(tmp_path, monkeypatch):
+    """S10 architect ruling + epic c-74a5b90c59: a person's board opt-out WINS over a static
+    slack_map operator handle — a disabled or unlinked human gets nothing, even when statically
+    mapped. A static handle with NO board record stays (they never opted out); one that switched
+    Slack OFF, or left it unlinked, on the board is dropped and its watcher stopped."""
+    settings = tmp_path / "ui-settings.json"
+    monkeypatch.setenv("EDP8_UI_SETTINGS", str(settings))
+    static = frozenset({"boss", "quiet_boss"})
+    people = {"boss": {"slack_id": "U9", "webhook_url": None, "quiet": None},
+              "quiet_boss": {"slack_id": "U8", "webhook_url": None, "quiet": None}}
+
+    # boss explicitly switches Slack OFF on the board; quiet_boss never touches settings.
+    save_settings("boss", {"slack": {"enabled": False, "slack_id": "U9"}})
+    added, removed = slack_bridge._merge_people(people, static)
+    assert removed == ["boss"] and "boss" not in people        # opt-out beats the static map
+    assert people["quiet_boss"]["slack_id"] == "U8"            # no board record → untouched
+
+    # an ENABLED-but-UNLINKED board record (no member id / webhook) is also "gets nothing".
+    save_settings("quiet_boss", {"slack": {"enabled": True}})
+    added, removed = slack_bridge._merge_people(people, static)
+    assert removed == ["quiet_boss"] and "quiet_boss" not in people
+
+    # opting back in re-adds the static person on the next refresh.
+    save_settings("boss", {"slack": {"enabled": True, "slack_id": "U9"}})
+    added, removed = slack_bridge._merge_people(people, static)
+    assert added == ["boss"] and people["boss"]["slack_id"] == "U9"

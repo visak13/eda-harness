@@ -184,12 +184,17 @@ def _merge_people(people: dict, static: frozenset[str] = frozenset(),
     - A person still on is replaced IN PLACE (clear+update, keeping the same dict object so a
       running watcher thread sees the change) — a full replace, not a non-None merge, so a
       CLEARED field propagates: clearing quiet hours resets `quiet` to None, it does not linger.
-    - A person who switched Slack off or unlinked, and is NOT backed by the static `slack_map.json`
-      (`static` holds those handles), is removed so their watcher can be stopped (removed).
+    - A person who switched Slack off or unlinked is removed so their watcher can be stopped
+      (removed). S10 architect ruling: a person's board opt-out WINS over a static `slack_map.json`
+      operator handle — epic c-74a5b90c59 says disabled or unlinked humans get nothing. So a static
+      handle (`static`) is normally protected from removal, BUT a handle that has actively opted out
+      on the board (a settings record that is off/unlinked → `opted_out_people`) is dropped anyway.
+      A static handle with NO board record is untouched (they never opted out).
 
     Returns (added, removed)."""
-    from .user_settings import bridge_people
+    from .user_settings import bridge_people, opted_out_people
     desired = bridge_people(path)
+    opted_out = opted_out_people(path)
     added: list[str] = []
     removed: list[str] = []
     for handle, person in desired.items():
@@ -201,7 +206,8 @@ def _merge_people(people: dict, static: frozenset[str] = frozenset(),
             current.clear()
             current.update(person)
     for handle in list(people):
-        if handle not in desired and handle not in static:
+        # remove a handle that is not wanted AND is either not static, or static but has opted out
+        if handle not in desired and (handle not in static or handle in opted_out):
             people.pop(handle, None)
             removed.append(handle)
     return added, removed

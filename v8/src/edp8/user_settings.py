@@ -198,3 +198,13 @@ def bridge_people(path: str | Path | None = None) -> dict[str, dict[str, Any]]:
                           "webhook_url": slack["webhook_url"] or None,
                           "quiet": slack["quiet"] or s["notifications"]["quiet"]}
     return people
+
+
+def opted_out_people(path: str | Path | None = None) -> set[str]:
+    """Handles that have a board settings record but are NOT enabled-and-reachable — a human who
+    switched Slack OFF or left it unlinked (no member id / webhook). Epic criterion c-74a5b90c59:
+    'disabled or unlinked humans get nothing'. This is the set the bridge uses to let a person's
+    board opt-out WIN over a static slack_map operator handle (S10 architect ruling): a handle with
+    a settings record that is not in bridge_people has actively opted out and must be dropped even
+    when slack_map.json statically maps them."""
+    return set(load_all(path)) - set(bridge_people(path))
