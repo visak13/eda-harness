@@ -61,11 +61,15 @@ describe("EpicPage", () => {
     }));
     mount(page({ thread_total: 235, thread_before: 136 }, messages.slice(-100)));
     expect(await screen.findByTestId("conversation-total")).toHaveTextContent("235 messages");
+    // Page indicator (newest first): the newest 100 loaded are positions 136-235 of 235.
+    expect(screen.getByTestId("thread-page-indicator")).toHaveTextContent("older 136-235 of 235");
     const draft = screen.getByRole("textbox", { name: "Message" });
     fireEvent.change(draft, { target: { value: "Keep my unsent draft" } });
     const list = screen.getByTestId("thread"); list.scrollTop = 42;
     fireEvent.click(screen.getByRole("button", { name: "Load older messages" }));
     await screen.findByText("History row 36");
+    // Prepending a page advances the indicator's older bound.
+    expect(screen.getByTestId("thread-page-indicator")).toHaveTextContent("older 36-235 of 235");
     fireEvent.click(screen.getByRole("button", { name: "Load older messages" }));
     await screen.findByText("History row 1");
     expect(cursors).toEqual([136, 36]);
