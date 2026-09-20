@@ -354,6 +354,8 @@ export interface TicketRecord extends Record<string, unknown> {
 export interface TicketPage extends ThreadPage {
   ticket: TicketRecord;
   epic_id: string;
+  /** The epic's short title for the breadcrumb (design-a2e5369133: never a bare id). */
+  epic_title?: string;
   criteria: CriterionView[];
   docs: DocSummaryRelated[];
   thread: MessageView[];

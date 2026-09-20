@@ -176,7 +176,10 @@ function ComposerInstance({
   useEffect(() => {
     const prior = selection.current;
     if (prior && taRef.current) { taRef.current.focus(); taRef.current.setSelectionRange(prior.start, prior.end); taRef.current.scrollTop = prior.scroll; }
-  }, []);
+    // A reply remounts the composer: put the caret in it and bring it on screen, else Reply looks
+    // like it did nothing (owner 2026-09-20: "the chat hangs when you reply").
+    else if (replyTo && taRef.current) { taRef.current.focus(); taRef.current.scrollIntoView?.({ block: "nearest" }); }
+  }, [replyTo]);
   const firstKind = useRef(kinds[0]);
   useEffect(() => { if (firstKind.current !== kinds[0]) { setKind(kinds[0]); firstKind.current = kinds[0]; } }, [kinds[0]]);
   const idRef = useRef(`composer-${Math.random().toString(36).slice(2)}`);

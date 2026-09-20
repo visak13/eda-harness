@@ -39,5 +39,17 @@
 .view { font: inherit; font-size: 13px; min-height: 30px; padding: 3px 8px; margin-top: 5px; justify-self: start; display: inline-flex; align-items: center; gap: 6px;
   border: 1.5px solid var(--strongline); border-radius: 8px; background: var(--panel); color: var(--ink); cursor: pointer; }
 .view:hover { background: var(--secondary); }
-.composer { margin-top: 4px; }
+/* The composer is PINNED (owner 2026-09-20 m-bb691081ef: "the message box isn't pinned"): it sticks
+   to the bottom of the viewport while the conversation is on screen, so Reply and Send never
+   need a scroll. It stays in flow — sticky, not fixed — so nothing overlaps the page. */
+.composer { position: sticky; bottom: 0; z-index: 3; margin-top: 4px; padding: 8px 0 12px; background: var(--bg); }
+.history { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+.historyButton {
+  font: inherit; font-size: 13px; min-height: 30px; padding: 3px 10px; display: inline-flex; align-items: center; gap: 6px;
+  border: 1.5px solid var(--strongline); border-radius: 8px; background: var(--panel); color: var(--ink); cursor: pointer;
+}
+.historyButton:hover { background: var(--secondary); }
+.historyButton:disabled { opacity: 0.6; cursor: default; }
+.historyButton:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
+.historyError { margin: 0; font-size: 13px; color: var(--accentink); }
 @media (max-width: 600px) { .messages { max-height: none; } .thumb { width: 100%; } }

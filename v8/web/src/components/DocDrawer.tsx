@@ -124,7 +124,7 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
       {top ? (
         <Link
           className={styles.asPage}
-          target="_blank" rel="noopener"
+          target="_blank"
           to={`/doc/${encodeURIComponent(top)}?${new URLSearchParams({ ...(shownDoc ? { version: String(shownDoc.version) } : {}), ...(source ? { source } : {}), ...(params.get("request") ? { request: params.get("request")! } : {}), as: identity() })}`}
         >
           Open in tab

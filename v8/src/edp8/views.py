@@ -637,13 +637,14 @@ def ticket_page(board: Board, ticket_id: str, include: str | None = None) -> dic
     docs = [{**board._doc_summary(d), "relation": rel_by_doc.get(d.id)}
             for d in board.linked_docs(ticket_id)]
     assignee = _participant(board, t.assignee)
-    epic_id = board.epic_of(t).id
+    epic = board.epic_of(t)
+    epic_id = epic.id
     # Open gates on THIS ticket, so the page can close the loop by answering them (design §16,
     # c-eb4300f7b2 "answer gate"). Shape matches GateRow so the same GateForm renders them.
     open_gates = [{"event_id": ev.id, "ticket_id": ticket_id, "gate": ev.data.get("gate"), "by": ev.data.get("by"),
                    "note": ev.data.get("note"), "opened_at": ev.created_at.isoformat(), "epic": epic_id}
                   for ev in board.open_gates(ticket_id)]
-    return {"ticket": t.model_dump(mode="json"), "epic_id": epic_id,
+    return {"ticket": t.model_dump(mode="json"), "epic_id": epic_id, "epic_title": epic.title,
             "criteria": [{"id": c.id, "text": c.text, "check": c.check.value,
                           "checked_by": c.checked_by, "verdict": c.verdict.value,
                           "evidence_ref": c.evidence_ref,

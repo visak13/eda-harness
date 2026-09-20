@@ -1,6 +1,30 @@
-.review { min-width: 0; padding: 16px; background: var(--panel); border-bottom: 1px solid var(--strongline); }
-.actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; position: sticky; top: 0; z-index: 2; background: var(--panel); padding: 8px 0; }
-.feedback { min-width: 0; margin-block: 16px; padding: 16px; background: var(--rail); border-left: 1px solid var(--strongline); }
+/* Design review per revision3-clean-review.png: a crumb ("Epic / Design review"), the document
+   title with its "Design · Version N · state" line, Approve (sage) / Request changes (coral) on
+   the right; the feedback panel beside the document when a mode is open. */
+.review { min-width: 0; padding: 0 16px 16px; background: var(--panel); border-bottom: 1px solid var(--strongline); }
+.head { position: sticky; top: 0; z-index: 2; background: var(--panel); padding: 14px 0 12px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+.crumb { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
+.crumb a { color: var(--ink); text-decoration: none; }
+.crumb a:hover { text-decoration: underline; }
+.titleRow { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 12px; }
+.titleBlock { min-width: 0; }
+.title { font: 700 26px/32px "Segoe UI", system-ui, sans-serif; color: var(--ink); margin: 0; overflow-wrap: anywhere; }
+.state { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+.actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.muted { font-size: 13px; color: var(--muted); }
+.approve { background: var(--successwash); border-color: var(--success); color: var(--success); }
+.approve:hover:not(:disabled) { filter: brightness(0.97); }
+.request { background: var(--accentwash); border-color: var(--accent); color: var(--accentink); }
+.request:hover:not(:disabled) { filter: brightness(0.97); }
+.notice { margin: 0 0 12px; font-size: 14px; }
+.feedback { min-width: 0; margin-block: 0 16px; padding: 20px; background: var(--rail); border-left: 1px solid var(--strongline); display: flex; flex-direction: column; gap: 10px; }
+.feedbackTitle { margin: 0; font-size: 20px; }
+.feedbackMeta { margin: 0; font-size: 13px; line-height: 19px; color: var(--muted); }
+.feedbackTo, .feedbackAction { margin: 0; display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.feedbackTo > span:first-child, .feedbackAction > span:first-child { color: var(--muted); }
+.toChip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 8px; border: 1.5px solid var(--strongline); border-radius: 8px; background: var(--panel); }
+.feedbackNote { margin: 0; font-size: 13px; line-height: 19px; color: var(--muted); display: flex; gap: 6px; align-items: flex-start; flex-wrap: wrap; }
+.linkButton { border: 0; background: transparent; padding: 0; font: inherit; color: var(--accentink); text-decoration: underline; cursor: pointer; }
 .split { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; }
 .reading { min-width: 0; }
 .split .reading [data-testid="doc-side"] { display: none; }

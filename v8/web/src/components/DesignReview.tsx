@@ -6,6 +6,8 @@ import type { SendMessage } from "../api/endpoints";
 import type { MessageSent } from "../api/types";
 import { identity } from "../auth/identity";
 import { Composer } from "./Composer";
+import { Avatar } from "./Avatar";
+import { Icon } from "./Icon";
 import ui from "./ui.module.css";
 import styles from "./DesignReview.module.css";
 import { readDraft, writeDraft } from "./draftStorage";
@@ -53,30 +55,51 @@ export function DesignReview({ docId, version, source, request, children, onLate
   if (context.isError) return <><p role="alert">Cannot use this source for review: {context.error.message}. The document remains readable. <Link to={`/doc/${encodeURIComponent(docId)}?version=${version}`}>Select a linked conversation source</Link></p>{children}</>;
   const ctx = context.data;
   const sourcePath = `/${ctx.source_kind === "epic" ? "epic" : "ticket"}/${encodeURIComponent(source)}`;
+  const reviewOpen = Boolean(ctx.can_review && ctx.gate_event_id);
+  const stateLine = [`Version ${version}`, version !== ctx.current_version ? `latest is v${ctx.current_version}` : "Latest", reviewOpen ? "Review requested" : null].filter(Boolean).join(" · ");
+  // Header per revision3-clean-review.png: source / Design review crumb, the document title with a
+  // "Design · Version N · state" line, and the two review actions on the right.
   return <section className={styles.review} aria-label="Document review" data-busy={approve.isPending ? "true" : undefined}>
-    <div className={styles.actions}>
-      <Link to={sourcePath}>Back to source: {ctx.source_title}</Link>
-      <span>{title ? <strong>{title} · </strong> : null}Reviewing v{version} · current v{ctx.current_version}</span>
-      {ctx.can_review && ctx.gate_event_id ? <>
-        <button className={ui.button} disabled={!ctx.can_approve || dirty || approve.isPending || sent} onClick={() => { if (!pendingWork()) approve.mutate(); }}>Approve design</button>
-        <button className={ui.button} disabled={!ctx.can_approve || approve.isPending} onClick={() => { if (!pendingWork()) { setMode("request_changes"); setSent(false); } }}>Request changes</button>
-      </> : <span>No active review available for this viewer.</span>}
-      <button className={ui.button} onClick={() => { if (!pendingWork()) { setMode("comment"); setSent(false); } }}>Comment without requesting changes</button>
+    <div className={styles.head}>
+      <nav className={styles.crumb} aria-label="Review source">
+        <Icon name="design" size={18} />
+        <Link to={sourcePath} aria-label={`Back to source: ${ctx.source_title}`}>{ctx.source_title}</Link>
+        <span aria-hidden="true">/</span>
+        <span>Design review</span>
+      </nav>
+      <div className={styles.titleRow}>
+        <div className={styles.titleBlock}>
+          {title ? <h1 className={styles.title} data-testid="review-title">{title}</h1> : null}
+          <p className={styles.state} data-testid="review-state">Design · {stateLine}</p>
+        </div>
+        <div className={styles.actions}>
+          {reviewOpen ? <>
+            <button className={`${ui.button} ${styles.approve}`} disabled={!ctx.can_approve || dirty || approve.isPending || sent} onClick={() => { if (!pendingWork()) approve.mutate(); }}><Icon name="check" size={16} /> Approve design</button>
+            <button className={`${ui.button} ${styles.request}`} disabled={!ctx.can_approve || approve.isPending} onClick={() => { if (!pendingWork()) { setMode("request_changes"); setSent(false); } }}>Request changes</button>
+          </> : <span className={styles.muted}>No active review available for this viewer.</span>}
+          <button className={ui.button} onClick={() => { if (!pendingWork()) { setMode("comment"); setSent(false); } }}>Comment without requesting changes</button>
+        </div>
+      </div>
     </div>
-    {version !== ctx.current_version ? <p role="status">Historical version — comments are allowed; approval requires the current version. {onLatest ? <button className={ui.button} onClick={() => onLatest(ctx.current_version)}>Review latest version (this version’s draft is kept)</button> : null}</p> : null}
-    {approve.isError ? <p role="alert">{approve.error.message}</p> : null}
-    {sent && !mode ? <p role="status">Design approved at v{version}.</p> : null}
+    {version !== ctx.current_version ? <p role="status" className={styles.notice}>Historical version — comments are allowed; approval requires the current version. {onLatest ? <button className={ui.button} onClick={() => onLatest(ctx.current_version)}>Review latest version (this version’s draft is kept)</button> : null}</p> : null}
+    {approve.isError ? <p role="alert" className={styles.notice}>{approve.error.message}</p> : null}
+    {sent && !mode ? <p role="status" className={styles.notice}>Design approved at v{version}.</p> : null}
     <div className={mode && !expanded ? styles.split : undefined}>
     <div className={styles.reading}>{children}</div>
     {mode ? <div className={expanded ? styles.expanded : styles.feedback}>
-      <h2>{mode === "request_changes" ? "Request changes" : "Document comment"} · v{version}</h2>
-      <p>Posts to {ctx.source_title}, addressed to architect. {mode === "request_changes" ? "This does not approve the design." : "No gate effect."}</p>
+      <h2 className={styles.feedbackTitle}>{mode === "request_changes" ? "Request changes" : "Document comment"}</h2>
+      <p className={styles.feedbackMeta}>To the {ctx.source_title} conversation<br />Regarding: {title ?? docId} · v{version}</p>
+      <p className={styles.feedbackTo}><span>To</span> <span className={styles.toChip}><Avatar id="architect" size={20} /> architect</span></p>
+      <p className={styles.feedbackAction}><span>Action</span> <strong>{mode === "request_changes" ? "Request changes" : "Comment"}</strong></p>
       <Composer ticketId={source} to="architect" lockRecipient kinds={mode === "request_changes" ? ["steer"] : ["note"]}
         submit={submit} initialText={draft.current.text} initialArtifacts={draft.current.artifacts}
         onDirtyChange={setDirty}
         onTextChange={(text) => { draft.current.text = text; writeDraft(key, { ...draft.current, mode: mode ?? undefined }); }}
         onArtifactsChange={(artifacts) => { draft.current.artifacts = artifacts; writeDraft(key, { ...draft.current, mode: mode ?? undefined }); }}
         expand={{ expanded, onToggle: () => setExpanded((x) => !x) }} />
+      <p className={styles.feedbackNote}>Posts to the original {ctx.source_kind === "epic" ? "epic" : "ticket"} conversation. {mode === "request_changes" ? "This requests changes — it does not approve the design." : "A comment has no gate effect."}
+        {mode === "request_changes" ? <> <button type="button" className={styles.linkButton} onClick={() => { if (!pendingWork()) setMode("comment"); }}>Comment instead, without requesting changes</button></> : null}</p>
+      <p className={styles.feedbackNote}><Icon name="files" size={16} /> Your {ctx.source_kind === "epic" ? "epic" : "ticket"} draft is preserved.</p>
     </div> : null}
     </div>
   </section>;

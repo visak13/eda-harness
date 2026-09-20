@@ -169,7 +169,7 @@ export function TicketPage(): React.JSX.Element {
     <div className={styles.page}>
       <WorkHeader
         ticketId={id} kind="ticket" title={ticket.title} purpose={ticket.description} status={ticket.status}
-        assignee={seat} designRef={ticket.design_ref} epic={{ id: epic_id, title: epic_id }}
+        assignee={seat} designRef={ticket.design_ref} epic={{ id: epic_id, title: page.data.epic_title ?? epic_id }}
         actions={<ActionsMenu items={actions} subject={ticket.title} />} work={work}
       />
       <Conversation ticketId={id} history={history} order={order} viewer={as}

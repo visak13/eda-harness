@@ -3,7 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { identity } from "../auth/identity";
 import { useDocDrawer } from "./DocDrawer";
+import { useEffect, useState } from "react";
 import { Icon } from "./Icon";
+import { dispositionOf, fetchArtifactContent, PREVIEW_TYPES } from "./ArtifactLink";
 import ui from "./ui.module.css";
 import styles from "./ContextualWork.module.css";
 
@@ -18,7 +20,7 @@ export interface WorkContext {
   blockers?: { id: string; title: string; status: string }[];
   unresolved_asks?: { id: string; kind: string; to: string }[];
   gates: { id: string; data: { gate: string } }[];
-  records: { type: string; group: string; relation: string; record: { id: string; title?: string; note?: string; version?: number; scope?: string; filename?: string } }[];
+  records: { type: string; group: string; relation: string; record: { id: string; title?: string; note?: string; version?: number; scope?: string; filename?: string; form?: string; content_type?: string; has_content?: boolean } }[];
   events: { id: string; created_at: string; created_by: string; kind: string; data: Record<string, unknown> }[];
 }
 
@@ -53,6 +55,35 @@ function outcome(data: Record<string, unknown>): string {
 
 const GROUPS = ["Design", "References", "Evidence", "Deliverables", "Other"];
 
+/** An attached file as a card (design-a2e5369133 §Files: "rows as cards"): an image shows its
+ *  thumbnail, any other file its type; the name links to the artifact page. */
+function FileCard({ record, relation }: { record: WorkContext["records"][number]["record"]; relation: string }): React.JSX.Element {
+  const image = record.has_content !== false && record.form === "image" && PREVIEW_TYPES.has(record.content_type ?? "");
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!image) return;
+    let cancelled = false, blobUrl: string | null = null;
+    void fetchArtifactContent(record.id).then(async (res) => {
+      if (!dispositionOf(res).inline) return;
+      const blob = await res.blob();
+      if (cancelled) return;
+      blobUrl = URL.createObjectURL(blob); setUrl(blobUrl);
+    }).catch(() => {});
+    return () => { cancelled = true; if (blobUrl) URL.revokeObjectURL(blobUrl); };
+  }, [record.id, image]);
+  const name = record.filename || record.note || record.id;
+  return <li className={styles.card} data-testid="file-card">
+    <Link to={`/artifact/${encodeURIComponent(record.id)}`} className={styles.cardThumb} aria-label={`Open ${name}`}>
+      {url ? <img src={url} alt={record.note || name} loading="lazy" /> : <Icon name={image ? "files" : "attach"} size={24} />}
+    </Link>
+    <div className={styles.cardBody}>
+      <Link className={styles.rowLink} to={`/artifact/${encodeURIComponent(record.id)}`}>{name}</Link>
+      <span className={styles.cardMeta}>{record.note && record.note !== name ? `${record.note} · ` : ""}{image ? "image" : record.form || "file"}{record.content_type ? ` · ${record.content_type}` : ""}</span>
+      <span className={styles.cardMeta}>{relation.replaceAll("_", " ")} · {record.scope === "global" || record.scope?.startsWith("domain:") ? "shared" : "this work"}</span>
+    </div>
+  </li>;
+}
+
 /** Files & evidence: records grouped, with a designed empty state (owner defect: blank pane). */
 export function FilesViewer({ ticketId }: { ticketId: string }): React.JSX.Element {
   const query = useWorkContext(ticketId);
@@ -70,11 +101,11 @@ export function FilesViewer({ ticketId }: { ticketId: string }): React.JSX.Eleme
   return <div className={styles.content}>
     {GROUPS.filter((g) => records.some((r) => r.group === g)).map((group) => <section key={group} className={styles.group}>
       <h3>{group}</h3>
-      <ul className={styles.rows}>{records.filter((r) => r.group === group).map((r, i) => <li key={`${r.record.id}:${i}`} className={styles.row}>
-        <Icon name={r.type === "doc" ? "design" : "attach"} size={18} />
-        {r.type === "doc"
-          ? <button className={styles.rowLink} onClick={() => openDoc(r.record.id)}>{r.record.title ?? r.record.id}{r.record.version ? ` · v${r.record.version}` : ""}</button>
-          : <Link className={styles.rowLink} to={`/artifact/${encodeURIComponent(r.record.id)}`}>{r.record.filename || r.record.note || r.record.id}</Link>}
+      <ul className={styles.rows}>{records.filter((r) => r.group === group).map((r, i) => r.type === "artifact"
+        ? <FileCard key={`${r.record.id}:${i}`} record={r.record} relation={r.relation} />
+        : <li key={`${r.record.id}:${i}`} className={styles.row}>
+        <Icon name="design" size={18} />
+        <button className={styles.rowLink} onClick={() => openDoc(r.record.id)}>{r.record.title ?? r.record.id}{r.record.version ? ` · v${r.record.version}` : ""}</button>
         <span className={styles.rowMeta}>{r.relation.replaceAll("_", " ")} · {r.record.scope === "global" || r.record.scope?.startsWith("domain:") ? "shared" : "this work"}</span>
       </li>)}</ul>
     </section>)}

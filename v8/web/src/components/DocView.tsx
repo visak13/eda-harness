@@ -113,6 +113,7 @@ export function DocView({
       onOpenTicket={onOpenTicket}
       onPickVersion={(v) => { if (!pendingWork()) setRequested(v); }}
       versionsHosted={versionsHosted}
+      hideTitle={!!source}
     />;
   return source ? <DesignReview key={`${docId}:${source}:${q.data.version}`} docId={docId} source={source} version={q.data.version} title={q.data.title} request={request} onLatest={(v) => { if (!pendingWork()) setRequested(v); }}>{content}</DesignReview> : <><DocumentSource key={docId} docId={docId} version={q.data.version} />{content}</>;
 }
@@ -123,12 +124,15 @@ function DocBody({
   onOpenTicket,
   onPickVersion,
   versionsHosted,
+  hideTitle,
 }: {
   doc: DocHtml;
   onOpenDoc?: (id: string) => void;
   onOpenTicket?: (id: string) => void;
   onPickVersion?: (v: number) => void;
   versionsHosted?: boolean;
+  /** Inside a design review the header already names the doc (review-title). */
+  hideTitle?: boolean;
 }): React.JSX.Element {
   const latest = doc.versions.length ? Math.max(...doc.versions) : doc.version;
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -187,9 +191,11 @@ function DocBody({
             v{doc.version} · {isLatest ? "latest" : `pinned (latest v${latest})`}
           </span>
         </p>
-        <h1 className={styles.title} data-testid="doc-title">
-          {stripScopeId(doc.title)}
-        </h1>
+        {!hideTitle && (
+          <h1 className={styles.title} data-testid="doc-title">
+            {stripScopeId(doc.title)}
+          </h1>
+        )}
 
         <div ref={bodyRef} onClick={onBodyClick} className={styles.body}>
           <Markdown html={doc.html} />

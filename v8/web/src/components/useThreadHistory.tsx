@@ -2,6 +2,8 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { getThreadPage } from "../api/endpoints";
 import type { MessageView, ThreadPage } from "../api/types";
+import { Icon } from "./Icon";
+import styles from "./Conversation.module.css";
 
 /** Older pages never replace the source query/composer. Cursor resets on a new head window,
  * retaining cached rows: even a >100-message arrival burst cannot create a skipped gap. */
@@ -42,8 +44,8 @@ export function useThreadHistory(id: string, page?: ThreadPage) {
 
 export function ThreadHistoryControls({ history }: { history: ReturnType<typeof useThreadHistory> }) {
   return <>
-    {history.more ? <div><span>Showing {history.messages.length} of {history.total} messages. </span>
-      <button type="button" onClick={history.load} disabled={history.loading}>{history.loading ? "Loading older messages…" : "Load older messages"}</button></div> : null}
-    {history.error ? <p role="alert">Could not load older messages: {(history.error as Error).message}. Your conversation and draft are kept; try again.</p> : null}
+    {history.more ? <div className={styles.history} data-testid="thread-history"><span>Showing {history.messages.length} of {history.total} messages. </span>
+      <button type="button" className={styles.historyButton} onClick={history.load} disabled={history.loading}><Icon name="history" size={16} /> {history.loading ? "Loading older messages…" : "Load older messages"}</button></div> : null}
+    {history.error ? <p role="alert" className={styles.historyError}>Could not load older messages: {(history.error as Error).message}. Your conversation and draft are kept; try again.</p> : null}
   </>;
 }
