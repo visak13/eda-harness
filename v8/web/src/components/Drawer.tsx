@@ -51,6 +51,24 @@ export function Drawer({
     return () => observer.disconnect();
   }, [held, open]);
 
+  // ORDER MATTERS: this effect is declared BEFORE the focus effect so its cleanup (un-inert the page)
+  // runs first. With the reverse order the trigger was still inside an inert subtree when focus was
+  // restored, so .focus() was a no-op and Esc landed on <body> in a real browser (qa finding 7;
+  // jsdom has no inert, so vitest could not see it; Playwright covers it).
+  // Lock body scroll while open (the page beneath keeps its scroll position — §17).
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    const siblings = Array.from(document.body.children).filter((el): el is HTMLElement => el instanceof HTMLElement && !el.contains(panelRef.current));
+    const prior = siblings.map((el) => el.inert);
+    siblings.forEach((el) => { el.inert = true; });
+    document.body.style.overflow = "hidden";
+    return () => {
+      siblings.forEach((el, i) => { el.inert = prior[i]; });
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
+
   // Remember what to restore focus to (the element focused at open time), and move focus in.
   useEffect(() => {
     if (!open) return;
@@ -65,20 +83,6 @@ export function Drawer({
       const target = returnRef.current ?? openerRef.current;
       // Restore focus after the drawer unmounts (design §6: Esc restores focus to the trigger).
       target?.focus?.();
-    };
-  }, [open]);
-
-  // Lock body scroll while open (the page beneath keeps its scroll position — §17).
-  useEffect(() => {
-    if (!open) return;
-    const prev = document.body.style.overflow;
-    const siblings = Array.from(document.body.children).filter((el): el is HTMLElement => el instanceof HTMLElement && !el.contains(panelRef.current));
-    const prior = siblings.map((el) => el.inert);
-    siblings.forEach((el) => { el.inert = true; });
-    document.body.style.overflow = "hidden";
-    return () => {
-      siblings.forEach((el, i) => { el.inert = prior[i]; });
-      document.body.style.overflow = prev;
     };
   }, [open]);
 

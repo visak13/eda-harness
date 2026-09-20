@@ -31,9 +31,9 @@ for (const [width,height] of sizes) test(`preferences bounded and keyboard usabl
   await page.keyboard.press("Escape");
   await trigger.click();
   await page.getByRole("button", { name: "Close Account and preferences" }).focus();
-  await page.keyboard.press("Shift+Tab"); // the nonmodal form lets focus leave
-  await expect(dialog).toHaveCount(0);
-  await trigger.click();
+  await page.keyboard.press("Shift+Tab"); // 457ae20: the panel traps Tab, focus wraps and stays inside
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator(":focus")).toHaveCount(1);
   await page.mouse.click(2, 2); // outside the 12px-clamped panel, without forced targeting
   await expect(dialog).toHaveCount(0);
 });
