@@ -118,7 +118,7 @@ export function HistoryViewer({ ticketId }: { ticketId: string }): React.JSX.Ele
   const category = params.get("category") ?? "all";
   const query = useWorkContext(ticketId, category);
   return <div className={styles.content}>
-    <label className={styles.category}>Show <select value={category} onChange={(e) => setParams((old) => { const p = new URLSearchParams(old); p.set("category", e.target.value); return p; }, { replace: true })}>
+    <label className={styles.category}>Show <select aria-label="History category" value={category} onChange={(e) => setParams((old) => { const p = new URLSearchParams(old); p.set("category", e.target.value); return p; }, { replace: true })}>
       {[["all", "All history"], ["conversation", "Conversation"], ["decisions", "Decisions"], ["status", "Status & assignments"], ["documents", "Documents/evidence"], ["activity", "Activity"]].map(([value, label]) => <option key={value} value={value}>{label}</option>)}
     </select></label>
     {query.isPending ? <p className={ui.empty}>Loading history…</p> : null}

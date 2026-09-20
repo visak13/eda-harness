@@ -15,7 +15,7 @@ test("source deep link, local feedback, optional tab context and exact-version a
   await post(`/v1/tickets/${epic.id}`, { design_ref: doc.id }, "arch", "PATCH");
   const gate = await post(`/v1/gates/${epic.id}/design_signoff/open`, { note: "Review requested" });
   await page.goto(`/ui/epic/${epic.id}?as=owner&request=${gate.id}`);
-  const dialog = page.getByRole("dialog", { name: "Drawer", exact: true });
+  const dialog = page.getByRole("dialog", { name: "Design", exact: true });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("heading", { name: "Conversation-first workflow", exact: true })).toBeVisible();
   await dialog.getByRole("button", { name: "Request changes", exact: true }).click();
@@ -35,7 +35,9 @@ test("source deep link, local feedback, optional tab context and exact-version a
   await page.keyboard.press("Escape"); await expect(dialog).toBeVisible();
   release();
   await expect(dialog.getByText(/Uploading 1 attachment/)).toHaveCount(0);
-  await expect(dialog.getByRole("textbox", { name: "Message" })).toHaveValue(/art-/);
+  // R1 stages an upload as a chip, not a raw art- token in the draft text (Composer §attachments).
+  await expect(dialog.getByTestId("attachment-chip")).toHaveCount(1);
+  await expect(dialog.getByRole("textbox", { name: "Message" })).toHaveValue("Please clarify how stale versions behave.");
   await expect(dialog.getByText("Wait for the pending upload or send before closing. Your draft is kept.")).toHaveCount(0);
   await dialog.getByLabel("Versions", { exact: true }).locator("summary").click();
   // @ts-expect-error shared axe adapter has dual playwright-core types

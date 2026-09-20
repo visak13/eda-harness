@@ -127,8 +127,8 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
         <button type="button" className={styles.link} onClick={() => choose("work")} data-testid="work-work"><Icon name="work" /> Work</button>
       </div>
 
-      <Drawer open={drawerOpen} title={<span className={styles.drawerTitle}>{viewerTitle}
-        {view !== "work" ? <Link className={styles.openTab} target="_blank" to={`/records/${encodeURIComponent(p.ticketId)}?${new URLSearchParams({ view: view ?? "files", as: identity() })}`}>Open in tab <Icon name="external" size={16} /></Link> : null}
+      <Drawer open={drawerOpen} label={viewerTitle} title={<span className={styles.drawerTitle}>{viewerTitle}
+        {view !== "work" ? <Link className={styles.openTab} target="_blank" to={`/records/${encodeURIComponent(p.ticketId)}?${new URLSearchParams({ view: view ?? "files", ...(params.get("category") ? { category: params.get("category")! } : {}), as: identity() })}`}>Open in tab <Icon name="external" size={16} /></Link> : null}
       </span>} onClose={() => choose(null)}>
         {view === "history" ? <HistoryViewer ticketId={p.ticketId} /> : view === "work" ? p.work : <FilesViewer ticketId={p.ticketId} />}
       </Drawer>
