@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from edp8 import slack_bridge
+from edp8.user_settings import save_settings
 
 
 def test_quiet_window_plain_and_wraparound():
@@ -66,3 +67,36 @@ def test_post_prefers_dm_then_webhook(monkeypatch):
     assert calls[-1][1]["json"]["text"].startswith("<@U1> ")
     # nothing configured -> dropped, not crashed
     assert not slack_bridge._post({}, {}, "hi")
+
+
+def test_merge_people_enable_clear_disable_within_one_refresh(tmp_path, monkeypatch):
+    """Finding m-93facfac8a #2: a board opt-out must reach a running bridge in one refresh, and a
+    cleared field must propagate. enable -> present; clear quiet -> None (not the stale window);
+    disable -> the entry and its watcher are retracted."""
+    settings = tmp_path / "ui-settings.json"
+    monkeypatch.setenv("EDP8_UI_SETTINGS", str(settings))
+    people: dict = {}
+
+    save_settings("pat", {"slack": {"enabled": True, "slack_id": "U1", "quiet": [22, 7]}})
+    added, removed = slack_bridge._merge_people(people)
+    assert added == ["pat"] and removed == []
+    assert people["pat"]["slack_id"] == "U1" and people["pat"]["quiet"] == [22, 7]
+
+    # the same dict object is kept so a live watcher thread sees the update
+    entry = people["pat"]
+    save_settings("pat", {"slack": {"enabled": True, "slack_id": "U1", "quiet": None}})
+    added, removed = slack_bridge._merge_people(people)
+    assert added == [] and removed == []
+    assert people["pat"] is entry and people["pat"]["quiet"] is None  # cleared, not the stale [22,7]
+
+    save_settings("pat", {"slack": {"enabled": False, "slack_id": "U1"}})
+    added, removed = slack_bridge._merge_people(people)
+    assert removed == ["pat"] and "pat" not in people
+
+
+def test_merge_people_keeps_static_map_person(tmp_path, monkeypatch):
+    """A person defined in slack_map.json (static) is never retracted by an empty/absent board file."""
+    monkeypatch.setenv("EDP8_UI_SETTINGS", str(tmp_path / "absent.json"))
+    people = {"boss": {"slack_id": "U9", "webhook_url": None, "quiet": None}}
+    added, removed = slack_bridge._merge_people(people, static=frozenset({"boss"}))
+    assert added == [] and removed == [] and people["boss"]["slack_id"] == "U9"

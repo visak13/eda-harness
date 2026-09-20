@@ -145,35 +145,59 @@ def _lock_or_exit() -> Path:
     return lock
 
 
-def _merge_people(people: dict) -> list[str]:
+def _merge_people(people: dict, static: frozenset[str] = frozenset(),
+                  path: str | Path | None = None) -> tuple[list[str], list[str]]:
     """Fold the board's per-person settings (Settings tab, `ui-settings.json`) over the static
-    map: a person who switched Slack on appears, or updates in place so a running watcher
-    thread sees the new destination / quiet hours on its next ping. Returns handles added."""
+    map and reconcile both directions (finding m-93facfac8a #2):
+
+    - A person who switched Slack on appears (added).
+    - A person still on is replaced IN PLACE (clear+update, keeping the same dict object so a
+      running watcher thread sees the change) — a full replace, not a non-None merge, so a
+      CLEARED field propagates: clearing quiet hours resets `quiet` to None, it does not linger.
+    - A person who switched Slack off or unlinked, and is NOT backed by the static `slack_map.json`
+      (`static` holds those handles), is removed so their watcher can be stopped (removed).
+
+    Returns (added, removed)."""
     from .user_settings import bridge_people
+    desired = bridge_people(path)
     added: list[str] = []
-    for handle, person in bridge_people().items():
+    removed: list[str] = []
+    for handle, person in desired.items():
         current = people.get(handle)
         if current is None:
             people[handle] = dict(person)
             added.append(handle)
         else:
-            current.update({k: v for k, v in person.items() if v is not None})
-    return added
+            current.clear()
+            current.update(person)
+    for handle in list(people):
+        if handle not in desired and handle not in static:
+            people.pop(handle, None)
+            removed.append(handle)
+    return added, removed
 
 
 def run() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     _lock_or_exit()
     cfg = _config()
-    stop = threading.Event()
-    people: dict = cfg.get("people") or {}
-    _merge_people(people)
+    people: dict = dict(cfg.get("people") or {})
+    static = frozenset(people)  # handles from slack_map.json — never retracted by a board opt-out
+    stops: dict[str, threading.Event] = {}  # one stop Event per watcher, so opt-out stops just that thread
+    _merge_people(people, static)
     if not people:
         raise SystemExit("slack_map.json has no people and nobody switched Slack on; nothing to watch")
 
     def _start(handle: str, person: dict) -> None:
-        threading.Thread(target=_watch, args=(cfg, handle, person, stop),
+        ev = threading.Event()
+        stops[handle] = ev
+        threading.Thread(target=_watch, args=(cfg, handle, person, ev),
                          name=f"slack-{handle}", daemon=True).start()
+
+    def _stop(handle: str) -> None:
+        ev = stops.pop(handle, None)
+        if ev is not None:
+            ev.set()
 
     for handle, person in people.items():
         _start(handle, person)
@@ -181,11 +205,16 @@ def run() -> None:
     try:
         while True:
             time.sleep(60)
-            for handle in _merge_people(people):
+            added, removed = _merge_people(people, static)
+            for handle in added:
                 log.info("slack: %s switched Slack on; watching", handle)
                 _start(handle, people[handle])
+            for handle in removed:
+                log.info("slack: %s switched Slack off; stopping watcher", handle)
+                _stop(handle)
     except KeyboardInterrupt:
-        stop.set()
+        for ev in stops.values():
+            ev.set()
 
 
 if __name__ == "__main__":
