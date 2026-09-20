@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getSettings, putSettings } from "../api/endpoints";
+import { getSettings, putSettings, sendSlackTestPing } from "../api/endpoints";
 import type { UserSettings } from "../api/types";
 import { BoardApiError } from "../api/client";
 import { PageHeader } from "../components/PageHeader";
@@ -64,6 +64,7 @@ export function SettingsPage(): React.JSX.Element {
     mutationFn: () => putSettings(draft),
     onSuccess: ({ value }) => { setDirty(false); qc.setQueryData(["me", "settings"], value); setDraft({ ...EMPTY, ...value, slack: { ...EMPTY.slack, ...value.slack } }); },
   });
+  const testPing = useMutation({ mutationFn: sendSlackTestPing });
   const err = (q.error ?? save.error) as BoardApiError | Error | null;
   const forbidden = q.error instanceof BoardApiError && q.error.status === 403;
   const missing = q.error instanceof BoardApiError && q.error.status === 404;
@@ -133,6 +134,17 @@ export function SettingsPage(): React.JSX.Element {
               <span className={ui.empty}>{draft.slack.webhook_set ? "A webhook is stored; it is shown masked. Paste a new one to replace it." : "Stored on the board host only; never shown back in full."}</span>
             </label>
             <QuietHours id="slack" value={draft.slack.quiet} onChange={(quiet) => patch({ slack: { ...draft.slack, quiet } })} />
+            <div className={styles.actions}>
+              <button type="button" className={ui.button} data-testid="settings-slack-test"
+                disabled={testPing.isPending || dirty || !draft.slack.enabled || !(draft.slack.slack_id || draft.slack.webhook_set)}
+                onClick={() => testPing.mutate()}>
+                {testPing.isPending ? "Sending…" : "Send test ping"}
+              </button>
+              {dirty ? <span className={ui.empty}>Save first, then send a test ping to the stored destination.</span>
+                : testPing.isSuccess ? <span role="status" className={ui.empty} data-testid="settings-slack-test-result">{testPing.data?.hint || "Test ping sent to Slack."}</span>
+                : testPing.isError ? <span role="alert" className={ui.empty} data-testid="settings-slack-test-error">{(testPing.error as BoardApiError | Error) instanceof BoardApiError ? ((testPing.error as BoardApiError).hint || testPing.error.message) : (testPing.error as Error).message}</span>
+                : <span className={ui.empty}>Rings your Slack now, using the stored webhook or member id — the masked webhook is never sent from here.</span>}
+            </div>
           </section>
         ) : null}
 

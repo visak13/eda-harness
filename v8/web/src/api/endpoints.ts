@@ -190,6 +190,9 @@ export const updateDoc = (id: string, b: { body_md?: string; title?: string }) =
 /** GET / PUT /v1/me/settings — the Settings page (s-7f663c6322). Humans only; the board 403s a seat. */
 export const getSettings = () => api<UserSettings>("/v1/me/settings");
 export const putSettings = (b: UserSettings) => postJson<UserSettings>("/v1/me/settings", b, "PUT");
+/** Ring the caller's own Slack with a test ping; the destination is read server-side from the
+ *  stored settings, so the masked webhook the SPA holds is never sent. */
+export const sendSlackTestPing = () => postJson<{ delivered: boolean }>("/v1/me/settings/slack/test", {});
 
 /** Atomic explicit title + exact raw words. Omitting title preserves legacy caller behavior. */
 export const createEpic = (words: string, choice?: { model: string; effort: string }, title?: string) =>

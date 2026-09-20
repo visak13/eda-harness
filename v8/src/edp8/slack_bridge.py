@@ -59,9 +59,16 @@ def _post(cfg: dict, person: dict, text: str) -> bool:
                        json={"channel": person["slack_id"], "text": text}, timeout=15)
         ok = r.status_code < 400 and r.json().get("ok", False)
     else:
+        from .user_settings import valid_webhook
         hook = person.get("webhook_url") or cfg.get("webhook_url")
         if not hook:
             log.warning("no webhook/bot_token for a ping; dropped")
+            return False
+        # Send-time allow-list: never POST thread content to a host that is not allow-listed, even
+        # for a value already on disk (qa findings 10/17). Save-time validation is not enough — a
+        # legacy stored webhook must not be posted to.
+        if not valid_webhook(hook):
+            log.warning("webhook host not allow-listed; refusing to post")
             return False
         mention = f"<@{person['slack_id']}> " if person.get("slack_id") else ""
         r = httpx.post(hook, json={"text": mention + text}, timeout=15)
@@ -69,6 +76,22 @@ def _post(cfg: dict, person: dict, text: str) -> bool:
     if not ok:
         log.warning("slack post failed: %s %s", r.status_code, r.text[:200])
     return ok
+
+
+def send_test_ping(handle: str, person: dict) -> tuple[bool, str]:
+    """One-off 'test ping' to a person's OWN Slack, from the Settings tab. The destination is the
+    stored settings passed in by the API (never the masked webhook the SPA echoes), and _post
+    re-validates the webhook host before sending (findings 3/10/17). Returns (ok, human message)."""
+    try:
+        cfg = _config()
+    except Exception:  # noqa: BLE001 — no slack_map.json is fine; per-person webhook/bot still works
+        cfg = {}
+    text = (f"*{handle}* — test ping from the board. If you can read this, your Slack alerts are "
+            f"working. Replies still happen on the board.")
+    if _post(cfg, person, text):
+        return True, "Test ping sent to Slack."
+    return False, ("Could not deliver the test ping. Check that the webhook host is allow-listed "
+                   "(hooks.slack.com) and your member id or bot token is set.")
 
 
 def _line(cfg: dict, handle: str, msg: dict) -> str:

@@ -9,15 +9,58 @@ leave this file in the clear — `public()` masks the webhook before it reaches 
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import tempfile
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 _MAX_NAME = 80
 _MAX_URL = 400
-MASK_PREFIX = "https://***"
+MASK_PREFIX = "https://***"  # legacy mask marker, still recognised on the echo path
+MASK_MARK = "…"  # the ellipsis in a masked webhook — a real Slack webhook never contains it
+
+
+def webhook_hosts() -> set[str]:
+    """The webhook host allow-list: hooks.slack.com plus any operator-provisioned hosts in
+    EDP8_SLACK_WEBHOOK_HOSTS (comma-separated). The board must never POST thread content to an
+    arbitrary internal or external address (qa finding 10)."""
+    hosts = {"hooks.slack.com"}
+    extra = os.environ.get("EDP8_SLACK_WEBHOOK_HOSTS", "")
+    hosts |= {h.strip().lower() for h in extra.split(",") if h.strip()}
+    return hosts
+
+
+def is_masked_webhook(url: str) -> bool:
+    """A value the SPA echoed back from public() — never a real destination to store or post to."""
+    return bool(url) and (url.startswith(MASK_PREFIX) or MASK_MARK in url)
+
+
+def valid_webhook(url: str) -> bool:
+    """A webhook URL is postable only if it is https, carries no userinfo (finding 17), is not an IP
+    literal, and its host is on the allow-list (finding 10). Enforced at save AND at send, so a
+    stored legacy value on a now-disallowed host is never posted to."""
+    if not url or is_masked_webhook(url):
+        return False
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return False
+    if parts.scheme != "https":
+        return False
+    if parts.username or parts.password or "@" in (parts.netloc or ""):
+        return False
+    host = (parts.hostname or "").lower()
+    if not host:
+        return False
+    try:
+        ipaddress.ip_address(host)
+        return False  # reject IP literals outright
+    except ValueError:
+        pass
+    return host in webhook_hosts()
 
 
 def settings_path() -> Path:
@@ -63,7 +106,7 @@ def normalise(raw: Any) -> dict[str, Any]:
     out["slack"]["enabled"] = bool(slack.get("enabled", False))
     out["slack"]["slack_id"] = str(slack.get("slack_id") or "")[:64].strip()
     url = str(slack.get("webhook_url") or "")[:_MAX_URL].strip()
-    out["slack"]["webhook_url"] = url if url.startswith("https://") and not url.startswith(MASK_PREFIX) else ""
+    out["slack"]["webhook_url"] = url if valid_webhook(url) else ""
     out["slack"]["quiet"] = _quiet(slack.get("quiet"))
     return out
 
@@ -91,7 +134,7 @@ def save_settings(handle: str, raw: Any, path: str | Path | None = None) -> dict
     stored = normalise(raw)
     # the SPA echoes the masked webhook back on every save: keep the one on disk
     submitted = str(((raw or {}).get("slack") or {}).get("webhook_url") or "") if isinstance(raw, dict) else ""
-    if submitted.startswith(MASK_PREFIX):
+    if is_masked_webhook(submitted):
         previous = everything.get(str(handle)) or default_settings()
         stored["slack"]["webhook_url"] = previous["slack"]["webhook_url"]
     everything[str(handle)] = stored
@@ -116,13 +159,15 @@ def save_settings(handle: str, raw: Any, path: str | Path | None = None) -> dict
 
 
 def public(settings: dict[str, Any]) -> dict[str, Any]:
-    """What the SPA sees: the webhook is masked to its host + a marker, never the secret path."""
+    """What the SPA sees: the webhook is masked to scheme + host + the last 4 characters of the
+    path, never the secret token (finding 17: the old mask leaked URL userinfo)."""
     out = json.loads(json.dumps(settings))
     url = out["slack"].get("webhook_url") or ""
     if url:
-        parts = url.split("/")
-        host = parts[2] if len(parts) > 2 else "slack"
-        out["slack"]["webhook_url"] = f"{MASK_PREFIX}{host}/…"
+        parts = urlsplit(url)
+        host = parts.hostname or "slack"
+        tail = parts.path[-4:] if parts.path else ""
+        out["slack"]["webhook_url"] = f"{parts.scheme or 'https'}://{host}/{MASK_MARK}{tail}"
         out["slack"]["webhook_set"] = True
     else:
         out["slack"]["webhook_set"] = False

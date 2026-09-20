@@ -74,6 +74,34 @@ describe("SettingsPage", () => {
     expect(screen.getByTestId("settings-save")).toBeDisabled();
   });
 
+  it("sends a Slack test ping to the stored destination without echoing the webhook (finding 3)", async () => {
+    let pinged = false;
+    let body: unknown = "unsent";
+    mount("slack", [
+      http.post("/v1/me/settings/slack/test", async ({ request }) => {
+        pinged = true;
+        body = await request.json().catch(() => ({}));
+        return HttpResponse.json({ ok: true, value: { delivered: true }, hint: "Test ping sent to Slack." });
+      }),
+    ]);
+    const button = await screen.findByTestId("settings-slack-test");
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    await waitFor(() => expect(screen.getByTestId("settings-slack-test-result")).toHaveTextContent(/Test ping sent/));
+    expect(pinged).toBe(true);
+    // the masked webhook is never sent from the client; the server reads the stored destination
+    expect(JSON.stringify(body)).not.toContain("hooks.slack.com");
+  });
+
+  it("blocks the test ping until unsaved Slack edits are saved (finding 3)", async () => {
+    mount("slack");
+    const button = await screen.findByTestId("settings-slack-test");
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.change(screen.getByTestId("settings-slack-id"), { target: { value: "U0000000009" } });
+    expect(button).toBeDisabled();
+    expect(screen.getByText(/Save first, then send a test ping/)).toBeInTheDocument();
+  });
+
   it("tells an agent seat that settings belong to people", async () => {
     mount("profile", [http.get("/v1/me/settings", () => HttpResponse.json({ ok: false, error: { code: "forbidden", message: "settings belong to people" }, hint: "" }, { status: 403 }))]);
     await waitFor(() => expect(screen.getByTestId("settings-forbidden")).toBeInTheDocument());

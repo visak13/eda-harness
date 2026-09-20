@@ -69,6 +69,40 @@ def test_post_prefers_dm_then_webhook(monkeypatch):
     assert not slack_bridge._post({}, {}, "hi")
 
 
+def test_post_refuses_a_disallowed_webhook_host(monkeypatch):
+    """Send-time allow-list (findings 10/17): a stored/legacy webhook on a host that is not
+    allow-listed is never posted to, even though a DM or an allowed webhook still sends."""
+    calls = []
+
+    class R:
+        status_code = 200
+        text = ""
+
+        @staticmethod
+        def json():
+            return {"ok": True}
+
+    monkeypatch.setattr(slack_bridge.httpx, "post", lambda url, **kw: calls.append(url) or R)
+    monkeypatch.delenv("EDP8_SLACK_WEBHOOK_HOSTS", raising=False)
+    assert not slack_bridge._post({}, {"webhook_url": "https://evil.example/h"}, "hi")
+    assert not slack_bridge._post({}, {"webhook_url": "https://10.0.0.5/h"}, "hi")
+    assert calls == []  # nothing left the process
+    assert slack_bridge._post({}, {"webhook_url": "https://hooks.slack.com/h"}, "hi")
+    assert calls == ["https://hooks.slack.com/h"]
+
+
+def test_send_test_ping_uses_stored_destination(monkeypatch):
+    sent = []
+    monkeypatch.setattr(slack_bridge, "_post", lambda cfg, person, text: sent.append((person, text)) or True)
+    monkeypatch.setattr(slack_bridge, "_config", lambda: {})
+    ok, detail = slack_bridge.send_test_ping("pat", {"slack_id": "U1", "webhook_url": None, "quiet": None})
+    assert ok and "sent" in detail.lower() and sent[0][0]["slack_id"] == "U1"
+    # a failed post surfaces a human reason, not a crash
+    monkeypatch.setattr(slack_bridge, "_post", lambda *a, **k: False)
+    ok, detail = slack_bridge.send_test_ping("pat", {"slack_id": "U1"})
+    assert not ok and "allow-listed" in detail
+
+
 def test_merge_people_enable_clear_disable_within_one_refresh(tmp_path, monkeypatch):
     """Finding m-93facfac8a #2: a board opt-out must reach a running bridge in one refresh, and a
     cleared field must propagate. enable -> present; clear quiet -> None (not the stale window);
