@@ -1254,11 +1254,15 @@ class PoolService(Microservice):
         # work stays OUTSIDE the lock (it can block).
         with self._transition_lock:
             s = self.sessions.get(sid)
-            # F36 R4#2: a release against a STARTING row (the shell closed
-            # itself faster than the spawn thread registered it) is
-            # recorded — _launch_reserved honors it right after
-            # registration.
-            if s and s.get("state") == "starting":
+            # F36 R4#2 + S11 finding 16: a release against a row mid-spawn (the
+            # shell closed itself faster than the spawn thread registered it) is
+            # RECORDED, not dropped. "starting" is a fresh spawn; "resuming" is a
+            # fork-resume — both replace the row with an "active" one when the
+            # spawn completes, and both now honor _release_requested right after
+            # registration (_launch_reserved / resume). Before this, a close_self
+            # arriving during "resuming" fell through to the active-only branch
+            # below and was silently discarded, stranding a phantom active row.
+            if s and s.get("state") in ("starting", "resuming"):
                 s["_release_requested"] = True
                 self._persist()
                 return
@@ -1643,13 +1647,20 @@ class PoolService(Microservice):
                 # (callers had to reap + fresh-spawn by hand). The row is
                 # trusted only when the process is alive or unknowable
                 # (None keeps the double-spawn guard fail-safe); a probed-
-                # DEAD "active" session is a crash and falls through to
-                # fork-resume.
-                if state == "active" and self._session_alive(sid) is False:
+                # DEAD session is a crash and falls through to fork-resume.
+                #
+                # S11 finding 15: a "resuming" row persisted across a pool
+                # restart has the SAME shape — its ~30 s spawn died with the
+                # old pool, so the probed-dead resuming row was a permanent
+                # no-op (resume refused forever). Probe BOTH states: a dead
+                # process recovers via fork-resume; a live or unknowable one
+                # still no-ops so the watchdog+backstop double-caller (and a
+                # genuinely in-flight resume) cannot double-spawn.
+                if self._session_alive(sid) is False:
                     dead_active = True
-                    _log.warning("resume_active_row_dead_process", handle,
-                                 handle=handle, sid=sid,
-                                 note="active row, dead process — treating "
+                    _log.warning("resume_row_dead_process", handle,
+                                 handle=handle, sid=sid, state=state,
+                                 note=f"{state} row, dead process — treating "
                                       "as crash and fork-resuming")
                 else:
                     # the double-caller (watchdog + backstop) no-op, by design
@@ -1801,11 +1812,20 @@ class PoolService(Microservice):
             s["proc"] = _proc_fingerprint(self.spawner.pid(sid))
             s["last_seen"] = s["resumed_at"] = _utc_now_iso()
             s.pop("parked", None)
+            release_requested = bool(s.pop("_release_requested", False))
             self._persist()
         _log.info("resume_done", handle, handle=handle, sid=sid,
                   via=resumed_via, claude_session=new_claude_session)
+        if release_requested:
+            # S11 finding 16: a release() (close_self) arrived while this row was
+            # "resuming" — honor it now instead of leaving a phantom "active" row
+            # for the watchdogs to chase, exactly as _launch_reserved does for a
+            # "starting" row.
+            _log.info("release_after_resume", sid, sid=sid, handle=handle)
+            self.release(sid)
         return {"resumed": True, "handle": handle, "session_id": sid,
-                "via": resumed_via, "claude_session_id": new_claude_session}
+                "via": resumed_via, "claude_session_id": new_claude_session,
+                "released_after_resume": release_requested}
 
     def resume_closed(self, handle: str) -> dict:
         """S20 / design §18.3 (owner m-6ffe756cf7) — fork-resume a CLOSED (`done`) seat from its
@@ -1878,11 +1898,18 @@ class PoolService(Microservice):
             s["proc"] = _proc_fingerprint(self.spawner.pid(sid))
             s["last_seen"] = s["resumed_at"] = _utc_now_iso()
             s.pop("dead_reason", None)
+            release_requested = bool(s.pop("_release_requested", False))
             self._persist()
         _log.info("resume_closed_done", handle, handle=handle, sid=sid,
                   claude_session=new_claude_session)
+        if release_requested:
+            # S11 finding 16: a close_self that arrived during this resume's
+            # "resuming" window is honored after registration, not dropped.
+            _log.info("release_after_resume_closed", sid, sid=sid, handle=handle)
+            self.release(sid)
         return {"resumed": True, "handle": handle, "session_id": sid,
-                "via": "resume-from-closed", "claude_session_id": new_claude_session}
+                "via": "resume-from-closed", "claude_session_id": new_claude_session,
+                "released_after_resume": release_requested}
 
     # ── close is a SELF-ASSERTION (owner ruling 2026-09-06) ──────────────
     #

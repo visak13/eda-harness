@@ -250,6 +250,55 @@ def test_resume_of_a_mid_resume_session_no_ops(svc, monkeypatch):
     assert out["resumed"] is False and out["no_op"] is True
 
 
+def test_resume_of_a_dead_resuming_row_recovers_after_restart(svc, monkeypatch):
+    """S11 finding 15: a row persisted as `resuming` when the pool died loads back
+    as `resuming` with its ~30 s spawn dead. Before, resume() no-opped on it
+    forever (only `active` got the dead-process probe), so the row was a permanent
+    no-op. A probed-DEAD resuming row is a crash — fork-resume it; a live/unknowable
+    one still no-ops (the racing-caller guard, above)."""
+    sid = svc.spawn("planner", "rec-x:s1", None, claude_session="base-uuid-1")
+    svc.sessions[sid]["state"] = "resuming"     # persisted mid-resume across the restart
+    svc._kill_session(sid)                       # the spawn died with the old pool
+    assert svc.spawner.alive(sid) is not True
+    out = svc.resume("rec-x:s1")
+    assert out["resumed"] is True and out["via"] == "fork-resume", out
+    rec = svc.spawner.launched[-1]
+    assert rec["session_id"] == sid              # same row, same lock
+    assert rec["resume_session"] == "base-uuid-1"
+    assert svc.sessions[sid]["state"] == "active"
+    assert svc.locks["rec-x:s1"] == sid
+    assert svc.liveness("rec-x:s1") == "alive"
+
+
+def test_release_during_resuming_is_deferred_and_honoured(svc, monkeypatch):
+    """S11 finding 16: a close_self (release) arriving while the row is `resuming`
+    was silently dropped (only `starting` deferred), leaving a phantom `active` row
+    for the watchdogs to chase. It must be RECORDED and honoured right after
+    registration, exactly as a release against a `starting` row is."""
+    sid = _parked_planner(svc, monkeypatch, crash=True, claude_session="base-uuid-1")
+    real_launch = svc.spawner.launch
+    released: list[dict] = []
+
+    def _launch_then_close(*a, **k):
+        # the shell closes itself while resume() still has the row in `resuming`
+        assert svc.sessions[sid]["state"] == "resuming"
+        r = real_launch(*a, **k)
+        released.append(svc.release(sid) or {"deferred": True})
+        # the deferral did NOT terminate the row — it is still resuming, flag set
+        assert svc.sessions[sid]["state"] == "resuming"
+        assert svc.sessions[sid].get("_release_requested") is True
+        return r
+
+    monkeypatch.setattr(svc.spawner, "launch", _launch_then_close)
+    out = svc.resume("rec-x:s1")
+    assert out["resumed"] is True and out.get("released_after_resume") is True, out
+    assert released, "the release during resuming must have been observed"
+    row = svc.sessions[sid]
+    assert row["state"] == "done"                  # the deferred close was honoured
+    assert "_release_requested" not in row         # flag consumed
+    assert "rec-x:s1" not in svc.locks             # terminal release freed the lock
+
+
 def test_resume_of_unparked_or_unknown_handle_is_refused(svc):
     assert svc.resume("never:held")["resumed"] is False
     svc.spawn("planner", "rec-x:s1", None)
