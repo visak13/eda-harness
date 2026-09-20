@@ -3,10 +3,11 @@
 from typing import Any, Callable
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Response
+from fastapi.responses import JSONResponse
 
 from .schemas import Participant
 from .slack_bridge import send_test_ping
-from .user_settings import load_settings, public, save_settings
+from .user_settings import load_settings, public, save_settings, webhook_rejection
 
 
 def settings_router(actor: Callable[..., Participant]) -> APIRouter:
@@ -28,6 +29,15 @@ def settings_router(actor: Callable[..., Participant]) -> APIRouter:
                      a: Participant = Depends(actor)):
         response.headers["Cache-Control"] = "private, no-store"
         a = _human(a)
+        # Finding 22: reject an invalid/off-list webhook with a 422 + field error, so the SPA can
+        # show it and the previously stored (valid) webhook is left untouched — never silently wiped.
+        rejection = webhook_rejection(body)
+        if rejection:
+            return JSONResponse(status_code=422, headers={"Cache-Control": "private, no-store"},
+                                content={"ok": False,
+                                         "error": {"code": "invalid_webhook", "message": rejection,
+                                                   "field": "slack.webhook_url"},
+                                         "hint": rejection})
         stored = save_settings(a.handle, body)
         return {"ok": True, "value": public(stored),
                 "hint": "saved; the Slack bridge picks the change up within a minute"}

@@ -10,3 +10,4 @@
 .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 14px; }
 .row input { width: 72px; margin-left: 6px; }
 .actions { display: flex; align-items: center; gap: 12px; }
+.fieldError { color: var(--danger, #b3261e); font-size: 13px; }

@@ -102,6 +102,25 @@ describe("SettingsPage", () => {
     expect(screen.getByText(/Save first, then send a test ping/)).toBeInTheDocument();
   });
 
+  it("shows a field error and keeps the draft when the webhook is rejected 422 (finding 22)", async () => {
+    mount("slack", [
+      http.put("/v1/me/settings", () => HttpResponse.json(
+        { ok: false, error: { code: "invalid_webhook", message: "off-list host", field: "slack.webhook_url" },
+          hint: "That webhook URL was not saved. Use an https URL on an allow-listed host (hooks.slack.com)." },
+        { status: 422 })),
+    ]);
+    await waitFor(() => expect(screen.getByTestId("settings-slack-id")).toHaveValue("U0123456789"));
+    fireEvent.change(screen.getByTestId("settings-slack-webhook"), { target: { value: "https://evil.example/h" } });
+    fireEvent.click(screen.getByTestId("settings-save"));
+    // the field error shows the board's reason; the top banner does not double it
+    await waitFor(() => expect(screen.getByTestId("settings-slack-webhook-error")).toHaveTextContent(/not saved/));
+    expect(screen.getByTestId("settings-slack-webhook")).toHaveAttribute("aria-invalid", "true");
+    // the draft keeps the typed value so the person can fix it, and it stays unsaved
+    expect(screen.getByTestId("settings-slack-webhook")).toHaveValue("https://evil.example/h");
+    expect(screen.getByTestId("settings-save")).toBeEnabled();
+    expect(screen.queryByTestId("settings-saved")).toBeNull();
+  });
+
   it("tells an agent seat that settings belong to people", async () => {
     mount("profile", [http.get("/v1/me/settings", () => HttpResponse.json({ ok: false, error: { code: "forbidden", message: "settings belong to people" }, hint: "" }, { status: 403 }))]);
     await waitFor(() => expect(screen.getByTestId("settings-forbidden")).toBeInTheDocument());
