@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Link, useSearchParams } from "react-router";
 import { Avatar } from "./Avatar";
 import { StatusChip } from "./StatusChip";
@@ -57,6 +58,21 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
   const designRef = data?.design_ref ?? p.designRef ?? null;
   const reviewRequested = p.reviewRequested ?? Boolean(data?.gates.some((g) => g.data.gate === "design_signoff"));
   const attention = data ? attentionLine(data) : "";
+
+  // Route request opens the source-bound review, never answers it (design-a2e5369133 §gate typed
+  // review path; restores the ?request= handling 9734d1d dropped from ContextualWork). A deep link
+  // /epic|ticket/<id>?request=<gate-id> (GateForm "Review design at source", an S5 notification)
+  // matches the design_signoff gate and opens ?doc=<design_ref>; DocDrawer forwards ?request= to the
+  // viewer so it renders the review surface, not a plain doc. It sets ?doc only, so the gate is untouched.
+  const request = params.get("request");
+  const openedRequest = useRef<string | null>(null);
+  useEffect(() => {
+    const gate = data?.gates.find((g) => g.id === request && g.data.gate === "design_signoff");
+    if (request && gate && designRef && openedRequest.current !== request && !params.get("doc")) {
+      openedRequest.current = request;
+      setParams((old) => { const next = new URLSearchParams(old); next.set("doc", designRef); return next; }, { replace: true });
+    }
+  }, [request, data, designRef, params, setParams]);
   const viewerTitle = view === "history" ? "History" : view === "work" ? "Work" : "Files & evidence";
   const crumbTitle = p.kind === "epic" ? p.title : p.epic?.title ?? p.epic?.id ?? "Epic";
   const crumbTo = p.kind === "epic" ? "/epics" : `/epic/${encodeURIComponent(p.epic?.id ?? "")}`;
