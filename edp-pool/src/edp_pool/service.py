@@ -1686,12 +1686,44 @@ class PoolService(Microservice):
                                   "restored to active, no fork needed"}
             s["state"] = "resuming"
             base = s.get("claude_session_id")
-        role = s.get("role") or "planner"
+            settings = s.get("spawn_settings") or {}
+            file_resume = False
+            if not base:
+                # S9 (owner follow-up): a parked row with no resume token must
+                # NOT silently fresh-spawn — that discards the parked
+                # transcript this resume exists to preserve. Recover the base
+                # from the backend's session file (Pi) exactly as
+                # resume_closed does; only then decide.
+                f = getattr(self.spawner, "closed_session_token", None)
+                base = f(sid, handle) if f else None
+                file_resume = bool(base)
+            if not base:
+                s["state"] = "parked"   # still resumable once a token exists
+                self._persist()
+                _log.warning("resume_no_session_id", handle, handle=handle,
+                             sid=sid,
+                             note="parked row has no claude_session_id and no "
+                                  "recoverable session file — reporting resync "
+                                  "instead of a silent fresh spawn")
+                return {"resumed": False, "handle": handle,
+                        "resync_required": True,
+                        "reason": "parked row has no claude_session_id and no "
+                                  "recoverable session file to fork-resume; "
+                                  "reground via resync, not a silent fresh "
+                                  "spawn"}
+        # S9: settings win over the bare row so a resumed seat keeps the shape
+        # it was spawned with — role/mode/model/parent AND the per-seat env
+        # (EDP8_TOKEN). Without the env the resumed shell's MCP client 401s on
+        # every call (whoami/context/consult); mirrors resume_closed.
+        role = settings.get("role") or s.get("role") or "planner"
         # a resume stays as visible as the shell it resumes; an untagged row
         # resolves through the same operator precedence as a fresh spawn
         # (monitor by default — no invisible resumed shell either).
-        mode = (s.get("mode")
+        mode = (settings.get("mode") or s.get("mode")
                 or os.environ.get("EDP_SPAWN_MODE", "monitor"))
+        model = settings.get("model") or s.get("model")
+        parent = settings.get("parent") or s.get("parent")
+        extra_env = settings.get("env") or None
         fork = str(uuid.uuid4())
         _log.info("resume_start", handle, handle=handle, sid=sid,
                   base=base, fork=fork)
@@ -1705,20 +1737,21 @@ class PoolService(Microservice):
                             lambda _sid: None)(sid)
             if token:
                 base = token
-            if not base:
-                raise RuntimeError(
-                    "no parked claude_session_id — nothing to fork-resume")
             self.spawner.launch(
                 sid, role, handle, mode,
                 claude_session=fork, resume_session=base,
                 activation=self.PARK_RESUME_ACTIVATION,
-                parent=s.get("parent"),   # F40#13: lineage survives resume
+                parent=parent,            # F40#13: lineage survives resume
+                model=model,              # S9: recorded model tier
+                extra_env=extra_env,      # S9: per-seat EDP8_TOKEN et al
             )
             # opencode `--continue` keeps the SAME session id (the spawner
-            # seam returns it); claude fork-resume mints `fork`. Store the
+            # seam returns it); claude fork-resume mints `fork`. A file-
+            # resuming backend (Pi) has no minted id — store None. Store the
             # token the NEXT resume actually needs.
             new_claude_session = (getattr(self.spawner, "session_token",
-                                          lambda _sid: None)(sid) or fork)
+                                          lambda _sid: None)(sid)
+                                  or (None if file_resume else fork))
         except Exception as exc:  # noqa: BLE001 — resume-fail → cold fallback
             _log.warning("resume_fork_failed",
                          "falling back to a FRESH spawn on the same handle; "
@@ -1741,7 +1774,9 @@ class PoolService(Microservice):
                         "re-delivers the retained inbox including "
                         "anything your predecessor consumed. Then follow "
                         "your role protocol file IN FULL from Step 1."),
-                    parent=s.get("parent"))   # F40#13
+                    parent=parent,          # F40#13
+                    model=model,            # S9: keep the recorded model tier
+                    extra_env=extra_env)    # S9: keep the per-seat EDP8_TOKEN
                 new_claude_session = fresh
                 resumed_via = "fresh-fallback"
             except Exception as exc2:  # noqa: BLE001

@@ -315,6 +315,75 @@ def test_park_resume_state_survives_a_pool_restart(tmp_path, monkeypatch):
     assert svc2.spawner.launched[-1]["resume_session"] == "base-1"
 
 
+# ── S9: resume carries the recorded env/model, never a silent fresh spawn ──
+
+def test_resume_relaunches_with_recorded_env_and_model(svc, monkeypatch):
+    """S9 (criterion c-ebb3f706c8): a crash-path fork-resume must re-launch
+    with the spawn_settings env (the per-seat EDP8_TOKEN) and the recorded
+    model, exactly as resume_closed does — else the resumed shell's MCP
+    client 401s and it runs on the wrong model tier."""
+    monkeypatch.setattr(svc, "_inbox_depth", lambda h: 0)
+    sid = svc.spawn("engineer", "eng:s1", None, "monitor",
+                    claude_session="base-uuid-1", model="opus",
+                    env={"EDP8_TOKEN": "tok-9"})
+    svc.park_session(sid, flush_timeout=0.05, flush_quiesce=0.01)
+    svc._kill_session(sid)
+    assert svc.spawner.alive(sid) is not True
+
+    out = svc.resume("eng:s1")
+    assert out["resumed"] is True and out["via"] == "fork-resume"
+    rec = svc.spawner.launched[-1]
+    assert rec["resume_session"] == "base-uuid-1"
+    assert rec["extra_env"] == {"EDP8_TOKEN": "tok-9"}, (
+        "resume dropped the per-seat env — the resumed shell will 401 on "
+        "every MCP call")
+    assert rec["model"] == "opus", "resume dropped the recorded model tier"
+
+
+def test_resume_without_session_id_reports_resync_not_fresh_spawn(
+        svc, monkeypatch):
+    """S9: a parked row with NO claude_session_id (and no recoverable session
+    file) must report resync — never a silent fresh spawn that discards the
+    parked transcript the resume exists to preserve."""
+    monkeypatch.setattr(svc, "_inbox_depth", lambda h: 0)
+    sid = svc.spawn("planner", "rec-x:s1", None)   # no claude_session
+    assert svc.sessions[sid].get("claude_session_id") is None
+    svc.park_session(sid, flush_timeout=0.05, flush_quiesce=0.01)
+    svc._kill_session(sid)
+    launches_before = len(svc.spawner.launched)
+
+    out = svc.resume("rec-x:s1")
+    assert out["resumed"] is False and out["resync_required"] is True
+    assert len(svc.spawner.launched) == launches_before, (
+        "no fresh spawn may be launched for a row that lacks a resume token")
+    assert svc.sessions[sid]["state"] == "parked"   # still resumable later
+    assert svc.locks["rec-x:s1"] == sid
+
+
+def test_resume_without_session_id_recovers_from_session_file(monkeypatch):
+    """S9: a file-resuming backend (Pi) has no claude_session_id but does have
+    a session file; resume recovers the base from it and forks, rather than
+    reporting resync or fresh-spawning."""
+
+    class FileSpawner(FakeSpawner):
+        def closed_session_token(self, session_id, handle):
+            return f"/sess/{handle}.jsonl"
+
+    svc = PoolService(FileSpawner())
+    monkeypatch.setattr(svc, "_inbox_depth", lambda h: 0)
+    sid = svc.spawn("engineer", "eng:pi", None, "monitor", model="astra")
+    assert svc.sessions[sid].get("claude_session_id") is None
+    svc.park_session(sid, flush_timeout=0.05, flush_quiesce=0.01)
+    svc._kill_session(sid)
+
+    out = svc.resume("eng:pi")
+    assert out["resumed"] is True
+    rec = svc.spawner.launched[-1]
+    assert rec["resume_session"] == "/sess/eng:pi.jsonl"
+    assert rec["model"] == "astra"
+    assert svc.sessions[sid]["state"] == "active"
+
+
 # ── flush-before-kill (verified live finding) ─────────────────────────────
 
 def test_park_waits_for_a_quiescent_transcript(svc, monkeypatch, tmp_path):
