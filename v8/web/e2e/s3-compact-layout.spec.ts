@@ -2,7 +2,17 @@ import { test, expect, EPIC, BASE } from './fixtures';
 import AxeBuilder from '@axe-core/playwright';
 import fs from 'node:fs';
 test.use({ boardFile: 's3-compact-layout' });
+// RETIRED (finding 4, s-d7c39c4b0f): this spec exercises the pre-R1 epic layout that 9734d1d
+// deleted — the inline `#work-details` disclosure, its `work-search` box reached by opening that
+// disclosure, "Work" as a <a> link, and the legacy `?tab=`/`#hash` destinations that mapped onto
+// it. R1 replaced all of that with the WorkHeader links row → right Drawer (a `Work` <button>,
+// no `#work-details`, no legacy tab routing). The behaviors here that DO survive are covered by
+// current specs: usage↔find-open adjacency and Subscription-usage Escape focus in s6-usage.spec.ts;
+// mobile Workspace-navigation / Sections in s2-foundations.spec.ts and s6-usage.spec.ts; the Work
+// drawer and Open-in-tab in s3-workflow.spec.ts and s3-review.spec.ts. Rewriting to the new surface
+// would only duplicate those, so the spec is skipped rather than restored.
 test.beforeEach(async ({ request }) => {
+  test.skip(true, 'Retired: pre-R1 #work-details/work-search/legacy-tab layout removed by 9734d1d; live behaviors covered by s6-usage, s2-foundations, s3-workflow, s3-review.');
   const current = await request.get(`${BASE()}/v1/epics/${EPIC()}/page`, { headers: { 'X-Participant': 'owner' } });
   expect(current.ok()).toBe(true);
   if ((await current.json()).value.board.epic.children.length) return;
