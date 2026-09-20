@@ -33,3 +33,25 @@ it("deduplicates pinned messages and reopens the gap after a >100-arrival head c
   expect(result.current.total).toBe(400);
   expect(result.current.more).toBe(false);
 });
+
+it("keeps a row that falls off the sliding head window on an already-loaded thread (finding 13)", async () => {
+  // qa's case: the head window is the newest 100. A new message arrives at the head, pushing the
+  // oldest head row off the page. Before the fix that row vanished from the loaded thread until
+  // "Load older" was pressed again; the hook's comment wrongly claimed this could not happen.
+  const rows: MessageView[] = Array.from({ length: 101 }, (_, i) => ({ id: `m-${i + 1}`, seq: i + 1, by: "owner", kind: "note", to: null, reply_to: null, text: String(i + 1), at: "2026-09-18T00:00:00Z" }));
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const wrapper = ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+  // Head window = the 100 newest so far (m-1 … m-100), nothing older to page.
+  const first: ThreadPage = { thread: rows.slice(0, 100), thread_total: 100, thread_before: null };
+  const { result, rerender } = renderHook(({ page }) => useThreadHistory("t-slide", page), { wrapper, initialProps: { page: first } });
+  expect(result.current.messages).toHaveLength(100);
+  expect(result.current.messages[0].id).toBe("m-1");
+
+  // m-101 arrives → the head window slides to m-2 … m-101; m-1 fell off the head page.
+  rerender({ page: { thread: rows.slice(1, 101), thread_total: 101, thread_before: 1 } });
+  const ids = result.current.messages.map((m) => m.id);
+  expect(ids).toContain("m-1");           // the fallen-off row is retained…
+  expect(ids).toContain("m-101");         // …alongside the new arrival
+  expect(result.current.messages).toHaveLength(101);
+  expect(ids).toEqual(rows.map((m) => m.id));  // full, in-order, no gap
+});

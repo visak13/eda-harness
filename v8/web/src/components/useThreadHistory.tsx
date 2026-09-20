@@ -5,16 +5,25 @@ import type { MessageView, ThreadPage } from "../api/types";
 import { Icon } from "./Icon";
 import styles from "./Conversation.module.css";
 
-/** Older pages never replace the source query/composer. Cursor resets on a new head window,
- * retaining cached rows: even a >100-message arrival burst cannot create a skipped gap. */
+/** Older pages never replace the source query/composer. Finding 13: the head window is a *sliding*
+ * page (the newest ~100), so a live arrival can push the oldest head row off it. We keep every head
+ * row we have ever shown in a per-thread cache and merge it back in, so a row that falls off the head
+ * window stays in an already-loaded thread instead of vanishing until "Load older" is pressed again.
+ * The cache resets when the thread id changes. */
 export function useThreadHistory(id: string, page?: ThreadPage) {
   const qc = useQueryClient();
   const [older, setOlder] = useState<{ id: string; head: number | null | undefined; next: number | null | undefined; rows: MessageView[]; total?: number }>();
   const listRef = useRef<HTMLUListElement>(null);
   const anchor = useRef<{ id: string; top: number } | null>(null);
   const currentId = useRef(id); currentId.current = id;
+  // Every head row ever seen for THIS thread (finding 13). Rebuilt on an id change; accumulated on
+  // each render as the head window slides. A cache write during render is idempotent (set by id).
+  const seen = useRef<{ id: string; rows: Map<string, MessageView> }>({ id, rows: new Map() });
+  if (seen.current.id !== id) seen.current = { id, rows: new Map() };
+  for (const m of page?.thread ?? []) seen.current.rows.set(m.id, m);
   const rows = older?.id === id ? older.rows : [];
   const merged = new Map(rows.map((m) => [m.id, m]));
+  for (const [mid, m] of seen.current.rows) merged.set(mid, m);
   for (const m of page?.thread ?? []) merged.set(m.id, m);
   const messages = [...merged.values()].sort((a, b) => a.seq != null && b.seq != null ? a.seq - b.seq : a.at.localeCompare(b.at));
   const before = older?.id === id && older.head === page?.thread_before ? older.next : page?.thread_before;
