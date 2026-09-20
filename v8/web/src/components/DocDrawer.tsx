@@ -166,6 +166,7 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
         open={top !== null}
         onClose={close}
         title={title}
+        label={shownDoc ? shownDoc.doc_type.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase()) : "Document"}
         returnFocusTo={returnFocus.current}
       >
         {top ? (

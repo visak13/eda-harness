@@ -12,6 +12,7 @@ export function Drawer({
   open,
   onClose,
   title,
+  label,
   width = 1112,
   children,
   returnFocusTo,
@@ -19,6 +20,9 @@ export function Drawer({
   open: boolean;
   onClose: () => void;
   title: React.ReactNode;
+  /** Accessible name when the visible title is not a plain string (e.g. the doc reader's toolbar):
+   *  the doc drawer is named by its kind ("Design"), not the generic "Drawer". */
+  label?: string;
   width?: number;
   children: React.ReactNode;
   returnFocusTo?: HTMLElement | null;
@@ -121,7 +125,7 @@ export function Drawer({
         style={{ width }}
         role="dialog"
         aria-modal="true"
-        aria-label={typeof title === "string" ? title : "Drawer"}
+        aria-label={label ?? (typeof title === "string" ? title : "Drawer")}
         tabIndex={-1}
         data-testid="drawer-panel"
         onMouseDown={(e) => e.stopPropagation()}
