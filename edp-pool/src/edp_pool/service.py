@@ -1693,9 +1693,16 @@ class PoolService(Microservice):
                 # NOT silently fresh-spawn — that discards the parked
                 # transcript this resume exists to preserve. Recover the base
                 # from the backend's session file (Pi) exactly as
-                # resume_closed does; only then decide.
+                # resume_closed does; only then decide. A recovery that RAISES
+                # must not strand the row in `resuming` (a permanent no-op) —
+                # treat it as no-base and fall through to the resync return.
                 f = getattr(self.spawner, "closed_session_token", None)
-                base = f(sid, handle) if f else None
+                try:
+                    base = f(sid, handle) if f else None
+                except Exception as exc:  # noqa: BLE001 — never strand at resuming
+                    _log.warning("resume_token_recovery_failed", handle,
+                                 handle=handle, sid=sid, error=repr(exc))
+                    base = None
                 file_resume = bool(base)
             if not base:
                 s["state"] = "parked"   # still resumable once a token exists
