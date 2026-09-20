@@ -11,7 +11,7 @@ for (const [width,height] of sizes) test(`preferences bounded and keyboard usabl
   const trigger = page.getByRole("button", { name: "Account and preferences", exact: true });
   if (width < 768) await page.getByRole("button", { name: "Workspace navigation", exact: true }).click();
   await trigger.click();
-  const dialog = page.getByRole("dialog", { name: "Preferences", exact: true });
+  const dialog = page.getByRole("dialog", { name: "Account and preferences", exact: true });
   await expect(dialog).toBeVisible();
   const box = (await dialog.boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(11); expect(box.y).toBeGreaterThanOrEqual(11);
@@ -30,7 +30,7 @@ for (const [width,height] of sizes) test(`preferences bounded and keyboard usabl
   const resized = (await dialog.boundingBox())!; expect(resized.x + resized.width).toBeLessThanOrEqual(309);
   await page.keyboard.press("Escape");
   await trigger.click();
-  await page.getByRole("button", { name: "Close Preferences" }).focus();
+  await page.getByRole("button", { name: "Close Account and preferences" }).focus();
   await page.keyboard.press("Shift+Tab"); // the nonmodal form lets focus leave
   await expect(dialog).toHaveCount(0);
   await trigger.click();
@@ -44,7 +44,7 @@ for (const theme of THEMES) test(`built theme ${theme.id}: prepaint, axe, screen
   await expect(page.locator("html")).toHaveAttribute("data-theme", theme.id);
   await expect(page.getByRole("heading", { name: "Spike epic", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Account and preferences", exact: true }).click();
-  await expect(page.getByRole("dialog", { name: "Preferences", exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Account and preferences", exact: true })).toBeVisible();
   // @ts-expect-error dual playwright-core types; existing axe.spec.ts uses the same runtime adapter
   const result = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze();
   expect(result.violations.filter((v) => v.impact === "serious" || v.impact === "critical")).toEqual([]);

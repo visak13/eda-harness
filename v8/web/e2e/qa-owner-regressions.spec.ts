@@ -2,7 +2,7 @@ import {test,expect,EPIC} from './fixtures';
 test.use({boardFile:'qa-owner-regressions'});
 test('status tooltip stays near its trigger instead of viewport bottom-left',async({page})=>{
  await page.goto(`/ui/epic/${EPIC()}?as=owner`);
- const status=page.getByLabel('Breadcrumb').getByText('Drafted',{exact:true});await status.hover();
+ const status=page.getByText('Drafted',{exact:true}).first();await status.hover();
  const anchor=(await status.boundingBox())!;const tip=(await page.getByRole('tooltip').filter({visible:true}).boundingBox())!;
  // Allow any nearby side and a broad gap; this rejects only detached screen-corner help.
  const gapY=Math.max(anchor.y-(tip.y+tip.height),tip.y-(anchor.y+anchor.height),0);

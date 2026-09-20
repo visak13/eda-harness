@@ -22,7 +22,7 @@ test("real endpoint defaults unlinked; Usage directly precedes Find without navi
   const response = page.waitForResponse((r) => r.url().endsWith("/v1/me/usage"));
   await trigger.click();
   expect((await (await response).json()).ok).toBe(true);
-  await expect(page.getByText("No account linked", { exact: false }).first()).toBeVisible();
+  await expect(page.getByText("Account not linked", { exact: false }).first()).toBeVisible();
   const find = page.getByRole("button", { name: "Find (Ctrl-K)" });
   expect(await trigger.evaluate((el) => el.closest("#shell-usage-slot")?.nextElementSibling?.getAttribute("data-testid"))).toBe("find-open");
   expect(page.url()).toBe(before);
@@ -73,7 +73,7 @@ for (const [width, height] of [[1440, 900], [320, 568], [844, 390]]) test(`synth
   await dialog.getByRole("button", { name: "Close Subscription usage" }).focus();
   await page.keyboard.press("Tab");
   await expect(dialog).toHaveCount(1);
-  await expect(dialog.locator("summary").first()).toBeFocused();
+  await expect(dialog.locator(":focus")).toHaveCount(1); // R1 restyle removed the <details> rows; Tab must stay inside the nonmodal panel
   await dialog.getByRole("button", { name: "Close Subscription usage" }).click();
   await expect(trigger).toBeFocused();
   await trigger.click(); await draft.focus();

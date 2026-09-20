@@ -101,7 +101,7 @@ test('Needs you negative ruling must not sign off a design', async ({ page, requ
   await expect(form.getByTestId('gate-answer')).toHaveCount(0);
   await expect(form.getByTestId('gate-submit')).toHaveCount(0);
   await form.getByRole('link', { name: 'Review design at source' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Drawer', exact: true });
+  const dialog = page.getByRole('dialog', { name: 'Design', exact: true });
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: 'Request changes', exact: true }).click();
   await dialog.getByRole('textbox', { name: 'Message', exact: true }).fill('Do not approve; changes required');
@@ -181,7 +181,7 @@ for (const action of ['dismiss', 'navigate'] as const) test(`delayed authorizati
     await route.continue();
   });
   await page.goto(`/ui/epic/${epic.id}?as=owner&request=${gate.id}`);
-  const dialog = page.getByRole('dialog', { name: 'Drawer', exact: true });
+  const dialog = page.getByRole('dialog', { name: 'Design', exact: true });
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   if (action === 'navigate') await page.getByRole('link', { name: 'Epics', exact: true }).first().click();
@@ -210,7 +210,7 @@ test('approval deep link keeps its viewer after delayed notification authorizati
     await route.continue();
   });
   await page.goto(`/ui/epic/${epic.id}?as=owner&request=${gate.id}`);
-  const dialog = page.getByRole('dialog', { name: 'Drawer', exact: true });
+  const dialog = page.getByRole('dialog', { name: 'Design', exact: true });
   await expect(dialog).toBeVisible();
   release();
   await expect(page.getByText('Request opened in this tab.', { exact: true })).toBeVisible();

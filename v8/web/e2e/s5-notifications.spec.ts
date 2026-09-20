@@ -71,11 +71,9 @@ test('integrated feed, real IDB multitab ledger, private display and draft-safe 
   // @ts-expect-error shared axe adapter has dual playwright-core types
   const audit = await new AxeBuilder({ page: selected }).withTags(['wcag2a', 'wcag2aa']).analyze();
   expect(audit.violations.filter(v => v.impact === 'serious' || v.impact === 'critical')).toEqual([]);
-  await selected.getByRole('region', { name: 'Board notifications' }).scrollIntoViewIfNeeded();
   await selected.screenshot({ path: 'e2e/evidence/s5-notifications.png' });
   await selected.setViewportSize({ width: 320, height: 568 });
   expect(await selected.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await selected.getByRole('region', { name: 'Board notifications' }).scrollIntoViewIfNeeded();
   await selected.screenshot({ path: 'e2e/evidence/s5-notifications-320.png' });
   await second.close();
 });

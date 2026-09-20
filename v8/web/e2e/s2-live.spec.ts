@@ -34,10 +34,10 @@ test("coalesced delivered burst/replay keeps draft, caret, focus, scroll and ava
   expect(refetches).toBe(initialRequests);
   expect(avatarRequests).toBe(initialAvatars);
   batch = events(fixture.story, 200);
-  await expect(page.getByTestId("live-new")).toContainText("40 new");
+  await expect(page.getByRole("status").filter({ hasText: "on the board" })).toContainText("40 new");
   expect(refetches).toBe(initialRequests);
   await page.waitForTimeout(1100); // replay the same sequence on reconnect
-  await expect(page.getByTestId("live-new")).toContainText("40 new");
+  await expect(page.getByRole("status").filter({ hasText: "on the board" })).toContainText("40 new");
   await expect(draft).toHaveValue("A draft that must survive live refresh");
   expect(await draft.evaluate((el: HTMLTextAreaElement) => el === (window as any).__s2Draft && el.selectionStart === 5 && el.selectionEnd === 10 && document.activeElement === el)).toBe(true);
   expect(await page.evaluate(() => scrollY)).toBe(scroll);
