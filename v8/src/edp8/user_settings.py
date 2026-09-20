@@ -14,6 +14,7 @@ import json
 import os
 import tempfile
 import threading
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -24,6 +25,8 @@ from urllib.parse import urlsplit
 # the whole read-merge-write so concurrent saves are last-writer-wins per field but never lose a
 # person or 500. One process owns the file (single board), so a threading.Lock is sufficient.
 _SAVE_LOCK = threading.Lock()
+_REPLACE_RETRIES = 5      # Windows sharing-violation retries on the atomic replace (finding 12)
+_REPLACE_BACKOFF = 0.02   # seconds, multiplied by the attempt number
 
 _MAX_NAME = 80
 _MAX_URL = 400
@@ -69,6 +72,22 @@ def valid_webhook(url: str) -> bool:
     except ValueError:
         pass
     return host in webhook_hosts()
+
+
+def webhook_rejection(raw: Any) -> str | None:
+    """Finding 22: a submitted webhook that is present but not postable (off-list host, IP literal,
+    non-https, or userinfo) must be REJECTED at the API, not silently coerced to '' by normalise —
+    which also WIPED a previously valid stored webhook. Returns a human field error to show on the
+    Slack tab, or None when the webhook is acceptable: valid, empty (an explicit clear), or the
+    masked value the SPA echoes back (handled by save_settings, which keeps the stored secret)."""
+    if not isinstance(raw, dict):
+        return None
+    submitted = str(((raw.get("slack") or {}).get("webhook_url") or "")).strip()
+    if not submitted or is_masked_webhook(submitted) or valid_webhook(submitted):
+        return None
+    return ("That webhook URL was not saved. Use an https URL on an allow-listed host "
+            "(hooks.slack.com), with no user:password and no IP address. Your stored webhook is "
+            "unchanged.")
 
 
 def settings_path() -> Path:
@@ -160,7 +179,18 @@ def save_settings(handle: str, raw: Any, path: str | Path | None = None) -> dict
                 stream.flush()
                 os.fsync(stream.fileno())
                 temporary = Path(stream.name)
-            temporary.replace(target)
+            # Finding 12 hardening: `_SAVE_LOCK` serialises WRITERS, but a concurrent READER
+            # (load_all in another request thread) can hold `target` open for the instant it
+            # reads, and on Windows os.replace onto an open file raises PermissionError (a
+            # sharing violation, not a lost update). Retry the replace briefly rather than 500.
+            for attempt in range(_REPLACE_RETRIES):
+                try:
+                    temporary.replace(target)
+                    break
+                except PermissionError:
+                    if attempt == _REPLACE_RETRIES - 1:
+                        raise
+                    time.sleep(_REPLACE_BACKOFF * (attempt + 1))
         finally:
             if temporary is not None and temporary.exists():
                 try:

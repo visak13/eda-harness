@@ -73,6 +73,39 @@ def test_concurrent_saves_lose_no_one(tmp_path):
         assert on_disk[h]["profile"]["display_name"] == h
 
 
+def test_save_retries_a_windows_sharing_violation_on_replace(tmp_path, monkeypatch):
+    """Consult claim 4: a concurrent reader can hold the target open for the instant it reads,
+    and on Windows os.replace onto an open file raises PermissionError (a sharing violation, not
+    a lost update). save_settings retries the replace briefly instead of 500-ing; a persistent
+    PermissionError still surfaces."""
+    from pathlib import Path
+
+    f = tmp_path / "ui-settings.json"
+    real_replace = Path.replace
+    calls = {"n": 0}
+
+    def flaky_replace(self, target):
+        calls["n"] += 1
+        if calls["n"] < 3:            # fail the first two attempts, then let it through
+            raise PermissionError(32, "The process cannot access the file")
+        return real_replace(self, target)
+
+    monkeypatch.setattr(user_settings.time, "sleep", lambda _s: None)  # no real backoff wait
+    monkeypatch.setattr(Path, "replace", flaky_replace)
+    stored = user_settings.save_settings("p1", {"profile": {"display_name": "Vishal"}}, path=f)
+    assert stored["profile"]["display_name"] == "Vishal"
+    assert calls["n"] == 3            # two retries then success
+    assert user_settings.load_all(f)["p1"]["profile"]["display_name"] == "Vishal"
+
+    # a replace that never recovers still raises rather than silently losing the write
+    calls["n"] = 0
+    monkeypatch.setattr(Path, "replace",
+                        lambda self, target: (_ for _ in ()).throw(PermissionError(32, "locked")))
+    import pytest
+    with pytest.raises(PermissionError):
+        user_settings.save_settings("p2", {"profile": {"display_name": "x"}}, path=f)
+
+
 def test_bridge_people_only_lists_enabled_reachable(tmp_path):
     f = tmp_path / "s.json"
     user_settings.save_settings("on", {"slack": {"enabled": True, "slack_id": "U1", "quiet": [22, 7]}}, path=f)
@@ -160,6 +193,56 @@ def test_slack_test_ping_route(tmp_path, monkeypatch):
         assert r.headers["cache-control"] == "private, no-store"
         # an agent seat has no Slack
         assert c.post("/v1/me/settings/slack/test", headers={"X-Participant": "bot", "X-Token": "b"}).status_code == 403
+
+
+def test_invalid_webhook_is_rejected_422_and_keeps_stored(tmp_path, monkeypatch):
+    """Finding 22: saving an invalid/off-list webhook must 422 with a field error and LEAVE the
+    stored (valid) webhook untouched — not silently coerce it to '' and wipe the previous one."""
+    from fastapi.testclient import TestClient
+    from edp8.board import Board
+    from edp8.service import create_app
+    from edp8.store import Store
+    monkeypatch.setenv("EDP8_UI_SETTINGS", str(tmp_path / "s.json"))
+    monkeypatch.setenv("EDP8_HOME", str(tmp_path))
+    monkeypatch.setenv("EDP8_PUBLIC", "0")
+    monkeypatch.setenv("EDP8_TOKENS", str(tmp_path / "tokens.json"))
+    monkeypatch.delenv("EDP8_SLACK_WEBHOOK_HOSTS", raising=False)
+    (tmp_path / "tokens.json").write_text(json.dumps({"alice": "a"}))
+    app = create_app(Board(Store(":memory:")), admin_token="t")
+    with TestClient(app) as c:
+        assert c.post("/v1/participants", json={"id": "alice", "handle": "alice", "role": "owner", "type": "human"},
+                      headers={"X-Admin": "t"}).status_code == 200
+        h = {"X-Participant": "alice", "X-Token": "a"}
+        # store a valid webhook first
+        assert c.put("/v1/me/settings", headers=h, json={"slack": {"enabled": True, "slack_id": "U1",
+              "webhook_url": "https://hooks.slack.com/services/a/b/c"}}).status_code == 200
+        # now submit an off-list webhook: 422, field error, stored value preserved
+        for bad in ("https://evil.example/h", "https://10.0.0.5/h", "https://u:p@hooks.slack.com/h"):
+            r = c.put("/v1/me/settings", headers=h, json={"slack": {"enabled": True, "slack_id": "U1",
+                  "webhook_url": bad}})
+            assert r.status_code == 422, (bad, r.text)
+            body = r.json()
+            assert body["ok"] is False and body["error"]["field"] == "slack.webhook_url"
+            assert body["hint"]
+        # the previously stored webhook is untouched
+        assert user_settings.bridge_people(tmp_path / "s.json")["alice"]["webhook_url"].endswith("/a/b/c")
+        # a masked echo is NOT a rejection (keeps the stored secret), and clearing to "" is allowed
+        shown = c.get("/v1/me/settings", headers=h).json()["value"]["slack"]["webhook_url"]
+        assert c.put("/v1/me/settings", headers=h, json={"slack": {"enabled": True, "slack_id": "U1",
+              "webhook_url": shown}}).status_code == 200
+        assert user_settings.bridge_people(tmp_path / "s.json")["alice"]["webhook_url"].endswith("/a/b/c")
+        assert c.put("/v1/me/settings", headers=h, json={"slack": {"enabled": True, "slack_id": "U1",
+              "webhook_url": ""}}).status_code == 200
+
+
+def test_webhook_rejection_helper(monkeypatch):
+    monkeypatch.delenv("EDP8_SLACK_WEBHOOK_HOSTS", raising=False)
+    assert user_settings.webhook_rejection({"slack": {"webhook_url": "https://evil.example/h"}})
+    assert user_settings.webhook_rejection({"slack": {"webhook_url": "https://10.0.0.5/h"}})
+    assert user_settings.webhook_rejection({"slack": {"webhook_url": "https://hooks.slack.com/h"}}) is None
+    assert user_settings.webhook_rejection({"slack": {"webhook_url": ""}}) is None          # clearing
+    assert user_settings.webhook_rejection({"slack": {"webhook_url": "https://hooks.slack.com/…/B/x"}}) is None  # masked echo
+    assert user_settings.webhook_rejection({}) is None
 
 
 def test_settings_endpoint_is_human_only(tmp_path, monkeypatch):

@@ -201,6 +201,19 @@ def test_content_disposition_helper_rfc6266():
     assert uploads.content_disposition("inline", "").startswith('inline; filename="download"')
 
 
+def test_content_disposition_strips_control_chars():
+    """Consult claim 3: a filename carrying ASCII control bytes (NUL/CR/LF/DEL) must not survive
+    into the fallback — left there they raise h11 LocalProtocolError (500) and a CR/LF is a
+    header-injection vector. They are replaced with `_`; the real name still rides in filename*."""
+    v = uploads.content_disposition("attachment", "a\r\nb\x00c\x7fd.txt")
+    disp, _, star = v.partition("; filename*=")
+    assert disp == 'attachment; filename="a__b_c_d.txt"'
+    v.encode("latin-1")  # header-safe
+    assert "\r" not in v and "\n" not in v and "\x00" not in v
+    # the untouched name is still recoverable, percent-encoded, in filename*
+    assert star == "UTF-8''a%0D%0Ab%00c%7Fd.txt"
+
+
 def test_download_non_latin_filename_is_200_not_500(board_app):
     """Finding 14: a download whose stored filename is non-Latin (or has quotes) returns 200 with a
     valid RFC 6266 header, not a Starlette UnicodeEncodeError 500."""

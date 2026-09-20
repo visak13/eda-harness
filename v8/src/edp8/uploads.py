@@ -51,8 +51,13 @@ def content_disposition(disposition: str, filename: str) -> str:
     BOTH: an ASCII-only `filename="..."` fallback (quotes/backslashes escaped, every non-ASCII byte
     replaced with `_`) for legacy agents, and `filename*=UTF-8''<pct-encoded>` for the real name."""
     name = filename or "download"
+    # Control chars (NUL/CR/LF/DEL, anything < 0x20 or 0x7f) are illegal in an HTTP header
+    # value: left in the ASCII fallback they raise h11 LocalProtocolError and the download 500s
+    # — a CR/LF would also be a header-injection vector. Replace them, and every non-ASCII byte,
+    # with `_`; the real name still rides in filename* (percent-encoded, so controls are safe).
     ascii_fallback = "".join(
-        ("_" if ord(ch) > 127 else "\\" + ch if ch in ('"', "\\") else ch)
+        ("_" if ord(ch) > 127 or ord(ch) < 32 or ord(ch) == 127
+         else "\\" + ch if ch in ('"', "\\") else ch)
         for ch in name
     ).strip() or "download"
     # RFC 5987/6266 ext-value: percent-encode everything but the unreserved/attr-char set.
