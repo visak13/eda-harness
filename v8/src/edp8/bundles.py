@@ -1802,7 +1802,13 @@ ROLE_BUNDLES: dict[str, list[str]] = {
 
 for _role_tools in ROLE_BUNDLES.values():
     if "artifact_create" in _role_tools and "artifact_upload" not in _role_tools:
-        _role_tools.append("artifact_upload")
+        # close_self must stay last: a doer's bundle ends inbox → record_status → close_self
+        # (test_lifecycle_fixes.py::test_architect_and_owner_have_no_close_self). Insert
+        # artifact_upload just before the closing triplet, never after close_self.
+        if "close_self" in _role_tools:
+            _role_tools.insert(_role_tools.index("inbox"), "artifact_upload")
+        else:
+            _role_tools.append("artifact_upload")
 
 ROLE_BUNDLES[Role.coordinator.value] = list(ROLE_BUNDLES[Role.owner.value])  # retired seat: explicit, not implicit
 ROLE_BUNDLES[Role.consultant.value] = _IDENTITY + ["ticket_read", "ticket_query", "message_send", "message_query",
