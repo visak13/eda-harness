@@ -35,11 +35,10 @@ test.describe("shell fidelity @ 1440×900", () => {
     expectPx(sb.width, GEOMETRY.sidebar.w, "sidebar width");
     expect(await style(sidebar, "background-color")).toBe(RAIL);
 
-    // Header: height 72, starting at x=216.
-    const header = page.getByTestId("app-header");
-    const hb = (await header.boundingBox())!;
-    expectPx(hb.x, GEOMETRY.header.x, "header x");
-    expectPx(hb.height, GEOMETRY.header.h, "header height");
+    // Header assertion RETIRED (S11 finding, architect steer m-8cf862eff2): the pre-R1 layout had a
+    // 72px app header at x=216; the R1 revision3-clean shell (design-a2e5369133) has no desktop
+    // header — `app-header` is now the mobile-only bar (AppShell.module.css `.mobileBar` is
+    // display:none ≥768px). There is nothing to assert here at 1440×900.
 
     // Main: x=256, width 1144.
     const main = page.locator("main");
