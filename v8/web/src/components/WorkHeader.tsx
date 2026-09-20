@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
+import { Link, useLocation, useSearchParams } from "react-router";
 import { Avatar } from "./Avatar";
 import { StatusChip } from "./StatusChip";
 import { Drawer } from "./Drawer";
@@ -53,7 +53,6 @@ const LEGACY_VIEW: Record<string, string | null> = { documents: "files", work: "
 export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
   const [params, setParams] = useSearchParams();
   const location = useLocation();
-  const navigate = useNavigate();
   const { openDoc } = useDocDrawer();
   const ctx = useWorkContext(p.ticketId);
   const view = params.get("view");
@@ -83,25 +82,29 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
     }
   }, [request, data, designRef, params, setParams]);
 
-  // Migrate a legacy ?tab=/#hash entry once (finding 9, epic c-bb6cf0d4d6): rewrite it to ?view=
-  // (replace) so an old bookmark opens the matching viewer. A #m- message anchor wins — the tab is
-  // dropped but no viewer opens and the anchor is kept so the page can scroll to the message.
-  const migrated = useRef(false);
+  // Migrate a legacy ?tab=/#hash entry to the R1 ?view= viewer (finding 9, epic c-bb6cf0d4d6) so an
+  // old bookmark opens the matching viewer. Uses a FUNCTIONAL setParams so it reads the latest params
+  // and can never overwrite a ?doc the request effect above just set (consult finding 2); setParams
+  // also leaves the hash intact, so a #m- anchor survives (finding 3). A design-review ?request=, an
+  // open ?doc, or a #m- message anchor is the higher-priority destination — the stale ?tab is dropped
+  // but no viewer opens over it. No run-once ref: the early return makes it idempotent and a later
+  // legacy URL on the same mounted page still migrates (finding 6).
   useEffect(() => {
-    if (migrated.current) return;
-    const anchor = location.hash.startsWith("#m-");
     const tab = params.get("tab");
+    const anchor = location.hash.startsWith("#m-");
     const hashKey = anchor ? "" : location.hash.replace(/^#/, "");
     const key = tab && tab in LEGACY_VIEW ? tab : hashKey in LEGACY_VIEW ? hashKey : null;
-    if (!tab && key === null) return;
-    migrated.current = true;
-    const nextView = anchor ? null : key ? LEGACY_VIEW[key] : null;
-    const q = new URLSearchParams(params);
-    q.delete("tab");
-    if (nextView && !q.get("view")) q.set("view", nextView);
-    const search = q.toString();
-    navigate({ search: search ? `?${search}` : "", hash: anchor ? location.hash : "" }, { replace: true });
-  }, [location.hash, params, navigate]);
+    if (!tab && key === null) return; // nothing legacy on this URL
+    const defer = anchor || Boolean(params.get("request")) || Boolean(params.get("doc"));
+    const nextView = defer ? null : key ? LEGACY_VIEW[key] : null;
+    if (!tab && !(nextView && !params.get("view"))) return; // hash-only, already resolved or deferred
+    setParams((old) => {
+      const q = new URLSearchParams(old);
+      q.delete("tab");
+      if (nextView && !q.get("view") && !q.get("doc")) q.set("view", nextView);
+      return q;
+    }, { replace: true });
+  }, [location.hash, params, setParams]);
 
   // Compact header on a phone (finding 19, epic c-63fdab92a4 / conversation-first): the metadata
   // grid and links row collapse behind a disclosure below 768px so the first message is in the first
@@ -140,7 +143,7 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
 
       <details className={styles.context} open={contextOpen} onToggle={(e) => setContextOpen(e.currentTarget.open)}>
         <summary className={styles.contextSummary} data-testid="work-context-toggle">
-          <StatusChip status={p.status} size="badge" />
+          <span className={styles.summaryChip}><StatusChip status={p.status} size="badge" /></span>
           <span>{attention || "Details, files & history"}</span>
         </summary>
       <dl className={styles.metadata} data-testid="work-metadata">

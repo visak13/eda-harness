@@ -40,7 +40,10 @@
     display: flex; align-items: center; gap: 10px; cursor: pointer;
     min-height: 40px; padding: 6px 0; color: var(--muted); font-size: 14px;
   }
-  .context > summary :global(.badge) { flex: none; }
+  .summaryChip { flex: none; display: inline-flex; }
+  /* When the section is open the STATUS grid cell shows the chip, so the summary chip is a
+     duplicate (consult/qa finding 20) — hide it while open. */
+  .context[open] .summaryChip { display: none; }
   .context > summary > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .context > summary::after { content: "▾"; margin-left: auto; }
   .context[open] > summary::after { content: "▴"; }

@@ -91,6 +91,31 @@ def test_post_refuses_a_disallowed_webhook_host(monkeypatch):
     assert calls == ["https://hooks.slack.com/h"]
 
 
+def test_post_returns_false_on_transport_error(monkeypatch):
+    """A network failure (connect/timeout) or a malformed bot response is a delivery FAILURE, not a
+    crash — _post returns False so send_test_ping/the route answer 502, never a 500 (consult finding 4)."""
+    monkeypatch.delenv("EDP8_SLACK_WEBHOOK_HOSTS", raising=False)
+
+    def boom(url, **kw):
+        raise slack_bridge.httpx.ConnectError("no route to host")
+
+    monkeypatch.setattr(slack_bridge.httpx, "post", boom)
+    assert slack_bridge._post({"webhook_url": "https://hooks.slack.com/h"}, {}, "hi") is False
+    ok, detail = slack_bridge.send_test_ping("pat", {"webhook_url": "https://hooks.slack.com/h"})
+    assert not ok and detail  # a human reason, not a traceback
+
+    class Bad:
+        status_code = 200
+        text = "not json"
+
+        @staticmethod
+        def json():
+            raise ValueError("not json")
+
+    monkeypatch.setattr(slack_bridge.httpx, "post", lambda url, **kw: Bad)
+    assert slack_bridge._post({"bot_token": "xoxb"}, {"slack_id": "U1"}, "hi") is False
+
+
 def test_send_test_ping_uses_stored_destination(monkeypatch):
     sent = []
     monkeypatch.setattr(slack_bridge, "_post", lambda cfg, person, text: sent.append((person, text)) or True)

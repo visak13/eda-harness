@@ -41,4 +41,13 @@ describe("WorkHeader request deep link (finding 1)", () => {
     await screen.findByTestId("work-header");
     expect(screen.queryByRole("dialog")).toBeNull();
   });
+
+  // consult finding 2: the legacy ?tab= migration (finding 9) must not overwrite the ?doc the request
+  // effect sets — a design review reached with a stale ?tab=work still opens the review, not the Work viewer.
+  it("keeps the request review open despite a legacy ?tab=work (migration must not steal ?doc)", async () => {
+    reviewMocks();
+    renderRoute("/epic/epic-req?request=ev-gate&tab=work", "/epic/:id", header());
+    expect(await screen.findByText(/Review requested/)).toBeInTheDocument();
+    expect(screen.queryByTestId("work-search")).toBeNull();
+  });
 });

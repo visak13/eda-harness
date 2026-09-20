@@ -53,26 +53,33 @@ def _in_quiet(quiet: list | None, now_hour: int) -> bool:
 
 def _post(cfg: dict, person: dict, text: str) -> bool:
     token = cfg.get("bot_token")
-    if token and person.get("slack_id"):
-        r = httpx.post("https://slack.com/api/chat.postMessage",
-                       headers={"Authorization": f"Bearer {token}"},
-                       json={"channel": person["slack_id"], "text": text}, timeout=15)
-        ok = r.status_code < 400 and r.json().get("ok", False)
-    else:
-        from .user_settings import valid_webhook
-        hook = person.get("webhook_url") or cfg.get("webhook_url")
-        if not hook:
-            log.warning("no webhook/bot_token for a ping; dropped")
-            return False
-        # Send-time allow-list: never POST thread content to a host that is not allow-listed, even
-        # for a value already on disk (qa findings 10/17). Save-time validation is not enough — a
-        # legacy stored webhook must not be posted to.
-        if not valid_webhook(hook):
-            log.warning("webhook host not allow-listed; refusing to post")
-            return False
-        mention = f"<@{person['slack_id']}> " if person.get("slack_id") else ""
-        r = httpx.post(hook, json={"text": mention + text}, timeout=15)
-        ok = r.status_code < 400
+    # A transport failure (connect/timeout) or a malformed bot response is a delivery FAILURE, not a
+    # crash: catch it so send_test_ping returns (False, …) and the route answers 502, never a 500
+    # (consult finding 4). The watcher loop relies on the same False to skip and retry next tick.
+    try:
+        if token and person.get("slack_id"):
+            r = httpx.post("https://slack.com/api/chat.postMessage",
+                           headers={"Authorization": f"Bearer {token}"},
+                           json={"channel": person["slack_id"], "text": text}, timeout=15)
+            ok = r.status_code < 400 and r.json().get("ok", False)
+        else:
+            from .user_settings import valid_webhook
+            hook = person.get("webhook_url") or cfg.get("webhook_url")
+            if not hook:
+                log.warning("no webhook/bot_token for a ping; dropped")
+                return False
+            # Send-time allow-list: never POST thread content to a host that is not allow-listed, even
+            # for a value already on disk (qa findings 10/17). Save-time validation is not enough — a
+            # legacy stored webhook must not be posted to.
+            if not valid_webhook(hook):
+                log.warning("webhook host not allow-listed; refusing to post")
+                return False
+            mention = f"<@{person['slack_id']}> " if person.get("slack_id") else ""
+            r = httpx.post(hook, json={"text": mention + text}, timeout=15)
+            ok = r.status_code < 400
+    except (httpx.HTTPError, ValueError) as exc:  # ValueError: a non-JSON bot response from r.json()
+        log.warning("slack post errored: %s", exc)
+        return False
     if not ok:
         log.warning("slack post failed: %s %s", r.status_code, r.text[:200])
     return ok
