@@ -154,6 +154,12 @@ export const uploadArtifact = async (
   return (await apiEnvelope<UploadedArtifact>("/v1/artifacts/upload", { method: "POST", body: form })).value;
 };
 
+/** POST /v1/artifacts/finalize (§18.1 finding 11). A file dropped on the ticket's Files card is
+ *  attached straight onto the ticket — no message — so it is unstaged, linked `produced`, appears
+ *  in Files & evidence and survives reload, instead of lingering staged until the 24 h sweep. */
+export const finalizeArtifacts = (artifactIds: string[], ticketId: string) =>
+  postJson<UploadedArtifact[]>("/v1/artifacts/finalize", { artifact_ids: artifactIds, ticket_id: ticketId });
+
 // The status edges the board offers THIS viewer on a ticket (the status control reads legality
 // from the server, never a client copy of the rules — design §16, "one implementation").
 export const getTicketTransitions = (id: string) =>

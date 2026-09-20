@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { useLocation, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { getTicketPage } from "../api/endpoints";
+import { getTicketPage, finalizeArtifacts } from "../api/endpoints";
 import type { MessageView, TicketStatus, UploadedArtifact } from "../api/types";
 import { ProcessStrip, nextActionFor } from "../components/ProcessStrip";
 import { StatusControl } from "../components/StatusControl";
@@ -41,7 +41,14 @@ export function TicketPage(): React.JSX.Element {
   const drawer = useDocDrawer();
   const [reply, setReply] = useState<{ id: string; by: string } | null>(null);
   const [attached, setAttached] = useState<UploadedArtifact[]>([]);
-  const onAttached = useCallback((art: UploadedArtifact) => setAttached((a) => [...a, art]), []);
+  // Finding 11: a file dropped on the ticket's Files card must REALLY attach. The upload is staged;
+  // finalise it onto the ticket (unstaged + `produced` link) before we show it, so it lands in
+  // Files & evidence and survives reload instead of lingering staged until the 24 h sweep. A
+  // finalise failure rejects so useDropUpload surfaces the reason and keeps the file retryable.
+  const onAttached = useCallback(async (art: UploadedArtifact) => {
+    await finalizeArtifacts([art.id], id);
+    setAttached((a) => [...a, { ...art, staged: false }]);
+  }, [id]);
   const docsDrop = useDropUpload(id, onAttached);
 
   const { hash } = useLocation();

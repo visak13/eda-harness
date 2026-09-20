@@ -123,6 +123,42 @@ def test_finalise_is_atomic_bad_id_posts_nothing(board_app):
     assert c.get(f"/v1/artifacts/{aid}", headers=OWN).json()["value"]["staged"] is True
 
 
+# --------------------------------------------------------------------------- direct ticket attach (finding 11)
+
+
+def test_drop_finalize_attaches_directly_to_ticket(board_app):
+    """Finding 11: a file dropped on the ticket's Files card is finalised straight onto the ticket
+    (no message) — unstaged, `produced`-linked, and it shows in Files & evidence (contextual) so it
+    survives reload instead of lingering staged=True until the 24 h sweep."""
+    c, epic = board_app["client"], board_app["epic"]
+    aid = _upload(c, PNG, "a.png").json()["value"]["id"]
+    assert c.get(f"/v1/artifacts/{aid}", headers=OWN).json()["value"]["staged"] is True
+    r = c.post("/v1/artifacts/finalize", json={"artifact_ids": [aid], "ticket_id": epic},
+               headers=OWN).json()
+    assert r["ok"], r
+    assert r["value"][0]["id"] == aid and r["value"][0]["staged"] is False
+    # unstaged on disk
+    assert c.get(f"/v1/artifacts/{aid}", headers=OWN).json()["value"]["staged"] is False
+    # produced link to the ticket
+    links = c.get("/v1/links", params={"to_id": aid}, headers=OWN).json()["value"]
+    assert any(lk["from_id"] == epic and lk["relation"] == "produced" for lk in links)
+    # appears in the ticket's Files & evidence viewer (contextual) — survives reload
+    ctx = c.get(f"/v1/tickets/{epic}/contextual", headers=OWN).json()["value"]
+    assert any(rec["record"]["id"] == aid and rec["type"] == "artifact" for rec in ctx["records"])
+
+
+def test_drop_finalize_refuses_another_actors_upload(board_app):
+    """The same uploader-scope check as the message finalise path: only the uploader can attach."""
+    c, board, epic = board_app["client"], board_app["board"], board_app["epic"]
+    c.post("/v1/participants", json={"type": "human", "role": "reviewer", "handle": "ravi", "id": "ravi"},
+           headers=ADMIN)
+    aid = _upload(c, PNG, "a.png").json()["value"]["id"]  # uploaded by owner
+    r = c.post("/v1/artifacts/finalize", json={"artifact_ids": [aid], "ticket_id": epic},
+               headers={"X-Participant": "ravi"})
+    assert not r.json()["ok"] and r.json()["error"]["code"] == "scope"
+    assert board._get("artifact", aid, "artifact").staged is True
+
+
 # --------------------------------------------------------------------------- content endpoint
 
 
@@ -150,6 +186,31 @@ def test_content_headers_png_inline_svg_attachment(board_app):
     assert rs.headers["content-type"].startswith("image/svg+xml")
     assert rs.headers["content-disposition"].startswith("attachment")  # never rendered inline
     assert rs.headers["x-content-type-options"] == "nosniff"
+
+
+def test_content_disposition_helper_rfc6266():
+    """Finding 14 (pure): the header carries an ASCII fallback AND filename*=UTF-8'' — quotes and
+    backslashes escaped in the fallback, non-ASCII bytes never leak into the latin-1 header."""
+    v = uploads.content_disposition("attachment", 'проверка "1".png')
+    disp, _, star = v.partition("; filename*=")
+    # non-Latin chars → underscores, and the embedded quotes are backslash-escaped in the fallback
+    assert disp == 'attachment; filename="________ \\"1\\".png"'  # 8 Cyrillic letters → 8 "_"
+    assert "\\\"1\\\"" in disp
+    assert star == "UTF-8''%D0%BF%D1%80%D0%BE%D0%B2%D0%B5%D1%80%D0%BA%D0%B0%20%221%22.png"
+    v.encode("latin-1")  # the whole value is header-safe (would have raised before the fix)
+    assert uploads.content_disposition("inline", "").startswith('inline; filename="download"')
+
+
+def test_download_non_latin_filename_is_200_not_500(board_app):
+    """Finding 14: a download whose stored filename is non-Latin (or has quotes) returns 200 with a
+    valid RFC 6266 header, not a Starlette UnicodeEncodeError 500."""
+    c = board_app["client"]
+    aid = _upload(c, PNG, 'отчёт "final".png', "image/png").json()["value"]["id"]
+    r = c.get(f"/v1/artifacts/{aid}/content", headers=OWN)
+    assert r.status_code == 200
+    cd = r.headers["content-disposition"]
+    assert cd.startswith("inline; filename=")
+    assert "filename*=UTF-8''" in cd and "%D0%BE%D1%82" in cd  # the UTF-8 name, percent-encoded
 
 
 # --------------------------------------------------------------------------- sweep

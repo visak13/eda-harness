@@ -162,6 +162,11 @@ class ArtifactIn(BaseModel):
     ticket_id: str | None = None
 
 
+class ArtifactFinalizeIn(BaseModel):
+    artifact_ids: list[str]  # staged upload ids to attach directly onto the ticket (§18.1 finding 11)
+    ticket_id: str
+
+
 class GateAnswerIn(BaseModel):
     answer: str
 
@@ -720,6 +725,15 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         return ok(_dump(art), "staged; post a message with artifacts:[this id] to attach it — "
                               "unfinalised uploads are swept after 24 h")
 
+    @app.post("/v1/artifacts/finalize")
+    def artifact_finalize(b: ArtifactFinalizeIn, a: Participant = Depends(actor)):
+        """Attach staged uploads straight onto a ticket, no message (§18.1 finding 11: a file
+        dropped on the ticket's Files card must really attach — flip staged→False and link
+        `produced` — not linger staged in the SPA until the 24 h sweep). Same all-or-nothing
+        validation and uploader-scope check as the message finalise path."""
+        arts = board.artifact_finalise(a, artifact_ids=b.artifact_ids, ticket_id=b.ticket_id)
+        return ok([_dump(x) for x in arts], "attached to the ticket")
+
     @app.get("/v1/artifacts/{id_}/content")
     def artifact_content(id_: str, a: Participant = Depends(actor)):
         """Serve an uploaded artifact's bytes with the sniffed type. Never sniffs in the browser
@@ -737,7 +751,8 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         name = art.filename or path.name
         return FileResponse(path, media_type=ctype, headers={
             "X-Content-Type-Options": "nosniff",
-            "Content-Disposition": f"{disp}; filename=\"{name}\""})
+            # RFC 6266: a non-Latin or quoted filename must not raise (finding 14).
+            "Content-Disposition": uploads.content_disposition(disp, name)})
 
     @app.get("/v1/artifacts/{id_}")
     def artifact_get(id_: str, a: Participant = Depends(actor)):

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import quote
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB (design §18.1)
 _SNIFF_BYTES = 4096  # enough for every magic number below and an SVG root element
@@ -41,6 +42,22 @@ _EXT = {
 
 def ext_for(content_type: str) -> str:
     return _EXT.get(content_type, "bin")
+
+
+def content_disposition(disposition: str, filename: str) -> str:
+    """An RFC 6266 Content-Disposition value that survives a non-Latin or quoted filename
+    (finding 14). Starlette encodes response headers as latin-1, so a raw UTF-8 filename raised
+    UnicodeEncodeError → the download 500'd; unescaped quotes also broke the quoted-string. We emit
+    BOTH: an ASCII-only `filename="..."` fallback (quotes/backslashes escaped, every non-ASCII byte
+    replaced with `_`) for legacy agents, and `filename*=UTF-8''<pct-encoded>` for the real name."""
+    name = filename or "download"
+    ascii_fallback = "".join(
+        ("_" if ord(ch) > 127 else "\\" + ch if ch in ('"', "\\") else ch)
+        for ch in name
+    ).strip() or "download"
+    # RFC 5987/6266 ext-value: percent-encode everything but the unreserved/attr-char set.
+    encoded = quote(name, safe="!#$&+-.^_`|~")
+    return f'{disposition}; filename="{ascii_fallback}"; filename*=UTF-8\'\'{encoded}'
 
 
 def _looks_textual(data: bytes) -> bool:

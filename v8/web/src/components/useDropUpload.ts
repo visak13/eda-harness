@@ -15,7 +15,9 @@ export interface DropUpload {
   pending: number;
   retry: () => void;
   clearError: () => void;
-  /** Upload each file in turn; `onUploaded` fires per success. Safe to call from a paste too. */
+  /** Upload each file in turn; `onUploaded` fires (and is awaited) per success. Safe to call from a
+   *  paste too. If `onUploaded` rejects (e.g. a finalise step fails), the file is treated as failed
+   *  and the reason surfaces through `error`, exactly like an upload refusal. */
   ingestFiles: (files: FileList | File[]) => Promise<void>;
   /** Spread onto the drop target element. */
   dropProps: {
@@ -25,7 +27,7 @@ export interface DropUpload {
   };
 }
 
-export function useDropUpload(ticketId: string, onUploaded: (art: UploadedArtifact, file?: File) => void): DropUpload {
+export function useDropUpload(ticketId: string, onUploaded: (art: UploadedArtifact, file?: File) => void | Promise<void>): DropUpload {
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(0);
@@ -39,7 +41,7 @@ export function useDropUpload(ticketId: string, onUploaded: (art: UploadedArtifa
       for (const file of list) {
         try {
           if (file.size > 25 * 1024 * 1024) throw new Error("File exceeds the 25 MB limit");
-          onUploaded(await uploadArtifact(file, ticketId), file);
+          await onUploaded(await uploadArtifact(file, ticketId), file);
         } catch (err) {
           setFailed((old) => [...old, file]);
           setError(err instanceof Error ? err.message : String(err));

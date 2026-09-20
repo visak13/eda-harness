@@ -345,12 +345,20 @@ describe("TicketPage composer Expand (§4.2, promise #15)", () => {
 
 // Promise #19: the "Linked documents" card is a drop target that uses the composer's upload path.
 describe("TicketPage linked-documents drop target (promise #19)", () => {
-  it("shows a drag-over state, uploads the dropped file, and lists the artifact", async () => {
+  it("shows a drag-over state, uploads the dropped file, FINALISES it onto the ticket, and lists it (finding 11)", async () => {
     vi.mocked(uploadArtifact).mockClear();
+    // Finding 11: the drop must not leave the upload staged. The upload returns a staged artifact;
+    // the page must then POST /v1/artifacts/finalize with that id + the ticket so it unstages and
+    // links `produced`. We record that call and prove the finalised id and ticket are correct.
+    let finalized: { path: string; body: Record<string, unknown> } | null = null;
     server.use(
       http.get("/v1/me/people", () => okJson([])), // the page's composer
       // the multipart body is never read back here: request.text()/formData() hang under jsdom
-      http.post("/v1/artifacts/upload", () => okJson({ id: "art-drop01", form: "image" })),
+      http.post("/v1/artifacts/upload", () => okJson({ id: "art-drop01", form: "image", staged: true })),
+      http.post("/v1/artifacts/finalize", async ({ request }) => {
+        finalized = { path: "/v1/artifacts/finalize", body: (await request.json()) as Record<string, unknown> };
+        return okJson([{ id: "art-drop01", form: "image", staged: false }], "attached to the ticket");
+      }),
     );
     mount(ticketPage());
     await title();
@@ -365,6 +373,9 @@ describe("TicketPage linked-documents drop target (promise #19)", () => {
     expect(row).toHaveTextContent("art-drop01");
     expect(within(row).getByTestId("artifact-link")).toHaveAttribute("data-artifact", "art-drop01");
     expect(vi.mocked(uploadArtifact).mock.calls[0]?.[1]).toBe("s-1");
+    // the finalise really happened: the staged id was attached onto this exact ticket
+    await waitFor(() => expect(finalized).not.toBeNull());
+    expect(finalized!.body).toMatchObject({ artifact_ids: ["art-drop01"], ticket_id: "s-1" });
   });
 
   it("a refused upload shows the board's reason on the card", async () => {
@@ -373,6 +384,20 @@ describe("TicketPage linked-documents drop target (promise #19)", () => {
     await title();
     const card = within(await openWork()).getByTestId("linked-documents");
     fireEvent.drop(card, { dataTransfer: { files: [new File(["x"], "a.exe", { type: "application/x-msdownload" })] } });
+    expect(await within(card).findByRole("alert")).toHaveTextContent(/Upload failed/);
+    expect(within(card).queryByTestId("attached-artifact")).not.toBeInTheDocument();
+  });
+
+  it("a failed finalise keeps the file off the list and surfaces the reason (finding 11)", async () => {
+    server.use(
+      http.get("/v1/me/people", () => okJson([])),
+      http.post("/v1/artifacts/upload", () => okJson({ id: "art-drop02", form: "image", staged: true })),
+      http.post("/v1/artifacts/finalize", () => HttpResponse.json({ ok: false, hint: "ticket is frozen" }, { status: 409 })),
+    );
+    mount(ticketPage());
+    await title();
+    const card = within(await openWork()).getByTestId("linked-documents");
+    fireEvent.drop(card, { dataTransfer: { files: [new File(["x"], "shot.png", { type: "image/png" })] } });
     expect(await within(card).findByRole("alert")).toHaveTextContent(/Upload failed/);
     expect(within(card).queryByTestId("attached-artifact")).not.toBeInTheDocument();
   });
