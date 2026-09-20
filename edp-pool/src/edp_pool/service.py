@@ -417,6 +417,13 @@ class PoolService(Microservice):
         # whose parked predecessor is still being torn down; resume holds it
         # only for the parked→resuming CAS, never across the ~30s spawn.
         self._transition_lock = threading.Lock()
+        # S11 finding 15: session ids with a fork-resume IN FLIGHT in THIS process (state flipped to
+        # "resuming" under the transition lock, spawn running outside it). In-memory only, exactly
+        # like the reap tasks above: a restart clears it, so a "resuming" row that PERSISTED across a
+        # restart is NOT in this set and is recognised as recoverable (probe the process, fork-resume
+        # if dead). A "resuming" row that IS in this set is a racing in-process caller (watchdog +
+        # backstop) and must no-op — never double-spawn. Guarded by _transition_lock.
+        self._resuming_inflight: set[str] = set()
         # F46#4 — serializes the neuron-driver lifecycle (arm/disarm/
         # respawn); the transition lock stays session-row-only.
         self._driver_lock = threading.Lock()
@@ -818,7 +825,11 @@ class PoolService(Microservice):
             # this pool launched it → the live PTY handle is authoritative.
             return self.spawner.alive(sid)
         sess = self.sessions.get(sid)
-        if sess is None or sess.get("state") != "active":
+        # S11 finding 15: a row orphaned across a pool restart keeps its persisted fingerprint but no
+        # PTY handle. Probe that fingerprint for a row that should still have a live process — an
+        # "active" one (existing behaviour) OR a "resuming" one whose fork completed just before the
+        # pool died. For any other state (done/parked/starting) there is nothing to resurrect.
+        if sess is None or sess.get("state") not in ("active", "resuming"):
             return False   # already released/closed — don't resurrect
         return _proc_alive(sess.get("proc"))
 
@@ -1652,10 +1663,18 @@ class PoolService(Microservice):
                 # S11 finding 15: a "resuming" row persisted across a pool
                 # restart has the SAME shape — its ~30 s spawn died with the
                 # old pool, so the probed-dead resuming row was a permanent
-                # no-op (resume refused forever). Probe BOTH states: a dead
-                # process recovers via fork-resume; a live or unknowable one
-                # still no-ops so the watchdog+backstop double-caller (and a
-                # genuinely in-flight resume) cannot double-spawn.
+                # no-op (resume refused forever). Recover it — BUT a "resuming"
+                # row also means "a fork is running RIGHT NOW in this process".
+                # `_resuming_inflight` tells the two apart: an in-flight resume
+                # (watchdog + backstop racing) MUST no-op here or its mid-launch
+                # probe would see the not-yet-spawned process as dead and launch
+                # a SECOND shell. Only a resuming row that is NOT in flight (i.e.
+                # persisted across a restart) is probed and, if dead, recovered.
+                if state == "resuming" and sid in self._resuming_inflight:
+                    return {"resumed": False, "handle": handle, "no_op": True,
+                            "state": state,
+                            "reason": "a fork-resume is already in flight for "
+                                      "this session — no-op"}
                 if self._session_alive(sid) is False:
                     dead_active = True
                     _log.warning("resume_row_dead_process", handle,
@@ -1696,6 +1715,7 @@ class PoolService(Microservice):
                                   "own heartbeat and subscriptions — "
                                   "restored to active, no fork needed"}
             s["state"] = "resuming"
+            self._resuming_inflight.add(sid)  # finding 15: mark the in-flight fork (cleared at every exit)
             base = s.get("claude_session_id")
             settings = s.get("spawn_settings") or {}
             file_resume = False
@@ -1717,6 +1737,7 @@ class PoolService(Microservice):
                 file_resume = bool(base)
             if not base:
                 s["state"] = "parked"   # still resumable once a token exists
+                self._resuming_inflight.discard(sid)  # finding 15: not in flight any more
                 self._persist()
                 _log.warning("resume_no_session_id", handle, handle=handle,
                              sid=sid,
@@ -1799,13 +1820,32 @@ class PoolService(Microservice):
                 resumed_via = "fresh-fallback"
             except Exception as exc2:  # noqa: BLE001
                 with self._transition_lock:
-                    s["state"] = "parked"   # still resumable later
-                self._persist()
+                    self._resuming_inflight.discard(sid)   # consult#1: launch over
+                    # consult#2: a release() (close_self) that arrived mid-resume must be
+                    # honored on the failure path too, not stranded on the row for a later
+                    # resume to trip on. release() is idempotent-guarded on "active", so it
+                    # is a no-op against the parked failure row — terminate inline instead:
+                    # the caller asked the seat to be gone, so a doomed resume must not
+                    # leave it parked-and-locked. No release requested → parked (resumable).
+                    release_requested = bool(s.pop("_release_requested", False))
+                    if release_requested:
+                        s["state"] = "done"
+                        s["dead_reason"] = "released (close_self) during a failed resume"
+                        if self.locks.get(s.get("handle")) == sid:
+                            del self.locks[s["handle"]]
+                    else:
+                        s["state"] = "parked"   # still resumable later
+                    self._persist()
+                if release_requested:
+                    _log.info("release_after_failed_resume", sid, sid=sid, handle=handle)
+                    self._kill_session(sid)
                 _log.error("resume_failed", handle, handle=handle, sid=sid,
-                           error=repr(exc2))
+                           error=repr(exc2), released_after_resume=release_requested)
                 return {"resumed": False, "handle": handle,
                         "reason": f"fork-resume AND fresh fallback failed: "
-                        f"{exc2!r}; session left parked"}
+                        f"{exc2!r}; session left "
+                        f"{'released' if release_requested else 'parked'}",
+                        "released_after_resume": release_requested}
         with self._transition_lock:
             s["claude_session_id"] = new_claude_session
             s["state"] = "active"
@@ -1813,6 +1853,7 @@ class PoolService(Microservice):
             s["last_seen"] = s["resumed_at"] = _utc_now_iso()
             s.pop("parked", None)
             release_requested = bool(s.pop("_release_requested", False))
+            self._resuming_inflight.discard(sid)   # consult#1: launch over
             self._persist()
         _log.info("resume_done", handle, handle=handle, sid=sid,
                   via=resumed_via, claude_session=new_claude_session)
@@ -1888,10 +1929,16 @@ class PoolService(Microservice):
                 s["state"] = "done"
                 if self.locks.get(handle) == sid:
                     del self.locks[handle]
+                # consult#2: a release() deferred during the "resuming" window is already
+                # satisfied by the row going back to "done" and the lock freeing — clear the
+                # flag so a later resume of this row doesn't trip on a stale request.
+                release_requested = bool(s.pop("_release_requested", False))
                 self._persist()
-            _log.error("resume_closed_failed", handle, handle=handle, sid=sid, error=repr(exc))
+            _log.error("resume_closed_failed", handle, handle=handle, sid=sid,
+                       error=repr(exc), released_after_resume=release_requested)
             return {"resumed": False, "handle": handle,
-                    "reason": f"fork-resume of the closed session failed: {exc!r}; left closed"}
+                    "reason": f"fork-resume of the closed session failed: {exc!r}; left closed",
+                    "released_after_resume": release_requested}
         with self._transition_lock:
             s["claude_session_id"] = new_claude_session
             s["state"] = "active"

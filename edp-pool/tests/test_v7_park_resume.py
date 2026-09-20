@@ -270,6 +270,73 @@ def test_resume_of_a_dead_resuming_row_recovers_after_restart(svc, monkeypatch):
     assert svc.liveness("rec-x:s1") == "alive"
 
 
+def test_inflight_resuming_row_no_ops_even_when_the_process_reads_dead(svc, monkeypatch):
+    """Consult#1 double-spawn guard: finding 15 recovers a resuming row whose spawn
+    died across a RESTART by probing the process and fork-resuming a dead one. But a
+    resuming row can ALSO mean a fork is launching RIGHT NOW in this process — and
+    mid-launch the not-yet-spawned process probes DEAD. `_resuming_inflight` tells the
+    two apart: an in-flight row must no-op (no second launch) even though the probe is
+    dead; only a NOT-in-flight resuming row (restart orphan) is recovered."""
+    sid = svc.spawn("planner", "rec-x:s1", None, claude_session="base-uuid-1")
+    svc.sessions[sid]["state"] = "resuming"
+    svc._resuming_inflight.add(sid)              # a fork is in flight in THIS process
+    svc._kill_session(sid)                        # the child isn't up yet — probes dead
+    assert svc.spawner.alive(sid) is not True
+    before = len(svc.spawner.launched)
+    out = svc.resume("rec-x:s1")
+    assert out["resumed"] is False and out["no_op"] is True, out
+    assert "in flight" in out["reason"]
+    assert len(svc.spawner.launched) == before, "an in-flight row must NOT launch a second shell"
+
+
+def test_two_concurrent_resumes_of_an_inflight_row_launch_once(svc, monkeypatch):
+    """The watchdog and the backstop can both call resume() on the same crashed row.
+    The first flips it to `resuming` and adds it to `_resuming_inflight`; a second
+    caller that arrives while the launch is still running must see the in-flight marker
+    and no-op, so exactly ONE shell is forked."""
+    sid = _parked_planner(svc, monkeypatch, crash=True, claude_session="base-uuid-1")
+    real_launch = svc.spawner.launch
+    second: dict = {}
+
+    def _launch_then_reenter(*a, **k):
+        # a second caller races in WHILE this launch is mid-flight (row is `resuming`,
+        # marked in-flight); it must no-op rather than fork a second shell.
+        assert svc.sessions[sid]["state"] == "resuming"
+        assert sid in svc._resuming_inflight
+        second.update(svc.resume("rec-x:s1"))
+        return real_launch(*a, **k)
+
+    monkeypatch.setattr(svc.spawner, "launch", _launch_then_reenter)
+    out = svc.resume("rec-x:s1")
+    assert out["resumed"] is True and out["via"] == "fork-resume", out
+    assert second.get("no_op") is True and "in flight" in second.get("reason", ""), second
+    forks = [r for r in svc.spawner.launched
+             if r["session_id"] == sid and r.get("resume_session")]
+    assert len(forks) == 1, f"exactly one fork-resume, got {len(forks)}"
+    assert sid not in svc._resuming_inflight, "the in-flight marker is cleared at exit"
+
+
+def test_total_failure_clears_the_inflight_marker_and_honours_a_deferred_release(svc, monkeypatch):
+    """Consult#1/#2: when fork-resume AND the fresh fallback both fail the row goes back
+    to `parked`, the in-flight marker is cleared (a later resume can retry), and a
+    release deferred during the resuming window is honoured, not stranded on the row."""
+    sid = _parked_planner(svc, monkeypatch, crash=True, claude_session="base-uuid-1")
+
+    def _always_fails(*a, **k):
+        # a close_self lands while the (doomed) launch is in flight
+        svc.release(sid)
+        raise RuntimeError("no spawns today")
+
+    monkeypatch.setattr(svc.spawner, "launch", _always_fails)
+    out = svc.resume("rec-x:s1")
+    assert out["resumed"] is False and out.get("released_after_resume") is True, out
+    row = svc.sessions[sid]
+    assert row["state"] == "done", "the deferred release was honoured on the failure path"
+    assert "_release_requested" not in row
+    assert sid not in svc._resuming_inflight, "the in-flight marker is cleared on failure"
+    assert "rec-x:s1" not in svc.locks
+
+
 def test_release_during_resuming_is_deferred_and_honoured(svc, monkeypatch):
     """S11 finding 16: a close_self (release) arriving while the row is `resuming`
     was silently dropped (only `starting` deferred), leaving a phantom `active` row
