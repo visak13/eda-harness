@@ -33,8 +33,10 @@ interface Summary {
 }
 
 // The rail per revision3-clean (design-a2e5369133 §AppShell): brand, Epics, Seats, a divider,
-// Needs you with its coral count, the CURRENT EPIC block, then (lower) Usage, Notifications, Find
-// and the account row. There is NO global header any more (owner defect: "the epic header takes
+// Needs you with its coral count, the CURRENT EPIC block, then (lower) Usage directly above Find
+// and the account row. Notifications are NOT a rail item between Usage and Find (finding 6): the
+// Board-notifications region lives in the account cluster (always mounted so its worker/authorization
+// keep running, even with the menu closed). There is NO global header any more (owner defect: "the epic header takes
 // many pixels for two buttons"): New epic lives on the Epics page, help and preferences live in
 // the account menu, and a pending live refresh is an inline banner at the top of main.
 const NAV = [
@@ -185,7 +187,6 @@ function AppShellChrome(): React.JSX.Element {
           <div id="shell-usage-slot" data-testid="usage-slot">
             {whoami.data ? <UsageWidget key={whoami.data.participant.id} actor={whoami.data.participant.id} /> : null}
           </div>
-          {whoami.data ? <NotificationCenter key={whoami.data.participant.id} actor={whoami.data.participant.id} /> : null}
           <button ref={findBtnRef} className={styles.railBtn} type="button" aria-label="Find (Ctrl-K)"
             {...copyProps("sidebar", "find")} aria-haspopup="dialog" aria-expanded={findOpen}
             onClick={() => setFindOpen(true)} data-testid="find-open">
@@ -206,6 +207,9 @@ function AppShellChrome(): React.JSX.Element {
               </small>
             </span>
           </button>
+          {/* Notifications live with the account, not as a rail item between Usage and Find (finding 6).
+              Always mounted so the worker poll and the S5 request-authorization run even when closed. */}
+          {whoami.data ? <NotificationCenter key={whoami.data.participant.id} actor={whoami.data.participant.id} /> : null}
           {accountOpen ? (
             <AnchoredPanel anchor={accountRef} label="Account and preferences" heading="Account" onClose={closeAccount} width={340}>
               <p className={styles.accountWho}><strong>{as}</strong>{role ? ` · ${role}` : ""}</p>
