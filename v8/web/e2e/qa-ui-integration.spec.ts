@@ -10,7 +10,7 @@ test('populated 235-message history keeps total, draft and viewport anchor', asy
     expect(r.ok()).toBe(true);
   }
   await page.goto(`/ui/epic/${epic.id}?as=owner`);
-  await expect(page.getByTestId('conversation-total')).toHaveText('Conversation (235)');
+  await expect(page.getByTestId('conversation-total')).toHaveText('235 messages');
   await expect(page.getByRole('tablist')).toHaveCount(0);
   const draft = page.getByRole('textbox', { name: 'Message', exact: true });
   await draft.fill('QA KEEP independent source draft');
@@ -70,7 +70,7 @@ test('representative three-message conversation comparison', async ({ page, requ
   await expect(page.getByTestId('thread').locator(':scope > li')).toHaveCount(3);
   await expect(page.getByRole('button', { name: /Design · review requested/ })).toBeVisible();
   await page.getByTestId('order-toggle').click();
-  await expect(page.getByTestId('thread').getByRole('img', { name: artifact.id, exact: true })).toBeVisible();
+  await expect(page.getByTestId('thread').locator(`[data-testid="attachment-card"][data-artifact="${artifact.id}"] img`)).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
   fs.mkdirSync('e2e/evidence/s3-final-layout', { recursive: true });
   await page.screenshot({ path: 'e2e/evidence/s3-final-layout/representative-1440.png' });
