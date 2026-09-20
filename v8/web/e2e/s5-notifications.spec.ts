@@ -10,12 +10,17 @@ test('integrated feed, real IDB multitab ledger, private display and draft-safe 
   };
   const epic = await post('/v1/tickets', { kind: 'epic', work_type: 'feature', title: 'Notification integration' });
   await page.goto(`/ui/epic/${epic.id}?as=owner`);
+  // S10 c-1165c735b6: Notifications is no longer a rail row — its UI lives inside the account menu.
+  await page.getByTestId('account-open').click();
   const panel = page.getByRole('region', { name: 'Board notifications' });
-  await panel.locator('summary').click();
+  await expect(panel).toBeVisible();
   const baseline = page.waitForResponse(res => res.url().includes('/v1/me/notifications?since=-1'));
   await panel.getByRole('button', { name: 'Enable notifications' }).click();
   await baseline;
   await expect(panel.getByRole('status')).toContainText('enabled while');
+  // Close the account menu so its overlay does not cover the conversation the test drives next.
+  await page.getByTestId('account-open').click();
+  await expect(panel).toBeHidden();
   const worker = context.serviceWorkers()[0]; expect(worker).toBeTruthy();
   // Suppress desktop UI only inside this owned test worker; exercise real ledger + handshake.
   await worker.evaluate(() => {
@@ -67,7 +72,9 @@ test('integrated feed, real IDB multitab ledger, private display and draft-safe 
   await selected.getByRole('textbox', { name: 'Message', exact: true }).fill('');
   await selected.getByRole('button', { name: 'Open waiting request' }).click();
   await expect(selected).toHaveURL(new RegExp(`request=${notification.data.request}#${message.id}`));
-  await selected.getByRole('region', { name: 'Board notifications' }).locator('details').evaluate(el => { (el as HTMLDetailsElement).open = true; });
+  // Open the account menu so the notifications panel is on screen for the audit and screenshot.
+  await selected.getByTestId('account-open').click();
+  await expect(selected.getByRole('region', { name: 'Board notifications' })).toBeVisible();
   // @ts-expect-error shared axe adapter has dual playwright-core types
   const audit = await new AxeBuilder({ page: selected }).withTags(['wcag2a', 'wcag2aa']).analyze();
   expect(audit.violations.filter(v => v.impact === 'serious' || v.impact === 'critical')).toEqual([]);

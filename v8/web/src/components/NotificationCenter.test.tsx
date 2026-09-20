@@ -2,7 +2,7 @@ import { beforeEach, afterEach, it, expect, vi } from 'vitest';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { server } from '../test/setup';
 import { http, okJson, renderRoute } from '../pages/testUtils';
-import { NotificationCenter } from './NotificationCenter';
+import { NotificationCenter, NotificationPanel } from './NotificationCenter';
 import { attentionChanged } from '../live/notificationEvents';
 
 let dirty = false;
@@ -37,7 +37,10 @@ beforeEach(() => {
   }));
 });
 afterEach(() => vi.unstubAllGlobals());
-function mount() { renderRoute('/epics', '/epics', <NotificationCenter actor="owner" />); }
+// The effects live in the headless provider; the UI moved into NotificationPanel (S10
+// c-1165c735b6). The panel is rendered as the provider's child (as AppShell places it in the
+// account menu) so these assertions keep exercising the same buttons and status.
+function mount() { renderRoute('/epics', '/epics', <NotificationCenter actor="owner"><NotificationPanel /></NotificationCenter>); }
 function destination(actor = 'owner') {
   act(() => messages.dispatchEvent(new MessageEvent('message', { data: { protocol: 'edp8-notifications-v1', type: 'destination', actor, ...row } })));
 }

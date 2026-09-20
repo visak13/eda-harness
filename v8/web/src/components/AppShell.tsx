@@ -17,7 +17,7 @@ import { GlossaryPanel } from "./GlossaryPanel";
 import { CommandPalette } from "./CommandPalette";
 import { CopyDescriptions } from "./CopyDescriptions";
 import { PendingNavigation } from "./PendingNavigation";
-import { NotificationCenter } from "./NotificationCenter";
+import { NotificationCenter, NotificationPanel } from "./NotificationCenter";
 import { UsageWidget } from "./UsageWidget";
 import { copyProps, pageKeyFor } from "../copy/pages";
 import styles from "./AppShell.module.css";
@@ -141,7 +141,7 @@ function AppShellChrome(): React.JSX.Element {
     return <IdentityPanel hint={authError.hint ?? authError.message} />;
   }
 
-  return (
+  const shell = (
     <div className={styles.shell}>
       <div className={styles.mobileBar} data-testid="app-header">
         <button ref={menuRef} type="button" className={styles.menuToggle} aria-label="Workspace navigation"
@@ -207,9 +207,6 @@ function AppShellChrome(): React.JSX.Element {
               </small>
             </span>
           </button>
-          {/* Notifications live with the account, not as a rail item between Usage and Find (finding 6).
-              Always mounted so the worker poll and the S5 request-authorization run even when closed. */}
-          {whoami.data ? <NotificationCenter key={whoami.data.participant.id} actor={whoami.data.participant.id} /> : null}
           {accountOpen ? (
             <AnchoredPanel anchor={accountRef} label="Account and preferences" heading="Account" onClose={closeAccount} width={340}>
               <p className={styles.accountWho}><strong>{as}</strong>{role ? ` · ${role}` : ""}</p>
@@ -218,6 +215,10 @@ function AppShellChrome(): React.JSX.Element {
                 <button type="button" className={styles.accountLink} data-testid="glossary-open" aria-haspopup="dialog" aria-expanded={helpOpen}
                   onClick={() => { closeAccount(); setHelpOpen((o) => !o); }}><Icon name="help" size={18} /> What am I looking at? <span className={styles.key}>Ctrl /</span></button>
               </div>
+              {/* Notifications now live INSIDE the account menu (S10 c-1165c735b6 / revision3-clean-usage):
+                  no rail row. The worker poll and S5 authorization keep running in the always-mounted
+                  NotificationCenter provider that wraps the shell, even with this menu closed. */}
+              <NotificationPanel />
               <ThemePicker />
               <AvatarPicker />
             </AnchoredPanel>
@@ -243,4 +244,10 @@ function AppShellChrome(): React.JSX.Element {
       <CommandPalette open={findOpen} onClose={closeFind} />
     </div>
   );
+
+  // The notification worker/authorization run for the whole session, so the provider ALWAYS wraps the
+  // shell (NotificationPanel in the account menu reads its state). It is deliberately NOT remounted by
+  // key on identity change — that would remount the whole shell + Outlet — the provider resets its own
+  // selectors when `actor` changes. An empty actor before whoami resolves keeps every effect a no-op.
+  return <NotificationCenter actor={whoami.data?.participant.id ?? ""}>{shell}</NotificationCenter>;
 }

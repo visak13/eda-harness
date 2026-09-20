@@ -68,6 +68,8 @@ export function SettingsPage(): React.JSX.Element {
   const err = (q.error ?? save.error) as BoardApiError | Error | null;
   const forbidden = q.error instanceof BoardApiError && q.error.status === 403;
   const missing = q.error instanceof BoardApiError && q.error.status === 404;
+  // Finding 22: a 422 webhook rejection is shown as a field error on the Slack tab, not the top banner.
+  const fieldError = save.error instanceof BoardApiError && save.error.status === 422;
   function patch(next: Partial<UserSettings>) { setDirty(true); setDraft((d) => ({ ...d, ...next })); }
 
   return (
@@ -76,7 +78,7 @@ export function SettingsPage(): React.JSX.Element {
       <Tabs tabs={TABS} active={tab} onChange={(key) => setParams((old) => { const p = new URLSearchParams(old); p.set("tab", key); return p; }, { replace: true })} />
       {forbidden ? <p className={ui.banner} role="alert" data-testid="settings-forbidden">Settings belong to people. This identity is an agent seat, which has no Slack or profile to set.</p> : null}
       {missing ? <p className={ui.banner} role="alert" data-testid="settings-missing">This board predates the settings route; theme and avatar below still save. Restart the board on the current build to enable the rest.</p> : null}
-      {err && !forbidden && !missing ? <p className={ui.banner} role="alert">{("hint" in err && err.hint) || err.message}</p> : null}
+      {err && !forbidden && !missing && !fieldError ? <p className={ui.banner} role="alert">{("hint" in err && err.hint) || err.message}</p> : null}
 
       <form className={styles.form} onSubmit={(e) => { e.preventDefault(); if (!forbidden && !missing) save.mutate(); }} data-testid="settings-form" aria-label={`${tab} settings`}>
         {tab === "profile" ? (
@@ -109,7 +111,7 @@ export function SettingsPage(): React.JSX.Element {
                 onChange={(e) => patch({ notifications: { ...draft.notifications, browser: e.target.checked } })} />
               I use browser notifications on this board
             </label>
-            <p className={ui.empty}>Browser alerts are enabled per browser from the rail (Notifications → Enable); this switch records your preference on the board so a new browser can prompt you.</p>
+            <p className={ui.empty}>Browser alerts are enabled per browser from the account menu (Notifications → Enable); this switch records your preference on the board so a new browser can prompt you.</p>
             <QuietHours id="notifications" value={draft.notifications.quiet} onChange={(quiet) => patch({ notifications: { ...draft.notifications, quiet } })} />
           </section>
         ) : null}
@@ -130,8 +132,13 @@ export function SettingsPage(): React.JSX.Element {
             <label className={styles.field}>
               <span>Incoming webhook URL</span>
               <input className={ui.input} value={draft.slack.webhook_url} maxLength={400} data-testid="settings-slack-webhook" type="url"
-                placeholder="https://hooks.slack.com/services/…" onChange={(e) => patch({ slack: { ...draft.slack, webhook_url: e.target.value } })} />
-              <span className={ui.empty}>{draft.slack.webhook_set ? "A webhook is stored; it is shown masked. Paste a new one to replace it." : "Stored on the board host only; never shown back in full."}</span>
+                placeholder="https://hooks.slack.com/services/…" onChange={(e) => patch({ slack: { ...draft.slack, webhook_url: e.target.value } })}
+                aria-invalid={save.error instanceof BoardApiError && save.error.status === 422} aria-describedby="slack-webhook-error" />
+              {/* Finding 22: an invalid/off-list webhook is rejected with a 422; show the field error
+                  here and keep the draft so the person can fix it — the stored value is untouched. */}
+              {save.error instanceof BoardApiError && save.error.status === 422
+                ? <span id="slack-webhook-error" role="alert" className={styles.fieldError} data-testid="settings-slack-webhook-error">{save.error.hint || save.error.message}</span>
+                : <span className={ui.empty}>{draft.slack.webhook_set ? "A webhook is stored; it is shown masked. Paste a new one to replace it." : "Stored on the board host only; never shown back in full."}</span>}
             </label>
             <QuietHours id="slack" value={draft.slack.quiet} onChange={(quiet) => patch({ slack: { ...draft.slack, quiet } })} />
             <div className={styles.actions}>

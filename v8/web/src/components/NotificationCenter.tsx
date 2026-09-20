@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { api } from '../api/client';
 import { attention, type AttentionRequest } from '../api/notifications';
@@ -50,8 +50,48 @@ export async function showAttention(target: ServiceWorker, actor: string, row: A
   });
 }
 
+// S10 criterion c-1165c735b6 / revision3-clean-usage: Notifications is NOT a rail item. The worker
+// poll and the S5 request-authorization must keep running whenever a board tab is open, so the
+// EFFECTS live in a headless provider (NotificationCenter) mounted once in the shell, while the UI
+// (Enable / Disable / Test / status) is rendered by NotificationPanel INSIDE the account menu.
+// Request-level statuses and a waiting destination surface globally (a toast), independent of the
+// menu, because a request can arrive while the menu is closed.
+interface NotificationApi {
+  enabled: boolean;
+  status: string;
+  busy: boolean;
+  supported: boolean;
+  pending: AttentionRequest | null;
+  enable: () => void;
+  disable: () => void;
+  test: () => void;
+  openPending: () => void;
+  dismissPending: () => void;
+}
+const NotificationCtx = createContext<NotificationApi | null>(null);
+
+/** The account-menu UI. Reads the shared notification state from context; renders nothing outside a
+ *  provider. The account menu is itself the disclosure, so there is no rail row / <details> here. */
+export function NotificationPanel(): React.JSX.Element | null {
+  const n = useContext(NotificationCtx);
+  if (!n) return null;
+  const configStatus = !(n.status.startsWith('Request ') || n.status.startsWith('Could not') || n.status.startsWith('This request'));
+  return <section className={styles.root} aria-label="Board notifications" data-testid="notification-panel">
+    <h3 className={styles.heading}><Icon name="warning" size={16} /> Notifications</h3>
+    <p>Private alerts for new questions and approval requests. Keep a board tab open; no delivery when the browser is closed.</p>
+    <div className={styles.actions}>
+      {!n.enabled ? <button disabled={n.busy || !n.supported} onClick={n.enable}>Enable notifications</button> : <>
+        <button onClick={n.disable}>Disable notifications</button>
+        <button disabled={n.busy} onClick={n.test}>Send test notification</button>
+      </>}
+      <Link to="/me">Needs you</Link>
+    </div>
+    {configStatus ? <p role="status">{n.status}</p> : null}
+  </section>;
+}
+
 /** The worker holds selectors only. Every identity challenge and click rechecks server authority. */
-export function NotificationCenter({ actor }: { actor: string }): React.JSX.Element {
+export function NotificationCenter({ actor, children }: { actor: string; children?: React.ReactNode }): React.JSX.Element {
   const navigate = useNavigate();
   const { hasDirty } = useDraftGuard();
   const [enabled, setEnabled] = useState(() => enabledFor(actor));
@@ -65,6 +105,17 @@ export function NotificationCenter({ actor }: { actor: string }): React.JSX.Elem
     enabledRef.current = value; authorizationGeneration.current += 1; setEnabled(value);
   }, []);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  // The provider is not remounted by key on identity change (that would remount the whole shell), so
+  // reset its per-participant selectors when `actor` changes — a re-login must not carry the previous
+  // person's enabled/status/pending. The poll and message effects re-subscribe via their `actor` dep.
+  const actorRef = useRef(actor);
+  useEffect(() => {
+    if (actorRef.current === actor) return;   // skip the initial mount
+    actorRef.current = actor;
+    const on = enabledFor(actor);
+    enabledRef.current = on; authorizationGeneration.current += 1;
+    setEnabled(on); setStatus(notificationState(on)); setPending(null);
+  }, [actor]);
   const open = useCallback(async (request: string, initial = false) => {
     const landing = new URL(window.location.href);
     try {
@@ -186,19 +237,27 @@ export function NotificationCenter({ actor }: { actor: string }): React.JSX.Elem
     } catch { setStatus('Could not send test notification. Check browser permission; use Needs you.'); }
     finally { setBusy(false); }
   };
-  return <section className={styles.root} aria-label="Board notifications">
-    <details><summary><Icon name="warning" size={18} />Notifications</summary>
-      <p>Private alerts for new questions and approval requests. Keep a board tab open; no delivery when the browser is closed.</p>
-      <div className={styles.actions}>
-        {!enabled ? <button disabled={busy || !supported()} onClick={() => void enable()}>Enable notifications</button> : <>
-          <button onClick={() => { try { localStorage.removeItem(pref(actor)); } catch { /* session disable still works */ } changeEnabled(false); }}>Disable notifications</button>
-          <button disabled={busy} onClick={() => void test()}>Send test notification</button>
-        </>}
-        <Link to="/me">Needs you</Link>
-      </div>
-      {!(status.startsWith('Request ') || status.startsWith('Could not') || status.startsWith('This request')) ? <p role="status">{status}</p> : null}
-    </details>
-    {status.startsWith('Request ') || status.startsWith('Could not') || status.startsWith('This request') ? <p role="status">{status}</p> : null}
-    {pending ? <div className={styles.actions}><button onClick={() => void open(pending.request)}>Open waiting request</button><button onClick={() => { setPending(null); setStatus(notificationState(enabled)); }}>Dismiss destination</button></div> : null}
-  </section>;
+  const disable = useCallback(() => {
+    try { localStorage.removeItem(pref(actor)); } catch { /* session disable still works */ }
+    changeEnabled(false);
+  }, [actor, changeEnabled]);
+  const requestStatus = status.startsWith('Request ') || status.startsWith('Could not') || status.startsWith('This request');
+  const value: NotificationApi = {
+    enabled, status, busy, supported: supported(), pending,
+    enable: () => void enable(), disable, test: () => void test(),
+    openPending: () => { if (pending) void open(pending.request); },
+    dismissPending: () => { setPending(null); setStatus(notificationState(enabled)); },
+  };
+  return <NotificationCtx.Provider value={value}>
+    {children}
+    {/* Request-level status and a waiting destination surface globally — a request can arrive with
+        the account menu closed, so these do not live in NotificationPanel. */}
+    {(requestStatus || pending) ? <div className={styles.toast} aria-live="polite" data-testid="notification-toast">
+      {requestStatus ? <p role="status">{status}</p> : null}
+      {pending ? <div className={styles.actions}>
+        <button onClick={value.openPending}>Open waiting request</button>
+        <button onClick={value.dismissPending}>Dismiss destination</button>
+      </div> : null}
+    </div> : null}
+  </NotificationCtx.Provider>;
 }

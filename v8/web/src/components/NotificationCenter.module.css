@@ -9,6 +9,14 @@
 .root details[open] summary { padding-left: 0; }
 .root details[open] summary:hover { background: transparent; }
 .root p { margin: 4px 0 8px; font-size: 13px; line-height: 18px; }
+/* In the account menu (no rail row / <details>): a compact heading above the actions. */
+.heading { display: flex; align-items: center; gap: 8px; margin: 4px 0 6px; font-size: 14px; color: var(--ink); }
+/* Request-level status + waiting destination, surfaced globally so a request that arrives with the
+   account menu closed is still actionable (design-a2e5369133 §notifications). */
+.toast { position: fixed; left: 16px; bottom: 16px; z-index: 40; max-width: 320px; padding: 10px 12px;
+  background: var(--panel); border: 1.5px solid var(--strongline); border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18); color: var(--muted); font-size: 13px; }
+.toast p { margin: 0 0 6px; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .actions button, .actions a { min-height: 34px; padding: 4px 8px; white-space: normal; overflow-wrap: anywhere; max-width: 100%; font: inherit; font-size: 13px; }
 .actions button { color: var(--ink); background: var(--panel); border: 1.5px solid var(--strongline); border-radius: 8px; cursor: pointer; }
