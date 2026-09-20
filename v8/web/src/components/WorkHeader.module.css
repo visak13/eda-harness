@@ -27,3 +27,21 @@
 .openTab { margin-left: auto; font: inherit; font-size: 14px; color: var(--ink); display: inline-flex; align-items: center; gap: 6px; text-decoration: underline; }
 @media (max-width: 1100px) { .metadata { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .metadata { grid-template-columns: minmax(0, 1fr); } .title { font-size: 26px; } }
+
+/* Compact header on a phone (finding 19): the metadata grid + links collapse behind a disclosure
+   below 768px so the conversation is the first screen. Wide: the disclosure chrome is hidden and the
+   header renders open (WorkHeader keeps `open` true above 767px), so the grid/links show as before. */
+.context { margin: 0; min-width: 0; }
+.context > summary { display: none; }
+.contextSummary { list-style: none; }
+.contextSummary::-webkit-details-marker { display: none; }
+@media (max-width: 767px) {
+  .context > summary {
+    display: flex; align-items: center; gap: 10px; cursor: pointer;
+    min-height: 40px; padding: 6px 0; color: var(--muted); font-size: 14px;
+  }
+  .context > summary :global(.badge) { flex: none; }
+  .context > summary > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .context > summary::after { content: "▾"; margin-left: auto; }
+  .context[open] > summary::after { content: "▴"; }
+}

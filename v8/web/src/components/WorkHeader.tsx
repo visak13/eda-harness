@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { Link, useSearchParams } from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { Avatar } from "./Avatar";
 import { StatusChip } from "./StatusChip";
 import { Drawer } from "./Drawer";
@@ -43,8 +43,17 @@ function short(text: string | null | undefined): string | null {
   return line.length > 180 ? `${line.slice(0, 177)}…` : line;
 }
 
+// Legacy pre-R1 destinations (old Slack pings and bookmarks carry these): the tabbed epic/ticket
+// used ?tab=/#hash; R1 replaced the tabs with the links-row viewers (epic c-bb6cf0d4d6 keeps the
+// old navigation working). documents→the Files viewer, work/overview→the Work viewer, thread is the
+// conversation itself (no viewer). A #m-<id> message anchor always wins — it scrolls to the message
+// and never opens a viewer (the page owns that hash).
+const LEGACY_VIEW: Record<string, string | null> = { documents: "files", work: "work", overview: "work", thread: null };
+
 export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
   const [params, setParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const { openDoc } = useDocDrawer();
   const ctx = useWorkContext(p.ticketId);
   const view = params.get("view");
@@ -73,6 +82,41 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
       setParams((old) => { const next = new URLSearchParams(old); next.set("doc", designRef); return next; }, { replace: true });
     }
   }, [request, data, designRef, params, setParams]);
+
+  // Migrate a legacy ?tab=/#hash entry once (finding 9, epic c-bb6cf0d4d6): rewrite it to ?view=
+  // (replace) so an old bookmark opens the matching viewer. A #m- message anchor wins — the tab is
+  // dropped but no viewer opens and the anchor is kept so the page can scroll to the message.
+  const migrated = useRef(false);
+  useEffect(() => {
+    if (migrated.current) return;
+    const anchor = location.hash.startsWith("#m-");
+    const tab = params.get("tab");
+    const hashKey = anchor ? "" : location.hash.replace(/^#/, "");
+    const key = tab && tab in LEGACY_VIEW ? tab : hashKey in LEGACY_VIEW ? hashKey : null;
+    if (!tab && key === null) return;
+    migrated.current = true;
+    const nextView = anchor ? null : key ? LEGACY_VIEW[key] : null;
+    const q = new URLSearchParams(params);
+    q.delete("tab");
+    if (nextView && !q.get("view")) q.set("view", nextView);
+    const search = q.toString();
+    navigate({ search: search ? `?${search}` : "", hash: anchor ? location.hash : "" }, { replace: true });
+  }, [location.hash, params, navigate]);
+
+  // Compact header on a phone (finding 19, epic c-63fdab92a4 / conversation-first): the metadata
+  // grid and links row collapse behind a disclosure below 768px so the first message is in the first
+  // viewport; open (and the disclosure UI hidden) at wider widths. Defaults open so jsdom, which has
+  // no matchMedia, still renders the metadata for the unit tests.
+  const [contextOpen, setContextOpen] = useState(true);
+  useEffect(() => {
+    const mq = window.matchMedia?.("(max-width: 767px)");
+    if (!mq) return;
+    const apply = () => setContextOpen(!mq.matches);
+    apply();
+    mq.addEventListener?.("change", apply);
+    return () => mq.removeEventListener?.("change", apply);
+  }, []);
+
   const viewerTitle = view === "history" ? "History" : view === "work" ? "Work" : "Files & evidence";
   const crumbTitle = p.kind === "epic" ? p.title : p.epic?.title ?? p.epic?.id ?? "Epic";
   const crumbTo = p.kind === "epic" ? "/epics" : `/epic/${encodeURIComponent(p.epic?.id ?? "")}`;
@@ -94,6 +138,11 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
       <h1 className={styles.title} data-testid="work-title">{p.title}</h1>
       {short(p.purpose) ? <p className={styles.purpose} data-testid="work-purpose">{short(p.purpose)}</p> : null}
 
+      <details className={styles.context} open={contextOpen} onToggle={(e) => setContextOpen(e.currentTarget.open)}>
+        <summary className={styles.contextSummary} data-testid="work-context-toggle">
+          <StatusChip status={p.status} size="badge" />
+          <span>{attention || "Details, files & history"}</span>
+        </summary>
       <dl className={styles.metadata} data-testid="work-metadata">
         <div>
           <dt className={styles.label}>Status</dt>
@@ -126,6 +175,7 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
         <button type="button" className={styles.link} onClick={() => choose("history")} data-testid="work-history"><Icon name="history" /> History</button>
         <button type="button" className={styles.link} onClick={() => choose("work")} data-testid="work-work"><Icon name="work" /> Work</button>
       </div>
+      </details>
 
       <Drawer open={drawerOpen} label={viewerTitle} title={<span className={styles.drawerTitle}>{viewerTitle}
         {view !== "work" ? <Link className={styles.openTab} target="_blank" to={`/records/${encodeURIComponent(p.ticketId)}?${new URLSearchParams({ view: view ?? "files", ...(params.get("category") ? { category: params.get("category")! } : {}), as: identity() })}`}>Open in tab <Icon name="external" size={16} /></Link> : null}

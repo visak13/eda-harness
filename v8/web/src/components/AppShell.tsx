@@ -143,7 +143,7 @@ function AppShellChrome(): React.JSX.Element {
 
   return (
     <div className={styles.shell}>
-      <div className={styles.mobileBar}>
+      <div className={styles.mobileBar} data-testid="app-header">
         <button ref={menuRef} type="button" className={styles.menuToggle} aria-label="Workspace navigation"
           aria-expanded={menuOpen} aria-controls="workspace-navigation" onClick={() => setMenuOpen((open) => !open)}>
           Menu
