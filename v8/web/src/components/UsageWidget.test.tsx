@@ -53,6 +53,20 @@ describe("subscription Usage widget", () => {
     expect(screen.getByText(/times are local/i)).toBeInTheDocument();
   });
 
+  it("traps Tab within the nonmodal panel — a Tab off Close stays inside, panel open (finding 7)", async () => {
+    mount();
+    fireEvent.click(screen.getByRole("button", { name: "Usage" }));
+    await screen.findByText("0% used");
+    const dialog = screen.getByRole("dialog", { name: "Subscription usage" });
+    const close = screen.getByRole("button", { name: "Close Subscription usage" });
+    close.focus();
+    fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true }); // Shift+Tab off the first control wraps to the last
+    expect(screen.getByRole("dialog")).toBeInTheDocument(); // panel stays open
+    expect(dialog.contains(document.activeElement)).toBe(true); // focus never left the panel
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  });
+
   it("Escape and Close return trigger focus without altering draft or URL; outside focus leaves freely", async () => {
     mount();
     const url = location.href;

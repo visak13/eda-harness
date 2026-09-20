@@ -96,6 +96,35 @@ describe("Drawer", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it("restores focus to the opening trigger when no returnFocusTo is given (finding 7)", () => {
+    const trigger = document.createElement("button");
+    document.body.appendChild(trigger);
+    trigger.focus();
+    const { rerender } = render(
+      <Drawer open onClose={() => {}} title="T"><button type="button">first</button></Drawer>,
+    );
+    expect(document.activeElement).not.toBe(trigger); // focus moved into the drawer
+    rerender(<Drawer open={false} onClose={() => {}} title="T"><button type="button">first</button></Drawer>);
+    expect(document.activeElement).toBe(trigger); // Esc/close returns to the trigger, not body
+    trigger.remove();
+  });
+
+  it("returns focus to the trigger even if returnFocusTo is cleared while open — never to body (finding 7)", () => {
+    const trigger = document.createElement("button");
+    document.body.appendChild(trigger);
+    trigger.focus();
+    const { rerender } = render(
+      <Drawer open onClose={() => {}} title="T" returnFocusTo={trigger}><button type="button">first</button></Drawer>,
+    );
+    // A re-render clears returnFocusTo while the drawer is open (focus is inside it now); the opener
+    // captured at open must not be overwritten with an in-drawer node, or close would land on body.
+    rerender(<Drawer open onClose={() => {}} title="T" returnFocusTo={null}><button type="button">first</button></Drawer>);
+    rerender(<Drawer open={false} onClose={() => {}} title="T" returnFocusTo={null}><button type="button">first</button></Drawer>);
+    expect(document.activeElement).toBe(trigger);
+    expect(document.activeElement).not.toBe(document.body);
+    trigger.remove();
+  });
+
   it("restores focus to returnFocusTo when it closes", () => {
     const returnTarget = document.createElement("button");
     document.body.appendChild(returnTarget);

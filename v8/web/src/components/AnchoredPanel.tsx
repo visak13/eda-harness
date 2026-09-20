@@ -41,8 +41,22 @@ export function AnchoredPanel({ anchor, label, heading, onClose, children, width
       if (e.target instanceof Node && !el.contains(e.target) && !anchor.current?.contains(e.target)) onClose();
     };
     const key = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.preventDefault(); e.stopPropagation(); onClose(); anchor.current?.focus();
+      if (e.key === "Escape") {
+        e.preventDefault(); e.stopPropagation(); onClose(); anchor.current?.focus();
+        return;
+      }
+      // Tab is trapped within the nonmodal panel so focus never falls out of it (finding 7): a Tab
+      // off the Close button wraps back to the first control instead of leaving the panel open with
+      // focus outside. Shift+Tab off the first control wraps to the last.
+      if (e.key !== "Tab") return;
+      const focusables = Array.from(el.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), textarea, input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )).filter((n) => n.offsetParent !== null || n === document.activeElement);
+      if (focusables.length === 0) { e.preventDefault(); el.focus(); return; }
+      const first = focusables[0], last = focusables[focusables.length - 1];
+      const active = document.activeElement as HTMLElement;
+      if (e.shiftKey && (active === first || active === el)) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
     };
     document.addEventListener("pointerdown", outside);
     document.addEventListener("focusin", outside);

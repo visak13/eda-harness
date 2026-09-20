@@ -25,6 +25,12 @@ export function Drawer({
 }): React.JSX.Element | null {
   const panelRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
+  // Read the latest returnFocusTo at close without making it a focus-effect dependency: if it were,
+  // a re-render while the drawer is open would re-run the effect and re-capture openerRef as some
+  // node INSIDE the drawer, so Esc would then restore focus to a now-unmounted node (→ body). The
+  // trigger is captured once, on the closed→open transition (finding 7).
+  const returnRef = useRef(returnFocusTo);
+  returnRef.current = returnFocusTo;
   const [held, setHeld] = useState(false);
   function requestClose() {
     if (panelRef.current?.querySelector('[data-busy="true"]')) { setHeld(true); return; }
@@ -52,11 +58,11 @@ export function Drawer({
     );
     (first ?? panel)?.focus();
     return () => {
-      const target = returnFocusTo ?? openerRef.current;
-      // Restore focus after the drawer unmounts (design §6: Esc restores focus).
+      const target = returnRef.current ?? openerRef.current;
+      // Restore focus after the drawer unmounts (design §6: Esc restores focus to the trigger).
       target?.focus?.();
     };
-  }, [open, returnFocusTo]);
+  }, [open]);
 
   // Lock body scroll while open (the page beneath keeps its scroll position — §17).
   useEffect(() => {
