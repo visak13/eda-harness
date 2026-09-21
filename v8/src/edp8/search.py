@@ -27,6 +27,14 @@ EMBED_BATCH = 8
 EMBED_MAX_TOKENS = 512
 EMBED_MAX_CHARS = 2000  # char backstop in case the tokenizer cap cannot be applied
 BULK_THRESHOLD = 32  # more un-embedded units than this -> embed in a background thread, FTS meanwhile
+# Board resident cost (2026-09-21 owner order m-6fba97db17 / steer m-e5133ef308): onnxruntime's CPU
+# memory arena pre-allocates and RETAINS a pool sized to the peak allocation, so the board's RSS
+# stayed at ~2.2 GB long after a bounded warm. Turn the arena off (RSS then tracks live use, which
+# after batch-8/512-token calls is small) and cap ORT threads (each op thread keeps its own arena).
+# Vectors are byte-identical either way, so seed recall is unchanged.
+EMBED_THREADS = int(os.environ.get("EDP8_EMBED_THREADS", "1"))
+EMBED_ARENA = os.environ.get("EDP8_EMBED_ARENA", "0") == "1"  # default OFF
+EMBED_MODEL = os.environ.get("EDP8_EMBED_MODEL", "nomic-ai/nomic-embed-text-v1.5")  # smaller model is a drop-in
 
 
 def _free_ram_gb() -> float | None:
@@ -176,7 +184,15 @@ class FastEmbedEmbedder:
         from fastembed import TextEmbedding
 
         before = _rss_mb()
-        self._model = TextEmbedding(model_name="nomic-ai/nomic-embed-text-v1.5")
+        # arena off + capped threads keep the board's idle RSS low (see EMBED_* notes). Fall back to a
+        # plain construction if a fastembed build does not accept these kwargs, so the board never
+        # fails to start over a memory tweak.
+        try:
+            self._model = TextEmbedding(model_name=EMBED_MODEL, threads=EMBED_THREADS,
+                                        enable_cpu_mem_arena=EMBED_ARENA)
+        except TypeError:
+            self._model = TextEmbedding(model_name=EMBED_MODEL)
+        self.model_name = EMBED_MODEL
         after = _rss_mb()
         # R2-6: report the model's resident footprint so a memory-tight host is legible
         self.resident_mb: float | None = round(after - before, 1) if (before and after) else after
@@ -333,11 +349,15 @@ class Index:
                 cached = self._cache.count()
             except Exception:
                 cached = None
-        return {"embedder": emb.name, "embeddings_active": on, "warming": self._warming,
-                "reason": getattr(emb, "fallback_reason", None),
-                "model_mb": getattr(emb, "resident_mb", None),
-                "cached_vectors": cached,
-                "free_ram_gb": round(g, 2) if (g := _free_ram_gb()) is not None else None}
+        st = {"embedder": emb.name, "embeddings_active": on, "warming": self._warming,
+              "reason": getattr(emb, "fallback_reason", None),
+              "model_mb": getattr(emb, "resident_mb", None),
+              "cached_vectors": cached,
+              "free_ram_gb": round(g, 2) if (g := _free_ram_gb()) is not None else None}
+        if emb.name == "fastembed":  # so the receipt shows the resident-cost config in effect
+            st.update({"model": getattr(emb, "model_name", EMBED_MODEL),
+                       "arena": EMBED_ARENA, "threads": EMBED_THREADS})
+        return st
 
     def _missing(self) -> list[tuple[str, str]]:
         """Units whose current text has no cached vector (new or edited)."""
@@ -439,6 +459,50 @@ class Index:
                     self._vecs[key] = (txt, vec)
                 self._persist(missing, vecs)
         self._build_matrix()
+
+    def reembed(self) -> dict:
+        """R2 item-3: embed every unit that lacks a current vector, via the SAME bounded path as a
+        normal reindex (batch 8, 512-token cap, RAM re-check between batches). Safe to trigger anytime
+        with no board restart — a bulk backlog warms in the background thread, a small delta embeds
+        inline. Returns counts so the caller can report how many are still unembedded (e.g. after the
+        RAM guard aborted a warm). This is the only sanctioned re-embed entry point (hard rule 4)."""
+        with self._lock:
+            if self._embedder.name == "none":
+                return {"embedder": "none", "missing": len(self._missing()), "warming": False,
+                        "reason": getattr(self._embedder, "fallback_reason", None)}
+            self._hydrate_from_cache()
+            missing = self._missing()
+            if not missing:
+                self._build_matrix()
+                return {"embedder": self._embedder.name, "missing": 0, "warming": self._warming,
+                        "embedded_now": 0}
+            if self._warming:
+                return {"embedder": self._embedder.name, "missing": len(missing), "warming": True}
+            if len(missing) > BULK_THRESHOLD:
+                self._warming = True
+                self._warm_thread = threading.Thread(target=self._warm, name="edp8-embed-warm", daemon=True)
+                self._warm_thread.start()
+                return {"embedder": self._embedder.name, "missing": len(missing), "warming": True}
+            try:
+                vecs = self._embedder.embed([txt for _, txt in missing], is_query=False)
+            except Exception as e:  # e.g. the mid-embed RAM guard: keep what is cached, report it
+                self._build_matrix()
+                return {"embedder": self._embedder.name, "missing": len(self._missing()),
+                        "warming": False, "error": str(e)}
+            if len(vecs) == len(missing):
+                for (key, txt), vec in zip(missing, vecs):
+                    self._vecs[key] = (txt, vec)
+                self._persist(missing, vecs)
+            self._build_matrix()
+            return {"embedder": self._embedder.name, "missing": len(self._missing()),
+                    "warming": False, "embedded_now": len(missing)}
+
+    def embedded_ids(self, type_: str) -> set[str]:
+        """The ids of `type_` that currently have a live vector in the dense matrix (R2 item-3
+        embedded/unembedded accounting)."""
+        with self._lock:
+            keys = set(self._dense_keys)
+            return {self._units[k][1] for k in keys if k in self._units and self._units[k][0] == type_}
 
     def search(
         self,

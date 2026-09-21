@@ -389,6 +389,108 @@ def test_edited_unit_reembeds_and_persists(monkeypatch, tmp_path):
     assert search.VectorCache(cache_path).count() == 2  # both the original and the edited vector
 
 
+def test_reembed_embeds_missing_units_inline(monkeypatch):
+    from edp8 import search
+    monkeypatch.setattr(search, "_free_ram_gb", lambda: 8.0)
+    emb = _stub_fastembed(search)
+    idx = search.Index(embedder=emb)
+    idx.upsert("decision", "1", "a rule")   # marks dirty, no embed yet
+    idx.upsert("decision", "2", "another rule")
+    st = idx.reembed()
+    assert st["missing"] == 0 and st["embedded_now"] == 2
+    assert idx.embedded_ids("decision") == {"1", "2"}
+
+
+def test_reembed_bulk_warms_in_background(monkeypatch):
+    from edp8 import search
+    monkeypatch.setattr(search, "_free_ram_gb", lambda: 8.0)
+    emb = _stub_fastembed(search)
+    idx = search.Index(embedder=emb)
+    for i in range(search.BULK_THRESHOLD * 2):
+        idx.upsert("decision", str(i), f"rule {i}")
+    st = idx.reembed()
+    assert st["warming"] is True
+    idx._warm_thread.join(timeout=10)
+    assert len(idx.embedded_ids("decision")) == search.BULK_THRESHOLD * 2
+
+
+def test_reembed_none_embedder_is_noop():
+    from edp8.search import Index, NullEmbedder
+    idx = Index(embedder=NullEmbedder(fallback_reason="EDP8_EMBEDDER=none"))
+    idx.upsert("decision", "1", "x")
+    st = idx.reembed()
+    assert st["embedder"] == "none" and st["warming"] is False
+
+
+def test_embed_counts_per_epic(monkeypatch, rig):
+    from edp8 import search
+    from edp8.board import Board
+    from edp8.store import Store
+    monkeypatch.setattr(search, "_free_ram_gb", lambda: 8.0)
+    b = Board(Store(":memory:"), search.Index(embedder=_stub_fastembed(search)))
+    owner = b.participant_create("human", Role.owner, "o2")
+    epic = b.ticket_create(owner, kind=TicketKind.epic, work_type=WorkType.feature, title="E")
+    d1 = b.record_decision(owner, scope=epic.id, text="rule one about hosts")
+    d2 = b.record_decision(owner, scope=epic.id, text="rule two about hosts")
+    gone = b.record_decision(owner, scope=epic.id, text="mistaken rule")
+    b.withdraw_decision(owner, decision_id=gone.id, reason="oops")
+    b.reembed()
+    counts = b.embed_counts(epic.id)
+    assert counts["epic"] == epic.id
+    assert counts["decision"]["live"] == 2  # the withdrawn one is not live
+    assert counts["decision"]["embedded"] == 2 and counts["decision"]["unembedded"] == 0
+    assert {d1.id, d2.id} == b.index.embedded_ids("decision") & {d1.id, d2.id}
+
+
+class _FakeTE:
+    def __init__(self, model_name, **kwargs):
+        self.model_name = model_name
+        self.kwargs = kwargs
+
+
+class _FakeTENoKwargs:
+    def __init__(self, model_name, **kwargs):
+        if kwargs:
+            raise TypeError("this build does not accept session kwargs")
+        self.model_name = model_name
+
+
+def _inject_fake_fastembed(monkeypatch, cls):
+    # Inject a fake `fastembed` module so FastEmbedEmbedder's `from fastembed import TextEmbedding`
+    # binds the fake — this never loads the real model or onnxruntime (hard rule: no model in tests).
+    import sys
+    import types
+    fake = types.ModuleType("fastembed")
+    fake.TextEmbedding = cls
+    monkeypatch.setitem(sys.modules, "fastembed", fake)
+
+
+def test_fastembed_passes_arena_off_and_thread_cap(monkeypatch):
+    # Board resident-cost fix (m-e5133ef308): the ONNX memory arena is turned OFF and threads capped.
+    from edp8 import search
+    _inject_fake_fastembed(monkeypatch, _FakeTE)
+    emb = search.FastEmbedEmbedder()
+    assert emb._model.kwargs["enable_cpu_mem_arena"] is False
+    assert emb._model.kwargs["threads"] == search.EMBED_THREADS
+    assert emb._model.model_name == search.EMBED_MODEL
+
+
+def test_fastembed_falls_back_when_kwargs_unsupported(monkeypatch):
+    from edp8 import search
+    _inject_fake_fastembed(monkeypatch, _FakeTENoKwargs)
+    emb = search.FastEmbedEmbedder()  # must not raise — plain construction fallback
+    assert emb._model.model_name == search.EMBED_MODEL
+
+
+def test_status_reports_embed_config_for_fastembed(monkeypatch):
+    from edp8 import search
+    idx = search.Index(embedder=_stub_fastembed(search))
+    st = idx.status()
+    assert st["embedder"] == "fastembed"
+    assert st["arena"] == search.EMBED_ARENA and st["threads"] == search.EMBED_THREADS
+    assert st["model"] == search.EMBED_MODEL
+
+
 def test_embedder_forced_none_has_reason(monkeypatch):
     from edp8 import search
     monkeypatch.setenv("EDP8_EMBEDDER", "none")

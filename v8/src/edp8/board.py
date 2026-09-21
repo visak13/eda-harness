@@ -1848,6 +1848,30 @@ class Board:
         self._index("decision", d.id, "")  # overwrite the semantic vector so search drops it too
         return d
 
+    def reembed(self) -> dict[str, Any]:
+        """R2 item-3: trigger the in-board bounded re-embed pass for any unit missing a vector (no
+        restart). The board is the only process that holds the model (hard rule 4)."""
+        if self.index is None:
+            return {"embedder": "none", "reason": "no semantic index installed"}
+        return self.index.reembed()
+
+    def embed_counts(self, scope: str) -> dict[str, Any]:
+        """R2 item-3: embedded vs unembedded live records for an epic, so the backfill receipt can
+        show whether the RAM guard left anything unembedded. Epic-scoped like lookup."""
+        epic = knowledge._epic_id_of(self.store, scope)
+        out: dict[str, Any] = {"scope": scope, "epic": epic,
+                               "embeddings": self.index.status() if self.index is not None else None}
+        emb_dec = self.index.embedded_ids("decision") if self.index is not None else set()
+        emb_clm = self.index.embedded_ids("claim") if self.index is not None else set()
+        for rtype, embedded in (("decision", emb_dec), ("claim", emb_clm)):
+            live = [r for r in self.store.query(rtype, limit=100000)
+                    if getattr(r, "status", "live") not in ("replaced", "withdrawn", "refuted", "retired")
+                    and (epic is not None and knowledge._epic_id_of(self.store, getattr(r, "scope", "") or "") == epic)]
+            ids = {r.id for r in live}
+            e = len(ids & embedded)
+            out[rtype] = {"live": len(ids), "embedded": e, "unembedded": len(ids) - e}
+        return out
+
     def lookup(self, actor: Participant, *, scope: str, question: str | None = None,
                id: str | None = None, path: str | None = None) -> dict[str, Any]:
         """Deterministic, capped, epic-isolated retrieval over the records (design §4.2).

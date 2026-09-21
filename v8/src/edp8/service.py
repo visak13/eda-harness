@@ -858,6 +858,17 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         return ok(board.lookup(a, scope=scope, question=question, id=id, path=path),
                   "records: at most 40 / 8000 bytes; binding never cut; receipt names what was cut")
 
+    @app.post("/v1/index/reembed")
+    def index_reembed(a: Participant = Depends(actor)):
+        """R2 item-3: run the in-board bounded re-embed pass for any unit lacking a vector (no
+        restart). The board is the only process allowed to hold the model."""
+        return ok(board.reembed(), "re-embed pass triggered on the board (bounded batch path)")
+
+    @app.get("/v1/index/embed_counts")
+    def index_embed_counts(scope: str, a: Participant = Depends(actor)):
+        """R2 item-3: embedded vs unembedded live records for an epic."""
+        return ok(board.embed_counts(scope), "embedded/unembedded live records for the epic")
+
     @app.post("/v1/service_event")
     def service_event(b: ServiceEventIn, _: None = Depends(admin)):
         """The launcher's supervisor (or `start.* --restart`) records that it restarted a shared
