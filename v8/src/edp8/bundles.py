@@ -653,7 +653,7 @@ _TOOLS_BY_TYPE: dict[str, list[str]] = {
     "artifact": ["artifact_create", "artifact_read", "artifact_upload"],
     "session": ["session_query", "spawn", "reap", "resume", "resume_self", "close_self"],
     "participant": ["participants", "whoami", "spawn"],
-    "decision": ["record_decision", "withdraw_decision", "lookup", "find"],
+    "decision": ["record_decision", "withdraw_decision", "set_binding", "lookup", "dense_search", "find"],
     "claim": ["record_claim", "withdraw_claim", "lookup", "find"],
     "lesson": ["lookup", "find"],
     "kglink": ["lookup"],
@@ -1613,8 +1613,28 @@ class WithdrawClaimArgs(BaseModel):
     reason: str = Field(default="", description="one line: why it is being withdrawn (at most 240 chars)")
 
 
+class SetBindingArgs(BaseModel):
+    decision_id: str = Field(description="the id of the LIVE decision to promote/demote")
+    binding: bool = Field(description="true = always handed to agents in scope; false = ordinary ranked record")
+    reason: str = Field(default="", description="one line: why (at most 240 chars); recorded in the audit event")
+
+
+class DenseSearchArgs(BaseModel):
+    scope: str = Field(description="an epic or ticket id; the diagnostic is limited to that epic's live records")
+    question: str = Field(description="the natural-language question to rank the records against")
+    k: int = Field(default=10, description="how many top cosine hits to return")
+
+
 def _lookup(a: LookupArgs) -> dict[str, Any]:
     return get_client().lookup(a.scope, question=a.question, id=a.id, path=a.path)
+
+
+def _set_binding(a: SetBindingArgs) -> dict[str, Any]:
+    return get_client().set_binding(a.decision_id, a.binding, reason=a.reason)
+
+
+def _dense_search(a: DenseSearchArgs) -> dict[str, Any]:
+    return get_client().dense_search(a.scope, a.question, k=a.k)
 
 
 def _withdraw_decision(a: WithdrawDecisionArgs) -> dict[str, Any]:
@@ -1657,6 +1677,19 @@ KNOWLEDGE_TOOLS = [
             "when a claim was superseded (e.g. by a re-curation) or entered in error and no newer claim replaces it",
             "the withdrawn claim record",
             WithdrawClaimArgs, _withdraw_claim, "knowledge"),
+    ToolDef("set_binding",
+            "Promote or demote a live decision's binding flag (architect or owner only); the id and its "
+            "links stay and a binding_changed audit event records who, when and why",
+            "when re-judging which decisions are truly must-follow for every seat in scope (binding), vs "
+            "ordinary ranked records",
+            "the updated decision record",
+            SetBindingArgs, _set_binding, "knowledge"),
+    ToolDef("dense_search",
+            "Read-only diagnostic: dense-only cosine top-k over an epic's live records (no BM25, no graph), "
+            "so you can see exactly what the dense seed leg votes for",
+            "when diagnosing why lookup did or did not surface a record for a question",
+            "dense-only ranked hits with cosine scores",
+            DenseSearchArgs, _dense_search, "knowledge"),
 ]
 
 # ============================================================================= ruleset
@@ -2080,7 +2113,8 @@ ROLE_BUNDLES[Role.consultant.value] = _IDENTITY + ["ticket_read", "ticket_query"
 # (test_lifecycle_fixes.py). A role that already has a name (none do) is not duplicated.
 for _role_tools in ROLE_BUNDLES.values():
     _at = _role_tools.index("inbox") if "close_self" in _role_tools else len(_role_tools)
-    for _kt in ("record_decision", "record_claim", "lookup", "withdraw_decision", "withdraw_claim"):
+    for _kt in ("record_decision", "record_claim", "lookup", "withdraw_decision", "withdraw_claim",
+                "set_binding", "dense_search"):
         if _kt not in _role_tools:
             _role_tools.insert(_at, _kt)
             _at += 1

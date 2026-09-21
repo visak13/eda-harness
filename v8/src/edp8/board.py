@@ -1897,6 +1897,46 @@ class Board:
         self._index("claim", c.id, "")  # overwrite the semantic vector so search drops it too
         return c
 
+    def set_binding(self, actor: Participant, *, decision_id: str, binding: bool, reason: str) -> Decision:
+        """Promote or demote a LIVE decision's binding flag (D5 re-judge, steer m-70df16487c line).
+        Architect or owner only; the id and every kglink stay, and a `binding_changed` audit event
+        records who, when and why. Binding is neither embedded nor in the FTS text, so no re-index."""
+        if actor.role not in (Role.architect, Role.owner):
+            raise BoardError("scope", f"{actor.role} may not change a decision's binding flag",
+                             "only the architect or the owner set binding")
+        d = self.store.get("decision", decision_id)
+        if d is None:
+            raise BoardError("not_found", f"decision {decision_id!r} does not exist",
+                             "pass the id of an existing decision")
+        if d.status != DecisionStatus.live:
+            raise BoardError("state", f"decision {decision_id!r} is {d.status}, not live",
+                             "binding only means something for a live decision")
+        was = bool(d.binding)
+        d.binding = bool(binding)  # type: ignore[attr-defined]
+        with self.store.transaction():
+            self.store.put("decision", d)
+            self._emit(d.id, EventKind.binding_changed,
+                       {"decision": d.id, "from": was, "to": d.binding,
+                        "reason": (reason or "").strip()[:240], "by": actor.id})
+        return d
+
+    def dense_diagnostic(self, actor: Participant, *, scope: str, question: str,
+                         k: int = 10) -> dict[str, Any]:
+        """Read-only D4/D5 diagnostic: the dense-only cosine top-k over the records in this epic's
+        scope (no BM25 leg, no graph, no cap). Lets a reviewer see exactly what the dense seed leg
+        votes for, which the fused lookup otherwise hides. Scope-limited to the epic's live records."""
+        if self.index is None:
+            return {"scope": scope, "question": question, "embedder": "none", "hits": []}
+        epic = knowledge._epic_id_of(self.store, scope)
+        allow = {r.id for rtype in knowledge.RECORD_TYPES
+                 for r in self.store.query(rtype, limit=100000)
+                 if getattr(r, "status", "live") not in ("replaced", "withdrawn", "refuted", "retired")
+                 and (epic is None
+                      or knowledge._epic_id_of(self.store, getattr(r, "scope", "") or "") == epic)}
+        hits = self.index.dense_search(question, k=k, types=set(knowledge.RECORD_TYPES), allow_ids=allow)
+        return {"scope": scope, "epic": epic, "question": question,
+                "embedder": self.index.status(), "candidates": len(allow), "hits": hits}
+
     def reembed(self) -> dict[str, Any]:
         """R2 item-3: trigger the in-board bounded re-embed pass for any unit missing a vector (no
         restart). The board is the only process that holds the model (hard rule 4)."""

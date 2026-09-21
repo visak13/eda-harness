@@ -173,6 +173,11 @@ class WithdrawIn(BaseModel):
     reason: str = ""
 
 
+class SetBindingIn(BaseModel):
+    binding: bool
+    reason: str = ""
+
+
 class ResolveIn(BaseModel):
     ticket_id: str
     to: str | None = None
@@ -856,6 +861,20 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     def withdraw_claim(id_: str, b: WithdrawIn, a: Participant = Depends(actor)):
         c = board.withdraw_claim(a, claim_id=id_, reason=b.reason)
         return ok(_dump(c), "claim withdrawn; lookup and search no longer return it")
+
+    @app.post("/v1/decisions/{id_}/binding")
+    def set_binding(id_: str, b: SetBindingIn, a: Participant = Depends(actor)):
+        """D5 re-judge: promote/demote a live decision's binding flag (architect or owner only). The
+        id and its kglinks stay; a binding_changed audit event records who, when and why."""
+        d = board.set_binding(a, decision_id=id_, binding=b.binding, reason=b.reason)
+        return ok(_dump(d), f"binding set to {b.binding}; audit event written")
+
+    @app.get("/v1/index/dense_search")
+    def index_dense_search(scope: str, question: str, k: int = 10, a: Participant = Depends(actor)):
+        """Read-only D4/D5 diagnostic: dense-only cosine top-k over this epic's live records (no BM25,
+        no graph). Shows what the dense seed leg votes for, which the fused lookup hides."""
+        return ok(board.dense_diagnostic(a, scope=scope, question=question, k=k),
+                  "dense-only cosine top-k, scope-limited to the epic's live records")
 
     @app.get("/v1/lookup")
     def lookup(scope: str, question: str | None = None, id: str | None = None,

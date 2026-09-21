@@ -267,10 +267,18 @@ class BoardClient:
         return self._request("POST", f"/v1/claims/{claim_id}/withdraw",
                              json={"reason": reason})
 
+    def set_binding(self, decision_id: str, binding: bool, reason: str = "") -> dict[str, Any]:
+        return self._request("POST", f"/v1/decisions/{decision_id}/binding",
+                             json={"binding": binding, "reason": reason})
+
     def lookup(self, scope: str, question: str | None = None, id: str | None = None,
                path: str | None = None) -> dict[str, Any]:
         return self._request("GET", "/v1/lookup",
                              params={"scope": scope, "question": question, "id": id, "path": path})
+
+    def dense_search(self, scope: str, question: str, k: int = 10) -> dict[str, Any]:
+        return self._request("GET", "/v1/index/dense_search",
+                             params={"scope": scope, "question": question, "k": k})
 
     # ------------------------------------------------------------------ sessions (pool, admin)
     def session_upsert(self, id_: str, participant_id: str, pool_id: str, state: str,

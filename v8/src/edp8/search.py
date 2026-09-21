@@ -560,3 +560,45 @@ class Index:
                 snippet = _snippet(text, query)
                 results.append({"type": t, "id": i, "score": score, "snippet": snippet})
             return results
+
+    def dense_search(
+        self,
+        query: str,
+        k: int = 10,
+        types: set[str] | None = None,
+        allow_ids: set[str] | None = None,
+    ) -> list[dict]:
+        """Dense-only cosine ranking (no BM25 leg). Returns [] when no dense matrix is loaded, so
+        callers fall back to FTS. Kept separate from search() so seeding can give the dense leg its
+        own top-N vote instead of one diluted vote inside the fused search (D4)."""
+        with self._lock:
+            if self._dirty:
+                self._reindex()
+            if self._dense_matrix is None:
+                return []
+            candidates = set(self._units.keys())
+            if types is not None:
+                candidates = {c for c in candidates if self._units[c][0] in types}
+            if allow_ids is not None:
+                candidates = {c for c in candidates if self._units[c][1] in allow_ids}
+            if not candidates:
+                return []
+            try:
+                qvecs = self._embedder.embed([query], is_query=True)
+            except Exception:
+                return []
+            if not qvecs:
+                return []
+            qv = np.array(qvecs[0], dtype=float)
+            qn = np.linalg.norm(qv)
+            if qn > 0:
+                qv = qv / qn
+            sims = self._dense_matrix @ qv
+            scored = [(key, float(sims[idx])) for idx, key in enumerate(self._dense_keys)
+                      if key in candidates]
+            scored.sort(key=lambda kv: kv[1], reverse=True)
+            results = []
+            for key, score in scored[:k]:
+                t, i, text = self._units[key]
+                results.append({"type": t, "id": i, "score": score, "snippet": _snippet(text, query)})
+            return results

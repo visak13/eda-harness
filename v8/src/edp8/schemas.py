@@ -202,6 +202,7 @@ class EventKind(StrEnum):
     # owner overrode the derived checker: {criterion, from, to, reason, by}
     criterion_checker_overridden = "criterion_checker_overridden"
     service_restarted = "service_restarted"  # launcher restarted a shared service: {service, reason, by, git_rev} (design §22)
+    binding_changed = "binding_changed"  # a decision's binding flag was set: {decision, from, to, reason, by} (D5 audit)
 
 
 class Reason(StrEnum):

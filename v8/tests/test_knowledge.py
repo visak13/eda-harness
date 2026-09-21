@@ -737,6 +737,53 @@ def test_withdraw_unknown_decision_raises(board, rig):
         board.withdraw_decision(rig["owner"], decision_id="dec-nope", reason="x")
 
 
+# --------------------------------------------------------------------------- D5 set_binding (audit)
+def test_set_binding_promotes_and_demotes_with_audit(board, rig):
+    epic = make_epic(board, rig)
+    d = board.record_decision(rig["owner"], scope=epic.id, text="ordinary ranked rule about webhooks")
+    assert d.binding is False
+    # promote: architect makes it binding → always-included, id and links untouched
+    p = board.set_binding(rig["architect"], decision_id=d.id, binding=True, reason="must hold for every seat")
+    assert p.binding is True and p.id == d.id
+    assert board.store.query("kglink", {"from_id": d.id, "kind": "decides"})  # links stay
+    out = board.lookup(rig["engineer"], scope=epic.id, question="something unrelated")
+    assert d.id in [r["id"] for r in out["records"]] and out["receipt"]["binding"] >= 1
+    # demote: back to an ordinary record → dropped from the always-include set
+    board.set_binding(rig["architect"], decision_id=d.id, binding=False, reason="not universal after all")
+    assert board.store.get("decision", d.id).binding is False
+    # the audit event records who / from→to / why (when = event.created_at)
+    evs = [e for e in board.store.query("event", {"kind": "binding_changed"}) if e.data.get("decision") == d.id]
+    assert len(evs) == 2
+    assert evs[-1].data["from"] is True and evs[-1].data["to"] is False
+    assert evs[-1].data["by"] == rig["architect"].id and evs[-1].data["reason"] == "not universal after all"
+
+
+def test_set_binding_rejects_unauthorized_role(board, rig):
+    epic = make_epic(board, rig)
+    d = board.record_decision(rig["owner"], scope=epic.id, text="a rule the engineer may not rebind")
+    with pytest.raises(BoardError):
+        board.set_binding(rig["engineer"], decision_id=d.id, binding=True, reason="nope")
+
+
+def test_set_binding_unknown_and_non_live_raise(board, rig):
+    epic = make_epic(board, rig)
+    with pytest.raises(BoardError):
+        board.set_binding(rig["architect"], decision_id="dec-nope", binding=True, reason="x")
+    a = board.record_decision(rig["owner"], scope=epic.id, text="first rule")
+    board.record_decision(rig["owner"], scope=epic.id, text="second rule", replaces=[a.id])  # a → replaced
+    with pytest.raises(BoardError):
+        board.set_binding(rig["architect"], decision_id=a.id, binding=True, reason="cannot rebind a replaced one")
+
+
+def test_dense_diagnostic_degrades_without_index(board, rig):
+    # hard rule 1: no model loaded in tests — with no semantic index the diagnostic returns the empty
+    # shape instead of raising, so the scope-limited GET is safe to call before embeddings warm.
+    epic = make_epic(board, rig)
+    board.record_decision(rig["owner"], scope=epic.id, text="a webhooks rule")
+    res = board.dense_diagnostic(rig["architect"], scope=epic.id, question="webhooks", k=5)
+    assert res["embedder"] == "none" and res["hits"] == []
+
+
 # --------------------------------------------------------------------------- R2-1 history inline
 def test_lookup_renders_replaced_chain_inline(board, rig):
     epic = make_epic(board, rig)
