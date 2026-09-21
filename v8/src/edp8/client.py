@@ -245,6 +245,25 @@ class BoardClient:
     def find(self, q: str, k: int = 10, types: str | None = None, epic_id: str | None = None) -> dict[str, Any]:
         return self._request("GET", "/v1/find", params={"q": q, "k": k, "types": types, "epic_id": epic_id})
 
+    def record_decision(self, scope: str, text: str, detail: str = "", replaces: list[str] | None = None,
+                        binding: bool = False, source: str | None = None,
+                        domains: list[str] | None = None) -> dict[str, Any]:
+        return self._request("POST", "/v1/decisions", json={
+            "scope": scope, "text": text, "detail": detail, "replaces": replaces or [],
+            "binding": binding, "source": source, "domains": domains or []})
+
+    def record_claim(self, scope: str, text: str, basis: str = "assumption",
+                     evidence: list[str] | None = None, source: str | None = None,
+                     status: str = "open") -> dict[str, Any]:
+        return self._request("POST", "/v1/claims", json={
+            "scope": scope, "text": text, "basis": basis, "evidence": evidence or [],
+            "source": source, "status": status})
+
+    def lookup(self, scope: str, question: str | None = None, id: str | None = None,
+               path: str | None = None) -> dict[str, Any]:
+        return self._request("GET", "/v1/lookup",
+                             params={"scope": scope, "question": question, "id": id, "path": path})
+
     # ------------------------------------------------------------------ sessions (pool, admin)
     def session_upsert(self, id_: str, participant_id: str, pool_id: str, state: str,
                        ticket_id: str | None = None, resume_token: str = "", reason: str = "") -> dict[str, Any]:

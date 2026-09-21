@@ -20,6 +20,7 @@ import threading
 from collections.abc import Iterable
 from typing import Any
 
+from . import knowledge, seat_choice
 from .schemas import (
     CRITERION_AUTHORS,
     CRITERION_CHECKERS,
@@ -30,13 +31,20 @@ from .schemas import (
     ArtifactForm,
     Check,
     CheckedBy,
+    Claim,
+    ClaimBasis,
+    ClaimStatus,
     Criterion,
+    Decision,
+    DecisionStatus,
     Doc,
     DocType,
     Event,
     EventKind,
     Gate,
+    KgLink,
     Link,
+    LinkKind,
     Message,
     MessageKind,
     Participant,
@@ -53,7 +61,6 @@ from .schemas import (
     WorkType,
     now,
 )
-from . import seat_choice
 from .store import Store, new_id
 
 _MENTION_RX = re.compile(r"@([A-Za-z0-9][A-Za-z0-9_.\-]*)")
@@ -1771,6 +1778,68 @@ class Board:
         if to and to != actor.id and to not in recipients:
             recipients.append(to)
         return m, recipients
+
+    # ------------------------------------------------------------------ knowledge records (design-d2c4f39fc6)
+    def _kglink(self, actor: Participant, from_id: str, to_id: str, kind: LinkKind) -> KgLink:
+        lk = KgLink(id=new_id("kl"), from_id=from_id, to_id=to_id, kind=kind, created_by=actor.id)
+        self.store.put("kglink", lk)
+        return lk
+
+    def record_decision(self, actor: Participant, *, scope: str, text: str, detail: str = "",
+                        replaces: list[str] | None = None, binding: bool = False,
+                        source: str | None = None, domains: list[str] | None = None) -> Decision:
+        """Record what is in force (design §4.1). The decision and any replaces[] flips land in ONE
+        transaction, whatever ticket or thread the older decision sat in; a `replaces` kglink and a
+        `came_from` kglink to the source are written alongside. Raises if a replaced id is unknown."""
+        replaces = list(replaces or [])
+        d = Decision(id=new_id("dec"), scope=scope, text=text, detail=detail or "",
+                     status=DecisionStatus.live, replaces=replaces, binding=binding,
+                     source=source, decided_by=actor.id, domains=list(domains or []), created_by=actor.id)
+        with self.store.transaction():
+            self.store.put("decision", d)
+            # a `decides` edge to the scope ticket/epic connects the decision for a lookup by id/path
+            # (derived-edge stand-in for part_of; §3 lists decides as written-on-purpose)
+            if scope:
+                self._kglink(actor, d.id, scope, LinkKind.decides)
+            for rid in replaces:
+                old = self.store.get("decision", rid)
+                if old is None:
+                    raise BoardError("not_found", f"decision {rid!r} to replace does not exist",
+                                     "pass ids of existing decisions in replaces[]")
+                old.status = DecisionStatus.replaced  # type: ignore[attr-defined]
+                self.store.put("decision", old)
+                self._kglink(actor, d.id, rid, LinkKind.replaces)
+            if source:
+                self._kglink(actor, d.id, source, LinkKind.came_from)
+        self._index("decision", d.id, self.store._fts_text("decision", d.model_dump(mode="json")) or text)
+        return d
+
+    def record_claim(self, actor: Participant, *, scope: str, text: str,
+                     basis: ClaimBasis = ClaimBasis.assumption, evidence: list[str] | None = None,
+                     source: str | None = None, status: ClaimStatus = ClaimStatus.open) -> Claim:
+        """Record something stated (design §4.1/§3). A `came_from` kglink to the source is written;
+        lookup labels it confirmed only when evidence is non-empty and basis is measured|ruled."""
+        c = Claim(id=new_id("clm"), scope=scope, text=text, basis=basis,
+                  evidence=list(evidence or []), status=status, source=source, created_by=actor.id)
+        with self.store.transaction():
+            self.store.put("claim", c)
+            if scope:
+                self._kglink(actor, c.id, scope, LinkKind.part_of)  # connects claim to its ticket/epic
+            if source:
+                self._kglink(actor, c.id, source, LinkKind.came_from)
+            for ev in (evidence or []):
+                self._kglink(actor, c.id, ev, LinkKind.proves)
+        self._index("claim", c.id, text)
+        return c
+
+    def lookup(self, actor: Participant, *, scope: str, question: str | None = None,
+               id: str | None = None, path: str | None = None) -> dict[str, Any]:
+        """Deterministic, capped, epic-isolated retrieval over the records (design §4.2).
+        Reuses the board's semantic Index when installed; FTS otherwise."""
+        semantic = None
+        if self.index is not None:
+            semantic = lambda q: self.index.search(q, k=20, types=set(knowledge.RECORD_TYPES))  # noqa: E731
+        return knowledge.lookup(self.store, scope, question=question, id=id, path=path, semantic=semantic)
 
     def last_status(self, p: Participant) -> dict[str, Any] | None:
         """The most recent status_recorded event data by this participant on its tickets."""

@@ -23,14 +23,16 @@ from pydantic import BaseModel
 
 from . import pool_adapter
 from .board import Board, BoardError
-from .design_review import ReviewDecision, DocumentComment, decide, comment, source_context
 from .contextual_work import HistoryCategory, contextual_work
+from .design_review import DocumentComment, ReviewDecision, comment, decide, source_context
 from .doc_tools import DocEdit
 from .schemas import (
     DESCRIBE,
     OBJECT_TYPES,
     ArtifactForm,
     Check,
+    ClaimBasis,
+    ClaimStatus,
     DocType,
     EventKind,
     Gate,
@@ -146,6 +148,25 @@ class StatusIn(BaseModel):
     note: str = ""
     to: str | None = None
     ticket_id: str | None = None
+
+
+class DecisionIn(BaseModel):
+    scope: str
+    text: str
+    detail: str = ""
+    replaces: list[str] = []
+    binding: bool = False
+    source: str | None = None
+    domains: list[str] = []
+
+
+class ClaimIn(BaseModel):
+    scope: str
+    text: str
+    basis: ClaimBasis = ClaimBasis.assumption
+    evidence: list[str] = []
+    source: str | None = None
+    status: ClaimStatus = ClaimStatus.open
 
 
 class ResolveIn(BaseModel):
@@ -480,8 +501,8 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     from .api_views import views_router
 
     app.include_router(views_router(board, actor))
-    from .api_usage import usage_router
     from .api_settings import settings_router
+    from .api_usage import usage_router
     app.include_router(settings_router(actor))
 
     app.include_router(usage_router(actor))
@@ -799,6 +820,25 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         told = delivery.after_status(board, a.id, m, recipients)
         return ok({"message": _dump(m), "told": told},
                   "status recorded; next: close_self() (resident seats: keep listening)")
+
+    @app.post("/v1/decisions")
+    def record_decision(b: DecisionIn, a: Participant = Depends(actor)):
+        d = board.record_decision(a, scope=b.scope, text=b.text, detail=b.detail, replaces=b.replaces,
+                                  binding=b.binding, source=b.source, domains=b.domains)
+        return ok(_dump(d), f"decision recorded; {len(b.replaces)} replaced" if b.replaces
+                  else "decision recorded")
+
+    @app.post("/v1/claims")
+    def record_claim(b: ClaimIn, a: Participant = Depends(actor)):
+        c = board.record_claim(a, scope=b.scope, text=b.text, basis=b.basis, evidence=b.evidence,
+                               source=b.source, status=b.status)
+        return ok(_dump(c), "claim recorded")
+
+    @app.get("/v1/lookup")
+    def lookup(scope: str, question: str | None = None, id: str | None = None,
+               path: str | None = None, a: Participant = Depends(actor)):
+        return ok(board.lookup(a, scope=scope, question=question, id=id, path=path),
+                  "records: at most 40 / 8000 bytes; binding never cut; receipt names what was cut")
 
     @app.post("/v1/service_event")
     def service_event(b: ServiceEventIn, _: None = Depends(admin)):

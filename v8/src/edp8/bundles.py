@@ -36,6 +36,7 @@ from .schemas import (
     ArtifactForm,
     Check,
     CheckedBy,
+    ClaimBasis,
     ConsultModel,
     ConsultProfile,
     ConsultPurpose,
@@ -652,6 +653,10 @@ _TOOLS_BY_TYPE: dict[str, list[str]] = {
     "artifact": ["artifact_create", "artifact_read", "artifact_upload"],
     "session": ["session_query", "spawn", "reap", "resume", "resume_self", "close_self"],
     "participant": ["participants", "whoami", "spawn"],
+    "decision": ["record_decision", "lookup", "find"],
+    "claim": ["record_claim", "lookup", "find"],
+    "lesson": ["lookup", "find"],
+    "kglink": ["lookup"],
 }
 
 
@@ -1554,6 +1559,76 @@ SEARCH_TOOLS = [
             FindArgs, _find, "search"),
 ]
 
+# ============================================================================= knowledge (design-d2c4f39fc6)
+
+
+class RecordDecisionArgs(BaseModel):
+    scope: str = Field(description="the epic or ticket id this decision is in force for (its isolation boundary)")
+    text: str = Field(description="one sentence, at most 240 chars: what is now in force")
+    detail: str = Field(default="", description="WHY the choice was made, in detail (at most 1000 chars)")
+    replaces: list[str] = Field(default_factory=list,
+                                description="ids of older decisions this supersedes — each is flipped to "
+                                "replaced in the same transaction, whatever ticket or thread it sat in")
+    binding: bool = Field(default=False,
+                          description="true = always handed to agents in scope and never cut by lookup "
+                          "(e.g. a must-follow render)")
+    source: str | None = Field(default=None, description="the message, doc or attachment id it came from")
+    domains: list[str] = Field(default_factory=list, description="domain checklist names it touches")
+
+
+class RecordClaimArgs(BaseModel):
+    scope: str = Field(description="the epic or ticket id this claim belongs to")
+    text: str = Field(description="one sentence: something stated but not yet shown")
+    basis: ClaimBasis = Field(default=ClaimBasis.assumption, description="assumption | measured | ruled")
+    evidence: list[str] = Field(default_factory=list,
+                                description="attachment, check or commit ids — a claim is a fact only when "
+                                "this is non-empty and basis is measured|ruled")
+    source: str | None = Field(default=None, description="the message or doc id it came from")
+
+
+class LookupArgs(BaseModel):
+    scope: str = Field(description="the epic or ticket id to isolate to — never returns another epic's "
+                       "decisions/claims; lessons are found across epics by domain/topic")
+    question: str | None = Field(default=None, description="plain words to search for; or use id/path")
+    id: str | None = Field(default=None, description="an exact record/ticket/doc id to start from")
+    path: str | None = Field(default=None, description="a file path to start from")
+
+
+def _record_decision(a: RecordDecisionArgs) -> dict[str, Any]:
+    return get_client().record_decision(a.scope, a.text, detail=a.detail, replaces=a.replaces,
+                                        binding=a.binding, source=a.source, domains=a.domains)
+
+
+def _record_claim(a: RecordClaimArgs) -> dict[str, Any]:
+    return get_client().record_claim(a.scope, a.text, basis=a.basis.value, evidence=a.evidence, source=a.source)
+
+
+def _lookup(a: LookupArgs) -> dict[str, Any]:
+    return get_client().lookup(a.scope, question=a.question, id=a.id, path=a.path)
+
+
+KNOWLEDGE_TOOLS = [
+    ToolDef("record_decision",
+            "Record what is now in force — one sentence plus WHY, the ids it replaces, and whether it is "
+            "binding; replaced decisions flip in the same transaction across any ticket or thread",
+            "the moment a ruling is made or an agent decides within its authority — before acting on it",
+            "the decision record",
+            RecordDecisionArgs, _record_decision, "knowledge"),
+    ToolDef("record_claim",
+            "Record something stated but not yet shown, with its basis and evidence, so assumptions stay "
+            "apart from facts",
+            "when you assert something whose proof is not yet attached",
+            "the claim record",
+            RecordClaimArgs, _record_claim, "knowledge"),
+    ToolDef("lookup",
+            "Retrieve the most relevant, current records for a question/id/path inside one epic — binding "
+            "decisions always included, at most 40 records / 8000 bytes, deterministic, with a receipt of "
+            "what was cut; each record labelled confirmed/unconfirmed and fresh/stale",
+            "on resume or before you act, to load current decisions and claims instead of trusting memory",
+            "records + rendered body + receipt",
+            LookupArgs, _lookup, "knowledge"),
+]
+
 # ============================================================================= ruleset
 
 
@@ -1914,7 +1989,7 @@ CLOSE_TOOLS = [
 ALL_TOOLS: dict[str, ToolDef] = {
     t.name: t for t in (
         IDENTITY_TOOLS + TICKET_TOOLS + DOC_TOOLS + THREAD_TOOLS + BOARD_TOOLS + POOL_TOOLS
-        + SEARCH_TOOLS + RULESET_TOOLS + CONSULT_TOOLS + ARTIFACT_TOOLS + CLOSE_TOOLS
+        + SEARCH_TOOLS + KNOWLEDGE_TOOLS + RULESET_TOOLS + CONSULT_TOOLS + ARTIFACT_TOOLS + CLOSE_TOOLS
     )
 }
 
@@ -1969,6 +2044,16 @@ for _role_tools in ROLE_BUNDLES.values():
 ROLE_BUNDLES[Role.coordinator.value] = list(ROLE_BUNDLES[Role.owner.value])  # retired seat: explicit, not implicit
 ROLE_BUNDLES[Role.consultant.value] = _IDENTITY + ["ticket_read", "ticket_query", "message_send", "message_query",
                                                    "find", "inbox"] + _DOC_RO
+
+# record_decision/record_claim/lookup are available to EVERY role (design-d2c4f39fc6 §2: the tools
+# any seat calls). Insert before the closing triplet where a doer has one — close_self stays last
+# (test_lifecycle_fixes.py). A role that already has a name (none do) is not duplicated.
+for _role_tools in ROLE_BUNDLES.values():
+    _at = _role_tools.index("inbox") if "close_self" in _role_tools else len(_role_tools)
+    for _kt in ("record_decision", "record_claim", "lookup"):
+        if _kt not in _role_tools:
+            _role_tools.insert(_at, _kt)
+            _at += 1
 
 
 def tools_for_role(role: str) -> list[ToolDef]:

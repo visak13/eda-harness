@@ -62,6 +62,45 @@ def test_all_role_bundle_names_resolve():
             assert n in ALL_TOOLS, f"{role} lists unknown tool {n!r}"
 
 
+def test_knowledge_tools_available_to_every_role():
+    for role in ROLE_BUNDLES:
+        names = {t.name for t in tools_for_role(role)}
+        for kt in ("record_decision", "record_claim", "lookup"):
+            assert kt in names, f"{role} is missing {kt}"
+
+
+def test_close_self_stays_last_for_doers():
+    # inserting the knowledge tools must not displace the closing triplet's terminal close_self
+    for role in ("engineer", "reviewer", "sme", "qa", "adversary"):
+        assert ROLE_BUNDLES[role][-1] == "close_self", role
+
+
+def test_record_and_lookup_through_tools(raw_client, board):
+    owner_id = register(raw_client, "owner", "own1")
+    register(raw_client, "architect", "arch1")
+    engineer_id = register(raw_client, "engineer", "eng1")
+
+    owner_client = make_client(raw_client, owner_id)
+    epic = owner_client._request("POST", "/v1/tickets",
+                                 json={"kind": "epic", "work_type": "feature", "title": "Epic one"})
+    epic_id = epic["value"]["id"]
+
+    eng = make_client(raw_client, engineer_id)
+    set_client(eng)
+    old = ALL_TOOLS["record_decision"].handler(
+        ALL_TOOLS["record_decision"].args_model(scope=epic_id, text="any https host accepted"))
+    assert old["ok"], old
+    new = ALL_TOOLS["record_decision"].handler(
+        ALL_TOOLS["record_decision"].args_model(scope=epic_id, text="allow-list hosts only",
+                                                replaces=[old["value"]["id"]], binding=True))
+    assert new["ok"], new
+    out = ALL_TOOLS["lookup"].handler(ALL_TOOLS["lookup"].args_model(scope=epic_id, question="hosts"))
+    assert out["ok"], out
+    ids = [r["id"] for r in out["value"]["records"]]
+    assert new["value"]["id"] in ids and old["value"]["id"] not in ids
+    assert out["value"]["receipt"]["cap"] == {"records": 40, "bytes": 8000}
+
+
 # ----------------------------------------------------------------------------- scripted flow
 
 

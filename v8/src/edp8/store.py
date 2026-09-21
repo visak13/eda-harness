@@ -32,6 +32,10 @@ _INDEXED: dict[str, list[str]] = {
     "event": ["subject_id", "kind"],
     "artifact": ["form"],
     "session": ["participant_id", "ticket_id", "pool_id", "state"],
+    "decision": ["scope", "status", "source"],
+    "claim": ["scope", "status", "basis"],
+    "lesson": ["domain", "topic", "status"],
+    "kglink": ["from_id", "to_id", "kind"],
 }
 
 
@@ -133,6 +137,12 @@ class Store:
             return d.get("text") or ""
         if type_ == "criterion":
             return d.get("text") or ""
+        if type_ == "decision":
+            return f"{d.get('text') or ''}\n{d.get('detail') or ''}"
+        if type_ == "claim":
+            return d.get("text") or ""
+        if type_ == "lesson":
+            return "\n".join([d.get("text") or "", d.get("topic") or "", d.get("domain") or ""])
         return None
 
     def _fts_put_locked(self, type_: str, id_: str, text: str) -> None:
@@ -141,7 +151,7 @@ class Store:
 
     def _fts_rebuild_locked(self) -> None:
         self._conn.execute("DELETE FROM fts")
-        for t in ("ticket", "doc", "message", "criterion"):
+        for t in ("ticket", "doc", "message", "criterion", "decision", "claim", "lesson"):
             for r in self._conn.execute(f"SELECT id, body FROM {t}"):
                 text = self._fts_text(t, json.loads(r["body"]))
                 if text:
@@ -347,6 +357,11 @@ class Store:
             for r in self._conn.execute("SELECT id, body FROM criterion"):
                 d = json.loads(r["body"])
                 out.append(("criterion", r["id"], d["text"]))
+            for t in ("decision", "claim", "lesson"):
+                for r in self._conn.execute(f"SELECT id, body FROM {t}"):
+                    text = self._fts_text(t, json.loads(r["body"]))
+                    if text:
+                        out.append((t, r["id"], text))
         return out
 
     def close(self) -> None:

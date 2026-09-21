@@ -123,6 +123,45 @@ class Relation(StrEnum):
     extends = "extends"  # doc -> doc layering: assemble_ruleset composes the chain universal-first
 
 
+class DecisionStatus(StrEnum):
+    live = "live"           # in force; binding ones are always handed to agents in scope
+    replaced = "replaced"   # a newer decision names it in replaces[]; kept, never handed out
+    withdrawn = "withdrawn"  # retracted without a successor
+
+
+class ClaimBasis(StrEnum):
+    assumption = "assumption"
+    measured = "measured"
+    ruled = "ruled"
+
+
+class ClaimStatus(StrEnum):
+    open = "open"
+    confirmed = "confirmed"
+    refuted = "refuted"
+
+
+class LessonStatus(StrEnum):
+    live = "live"
+    retired = "retired"
+
+
+class LinkKind(StrEnum):
+    """Knowledge-graph edge kinds (design-d2c4f39fc6 §3), distinct from product `Relation`.
+    Only decides/replaces/must_follow/learned_from are written on purpose; part_of/came_from/
+    touches are derived (parent, source ticket, git)."""
+    part_of = "part_of"
+    decides = "decides"
+    replaces = "replaces"
+    must_follow = "must_follow"
+    implements = "implements"
+    verifies = "verifies"
+    proves = "proves"
+    came_from = "came_from"
+    learned_from = "learned_from"
+    touches = "touches"
+
+
 class MessageKind(StrEnum):
     question = "question"
     answer = "answer"
@@ -315,6 +354,54 @@ class Session(Obj):
     presence_stale_since: datetime | None = None
 
 
+class Decision(Obj):
+    """What is in force (design-d2c4f39fc6 §3). Written at the moment a ruling is made,
+    never guessed after. A new decision that names an older one in replaces[] flips that
+    older one to `replaced` in the same transaction, across any ticket or thread."""
+    scope: str  # epic id | ticket id — the isolation boundary
+    text: str = Field(max_length=240)  # one sentence
+    detail: str = Field(default="", max_length=1000)  # WHY the choice was made, in detail
+    status: DecisionStatus = DecisionStatus.live
+    replaces: list[str] = Field(default_factory=list)  # decision ids this supersedes
+    binding: bool = False  # true = always handed to agents in scope, never cut by lookup
+    source: str | None = None  # message | doc | attachment id it came from
+    decided_by: str = ""  # participant id
+    domains: list[str] = Field(default_factory=list)  # domain checklist names it touches
+
+
+class Claim(Obj):
+    """Something stated but not yet shown (design-d2c4f39fc6 §3): keeps assumptions apart
+    from facts. Counts as a fact only when evidence is non-empty and basis is measured|ruled;
+    lookup labels everything else unconfirmed."""
+    scope: str
+    text: str  # one sentence (no hard char cap — a claim can be a full sentence; design §3)
+    basis: ClaimBasis = ClaimBasis.assumption
+    evidence: list[str] = Field(default_factory=list)  # attachment | check | commit ids
+    status: ClaimStatus = ClaimStatus.open
+    source: str | None = None
+
+
+class Lesson(Obj):
+    """Reusable across epics (design-d2c4f39fc6 §3): filed by topic, not by epic, so lookup
+    finds it from any epic by domain/topic. The cap/self-improvement loop is a later story."""
+    domain: str
+    topic: str
+    text: str  # one sentence (design §3; no hard char cap)
+    evidence: list[str] = Field(default_factory=list)  # defect | rework | ruling ids
+    uses: int = Field(default=0, ge=0)
+    helped: int = Field(default=0, ge=0)
+    harmed: int = Field(default=0, ge=0)
+    status: LessonStatus = LessonStatus.live
+
+
+class KgLink(Obj):
+    """One knowledge-graph edge (design-d2c4f39fc6 §3). Separate from product `Link` so
+    lookup walks only knowledge edges and product links stay untouched."""
+    from_id: str
+    to_id: str
+    kind: LinkKind
+
+
 OBJECT_TYPES: dict[str, type[Obj]] = {
     "participant": Participant,
     "ticket": Ticket,
@@ -325,6 +412,10 @@ OBJECT_TYPES: dict[str, type[Obj]] = {
     "event": Event,
     "artifact": Artifact,
     "session": Session,
+    "decision": Decision,
+    "claim": Claim,
+    "lesson": Lesson,
+    "kglink": KgLink,
 }
 
 # Every strict-valued enum in the model + the consult tool args, keyed by class name.
@@ -355,6 +446,11 @@ ENUMS: dict[str, type[StrEnum]] = {
     "DocType": DocType,
     "Relation": Relation,
     "MessageKind": MessageKind,
+    "DecisionStatus": DecisionStatus,
+    "ClaimBasis": ClaimBasis,
+    "ClaimStatus": ClaimStatus,
+    "LessonStatus": LessonStatus,
+    "LinkKind": LinkKind,
     "StatusValue": StatusValue,
     "Gate": Gate,
     "ArtifactForm": ArtifactForm,
@@ -438,4 +534,16 @@ DESCRIBE: dict[str, str] = {
     "event": "Board-emitted audit + feed item (status_changed, gate_opened, ...). CRUD: query.",
     "artifact": "A produced thing by uri (never a machine path). CRUD: create, read, query.",
     "session": "A running/parked shell for a participant on a ticket (pool-owned). CRUD: read, query.",
+    "decision": "What is in force in an epic/ticket: one sentence + WHY (detail), a status "
+    "(live|replaced|withdrawn), the ids it replaces, a binding flag (always handed to agents in scope), "
+    "its source and who decided it. record_decision writes one and flips replaced ones in one "
+    "transaction. Found by lookup, isolated to its epic.",
+    "claim": "Something stated but not yet shown: text, basis (assumption|measured|ruled), evidence ids, "
+    "status (open|confirmed|refuted). A fact only when evidence is non-empty and basis is measured|ruled. "
+    "record_claim writes one; lookup labels it confirmed/unconfirmed.",
+    "lesson": "A reusable lesson filed by domain+topic (not by epic), so lookup finds it across epics. "
+    "Carries uses/helped/harmed counts for the self-improvement loop (a later story).",
+    "kglink": "One knowledge-graph edge (part_of|decides|replaces|must_follow|implements|verifies|proves|"
+    "came_from|learned_from|touches) between any two records/objects; separate from the product `link`. "
+    "lookup walks these; only decides/replaces/must_follow/learned_from are written on purpose.",
 }
