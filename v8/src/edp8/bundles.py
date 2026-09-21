@@ -511,11 +511,12 @@ def _clip(s: Any, n: int) -> Any:
 
 
 def _bound_snapshot(snap: dict[str, Any], *, thread_keep: int, thread_head: int,
-                    doc_head: int, words_head: int | None) -> tuple[dict[str, Any], bool]:
-    """Return a byte-bounded copy of a context snapshot and whether anything was trimmed.
-    Per-ticket summaries + read_refs stay; thread bodies and doc summaries are clipped/paged.
-    Never touches `cursor`, `asks_for_me`, criteria, chain or the ticket record."""
-    trimmed = False
+                    doc_head: int, words_head: int | None) -> tuple[dict[str, Any], set[str]]:
+    """Return a byte-bounded copy of a context snapshot and the set of categories trimmed
+    ('thread'/'docs'/'words'). Per-ticket summaries + read_refs stay; thread bodies and doc
+    summaries are clipped/paged. Never touches `cursor`, `asks_for_me`, criteria, chain or the
+    ticket record."""
+    hit: set[str] = set()
     out = dict(snap)
     tickets_in = snap.get("tickets") or []
     new_tickets: list[dict[str, Any]] = []
@@ -523,12 +524,11 @@ def _bound_snapshot(snap: dict[str, Any], *, thread_keep: int, thread_head: int,
         tv = dict(tv)
         rows = tv.get("thread") or []
         total = tv.get("thread_total", len(rows))
-        if len(rows) > thread_keep or any(len(r.get("text") or "") > thread_head for r in rows):
-            trimmed = True
         kept = rows[-thread_keep:] if thread_keep > 0 else []
         tv["thread"] = [{**r, "text": _clip(r.get("text"), thread_head)} for r in kept]
+        if total > len(kept) or any(len(r.get("text") or "") > thread_head for r in rows):
+            hit.add("thread")
         if total > len(kept):
-            trimmed = True
             tv["thread_omitted"] = total - len(kept)
         if tv.get("docs"):
             new_docs = []
@@ -536,19 +536,21 @@ def _bound_snapshot(snap: dict[str, Any], *, thread_keep: int, thread_head: int,
                 d = dict(d)
                 if isinstance(d.get("summary"), str) and len(d["summary"]) > doc_head:
                     d["summary"] = _clip(d["summary"], doc_head)
-                    trimmed = True
+                    hit.add("docs")
                 new_docs.append(d)
             tv["docs"] = new_docs
         if words_head is not None and isinstance(tv.get("words"), str) and len(tv["words"]) > words_head:
             tv["words"] = _clip(tv["words"], words_head)
-            trimmed = True
+            hit.add("words")
         new_tickets.append(tv)
     out["tickets"] = new_tickets
-    return out, trimmed
+    return out, hit
 
 
 def _bytes(obj: Any) -> int:
-    return len(json.dumps(obj, ensure_ascii=False, default=str).encode("utf-8"))
+    # match the MCP client's serialisation (ASCII-escaped) so the budget is a real cap even for
+    # non-ASCII bodies — ensure_ascii=False would under-count a CJK snapshot by ~2x.
+    return len(json.dumps(obj, ensure_ascii=True, default=str).encode("utf-8"))
 
 
 def _context(args: ContextArgs) -> dict[str, Any]:
@@ -559,26 +561,42 @@ def _context(args: ContextArgs) -> dict[str, Any]:
     if not isinstance(snap, dict):
         return resp
     budget = _context_budget()
-    # progressively tighter passes until the snapshot fits the budget (or we hit the floor)
+    reserve = 1_500                       # room for the `omitted` receipt + the {ok,hint} envelope
+    # progressively tighter passes; take the FIRST that fits, else the tightest available (the
+    # per-ticket records + criteria + asks are the irreducible floor and are never dropped).
     passes = [
         dict(thread_keep=_THREAD_KEEP, thread_head=_THREAD_HEAD, doc_head=_DOC_SUMMARY_HEAD, words_head=800),
         dict(thread_keep=1, thread_head=120, doc_head=120, words_head=400),
         dict(thread_keep=0, thread_head=0, doc_head=0, words_head=200),
     ]
-    bounded, trimmed = _bound_snapshot(snap, **passes[0])
-    for p in passes[1:]:
-        if _bytes(bounded) <= budget:
+    bounded: dict[str, Any] = {}
+    hit: set[str] = set()
+    for i, p in enumerate(passes):
+        bounded, hit = _bound_snapshot(snap, **p)
+        if i > 0:
+            hit.add("_tightened")
+        if _bytes(bounded) <= budget - reserve:
             break
-        bounded, trimmed = _bound_snapshot(snap, **p)
-        trimmed = True
-    if trimmed:
+    over = _bytes(bounded) > budget
+    if hit:  # something was clipped or a tighter pass was forced
+        fetch = {}
+        if "thread" in hit:
+            fetch["thread_bodies"] = ("full window: context(ticket_id=<id>, verbose=True); complete history: "
+                                      "message_query(ticket_id=<id>, since_seq=0) then continue from last_seq")
+        if "docs" in hit:
+            fetch["doc_summaries"] = "doc_read(id) for the full body"
+        if "words" in hit:
+            fetch["epic_words"] = "context(verbose=True) or ticket_read(<epic id>) for the owner's full words"
         bounded["omitted"] = {
             "why": f"bounded to EDP8_CONTEXT_BUDGET_B={budget} bytes (verbose=False); "
                    f"snapshot is {_bytes(bounded)} bytes",
-            "thread_bodies": "per ticket: context(ticket_id=<id>, verbose=True) or message_query(ticket_id=<id>)",
-            "doc_summaries": "doc_read(id) for the full body",
+            **fetch,
             "full_snapshot": "context(verbose=True)",
         }
+        if over:
+            bounded["omitted"]["still_over_budget"] = (
+                "the per-ticket records/criteria/asks alone exceed the budget; nothing summary-level was "
+                "dropped — narrow with context(ticket_id=<id>) or raise EDP8_CONTEXT_BUDGET_B")
     return {**resp, "value": bounded}
 
 
@@ -1750,7 +1768,19 @@ class ConsultStatusArgs(BaseModel):
 
 # S12 (qa finding 18): consult_status returned `answer` twice (top-level + inside the manifest copy)
 # and listed ~55 pre-dirty fence rows even for a read-only run. Compacted HERE, in the tool layer.
-_FENCE_KEYS = ("fence", "concurrent_writes", "writes_outside_write_dir", "escapes", "escaped")
+# Only pre-dirty / concurrent noise is dropped; ATTRIBUTED escapes (real boundary violations) and
+# their remediation evidence are always kept — dropping them would hide a real fence breach from qa.
+_NOISE_KEYS = ("fence", "concurrent_writes")   # write-fence detail + pre-dirty/concurrent noise
+
+
+def _has_real_escape(man: dict[str, Any]) -> bool:
+    """A run with attributed escapes or a boundary-violation verdict must keep its full fence detail."""
+    if man.get("status") == "boundary_violation" or man.get("writes_outside_write_dir"):
+        return True
+    fence = man.get("fence")
+    escapes = fence.get("escapes") if isinstance(fence, dict) else None
+    return bool(escapes and any(e.get("action") not in ("pre_dirty_concurrent", "unattributed_concurrent")
+                                for e in escapes if isinstance(e, dict)))
 
 
 def _consult_status(a: ConsultStatusArgs) -> dict[str, Any]:
@@ -1770,13 +1800,11 @@ def _consult_status(a: ConsultStatusArgs) -> dict[str, Any]:
         # `answer` is already returned once at value.answer — don't ship it a second time
         if man.pop("answer", None) is not None:
             dropped.append("manifest.answer (returned once at value.answer)")
-        for k in _FENCE_KEYS:
-            if man.pop(k, None) is not None:
-                dropped.append(f"manifest.{k}")
+        if not _has_real_escape(man):
+            for k in _NOISE_KEYS:
+                if man.pop(k, None) is not None:
+                    dropped.append(f"manifest.{k}")
         val["manifest"] = man
-    for k in _FENCE_KEYS:
-        if k in val and val.pop(k, None) is not None:
-            dropped.append(k)
     if dropped:
         val["omitted"] = {"fields": dropped,
                           "full": f"consult_status(run_id={val.get('run_id')!r}, verbose=True)"}

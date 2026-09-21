@@ -160,3 +160,19 @@ def test_consult_status_verbose_keeps_fence_rows(tmp_path, monkeypatch):
     man = verbose["value"]["manifest"]
     assert man["fence"]["escapes"] and len(man["concurrent_writes"]) == 55
     assert "omitted" not in verbose["value"]
+
+
+def test_consult_status_keeps_real_boundary_violation(tmp_path, monkeypatch):
+    """A run with an ATTRIBUTED escape is a real fence breach — compaction must not hide it."""
+    monkeypatch.setenv("EDP8_SOL_LOG_DIR", str(tmp_path))
+    run_id = "run-viol-1"
+    man = {"run_id": run_id, "status": "boundary_violation", "answer": "",
+           "writes_outside_write_dir": ["Content/BAD.uasset"],
+           "fence": {"escapes": [{"path": "Content/BAD.uasset", "action": "restored_tracked",
+                                  "attribution": "log", "tracked": True, "pre_dirty": False}]},
+           "concurrent_writes": []}
+    (tmp_path / f"{run_id}.manifest.json").write_text(json.dumps(man), encoding="utf-8")
+    cs = ALL_TOOLS["consult_status"]
+    compact = cs.handler(cs.args_model(run_id=run_id))["value"]
+    assert compact["manifest"]["writes_outside_write_dir"] == ["Content/BAD.uasset"]
+    assert compact["manifest"]["fence"]["escapes"], "a real escape row must survive compaction"
