@@ -18,6 +18,13 @@ import numpy as np
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 
 RAM_FLOOR_GB = 1.5  # R2-6: below this free RAM at load, skip the embedding model, fall back to FTS
+# Bound every ONNX call. fastembed's defaults (batch 256, padded to the longest text, nomic's 8192
+# token window) make attention memory batch x heads x seq^2: a full-corpus reindex reached ~58 GB
+# of commit and took the host down (2026-09-21). Small batch x capped length keeps a call ~100 MB.
+EMBED_BATCH = 8
+EMBED_MAX_TOKENS = 512
+EMBED_MAX_CHARS = 2000  # char backstop in case the tokenizer cap cannot be applied
+BULK_THRESHOLD = 32  # more un-embedded units than this -> embed in a background thread, FTS meanwhile
 
 
 def _free_ram_gb() -> float | None:
@@ -117,10 +124,25 @@ class FastEmbedEmbedder:
         after = _rss_mb()
         # R2-6: report the model's resident footprint so a memory-tight host is legible
         self.resident_mb: float | None = round(after - before, 1) if (before and after) else after
+        try:  # cap the sequence length at the tokenizer; EMBED_MAX_CHARS is the backstop
+            self._model.model.tokenizer.enable_truncation(max_length=EMBED_MAX_TOKENS)
+        except Exception:
+            pass
 
     def embed(self, texts: list[str], is_query: bool = False) -> list[list[float]]:
         prefix = "search_query: " if is_query else "search_document: "
-        return [list(v) for v in self._model.embed([prefix + t for t in texts])]
+        docs = [prefix + t[:EMBED_MAX_CHARS] for t in texts]
+        out: list[list[float]] = []
+        for i in range(0, len(docs), EMBED_BATCH):
+            # the load-time guard is not enough: re-check between batches so a tightening host
+            # aborts the dense leg (callers fall back to FTS) instead of running into the pagefile
+            free = _free_ram_gb()
+            if free is not None and free < RAM_FLOOR_GB:
+                self.fallback_reason = f"low_ram mid-embed: {free:.2f}GB free < {RAM_FLOOR_GB}GB floor"
+                raise MemoryError(self.fallback_reason)
+            chunk = docs[i : i + EMBED_BATCH]
+            out.extend(list(v) for v in self._model.embed(chunk, batch_size=EMBED_BATCH))
+        return out
 
 
 class OllamaEmbedder:
@@ -227,6 +249,9 @@ class Index:
         self._units: dict[str, tuple[str, str, str]] = {}
         self._dense_keys: list[str] = []
         self._dense_matrix: np.ndarray | None = None
+        self._vecs: dict[str, tuple[str, list[float]]] = {}  # key -> (text it was embedded from, vec)
+        self._warming = False
+        self._warm_thread: threading.Thread | None = None
         self._dirty = True
 
     def rebuild(self, units: list[tuple[str, str, str]]) -> None:
@@ -244,30 +269,77 @@ class Index:
         """R2-6: which seeding backend is live, why (if it fell back), and the model's footprint."""
         emb = self._embedder
         on = emb.name != "none" and self._dense_matrix is not None
-        return {"embedder": emb.name, "embeddings_active": on,
+        return {"embedder": emb.name, "embeddings_active": on, "warming": self._warming,
                 "reason": getattr(emb, "fallback_reason", None),
                 "model_mb": getattr(emb, "resident_mb", None),
                 "free_ram_gb": round(g, 2) if (g := _free_ram_gb()) is not None else None}
 
+    def _missing(self) -> list[tuple[str, str]]:
+        """Units whose current text has no cached vector (new or edited)."""
+        return [(key, txt) for key, (_, _, txt) in self._units.items()
+                if self._vecs.get(key, (None, None))[0] != txt]
+
+    def _build_matrix(self) -> None:
+        """Dense matrix from the vector cache (lock held); units not embedded yet are FTS-only."""
+        for key in [k for k in self._vecs if k not in self._units]:
+            del self._vecs[key]
+        keys = [key for key, (_, _, txt) in self._units.items()
+                if self._vecs.get(key, (None, None))[0] == txt]
+        self._dense_matrix = None
+        self._dense_keys = []
+        if keys:
+            arr = np.array([self._vecs[k][1] for k in keys], dtype=float)
+            norms = np.linalg.norm(arr, axis=1, keepdims=True)
+            norms[norms == 0] = 1.0
+            self._dense_matrix = arr / norms
+            self._dense_keys = keys
+
+    def _warm(self) -> None:
+        """Background bulk embed: chunks run OUTSIDE the lock so search stays live on FTS."""
+        try:
+            while True:
+                with self._lock:
+                    chunk = self._missing()[:BULK_THRESHOLD]
+                if not chunk:
+                    break
+                vecs = self._embedder.embed([txt for _, txt in chunk], is_query=False)
+                if len(vecs) != len(chunk):
+                    break
+                with self._lock:
+                    for (key, txt), vec in zip(chunk, vecs):
+                        self._vecs[key] = (txt, vec)
+        except Exception:
+            pass  # e.g. the mid-embed RAM guard: keep what is cached, stay FTS for the rest
+        finally:
+            with self._lock:
+                self._warming = False
+                self._build_matrix()
+
     def _reindex(self) -> None:
         docs = [(key, txt) for key, (_, _, txt) in self._units.items()]
         self._bm25.fit(docs)
-        self._dense_matrix = None
-        self._dense_keys = []
-        if docs and self._embedder.name != "none":
-            keys = [key for key, _ in docs]
-            texts = [txt for _, txt in docs]
+        self._dirty = False
+        if self._embedder.name == "none":
+            self._dense_matrix, self._dense_keys = None, []
+            return
+        if self._warming:
+            return  # the warm thread picks up whatever is missing and rebuilds the matrix
+        missing = self._missing()
+        if len(missing) > BULK_THRESHOLD:
+            # a bulk embed (startup: the whole corpus) must not block the caller or hold the lock
+            self._warming = True
+            self._warm_thread = threading.Thread(target=self._warm, name="edp8-embed-warm", daemon=True)
+            self._warm_thread.start()
+            return
+        if missing:  # small delta (a new message): embed just that, inline
             try:
-                vecs = self._embedder.embed(texts, is_query=False)
+                vecs = self._embedder.embed([txt for _, txt in missing], is_query=False)
             except Exception:
                 vecs = []
-            if vecs:
-                arr = np.array(vecs, dtype=float)
-                norms = np.linalg.norm(arr, axis=1, keepdims=True)
-                norms[norms == 0] = 1.0
-                self._dense_matrix = arr / norms
-                self._dense_keys = keys
-        self._dirty = False
+            if len(vecs) == len(missing):
+                for (key, txt), vec in zip(missing, vecs):
+                    self._vecs[key] = (txt, vec)
+        self._build_matrix()
 
     def search(
         self,

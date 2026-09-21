@@ -278,6 +278,64 @@ def test_embedder_ram_guard_falls_back_to_fts(monkeypatch):
     assert "low_ram" in (emb.fallback_reason or "")
 
 
+class _StubModel:
+    def __init__(self):
+        self.calls = []
+
+    def embed(self, docs, batch_size=256, **_):
+        self.calls.append((list(docs), batch_size))
+        return [[1.0, 0.0] for _ in docs]
+
+
+def _stub_fastembed(search):
+    emb = search.FastEmbedEmbedder.__new__(search.FastEmbedEmbedder)  # skip the model load
+    emb._model = _StubModel()
+    return emb
+
+
+def test_fastembed_calls_are_bounded(monkeypatch):
+    """Host-crash regression (2026-09-21): never hand the model a big batch or an unbounded text."""
+    from edp8 import search
+    monkeypatch.setattr(search, "_free_ram_gb", lambda: 8.0)
+    emb = _stub_fastembed(search)
+    vecs = emb.embed(["x" * 50_000] * 20)
+    assert len(vecs) == 20
+    for docs, batch_size in emb._model.calls:
+        assert len(docs) <= search.EMBED_BATCH and batch_size == search.EMBED_BATCH
+        assert all(len(d) <= search.EMBED_MAX_CHARS + len("search_document: ") for d in docs)
+
+
+def test_fastembed_aborts_mid_embed_when_ram_tightens(monkeypatch):
+    from edp8 import search
+    free = iter([8.0, 0.5])
+    monkeypatch.setattr(search, "_free_ram_gb", lambda: next(free))
+    emb = _stub_fastembed(search)
+    idx = search.Index(embedder=emb)
+    idx.rebuild([("doc", str(i), "cache rule") for i in range(search.EMBED_BATCH * 2)])
+    assert len(emb._model.calls) == 1  # stopped before the second batch
+    assert idx._dense_matrix is None and "low_ram mid-embed" in emb.fallback_reason
+    assert idx.search("cache")  # FTS still answers
+
+
+def test_bulk_reindex_warms_in_background_then_embeds_only_deltas(monkeypatch):
+    from edp8 import search
+    monkeypatch.setattr(search, "_free_ram_gb", lambda: 8.0)
+    emb = _stub_fastembed(search)
+    idx = search.Index(embedder=emb)
+    n = search.BULK_THRESHOLD * 3
+    idx.rebuild([("doc", str(i), f"cache rule {i}") for i in range(n)])  # returns without embedding inline
+    idx._warm_thread.join(timeout=10)
+    st = idx.status()
+    assert st["warming"] is False and st["embeddings_active"] is True
+    assert len(idx._dense_keys) == n
+    emb._model.calls.clear()
+    idx.upsert("doc", "new", "one new message")
+    idx.search("message")
+    embedded = [d for docs, _ in emb._model.calls for d in docs if d.startswith("search_document")]
+    assert embedded == ["search_document: one new message"]  # not the whole corpus again
+    assert len(idx._dense_keys) == n + 1
+
+
 def test_embedder_forced_none_has_reason(monkeypatch):
     from edp8 import search
     monkeypatch.setenv("EDP8_EMBEDDER", "none")
