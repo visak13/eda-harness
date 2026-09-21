@@ -259,6 +259,39 @@ def test_negative_lesson_counter_rejected():
         Lesson(id=new_id("les"), domain="d", topic="t", text="x", helped=-1)
 
 
+# --------------------------------------------------------------------------- R2-6 seeding recall
+def test_lookup_receipt_reports_seeding_backend(board, rig):
+    epic = make_epic(board, rig)
+    board.record_decision(rig["owner"], scope=epic.id, text="a rule about caches")
+    out = board.lookup(rig["engineer"], scope=epic.id, question="caches")
+    assert out["receipt"]["seed_top"] == 8
+    assert out["receipt"]["embeddings"]["embedder"] == "none"  # no semantic index in the unit fixture
+
+
+def test_embedder_ram_guard_falls_back_to_fts(monkeypatch):
+    from edp8 import search
+    monkeypatch.delenv("EDP8_EMBEDDER", raising=False)  # reach the auto→fastembed guard branch
+    monkeypatch.setattr(search, "_free_ram_gb", lambda: 0.5)
+    emb = search.make_embedder(ram_floor=1.5)  # must NOT load the model when RAM is tight
+    assert emb.name == "none"
+    assert "low_ram" in (emb.fallback_reason or "")
+
+
+def test_embedder_forced_none_has_reason(monkeypatch):
+    from edp8 import search
+    monkeypatch.setenv("EDP8_EMBEDDER", "none")
+    emb = search.make_embedder()
+    assert emb.name == "none" and emb.fallback_reason == "EDP8_EMBEDDER=none"
+
+
+def test_index_status_shape_without_model():
+    from edp8.search import Index, NullEmbedder
+    idx = Index(embedder=NullEmbedder(fallback_reason="EDP8_EMBEDDER=none"))
+    st = idx.status()
+    assert st["embedder"] == "none" and st["embeddings_active"] is False
+    assert st["reason"] == "EDP8_EMBEDDER=none"
+
+
 # --------------------------------------------------------------------------- withdraw (ruling m-7baa527b65)
 def test_withdraw_decision_hides_it_but_keeps_row_and_links(board, rig):
     epic = make_epic(board, rig)

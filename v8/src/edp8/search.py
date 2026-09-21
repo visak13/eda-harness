@@ -17,6 +17,28 @@ import numpy as np
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 
+RAM_FLOOR_GB = 1.5  # R2-6: below this free RAM at load, skip the embedding model, fall back to FTS
+
+
+def _free_ram_gb() -> float | None:
+    """Available system RAM in GB, or None if it cannot be measured (guard then stays off)."""
+    try:
+        import psutil
+
+        return psutil.virtual_memory().available / (1024**3)
+    except Exception:
+        return None
+
+
+def _rss_mb() -> float | None:
+    """This process's resident set size in MB, or None if it cannot be measured."""
+    try:
+        import psutil
+
+        return psutil.Process().memory_info().rss / (1024**2)
+    except Exception:
+        return None
+
 
 def _tokenize(text: str) -> list[str]:
     """Lowercase, split on non-alphanumerics, drop tokens shorter than 2 chars."""
@@ -85,11 +107,16 @@ class FastEmbedEmbedder:
     """Local ONNX embeddings via fastembed (nomic-embed-text-v1.5)."""
 
     name = "fastembed"
+    fallback_reason: str | None = None
 
     def __init__(self) -> None:
         from fastembed import TextEmbedding
 
+        before = _rss_mb()
         self._model = TextEmbedding(model_name="nomic-ai/nomic-embed-text-v1.5")
+        after = _rss_mb()
+        # R2-6: report the model's resident footprint so a memory-tight host is legible
+        self.resident_mb: float | None = round(after - before, 1) if (before and after) else after
 
     def embed(self, texts: list[str], is_query: bool = False) -> list[list[float]]:
         prefix = "search_query: " if is_query else "search_document: "
@@ -128,34 +155,47 @@ class NullEmbedder:
 
     name = "none"
 
+    def __init__(self, fallback_reason: str | None = None) -> None:
+        self.fallback_reason = fallback_reason
+
     def embed(self, texts: list[str], is_query: bool = False) -> list[list[float]]:
         return []
 
 
-def make_embedder() -> Embedder:
-    """Pick an embedder: EDP8_EMBEDDER forces a choice, else fastembed->ollama->none."""
+def _load_fastembed(ram_floor: float) -> Embedder:
+    """Load fastembed unless free RAM is below the floor (R2-6): a tight host stays on FTS
+    rather than pay a multi-hundred-MB model load and risk an OOM on this shared machine."""
+    free = _free_ram_gb()
+    if free is not None and free < ram_floor:
+        return NullEmbedder(fallback_reason=f"low_ram: {free:.2f}GB free < {ram_floor}GB floor")
+    return FastEmbedEmbedder()
+
+
+def make_embedder(ram_floor: float = RAM_FLOOR_GB) -> Embedder:
+    """Pick an embedder: EDP8_EMBEDDER forces a choice, else fastembed->ollama->none. fastembed
+    is skipped (FTS fallback) when free RAM is under `ram_floor` at load time."""
     forced = os.environ.get("EDP8_EMBEDDER")
     if forced == "fastembed":
         try:
-            return FastEmbedEmbedder()
-        except Exception:
-            return NullEmbedder()
+            return _load_fastembed(ram_floor)
+        except Exception as e:
+            return NullEmbedder(fallback_reason=f"fastembed load failed: {e}")
     if forced == "ollama":
         try:
             return OllamaEmbedder()
-        except Exception:
-            return NullEmbedder()
+        except Exception as e:
+            return NullEmbedder(fallback_reason=f"ollama unavailable: {e}")
     if forced == "none":
-        return NullEmbedder()
+        return NullEmbedder(fallback_reason="EDP8_EMBEDDER=none")
     try:
-        return FastEmbedEmbedder()
+        return _load_fastembed(ram_floor)
     except Exception:
         pass
     try:
         return OllamaEmbedder()
     except Exception:
         pass
-    return NullEmbedder()
+    return NullEmbedder(fallback_reason="no embedder available")
 
 
 def _snippet(text: str, query: str, width: int = 200) -> str:
@@ -199,6 +239,15 @@ class Index:
         with self._lock:
             self._units[_key(type_, id_)] = (type_, id_, text)
             self._dirty = True
+
+    def status(self) -> dict:
+        """R2-6: which seeding backend is live, why (if it fell back), and the model's footprint."""
+        emb = self._embedder
+        on = emb.name != "none" and self._dense_matrix is not None
+        return {"embedder": emb.name, "embeddings_active": on,
+                "reason": getattr(emb, "fallback_reason", None),
+                "model_mb": getattr(emb, "resident_mb", None),
+                "free_ram_gb": round(g, 2) if (g := _free_ram_gb()) is not None else None}
 
     def _reindex(self) -> None:
         docs = [(key, txt) for key, (_, _, txt) in self._units.items()]

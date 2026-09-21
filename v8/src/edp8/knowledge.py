@@ -25,7 +25,7 @@ MAX_RECORDS = 40
 MAX_BYTES = 8000
 ALWAYS_MAX_BYTES = 2000  # R2-5: the "Always applies" (binding, text-only) section's byte reserve
 MAX_HOPS = 2
-SEED_TOP = 5
+SEED_TOP = 8  # R2-6: widen seed recall (top-8 of the FTS∪embeddings rank fusion)
 
 # link weight: how much a hop across this kind carries relevance (design §4.2 step 5).
 LINK_WEIGHT = {
@@ -240,7 +240,8 @@ def _render_line(rtype: str, rec: Any, *, confirmed: bool, fresh: bool, binding:
 def lookup(store: Any, scope: str, *, question: str | None = None, id: str | None = None,
            path: str | None = None, semantic: Callable[[str], list[dict[str, Any]]] | None = None,
            stale_paths: Callable[[Any, str], bool] | None = None,
-           ref_now: datetime | None = None) -> dict[str, Any]:
+           ref_now: datetime | None = None,
+           embed_status: dict[str, Any] | None = None) -> dict[str, Any]:
     """Deterministic retrieval (design §4.2). Returns {records, body, receipt}.
 
     scope: epic|ticket id — the isolation boundary. question|id|path: the starting point.
@@ -379,6 +380,9 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
         "cap": {"records": MAX_RECORDS, "bytes": MAX_BYTES},
         # mandatory overflow = the binding must-follow set could not fit its byte reserve (R2-5)
         "mandatory_overflow": bool(binding_trimmed),
+        # R2-6: which seeding backend served this lookup (embeddings vs FTS-only + why)
+        "embeddings": embed_status or {"embedder": "none", "reason": "no semantic index wired"},
+        "seed_top": SEED_TOP,
         **counts,
     }
     return {"records": records, "body": body, "receipt": receipt}
