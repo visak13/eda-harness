@@ -321,6 +321,11 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
     target_epic = _epic_id_of(store, scope)
     seeds, seed_kind = _seed(store, question=question, node_id=id, path=path,
                              target_epic=target_epic, semantic=semantic)
+    # R2-6: the FTS∪semantic fusion in _seed labels itself "fts"; say "fts+dense" honestly only when
+    # the dense matrix actually seeded (embeddings_active). A RAM/absent-model fallback stays "fts",
+    # with the embeddings block carrying the reason — so the receipt shows which backend served.
+    if seed_kind == "fts" and embed_status and embed_status.get("embeddings_active"):
+        seed_kind = "fts+dense"
 
     # 2-hop scored BFS over kglinks; best weight per node (design §4.2 step 3/5). A ticket/epic/
     # message/doc HUB reached mid-traversal does not re-broadcast to its siblings (R2-5/defect-2):

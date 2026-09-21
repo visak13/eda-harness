@@ -593,6 +593,27 @@ def test_ranked_floor_disabled_keeps_weak_record(board, rig, monkeypatch):
     assert out["receipt"]["floor_dropped"] == 0
 
 
+# --------------------------------------------------------------------------- R2-6 seed_kind honesty
+def test_seed_kind_reports_dense_when_embeddings_active(board, rig):
+    epic = make_epic(board, rig)
+    board.record_decision(rig["owner"], scope=epic.id, text="webhooks allowlist hosts rule")
+    out = knowledge.lookup(board.store, epic.id, question="webhooks allowlist hosts",
+                           semantic=lambda q: [], embed_status={"embeddings_active": True})
+    assert out["receipt"]["seed_kind"] == "fts+dense"
+
+
+def test_seed_kind_reports_fts_when_embeddings_inactive(board, rig):
+    epic = make_epic(board, rig)
+    board.record_decision(rig["owner"], scope=epic.id, text="webhooks allowlist hosts rule")
+    # embedder present but not active (e.g. RAM fallback) => the receipt must not claim dense
+    out = knowledge.lookup(board.store, epic.id, question="webhooks allowlist hosts",
+                           semantic=lambda q: [], embed_status={"embeddings_active": False, "reason": "low RAM"})
+    assert out["receipt"]["seed_kind"] == "fts"
+    out2 = knowledge.lookup(board.store, epic.id, question="webhooks allowlist hosts",
+                            semantic=None, embed_status=None)
+    assert out2["receipt"]["seed_kind"] == "fts"
+
+
 # --------------------------------------------------------------------------- withdraw (ruling m-7baa527b65)
 def test_withdraw_decision_hides_it_but_keeps_row_and_links(board, rig):
     epic = make_epic(board, rig)
