@@ -182,10 +182,30 @@ def write_pack(conn, path):
     return nbytes
 
 
+def write_pack_perq(conn, path):
+    """Per-question isolation: each question gets ONLY its own walk() output
+    (walk's intended one-need-one-walk use). Avoids cross-question contamination
+    a single merged pack causes. Per-question bytes are the honest read cost."""
+    parts = ["# Per-question retrieval pack — answer each question ONLY from the "
+             "facts in its own block.\n"]
+    total = 0
+    for item in QUESTIONS:
+        body, r, _ = walk.walk(item["seed"], uses_on=True, detail=True, conn=conn)
+        total += r["bytes"]
+        parts.append(f"## Q{item['id']}: {item['q']}\nFacts:\n{body}\n")
+    text = "\n".join(parts)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+    print(f"per-q pack: {path}  bytes={len(text.encode('utf-8'))}  "
+          f"avg_walk_bytes={total // len(QUESTIONS)}")
+
+
 if __name__ == "__main__":
     conn = db.connect()
     if len(sys.argv) > 2 and sys.argv[1] == "pack":
         write_pack(conn, sys.argv[2])
+    elif len(sys.argv) > 2 and sys.argv[1] == "packq":
+        write_pack_perq(conn, sys.argv[2])
     else:
         seed_comparison(conn)
         walk_recall(conn)
