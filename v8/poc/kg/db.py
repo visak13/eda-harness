@@ -46,6 +46,16 @@ CREATE TABLE IF NOT EXISTS ingest_state (
     value TEXT
 );
 
+-- decision thread membership, persisted so replaces-chains work ACROSS
+-- incremental runs (not just within one batch): a later answer to an older
+-- root supersedes the earlier decision even when they arrive in separate runs.
+CREATE TABLE IF NOT EXISTS msg_thread (
+    node_id TEXT PRIMARY KEY,
+    root    TEXT NOT NULL,
+    seq     INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_msg_thread_root ON msg_thread(root);
+
 -- live code state: latest commit time per module path (refreshed every ingest).
 -- Staleness = module_head.head_at > node.last_verified_at, so a new commit
 -- flags the touched nodes stale without bumping their verification time.

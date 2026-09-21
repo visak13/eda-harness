@@ -125,27 +125,52 @@ def seed_comparison(conn):
 
 
 def walk_recall(conn):
-    print("\n== WALK RECALL (did walk() return a needed node?) ==")
-    hits, misses = 0, []
-    evicted = []
+    # Honest naming (Astra): this measures whether AT LEAST ONE designated
+    # answer-node was returned for a SHAPED seed. It is answer-node presence,
+    # not complete answer-bearing recall, and the seeds contain answer terms
+    # (the steer permits shaping). The unaided figure is reported separately.
+    print("\n== ANSWER-NODE PRESENCE — shaped seeds (>=1 designated id returned) ==")
+    # exercise `uses` first so the eviction check is not vacuous (all start at 0)
+    for _ in range(3):
+        for item in QUESTIONS:
+            walk.walk(item["seed"], record=True, detail=True, conn=conn)
+    hits, misses, evicted = 0, [], []
     for item in QUESTIONS:
         need = set(item["need"])
-        _, r_on, sel_on = walk.walk(item["seed"], uses_on=True, detail=True, conn=conn)
-        got = need & set(sel_on)
-        if got:
-            hits += 1
-            status = "HIT " + next(iter(got))
-        else:
-            misses.append(item["id"])
-            status = "MISS  need=" + ",".join(sorted(need))
-        # uses-eviction: with uses off, does a previously-missed need node appear?
+        _, _, sel_on = walk.walk(item["seed"], uses_on=True, detail=True, conn=conn)
         _, _, sel_off = walk.walk(item["seed"], uses_on=False, detail=True, conn=conn)
-        if not got and (need & set(sel_off)):
+        got = need & set(sel_on)
+        # per-node eviction: a needed node present with uses OFF but gone with uses ON
+        if (need & set(sel_off)) - set(sel_on):
             evicted.append(item["id"])
+        if got:
+            hits += 1; status = "HIT " + next(iter(got))
+        else:
+            misses.append(item["id"]); status = "MISS need=" + ",".join(sorted(need))
         print(f"  Q{item['id']:>2}: {status}")
-    print(f"walk recall: {hits}/12; misses: {misses or 'none'}")
-    print(f"'uses' pushed a needed node out of the cut on: {evicted or 'no question'}")
+    print(f"shaped answer-node presence: {hits}/12; misses: {misses or 'none'}")
+    print(f"'uses' evicted a needed node on: {evicted or 'no question'} "
+          f"(max uses now {conn.execute('SELECT max(uses) FROM node').fetchone()[0]})")
     return hits, misses, evicted
+
+
+def unaided_recall(conn):
+    """The HONEST retrieval number: seed with the raw question text (no answer
+    terms shaped in), report seed@5 and walk answer-node presence."""
+    print("\n== UNAIDED — raw question text as the seed (no shaping) ==")
+    fh = wh = 0
+    wmiss = []
+    for item in QUESTIONS:
+        need = set(item["need"])
+        fs = fts_seed(conn, item["q"], 5)
+        _, _, sel = walk.walk(item["q"], detail=True, conn=conn)
+        f_ok = bool(need & set(fs)); w_ok = bool(need & set(sel))
+        fh += f_ok; wh += w_ok
+        if not w_ok:
+            wmiss.append(item["id"])
+    print(f"unaided seed@5: {fh}/12 ; unaided walk answer-node presence: {wh}/12; "
+          f"walk misses: {wmiss or 'none'}")
+    return fh, wh, wmiss
 
 
 def write_pack(conn, path):
@@ -208,4 +233,5 @@ if __name__ == "__main__":
         write_pack_perq(conn, sys.argv[2])
     else:
         seed_comparison(conn)
+        unaided_recall(conn)
         walk_recall(conn)

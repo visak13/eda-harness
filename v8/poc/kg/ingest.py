@@ -53,11 +53,13 @@ def ruling_sentence(text: str, maxlen: int = 300) -> str:
 
 def upsert_source(conn, kind, ref, excerpt):
     sid = f"{kind}:{ref}"
-    conn.execute(
-        "INSERT INTO source(id, kind, ref, excerpt) VALUES (?,?,?,?) "
-        "ON CONFLICT(id) DO UPDATE SET excerpt=excluded.excerpt",
-        (sid, kind, ref, (excerpt or "")[:2000]),
-    )
+    ex = (excerpt or "")[:2000]
+    row = conn.execute("SELECT excerpt FROM source WHERE id=?", (sid,)).fetchone()
+    if row is None:
+        conn.execute("INSERT INTO source(id, kind, ref, excerpt) VALUES (?,?,?,?)",
+                     (sid, kind, ref, ex))
+    elif row["excerpt"] != ex:  # only write when it actually changed (true no-op re-runs)
+        conn.execute("UPDATE source SET excerpt=? WHERE id=?", (ex, sid))
     return sid
 
 
@@ -142,7 +144,7 @@ def ingest_messages(conn, stats):
     msgs = board.messages(EPIC, since_seq=since)
     if not msgs:
         return 0
-    by_reply = defaultdict(list)  # reply_to root -> [decision nodes] for replaces chains
+    roots_touched = set()  # reply_to roots that gained a decision this run
     judgement = 0
     maxseq = since
     for m in sorted(msgs, key=lambda x: x.get("seq", 0)):
@@ -169,7 +171,10 @@ def ingest_messages(conn, stats):
                 stats["edge+"] += add_edge(conn, nid, target, "decides", m.get("created_at"))
                 stats["edge+"] += add_edge(conn, nid, src, "came_from", m.get("created_at"))
                 if m.get("reply_to"):
-                    by_reply[m["reply_to"]].append((m.get("seq", 0), nid, m.get("created_at")))
+                    conn.execute(
+                        "INSERT OR IGNORE INTO msg_thread(node_id, root, seq) VALUES (?,?,?)",
+                        (nid, m["reply_to"], m.get("seq", 0)))
+                    roots_touched.add(m["reply_to"])
         # lessons: findings and deviations, any author
         if kind in ("finding", "deviation"):
             src = upsert_source(conn, "message", mid, text)
@@ -180,13 +185,22 @@ def ingest_messages(conn, stats):
             stats["edge+"] += add_edge(conn, nid, target, "learned_from", m.get("created_at"))
             stats["edge+"] += add_edge(conn, nid, src, "came_from", m.get("created_at"))
 
-    # replaces: within one reply_to thread, a later owner/architect decision
-    # supersedes the earlier one; mark earlier replaced, edge new -> old.
-    for root, items in by_reply.items():
-        items.sort()
-        for (s1, prev, _), (s2, cur, at2) in zip(items, items[1:]):
+    # replaces: within one reply_to thread, a later decision supersedes the
+    # earlier one. Rebuilt from the PERSISTED thread membership (all runs), so
+    # a decision ingested in a later batch still supersedes one from an earlier
+    # batch — incremental and full ingest converge. Only re-touched roots are
+    # recomputed. Caveat (Astra): thread membership is not proof of semantic
+    # supersession; complementary answers to one root are collapsed — a known
+    # limitation recorded in the findings, not silently correct.
+    for root in roots_touched:
+        rows = conn.execute(
+            "SELECT node_id, seq FROM msg_thread WHERE root=? ORDER BY seq, node_id", (root,)).fetchall()
+        chain = [r["node_id"] for r in rows]
+        for prev, cur in zip(chain, chain[1:]):
             conn.execute("UPDATE node SET status='replaced' WHERE id=?", (prev,))
-            stats["edge+"] += add_edge(conn, cur, prev, "replaces", at2)
+            stats["edge+"] += add_edge(conn, cur, prev, "replaces", None)
+        if chain:  # newest stays live
+            conn.execute("UPDATE node SET status='live' WHERE id=?", (chain[-1],))
     db.set_state(conn, "msg_seq", str(maxseq))
     stats["judgement"] = stats.get("judgement", 0) + judgement
     stats["msgs_scanned"] = stats.get("msgs_scanned", 0) + len(msgs)
@@ -223,13 +237,19 @@ def ingest_git(conn, stats, tickets, label_map):
     # only names the epic is too coarse to attribute; attributing it to the
     # problem node would drag every epic-level owner musing into a module walk.
     aliases = sorted(alias_to_ticket, key=len, reverse=True)
+    # word-boundary matchers so "S1" does not match "S10" (a-in-subject bug)
+    matchers = {a: re.compile(r"(?<![\w])" + re.escape(a) + r"(?![\w])") for a in aliases}
+
+    def norm(f):
+        return f[3:] if f.startswith("v8/") else f  # story convention drops v8/
 
     out = subprocess.run(
         ["git", "-C", REPO, "log", "--name-only",
          "--pretty=format:%x01%H%x1f%aI%x1f%s", "--", "v8"],
         capture_output=True, text=True, encoding="utf-8",
     ).stdout
-    head_at = {}  # normalized path -> latest commit iso
+    blocks = []
+    head_at = {}  # normalized path -> latest commit iso, over ALL commits
     for block in out.split("\x01"):
         if not block.strip():
             continue
@@ -238,33 +258,41 @@ def ingest_git(conn, stats, tickets, label_map):
         if len(parts) < 3:
             continue
         sha, cdate, subject = parts[0], parts[1], parts[2]
-        files = [f for f in rest if f.strip()]
-        # which epic tickets does this commit name?
-        matched = {alias_to_ticket[a] for a in aliases if a in subject}
+        files = [norm(f) for f in rest if f.strip()]
+        # head_at over EVERY commit (log is newest-first): a later UNLABELLED
+        # commit touching a known module must still advance its head, else the
+        # module reads falsely fresh. Staleness = head_at > last_verified_at.
+        for p in files:
+            if p not in head_at:
+                head_at[p] = cdate
+        blocks.append((sha, cdate, subject, files))
+
+    module_paths = set()
+    for sha, cdate, subject, files in blocks:
+        matched = {alias_to_ticket[a] for a in aliases if matchers[a].search(subject)}
         if not matched:
             continue
         csrc = upsert_source(conn, "commit", sha[:12], subject)
-        for f in files:
-            path = f[3:] if f.startswith("v8/") else f  # story convention drops v8/
-            if head_at.get(path, "") < cdate:
-                head_at[path] = cdate
+        for path in files:
             mnid = f"module:{path}"
+            module_paths.add(path)
             # module.last_verified_at set once, at creation, to this commit date
             if upsert_node(conn, mnid, "module", path, module=path,
                            source_id=csrc, created_at=cdate, last_verified_at=cdate):
                 stats["node+"] += 1
             stats["edge+"] += add_edge(conn, mnid, csrc, "came_from", cdate)
             for tid in matched:
-                tnode = f"ticket:{tid}" if tid != EPIC else f"problem:{EPIC}"
-                stats["edge+"] += add_edge(conn, mnid, tnode, "touches", cdate)
-    # refresh live code state (this is what staleness compares against)
-    for path, at in head_at.items():
-        conn.execute(
-            "INSERT INTO module_head(path,head_at) VALUES (?,?) "
-            "ON CONFLICT(path) DO UPDATE SET head_at=excluded.head_at",
-            (path, at),
-        )
-    stats["modules"] = len(head_at)
+                stats["edge+"] += add_edge(conn, mnid, f"ticket:{tid}", "touches", cdate)
+    # refresh live code state for every module node (head over all commits);
+    # write only when the head actually moved so a no-op re-run writes nothing
+    for path in module_paths:
+        at = head_at.get(path, "")
+        row = conn.execute("SELECT head_at FROM module_head WHERE path=?", (path,)).fetchone()
+        if row is None:
+            conn.execute("INSERT INTO module_head(path,head_at) VALUES (?,?)", (path, at))
+        elif row["head_at"] != at:
+            conn.execute("UPDATE module_head SET head_at=? WHERE path=?", (at, path))
+    stats["modules"] = len(module_paths)
     return None
 
 

@@ -43,7 +43,7 @@ def _fts_seed(conn, text, k=5):
         rows = conn.execute(
             "SELECT n.id FROM node_fts f JOIN node n ON n.rowid=f.rowid "
             "WHERE node_fts MATCH ? AND n.status='live' "
-            "ORDER BY bm25(node_fts) LIMIT ?", (q, k)).fetchall()
+            "ORDER BY bm25(node_fts), n.id LIMIT ?", (q, k)).fetchall()  # id tie-break
     except Exception:
         rows = []
     return [r["id"] for r in rows]
@@ -187,7 +187,14 @@ def _detail(conn, r):
     if not s or not s["excerpt"]:
         return ""
     ex = " ".join(s["excerpt"].split())
-    if ex.startswith(r["text"][:40]):  # avoid echoing the same sentence twice
+    # window the excerpt on the ruling content (where node.text starts in the
+    # source), not the first 340 chars — otherwise a message's preamble is all
+    # the reader ever sees (this was the real Q7 information-loss bug).
+    probe = r["text"][:40]
+    idx = ex.find(probe)
+    if idx > 0:
+        ex = ex[idx:]
+    elif idx == 0:
         ex = ex[len(r["text"]):].strip() or ex
     return "    detail: " + ex[:340] if ex else ""
 
@@ -227,11 +234,13 @@ def walk(start, uses_on=True, record=False, detail=False, conn=None):
         scored.append((_score(conn, nid, w, span, None, uses_on), nid))
     scored.sort(key=lambda x: (-x[0], x[1]))
 
-    # assemble: mandatory first (never cut), then scored until caps
+    # assemble: mandatory first (never cut), then scored until caps.
+    # sorted() so the set's hash-seed iteration order can't make walk
+    # non-deterministic across processes.
     selected, cut_by_type = [], {}
-    order = list(mandatory) + [nid for _, nid in scored]
     mandatory_set = set(mandatory)
-    used_bytes, count, detailed = 0, 0, 0
+    order = sorted(mandatory) + [nid for _, nid in scored]
+    used_bytes, count, detailed, mandatory_bytes = 0, 0, 0, 0
     lines = []
     for nid in _dedupe(order):
         r = conn.execute("SELECT * FROM node WHERE id=?", (nid,)).fetchone()
@@ -245,14 +254,17 @@ def walk(start, uses_on=True, record=False, detail=False, conn=None):
             if d:
                 block = line + "\n" + d
                 detailed += 1
+        bsize = len(block.encode("utf-8")) + 1  # real UTF-8 bytes, not chars
         forced = nid in mandatory_set
-        if not forced and (count >= MAX_NODES or used_bytes + len(block) + 1 > MAX_BYTES):
+        if not forced and (count >= MAX_NODES or used_bytes + bsize > MAX_BYTES):
             cut_by_type[r["type"]] = cut_by_type.get(r["type"], 0) + 1
             continue
         selected.append(nid); lines.append(block)
         if record:
             conn.execute("UPDATE node SET uses = uses + 1 WHERE id=?", (nid,))
-        used_bytes += len(block) + 1
+        used_bytes += bsize
+        if forced:
+            mandatory_bytes += bsize
         count += 1
     if record:
         conn.commit()
@@ -262,6 +274,10 @@ def walk(start, uses_on=True, record=False, detail=False, conn=None):
         "returned": count, "mandatory": len(mandatory_set & set(selected)),
         "bytes": used_bytes, "cut_by_type": cut_by_type,
         "cap": {"nodes": MAX_NODES, "bytes": MAX_BYTES},
+        # mandatory constraints are exempt from the cut, so they can push the
+        # total past the cap; the receipt says so rather than hide it.
+        "mandatory_overflow": used_bytes > MAX_BYTES or count > MAX_NODES,
+        "mandatory_bytes": mandatory_bytes,
     }
     body = "\n".join(lines)
     if close:
