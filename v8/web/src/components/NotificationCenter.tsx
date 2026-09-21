@@ -168,10 +168,18 @@ export function NotificationCenter({ actor, children }: { actor: string; childre
     return () => { stopped = true; navigator.serviceWorker.removeEventListener('message', listener); };
   }, [actor, open]);
   // A toast whose original client disappeared opens a fresh shell without credentials.
+  // Only the initial load; normal source navigation remains S3's responsibility. The provider now
+  // mounts BEFORE whoami resolves (actor ''), so wait for the first real actor: an authorization
+  // started with actor '' compared `value.participant !== actor` and bailed silently, losing the
+  // "Request opened / Request ready" toast and the draft-safe pending destination on a cold
+  // ?request= load (qa, e2e/qa-ui-integration.spec.ts:195).
+  const initialAuthorized = useRef(false);
   useEffect(() => {
+    if (!actor || initialAuthorized.current) return;
+    initialAuthorized.current = true;
     const request = new URL(location.href).searchParams.get('request');
     if (request) void open(request, true);
-  }, []); // only initial load; normal source navigation remains S3's responsibility
+  }, [actor, open]);
   useEffect(() => {
     let stopped = false;
     let running = false;

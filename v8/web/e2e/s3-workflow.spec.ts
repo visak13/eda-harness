@@ -41,6 +41,8 @@ for (const [width, height] of [[1440, 900], [320, 568], [844, 390]]) test(`New e
   const made = (await (await response).json()).value;
   expect(made.title).toBe("Separate title"); expect(made.words).toBe(words);
   await expect(page).toHaveURL(new RegExp(`/epic/${made.id}`));
+  // R1 (9734d1d) moved New epic off the shell onto the Epics page; the emptied form is checked there.
+  await page.goto("/ui/epics?as=owner");
   await page.getByRole("button", { name: "New epic", exact: true }).click();
   await expect(page.getByTestId("new-epic-title")).toHaveValue("");
   await expect(page.getByTestId("new-epic-words")).toHaveValue("");
