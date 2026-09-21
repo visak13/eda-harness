@@ -654,7 +654,7 @@ _TOOLS_BY_TYPE: dict[str, list[str]] = {
     "session": ["session_query", "spawn", "reap", "resume", "resume_self", "close_self"],
     "participant": ["participants", "whoami", "spawn"],
     "decision": ["record_decision", "withdraw_decision", "lookup", "find"],
-    "claim": ["record_claim", "lookup", "find"],
+    "claim": ["record_claim", "withdraw_claim", "lookup", "find"],
     "lesson": ["lookup", "find"],
     "kglink": ["lookup"],
 }
@@ -1608,12 +1608,21 @@ class WithdrawDecisionArgs(BaseModel):
     reason: str = Field(default="", description="one line: why it is being withdrawn (at most 240 chars)")
 
 
+class WithdrawClaimArgs(BaseModel):
+    claim_id: str = Field(description="the id of the claim to retire")
+    reason: str = Field(default="", description="one line: why it is being withdrawn (at most 240 chars)")
+
+
 def _lookup(a: LookupArgs) -> dict[str, Any]:
     return get_client().lookup(a.scope, question=a.question, id=a.id, path=a.path)
 
 
 def _withdraw_decision(a: WithdrawDecisionArgs) -> dict[str, Any]:
     return get_client().withdraw_decision(a.decision_id, reason=a.reason)
+
+
+def _withdraw_claim(a: WithdrawClaimArgs) -> dict[str, Any]:
+    return get_client().withdraw_claim(a.claim_id, reason=a.reason)
 
 
 KNOWLEDGE_TOOLS = [
@@ -1642,6 +1651,12 @@ KNOWLEDGE_TOOLS = [
             "when a decision was mistaken or entered in error and no newer decision replaces it",
             "the withdrawn decision record",
             WithdrawDecisionArgs, _withdraw_decision, "knowledge"),
+    ToolDef("withdraw_claim",
+            "Retire a claim without a successor: sets its status to withdrawn with a one-line reason, "
+            "keeps the row and its links, and lookup/search never return it again",
+            "when a claim was superseded (e.g. by a re-curation) or entered in error and no newer claim replaces it",
+            "the withdrawn claim record",
+            WithdrawClaimArgs, _withdraw_claim, "knowledge"),
 ]
 
 # ============================================================================= ruleset
@@ -2065,7 +2080,7 @@ ROLE_BUNDLES[Role.consultant.value] = _IDENTITY + ["ticket_read", "ticket_query"
 # (test_lifecycle_fixes.py). A role that already has a name (none do) is not duplicated.
 for _role_tools in ROLE_BUNDLES.values():
     _at = _role_tools.index("inbox") if "close_self" in _role_tools else len(_role_tools)
-    for _kt in ("record_decision", "record_claim", "lookup", "withdraw_decision"):
+    for _kt in ("record_decision", "record_claim", "lookup", "withdraw_decision", "withdraw_claim"):
         if _kt not in _role_tools:
             _role_tools.insert(_at, _kt)
             _at += 1

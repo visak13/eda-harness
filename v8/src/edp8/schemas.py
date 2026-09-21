@@ -139,6 +139,7 @@ class ClaimStatus(StrEnum):
     open = "open"
     confirmed = "confirmed"
     refuted = "refuted"
+    withdrawn = "withdrawn"  # retired without a successor (e.g. superseded by a re-curation); kept, never handed out
 
 
 class LessonStatus(StrEnum):
@@ -368,6 +369,8 @@ class Decision(Obj):
     decided_by: str = ""  # participant id
     domains: list[str] = Field(default_factory=list)  # domain checklist names it touches
     withdrawn_reason: str = Field(default="", max_length=240)  # one line, set when status→withdrawn
+    decided_at: datetime | None = None  # when the ruling was MADE (source msg/doc date); scoring +
+    # render use it over created_at, which for a backfilled record is only when the record was written
 
 
 class Claim(Obj):
@@ -380,6 +383,8 @@ class Claim(Obj):
     evidence: list[str] = Field(default_factory=list)  # attachment | check | commit ids
     status: ClaimStatus = ClaimStatus.open
     source: str | None = None
+    withdrawn_reason: str = Field(default="", max_length=240)  # one line, set when status→withdrawn
+    decided_at: datetime | None = None  # when the claim was MADE (source date); scoring/render over created_at
 
 
 class Lesson(Obj):

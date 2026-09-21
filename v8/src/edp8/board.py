@@ -1785,6 +1785,37 @@ class Board:
         self.store.put("kglink", lk)
         return lk
 
+    def _source_date(self, source: str | None):
+        """The created_at of the message or doc a record came from — the date the ruling was MADE.
+        None when there is no source or it is an id we do not hold (e.g. a commit); caller falls back
+        to created_at (steer m-34d0beb1e8)."""
+        if not source:
+            return None
+        obj = self.store.get("message", source) or self.store.get("doc", source)
+        return getattr(obj, "created_at", None) if obj is not None else None
+
+    def backfill_decided_at(self) -> dict[str, int]:
+        """Data pass (no re-curation): for every live decision/claim with a source id and no decided_at,
+        set decided_at from the source's date so scoring/render use when it was decided, not the evening
+        it was backfilled. Re-embedding is not needed — decided_at is not part of the embedded text."""
+        set_dec = set_clm = skipped = 0
+        for rtype in ("decision", "claim"):
+            for rec in self.store.query(rtype, limit=100000):
+                if getattr(rec, "decided_at", None) is not None:
+                    continue
+                dt = self._source_date(getattr(rec, "source", None))
+                if dt is None:
+                    skipped += 1
+                    continue
+                rec.decided_at = dt  # type: ignore[attr-defined]
+                with self.store.transaction():
+                    self.store.put(rtype, rec)
+                if rtype == "decision":
+                    set_dec += 1
+                else:
+                    set_clm += 1
+        return {"decisions_set": set_dec, "claims_set": set_clm, "skipped_no_source_date": skipped}
+
     def record_decision(self, actor: Participant, *, scope: str, text: str, detail: str = "",
                         replaces: list[str] | None = None, binding: bool = False,
                         source: str | None = None, domains: list[str] | None = None) -> Decision:
@@ -1794,7 +1825,8 @@ class Board:
         replaces = list(replaces or [])
         d = Decision(id=new_id("dec"), scope=scope, text=text, detail=detail or "",
                      status=DecisionStatus.live, replaces=replaces, binding=binding,
-                     source=source, decided_by=actor.id, domains=list(domains or []), created_by=actor.id)
+                     source=source, decided_by=actor.id, domains=list(domains or []), created_by=actor.id,
+                     decided_at=self._source_date(source))  # when it was decided (source date), not now
         with self.store.transaction():
             self.store.put("decision", d)
             # a `decides` edge to the scope ticket/epic connects the decision for a lookup by id/path
@@ -1820,7 +1852,8 @@ class Board:
         """Record something stated (design §4.1/§3). A `came_from` kglink to the source is written;
         lookup labels it confirmed only when evidence is non-empty and basis is measured|ruled."""
         c = Claim(id=new_id("clm"), scope=scope, text=text, basis=basis,
-                  evidence=list(evidence or []), status=status, source=source, created_by=actor.id)
+                  evidence=list(evidence or []), status=status, source=source, created_by=actor.id,
+                  decided_at=self._source_date(source))
         with self.store.transaction():
             self.store.put("claim", c)
             if scope:
@@ -1847,6 +1880,22 @@ class Board:
             self.store.put("decision", d)  # _fts_text returns "" for withdrawn → drops it from FTS
         self._index("decision", d.id, "")  # overwrite the semantic vector so search drops it too
         return d
+
+    def withdraw_claim(self, actor: Participant, *, claim_id: str, reason: str) -> Claim:
+        """Retire a claim without a successor (status `withdrawn`): the row and its links are kept,
+        but lookup never returns it and the search index drops it. Idempotent. Gives re-curation a
+        way to retire round-1 claims that round 2 superseded (steer m-70df16487c), the claim analogue
+        of withdraw_decision."""
+        c = self.store.get("claim", claim_id)
+        if c is None:
+            raise BoardError("not_found", f"claim {claim_id!r} does not exist",
+                             "pass the id of an existing claim")
+        c.status = ClaimStatus.withdrawn  # type: ignore[attr-defined]
+        c.withdrawn_reason = (reason or "").strip()[:240]  # type: ignore[attr-defined]
+        with self.store.transaction():
+            self.store.put("claim", c)  # _fts_text returns "" for withdrawn → drops it from FTS
+        self._index("claim", c.id, "")  # overwrite the semantic vector so search drops it too
+        return c
 
     def reembed(self) -> dict[str, Any]:
         """R2 item-3: trigger the in-board bounded re-embed pass for any unit missing a vector (no
@@ -1880,7 +1929,10 @@ class Board:
         embed_status = None
         source_search = None
         if self.index is not None:
-            semantic = lambda q: self.index.search(q, k=20, types=set(knowledge.RECORD_TYPES))  # noqa: E731
+            # D4: the seed leg is DENSE-ONLY so it casts an independent vote alongside FTS in _seed,
+            # instead of one diluted vote inside the BM25+dense fused search().
+            semantic = lambda q: self.index.dense_search(q, k=knowledge.SEED_TOP * 2,  # noqa: E731
+                                                         types=set(knowledge.RECORD_TYPES))
             embed_status = self.index.status()  # R2-6: report the seeding backend in the receipt
             # R2-7: the source-fallback tier searches the epic's own messages/docs (BM25 ∪ dense)
             source_search = lambda q: self.index.search(q, k=30, types={"message", "doc"})  # noqa: E731

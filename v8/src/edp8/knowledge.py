@@ -26,7 +26,12 @@ MAX_RECORDS = 40
 MAX_BYTES = 8000
 ALWAYS_MAX_BYTES = 2000  # R2-5: the "Always applies" (binding, text-only) section's byte reserve
 MAX_HOPS = 2
-SEED_TOP = 8  # R2-6: widen seed recall (top-8 of the FTS∪embeddings rank fusion)
+SEED_TOP = 8  # R2-6/D4: each leg (FTS, dense) casts its own top-8 vote, then RRF-fused
+SEED_MAX = 16  # D4: cap on the union of both legs' seeds (so a wider net still bounds the BFS)
+# D2: seeds carry a rank-decayed weight in [SEED_W_LO, SEED_W_HI] so ranked scores discriminate by
+# retrieval relevance instead of collapsing to a constant; both stay above the 0.6 one-hop weight.
+SEED_W_HI = 1.0
+SEED_W_LO = 0.7
 # R2-7 source fallback: when the question reaches too few strong records, quote the epic's raw
 # messages/doc paragraphs so a not-yet-curated answer is still visible (marked unconfirmed).
 RELEVANCE_FLOOR = 0.5   # graph weight (1.0 = a direct seed, 0.6 = one strong hop) that counts as strong
@@ -95,7 +100,7 @@ def _dropped(rec: Any, rec_type: str) -> bool:
     if rec_type == "decision":
         return st in ("replaced", "withdrawn")
     if rec_type == "claim":
-        return st == "refuted"
+        return st in ("refuted", "withdrawn")
     if rec_type == "lesson":
         return st == "retired"
     return False
@@ -104,6 +109,13 @@ def _dropped(rec: Any, rec_type: str) -> bool:
 def _freshness(created_at: datetime, ref: datetime) -> float:
     age_days = max(0.0, (ref - created_at).total_seconds() / 86400.0)
     return 1.0 / (1.0 + age_days / 30.0)
+
+
+def _effective_date(rec: Any) -> datetime:
+    """When the ruling/claim was MADE. For a backfilled record created_at is only the evening it was
+    written, so freshness and the rendered date use decided_at (the source msg/doc date) when set,
+    falling back to created_at (steer m-34d0beb1e8)."""
+    return getattr(rec, "decided_at", None) or rec.created_at
 
 
 def _usefulness(rec: Any, rec_type: str) -> float:
@@ -212,54 +224,79 @@ def _history_chain(store: Any, rec: Any, _seen: set[str] | None = None) -> list[
     return out
 
 
+def _leg_ranked(store: Any, hits: Any, target_epic: str | None, limit: int) -> list[str]:
+    """One retrieval leg's hits → in-scope record ids in rank order, de-duped, capped at `limit`."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for h in hits or []:
+        nid = h["id"] if isinstance(h, dict) else h
+        if nid in seen:
+            continue
+        found = _find_record(store, nid)
+        if not found:
+            continue
+        rtype, rec = found
+        if _dropped(rec, rtype):
+            continue  # a replaced/withdrawn/refuted record must not take a seed slot
+        if _in_scope(store, rec, rtype, target_epic):
+            out.append(nid)
+            seen.add(nid)
+        if len(out) >= limit:
+            break
+    return out
+
+
 def _seed(store: Any, *, question: str | None, node_id: str | None, path: str | None,
-          target_epic: str | None, semantic: Callable[[str], list[dict[str, Any]]] | None) -> tuple[list[str], str]:
-    """Seed nodes and the seed kind. Explicit id/path win; else FTS ∪ semantic, top SEED_TOP."""
+          target_epic: str | None,
+          semantic: Callable[[str], list[dict[str, Any]]] | None,
+          ) -> tuple[list[str], dict[str, float], str]:
+    """Seed nodes, their retrieval weights, and the seed kind. Explicit id/path win; else the FTS and
+    DENSE legs each cast their own top-SEED_TOP vote (D4: not top-8 of one fused search, so a weak leg
+    cannot crowd out the other), fused via RRF. Seeds carry a rank-decayed weight in [SEED_W_LO, 1.0]
+    so the ranked scores discriminate instead of collapsing to a constant (D2)."""
     if node_id:
         rec = _find_record(store, node_id)
         if rec:
             # an explicit record id seeds only if it is in scope (never bridge to a foreign epic)
             if _in_scope(store, rec[1], rec[0], target_epic):
-                return [node_id], "id"
-            return [], "id_out_of_scope"
+                return [node_id], {node_id: 1.0}, "id"
+            return [], {}, "id_out_of_scope"
         if store.get("ticket", node_id) or store.get("doc", node_id):
-            return [node_id], "id"
+            return [node_id], {node_id: 1.0}, "id"
     if path:
         # a path seeds through kglink endpoints that name it (touches edges), else FTS on the string.
-        hits = [lk.from_id for lk in store.query("kglink", {"to_id": path}, limit=50)]
+        hits = [lk.from_id for lk in store.query("kglink", {"to_id": path}, limit=50)][:SEED_TOP]
         if hits:
-            return hits[:SEED_TOP], "path"
+            return hits, {h: 1.0 for h in hits}, "path"
         question = question or path
     if not question:
-        return [], "none"
-    fused: dict[str, float] = {}
-    rrf_k = 60
-    # over-fetch well past SEED_TOP so in-scope hits are never crowded out by foreign matches
-    # before the scope filter runs below (design §4.2: seeds are limited to the agent's epic).
+        return [], {}, "none"
+    # Each leg over-fetches past SEED_TOP so in-scope hits are not crowded out by foreign matches
+    # before scope filtering (design §4.2: seeds are limited to the agent's epic).
     try:
-        for rank, h in enumerate(store.fts_search(question, types=set(RECORD_TYPES), limit=200), start=1):
-            fused[h["id"]] = fused.get(h["id"], 0.0) + 1.0 / (rrf_k + rank)
+        fts_leg = _leg_ranked(store, store.fts_search(question, types=set(RECORD_TYPES), limit=200),
+                              target_epic, SEED_TOP)
     except Exception:
-        pass
+        fts_leg = []
+    dense_leg: list[str] = []
     if semantic is not None:
         try:
-            for rank, h in enumerate(semantic(question), start=1):
-                if h.get("type") in RECORD_TYPES:
-                    fused[h["id"]] = fused.get(h["id"], 0.0) + 1.0 / (rrf_k + rank)
+            dense_leg = _leg_ranked(store, semantic(question), target_epic, SEED_TOP)
         except Exception:
-            pass
-    ranked = sorted(fused.items(), key=lambda kv: (-kv[1], kv[0]))
-    seeds: list[str] = []
-    for nid, _ in ranked:
-        found = _find_record(store, nid)
-        if not found:
-            continue
-        rtype, rec = found
-        if _in_scope(store, rec, rtype, target_epic):
-            seeds.append(nid)
-        if len(seeds) >= SEED_TOP:
-            break
-    return seeds, "fts"
+            dense_leg = []
+    # RRF over the two legs' rank lists; each leg gets an equal, independent vote.
+    rrf_k = 60
+    fused: dict[str, float] = {}
+    for leg in (fts_leg, dense_leg):
+        for rank, nid in enumerate(leg, start=1):
+            fused[nid] = fused.get(nid, 0.0) + 1.0 / (rrf_k + rank)
+    order = sorted(fused, key=lambda nid: (-fused[nid], nid))[:SEED_MAX]
+    n = len(order)
+    weights: dict[str, float] = {}
+    for i, nid in enumerate(order):
+        weights[nid] = SEED_W_HI if n <= 1 else SEED_W_HI - (SEED_W_HI - SEED_W_LO) * (i / (n - 1))
+    kind = "fts+dense" if dense_leg else "fts"
+    return order, weights, kind
 
 
 def _in_scope(store: Any, rec: Any, rec_type: str, target_epic: str | None) -> bool:
@@ -299,7 +336,10 @@ def _render_line(rtype: str, rec: Any, *, confirmed: bool, fresh: bool, binding:
     if not fresh:
         tags.append("STALE")
     head = " ".join(tags)
-    line = f"- {head}: {rec.text}  <{rec.id}>"
+    when = ""
+    if rtype in ("decision", "claim"):  # show WHEN it was decided (source date), not when backfilled
+        when = f" (decided {_effective_date(rec).date().isoformat()})"
+    line = f"- {head}: {rec.text}{when}  <{rec.id}>"
     detail = getattr(rec, "detail", "") or ""
     if detail and not text_only:  # R2-5: the Always-applies section renders text only
         line += f"\n    why: {detail}"
@@ -319,11 +359,11 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
     """
     ref = ref_now or now()
     target_epic = _epic_id_of(store, scope)
-    seeds, seed_kind = _seed(store, question=question, node_id=id, path=path,
-                             target_epic=target_epic, semantic=semantic)
-    # R2-6: the FTS∪semantic fusion in _seed labels itself "fts"; say "fts+dense" honestly only when
-    # the dense matrix actually seeded (embeddings_active). A RAM/absent-model fallback stays "fts",
-    # with the embeddings block carrying the reason — so the receipt shows which backend served.
+    seeds, seed_weights, seed_kind = _seed(store, question=question, node_id=id, path=path,
+                                           target_epic=target_epic, semantic=semantic)
+    # R2-6: _seed labels "fts+dense" when the dense leg actually returned seeds; also say so when the
+    # dense matrix was active but returned nothing here (embeddings were consulted), so the receipt
+    # honestly shows which backend served — a RAM/absent-model fallback stays "fts" with the reason.
     if seed_kind == "fts" and embed_status and embed_status.get("embeddings_active"):
         seed_kind = "fts+dense"
 
@@ -333,8 +373,10 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
     # "ranks for the question" means nothing. A ticket SEED still reaches its own decisions.
     adj = _adjacency(store)
     seed_set = set(seeds)
-    best: dict[str, float] = {s: 1.0 for s in seeds}
-    frontier: dict[str, float] = {s: 1.0 for s in seeds}
+    # D2: seeds start at their retrieval-rank weight (not a flat 1.0), so the ranked scores reflect how
+    # well each seed matched the question; BFS neighbours still decay from there by link weight.
+    best: dict[str, float] = {s: seed_weights.get(s, SEED_W_HI) for s in seeds}
+    frontier: dict[str, float] = dict(best)
     for _hop in range(MAX_HOPS):
         nxt: dict[str, float] = {}
         for nid, w in frontier.items():
@@ -353,7 +395,7 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
         confirmed = _confirmed(rec, rtype)
         fresh = not (stale_paths(rec, rtype) if stale_paths else False)
         history = _history_chain(store, rec) if rtype == "decision" else []
-        score = weight * _freshness(rec.created_at, ref) * _usefulness(rec, rtype)
+        score = weight * _freshness(_effective_date(rec), ref) * _usefulness(rec, rtype)
         entry = {"id": rec.id, "type": rtype, "text": rec.text,
                  "detail": getattr(rec, "detail", "") or "",
                  "status": getattr(rec, "status", "live"),

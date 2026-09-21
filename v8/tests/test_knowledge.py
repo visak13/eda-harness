@@ -4,6 +4,8 @@ determinism and epic isolation."""
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 
 from edp8 import knowledge
@@ -12,6 +14,7 @@ from edp8.knowledge import ALWAYS_MAX_BYTES, EXCERPT_CHARS, MAX_BYTES, MAX_RECOR
 from edp8.schemas import (
     Claim,
     ClaimBasis,
+    ClaimStatus,
     Decision,
     DecisionStatus,
     DocType,
@@ -614,6 +617,66 @@ def test_seed_kind_reports_fts_when_embeddings_inactive(board, rig):
     assert out2["receipt"]["seed_kind"] == "fts"
 
 
+# --------------------------------------------------------------------------- D2 seed-weight scoring
+def test_seed_weights_discriminate_scores(board, rig):
+    # D2: two records that both match must NOT get an identical score; the dense vote breaks the tie
+    epic = make_epic(board, rig)
+    a = board.record_decision(rig["owner"], scope=epic.id, text="webhooks allowlist hosts primary rule")
+    b = board.record_decision(rig["owner"], scope=epic.id, text="webhooks allowlist hosts secondary note")
+    out = knowledge.lookup(board.store, epic.id, question="webhooks allowlist hosts",
+                           semantic=lambda q: [{"id": b.id, "type": "decision"}],  # dense favours b only
+                           embed_status={"embeddings_active": True})
+    scores = {r["id"]: r["score"] for r in out["records"]}
+    assert a.id in scores and b.id in scores
+    assert scores[b.id] != scores[a.id]  # not the constant-freshness collapse
+    assert scores[b.id] > scores[a.id]   # b got the extra dense vote → ranks higher
+
+
+# --------------------------------------------------------------------------- D4 dense leg widens recall
+def test_dense_leg_surfaces_record_fts_misses(board, rig):
+    epic = make_epic(board, rig)
+    board.record_decision(rig["owner"], scope=epic.id, text="webhooks allowlist hosts rule")
+    densehit = board.record_decision(rig["owner"], scope=epic.id,
+                                     text="the theme picker lives in the sidebar preferences popover")
+    # FTS on the question cannot bridge "colour scheme" -> "theme picker"; the dense leg seeds it
+    out = knowledge.lookup(board.store, epic.id, question="where do I change the colour scheme",
+                           semantic=lambda q: [{"id": densehit.id, "type": "decision"}],
+                           embed_status={"embeddings_active": True})
+    assert densehit.id in [r["id"] for r in out["records"]]
+
+
+# --------------------------------------------------------------------------- decided_at (steer m-34d0beb1e8)
+def test_effective_date_prefers_decided_at_and_renders_it():
+    d = Decision(id="dec-x", scope="e", text="t",
+                 created_at=datetime(2026, 9, 20, tzinfo=timezone.utc),
+                 decided_at=datetime(2026, 1, 3, tzinfo=timezone.utc))
+    assert knowledge._effective_date(d) == datetime(2026, 1, 3, tzinfo=timezone.utc)
+    line = knowledge._render_line("decision", d, confirmed=True, fresh=True, binding=False)
+    assert "(decided 2026-01-03)" in line
+    d2 = Decision(id="dec-y", scope="e", text="t", created_at=datetime(2026, 9, 20, tzinfo=timezone.utc))
+    assert knowledge._effective_date(d2) == datetime(2026, 9, 20, tzinfo=timezone.utc)  # falls back
+
+
+def test_backfill_decided_at_sets_from_source(board, rig):
+    epic = make_epic(board, rig)
+    doc = board.doc_create(rig["architect"], doc_type=DocType.note, scope=epic.id,
+                           title="src", body_md="the ruling was here")
+    # a legacy record with a source but no decided_at (as the round-1 backfill left them)
+    d = Decision(id=new_id("dec"), scope=epic.id, text="legacy decision from that doc",
+                 source=doc.id, created_by=rig["owner"].id)
+    board.store.put("decision", d)
+    res = board.backfill_decided_at()
+    assert res["decisions_set"] >= 1
+    assert board.store.get("decision", d.id).decided_at == doc.created_at
+
+
+def test_record_decision_sets_decided_at_from_source(board, rig):
+    epic = make_epic(board, rig)
+    doc = board.doc_create(rig["architect"], doc_type=DocType.note, scope=epic.id, title="s", body_md="x")
+    d = board.record_decision(rig["owner"], scope=epic.id, text="decided from a doc source", source=doc.id)
+    assert d.decided_at == doc.created_at  # write-time derivation
+
+
 # --------------------------------------------------------------------------- withdraw (ruling m-7baa527b65)
 def test_withdraw_decision_hides_it_but_keeps_row_and_links(board, rig):
     epic = make_epic(board, rig)
@@ -631,6 +694,32 @@ def test_withdraw_decision_hides_it_but_keeps_row_and_links(board, rig):
     # lookup never returns it, and search drops it
     assert d.id not in [r["id"] for r in board.lookup(rig["engineer"], scope=epic.id, question="webhooks rule")["records"]]
     assert d.id not in [h["id"] for h in board.store.fts_search("webhooks", types={"decision"})]
+
+
+def test_withdraw_claim_hides_it_but_keeps_row(board, rig):
+    epic = make_epic(board, rig)
+    c = board.record_claim(rig["owner"], scope=epic.id, text="webhooks throughput is fine, claim")
+    # present before withdrawal
+    assert c.id in [r["id"] for r in board.lookup(rig["engineer"], scope=epic.id, question="webhooks throughput")["records"]]
+    assert board.store.fts_search("throughput", types={"claim"})
+
+    w = board.withdraw_claim(rig["owner"], claim_id=c.id, reason="superseded by round-2 curation")
+    assert w.status == ClaimStatus.withdrawn
+    assert w.withdrawn_reason == "superseded by round-2 curation"
+    # the row is kept, but lookup and search never return it again
+    assert board.store.get("claim", c.id) is not None
+    assert c.id not in [r["id"] for r in board.lookup(rig["engineer"], scope=epic.id, question="webhooks throughput")["records"]]
+    assert c.id not in [h["id"] for h in board.store.fts_search("throughput", types={"claim"})]
+
+
+def test_withdraw_claim_idempotent_and_unknown_raises(board, rig):
+    epic = make_epic(board, rig)
+    c = board.record_claim(rig["owner"], scope=epic.id, text="a claim to retire twice")
+    board.withdraw_claim(rig["owner"], claim_id=c.id, reason="first")
+    again = board.withdraw_claim(rig["owner"], claim_id=c.id, reason="second refreshes reason")
+    assert again.status == ClaimStatus.withdrawn and again.withdrawn_reason == "second refreshes reason"
+    with pytest.raises(BoardError):
+        board.withdraw_claim(rig["owner"], claim_id="clm-does-not-exist", reason="x")
 
 
 def test_withdraw_binding_decision_not_force_included(board, rig):

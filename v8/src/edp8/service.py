@@ -852,6 +852,11 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         d = board.withdraw_decision(a, decision_id=id_, reason=b.reason)
         return ok(_dump(d), "decision withdrawn; lookup and search no longer return it")
 
+    @app.post("/v1/claims/{id_}/withdraw")
+    def withdraw_claim(id_: str, b: WithdrawIn, a: Participant = Depends(actor)):
+        c = board.withdraw_claim(a, claim_id=id_, reason=b.reason)
+        return ok(_dump(c), "claim withdrawn; lookup and search no longer return it")
+
     @app.get("/v1/lookup")
     def lookup(scope: str, question: str | None = None, id: str | None = None,
                path: str | None = None, a: Participant = Depends(actor)):
@@ -868,6 +873,12 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     def index_embed_counts(scope: str, a: Participant = Depends(actor)):
         """R2 item-3: embedded vs unembedded live records for an epic."""
         return ok(board.embed_counts(scope), "embedded/unembedded live records for the epic")
+
+    @app.post("/v1/index/backfill_decided_at")
+    def index_backfill_decided_at(a: Participant = Depends(actor)):
+        """Data pass (steer m-34d0beb1e8): set decided_at from each record's source date, so scoring
+        and render use when it was decided, not when it was backfilled. No re-embed needed."""
+        return ok(board.backfill_decided_at(), "decided_at backfilled from source dates")
 
     @app.post("/v1/service_event")
     def service_event(b: ServiceEventIn, _: None = Depends(admin)):
