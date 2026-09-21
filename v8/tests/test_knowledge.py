@@ -7,12 +7,13 @@ from __future__ import annotations
 import pytest
 
 from edp8.board import Board, BoardError
-from edp8.knowledge import ALWAYS_MAX_BYTES, MAX_BYTES, MAX_RECORDS
+from edp8.knowledge import ALWAYS_MAX_BYTES, EXCERPT_CHARS, MAX_BYTES, MAX_RECORDS
 from edp8.schemas import (
     Claim,
     ClaimBasis,
     Decision,
     DecisionStatus,
+    DocType,
     KgLink,
     Lesson,
     LinkKind,
@@ -290,6 +291,41 @@ def test_index_status_shape_without_model():
     st = idx.status()
     assert st["embedder"] == "none" and st["embeddings_active"] is False
     assert st["reason"] == "EDP8_EMBEDDER=none"
+
+
+# --------------------------------------------------------------------------- R2-7 source fallback
+def test_source_fallback_quotes_epic_docs_when_sparse(board, rig):
+    epic = make_epic(board, rig)
+    board.doc_create(rig["architect"], doc_type=DocType.note, scope=epic.id, title="ux notes",
+                     body_md="Relocation-only roles are hidden behind a toggle in the filter rail.")
+    out = board.lookup(rig["engineer"], scope=epic.id, question="relocation only roles hidden toggle")
+    assert out["receipt"]["source_excerpts"] >= 1
+    assert out["receipt"]["strong_records"] < 3  # the fallback only fires when curated recall is thin
+    exc = [r for r in out["records"] if r.get("section") == "excerpt"]
+    assert exc and exc[0]["type"] == "doc"
+    assert exc[0]["author"] and exc[0]["date"] and len(exc[0]["text"]) <= EXCERPT_CHARS
+    assert "Unconfirmed source excerpts" in out["body"]
+
+
+def test_source_fallback_suppressed_when_enough_strong_records(board, rig):
+    epic = make_epic(board, rig)
+    board.doc_create(rig["architect"], doc_type=DocType.note, scope=epic.id, title="notes",
+                     body_md="webhooks allow-list hosts and cadence")
+    for i in range(3):
+        board.record_decision(rig["owner"], scope=epic.id, text=f"webhooks allow-list rule {i} for hosts")
+    out = board.lookup(rig["engineer"], scope=epic.id, question="webhooks allow-list hosts")
+    assert out["receipt"]["strong_records"] >= 3
+    assert out["receipt"]["source_excerpts"] == 0
+    assert "Unconfirmed source excerpts" not in out["body"]
+
+
+def test_source_excerpts_are_epic_scoped(board, rig):
+    epic_a = make_epic(board, rig, "A")
+    epic_b = make_epic(board, rig, "B")
+    board.doc_create(rig["architect"], doc_type=DocType.note, scope=epic_b.id, title="b notes",
+                     body_md="the escrow slots settle at close in epic B only")
+    out = board.lookup(rig["engineer"], scope=epic_a.id, question="escrow slots settle close")
+    assert out["receipt"]["source_excerpts"] == 0  # never leaks epic B's sources into epic A
 
 
 # --------------------------------------------------------------------------- withdraw (ruling m-7baa527b65)

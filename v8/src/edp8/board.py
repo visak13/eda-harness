@@ -1854,11 +1854,14 @@ class Board:
         Reuses the board's semantic Index when installed; FTS otherwise."""
         semantic = None
         embed_status = None
+        source_search = None
         if self.index is not None:
             semantic = lambda q: self.index.search(q, k=20, types=set(knowledge.RECORD_TYPES))  # noqa: E731
             embed_status = self.index.status()  # R2-6: report the seeding backend in the receipt
+            # R2-7: the source-fallback tier searches the epic's own messages/docs (BM25 ∪ dense)
+            source_search = lambda q: self.index.search(q, k=30, types={"message", "doc"})  # noqa: E731
         return knowledge.lookup(self.store, scope, question=question, id=id, path=path,
-                                semantic=semantic, embed_status=embed_status)
+                                semantic=semantic, embed_status=embed_status, source_search=source_search)
 
     def last_status(self, p: Participant) -> dict[str, Any] | None:
         """The most recent status_recorded event data by this participant on its tickets."""

@@ -26,6 +26,12 @@ MAX_BYTES = 8000
 ALWAYS_MAX_BYTES = 2000  # R2-5: the "Always applies" (binding, text-only) section's byte reserve
 MAX_HOPS = 2
 SEED_TOP = 8  # R2-6: widen seed recall (top-8 of the FTS∪embeddings rank fusion)
+# R2-7 source fallback: when the question reaches too few strong records, quote the epic's raw
+# messages/doc paragraphs so a not-yet-curated answer is still visible (marked unconfirmed).
+RELEVANCE_FLOOR = 0.5   # graph weight (1.0 = a direct seed, 0.6 = one strong hop) that counts as strong
+MIN_RELEVANT = 3        # below this many strong records, add the source-excerpt tier
+MAX_EXCERPTS = 4
+EXCERPT_CHARS = 400
 
 # link weight: how much a hop across this kind carries relevance (design §4.2 step 5).
 LINK_WEIGHT = {
@@ -124,6 +130,62 @@ def _as_date(dt: Any) -> str:
     if isinstance(dt, datetime):
         return dt.date().isoformat()
     return str(dt)[:10]
+
+
+def _excerpt(text: str, question: str | None, width: int = EXCERPT_CHARS) -> str:
+    """A ≤width-char window around the earliest question token, else the head of the text."""
+    text = " ".join((text or "").split())
+    if len(text) <= width:
+        return text
+    lo = text.lower()
+    best = -1
+    for term in re.findall(r"[\w\-]+", (question or "").lower()):
+        idx = lo.find(term)
+        if idx != -1 and (best == -1 or idx < best):
+            best = idx
+    start = 0 if best == -1 else max(0, best - width // 3)
+    return text[start:start + width]
+
+
+def _source_excerpts(store: Any, target_epic: str | None, question: str | None,
+                     source_search: Callable[[str], list[dict[str, Any]]] | None) -> list[dict[str, str]]:
+    """R2-7: quote up to MAX_EXCERPTS of the epic's OWN messages/doc paragraphs (FTS ∪ embeddings,
+    scope-limited, newest-first) when the curated records did not answer the question. These are
+    unconfirmed source material, never treated as decisions."""
+    if not question or target_epic is None:
+        return []
+    hits: list[dict[str, Any]] = []
+    if source_search is not None:
+        try:
+            hits = source_search(question)
+        except Exception:
+            hits = []
+    if not hits:
+        try:
+            hits = store.fts_search(question, types={"message", "doc"}, limit=30)
+        except Exception:
+            hits = []
+    cand: list[tuple[str, Any]] = []
+    seen: set[str] = set()
+    for h in hits:
+        t, i = h.get("type"), h.get("id")
+        if t not in ("message", "doc") or not i or i in seen:
+            continue
+        seen.add(i)
+        obj = store.get(t, i)
+        if obj is None:
+            continue
+        ep = _epic_id_of(store, (getattr(obj, "ticket_id", "") if t == "message"
+                                 else getattr(obj, "scope", "")) or "")
+        if ep == target_epic:
+            cand.append((t, obj))
+    cand.sort(key=lambda to: to[1].created_at, reverse=True)  # newest-first
+    out: list[dict[str, str]] = []
+    for t, obj in cand[:MAX_EXCERPTS]:
+        body = obj.text if t == "message" else f"{getattr(obj, 'title', '')} {getattr(obj, 'body_md', '')}"
+        out.append({"id": obj.id, "type": t, "author": obj.created_by or "",
+                    "date": _as_date(obj.created_at), "text": _excerpt(body, question)})
+    return out
 
 
 def _history_chain(store: Any, rec: Any, _seen: set[str] | None = None) -> list[dict[str, str]]:
@@ -241,7 +303,8 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
            path: str | None = None, semantic: Callable[[str], list[dict[str, Any]]] | None = None,
            stale_paths: Callable[[Any, str], bool] | None = None,
            ref_now: datetime | None = None,
-           embed_status: dict[str, Any] | None = None) -> dict[str, Any]:
+           embed_status: dict[str, Any] | None = None,
+           source_search: Callable[[str], list[dict[str, Any]]] | None = None) -> dict[str, Any]:
     """Deterministic retrieval (design §4.2). Returns {records, body, receipt}.
 
     scope: epic|ticket id — the isolation boundary. question|id|path: the starting point.
@@ -362,15 +425,33 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
         used_bytes += bsize
         _count(entry)
 
+    # --- Section C "Unconfirmed source excerpts" (R2-7): only when the question reached too few
+    # strong records, quote the epic's own messages/doc paragraphs so a not-yet-curated answer is
+    # still visible. Counts inside the 8,000-byte budget.
+    excerpt_lines: list[str] = []
+    strong = sum(1 for tup in ranked if best.get(tup[1], 0.0) >= RELEVANCE_FLOOR)
+    if strong < MIN_RELEVANT:
+        for ex in _source_excerpts(store, target_epic, question, source_search):
+            e = {**ex, "section": "excerpt", "confirmed": False, "binding": False}
+            bsize = len(_json.dumps(e, ensure_ascii=False).encode("utf-8"))
+            if used_bytes + bsize > MAX_BYTES:
+                break
+            records.append(e)
+            excerpt_lines.append(f"- SOURCE {ex['type']} <{ex['id']}> {ex['author']} {ex['date']}: {ex['text']}")
+            used_bytes += bsize
+
     body_parts = []
     if always_lines:
         body_parts.append("Always applies\n" + "\n".join(always_lines))
     body_parts.append("For your question\n" + ("\n".join(ranked_lines) if ranked_lines else "(nothing scored)"))
+    if excerpt_lines:
+        body_parts.append("Unconfirmed source excerpts\n" + "\n".join(excerpt_lines))
     body = "\n\n".join(body_parts)
 
     receipt = {
         "scope": scope, "epic": target_epic, "seed_kind": seed_kind, "seeds": seeds,
         "returned": len(records), "ranked_returned": len(ranked_lines),
+        "source_excerpts": len(excerpt_lines), "strong_records": strong,
         "always_applies": len(always_lines), "always_bytes": always_bytes,
         "binding": sum(1 for r in records if r.get("binding")),
         "binding_trimmed": binding_trimmed, "always_cap": ALWAYS_MAX_BYTES,
