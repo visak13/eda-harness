@@ -26,8 +26,17 @@ MAX_RECORDS = 40
 MAX_BYTES = 8000
 ALWAYS_MAX_BYTES = 2000  # R2-5: the "Always applies" (binding, text-only) section's byte reserve
 MAX_HOPS = 2
-SEED_TOP = 8  # R2-6/D4: each leg (FTS, dense) casts its own top-8 vote, then RRF-fused
-SEED_MAX = 16  # D4: cap on the union of both legs' seeds (so a wider net still bounds the BFS)
+SEED_TOP = 8  # R2-6/D4: each leg (FTS, dense) casts at least its top-8 vote, then RRF-fused
+SEED_TOP_CAP = 24  # E1 (steer m-a006bfe2a5): per-leg seed count caps here when scaled by epic size
+SEED_SCALE_DIV = 6  # E1: per-leg = max(SEED_TOP, ceil(live_records / SEED_SCALE_DIV)), cap SEED_TOP_CAP
+
+
+def _seed_per_leg(live_count: int) -> int:
+    """E1: on a large epic the fixed 8+8 seed net missed live records that existed but never seeded.
+    Scale each leg with the scope's live-record count — max(8, ceil(live/6)), capped at 24 per leg —
+    so recall grows with the corpus while the BFS stays bounded (union cap = 2x per-leg)."""
+    scaled = -(-max(0, live_count) // SEED_SCALE_DIV)  # ceil division
+    return min(SEED_TOP_CAP, max(SEED_TOP, scaled))
 # D2: seeds carry a rank-decayed weight in [SEED_W_LO, SEED_W_HI] so ranked scores discriminate by
 # retrieval relevance instead of collapsing to a constant; both stay above the 0.6 one-hop weight.
 SEED_W_HI = 1.0
@@ -249,11 +258,12 @@ def _leg_ranked(store: Any, hits: Any, target_epic: str | None, limit: int) -> l
 def _seed(store: Any, *, question: str | None, node_id: str | None, path: str | None,
           target_epic: str | None,
           semantic: Callable[[str], list[dict[str, Any]]] | None,
+          per_leg: int = SEED_TOP,
           ) -> tuple[list[str], dict[str, float], str]:
     """Seed nodes, their retrieval weights, and the seed kind. Explicit id/path win; else the FTS and
-    DENSE legs each cast their own top-SEED_TOP vote (D4: not top-8 of one fused search, so a weak leg
-    cannot crowd out the other), fused via RRF. Seeds carry a rank-decayed weight in [SEED_W_LO, 1.0]
-    so the ranked scores discriminate instead of collapsing to a constant (D2)."""
+    DENSE legs each cast their own top-`per_leg` vote (D4: not top-N of one fused search, so a weak leg
+    cannot crowd out the other; E1: `per_leg` scales with epic size), fused via RRF. Seeds carry a
+    rank-decayed weight in [SEED_W_LO, 1.0] so the ranked scores discriminate (D2)."""
     if node_id:
         rec = _find_record(store, node_id)
         if rec:
@@ -265,7 +275,7 @@ def _seed(store: Any, *, question: str | None, node_id: str | None, path: str | 
             return [node_id], {node_id: 1.0}, "id"
     if path:
         # a path seeds through kglink endpoints that name it (touches edges), else FTS on the string.
-        hits = [lk.from_id for lk in store.query("kglink", {"to_id": path}, limit=50)][:SEED_TOP]
+        hits = [lk.from_id for lk in store.query("kglink", {"to_id": path}, limit=50)][:per_leg]
         if hits:
             return hits, {h: 1.0 for h in hits}, "path"
         question = question or path
@@ -275,13 +285,13 @@ def _seed(store: Any, *, question: str | None, node_id: str | None, path: str | 
     # before scope filtering (design §4.2: seeds are limited to the agent's epic).
     try:
         fts_leg = _leg_ranked(store, store.fts_search(question, types=set(RECORD_TYPES), limit=200),
-                              target_epic, SEED_TOP)
+                              target_epic, per_leg)
     except Exception:
         fts_leg = []
     dense_leg: list[str] = []
     if semantic is not None:
         try:
-            dense_leg = _leg_ranked(store, semantic(question), target_epic, SEED_TOP)
+            dense_leg = _leg_ranked(store, semantic(question), target_epic, per_leg)
         except Exception:
             dense_leg = []
     # RRF over the two legs' rank lists; each leg gets an equal, independent vote.
@@ -290,7 +300,7 @@ def _seed(store: Any, *, question: str | None, node_id: str | None, path: str | 
     for leg in (fts_leg, dense_leg):
         for rank, nid in enumerate(leg, start=1):
             fused[nid] = fused.get(nid, 0.0) + 1.0 / (rrf_k + rank)
-    order = sorted(fused, key=lambda nid: (-fused[nid], nid))[:SEED_MAX]
+    order = sorted(fused, key=lambda nid: (-fused[nid], nid))[:2 * per_leg]  # E1: union cap scales too
     n = len(order)
     weights: dict[str, float] = {}
     for i, nid in enumerate(order):
@@ -346,6 +356,18 @@ def _render_line(rtype: str, rec: Any, *, confirmed: bool, fresh: bool, binding:
     return line
 
 
+def _live_record_count(store: Any, target_epic: str | None) -> int:
+    """E1: count of non-dropped decision+claim records in the epic — the size the seed net scales to."""
+    if target_epic is None:
+        return 0
+    n = 0
+    for rtype in ("decision", "claim"):
+        for r in store.query(rtype, limit=100000):
+            if not _dropped(r, rtype) and _epic_id_of(store, getattr(r, "scope", "") or "") == target_epic:
+                n += 1
+    return n
+
+
 def lookup(store: Any, scope: str, *, question: str | None = None, id: str | None = None,
            path: str | None = None, semantic: Callable[[str], list[dict[str, Any]]] | None = None,
            stale_paths: Callable[[Any, str], bool] | None = None,
@@ -359,8 +381,10 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
     """
     ref = ref_now or now()
     target_epic = _epic_id_of(store, scope)
+    live_count = _live_record_count(store, target_epic)  # E1: seed net scales with epic size
+    per_leg = _seed_per_leg(live_count)
     seeds, seed_weights, seed_kind = _seed(store, question=question, node_id=id, path=path,
-                                           target_epic=target_epic, semantic=semantic)
+                                           target_epic=target_epic, semantic=semantic, per_leg=per_leg)
     # R2-6: _seed labels "fts+dense" when the dense leg actually returned seeds; also say so when the
     # dense matrix was active but returned nothing here (embeddings were consulted), so the receipt
     # honestly shows which backend served — a RAM/absent-model fallback stays "fts" with the reason.
@@ -416,8 +440,12 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
         if _dropped(rec, rtype) or not _in_scope(store, rec, rtype, target_epic):
             continue
         sc, entry = _mk(nid, rtype, rec, best.get(nid, DEFAULT_WEIGHT))
+        entry["provenance"] = "seed" if nid in seed_set else "walk"  # E2: seed = a lexical/dense match
         ranked.append((sc, nid, rtype, rec, entry))
-    ranked.sort(key=lambda x: (-x[0], x[1]))
+    # E2 (steer m-a006bfe2a5): a walk-only record (reached by graph links, with NO lexical or dense
+    # match to the question) must never outrank a seed (matched) record — a high-degree hub was winning
+    # on graph weight alone. Tier seeds above walks, each tier ordered by score.
+    ranked.sort(key=lambda x: (x[1] not in seed_set, -x[0], x[1]))
 
     # C4 noise floor: keep only ranked records at >= RANKED_FLOOR_FRAC of the top score, plus any
     # weak record linked by replaces/part_of to a kept (strong) one — so a live decision's chain and
@@ -493,7 +521,7 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
             continue  # C4: below the noise floor and not rescued by a replaces/part_of link
         entry = {**entry, "section": "ranked"}
         bsize = len(_json.dumps(entry, ensure_ascii=False).encode("utf-8"))
-        if len(records) >= MAX_RECORDS or used_bytes + bsize > MAX_BYTES:
+        if used_bytes + bsize > MAX_BYTES:  # E1: the ranked section runs to the byte cap, not a count
             cut_by_type[rtype] = cut_by_type.get(rtype, 0) + 1
             cut_ids.setdefault(rtype, []).append(rec.id)
             continue
@@ -544,7 +572,11 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
         "mandatory_overflow": bool(binding_trimmed),
         # R2-6: which seeding backend served this lookup (embeddings vs FTS-only + why)
         "embeddings": embed_status or {"embedder": "none", "reason": "no semantic index wired"},
-        "seed_top": SEED_TOP,
+        # E1: the adaptive per-leg seed count and the epic size it scaled to; E2: seed vs walk provenance
+        "seed_top": per_leg, "seed_top_base": SEED_TOP, "seed_union_cap": 2 * per_leg,
+        "live_records": live_count,
+        "ranked_seed": sum(1 for r in records if r.get("provenance") == "seed"),
+        "ranked_walk": sum(1 for r in records if r.get("provenance") == "walk"),
         # C4 noise floor: how many ranked records were dropped for scoring below the floor, and the floor
         "floor_dropped": len(floor_dropped), "floor_dropped_ids": floor_dropped[:20],
         "ranked_floor_frac": RANKED_FLOOR_FRAC,
