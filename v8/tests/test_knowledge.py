@@ -7,7 +7,7 @@ from __future__ import annotations
 import pytest
 
 from edp8.board import Board, BoardError
-from edp8.knowledge import MAX_BYTES, MAX_RECORDS
+from edp8.knowledge import ALWAYS_MAX_BYTES, MAX_BYTES, MAX_RECORDS
 from edp8.schemas import (
     Claim,
     ClaimBasis,
@@ -235,12 +235,17 @@ def test_lookup_by_ticket_id_finds_its_decisions(board, rig):
 
 def test_records_payload_within_byte_budget(board, rig):
     # P2: the cap is measured against the serialized records payload, not just a render.
+    # (R2-5: a record only ranks if the question reaches it — the epic hub no longer bridges
+    # every decision — so link the 80 into the ranked neighbourhood to exercise the Section-B cut.)
     import json
     epic = make_epic(board, rig)
+    anchor = board.record_decision(rig["owner"], scope=epic.id, text="anchor about webhooks hosts allow")
     for i in range(80):
-        board.record_decision(rig["owner"], scope=epic.id,
-                              text=f"rule {i} about webhooks and hosts and allow lists and echoes number {i}",
-                              detail="a long detail sentence " * 20)
+        d = board.record_decision(rig["owner"], scope=epic.id,
+                                  text=f"rule {i} about webhooks and hosts and allow lists and echoes number {i}",
+                                  detail="a long detail sentence " * 20)
+        board.store.put("kglink", KgLink(id=new_id("kl"), from_id=anchor.id, to_id=d.id,
+                                         kind=LinkKind.implements, created_by=rig["owner"].id))
     out = board.lookup(rig["engineer"], scope=epic.id, question="webhooks hosts allow")
     payload = len(json.dumps(out["records"], ensure_ascii=False).encode("utf-8"))
     assert payload <= MAX_BYTES, payload
@@ -303,3 +308,37 @@ def test_lookup_renders_replaced_chain_inline(board, rig):
     rec_c = next(r for r in out["records"] if r["id"] == c.id)
     assert [h["id"] for h in rec_c["history"]] == [b.id, a.id]  # whole chain, newest-first
     assert "earlier: first: use OAuth via Google login (replaced " in out["body"]
+
+
+# --------------------------------------------------------------------------- R2-5 two-section budget
+def test_always_section_is_text_only_and_capped_and_trims_by_score(board, rig):
+    epic = make_epic(board, rig)
+    for i in range(40):
+        board.record_decision(rig["owner"], scope=epic.id,
+                              text=f"binding rule {i:02d} every seat must follow this host allow policy line",
+                              detail="WHY: a long reason that must never appear in the always section " * 3,
+                              binding=True)
+    out = board.lookup(rig["engineer"], scope=epic.id, question="totally unrelated question")
+    r = out["receipt"]
+    assert r["always_bytes"] <= ALWAYS_MAX_BYTES
+    assert r["binding_trimmed"], "binding text over the 2000-byte reserve must be trimmed by score"
+    assert r["mandatory_overflow"] is True
+    always = [x for x in out["records"] if x.get("section") == "always"]
+    assert always and all("detail" not in x for x in always)  # text only, never detail
+    assert "Always applies" in out["body"]
+
+
+def test_binding_detail_only_when_it_also_ranks(board, rig):
+    epic = make_epic(board, rig)
+    ranked = board.record_decision(rig["owner"], scope=epic.id,
+                                   text="binding webhook allowlist rule for hosts",
+                                   detail="WHY: security; only allow-listed hosts", binding=True)
+    other = board.record_decision(rig["owner"], scope=epic.id,
+                                  text="binding standup cadence rule", detail="WHY: ops rhythm", binding=True)
+    out = board.lookup(rig["engineer"], scope=epic.id, question="webhook allowlist hosts")
+    always = {x["id"] for x in out["records"] if x.get("section") == "always"}
+    assert ranked.id in always and other.id in always  # both must-follow, text-only up top
+    ranked_sec = {x["id"]: x for x in out["records"] if x.get("section") == "ranked"}
+    assert ranked.id in ranked_sec and ranked_sec[ranked.id]["detail"]  # detail only where it ranks
+    assert other.id not in ranked_sec  # unrelated binding does not bridge in via the epic hub
+    assert "Always applies" in out["body"] and "For your question" in out["body"]
