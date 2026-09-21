@@ -118,6 +118,30 @@ def _adjacency(store: Any) -> dict[str, list[tuple[str, str]]]:
     return adj
 
 
+def _as_date(dt: Any) -> str:
+    """The date portion of a created_at (datetime or ISO string), for the 'replaced <date>' tag."""
+    if isinstance(dt, datetime):
+        return dt.date().isoformat()
+    return str(dt)[:10]
+
+
+def _history_chain(store: Any, rec: Any, _seen: set[str] | None = None) -> list[dict[str, str]]:
+    """The replaces chain under a live decision (design R2-1): every decision it superseded,
+    directly or transitively, newest-first, each tagged with the date it was replaced (the
+    created_at of the record that replaced it). Replaced records never rank on their own — they
+    live only here, inline, so 'what was first proposed and why it changed' is answerable."""
+    _seen = _seen or set()
+    out: list[dict[str, str]] = []
+    for lk in store.query("kglink", {"from_id": rec.id, "kind": "replaces"}, limit=100):
+        old = store.get("decision", lk.to_id)
+        if old is None or old.id in _seen:
+            continue
+        _seen.add(old.id)
+        out.append({"id": old.id, "text": old.text, "date": _as_date(rec.created_at)})
+        out.extend(_history_chain(store, old, _seen))
+    return out
+
+
 def _seed(store: Any, *, question: str | None, node_id: str | None, path: str | None,
           target_epic: str | None, semantic: Callable[[str], list[dict[str, Any]]] | None) -> tuple[list[str], str]:
     """Seed nodes and the seed kind. Explicit id/path win; else FTS ∪ semantic, top SEED_TOP."""
@@ -269,11 +293,14 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
         binding = nid in always_ids
         confirmed = _confirmed(rec, rtype)
         fresh = not (stale_paths(rec, rtype) if stale_paths else False)
+        history = _history_chain(store, rec) if rtype == "decision" else []
         entry = {"id": rec.id, "type": rtype, "text": rec.text,
                  "detail": getattr(rec, "detail", "") or "",
                  "status": getattr(rec, "status", "live"),
                  "confirmed": confirmed, "fresh": fresh, "binding": binding,
                  "score": round(score, 6)}
+        if history:
+            entry["history"] = history
         # budget against the ACTUAL returned payload (the serialized record), not just a render,
         # so the ≤8,000-byte cap is a real reading budget (design §4.2 step 7).
         bsize = len(_json.dumps(entry, ensure_ascii=False).encode("utf-8"))
@@ -282,7 +309,10 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
             cut_ids.setdefault(rtype, []).append(rec.id)
             continue
         records.append(entry)
-        lines.append(_render_line(rtype, rec, confirmed=confirmed, fresh=fresh, binding=binding))
+        line = _render_line(rtype, rec, confirmed=confirmed, fresh=fresh, binding=binding)
+        for h in history:  # R2-1: the superseded chain, inline, newest-first
+            line += f"\n    earlier: {h['text']} (replaced {h['date']})"
+        lines.append(line)
         used_bytes += bsize
         counts["confirmed" if confirmed else "unconfirmed"] += 1
         counts["fresh" if fresh else "stale"] += 1

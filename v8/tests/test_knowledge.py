@@ -271,3 +271,20 @@ def test_withdraw_binding_decision_not_force_included(board, rig):
 def test_withdraw_unknown_decision_raises(board, rig):
     with pytest.raises(BoardError):
         board.withdraw_decision(rig["owner"], decision_id="dec-nope", reason="x")
+
+
+# --------------------------------------------------------------------------- R2-1 history inline
+def test_lookup_renders_replaced_chain_inline(board, rig):
+    epic = make_epic(board, rig)
+    a = board.record_decision(rig["owner"], scope=epic.id, text="first: use OAuth via Google login")
+    b = board.record_decision(rig["owner"], scope=epic.id, text="second: use OAuth via GitHub login",
+                              replaces=[a.id])
+    c = board.record_decision(rig["owner"], scope=epic.id, text="third: use email magic links for login",
+                              replaces=[b.id])
+    out = board.lookup(rig["engineer"], scope=epic.id, question="login OAuth email magic")
+    ids = [r["id"] for r in out["records"]]
+    assert c.id in ids
+    assert a.id not in ids and b.id not in ids  # replaced records never rank on their own
+    rec_c = next(r for r in out["records"] if r["id"] == c.id)
+    assert [h["id"] for h in rec_c["history"]] == [b.id, a.id]  # whole chain, newest-first
+    assert "earlier: first: use OAuth via Google login (replaced " in out["body"]
