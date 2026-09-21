@@ -784,6 +784,50 @@ def test_dense_diagnostic_degrades_without_index(board, rig):
     assert res["embedder"] == "none" and res["hits"] == []
 
 
+# --------------------------------------------------------------------------- E1 adaptive seed count
+def test_seed_per_leg_scales_with_epic_size():
+    assert knowledge._seed_per_leg(0) == 8       # empty -> base
+    assert knowledge._seed_per_leg(30) == 8      # ceil(30/6)=5 -> floored at base 8
+    assert knowledge._seed_per_leg(80) == 14     # ceil(80/6)=14
+    assert knowledge._seed_per_leg(200) == 24    # ceil(200/6)=34 -> capped at 24
+
+
+def test_lookup_seed_count_scales_with_live_records(board, rig):
+    epic = make_epic(board, rig)
+    for i in range(80):  # a large epic: 80 live decisions
+        board.record_decision(rig["owner"], scope=epic.id, text=f"webhooks allowlist rule number {i}")
+    out = board.lookup(rig["engineer"], scope=epic.id, question="webhooks allowlist rule")
+    r = out["receipt"]
+    assert r["live_records"] >= 80
+    assert r["seed_top"] == 14 and r["seed_top"] > r["seed_top_base"]  # scaled past the fixed 8
+    assert r["seed_union_cap"] == 28
+
+
+# --------------------------------------------------------------------------- E2 walk cannot outrank a match
+def test_walk_record_ranks_below_seed_with_provenance(board, rig):
+    epic = make_epic(board, rig)
+    a = board.record_decision(rig["owner"], scope=epic.id, text="webhooks allowlist hosts rule")  # matches
+    b = board.record_decision(rig["owner"], scope=epic.id, text="unrelated cron scheduling policy")  # no match
+    # link a -> b with a traversed edge so the BFS reaches b from the seed a (b never matches the query)
+    board.store.put("kglink", KgLink(id=new_id("kl"), from_id=a.id, to_id=b.id, kind=LinkKind.implements))
+    out = knowledge.lookup(board.store, epic.id, question="webhooks allowlist hosts",
+                           semantic=lambda q: [], embed_status={"embeddings_active": False})
+    ranked = [r for r in out["records"] if r.get("section") == "ranked"]
+    prov = {r["id"]: r.get("provenance") for r in ranked}
+    assert prov.get(a.id) == "seed"
+    assert prov.get(b.id) == "walk"  # reached only by the graph walk, never a lexical/dense hit
+    # tiering invariant: no seed may appear after a walk in the ranked order
+    seen_walk = False
+    for r in ranked:
+        if r.get("provenance") == "walk":
+            seen_walk = True
+        elif r.get("provenance") == "seed":
+            assert not seen_walk, "a matched (seed) record ranked below an unmatched (walk) record"
+    ids = [r["id"] for r in ranked]
+    assert ids.index(a.id) < ids.index(b.id)
+    assert out["receipt"]["ranked_seed"] >= 1 and out["receipt"]["ranked_walk"] >= 1
+
+
 # --------------------------------------------------------------------------- R2-1 history inline
 def test_lookup_renders_replaced_chain_inline(board, rig):
     epic = make_epic(board, rig)
