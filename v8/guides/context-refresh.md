@@ -4,6 +4,14 @@ Use `context()` for full orientation at boot, after compaction if knowledge or a
 was lost, or when a delta returns `resync_required`. Existing ticket blocks and asks
 remain intact. Save its `cursor` only with enough context to interpret later changes.
 
+`context()` is **bounded by default** (S12, qa finding 18): per-ticket summaries, criteria,
+chain and your open asks come back whole, but thread bodies and doc summaries are clipped to
+fit a byte budget (`EDP8_CONTEXT_BUDGET_B`, default 40 KB) so a multi-ticket checking seat
+never overflows the client cap. When anything is clipped the snapshot carries an `omitted`
+block naming the exact fetch call — a ticket's full thread is `context(ticket_id=<id>,
+verbose=True)` or `message_query(ticket_id=<id>)`, a doc's full body is `doc_read(id)`, and
+`context(verbose=True)` returns the whole unbounded snapshot. `context_delta` is unaffected.
+
 Otherwise choose `context_delta(cursor=last_cursor, ticket_id=same_scope)`.
 Do not call both routinely. `changed:false` needs no read. Changes carry IDs, sequence,
 read references and short messages (512 characters, with explicit truncation); read only

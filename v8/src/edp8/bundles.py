@@ -16,6 +16,7 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import enum as _enum
+import json
 import os
 import sys
 import threading
@@ -318,9 +319,12 @@ class ResumeSelfArgs(BaseModel):
 
 class ContextArgs(BaseModel):
     ticket_id: str | None = Field(default=None, description="a specific ticket id, or omit for all your tickets")
+    verbose: bool = Field(default=False, description="return the full unbounded snapshot (all thread bodies and full doc summaries); default bounds the output to a byte budget and names what was omitted")
 
 
-class ContextDeltaArgs(ContextArgs):
+class ContextDeltaArgs(BaseModel):
+    # not a subclass of ContextArgs: context_delta takes no `verbose` — its behaviour is unchanged by S12.
+    ticket_id: str | None = Field(default=None, description="a specific ticket id, or omit for all your tickets")
     cursor: str = Field(description="last consumed snapshot/delta cursor for this participant and scope; not a credential")
     limit: int = Field(default=50, ge=1, le=100, description="maximum change envelopes per page; continue if has_more")
 
@@ -483,8 +487,99 @@ def _subscribe(_: SubscribeArgs) -> dict[str, Any]:
     }
 
 
+# S12 (qa finding 18): a multi-ticket checking seat's context() returned ~120k chars and
+# overflowed the MCP client cap. The snapshot is bounded HERE, in the tool layer, so board.py
+# _context_snapshot / ticket_view (shared by context_delta) stay unchanged. Default is bounded;
+# verbose=True hands back the full snapshot. The budget is deliberately below the client cap.
+_CONTEXT_BUDGET_B = 40_000        # default byte cap for the bounded snapshot (env-overridable)
+_THREAD_HEAD = 200                # per-message body kept in a bounded thread
+_THREAD_KEEP = 3                  # newest messages kept per ticket by default
+_DOC_SUMMARY_HEAD = 200           # doc summary kept in a bounded snapshot
+
+
+def _context_budget() -> int:
+    try:
+        return max(4_000, int(os.environ.get("EDP8_CONTEXT_BUDGET_B", _CONTEXT_BUDGET_B)))
+    except ValueError:
+        return _CONTEXT_BUDGET_B
+
+
+def _clip(s: Any, n: int) -> Any:
+    if not isinstance(s, str) or len(s) <= n:
+        return s
+    return s[:n].rstrip() + f"… (+{len(s) - n} chars)"
+
+
+def _bound_snapshot(snap: dict[str, Any], *, thread_keep: int, thread_head: int,
+                    doc_head: int, words_head: int | None) -> tuple[dict[str, Any], bool]:
+    """Return a byte-bounded copy of a context snapshot and whether anything was trimmed.
+    Per-ticket summaries + read_refs stay; thread bodies and doc summaries are clipped/paged.
+    Never touches `cursor`, `asks_for_me`, criteria, chain or the ticket record."""
+    trimmed = False
+    out = dict(snap)
+    tickets_in = snap.get("tickets") or []
+    new_tickets: list[dict[str, Any]] = []
+    for tv in tickets_in:
+        tv = dict(tv)
+        rows = tv.get("thread") or []
+        total = tv.get("thread_total", len(rows))
+        if len(rows) > thread_keep or any(len(r.get("text") or "") > thread_head for r in rows):
+            trimmed = True
+        kept = rows[-thread_keep:] if thread_keep > 0 else []
+        tv["thread"] = [{**r, "text": _clip(r.get("text"), thread_head)} for r in kept]
+        if total > len(kept):
+            trimmed = True
+            tv["thread_omitted"] = total - len(kept)
+        if tv.get("docs"):
+            new_docs = []
+            for d in tv["docs"]:
+                d = dict(d)
+                if isinstance(d.get("summary"), str) and len(d["summary"]) > doc_head:
+                    d["summary"] = _clip(d["summary"], doc_head)
+                    trimmed = True
+                new_docs.append(d)
+            tv["docs"] = new_docs
+        if words_head is not None and isinstance(tv.get("words"), str) and len(tv["words"]) > words_head:
+            tv["words"] = _clip(tv["words"], words_head)
+            trimmed = True
+        new_tickets.append(tv)
+    out["tickets"] = new_tickets
+    return out, trimmed
+
+
+def _bytes(obj: Any) -> int:
+    return len(json.dumps(obj, ensure_ascii=False, default=str).encode("utf-8"))
+
+
 def _context(args: ContextArgs) -> dict[str, Any]:
-    return get_client().context(ticket_id=args.ticket_id)
+    resp = get_client().context(ticket_id=args.ticket_id)
+    if args.verbose or not isinstance(resp, dict) or not resp.get("ok"):
+        return resp
+    snap = resp.get("value")
+    if not isinstance(snap, dict):
+        return resp
+    budget = _context_budget()
+    # progressively tighter passes until the snapshot fits the budget (or we hit the floor)
+    passes = [
+        dict(thread_keep=_THREAD_KEEP, thread_head=_THREAD_HEAD, doc_head=_DOC_SUMMARY_HEAD, words_head=800),
+        dict(thread_keep=1, thread_head=120, doc_head=120, words_head=400),
+        dict(thread_keep=0, thread_head=0, doc_head=0, words_head=200),
+    ]
+    bounded, trimmed = _bound_snapshot(snap, **passes[0])
+    for p in passes[1:]:
+        if _bytes(bounded) <= budget:
+            break
+        bounded, trimmed = _bound_snapshot(snap, **p)
+        trimmed = True
+    if trimmed:
+        bounded["omitted"] = {
+            "why": f"bounded to EDP8_CONTEXT_BUDGET_B={budget} bytes (verbose=False); "
+                   f"snapshot is {_bytes(bounded)} bytes",
+            "thread_bodies": "per ticket: context(ticket_id=<id>, verbose=True) or message_query(ticket_id=<id>)",
+            "doc_summaries": "doc_read(id) for the full body",
+            "full_snapshot": "context(verbose=True)",
+        }
+    return {**resp, "value": bounded}
 
 
 def _resume_self(_: ResumeSelfArgs) -> dict[str, Any]:
@@ -633,7 +728,9 @@ IDENTITY_TOOLS = [
             "see get_guide('resume')",
             ResumeSelfArgs, _resume_self, "identity"),
     ToolDef("context",
-            "Load everything needed to act on your ticket(s): chain, criteria, docs, thread, open asks",
+            "Load everything needed to act on your ticket(s): chain, criteria, docs, thread, open asks. "
+            "Bounded to a byte budget by default (thread bodies + doc summaries clipped, `omitted` names the "
+            "exact fetch call); pass verbose=True for the full snapshot",
             "at boot after subscribe, after compaction without sufficient context/cursor, or when context_delta requires resynchronization",
             "ContextSnapshot: existing ticket/doc/message orientation and asks plus a safe cursor for context_delta; see get_guide('context-refresh')",
             ContextArgs, _context, "identity"),
@@ -1648,18 +1745,49 @@ def _consult(a: ConsultArgs) -> dict[str, Any]:
 
 class ConsultStatusArgs(BaseModel):
     run_id: str = Field(description="the run_id a consult returned (or the newest run when omitted)")
+    verbose: bool = Field(default=False, description="include the write-fence rows (pre_dirty / concurrent_writes / escapes) and the manifest's duplicate answer copy; default returns the compact shape")
+
+
+# S12 (qa finding 18): consult_status returned `answer` twice (top-level + inside the manifest copy)
+# and listed ~55 pre-dirty fence rows even for a read-only run. Compacted HERE, in the tool layer.
+_FENCE_KEYS = ("fence", "concurrent_writes", "writes_outside_write_dir", "escapes", "escaped")
 
 
 def _consult_status(a: ConsultStatusArgs) -> dict[str, Any]:
     from . import consult as consult_mod
 
-    return consult_mod.consult_status(a.run_id)
+    resp = consult_mod.consult_status(a.run_id)
+    if a.verbose or not resp.get("ok"):
+        return resp
+    val = resp.get("value")
+    if not isinstance(val, dict):
+        return resp
+    val = dict(val)
+    dropped: list[str] = []
+    man = val.get("manifest")
+    if isinstance(man, dict):
+        man = dict(man)
+        # `answer` is already returned once at value.answer — don't ship it a second time
+        if man.pop("answer", None) is not None:
+            dropped.append("manifest.answer (returned once at value.answer)")
+        for k in _FENCE_KEYS:
+            if man.pop(k, None) is not None:
+                dropped.append(f"manifest.{k}")
+        val["manifest"] = man
+    for k in _FENCE_KEYS:
+        if k in val and val.pop(k, None) is not None:
+            dropped.append(k)
+    if dropped:
+        val["omitted"] = {"fields": dropped,
+                          "full": f"consult_status(run_id={val.get('run_id')!r}, verbose=True)"}
+    return {**resp, "value": val}
 
 
 CONSULT_TOOLS = [
     ToolDef("consult_status",
             "Look up a consult run by run_id: its manifest status and, when the run produced one, the "
-            "recovered answer; also reports the fleet-wide consult lane (in flight / queued) and any quota block",
+            "recovered answer (once); also reports the fleet-wide consult lane (in flight / queued) and any "
+            "quota block. Compact by default (write-fence rows omitted, `omitted` names them); verbose=True adds them",
             "after your own consult returned {status:running} or timed out, or the server restarted mid-run — "
             "instead of re-asking",
             "the run's status and recovered answer if any, plus the lane and quota block",
