@@ -21,7 +21,7 @@ Run from `v8/` with the fleet board (:9400) up:
 ```
 PY=.venv/Scripts/python.exe
 $PY poc/kg/ingest.py            # build kg.db; prints node/edge counts by type
-$PY poc/kg/ingest.py            # second run: a true no-op (0 writes)  -> c-06d5f4a76d
+$PY poc/kg/ingest.py            # second run: a no-op (0 node/edge/source/head writes) -> c-06d5f4a76d
 $PY poc/kg/walk.py "src/edp8/slack_bridge.py"   # module walk + stale flags -> c-4b3c96e28c
 $PY poc/kg/walk.py "s-5c93e5e31e"               # ticket walk (<=40 nodes, <=8KB)
 $PY poc/kg/gold.py             # seed comparison + walk recall 12/12       -> c-be9347848d
