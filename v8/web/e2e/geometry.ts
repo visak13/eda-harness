@@ -8,10 +8,11 @@
 // import these values — that would make the check non-load-bearing.
 
 export const GEOMETRY = {
-  // Shell (design §4.2): rail x=0 w=216, header x=216 h=72, main x=256 w=1144.
-  sidebar: { x: 0, w: 216 },
+  // Shell (revision3-clean, design-a2e5369133): rail x=0 w=192, main x=192 w=1248 (no desktop header;
+  // the pre-R1 216/72/256 numbers were retired with S11 — qa m-a71347e427).
+  sidebar: { x: 0, w: 192 },
   header: { x: 216, h: 72 },
-  main: { x: 256, w: 1144 },
+  main: { x: 192, w: 1248 },
 
   // Decisions home split (design §4.2): 744 / 336, gap 64.
   homeGrid: { left: 744, right: 336, gap: 64 },
@@ -31,7 +32,8 @@ export const GEOMETRY = {
 
   // Rules (design §4.2): 3px salmon underline for the active tab; focus ring 2px offset 3px.
   tabUnderline: 3,
-  focus: { width: 2, offset: 3 },
+  // Focus ring (revision3-clean rail, AppShell.module.css .navItem:focus-visible): 2px accentink, offset 2.
+  focus: { width: 2, offset: 2 },
 
   // Pixelmatch bands @ 1440×900 (design §4.2): the two fixed-chrome regions Astra pinned.
   bands: {

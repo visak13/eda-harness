@@ -12,8 +12,9 @@ test.use({ boardFile: "fidelity" }); // one fresh board per spec file (fixtures.
 
 // Folio (default theme) token colours as the browser reports them.
 const RAIL = "rgb(238, 229, 216)"; // #EEE5D8
-const PANEL = "rgb(255, 253, 248)"; // #FFFDF8
 const ACCENTINK = "rgb(135, 63, 56)"; // #873F38
+const INK = "rgb(52, 43, 37)"; // #342B25 — the active row is ink-on-wash; the icon inherits it
+const ACCENTWASH = "rgb(246, 221, 211)"; // #F6DDD3 — active nav row ground per revision3-clean
 
 const style = (loc: Locator, prop: string) =>
   loc.evaluate((el, p) => getComputedStyle(el).getPropertyValue(p), prop);
@@ -28,7 +29,7 @@ test.describe("shell fidelity @ 1440×900", () => {
   test("sidebar / header / main geometry, rail token, active nav, h1, focus ring", async ({ page }) => {
     await page.goto(`${BASE()}/ui/me?as=owner`);
 
-    // Sidebar: x=0, width 216, background = the rail token.
+    // Sidebar: x=0, width 192 (revision3-clean rail), background = the rail token.
     const sidebar = page.getByRole("complementary", { name: "Primary" }); // the Status rail is a second <aside>
     const sb = (await sidebar.boundingBox())!;
     expectPx(sb.x, GEOMETRY.sidebar.x, "sidebar x");
@@ -40,26 +41,26 @@ test.describe("shell fidelity @ 1440×900", () => {
     // header — `app-header` is now the mobile-only bar (AppShell.module.css `.mobileBar` is
     // display:none ≥768px). There is nothing to assert here at 1440×900.
 
-    // Main: x=256, width 1144.
+    // Main: x=192, width 1248 (starts flush with the rail; the 32px gutter is padding).
     const main = page.locator("main");
     const mb = (await main.boundingBox())!;
     expectPx(mb.x, GEOMETRY.main.x, "main x");
     expectPx(mb.width, GEOMETRY.main.w, "main width");
 
-    // Active nav row (Decisions on /me): 43px tall, on the panel colour, icon in accentink.
+    // Active nav row (Epics on /me): 46px tall per the revision3-clean rail, on the accent wash, icon in ink (inherits the row).
     const active = page.locator("a[aria-current='page']");
     const ab = (await active.boundingBox())!;
-    expectPx(ab.height, 43, "active nav row height");
-    expect(await style(active, "background-color")).toBe(PANEL);
-    expect(await style(active.locator("[data-nav-icon] svg"), "color")).toBe(ACCENTINK);
+    expectPx(ab.height, 46, "active nav row height");
+    expect(await style(active, "background-color")).toBe(ACCENTWASH);
+    expect(await style(active.locator("[data-nav-icon] svg"), "color")).toBe(INK);
 
     // Page h1: Georgia 38px.
     const h1 = page.locator("main h1");
     expect(await style(h1, "font-family")).toContain(GEOMETRY.type.h1.family);
     expect(await style(h1, "font-size")).toBe(`${GEOMETRY.type.h1.px}px`);
 
-    // Focus ring on a nav link: 2px accentink, offset 3px. Keyboard focus so :focus-visible
-    // engages (the first Tab lands on the Decisions link, first focusable in the DOM).
+    // Focus ring on a nav link: 2px accentink, offset 2px. Keyboard focus so :focus-visible
+    // engages (the first Tab lands on the Epics link, the first focusable in the revision3-clean rail).
     await page.keyboard.press("Tab");
     const ring = await page.evaluate(() => {
       const el = document.activeElement as HTMLElement;
@@ -71,7 +72,7 @@ test.describe("shell fidelity @ 1440×900", () => {
         offset: s.outlineOffset,
       };
     });
-    expect(ring.text).toContain("Decisions");
+    expect(ring.text).toContain("Epics");
     expect(ring.width).toBe(`${GEOMETRY.focus.width}px`);
     expect(ring.offset).toBe(`${GEOMETRY.focus.offset}px`);
     expect(ring.color).toBe(ACCENTINK);
