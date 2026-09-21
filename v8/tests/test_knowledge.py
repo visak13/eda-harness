@@ -336,6 +336,59 @@ def test_bulk_reindex_warms_in_background_then_embeds_only_deltas(monkeypatch):
     assert len(idx._dense_keys) == n + 1
 
 
+def test_vector_cache_roundtrip(tmp_path):
+    from edp8.search import VectorCache, _text_hash
+    vc = VectorCache(str(tmp_path / "vec.db"))
+    vc.put_many([(_text_hash("alpha"), [0.1, 0.2, 0.3]), (_text_hash("beta"), [0.4, 0.5, 0.6])])
+    assert vc.count() == 2
+    got = vc.get_many([_text_hash("alpha"), _text_hash("missing")])
+    assert _text_hash("missing") not in got
+    assert got[_text_hash("alpha")] == pytest.approx([0.1, 0.2, 0.3], abs=1e-6)
+    vc.close()
+    # a fresh handle onto the same file still sees the rows (persistence)
+    assert VectorCache(str(tmp_path / "vec.db")).count() == 2
+
+
+def test_persisted_vectors_survive_restart_without_reembedding(monkeypatch, tmp_path):
+    # Follow-up to ffb0476: a board restart must NOT re-embed the whole corpus. With a disk cache,
+    # the second Index hydrates every vector by text hash and embeds no documents at all.
+    from edp8 import search
+    monkeypatch.setattr(search, "_free_ram_gb", lambda: 8.0)
+    cache_path = str(tmp_path / "vec.db")
+    units = [("doc", str(i), f"cache rule {i}") for i in range(search.BULK_THRESHOLD * 3)]
+
+    first = search.Index(embedder=_stub_fastembed(search), cache=search.VectorCache(cache_path))
+    first.rebuild(units)
+    first._warm_thread.join(timeout=10)
+    assert first.status()["embeddings_active"] is True
+    assert search.VectorCache(cache_path).count() == len(units)  # every unit persisted
+
+    emb2 = _stub_fastembed(search)
+    second = search.Index(embedder=emb2, cache=search.VectorCache(cache_path))
+    second.rebuild(units)  # same corpus, warm restart
+    if second._warm_thread is not None:
+        second._warm_thread.join(timeout=10)
+    doc_embeds = [d for docs, _ in emb2._model.calls for d in docs if d.startswith("search_document")]
+    assert doc_embeds == []  # nothing re-embedded — all served from the disk cache
+    assert len(second._dense_keys) == len(units)  # dense matrix is fully populated from cache
+    assert second.search("cache rule 1")  # and search works
+
+
+def test_edited_unit_reembeds_and_persists(monkeypatch, tmp_path):
+    from edp8 import search
+    monkeypatch.setattr(search, "_free_ram_gb", lambda: 8.0)
+    cache_path = str(tmp_path / "vec.db")
+    emb = _stub_fastembed(search)
+    idx = search.Index(embedder=emb, cache=search.VectorCache(cache_path))
+    idx.rebuild([("doc", "1", "original text")])
+    idx.search("original")  # inline embed of the single unit
+    idx.upsert("doc", "1", "edited text")  # new content hash -> a re-embed
+    idx.search("edited")
+    embedded = [d for docs, _ in emb._model.calls for d in docs if d.startswith("search_document")]
+    assert "search_document: edited text" in embedded
+    assert search.VectorCache(cache_path).count() == 2  # both the original and the edited vector
+
+
 def test_embedder_forced_none_has_reason(monkeypatch):
     from edp8 import search
     monkeypatch.setenv("EDP8_EMBEDDER", "none")

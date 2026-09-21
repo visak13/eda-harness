@@ -293,9 +293,18 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         Path(db).parent.mkdir(parents=True, exist_ok=True)
         index = None
         try:
-            from .search import Index, make_embedder
+            from .search import Index, VectorCache, make_embedder
 
-            index = Index(embedder=make_embedder())
+            # Persist embeddings to a small SQLite file beside the board DB, keyed by text hash, so a
+            # board restart reuses vectors instead of re-embedding the whole corpus (ffb0476 left the
+            # ~520 s startup warm as a follow-up). EDP8_VEC_CACHE overrides the default path.
+            cache = None
+            try:
+                vec_path = os.environ.get("EDP8_VEC_CACHE", str(db) + ".vec")
+                cache = VectorCache(vec_path)
+            except Exception:
+                cache = None
+            index = Index(embedder=make_embedder(), cache=cache)
         except Exception:
             index = None
         store = Store(db)

@@ -6,12 +6,14 @@ ranks it. One writer / many readers guarded by a single RLock.
 
 from __future__ import annotations
 
+import hashlib
 import math
 import os
 import re
+import sqlite3
 import threading
 from collections import Counter
-from typing import Protocol
+from typing import Iterable, Protocol
 
 import numpy as np
 
@@ -50,6 +52,60 @@ def _rss_mb() -> float | None:
 def _tokenize(text: str) -> list[str]:
     """Lowercase, split on non-alphanumerics, drop tokens shorter than 2 chars."""
     return [t for t in _TOKEN_RE.findall(text.lower()) if len(t) >= 2]
+
+
+def _text_hash(text: str) -> str:
+    """Content key for a vector: the sha256 of the exact text handed to the embedder. Identical
+    text (across ids) shares one vector; an edit re-hashes and re-embeds."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+class VectorCache:
+    """Disk-persisted {text-hash -> vector}, so a board restart reuses embeddings instead of
+    re-embedding the whole corpus (the ~520 s startup warm that followed ffb0476). One tiny SQLite
+    file beside the board DB; keyed on content, not on (type,id), so a moved/duplicated unit is a
+    cache hit. All access is under the Index lock, so a single shared connection is safe."""
+
+    _SQLITE_VARS = 500  # keep IN(...) lists well under SQLite's 999-variable limit
+
+    def __init__(self, path: str):
+        self.path = path
+        self._conn = sqlite3.connect(path, check_same_thread=False)
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS vec (hash TEXT PRIMARY KEY, dim INTEGER NOT NULL, vec BLOB NOT NULL)"
+        )
+        self._conn.commit()
+
+    def get_many(self, hashes: Iterable[str]) -> dict[str, list[float]]:
+        out: dict[str, list[float]] = {}
+        hs = list(dict.fromkeys(hashes))  # de-dup, preserve order
+        cur = self._conn.cursor()
+        for i in range(0, len(hs), self._SQLITE_VARS):
+            chunk = hs[i : i + self._SQLITE_VARS]
+            q = f"SELECT hash, vec FROM vec WHERE hash IN ({','.join('?' * len(chunk))})"
+            for h, blob in cur.execute(q, chunk):
+                out[h] = np.frombuffer(blob, dtype=np.float32).tolist()
+        return out
+
+    def put_many(self, items: Iterable[tuple[str, list[float]]]) -> int:
+        rows = [
+            (h, len(v), np.asarray(v, dtype=np.float32).tobytes())
+            for h, v in items
+        ]
+        if not rows:
+            return 0
+        self._conn.executemany("INSERT OR REPLACE INTO vec(hash, dim, vec) VALUES(?, ?, ?)", rows)
+        self._conn.commit()
+        return len(rows)
+
+    def count(self) -> int:
+        return self._conn.execute("SELECT COUNT(*) FROM vec").fetchone()[0]
+
+    def close(self) -> None:
+        try:
+            self._conn.close()
+        except Exception:
+            pass
 
 
 class BM25:
@@ -241,9 +297,11 @@ def _key(type_: str, id_: str) -> str:
 class Index:
     """BM25 + optional dense vectors over edp8 text units, fused via RRF."""
 
-    def __init__(self, embedder: Embedder | None = None, rrf_k: int = 60):
+    def __init__(self, embedder: Embedder | None = None, rrf_k: int = 60,
+                 cache: VectorCache | None = None):
         self._embedder = embedder if embedder is not None else make_embedder()
         self._rrf_k = rrf_k
+        self._cache = cache  # disk-persisted text-hash -> vec; None disables persistence
         self._lock = threading.RLock()
         self._bm25 = BM25()
         self._units: dict[str, tuple[str, str, str]] = {}
@@ -269,15 +327,53 @@ class Index:
         """R2-6: which seeding backend is live, why (if it fell back), and the model's footprint."""
         emb = self._embedder
         on = emb.name != "none" and self._dense_matrix is not None
+        cached = None
+        if self._cache is not None:
+            try:
+                cached = self._cache.count()
+            except Exception:
+                cached = None
         return {"embedder": emb.name, "embeddings_active": on, "warming": self._warming,
                 "reason": getattr(emb, "fallback_reason", None),
                 "model_mb": getattr(emb, "resident_mb", None),
+                "cached_vectors": cached,
                 "free_ram_gb": round(g, 2) if (g := _free_ram_gb()) is not None else None}
 
     def _missing(self) -> list[tuple[str, str]]:
         """Units whose current text has no cached vector (new or edited)."""
         return [(key, txt) for key, (_, _, txt) in self._units.items()
                 if self._vecs.get(key, (None, None))[0] != txt]
+
+    def _hydrate_from_cache(self) -> None:
+        """Fill the in-memory vector map from the disk cache (lock held): for every unit whose text
+        is not already embedded, reuse a persisted vector matched by content hash. After this the
+        startup warm only embeds units that were never seen before, so a restart is near-instant."""
+        if self._cache is None:
+            return
+        want: dict[str, list[tuple[str, str]]] = {}
+        for key, (_, _, txt) in self._units.items():
+            if self._vecs.get(key, (None, None))[0] != txt:
+                want.setdefault(_text_hash(txt), []).append((key, txt))
+        if not want:
+            return
+        try:
+            got = self._cache.get_many(want.keys())
+        except Exception:
+            return
+        for h, pairs in want.items():
+            vec = got.get(h)
+            if vec is not None:
+                for key, txt in pairs:
+                    self._vecs[key] = (txt, vec)
+
+    def _persist(self, pairs: list[tuple[str, str]], vecs: list[list[float]]) -> None:
+        """Write freshly computed vectors to the disk cache, keyed by text hash (lock held)."""
+        if self._cache is None or not vecs:
+            return
+        try:
+            self._cache.put_many((_text_hash(txt), vec) for (_, txt), vec in zip(pairs, vecs))
+        except Exception:
+            pass  # persistence is best-effort; the in-memory map still serves this run
 
     def _build_matrix(self) -> None:
         """Dense matrix from the vector cache (lock held); units not embedded yet are FTS-only."""
@@ -308,6 +404,7 @@ class Index:
                 with self._lock:
                     for (key, txt), vec in zip(chunk, vecs):
                         self._vecs[key] = (txt, vec)
+                    self._persist(chunk, vecs)
         except Exception:
             pass  # e.g. the mid-embed RAM guard: keep what is cached, stay FTS for the rest
         finally:
@@ -322,6 +419,7 @@ class Index:
         if self._embedder.name == "none":
             self._dense_matrix, self._dense_keys = None, []
             return
+        self._hydrate_from_cache()  # reuse persisted vectors before deciding what to embed
         if self._warming:
             return  # the warm thread picks up whatever is missing and rebuilds the matrix
         missing = self._missing()
@@ -339,6 +437,7 @@ class Index:
             if len(vecs) == len(missing):
                 for (key, txt), vec in zip(missing, vecs):
                     self._vecs[key] = (txt, vec)
+                self._persist(missing, vecs)
         self._build_matrix()
 
     def search(
