@@ -67,6 +67,21 @@ def test_decision_fts_searchable():
     s.close()
 
 
+def test_decision_indexes_detail_not_text_alone():
+    # R2-2: FTS (and the embed input, which is _fts_text) index text PLUS detail, so a question
+    # answered only by the WHY/TRIGGER/EFFECT lines still seeds. Words + the trigger source id that
+    # appear ONLY in detail must be searchable.
+    s = Store(":memory:")
+    d = Decision(id=new_id("dec"), scope="epic-x", text="adopt session resume",
+                 detail="WHY: seats lose context on respawn. TRIGGER: owner ruling m-6ffe756cf7. "
+                        "EFFECT: the pool fork-resumes done rows.")
+    s.put("decision", d)
+    assert d.id in [h["id"] for h in s.fts_search("respawn", types={"decision"})]
+    assert d.id in [h["id"] for h in s.fts_search("m-6ffe756cf7", types={"decision"})]
+    assert "respawn" in s._fts_text("decision", d.model_dump(mode="json"))  # the embed input carries detail
+    s.close()
+
+
 # --------------------------------------------------------------------------- record_decision
 def test_record_decision_replaces_flips_in_one_transaction(board, rig):
     epic = make_epic(board, rig)
