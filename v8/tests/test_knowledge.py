@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import pytest
 
+from edp8 import knowledge
 from edp8.board import Board, BoardError
 from edp8.knowledge import ALWAYS_MAX_BYTES, EXCERPT_CHARS, MAX_BYTES, MAX_RECORDS
 from edp8.schemas import (
@@ -539,6 +540,57 @@ def test_source_excerpts_are_epic_scoped(board, rig):
                      body_md="the escrow slots settle at close in epic B only")
     out = board.lookup(rig["engineer"], scope=epic_a.id, question="escrow slots settle close")
     assert out["receipt"]["source_excerpts"] == 0  # never leaks epic B's sources into epic A
+
+
+# --------------------------------------------------------------------------- C4 ranked noise floor
+def test_ranked_floor_drops_below_threshold_record(board, rig):
+    epic = make_epic(board, rig)
+    hit = board.record_decision(rig["owner"], scope=epic.id,
+                                text="webhooks allowlist hosts rule is the strong direct match")
+    # weak: never seeded by the question; reached only via a 0.3 `touches` edge from the hit,
+    # so its score is 0.3x the top and it sits below the 0.35 floor.
+    weak = board.record_decision(rig["owner"], scope=epic.id,
+                                 text="standup cadence timing note unrelated to the query")
+    board.store.put("kglink", KgLink(id=new_id("kl"), from_id=hit.id, to_id=weak.id,
+                                     kind=LinkKind.touches, created_by=rig["owner"].id))
+    out = board.lookup(rig["engineer"], scope=epic.id, question="webhooks allowlist hosts")
+    ids = [r["id"] for r in out["records"]]
+    assert hit.id in ids
+    assert weak.id not in ids
+    assert out["receipt"]["floor_dropped"] >= 1
+    assert weak.id in out["receipt"]["floor_dropped_ids"]
+
+
+def test_ranked_floor_rescues_part_of_linked_record(board, rig):
+    epic = make_epic(board, rig)
+    hit = board.record_decision(rig["owner"], scope=epic.id,
+                                text="webhooks allowlist hosts rule is the strong direct match")
+    weak = board.record_decision(rig["owner"], scope=epic.id,
+                                 text="a minor sub-point that only makes sense beside the hit")
+    # part_of both pulls `weak` into the neighbourhood (0.3) AND rescues it from the floor,
+    # because it links to a kept (strong) record.
+    board.store.put("kglink", KgLink(id=new_id("kl"), from_id=weak.id, to_id=hit.id,
+                                     kind=LinkKind.part_of, created_by=rig["owner"].id))
+    out = board.lookup(rig["engineer"], scope=epic.id, question="webhooks allowlist hosts")
+    ids = [r["id"] for r in out["records"]]
+    assert hit.id in ids
+    assert weak.id in ids  # rescued by part_of despite being below the raw floor
+    assert weak.id not in out["receipt"]["floor_dropped_ids"]
+
+
+def test_ranked_floor_disabled_keeps_weak_record(board, rig, monkeypatch):
+    monkeypatch.setattr(knowledge, "RANKED_FLOOR_FRAC", 0.0)
+    epic = make_epic(board, rig)
+    hit = board.record_decision(rig["owner"], scope=epic.id,
+                                text="webhooks allowlist hosts rule is the strong direct match")
+    weak = board.record_decision(rig["owner"], scope=epic.id,
+                                 text="standup cadence timing note unrelated to the query")
+    board.store.put("kglink", KgLink(id=new_id("kl"), from_id=hit.id, to_id=weak.id,
+                                     kind=LinkKind.touches, created_by=rig["owner"].id))
+    out = board.lookup(rig["engineer"], scope=epic.id, question="webhooks allowlist hosts")
+    ids = [r["id"] for r in out["records"]]
+    assert weak.id in ids  # floor off (A/B baseline) => nothing dropped
+    assert out["receipt"]["floor_dropped"] == 0
 
 
 # --------------------------------------------------------------------------- withdraw (ruling m-7baa527b65)

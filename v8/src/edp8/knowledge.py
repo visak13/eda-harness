@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json as _json
 import math
+import os
 import re
 from datetime import datetime
 from typing import Any, Callable
@@ -32,6 +33,12 @@ RELEVANCE_FLOOR = 0.5   # graph weight (1.0 = a direct seed, 0.6 = one strong ho
 MIN_RELEVANT = 3        # below this many strong records, add the source-excerpt tier
 MAX_EXCERPTS = 4
 EXCERPT_CHARS = 400
+# C4 (steer m-cb8198669e): the reader kept seeing the same few unrelated decisions under every
+# question. In "For your question", drop any ranked record whose fused score is below this fraction
+# of the top hit's score — unless it is linked by replaces or part_of to a kept record (so chains and
+# a claim's own ticket group are not orphaned). Fewer, relevant records beat a full budget of noise.
+RANKED_FLOOR_FRAC = float(os.environ.get("EDP8_RANKED_FLOOR", "0.35"))  # 0 disables (for A/B measuring)
+RESCUE_KINDS = {"replaces", "part_of"}
 
 # link weight: how much a hop across this kind carries relevance (design §4.2 step 5).
 LINK_WEIGHT = {
@@ -365,6 +372,31 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
         ranked.append((sc, nid, rtype, rec, entry))
     ranked.sort(key=lambda x: (-x[0], x[1]))
 
+    # C4 noise floor: keep only ranked records at >= RANKED_FLOOR_FRAC of the top score, plus any
+    # weak record linked by replaces/part_of to a kept (strong) one — so a live decision's chain and
+    # a claim tied to a kept record's ticket are not dropped. Below-floor records are noise, not budget.
+    floor_dropped: list[str] = []
+    ranked_allowed_ids: set[str] = {rec.id for _, _, _, rec, _ in ranked}
+    if ranked and RANKED_FLOOR_FRAC > 0:
+        top_score = ranked[0][0]
+        floor = RANKED_FLOOR_FRAC * top_score if top_score > 0 else 0.0
+        if floor > 0:
+            strong_ids = {rec.id for sc, _, _, rec, _ in ranked if sc >= floor}
+            rescue_pairs: set[tuple[str, str]] = set()
+            for lk in store.query("kglink", limit=100000):
+                if lk.kind in RESCUE_KINDS:
+                    rescue_pairs.add((lk.from_id, lk.to_id))
+                    rescue_pairs.add((lk.to_id, lk.from_id))
+            allowed: set[str] = set(strong_ids)
+            for sc, _, _, rec, _ in ranked:
+                if rec.id in allowed:
+                    continue
+                if any((rec.id, s) in rescue_pairs for s in strong_ids):
+                    allowed.add(rec.id)
+                else:
+                    floor_dropped.append(rec.id)
+            ranked_allowed_ids = allowed
+
     binding_cands: list[tuple[float, str, Any, dict[str, Any]]] = []
     for nid in always_ids:
         found = _find_record(store, nid)
@@ -410,6 +442,8 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
     cut_by_type: dict[str, int] = {}
     cut_ids: dict[str, list[str]] = {}
     for sc, nid, rtype, rec, entry in ranked:
+        if rec.id not in ranked_allowed_ids:
+            continue  # C4: below the noise floor and not rescued by a replaces/part_of link
         entry = {**entry, "section": "ranked"}
         bsize = len(_json.dumps(entry, ensure_ascii=False).encode("utf-8"))
         if len(records) >= MAX_RECORDS or used_bytes + bsize > MAX_BYTES:
@@ -464,6 +498,9 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
         # R2-6: which seeding backend served this lookup (embeddings vs FTS-only + why)
         "embeddings": embed_status or {"embedder": "none", "reason": "no semantic index wired"},
         "seed_top": SEED_TOP,
+        # C4 noise floor: how many ranked records were dropped for scoring below the floor, and the floor
+        "floor_dropped": len(floor_dropped), "floor_dropped_ids": floor_dropped[:20],
+        "ranked_floor_frac": RANKED_FLOOR_FRAC,
         **counts,
     }
     return {"records": records, "body": body, "receipt": receipt}
