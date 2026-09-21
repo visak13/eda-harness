@@ -19,6 +19,7 @@ import db
 MAX_NODES = 40
 MAX_BYTES = 8192
 MAX_HOPS = 2
+DETAIL_LIMIT = 8  # detail=True: surface source excerpts on the top-N fact nodes only
 
 # edge-type weights: how much a hop across this relation carries relevance.
 # came_from/replaces are never traversed (source rows aren't nodes; replaced
@@ -167,15 +168,34 @@ def _span(conn):
         return None, None
 
 
+DETAIL_TYPES = ("decision", "check", "lesson")
+
+
 def _render_line(r, stale):
     tag = r["type"].upper()
     flag = " [STALE]" if stale else ""
     return f"- {tag}{flag}: {r['text']}  <{r['id']}>"
 
 
-def walk(start, uses_on=True, record=False, conn=None):
+def _detail(conn, r):
+    """The one-line node text is the INDEX; enumerated answers live in the source
+    excerpt. walk surfaces it for its top fact-bearing nodes (finding: a
+    one-sentence cap alone loses lists like 'what remains: 1... 2...')."""
+    if r["type"] not in DETAIL_TYPES or not r["source_id"]:
+        return ""
+    s = conn.execute("SELECT excerpt FROM source WHERE id=?", (r["source_id"],)).fetchone()
+    if not s or not s["excerpt"]:
+        return ""
+    ex = " ".join(s["excerpt"].split())
+    if ex.startswith(r["text"][:40]):  # avoid echoing the same sentence twice
+        ex = ex[len(r["text"]):].strip() or ex
+    return "    detail: " + ex[:340] if ex else ""
+
+
+def walk(start, uses_on=True, record=False, detail=False, conn=None):
     """Pure deterministic read by default. record=True bumps the `uses` counter
-    of the returned nodes (popularity feedback) — off during determinism tests."""
+    of the returned nodes (popularity feedback) — off during determinism tests.
+    detail=True surfaces the source excerpt for top fact-bearing nodes."""
     close = False
     if conn is None:
         conn, close = db.connect(), True
@@ -211,7 +231,7 @@ def walk(start, uses_on=True, record=False, conn=None):
     selected, cut_by_type = [], {}
     order = list(mandatory) + [nid for _, nid in scored]
     mandatory_set = set(mandatory)
-    used_bytes, count = 0, 0
+    used_bytes, count, detailed = 0, 0, 0
     lines = []
     for nid in _dedupe(order):
         r = conn.execute("SELECT * FROM node WHERE id=?", (nid,)).fetchone()
@@ -219,14 +239,20 @@ def walk(start, uses_on=True, record=False, conn=None):
             continue
         stale = _stale(conn, r, head_cache)
         line = _render_line(r, stale)
+        block = line
+        if detail and detailed < DETAIL_LIMIT:
+            d = _detail(conn, r)
+            if d:
+                block = line + "\n" + d
+                detailed += 1
         forced = nid in mandatory_set
-        if not forced and (count >= MAX_NODES or used_bytes + len(line) + 1 > MAX_BYTES):
+        if not forced and (count >= MAX_NODES or used_bytes + len(block) + 1 > MAX_BYTES):
             cut_by_type[r["type"]] = cut_by_type.get(r["type"], 0) + 1
             continue
-        selected.append(nid); lines.append(line)
+        selected.append(nid); lines.append(block)
         if record:
             conn.execute("UPDATE node SET uses = uses + 1 WHERE id=?", (nid,))
-        used_bytes += len(line) + 1
+        used_bytes += len(block) + 1
         count += 1
     if record:
         conn.commit()

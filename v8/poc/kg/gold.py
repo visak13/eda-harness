@@ -130,7 +130,7 @@ def walk_recall(conn):
     evicted = []
     for item in QUESTIONS:
         need = set(item["need"])
-        _, r_on, sel_on = walk.walk(item["seed"], uses_on=True, conn=conn)
+        _, r_on, sel_on = walk.walk(item["seed"], uses_on=True, detail=True, conn=conn)
         got = need & set(sel_on)
         if got:
             hits += 1
@@ -139,7 +139,7 @@ def walk_recall(conn):
             misses.append(item["id"])
             status = "MISS  need=" + ",".join(sorted(need))
         # uses-eviction: with uses off, does a previously-missed need node appear?
-        _, _, sel_off = walk.walk(item["seed"], uses_on=False, conn=conn)
+        _, _, sel_off = walk.walk(item["seed"], uses_on=False, detail=True, conn=conn)
         if not got and (need & set(sel_off)):
             evicted.append(item["id"])
         print(f"  Q{item['id']:>2}: {status}")
@@ -155,13 +155,21 @@ def write_pack(conn, path):
     seen, know = set(), []
     per_q_bytes = 0
     for item in QUESTIONS:
-        body, r, sel = walk.walk(item["seed"], uses_on=True, conn=conn)
+        body, r, sel = walk.walk(item["seed"], uses_on=True, detail=True, conn=conn)
         per_q_bytes += r["bytes"]
+        block = []
+        cur_id = None
         for line in body.splitlines():
-            m = re.search(r"<([^>]+)>\s*$", line)
-            nid = m.group(1) if m else line
-            if nid not in seen:
-                seen.add(nid); know.append(line)
+            if line.startswith("- "):
+                if cur_id and cur_id not in seen:
+                    seen.add(cur_id); know.append("\n".join(block))
+                m = re.search(r"<([^>]+)>\s*$", line)
+                cur_id = m.group(1) if m else line
+                block = [line]
+            else:
+                block.append(line)
+        if cur_id and cur_id not in seen:
+            seen.add(cur_id); know.append("\n".join(block))
     parts = ["# Knowledge pack (walk output only) — answer the questions from THIS alone.\n",
              "## Facts\n" + "\n".join(know),
              "\n## Questions\n" + "\n".join(f"{it['id']}. {it['q']}" for it in QUESTIONS)]
