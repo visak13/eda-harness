@@ -237,3 +237,37 @@ def test_negative_lesson_counter_rejected():
     import pytest as _pytest
     with _pytest.raises(Exception):
         Lesson(id=new_id("les"), domain="d", topic="t", text="x", helped=-1)
+
+
+# --------------------------------------------------------------------------- withdraw (ruling m-7baa527b65)
+def test_withdraw_decision_hides_it_but_keeps_row_and_links(board, rig):
+    epic = make_epic(board, rig)
+    d = board.record_decision(rig["owner"], scope=epic.id, text="a mistaken rule about webhooks")
+    # present before withdrawal
+    assert d.id in [r["id"] for r in board.lookup(rig["engineer"], scope=epic.id, question="webhooks rule")["records"]]
+    assert board.store.fts_search("webhooks", types={"decision"})
+
+    w = board.withdraw_decision(rig["owner"], decision_id=d.id, reason="duplicate from resume-script bug")
+    assert w.status == DecisionStatus.withdrawn
+    assert w.withdrawn_reason == "duplicate from resume-script bug"
+    # the row and its `decides` kglink are kept
+    assert board.store.get("decision", d.id) is not None
+    assert board.store.query("kglink", {"from_id": d.id, "kind": "decides"})
+    # lookup never returns it, and search drops it
+    assert d.id not in [r["id"] for r in board.lookup(rig["engineer"], scope=epic.id, question="webhooks rule")["records"]]
+    assert d.id not in [h["id"] for h in board.store.fts_search("webhooks", types={"decision"})]
+
+
+def test_withdraw_binding_decision_not_force_included(board, rig):
+    # a withdrawn binding decision must not sneak back via the always-include set
+    epic = make_epic(board, rig)
+    b = board.record_decision(rig["owner"], scope=epic.id, text="binding but retracted", binding=True)
+    board.withdraw_decision(rig["owner"], decision_id=b.id, reason="entered in error")
+    out = board.lookup(rig["engineer"], scope=epic.id, question="anything")
+    assert b.id not in [r["id"] for r in out["records"]]
+    assert out["receipt"]["binding"] == 0
+
+
+def test_withdraw_unknown_decision_raises(board, rig):
+    with pytest.raises(BoardError):
+        board.withdraw_decision(rig["owner"], decision_id="dec-nope", reason="x")

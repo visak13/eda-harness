@@ -1832,6 +1832,22 @@ class Board:
         self._index("claim", c.id, text)
         return c
 
+    def withdraw_decision(self, actor: Participant, *, decision_id: str, reason: str) -> Decision:
+        """Retract a decision without a successor (design §3 status `withdrawn`): the row and its
+        links are kept, but lookup never returns it and the search index drops it. Idempotent —
+        re-withdrawing only refreshes the reason. Gives the owner a real way to retract a mistaken
+        decision (ruling m-7baa527b65)."""
+        d = self.store.get("decision", decision_id)
+        if d is None:
+            raise BoardError("not_found", f"decision {decision_id!r} does not exist",
+                             "pass the id of an existing decision")
+        d.status = DecisionStatus.withdrawn  # type: ignore[attr-defined]
+        d.withdrawn_reason = (reason or "").strip()[:240]  # type: ignore[attr-defined]
+        with self.store.transaction():
+            self.store.put("decision", d)  # _fts_text returns "" for withdrawn → drops it from FTS
+        self._index("decision", d.id, "")  # overwrite the semantic vector so search drops it too
+        return d
+
     def lookup(self, actor: Participant, *, scope: str, question: str | None = None,
                id: str | None = None, path: str | None = None) -> dict[str, Any]:
         """Deterministic, capped, epic-isolated retrieval over the records (design §4.2).

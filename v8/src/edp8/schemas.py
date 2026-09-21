@@ -367,6 +367,7 @@ class Decision(Obj):
     source: str | None = None  # message | doc | attachment id it came from
     decided_by: str = ""  # participant id
     domains: list[str] = Field(default_factory=list)  # domain checklist names it touches
+    withdrawn_reason: str = Field(default="", max_length=240)  # one line, set when status→withdrawn
 
 
 class Claim(Obj):

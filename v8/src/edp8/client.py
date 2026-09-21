@@ -259,6 +259,10 @@ class BoardClient:
             "scope": scope, "text": text, "basis": basis, "evidence": evidence or [],
             "source": source, "status": status})
 
+    def withdraw_decision(self, decision_id: str, reason: str = "") -> dict[str, Any]:
+        return self._request("POST", f"/v1/decisions/{decision_id}/withdraw",
+                             json={"reason": reason})
+
     def lookup(self, scope: str, question: str | None = None, id: str | None = None,
                path: str | None = None) -> dict[str, Any]:
         return self._request("GET", "/v1/lookup",

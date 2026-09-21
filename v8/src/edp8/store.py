@@ -138,6 +138,8 @@ class Store:
         if type_ == "criterion":
             return d.get("text") or ""
         if type_ == "decision":
+            if d.get("status") == "withdrawn":
+                return ""  # withdrawn: keep the row + links, drop it from search (design §3 status)
             return f"{d.get('text') or ''}\n{d.get('detail') or ''}"
         if type_ == "claim":
             return d.get("text") or ""

@@ -169,6 +169,10 @@ class ClaimIn(BaseModel):
     status: ClaimStatus = ClaimStatus.open
 
 
+class WithdrawIn(BaseModel):
+    reason: str = ""
+
+
 class ResolveIn(BaseModel):
     ticket_id: str
     to: str | None = None
@@ -833,6 +837,11 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         c = board.record_claim(a, scope=b.scope, text=b.text, basis=b.basis, evidence=b.evidence,
                                source=b.source, status=b.status)
         return ok(_dump(c), "claim recorded")
+
+    @app.post("/v1/decisions/{id_}/withdraw")
+    def withdraw_decision(id_: str, b: WithdrawIn, a: Participant = Depends(actor)):
+        d = board.withdraw_decision(a, decision_id=id_, reason=b.reason)
+        return ok(_dump(d), "decision withdrawn; lookup and search no longer return it")
 
     @app.get("/v1/lookup")
     def lookup(scope: str, question: str | None = None, id: str | None = None,
