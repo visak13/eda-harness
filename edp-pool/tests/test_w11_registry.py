@@ -34,12 +34,12 @@ def test_spawn_stores_the_claude_session_id(svc):
     assert datetime.fromisoformat(row["spawned_at"]).tzinfo is not None
 
 
-def test_spawn_without_a_claude_session_stores_none(svc):
-    """No claude_session (the common planner/worker spawn) ⇒ None, no crash.
-    Same for a bare handle with no ':' — it simply has no recipe."""
+def test_spawn_without_a_claude_session_mints_one(svc):
+    """No claude_session (the common planner/worker spawn) ⇒ a minted id is pinned so the
+    row stays fork-resumable (owner m-8b70f4afb6). A bare handle simply has no recipe."""
     sid = svc.spawn("specialist", "spec-python", None)   # no ':' in handle
     row = svc.sessions[sid]
-    assert row["claude_session_id"] is None
+    assert row["claude_session_id"]
     assert row["recipe_id"] is None
     assert row["spawned_at"] and row["last_seen"]
 

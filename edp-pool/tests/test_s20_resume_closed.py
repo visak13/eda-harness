@@ -67,6 +67,9 @@ def test_resume_closed_continues_a_file_resuming_backend(tmp_path):
         def closed_session_token(self, session_id, handle):
             return str(tmp_path / f"{handle}.jsonl")
 
+        def pins_session_id(self, session_id):
+            return False  # like Pi: the pool's claude pin is ignored
+
     svc = PoolService(FileSpawner())
     h = "engineer.s-pi"
     sid = svc.spawn("engineer", h, None, "monitor", model="astra")
@@ -113,3 +116,12 @@ def test_resume_closed_endpoint_round_trip():
     assert r.status_code == 200, r.text
     assert r.json()["resumed"] is True
     assert svc.sessions[sid]["state"] == "active"
+
+
+def test_spawn_without_a_session_id_pins_a_minted_one():
+    """owner m-8b70f4afb6 (2026-09-21): the board adapter passes no session id, so rows carried
+    claude_session_id=None and a seat orphaned by a host crash could not be fork-resumed."""
+    svc = PoolService(FakeSpawner())
+    sid = svc.spawn("engineer", "engineer.s-mint", None, "monitor")
+    minted = svc.sessions[sid]["claude_session_id"]
+    assert minted and svc.spawner.launched[-1]["claude_session"] == minted

@@ -462,8 +462,8 @@ def test_resume_without_session_id_reports_resync_not_fresh_spawn(
     file) must report resync — never a silent fresh spawn that discards the
     parked transcript the resume exists to preserve."""
     monkeypatch.setattr(svc, "_inbox_depth", lambda h: 0)
-    sid = svc.spawn("planner", "rec-x:s1", None)   # no claude_session
-    assert svc.sessions[sid].get("claude_session_id") is None
+    sid = svc.spawn("planner", "rec-x:s1", None)
+    svc.sessions[sid]["claude_session_id"] = None   # a legacy row from before spawn minted ids
     svc.park_session(sid, flush_timeout=0.05, flush_quiesce=0.01)
     svc._kill_session(sid)
     launches_before = len(svc.spawner.launched)
@@ -484,6 +484,9 @@ def test_resume_without_session_id_recovers_from_session_file(monkeypatch):
     class FileSpawner(FakeSpawner):
         def closed_session_token(self, session_id, handle):
             return f"/sess/{handle}.jsonl"
+
+        def pins_session_id(self, session_id):
+            return False
 
     svc = PoolService(FileSpawner())
     monkeypatch.setattr(svc, "_inbox_depth", lambda h: 0)

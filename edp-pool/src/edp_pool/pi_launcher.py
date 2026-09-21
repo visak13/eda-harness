@@ -275,6 +275,10 @@ class PiSpawner:
     def viewport_died(self, session_id) -> bool:
         return False
 
+    def pins_session_id(self, session_id) -> bool:
+        """Pi ignores the pool's claude pin (it resumes from its own session file)."""
+        return False
+
     def session_token(self, session_id):
         """Pi resumes from the seat's own session file (`<log_dir>/pi-sessions/<handle>.jsonl`),
         selected by EDP_PI_RESUME=1 on relaunch — no token to hand back."""

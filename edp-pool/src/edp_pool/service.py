@@ -1038,6 +1038,12 @@ class PoolService(Microservice):
             # so a concurrent admission sees this slot taken (F36 R4#1/#2).
             sid = f"{role}:{uuid.uuid4()}"
             now0 = _utc_now_iso()
+            # Owner m-8b70f4afb6 (2026-09-21): a caller that passes no session id (the
+            # board adapter never does) left the row with claude_session_id=None, so a
+            # seat orphaned by a host crash had nothing to fork-resume. Pin a minted id
+            # on every spawn; _launch_reserved drops it again for a non-claude backend.
+            if not claude_session and not resume_session:
+                claude_session = str(uuid.uuid4())
             # S20 (v8, design §18.3): record everything a resume-from-closed needs to
             # re-launch this seat days later with the SAME shape — role, cwd, env, model,
             # mode, parent. Nothing has to be reconstructed from a `done` row.
@@ -1200,6 +1206,11 @@ class PoolService(Microservice):
                 self._persist()
             raise
         _log.info("launch_done", handle, role=role, handle=handle, sid=sid)
+        # A second backend (Pi, opencode) ignores the claude pin and resumes by its own
+        # seam; a stored minted id there would send resume() down the claude fork path.
+        pins = getattr(self.spawner, "pins_session_id", None)
+        if pins is not None and not pins(sid):
+            claude_session = None
         self._register_channel_membership(role, handle)
         with self._transition_lock:
             s = self.sessions.get(sid)

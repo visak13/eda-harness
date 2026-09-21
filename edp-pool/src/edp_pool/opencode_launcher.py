@@ -581,6 +581,10 @@ class CompositeSpawner:
             return oc_code
         return getattr(self._claude, "exit_code", lambda _s: None)(session_id)
 
+    def pins_session_id(self, session_id) -> bool:
+        """Only a claude-backed seat is launched WITH the pool's minted session id."""
+        return not self._oc.knows(session_id)
+
     def session_token(self, session_id):
         """Resume-token seam: only the opencode backend has one; claude rows
         resume via their minted claude_session_id (service default path)."""
