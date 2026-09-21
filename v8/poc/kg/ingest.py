@@ -95,6 +95,7 @@ def add_edge(conn, from_id, to_id, rel, created_at=None):
 def ingest_tickets(conn, stats):
     tickets = board.tickets(EPIC)
     label_map = {}  # "S10" -> ticket id
+    epic_design = next((t.get("design_ref") for t in tickets if t["kind"] == "epic"), None)
     for t in tickets:
         tid = t["id"]
         if t["kind"] == "epic":
@@ -111,6 +112,9 @@ def ingest_tickets(conn, stats):
             stats["node+"] += 1
         stats["edge+"] += add_edge(conn, nid, f"problem:{EPIC}", "part_of", t.get("created_at"))
         stats["edge+"] += add_edge(conn, nid, src, "came_from", t.get("created_at"))
+        if epic_design:
+            stats["edge+"] += add_edge(conn, nid, f"design_part:{epic_design}", "implements",
+                                       t.get("created_at"))
         m = re.match(r"(S\d+)\b", t.get("title", ""))
         if m:
             label_map[m.group(1).upper()] = tid
@@ -215,7 +219,9 @@ def ingest_git(conn, stats, tickets, label_map):
         if t["kind"] != "epic":
             alias_to_ticket[t["id"]] = t["id"]
     alias_to_ticket.update(label_map)
-    alias_to_ticket[EPIC] = EPIC
+    # NOTE: the epic id is deliberately NOT an alias for `touches`. A commit that
+    # only names the epic is too coarse to attribute; attributing it to the
+    # problem node would drag every epic-level owner musing into a module walk.
     aliases = sorted(alias_to_ticket, key=len, reverse=True)
 
     out = subprocess.run(
