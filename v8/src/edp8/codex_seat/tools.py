@@ -47,6 +47,8 @@ IDLE_COALESCE_MS = 20  # parity §5 "queued notifications at idle": landing toge
 MONITOR_START_GRACE_MS = 200  # §5: Claude's Monitor result is committed ≈270 ms after invocation
 SEND_RETRIES = 40  # edp8.ts sendFollowUp: never lose a notification
 SEND_RETRY_S = 0.05
+RETRY_BACKOFF_S = (2.0, 60.0)  # retries exhausted: re-kick on our own, doubling up to 60 s
+UNKNOWN_START_S = 90.0  # a timed-out turn/start with no turn notification by then was never accepted
 
 PREAMBLE_IDLE = (  # our wording (owner m-2d7ef9243d); mapped to Claude's by guides/harness-parity/wording.json
     "[BACKGROUND EVENT - NOT FROM THE USER]\n"
@@ -74,8 +76,24 @@ def fnv1a(s: str) -> int:
 
 
 def _utf16_units(ch: str) -> list[int]:
-    b = ch.encode("utf-16-le")
+    b = ch.encode("utf-16-le", "surrogatepass")
     return [int.from_bytes(b[i:i + 2], "little") for i in range(0, len(b), 2)]
+
+
+def js_len(s: str) -> int:
+    """JS `.length`: UTF-16 code units, not code points."""
+    return len(s.encode("utf-16-le", "surrogatepass")) // 2
+
+
+def js_slice(s: str, n: int) -> str:
+    """JS `.slice(0, n)` in UTF-16 units (it may split a surrogate pair, exactly like the reference)."""
+    return s.encode("utf-16-le", "surrogatepass")[:2 * n].decode("utf-16-le", "surrogatepass")
+
+
+def js_round(x: float) -> int:
+    """JS Math.round: halves round toward +inf (Python round() is banker's)."""
+    import math
+    return math.floor(x + 0.5)
 
 
 class Clock:
@@ -127,9 +145,13 @@ class Delivery:
     busy, native tool running  → turn/steer now (lands after that tool's output = "next tool result")
     busy otherwise             → pending: appended to the next seat-tool result; a native tool that
                                  starts steers them; whatever is left at turn/completed is ONE turn
-    `start_turn(text) -> bool` / `steer(text, turn_id) -> bool` are the runner's JSON-RPC calls."""
+    Intake order is kept across the idle batch, pending and steers (older entries always go first).
 
-    def __init__(self, start_turn: Callable[[str], bool], steer: Callable[[str, str], bool],
+    `start_turn(text)` / `steer(text, turn_id)` are the runner's JSON-RPC calls and return True
+    (accepted), False (explicitly rejected: safe to resend) or None (outcome unknown, e.g. a timeout:
+    never resent blindly; a start is reconciled by the turn notifications, see UNKNOWN_START_S)."""
+
+    def __init__(self, start_turn: Callable[[str], bool | None], steer: Callable[[str, str], bool | None],
                  log: Callable[[str], None] | None = None):
         self._start_turn = start_turn
         self._steer = steer
@@ -143,6 +165,10 @@ class Delivery:
         self._idle_timer: threading.Timer | None = None
         self._outbox: deque[str] = deque()
         self._settle_hooks: list[Callable[[], str | None]] = []
+        self._done_turns: deque[str] = deque(maxlen=64)  # a late turn/start response never revives these
+        self._gen = 0  # bumped at every turn/started + turn/completed: the unknown-start watchdog's witness
+        self._retry_timer: threading.Timer | None = None
+        self._retry_delay = RETRY_BACKOFF_S[0]
 
     # -- state ----------------------------------------------------------------
     def is_idle(self) -> bool:
@@ -155,11 +181,16 @@ class Delivery:
 
     def turn_started(self, turn_id: str | None) -> None:
         with self.lock:
+            if turn_id and turn_id in self._done_turns:
+                return  # the turn/start RESPONSE arrived after that turn already completed
             self.busy = True
             self.turn_id = turn_id
+            self._gen += 1
 
-    def turn_completed(self) -> None:
+    def turn_completed(self, turn_id: str | None = None) -> None:
         with self.lock:
+            if turn_id:
+                self._done_turns.append(turn_id)
             self.native_in_flight = None
         # hooks run OUTSIDE this lock (they take SeatTools.lock, which is taken before this one
         # elsewhere); `busy` stays True meanwhile, so a notification landing now goes to pending
@@ -167,6 +198,7 @@ class Delivery:
         with self.lock:
             self.busy = False
             self.turn_id = None
+            self._gen += 1
             self._outbox.extend(texts)
             if self.pending:
                 rest = self.pending[:]
@@ -196,13 +228,15 @@ class Delivery:
                     self._idle_timer = threading.Timer(IDLE_COALESCE_MS / 1000, self._flush_idle)
                     self._idle_timer.daemon = True
                     self._idle_timer.start()
-            elif self.busy and self.native_in_flight:
-                rest = [*self.pending, notification]  # older undelivered ones first, never reordered
+                return
+            older = self._take_idle_batch()  # a turn started inside the coalesce window: those go first
+            if self.busy and self.native_in_flight:
+                rest = [*older, *self.pending, notification]  # never reordered
                 self.pending.clear()
                 self._steer_now(rest)
             else:
-                self._log(f"deliver pending({len(self.pending) + 1}) {notification[:80]!r}")
-                self.pending.append(notification)
+                self._log(f"deliver pending({len(older) + len(self.pending) + 1}) {notification[:80]!r}")
+                self.pending[:] = [*older, *self.pending, notification]
 
     def enqueue_turn(self, text: str) -> None:
         """A standalone user turn (cron fire, console input): delivered when idle, in order."""
@@ -213,14 +247,23 @@ class Delivery:
     def attach(self, text: str) -> str:
         """A seat tool's result text + every pending notification (edp8.ts `tool_result` hook)."""
         with self.lock:
-            if not self.pending:
-                return text
-            rest = self.pending[:]
+            rest = [*self._take_idle_batch(), *self.pending]
             self.pending.clear()
+            if not rest:
+                return text
         self._log(f"attach {len(rest)} to a seat tool result")
         return text + "".join("\n\n" + wrap(n) for n in rest)
 
     # -- internals ------------------------------------------------------------
+    def _take_idle_batch(self) -> list[str]:
+        """(lock held) the not-yet-flushed idle batch, its timer cancelled."""
+        if self._idle_timer is not None:
+            self._idle_timer.cancel()
+            self._idle_timer = None
+        rest = self._idle_batch[:]
+        self._idle_batch.clear()
+        return rest
+
     def _flush_idle(self) -> None:
         with self.lock:
             self._idle_timer = None
@@ -228,8 +271,13 @@ class Delivery:
             self._idle_batch.clear()
             if not rest:
                 return
-            if self.busy or self._outbox:  # a turn started in the coalesce window: treat as busy
-                self.pending.extend(rest)
+            if self.busy or self._outbox:  # a turn started in the coalesce window: treat as busy, oldest first
+                if self.busy and self.native_in_flight:
+                    rest += self.pending
+                    self.pending.clear()
+                    self._steer_now(rest)
+                else:
+                    self.pending[:0] = rest
                 return
             self._log(f"deliver standalone x{len(rest)} {rest[0][:80]!r}")
             self._outbox.append("\n".join(wrap(n) for n in rest))
@@ -238,10 +286,11 @@ class Delivery:
     def _steer_now(self, notes: list[str]) -> None:
         text = "\n\n".join(wrap(n) for n in notes)
         tid = self.turn_id
-        ok = bool(tid) and self._steer(text, tid)  # type: ignore[arg-type]
+        ok = self._steer(text, tid) if tid else False
         self._log(f"steer x{len(notes)} after {self.native_in_flight} ok={ok}")
-        if not ok:
-            self.pending[:0] = notes  # the turn ended under us: next tool result / settle carries them
+        if ok is False:  # explicitly refused (the turn ended under us): next tool result / settle carries them
+            self.pending[:0] = notes
+        # None = unknown outcome (timeout): counted as delivered, since a resend could land twice
 
     def kick(self) -> None:
         for attempt in range(SEND_RETRIES + 1):
@@ -250,14 +299,52 @@ class Delivery:
                     return
                 text = self._outbox.popleft()
                 self.busy = True  # optimistic: turn/started confirms, a failure reverts
-            if self._start_turn(text):
+                gen = self._gen
+            ok = self._start_turn(text)
+            if ok:
+                with self.lock:
+                    self._retry_delay = RETRY_BACKOFF_S[0]
+                return
+            if ok is None:  # unknown: the server may have accepted it; the turn notifications decide
+                self._log("turn/start outcome unknown; reconciling via turn notifications")
+                self._arm_unknown_watchdog(text, gen)
                 return
             with self.lock:
                 self.busy = False
                 self._outbox.appendleft(text)
             self._log(f"turn/start failed (attempt {attempt + 1}); retrying")
             time.sleep(SEND_RETRY_S)
-        self._log("turn/start delivery FAILED; kept in outbox for the next settle")
+        self._arm_retry()
+
+    def _arm_retry(self) -> None:
+        """Retries exhausted: keep the outbox AND come back on our own (backoff), never wait for a settle."""
+        with self.lock:
+            if self._retry_timer is not None:
+                return
+            delay = self._retry_delay
+            self._retry_delay = min(self._retry_delay * 2, RETRY_BACKOFF_S[1])
+            self._retry_timer = threading.Timer(delay, self._retry_fire)
+            self._retry_timer.daemon = True
+            self._retry_timer.start()
+        self._log(f"turn/start delivery failing; outbox kept, retry in {delay:.1f}s")
+
+    def _retry_fire(self) -> None:
+        with self.lock:
+            self._retry_timer = None
+        self.kick()
+
+    def _arm_unknown_watchdog(self, text: str, gen: int) -> None:
+        def check() -> None:
+            with self.lock:
+                if self._gen != gen or not self.busy or self.turn_id is not None:
+                    return  # a turn notification arrived: the start was accepted (or settled)
+                self.busy = False
+                self._outbox.appendleft(text)  # no witness at all: the server never took it
+            self._log("turn/start unknown outcome with no turn seen; resending")
+            self.kick()
+        t = threading.Timer(UNKNOWN_START_S, check)
+        t.daemon = True
+        t.start()
 
 
 # ---------------------------------------------------------------------------- schemas
@@ -307,22 +394,28 @@ SCHEMAS: dict[str, Callable[[str], dict]] = {
 
 
 # ---------------------------------------------------------------------------- cron parsing
+_DIGITS4 = __import__("re").compile(r"[0-9]{1,4}")  # JS /^\d{1,4}$/: ASCII digits only
+
+
 def parse_field(f: str, lo_b: int, hi_b: int) -> list[int]:
+    """edp8.ts parseField verbatim: `part.split("/")` keeps [0] and [1] (a third piece is ignored),
+    a present-but-empty step fails the digit test, and bounds are checked after."""
     out: set[int] = set()
     for part in f.split(","):
-        range_s, _, step_s = part.partition("/")
-        pieces = range_s.split("-")
-        numeric = ["0" if range_s == "*" else pieces[0],
-                   "0" if range_s == "*" else (pieces[1] if len(pieces) > 1 else "0"), step_s or "1"]
-        if not all(s.isdigit() and 1 <= len(s) <= 4 for s in numeric):
+        pieces = part.split("/")
+        range_s, step_s = pieces[0], (pieces[1] if len(pieces) > 1 else None)
+        ab = range_s.split("-")
+        numeric = ["0" if range_s == "*" else ab[0], "0" if range_s == "*" else (ab[1] if len(ab) > 1 else "0"),
+                   step_s if step_s is not None else "1"]
+        if not all(_DIGITS4.fullmatch(x) for x in numeric):
             raise ValueError(f'bad cron field "{f}"')
         step = int(step_s) if step_s else 1
         if step < 1:
             raise ValueError(f'bad cron field "{f}"')
         lo, hi = lo_b, hi_b
         if range_s != "*":
-            lo = int(pieces[0])
-            hi = int(pieces[1]) if len(pieces) > 1 else (hi_b if step_s else lo)
+            lo = int(ab[0])
+            hi = int(ab[1]) if len(ab) > 1 else (hi_b if step_s else lo)
         if lo < lo_b or hi > hi_b or lo > hi:
             raise ValueError(f'cron field "{f}" out of range {lo_b}-{hi_b}')
         out.update(range(lo, hi + 1, step))
@@ -420,6 +513,7 @@ class Mon:
     stopped: bool = False
     ws_close: tuple[int, str] | None = None
     ws_error: str = ""
+    order: threading.RLock = field(default_factory=threading.RLock)  # serialises this watch's deliveries
 
 
 @dataclass
@@ -472,6 +566,8 @@ class SeatTools:
         self.desc = _desc(Path(dp))
         self.clock = clock or Clock(self.env.get("EDP_PARITY_SEED", ""), float(self.env.get("EDP_PARITY_CLOCK_SCALE", "1") or 1))
         self._log_fn = log
+        from .rpc import redactor
+        self._redact = redactor(self.env)
         self.monitors: dict[str, Mon] = {}
         self.jobs: dict[str, Job] = {}
         self.lock = threading.RLock()
@@ -486,7 +582,7 @@ class SeatTools:
         try:
             self.tasks_dir.mkdir(parents=True, exist_ok=True)
             with open(self.tasks_dir / "edp8-extension.log", "a", encoding="utf-8") as f:
-                f.write(f"{datetime.now(timezone.utc).isoformat()} {line}\n")
+                f.write(f"{datetime.now(timezone.utc).isoformat()} {self._redact(line)}\n")
         except OSError:
             pass
 
@@ -527,22 +623,23 @@ class SeatTools:
                 f"<output-file>{m.output_file}</output-file>\n<status>{status}</status>\n<summary>{summary}</summary>\n</task-notification>")
 
     def _flush_batch(self, m: Mon) -> None:
-        with self.lock:
-            m.batch_timer = None
-            if not m.batch:
-                return
-            lines = m.batch[:]
-            m.batch.clear()
-        self.d.deliver(self._envelope(m, "\n".join(lines)))
+        with m.order:  # lock order: Mon.order → SeatTools.lock → Delivery.lock
+            with self.lock:
+                m.batch_timer = None
+                if not m.batch:
+                    return
+                lines = m.batch[:]
+                m.batch.clear()
+            self.d.deliver(self._envelope(m, "\n".join(lines)))
 
     def _on_line(self, m: Mon, raw: str) -> None:
-        with self.lock:
+        with m.order, self.lock:
             n = rate_gate(m, self.clock.now_ms())
             if n is None:
                 return
             if n > 0:
                 self.d.deliver(self._envelope(m, SUPPRESSED(n)))
-            line = raw[:LINE_MAX] + "...(truncated)" if len(raw) > LINE_MAX else raw
+            line = js_slice(raw, LINE_MAX) + "...(truncated)" if js_len(raw) > LINE_MAX else raw
             m.batch.append(line)
             if m.batch_timer is None:
                 m.batch_timer = threading.Timer(BATCH_MS / 1000, self._flush_batch, (m,))
@@ -643,6 +740,10 @@ class SeatTools:
                           f'Watch "{m.description}" ended: socket closed (code {code}{": " + err if err else ""})')
 
     def _end_monitor(self, m: Mon, tail: str, status: str, summary: str) -> None:
+        with m.order:  # the whole terminal sequence, after any batch already being delivered
+            self._end_monitor_locked(m, tail, status, summary)
+
+    def _end_monitor_locked(self, m: Mon, tail: str, status: str, summary: str) -> None:
         with self.lock:
             if m.ended:
                 return
@@ -708,7 +809,7 @@ class SeatTools:
         tail = ("Each event reaches you as a notification while you carry on; no polling, no sleeping. A notification "
                 "is a background event and never the user's reply, even one that lands while you wait for them.")
         if expiry:
-            text = f"Watch armed (task {m.id}; expires in {round(timeout_ms / 60000)}m unless the source ends first, one notice at expiry, arm it again if still needed). {tail}"
+            text = f"Watch armed (task {m.id}; expires in {js_round(timeout_ms / 60000)}m unless the source ends first, one notice at expiry, arm it again if still needed). {tail}"
         elif persistent:
             text = f"Watch armed (task {m.id}; persistent, lives until TaskStop or the session ends). {tail}"
         else:
@@ -717,7 +818,11 @@ class SeatTools:
         return text, True
 
     def _task_stop(self, _call_id: str, p: dict) -> tuple[str, bool]:
-        tid = p.get("task_id") or p.get("shell_id") or ""
+        tid = p.get("task_id")  # edp8.ts: params.task_id ?? params.shell_id ?? "" (nullish, not falsy)
+        if tid is None:
+            tid = p.get("shell_id")
+        if tid is None:
+            tid = ""
         with self.lock:
             m = self.monitors.get(tid)
         if m is None:
@@ -765,7 +870,12 @@ class SeatTools:
     def tick(self) -> None:
         now = self.clock.now_ms()
         fire: list[Job] = []
+        drain = None
         with self.lock:
+            if self.d.is_idle() and not self.d.pending and any(j.deferred for j in self.jobs.values()):
+                # marked deferred after the settle hook ran but before the thread went idle: no settle
+                # will come for it, so the idle tick fires it (the hook and this share the flag; one wins)
+                drain = self._deferred_cron_turn()
             for j in list(self.jobs.values()):
                 if j.recurring and not j.expiring and now - j.created_at >= CRON_EXPIRE_MS:
                     j.expiring = True  # fires one final time, then deleted
@@ -775,6 +885,8 @@ class SeatTools:
                     fire.append(j)
                 else:
                     j.deferred = True
+        if drain:
+            self.d.enqueue_turn(drain)
         for j in fire:
             self._fire(j)
 
@@ -820,7 +932,7 @@ class SeatTools:
             jobs = list(self.jobs.values())
         lines = []
         for j in jobs:
-            pr = j.prompt[:79] + "…" if len(j.prompt) > 79 else j.prompt
+            pr = js_slice(j.prompt, 79) + "…" if js_len(j.prompt) > 79 else j.prompt
             lines.append(f"{j.id} — {humanise(j.cron) if j.recurring else j.cron} ({'recurring' if j.recurring else 'one-shot'}) [session-only]: {pr}")
         return ("\n".join(lines) if lines else "No jobs scheduled."), True
 

@@ -255,10 +255,12 @@ def capture_codex(path: Path, since: float | None = None, until: float | None = 
     out: list[dict] = []
     calls: dict = {}  # request id → tool name
     native = ""
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        if not raw.strip():
-            continue
-        o = json.loads(raw)
+    rows = [json.loads(r) for r in path.read_text(encoding="utf-8").splitlines() if r.strip()]
+    # a steer / turn start counts only when the server ACCEPTED it (its response carries `result`, not `error`):
+    # an attempted delivery the server refused ("no active turn") never reached the model
+    accepted = {(o.get("msg") or {}).get("id") for o in rows
+                if o.get("dir") == "in" and "method" not in (o.get("msg") or {}) and "result" in (o.get("msg") or {})}
+    for o in rows:
         ts = o.get("ts")
         if (since is not None and ts is not None and ts < since) or (until is not None and ts is not None and ts > until):
             continue
@@ -286,6 +288,8 @@ def capture_codex(path: Path, since: float | None = None, until: float | None = 
                 for block in text[att + 2:].split("\n\n<system-reminder>"):
                     block = block if block.startswith("<system-reminder>") else "<system-reminder>" + block
                     out.append({"kind": "notification_attached", "text": block, "ts": ts, "attached_to": tool})
+        elif d == "out" and method in ("turn/steer", "turn/start") and m.get("id") not in accepted:
+            continue
         elif d == "out" and method == "turn/steer":
             for block in _codex_input_text(p).split("\n\n<system-reminder>"):
                 block = block if block.startswith("<system-reminder>") else "<system-reminder>" + block

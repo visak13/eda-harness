@@ -27,6 +27,20 @@ from queue import Queue
 SECRET_KEYS = ("EDP8_TOKEN", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "CODEX_API_KEY")
 
 
+def redactor(env: dict[str, str] | None) -> Callable[[str], str]:
+    """A str → str that replaces every SECRET_KEYS value found in `env` with `<redacted:KEY>`: applied to
+    everything this seat PERSISTS (RPC mirror, events log, extension log). The model still sees what a
+    Claude seat would (a Monitor that echoes the token delivers it); only the files never hold it."""
+    pairs = [(v, f"<redacted:{k}>") for k in SECRET_KEYS if (v := (env or {}).get(k)) and len(v) >= 6]
+
+    def redact(s: str) -> str:
+        for v, tag in pairs:
+            if v in s:
+                s = s.replace(v, tag)
+        return s
+    return redact
+
+
 class RpcError(RuntimeError):
     def __init__(self, method: str, error: dict):
         super().__init__(f"{method}: {error.get('message', error)}")
@@ -54,6 +68,7 @@ class AppServer:
         self.last_output_ts = 0.0
         self.exit_code: int | None = None
         self.exited = threading.Event()
+        self._redact = redactor(env)
 
     # ------------------------------------------------------------------ process
     def start(self) -> None:
@@ -94,12 +109,13 @@ class AppServer:
     # ------------------------------------------------------------------ io
     def _mirror(self, direction: str, msg: dict) -> None:
         with self._llock:
-            self._log_f.write(json.dumps({"ts": time.time(), "dir": direction, "msg": msg}, ensure_ascii=False) + "\n")
+            line = json.dumps({"ts": time.time(), "dir": direction, "msg": msg}, ensure_ascii=False)
+            self._log_f.write(self._redact(line).encode("utf-8", "replace").decode("utf-8") + "\n")
             self._log_f.flush()
 
     def _write(self, msg: dict) -> None:
         assert self.proc and self.proc.stdin
-        line = json.dumps(msg, ensure_ascii=False)
+        line = json.dumps(msg)  # ASCII-escaped: a lone surrogate from a JS-style UTF-16 slice travels escaped, as JSON.stringify does
         with self._wlock:
             self.proc.stdin.write(line + "\n")
             self.proc.stdin.flush()

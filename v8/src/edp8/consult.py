@@ -244,15 +244,18 @@ def _profile_config_args(spec: ProfileSpec) -> list[str]:
     return args
 
 
-def discover_mcp_servers(codex: str, timeout_s: int = 30) -> tuple[list[dict[str, str]], str | None]:
+def discover_mcp_servers(codex: str, timeout_s: int = 30, *, env: dict[str, str] | None = None,
+                         cwd: str | None = None) -> tuple[list[dict[str, str]], str | None]:
     """Enumerate every MCP server codex would load, via `codex mcp list --json`.
     Returns ([{name, transport}], None) or ([], error). FAIL-CLOSED: a non-zero
     exit or unparseable output is an error the caller must not launch through — the
     consult refuses to run rather than leave an unknown server live. A valid empty
-    array is not an error (the unreal-mcp floor still applies). (criterion c-9f87c3d102)"""
+    array is not an error (the unreal-mcp floor still applies). (criterion c-9f87c3d102)
+    `env`/`cwd` = the LAUNCH context (CODEX_HOME, project config): discovery must see the
+    same configuration the launched codex will load; default = this process's."""
     try:
         proc = subprocess.run(
-            [codex, "mcp", "list", "--json"],
+            [codex, "mcp", "list", "--json"], env=env, cwd=cwd,
             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding="utf-8", errors="replace", timeout=timeout_s, check=False)
     except (OSError, subprocess.SubprocessError) as e:

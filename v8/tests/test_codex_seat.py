@@ -333,7 +333,7 @@ def test_e2e_thread_start_carries_dynamic_tools_and_live_set(fake_seat):
     start = sent(log, "thread/start")[0]["params"]
     assert [t["name"] for t in start["dynamicTools"]] == ["Monitor", "TaskStop", "CronCreate", "CronList", "CronDelete"]
     assert start["sandbox"] == "workspace-write" and start["approvalPolicy"] == "never"
-    assert s.live_mcp_servers() == ["edp8"]
+    assert s.live_mcp_servers() == [] == s.live_servers  # board=False: nothing live at all
     assert json.loads(s.state_path.read_text())["threadId"] == s.thread_id
 
 
@@ -369,5 +369,192 @@ def test_rpc_mirror_log_records_both_directions(fake_seat):
     s, _log = fake_seat
     dirs = {json.loads(line)["dir"] for line in s.log_path.read_text(encoding="utf-8").splitlines()}
     assert {"in", "out"} <= dirs
+
+
+# ------------------------------------------------------------------ second-opinion regressions (run 20260922T232513Z-3201a4ac)
+from edp8.codex_seat import tools as tools_mod  # noqa: E402
+from edp8.codex_seat.rpc import redactor  # noqa: E402
+from edp8.codex_seat.tools import js_len, js_round, js_slice, parse_field  # noqa: E402
+
+
+def test_late_turn_start_response_never_revives_a_completed_turn():
+    """#2: the dispatcher processed turn/started + turn/completed before the turn/start RESPONSE."""
+    d = Delivery(lambda _t: True, lambda _t, _i: True)
+    d.turn_started("T")
+    d.turn_completed("T")
+    d.turn_started("T")  # the late response
+    assert d.is_idle() and d.turn_id is None
+
+
+def test_unknown_start_outcome_is_reconciled_not_blindly_resent(monkeypatch):
+    """#3: a timed-out turn/start is resent only when no turn notification ever witnessed it."""
+    monkeypatch.setattr(tools_mod, "UNKNOWN_START_S", 0.2)
+    calls: list[str] = []
+    d = Delivery(lambda t: calls.append(t) or (None if len(calls) == 1 else True), lambda _t, _i: True)
+    d.enqueue_turn("A")
+    d.turn_started("x")  # the server did take it: a notification arrived
+    time.sleep(0.4)
+    assert calls == ["A"]
+    d.turn_completed("x")
+    calls.clear()
+    d.enqueue_turn("B")  # first attempt unknown, and NO notification follows
+    assert wait_for(lambda: calls == ["B", "B"], 2)
+
+
+def test_unknown_steer_outcome_is_not_repended():
+    d = Delivery(lambda _t: True, lambda _t, _i: None)
+    d.turn_started("t")
+    d.native_started("bash")
+    d.deliver("N")
+    assert d.pending == []  # counted as delivered: a resend could land twice
+
+
+def test_exhausted_start_retries_rekick_on_their_own(monkeypatch):
+    """#4: retries exhausted → the outbox is retried with backoff, not stranded until a settle."""
+    monkeypatch.setattr(tools_mod, "SEND_RETRIES", 1)
+    monkeypatch.setattr(tools_mod, "SEND_RETRY_S", 0)
+    monkeypatch.setattr(tools_mod, "RETRY_BACKOFF_S", (0.1, 0.2))
+    calls: list[str] = []
+    d = Delivery(lambda t: calls.append(t) or len(calls) >= 3, lambda _t, _i: True)
+    d.enqueue_turn("A")
+    assert wait_for(lambda: len(calls) == 3, 2) and calls == ["A"] * 3
+
+
+def test_cron_deferred_after_settle_hook_drains_on_the_next_idle_tick(tmp_path):
+    """#5: a job marked deferred between the settle hook and busy=False still fires."""
+    wall = FakeWall(time.time())
+    h, t = make_tools(tmp_path, clock=Clock("s", 1.0, wall))
+    t.call("CronCreate", {"cron": "* * * * *", "prompt": "LATE", "recurring": False}, "c")
+    next(iter(t.jobs.values())).deferred = True  # the race's end state: idle, deferred, no settle coming
+    t.tick()
+    assert h.turns == ["LATE"] and not t.jobs
+
+
+def test_idle_batch_keeps_intake_order_across_a_turn_start():
+    """#7: A (idle, coalescing) then a turn starts, then B → A before B, pending and steered alike."""
+    h = FakeHost()
+    h.d.deliver("A")
+    h.d.turn_started("t")
+    h.d.deliver("B")
+    assert h.d.pending == ["A", "B"]
+    h2 = FakeHost()
+    h2.d.deliver("A")
+    h2.d.turn_started("t")
+    h2.d.native_started("bash")
+    h2.d.deliver("B")
+    assert len(h2.steers) == 1 and h2.steers[0].index("\nA\n") < h2.steers[0].index("\nB\n")
+    time.sleep(0.05)  # the cancelled coalesce timer never re-delivers A
+    assert h2.turns == [] and h2.d.pending == []
+
+
+def test_monitor_terminal_notice_never_overtakes_its_final_batch(tmp_path):
+    """#8: a flush holding the watch's order lock finishes before the terminal sequence runs."""
+    import threading
+    h, t = make_tools(tmp_path)
+    got: list[str] = []
+    h.d.deliver = lambda n: got.append("terminal" if "<status>" in n else "line")  # type: ignore[method-assign]
+    m = t._new_mon("call-1", "order", "true", False)
+    held, release = threading.Event(), threading.Event()
+
+    def flushing() -> None:  # between batch extraction and deliver, the order lock held
+        with m.order:
+            held.set()
+            release.wait(2)
+            h.d.deliver("line")
+    th = threading.Thread(target=flushing)
+    th.start()
+    held.wait(2)
+    end = threading.Thread(target=t._end_monitor, args=(m, "[exited with code 0]", "completed", "done"))
+    end.start()
+    time.sleep(0.2)
+    assert got == []  # the terminal is blocked behind the in-flight batch
+    release.set()
+    th.join(2)
+    end.join(2)
+    assert got == ["line", "terminal"]
+
+
+def test_secrets_never_reach_the_persisted_logs(tmp_path, monkeypatch):
+    """#1: a Monitor that echoes EDP8_TOKEN still delivers it to the model, but no file keeps it."""
+    tok = "sekret-token-4711"
+    r = redactor({"EDP8_TOKEN": tok})
+    assert r(f"a {tok} b") == "a <redacted:EDP8_TOKEN> b" and redactor({})("x") == "x"
+    log = tmp_path / "fake.jsonl"
+    monkeypatch.setenv("FAKE_APPSERVER_LOG", str(log))
+    s = seat_mod.CodexSeat(cwd=V8, role="engineer", handle="engineer.redact", log_dir=tmp_path,
+                           codex_bin=str(HERE / "fake_app_server.py"), board=False,
+                           env={"EDP8_TOKEN": tok, "EDP_PARITY_DESCRIPTIONS": str(DESC)}, discover=lambda _c: ([], None))
+    s.start()
+    try:
+        s.enqueue_turn('CALL Monitor {"command": "echo $EDP8_TOKEN", "description": "leak", "persistent": false, "timeout_ms": 30000}\nSAY ok')
+        assert wait_for(lambda: tok in log.read_text(encoding="utf-8"), 10)  # the model side did receive it
+        assert wait_for(lambda: "<redacted:EDP8_TOKEN>" in s.log_path.read_text(encoding="utf-8"), 10)
+    finally:
+        s.stop()
+    for f in tmp_path.rglob("*"):
+        if f.is_file() and f != log and not f.name.endswith(".output"):
+            assert tok not in f.read_text(encoding="utf-8", errors="replace"), f
+
+
+def test_uncontained_live_server_fails_the_boot_before_any_turn(tmp_path, monkeypatch):
+    """#6: a server discovery never saw (another CODEX_HOME / project config) stops the seat at start."""
+    log = tmp_path / "fake.jsonl"
+    monkeypatch.setenv("FAKE_APPSERVER_LOG", str(log))
+    monkeypatch.setenv("FAKE_EXTRA_LIVE", "sneaky")
+    s = seat_mod.CodexSeat(cwd=V8, role="engineer", handle="engineer.leak", log_dir=tmp_path,
+                           codex_bin=str(HERE / "fake_app_server.py"), board=False,
+                           env={"EDP_PARITY_DESCRIPTIONS": str(DESC)}, discover=lambda _c: ([], None))
+    with pytest.raises(RuntimeError, match="sneaky"):
+        s.start()
+    assert not sent(log, "turn/start") and not s.state_path.exists()
+
+
+def test_discovery_runs_in_the_launch_context(monkeypatch):
+    seen = {}
+
+    def fake_discover(codex, timeout_s=30, *, env=None, cwd=None):
+        seen.update(env=env, cwd=cwd)
+        return [], None
+    monkeypatch.setattr("edp8.consult.discover_mcp_servers", fake_discover)
+    seat_mod.containment_args("codex", env={"CODEX_HOME": "X:/other"}, cwd="X:/proj")
+    assert seen == {"env": {"CODEX_HOME": "X:/other"}, "cwd": "X:/proj"}
+
+
+def test_resume_with_invalid_state_fails_instead_of_a_fresh_thread(tmp_path, monkeypatch):
+    """#10: a torn state file never turns 'You were resumed' into a silent new thread; writes are atomic."""
+    monkeypatch.setenv("FAKE_APPSERVER_LOG", str(tmp_path / "fake.jsonl"))
+    kw = dict(cwd=V8, role="engineer", handle="engineer.st", log_dir=tmp_path, codex_bin=str(HERE / "fake_app_server.py"),
+              board=False, env={"EDP_PARITY_DESCRIPTIONS": str(DESC)}, discover=lambda _c: ([], None))
+    s = seat_mod.CodexSeat(**kw)
+    s.state_path.parent.mkdir(parents=True)
+    s.state_path.write_text('{"threadId": "abc', encoding="utf-8")  # torn write
+    with pytest.raises(RuntimeError, match="no valid threadId"):
+        s.start(resume=True)
+    s2 = seat_mod.CodexSeat(**kw)
+    s2.start()
+    try:
+        assert json.loads(s2.state_path.read_text(encoding="utf-8"))["threadId"] == s2.thread_id
+        assert not list(s2.state_path.parent.glob("*.tmp"))
+    finally:
+        s2.stop()
+
+
+def test_js_string_number_and_nullish_semantics(tmp_path):
+    """#11: UTF-16 lengths, Math.round, `??` and parseField exactly as edp8.ts (checked against node)."""
+    emoji = "\U0001F600" * 300  # 600 UTF-16 units, 300 code points
+    assert js_len(emoji) == 600 and js_len(js_slice(emoji, LINE_MAX)) == LINE_MAX
+    assert js_round(0.5) == 1 and js_round(2.5) == 3 and js_round(-0.5) == 0
+    h, t = make_tools(tmp_path)
+    text, ok = t.call("TaskStop", {"task_id": "", "shell_id": "whatever1"}, "c")
+    assert (text, ok) == ("No such task: ", False)
+    for bad in ("1/", "\u0661", "*/", "1-"):
+        with pytest.raises(ValueError):
+            parse_field(bad, 0, 59)
+    assert parse_field("1/2/3", 0, 59) == list(range(1, 60, 2))  # the third piece is ignored, as split() in JS
+    text, _ = t.call("Monitor", {"command": "exit 0", "description": "r", "timeout_ms": 30000}, "c")
+    assert "stops after 30000ms" in text
+    ht, te = make_tools(tmp_path, variant="expiry")
+    text, _ = te.call("Monitor", {"command": "exit 0", "description": "r", "timeout_ms": 30000}, "c")
+    assert "expires in 1m" in text  # Math.round(0.5) = 1, Python round() would say 0m
 
 

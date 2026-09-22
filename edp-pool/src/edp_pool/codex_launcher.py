@@ -164,11 +164,13 @@ class CodexSpawner:
         return rec.proc.pid if rec and rec.proc.poll() is None else None
 
     def last_output_ts(self, session_id):
-        """Newest of the pool log (headless stdout) and the runner's RPC mirror (both modes)."""
+        """Newest of the pool log (headless stdout) and the runner's RPC mirror (both modes), counting
+        only writes by THIS incarnation (both files are appended across respawns of one handle)."""
         rec = self._launches.get(session_id)
         if not rec:
             return None
-        ts = [p.stat().st_mtime for p in (rec.log_path, rec.mirror_path) if p and p.exists()]
+        ts = [t for p in (rec.log_path, rec.mirror_path) if p and p.exists()
+              if (t := p.stat().st_mtime) >= rec.started - 1.0]  # 1 s slack: coarse filesystem mtimes
         return max(ts) if ts else None
 
     # -- optional hooks service.py probes with getattr ------------------------

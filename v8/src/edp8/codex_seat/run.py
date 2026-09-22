@@ -84,7 +84,10 @@ def main(argv: list[str] | None = None) -> int:
     resume = env.get("EDP_CODEX_RESUME") == "1" and state.is_file()
     if not resume and state.is_file():
         # a fresh boot must not continue the previous (closed) thread (memory: pi-respawn-continues-closed-session)
-        state.rename(state.with_name(f"{handle}.{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json"))
+        stamp = time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())
+        os.replace(state, state.with_name(f"{handle}.{stamp}.{os.getpid()}.{time.time_ns() % 10**9}.json"))
+    # resume=True with a state file that is not a valid threadId makes seat.start() raise (never a
+    # silent fresh thread under a "You were resumed" activation); the pool sees the exit and reaps
 
     console: Console | None = None
     seat = CodexSeat(cwd=agent_home, role=role, handle=handle, log_dir=log_dir,
@@ -94,13 +97,15 @@ def main(argv: list[str] | None = None) -> int:
         console = Console(seat)
         if os.name == "nt":
             os.system(f"title {handle} (codex seat)")
-    seat.start(resume=resume)
+    try:
+        seat.start(resume=resume)  # fail-closed: uncontained MCP set or invalid resume state raise here
+    except Exception as e:  # noqa: BLE001
+        print(f"{time.strftime('%H:%M:%S')} codex seat {handle} refused to start: {e}", flush=True)
+        seat.tools.shutdown()
+        return 2
     print(f"codex seat {handle} role={role} pid={seat.pid} thread={seat.thread_id} resume={resume} "
           f"disabled_mcp={','.join(seat.disabled_servers)}", flush=True)
-    try:
-        print(f"live mcp servers: {seat.live_mcp_servers()}", flush=True)
-    except Exception as e:  # noqa: BLE001 — informational
-        print(f"live mcp servers: unavailable ({e})", flush=True)
+    print(f"live mcp servers: {seat.live_servers}", flush=True)  # verified ⊆ {edp8} before the first turn
 
     def _stop(*_a):
         seat.stop()

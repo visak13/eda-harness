@@ -141,10 +141,20 @@ def test_capture_codex_shapes():
         {"ts": 6, "dir": "out", "msg": {"method": "turn/start", "params": {"input": [{"text": "<system-reminder>\nD\n</system-reminder>\n<system-reminder>\nE\n</system-reminder>"}]}}},
         {"ts": 7, "dir": "out", "msg": {"method": "turn/start", "params": {"input": [{"text": "ORACLE-X"}]}}},
     ]
+    # every steer / start is ACCEPTED (its response has `result`), except one refused steer, which must not count
+    for r in rows:
+        if r["msg"].get("method") in ("turn/start", "turn/steer"):
+            r["msg"]["id"] = r["ts"]
+    rows += [{"ts": 9, "dir": "in", "msg": {"id": r["ts"], "result": {}}} for r in list(rows)
+             if r["msg"].get("method") in ("turn/start", "turn/steer")]
+    rows += [{"ts": 10, "dir": "in", "msg": {"method": "item/started", "params": {"item": {"type": "commandExecution"}}}},
+             {"ts": 11, "dir": "out", "msg": {"id": 99, "method": "turn/steer", "params": {"input": [{"text": "<system-reminder>\nLOST\n</system-reminder>"}]}}},
+             {"ts": 12, "dir": "in", "msg": {"id": 99, "error": {"message": "no active turn"}}}]
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / "m.jsonl"
         p.write_text("\n".join(json.dumps(r) for r in rows), encoding="utf-8")
         tr = po.capture_codex(p)
+    assert not any("LOST" in e.get("text", "") for e in tr)
     assert [(e["kind"], e.get("attached_to")) for e in tr] == [
         ("tool_use", None), ("tool_result", None), ("notification_attached", "Monitor"),
         ("notification_attached", "bash"), ("notification_attached", "bash"),

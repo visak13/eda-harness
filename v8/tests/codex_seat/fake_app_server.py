@@ -132,11 +132,15 @@ def main():
             _steers.append("\n".join(i.get("text", "") for i in p.get("input", [])))
             send({"jsonrpc": "2.0", "id": rid, "result": {"turnId": _turn["id"]}})
         elif m == "mcpServerStatus/list":
-            send({"jsonrpc": "2.0", "id": rid, "result": {"data": [
-                {"name": "edp8", "runtimeStatus": "ready", "tools": {"whoami": {}}},
-                {"name": "chrome-devtools", "runtimeStatus": "disabled", "tools": {}},  # measured 0.156.0 shape
-                {"name": "codex_app", "runtimeStatus": "disabled", "tools": {}},
-            ]}})
+            # edp8 is live only when the argv added it (board seat); FAKE_EXTRA_LIVE simulates a server
+            # discovery never saw (e.g. another CODEX_HOME's config) so the fail-closed boot can be tested
+            data = [{"name": "chrome-devtools", "runtimeStatus": "disabled", "tools": {}},  # measured 0.156.0 shape
+                    {"name": "codex_app", "runtimeStatus": "disabled", "tools": {}}]
+            if any(a.startswith("mcp_servers.edp8.url=") for a in sys.argv):
+                data.insert(0, {"name": "edp8", "runtimeStatus": "ready", "tools": {"whoami": {}}})
+            if os.environ.get("FAKE_EXTRA_LIVE"):
+                data.append({"name": os.environ["FAKE_EXTRA_LIVE"], "runtimeStatus": "ready", "tools": {"x": {}}})
+            send({"jsonrpc": "2.0", "id": rid, "result": {"data": data}})
         else:
             send({"jsonrpc": "2.0", "id": rid, "result": {}})
 

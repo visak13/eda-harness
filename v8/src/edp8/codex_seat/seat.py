@@ -24,7 +24,7 @@ import uuid
 from collections.abc import Callable
 from pathlib import Path
 
-from .rpc import AppServer, RpcError
+from .rpc import AppServer, RpcError, redactor
 from .tools import Delivery, SeatTools
 
 BOARD_SERVER = "edp8"
@@ -61,10 +61,15 @@ def find_codex(explicit: str | None = None) -> str:
     return exe
 
 
-def containment_args(codex: str, *, discover: Callable | None = None) -> tuple[list[str], list[str]]:
-    """(`-c` args, disabled server names). Fail-closed: a discovery error raises."""
+def containment_args(codex: str, *, discover: Callable | None = None, env: dict[str, str] | None = None,
+                     cwd: str | None = None) -> tuple[list[str], list[str]]:
+    """(`-c` args, disabled server names). Fail-closed: a discovery error raises. Discovery runs in the
+    LAUNCH context (env/cwd), so it reads the config the launched app-server will load."""
     from ..consult import HIDDEN_SERVER_FEATURES, discover_mcp_servers, mcp_containment_args, mcp_disabled_names
-    servers, err = (discover or discover_mcp_servers)(codex)
+    if discover is not None:
+        servers, err = discover(codex)
+    else:
+        servers, err = discover_mcp_servers(codex, env=env, cwd=cwd)
     if err:
         raise RuntimeError(f"MCP discovery failed, refusing to start an uncontained seat: {err}")
     servers = [s for s in servers if s["name"] != BOARD_SERVER]  # ours is redefined below
@@ -114,6 +119,8 @@ class CodexSeat:
         self.state_path = self.log_dir / "codex-sessions" / f"{handle}.json"
         self.log_path = self.log_dir / f"codex-seat.{handle}.jsonl"
         self._elog = self.log_dir / f"codex-seat.{handle}.events.log"
+        self._redact = redactor(self.env)
+        self.live_servers: list[str] = []
         self.delivery = Delivery(self._start_turn, self._steer, log=self._log)
         tasks = self.env.get("EDP_CODEX_TASKS_DIR") or str(self.log_dir / "tasks" / handle)
         self.tools = SeatTools(self.delivery, cwd=self.cwd, tasks_dir=tasks, env=self.env, log=self._log)
@@ -126,13 +133,13 @@ class CodexSeat:
         try:
             self.log_dir.mkdir(parents=True, exist_ok=True)
             with open(self._elog, "a", encoding="utf-8") as f:
-                f.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {line}\n")
+                f.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {self._redact(line)}\n")
         except OSError:
             pass
 
     # ------------------------------------------------------------------ boot
     def argv(self) -> list[str]:
-        cargs, self.disabled_servers = containment_args(self.codex, discover=self._discover)
+        cargs, self.disabled_servers = containment_args(self.codex, discover=self._discover, env=self.env, cwd=self.cwd)
         # a .py "codex" is the test double (tests/codex_seat/fake_app_server.py), run under this python
         head = [sys.executable, self.codex] if self.codex.endswith(".py") else [self.codex]
         argv = [*head, "app-server", *cargs, "-c", "approval_policy=never"]
@@ -153,6 +160,10 @@ class CodexSeat:
                                            "capabilities": {"experimentalApi": True, "requestAttestation": False}})
         self.server.notify("initialized")
         prior = self._read_state() if resume else None
+        if resume and not (prior and prior.get("threadId")):
+            # a requested resume never silently becomes a fresh thread (the model would be told it resumed)
+            self.server.stop()
+            raise RuntimeError(f"resume requested but {self.state_path} holds no valid threadId")
         if prior and prior.get("threadId"):
             res = self.server.request("thread/resume", {"threadId": prior["threadId"], "cwd": self.cwd,
                                                         "sandbox": sandbox_for(self.role, self.env), "model": self.model,
@@ -168,9 +179,24 @@ class CodexSeat:
                 params["config"] = {"model_reasoning_effort": self.effort}
             res = self.server.request("thread/start", params, timeout=120)
         self.thread_id = res["thread"]["id"]
+        self._enforce_allowlist()
         self._write_state()
         self.tools.start()
         return res
+
+    def _enforce_allowlist(self) -> None:
+        """Fail closed BEFORE the first turn: the thread's live MCP set must be exactly what we added
+        ({edp8} with the board, {} without). A server that discovery never saw stops the seat here."""
+        allowed = {BOARD_SERVER} if self.board else set()
+        try:
+            live = set(self.live_mcp_servers())
+        except Exception as e:  # noqa: BLE001
+            self.server.stop()  # type: ignore[union-attr]
+            raise RuntimeError(f"cannot read the thread's MCP set, refusing an unverified seat: {e}") from e
+        self.live_servers = sorted(live)
+        if not live <= allowed:
+            self.server.stop()  # type: ignore[union-attr]
+            raise RuntimeError(f"uncontained MCP servers live in the thread: {sorted(live - allowed)}")
 
     def _read_state(self) -> dict | None:
         try:
@@ -182,9 +208,11 @@ class CodexSeat:
         if self.ephemeral:
             return
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
-        self.state_path.write_text(json.dumps({"threadId": self.thread_id, "role": self.role, "handle": self.handle,
-                                               "model": self.model, "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}),
-                                   encoding="utf-8")
+        tmp = self.state_path.with_name(f"{self.state_path.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps({"threadId": self.thread_id, "role": self.role, "handle": self.handle,
+                                   "model": self.model, "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}),
+                       encoding="utf-8")
+        os.replace(tmp, self.state_path)  # atomic: a kill mid-write never leaves a half file
 
     def live_mcp_servers(self) -> list[str]:
         """Servers ACTUALLY live in this thread: any tool catalog, or a runtimeStatus other than
@@ -198,7 +226,8 @@ class CodexSeat:
     def enqueue_turn(self, text: str) -> None:
         self.delivery.enqueue_turn(text)
 
-    def _start_turn(self, text: str) -> bool:
+    def _start_turn(self, text: str) -> bool | None:
+        """True accepted · False refused (an RPC error: safe to resend) · None unknown (timeout)."""
         if not self.server or not self.thread_id:
             return False
         params: dict = {"threadId": self.thread_id, "clientUserMessageId": f"edp8-{uuid.uuid4().hex[:12]}",
@@ -207,13 +236,17 @@ class CodexSeat:
             params["effort"] = self.effort
         try:
             res = self.server.request("turn/start", params, timeout=60)
-        except (RpcError, TimeoutError) as e:
-            self._log(f"turn/start failed: {e}")
+        except (RpcError, OSError) as e:  # OSError: the pipe is gone, nothing was sent
+            self._log(f"turn/start refused: {e}")
             return False
+        except TimeoutError as e:
+            self._log(f"turn/start timed out (outcome unknown): {e}")
+            return None
+        # turn_started ignores an id whose turn/completed the dispatcher already processed
         self.delivery.turn_started((res or {}).get("turn", {}).get("id"))
         return True
 
-    def _steer(self, text: str, turn_id: str) -> bool:
+    def _steer(self, text: str, turn_id: str) -> bool | None:
         if not self.server or not self.thread_id:
             return False
         try:
@@ -221,9 +254,12 @@ class CodexSeat:
                                                "clientUserMessageId": f"edp8-steer-{uuid.uuid4().hex[:12]}",
                                                "input": [{"type": "text", "text": text, "text_elements": []}]}, timeout=30)
             return True
-        except (RpcError, TimeoutError) as e:
-            self._log(f"turn/steer failed: {e}")
+        except (RpcError, OSError) as e:
+            self._log(f"turn/steer refused: {e}")
             return False
+        except TimeoutError as e:
+            self._log(f"turn/steer timed out (outcome unknown, not resent): {e}")
+            return None
 
     # ------------------------------------------------------------------ server → us
     def _on_notification(self, method: str, p: dict) -> None:
@@ -235,7 +271,7 @@ class CodexSeat:
                 self.last_error = turn["error"]
                 self._log(f"turn error: {json.dumps(turn['error'])[:300]}")
                 self._maybe_report_quota(turn["error"])
-            self.delivery.turn_completed()
+            self.delivery.turn_completed(turn.get("id"))
         elif method in ("item/started", "item/completed"):
             item = p.get("item") or {}
             native = NATIVE_TOOL_ITEMS.get(item.get("type", ""))

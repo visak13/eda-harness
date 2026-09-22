@@ -94,6 +94,24 @@ def test_lifecycle_with_a_stand_in_process(monkeypatch, tmp_path):
     assert not sp.knows("nope")
 
 
+def test_last_output_ts_ignores_an_earlier_incarnations_writes(monkeypatch, tmp_path):
+    """second opinion 20260922T232513Z: the mirror is appended across respawns of one handle."""
+    import os
+    monkeypatch.setattr(cl, "build_argv_codex", lambda _h: [sys.executable, "-c", "import time; time.sleep(30)"])
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    old = logs / "codex-seat.qa.old.jsonl"
+    old.write_text("{}\n", encoding="utf-8")
+    os.utime(old, (time.time() - 3600, time.time() - 3600))
+    sp = cl.CodexSpawner(log_dir=str(logs), agent_home=str(tmp_path))
+    sp.launch("sid-o", "qa", "qa.old", extra_env={"EDP_LOG_DIR": str(logs)})
+    try:
+        ts = sp.last_output_ts("sid-o")
+        assert ts is None or ts >= time.time() - 60  # the stale mirror (1 h old) is not this seat's output
+    finally:
+        sp.kill("sid-o")
+
+
 def test_closed_session_token_is_the_thread_state_file(tmp_path):
     sp = cl.CodexSpawner(log_dir=str(tmp_path), agent_home=str(tmp_path))
     assert sp.closed_session_token("sid", "qa.1") is None
