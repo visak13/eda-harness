@@ -113,3 +113,41 @@ def test_wording_equivalence_collapses_claude_and_our_texts():
     assert po.canon("Watch armed (task bfgghodgn; stops after 5000ms). Each event reaches you as a notification while you carry on; "
                     "no polling, no sleeping. A notification is a background event and never the user's reply, even one that lands "
                     "while you wait for them.") != po.canon(pairs[0][0])
+
+
+def test_codex_live_trace_has_zero_diffs_against_claude():
+    """s-10a2b1f9ec c-661956fad0: the live codex app-server run (2026-09-22, gpt-6-astra, codex-cli 0.156.0) passes
+    every case the Pi seat passes; capture_codex re-derives the stored trace from the trimmed raw mirror."""
+    ref = Path(__file__).resolve().parents[1] / "tests" / "pi_ext" / "oracle_traces"
+    claude = json.loads((ref / "claude_trace_final.json").read_text(encoding="utf-8"))
+    pi = json.loads((ref / "pi_trace_final.json").read_text(encoding="utf-8"))
+    codex = po.capture_codex(ref / "codex_raw" / "codex-seat.cases.jsonl")
+    assert [po.project(e) for e in po.case_only(codex)] == \
+        [po.project(e) for e in po.case_only(json.loads((ref / "codex_trace_final.json").read_text(encoding="utf-8")))]
+    assert po.diff(claude, pi) == [] and po.diff(claude, codex) == []
+    att = [e for e in codex if e["kind"] == "notification_attached"]
+    assert {e["attached_to"] for e in att} == {"bash", "Monitor", "TaskStop"}  # steer-after-command case included
+    assert any(e["kind"] == "cron_fire" and e["text"] == "ORACLE-ONESHOT" for e in codex)
+
+
+def test_capture_codex_shapes():
+    import tempfile
+    rows = [
+        {"ts": 1, "dir": "out", "msg": {"method": "turn/start", "params": {"input": [{"text": "You are running a parity probe. x"}]}}},
+        {"ts": 2, "dir": "in", "msg": {"id": 7, "method": "item/tool/call", "params": {"tool": "Monitor", "arguments": {"command": "c"}}}},
+        {"ts": 3, "dir": "out", "msg": {"id": 7, "result": {"contentItems": [{"type": "inputText", "text": "Watch armed (task abcdefghi).\n\n<system-reminder>\nA\n</system-reminder>"}], "success": True}}},
+        {"ts": 4, "dir": "in", "msg": {"method": "item/started", "params": {"item": {"type": "commandExecution"}}}},
+        {"ts": 5, "dir": "out", "msg": {"method": "turn/steer", "params": {"input": [{"text": "<system-reminder>\nB\n</system-reminder>\n\n<system-reminder>\nC\n</system-reminder>"}]}}},
+        {"ts": 6, "dir": "out", "msg": {"method": "turn/start", "params": {"input": [{"text": "<system-reminder>\nD\n</system-reminder>\n<system-reminder>\nE\n</system-reminder>"}]}}},
+        {"ts": 7, "dir": "out", "msg": {"method": "turn/start", "params": {"input": [{"text": "ORACLE-X"}]}}},
+    ]
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "m.jsonl"
+        p.write_text("\n".join(json.dumps(r) for r in rows), encoding="utf-8")
+        tr = po.capture_codex(p)
+    assert [(e["kind"], e.get("attached_to")) for e in tr] == [
+        ("tool_use", None), ("tool_result", None), ("notification_attached", "Monitor"),
+        ("notification_attached", "bash"), ("notification_attached", "bash"),
+        ("notification_standalone", None), ("notification_standalone", None), ("cron_fire", None)]
+    assert tr[1]["text"] == "Watch armed (task abcdefghi)." and tr[2]["text"] == "<system-reminder>\nA\n</system-reminder>"
+    assert tr[4]["text"] == "<system-reminder>\nC\n</system-reminder>" and tr[6]["text"].endswith("E\n</system-reminder>")

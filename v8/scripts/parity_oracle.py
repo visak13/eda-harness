@@ -46,6 +46,7 @@ CASES = [
 _ID_RX = [
     (re.compile(r"\btoolu_[A-Za-z0-9]{6,}\b"), "<toolu>"),
     (re.compile(r"\bcall_[A-Za-z0-9]{6,}\|fc_[0-9a-f]{6,}\b"), "<toolu>"),  # Pi/Codex tool-call ids
+    (re.compile(r"\b[a-z]+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b"), "<toolu>"),  # codex app-server callId (exec-<uuid>)
     (re.compile(r"\btask [a-z0-9]{9}\b"), "task <task-id>"),
     (re.compile(r"<task-id>[a-z0-9]{9}</task-id>"), "<task-id><task-id></task-id>"),
     (re.compile(r"\b(job|task|Job) [0-9a-f]{8}\b"), r"\1 <job-id>"),
@@ -230,6 +231,80 @@ def capture_pi(path: Path, since: float | None = None, until: float | None = Non
     return out
 
 
+# ---------------------------------------------------------------- Codex side (edp8.codex_seat JSON-RPC mirror)
+# native items the model's own tools produce; a steer landing while one runs arrives after its output
+_CODEX_NATIVE = {"commandExecution": "bash", "fileChange": "edit", "webSearch": "web_search", "imageView": "view_image"}
+
+
+def _codex_input_text(params: dict) -> str:
+    return "\n".join(x.get("text", "") for x in params.get("input") or [] if isinstance(x, dict))
+
+
+def capture_codex(path: Path, since: float | None = None, until: float | None = None,
+                  exclude_prefix: str = "You are running a parity probe") -> list[dict]:
+    """Model-input events from `codex-seat.<handle>.jsonl` (edp8.codex_seat.rpc mirror, one
+    `{ts, dir: in|out, msg}` per JSON-RPC message). SCHEMA PINNED on codex-cli 0.156.0 app-server:
+      in  item/tool/call {id, params:{tool, arguments}}       → tool_use (the model's dynamic tool call)
+      out {id, result:{contentItems[{text}], success}}         → tool_result (+ notification_attached per
+                                                                   appended <system-reminder> block)
+      out turn/steer {input[{text}]}                            → notification_attached, attached_to = the
+                                                                   native tool in flight (the steer lands right
+                                                                   after its output: measured, spike 2026-09-22)
+      out turn/start {input[{text}]}: "<system-reminder>…"      → notification_standalone; exclude_prefix =
+                                                                   a driver prompt; anything else = cron_fire."""
+    out: list[dict] = []
+    calls: dict = {}  # request id → tool name
+    native = ""
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        if not raw.strip():
+            continue
+        o = json.loads(raw)
+        ts = o.get("ts")
+        if (since is not None and ts is not None and ts < since) or (until is not None and ts is not None and ts > until):
+            continue
+        m, d = o.get("msg") or {}, o.get("dir")
+        method, p = m.get("method"), m.get("params") or {}
+        if d == "in" and method == "item/tool/call":
+            calls[m.get("id")] = p.get("tool", "")
+            if p.get("tool") in PARITY_TOOLS:
+                out.append({"kind": "tool_use", "tool": p["tool"], "input": p.get("arguments"), "ts": ts})
+        elif d == "in" and method == "item/started":
+            t = (p.get("item") or {}).get("type", "")
+            if t in _CODEX_NATIVE:
+                native = _CODEX_NATIVE[t]
+            elif t == "mcpToolCall":
+                native = f"{p['item'].get('server')}/{p['item'].get('tool')}"
+        elif d == "out" and method is None and m.get("id") in calls and "result" in m:
+            tool = calls.pop(m["id"])
+            res = m["result"] or {}
+            text = "\n".join(c.get("text", "") for c in res.get("contentItems") or [] if isinstance(c, dict))
+            att = text.find("\n\n<system-reminder>")
+            own = text if att < 0 else text[:att]
+            if tool in PARITY_TOOLS:
+                out.append({"kind": "tool_result", "tool": tool, "text": own, "ts": ts, "is_error": res.get("success") is False})
+            if att >= 0:
+                for block in text[att + 2:].split("\n\n<system-reminder>"):
+                    block = block if block.startswith("<system-reminder>") else "<system-reminder>" + block
+                    out.append({"kind": "notification_attached", "text": block, "ts": ts, "attached_to": tool})
+        elif d == "out" and method == "turn/steer":
+            for block in _codex_input_text(p).split("\n\n<system-reminder>"):
+                block = block if block.startswith("<system-reminder>") else "<system-reminder>" + block
+                out.append({"kind": "notification_attached", "text": block, "ts": ts, "attached_to": native or "?"})
+        elif d == "out" and method == "turn/start":
+            text = _codex_input_text(p)
+            if text.startswith("<system-reminder>"):
+                for block in text.split("\n<system-reminder>"):
+                    block = block if block.startswith("<system-reminder>") else "<system-reminder>" + block
+                    out.append({"kind": "notification_standalone", "text": block, "ts": ts})
+            elif exclude_prefix and text.startswith(exclude_prefix):
+                continue
+            else:
+                out.append({"kind": "cron_fire", "text": text, "ts": ts})
+    if not out:
+        raise SystemExit("codex capture: no parity events found — app-server schema drift? re-pin against a live run")
+    return out
+
+
 # ---------------------------------------------------------------- case-only filter
 _TASK_IN_RESULT = re.compile(r"\btask ([a-z0-9]{9})\b")
 _TASK_IN_NOTE = re.compile(r"<task-id>([a-z0-9]{9})</task-id>")
@@ -294,27 +369,31 @@ def diff(a: list[dict], b: list[dict]) -> list[str]:
     return list(difflib.unified_diff(pa, pb, "claude", "pi", lineterm="", n=1))
 
 
-def run_both(claude_ref: Path, out_dir: Path | None) -> int:
-    """`--both`: the Pi side is driven live (scripts/parity_live_pi.py: one Pi RPC session, the CASES one turn each,
-    seeded ids, wall clock for Monitor timings), captured, and diffed against the checked-in Claude reference.
-    Exit 0 = zero diffs; 1 = diffs; 2 = the Pi seat cannot start (no install / no credentials)."""
+def run_both(claude_ref: Path, out_dir: Path | None, harness: str = "pi") -> int:
+    """`--both` / `--both-codex`: the Astra side is driven live (scripts/parity_live_pi.py: one Pi RPC session;
+    scripts/parity_live_codex.py: one codex app-server thread — the CASES one turn each, seeded ids, wall clock for
+    Monitor timings), captured, and diffed against the checked-in Claude reference.
+    Exit 0 = zero diffs; 1 = diffs; 2 = the seat cannot start (no install / no credentials)."""
     import subprocess
     import tempfile
     if not claude_ref.is_file():
         print(f"claude reference missing: {claude_ref}", file=sys.stderr)
         return 2
-    work = out_dir or Path(tempfile.mkdtemp(prefix="parity-both-"))
+    work = out_dir or Path(tempfile.mkdtemp(prefix=f"parity-both-{harness}-"))
     work.mkdir(parents=True, exist_ok=True)
-    runner = Path(__file__).resolve().parent / "parity_live_pi.py"
+    runner = Path(__file__).resolve().parent / f"parity_live_{harness}.py"
     env = {**os.environ, "EDP_PARITY_SEED": os.environ.get("EDP_PARITY_SEED", "oracle")}
     proc = subprocess.run([sys.executable, str(runner), "--log-dir", str(work)], env=env, text=True,
                           capture_output=True, timeout=float(os.environ.get("EDP_PARITY_BOTH_TIMEOUT_S", "1800")))
     sys.stderr.write(proc.stdout[-4000:] + proc.stderr[-2000:])
     if proc.returncode != 0:
-        print(f"pi runner exit {proc.returncode} — see {work}", file=sys.stderr)
+        print(f"{harness} runner exit {proc.returncode} — see {work}", file=sys.stderr)
         return 2
-    pi_trace = capture_pi(work / "pi-seat.cases.jsonl")
-    (work / "pi_trace.json").write_text(json.dumps(pi_trace, indent=1), encoding="utf-8")
+    if harness == "codex":
+        pi_trace = capture_codex(work / "codex-seat.cases.jsonl")
+    else:
+        pi_trace = capture_pi(work / "pi-seat.cases.jsonl")
+    (work / f"{harness}_trace.json").write_text(json.dumps(pi_trace, indent=1), encoding="utf-8")
     d = diff(json.loads(claude_ref.read_text(encoding="utf-8")), pi_trace)
     print("\n".join(d) if d else f"0 diffs ({work})")
     return 1 if d else 0
@@ -324,8 +403,10 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--capture-claude", metavar="SESSION_JSONL")
     ap.add_argument("--capture-pi", metavar="PI_SEAT_JSONL")
+    ap.add_argument("--capture-codex", metavar="CODEX_SEAT_JSONL")
     ap.add_argument("--diff", nargs=2, metavar=("CLAUDE_JSON", "PI_JSON"))
     ap.add_argument("--both", action="store_true", help="run the CASES on a live Pi/Astra seat and diff against --claude-ref")
+    ap.add_argument("--both-codex", action="store_true", help="run the CASES on a live codex app-server seat and diff against --claude-ref")
     ap.add_argument("--claude-ref", default=str(Path(__file__).resolve().parents[1] / "tests" / "pi_ext" / "oracle_traces" / "claude_trace_final.json"),
                     help="the Claude-side reference trace (a Claude seat is interactive and cannot be driven from here; "
                          "re-capture it with --capture-claude from a session JSONL when Claude Code moves)")
@@ -343,9 +424,12 @@ def main(argv: list[str] | None = None) -> int:
         for name, prompt in CASES:
             print(f"{name}: {prompt}")
         return 0
-    if a.capture_claude or a.capture_pi:
+    if a.capture_claude or a.capture_pi or a.capture_codex:
         if a.capture_claude:
             trace = capture_claude(Path(a.capture_claude), since=a.since, until=a.until)
+        elif a.capture_codex:
+            trace = capture_codex(Path(a.capture_codex), since=float(a.since) if a.since else None,
+                                  until=float(a.until) if a.until else None)
         else:
             trace = capture_pi(Path(a.capture_pi), since=float(a.since) if a.since else None,
                                until=float(a.until) if a.until else None)
@@ -363,6 +447,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1 if d else 0
     if a.both:
         return run_both(Path(a.claude_ref), Path(a.out) if a.out else None)
+    if a.both_codex:
+        return run_both(Path(a.claude_ref), Path(a.out) if a.out else None, harness="codex")
     ap.print_help()
     return 2
 
