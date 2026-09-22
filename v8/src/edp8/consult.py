@@ -1338,7 +1338,7 @@ def _consult_locked(purpose: str, question: str, *, context: str, files: list[st
         "mcp_discovered": discovered_names,
         "mcp_disabled": disabled_names,
         "mcp_servers_disabled": disabled_names,  # back-compat alias for the disabled set
-        "features": dict(spec.features),
+        "features": {**dict(spec.features), **{f: False for f in HIDDEN_SERVER_FEATURES}},
         "skills": profile_skill_intent(spec),
         "skills_note": ("recorded intent only — codex 0.153.4 `exec` rejects "
                         "`-c skills.config` and does not prune the skill list; "

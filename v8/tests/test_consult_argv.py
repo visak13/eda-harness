@@ -377,6 +377,7 @@ def test_manifest_records_effective_profile_and_config(_logs, monkeypatch):
     assert man["profile"] == "verify"
     assert man["sandbox"] == "read-only" and man["approval_policy"] == "never"
     assert man["features"]["image_generation"] is False
+    assert man["features"]["apps"] is False  # the hidden codex_apps toggle is recorded (t-1b6d0f546f)
     assert man["skills"]["photoreal-asset-factory"] is False
     assert man["config_args"] and man["image_gen_retried"] is False
     # discovered == disabled (cua_repl included); both recorded, denylist gone
