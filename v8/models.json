@@ -36,6 +36,14 @@
       "thinking": "medium",
       "context_window": 272000,
       "auto_compact": 200000
+    },
+    "astra-codex": {
+      "model": "gpt-6-astra",
+      "effort": "medium",
+      "harness": "codex",
+      "thinking": "medium",
+      "context_window": 272000,
+      "auto_compact": 200000
     }
   },
   "roles": {

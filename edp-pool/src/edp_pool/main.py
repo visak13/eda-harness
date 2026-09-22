@@ -101,6 +101,28 @@ if _pi_roles or _pi_available:
     )
     _log.info("pi_backend_armed", "mixed fleet: roles + pi-seat models routed to pi (GPT-6 Astra)",
               roles=sorted(_pi_roles), by_model=True)
+# s-10a2b1f9ec — resident GPT-6 Astra seats under `codex app-server`. EDP_CODEX_ROLES names the
+# roles routed there; EDP_CODEX_BY_MODEL=1 also routes spawns whose model is a `harness: codex`
+# seat ("astra-codex") or `codex/<id>`. BOTH empty (the default) = the stack above, untouched.
+_codex_roles = {r.strip() for r in
+                os.environ.get("EDP_CODEX_ROLES", "").split(",") if r.strip()}
+if _codex_roles or os.environ.get("EDP_CODEX_BY_MODEL") == "1":
+    from .codex_launcher import CodexSpawner, is_codex_model
+    from .opencode_launcher import CompositeSpawner
+    _spawner = CompositeSpawner(
+        _spawner,
+        CodexSpawner(
+            log_dir=str(_root / ".logs" / "codex"),
+            broker_url=_broker_url,
+            pool_url=_pool_url,
+            agent_home=_agent_home,
+        ),
+        opencode_roles=_codex_roles,
+        route_model=(lambda m: is_codex_model(m, _agent_home))
+        if os.environ.get("EDP_CODEX_BY_MODEL") == "1" else None,
+    )
+    _log.info("codex_backend_armed", "mixed fleet: roles routed to codex app-server (GPT-6 Astra)",
+              roles=sorted(_codex_roles), by_model=os.environ.get("EDP_CODEX_BY_MODEL") == "1")
 
 # WS7 (SHADOW.md): every spawn gets a per-shell shadow (wake plane,
 # brief injection, observed close) — Spawner-compatible wrapper, so the
