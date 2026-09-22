@@ -63,14 +63,15 @@ def find_codex(explicit: str | None = None) -> str:
 
 def containment_args(codex: str, *, discover: Callable | None = None) -> tuple[list[str], list[str]]:
     """(`-c` args, disabled server names). Fail-closed: a discovery error raises."""
-    from ..consult import discover_mcp_servers, mcp_disable_args, mcp_disabled_names
+    from ..consult import HIDDEN_SERVER_FEATURES, discover_mcp_servers, mcp_containment_args, mcp_disabled_names
     servers, err = (discover or discover_mcp_servers)(codex)
     if err:
         raise RuntimeError(f"MCP discovery failed, refusing to start an uncontained seat: {err}")
     servers = [s for s in servers if s["name"] != BOARD_SERVER]  # ours is redefined below
-    args = mcp_disable_args(servers)
+    args = mcp_containment_args(servers)  # consult.py's path: listed servers + hidden-server features
     for feat in MANAGED_FEATURES_OFF:
-        args += ["-c", f"features.{feat}=false"]
+        if feat not in HIDDEN_SERVER_FEATURES:
+            args += ["-c", f"features.{feat}=false"]
     return args, mcp_disabled_names(servers)
 
 
@@ -186,10 +187,12 @@ class CodexSeat:
                                    encoding="utf-8")
 
     def live_mcp_servers(self) -> list[str]:
-        """Servers ACTUALLY live in this thread: connected runtime or a non-empty tool catalog."""
+        """Servers ACTUALLY live in this thread: any tool catalog, or a runtimeStatus other than
+        "disabled" (a disabled server is still LISTED, with runtimeStatus "disabled" — measured 0.156.0)."""
         assert self.server
-        res = self.server.request("mcpServerStatus/list", {"threadId": self.thread_id})
-        return sorted(s["name"] for s in res.get("data", []) if s.get("tools") or s.get("runtimeStatus"))
+        res = self.server.request("mcpServerStatus/list", {"threadId": self.thread_id}, timeout=120)
+        return sorted(s["name"] for s in res.get("data", [])
+                      if s.get("tools") or s.get("runtimeStatus") not in (None, "disabled"))
 
     # ------------------------------------------------------------------ turns
     def enqueue_turn(self, text: str) -> None:

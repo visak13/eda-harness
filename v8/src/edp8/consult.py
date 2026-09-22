@@ -124,6 +124,12 @@ _MCP_FLOOR: tuple[str, ...] = ("unreal-mcp",)
 #: is rejected as "url is not supported for stdio". (proven on codex 0.153.4)
 _MCP_STUB_COMMAND = "edp8-disabled"
 
+#: Features that load an MCP server `codex mcp list` never reports, so discover-and-disable
+#: cannot see it (p-8b8c035f, codex 0.156.0: `apps` carries the 73-tool `codex_apps`
+#: plugin-runtime server, live in every thread). Forced off in every consult profile AND
+#: every codex seat (edp8.codex_seat) through mcp_containment_args — one code path.
+HIDDEN_SERVER_FEATURES: tuple[str, ...] = ("apps",)
+
 #: Features we always emit (name order fixed) so the argv is deterministic and a
 #: reviewer can assert the exact set. Proven via `codex features list -c features.<n>=…`.
 _MANAGED_FEATURES: tuple[str, ...] = (
@@ -293,6 +299,16 @@ def mcp_disable_args(servers: list[dict[str, str]]) -> list[str]:
     for floor in _MCP_FLOOR:
         if floor not in seen:
             args += ["-c", f"mcp_servers.{floor}.enabled=false"]
+    return args
+
+
+def mcp_containment_args(servers: list[dict[str, str]]) -> list[str]:
+    """The whole MCP containment: every discovered server disabled (mcp_disable_args) plus
+    every HIDDEN_SERVER_FEATURES feature off, so a server outside `codex mcp list` is gone
+    too. Shared by consult() and the codex seat (s-10a2b1f9ec, chore t-1b6d0f546f). PURE."""
+    args = mcp_disable_args(servers)
+    for feat in HIDDEN_SERVER_FEATURES:
+        args += ["-c", f"features.{feat}=false"]
     return args
 
 
@@ -1308,7 +1324,7 @@ def _consult_locked(purpose: str, question: str, *, context: str, files: list[st
                         "unknown MCP surface). Check `codex login` and the CLI version"}
     discovered_names = sorted(s["name"] for s in discovered)
     disabled_names = mcp_disabled_names(discovered)
-    config_args = _profile_config_args(spec) + mcp_disable_args(discovered)
+    config_args = _profile_config_args(spec) + mcp_containment_args(discovered)
     argv = _build_argv(codex, prompt=prompt, workdir=write_dir or os.getcwd(),
                        last_message_file=str(last_msg), model=requested_model,
                        effort=spec.effort, sandbox=spec.sandbox,

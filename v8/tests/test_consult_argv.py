@@ -28,6 +28,8 @@ from edp8.consult import (
     fence_remediate,
     git_status_map,
     image_evidence,
+    HIDDEN_SERVER_FEATURES,
+    mcp_containment_args,
     mcp_disable_args,
     mcp_disabled_names,
     parse_provider_model,
@@ -219,6 +221,16 @@ def test_mcp_floor_not_duplicated_when_discovered():
     assert names == sorted({s["name"] for s in _FAKE_MCP})
 
 
+def test_containment_also_kills_servers_codex_mcp_list_misses():
+    # p-8b8c035f / t-1b6d0f546f: `codex_apps` (73 tools) rides the `apps` feature and is absent from
+    # `codex mcp list`; the shared containment path turns that feature off on top of the discovered set.
+    assert "apps" in HIDDEN_SERVER_FEATURES
+    args = mcp_containment_args(_FAKE_MCP)
+    assert args[:len(mcp_disable_args(_FAKE_MCP))] == mcp_disable_args(_FAKE_MCP)
+    assert " ".join(args).endswith("-c features.apps=false")
+    assert "features.apps=false" in " ".join(mcp_containment_args([]))
+
+
 def test_discover_parses_json_and_transport(monkeypatch):
     payload = json.dumps([
         {"name": "cua_repl", "transport": {"type": "stdio", "command": "node"}},
@@ -353,6 +365,7 @@ def test_consult_argv_carries_profile_config_and_sandbox(_logs, monkeypatch):
     # the discovered plugin-injected server is contained in the read-only profile too
     assert 'mcp_servers.cua_repl.command="edp8-disabled"' in joined
     assert "mcp_servers.cua_repl.enabled=false" in joined
+    assert "features.apps=false" in joined  # the hidden codex_apps server too (t-1b6d0f546f)
     assert resp["value"]["profile"] == "design"
 
 

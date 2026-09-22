@@ -134,7 +134,8 @@ def main():
         elif m == "mcpServerStatus/list":
             send({"jsonrpc": "2.0", "id": rid, "result": {"data": [
                 {"name": "edp8", "runtimeStatus": "ready", "tools": {"whoami": {}}},
-                {"name": "chrome-devtools", "runtimeStatus": None, "tools": {}},
+                {"name": "chrome-devtools", "runtimeStatus": "disabled", "tools": {}},  # measured 0.156.0 shape
+                {"name": "codex_app", "runtimeStatus": "disabled", "tools": {}},
             ]}})
         else:
             send({"jsonrpc": "2.0", "id": rid, "result": {}})
