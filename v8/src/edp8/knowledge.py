@@ -22,6 +22,7 @@ from typing import Any, Callable
 from .schemas import now
 
 RECORD_TYPES = ("decision", "claim", "lesson")
+EPIC_TYPES = ("decision", "claim")  # the epic-isolated types; lessons are filed nowhere
 MAX_RECORDS = 40
 MAX_BYTES = 8000
 ALWAYS_MAX_BYTES = 2000  # R2-5: the "Always applies" (binding, text-only) section's byte reserve
@@ -65,6 +66,38 @@ LINK_WEIGHT = {
 DEFAULT_WEIGHT = 0.3
 # never traversed: came_from points at sources; replaces points at superseded records.
 SKIP_KINDS = {"came_from", "replaces"}
+# Item 3 (steer m-3f96079aa8): claims were under-used — they only surfaced when they seeded on their
+# own words, because the source message they share with a decision is a came_from edge (never walked).
+# A matched decision now pulls the claims recorded from the SAME source (or citing it as evidence),
+# and a matched claim pulls its decision, at this hop weight (same as `implements`).
+CO_SOURCE_WEIGHT = 0.6
+# per-type score multiplier: an unconfirmed claim (an assumption, or no evidence) ranks below a live
+# decision of equal match; a lesson is filed nowhere, so it ranks a notch below an epic-local record.
+TYPE_WEIGHT = {"decision": 1.0, "claim": 1.0, "claim_unconfirmed": 0.8, "lesson": 0.9}
+# Lessons tail: lessons render in their own section, "Lessons from elsewhere", never in the ranked
+# section — at most MAX_LESSONS within LESSON_MAX_BYTES, reserved inside the 8,000-byte cap.
+MAX_LESSONS = 3
+LESSON_MAX_BYTES = 1500
+# E5 (finding m-205a352fec): the board ranks the dense leg WITHIN the scope (live_scope_ids as allow_ids)
+# and fetches this many in-scope hits, enough to fill the largest adaptive leg.
+DENSE_FETCH = 2 * SEED_TOP_CAP
+
+
+def live_scope_ids(store: Any, target_epic: str | None) -> set[str]:
+    """E5: ids of the live records a dense search may return for this scope — the epic's live
+    decisions/claims plus every live lesson (cross-epic). The board passes this as allow_ids so the dense
+    leg ranks WITHIN the epic instead of taking a global top-k and filtering it afterwards."""
+    ids: set[str] = set()
+    for rtype in EPIC_TYPES:
+        if target_epic is None:
+            break
+        for r in store.query(rtype, limit=100000):
+            if not _dropped(r, rtype) and _epic_id_of(store, getattr(r, "scope", "") or "") == target_epic:
+                ids.add(r.id)
+    for les in store.query("lesson", limit=100000):
+        if not _dropped(les, "lesson"):
+            ids.add(les.id)
+    return ids
 
 
 def _tokens(q: str) -> str:
@@ -228,13 +261,15 @@ def _history_chain(store: Any, rec: Any, _seen: set[str] | None = None) -> list[
         if old is None or old.id in _seen:
             continue
         _seen.add(old.id)
-        out.append({"id": old.id, "text": old.text, "date": _as_date(rec.created_at)})
+        out.append({"id": old.id, "text": old.text, "date": _as_date(rec.created_at),
+                    **({"source": old.source} if getattr(old, "source", None) else {})})
         out.extend(_history_chain(store, old, _seen))
     return out
 
 
-def _leg_ranked(store: Any, hits: Any, target_epic: str | None, limit: int) -> list[str]:
-    """One retrieval leg's hits → in-scope record ids in rank order, de-duped, capped at `limit`."""
+def _leg_ranked(store: Any, hits: Any, target_epic: str | None, limit: int,
+                types: tuple[str, ...] = EPIC_TYPES) -> list[str]:
+    """One retrieval leg's hits → in-scope record ids of `types` in rank order, de-duped, capped at `limit`."""
     out: list[str] = []
     seen: set[str] = set()
     for h in hits or []:
@@ -245,6 +280,8 @@ def _leg_ranked(store: Any, hits: Any, target_epic: str | None, limit: int) -> l
         if not found:
             continue
         rtype, rec = found
+        if rtype not in types:
+            continue  # item 3: lessons seed on their own leg, never taking an epic record's slot
         if _dropped(rec, rtype):
             continue  # a replaced/withdrawn/refuted record must not take a seed slot
         if _in_scope(store, rec, rtype, target_epic):
@@ -309,6 +346,30 @@ def _seed(store: Any, *, question: str | None, node_id: str | None, path: str | 
     return order, weights, kind
 
 
+def _lesson_seeds(store: Any, question: str | None,
+                  semantic: Callable[[str], list[dict[str, Any]]] | None) -> list[str]:
+    """Item 3: lessons get their OWN seed leg (lesson-only FTS + the dense hits that are lessons, RRF),
+    so a cross-epic lesson is found even when the epic's decisions fill every main seed slot."""
+    if not question:
+        return []
+    legs: list[list[str]] = []
+    try:
+        legs.append(_leg_ranked(store, store.fts_search(question, types={"lesson"}, limit=50), None,
+                                2 * MAX_LESSONS, types=("lesson",)))
+    except Exception:
+        pass
+    if semantic is not None:
+        try:
+            legs.append(_leg_ranked(store, semantic(question), None, 2 * MAX_LESSONS, types=("lesson",)))
+        except Exception:
+            pass
+    fused: dict[str, float] = {}
+    for leg in legs:
+        for rank, nid in enumerate(leg, start=1):
+            fused[nid] = fused.get(nid, 0.0) + 1.0 / (60 + rank)
+    return sorted(fused, key=lambda nid: (-fused[nid], nid))[:2 * MAX_LESSONS]
+
+
 def _in_scope(store: Any, rec: Any, rec_type: str, target_epic: str | None) -> bool:
     if rec_type == "lesson":
         return True  # cross-epic by design
@@ -349,11 +410,64 @@ def _render_line(rtype: str, rec: Any, *, confirmed: bool, fresh: bool, binding:
     when = ""
     if rtype in ("decision", "claim"):  # show WHEN it was decided (source date), not when backfilled
         when = f" (decided {_effective_date(rec).date().isoformat()})"
+    if rtype == "claim":
+        head += f" {rec.basis}"  # measured | ruled | assumption — how the claim is known
+    elif rtype == "lesson":
+        head += f" [{rec.domain}/{rec.topic}]"
     line = f"- {head}: {rec.text}{when}  <{rec.id}>"
     detail = getattr(rec, "detail", "") or ""
     if detail and not text_only:  # R2-5: the Always-applies section renders text only
         line += f"\n    why: {detail}"
+    evidence = getattr(rec, "evidence", None) or []
+    if rtype in ("claim", "lesson") and evidence and not text_only:
+        line += f"\n    evidence: {', '.join(evidence[:8])}"
     return line
+
+
+def _co_source_links(store: Any, target_epic: str | None) -> dict[str, set[str]]:
+    """Item 3: live decision<->claim pairs in the epic that share a source id, or where the claim cites
+    the decision (or its source) as evidence. Undirected, record ids only."""
+    if target_epic is None:
+        return {}
+    by_source: dict[str, set[str]] = {}
+    claims: list[Any] = []
+    dec_ids: set[str] = set()
+    for rtype in ("decision", "claim"):
+        for r in store.query(rtype, limit=100000):
+            if _dropped(r, rtype) or _epic_id_of(store, getattr(r, "scope", "") or "") != target_epic:
+                continue
+            if rtype == "claim":
+                claims.append(r)
+            else:
+                dec_ids.add(r.id)
+            if getattr(r, "source", None):
+                by_source.setdefault(r.source, set()).add(r.id)
+    out: dict[str, set[str]] = {}
+
+    def _pair(a: str, b: str) -> None:
+        if a != b:
+            out.setdefault(a, set()).add(b)
+            out.setdefault(b, set()).add(a)
+
+    for ids in by_source.values():
+        decs = [i for i in ids if i in dec_ids]
+        for c in (i for i in ids if i not in dec_ids):
+            for d in decs:
+                _pair(c, d)
+    for c in claims:
+        for ev in c.evidence or []:
+            if ev in dec_ids:
+                _pair(c.id, ev)
+            for d in by_source.get(ev, ()):
+                if d in dec_ids:
+                    _pair(c.id, d)
+    return out
+
+
+def _type_weight(rec: Any, rtype: str) -> float:
+    if rtype == "claim" and not _confirmed(rec, rtype):
+        return TYPE_WEIGHT["claim_unconfirmed"]
+    return TYPE_WEIGHT.get(rtype, 1.0)
 
 
 def _live_record_count(store: Any, target_epic: str | None) -> int:
@@ -412,6 +526,16 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
                     best[other] = ow
                     nxt[other] = ow
         frontier = nxt
+    # Item 3: one co-source hop from each seed — a matched decision brings the claims recorded from
+    # its source message (the measured fact behind the ruling), and a matched claim its decision.
+    co_source = _co_source_links(store, target_epic) if seeds else {}
+    co_source_hits: set[str] = set()
+    for s in seeds:
+        for other in co_source.get(s, ()):
+            ow = best.get(s, SEED_W_HI) * CO_SOURCE_WEIGHT
+            if ow > best.get(other, 0.0):
+                best[other] = ow
+                co_source_hits.add(other)
 
     always_ids = _always_include(store, target_epic)
 
@@ -419,12 +543,15 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
         confirmed = _confirmed(rec, rtype)
         fresh = not (stale_paths(rec, rtype) if stale_paths else False)
         history = _history_chain(store, rec) if rtype == "decision" else []
-        score = weight * _freshness(_effective_date(rec), ref) * _usefulness(rec, rtype)
+        score = (weight * _freshness(_effective_date(rec), ref) * _usefulness(rec, rtype)
+                 * _type_weight(rec, rtype))
         entry = {"id": rec.id, "type": rtype, "text": rec.text,
                  "detail": getattr(rec, "detail", "") or "",
                  "status": getattr(rec, "status", "live"),
                  "confirmed": confirmed, "fresh": fresh, "binding": nid in always_ids,
                  "score": round(score, 6)}
+        if getattr(rec, "source", None):
+            entry["source"] = rec.source  # the message/doc it came from, so a reader can cite it
         if history:
             entry["history"] = history
         return score, entry
@@ -446,6 +573,21 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
     # match to the question) must never outrank a seed (matched) record — a high-degree hub was winning
     # on graph weight alone. Tier seeds above walks, each tier ordered by score.
     ranked.sort(key=lambda x: (x[1] not in seed_set, -x[0], x[1]))
+    # Item 3: lessons leave the ranked section for their own tail (below), so a cross-epic lesson
+    # neither takes an epic record's slot nor is lost under the byte cap.
+    lesson_cands = [t for t in ranked if t[2] == "lesson"]
+    ranked = [t for t in ranked if t[2] != "lesson"]
+    have_lessons = {t[1] for t in lesson_cands}
+    lesson_seed_ids = _lesson_seeds(store, question, semantic) if not id else []
+    for i, lid in enumerate(lesson_seed_ids):
+        les = store.get("lesson", lid)
+        if les is None or lid in have_lessons or _dropped(les, "lesson"):
+            continue
+        w = SEED_W_HI - (SEED_W_HI - SEED_W_LO) * (i / max(1, len(lesson_seed_ids) - 1))
+        sc, entry = _mk(lid, "lesson", les, w)
+        entry["provenance"] = "seed"
+        lesson_cands.append((sc, lid, "lesson", les, entry))
+    lesson_cands.sort(key=lambda x: (x[4].get("provenance") != "seed", -x[0], x[1]))
 
     # C4 noise floor: keep only ranked records at >= RANKED_FLOOR_FRAC of the top score, plus any
     # weak record linked by replaces/part_of to a kept (strong) one — so a live decision's chain and
@@ -511,9 +653,43 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
         always_bytes += bsize
         _count(stub)
 
+    # --- Section D "Lessons from elsewhere" (item 3), sized FIRST so its reserve is kept inside the cap:
+    # lessons the question matched (seeded or walked), then lessons filed under a domain of a kept
+    # decision ("found across epics by domain/topic"), at most MAX_LESSONS / LESSON_MAX_BYTES.
+    kept_domains: set[str] = set()
+    for _sc, _nid, rtype, rec, _e in ranked:
+        if rtype == "decision" and rec.id in ranked_allowed_ids:
+            kept_domains.update(getattr(rec, "domains", None) or [])
+    if kept_domains:
+        have = {t[1] for t in lesson_cands}
+        extra = []
+        for les in store.query("lesson", {"status": "live"}, limit=100000):
+            if les.id in have or les.domain not in kept_domains:
+                continue
+            sc, entry = _mk(les.id, "lesson", les, DEFAULT_WEIGHT)
+            entry["provenance"] = "domain"
+            extra.append((sc, les.id, "lesson", les, entry))
+        extra.sort(key=lambda x: (-x[0], x[1]))
+        lesson_cands = lesson_cands + extra
+    lesson_lines: list[str] = []
+    lesson_bytes = 0
+    lesson_entries: list[dict[str, Any]] = []
+    for _sc, _nid, _rt, rec, entry in lesson_cands:
+        if len(lesson_lines) >= MAX_LESSONS:
+            break
+        entry = {**entry, "section": "lesson", "evidence": list(rec.evidence or [])[:8],
+                 "domain": rec.domain, "topic": rec.topic}
+        bsize = len(_json.dumps(entry, ensure_ascii=False).encode("utf-8"))
+        if lesson_bytes + bsize > LESSON_MAX_BYTES or always_bytes + lesson_bytes + bsize > MAX_BYTES:
+            continue
+        lesson_entries.append(entry)
+        lesson_lines.append(_render_line("lesson", rec, confirmed=entry["confirmed"], fresh=entry["fresh"],
+                                         binding=False))
+        lesson_bytes += bsize
+
     # --- Section B "For your question": ranked records, full detail + inline history, up to MAX_BYTES total.
     ranked_lines: list[str] = []
-    used_bytes = always_bytes
+    used_bytes = always_bytes + lesson_bytes
     cut_by_type: dict[str, int] = {}
     cut_ids: dict[str, list[str]] = {}
     for sc, nid, rtype, rec, entry in ranked:
@@ -532,6 +708,10 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
             line += f"\n    earlier: {h['text']} (replaced {h['date']})"
         ranked_lines.append(line)
         used_bytes += bsize
+        _count(entry)
+
+    for entry in lesson_entries:  # Section D records follow the ranked ones in `records`
+        records.append(entry)
         _count(entry)
 
     # --- Section C "Unconfirmed source excerpts" (R2-7): only when the question reached too few
@@ -553,6 +733,8 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
     if always_lines:
         body_parts.append("Always applies\n" + "\n".join(always_lines))
     body_parts.append("For your question\n" + ("\n".join(ranked_lines) if ranked_lines else "(nothing scored)"))
+    if lesson_lines:
+        body_parts.append("Lessons from elsewhere\n" + "\n".join(lesson_lines))
     if excerpt_lines:
         body_parts.append("Unconfirmed source excerpts\n" + "\n".join(excerpt_lines))
     body = "\n\n".join(body_parts)
@@ -579,6 +761,10 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
         "ranked_walk": sum(1 for r in records if r.get("provenance") == "walk"),
         # C4 noise floor: how many ranked records were dropped for scoring below the floor, and the floor
         "floor_dropped": len(floor_dropped), "floor_dropped_ids": floor_dropped[:20],
+        # item 3: the lessons tail and how many ranked records arrived by a co-source hop
+        "lessons": len(lesson_lines), "lesson_bytes": lesson_bytes,
+        "co_source_pulled": sum(1 for r in records if r.get("section") == "ranked"
+                                and r["id"] not in seed_set and r["id"] in co_source_hits),
         "ranked_floor_frac": RANKED_FLOOR_FRAC,
         **counts,
     }

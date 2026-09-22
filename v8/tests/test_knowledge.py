@@ -877,3 +877,110 @@ def test_binding_detail_only_when_it_also_ranks(board, rig):
     assert ranked.id in ranked_sec and ranked_sec[ranked.id]["detail"]  # detail only where it ranks
     assert other.id not in ranked_sec  # unrelated binding does not bridge in via the epic hub
     assert "Always applies" in out["body"] and "For your question" in out["body"]
+
+
+# --------------------------------------------------------------------------- item 3 (steer m-3f96079aa8)
+def test_matched_decision_pulls_co_source_claim(board, rig):
+    # a claim shares its source message with a decision but none of the question's words
+    epic = make_epic(board, rig)
+    d = board.record_decision(rig["owner"], scope=epic.id, text="usage widget sits above find",
+                              source="m-src1")
+    c = board.record_claim(rig["engineer"], scope=epic.id, text="collector adds 40 ms per refresh",
+                           basis=ClaimBasis.measured, evidence=["c-x1"], source="m-src1")
+    board.record_decision(rig["owner"], scope=epic.id, text="unrelated theme palette rule")
+    out = board.lookup(rig["engineer"], scope=epic.id, question="usage widget placement")
+    ids = [r["id"] for r in out["records"]]
+    assert d.id in ids and c.id in ids
+    claim = next(r for r in out["records"] if r["id"] == c.id)
+    assert claim["provenance"] == "walk"  # reached by the co-source hop, tiered below the match
+    assert ids.index(d.id) < ids.index(c.id)
+    assert out["receipt"]["co_source_pulled"] >= 1
+    # the claim renders its basis and evidence
+    assert "CLAIM measured" in out["body"] and "evidence: c-x1" in out["body"]
+
+
+def test_claim_citing_decision_is_pulled_and_unconfirmed_ranks_lower(board, rig):
+    epic = make_epic(board, rig)
+    d = board.record_decision(rig["owner"], scope=epic.id, text="webhook retries capped at three")
+    c = board.record_claim(rig["engineer"], scope=epic.id, text="observed backoff", evidence=[d.id],
+                           basis=ClaimBasis.measured)
+    out = board.lookup(rig["engineer"], scope=epic.id, question="webhook retries")
+    assert c.id in [r["id"] for r in out["records"]]
+    # an unconfirmed claim with the same match scores below a live decision
+    assert knowledge._type_weight(Claim(id="clm-z", scope=epic.id, text="t"), "claim") < \
+        knowledge._type_weight(d, "decision")
+
+
+def test_record_lesson_tool_and_learned_from_links(board, rig):
+    epic = make_epic(board, rig)
+    les = board.record_lesson(rig["engineer"], domain="operations", topic="restart",
+                              text="never taskkill the board by image name", evidence=["m-e1"])
+    assert les.id.startswith("les-") and les.status == "live"
+    links = board.store.query("kglink", {"from_id": les.id})
+    assert [(lk.to_id, lk.kind) for lk in links] == [("m-e1", LinkKind.learned_from)]
+    with pytest.raises(BoardError):
+        board.record_lesson(rig["engineer"], domain="", topic="x", text="y")
+    out = board.lookup(rig["engineer"], scope=epic.id, question="taskkill board image")
+    assert "Lessons from elsewhere" in out["body"]
+    entry = next(r for r in out["records"] if r["id"] == les.id)
+    assert entry["section"] == "lesson" and entry["domain"] == "operations"
+    assert out["receipt"]["lessons"] == 1
+
+
+def test_lesson_found_by_domain_of_a_kept_decision(board, rig):
+    epic = make_epic(board, rig)
+    d = board.record_decision(rig["owner"], scope=epic.id, text="restart the pool without tree kill",
+                              domains=["operations"])
+    les = board.record_lesson(rig["architect"], domain="operations", topic="memory",
+                              text="serialise heavy processes under two gigabytes free")
+    other = board.record_lesson(rig["architect"], domain="ui", topic="themes", text="contrast checks")
+    out = board.lookup(rig["engineer"], scope=epic.id, question="pool restart tree kill")
+    ids = [r["id"] for r in out["records"]]
+    assert d.id in ids and les.id in ids and other.id not in ids
+    assert next(r for r in out["records"] if r["id"] == les.id)["provenance"] == "domain"
+
+
+def test_lessons_tail_is_capped_and_inside_the_byte_budget(board, rig):
+    epic = make_epic(board, rig)
+    for i in range(60):
+        board.record_decision(rig["owner"], scope=epic.id, text=f"rule {i} " + "cache eviction policy " * 6)
+    for i in range(6):
+        board.record_lesson(rig["architect"], domain="ops", topic=f"cache{i}",
+                            text=f"cache eviction lesson {i} " + "word " * 30)
+    out = board.lookup(rig["engineer"], scope=epic.id, question="cache eviction policy")
+    rc = out["receipt"]
+    assert rc["lessons"] == knowledge.MAX_LESSONS
+    assert rc["lesson_bytes"] <= knowledge.LESSON_MAX_BYTES
+    assert rc["bytes"] <= MAX_BYTES
+    # lessons never sit in the ranked section
+    assert all(r["section"] != "ranked" for r in out["records"] if r["type"] == "lesson")
+
+
+def test_board_dense_leg_is_scope_limited(board, rig):
+    # E5 (finding m-205a352fec): the dense leg must rank WITHIN the epic — a global top-k filtered
+    # afterwards left a large epic only its share of k.
+    epic_a, epic_b = make_epic(board, rig, "A"), make_epic(board, rig, "B")
+    da = board.record_decision(rig["owner"], scope=epic_a.id, text="alpha rule")
+    db = board.record_decision(rig["owner"], scope=epic_b.id, text="beta rule")
+    les = board.record_lesson(rig["architect"], domain="ops", topic="t", text="a lesson")
+    seen = {}
+
+    class FakeIndex:
+        def dense_search(self, q, k=10, types=None, allow_ids=None):
+            seen.update(k=k, allow=set(allow_ids or ()))
+            return [{"type": "decision", "id": da.id, "score": 0.9}]
+
+        def search(self, q, k=30, types=None):
+            return []
+
+        def status(self):
+            return {"embeddings_active": True}
+
+        def upsert(self, *a, **kw):
+            pass
+
+    board.index = FakeIndex()
+    out = board.lookup(rig["engineer"], scope=epic_a.id, question="zzz unmatched words")
+    assert seen["k"] == knowledge.DENSE_FETCH
+    assert da.id in seen["allow"] and les.id in seen["allow"] and db.id not in seen["allow"]
+    assert da.id in out["receipt"]["seeds"]

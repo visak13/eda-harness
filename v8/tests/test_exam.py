@@ -19,7 +19,7 @@ def test_load_exam_accepts_list_and_wrapper(tmp_path):
     p = tmp_path / "e.json"
     p.write_text(json.dumps({"questions": [{"epic": "epic-a", "question": "q1"}]}))
     qs = exam.load_exam(p)
-    assert qs == [{"n": 1, "epic": "epic-a", "question": "q1", "expected": "", "expected_ids": []}]
+    assert qs == [{"n": 1, "epic": "epic-a", "question": "q1", "expected": "", "expected_ids": [], "proof_ids": []}]
     p.write_text(json.dumps([{"n": 7, "epic": "epic-a", "question": "q"}, {"n": 7, "epic": "e", "question": "q"}]))
     with pytest.raises(ValueError, match="duplicate"):
         exam.load_exam(p)
@@ -51,7 +51,7 @@ def test_run_packs_writes_reader_inputs_and_template(tmp_path):
     m = exam.run_packs(qs, tmp_path, lookup=fake_lookup, rev="abc123")
     assert calls == [("epic-a", "where is usage?"), ("epic-b", "boom")]
     assert m["board_rev"] == "abc123"
-    assert m["summary"] == {"questions": 2, "failed_lookups": 1, "mean_id_recall": 1.0}
+    assert m["summary"]["failed_lookups"] == 1 and m["summary"]["mean_id_recall"] == 1.0
     md = (tmp_path / "packs" / "1.md").read_text(encoding="utf-8")
     assert "where is usage?" in md and "usage above find" in md
     assert "lookup failed" in (tmp_path / "packs" / "2.md").read_text(encoding="utf-8")
@@ -83,3 +83,17 @@ def test_lookup_goes_through_the_tool_layer(monkeypatch):
     monkeypatch.setattr(bundles, "_client", FakeClient())
     env = exam._lookup_via_tools("epic-z", "why?")
     assert env["ok"] and seen["args"] == ("epic-z", "why?")
+
+
+def test_architect_exam_format_and_grade_aliases(tmp_path):
+    p = tmp_path / "exam4.json"
+    p.write_text(json.dumps([{"n": 1, "epic": "e", "type": "why", "question": "q", "answer": "two positions",
+                              "proof_ids": ["m-1", "m-2"], "superseded_note": ""}]))
+    q = exam.load_exam(p)[0]
+    assert q["expected"] == "two positions" and q["proof_ids"] == ["m-1", "m-2"]
+    value = {"records": [{"id": "dec-1", "source": "m-1"}], "body": "two positions", "receipt": {}}
+    sig = exam.pack_signals(q, value)
+    assert sig["proof_ids_found"] == ["m-1"] and sig["proof_recall"] == 0.5
+    r = exam.score([{"n": 1, "epic": "e", "verdict": "CORRECT"}, {"n": 2, "epic": "e", "verdict": "NOT-IN-PACK"},
+                    {"n": 3, "epic": "e", "verdict": "PARTIAL"}, {"n": 4, "epic": "e", "verdict": "WRONG"}])
+    assert r["overall"] == {"graded": 4, "points": 1.5, "pct": 37.5, "right": 1, "half": 1, "miss": 1, "invented": 1}

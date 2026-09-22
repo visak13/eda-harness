@@ -43,6 +43,7 @@ from .schemas import (
     EventKind,
     Gate,
     KgLink,
+    Lesson,
     Link,
     LinkKind,
     Message,
@@ -1865,6 +1866,23 @@ class Board:
         self._index("claim", c.id, text)
         return c
 
+    def record_lesson(self, actor: Participant, *, domain: str, topic: str, text: str,
+                      evidence: list[str] | None = None) -> Lesson:
+        """Record a reusable lesson (design §3): filed by domain/topic, not by epic, so lookup surfaces it
+        from any epic in its "Lessons from elsewhere" tail. A learned_from kglink goes to each evidence id
+        (the defect, rework or ruling it was learned from)."""
+        if not (domain or "").strip() or not (topic or "").strip() or not (text or "").strip():
+            raise BoardError("invalid", "a lesson needs a domain, a topic and one sentence of text",
+                             "pass domain (e.g. operations), topic (e.g. restart) and text")
+        le = Lesson(id=new_id("les"), domain=domain.strip(), topic=topic.strip(), text=text.strip(),
+                    evidence=list(evidence or []), created_by=actor.id)
+        with self.store.transaction():
+            self.store.put("lesson", le)
+            for ev in (evidence or []):
+                self._kglink(actor, le.id, ev, LinkKind.learned_from)
+        self._index("lesson", le.id, "\n".join([le.text, le.topic, le.domain]))
+        return le
+
     def withdraw_decision(self, actor: Participant, *, decision_id: str, reason: str) -> Decision:
         """Retract a decision without a successor (design §3 status `withdrawn`): the row and its
         links are kept, but lookup never returns it and the search index drops it. Idempotent —
@@ -1971,8 +1989,11 @@ class Board:
         if self.index is not None:
             # D4: the seed leg is DENSE-ONLY so it casts an independent vote alongside FTS in _seed,
             # instead of one diluted vote inside the BM25+dense fused search().
-            semantic = lambda q: self.index.dense_search(q, k=knowledge.SEED_TOP * 2,  # noqa: E731
-                                                         types=set(knowledge.RECORD_TYPES))
+            # E5 (finding m-205a352fec): rank WITHIN the scope. A global top-16 filtered to the epic
+            # afterwards left a large epic only its share of 16, so its adaptive per-leg count never filled.
+            allow = knowledge.live_scope_ids(self.store, knowledge._epic_id_of(self.store, scope))
+            semantic = lambda q: self.index.dense_search(q, k=knowledge.DENSE_FETCH,  # noqa: E731
+                                                         types=set(knowledge.RECORD_TYPES), allow_ids=allow)
             embed_status = self.index.status()  # R2-6: report the seeding backend in the receipt
             # R2-7: the source-fallback tier searches the epic's own messages/docs (BM25 ∪ dense)
             source_search = lambda q: self.index.search(q, k=30, types={"message", "doc"})  # noqa: E731

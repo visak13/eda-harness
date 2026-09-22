@@ -27,6 +27,16 @@ from pathlib import Path
 from typing import Any
 
 VERDICTS = {"right": 1.0, "half": 0.5, "miss": 0.0, "invented": 0.0}
+# the architect's grade files (v8/.data/exams/r4) use CORRECT | PARTIAL | WRONG | NOT-IN-PACK
+VERDICT_ALIASES = {"correct": "right", "partial": "half", "wrong": "invented", "not-in-pack": "miss",
+                   "not_in_pack": "miss", "not in pack": "miss"}
+
+
+def _verdict(v: Any) -> str:
+    v = (v or "").strip().lower()
+    return VERDICT_ALIASES.get(v, v)
+
+
 _STOP = set("a an the of to in on for and or is are was were be by with as at from that this it its "
             "which what why how when who not no do does did into than then so".split())
 
@@ -47,8 +57,11 @@ def load_exam(path: Path) -> list[dict[str, Any]]:
     for i, q in enumerate(qs, start=1):
         if not q.get("epic") or not q.get("question"):
             raise ValueError(f"{path}: question #{i} needs 'epic' and 'question'")
+        # the architect's exam files carry `answer` + `proof_ids` (source message/doc ids)
         out.append({"n": q.get("n", i), "epic": q["epic"], "question": q["question"],
-                    "expected": q.get("expected", ""), "expected_ids": list(q.get("expected_ids") or [])})
+                    "expected": q.get("expected") or q.get("answer", ""),
+                    "expected_ids": list(q.get("expected_ids") or []),
+                    "proof_ids": list(q.get("proof_ids") or [])})
     ns = [q["n"] for q in out]
     if len(set(ns)) != len(ns):
         raise ValueError(f"{path}: duplicate question numbers")
@@ -68,6 +81,11 @@ def pack_signals(q: dict[str, Any], value: dict[str, Any]) -> dict[str, Any]:
     for r in recs:
         present.update(h.get("id") for h in r.get("history", []) or [])
     exp_ids = q.get("expected_ids") or []
+    # proof_ids are SOURCE ids (m-…/doc ids): a pack covers one when a record in it came from it
+    sources = {r.get("source") for r in recs if r.get("source")}
+    sources.update(h.get("source") for r in recs for h in r.get("history", []) or [] if h.get("source"))
+    proofs = q.get("proof_ids") or []
+    proof_hit = [p for p in proofs if p in sources or p in body]
     hit = [i for i in exp_ids if i in present]
     terms = _content_terms(q.get("expected", ""))
     body_terms = _content_terms(body)
@@ -76,6 +94,8 @@ def pack_signals(q: dict[str, Any], value: dict[str, Any]) -> dict[str, Any]:
         "expected_ids_found": hit,
         "expected_ids_missing": [i for i in exp_ids if i not in present],
         "id_recall": (len(hit) / len(exp_ids)) if exp_ids else None,
+        "proof_ids_found": proof_hit,
+        "proof_recall": round(len(proof_hit) / len(proofs), 3) if proofs else None,
         "term_coverage": round(len(terms & body_terms) / len(terms), 3) if terms else None,
         "records": len(recs), "bytes": rc.get("bytes"), "seed_kind": rc.get("seed_kind"),
         "source_excerpts": rc.get("source_excerpts"),
@@ -120,9 +140,14 @@ def run_packs(exam: list[dict[str, Any]], out: Path, *, lookup: Any = None, rev:
                         "signals": sig, "verdict": "", "note": ""})
     (out / "grading.json").write_text(json.dumps(grading, indent=1), encoding="utf-8")
     (out / "reader_prompt.md").write_text(READER_PROMPT, encoding="utf-8")
-    ids = [m["id_recall"] for m in manifest["questions"] if m.get("id_recall") is not None]
+
+    def _mean(key: str) -> float | None:
+        vals = [m[key] for m in manifest["questions"] if m.get(key) is not None]
+        return round(sum(vals) / len(vals), 3) if vals else None
+
     manifest["summary"] = {"questions": len(exam), "failed_lookups": sum(1 for m in manifest["questions"] if "error" in m),
-                           "mean_id_recall": round(sum(ids) / len(ids), 3) if ids else None}
+                           "mean_id_recall": _mean("id_recall"), "mean_proof_recall": _mean("proof_recall"),
+                           "mean_term_coverage": _mean("term_coverage")}
     (out / "manifest.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")
     return manifest
 
@@ -130,8 +155,9 @@ def run_packs(exam: list[dict[str, Any]], out: Path, *, lookup: Any = None, rev:
 def score(graded: list[dict[str, Any]], baseline: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     by_epic: dict[str, dict[str, float]] = {}
     ungraded = []
+    graded = [g for g in graded if "n" in g]  # skip summary rows the grade files carry
     for g in graded:
-        v = (g.get("verdict") or "").strip().lower()
+        v = _verdict(g.get("verdict"))
         if v not in VERDICTS:
             ungraded.append(g["n"])
             continue
@@ -148,10 +174,9 @@ def score(graded: list[dict[str, Any]], baseline: list[dict[str, Any]] | None = 
         "ungraded": ungraded,
     }
     if baseline is not None:
-        old = {b["n"]: (b.get("verdict") or "").strip().lower() for b in baseline}
-        res["changes"] = [{"n": g["n"], "was": old.get(g["n"]), "now": (g.get("verdict") or "").strip().lower()}
-                          for g in graded
-                          if g["n"] in old and old[g["n"]] != (g.get("verdict") or "").strip().lower()]
+        old = {b["n"]: _verdict(b.get("verdict")) for b in baseline if "n" in b}
+        res["changes"] = [{"n": g["n"], "was": old.get(g["n"]), "now": _verdict(g.get("verdict"))}
+                          for g in graded if g["n"] in old and old[g["n"]] != _verdict(g.get("verdict"))]
     return res
 
 

@@ -169,6 +169,13 @@ class ClaimIn(BaseModel):
     status: ClaimStatus = ClaimStatus.open
 
 
+class LessonIn(BaseModel):
+    domain: str
+    topic: str
+    text: str
+    evidence: list[str] = []
+
+
 class WithdrawIn(BaseModel):
     reason: str = ""
 
@@ -851,6 +858,11 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         c = board.record_claim(a, scope=b.scope, text=b.text, basis=b.basis, evidence=b.evidence,
                                source=b.source, status=b.status)
         return ok(_dump(c), "claim recorded")
+
+    @app.post("/v1/lessons")
+    def record_lesson(b: LessonIn, a: Participant = Depends(actor)):
+        le = board.record_lesson(a, domain=b.domain, topic=b.topic, text=b.text, evidence=b.evidence)
+        return ok(_dump(le), "lesson recorded; lookup shows it under 'Lessons from elsewhere' from any epic")
 
     @app.post("/v1/decisions/{id_}/withdraw")
     def withdraw_decision(id_: str, b: WithdrawIn, a: Participant = Depends(actor)):

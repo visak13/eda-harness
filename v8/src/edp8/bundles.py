@@ -655,7 +655,7 @@ _TOOLS_BY_TYPE: dict[str, list[str]] = {
     "participant": ["participants", "whoami", "spawn"],
     "decision": ["record_decision", "withdraw_decision", "set_binding", "lookup", "dense_search", "find"],
     "claim": ["record_claim", "withdraw_claim", "lookup", "find"],
-    "lesson": ["lookup", "find"],
+    "lesson": ["record_lesson", "lookup", "find"],
     "kglink": ["lookup"],
 }
 
@@ -1586,6 +1586,14 @@ class RecordClaimArgs(BaseModel):
     source: str | None = Field(default=None, description="the message or doc id it came from")
 
 
+class RecordLessonArgs(BaseModel):
+    domain: str = Field(description="the craft or domain it applies to, e.g. operations, testing, ui")
+    topic: str = Field(description="a short topic key within the domain, e.g. restart, e2e, memory")
+    text: str = Field(description="one sentence: the reusable rule, true beyond the ticket it came from")
+    evidence: list[str] = Field(default_factory=list,
+                                description="the defect, rework, ruling or message ids it was learned from")
+
+
 class LookupArgs(BaseModel):
     scope: str = Field(description="the epic or ticket id to isolate to — never returns another epic's "
                        "decisions/claims; lessons are found across epics by domain/topic")
@@ -1597,6 +1605,10 @@ class LookupArgs(BaseModel):
 def _record_decision(a: RecordDecisionArgs) -> dict[str, Any]:
     return get_client().record_decision(a.scope, a.text, detail=a.detail, replaces=a.replaces,
                                         binding=a.binding, source=a.source, domains=a.domains)
+
+
+def _record_lesson(a: RecordLessonArgs) -> dict[str, Any]:
+    return get_client().record_lesson(a.domain, a.topic, a.text, evidence=a.evidence)
 
 
 def _record_claim(a: RecordClaimArgs) -> dict[str, Any]:
@@ -1658,6 +1670,12 @@ KNOWLEDGE_TOOLS = [
             "when you assert something whose proof is not yet attached",
             "the claim record",
             RecordClaimArgs, _record_claim, "knowledge"),
+    ToolDef("record_lesson",
+            "Record a reusable lesson filed by domain/topic, not by epic, so lookup surfaces it from any "
+            "epic in its 'Lessons from elsewhere' section",
+            "when you learn something true beyond this ticket: a pitfall, a host rule, a better approach",
+            "the lesson record",
+            RecordLessonArgs, _record_lesson, "knowledge"),
     ToolDef("lookup",
             "Retrieve the most relevant, current records for a question/id/path inside one epic — binding "
             "decisions always included, at most 40 records / 8000 bytes, deterministic, with a receipt of "
@@ -2113,7 +2131,7 @@ ROLE_BUNDLES[Role.consultant.value] = _IDENTITY + ["ticket_read", "ticket_query"
 # (test_lifecycle_fixes.py). A role that already has a name (none do) is not duplicated.
 for _role_tools in ROLE_BUNDLES.values():
     _at = _role_tools.index("inbox") if "close_self" in _role_tools else len(_role_tools)
-    for _kt in ("record_decision", "record_claim", "lookup", "withdraw_decision", "withdraw_claim",
+    for _kt in ("record_decision", "record_claim", "record_lesson", "lookup", "withdraw_decision", "withdraw_claim",
                 "set_binding", "dense_search"):
         if _kt not in _role_tools:
             _role_tools.insert(_at, _kt)

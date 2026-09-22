@@ -1,0 +1,29 @@
+[
+ {
+  "n": 17,
+  "epic": "epic-1b289d63f9",
+  "question": "In the redesigned board interface, if someone types formatting marks or a snippet of page code into a message, what does the reader see, and what does become clickable?",
+  "expected": "Exactly the characters typed: message text is rendered as plain text, with no Markdown and no HTML, so nothing can be styled or injected through a message. A deliberately narrow pass over the text turns only two things into links - @handles that resolve to a participant, and artifact ids that resolve to a real artifact.",
+  "expected_ids": [
+   "dec-741fedc8eb"
+  ],
+  "proof_ids": [
+   "m-50b5b9d20d"
+  ],
+  "why": "exam4 Q17: live record existed, dense rank 15 in-epic, never seeded (finding m-205a352fec)"
+ },
+ {
+  "n": 21,
+  "epic": "epic-733b165bd7",
+  "question": "In the Space Travel project, how are the pictures used as measurement evidence actually taken from the engine, and which routes were abandoned?",
+  "expected": "By running the packaged game (-game -unattended -windowed with the map on the command line) under a dedicated game mode that requests an in-game screenshot per pose into Saved/, with a manifest, and measuring the decoded PNGs afterwards. The editor-side capture paths were dropped because they render the editor's level rather than the runtime scene, and the offscreen SceneCapture2D attempt in the automation commandlet was ruled a dead end and abandoned by order.",
+  "expected_ids": [
+   "dec-1e4f7aba38"
+  ],
+  "proof_ids": [
+   "m-fb91ae144f",
+   "m-003fdc61f5"
+  ],
+  "why": "exam4 Q21: live record existed, dense rank 18 in-epic, never seeded (finding m-205a352fec)"
+ }
+]
