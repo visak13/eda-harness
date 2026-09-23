@@ -1679,7 +1679,7 @@ KNOWLEDGE_TOOLS = [
             RecordLessonArgs, _record_lesson, "knowledge"),
     ToolDef("lookup",
             "Retrieve the most relevant, current records for a question/id/path inside one epic — binding "
-            "decisions always included, at most 40 records / 8000 bytes, deterministic, with a receipt of "
+            "decisions always included, at most 40 records / 16000 bytes, deterministic, with a receipt of "
             "what was cut; each record labelled confirmed/unconfirmed and fresh/stale",
             "on resume or before you act, to load current decisions and claims instead of trusting memory",
             "records + rendered body + receipt",

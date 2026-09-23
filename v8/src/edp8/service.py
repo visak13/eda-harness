@@ -851,7 +851,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     def record_decision(b: DecisionIn, a: Participant = Depends(actor)):
         d = board.record_decision(a, scope=b.scope, text=b.text, detail=b.detail, replaces=b.replaces,
                                   binding=b.binding, source=b.source, domains=b.domains)
-        return ok(_dump(d), f"decision recorded; {len(b.replaces)} replaced" if b.replaces
+        return ok(_dump(d), f"decision recorded; {len(d.replaces)} replaced" if d.replaces
                   else "decision recorded")
 
     @app.post("/v1/claims")
@@ -893,7 +893,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     def lookup(scope: str, question: str | None = None, id: str | None = None,
                path: str | None = None, a: Participant = Depends(actor)):
         return ok(board.lookup(a, scope=scope, question=question, id=id, path=path),
-                  "records: json.dumps(records) at most 8000 bytes; binding never cut; receipt names what was cut")
+                  "records: json.dumps(records) at most 16000 bytes; binding never cut; receipt names what was cut")
 
     @app.post("/v1/index/reembed")
     def index_reembed(a: Participant = Depends(actor)):

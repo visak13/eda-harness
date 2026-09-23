@@ -42,6 +42,17 @@ def rig(board):
     }
 
 
+# A maximal detail (1,000 emoji, each json-escaped to 12 bytes) is ~12 KB: past the old 8 KB cap on its own,
+# but not past 16 KB. _crowd() records never-cut binding filler (240-emoji texts, ~2.9 KB each) until what is
+# left of MAX_BYTES is below one maximal detail, so "an enrichment / a strong record did not fit" still holds.
+_BIG_DETAIL = "\U0001f600" * 1000
+
+
+def _crowd(board, rig, epic):
+    for i in range(max(0, -(-(MAX_BYTES - 11000) // 2800))):
+        board.record_decision(rig["owner"], scope=epic.id, text=chr(0x1F600 + i) * 240, binding=True)
+
+
 def make_epic(board, rig, title="Epic one"):
     return board.ticket_create(rig["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title=title)
 
@@ -1256,8 +1267,9 @@ def test_f3_gate_holds_the_write_lock_against_another_connection(tmp_path):
 def test_matched_binding_enrichment_stays_inside_the_byte_cap(board, rig):
     import json
     epic = make_epic(board, rig)
+    _crowd(board, rig, epic)
     b = board.record_decision(rig["owner"], scope=epic.id, text="quasar rule",
-                              detail="\U0001f600" * 1000, binding=True)
+                              detail=_BIG_DETAIL, binding=True)
     out = board.lookup(rig["engineer"], scope=epic.id, question="quasar")
     payload = len(json.dumps(out["records"], default=str).encode("utf-8"))
     assert payload == out["receipt"]["bytes"] <= MAX_BYTES
@@ -1294,11 +1306,34 @@ def test_withdrawn_never_replaced_decision_can_still_be_replaced(board, rig):
 
 def test_excerpts_fall_back_when_strong_records_are_all_cut(board, rig):
     epic = make_epic(board, rig)
+    _crowd(board, rig, epic)
     for i in range(3):
         board.record_decision(rig["owner"], scope=epic.id, text=f"quasar decision {i}",
-                              detail="\U0001f600" * 1000)
+                              detail=_BIG_DETAIL)
     board.doc_create(rig["owner"], doc_type=DocType.note, title="quasar note",
                      body_md="the quasar source says hello", scope=epic.id)
     out = board.lookup(rig["engineer"], scope=epic.id, question="quasar")
     assert out["receipt"]["strong_records"] == 0
     assert out["receipt"]["source_excerpts"] >= 1
+
+
+# --------------------------------------------------------------------------- S14-C1 (qa O1/O2)
+def test_o1_duplicate_replaces_id_writes_one_edge(board, rig):
+    epic = make_epic(board, rig)
+    old = board.record_decision(rig["owner"], scope=epic.id, text="any https host is accepted")
+    new = board.record_decision(rig["owner"], scope=epic.id, text="allow-list hosts only",
+                                replaces=[old.id, old.id])
+    links = board.store.query("kglink", {"from_id": new.id, "kind": "replaces"})
+    assert [lk.to_id for lk in links] == [old.id]
+    assert new.replaces == [old.id]
+
+
+def test_o2_score_identical_across_calls_on_one_request_clock(board, rig):
+    epic = make_epic(board, rig)
+    for i in range(6):
+        board.record_decision(rig["owner"], scope=epic.id, text=f"webhook rule {i} about hosts")
+    clock = datetime(2026, 9, 23, 12, 0, 0, tzinfo=timezone.utc)
+    a = board.lookup(rig["engineer"], scope=epic.id, question="webhook hosts", ref_now=clock)
+    b = board.lookup(rig["engineer"], scope=epic.id, question="webhook hosts", ref_now=clock)
+    assert a["records"] and a["records"] == b["records"]
+    assert [r["score"] for r in a["records"]] == [r["score"] for r in b["records"]]

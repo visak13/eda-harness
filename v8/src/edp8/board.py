@@ -18,6 +18,7 @@ import logging
 import re
 import threading
 from collections.abc import Iterable
+from datetime import datetime
 from typing import Any
 
 from . import knowledge, seat_choice
@@ -1825,7 +1826,7 @@ class Board:
         `came_from` kglink to the source are written alongside. Raises if a replaced id is unknown.
         `binding=None` (the default) inherits: a successor of a binding decision stays binding, so a
         re-curation cannot silently demote a must-follow rule (m-db71577ddc); pass False to demote."""
-        replaces = list(replaces or [])
+        replaces = list(dict.fromkeys(replaces or []))  # O1: replaces=[x, x] is one successor, one edge
         if binding is not None:
             binding = bool(binding)  # F2: a truthy non-bool (binding=1) must meet the gate as True
         epic = knowledge._epic_id_of(self.store, scope) or scope
@@ -2015,9 +2016,12 @@ class Board:
         return out
 
     def lookup(self, actor: Participant, *, scope: str, question: str | None = None,
-               id: str | None = None, path: str | None = None) -> dict[str, Any]:
+               id: str | None = None, path: str | None = None,
+               ref_now: datetime | None = None) -> dict[str, Any]:
         """Deterministic, capped, epic-isolated retrieval over the records (design §4.2).
-        Reuses the board's semantic Index when installed; FTS otherwise."""
+        Reuses the board's semantic Index when installed; FTS otherwise. `ref_now` is the request
+        clock: the freshness `now` is read ONCE per lookup (O2), so calls sharing a clock score alike."""
+        ref_now = ref_now or now()
         semantic = None
         lesson_semantic = None
         embed_status = None
@@ -2039,7 +2043,7 @@ class Board:
             source_search = lambda q: self.index.search(q, k=30, types={"message", "doc"})  # noqa: E731
         return knowledge.lookup(self.store, scope, question=question, id=id, path=path,
                                 semantic=semantic, embed_status=embed_status, source_search=source_search,
-                                lesson_semantic=lesson_semantic)
+                                lesson_semantic=lesson_semantic, ref_now=ref_now)
 
     def last_status(self, p: Participant) -> dict[str, Any] | None:
         """The most recent status_recorded event data by this participant on its tickets."""

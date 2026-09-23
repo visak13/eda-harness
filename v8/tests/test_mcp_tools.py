@@ -101,7 +101,7 @@ def test_record_and_lookup_through_tools(raw_client, board):
     assert out["ok"], out
     ids = [r["id"] for r in out["value"]["records"]]
     assert new["value"]["id"] in ids and old["value"]["id"] not in ids
-    assert out["value"]["receipt"]["cap"] == {"records": 40, "bytes": 8000}
+    assert out["value"]["receipt"]["cap"] == {"records": 40, "bytes": 16000}
 
 
 # ----------------------------------------------------------------------------- scripted flow

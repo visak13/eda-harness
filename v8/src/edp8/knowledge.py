@@ -24,7 +24,7 @@ from .schemas import now
 RECORD_TYPES = ("decision", "claim", "lesson")
 EPIC_TYPES = ("decision", "claim")  # the epic-isolated types; lessons are filed nowhere
 MAX_RECORDS = 40
-MAX_BYTES = 8000
+MAX_BYTES = 16000  # owner ruling m-5e2ff72e19 / dec-b9ad9b301d (2026-09-23): 16 KB pack; was 8000
 # F4: MAX_BYTES bounds the records list exactly as the tool returns it — json.dumps(records) with the
 # default ", " separators and ASCII escapes (mcp_server serializes that way), brackets included.
 LIST_SEP_BYTES = 2
@@ -77,7 +77,7 @@ CO_SOURCE_WEIGHT = 0.6
 # decision of equal match; a lesson is filed nowhere, so it ranks a notch below an epic-local record.
 TYPE_WEIGHT = {"decision": 1.0, "claim": 1.0, "claim_unconfirmed": 0.8, "lesson": 0.9}
 # Lessons tail: lessons render in their own section, "Lessons from elsewhere", never in the ranked
-# section — at most MAX_LESSONS within LESSON_MAX_BYTES, reserved inside the 8,000-byte cap.
+# section — at most MAX_LESSONS within LESSON_MAX_BYTES, reserved inside the MAX_BYTES cap.
 MAX_LESSONS = 3
 LESSON_MAX_BYTES = 1500
 # E5 (finding m-205a352fec): the board ranks the dense leg WITHIN the scope (live_scope_ids as allow_ids)
@@ -720,16 +720,24 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
     # carries its retrieval provenance, and its detail/history when those still fit the byte cap —
     # the TEXT is mandatory (never cut), the enrichment is optional and budgeted like a ranked record.
     question_hit = {rec.id: e.get("provenance") for _, _, _, rec, e in ranked if rec.id in ranked_allowed_ids}
-    for sc, nid, rec, _full in binding_cands:
+    stubs = []
+    for _sc, _nid, rec, _full in binding_cands:
         stub = {"id": rec.id, "type": "decision", "text": rec.text, "binding": True,
                 "section": "always", "confirmed": _full["confirmed"], "fresh": _full["fresh"],
                 "score": _full["score"]}
-        enriched = False
         if rec.id in question_hit:
             stub["provenance"] = question_hit[rec.id]
+        stubs.append(stub)
+    # S14-C1: an enrichment must leave room for the text-only stubs still to come — at 16 KB one maximal
+    # detail (~12 KB) fits on its own, so budgeting it before the later binding texts overran the cap.
+    reserve = sum(_jbytes(s) + LIST_SEP_BYTES for s in stubs)
+    for (_sc, _nid, rec, _full), stub in zip(binding_cands, stubs):
+        reserve -= _jbytes(stub) + LIST_SEP_BYTES
+        enriched = False
+        if rec.id in question_hit:
             rich = {**stub, "detail": _full["detail"],
                     **{k: _full[k] for k in ("source", "history") if k in _full}}
-            if used_bytes + _cost(rich) <= MAX_BYTES:
+            if used_bytes + _cost(rich) + reserve <= MAX_BYTES:
                 stub, enriched = rich, True
         used_bytes += _cost(stub)
         n_items += 1
@@ -809,7 +817,7 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
 
     # --- Section C "Unconfirmed source excerpts" (R2-7): only when the question reached too few
     # strong records, quote the epic's own messages/doc paragraphs so a not-yet-curated answer is
-    # still visible. Counts inside the 8,000-byte budget.
+    # still visible. Counts inside the MAX_BYTES budget.
     excerpt_lines: list[str] = []
     # counted over what the pack actually RETURNED: a strong record cut by the byte cap answers nothing
     returned_ids = {r["id"] for r in records if r.get("section") in ("ranked", "always")}
