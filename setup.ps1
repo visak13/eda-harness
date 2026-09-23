@@ -14,9 +14,15 @@ foreach ($proj in @("edp-contracts", "edp-broker", "edp-pool", "v8")) {
   if (-not (Test-Path (Join-Path $dir "pyproject.toml"))) { throw "missing project: $dir" }
   Write-Host "== uv sync: $proj"
   Push-Location $dir
-  try { uv sync } finally { Pop-Location }
+  # uv reports progress on stderr; under Windows PowerShell 5.1 with "Stop" that line is a terminating
+  # NativeCommandError, so run it under "Continue" and judge it by its exit code.
+  $ErrorActionPreference = "Continue"
+  try {
+    uv sync 2>&1 | ForEach-Object { "$_" }
+    if ($LASTEXITCODE -ne 0) { throw "uv sync failed in $dir (exit $LASTEXITCODE)" }
+  } finally { $ErrorActionPreference = "Stop"; Pop-Location }
 }
 
 Write-Host ""
-Write-Host "setup complete. Start the stack with start-v8.bat, or your shell with owner.bat."
+Write-Host "setup complete. Next: copy v8\.env.example v8\.env, then .\edp.ps1 start all"
 Write-Host "board UI: http://127.0.0.1:9400/ui"
