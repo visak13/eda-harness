@@ -182,7 +182,7 @@ def test_mcp_spawn_tool_inherits_the_epic_choice(rig, monkeypatch):
     assert seen[-1]["model"] == "astra" and seen[-1]["effort"] == "high"
     assert out["value"]["seat_choice"] == {"model": "astra", "effort": "high", "note": None}
     # spawn(model=...) names its own model: the epic's effort still applies, capped for Claude
-    out = ALL_TOOLS["spawn"].handler(ALL_TOOLS["spawn"].args_model(role="reviewer", ticket_id=story,
+    out = ALL_TOOLS["spawn"].handler(ALL_TOOLS["spawn"].args_model(role="qa", ticket_id=story,
                                                                    model="builder", assign=False))
     assert out["ok"], out
     assert seen[-1]["model"] == "builder" and seen[-1]["effort"] == "medium"
@@ -207,7 +207,7 @@ def test_auto_pairing_spawn_inherits_the_epic_choice(home):
     epic = board.ticket_create(owner, kind=TicketKind.epic, work_type=WorkType.feature, title="E",
                                tags=["seat-model:astra", "seat-effort:high"])
     story = board.ticket_create(arch, kind=TicketKind.story, work_type=WorkType.feature, title="S", parent_id=epic.id)
-    assert board._spawn_seat("reviewer", f"reviewer.{story.id}", story.id) is True
+    assert board._spawn_seat("qa", f"qa.{story.id}", story.id) is True
     assert pool.calls[-1]["model"] == "astra" and pool.calls[-1]["effort"] == "high"
     assert board.seat_choice_for(None).as_dict() == {"model": None, "effort": None, "note": None}
     assert board.seat_choice_for("t-missing").model is None
