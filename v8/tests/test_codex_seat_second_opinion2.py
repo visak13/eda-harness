@@ -99,8 +99,8 @@ def test_c_late_witness_never_withdraws_a_newer_identical_event():
 
 # ------------------------------------------------------------------ D · the kill job is fail-closed
 def test_d_failed_kill_job_bind_refuses_to_start(tmp_path, monkeypatch):
-    monkeypatch.setenv("EDP_ROLE", "reviewer")
-    monkeypatch.setenv("EDP_HANDLE", "reviewer.jobfail")
+    monkeypatch.setenv("EDP_ROLE", "qa")
+    monkeypatch.setenv("EDP_HANDLE", "qa.jobfail")
     monkeypatch.setenv("EDP_AGENT_HOME", str(V8))
     monkeypatch.setenv("EDP_LOG_DIR", str(tmp_path))
     monkeypatch.delenv("EDP_CODEX_RESUME", raising=False)

@@ -25,7 +25,7 @@ def _names(roots):
 
 
 def test_role_skill_roots_follow_the_role_cards_skills_line():
-    assert _names(seat_mod.role_skill_roots(V8, "reviewer")) == ["verify", "deviation", "doubt", "pain"]
+    assert _names(seat_mod.role_skill_roots(V8, "qa")) == ["verify", "pain"]
     assert _names(seat_mod.role_skill_roots(V8, "engineer")) == ["methodology", "demo", "verify", "deviation",
                                                                   "doubt", "learn", "pain"]
     for r in seat_mod.role_skill_roots(V8, "qa"):
@@ -52,7 +52,7 @@ def _mirror_out_methods(path: Path) -> list[str]:
 @pytest.mark.parametrize("resume", [False, True])
 def test_the_role_bundle_is_bound_before_the_thread_and_read_back(tmp_path, monkeypatch, resume):
     monkeypatch.setenv("FAKE_APPSERVER_LOG", str(tmp_path / "fake.jsonl"))
-    kw = dict(cwd=V8, role="reviewer", handle="reviewer.skills", log_dir=tmp_path,
+    kw = dict(cwd=V8, role="qa", handle="qa.skills", log_dir=tmp_path,
               codex_bin=str(HERE / "fake_app_server.py"), board=False,
               env={"EDP_PARITY_DESCRIPTIONS": str(DESC)}, discover=lambda _c: ([], None))
     if resume:
@@ -62,13 +62,13 @@ def test_the_role_bundle_is_bound_before_the_thread_and_read_back(tmp_path, monk
     s = seat_mod.CodexSeat(**kw)
     s.start(resume=resume)
     try:
-        assert s.skills == sorted(["verify", "deviation", "doubt", "pain"])  # the bundle, not imagegen
+        assert s.skills == sorted(["verify", "pain"])  # the bundle, not imagegen
         methods = _mirror_out_methods(s.log_path)[-6:] if resume else _mirror_out_methods(s.log_path)
         thread = "thread/resume" if resume else "thread/start"
         assert methods.index("skills/extraRoots/set") < methods.index(thread)
         sent = [json.loads(ln)["msg"]["params"]["extraRoots"] for ln in s.log_path.read_text(encoding="utf-8").splitlines()
                 if '"skills/extraRoots/set"' in ln and '"dir": "out"' in ln][-1]
-        assert sent == seat_mod.role_skill_roots(V8, "reviewer")
+        assert sent == seat_mod.role_skill_roots(V8, "qa")
     finally:
         s.stop()
 

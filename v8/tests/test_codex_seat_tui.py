@@ -174,7 +174,7 @@ def test_app_server_child_never_holds_the_ws_token(tmp_path, monkeypatch):
 
 
 def test_tui_argv_joins_the_seat_thread_with_the_token_by_env_name(tmp_path):
-    s = seat_mod.CodexSeat(cwd=V8, role="reviewer", handle="reviewer.tui", log_dir=tmp_path, codex_bin=str(FAKE),
+    s = seat_mod.CodexSeat(cwd=V8, role="qa", handle="qa.tui", log_dir=tmp_path, codex_bin=str(FAKE),
                            board=False, env={"EDP_PARITY_DESCRIPTIONS": str(V8 / "guides" / "harness-parity" / "descriptions.ours.json")},
                            discover=lambda _c: ([], None), ws=True)
     s.server = SimpleNamespace(ws_url="ws://127.0.0.1:5555", env={WS_TOKEN_ENV: "the-token-value"})
@@ -235,7 +235,7 @@ class _FakeSeat:
 
 def test_run_tui_waits_for_the_first_input_and_the_seat_ends_with_the_tui():
     seat = _FakeSeat([sys.executable, "-c", "import sys; sys.exit(3)"])
-    assert run_mod.run_tui(seat, "reviewer.x") == 3
+    assert run_mod.run_tui(seat, "qa.x") == 3
     assert seat.stopped
 
 
@@ -244,7 +244,7 @@ def test_run_tui_stops_the_tui_when_the_thread_is_gone():
     t = threading.Timer(1.0, seat.stop)
     t.start()
     t0 = __import__("time").time()
-    run_mod.run_tui(seat, "reviewer.x")  # returns only once the TUI is gone
+    run_mod.run_tui(seat, "qa.x")  # returns only once the TUI is gone
     assert seat.stopped and __import__("time").time() - t0 < 30
 
 
@@ -335,5 +335,5 @@ def test_so_3_the_tui_never_starts_when_the_first_turn_never_landed():
     the seat stops cleanly instead of launching a TUI that fails."""
     seat = _FakeSeat([sys.executable, "-c", "raise SystemExit('the TUI must not start')"], seen_after=10**9)
     seat.tui_argv = lambda: pytest.fail("TUI launched without a landed first turn")
-    assert run_mod.run_tui(seat, "reviewer.x", materialize_s=0.5) == 1
+    assert run_mod.run_tui(seat, "qa.x", materialize_s=0.5) == 1
     assert seat.stopped

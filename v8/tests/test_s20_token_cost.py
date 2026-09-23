@@ -85,7 +85,7 @@ def test_feed_cap_is_env_overridable_and_small_lines_pass_through(monkeypatch, c
 
 # ----------------------------------------------------------------------------- tool surface
 _AUDIT_BEFORE = {'architect': 52_174, 'engineer': 48_457, 'adversary': 48_457, 'qa': 44_823,
-                 'reviewer': 43_964, 'sme': 39_078, 'owner': 37_337}
+                 'sme': 39_078, 'owner': 37_337}
 
 
 def _surface_bytes(role):
@@ -133,10 +133,6 @@ def test_invoked_tools_stay_in_their_role():
                'context_delta', 'doc_create', 'consult', 'link_create', 'assemble_ruleset', 'close_self',
                'ticket_read', 'lookup', 'ticket_update', 'doc_update', 'gates', 'describe', 'find', 'participants',
                'artifact_read', 'board', 'preflight'},
-        'reviewer': {'criterion_update', 'doc_read', 'message_send', 'context', 'doc_create', 'whoami', 'subscribe',
-                     'link_create', 'assemble_ruleset', 'ticket_update', 'criterion_query', 'inbox', 'ticket_read',
-                     'record_status', 'message_query', 'message_read', 'doc_update', 'close_self', 'link_delete',
-                     'artifact_read', 'link_query', 'consult_status', 'consult'},
         'sme': {'message_send', 'context', 'criterion_update', 'link_create', 'doc_read', 'doc_update',
                 'message_query', 'whoami', 'subscribe', 'describe', 'doc_create', 'criterion_query', 'inbox',
                 'assemble_ruleset', 'record_status', 'message_read', 'doc_query', 'get_guide', 'participants',

@@ -42,7 +42,7 @@ def rig(client):
         assert r["ok"], r
         return r["value"]
 
-    for pid, role, typ in [("owner", "owner", "human"), ("ravi", "reviewer", "human"),
+    for pid, role, typ in [("owner", "owner", "human"), ("ravi", "qa", "human"),
                            ("arch", "architect", "agent"), ("craft", "sme", "agent")]:
         post("/v1/participants", {"type": typ, "role": role, "handle": pid, "id": pid}, ADMIN)
     epic = post("/v1/tickets", {"kind": "epic", "work_type": "feature", "title": "Galaxy site"}, OWN)["id"]

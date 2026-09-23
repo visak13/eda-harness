@@ -32,7 +32,7 @@ def client(board, monkeypatch, ui_prefix):
 
 @pytest.fixture
 def rig(client):
-    for pid, role, typ in [("owner", "owner", "human"), ("ravi", "reviewer", "human"), ("arch", "architect", "agent")]:
+    for pid, role, typ in [("owner", "owner", "human"), ("ravi", "qa", "human"), ("arch", "architect", "agent")]:
         assert client.post("/v1/participants", json={"type": typ, "role": role, "handle": pid, "id": pid},
                            headers=ADMIN).json()["ok"]
     e = client.post("/v1/tickets", json={"kind": "epic", "work_type": "feature", "title": "Galaxy site"},

@@ -31,7 +31,7 @@ def rig(client):
         ("owner", "owner", "human"),
         ("arch", "architect", "agent"),
         ("eng", "engineer", "agent"),
-        ("rev", "reviewer", "agent"),
+        ("rev", "adversary", "agent"),
         ("qa", "qa", "agent"),
         ("coord", "coordinator", "agent"),
     ]

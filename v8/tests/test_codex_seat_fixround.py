@@ -111,7 +111,7 @@ def test_1_seat_wraps_every_monitor_in_its_role_sandbox(tmp_path, monkeypatch):
     sb_log = tmp_path / "sandbox.jsonl"
     monkeypatch.setenv("FAKE_APPSERVER_LOG", str(tmp_path / "fake.jsonl"))
     monkeypatch.setenv("FAKE_SANDBOX_LOG", str(sb_log))
-    s = seat_mod.CodexSeat(cwd=V8, role="reviewer", handle="reviewer.sbx", log_dir=tmp_path, codex_bin=str(FAKE),
+    s = seat_mod.CodexSeat(cwd=V8, role="adversary", handle="adversary.sbx", log_dir=tmp_path, codex_bin=str(FAKE),
                            board=False, env={"EDP_PARITY_DESCRIPTIONS": str(DESC)}, discover=lambda _c: ([], None))
     s.start()
     try:

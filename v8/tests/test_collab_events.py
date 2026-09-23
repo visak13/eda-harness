@@ -37,7 +37,7 @@ def published(monkeypatch):
 
 @pytest.fixture
 def rig(client):
-    for pid, role, typ in [("owner", "owner", "human"), ("ravi", "reviewer", "human"),
+    for pid, role, typ in [("owner", "owner", "human"), ("ravi", "qa", "human"),
                            ("arch", "architect", "agent"), ("craft", "sme", "agent")]:
         assert client.post("/v1/participants", json={"type": typ, "role": role, "handle": pid, "id": pid},
                            headers=ADMIN).json()["ok"]
@@ -67,10 +67,10 @@ def test_message_events_and_asks_carry_sender_identity(client, rig):
     client.post("/v1/messages", json={"ticket_id": rig["epic"], "kind": "question", "to": "arch",
                                       "text": "human here"}, headers={"X-Participant": "ravi"})
     ev = [e for e in _events(client, rig["epic"]) if e["kind"] == "message_sent"][-1]
-    assert ev["data"]["from_type"] == "human" and ev["data"]["from_role"] == "reviewer"
+    assert ev["data"]["from_type"] == "human" and ev["data"]["from_role"] == "qa"
     ctx = client.get("/v1/context", headers={"X-Participant": "arch"}).json()["value"]
     ask = next(a for a in ctx["asks_for_me"] if a["text"] == "human here")
-    assert ask["from_type"] == "human" and ask["from_role"] == "reviewer"
+    assert ask["from_type"] == "human" and ask["from_role"] == "qa"
 
 
 def test_message_to_closed_agent_seat_notifies_owner(client, rig, published):

@@ -150,7 +150,7 @@ def test_drop_finalize_attaches_directly_to_ticket(board_app):
 def test_drop_finalize_refuses_another_actors_upload(board_app):
     """The same uploader-scope check as the message finalise path: only the uploader can attach."""
     c, board, epic = board_app["client"], board_app["board"], board_app["epic"]
-    c.post("/v1/participants", json={"type": "human", "role": "reviewer", "handle": "ravi", "id": "ravi"},
+    c.post("/v1/participants", json={"type": "human", "role": "qa", "handle": "ravi", "id": "ravi"},
            headers=ADMIN)
     aid = _upload(c, PNG, "a.png").json()["value"]["id"]  # uploaded by owner
     r = c.post("/v1/artifacts/finalize", json={"artifact_ids": [aid], "ticket_id": epic},
@@ -164,7 +164,7 @@ def test_drop_finalize_refuses_another_actors_upload(board_app):
 
 def test_finalise_refuses_another_actors_staged_upload(board_app):
     c, board, epic = board_app["client"], board_app["board"], board_app["epic"]
-    c.post("/v1/participants", json={"type": "human", "role": "reviewer", "handle": "ravi", "id": "ravi"},
+    c.post("/v1/participants", json={"type": "human", "role": "qa", "handle": "ravi", "id": "ravi"},
            headers=ADMIN)
     aid = _upload(c, PNG, "a.png").json()["value"]["id"]  # uploaded by owner
     # ravi tries to attach owner's staged upload onto a message → refused, artifact stays staged

@@ -299,18 +299,18 @@ def test_containment_fails_closed_on_discovery_error():
 
 
 def test_token_never_on_argv_and_board_headers_by_env_name(tmp_path):
-    s = seat_mod.CodexSeat(cwd=V8, role="reviewer", handle="reviewer.t", log_dir=tmp_path, codex_bin="codex",
-                           env={"EDP8_TOKEN": "tok-SECRET-123", "EDP_HANDLE": "reviewer.t"},
+    s = seat_mod.CodexSeat(cwd=V8, role="adversary", handle="adversary.t", log_dir=tmp_path, codex_bin="codex",
+                           env={"EDP8_TOKEN": "tok-SECRET-123", "EDP_HANDLE": "adversary.t"},
                            discover=lambda _c: (FAKE_SERVERS, None))
     argv = s.argv()
     assert not any("tok-SECRET-123" in a for a in argv)
-    assert 'mcp_servers.edp8.url="http://127.0.0.1:9402/mcp/reviewer"' in argv
+    assert 'mcp_servers.edp8.url="http://127.0.0.1:9402/mcp/adversary"' in argv
     assert any(a.startswith("mcp_servers.edp8.env_http_headers=") and '"X-Token"="EDP8_TOKEN"' in a for a in argv)
     # approval_policy=never refuses every MCP call a server has not pre-approved (drill 2026-09-23)
     assert "approval_policy=never" in argv and 'mcp_servers.edp8.default_tools_approval_mode="approve"' in argv
     assert sum("default_tools_approval_mode" in a for a in argv) == 1  # only the board is pre-approved
     assert "mcp_servers.edp8.enabled=true" in argv  # an inherited enabled=false never leaves a board-less seat
-    assert seat_mod.sandbox_for("reviewer", {}) == "read-only"
+    assert seat_mod.sandbox_for("adversary", {}) == "read-only"
     assert seat_mod.sandbox_for("engineer", {}) == "workspace-write"
 
 

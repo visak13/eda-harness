@@ -20,7 +20,7 @@ from pathlib import Path
 from edp8.bundles import ALL_TOOLS, tools_for_role
 
 V8 = Path(__file__).resolve().parents[1]
-SEAT_ROLES = ("owner", "architect", "engineer", "reviewer", "qa", "sme", "adversary")
+SEAT_ROLES = ("owner", "architect", "engineer", "qa", "sme", "adversary")
 _ALT = "|".join(sorted(ALL_TOOLS, key=len, reverse=True))
 _CALL = re.compile(r"`(" + _ALT + r")\b[^`]*`|(?<![.\w])(" + _ALT + r")\(")
 _ROLE = "|".join(SEAT_ROLES)
@@ -89,7 +89,7 @@ def test_the_scan_sees_calls_scopes_and_role_limits():
     # naming them for those roles must be caught.
     have = {r: {t.name for t in tools_for_role(r)} for r in SEAT_ROLES}
     assert "artifact_create" not in have["qa"]
-    assert "find" not in have["reviewer"]
+    assert "find" not in have["sme"]
     assert "gates" not in have["engineer"]
     # Every skill a card lists exists, so no skill silently falls out of the scan.
     for skill in _card_skills():

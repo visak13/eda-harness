@@ -47,7 +47,7 @@ def rig(client):
                                           "parent_id": s1["id"], "assignee": "eng"},
                        headers={"X-Participant": "arch"}).json()["value"]
     c = client.post("/v1/criteria", json={"ticket_id": s1["id"], "text": "the selection sheet renders four ships",
-                                          "check": "look", "checked_by": "reviewer"},
+                                          "check": "look", "checked_by": "qa"},
                      headers={"X-Participant": "arch"}).json()["value"]
     d = client.post("/v1/docs", json={"doc_type": "note", "title": "ship ledger", "body_md": "kestrel pilgrim",
                                       "scope": epic["id"]}, headers={"X-Participant": "arch"}).json()["value"]
