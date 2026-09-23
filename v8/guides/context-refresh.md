@@ -18,8 +18,9 @@ read references and short messages (512 characters, with explicit truncation); r
 objects needed for action. An `orientation_changed` reference requires refreshing orientation:
 legacy link/criterion/description writes do not all emit events, so a current-state fingerprint
 conservatively invalidates metadata. This is explicit resynchronization, not routine double-reading.
-The complete successful delta envelope is bounded to 48 KB, including its constant-size hashed
-cursor. Oversized individual events yield an explicit invalidation instead of stalling pagination.
+The complete successful delta envelope is bounded to `EDP8_DELTA_BUDGET_B` (default 12 KB, S20),
+including its constant-size hashed cursor; a cut page carries `omitted` (why + `context_delta(cursor=
+next_cursor)`). Oversized individual events yield an explicit invalidation instead of stalling pagination.
 An `asks_changed` reference requires `inbox()` so resolved,
 reopened and newly addressed asks are not lost. Unchanged asks remain your responsibility.
 
@@ -33,8 +34,7 @@ Unknown/deleted objects return a resynchronization hint, never silent omission.
 ContextDelta/ContextSnapshot/ContextChange schemas: `describe_objects(type=...)`.
 Related objects: ticket, doc, message, event. Related skills: methodology, handoff.
 
-A doing seat resumes its next unbuilt plan item even with no new board changes. Listening
-seats may end silently. Silence is not permission to abandon an in-progress plan.
+An empty delta is not a stop signal for a doing seat: see your card's NEVER IDLE MID-PLAN line.
 
 ## Activation
 Deploy board and MCP only through owner-coordinated maintenance. Verify tools/list contains

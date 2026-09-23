@@ -9,6 +9,7 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import time
 
@@ -16,7 +17,16 @@ from .board import BoardError
 
 MAX_AGE = 86400
 MAX_SCAN = 500
-MAX_BYTES = 48000
+MAX_BYTES = 12000        # default page cap in bytes (S20; was 48000) — EDP8_DELTA_BUDGET_B overrides
+TEXT_HEAD = 512          # message text carried per change row; read_ref fetches the rest
+
+
+def delta_budget() -> int:
+    """The page byte cap, env-overridable like EDP8_CONTEXT_BUDGET_B (floor 4000)."""
+    try:
+        return max(4_000, int(os.environ.get("EDP8_DELTA_BUDGET_B", MAX_BYTES)))
+    except ValueError:
+        return MAX_BYTES
 
 
 class ContextReader:
@@ -111,13 +121,15 @@ class ContextReader:
         through = state['through'] if state['through'] is not None else high
         refs = self._references(roots)
         changes = []
+        cut = None
         consumed = state['seq']
         anchor = state.get('anchor')
         # Reserve the entire protocol envelope, fixed-size hashed cursor and optional
         # invalidations. Remaining bytes include JSON separators, not only row content.
+        budget = delta_budget()
         size = len(json.dumps({'ok': True, 'value': {'changed': True, 'next_cursor': cursor,
                               'has_more': True}, 'hint': ''}).encode()) + 1024
-        if size >= MAX_BYTES:
+        if size >= budget:
             self._fail('cursor cannot fit the bounded response; refresh orientation')
         events = store.events_since(consumed, limit=MAX_SCAN)
         for seq, event in events:
@@ -127,13 +139,14 @@ class ContextReader:
             if relevant:
                 change = self._change(seq, event)
                 cost = len(json.dumps(change).encode()) + 2
-                if cost > MAX_BYTES // 2:
+                if cost > budget // 2:
                     # Never stall on an accepted but unusually large ID/metadata field.
                     change = {'event_id': event.id, 'seq': seq, 'kind': event.kind.value,
                               'object_id': event.id, 'object_type': 'event', 'truncated': True,
                               'action': 'context() to read oversized change; event payload omitted'}
                     cost = len(json.dumps(change).encode()) + 2
-                if len(changes) >= limit or size + cost > MAX_BYTES:
+                if len(changes) >= limit or size + cost > budget:
+                    cut = 'bytes' if size + cost > budget else 'limit'
                     break
                 changes.append(change)
                 size += cost
@@ -161,6 +174,10 @@ class ContextReader:
                                              'action': 'refresh changed ticket metadata/criteria/links/gates/docs'}
         if changes:
             result['changes'] = changes
+        if more:  # the page was cut: say why and how to continue (S20)
+            why = {'bytes': f'page bounded to EDP8_DELTA_BUDGET_B={budget} bytes',
+                   'limit': f'page bounded to limit={limit} changes'}.get(cut, f'scan bounded to {MAX_SCAN} events')
+            result['omitted'] = {'why': why, 'continue': 'context_delta(cursor=next_cursor)'}
         if asks_changed:
             result['asks_changed'] = {'read_ref': {'tool': 'inbox'}, 'action': 'read new/resolved/reopened asks'}
         return result
@@ -175,7 +192,7 @@ class ContextReader:
             row.update(object_type='message', object_id=message.id,
                        read_ref={'tool': 'message_read', 'id': message.id},
                        actor=message.created_by, recipient=message.to,
-                       text=message.text[:512], truncated=len(message.text) > 512)
+                       text=message.text[:TEXT_HEAD], truncated=len(message.text) > TEXT_HEAD)
             return row
         for typ, tool, arg in [('ticket', 'ticket_read', 'ticket_id'), ('doc', 'doc_read', 'id'),
                                ('criterion', 'criterion_query', 'ticket_id'), ('artifact', 'artifact_read', 'id')]:

@@ -7,25 +7,95 @@ One line per item: `{"event": {...}}` (board) or `{"broker_msg": {...}}`
 from its own cursor (board seq / broker since_ts). Prints `{"error": "..."}` on
 a failure it cannot recover from within a reconnect attempt, then keeps
 retrying.
+
+Every line is byte-capped (EDP8_FEED_EVENT_B, default 2000): an over-long line has its longest
+strings clipped and carries `omitted` with the call that fetches the full item (S20 token-cost
+rework: each line becomes a seat's turn input verbatim).
 """
 
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import sys
 import threading
 import time
+from typing import Any
 
 import httpx
 
 _out_lock = threading.Lock()
+_EVENT_BUDGET_B = 2_000     # default byte cap per printed line (env-overridable)
+_OMITTED_RESERVE = 300      # room for the `omitted` receipt the cut adds
+
+
+def _event_budget() -> int:
+    try:
+        return max(600, int(os.environ.get("EDP8_FEED_EVENT_B", _EVENT_BUDGET_B)))
+    except ValueError:
+        return _EVENT_BUDGET_B
+
+
+def _dumps(obj: dict) -> str:
+    return json.dumps(obj, default=str)
+
+
+def _fetch_hint(obj: dict) -> str:
+    """The call that returns the full item a capped line was cut from."""
+    ev = obj.get("event")
+    if isinstance(ev, dict):
+        data = ev.get("data") or {}
+        if data.get("message"):
+            return f"message_read(id={data['message']!r})"
+        return f"events_query(subject_id={ev.get('subject_id')!r}, since={max(0, int(ev.get('seq') or 1) - 1)})"
+    msg = obj.get("broker_msg")
+    if isinstance(msg, dict):
+        body = msg.get("body") if isinstance(msg.get("body"), dict) else {}
+        if body.get("ticket_id"):
+            return f"inbox(), or message_query(ticket_id={body['ticket_id']!r}) for the full text"
+    return "inbox()"
+
+
+def cap_line(obj: dict, budget: int | None = None) -> dict:
+    """obj unchanged when its JSON line fits `budget` bytes; else a copy whose longest strings are
+    clipped (`…[+N chars]`) until it fits, plus `omitted` naming the cap and the fetch call."""
+    budget = budget or _event_budget()
+    if len(_dumps(obj).encode()) <= budget:
+        return obj
+    out = copy.deepcopy(obj)
+    target = budget - _OMITTED_RESERVE
+    for _ in range(64):
+        leaves: list[tuple[Any, Any, str]] = []
+
+        def walk(node: Any) -> None:
+            items = node.items() if isinstance(node, dict) else enumerate(node) if isinstance(node, list) else ()
+            for k, v in items:
+                if isinstance(v, str):
+                    leaves.append((node, k, v))
+                else:
+                    walk(v)
+
+        walk(out)
+        excess = len(_dumps(out).encode()) - target
+        if excess <= 0 or not leaves:
+            break
+        node, key, text = max(leaves, key=lambda leaf: len(_dumps({"": leaf[2]})))
+        # JSON bytes per char of this string (escapes, multi-byte) so one clip lands under target
+        per_char = max(1.0, (len(_dumps({"": text})) - 6) / max(1, len(text)))
+        keep = max(0, len(text) - int(excess / per_char) - 24)  # 24 ≈ the marker's own bytes
+        if keep >= len(text) or len(text) <= 24:
+            break
+        node[key] = f"{text[:keep]}…[+{len(text) - keep} chars]"
+    out["omitted"] = {"why": f"line capped at EDP8_FEED_EVENT_B={budget} bytes", "fetch": _fetch_hint(obj)[:200]}
+    return out
 
 
 def _print(obj: dict) -> None:
+    line = _dumps(cap_line(obj))
     with _out_lock:
-        sys.stdout.write(json.dumps(obj, default=str) + "\n")
+        sys.stdout.write(line + "\n")
         sys.stdout.flush()
 
 
