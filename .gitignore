@@ -32,6 +32,7 @@ claude/scratch/
 *.png
 # Exception: README visual assets are tracked
 !docs/assets/**
+!docs/readme/**
 claude/.recipes/
 claude/.plans/
 claude/.specs/
