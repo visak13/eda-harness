@@ -644,6 +644,15 @@ def epic_page(board: Board, epic_id: str, include: str | None = None) -> dict[st
                         for ev in board.open_gates(epic_id)]
     crits = board.criteria(epic_id)
     epic = board.ticket(epic_id)
+    # S-LIBRARY c-14e93ebfc7: the Library docs linked to this epic (what its stories' briefs index),
+    # with the link id so the page / Library can unlink
+    knowledge = []
+    for lk in board.links(from_id=epic_id):
+        if lk.relation.value not in ("uses_strategy", "uses_domain"):
+            continue
+        d = board.store.get("doc", lk.to_id)
+        if d is not None:
+            knowledge.append({**board._doc_summary(d, 160), "link_id": lk.id, "relation": lk.relation.value})
     # Ruling #32/#33: `words` are the owner's verbatim request, `title` the short human title, and
     # `description` the architect's brief (the SPA's "Architect's brief" card).
     return {"board": bd, "words": bd.get("words"), "title": epic.title, "description": epic.description,
@@ -655,7 +664,7 @@ def epic_page(board: Board, epic_id: str, include: str | None = None) -> dict[st
             # who the live resident architect is (t-cf353a4051): {id, state}
             "architect": bd.get("architect"),
             "counts": bd.get("counts"),
-            **thread, "docs": docs, "open_gates": bd.get("open_gates", []),
+            **thread, "docs": docs, "knowledge": knowledge, "open_gates": bd.get("open_gates", []),
             "answerable_gates": answerable_gates,
             "criteria": [{"id": c.id, "text": c.text, "check": c.check.value,
                           "checked_by": c.checked_by, "verdict": c.verdict.value,

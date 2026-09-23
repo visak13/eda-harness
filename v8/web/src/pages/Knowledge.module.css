@@ -1,0 +1,183 @@
+/* S-LIBRARY: the Library's knowledge section — strategies, domains, lessons. */
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.search {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.spacer {
+  flex: 1 1 0;
+}
+.proposedBanner {
+  margin: 0 0 16px;
+}
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 24px;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 16px;
+  color: var(--ink);
+  font: inherit;
+}
+.row:hover {
+  border-color: var(--strongline);
+}
+.row:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 3px;
+}
+.rowSelected {
+  border-color: var(--accentink);
+  box-shadow: inset 3px 0 0 var(--accentink);
+}
+.rowTitle {
+  font-size: 14px;
+  line-height: 22px;
+  overflow-wrap: anywhere;
+}
+.rowMeta {
+  grid-column: 2 / 4;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+.status {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--strongline);
+  color: var(--ink);
+  white-space: nowrap;
+}
+.statusProposed {
+  background: var(--accentwash);
+  color: var(--accentink);
+}
+.statusRetired {
+  color: var(--muted);
+}
+.lesson {
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--ink);
+}
+.detail {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  min-width: 0;
+}
+.detailTitle {
+  margin: 0;
+  font: 400 22px/30px Georgia, serif;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.diff {
+  margin: 0;
+  max-height: 360px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  font: 12px/18px Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.diffAdd {
+  display: block;
+  background: var(--successwash);
+  color: var(--ink);
+}
+.diffDel {
+  display: block;
+  background: var(--accentwash);
+  color: var(--ink);
+}
+.diffCtx {
+  display: block;
+  color: var(--muted);
+}
+.linked {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.linkedRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 14px;
+  color: var(--ink);
+}
+.linkedTitle {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.linkForm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.linkForm select {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.muted {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}

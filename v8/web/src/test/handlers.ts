@@ -44,3 +44,36 @@ export const handlers = [
     new HttpResponse(new ReadableStream(), { headers: { "content-type": "text/event-stream" } }),
   ),
 ];
+
+// S-LIBRARY: a knowledge view with one active linked strategy, one proposal for it, and a lesson
+// (GET /v1/knowledge shape — library.knowledge_view).
+export const KNOWLEDGE_VIEW = {
+  docs: [
+    {
+      id: "strategyhl-2", doc_type: "strategy_hl", title: "py craft v2", version: 1, scope: "global", tags: ["python"],
+      status: "proposed", proposes: "strategyhl-1", summary: "- rule one", full: "doc_read(id)", created_by: "engineer.s-1",
+      created_at: "2026-09-23T10:00:00Z", source: { participant: "engineer.s-1", ticket: "s-1" }, source_url: null,
+      resolution: null, linked: [],
+    },
+    {
+      id: "strategyhl-1", doc_type: "strategy_hl", title: "py craft", version: 3, scope: "global", tags: ["python", "testing"],
+      status: "active", summary: "- rule one", full: "doc_read(id)", created_by: "owner", created_at: "2026-09-20T10:00:00Z",
+      source: null, source_url: null, resolution: null,
+      linked: [{ link_id: "lk-1", ticket_id: "epic-1", kind: "epic", title: "The epic", relation: "uses_strategy" }],
+    },
+    {
+      id: "domain-1", doc_type: "domain", title: "board domain", version: 1, scope: "global", tags: ["board"],
+      status: "retired", summary: "", full: "doc_read(id)", created_by: "owner", created_at: "2026-09-19T10:00:00Z",
+      source: null, source_url: null, resolution: "rejected", linked: [],
+    },
+  ],
+  lessons: [{ id: "les-1", domain: "operations", topic: "restart", text: "restart the board by pid", status: "live",
+    created_by: "owner", created_at: "2026-09-18T10:00:00Z" }],
+  tags: ["board", "python", "testing"],
+  epics: [{ id: "epic-1", title: "The epic", status: "in_progress" }, { id: "epic-2", title: "Other epic", status: "ready" }],
+};
+export const KNOWLEDGE_DIFF = {
+  id: "strategyhl-2", status: "proposed", base_id: "strategyhl-1", base_version: 3, title_changed: true,
+  base_title: "py craft", title: "py craft v2",
+  diff: "--- strategyhl-1 v3 (active)\n+++ strategyhl-2 v1 (proposed)\n@@ -1 +1,2 @@\n- rule one\n+- rule two\n",
+};

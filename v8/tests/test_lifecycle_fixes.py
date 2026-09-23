@@ -162,7 +162,7 @@ def test_ruleset_skips_dangling_layer(client, rig, board):
     board.store.put("link", Link(id="lk-bad", from_id=d["id"], to_id=rig["epic"], relation=Relation.extends,
                                  created_by="arch"))
     out = ALL_TOOLS["assemble_ruleset"].handler(
-        ALL_TOOLS["assemble_ruleset"].args_model(ticket_id=rig["epic"]))
+        ALL_TOOLS["assemble_ruleset"].args_model(ticket_id=rig["epic"], full=True))
     assert out["ok"], out
     assert out["value"]["skipped_layers"] == [rig["epic"]]
     assert any("rule one" in x["text"] for x in out["value"]["constructive"])

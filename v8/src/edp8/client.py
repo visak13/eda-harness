@@ -148,9 +148,12 @@ class BoardClient:
                                    "evidence_version": evidence_version, "stale_ok": stale_ok})
 
     # ------------------------------------------------------------------ docs / links / artifacts
-    def doc_create(self, doc_type: str, title: str, body_md: str, scope: str) -> dict[str, Any]:
-        return self._request("POST", "/v1/docs",
-                             json={"doc_type": doc_type, "title": title, "body_md": body_md, "scope": scope})
+    def doc_create(self, doc_type: str, title: str, body_md: str, scope: str, tags: list[str] | None = None,
+                   status: str | None = None, proposes: str | None = None,
+                   ticket_id: str | None = None) -> dict[str, Any]:
+        body: dict[str, Any] = {"doc_type": doc_type, "title": title, "body_md": body_md, "scope": scope}
+        extra = {"tags": tags, "status": status, "proposes": proposes, "ticket_id": ticket_id}
+        return self._request("POST", "/v1/docs", json={**body, **{k: v for k, v in extra.items() if v is not None}})
 
     def doc_read(self, id_: str, version: int | None = None, offset: int | None = None,
                  limit: int | None = None, section: str | None = None) -> dict[str, Any]:
@@ -162,14 +165,14 @@ class BoardClient:
                              json={"expected_version": expected_version, "edits": edits, "title": title})
 
     def doc_query(self, doc_type: str | None = None, scope: str | None = None,
-                  owner_role: str | None = None) -> dict[str, Any]:
+                  owner_role: str | None = None, tag: str | None = None, status: str | None = None) -> dict[str, Any]:
         return self._request("GET", "/v1/docs", params={"doc_type": doc_type, "scope": scope,
-                                                         "owner_role": owner_role})
+                                                         "owner_role": owner_role, "tag": tag, "status": status})
 
     def doc_update(self, id_: str, body_md: str | None = None, title: str | None = None,
-                   compact: bool = False) -> dict[str, Any]:
+                   compact: bool = False, tags: list[str] | None = None) -> dict[str, Any]:
         return self._request("PATCH", f"/v1/docs/{id_}",
-                             json={"body_md": body_md, "title": title, "compact": compact})
+                             json={"body_md": body_md, "title": title, "compact": compact, "tags": tags})
 
     def link_create(self, from_id: str, to_id: str, relation: str) -> dict[str, Any]:
         return self._request("POST", "/v1/links", json={"from_id": from_id, "to_id": to_id, "relation": relation})

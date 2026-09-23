@@ -43,16 +43,18 @@ interface Summary {
 const NAV = [
   { to: "/epics", label: "Epics", icon: "epics", count: "epics" as const, copy: "epics" },
   { to: "/seats", label: "Seats", icon: "seats", count: "seats" as const, copy: "seats" },
+  // S-LIBRARY (owner m-5b3db5cb0d "sme tab? sure"): knowledge first; the records tabs sit beside it
+  { to: "/library/knowledge", label: "Library", icon: "library", count: null, copy: "library" },
 ] as const;
 
 // Human #38 (m-4e303d7b27, 2026-09-11): the sidebar highlight is by ROUTE FAMILY, not by exact path.
-export function navFamily(pathname: string, search = ""): "/me" | "/epics" | "/seats" | "/library/tickets" | "/settings" | null {
+export function navFamily(pathname: string, search = ""): "/me" | "/epics" | "/seats" | "/library/knowledge" | "/settings" | null {
   if (pathname === "/me" || pathname.startsWith("/me/")) return "/me";
   if (/^\/(epics|epic|ticket|records)(\/|$)/.test(pathname)) return "/epics";
   if (/^\/seats(\/|$)/.test(pathname)) return "/seats";
   // S19 D11: a design opened in its own tab from a review belongs to the source's (Epics) family.
   if (/^\/doc\//.test(pathname) && new URLSearchParams(search).has("source")) return "/epics";
-  if (/^\/(library|doc|artifact)(\/|$)/.test(pathname)) return "/library/tickets";
+  if (/^\/(library|doc|artifact)(\/|$)/.test(pathname)) return "/library/knowledge";
   if (/^\/settings(\/|$)/.test(pathname)) return "/settings";
   return null;
 }
@@ -182,7 +184,7 @@ function AppShellChrome(): React.JSX.Element {
               {...copyProps("sidebar", item.copy)}>
               <span className={styles.icon} data-nav-icon><Icon name={item.icon} size={18} /></span>
               <span className={styles.navLabel}>{item.label}</span>
-              {counts && typeof counts[item.count] === "number" ? <span className={styles.count}>{counts[item.count]}</span> : null}
+              {item.count && counts && typeof counts[item.count] === "number" ? <span className={styles.count}>{counts[item.count]}</span> : null}
             </Link>
           ))}
           <div className={styles.divider} />

@@ -9,7 +9,10 @@ import type {
   ConversationRow,
   ReplyRow,
   DecisionsHome,
+  DocDiff,
   DocHtml,
+  DocRecord,
+  KnowledgeView,
   EpicPage,
   EpicSummaryRow,
   Library,
@@ -189,9 +192,29 @@ export const rewordCriterion = (id: string, text: string) =>
 export const createLink = (b: { from_id: string; to_id: string; relation: string }) =>
   postJson<Record<string, unknown>>("/v1/links", b);
 
-/** PATCH /v1/docs/{id} — revise a doc's body/title; the board records it as a new version. */
-export const updateDoc = (id: string, b: { body_md?: string; title?: string }) =>
+/** PATCH /v1/docs/{id} — revise a doc's body/title/tags; the board records it as a new version. */
+export const updateDoc = (id: string, b: { body_md?: string; title?: string; tags?: string[] }) =>
   postJson<Record<string, unknown>>(`/v1/docs/${encodeURIComponent(id)}`, b, "PATCH");
+
+// ------------------------------------------------------------------ S-LIBRARY (design-34bf11cc07 §4.3)
+/** GET /v1/knowledge — strategies, domains (all statuses, with linked tickets) and lessons. */
+export const getKnowledge = () => api<KnowledgeView>("/v1/knowledge");
+export const getDoc = (id: string) => api<DocRecord>(`/v1/docs/${encodeURIComponent(id)}`);
+export const getDocDiff = (id: string) => api<DocDiff>(`/v1/docs/${encodeURIComponent(id)}/diff`);
+/** POST /v1/docs — the owner authors a knowledge doc (active). */
+export const createKnowledgeDoc = (b: { doc_type: string; title: string; body_md: string; tags: string[]; scope?: string }) =>
+  postJson<DocRecord>("/v1/docs", { scope: "global", ...b });
+/** Approve: a proposal for an active doc becomes its next version; a free-standing one becomes active. */
+export const approveDoc = (id: string) =>
+  postJson<{ doc: DocRecord; target: DocRecord | null }>(`/v1/docs/${encodeURIComponent(id)}/approve`, {});
+export const rejectDoc = (id: string) =>
+  postJson<{ doc: DocRecord; target: null }>(`/v1/docs/${encodeURIComponent(id)}/reject`, {});
+/** POST /v1/library/import — one bounded server-side fetch of a skills.sh skill → a strategy_hl doc. */
+export const importSkill = (b: { url: string; tags?: string[] }) =>
+  postJson<{ doc: DocRecord; created: boolean; fetched: string }>("/v1/library/import", b);
+/** DELETE /v1/links/{id} — unlink (e.g. a Library doc from an epic). */
+export const deleteLink = (id: string) =>
+  apiEnvelope<{ deleted: boolean }>(`/v1/links/${encodeURIComponent(id)}`, { method: "DELETE" });
 
 /** GET / PUT /v1/me/settings — the Settings page (s-7f663c6322). Humans only; the board 403s a seat. */
 export const getSettings = () => api<UserSettings>("/v1/me/settings");

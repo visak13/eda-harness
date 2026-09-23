@@ -38,7 +38,7 @@ export const appRoutes: RouteObject[] = [
       { path: "artifact/:id", element: <ArtifactPage /> },
       { path: "seats", element: <SeatsPage /> },
       { path: "settings", element: <SettingsPage /> },
-      { path: "library", element: <RedirectTo to="/library/tickets" /> },
+      { path: "library", element: <RedirectTo to="/library/knowledge" /> },
       { path: "library/:section", element: <LibraryPage /> },
       // Legacy paths keep their shape but redirect to Library (preserving ?as=).
       { path: "tickets", element: <RedirectTo to="/library/tickets" /> },

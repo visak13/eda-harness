@@ -1,0 +1,16 @@
+{
+ "leaves": [
+  "strategyll-37c460a141",
+  "strategyll-c8c1590897"
+ ],
+ "before_tokens_inlined": 8270,
+ "after_tokens_inlined": 4794,
+ "before_json_bytes": 48849,
+ "after_json_bytes": 27103,
+ "enforced_lines": 129,
+ "constructive_lines_moved_to_on_demand": 168,
+ "index": [
+  "strategyll-37c460a141 \u00b7 strategy_ll: React + TypeScript + Vite craft bars for v8/web (Folio board SPA) \u2014 layout, envelope client, identity adapter, themes+contrast, a11y, Query/SSE/draft-guard, msw, Playwright fixture, geometry fidelity, screenshot policy, npm hygiene (strategy_ll) \u00b7 untagged \u00b7 ~8586 tokens",
+  "strategyll-c8c1590897 \u00b7 craft: project bars (strategy_ll) \u00b7 untagged \u00b7 ~30 tokens"
+ ]
+}

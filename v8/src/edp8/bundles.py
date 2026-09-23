@@ -26,7 +26,7 @@ import typing
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from pydantic import AliasChoices, BaseModel, Field, ValidationError
 
@@ -993,6 +993,11 @@ class DocCreateArgs(BaseModel):
     title: str
     body_md: str
     scope: str = Field(description='epic id | domain:<name> | global')
+    tags: list[str] | None = Field(default=None, description='knowledge tags')
+    status: Literal["active", "proposed"] | None = Field(
+        default=None, description='proposed: owner approves')
+    proposes: str | None = Field(default=None, description='active doc id it revises')
+    ticket_id: str | None = Field(default=None, description='source ticket')
 
 
 class DocReadArgs(BaseModel):
@@ -1011,12 +1016,15 @@ class DocQueryArgs(BaseModel):
     doc_type: DocType | None = None
     scope: str | None = None
     owner_role: Role | None = None
+    tag: str | None = None
+    status: Literal["active", "proposed", "retired"] | None = None
 
 
 class DocUpdateArgs(BaseModel):
     id: str = Field()
     body_md: str | None = None
     title: str | None = None
+    tags: list[str] | None = Field(default=None, description='replaces the tag list')
     compact: bool = Field(default=False, description='return only a receipt')
 
 
@@ -1037,7 +1045,8 @@ class LinkDeleteArgs(BaseModel):
 
 
 def _doc_create(a: DocCreateArgs) -> dict[str, Any]:
-    return get_client().doc_create(doc_type=a.doc_type, title=a.title, body_md=a.body_md, scope=a.scope)
+    return get_client().doc_create(doc_type=a.doc_type, title=a.title, body_md=a.body_md, scope=a.scope,
+                                   tags=a.tags, status=a.status, proposes=a.proposes, ticket_id=a.ticket_id)
 
 
 def _doc_read(a: DocReadArgs) -> dict[str, Any]:
@@ -1045,11 +1054,12 @@ def _doc_read(a: DocReadArgs) -> dict[str, Any]:
 
 
 def _doc_query(a: DocQueryArgs) -> dict[str, Any]:
-    return get_client().doc_query(doc_type=a.doc_type, scope=a.scope, owner_role=a.owner_role)
+    return get_client().doc_query(doc_type=a.doc_type, scope=a.scope, owner_role=a.owner_role,
+                                  tag=a.tag, status=a.status)
 
 
 def _doc_update(a: DocUpdateArgs) -> dict[str, Any]:
-    return get_client().doc_update(a.id, body_md=a.body_md, title=a.title, compact=a.compact)
+    return get_client().doc_update(a.id, body_md=a.body_md, title=a.title, compact=a.compact, tags=a.tags)
 
 
 def _doc_edit(a: DocEditArgs) -> dict[str, Any]:
@@ -1742,6 +1752,7 @@ KNOWLEDGE_TOOLS = [
 class AssembleRulesetArgs(BaseModel):
     ticket_id: str | None = Field(default=None, description='use its linked strategy/domain docs (inherited up the chain)')
     doc_ids: list[str] | None = Field(default=None, description='explicit leaf doc ids instead')
+    full: bool = Field(default=False, description='also inline constructive lines')
 
 
 def _ruleset_leaves_for_ticket(c: BoardClient, ticket_id: str) -> list[str]:
@@ -1782,7 +1793,14 @@ def _assemble_ruleset(a: AssembleRulesetArgs) -> dict[str, Any]:
         if not got.get("ok"):
             return None
         v = got["value"]
-        return LayerDoc(id=v["id"], title=v["title"], doc_type=v["doc_type"], body_md=v["body_md"])
+        return LayerDoc(id=v["id"], title=v["title"], doc_type=v["doc_type"], body_md=v["body_md"],
+                        tags=v.get("tags") or [])
+
+    def readable(doc_id: str) -> bool:
+        # S-LIBRARY: only an active doc is a layer — a proposed one is unapproved, a retired one out of
+        # use; both are skipped like a dangling layer and named in skipped_layers
+        got = c.doc_read(doc_id)
+        return bool(got.get("ok")) and (got["value"].get("status") or "active") == "active"
 
     def extends_of(doc_id: str) -> list[str]:
         links = c.link_query(from_id=doc_id, relation=Relation.extends.value)
@@ -1790,25 +1808,26 @@ def _assemble_ruleset(a: AssembleRulesetArgs) -> dict[str, Any]:
         for lk in links.get("value") or []:
             # a dangling/non-doc layer (legacy extends pointing at a ticket) is SKIPPED
             # loudly, never a hard failure that strips the checker of its whole brief
-            if c.doc_read(lk["to_id"]).get("ok"):
+            if readable(lk["to_id"]):
                 out.append(lk["to_id"])
             else:
                 skipped.append(lk["to_id"])
         return out
 
-    leaves2 = [x for x in leaves if c.doc_read(x).get("ok")]
+    leaves2 = [x for x in leaves if readable(x)]
     skipped += [x for x in leaves if x not in leaves2]
     if not leaves2:
         return {"ok": False, "error": {"code": "not_found", "message": f"no readable leaf docs (skipped: {skipped})"},
                 "hint": "re-link the ticket's uses_strategy/uses_domain to existing docs"}
     try:
-        out = assemble_ruleset(load, extends_of, leaves2)
+        out = assemble_ruleset(load, extends_of, leaves2, full=a.full)
     except AssembleError as e:
         return {"ok": False, "error": {"code": "precondition", "message": e.instruction}, "hint": ""}
-    hint = "apply constructive in full while building; enforced is the adherence view a checker verifies"
+    hint = ("enforced is inlined (the adherence view a checker verifies); `index` lists each linked doc — "
+            "doc_read(id) the ones your work touches for the constructive craft")
     if out.oversize:
-        hint = f"OVERSIZE (~{out.approx_tokens} tokens): the layering is a scoping defect — split it, don't truncate"
-    value = out.model_dump()
+        hint = f"OVERSIZE (~{out.approx_tokens} inlined tokens): the layering is a scoping defect — split it, don't truncate"
+    value = out.model_dump(exclude_none=True)
     if skipped:
         value["skipped_layers"] = skipped
         hint += f"; NOTE: {len(skipped)} dangling layer(s) skipped: {skipped}"
@@ -1817,9 +1836,9 @@ def _assemble_ruleset(a: AssembleRulesetArgs) -> dict[str, Any]:
 
 RULESET_TOOLS = [
     ToolDef("assemble_ruleset",
-            "Compose a ticket's layered ruleset from its strategy/domain docs into a constructive and an enforced view",
+            "Compose a ticket's layered ruleset from its strategy/domain docs: enforced lines inlined, each doc one index line",
             'at the start of a story/task, for your working brief',
-            'the layers and both views, or a cycle/missing-layer error',
+            'enforced lines + a doc index (full adds constructive), or a cycle/missing-layer error',
             AssembleRulesetArgs, _assemble_ruleset, "ruleset"),
 ]
 

@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getEpicPage, getEpicsSummary, getTicketsTable } from "../api/endpoints";
 import { getPoolCapabilities, resumeSeat } from "../api/seats";
 import { BoardApiError } from "../api/client";
-import type { CriterionView, EpicSummaryRow, EpicTreeNode, MessageView, PoolCapabilities, TicketStatus } from "../api/types";
+import type { CriterionView, EpicKnowledgeRow, EpicSummaryRow, EpicTreeNode, MessageView, PoolCapabilities, TicketStatus } from "../api/types";
 import { StatusChip } from "../components/StatusChip";
 import { ProcessStrip } from "../components/ProcessStrip";
 import { StatusControl } from "../components/StatusControl";
@@ -142,7 +142,7 @@ export function EpicPage(): React.JSX.Element {
         <div className={ui.sectionLabel}>Process</div>
         <ProcessStrip status={epic.status} ariaLabel="Epic process" />
       </section>
-      <OverviewTab epicId={id} storyCount={stories.length} totals={totals} openGates={data.open_gates.length} docs={data.docs} criteria={data.criteria} />
+      <OverviewTab epicId={id} storyCount={stories.length} totals={totals} openGates={data.open_gates.length} docs={data.docs} knowledge={data.knowledge ?? []} criteria={data.criteria} />
       <WorkTab epicId={id} epic={epic} stories={stories} />
     </div>
   );
@@ -219,9 +219,9 @@ function DocLink({ id }: { id: string | null }): React.JSX.Element {
   return <button type="button" className={styles.docLink} onClick={() => drawer.openDoc(id)}>{id}</button>;
 }
 
-function OverviewTab({ epicId, storyCount, totals, openGates, docs, criteria }: {
+function OverviewTab({ epicId, storyCount, totals, openGates, docs, knowledge, criteria }: {
   epicId: string; storyCount: number; totals: { passed: number; total: number }; openGates: number;
-  docs: { id: string; doc_type: string; title: string }[]; criteria: CriterionView[];
+  docs: { id: string; doc_type: string; title: string }[]; knowledge: EpicKnowledgeRow[]; criteria: CriterionView[];
 }): React.JSX.Element {
   const drawer = useDocDrawer();
   const design = docs.find((d) => d.doc_type === "design");
@@ -235,6 +235,23 @@ function OverviewTab({ epicId, storyCount, totals, openGates, docs, criteria }: 
             `${openGates} open ${openGates === 1 ? "gate" : "gates"}`}
       </p>
       {design ? <p className={ui.empty}>Design: <button type="button" className={styles.docLink} onClick={() => drawer.openDoc(design.id)}>{design.title}</button></p> : null}
+      {/* S-LIBRARY c-14e93ebfc7: the Library docs this epic's briefs index (link/unlink in the Library) */}
+      <div className={ui.sectionLabel}>Knowledge ({knowledge.length})</div>
+      {knowledge.length === 0 ? (
+        <p className={ui.empty} data-testid="epic-knowledge-empty">
+          No Library docs linked. <Link to="/library/knowledge">Link one from the Library</Link>.
+        </p>
+      ) : (
+        <ul className={styles.knowledge} data-testid="epic-knowledge">
+          {knowledge.map((k) => (
+            <li key={k.link_id}>
+              <span className={ui.tag}>{k.relation === "uses_domain" ? "domain" : "strategy"}</span>{" "}
+              <Link to={`/library/knowledge?k=${encodeURIComponent(k.id)}`}>{k.title}</Link>{" "}
+              <span className={ui.idMono}>v{k.version}{k.tags?.length ? ` · ${k.tags.join(", ")}` : ""}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className={ui.sectionLabel}>Acceptance criteria ({criteria.length})</div>
       {criteria.length === 0 ? (
         <p className={ui.empty}>No acceptance criteria on the epic itself. Add one under Actions.</p>

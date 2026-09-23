@@ -34,12 +34,13 @@ beforeEach(() => {
 });
 
 describe("AppShell", () => {
-  it("renders Epics, Seats and Needs you without duplicate Library destination", async () => {
+  it("renders Epics, Seats, Library and Needs you (one Library destination)", async () => {
     renderShell("/me");
     const links = screen.getAllByRole("link");
     expect(links.map((l) => l.textContent?.replace(/\d+$/, "").trim())).toEqual([
       "Epics",
       "Seats",
+      "Library",
       "Needs you",
     ]);
     // NavLink marks the active route with aria-current=page.
@@ -152,6 +153,9 @@ describe("AppShell nav route families (human #38)", () => {
     ["/ticket/s-abc", "Epics"],
     ["/seats", "Seats"],
     ["/seats#engineer.s-1", "Seats"],
+    ["/library/knowledge", "Library"],
+    ["/library/tickets", "Library"],
+    ["/doc/strategyhl-1", "Library"],
 
   ];
   for (const [path, label] of cases) {

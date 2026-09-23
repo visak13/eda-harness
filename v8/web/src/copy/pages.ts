@@ -28,7 +28,7 @@ export const SIDEBAR: PageCopy = {
     { key: "decisions", label: "Decisions", text: "everything waiting on you: sign-offs, questions, gates, replies. Source: your inbox (events the board judged relevant to you).", control: true },
     { key: "epics", label: "Epics", text: "every epic in the fleet with its progress. Source: /v1/epics/summary.", control: true },
     { key: "seats", label: "Seats", text: "every agent shell, alive or closed, and what it last said. Source: pool sessions mirrored into the board.", control: true },
-    { key: "library", label: "Library", text: "every document, artifact and ticket, searchable. Source: the board's records.", control: true },
+    { key: "library", label: "Library", text: "knowledge first — strategies, domains and lessons every epic can link (approve proposals, import from skills.sh) — then every document, artifact and ticket. Source: /v1/knowledge and the board's records.", control: true },
     { key: "find", label: "Find (Ctrl K)", text: "full-text search across tickets, documents, messages and seats; Enter opens the hit.", control: true },
     { key: "identity", label: "Account (bottom)", text: "who you are on this board; opens the account menu: Settings, What am I looking at?, theme, avatar. Source: /v1/whoami.", control: true },
     { key: "new-epic", label: "New epic", text: "on the Epics page: records your words verbatim as a new epic and offers to spawn its architect; the preview lists who is woken before you confirm.", control: true },
@@ -112,8 +112,12 @@ export const PAGES: Record<string, PageCopy> = {
   library: {
     key: "library",
     title: "Library",
-    framing: "Every record on the board: documents, artifacts, links, tickets; seven filters.",
-    items: [{ key: "filters", label: "Filters", text: "type, epic, author, status, date, tag, text. Row click opens the record.", control: true }],
+    framing: "Knowledge every epic can use (strategies, domains, lessons), then every record on the board: documents, artifacts, links, tickets.",
+    items: [
+      { key: "knowledge", label: "Knowledge", text: "search, kind, tag and status filters; a doc opens to read, edit (a new version), approve or reject a proposal against its diff, and link or unlink it to an epic. Linked docs reach that epic's briefs as one index line, read on demand.", control: true },
+      { key: "import", label: "Import from skills.sh", text: "a skills.sh skill page or raw SKILL.md URL; the board fetches it once and files a high-level strategy with the skill's tags; the same URL again is the next version.", control: true },
+      { key: "filters", label: "Filters", text: "type, epic, author, status, date, tag, text. Row click opens the record.", control: true },
+    ],
   },
   settings: {
     key: "settings",

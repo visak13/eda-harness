@@ -39,6 +39,7 @@ from .schemas import (
     Decision,
     DecisionStatus,
     Doc,
+    DocStatus,
     DocType,
     Event,
     EventKind,
@@ -61,6 +62,7 @@ from .schemas import (
     TicketStatus,
     Verdict,
     WorkType,
+    normalize_tags,
     now,
 )
 from .store import Store, new_id
@@ -1047,20 +1049,105 @@ class Board:
             self._after_status(t)
 
     # ------------------------------------------------------------------ docs / links
-    def doc_create(self, actor: Participant, *, doc_type: DocType, title: str, body_md: str, scope: str) -> Doc:
-        if actor.role not in DOC_AUTHORS[doc_type]:
+    def doc_create(self, actor: Participant, *, doc_type: DocType, title: str, body_md: str, scope: str,
+                   tags: list[str] | None = None, status: DocStatus | None = None, proposes: str | None = None,
+                   ticket_id: str | None = None, source_url: str | None = None) -> Doc:
+        """S-LIBRARY: `status=proposed` is a suggestion any seat may file (the owner approves it in the
+        Library); `proposes` names the active doc it would become the next version of. Every other
+        doc is authored per DOC_AUTHORS and starts active."""
+        status = DocStatus(status or DocStatus.active)
+        if status == DocStatus.retired:
+            raise BoardError("invalid", "a doc cannot be created retired", "create it active or proposed")
+        if status == DocStatus.active and proposes:
+            raise BoardError("invalid", "`proposes` is for a proposed doc", "pass status=proposed")
+        if status == DocStatus.active and actor.role not in DOC_AUTHORS[doc_type]:
             raise BoardError("scope", f"{actor.role} may not author {doc_type} docs",
-                             f"authors: {sorted(r.value for r in DOC_AUTHORS[doc_type])}")
+                             f"authors: {sorted(r.value for r in DOC_AUTHORS[doc_type])}; "
+                             "or file it with status=proposed for the owner to approve")
+        if proposes:
+            target = self._get("doc", proposes, "doc")
+            if target.doc_type != doc_type:
+                raise BoardError("invalid", f"{proposes} is a {target.doc_type} doc, not {doc_type}",
+                                 "propose a new version with the target's doc_type")
+            if target.status != DocStatus.active:
+                raise BoardError("invalid", f"{proposes} is {target.status}; only an active doc takes a proposal")
         d = Doc(id=new_id(doc_type.value.replace('_', '')), doc_type=doc_type, title=title, body_md=body_md,
-                owner_role=actor.role, scope=scope, created_by=actor.id)
+                owner_role=actor.role, scope=scope, created_by=actor.id, tags=normalize_tags(tags),
+                status=status, proposes=proposes, source_url=source_url,
+                source={"participant": actor.id, "ticket": ticket_id} if status == DocStatus.proposed else None)
         self.store.put("doc", d)
         self._index("doc", d.id, f"{title}\n{body_md}")
-        self._emit(d.id, EventKind.doc_updated, {"version": 1, "doc_type": doc_type, "scope": scope, "by": actor.id})
+        self._emit(d.id, EventKind.doc_updated, {"version": 1, "doc_type": doc_type, "scope": scope, "by": actor.id,
+                                                 "status": status.value, **({"proposes": proposes} if proposes else {})})
         return d
 
-    def doc_update(self, actor: Participant, id_: str, *, body_md: str | None = None, title: str | None = None) -> Doc:
+    def docs_query(self, *, doc_type: DocType | None = None, scope: str | None = None, owner_role: Role | None = None,
+                   tag: str | None = None, status: DocStatus | None = None, limit: int = 500) -> list[Doc]:
+        """doc_query with the S-LIBRARY filters. `status`/`tag` filter in Python: rows stored before the
+        fields existed carry no column, and a SQL filter would hide them (they are active, untagged)."""
+        filtered = status is not None or bool(tag)
+        docs = self.store.query("doc", {"doc_type": doc_type, "scope": scope, "owner_role": owner_role},
+                                limit=-1 if filtered else limit)
+        if status is not None:
+            docs = [d for d in docs if d.status == status]
+        if tag:
+            want = tag.strip().lower()
+            docs = [d for d in docs if want in d.tags]
+        return docs[:limit]
+
+    def doc_resolve(self, actor: Participant, id_: str, *, approve: bool) -> dict[str, Any]:
+        """The owner rules on a proposed doc. Approve: a proposal for an active doc becomes that doc's
+        next version (links keep pointing at it, so the next brief carries it) and the proposal retires;
+        a free-standing proposal becomes active. Reject: the proposal retires."""
+        if actor.role != Role.owner:
+            raise BoardError("scope", "only the owner approves or rejects a proposed doc")
         with self._lock, self.store._lock:
-            return self._doc_update_locked(actor, id_, body_md=body_md, title=title)
+            d: Doc = self._get("doc", id_, "doc")
+            if d.status != DocStatus.proposed:
+                raise BoardError("invalid", f"{id_} is {d.status}, not proposed")
+            target: Doc | None = None
+            if not approve:
+                d.status, d.resolution = DocStatus.retired, "rejected"
+            elif d.proposes:
+                target = self._get("doc", d.proposes, "doc")
+                if target.status != DocStatus.active:
+                    raise BoardError("invalid", f"{target.id} is {target.status}; reject this proposal instead")
+                target.body_md, target.title = d.body_md, d.title
+                target.tags = normalize_tags([*target.tags, *d.tags])
+                target.version += 1
+                self.store.put("doc", target)
+                self._index("doc", target.id, f"{target.title}\n{target.body_md}")
+                self._emit(target.id, EventKind.doc_updated, {"version": target.version, "doc_type": target.doc_type,
+                                                              "by": actor.id, "approved": d.id})
+                d.status, d.resolution = DocStatus.retired, f"approved -> {target.id} v{target.version}"
+            else:
+                # the proposer's role is not an author: approval must not hand it write access
+                d.status, d.resolution, d.owner_role = DocStatus.active, "approved", Role.owner
+            self.store.put("doc", d)
+            self._emit(d.id, EventKind.doc_updated, {"version": d.version, "doc_type": d.doc_type, "by": actor.id,
+                                                     "status": d.status.value, "resolution": d.resolution})
+            return {"doc": d, "target": target}
+
+    def doc_diff(self, id_: str) -> dict[str, Any]:
+        """A proposed doc against the active version it proposes (unified diff); a free-standing
+        proposal diffs against nothing, so every line shows as added."""
+        import difflib
+        d: Doc = self._get("doc", id_, "doc")
+        base: Doc | None = self.store.get("doc", d.proposes) if d.proposes else None
+        old = base.body_md if base else ""
+        diff = "\n".join(difflib.unified_diff(
+            old.splitlines(), d.body_md.splitlines(),
+            fromfile=f"{base.id} v{base.version} (active)" if base else "(none)",
+            tofile=f"{d.id} v{d.version} ({d.status})", lineterm=""))
+        return {"id": d.id, "status": d.status.value, "base_id": base.id if base else None,
+                "base_version": base.version if base else None, "diff": diff,
+                "title_changed": bool(base and base.title != d.title),
+                "base_title": base.title if base else None, "title": d.title}
+
+    def doc_update(self, actor: Participant, id_: str, *, body_md: str | None = None, title: str | None = None,
+                   tags: list[str] | None = None) -> Doc:
+        with self._lock, self.store._lock:
+            return self._doc_update_locked(actor, id_, body_md=body_md, title=title, tags=tags)
 
     def doc_edit(self, actor: Participant, id_: str, request) -> dict[str, Any]:
         from .doc_tools import edited_body, receipt
@@ -1076,14 +1163,15 @@ class Board:
             return receipt(self._doc_update_locked(actor, id_, body_md=body, title=request.title), fields)
 
     def _doc_update_locked(self, actor: Participant, id_: str, *, body_md: str | None = None,
-                           title: str | None = None) -> Doc:
+                           title: str | None = None, tags: list[str] | None = None) -> Doc:
         d: Doc = self._get("doc", id_, "doc")
         if actor.role not in DOC_AUTHORS[d.doc_type] and actor.role != d.owner_role:
             raise BoardError("scope", f"{actor.role} may not update {d.doc_type} docs")
-        if body_md is None and title is None:
+        if body_md is None and title is None and (tags is None or normalize_tags(tags) == d.tags):
             return d
         d.body_md = body_md if body_md is not None else d.body_md
         d.title = title if title is not None else d.title
+        d.tags = normalize_tags(tags) if tags is not None else d.tags
         d.version += 1
         self.store.put("doc", d)
         self._index("doc", d.id, f"{d.title}\n{d.body_md}")
@@ -1615,6 +1703,8 @@ class Board:
 
     def _doc_summary(self, d: Doc, n: int = 300) -> dict[str, Any]:
         return {"id": d.id, "doc_type": d.doc_type, "title": d.title, "version": d.version, "scope": d.scope,
+                "tags": list(d.tags), "status": d.status.value,
+                **({"proposes": d.proposes} if d.proposes else {}),
                 "summary": d.body_md[:n].strip(), "full": "doc_read(id)"}
 
     def _context_reader(self):

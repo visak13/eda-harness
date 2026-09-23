@@ -308,3 +308,20 @@
   color: var(--ink);
   white-space: pre-wrap;
 }
+
+/* S-LIBRARY: the epic's linked Library docs */
+.knowledge {
+  list-style: none;
+  margin: 0 0 20px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--ink);
+}
+.knowledge a {
+  color: var(--accentink);
+  overflow-wrap: anywhere;
+}

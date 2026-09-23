@@ -113,6 +113,28 @@ class DocType(StrEnum):
     note = "note"
 
 
+class DocStatus(StrEnum):
+    """S-LIBRARY (design-34bf11cc07 §4.3): a knowledge doc is in force (active), awaiting the owner
+    (proposed: a seat's suggested new doc or new version of an active one), or out of use (retired)."""
+    active = "active"
+    proposed = "proposed"
+    retired = "retired"
+
+
+# The knowledge kinds the Library tab lists; only these carry tags/status in practice.
+KNOWLEDGE_DOC_TYPES = ("strategy_hl", "strategy_ll", "domain")
+
+
+def normalize_tags(tags: list[str] | None) -> list[str]:
+    """Tags are lower-case words, deduped in first-seen order; blanks dropped."""
+    out: list[str] = []
+    for t in tags or []:
+        k = str(t).strip().lower()
+        if k and k not in out:
+            out.append(k)
+    return out
+
+
 class Relation(StrEnum):
     designed_by = "designed_by"
     uses_strategy = "uses_strategy"
@@ -299,6 +321,13 @@ class Doc(Obj):
     version: int = 1
     owner_role: Role
     scope: str  # epic_id | domain:<name> | global
+    # S-LIBRARY (design-34bf11cc07 §4.3). Defaults keep every stored row valid without a migration.
+    tags: list[str] = Field(default_factory=list)  # stack/product/area words, lower-case
+    status: DocStatus = DocStatus.active
+    proposes: str | None = None  # a proposed doc: the active doc id it would become the next version of
+    source: dict[str, str | None] | None = None  # a proposed doc: {participant, ticket} it came from
+    source_url: str | None = None  # an imported doc (skills.sh / raw SKILL.md): its origin, the re-import key
+    resolution: str | None = None  # a resolved proposal: "approved -> <id> v<n>" | "rejected"
 
 
 class Link(Obj):
@@ -501,6 +530,7 @@ ENUMS: dict[str, type[StrEnum]] = {
     "Verdict": Verdict,
     "CheckedBy": CheckedBy,
     "DocType": DocType,
+    "DocStatus": DocStatus,
     "Relation": Relation,
     "MessageKind": MessageKind,
     "DecisionStatus": DecisionStatus,
@@ -558,9 +588,10 @@ CRITERION_CHECKERS: set[Role] = {Role.qa, Role.owner}
 # Which roles may author which doc types.
 DOC_AUTHORS: dict[DocType, set[Role]] = {
     DocType.design: {Role.architect},
-    DocType.strategy_hl: {Role.sme},
-    DocType.strategy_ll: {Role.sme},
-    DocType.domain: {Role.sme},
+    # S-LIBRARY: the owner authors knowledge in the Library tab (lessons: record_lesson, open to the owner)
+    DocType.strategy_hl: {Role.sme, Role.owner},
+    DocType.strategy_ll: {Role.sme, Role.owner},
+    DocType.domain: {Role.sme, Role.owner},
     DocType.report: {Role.engineer, Role.adversary, Role.qa},
     DocType.note: set(Role),
 }
@@ -582,8 +613,11 @@ DESCRIBE: dict[str, str] = {
     "self-verdicted, gating nothing), owner for a knowledge ticket — criterion_create's checked_by argument is "
     "accepted for one release but ignored unless the owner also passes override_reason (recorded as a "
     "criterion_checker_overridden event). CRUD: create, read, update.",
-    "doc": "A versioned markdown knowledge unit: design (architect), strategy_hl/strategy_ll/domain (sme), "
-    "report (engineer/adversary/qa), note. Every update is a new version. CRUD: create, read, query, update.",
+    "doc": "A versioned markdown knowledge unit: design (architect), strategy_hl/strategy_ll/domain (sme, owner), "
+    "report (engineer/adversary/qa), note. Every update is a new version. Knowledge docs carry tags and a status "
+    "active|proposed|retired: any seat may file a proposed doc (proposes=<active id> for a new version of it); the "
+    "owner approves (it becomes active / the target's next version) or rejects (retired). CRUD: create, read, "
+    "query(doc_type, scope, tag, status), update.",
     "link": "A typed edge: ticket/doc -> doc/artifact/ticket with a relation. CRUD: create, query, delete.",
     "message": "One unit of a ticket's thread addressed to a participant, role, @handle or nobody. "
     "Kinds: question, answer, steer, status, finding, deviation, note. CRUD: create, read, query.",

@@ -34,6 +34,7 @@ from .schemas import (
     Check,
     ClaimBasis,
     ClaimStatus,
+    DocStatus,
     DocType,
     EventKind,
     Gate,
@@ -121,11 +122,22 @@ class DocIn(BaseModel):
     title: str
     body_md: str
     scope: str
+    tags: list[str] | None = None
+    status: DocStatus | None = None  # active (default) | proposed
+    proposes: str | None = None  # proposed: the active doc this would become the next version of
+    ticket_id: str | None = None  # proposed: the ticket it came from (its source)
+
+
+class LibraryImportIn(BaseModel):
+    url: str
+    scope: str = "global"
+    tags: list[str] | None = None
 
 
 class DocPatch(BaseModel):
     body_md: str | None = None
     title: str | None = None
+    tags: list[str] | None = None
     compact: bool = False
 
 
@@ -690,7 +702,10 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     # docs / links / artifacts ---------------------------------------------------
     @app.post("/v1/docs")
     def doc_create(b: DocIn, a: Participant = Depends(actor)):
-        d = board.doc_create(a, doc_type=b.doc_type, title=b.title, body_md=b.body_md, scope=b.scope)
+        d = board.doc_create(a, doc_type=b.doc_type, title=b.title, body_md=b.body_md, scope=b.scope,
+                             tags=b.tags, status=b.status, proposes=b.proposes, ticket_id=b.ticket_id)
+        if d.status == DocStatus.proposed:
+            return ok(_dump(d), "proposed: the owner approves or rejects it in the Library (POST /v1/docs/{id}/approve|reject)")
         if b.doc_type in (DocType.strategy_hl, DocType.strategy_ll):
             hint = ("link it: extends -> its parent layer (doc), uses_strategy -> the epic; "
                     "assemble_ruleset composes the chain at read time")
@@ -712,15 +727,44 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     @app.get("/v1/docs")
     def doc_query(doc_type: DocType | None = None, scope: str | None = None, owner_role: Role | None = None,
-                  a: Participant = Depends(actor)):
-        return ok([board._doc_summary(d) for d in board.store.query("doc", {"doc_type": doc_type, "scope": scope,
-                                                                             "owner_role": owner_role})])
+                  tag: str | None = None, status: DocStatus | None = None, a: Participant = Depends(actor)):
+        return ok([board._doc_summary(d) for d in board.docs_query(doc_type=doc_type, scope=scope,
+                                                                   owner_role=owner_role, tag=tag, status=status)])
+
+    @app.post("/v1/docs/{id_}/approve")
+    def doc_approve(id_: str, a: Participant = Depends(actor)):
+        r = board.doc_resolve(a, id_, approve=True)
+        t = r["target"]
+        return ok({"doc": _dump(r["doc"]), "target": _dump(t) if t else None},
+                  f"{t.id} is now v{t.version}; briefs linking it carry the new text" if t else f"{id_} is active")
+
+    @app.post("/v1/docs/{id_}/reject")
+    def doc_reject(id_: str, a: Participant = Depends(actor)):
+        return ok({"doc": _dump(board.doc_resolve(a, id_, approve=False)["doc"]), "target": None}, f"{id_} retired")
+
+    @app.get("/v1/docs/{id_}/diff")
+    def doc_diff(id_: str, a: Participant = Depends(actor)):
+        return ok(board.doc_diff(id_))
+
+    @app.get("/v1/knowledge")
+    def knowledge_list(a: Participant = Depends(actor)):
+        from .library import knowledge_view
+        return ok(knowledge_view(board))
+
+    @app.post("/v1/library/import")
+    def library_import(b: LibraryImportIn, a: Participant = Depends(actor)):
+        from .library import import_skill
+        r = import_skill(board, a, b.url, scope=b.scope, tags=b.tags)
+        d = r["doc"]
+        return ok({"doc": _dump(d), "created": r["created"], "fetched": r["fetched"]},
+                  (f"imported as {d.id} v1" if r["created"] else f"re-import: {d.id} is now v{d.version}")
+                  + "; link it to an epic (uses_strategy) to put it in that epic's brief index")
 
     @app.patch("/v1/docs/{id_}")
     def doc_update(id_: str, b: DocPatch, a: Participant = Depends(actor)):
         from .doc_tools import receipt
-        d = board.doc_update(a, id_, body_md=b.body_md, title=b.title)
-        return ok(receipt(d, [k for k in ("body_md", "title") if getattr(b, k) is not None])
+        d = board.doc_update(a, id_, body_md=b.body_md, title=b.title, tags=b.tags)
+        return ok(receipt(d, [k for k in ("body_md", "title", "tags") if getattr(b, k) is not None])
                   if b.compact else _dump(d))
 
     @app.post("/v1/docs/{id_}/edit")

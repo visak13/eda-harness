@@ -1,0 +1,31 @@
+rail Library link current=page
+rows=4 lessons=1
+shot 01-library-knowledge-list
+tag=python rows=1
+tag=python status=proposed rows=0
+shot 02-filters-tag-status
+search=frontend rows=1
+shot 03-proposal-diff
+shot 04-proposal-approved
+after approve: strategyll-230779176c v2 tags=python,testing,ruff
+shot 05-read-drawer
+shot 06-linked-two-epics
+unlinked Second epic
+shot 07-edit-imported
+shot 08-edited-v2
+re-import: re-import: strategyhl-0d61886760 is now v3; link it to an epic (uses_strategy) to put it in that epic's brief index
+shot 09-reimport-next-version
+shot 10-proposal-rejected
+    1) <select aria-label="Kind" data-testid="knowledge-kind" class="_select_muibz_317 _input_muibz_291">…</select> aka getByTestId('knowledge-kind')
+    2) <select id="kn-kind" class="_select_muibz_317 _input_muibz_291">…</select> aka getByTestId('knowledge-new-dialog').getByLabel('Kind')
+Call log:
+[2m  - waiting for getByLabel('Kind')[22m
+shot 11-new-doc-dialog
+Call log:
+[2m  - waiting for getByTestId('epic-knowledge') to be visible[22m
+    1) <button type="button" class="_link_urjk7_37" data-testid="work-work">…</button> aka getByTestId('work-work')
+    2) <button type="button" aria-expanded="false" aria-haspopup="dialog" class="_tool_ue8ve_132" aria-label="How sending works" data-testid="composer-help-toggle">…</button> aka getByTestId('composer-help-toggle')
+Call log:
+[2m  - waiting for getByRole('button', { name: 'Work' })[22m
+epic knowledge: strategy Python craft bars v2 · python, testing, ruff
+shot 12-epic-knowledge

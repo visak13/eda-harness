@@ -9,7 +9,7 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { http, HttpResponse } from "msw";
 import { server } from "./setup";
-import { MODEL_CATALOG } from "./handlers";
+import { KNOWLEDGE_DIFF, KNOWLEDGE_VIEW, MODEL_CATALOG } from "./handlers";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { appRoutes } from "../routes";
 
@@ -271,6 +271,8 @@ function installBoard(): void {
       new HttpResponse("hello", { headers: { "content-type": "text/plain", "content-disposition": 'attachment; filename="notes.txt"' } }),
     ),
     http.get("/v1/library", () => ok(LIBRARY)),
+    http.get("/v1/knowledge", () => ok(KNOWLEDGE_VIEW)),
+    http.get("/v1/docs/:id/diff", () => ok(KNOWLEDGE_DIFF)),
     http.get("/v1/activity", () => ok(ACTIVITY)),
     http.get("/v1/seats", () => ok(SEATS)),
     http.get("/v1/pool/capabilities", () => ok(CAPS)),
@@ -419,6 +421,13 @@ describe("dead-control lint over the real route table (human #26)", () => {
   it("/library/tickets", async () => {
     await walk("/library/tickets");
     await screen.findByTestId("tickets-table");
+    await settle();
+    expectNoDead();
+  });
+
+  it("/library/knowledge", async () => {
+    await walk("/library/knowledge?k=strategyhl-2");
+    await screen.findByTestId("knowledge-approve");
     await settle();
     expectNoDead();
   });

@@ -300,6 +300,81 @@ export interface DocSummary extends Record<string, unknown> {
   scope: string;
   summary: string;
   full: string;
+  /** S-LIBRARY: knowledge tags and status (absent on an older board = untagged, active). */
+  tags?: string[];
+  status?: DocStatus;
+  proposes?: string;
+}
+
+// ------------------------------------------------------------------ S-LIBRARY knowledge (GET /v1/knowledge)
+
+export type DocStatus = "active" | "proposed" | "retired";
+
+/** A ticket a knowledge doc is linked to (uses_strategy / uses_domain), with the link id to unlink it. */
+export interface KnowledgeLinkRow {
+  link_id: string;
+  ticket_id: string;
+  kind: string;
+  title: string;
+  relation: string;
+}
+
+export interface KnowledgeDoc extends DocSummary {
+  tags: string[];
+  status: DocStatus;
+  created_by: string;
+  created_at: ISODateString;
+  source: { participant: string; ticket: string | null } | null;
+  source_url: string | null;
+  resolution: string | null;
+  linked: KnowledgeLinkRow[];
+}
+
+export interface KnowledgeLesson {
+  id: string;
+  domain: string;
+  topic: string;
+  text: string;
+  status: string;
+  created_by: string;
+  created_at: ISODateString;
+}
+
+export interface KnowledgeView {
+  docs: KnowledgeDoc[];
+  lessons: KnowledgeLesson[];
+  tags: string[];
+  epics: { id: string; title: string; status: string }[];
+}
+
+/** GET /v1/docs/{id} — the full doc record (the Library editor reads body_md from it). */
+export interface DocRecord extends Record<string, unknown> {
+  id: string;
+  doc_type: string;
+  title: string;
+  body_md: string;
+  version: number;
+  tags?: string[];
+  status?: DocStatus;
+  versions: number[];
+}
+
+/** GET /v1/docs/{id}/diff — a proposed doc against the active version it proposes. */
+export interface DocDiff {
+  id: string;
+  status: DocStatus;
+  base_id: string | null;
+  base_version: number | null;
+  diff: string;
+  title_changed: boolean;
+  base_title?: string | null;
+  title?: string;
+}
+
+/** An epic's linked Library docs (epic page `knowledge`). */
+export interface EpicKnowledgeRow extends DocSummary {
+  link_id: string;
+  relation: string;
 }
 
 /** The seat choice every spawn on an epic inherits (owner m-2d7ef9243d), resolved by the board:
@@ -335,6 +410,8 @@ export interface EpicPage extends ThreadPage {
   counts: Record<string, number> | null;
   thread: MessageView[];
   docs: DocSummary[];
+  /** S-LIBRARY: Library docs linked to the epic (uses_strategy/uses_domain); absent on an older board. */
+  knowledge?: EpicKnowledgeRow[];
   /** The epic's short human title (human #32; falls back to the words on an older board). */
   title?: string;
   /** The architect's brief — the epic description (human #33). */

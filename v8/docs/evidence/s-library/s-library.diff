@@ -1,0 +1,2569 @@
+diff --git a/v8/src/edp8/board.py b/v8/src/edp8/board.py
+index 05ac62d..1ede07f 100644
+--- a/v8/src/edp8/board.py
++++ b/v8/src/edp8/board.py
+@@ -39,6 +39,7 @@ from .schemas import (
+     Decision,
+     DecisionStatus,
+     Doc,
++    DocStatus,
+     DocType,
+     Event,
+     EventKind,
+@@ -61,6 +62,7 @@ from .schemas import (
+     TicketStatus,
+     Verdict,
+     WorkType,
++    normalize_tags,
+     now,
+ )
+ from .store import Store, new_id
+@@ -1047,20 +1049,105 @@ class Board:
+             self._after_status(t)
+ 
+     # ------------------------------------------------------------------ docs / links
+-    def doc_create(self, actor: Participant, *, doc_type: DocType, title: str, body_md: str, scope: str) -> Doc:
+-        if actor.role not in DOC_AUTHORS[doc_type]:
++    def doc_create(self, actor: Participant, *, doc_type: DocType, title: str, body_md: str, scope: str,
++                   tags: list[str] | None = None, status: DocStatus | None = None, proposes: str | None = None,
++                   ticket_id: str | None = None, source_url: str | None = None) -> Doc:
++        """S-LIBRARY: `status=proposed` is a suggestion any seat may file (the owner approves it in the
++        Library); `proposes` names the active doc it would become the next version of. Every other
++        doc is authored per DOC_AUTHORS and starts active."""
++        status = DocStatus(status or DocStatus.active)
++        if status == DocStatus.retired:
++            raise BoardError("invalid", "a doc cannot be created retired", "create it active or proposed")
++        if status == DocStatus.active and proposes:
++            raise BoardError("invalid", "`proposes` is for a proposed doc", "pass status=proposed")
++        if status == DocStatus.active and actor.role not in DOC_AUTHORS[doc_type]:
+             raise BoardError("scope", f"{actor.role} may not author {doc_type} docs",
+-                             f"authors: {sorted(r.value for r in DOC_AUTHORS[doc_type])}")
++                             f"authors: {sorted(r.value for r in DOC_AUTHORS[doc_type])}; "
++                             "or file it with status=proposed for the owner to approve")
++        if proposes:
++            target = self._get("doc", proposes, "doc")
++            if target.doc_type != doc_type:
++                raise BoardError("invalid", f"{proposes} is a {target.doc_type} doc, not {doc_type}",
++                                 "propose a new version with the target's doc_type")
++            if target.status != DocStatus.active:
++                raise BoardError("invalid", f"{proposes} is {target.status}; only an active doc takes a proposal")
+         d = Doc(id=new_id(doc_type.value.replace('_', '')), doc_type=doc_type, title=title, body_md=body_md,
+-                owner_role=actor.role, scope=scope, created_by=actor.id)
++                owner_role=actor.role, scope=scope, created_by=actor.id, tags=normalize_tags(tags),
++                status=status, proposes=proposes, source_url=source_url,
++                source={"participant": actor.id, "ticket": ticket_id} if status == DocStatus.proposed else None)
+         self.store.put("doc", d)
+         self._index("doc", d.id, f"{title}\n{body_md}")
+-        self._emit(d.id, EventKind.doc_updated, {"version": 1, "doc_type": doc_type, "scope": scope, "by": actor.id})
++        self._emit(d.id, EventKind.doc_updated, {"version": 1, "doc_type": doc_type, "scope": scope, "by": actor.id,
++                                                 "status": status.value, **({"proposes": proposes} if proposes else {})})
+         return d
+ 
+-    def doc_update(self, actor: Participant, id_: str, *, body_md: str | None = None, title: str | None = None) -> Doc:
++    def docs_query(self, *, doc_type: DocType | None = None, scope: str | None = None, owner_role: Role | None = None,
++                   tag: str | None = None, status: DocStatus | None = None, limit: int = 500) -> list[Doc]:
++        """doc_query with the S-LIBRARY filters. `status`/`tag` filter in Python: rows stored before the
++        fields existed carry no column, and a SQL filter would hide them (they are active, untagged)."""
++        filtered = status is not None or bool(tag)
++        docs = self.store.query("doc", {"doc_type": doc_type, "scope": scope, "owner_role": owner_role},
++                                limit=-1 if filtered else limit)
++        if status is not None:
++            docs = [d for d in docs if d.status == status]
++        if tag:
++            want = tag.strip().lower()
++            docs = [d for d in docs if want in d.tags]
++        return docs[:limit]
++
++    def doc_resolve(self, actor: Participant, id_: str, *, approve: bool) -> dict[str, Any]:
++        """The owner rules on a proposed doc. Approve: a proposal for an active doc becomes that doc's
++        next version (links keep pointing at it, so the next brief carries it) and the proposal retires;
++        a free-standing proposal becomes active. Reject: the proposal retires."""
++        if actor.role != Role.owner:
++            raise BoardError("scope", "only the owner approves or rejects a proposed doc")
+         with self._lock, self.store._lock:
+-            return self._doc_update_locked(actor, id_, body_md=body_md, title=title)
++            d: Doc = self._get("doc", id_, "doc")
++            if d.status != DocStatus.proposed:
++                raise BoardError("invalid", f"{id_} is {d.status}, not proposed")
++            target: Doc | None = None
++            if not approve:
++                d.status, d.resolution = DocStatus.retired, "rejected"
++            elif d.proposes:
++                target = self._get("doc", d.proposes, "doc")
++                if target.status != DocStatus.active:
++                    raise BoardError("invalid", f"{target.id} is {target.status}; reject this proposal instead")
++                target.body_md, target.title = d.body_md, d.title
++                target.tags = normalize_tags([*target.tags, *d.tags])
++                target.version += 1
++                self.store.put("doc", target)
++                self._index("doc", target.id, f"{target.title}\n{target.body_md}")
++                self._emit(target.id, EventKind.doc_updated, {"version": target.version, "doc_type": target.doc_type,
++                                                              "by": actor.id, "approved": d.id})
++                d.status, d.resolution = DocStatus.retired, f"approved -> {target.id} v{target.version}"
++            else:
++                # the proposer's role is not an author: approval must not hand it write access
++                d.status, d.resolution, d.owner_role = DocStatus.active, "approved", Role.owner
++            self.store.put("doc", d)
++            self._emit(d.id, EventKind.doc_updated, {"version": d.version, "doc_type": d.doc_type, "by": actor.id,
++                                                     "status": d.status.value, "resolution": d.resolution})
++            return {"doc": d, "target": target}
++
++    def doc_diff(self, id_: str) -> dict[str, Any]:
++        """A proposed doc against the active version it proposes (unified diff); a free-standing
++        proposal diffs against nothing, so every line shows as added."""
++        import difflib
++        d: Doc = self._get("doc", id_, "doc")
++        base: Doc | None = self.store.get("doc", d.proposes) if d.proposes else None
++        old = base.body_md if base else ""
++        diff = "\n".join(difflib.unified_diff(
++            old.splitlines(), d.body_md.splitlines(),
++            fromfile=f"{base.id} v{base.version} (active)" if base else "(none)",
++            tofile=f"{d.id} v{d.version} ({d.status})", lineterm=""))
++        return {"id": d.id, "status": d.status.value, "base_id": base.id if base else None,
++                "base_version": base.version if base else None, "diff": diff,
++                "title_changed": bool(base and base.title != d.title),
++                "base_title": base.title if base else None, "title": d.title}
++
++    def doc_update(self, actor: Participant, id_: str, *, body_md: str | None = None, title: str | None = None,
++                   tags: list[str] | None = None) -> Doc:
++        with self._lock, self.store._lock:
++            return self._doc_update_locked(actor, id_, body_md=body_md, title=title, tags=tags)
+ 
+     def doc_edit(self, actor: Participant, id_: str, request) -> dict[str, Any]:
+         from .doc_tools import edited_body, receipt
+@@ -1076,14 +1163,15 @@ class Board:
+             return receipt(self._doc_update_locked(actor, id_, body_md=body, title=request.title), fields)
+ 
+     def _doc_update_locked(self, actor: Participant, id_: str, *, body_md: str | None = None,
+-                           title: str | None = None) -> Doc:
++                           title: str | None = None, tags: list[str] | None = None) -> Doc:
+         d: Doc = self._get("doc", id_, "doc")
+         if actor.role not in DOC_AUTHORS[d.doc_type] and actor.role != d.owner_role:
+             raise BoardError("scope", f"{actor.role} may not update {d.doc_type} docs")
+-        if body_md is None and title is None:
++        if body_md is None and title is None and (tags is None or normalize_tags(tags) == d.tags):
+             return d
+         d.body_md = body_md if body_md is not None else d.body_md
+         d.title = title if title is not None else d.title
++        d.tags = normalize_tags(tags) if tags is not None else d.tags
+         d.version += 1
+         self.store.put("doc", d)
+         self._index("doc", d.id, f"{d.title}\n{d.body_md}")
+@@ -1615,6 +1703,8 @@ class Board:
+ 
+     def _doc_summary(self, d: Doc, n: int = 300) -> dict[str, Any]:
+         return {"id": d.id, "doc_type": d.doc_type, "title": d.title, "version": d.version, "scope": d.scope,
++                "tags": list(d.tags), "status": d.status.value,
++                **({"proposes": d.proposes} if d.proposes else {}),
+                 "summary": d.body_md[:n].strip(), "full": "doc_read(id)"}
+ 
+     def _context_reader(self):
+diff --git a/v8/src/edp8/bundles.py b/v8/src/edp8/bundles.py
+index 941f10b..0786d33 100644
+--- a/v8/src/edp8/bundles.py
++++ b/v8/src/edp8/bundles.py
+@@ -26,7 +26,7 @@ import typing
+ from collections.abc import Iterator
+ from dataclasses import dataclass
+ from pathlib import Path
+-from typing import Any, Callable
++from typing import Any, Callable, Literal
+ 
+ from pydantic import AliasChoices, BaseModel, Field, ValidationError
+ 
+@@ -993,6 +993,11 @@ class DocCreateArgs(BaseModel):
+     title: str
+     body_md: str
+     scope: str = Field(description='epic id | domain:<name> | global')
++    tags: list[str] | None = Field(default=None, description='knowledge tags')
++    status: Literal["active", "proposed"] | None = Field(
++        default=None, description='proposed: owner approves')
++    proposes: str | None = Field(default=None, description='active doc id it revises')
++    ticket_id: str | None = Field(default=None, description='source ticket')
+ 
+ 
+ class DocReadArgs(BaseModel):
+@@ -1011,12 +1016,15 @@ class DocQueryArgs(BaseModel):
+     doc_type: DocType | None = None
+     scope: str | None = None
+     owner_role: Role | None = None
++    tag: str | None = None
++    status: Literal["active", "proposed", "retired"] | None = None
+ 
+ 
+ class DocUpdateArgs(BaseModel):
+     id: str = Field()
+     body_md: str | None = None
+     title: str | None = None
++    tags: list[str] | None = Field(default=None, description='replaces the tag list')
+     compact: bool = Field(default=False, description='return only a receipt')
+ 
+ 
+@@ -1037,7 +1045,8 @@ class LinkDeleteArgs(BaseModel):
+ 
+ 
+ def _doc_create(a: DocCreateArgs) -> dict[str, Any]:
+-    return get_client().doc_create(doc_type=a.doc_type, title=a.title, body_md=a.body_md, scope=a.scope)
++    return get_client().doc_create(doc_type=a.doc_type, title=a.title, body_md=a.body_md, scope=a.scope,
++                                   tags=a.tags, status=a.status, proposes=a.proposes, ticket_id=a.ticket_id)
+ 
+ 
+ def _doc_read(a: DocReadArgs) -> dict[str, Any]:
+@@ -1045,11 +1054,12 @@ def _doc_read(a: DocReadArgs) -> dict[str, Any]:
+ 
+ 
+ def _doc_query(a: DocQueryArgs) -> dict[str, Any]:
+-    return get_client().doc_query(doc_type=a.doc_type, scope=a.scope, owner_role=a.owner_role)
++    return get_client().doc_query(doc_type=a.doc_type, scope=a.scope, owner_role=a.owner_role,
++                                  tag=a.tag, status=a.status)
+ 
+ 
+ def _doc_update(a: DocUpdateArgs) -> dict[str, Any]:
+-    return get_client().doc_update(a.id, body_md=a.body_md, title=a.title, compact=a.compact)
++    return get_client().doc_update(a.id, body_md=a.body_md, title=a.title, compact=a.compact, tags=a.tags)
+ 
+ 
+ def _doc_edit(a: DocEditArgs) -> dict[str, Any]:
+@@ -1742,6 +1752,7 @@ KNOWLEDGE_TOOLS = [
+ class AssembleRulesetArgs(BaseModel):
+     ticket_id: str | None = Field(default=None, description='use its linked strategy/domain docs (inherited up the chain)')
+     doc_ids: list[str] | None = Field(default=None, description='explicit leaf doc ids instead')
++    full: bool = Field(default=False, description='also inline constructive lines')
+ 
+ 
+ def _ruleset_leaves_for_ticket(c: BoardClient, ticket_id: str) -> list[str]:
+@@ -1782,7 +1793,14 @@ def _assemble_ruleset(a: AssembleRulesetArgs) -> dict[str, Any]:
+         if not got.get("ok"):
+             return None
+         v = got["value"]
+-        return LayerDoc(id=v["id"], title=v["title"], doc_type=v["doc_type"], body_md=v["body_md"])
++        return LayerDoc(id=v["id"], title=v["title"], doc_type=v["doc_type"], body_md=v["body_md"],
++                        tags=v.get("tags") or [])
++
++    def readable(doc_id: str) -> bool:
++        # S-LIBRARY: only an active doc is a layer — a proposed one is unapproved, a retired one out of
++        # use; both are skipped like a dangling layer and named in skipped_layers
++        got = c.doc_read(doc_id)
++        return bool(got.get("ok")) and (got["value"].get("status") or "active") == "active"
+ 
+     def extends_of(doc_id: str) -> list[str]:
+         links = c.link_query(from_id=doc_id, relation=Relation.extends.value)
+@@ -1790,25 +1808,26 @@ def _assemble_ruleset(a: AssembleRulesetArgs) -> dict[str, Any]:
+         for lk in links.get("value") or []:
+             # a dangling/non-doc layer (legacy extends pointing at a ticket) is SKIPPED
+             # loudly, never a hard failure that strips the checker of its whole brief
+-            if c.doc_read(lk["to_id"]).get("ok"):
++            if readable(lk["to_id"]):
+                 out.append(lk["to_id"])
+             else:
+                 skipped.append(lk["to_id"])
+         return out
+ 
+-    leaves2 = [x for x in leaves if c.doc_read(x).get("ok")]
++    leaves2 = [x for x in leaves if readable(x)]
+     skipped += [x for x in leaves if x not in leaves2]
+     if not leaves2:
+         return {"ok": False, "error": {"code": "not_found", "message": f"no readable leaf docs (skipped: {skipped})"},
+                 "hint": "re-link the ticket's uses_strategy/uses_domain to existing docs"}
+     try:
+-        out = assemble_ruleset(load, extends_of, leaves2)
++        out = assemble_ruleset(load, extends_of, leaves2, full=a.full)
+     except AssembleError as e:
+         return {"ok": False, "error": {"code": "precondition", "message": e.instruction}, "hint": ""}
+-    hint = "apply constructive in full while building; enforced is the adherence view a checker verifies"
++    hint = ("enforced is inlined (the adherence view a checker verifies); `index` lists each linked doc — "
++            "doc_read(id) the ones your work touches for the constructive craft")
+     if out.oversize:
+-        hint = f"OVERSIZE (~{out.approx_tokens} tokens): the layering is a scoping defect — split it, don't truncate"
+-    value = out.model_dump()
++        hint = f"OVERSIZE (~{out.approx_tokens} inlined tokens): the layering is a scoping defect — split it, don't truncate"
++    value = out.model_dump(exclude_none=True)
+     if skipped:
+         value["skipped_layers"] = skipped
+         hint += f"; NOTE: {len(skipped)} dangling layer(s) skipped: {skipped}"
+@@ -1817,9 +1836,9 @@ def _assemble_ruleset(a: AssembleRulesetArgs) -> dict[str, Any]:
+ 
+ RULESET_TOOLS = [
+     ToolDef("assemble_ruleset",
+-            "Compose a ticket's layered ruleset from its strategy/domain docs into a constructive and an enforced view",
++            "Compose a ticket's layered ruleset from its strategy/domain docs: enforced lines inlined, each doc one index line",
+             'at the start of a story/task, for your working brief',
+-            'the layers and both views, or a cycle/missing-layer error',
++            'enforced lines + a doc index (full adds constructive), or a cycle/missing-layer error',
+             AssembleRulesetArgs, _assemble_ruleset, "ruleset"),
+ ]
+ 
+diff --git a/v8/src/edp8/client.py b/v8/src/edp8/client.py
+index 091fbaf..4a7ba11 100644
+--- a/v8/src/edp8/client.py
++++ b/v8/src/edp8/client.py
+@@ -148,9 +148,12 @@ class BoardClient:
+                                    "evidence_version": evidence_version, "stale_ok": stale_ok})
+ 
+     # ------------------------------------------------------------------ docs / links / artifacts
+-    def doc_create(self, doc_type: str, title: str, body_md: str, scope: str) -> dict[str, Any]:
+-        return self._request("POST", "/v1/docs",
+-                             json={"doc_type": doc_type, "title": title, "body_md": body_md, "scope": scope})
++    def doc_create(self, doc_type: str, title: str, body_md: str, scope: str, tags: list[str] | None = None,
++                   status: str | None = None, proposes: str | None = None,
++                   ticket_id: str | None = None) -> dict[str, Any]:
++        body: dict[str, Any] = {"doc_type": doc_type, "title": title, "body_md": body_md, "scope": scope}
++        extra = {"tags": tags, "status": status, "proposes": proposes, "ticket_id": ticket_id}
++        return self._request("POST", "/v1/docs", json={**body, **{k: v for k, v in extra.items() if v is not None}})
+ 
+     def doc_read(self, id_: str, version: int | None = None, offset: int | None = None,
+                  limit: int | None = None, section: str | None = None) -> dict[str, Any]:
+@@ -162,14 +165,14 @@ class BoardClient:
+                              json={"expected_version": expected_version, "edits": edits, "title": title})
+ 
+     def doc_query(self, doc_type: str | None = None, scope: str | None = None,
+-                  owner_role: str | None = None) -> dict[str, Any]:
++                  owner_role: str | None = None, tag: str | None = None, status: str | None = None) -> dict[str, Any]:
+         return self._request("GET", "/v1/docs", params={"doc_type": doc_type, "scope": scope,
+-                                                         "owner_role": owner_role})
++                                                         "owner_role": owner_role, "tag": tag, "status": status})
+ 
+     def doc_update(self, id_: str, body_md: str | None = None, title: str | None = None,
+-                   compact: bool = False) -> dict[str, Any]:
++                   compact: bool = False, tags: list[str] | None = None) -> dict[str, Any]:
+         return self._request("PATCH", f"/v1/docs/{id_}",
+-                             json={"body_md": body_md, "title": title, "compact": compact})
++                             json={"body_md": body_md, "title": title, "compact": compact, "tags": tags})
+ 
+     def link_create(self, from_id: str, to_id: str, relation: str) -> dict[str, Any]:
+         return self._request("POST", "/v1/links", json={"from_id": from_id, "to_id": to_id, "relation": relation})
+diff --git a/v8/src/edp8/library.py b/v8/src/edp8/library.py
+new file mode 100644
+index 0000000..33b5cd7
+--- /dev/null
++++ b/v8/src/edp8/library.py
+@@ -0,0 +1,201 @@
++"""The Library's knowledge side (S-LIBRARY, design-34bf11cc07 §4.3): the strategy/domain docs and
++lessons the Library tab lists, and the one-shot "Import from skills.sh".
++
++Import is a single bounded server-side fetch, never something a seat runs at boot: a skills.sh
++page URL (`https://skills.sh/<owner>/<repo>/<skill>`) resolves to the skill's raw SKILL.md on
++GitHub (the page names the repo; the file sits at `skills/<skill>/SKILL.md`, `<skill>/SKILL.md` or
++the repo root), a GitHub blob URL resolves to its raw form, and a raw SKILL.md URL is taken as is.
++Only those three hosts are fetched (no open proxy). The doc keeps `source_url` so a repeat import
++of the same URL writes the next version of that doc instead of a duplicate.
++"""
++
++from __future__ import annotations
++
++import re
++import time
++from typing import Any
++from urllib.parse import urlsplit, urlunsplit
++
++import httpx
++
++from .board import Board, BoardError
++from .schemas import KNOWLEDGE_DOC_TYPES, DocStatus, DocType, Participant, Relation, TicketKind, normalize_tags
++
++MAX_BYTES = 256 * 1024
++TIMEOUT_S = 10.0
++ALLOWED_HOSTS = ("skills.sh", "www.skills.sh", "github.com", "raw.githubusercontent.com")
++_RAW = "https://raw.githubusercontent.com"
++_SEG = re.compile(r"^[A-Za-z0-9_.\-]+$")
++
++
++# ----------------------------------------------------------------------------- knowledge view
++def knowledge_view(board: Board) -> dict[str, Any]:
++    """Every strategy/domain doc (all statuses, newest first) with its tags, provenance and the
++    epics it is linked to (uses_strategy/uses_domain, with link ids so the tab can unlink), plus
++    every lesson. `{ok, value}` envelope is the caller's."""
++    docs = [d for t in KNOWLEDGE_DOC_TYPES for d in board.store.query("doc", {"doc_type": t}, limit=2000)]
++    docs.sort(key=lambda d: d.created_at, reverse=True)
++    links = [lk for rel in (Relation.uses_strategy, Relation.uses_domain)
++             for lk in board.store.query("link", {"relation": rel}, limit=100_000)]
++    by_doc: dict[str, list[dict[str, Any]]] = {}
++    tickets: dict[str, Any] = {}
++    for lk in links:
++        t = tickets.get(lk.from_id) or board.store.get("ticket", lk.from_id)
++        if t is None:
++            continue
++        tickets[lk.from_id] = t
++        by_doc.setdefault(lk.to_id, []).append({"link_id": lk.id, "ticket_id": t.id, "kind": t.kind.value,
++                                                 "title": t.title, "relation": lk.relation.value})
++    rows = []
++    for d in docs:
++        rows.append({**board._doc_summary(d, 240), "created_by": d.created_by,
++                     "created_at": d.created_at.isoformat(), "source": d.source, "source_url": d.source_url,
++                     "resolution": d.resolution, "linked": by_doc.get(d.id, [])})
++    lessons = [{"id": le.id, "domain": le.domain, "topic": le.topic, "text": le.text, "status": le.status.value,
++                "created_by": le.created_by, "created_at": le.created_at.isoformat()}
++               for le in board.store.query("lesson", {}, limit=2000, newest_first=True)]
++    epics = [{"id": t.id, "title": t.title, "status": t.status.value}
++             for t in board.store.query("ticket", {"kind": TicketKind.epic.value}, limit=2000, newest_first=True)]
++    tags = sorted({t for r in rows for t in r["tags"]})
++    return {"docs": rows, "lessons": lessons, "tags": tags, "epics": epics}
++
++
++# ----------------------------------------------------------------------------- skills.sh import
++def normalize_source(url: str) -> str:
++    """The re-import key: scheme+host+path, no query/fragment/trailing slash, host lower-cased."""
++    u = urlsplit(url.strip())
++    return urlunsplit((u.scheme.lower(), u.netloc.lower(), u.path.rstrip("/"), "", ""))
++
++
++def candidate_urls(url: str) -> list[str]:
++    """The raw SKILL.md URLs to try for `url`, in order. Refuses non-https and foreign hosts."""
++    u = urlsplit(url.strip())
++    host = u.netloc.lower()
++    if u.scheme != "https" or host not in ALLOWED_HOSTS:
++        raise BoardError("invalid", f"cannot import from {url!r}",
++                         "give a https://skills.sh/<owner>/<repo>/<skill> page or a raw SKILL.md URL on GitHub")
++    parts = [p for p in u.path.split("/") if p]
++    if host.endswith("skills.sh"):
++        if len(parts) != 3 or not all(_SEG.match(p) for p in parts):
++            raise BoardError("invalid", f"{url!r} is not a skill page",
++                             "a skills.sh skill page looks like https://skills.sh/<owner>/<repo>/<skill>")
++        o, r, sk = parts
++        return [f"{_RAW}/{o}/{r}/HEAD/skills/{sk}/SKILL.md", f"{_RAW}/{o}/{r}/HEAD/{sk}/SKILL.md",
++                f"{_RAW}/{o}/{r}/HEAD/SKILL.md"]
++    if host == "github.com":
++        if len(parts) < 5 or parts[2] != "blob" or not parts[-1].lower().endswith(".md"):
++            raise BoardError("invalid", f"{url!r} is not a GitHub file URL",
++                             "use https://github.com/<owner>/<repo>/blob/<ref>/<path>/SKILL.md")
++        return [f"{_RAW}/{parts[0]}/{parts[1]}/{'/'.join(parts[3:])}"]
++    if not parts or not parts[-1].lower().endswith(".md"):
++        raise BoardError("invalid", f"{url!r} is not a markdown file", "give the raw SKILL.md URL")
++    return [urlunsplit(("https", host, u.path, "", ""))]
++
++
++def http_get(url: str) -> tuple[int, bytes]:
++    """One bounded GET: no redirects (a redirect could leave the allowed hosts), TIMEOUT_S total,
++    at most MAX_BYTES read. Returns (status, body); a body over the cap raises."""
++    deadline = time.monotonic() + TIMEOUT_S
++    with httpx.Client(timeout=TIMEOUT_S, follow_redirects=False) as c, c.stream("GET", url) as r:
++        if r.status_code != 200:
++            return r.status_code, b""
++        buf = bytearray()
++        for chunk in r.iter_bytes():
++            buf += chunk
++            if len(buf) > MAX_BYTES:
++                raise BoardError("invalid", f"{url} is larger than {MAX_BYTES // 1024} KB", "import a smaller skill")
++            if time.monotonic() > deadline:  # a slow drip under the read timeout still stops at TIMEOUT_S
++                raise httpx.ReadTimeout(f"{url} took longer than {TIMEOUT_S:.0f} s")
++        return 200, bytes(buf)
++
++
++# tests replace this (a stubbed fetch); production is http_get
++FETCH = http_get
++
++
++def parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
++    """A SKILL.md's YAML frontmatter, hand-parsed for the keys we use (no YAML dependency):
++    scalar `key: value`, inline lists `[a, b]`, block lists (`- a`) and keys nested one level
++    (e.g. `metadata:` → `tags:`) flattened. Returns (fields, body without the frontmatter)."""
++    m = re.match(r"\A---\r?\n(.*?)\r?\n---\r?\n?", text, re.S)
++    if not m:
++        return {}, text
++    fields: dict[str, Any] = {}
++    last: str | None = None
++    for raw in m.group(1).splitlines():
++        if not raw.strip() or raw.lstrip().startswith("#"):
++            continue
++        item = re.match(r"^\s*-\s+(.*)$", raw)
++        if item and last is not None:
++            cur = fields.get(last)
++            fields[last] = [*(cur if isinstance(cur, list) else []), _scalar(item.group(1))]
++            continue
++        kv = re.match(r"^\s*([A-Za-z0-9_\-]+)\s*:\s*(.*)$", raw)
++        if not kv:
++            continue
++        key, val = kv.group(1).lower(), kv.group(2).strip()
++        last = key
++        if val.startswith("[") and val.endswith("]"):
++            fields[key] = [_scalar(x) for x in val[1:-1].split(",") if x.strip()]
++        elif val:
++            fields.setdefault(key, _scalar(val))  # a top-level key wins over a nested one of the same name
++        else:
++            fields.setdefault(key, [])
++    return fields, text[m.end():]
++
++
++def _scalar(v: str) -> str:
++    v = v.strip()
++    if len(v) >= 2 and v[0] == v[-1] and v[0] in "'\"":
++        v = v[1:-1]
++    return v
++
++
++def _tags_of(fields: dict[str, Any]) -> list[str]:
++    raw = fields.get("tags") or fields.get("keywords") or []
++    if isinstance(raw, str):
++        raw = [x for x in re.split(r"[,\s]+", raw) if x]
++    return normalize_tags(raw)
++
++
++def import_skill(board: Board, actor: Participant, url: str, *, scope: str = "global",
++                 tags: list[str] | None = None) -> dict[str, Any]:
++    """Fetch one skill and file it as a strategy_hl doc (title, body, frontmatter tags, source_url).
++    Same URL again → the next version of that doc. Authoring rights are DOC_AUTHORS[strategy_hl]."""
++    key = normalize_source(url)
++    tried: list[str] = []
++    text: str | None = None
++    fetched: str | None = None
++    for cand in candidate_urls(url):
++        tried.append(cand)
++        try:
++            status, body = FETCH(cand)
++        except httpx.HTTPError as e:
++            raise BoardError("invalid", f"fetching {cand} failed: {type(e).__name__}", "retry, or give the raw SKILL.md URL") from e
++        if status == 200 and body:
++            text, fetched = body.decode("utf-8", errors="replace"), cand
++            break
++    if text is None:
++        raise BoardError("not_found", f"no SKILL.md found for {url}", f"tried: {', '.join(tried)}")
++    fields, body_md = parse_frontmatter(text)
++    parts = [p for p in urlsplit(key).path.split("/") if p]
++    name = str(fields.get("name") or (parts[-2] if parts and parts[-1].lower() == "skill.md" and len(parts) > 1
++                                       else parts[-1] if parts else "skill"))
++    desc = str(fields.get("description") or "").strip()
++    head = [f"> Imported from {url.strip()} (skills.sh source; fetched {fetched})."]
++    if desc:
++        head.append(f"> {desc}")
++    doc_body = "\n".join(head) + "\n\n" + body_md.lstrip()
++    all_tags = normalize_tags([*_tags_of(fields), "skills-sh", *(tags or [])])
++    title = f"skill: {name}"
++    # lookup and write under the board's lock: two imports of one URL cannot both see "no doc yet"
++    with board._lock:
++        existing = [d for d in board.store.query("doc", {"doc_type": DocType.strategy_hl}, limit=-1)
++                    if d.source_url == key and d.status != DocStatus.retired]
++        if existing:
++            d = board.doc_update(actor, existing[0].id, body_md=doc_body, title=title,
++                                 tags=normalize_tags([*existing[0].tags, *all_tags]))
++            return {"doc": d, "created": False, "fetched": fetched}
++        d = board.doc_create(actor, doc_type=DocType.strategy_hl, title=title, body_md=doc_body, scope=scope,
++                             tags=all_tags, source_url=key)
++        return {"doc": d, "created": True, "fetched": fetched}
+diff --git a/v8/src/edp8/ruleset.py b/v8/src/edp8/ruleset.py
+index 5d2f011..e8af541 100644
+--- a/v8/src/edp8/ruleset.py
++++ b/v8/src/edp8/ruleset.py
+@@ -15,6 +15,12 @@ the reviewer/adversary's adherence view). A line is ENFORCED when it is a
+ checkbox (`- [ ]`), carries an adherence tag (`[required]`, `[expected]`,
+ `[preferred]`), or sits under a heading containing "checklist" or "enforced".
+ 
++No context weight (S-LIBRARY, design-34bf11cc07 §4.4): the brief a seat receives INLINES only
++the ENFORCED lines; every layer doc appears once in `index` (id, title, tags, approx tokens) for
++the seat to doc_read when its work touches it — knowledge "like skills but dynamic": loaded by
++link and on demand, never by default. The oversize check applies to the inlined part only. The
++full constructive view is still computed and returned when the caller asks (`full=True`).
++
+ This module is pure: it takes `load(doc_id) -> LayerDoc | None` and
+ `extends_of(doc_id) -> list[str]` callables so it is testable without the
+ board service.
+@@ -50,6 +56,7 @@ class LayerDoc(BaseModel):
+     title: str
+     doc_type: str
+     body_md: str
++    tags: list[str] = []
+ 
+ 
+ class RulesetLine(BaseModel):
+@@ -57,14 +64,31 @@ class RulesetLine(BaseModel):
+     layer: str  # the doc id this line came from (provenance)
+ 
+ 
++class IndexLine(BaseModel):
++    """One layer doc, listed instead of inlined: the seat doc_reads it on demand."""
++    id: str
++    title: str
++    doc_type: str
++    tags: list[str]
++    approx_tokens: int  # the whole doc body
++    line: str  # "id · title · tags · ~N tokens" — the one line a brief prints
++
++
++INDEX_INSTRUCTION = ("enforced lines are inlined; every linked doc is one `index` line — doc_read(id) the ones "
++                     "your work touches (constructive craft lives there), before you build on them")
++
++
+ class AssembledRuleset(BaseModel):
+     leaf_doc_ids: list[str]
+     layers: list[str]                # ordered doc ids: universal-first … most-specific-last
+     layer_titles: dict[str, str]     # doc id -> "title (doc_type)"
+-    constructive: list[RulesetLine]  # HOW to build — the worker's view
+-    enforced: list[RulesetLine]      # WHAT to check — the adherence view
+-    approx_tokens: int
+-    oversize: bool
++    enforced: list[RulesetLine]      # WHAT to check — the adherence view (inlined)
++    index: list[IndexLine]           # every layer doc, one line each (read on demand)
++    instruction: str
++    constructive: list[RulesetLine] | None = None  # HOW to build — only with full=True
++    approx_tokens: int               # the INLINED part: enforced + index lines
++    full_tokens: int                 # what inlining everything would cost (constructive + enforced)
++    oversize: bool                   # on the inlined part only
+ 
+ 
+ def _resolve_layers(
+@@ -125,14 +149,21 @@ def _split_lines(doc: LayerDoc) -> tuple[list[str], list[str]]:
+     return constructive, enforced
+ 
+ 
++def _tokens(text_len: int) -> int:
++    return text_len // 4
++
++
+ def assemble_ruleset(
+     load: Callable[[str], LayerDoc | None],
+     extends_of: Callable[[str], list[str]],
+     leaf_doc_ids: list[str],
++    *,
++    full: bool = False,
+ ) -> AssembledRuleset:
+     """Resolve + split the layered ruleset. Additive union across layers,
+     deduped on the stripped line text keeping the FIRST (most-universal)
+-    occurrence, so a leaf that restates a universal rule doesn't double it."""
++    occurrence, so a leaf that restates a universal rule doesn't double it.
++    Enforced lines are inlined; each layer is one index line; `full` adds constructive."""
+     if not leaf_doc_ids:
+         raise AssembleError(
+             "no leaf docs to assemble. Link strategy/domain docs to the ticket "
+@@ -158,14 +189,23 @@ def assemble_ruleset(
+             seen.add(key)
+             enforced.append(RulesetLine(text=text, layer=doc.id))
+ 
+-    n_chars = sum(len(x.text) for x in constructive) + sum(len(x.text) for x in enforced)
+-    approx_tokens = n_chars // 4
++    index = []
++    for d in layers:
++        n = _tokens(len(d.body_md))
++        tags = ", ".join(d.tags) if d.tags else "untagged"
++        index.append(IndexLine(id=d.id, title=d.title, doc_type=d.doc_type, tags=list(d.tags), approx_tokens=n,
++                               line=f"{d.id} · {d.title} ({d.doc_type}) · {tags} · ~{n} tokens"))
++    enforced_chars = sum(len(x.text) for x in enforced)
++    inlined = _tokens(enforced_chars + sum(len(x.line) for x in index) + len(INDEX_INSTRUCTION))
+     return AssembledRuleset(
+         leaf_doc_ids=leaf_doc_ids,
+         layers=[d.id for d in layers],
+         layer_titles={d.id: f"{d.title} ({d.doc_type})" for d in layers},
+-        constructive=constructive,
+         enforced=enforced,
+-        approx_tokens=approx_tokens,
+-        oversize=approx_tokens > OVERSIZE_TOKENS,
++        index=index,
++        instruction=INDEX_INSTRUCTION,
++        constructive=constructive if full else None,
++        approx_tokens=inlined,
++        full_tokens=_tokens(sum(len(x.text) for x in constructive) + enforced_chars),
++        oversize=inlined > OVERSIZE_TOKENS,
+     )
+diff --git a/v8/src/edp8/schemas.py b/v8/src/edp8/schemas.py
+index 56e59b8..0cf1931 100644
+--- a/v8/src/edp8/schemas.py
++++ b/v8/src/edp8/schemas.py
+@@ -113,6 +113,28 @@ class DocType(StrEnum):
+     note = "note"
+ 
+ 
++class DocStatus(StrEnum):
++    """S-LIBRARY (design-34bf11cc07 §4.3): a knowledge doc is in force (active), awaiting the owner
++    (proposed: a seat's suggested new doc or new version of an active one), or out of use (retired)."""
++    active = "active"
++    proposed = "proposed"
++    retired = "retired"
++
++
++# The knowledge kinds the Library tab lists; only these carry tags/status in practice.
++KNOWLEDGE_DOC_TYPES = ("strategy_hl", "strategy_ll", "domain")
++
++
++def normalize_tags(tags: list[str] | None) -> list[str]:
++    """Tags are lower-case words, deduped in first-seen order; blanks dropped."""
++    out: list[str] = []
++    for t in tags or []:
++        k = str(t).strip().lower()
++        if k and k not in out:
++            out.append(k)
++    return out
++
++
+ class Relation(StrEnum):
+     designed_by = "designed_by"
+     uses_strategy = "uses_strategy"
+@@ -299,6 +321,13 @@ class Doc(Obj):
+     version: int = 1
+     owner_role: Role
+     scope: str  # epic_id | domain:<name> | global
++    # S-LIBRARY (design-34bf11cc07 §4.3). Defaults keep every stored row valid without a migration.
++    tags: list[str] = Field(default_factory=list)  # stack/product/area words, lower-case
++    status: DocStatus = DocStatus.active
++    proposes: str | None = None  # a proposed doc: the active doc id it would become the next version of
++    source: dict[str, str | None] | None = None  # a proposed doc: {participant, ticket} it came from
++    source_url: str | None = None  # an imported doc (skills.sh / raw SKILL.md): its origin, the re-import key
++    resolution: str | None = None  # a resolved proposal: "approved -> <id> v<n>" | "rejected"
+ 
+ 
+ class Link(Obj):
+@@ -501,6 +530,7 @@ ENUMS: dict[str, type[StrEnum]] = {
+     "Verdict": Verdict,
+     "CheckedBy": CheckedBy,
+     "DocType": DocType,
++    "DocStatus": DocStatus,
+     "Relation": Relation,
+     "MessageKind": MessageKind,
+     "DecisionStatus": DecisionStatus,
+@@ -558,9 +588,10 @@ CRITERION_CHECKERS: set[Role] = {Role.qa, Role.owner}
+ # Which roles may author which doc types.
+ DOC_AUTHORS: dict[DocType, set[Role]] = {
+     DocType.design: {Role.architect},
+-    DocType.strategy_hl: {Role.sme},
+-    DocType.strategy_ll: {Role.sme},
+-    DocType.domain: {Role.sme},
++    # S-LIBRARY: the owner authors knowledge in the Library tab (lessons: record_lesson, open to the owner)
++    DocType.strategy_hl: {Role.sme, Role.owner},
++    DocType.strategy_ll: {Role.sme, Role.owner},
++    DocType.domain: {Role.sme, Role.owner},
+     DocType.report: {Role.engineer, Role.adversary, Role.qa},
+     DocType.note: set(Role),
+ }
+@@ -582,8 +613,11 @@ DESCRIBE: dict[str, str] = {
+     "self-verdicted, gating nothing), owner for a knowledge ticket — criterion_create's checked_by argument is "
+     "accepted for one release but ignored unless the owner also passes override_reason (recorded as a "
+     "criterion_checker_overridden event). CRUD: create, read, update.",
+-    "doc": "A versioned markdown knowledge unit: design (architect), strategy_hl/strategy_ll/domain (sme), "
+-    "report (engineer/adversary/qa), note. Every update is a new version. CRUD: create, read, query, update.",
++    "doc": "A versioned markdown knowledge unit: design (architect), strategy_hl/strategy_ll/domain (sme, owner), "
++    "report (engineer/adversary/qa), note. Every update is a new version. Knowledge docs carry tags and a status "
++    "active|proposed|retired: any seat may file a proposed doc (proposes=<active id> for a new version of it); the "
++    "owner approves (it becomes active / the target's next version) or rejects (retired). CRUD: create, read, "
++    "query(doc_type, scope, tag, status), update.",
+     "link": "A typed edge: ticket/doc -> doc/artifact/ticket with a relation. CRUD: create, query, delete.",
+     "message": "One unit of a ticket's thread addressed to a participant, role, @handle or nobody. "
+     "Kinds: question, answer, steer, status, finding, deviation, note. CRUD: create, read, query.",
+diff --git a/v8/src/edp8/service.py b/v8/src/edp8/service.py
+index 73a845a..2f4b782 100644
+--- a/v8/src/edp8/service.py
++++ b/v8/src/edp8/service.py
+@@ -34,6 +34,7 @@ from .schemas import (
+     Check,
+     ClaimBasis,
+     ClaimStatus,
++    DocStatus,
+     DocType,
+     EventKind,
+     Gate,
+@@ -121,11 +122,22 @@ class DocIn(BaseModel):
+     title: str
+     body_md: str
+     scope: str
++    tags: list[str] | None = None
++    status: DocStatus | None = None  # active (default) | proposed
++    proposes: str | None = None  # proposed: the active doc this would become the next version of
++    ticket_id: str | None = None  # proposed: the ticket it came from (its source)
++
++
++class LibraryImportIn(BaseModel):
++    url: str
++    scope: str = "global"
++    tags: list[str] | None = None
+ 
+ 
+ class DocPatch(BaseModel):
+     body_md: str | None = None
+     title: str | None = None
++    tags: list[str] | None = None
+     compact: bool = False
+ 
+ 
+@@ -690,7 +702,10 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
+     # docs / links / artifacts ---------------------------------------------------
+     @app.post("/v1/docs")
+     def doc_create(b: DocIn, a: Participant = Depends(actor)):
+-        d = board.doc_create(a, doc_type=b.doc_type, title=b.title, body_md=b.body_md, scope=b.scope)
++        d = board.doc_create(a, doc_type=b.doc_type, title=b.title, body_md=b.body_md, scope=b.scope,
++                             tags=b.tags, status=b.status, proposes=b.proposes, ticket_id=b.ticket_id)
++        if d.status == DocStatus.proposed:
++            return ok(_dump(d), "proposed: the owner approves or rejects it in the Library (POST /v1/docs/{id}/approve|reject)")
+         if b.doc_type in (DocType.strategy_hl, DocType.strategy_ll):
+             hint = ("link it: extends -> its parent layer (doc), uses_strategy -> the epic; "
+                     "assemble_ruleset composes the chain at read time")
+@@ -712,15 +727,44 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
+ 
+     @app.get("/v1/docs")
+     def doc_query(doc_type: DocType | None = None, scope: str | None = None, owner_role: Role | None = None,
+-                  a: Participant = Depends(actor)):
+-        return ok([board._doc_summary(d) for d in board.store.query("doc", {"doc_type": doc_type, "scope": scope,
+-                                                                             "owner_role": owner_role})])
++                  tag: str | None = None, status: DocStatus | None = None, a: Participant = Depends(actor)):
++        return ok([board._doc_summary(d) for d in board.docs_query(doc_type=doc_type, scope=scope,
++                                                                   owner_role=owner_role, tag=tag, status=status)])
++
++    @app.post("/v1/docs/{id_}/approve")
++    def doc_approve(id_: str, a: Participant = Depends(actor)):
++        r = board.doc_resolve(a, id_, approve=True)
++        t = r["target"]
++        return ok({"doc": _dump(r["doc"]), "target": _dump(t) if t else None},
++                  f"{t.id} is now v{t.version}; briefs linking it carry the new text" if t else f"{id_} is active")
++
++    @app.post("/v1/docs/{id_}/reject")
++    def doc_reject(id_: str, a: Participant = Depends(actor)):
++        return ok({"doc": _dump(board.doc_resolve(a, id_, approve=False)["doc"]), "target": None}, f"{id_} retired")
++
++    @app.get("/v1/docs/{id_}/diff")
++    def doc_diff(id_: str, a: Participant = Depends(actor)):
++        return ok(board.doc_diff(id_))
++
++    @app.get("/v1/knowledge")
++    def knowledge_list(a: Participant = Depends(actor)):
++        from .library import knowledge_view
++        return ok(knowledge_view(board))
++
++    @app.post("/v1/library/import")
++    def library_import(b: LibraryImportIn, a: Participant = Depends(actor)):
++        from .library import import_skill
++        r = import_skill(board, a, b.url, scope=b.scope, tags=b.tags)
++        d = r["doc"]
++        return ok({"doc": _dump(d), "created": r["created"], "fetched": r["fetched"]},
++                  (f"imported as {d.id} v1" if r["created"] else f"re-import: {d.id} is now v{d.version}")
++                  + "; link it to an epic (uses_strategy) to put it in that epic's brief index")
+ 
+     @app.patch("/v1/docs/{id_}")
+     def doc_update(id_: str, b: DocPatch, a: Participant = Depends(actor)):
+         from .doc_tools import receipt
+-        d = board.doc_update(a, id_, body_md=b.body_md, title=b.title)
+-        return ok(receipt(d, [k for k in ("body_md", "title") if getattr(b, k) is not None])
++        d = board.doc_update(a, id_, body_md=b.body_md, title=b.title, tags=b.tags)
++        return ok(receipt(d, [k for k in ("body_md", "title", "tags") if getattr(b, k) is not None])
+                   if b.compact else _dump(d))
+ 
+     @app.post("/v1/docs/{id_}/edit")
+diff --git a/v8/src/edp8/views.py b/v8/src/edp8/views.py
+index 6e95dad..ebc09a8 100644
+--- a/v8/src/edp8/views.py
++++ b/v8/src/edp8/views.py
+@@ -644,6 +644,15 @@ def epic_page(board: Board, epic_id: str, include: str | None = None) -> dict[st
+                         for ev in board.open_gates(epic_id)]
+     crits = board.criteria(epic_id)
+     epic = board.ticket(epic_id)
++    # S-LIBRARY c-14e93ebfc7: the Library docs linked to this epic (what its stories' briefs index),
++    # with the link id so the page / Library can unlink
++    knowledge = []
++    for lk in board.links(from_id=epic_id):
++        if lk.relation.value not in ("uses_strategy", "uses_domain"):
++            continue
++        d = board.store.get("doc", lk.to_id)
++        if d is not None:
++            knowledge.append({**board._doc_summary(d, 160), "link_id": lk.id, "relation": lk.relation.value})
+     # Ruling #32/#33: `words` are the owner's verbatim request, `title` the short human title, and
+     # `description` the architect's brief (the SPA's "Architect's brief" card).
+     return {"board": bd, "words": bd.get("words"), "title": epic.title, "description": epic.description,
+@@ -655,7 +664,7 @@ def epic_page(board: Board, epic_id: str, include: str | None = None) -> dict[st
+             # who the live resident architect is (t-cf353a4051): {id, state}
+             "architect": bd.get("architect"),
+             "counts": bd.get("counts"),
+-            **thread, "docs": docs, "open_gates": bd.get("open_gates", []),
++            **thread, "docs": docs, "knowledge": knowledge, "open_gates": bd.get("open_gates", []),
+             "answerable_gates": answerable_gates,
+             "criteria": [{"id": c.id, "text": c.text, "check": c.check.value,
+                           "checked_by": c.checked_by, "verdict": c.verdict.value,
+diff --git a/v8/tests/test_library.py b/v8/tests/test_library.py
+new file mode 100644
+index 0000000..7ae897d
+--- /dev/null
++++ b/v8/tests/test_library.py
+@@ -0,0 +1,367 @@
++"""S-LIBRARY (s-decb4f7511, design-34bf11cc07 §4.3–4.4): knowledge docs with tags and status,
++proposed → approve/reject with a diff, owner authoring, doc_query filters, the knowledge view,
++link/unlink reflected in assemble_ruleset, and Import from skills.sh with a stubbed fetch."""
++
++from __future__ import annotations
++
++import os
++
++os.environ.setdefault("EDP8_EMBEDDER", "none")
++
++import pytest
++from fastapi.testclient import TestClient
++
++from edp8 import library
++from edp8.board import Board
++from edp8.bundles import ALL_TOOLS, set_client
++from edp8.client import BoardClient
++from edp8.schemas import DocType
++from edp8.service import create_app
++from edp8.store import Store
++
++ADMIN = {"X-Admin": "t"}
++OWNER = {"X-Participant": "owner"}
++ENG = {"X-Participant": "eng"}
++
++
++@pytest.fixture
++def board():
++    return Board(Store(":memory:"))
++
++
++@pytest.fixture
++def client(board):
++    return TestClient(create_app(board, admin_token="t"))
++
++
++@pytest.fixture
++def rig(client):
++    for pid, role, typ in [("owner", "owner", "human"), ("arch", "architect", "agent"),
++                           ("eng", "engineer", "agent"), ("craft", "sme", "agent")]:
++        assert client.post("/v1/participants", json={"type": typ, "role": role, "handle": pid, "id": pid},
++                           headers=ADMIN).json()["ok"]
++    epic = client.post("/v1/tickets", json={"kind": "epic", "work_type": "feature", "title": "w"},
++                       headers=OWNER).json()["value"]["id"]
++    story = client.post("/v1/tickets", json={"kind": "story", "work_type": "feature", "title": "s",
++                                             "parent_id": epic}, headers={"X-Participant": "arch"}).json()
++    return {"epic": epic, "story": story["value"]["id"] if story["ok"] else None}
++
++
++def _doc(client, who, **kw):
++    body = {"doc_type": "strategy_hl", "title": "craft", "body_md": "- rule one\n- [ ] bar [required]",
++            "scope": "global", **kw}
++    return client.post("/v1/docs", json=body, headers=who).json()
++
++
++# ----------------------------------------------------------------------------- c-fb59539911
++def test_doc_defaults_active_untagged_and_tags_normalized(client, rig):
++    d = _doc(client, OWNER)["value"]
++    assert d["status"] == "active" and d["tags"] == [] and d["source"] is None
++    t = _doc(client, OWNER, tags=["Python", " web ", "python", ""])["value"]
++    assert t["tags"] == ["python", "web"]
++
++
++@pytest.mark.parametrize("doc_type", ["strategy_hl", "strategy_ll", "domain"])
++def test_owner_authors_knowledge_docs(client, rig, doc_type):
++    r = _doc(client, OWNER, doc_type=doc_type)
++    assert r["ok"], r
++    # and edits them: a new version
++    u = client.patch(f"/v1/docs/{r['value']['id']}", json={"body_md": "- v2", "tags": ["x"]}, headers=OWNER).json()
++    assert u["ok"] and u["value"]["version"] == 2 and u["value"]["tags"] == ["x"]
++
++
++def test_owner_records_lessons(client, rig):
++    r = client.post("/v1/lessons", json={"domain": "operations", "topic": "restart", "text": "restart by pid"},
++                    headers=OWNER).json()
++    assert r["ok"], r
++
++
++def test_engineer_cannot_author_active_strategy_but_may_propose(client, rig):
++    bad = _doc(client, ENG)
++    assert not bad["ok"] and "status=proposed" in bad["hint"]
++    p = _doc(client, ENG, status="proposed", ticket_id=rig["epic"])
++    assert p["ok"], p
++    v = p["value"]
++    assert v["status"] == "proposed" and v["source"] == {"participant": "eng", "ticket": rig["epic"]}
++
++
++def test_proposal_for_active_doc_diff_and_approve_makes_next_version(client, rig):
++    base = _doc(client, OWNER, tags=["python"])["value"]
++    p = _doc(client, ENG, status="proposed", proposes=base["id"], body_md="- rule one\n- rule two",
++             tags=["testing"])["value"]
++    diff = client.get(f"/v1/docs/{p['id']}/diff", headers=OWNER).json()["value"]
++    assert diff["base_id"] == base["id"] and diff["base_version"] == 1
++    assert "+- rule two" in diff["diff"] and "-- [ ] bar [required]" in diff["diff"]
++    # only the owner rules
++    assert not client.post(f"/v1/docs/{p['id']}/approve", headers=ENG).json()["ok"]
++    r = client.post(f"/v1/docs/{p['id']}/approve", headers=OWNER).json()
++    assert r["ok"], r
++    tgt = client.get(f"/v1/docs/{base['id']}", headers=OWNER).json()["value"]
++    assert tgt["version"] == 2 and tgt["body_md"] == "- rule one\n- rule two" and tgt["status"] == "active"
++    assert tgt["tags"] == ["python", "testing"] and tgt["versions"] == [1, 2]
++    prop = client.get(f"/v1/docs/{p['id']}", headers=OWNER).json()["value"]
++    assert prop["status"] == "retired" and prop["resolution"] == f"approved -> {base['id']} v2"
++    # a resolved proposal cannot be ruled again
++    assert not client.post(f"/v1/docs/{p['id']}/reject", headers=OWNER).json()["ok"]
++
++
++def test_free_standing_proposal_approve_becomes_active_reject_retires(client, rig):
++    a = _doc(client, ENG, status="proposed")["value"]
++    b = _doc(client, ENG, status="proposed")["value"]
++    diff = client.get(f"/v1/docs/{a['id']}/diff", headers=OWNER).json()["value"]
++    assert diff["base_id"] is None and "+- rule one" in diff["diff"]
++    assert client.post(f"/v1/docs/{a['id']}/approve", headers=OWNER).json()["value"]["doc"]["status"] == "active"
++    rb = client.post(f"/v1/docs/{b['id']}/reject", headers=OWNER).json()["value"]["doc"]
++    assert rb["status"] == "retired" and rb["resolution"] == "rejected"
++
++
++def test_proposal_guards(client, rig):
++    base = _doc(client, OWNER)["value"]
++    assert not _doc(client, ENG, status="proposed", proposes=base["id"], doc_type="domain")["ok"]  # type mismatch
++    assert not _doc(client, OWNER, proposes=base["id"])["ok"]  # proposes needs status=proposed
++    assert not _doc(client, OWNER, status="retired")["ok"]
++
++
++def test_doc_query_filters_by_tag_and_status(client, rig):
++    a = _doc(client, OWNER, tags=["python"])["value"]
++    _doc(client, OWNER, tags=["web"])
++    p = _doc(client, ENG, status="proposed", tags=["python"])["value"]
++    ids = lambda q: [d["id"] for d in client.get(f"/v1/docs?{q}", headers=OWNER).json()["value"]]  # noqa: E731
++    assert ids("tag=python") == [a["id"], p["id"]]
++    assert ids("tag=Python&status=active") == [a["id"]]
++    assert ids("status=proposed") == [p["id"]]
++    assert ids("doc_type=strategy_hl&status=retired") == []
++    # the MCP tool carries the filters too
++    set_client(BoardClient(participant="owner", client=client))
++    out = ALL_TOOLS["doc_query"].handler(ALL_TOOLS["doc_query"].args_model(tag="python", status="proposed"))
++    assert [d["id"] for d in out["value"]] == [p["id"]]
++
++
++def test_legacy_doc_rows_read_as_active(board, client, rig):
++    """A doc stored before the fields existed (no tags/status keys in its JSON) reads as active."""
++    import json
++    d = _doc(client, OWNER)["value"]
++    raw = json.loads(board.store._conn.execute("SELECT body FROM doc WHERE id=?", (d["id"],)).fetchone()["body"])
++    for k in ("tags", "status", "proposes", "source", "source_url", "resolution"):
++        raw.pop(k)
++    with board.store._conn:
++        board.store._conn.execute("UPDATE doc SET body=? WHERE id=?", (json.dumps(raw), d["id"]))
++    assert [x["id"] for x in client.get("/v1/docs?status=active", headers=OWNER).json()["value"]] == [d["id"]]
++
++
++# ----------------------------------------------------------------------------- knowledge view + links
++def test_knowledge_view_lists_docs_lessons_and_linked_epics(client, rig):
++    d = _doc(client, OWNER, tags=["python"])["value"]
++    _doc(client, OWNER, doc_type="report")  # not knowledge: not listed
++    lk = client.post("/v1/links", json={"from_id": rig["epic"], "to_id": d["id"], "relation": "uses_strategy"},
++                     headers=OWNER).json()["value"]
++    client.post("/v1/lessons", json={"domain": "ops", "topic": "t", "text": "a lesson"}, headers=OWNER)
++    v = client.get("/v1/knowledge", headers=OWNER).json()["value"]
++    assert [x["id"] for x in v["docs"]] == [d["id"]]
++    assert v["docs"][0]["linked"] == [{"link_id": lk["id"], "ticket_id": rig["epic"], "kind": "epic", "title": "w",
++                                       "relation": "uses_strategy"}]
++    assert v["tags"] == ["python"] and v["lessons"][0]["text"] == "a lesson"
++    assert rig["epic"] in [e["id"] for e in v["epics"]]
++
++
++def test_link_unlink_epic_is_reflected_in_next_ruleset_and_epic_page(client, rig):
++    set_client(BoardClient(participant="owner", client=client))
++    d = _doc(client, OWNER, title="py craft", tags=["python"])["value"]
++    tool = ALL_TOOLS["assemble_ruleset"]
++    story = rig["story"]
++    assert story, "story creation failed"
++    assert not tool.handler(tool.args_model(ticket_id=story))["ok"]  # nothing linked yet
++    lk = client.post("/v1/links", json={"from_id": rig["epic"], "to_id": d["id"], "relation": "uses_strategy"},
++                     headers=OWNER).json()["value"]
++    page = client.get(f"/v1/epics/{rig['epic']}/page", headers=OWNER).json()["value"]
++    assert [(k["id"], k["link_id"], k["relation"]) for k in page["knowledge"]] == [(d["id"], lk["id"], "uses_strategy")]
++    out = tool.handler(tool.args_model(ticket_id=story))
++    assert out["ok"] and [x["id"] for x in out["value"]["index"]] == [d["id"]]
++    assert "constructive" not in out["value"] and out["value"]["enforced"][0]["text"] == "- [ ] bar [required]"
++    assert client.delete(f"/v1/links/{lk['id']}", headers=OWNER).json()["value"]["deleted"]
++    assert not tool.handler(tool.args_model(ticket_id=story))["ok"]
++    assert client.get(f"/v1/epics/{rig['epic']}/page", headers=OWNER).json()["value"]["knowledge"] == []
++
++
++def test_retired_doc_is_skipped_from_the_brief(client, rig):
++    set_client(BoardClient(participant="owner", client=client))
++    keep = _doc(client, OWNER)["value"]
++    gone = _doc(client, ENG, status="proposed")["value"]
++    client.post(f"/v1/docs/{gone['id']}/reject", headers=OWNER)
++    for x in (keep, gone):
++        client.post("/v1/links", json={"from_id": rig["epic"], "to_id": x["id"], "relation": "uses_strategy"},
++                    headers=OWNER)
++    tool = ALL_TOOLS["assemble_ruleset"]
++    out = tool.handler(tool.args_model(ticket_id=rig["epic"]))
++    assert [x["id"] for x in out["value"]["index"]] == [keep["id"]] and out["value"]["skipped_layers"] == [gone["id"]]
++
++
++# ----------------------------------------------------------------------------- c-e30967d7ab import
++SKILL = """---
++name: frontend-design
++description: Distinctive visual design for new UI.
++license: see LICENSE
++metadata:
++  tags: [design, ui]
++---
++
++# Frontend Design
++
++- pick a direction before code
++"""
++
++
++@pytest.fixture
++def fetch(monkeypatch):
++    calls: list[str] = []
++    pages: dict[str, bytes] = {}
++
++    def stub(url):
++        calls.append(url)
++        return (200, pages[url]) if url in pages else (404, b"")
++
++    monkeypatch.setattr(library, "FETCH", stub)
++    return calls, pages
++
++
++def test_candidate_urls_and_host_allowlist():
++    assert library.candidate_urls("https://skills.sh/anthropics/skills/frontend-design") == [
++        "https://raw.githubusercontent.com/anthropics/skills/HEAD/skills/frontend-design/SKILL.md",
++        "https://raw.githubusercontent.com/anthropics/skills/HEAD/frontend-design/SKILL.md",
++        "https://raw.githubusercontent.com/anthropics/skills/HEAD/SKILL.md"]
++    assert library.candidate_urls("https://github.com/o/r/blob/main/skills/x/SKILL.md") == [
++        "https://raw.githubusercontent.com/o/r/main/skills/x/SKILL.md"]
++    for bad in ("http://skills.sh/a/b/c", "https://evil.example/SKILL.md", "https://skills.sh/a/b",
++                "https://raw.githubusercontent.com/o/r/HEAD/x.txt", "https://127.0.0.1/SKILL.md"):
++        with pytest.raises(library.BoardError):
++            library.candidate_urls(bad)
++
++
++def test_parse_frontmatter_nested_and_block_lists():
++    f, body = library.parse_frontmatter(SKILL)
++    assert f["name"] == "frontend-design" and f["tags"] == ["design", "ui"] and body.startswith("\n# Frontend")
++    f2, _ = library.parse_frontmatter("---\nname: 'x'\ntags:\n  - A\n  - b\n---\nbody")
++    assert f2 == {"name": "x", "tags": ["A", "b"]}
++    assert library.parse_frontmatter("no frontmatter") == ({}, "no frontmatter")
++
++
++def test_import_creates_strategy_doc_then_reimport_is_a_new_version(client, rig, fetch):
++    calls, pages = fetch
++    url = "https://skills.sh/anthropics/skills/frontend-design"
++    pages["https://raw.githubusercontent.com/anthropics/skills/HEAD/skills/frontend-design/SKILL.md"] = SKILL.encode()
++    r = client.post("/v1/library/import", json={"url": url}, headers=OWNER).json()
++    assert r["ok"], r
++    d = r["value"]["doc"]
++    assert r["value"]["created"] and d["doc_type"] == "strategy_hl" and d["title"] == "skill: frontend-design"
++    assert d["tags"] == ["design", "ui", "skills-sh"] and d["source_url"] == url and d["status"] == "active"
++    assert "- pick a direction before code" in d["body_md"] and "Distinctive visual design" in d["body_md"]
++    assert len(calls) == 1  # the first candidate hit: one fetch
++    r2 = client.post("/v1/library/import", json={"url": url + "/"}, headers=OWNER).json()  # same URL, normalized
++    assert r2["ok"] and not r2["value"]["created"]
++    assert r2["value"]["doc"]["id"] == d["id"] and r2["value"]["doc"]["version"] == 2
++    assert len([x for x in client.get("/v1/docs?tag=skills-sh", headers=OWNER).json()["value"]]) == 1
++
++
++def test_import_falls_back_through_candidates_and_reports_misses(client, rig, fetch):
++    calls, pages = fetch
++    pages["https://raw.githubusercontent.com/o/r/HEAD/SKILL.md"] = b"# bare skill\n- one"
++    r = client.post("/v1/library/import", json={"url": "https://skills.sh/o/r/bare"}, headers=OWNER).json()
++    assert r["ok"] and len(calls) == 3 and r["value"]["doc"]["title"] == "skill: bare"
++    miss = client.post("/v1/library/import", json={"url": "https://skills.sh/o/other/none"}, headers=OWNER).json()
++    assert not miss["ok"] and "tried:" in miss["hint"]
++
++
++def test_import_needs_a_knowledge_author(client, rig, fetch):
++    _, pages = fetch
++    pages["https://raw.githubusercontent.com/o/r/HEAD/skills/s/SKILL.md"] = SKILL.encode()
++    assert not client.post("/v1/library/import", json={"url": "https://skills.sh/o/r/s"}, headers=ENG).json()["ok"]
++
++
++def test_http_get_caps_size(monkeypatch):
++    import httpx
++
++    def handler(request):
++        return httpx.Response(200, content=b"x" * (library.MAX_BYTES + 10))
++
++    real = httpx.Client
++    monkeypatch.setattr(httpx, "Client", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
++    with pytest.raises(library.BoardError, match="larger than"):
++        library.http_get("https://raw.githubusercontent.com/o/r/HEAD/SKILL.md")
++
++
++# ----------------------------------------------------------------------------- second_opinion fixes
++def test_proposed_doc_linked_to_an_epic_stays_out_of_the_brief(client, rig):
++    set_client(BoardClient(participant="owner", client=client))
++    keep = _doc(client, OWNER, body_md="- plain")["value"]
++    p = _doc(client, ENG, status="proposed")["value"]  # carries "- [ ] bar [required]"
++    for x in (keep, p):
++        client.post("/v1/links", json={"from_id": rig["epic"], "to_id": x["id"], "relation": "uses_strategy"},
++                    headers={"X-Participant": "arch"})
++    tool = ALL_TOOLS["assemble_ruleset"]
++    out = tool.handler(tool.args_model(ticket_id=rig["epic"]))["value"]
++    assert [x["id"] for x in out["index"]] == [keep["id"]] and out["skipped_layers"] == [p["id"]]
++    assert not any("bar" in str(line) for line in out["enforced"])
++
++
++def test_approved_free_standing_proposal_is_owner_authored_not_the_proposers_role(client, rig):
++    p = _doc(client, ENG, status="proposed")["value"]
++    d = client.post(f"/v1/docs/{p['id']}/approve", headers=OWNER).json()["value"]["doc"]
++    assert d["owner_role"] == "owner"
++    assert not client.patch(f"/v1/docs/{p['id']}", json={"body_md": "- mine"}, headers=ENG).json()["ok"]
++    assert client.patch(f"/v1/docs/{p['id']}", json={"body_md": "- v2"}, headers=OWNER).json()["ok"]
++
++
++def test_filters_and_import_identity_see_past_the_row_limit(board, client, rig, fetch):
++    owner = board.store.get("participant", "owner")
++    for i in range(501):
++        board.doc_create(owner, doc_type=DocType.strategy_hl, title=f"d{i}", body_md="- x", scope="global")
++    last = board.doc_create(owner, doc_type=DocType.strategy_hl, title="rare", body_md="- x", scope="global", tags=["rare"])
++    assert [d.id for d in board.docs_query(tag="rare")] == [last.id]
++    assert len(board.docs_query(status="active", limit=10)) == 10
++    _, pages = fetch
++    pages["https://raw.githubusercontent.com/o/r/HEAD/skills/s/SKILL.md"] = SKILL.encode()
++    first = client.post("/v1/library/import", json={"url": "https://skills.sh/o/r/s"}, headers=OWNER).json()["value"]
++    again = client.post("/v1/library/import", json={"url": "https://skills.sh/o/r/s"}, headers=OWNER).json()["value"]
++    assert not again["created"] and again["doc"]["id"] == first["doc"]["id"] and again["doc"]["version"] == 2
++
++
++def test_concurrent_imports_of_one_url_make_one_doc(board, rig, monkeypatch):
++    import threading
++    owner = board.store.get("participant", "owner")
++    both_fetched = threading.Barrier(2, timeout=10)
++
++    def stub(url):  # both requests are past the fetch before either looks for an existing doc
++        both_fetched.wait()
++        return 200, SKILL.encode()
++
++    monkeypatch.setattr(library, "FETCH", stub)
++    out: list[dict] = []
++    ts = [threading.Thread(target=lambda: out.append(library.import_skill(board, owner, url="https://skills.sh/o/r/s",
++                                                                          scope="global", tags=None))) for _ in range(2)]
++    for t in ts:
++        t.start()
++    for t in ts:
++        t.join()
++    assert sorted(x["created"] for x in out) == [False, True] and len({x["doc"].id for x in out}) == 1
++
++
++def test_http_get_enforces_a_total_deadline(monkeypatch):
++    import httpx
++    clock = iter(range(0, 1000, 4))  # each monotonic() read is 4 s later: a slow drip under the read timeout
++    monkeypatch.setattr(library.time, "monotonic", lambda: next(clock))
++
++    def handler(request):
++        return httpx.Response(200, content=iter([b"a" * 10] * 20))
++
++    real = httpx.Client
++    monkeypatch.setattr(httpx, "Client", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
++    with pytest.raises(httpx.ReadTimeout, match="longer than 10 s"):
++        library.http_get("https://raw.githubusercontent.com/o/r/HEAD/SKILL.md")
++
++
++def test_diff_of_bodies_without_a_trailing_newline_keeps_lines_apart(client, rig):
++    base = _doc(client, OWNER, body_md="old")["value"]
++    p = _doc(client, ENG, status="proposed", proposes=base["id"], body_md="new", title="craft 2")["value"]
++    d = client.get(f"/v1/docs/{p['id']}/diff", headers=OWNER).json()["value"]
++    assert d["diff"].splitlines()[-2:] == ["-old", "+new"]
++    assert d["title_changed"] and d["base_title"] == "craft" and d["title"] == "craft 2"
+diff --git a/v8/tests/test_lifecycle_fixes.py b/v8/tests/test_lifecycle_fixes.py
+index b06b4e3..f313d25 100644
+--- a/v8/tests/test_lifecycle_fixes.py
++++ b/v8/tests/test_lifecycle_fixes.py
+@@ -162,7 +162,7 @@ def test_ruleset_skips_dangling_layer(client, rig, board):
+     board.store.put("link", Link(id="lk-bad", from_id=d["id"], to_id=rig["epic"], relation=Relation.extends,
+                                  created_by="arch"))
+     out = ALL_TOOLS["assemble_ruleset"].handler(
+-        ALL_TOOLS["assemble_ruleset"].args_model(ticket_id=rig["epic"]))
++        ALL_TOOLS["assemble_ruleset"].args_model(ticket_id=rig["epic"], full=True))
+     assert out["ok"], out
+     assert out["value"]["skipped_layers"] == [rig["epic"]]
+     assert any("rule one" in x["text"] for x in out["value"]["constructive"])
+diff --git a/v8/tests/test_ruleset.py b/v8/tests/test_ruleset.py
+index 1fdf55b..0aff7bb 100644
+--- a/v8/tests/test_ruleset.py
++++ b/v8/tests/test_ruleset.py
+@@ -26,7 +26,7 @@ def test_universal_first_most_specific_last_and_dedupe():
+         },
+         {"leaf": ["python"], "python": ["universal"]},
+     )
+-    out = assemble_ruleset(load, ext, ["leaf"])
++    out = assemble_ruleset(load, ext, ["leaf"], full=True)
+     assert out.layers == ["universal", "python", "leaf"]
+     constructive = [x.text.strip() for x in out.constructive]
+     assert constructive == ["- log every failure", "- use pydantic models"]
+@@ -39,7 +39,7 @@ def test_universal_first_most_specific_last_and_dedupe():
+ 
+ def test_enforced_section_heading():
+     load, ext = _mk({"d": "# How\n- build small\n## Enforced checklist\n- every claim has evidence"}, {})
+-    out = assemble_ruleset(load, ext, ["d"])
++    out = assemble_ruleset(load, ext, ["d"], full=True)
+     assert [x.text.strip() for x in out.enforced] == ["- every claim has evidence"]
+     assert [x.text.strip() for x in out.constructive] == ["- build small"]
+ 
+@@ -60,3 +60,47 @@ def test_no_leaves_raises():
+     load, ext = _mk({}, {})
+     with pytest.raises(AssembleError, match="no leaf docs"):
+         assemble_ruleset(load, ext, [])
++
++
++# ---- S-LIBRARY c-6007364edf: no context weight — enforced inlined, every doc one index line
++def _tagged(docs: dict[str, tuple[str, list[str]]]):
++    def load(doc_id):
++        if doc_id not in docs:
++            return None
++        body, tags = docs[doc_id]
++        return LayerDoc(id=doc_id, title=f"T {doc_id}", doc_type="strategy_hl", body_md=body, tags=tags)
++
++    return load, lambda _d: []
++
++
++def test_brief_inlines_enforced_only_and_indexes_every_doc():
++    craft = "\n".join(f"- constructive craft line number {i} with some words" for i in range(400))
++    load, ext = _tagged({"a": (craft + "\n- [ ] one enforced bar", ["python", "web"]),
++                         "b": ("- only constructive here", [])})
++    out = assemble_ruleset(load, ext, ["a", "b"])
++    assert out.constructive is None  # not inlined by default
++    assert [x.text.strip() for x in out.enforced] == ["- [ ] one enforced bar"]
++    assert [x.id for x in out.index] == ["a", "b"]  # a doc with no enforced line is still indexed
++    a, b = out.index
++    assert a.tags == ["python", "web"] and a.approx_tokens == len(craft + "\n- [ ] one enforced bar") // 4
++    assert a.line == f"a · T a (strategy_hl) · python, web · ~{a.approx_tokens} tokens"
++    assert "untagged" in b.line
++    assert "doc_read" in out.instruction
++    # the inlined part is a small fraction of the whole
++    assert out.approx_tokens < 200 < out.full_tokens
++
++
++def test_oversize_applies_to_inlined_part_only():
++    huge = "\n".join(f"- craft {i} " + "x" * 200 for i in range(2000))  # ~100k tokens of constructive
++    load, ext = _tagged({"a": (huge + "\n- [ ] bar", [])})
++    out = assemble_ruleset(load, ext, ["a"])
++    assert out.full_tokens > 24_000 and not out.oversize
++    enforced_huge = "\n".join(f"- [ ] bar {i} " + "x" * 200 for i in range(2000))
++    load2, ext2 = _tagged({"a": (enforced_huge, [])})
++    assert assemble_ruleset(load2, ext2, ["a"]).oversize
++
++
++def test_full_true_restores_constructive():
++    load, ext = _tagged({"a": ("- build small\n- [ ] bar", [])})
++    out = assemble_ruleset(load, ext, ["a"], full=True)
++    assert [x.text for x in out.constructive] == ["- build small"]
+diff --git a/v8/web/src/api/endpoints.ts b/v8/web/src/api/endpoints.ts
+index a8b773a..276fc62 100644
+--- a/v8/web/src/api/endpoints.ts
++++ b/v8/web/src/api/endpoints.ts
+@@ -9,7 +9,10 @@ import type {
+   ConversationRow,
+   ReplyRow,
+   DecisionsHome,
++  DocDiff,
+   DocHtml,
++  DocRecord,
++  KnowledgeView,
+   EpicPage,
+   EpicSummaryRow,
+   Library,
+@@ -189,10 +192,30 @@ export const rewordCriterion = (id: string, text: string) =>
+ export const createLink = (b: { from_id: string; to_id: string; relation: string }) =>
+   postJson<Record<string, unknown>>("/v1/links", b);
+ 
+-/** PATCH /v1/docs/{id} — revise a doc's body/title; the board records it as a new version. */
+-export const updateDoc = (id: string, b: { body_md?: string; title?: string }) =>
++/** PATCH /v1/docs/{id} — revise a doc's body/title/tags; the board records it as a new version. */
++export const updateDoc = (id: string, b: { body_md?: string; title?: string; tags?: string[] }) =>
+   postJson<Record<string, unknown>>(`/v1/docs/${encodeURIComponent(id)}`, b, "PATCH");
+ 
++// ------------------------------------------------------------------ S-LIBRARY (design-34bf11cc07 §4.3)
++/** GET /v1/knowledge — strategies, domains (all statuses, with linked tickets) and lessons. */
++export const getKnowledge = () => api<KnowledgeView>("/v1/knowledge");
++export const getDoc = (id: string) => api<DocRecord>(`/v1/docs/${encodeURIComponent(id)}`);
++export const getDocDiff = (id: string) => api<DocDiff>(`/v1/docs/${encodeURIComponent(id)}/diff`);
++/** POST /v1/docs — the owner authors a knowledge doc (active). */
++export const createKnowledgeDoc = (b: { doc_type: string; title: string; body_md: string; tags: string[]; scope?: string }) =>
++  postJson<DocRecord>("/v1/docs", { scope: "global", ...b });
++/** Approve: a proposal for an active doc becomes its next version; a free-standing one becomes active. */
++export const approveDoc = (id: string) =>
++  postJson<{ doc: DocRecord; target: DocRecord | null }>(`/v1/docs/${encodeURIComponent(id)}/approve`, {});
++export const rejectDoc = (id: string) =>
++  postJson<{ doc: DocRecord; target: null }>(`/v1/docs/${encodeURIComponent(id)}/reject`, {});
++/** POST /v1/library/import — one bounded server-side fetch of a skills.sh skill → a strategy_hl doc. */
++export const importSkill = (b: { url: string; tags?: string[] }) =>
++  postJson<{ doc: DocRecord; created: boolean; fetched: string }>("/v1/library/import", b);
++/** DELETE /v1/links/{id} — unlink (e.g. a Library doc from an epic). */
++export const deleteLink = (id: string) =>
++  apiEnvelope<{ deleted: boolean }>(`/v1/links/${encodeURIComponent(id)}`, { method: "DELETE" });
++
+ /** GET / PUT /v1/me/settings — the Settings page (s-7f663c6322). Humans only; the board 403s a seat. */
+ export const getSettings = () => api<UserSettings>("/v1/me/settings");
+ export const putSettings = (b: UserSettings) => postJson<UserSettings>("/v1/me/settings", b, "PUT");
+diff --git a/v8/web/src/api/types.ts b/v8/web/src/api/types.ts
+index 0141256..7dc2c1f 100644
+--- a/v8/web/src/api/types.ts
++++ b/v8/web/src/api/types.ts
+@@ -300,6 +300,81 @@ export interface DocSummary extends Record<string, unknown> {
+   scope: string;
+   summary: string;
+   full: string;
++  /** S-LIBRARY: knowledge tags and status (absent on an older board = untagged, active). */
++  tags?: string[];
++  status?: DocStatus;
++  proposes?: string;
++}
++
++// ------------------------------------------------------------------ S-LIBRARY knowledge (GET /v1/knowledge)
++
++export type DocStatus = "active" | "proposed" | "retired";
++
++/** A ticket a knowledge doc is linked to (uses_strategy / uses_domain), with the link id to unlink it. */
++export interface KnowledgeLinkRow {
++  link_id: string;
++  ticket_id: string;
++  kind: string;
++  title: string;
++  relation: string;
++}
++
++export interface KnowledgeDoc extends DocSummary {
++  tags: string[];
++  status: DocStatus;
++  created_by: string;
++  created_at: ISODateString;
++  source: { participant: string; ticket: string | null } | null;
++  source_url: string | null;
++  resolution: string | null;
++  linked: KnowledgeLinkRow[];
++}
++
++export interface KnowledgeLesson {
++  id: string;
++  domain: string;
++  topic: string;
++  text: string;
++  status: string;
++  created_by: string;
++  created_at: ISODateString;
++}
++
++export interface KnowledgeView {
++  docs: KnowledgeDoc[];
++  lessons: KnowledgeLesson[];
++  tags: string[];
++  epics: { id: string; title: string; status: string }[];
++}
++
++/** GET /v1/docs/{id} — the full doc record (the Library editor reads body_md from it). */
++export interface DocRecord extends Record<string, unknown> {
++  id: string;
++  doc_type: string;
++  title: string;
++  body_md: string;
++  version: number;
++  tags?: string[];
++  status?: DocStatus;
++  versions: number[];
++}
++
++/** GET /v1/docs/{id}/diff — a proposed doc against the active version it proposes. */
++export interface DocDiff {
++  id: string;
++  status: DocStatus;
++  base_id: string | null;
++  base_version: number | null;
++  diff: string;
++  title_changed: boolean;
++  base_title?: string | null;
++  title?: string;
++}
++
++/** An epic's linked Library docs (epic page `knowledge`). */
++export interface EpicKnowledgeRow extends DocSummary {
++  link_id: string;
++  relation: string;
+ }
+ 
+ /** The seat choice every spawn on an epic inherits (owner m-2d7ef9243d), resolved by the board:
+@@ -335,6 +410,8 @@ export interface EpicPage extends ThreadPage {
+   counts: Record<string, number> | null;
+   thread: MessageView[];
+   docs: DocSummary[];
++  /** S-LIBRARY: Library docs linked to the epic (uses_strategy/uses_domain); absent on an older board. */
++  knowledge?: EpicKnowledgeRow[];
+   /** The epic's short human title (human #32; falls back to the words on an older board). */
+   title?: string;
+   /** The architect's brief — the epic description (human #33). */
+diff --git a/v8/web/src/components/AppShell.test.tsx b/v8/web/src/components/AppShell.test.tsx
+index da3d872..efbd95c 100644
+--- a/v8/web/src/components/AppShell.test.tsx
++++ b/v8/web/src/components/AppShell.test.tsx
+@@ -34,12 +34,13 @@ beforeEach(() => {
+ });
+ 
+ describe("AppShell", () => {
+-  it("renders Epics, Seats and Needs you without duplicate Library destination", async () => {
++  it("renders Epics, Seats, Library and Needs you (one Library destination)", async () => {
+     renderShell("/me");
+     const links = screen.getAllByRole("link");
+     expect(links.map((l) => l.textContent?.replace(/\d+$/, "").trim())).toEqual([
+       "Epics",
+       "Seats",
++      "Library",
+       "Needs you",
+     ]);
+     // NavLink marks the active route with aria-current=page.
+@@ -152,6 +153,9 @@ describe("AppShell nav route families (human #38)", () => {
+     ["/ticket/s-abc", "Epics"],
+     ["/seats", "Seats"],
+     ["/seats#engineer.s-1", "Seats"],
++    ["/library/knowledge", "Library"],
++    ["/library/tickets", "Library"],
++    ["/doc/strategyhl-1", "Library"],
+ 
+   ];
+   for (const [path, label] of cases) {
+diff --git a/v8/web/src/components/AppShell.tsx b/v8/web/src/components/AppShell.tsx
+index a345398..5283a18 100644
+--- a/v8/web/src/components/AppShell.tsx
++++ b/v8/web/src/components/AppShell.tsx
+@@ -43,16 +43,18 @@ interface Summary {
+ const NAV = [
+   { to: "/epics", label: "Epics", icon: "epics", count: "epics" as const, copy: "epics" },
+   { to: "/seats", label: "Seats", icon: "seats", count: "seats" as const, copy: "seats" },
++  // S-LIBRARY (owner m-5b3db5cb0d "sme tab? sure"): knowledge first; the records tabs sit beside it
++  { to: "/library/knowledge", label: "Library", icon: "library", count: null, copy: "library" },
+ ] as const;
+ 
+ // Human #38 (m-4e303d7b27, 2026-09-11): the sidebar highlight is by ROUTE FAMILY, not by exact path.
+-export function navFamily(pathname: string, search = ""): "/me" | "/epics" | "/seats" | "/library/tickets" | "/settings" | null {
++export function navFamily(pathname: string, search = ""): "/me" | "/epics" | "/seats" | "/library/knowledge" | "/settings" | null {
+   if (pathname === "/me" || pathname.startsWith("/me/")) return "/me";
+   if (/^\/(epics|epic|ticket|records)(\/|$)/.test(pathname)) return "/epics";
+   if (/^\/seats(\/|$)/.test(pathname)) return "/seats";
+   // S19 D11: a design opened in its own tab from a review belongs to the source's (Epics) family.
+   if (/^\/doc\//.test(pathname) && new URLSearchParams(search).has("source")) return "/epics";
+-  if (/^\/(library|doc|artifact)(\/|$)/.test(pathname)) return "/library/tickets";
++  if (/^\/(library|doc|artifact)(\/|$)/.test(pathname)) return "/library/knowledge";
+   if (/^\/settings(\/|$)/.test(pathname)) return "/settings";
+   return null;
+ }
+@@ -182,7 +184,7 @@ function AppShellChrome(): React.JSX.Element {
+               {...copyProps("sidebar", item.copy)}>
+               <span className={styles.icon} data-nav-icon><Icon name={item.icon} size={18} /></span>
+               <span className={styles.navLabel}>{item.label}</span>
+-              {counts && typeof counts[item.count] === "number" ? <span className={styles.count}>{counts[item.count]}</span> : null}
++              {item.count && counts && typeof counts[item.count] === "number" ? <span className={styles.count}>{counts[item.count]}</span> : null}
+             </Link>
+           ))}
+           <div className={styles.divider} />
+diff --git a/v8/web/src/copy/pages.ts b/v8/web/src/copy/pages.ts
+index 01708fe..91c5ac7 100644
+--- a/v8/web/src/copy/pages.ts
++++ b/v8/web/src/copy/pages.ts
+@@ -28,7 +28,7 @@ export const SIDEBAR: PageCopy = {
+     { key: "decisions", label: "Decisions", text: "everything waiting on you: sign-offs, questions, gates, replies. Source: your inbox (events the board judged relevant to you).", control: true },
+     { key: "epics", label: "Epics", text: "every epic in the fleet with its progress. Source: /v1/epics/summary.", control: true },
+     { key: "seats", label: "Seats", text: "every agent shell, alive or closed, and what it last said. Source: pool sessions mirrored into the board.", control: true },
+-    { key: "library", label: "Library", text: "every document, artifact and ticket, searchable. Source: the board's records.", control: true },
++    { key: "library", label: "Library", text: "knowledge first — strategies, domains and lessons every epic can link (approve proposals, import from skills.sh) — then every document, artifact and ticket. Source: /v1/knowledge and the board's records.", control: true },
+     { key: "find", label: "Find (Ctrl K)", text: "full-text search across tickets, documents, messages and seats; Enter opens the hit.", control: true },
+     { key: "identity", label: "Account (bottom)", text: "who you are on this board; opens the account menu: Settings, What am I looking at?, theme, avatar. Source: /v1/whoami.", control: true },
+     { key: "new-epic", label: "New epic", text: "on the Epics page: records your words verbatim as a new epic and offers to spawn its architect; the preview lists who is woken before you confirm.", control: true },
+@@ -112,8 +112,12 @@ export const PAGES: Record<string, PageCopy> = {
+   library: {
+     key: "library",
+     title: "Library",
+-    framing: "Every record on the board: documents, artifacts, links, tickets; seven filters.",
+-    items: [{ key: "filters", label: "Filters", text: "type, epic, author, status, date, tag, text. Row click opens the record.", control: true }],
++    framing: "Knowledge every epic can use (strategies, domains, lessons), then every record on the board: documents, artifacts, links, tickets.",
++    items: [
++      { key: "knowledge", label: "Knowledge", text: "search, kind, tag and status filters; a doc opens to read, edit (a new version), approve or reject a proposal against its diff, and link or unlink it to an epic. Linked docs reach that epic's briefs as one index line, read on demand.", control: true },
++      { key: "import", label: "Import from skills.sh", text: "a skills.sh skill page or raw SKILL.md URL; the board fetches it once and files a high-level strategy with the skill's tags; the same URL again is the next version.", control: true },
++      { key: "filters", label: "Filters", text: "type, epic, author, status, date, tag, text. Row click opens the record.", control: true },
++    ],
+   },
+   settings: {
+     key: "settings",
+diff --git a/v8/web/src/pages/Epic.module.css b/v8/web/src/pages/Epic.module.css
+index 450fb8b..2008113 100644
+--- a/v8/web/src/pages/Epic.module.css
++++ b/v8/web/src/pages/Epic.module.css
+@@ -308,3 +308,20 @@
+   color: var(--ink);
+   white-space: pre-wrap;
+ }
++
++/* S-LIBRARY: the epic's linked Library docs */
++.knowledge {
++  list-style: none;
++  margin: 0 0 20px;
++  padding: 0;
++  display: flex;
++  flex-direction: column;
++  gap: 6px;
++  font-size: 14px;
++  line-height: 22px;
++  color: var(--ink);
++}
++.knowledge a {
++  color: var(--accentink);
++  overflow-wrap: anywhere;
++}
+diff --git a/v8/web/src/pages/Epic.tsx b/v8/web/src/pages/Epic.tsx
+index 812e086..4145207 100644
+--- a/v8/web/src/pages/Epic.tsx
++++ b/v8/web/src/pages/Epic.tsx
+@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+ import { getEpicPage, getEpicsSummary, getTicketsTable } from "../api/endpoints";
+ import { getPoolCapabilities, resumeSeat } from "../api/seats";
+ import { BoardApiError } from "../api/client";
+-import type { CriterionView, EpicSummaryRow, EpicTreeNode, MessageView, PoolCapabilities, TicketStatus } from "../api/types";
++import type { CriterionView, EpicKnowledgeRow, EpicSummaryRow, EpicTreeNode, MessageView, PoolCapabilities, TicketStatus } from "../api/types";
+ import { StatusChip } from "../components/StatusChip";
+ import { ProcessStrip } from "../components/ProcessStrip";
+ import { StatusControl } from "../components/StatusControl";
+@@ -142,7 +142,7 @@ export function EpicPage(): React.JSX.Element {
+         <div className={ui.sectionLabel}>Process</div>
+         <ProcessStrip status={epic.status} ariaLabel="Epic process" />
+       </section>
+-      <OverviewTab epicId={id} storyCount={stories.length} totals={totals} openGates={data.open_gates.length} docs={data.docs} criteria={data.criteria} />
++      <OverviewTab epicId={id} storyCount={stories.length} totals={totals} openGates={data.open_gates.length} docs={data.docs} knowledge={data.knowledge ?? []} criteria={data.criteria} />
+       <WorkTab epicId={id} epic={epic} stories={stories} />
+     </div>
+   );
+@@ -219,9 +219,9 @@ function DocLink({ id }: { id: string | null }): React.JSX.Element {
+   return <button type="button" className={styles.docLink} onClick={() => drawer.openDoc(id)}>{id}</button>;
+ }
+ 
+-function OverviewTab({ epicId, storyCount, totals, openGates, docs, criteria }: {
++function OverviewTab({ epicId, storyCount, totals, openGates, docs, knowledge, criteria }: {
+   epicId: string; storyCount: number; totals: { passed: number; total: number }; openGates: number;
+-  docs: { id: string; doc_type: string; title: string }[]; criteria: CriterionView[];
++  docs: { id: string; doc_type: string; title: string }[]; knowledge: EpicKnowledgeRow[]; criteria: CriterionView[];
+ }): React.JSX.Element {
+   const drawer = useDocDrawer();
+   const design = docs.find((d) => d.doc_type === "design");
+@@ -235,6 +235,23 @@ function OverviewTab({ epicId, storyCount, totals, openGates, docs, criteria }:
+             `${openGates} open ${openGates === 1 ? "gate" : "gates"}`}
+       </p>
+       {design ? <p className={ui.empty}>Design: <button type="button" className={styles.docLink} onClick={() => drawer.openDoc(design.id)}>{design.title}</button></p> : null}
++      {/* S-LIBRARY c-14e93ebfc7: the Library docs this epic's briefs index (link/unlink in the Library) */}
++      <div className={ui.sectionLabel}>Knowledge ({knowledge.length})</div>
++      {knowledge.length === 0 ? (
++        <p className={ui.empty} data-testid="epic-knowledge-empty">
++          No Library docs linked. <Link to="/library/knowledge">Link one from the Library</Link>.
++        </p>
++      ) : (
++        <ul className={styles.knowledge} data-testid="epic-knowledge">
++          {knowledge.map((k) => (
++            <li key={k.link_id}>
++              <span className={ui.tag}>{k.relation === "uses_domain" ? "domain" : "strategy"}</span>{" "}
++              <Link to={`/library/knowledge?k=${encodeURIComponent(k.id)}`}>{k.title}</Link>{" "}
++              <span className={ui.idMono}>v{k.version}{k.tags?.length ? ` · ${k.tags.join(", ")}` : ""}</span>
++            </li>
++          ))}
++        </ul>
++      )}
+       <div className={ui.sectionLabel}>Acceptance criteria ({criteria.length})</div>
+       {criteria.length === 0 ? (
+         <p className={ui.empty}>No acceptance criteria on the epic itself. Add one under Actions.</p>
+diff --git a/v8/web/src/pages/Knowledge.module.css b/v8/web/src/pages/Knowledge.module.css
+new file mode 100644
+index 0000000..b0f2523
+--- /dev/null
++++ b/v8/web/src/pages/Knowledge.module.css
+@@ -0,0 +1,183 @@
++/* S-LIBRARY: the Library's knowledge section — strategies, domains, lessons. */
++.tools {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 8px;
++  align-items: center;
++  margin-bottom: 16px;
++}
++.search {
++  flex: 1 1 240px;
++  min-width: 0;
++}
++.spacer {
++  flex: 1 1 0;
++}
++.proposedBanner {
++  margin: 0 0 16px;
++}
++.layout {
++  display: grid;
++  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
++  gap: 24px;
++  align-items: start;
++}
++@media (max-width: 1100px) {
++  .layout {
++    grid-template-columns: minmax(0, 1fr);
++  }
++}
++.row {
++  display: grid;
++  grid-template-columns: auto minmax(0, 1fr) auto;
++  gap: 4px 12px;
++  align-items: center;
++  width: 100%;
++  text-align: left;
++  background: var(--panel);
++  border: 1px solid var(--line);
++  border-radius: 8px;
++  padding: 12px 16px;
++  color: var(--ink);
++  font: inherit;
++}
++.row:hover {
++  border-color: var(--strongline);
++}
++.row:focus-visible {
++  outline: 2px solid var(--accentink);
++  outline-offset: 3px;
++}
++.rowSelected {
++  border-color: var(--accentink);
++  box-shadow: inset 3px 0 0 var(--accentink);
++}
++.rowTitle {
++  font-size: 14px;
++  line-height: 22px;
++  overflow-wrap: anywhere;
++}
++.rowMeta {
++  grid-column: 2 / 4;
++  display: flex;
++  flex-wrap: wrap;
++  gap: 6px;
++  color: var(--muted);
++  font-size: 12px;
++  line-height: 18px;
++}
++.status {
++  font-size: 12px;
++  font-weight: 600;
++  padding: 2px 8px;
++  border-radius: 999px;
++  border: 1px solid var(--strongline);
++  color: var(--ink);
++  white-space: nowrap;
++}
++.statusProposed {
++  background: var(--accentwash);
++  color: var(--accentink);
++}
++.statusRetired {
++  color: var(--muted);
++}
++.lesson {
++  padding: 12px 16px;
++  border: 1px solid var(--line);
++  border-radius: 8px;
++  background: var(--panel);
++  font-size: 14px;
++  line-height: 22px;
++  color: var(--ink);
++}
++.detail {
++  position: sticky;
++  top: 16px;
++  display: flex;
++  flex-direction: column;
++  gap: 12px;
++  padding: 20px;
++  border: 1px solid var(--line);
++  border-radius: 8px;
++  background: var(--panel);
++  min-width: 0;
++}
++.detailTitle {
++  margin: 0;
++  font: 400 22px/30px Georgia, serif;
++  color: var(--ink);
++  overflow-wrap: anywhere;
++}
++.actions {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 8px;
++}
++.diff {
++  margin: 0;
++  max-height: 360px;
++  overflow: auto;
++  padding: 12px;
++  border: 1px solid var(--line);
++  border-radius: 8px;
++  background: var(--bg);
++  font: 12px/18px Consolas, monospace;
++  white-space: pre-wrap;
++  overflow-wrap: anywhere;
++}
++.diffAdd {
++  display: block;
++  background: var(--successwash);
++  color: var(--ink);
++}
++.diffDel {
++  display: block;
++  background: var(--accentwash);
++  color: var(--ink);
++}
++.diffCtx {
++  display: block;
++  color: var(--muted);
++}
++.linked {
++  list-style: none;
++  margin: 0;
++  padding: 0;
++  display: flex;
++  flex-direction: column;
++  gap: 6px;
++}
++.linkedRow {
++  display: flex;
++  gap: 8px;
++  align-items: center;
++  font-size: 14px;
++  color: var(--ink);
++}
++.linkedTitle {
++  flex: 1;
++  min-width: 0;
++  overflow-wrap: anywhere;
++}
++.linkForm {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 8px;
++}
++.linkForm select {
++  flex: 1 1 200px;
++  min-width: 0;
++}
++.editor {
++  display: flex;
++  flex-direction: column;
++  gap: 8px;
++}
++.muted {
++  margin: 0;
++  color: var(--muted);
++  font-size: 13px;
++  line-height: 20px;
++  overflow-wrap: anywhere;
++}
+diff --git a/v8/web/src/pages/Knowledge.test.tsx b/v8/web/src/pages/Knowledge.test.tsx
+new file mode 100644
+index 0000000..4cf6253
+--- /dev/null
++++ b/v8/web/src/pages/Knowledge.test.tsx
+@@ -0,0 +1,134 @@
++import { describe, it, expect } from "vitest";
++import { screen, fireEvent, waitFor, within } from "@testing-library/react";
++import { server } from "../test/setup";
++import { KNOWLEDGE_DIFF, KNOWLEDGE_VIEW } from "../test/handlers";
++import { http, HttpResponse, okJson, renderRoute } from "./testUtils";
++import { LibraryPage } from "./Library";
++
++// S-LIBRARY c-ed2a341466 / c-14e93ebfc7: the Library's knowledge section — list, filters, proposal
++// diff with Approve / Reject, edit as a new version, link/unlink to an epic, import from skills.sh.
++function mount(path = "/library/knowledge") {
++  server.use(http.get("/v1/knowledge", () => okJson(KNOWLEDGE_VIEW)), http.get("/v1/docs/:id/diff", () => okJson(KNOWLEDGE_DIFF)));
++  return renderRoute(path, "/library/:section", <LibraryPage />);
++}
++const rows = () => screen.getAllByTestId("knowledge-row").map((r) => r.textContent ?? "");
++
++describe("Library knowledge", () => {
++  it("lists docs with a status word and lessons, and flags proposals", async () => {
++    mount();
++    await screen.findByTestId("knowledge-list");
++    expect(rows()).toHaveLength(3);
++    expect(screen.getAllByTestId("knowledge-status").map((s) => s.textContent)).toEqual(["Proposed", "Active", "Retired"]);
++    expect(screen.getByTestId("knowledge-lesson")).toHaveTextContent("restart the board by pid");
++    expect(screen.getByTestId("knowledge-proposed-banner")).toHaveTextContent("1 proposed doc waits");
++  });
++
++  it("filters by search, kind, tag and status", async () => {
++    mount();
++    await screen.findByTestId("knowledge-list");
++    fireEvent.change(screen.getByTestId("knowledge-tag"), { target: { value: "testing" } });
++    expect(rows()).toEqual([expect.stringContaining("py craft")]);
++    expect(screen.queryByTestId("knowledge-lesson")).toBeNull(); // lessons carry no tags
++    fireEvent.change(screen.getByTestId("knowledge-tag"), { target: { value: "" } });
++    fireEvent.change(screen.getByTestId("knowledge-kind"), { target: { value: "domain" } });
++    expect(rows()).toEqual([expect.stringContaining("board domain")]);
++    fireEvent.change(screen.getByTestId("knowledge-kind"), { target: { value: "" } });
++    fireEvent.change(screen.getByTestId("knowledge-status-filter"), { target: { value: "proposed" } });
++    expect(rows()).toEqual([expect.stringContaining("py craft v2")]);
++    fireEvent.change(screen.getByTestId("knowledge-status-filter"), { target: { value: "" } });
++    fireEvent.change(screen.getByTestId("knowledge-search"), { target: { value: "pid" } });
++    expect(screen.queryAllByTestId("knowledge-row")).toHaveLength(0);
++    expect(screen.getByTestId("knowledge-lesson")).toBeInTheDocument();
++  });
++
++  it("shows a proposal's diff with words and approves it", async () => {
++    let approved = "";
++    server.use(http.post("/v1/docs/:id/approve", ({ params }) => { approved = String(params.id); return okJson({ doc: {}, target: {} }); }));
++    mount("/library/knowledge?k=strategyhl-2");
++    const detail = await screen.findByTestId("knowledge-detail");
++    const diff = await within(detail).findByTestId("knowledge-diff");
++    expect(diff).toHaveTextContent("added: +- rule two");
++    expect(within(detail).getByTestId("knowledge-title-change")).toHaveTextContent("Title: “py craft” → “py craft v2”");
++    expect(within(detail).getByTestId("knowledge-source")).toHaveTextContent("Proposed by engineer.s-1 on s-1 as the next version of strategyhl-1");
++    fireEvent.click(within(detail).getByTestId("knowledge-approve"));
++    await waitFor(() => expect(approved).toBe("strategyhl-2"));
++  });
++
++  it("rejects a proposal and shows the board's refusal verbatim", async () => {
++    server.use(http.post("/v1/docs/:id/reject", () =>
++      HttpResponse.json({ ok: false, error: { code: "scope", message: "only the owner approves or rejects a proposed doc" }, hint: "" }, { status: 403 })));
++    mount("/library/knowledge?k=strategyhl-2");
++    fireEvent.click(await screen.findByTestId("knowledge-reject"));
++    expect(await screen.findByTestId("knowledge-error")).toHaveTextContent("only the owner approves or rejects a proposed doc");
++  });
++
++  it("edits a doc as a new version with tags", async () => {
++    let body: Record<string, unknown> | null = null;
++    server.use(
++      http.get("/v1/docs/:id", () => okJson({ id: "strategyhl-1", doc_type: "strategy_hl", title: "py craft", body_md: "- rule one",
++        version: 3, tags: ["python"], status: "active", versions: [1, 2, 3] })),
++      http.patch("/v1/docs/:id", async ({ request }) => { body = (await request.json()) as Record<string, unknown>; return okJson({}); }),
++    );
++    mount("/library/knowledge?k=strategyhl-1");
++    fireEvent.click(await screen.findByTestId("knowledge-edit"));
++    const text = await screen.findByTestId("knowledge-edit-body");
++    expect(text).toHaveValue("- rule one");
++    fireEvent.change(text, { target: { value: "- rule one\n- rule two" } });
++    fireEvent.change(screen.getByTestId("knowledge-edit-tags"), { target: { value: "Python, web" } });
++    fireEvent.click(screen.getByRole("button", { name: "Save as v4" }));
++    await waitFor(() => expect(body).toEqual({ body_md: "- rule one\n- rule two", tags: ["python", "web"] }));
++  });
++
++  it("links to an epic and unlinks", async () => {
++    const calls: string[] = [];
++    server.use(
++      http.post("/v1/links", async ({ request }) => { const b = (await request.json()) as Record<string, string>; calls.push(`link ${b.from_id} ${b.relation} ${b.to_id}`); return okJson({}); }),
++      http.delete("/v1/links/:id", ({ params }) => { calls.push(`unlink ${String(params.id)}`); return okJson({ deleted: true }); }),
++    );
++    mount("/library/knowledge?k=strategyhl-1");
++    const linked = await screen.findByTestId("knowledge-linked");
++    expect(linked).toHaveTextContent("The epic");
++    const pick = screen.getByTestId("knowledge-link-epic");
++    expect(within(pick).queryByText(/The epic/)).toBeNull(); // already linked: not offered again
++    fireEvent.change(pick, { target: { value: "epic-2" } });
++    fireEvent.click(screen.getByTestId("knowledge-link"));
++    fireEvent.click(screen.getByTestId("knowledge-unlink"));
++    await waitFor(() => expect([...calls].sort()).toEqual(["link epic-2 uses_strategy strategyhl-1", "unlink lk-1"]));
++  });
++
++  it("imports from skills.sh and reports the board's hint", async () => {
++    let sent: Record<string, unknown> | null = null;
++    server.use(http.post("/v1/library/import", async ({ request }) => {
++      sent = (await request.json()) as Record<string, unknown>;
++      return okJson({ doc: { id: "strategyhl-9" }, created: true, fetched: "https://raw…" }, "imported as strategyhl-9 v1");
++    }));
++    mount();
++    fireEvent.click(await screen.findByTestId("knowledge-import-open"));
++    const dialog = await screen.findByRole("dialog", { name: "Import from skills.sh" });
++    const run = within(dialog).getByTestId("knowledge-import-run");
++    expect(run).toBeDisabled();
++    fireEvent.change(within(dialog).getByTestId("knowledge-import-url"), { target: { value: "https://skills.sh/anthropics/skills/frontend-design" } });
++    fireEvent.click(run);
++    expect(await within(dialog).findByTestId("knowledge-import-done")).toHaveTextContent("imported as strategyhl-9 v1");
++    expect(sent).toEqual({ url: "https://skills.sh/anthropics/skills/frontend-design", tags: [] });
++    fireEvent.keyDown(document, { key: "Escape" });
++    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
++  });
++
++  it("creates a new knowledge doc", async () => {
++    let sent: Record<string, unknown> | null = null;
++    server.use(http.post("/v1/docs", async ({ request }) => {
++      sent = (await request.json()) as Record<string, unknown>;
++      return okJson({ id: "domain-9" });
++    }));
++    mount();
++    fireEvent.click(await screen.findByTestId("knowledge-new-open"));
++    const dialog = await screen.findByRole("dialog", { name: "New knowledge doc" });
++    fireEvent.change(within(dialog).getByLabelText("Kind"), { target: { value: "domain" } });
++    fireEvent.change(within(dialog).getByTestId("knowledge-new-title"), { target: { value: "Board domain" } });
++    fireEvent.change(within(dialog).getByLabelText(/Tags/), { target: { value: "board ops" } });
++    fireEvent.change(within(dialog).getByTestId("knowledge-new-body"), { target: { value: "- a fact" } });
++    fireEvent.click(within(dialog).getByTestId("knowledge-new-create"));
++    await waitFor(() => expect(sent).toEqual({ scope: "global", doc_type: "domain", title: "Board domain", body_md: "- a fact", tags: ["board", "ops"] }));
++  });
++});
+diff --git a/v8/web/src/pages/Knowledge.tsx b/v8/web/src/pages/Knowledge.tsx
+new file mode 100644
+index 0000000..bf1f695
+--- /dev/null
++++ b/v8/web/src/pages/Knowledge.tsx
+@@ -0,0 +1,121 @@
++import { useMemo, useState } from "react";
++import { useSearchParams } from "react-router";
++import { useQuery } from "@tanstack/react-query";
++import { getKnowledge } from "../api/endpoints";
++import type { DocStatus, KnowledgeDoc, KnowledgeLesson } from "../api/types";
++import { KIND_LABEL, KNOWLEDGE_KINDS, STATUS_WORD, StatusWord } from "./knowledgeShared";
++import ui from "../components/ui.module.css";
++import { ImportSkillDialog, NewKnowledgeDialog } from "./KnowledgeDialogs";
++import { KnowledgeDetail } from "./KnowledgeDetail";
++import styles from "./Knowledge.module.css";
++
++// S-LIBRARY (design-34bf11cc07 §4.3, owner m-5b3db5cb0d "sme tab? sure"): the Library's knowledge —
++// strategies, domains and lessons — as a standing shelf any epic's seats reach through their brief's
++// index (never inlined). Search + kind/tag/status filters; a row opens the detail pane (read, edit
++// as a new version, tags, approve/reject a proposal against its diff, link/unlink to an epic); New
++// doc and Import from skills.sh add to it. The selected doc lives in `?k=` so a link reopens it.
++
++function matchesText(needle: string, ...fields: (string | undefined | null)[]): boolean {
++  return !needle || fields.some((f) => (f ?? "").toLowerCase().includes(needle));
++}
++
++export function KnowledgeSection(): React.JSX.Element {
++  const [params, setParams] = useSearchParams();
++  const [q, setQ] = useState("");
++  const [kind, setKind] = useState("");
++  const [tag, setTag] = useState("");
++  const [status, setStatus] = useState<"" | DocStatus>("");
++  const [dialog, setDialog] = useState<null | "new" | "import">(null);
++  const query = useQuery({ queryKey: ["knowledge"], queryFn: getKnowledge });
++  const selectedId = params.get("k");
++  const select = (id: string | null) => {
++    const next = new URLSearchParams(params);
++    if (id) next.set("k", id); else next.delete("k");
++    setParams(next, { replace: true });
++  };
++
++  const needle = q.trim().toLowerCase();
++  const docs = useMemo<KnowledgeDoc[]>(() => (query.data?.docs ?? []).filter((d) =>
++    (!kind || d.doc_type === kind) && (!tag || d.tags.includes(tag)) && (!status || d.status === status) &&
++    matchesText(needle, d.title, d.id, d.summary, d.tags.join(" "))), [query.data, kind, tag, status, needle]);
++  const lessons = useMemo<KnowledgeLesson[]>(() => (query.data?.lessons ?? []).filter((l) =>
++    (!kind || kind === "lesson") && !tag && (!status || status === "active") &&
++    matchesText(needle, l.text, l.topic, l.domain)), [query.data, kind, tag, status, needle]);
++
++  if (query.isPending) return <p className={ui.empty}>Loading…</p>;
++  if (query.isError) return <p className={ui.banner} role="alert">{(query.error as Error).message}</p>;
++  const data = query.data;
++  const proposed = data.docs.filter((d) => d.status === "proposed").length;
++  const selected = data.docs.find((d) => d.id === selectedId) ?? null;
++
++  return (
++    <section data-testid="knowledge">
++      <div className={styles.tools}>
++        <input className={`${ui.input} ${styles.search}`} type="search" aria-label="Search knowledge"
++          placeholder="Search title, text, tag…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="knowledge-search" />
++        <select className={ui.select} aria-label="Kind" value={kind} onChange={(e) => setKind(e.target.value)} data-testid="knowledge-kind">
++          <option value="">every kind</option>
++          {[...KNOWLEDGE_KINDS, "lesson"].map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
++        </select>
++        <select className={ui.select} aria-label="Tag" value={tag} onChange={(e) => setTag(e.target.value)} data-testid="knowledge-tag">
++          <option value="">any tag</option>
++          {data.tags.map((t) => <option key={t} value={t}>{t}</option>)}
++        </select>
++        <select className={ui.select} aria-label="Status" value={status}
++          onChange={(e) => setStatus(e.target.value as "" | DocStatus)} data-testid="knowledge-status-filter">
++          <option value="">any status</option>
++          {(["active", "proposed", "retired"] as const).map((s) => <option key={s} value={s}>{STATUS_WORD[s]}</option>)}
++        </select>
++        <span className={styles.spacer} />
++        <button type="button" className={ui.button} onClick={() => setDialog("import")} data-testid="knowledge-import-open">
++          Import from skills.sh
++        </button>
++        <button type="button" className={`${ui.button} ${ui.buttonPrimary}`} onClick={() => setDialog("new")}
++          data-testid="knowledge-new-open">New doc</button>
++      </div>
++      {proposed > 0 ? (
++        <p className={`${ui.banner} ${styles.proposedBanner}`} data-testid="knowledge-proposed-banner">
++          {proposed} proposed {proposed === 1 ? "doc waits" : "docs wait"} for your approval.{" "}
++          <button type="button" className={ui.button} onClick={() => setStatus("proposed")}>Show proposed</button>
++        </p>
++      ) : null}
++      <div className={styles.layout}>
++        <div>
++          <div className={ui.sectionLabel}>{docs.length} {docs.length === 1 ? "doc" : "docs"} · {lessons.length} {lessons.length === 1 ? "lesson" : "lessons"}</div>
++          {docs.length === 0 && lessons.length === 0 ? (
++            <p className={ui.empty}>Nothing matches. Import a skill or write a doc.</p>
++          ) : null}
++          <ul className={styles.linked} aria-label="Knowledge docs" data-testid="knowledge-list">
++            {docs.map((d) => (
++              <li key={d.id}>
++                <button type="button" className={`${styles.row} ${d.id === selectedId ? styles.rowSelected : ""}`}
++                  aria-pressed={d.id === selectedId} onClick={() => select(d.id)} data-testid="knowledge-row">
++                  <span className={ui.tag}>{KIND_LABEL[d.doc_type] ?? d.doc_type}</span>
++                  <span className={styles.rowTitle}>{d.title}</span>
++                  <StatusWord status={d.status} />
++                  <span className={styles.rowMeta}>
++                    <span>v{d.version}</span>
++                    {d.tags.length ? <span>{d.tags.map((t) => `#${t}`).join(" ")}</span> : <span>untagged</span>}
++                    <span>{d.linked.length ? `linked to ${d.linked.length}` : "not linked"}</span>
++                  </span>
++                </button>
++              </li>
++            ))}
++            {lessons.map((l) => (
++              <li key={l.id} className={styles.lesson} data-testid="knowledge-lesson">
++                <span className={ui.tag}>lesson</span> <strong>{l.domain} · {l.topic}</strong> — {l.text}
++              </li>
++            ))}
++          </ul>
++        </div>
++        {selected ? (
++          <KnowledgeDetail key={selected.id} doc={selected} epics={data.epics} onClose={() => select(null)} />
++        ) : (
++          <p className={ui.empty}>Pick a doc to read, edit, rule on or link it.</p>
++        )}
++      </div>
++      <NewKnowledgeDialog open={dialog === "new"} onClose={() => setDialog(null)} onCreated={(id) => select(id)} />
++      <ImportSkillDialog open={dialog === "import"} onClose={() => setDialog(null)} onImported={(id) => select(id)} />
++    </section>
++  );
++}
+diff --git a/v8/web/src/pages/KnowledgeDetail.tsx b/v8/web/src/pages/KnowledgeDetail.tsx
+new file mode 100644
+index 0000000..341353b
+--- /dev/null
++++ b/v8/web/src/pages/KnowledgeDetail.tsx
+@@ -0,0 +1,187 @@
++import { useState } from "react";
++import { Link } from "react-router";
++import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
++import { approveDoc, createLink, deleteLink, getDoc, getDocDiff, rejectDoc, updateDoc } from "../api/endpoints";
++import type { BoardApiError } from "../api/client";
++import type { KnowledgeDoc, KnowledgeView } from "../api/types";
++import { useDocDrawer } from "../components/DocDrawer";
++import ui from "../components/ui.module.css";
++import { KIND_LABEL, StatusWord } from "./knowledgeShared";
++import styles from "./Knowledge.module.css";
++
++// One knowledge doc: meta + provenance, Read (the doc drawer), Edit (title/body/tags → the board
++// writes a new version), a proposal's diff against the active version with Approve / Reject, and
++// the epics it is linked to with Unlink + Link to an epic (uses_domain for a domain doc, else
++// uses_strategy). Every write invalidates ["knowledge"] and the epic pages so the change shows at once.
++
++export function parseTags(s: string): string[] {
++  return s.split(/[,\s]+/).map((t) => t.trim().toLowerCase()).filter(Boolean);
++}
++
++function errText(e: unknown): string | null {
++  if (!e) return null;
++  const b = e as BoardApiError;
++  return b.hint || b.message;
++}
++
++export function DiffView({ diff, titleFrom, titleTo }: {
++  diff: string; titleFrom?: string | null; titleTo?: string;
++}): React.JSX.Element {
++  // approval overwrites the active title too, so a title change is shown even when the body is equal
++  const title = titleFrom != null && titleTo !== undefined && titleFrom !== titleTo ? (
++    <p className={styles.muted} data-testid="knowledge-title-change">Title: “{titleFrom}” → “{titleTo}”</p>
++  ) : null;
++  if (!diff) return <>{title}<p className={styles.muted}>{title ? "The body is unchanged." : "No change against the active version."}</p></>;
++  return (
++    <>{title}<pre className={styles.diff} data-testid="knowledge-diff" aria-label="Changes against the active version">
++      {diff.split("\n").map((line, i) => {
++        const cls = line.startsWith("+") && !line.startsWith("+++") ? styles.diffAdd
++          : line.startsWith("-") && !line.startsWith("---") ? styles.diffDel : styles.diffCtx;
++        const word = cls === styles.diffAdd ? "added: " : cls === styles.diffDel ? "removed: " : "";
++        return <span key={i} className={cls}><span className="srOnly">{word}</span>{line || " "}</span>;
++      })}
++    </pre></>
++  );
++}
++
++export function KnowledgeDetail({ doc, epics, onClose }: {
++  doc: KnowledgeDoc; epics: KnowledgeView["epics"]; onClose: () => void;
++}): React.JSX.Element {
++  const qc = useQueryClient();
++  const drawer = useDocDrawer();
++  const refresh = () => {
++    void qc.invalidateQueries({ queryKey: ["knowledge"] });
++    void qc.invalidateQueries({ queryKey: ["epic"] });
++    void qc.invalidateQueries({ queryKey: ["doc", doc.id] });
++  };
++  const [editing, setEditing] = useState(false);
++  const [epicPick, setEpicPick] = useState("");
++  const relation = doc.doc_type === "domain" ? "uses_domain" : "uses_strategy";
++
++  const diff = useQuery({ queryKey: ["doc", doc.id, "diff"], queryFn: () => getDocDiff(doc.id), enabled: doc.status === "proposed" });
++  const approve = useMutation({ mutationFn: () => approveDoc(doc.id), onSuccess: refresh });
++  const reject = useMutation({ mutationFn: () => rejectDoc(doc.id), onSuccess: refresh });
++  const link = useMutation({
++    mutationFn: () => createLink({ from_id: epicPick, to_id: doc.id, relation }),
++    onSuccess: () => { setEpicPick(""); refresh(); },
++  });
++  const unlink = useMutation({ mutationFn: (linkId: string) => deleteLink(linkId), onSuccess: refresh });
++  const linkedIds = new Set(doc.linked.map((l) => l.ticket_id));
++  const error = errText(approve.error ?? reject.error ?? link.error ?? unlink.error);
++
++  return (
++    <aside className={styles.detail} aria-label={`Knowledge doc ${doc.title}`} data-testid="knowledge-detail">
++      <h2 className={styles.detailTitle}>{doc.title}</h2>
++      <p className={styles.muted}>
++        <span className={ui.tag}>{KIND_LABEL[doc.doc_type] ?? doc.doc_type}</span> <StatusWord status={doc.status} /> ·
++        v{doc.version} · {doc.id} · by {doc.created_by}
++      </p>
++      <p className={styles.muted} data-testid="knowledge-tags">Tags: {doc.tags.length ? doc.tags.join(", ") : "none"}</p>
++      {doc.source_url ? <p className={styles.muted}>Imported from <a href={doc.source_url} target="_blank" rel="noreferrer">{doc.source_url}</a></p> : null}
++      {doc.source ? (
++        <p className={styles.muted} data-testid="knowledge-source">
++          Proposed by {doc.source.participant}
++          {doc.source.ticket ? <> on <Link to={`/ticket/${encodeURIComponent(doc.source.ticket)}`}>{doc.source.ticket}</Link></> : null}
++          {doc.proposes ? <> as the next version of {doc.proposes}</> : " as a new doc"}
++        </p>
++      ) : null}
++      {doc.resolution ? <p className={styles.muted}>Resolution: {doc.resolution}</p> : null}
++      <div className={styles.actions}>
++        <button type="button" className={ui.button} onClick={() => drawer.openDoc(doc.id)} data-testid="knowledge-read">Read</button>
++        {doc.status !== "retired" ? (
++          <button type="button" className={ui.button} onClick={() => setEditing((v) => !v)} aria-expanded={editing}
++            data-testid="knowledge-edit">{editing ? "Close editor" : "Edit"}</button>
++        ) : null}
++        <button type="button" className={ui.button} onClick={onClose}>Close</button>
++      </div>
++      {editing ? <KnowledgeEditor doc={doc} onSaved={() => { setEditing(false); refresh(); }} /> : null}
++
++      {doc.status === "proposed" ? (
++        <section aria-label="Proposal">
++          <div className={ui.sectionLabel}>
++            {doc.proposes ? `Changes against the active version of ${doc.proposes}` : "A new doc (no active version)"}
++          </div>
++          {diff.isPending ? <p className={styles.muted}>Loading the diff…</p> : null}
++          {diff.isError ? <p className={ui.banner} role="alert">{errText(diff.error)}</p> : null}
++          {diff.data ? <DiffView diff={diff.data.diff} titleFrom={diff.data.title_changed ? diff.data.base_title : null} titleTo={diff.data.title} /> : null}
++          <div className={styles.actions}>
++            <button type="button" className={`${ui.button} ${ui.buttonPrimary}`} disabled={approve.isPending || reject.isPending}
++              onClick={() => approve.mutate()} data-testid="knowledge-approve">
++              {doc.proposes ? "Approve — becomes the next version" : "Approve — becomes active"}
++            </button>
++            <button type="button" className={`${ui.button} ${ui.buttonFail}`} disabled={approve.isPending || reject.isPending}
++              onClick={() => reject.mutate()} data-testid="knowledge-reject">Reject — retire it</button>
++          </div>
++        </section>
++      ) : null}
++
++      {doc.status === "active" ? (
++        <section aria-label="Linked epics">
++          <div className={ui.sectionLabel}>Linked to ({doc.linked.length})</div>
++          {doc.linked.length === 0 ? <p className={styles.muted}>No epic uses it yet.</p> : (
++            <ul className={styles.linked} data-testid="knowledge-linked">
++              {doc.linked.map((l) => (
++                <li key={l.link_id} className={styles.linkedRow}>
++                  <span className={ui.tag}>{l.kind}</span>
++                  <Link className={styles.linkedTitle} to={`/${l.kind === "epic" ? "epic" : "ticket"}/${encodeURIComponent(l.ticket_id)}`}>
++                    {l.title}
++                  </Link>
++                  <button type="button" className={ui.button} disabled={unlink.isPending}
++                    onClick={() => unlink.mutate(l.link_id)} data-testid="knowledge-unlink">Unlink</button>
++                </li>
++              ))}
++            </ul>
++          )}
++          <form className={styles.linkForm} onSubmit={(e) => { e.preventDefault(); if (epicPick) link.mutate(); }}>
++            <select className={ui.select} aria-label="Epic to link" value={epicPick} onChange={(e) => setEpicPick(e.target.value)}
++              data-testid="knowledge-link-epic">
++              <option value="">Choose an epic…</option>
++              {epics.filter((e) => !linkedIds.has(e.id)).map((e) => (
++                <option key={e.id} value={e.id}>{e.title} ({e.status.replace(/_/g, " ")})</option>
++              ))}
++            </select>
++            <button type="submit" className={ui.button} disabled={!epicPick || link.isPending} data-testid="knowledge-link">
++              Link to epic
++            </button>
++          </form>
++          <p className={styles.muted}>Linked docs appear in that epic's briefs as one index line, read on demand.</p>
++        </section>
++      ) : null}
++      {error ? <p className={ui.banner} role="alert" data-testid="knowledge-error">{error}</p> : null}
++    </aside>
++  );
++}
++
++function KnowledgeEditor({ doc, onSaved }: { doc: KnowledgeDoc; onSaved: () => void }): React.JSX.Element {
++  const full = useQuery({ queryKey: ["doc", doc.id, "record"], queryFn: () => getDoc(doc.id) });
++  const [title, setTitle] = useState<string | null>(null);
++  const [body, setBody] = useState<string | null>(null);
++  const [tags, setTags] = useState<string | null>(null);
++  const save = useMutation({
++    mutationFn: () => updateDoc(doc.id, {
++      title: title ?? undefined, body_md: body ?? undefined, tags: tags === null ? undefined : parseTags(tags),
++    }),
++    onSuccess: onSaved,
++  });
++  if (full.isPending) return <p className={styles.muted}>Loading the doc…</p>;
++  if (full.isError) return <p className={ui.banner} role="alert">{errText(full.error)}</p>;
++  const changed = title !== null || body !== null || tags !== null;
++  return (
++    <form className={styles.editor} onSubmit={(e) => { e.preventDefault(); if (changed) save.mutate(); }}
++      data-testid="knowledge-editor">
++      <label className={ui.sectionLabel} htmlFor="kd-title">Title</label>
++      <input id="kd-title" className={ui.input} value={title ?? full.data.title} onChange={(e) => setTitle(e.target.value)} />
++      <label className={ui.sectionLabel} htmlFor="kd-tags">Tags (comma or space separated)</label>
++      <input id="kd-tags" className={ui.input} value={tags ?? (full.data.tags ?? []).join(", ")}
++        onChange={(e) => setTags(e.target.value)} data-testid="knowledge-edit-tags" />
++      <label className={ui.sectionLabel} htmlFor="kd-body">Body (markdown)</label>
++      <textarea id="kd-body" className={ui.textarea} rows={14} value={body ?? full.data.body_md}
++        onChange={(e) => setBody(e.target.value)} data-testid="knowledge-edit-body" />
++      {save.isError ? <p className={ui.banner} role="alert">{errText(save.error)}</p> : null}
++      <div className={styles.actions}>
++        <button type="submit" className={`${ui.button} ${ui.buttonPrimary}`} disabled={!changed || save.isPending}
++          data-testid="knowledge-save">{save.isPending ? "Saving…" : `Save as v${doc.version + 1}`}</button>
++      </div>
++    </form>
++  );
++}
+diff --git a/v8/web/src/pages/KnowledgeDialogs.tsx b/v8/web/src/pages/KnowledgeDialogs.tsx
+new file mode 100644
+index 0000000..1ef0fc1
+--- /dev/null
++++ b/v8/web/src/pages/KnowledgeDialogs.tsx
+@@ -0,0 +1,124 @@
++import { useRef, useState } from "react";
++import { createPortal } from "react-dom";
++import { useMutation, useQueryClient } from "@tanstack/react-query";
++import { createKnowledgeDoc, importSkill } from "../api/endpoints";
++import type { BoardApiError } from "../api/client";
++import ui from "../components/ui.module.css";
++import dialogStyles from "../components/NewEpicDialog.module.css";
++import { useModalDialog } from "../components/useModalDialog";
++import { parseTags } from "./KnowledgeDetail";
++import { KIND_LABEL, KNOWLEDGE_KINDS } from "./knowledgeShared";
++
++// The two Library add paths (S-LIBRARY). Both are page dialogs under the shared modal contract
++// (Esc closes and restores focus, focus trapped, background inert). The board's error sentence
++// shows verbatim; success selects the new doc in the list.
++
++function errText(e: unknown): string | null {
++  if (!e) return null;
++  const b = e as BoardApiError;
++  return b.hint || b.message;
++}
++
++export function NewKnowledgeDialog({ open, onClose, onCreated }: {
++  open: boolean; onClose: () => void; onCreated: (id: string) => void;
++}): React.JSX.Element | null {
++  const [kind, setKind] = useState<string>("strategy_hl");
++  const [title, setTitle] = useState("");
++  const [tags, setTags] = useState("");
++  const [body, setBody] = useState("");
++  const panelRef = useRef<HTMLFormElement>(null);
++  const firstRef = useRef<HTMLSelectElement>(null);
++  const busy = useRef(false);
++  const qc = useQueryClient();
++  useModalDialog(open, panelRef, firstRef, busy, onClose);
++  const create = useMutation({
++    mutationFn: () => createKnowledgeDoc({ doc_type: kind, title: title.trim(), body_md: body, tags: parseTags(tags) }),
++    onSuccess: (res) => {
++      void qc.invalidateQueries({ queryKey: ["knowledge"] });
++      setTitle(""); setTags(""); setBody("");
++      onCreated(res.value.id);
++      onClose();
++    },
++    onSettled: () => { busy.current = false; },
++  });
++  if (!open) return null;
++  const ready = Boolean(title.trim()) && Boolean(body.trim());
++  return createPortal(
++    <div className={dialogStyles.scrim} onMouseDown={(e) => e.target === e.currentTarget && !busy.current && onClose()}>
++      <form className={dialogStyles.dialog} ref={panelRef} role="dialog" aria-modal="true" aria-label="New knowledge doc"
++        data-testid="knowledge-new-dialog"
++        onSubmit={(e) => { e.preventDefault(); if (ready && !busy.current) { busy.current = true; create.mutate(); } }}>
++        <h2 className={dialogStyles.title}>New knowledge doc</h2>
++        <label className={ui.sectionLabel} htmlFor="kn-kind">Kind</label>
++        <select id="kn-kind" ref={firstRef} className={ui.select} value={kind} onChange={(e) => setKind(e.target.value)}>
++          {KNOWLEDGE_KINDS.map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
++        </select>
++        <label className={ui.sectionLabel} htmlFor="kn-title">Title</label>
++        <input id="kn-title" className={ui.input} value={title} onChange={(e) => setTitle(e.target.value)} data-testid="knowledge-new-title" />
++        <label className={ui.sectionLabel} htmlFor="kn-tags">Tags (comma or space separated)</label>
++        <input id="kn-tags" className={ui.input} value={tags} onChange={(e) => setTags(e.target.value)} placeholder="python, web" />
++        <label className={ui.sectionLabel} htmlFor="kn-body">Body (markdown)</label>
++        <textarea id="kn-body" className={ui.textarea} rows={10} value={body} onChange={(e) => setBody(e.target.value)}
++          data-testid="knowledge-new-body"
++          placeholder={"- a bar a seat applies [required]\n- context a seat reads on demand"} />
++        <p className={dialogStyles.muted}>Lines tagged [required]/[expected]/[preferred] or checkboxes are inlined into briefs; the rest is read on demand.</p>
++        {create.isError ? <p className={ui.banner} role="alert">{errText(create.error)}</p> : null}
++        <div className={dialogStyles.actions}>
++          <button type="button" className={ui.button} onClick={onClose} disabled={create.isPending}>Cancel</button>
++          <button type="submit" className={`${ui.button} ${ui.buttonPrimary}`} disabled={!ready || create.isPending}
++            data-testid="knowledge-new-create">{create.isPending ? "Saving…" : "Create"}</button>
++        </div>
++      </form>
++    </div>, document.body,
++  );
++}
++
++export function ImportSkillDialog({ open, onClose, onImported }: {
++  open: boolean; onClose: () => void; onImported: (id: string) => void;
++}): React.JSX.Element | null {
++  const [url, setUrl] = useState("");
++  const [tags, setTags] = useState("");
++  const [done, setDone] = useState<string | null>(null);
++  const panelRef = useRef<HTMLFormElement>(null);
++  const firstRef = useRef<HTMLInputElement>(null);
++  const busy = useRef(false);
++  const qc = useQueryClient();
++  useModalDialog(open, panelRef, firstRef, busy, onClose);
++  const run = useMutation({
++    mutationFn: () => importSkill({ url: url.trim(), tags: parseTags(tags) }),
++    onSuccess: (res) => {
++      void qc.invalidateQueries({ queryKey: ["knowledge"] });
++      setDone(res.hint);
++      onImported(res.value.doc.id);
++    },
++    onSettled: () => { busy.current = false; },
++  });
++  if (!open) return null;
++  const ready = /^https:\/\/\S+$/.test(url.trim());
++  const close = () => { setDone(null); setUrl(""); setTags(""); run.reset(); onClose(); };
++  return createPortal(
++    <div className={dialogStyles.scrim} onMouseDown={(e) => e.target === e.currentTarget && !busy.current && close()}>
++      <form className={dialogStyles.dialog} ref={panelRef} role="dialog" aria-modal="true" aria-label="Import from skills.sh"
++        data-testid="knowledge-import-dialog"
++        onSubmit={(e) => { e.preventDefault(); if (ready && !busy.current) { busy.current = true; setDone(null); run.mutate(); } }}>
++        <h2 className={dialogStyles.title}>Import from skills.sh</h2>
++        <label className={ui.sectionLabel} htmlFor="ki-url">Skill page or SKILL.md URL</label>
++        <input id="ki-url" ref={firstRef} className={ui.input} value={url} onChange={(e) => setUrl(e.target.value)}
++          placeholder="https://skills.sh/anthropics/skills/frontend-design" data-testid="knowledge-import-url" />
++        <label className={ui.sectionLabel} htmlFor="ki-tags">Extra tags (optional)</label>
++        <input id="ki-tags" className={ui.input} value={tags} onChange={(e) => setTags(e.target.value)} placeholder="web, design" />
++        <p className={dialogStyles.muted}>
++          The board fetches the skill once (skills.sh page, a GitHub blob or a raw SKILL.md; 256 KB, 10 s) and files it as a
++          high-level strategy with the skill's tags. Importing the same URL again writes the next version. Nothing runs at seat boot.
++        </p>
++        {run.isError ? <p className={ui.banner} role="alert" data-testid="knowledge-import-error">{errText(run.error)}</p> : null}
++        {done ? <p className={dialogStyles.preview} role="status" data-testid="knowledge-import-done">{done}</p> : null}
++        <div className={dialogStyles.actions}>
++          <button type="button" className={ui.button} onClick={close} disabled={run.isPending}>{done ? "Done" : "Cancel"}</button>
++          <button type="submit" className={`${ui.button} ${ui.buttonPrimary}`} disabled={!ready || run.isPending}
++            data-testid="knowledge-import-run">{run.isPending ? "Fetching…" : "Import"}</button>
++        </div>
++      </form>
++    </div>, document.body,
++  );
++}
+diff --git a/v8/web/src/pages/Library.tsx b/v8/web/src/pages/Library.tsx
+index fd4daea..8691e66 100644
+--- a/v8/web/src/pages/Library.tsx
++++ b/v8/web/src/pages/Library.tsx
+@@ -8,12 +8,15 @@ import { PageHeader } from "../components/PageHeader";
+ import ui from "../components/ui.module.css";
+ import { ArtifactLink } from "../components/ArtifactLink";
+ import styles from "./Library.module.css";
++import { KnowledgeSection } from "./Knowledge";
+ 
++// S-LIBRARY (design-34bf11cc07 §4.3): Knowledge (strategies, domains, lessons) is the first section and
++// the rail's Library item lands on it.
+ // Library destination (design §4.2/§12): sub-nav Documents / Artifacts / Links / Tickets /
+ // History over one workspace. Tickets is the cross-epic table with the seven legacy filters bound
+ // to the query string (parity test_tickets_page_filters); History is the day-grouped activity
+ // replay (parity /ui/activity). The legacy /ui/tickets and /ui/activity paths redirect here.
+-const SECTIONS = ["documents", "artifacts", "links", "tickets", "history"] as const;
++const SECTIONS = ["knowledge", "documents", "artifacts", "links", "tickets", "history"] as const;
+ type Section = (typeof SECTIONS)[number];
+ 
+ export function LibraryPage(): React.JSX.Element {
+@@ -24,7 +27,7 @@ export function LibraryPage(): React.JSX.Element {
+ 
+   return (
+     <>
+-      <PageHeader title="Library" subtitle="Every record on the board, in one place." />
++      <PageHeader title="Library" subtitle="Knowledge every epic can use, and every record on the board." />
+       <nav className={styles.subnav} aria-label="Library sections">
+         {SECTIONS.map((s) => (
+           <NavLink
+@@ -37,6 +40,7 @@ export function LibraryPage(): React.JSX.Element {
+         ))}
+       </nav>
+ 
++      {active === "knowledge" ? <KnowledgeSection /> : null}
+       {active === "documents" ? <DocumentsSection /> : null}
+       {active === "artifacts" ? <ArtifactsSection /> : null}
+       {active === "links" ? <LinksSection /> : null}
+diff --git a/v8/web/src/pages/knowledgeShared.tsx b/v8/web/src/pages/knowledgeShared.tsx
+new file mode 100644
+index 0000000..aac1950
+--- /dev/null
++++ b/v8/web/src/pages/knowledgeShared.tsx
+@@ -0,0 +1,20 @@
++import type { DocStatus } from "../api/types";
++import styles from "./Knowledge.module.css";
++
++// Shared by the Library knowledge list and its detail pane: kind labels and the status word
++// (every state carries a word, never colour alone).
++/** The doc kinds the Library knowledge section lists (schemas.KNOWLEDGE_DOC_TYPES). */
++export const KNOWLEDGE_KINDS = ["strategy_hl", "strategy_ll", "domain"] as const;
++
++export const KIND_LABEL: Record<string, string> = {
++  strategy_hl: "strategy · high level",
++  strategy_ll: "strategy · low level",
++  domain: "domain",
++  lesson: "lesson",
++};
++export const STATUS_WORD: Record<DocStatus, string> = { active: "Active", proposed: "Proposed", retired: "Retired" };
++
++export function StatusWord({ status }: { status: DocStatus }): React.JSX.Element {
++  const cls = status === "proposed" ? styles.statusProposed : status === "retired" ? styles.statusRetired : "";
++  return <span className={`${styles.status} ${cls}`} data-testid="knowledge-status">{STATUS_WORD[status]}</span>;
++}
+diff --git a/v8/web/src/routes.tsx b/v8/web/src/routes.tsx
+index 6acaa44..f440b75 100644
+--- a/v8/web/src/routes.tsx
++++ b/v8/web/src/routes.tsx
+@@ -38,7 +38,7 @@ export const appRoutes: RouteObject[] = [
+       { path: "artifact/:id", element: <ArtifactPage /> },
+       { path: "seats", element: <SeatsPage /> },
+       { path: "settings", element: <SettingsPage /> },
+-      { path: "library", element: <RedirectTo to="/library/tickets" /> },
++      { path: "library", element: <RedirectTo to="/library/knowledge" /> },
+       { path: "library/:section", element: <LibraryPage /> },
+       // Legacy paths keep their shape but redirect to Library (preserving ?as=).
+       { path: "tickets", element: <RedirectTo to="/library/tickets" /> },
+diff --git a/v8/web/src/test/deadControls.test.tsx b/v8/web/src/test/deadControls.test.tsx
+index 04f5ea4..24cae01 100644
+--- a/v8/web/src/test/deadControls.test.tsx
++++ b/v8/web/src/test/deadControls.test.tsx
+@@ -9,7 +9,7 @@ import { createMemoryRouter, RouterProvider } from "react-router";
+ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+ import { http, HttpResponse } from "msw";
+ import { server } from "./setup";
+-import { MODEL_CATALOG } from "./handlers";
++import { KNOWLEDGE_DIFF, KNOWLEDGE_VIEW, MODEL_CATALOG } from "./handlers";
+ import { ThemeProvider } from "../theme/ThemeProvider";
+ import { appRoutes } from "../routes";
+ 
+@@ -271,6 +271,8 @@ function installBoard(): void {
+       new HttpResponse("hello", { headers: { "content-type": "text/plain", "content-disposition": 'attachment; filename="notes.txt"' } }),
+     ),
+     http.get("/v1/library", () => ok(LIBRARY)),
++    http.get("/v1/knowledge", () => ok(KNOWLEDGE_VIEW)),
++    http.get("/v1/docs/:id/diff", () => ok(KNOWLEDGE_DIFF)),
+     http.get("/v1/activity", () => ok(ACTIVITY)),
+     http.get("/v1/seats", () => ok(SEATS)),
+     http.get("/v1/pool/capabilities", () => ok(CAPS)),
+@@ -423,6 +425,13 @@ describe("dead-control lint over the real route table (human #26)", () => {
+     expectNoDead();
+   });
+ 
++  it("/library/knowledge", async () => {
++    await walk("/library/knowledge?k=strategyhl-2");
++    await screen.findByTestId("knowledge-approve");
++    await settle();
++    expectNoDead();
++  });
++
+   it("/library/documents", async () => {
+     await walk("/library/documents");
+     await screen.findByText("The design");
+diff --git a/v8/web/src/test/handlers.ts b/v8/web/src/test/handlers.ts
+index d1c31b6..e1c0f66 100644
+--- a/v8/web/src/test/handlers.ts
++++ b/v8/web/src/test/handlers.ts
+@@ -44,3 +44,36 @@ export const handlers = [
+     new HttpResponse(new ReadableStream(), { headers: { "content-type": "text/event-stream" } }),
+   ),
+ ];
++
++// S-LIBRARY: a knowledge view with one active linked strategy, one proposal for it, and a lesson
++// (GET /v1/knowledge shape — library.knowledge_view).
++export const KNOWLEDGE_VIEW = {
++  docs: [
++    {
++      id: "strategyhl-2", doc_type: "strategy_hl", title: "py craft v2", version: 1, scope: "global", tags: ["python"],
++      status: "proposed", proposes: "strategyhl-1", summary: "- rule one", full: "doc_read(id)", created_by: "engineer.s-1",
++      created_at: "2026-09-23T10:00:00Z", source: { participant: "engineer.s-1", ticket: "s-1" }, source_url: null,
++      resolution: null, linked: [],
++    },
++    {
++      id: "strategyhl-1", doc_type: "strategy_hl", title: "py craft", version: 3, scope: "global", tags: ["python", "testing"],
++      status: "active", summary: "- rule one", full: "doc_read(id)", created_by: "owner", created_at: "2026-09-20T10:00:00Z",
++      source: null, source_url: null, resolution: null,
++      linked: [{ link_id: "lk-1", ticket_id: "epic-1", kind: "epic", title: "The epic", relation: "uses_strategy" }],
++    },
++    {
++      id: "domain-1", doc_type: "domain", title: "board domain", version: 1, scope: "global", tags: ["board"],
++      status: "retired", summary: "", full: "doc_read(id)", created_by: "owner", created_at: "2026-09-19T10:00:00Z",
++      source: null, source_url: null, resolution: "rejected", linked: [],
++    },
++  ],
++  lessons: [{ id: "les-1", domain: "operations", topic: "restart", text: "restart the board by pid", status: "live",
++    created_by: "owner", created_at: "2026-09-18T10:00:00Z" }],
++  tags: ["board", "python", "testing"],
++  epics: [{ id: "epic-1", title: "The epic", status: "in_progress" }, { id: "epic-2", title: "Other epic", status: "ready" }],
++};
++export const KNOWLEDGE_DIFF = {
++  id: "strategyhl-2", status: "proposed", base_id: "strategyhl-1", base_version: 3, title_changed: true,
++  base_title: "py craft", title: "py craft v2",
++  diff: "--- strategyhl-1 v3 (active)\n+++ strategyhl-2 v1 (proposed)\n@@ -1 +1,2 @@\n- rule one\n+- rule two\n",
++};

@@ -15,6 +15,12 @@ the reviewer/adversary's adherence view). A line is ENFORCED when it is a
 checkbox (`- [ ]`), carries an adherence tag (`[required]`, `[expected]`,
 `[preferred]`), or sits under a heading containing "checklist" or "enforced".
 
+No context weight (S-LIBRARY, design-34bf11cc07 §4.4): the brief a seat receives INLINES only
+the ENFORCED lines; every layer doc appears once in `index` (id, title, tags, approx tokens) for
+the seat to doc_read when its work touches it — knowledge "like skills but dynamic": loaded by
+link and on demand, never by default. The oversize check applies to the inlined part only. The
+full constructive view is still computed and returned when the caller asks (`full=True`).
+
 This module is pure: it takes `load(doc_id) -> LayerDoc | None` and
 `extends_of(doc_id) -> list[str]` callables so it is testable without the
 board service.
@@ -50,6 +56,7 @@ class LayerDoc(BaseModel):
     title: str
     doc_type: str
     body_md: str
+    tags: list[str] = []
 
 
 class RulesetLine(BaseModel):
@@ -57,14 +64,31 @@ class RulesetLine(BaseModel):
     layer: str  # the doc id this line came from (provenance)
 
 
+class IndexLine(BaseModel):
+    """One layer doc, listed instead of inlined: the seat doc_reads it on demand."""
+    id: str
+    title: str
+    doc_type: str
+    tags: list[str]
+    approx_tokens: int  # the whole doc body
+    line: str  # "id · title · tags · ~N tokens" — the one line a brief prints
+
+
+INDEX_INSTRUCTION = ("enforced lines are inlined; every linked doc is one `index` line — doc_read(id) the ones "
+                     "your work touches (constructive craft lives there), before you build on them")
+
+
 class AssembledRuleset(BaseModel):
     leaf_doc_ids: list[str]
     layers: list[str]                # ordered doc ids: universal-first … most-specific-last
     layer_titles: dict[str, str]     # doc id -> "title (doc_type)"
-    constructive: list[RulesetLine]  # HOW to build — the worker's view
-    enforced: list[RulesetLine]      # WHAT to check — the adherence view
-    approx_tokens: int
-    oversize: bool
+    enforced: list[RulesetLine]      # WHAT to check — the adherence view (inlined)
+    index: list[IndexLine]           # every layer doc, one line each (read on demand)
+    instruction: str
+    constructive: list[RulesetLine] | None = None  # HOW to build — only with full=True
+    approx_tokens: int               # the INLINED part: enforced + index lines
+    full_tokens: int                 # what inlining everything would cost (constructive + enforced)
+    oversize: bool                   # on the inlined part only
 
 
 def _resolve_layers(
@@ -125,14 +149,21 @@ def _split_lines(doc: LayerDoc) -> tuple[list[str], list[str]]:
     return constructive, enforced
 
 
+def _tokens(text_len: int) -> int:
+    return text_len // 4
+
+
 def assemble_ruleset(
     load: Callable[[str], LayerDoc | None],
     extends_of: Callable[[str], list[str]],
     leaf_doc_ids: list[str],
+    *,
+    full: bool = False,
 ) -> AssembledRuleset:
     """Resolve + split the layered ruleset. Additive union across layers,
     deduped on the stripped line text keeping the FIRST (most-universal)
-    occurrence, so a leaf that restates a universal rule doesn't double it."""
+    occurrence, so a leaf that restates a universal rule doesn't double it.
+    Enforced lines are inlined; each layer is one index line; `full` adds constructive."""
     if not leaf_doc_ids:
         raise AssembleError(
             "no leaf docs to assemble. Link strategy/domain docs to the ticket "
@@ -158,14 +189,23 @@ def assemble_ruleset(
             seen.add(key)
             enforced.append(RulesetLine(text=text, layer=doc.id))
 
-    n_chars = sum(len(x.text) for x in constructive) + sum(len(x.text) for x in enforced)
-    approx_tokens = n_chars // 4
+    index = []
+    for d in layers:
+        n = _tokens(len(d.body_md))
+        tags = ", ".join(d.tags) if d.tags else "untagged"
+        index.append(IndexLine(id=d.id, title=d.title, doc_type=d.doc_type, tags=list(d.tags), approx_tokens=n,
+                               line=f"{d.id} · {d.title} ({d.doc_type}) · {tags} · ~{n} tokens"))
+    enforced_chars = sum(len(x.text) for x in enforced)
+    inlined = _tokens(enforced_chars + sum(len(x.line) for x in index) + len(INDEX_INSTRUCTION))
     return AssembledRuleset(
         leaf_doc_ids=leaf_doc_ids,
         layers=[d.id for d in layers],
         layer_titles={d.id: f"{d.title} ({d.doc_type})" for d in layers},
-        constructive=constructive,
         enforced=enforced,
-        approx_tokens=approx_tokens,
-        oversize=approx_tokens > OVERSIZE_TOKENS,
+        index=index,
+        instruction=INDEX_INSTRUCTION,
+        constructive=constructive if full else None,
+        approx_tokens=inlined,
+        full_tokens=_tokens(sum(len(x.text) for x in constructive) + enforced_chars),
+        oversize=inlined > OVERSIZE_TOKENS,
     )
