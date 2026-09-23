@@ -34,13 +34,19 @@ def role_card(agent_home: Path, role: str) -> str:
     return p.read_text(encoding="utf-8") if p.is_file() else f"/{role}"
 
 
-def standing_context(agent_home: Path) -> str | None:
-    """CLAUDE.md for codex when the home has no AGENTS.md (codex reads AGENTS.md itself)."""
-    if (agent_home / "AGENTS.md").is_file():
-        return None
-    p = agent_home / "CLAUDE.md"
-    return p.read_text(encoding="utf-8") if p.is_file() else None
+#: every codex seat's first Monitor began with PowerShell's `&` and exited 2 (drills r2, r5, tui2 and both
+#: live seats, 2026-09-23): the home's CLAUDE.md says PowerShell is primary, but the seat tools run
+#: Monitor (and cron-fired shell work) under Git bash, exactly as Claude Code's Monitor does (m-2485ca32e7)
+SHELL_NOTE = ("Monitor and cron commands run under Git bash; never prefix them with & or use PowerShell syntax "
+              "(POSIX shell only: /dev/null, forward slashes, $VAR).")
 
+
+def standing_context(agent_home: Path) -> str:
+    """The thread's developer instructions: CLAUDE.md when the home has no AGENTS.md (codex reads
+    AGENTS.md itself), then the seat's shell note."""
+    p = agent_home / "CLAUDE.md"
+    home = p.read_text(encoding="utf-8") if p.is_file() and not (agent_home / "AGENTS.md").is_file() else ""
+    return f"{home.rstrip()}\n\n{SHELL_NOTE}\n" if home else f"{SHELL_NOTE}\n"
 
 def resume_prompt(handle: str) -> str:
     return (f"You were resumed: this seat ({handle}) restarted and its Monitor watches and cron jobs are gone "

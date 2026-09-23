@@ -110,3 +110,14 @@ def test_a_codex_without_the_skills_rpc_still_boots_and_logs_the_gap(tmp_path, m
         assert "skills not bound" in (tmp_path / "codex-seat.qa.noskills.events.log").read_text(encoding="utf-8")
     finally:
         s.stop()
+
+
+def test_the_seats_standing_context_says_monitor_runs_under_bash(tmp_path):
+    """m-2485ca32e7: every codex seat's first Monitor began with PowerShell's `&` (CLAUDE.md says PowerShell
+    is primary) and exited 2; the thread's developer instructions now end with the shell note."""
+    from edp8.codex_seat import run as run_mod
+    ctx = run_mod.standing_context(V8)
+    assert ctx.startswith((V8 / "CLAUDE.md").read_text(encoding="utf-8").rstrip()[:200])
+    assert ctx.rstrip().endswith(run_mod.SHELL_NOTE) and "Git bash" in ctx and "&" in run_mod.SHELL_NOTE
+    (tmp_path / "AGENTS.md").write_text("codex reads me itself", encoding="utf-8")
+    assert run_mod.standing_context(tmp_path).strip() == run_mod.SHELL_NOTE
