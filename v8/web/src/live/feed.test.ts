@@ -106,3 +106,26 @@ describe("subscribeFeed watchdog (round 2 #9)", () => {
     expect(polls).toBeGreaterThanOrEqual(1);
   });
 });
+
+// S19 qa (adversary #1, 2026-09-23): the `: ready <cursor>` frame is where the server's replay
+// ended. A client that never saw a data frame must reconnect from that cursor, not from -1 —
+// which the server reads as "now" and so skipped every event posted during the drop.
+describe("subscribeFeed ready cursor (S19 qa)", () => {
+  it("reconnects from the ready cursor after a drop before any data frame", async () => {
+    const sinces: string[] = [];
+    server.use(
+      http.get("/v1/feed", ({ request }) => {
+        sinces.push(new URL(request.url).searchParams.get("since") ?? "");
+        if (sinces.length === 1) return sseResponse([": ready 41\n\n"]); // then the server closes
+        return sseResponse([": ready 41\n\n", 'data: {"seq":42,"kind":"message_sent"}\n\n']);
+      }),
+    );
+    const events: FeedEvent[] = [];
+    const stop = subscribeFeed((e) => events.push(e), { backoffMs: 5, watch: true });
+    await until(() => events.length >= 1, 3000);
+    stop();
+    expect(sinces[0]).toBe("-1");
+    expect(sinces[1]).toBe("41");
+    expect(events[0].seq).toBe(42);
+  });
+});

@@ -104,6 +104,13 @@ export function DocView({
   useEffect(() => {
     if (data) onDoc?.(data);
   }, [data, onDoc]);
+  // S19 qa (adversary #5): a doc that carries the viewer's sign-off criteria is a criterion
+  // ruling, not a design review — keep the classic reader with its SignoffPane (latched: a
+  // successful ruling empties signoff_criteria and the pane must stay for the "Passed" read).
+  const signoffDoc = useRef<string | null>(null);
+  const signoffNow = (data?.signoff_criteria?.length ?? 0) > 0 || Boolean(data?.signoff_criterion);
+  if (signoffNow) signoffDoc.current = docId;
+  const reviewing = !!source && signoffDoc.current !== docId;
 
   if (q.isPending) return <p className={ui.empty}>Loading document…</p>;
   if (q.isError)
@@ -118,10 +125,10 @@ export function DocView({
       onOpenTicket={onOpenTicket}
       onPickVersion={(v) => { if (!pendingWork()) setRequested(v); }}
       versionsHosted={versionsHosted}
-      hideTitle={!!source}
-      reviewing={!!source}
+      hideTitle={reviewing}
+      reviewing={reviewing}
     />;
-  return source ? <DesignReview key={`${docId}:${source}:${q.data.version}`} docId={docId} source={source} version={q.data.version} title={q.data.title} request={request} versions={q.data.versions} onPickVersion={(v) => { if (!pendingWork()) setRequested(v); }} tabHref={tabHref} onBack={onBack} onLatest={(v) => { if (!pendingWork()) setRequested(v); }}>{content}</DesignReview> : <><DocumentSource key={docId} docId={docId} version={q.data.version} />{content}</>;
+  return reviewing ? <DesignReview key={`${docId}:${source}:${q.data.version}`} docId={docId} source={source} version={q.data.version} title={q.data.title} request={request} versions={q.data.versions} onPickVersion={(v) => { if (!pendingWork()) setRequested(v); }} tabHref={tabHref} onBack={onBack} onLatest={(v) => { if (!pendingWork()) setRequested(v); }}>{content}</DesignReview> : <><DocumentSource key={docId} docId={docId} version={q.data.version} />{content}</>;
 }
 
 function DocBody({

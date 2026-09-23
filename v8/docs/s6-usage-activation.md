@@ -1,5 +1,7 @@
 # S6 subscription telemetry — operator activation proposal (not executed)
 
+> **Superseded on the UI side by S19 (s-d330d76467, commit 0183513):** the Usage rail entry and widget were removed because `/v1/me/usage` on the fleet board returns only `unavailable` (no `EDP8_USAGE_CONFIG`). The endpoint and collectors below still exist; step 6's widget comparison cannot be performed until the widget is restored from 0183513's parent after steps 1–5 produce data.
+
 Default off. Installing the widget does not authorize source collection, login, paid prompts, active CLI configuration changes, or restarting the shared board. No provider network requests occur on widget open/refresh. The endpoint only reads approved local allowlisted receipts.
 
 ## Trust and binding

@@ -117,7 +117,9 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
   // S19 (revision3-clean-review.png): a doc opened from a conversation is a design review — a centred
   // viewer with ONE header drawn by DesignReview (crumb · Open in tab · Close · version menu), not this
   // toolbar stacked above a second review header.
-  const review = Boolean(source);
+  // Only once the document has loaded: while it is loading or failed, DocView draws no review
+  // header, so the toolbar (with its Close) must stay (S19 qa, adversary #4).
+  const review = Boolean(source) && shownDoc !== null;
   const title = (
     <div className={styles.toolbar}>
       {stack.length > 1 ? (

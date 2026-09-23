@@ -152,3 +152,17 @@ describe("DocDrawer design review viewer (S19)", () => {
     await waitFor(() => expect(screen.queryByTestId("drawer-panel")).toBeNull());
   });
 });
+
+// S19 qa (adversary #4): the review viewer is bare only once the document has loaded — a failed or
+// loading document keeps the drawer toolbar, so the reader can still Close it.
+describe("DocDrawer review viewer while the document fails to load (S19 qa)", () => {
+  it("keeps a Close control when the source-backed document cannot be loaded", async () => {
+    server.use(http.get("/v1/docs/missing/html", () => HttpResponse.json({ ok: false, error: { code: "not_found", message: "no such doc" } }, { status: 404 })));
+    renderDrawer("/epic/epic-1?doc=missing");
+    const panel = await screen.findByTestId("drawer-panel");
+    await within(panel).findByRole("alert");
+    const close = within(panel).getByRole("button", { name: "Close" });
+    fireEvent.click(close);
+    await waitFor(() => expect(screen.queryByTestId("drawer-panel")).toBeNull());
+  });
+});

@@ -1183,9 +1183,14 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
             q = board.subscribe(a.id, watch=watch)
             try:
                 start = since if since >= 0 else board.store.max_seq()
+                cursor = start
                 for s, e in board.replay(a, start, watch=watch):
+                    cursor = max(cursor, s)
                     yield frame(s, e)
-                yield b": ready\n\n"
+                # S19 qa (adversary #1): the ready frame carries the cursor so a client that never
+                # saw a data frame reconnects from HERE, not from "now" — a drop before the first
+                # event used to skip everything posted during the gap.
+                yield f": ready {cursor}\n\n".encode()
                 while True:
                     try:
                         e = await asyncio.wait_for(q.get(), timeout=15)

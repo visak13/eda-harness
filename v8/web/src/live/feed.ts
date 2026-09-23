@@ -116,7 +116,14 @@ export function subscribeFeed(onEvent: (e: FeedEvent) => void, opts: FeedOptions
               .filter((l) => l.startsWith("data:"))
               .map((l) => l.slice(5).replace(/^ /, ""))
               .join("\n");
-            if (!data) continue; // comment frame (: ready / : ping)
+            if (!data) {
+              // comment frame (: ready <cursor> / : ping). The ready cursor is where the server's
+              // replay ended: adopt it so a reconnect before any data frame resumes from there
+              // instead of from -1 (= "now"), which skipped events posted during the gap.
+              const ready = /^:\s*ready\s+(\d+)/.exec(frame);
+              if (ready) since = Math.max(since, Number(ready[1]));
+              continue;
+            }
             try {
               const ev = JSON.parse(data) as FeedEvent;
               if (typeof ev.seq === "number") {

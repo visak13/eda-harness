@@ -236,3 +236,18 @@ def test_find_returns_bm25_hits(search_client):
 def test_find_empty_without_index(client, rig):
     r = client.get("/v1/find?q=hello", headers=rig["owner"])
     assert r.json()["value"] == []
+
+
+# S19 qa (adversary #1): the ready frame carries the replay cursor so a client that saw no data
+# frame reconnects from there instead of from "now". Same TestClient hang as the test above, so it is
+# proven against a spawned board instead: `curl -N /v1/feed?since=-1&watch=true | head -1` prints
+# `: ready <max_seq>` (qa S19 report) and web/src/live/feed.test.ts proves the client side.
+@pytest.mark.skip(reason="SSE /v1/feed's endless generator hangs TestClient's sync stream iterator; "
+                         "proven by curl against a spawned board + feed.test.ts (S19 qa)")
+def test_feed_ready_frame_carries_the_cursor(client, rig):
+    make_epic(client, rig)
+    top = client.get("/v1/events?since=0&limit=1000", headers=rig["coord"]).json()["value"][-1]["seq"]
+    with client.stream("GET", "/v1/feed?since=-1&watch=true", headers=rig["coord"]) as r:
+        assert r.status_code == 200
+        ready = next(line for line in r.iter_lines() if line.startswith(": ready"))
+    assert ready == f": ready {top}"

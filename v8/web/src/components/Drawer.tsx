@@ -105,6 +105,19 @@ export function Drawer({
     };
   }, [open]);
 
+  // The header can leave while open (`bare` flips once a review document loads, S19 qa): if the
+  // focused control unmounted with it, focus fell to <body> and Esc stopped reaching the panel —
+  // bring it back to the first focusable, else the panel.
+  useEffect(() => {
+    if (!open) return;
+    const panel = panelRef.current;
+    if (!panel || panel.contains(document.activeElement)) return;
+    const first = panel.querySelector<HTMLElement>(
+      'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])',
+    );
+    (first ?? panel).focus();
+  }, [open, bare]);
+
   // Esc closes; Tab / Shift+Tab is trapped within the panel.
   function onKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Escape") {

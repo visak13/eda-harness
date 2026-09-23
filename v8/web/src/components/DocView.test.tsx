@@ -251,3 +251,16 @@ it("keeps the sign-off pane mounted when a refetched doc no longer lists the cri
   await new Promise((r) => setTimeout(r, 50));
   expect(screen.getByTestId("signoff-pane")).toBeInTheDocument();
 });
+
+// S19 qa (adversary #5): a source-backed doc that carries the viewer's sign-off criteria is a
+// criterion ruling, not a design review — the classic reader with its SignoffPane stays.
+it("keeps the sign-off pane for a source-backed doc that lists the viewer's criteria", async () => {
+  server.use(
+    http.get("/v1/docs/design-1/html", () =>
+      okJson(doc({ signoff_criteria: [{ id: "c-1", text: "Looks right", ticket_id: "s-1", checked_by: "qa" }] } as Partial<DocHtml>)),
+    ),
+  );
+  renderRoute("/x", "/x", <DocView docId="design-1" source="s-1" />);
+  expect(await screen.findByTestId("signoff-pane")).toBeInTheDocument();
+  expect(screen.getByTestId("doc-side")).toBeInTheDocument();
+});
