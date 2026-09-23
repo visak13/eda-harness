@@ -222,3 +222,38 @@ def test_all_text_units_includes_doc_ticket_message(store):
     assert kinds == {"doc", "ticket", "message"}
     doc_unit = next(u for u in units if u[0] == "doc")
     assert "Doc Title" in doc_unit[2] and "doc body" in doc_unit[2]
+
+
+def test_open_migrates_every_stored_reviewer_to_qa_and_counts_it(tmp_path):
+    """S-ROLES (s-a0c67e6aa7): reviewer is no longer a role. An old board's reviewer participants,
+    reviewer-checked criteria and reviewer-owned docs (every version) read back as qa after open;
+    the counts are what the service logs, and a second open migrates nothing."""
+    from edp8.schemas import Check, Criterion
+    db = str(tmp_path / "old.db")
+    s = Store(db)
+    assert s.migrated_reviewer == {"participant": 0, "criterion": 0, "doc": 0, "doc_versions": 0}
+    p = make_participant(role=Role.qa, handle="rev", id_="reviewer.s-1")
+    c = Criterion(id="c-1", ticket_id="s-1", text="t", check=Check.command, checked_by="qa")
+    d = Doc(id="d-1", doc_type=DocType.report, title="r", body_md="b", owner_role=Role.qa, scope="epic-1")
+    for t, o in (("participant", p), ("criterion", c), ("doc", d)):
+        s.put(t, o)
+    d.version = 2
+    s.put("doc", d)
+    # what a pre-S-ROLES board stored (the enum no longer builds these, so write them raw)
+    for t, col, path in Store._REVIEWER_ROWS:
+        s._conn.execute(f"UPDATE {t} SET \"{col}\"='reviewer', body=json_set(body, '{path}', 'reviewer')")
+    s._conn.execute("UPDATE doc_versions SET body=json_set(body, '$.owner_role', 'reviewer')")
+    s._conn.commit()
+    s.close()
+
+    s = Store(db)
+    assert s.migrated_reviewer == {"participant": 1, "criterion": 1, "doc": 1, "doc_versions": 2}
+    assert s.get("participant", "reviewer.s-1").role == Role.qa
+    assert s.get("criterion", "c-1").checked_by == "qa"
+    assert s.get("doc", "d-1").owner_role == Role.qa
+    assert s.doc_version("d-1", 1).owner_role == Role.qa
+    assert [r.id for r in s.query("criterion", {"checked_by": "qa"})] == ["c-1"]
+    s.close()
+    s = Store(db)
+    assert not any(s.migrated_reviewer.values())
+    s.close()

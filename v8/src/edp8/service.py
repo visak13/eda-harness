@@ -337,6 +337,9 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         rsi.ensure_p0(board.store)
     except Exception as e:  # noqa: BLE001 — never block startup on the monitor's bookkeeping
         logging.getLogger("edp8.service").warning("rsi p-0 bootstrap failed: %s", e)
+    moved = getattr(board.store, "migrated_reviewer", None)
+    if moved and any(moved.values()):  # S-ROLES: reviewer -> qa at open (Store._migrate_reviewer_locked)
+        logging.getLogger("edp8.service").warning("migrated reviewer -> qa: %s", moved)
     app = FastAPI(title="edp8 board", version="0.8.0")
     app.state.board = board
 
