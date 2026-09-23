@@ -95,3 +95,10 @@ details[open] > .outlineSummary > svg { transform: none; }
   .state { order: 2; }
   .actions { order: 3; margin-left: auto; }
 }
+/* t-feb26a46d9 reader mode (the default): the document alone, centred at a reading width; the comment
+   panel and the section index are not rendered. Wide content scrolls inside the document column instead
+   of being clipped by the framed review, with the left rail expanded or not. */
+.splitReader { grid-template-columns: minmax(0, 1fr); }
+.splitReader .reading { width: 100%; max-width: 960px; margin: 0 auto; box-sizing: border-box; }
+.reading { overflow-x: auto; }
+.tool[aria-pressed="false"] { background: var(--secondary); }

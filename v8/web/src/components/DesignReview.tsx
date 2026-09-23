@@ -84,6 +84,11 @@ export function DesignReview({ docId, version, source, request, children, onLate
   const [dirty, setDirty] = useState(Boolean(draft.current.text || draft.current.artifacts.length));
   const [sent, setSent] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  // t-feb26a46d9 (owner m-8d2c74d289 / m-1eaab6a461): reader mode — the document alone, the comment panel and
+  // the section index hidden — is the default in the pop-up and in the tab. A kept draft reopens with the
+  // panel shown (hiding it would hide the draft); starting a comment or a change request shows it too.
+  const [reader, setReader] = useState(!draft.current.text);
+  const openMode = (m: "comment" | "request_changes") => { setMode(m); setReader(false); };
   const action = useRef<{ signature: string; key: string } | null>(draft.current.pendingAction ?? null);
   const qc = useQueryClient();
   const context = useQuery({ queryKey: ["review-context", source, docId, version, request], queryFn: () => getReviewContext(docId, source, version, request), retry: false });
@@ -113,7 +118,12 @@ export function DesignReview({ docId, version, source, request, children, onLate
       hint: (mode === "request_changes" ? "Changes requested in the source conversation. Design remains unapproved." : "Comment posted to the source conversation.") + (result.value.delivery_note ? ` ${result.value.delivery_note}` : "") };
   }
   // S19 D2/D9: the viewer has ONE header — this crumb row carries Open in tab and a labelled Close.
+  const readerToggle = <button type="button" className={styles.tool} aria-pressed={reader} data-testid="review-reader-toggle"
+    title={reader ? "Show the comment panel and the section index" : "Hide the comment panel and the section index"}
+    onClick={() => setReader((r) => !r)}>
+    <Icon name={reader ? "collapse" : "expand"} size={18} /> {reader ? "Show panel" : "Reader mode"}</button>;
   const tools = <div className={styles.tools}>
+    {readerToggle}
     {tabHref ? <Link className={styles.tool} to={tabHref} target="_blank">Open in tab <Icon name="external" size={18} /></Link> : null}
     {close ? <button type="button" className={styles.tool} onClick={close}><Icon name="close" size={18} /> Close</button> : null}
   </div>;
@@ -160,20 +170,20 @@ export function DesignReview({ docId, version, source, request, children, onLate
         {reviewOpen ? <div className={styles.actions}>
           {/* Approve stays disabled while unsent feedback exists: approving would strand the note (S19 D8, kept on purpose). */}
           <button className={`${ui.button} ${styles.approve}`} disabled={!ctx.can_approve || dirty || approve.isPending || sent} title={dirty ? "Send or cancel your feedback before approving" : undefined} onClick={() => { if (!pendingWork()) approve.mutate(); }}><Icon name="check" size={18} /> Approve design</button>
-          <button className={`${ui.button} ${styles.request}`} disabled={!ctx.can_approve || approve.isPending} onClick={() => { if (!pendingWork()) { setMode("request_changes"); setSent(false); } }}>Request changes</button>
+          <button className={`${ui.button} ${styles.request}`} disabled={!ctx.can_approve || approve.isPending} onClick={() => { if (!pendingWork()) { openMode("request_changes"); setSent(false); } }}>Request changes</button>
         </div> : null}
         {tools}
       </div>
     </div>
-    <div className={expanded && mode ? `${styles.split} ${styles.splitExpanded}` : styles.split}>
+    <div className={reader ? `${styles.split} ${styles.splitReader}` : expanded && mode ? `${styles.split} ${styles.splitExpanded}` : styles.split} data-reader={reader ? "true" : undefined}>
       <div className={styles.reading} ref={readingRef}>
-        {outline?.length && narrow ? <SectionOutline entries={outline} onJump={jump} placement="inline" /> : null}
+        {outline?.length && narrow && !reader ? <SectionOutline entries={outline} onJump={jump} placement="inline" /> : null}
         {version !== ctx.current_version ? <p role="status" className={styles.notice}>Historical version — comments are allowed; approval requires the current version. {onLatest ? <button className={ui.button} onClick={() => onLatest(ctx.current_version)}>Review latest version (this version’s draft is kept)</button> : null}</p> : null}
         {approve.isError ? <p role="alert" className={styles.notice}>{approve.error.message}</p> : null}
         {sent && !mode ? <p role="status" className={styles.notice}>Design approved at v{version}.</p> : null}
         {children}
       </div>
-      <aside className={styles.feedback} aria-label={mode ? composeLabel : "Your review"}>
+      {reader ? null : <aside className={styles.feedback} aria-label={mode ? composeLabel : "Your review"}>
         {mode ? <>
           <h2 className={styles.feedbackTitle}>{mode === "request_changes" ? "Request changes" : "Document comment"}</h2>
           <p className={styles.feedbackMeta}>To the {ctx.source_title} conversation<br />Regarding: {title ?? docId} · v{version}</p>
@@ -190,7 +200,7 @@ export function DesignReview({ docId, version, source, request, children, onLate
             expand={{ expanded, onToggle: () => setExpanded((x) => !x) }} />
           <div className={styles.feedbackFoot}>
             <p className={styles.feedbackNote}>Posts to the original {where} conversation. {mode === "request_changes" ? "This requests changes—it does not approve the design." : "A comment has no gate effect."}</p>
-            {mode === "request_changes" ? <button type="button" className={styles.linkButton} onClick={() => { if (!pendingWork()) setMode("comment"); }}>Comment without requesting changes</button> : null}
+            {mode === "request_changes" ? <button type="button" className={styles.linkButton} onClick={() => { if (!pendingWork()) openMode("comment"); }}>Comment without requesting changes</button> : null}
             <p className={styles.feedbackNote}><Icon name="files" size={16} /> Your {where} draft is preserved.</p>
           </div>
         </> : <>
@@ -198,12 +208,12 @@ export function DesignReview({ docId, version, source, request, children, onLate
           <p className={styles.feedbackMeta}>{reviewOpen ? `The architect asked you to review version ${version}. Approve it, or request changes — the feedback box opens here, beside the design.` : "No review is open on this version for you. You can still comment."}</p>
           <div className={styles.feedbackFoot}>
             <p className={styles.feedbackNote}>Feedback posts to the original {where} conversation, addressed to the architect. You stay in this viewer.</p>
-            <button type="button" className={styles.linkButton} onClick={() => { if (!pendingWork()) { setMode("comment"); setSent(false); } }}>Comment without requesting changes</button>
+            <button type="button" className={styles.linkButton} onClick={() => { if (!pendingWork()) { openMode("comment"); setSent(false); } }}>Comment without requesting changes</button>
             <p className={styles.feedbackNote}><Icon name="files" size={16} /> Your {where} draft is preserved.</p>
           </div>
         </>}
         {outline?.length && !narrow ? <SectionOutline entries={outline} onJump={jump} placement="side" /> : null}
-      </aside>
+      </aside>}
     </div>
   </section>;
 }

@@ -82,6 +82,7 @@ describe("DocView", () => {
     renderRoute("/x", "/x", <DocView docId="design-1" />);
     await screen.findByRole("option", { name: "Source work · epic-1" });
     fireEvent.change(screen.getByLabelText("Conversation source"), { target: { value: "epic-1" } });
+    fireEvent.click(await screen.findByTestId("review-reader-toggle")); // reader mode is the default (t-feb26a46d9)
     fireEvent.click(await screen.findByRole("button", { name: "Comment without requesting changes" }));
     fireEvent.change(screen.getByLabelText("Message"), { target: { value: "looks good" } });
     fireEvent.click(screen.getByRole("button", { name: "Send comment" }));

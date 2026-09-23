@@ -4,20 +4,23 @@ import { http, HttpResponse } from "msw";
 import { server } from "../test/setup";
 import { renderRoute } from "../pages/testUtils";
 import { DesignReview } from "./DesignReview";
-function mount() {
+function mount(el = <DesignReview docId="design-test" version={2} source="epic-review" request="ev-review" />) {
   server.use(http.get("/v1/me/people", () => HttpResponse.json({ ok: true, value: [] })),
     http.post("/v1/messages/resolve", () => HttpResponse.json({ ok: true, value: { to: "architect", plan: [], note: "Saved for next session" } })));
   server.use(http.get("/v1/docs/design-test/context", () => HttpResponse.json({ ok: true, value: {
     ticket_id: "epic-review", source_title: "Review source", source_kind: "epic", design_ref: "design-test", reviewed_version: 2,
     current_version: 2, gate_event_id: "ev-review", can_review: true, can_approve: true,
   } })));
-  renderRoute("/doc/design-test", "/doc/:id", <DesignReview docId="design-test" version={2} source="epic-review" request="ev-review" />);
+  renderRoute("/doc/design-test", "/doc/:id", el);
 }
 describe("source-bound design review", () => {
   it("S19: one header per revision3-clean-review.png — the review panel sits beside the document; Cancel clears the feedback", async () => {
     mount();
     expect(await screen.findByTestId("review-state")).toHaveTextContent("Design · Version 2 · Review requested");
     expect(screen.getByRole("link", { name: "Back to source: Review source" })).toBeInTheDocument();
+    // t-feb26a46d9: reader mode is the default — no panel, no index until the toggle shows them.
+    expect(screen.queryByRole("complementary")).toBeNull();
+    fireEvent.click(screen.getByTestId("review-reader-toggle"));
     // Only the two review actions in the header; commenting is the panel's link.
     expect(screen.queryAllByRole("button", { name: "Comment without requesting changes" })).toHaveLength(1);
     expect(screen.getByRole("complementary", { name: "Your review" })).toBeInTheDocument();
@@ -30,6 +33,28 @@ describe("source-bound design review", () => {
     expect(screen.queryByRole("textbox")).toBeNull();
     expect(screen.getByRole("button", { name: "Approve design" })).toBeEnabled();
   });
+  it("t-feb26a46d9: opens in reader mode; the toggle shows and hides the comment panel and the index; Request changes shows the panel", async () => {
+    mount(<DesignReview docId="design-test" version={2} source="epic-review" request="ev-review"
+      outline={[{ level: 1, text: "Intro" }, { level: 2, text: "Detail" }]}><p>the design body</p></DesignReview>);
+    await screen.findByTestId("review-state");
+    const toggle = screen.getByTestId("review-reader-toggle");
+    expect(screen.getByText("the design body")).toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(toggle).toHaveTextContent("Show panel");
+    expect(screen.queryByRole("complementary")).toBeNull();
+    expect(screen.queryByTestId("review-outline-side")).toBeNull();
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(toggle).toHaveTextContent("Reader mode");
+    expect(screen.getByRole("complementary", { name: "Your review" })).toBeInTheDocument();
+    expect(screen.getByTestId("review-outline-side")).toHaveTextContent("Detail");
+    fireEvent.click(toggle);
+    expect(screen.queryByRole("complementary")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Request changes" }));
+    expect(screen.getByRole("complementary", { name: "Request changes" })).toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+  });
+
   it("keeps an authorized nested document readable when the proposed source is unrelated", async () => {
     server.use(http.get("/v1/docs/design-nested/context", () => HttpResponse.json({ ok: false, error: "not linked", hint: "Choose a linked source" }, { status: 400 })));
     renderRoute("/doc/design-nested", "/doc/:id", <DesignReview docId="design-nested" version={1} source="epic-unrelated"><p>Authorized nested document body</p></DesignReview>);
@@ -52,6 +77,7 @@ describe("source-bound design review", () => {
     const bodies: Record<string, unknown>[] = [];
     server.use(http.post("/v1/docs/comments", async ({ request }) => { bodies.push(await request.json() as Record<string, unknown>); return HttpResponse.json({ ok: false, hint: "Please retry", error: "offline" }, { status: 503 }); }));
     mount();
+    fireEvent.click(await screen.findByTestId("review-reader-toggle"));
     fireEvent.click(await screen.findByRole("button", { name: "Comment without requesting changes" }));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Keep this comment" } });
     fireEvent.click(screen.getByRole("button", { name: "Send comment" }));

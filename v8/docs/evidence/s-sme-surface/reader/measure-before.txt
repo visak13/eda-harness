@@ -1,0 +1,10 @@
+rail full at 1280
+tab 1280: {"review":true,"viewport":1280,"left":225,"right":1207,"width":982,"pastViewport":false,"toolsOutOfView":0,"clippedInside":false,"commentsAndIndexShown":true,"readerToggle":false,"readingWidth":569,"pageHScroll":false}
+shot before-tab-1280.png
+pop-up 1280: {"review":true,"viewport":1280,"left":46,"right":1234,"width":1188,"pastViewport":false,"toolsOutOfView":0,"clippedInside":false,"commentsAndIndexShown":true,"readerToggle":false,"readingWidth":689,"pageHScroll":false}
+shot before-popup-1280.png
+rail full at 1920
+tab 1920: {"review":true,"viewport":1920,"left":442,"right":1630,"width":1188,"pastViewport":false,"toolsOutOfView":0,"clippedInside":false,"commentsAndIndexShown":true,"readerToggle":false,"readingWidth":689,"pageHScroll":false}
+shot before-tab-1920.png
+pop-up 1920: {"review":true,"viewport":1920,"left":366,"right":1554,"width":1188,"pastViewport":false,"toolsOutOfView":0,"clippedInside":false,"commentsAndIndexShown":true,"readerToggle":false,"readingWidth":689,"pageHScroll":false}
+shot before-popup-1920.png
