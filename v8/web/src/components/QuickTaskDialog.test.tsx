@@ -57,6 +57,24 @@ describe("QuickTaskDialog (S-QUICK)", () => {
     expect(bodies).toEqual([{ title: "Rename the tab", words: "The Seats tab says Sessions. Call it Seats.", model: "gpt-6-sol", effort: "high" }]);
   });
 
+  it("t-683d0033bb: the Tags input sends the plain words as the quick story's tags; empty sends none", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    server.use(http.post("/v1/quick-tasks", async ({ request }) => {
+      bodies.push((await request.json()) as Record<string, unknown>);
+      return HttpResponse.json({ ok: true, value: { ticket: { id: "s-q3" }, seat: "engineer.s-q3" }, hint: "ok" });
+    }));
+    mount();
+    fireEvent.change(await screen.findByTestId("quick-task-title"), { target: { value: "T" } });
+    fireEvent.change(screen.getByTestId("quick-task-words"), { target: { value: "w" } });
+    expect(screen.getByTestId("quick-task-tags-help")).toHaveTextContent("Plain words, comma-separated");
+    fireEvent.change(screen.getByTestId("quick-task-tags"), { target: { value: "Web, seat-effort:engineer=high, web" } });
+    expect(screen.getByTestId("quick-task-tags-help")).toHaveTextContent("Library docs tagged web link to the task when it opens.");
+    await waitFor(() => expect(screen.getByTestId("quick-task-create")).not.toBeDisabled());
+    fireEvent.click(screen.getByTestId("quick-task-create"));
+    expect(await screen.findByTestId("landed")).toBeInTheDocument();
+    expect(bodies[0]).toMatchObject({ title: "T", words: "w", tags: ["web"] });
+  });
+
   it("refuses to open a task the pool cannot start, and says why", async () => {
     mount(false);
     fireEvent.change(await screen.findByTestId("quick-task-title"), { target: { value: "T" } });

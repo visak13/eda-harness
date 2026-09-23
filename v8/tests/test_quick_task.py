@@ -268,6 +268,27 @@ def test_quick_task_endpoint_carries_the_engineer_effort_s_ui(api):
     assert "seat-effort:engineer=high" in r.json()["value"]["ticket"]["tags"]
     assert api["calls"][-1]["model"] == "claude-opus-5-5" and api["calls"][-1]["effort"] == "medium"
 
+
+def test_quick_task_endpoint_takes_plain_tags_and_autolinks_the_library(api):
+    """t-683d0033bb (qa m-35926a1c92): the dialog's tags ride POST /v1/quick-tasks; only plain words land
+    (a seat key typed as a tag never overrides the engineer's model), and the auto-link at create fires."""
+    from edp8.schemas import Relation
+    board, client = api["board"], api["client"]
+    owner = board.participant("owner")
+    web = board.doc_create(owner, doc_type=DocType.domain, title="Web craft", body_md="- rule", scope="global",
+                           tags=["web"])
+    r = client.post("/v1/quick-tasks", json={"title": "T", "words": "w", "model": "gpt-6-sol",
+                                             "tags": [" Web ", "web", "model:engineer=claude-opus-5-5", "quick"]},
+                    headers=OWNER)
+    v = r.json()["value"]
+    tid, tags = v["ticket"]["id"], v["ticket"]["tags"]
+    assert tags.count("web") == 1 and tags.count("quick") == 1
+    assert "model:engineer=gpt-6-sol" in tags and "model:engineer=claude-opus-5-5" not in tags
+    assert api["calls"][-1]["model"] == "codex/gpt-6-sol"
+    assert [lk.to_id for lk in board.store.query("link", {"from_id": tid, "relation": Relation.uses_domain},
+                                                 limit=-1)] == [web.id]
+    assert [m for m in board.thread(tid) if m.created_by == "board" and "Library auto-link at quick task" in m.text]
+
 # ----------------------------------------------------------------------------- S-ADV findings (s-966102b3c9)
 ARCH = {"X-Participant": "arch"}
 

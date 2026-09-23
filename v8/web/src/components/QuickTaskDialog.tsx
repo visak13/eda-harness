@@ -2,7 +2,8 @@ import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useNavigate } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createQuickTask } from "../api/endpoints";
+import { createQuickTask, libraryTags } from "../api/endpoints";
+import { parseTags } from "../pages/KnowledgeDetail";
 import { getModels, getPoolCapabilities, modelLabel } from "../api/seats";
 import { clampEffort, SeatPickHead, SeatPickRow, type Effort } from "./SeatPicks";
 import type { ModelCatalog, PoolCapabilities } from "../api/types";
@@ -16,10 +17,14 @@ import { useModalDialog } from "./useModalDialog";
 // is ONE board call (POST /v1/quick-tasks) that creates the quick story, spawns engineer.<story> on the
 // model and assigns it — so a down pool refuses before any ticket exists. The board's hint shows
 // verbatim; success lands on the new story's page, where the seat's plan and criteria appear.
+//
+// t-683d0033bb (qa m-35926a1c92): a plain Tags input, sent as the quick story's tags, so the board's
+// Library auto-link at create (edp8/library.autolink, trigger "quick task") can link a matching doc.
 
 export function QuickTaskDialog({ open, onClose }: { open: boolean; onClose: () => void }): React.JSX.Element | null {
   const [title, setTitle] = useState("");
   const [words, setWords] = useState("");
+  const [tags, setTags] = useState("");
   const [picked, setPicked] = useState<string | null>(null);
   // the ticket was opened but the pool refused the spawn: stay open, say so, link the ticket
   const [stranded, setStranded] = useState<{ id: string; hint: string } | null>(null);
@@ -41,12 +46,12 @@ export function QuickTaskDialog({ open, onClose }: { open: boolean; onClose: () 
   useModalDialog(open, panelRef, titleRef, busy, onClose);
 
   const create = useMutation({
-    mutationFn: () => createQuickTask({ title, words, model: model || null, effort }),
+    mutationFn: () => createQuickTask({ title, words, model: model || null, effort, tags: parseTags(tags) }),
     onSuccess: (res) => {
       void qc.invalidateQueries({ queryKey: ["seats"] });
       void qc.invalidateQueries({ queryKey: ["me", "summary"] });
       const id = res.value.ticket.id;
-      setTitle(""); setWords(""); setPicked(null); setEffortPick("medium");
+      setTitle(""); setWords(""); setTags(""); setPicked(null); setEffortPick("medium");
       if (!res.value.seat) { setStranded({ id, hint: res.hint }); return; }
       navigate(`/ticket/${encodeURIComponent(id)}`);
       onClose();
@@ -56,6 +61,7 @@ export function QuickTaskDialog({ open, onClose }: { open: boolean; onClose: () 
   const err = create.error as BoardApiError | undefined;
 
   if (!open) return null;
+  const plain = libraryTags(parseTags(tags));
   const ready = !stranded && Boolean(title.trim()) && title.trim().length <= 80 && Boolean(words.trim()) && canSpawn;
   return createPortal(
     <div className={styles.scrim} onMouseDown={(e) => e.target === e.currentTarget && !busy.current && onClose()} data-testid="quick-task-scrim">
@@ -80,6 +86,15 @@ export function QuickTaskDialog({ open, onClose }: { open: boolean; onClose: () 
         <textarea id="quick-task-words" data-testid="quick-task-words" className={ui.textarea} rows={5} value={words}
           disabled={create.isPending} onChange={(e) => setWords(e.target.value)}
           placeholder="The small task, in your own words. The engineer plans from them verbatim." />
+        <label className={ui.sectionLabel} htmlFor="quick-task-tags">Tags (optional)</label>
+        <input id="quick-task-tags" data-testid="quick-task-tags" className={ui.input} value={tags}
+          disabled={create.isPending} onChange={(e) => setTags(e.target.value)}
+          placeholder="web, python" aria-describedby="quick-task-tags-help" />
+        <p id="quick-task-tags-help" className={styles.muted} data-testid="quick-task-tags-help">
+          {plain.length
+            ? `Library docs tagged ${plain.join(", ")} link to the task when it opens.`
+            : "Plain words, comma-separated; a Library doc sharing a tag links to the task when it opens."}
+        </p>
         <fieldset className={styles.roleModels} data-testid="quick-task-role-models">
           <legend className={ui.sectionLabel}>Engineer model and effort</legend>
           <SeatPickHead />

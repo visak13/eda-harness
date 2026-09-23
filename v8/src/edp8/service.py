@@ -258,6 +258,7 @@ class QuickTaskIn(BaseModel):
     words: str
     model: str | None = None   # an engineer-catalog id; omitted = the engineer catalog default
     effort: str | None = None  # S-UI: low|medium|high for the engineer; Claude is capped at medium
+    tags: list[str] = []       # t-683d0033bb: plain words for the Library auto-link; seat keys are dropped
     description: str = ""
     work_type: WorkType = WorkType.feature
 
@@ -1266,10 +1267,15 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         cached = _idem_get(a, idempotency_key)
         if cached is not None:
             return {**cached, "hint": "idempotent replay: same quick task, no second ticket"}
+        from .library import plain_tags
+        from .schemas import normalize_tags
         t = board.ticket_create(a, kind=TicketKind.story, work_type=b.work_type, title=b.title.strip(),
                                 words=b.words, description=b.description,
                                 # S-UI: the quick story is its own root, so its seat choice lives on it
+                                # t-683d0033bb: the owner's plain tags (words only — never a seat
+                                # key) ride along, so the Library auto-link at create can match them
                                 tags=[QUICK_TAG,
+                                      *[t for t in normalize_tags(b.tags) if t in plain_tags(b.tags)],
                                       *seat_choice.tags_for_role_models({"engineer": b.model or ""}),
                                       *seat_choice.tags_for_role_efforts({"engineer": b.effort or ""})])
         seat = f"engineer.{t.id}"

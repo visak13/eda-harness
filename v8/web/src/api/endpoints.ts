@@ -228,16 +228,23 @@ export const putSettings = (b: UserSettings) => postJson<UserSettings>("/v1/me/s
 export const sendSlackTestPing = () => postJson<{ delivered: boolean }>("/v1/me/settings/slack/test", {});
 
 /** Atomic explicit title + exact raw words. Omitting title preserves legacy caller behavior. */
-export const createEpic = (words: string, choice?: EpicSeatChoice, title?: string) =>
+export const createEpic = (words: string, choice?: EpicSeatChoice, title?: string, tags: string[] = []) =>
   postJson<TicketRecord>("/v1/tickets", {
     kind: "epic",
     work_type: "feature",
     title: title === undefined ? words : title.trim(),
     words,
     // S-ROLES (design-34bf11cc07 §4.1) + S-UI: one model and one effort per role, recorded as
-    // `model:<role>=<id>` / `seat-effort:<role>=<level>` tags (edp8/seat_choice.py).
-    ...(choice ? { tags: epicChoiceTags(choice) } : {}),
+    // `model:<role>=<id>` / `seat-effort:<role>=<level>` tags (edp8/seat_choice.py); t-683d0033bb: the
+    // owner's plain tags lead, so the Library auto-link (edp8/library.autolink) can match them.
+    ...(choice || libraryTags(tags).length
+      ? { tags: [...libraryTags(tags), ...(choice ? epicChoiceTags(choice) : [])] } : {}),
   });
+
+/** t-683d0033bb: the owner's tags that can match a Library doc — plain words only, as the board's
+ *  library.plain_tags: a `key:value` / `key=value` tag configures seats and `quick` marks the kind. */
+export const libraryTags = (tags: string[]): string[] =>
+  [...new Set(tags.map((t) => t.trim().toLowerCase()).filter((t) => t && !/[:=]/.test(t) && t !== "quick"))];
 
 /** The per-role models and efforts chosen in the new-epic dialog or Actions → Models…. */
 export interface EpicSeatChoice {
@@ -296,12 +303,14 @@ export interface QuickTaskCreated {
 /** POST /v1/quick-tasks — S-QUICK (design-34bf11cc07 §4.2): the owner's one-step quick task. The board
  *  creates a parentless story tagged `quick` with the words verbatim, spawns `engineer.<story>` on the
  *  chosen engineer-catalog model and makes it the assignee. The model is sent only when picked. */
-export const createQuickTask = (b: { title: string; words: string; model?: string | null; effort?: string | null }) =>
+export const createQuickTask = (b: { title: string; words: string; model?: string | null; effort?: string | null; tags?: string[] }) =>
   postJson<QuickTaskCreated>("/v1/quick-tasks", {
     title: b.title.trim(),
     words: b.words,
     ...(b.model ? { model: b.model } : {}),
     ...(b.effort ? { effort: b.effort } : {}),
+    // t-683d0033bb: plain tags on the quick story, so the board's auto-link at create can match them
+    ...(libraryTags(b.tags ?? []).length ? { tags: libraryTags(b.tags ?? []) } : {}),
   });
 
 // ------------------------------------------------------------------ S-SME-SURFACE (s-698224fca8) Library topics

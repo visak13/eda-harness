@@ -3,7 +3,8 @@ import { createPortal } from "react-dom";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
-import { createEpic, type EpicSeatChoice } from "../api/endpoints";
+import { createEpic, libraryTags, type EpicSeatChoice } from "../api/endpoints";
+import { parseTags } from "../pages/KnowledgeDetail";
 import { getModels, getPoolCapabilities, spawnSeat } from "../api/seats";
 import { clampEffort, SeatPickHead, SeatPickRow, type Effort } from "./SeatPicks";
 import type { ModelCatalog, PoolCapabilities } from "../api/types";
@@ -31,10 +32,14 @@ import { useModalDialog } from "./useModalDialog";
 //
 // S-UI (owner m-ec5a9b86c5): effort is per role too — an effort select beside each model select
 // (SeatPickRow), sent as `seat-effort:<role>=<level>`; the old single global dropdown is gone.
+//
+// t-683d0033bb (qa m-35926a1c92): a plain Tags input — words only, sent ahead of the seat tags — so the
+// Library auto-link (edp8/library.autolink) can link a doc sharing a tag at design sign-off.
 
 export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () => void }): React.JSX.Element | null {
   const [words, setWords] = useState("");
   const [title, setTitle] = useState("");
+  const [tags, setTags] = useState("");
   const committed = useRef<{ id: string; hint: string; choice: EpicSeatChoice } | null>(null);
   const busy = useRef(false);
   const panelRef = useRef<HTMLFormElement>(null);
@@ -64,7 +69,7 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
     mutationFn: async () => {
       const choice = committed.current?.choice ?? { roleModels, roleEfforts };
       if (!committed.current) {
-        const made = await createEpic(words, choice, title);
+        const made = await createEpic(words, choice, title, parseTags(tags));
         committed.current = { id: made.value.id, hint: made.hint, choice };
       }
       const made = committed.current;
@@ -84,7 +89,7 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
       void qc.invalidateQueries({ queryKey: ["epics", "summary"] });
       void qc.invalidateQueries({ queryKey: ["me", "summary"] });
       void qc.invalidateQueries({ queryKey: ["seats"] });
-      setWords(""); setTitle(""); setSpawn(false); setDone(null); setPicks({}); setEfforts({});
+      setWords(""); setTitle(""); setTags(""); setSpawn(false); setDone(null); setPicks({}); setEfforts({});
       committed.current = null;
       navigate(`/epic/${encodeURIComponent(res.id)}`);
       onClose();
@@ -95,6 +100,7 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
 
   if (!open) return null;
   const text = words.trim();
+  const plain = libraryTags(parseTags(tags));
   return createPortal(
     <div className={styles.scrim} onMouseDown={(e) => e.target === e.currentTarget && !busy.current && onClose()} data-testid="new-epic-scrim">
       <form
@@ -126,6 +132,15 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
           placeholder="What you want, in your own words. They are kept verbatim, separately from your title."
           data-testid="new-epic-words"
         />
+        <label className={ui.sectionLabel} htmlFor="new-epic-tags">Tags (optional)</label>
+        <input id="new-epic-tags" data-testid="new-epic-tags" className={ui.input} value={tags}
+          disabled={create.isPending || Boolean(done)} onChange={(e) => setTags(e.target.value)}
+          placeholder="web, python" aria-describedby="new-epic-tags-help" />
+        <p id="new-epic-tags-help" className={styles.muted} data-testid="new-epic-tags-help">
+          {plain.length
+            ? `Library docs tagged ${plain.join(", ")} link to the epic at design sign-off.`
+            : "Plain words, comma-separated; a Library doc sharing a tag links to the epic at design sign-off."}
+        </p>
         <fieldset className={styles.roleModels} data-testid="new-epic-role-models">
           <legend className={ui.sectionLabel}>Model and effort per role</legend>
           {modelsQ.isError ? (

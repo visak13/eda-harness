@@ -217,4 +217,28 @@ describe("NewEpicDialog (human #22)", () => {
     await waitFor(() => expect(screen.getByTestId("new-epic-spawn")).toBeDisabled());
     expect(screen.getByText(/pool offline/)).toBeInTheDocument();
   });
+
+  it("t-683d0033bb: the Tags input sends plain words ahead of the seat tags, so the Library auto-link can match", async () => {
+    let ticketBody: Record<string, unknown> | null = null;
+    server.use(http.post("/v1/tickets", async ({ request }) => {
+      ticketBody = (await request.json()) as Record<string, unknown>;
+      return HttpResponse.json({ ok: true, value: { id: "epic-t1", kind: "epic" }, hint: "epic created" });
+    }));
+    mount();
+    await screen.findByRole("dialog", { name: "New epic" });
+    fireEvent.change(screen.getByTestId("new-epic-title"), { target: { value: "Tagged" } });
+    fireEvent.change(screen.getByTestId("new-epic-words"), { target: { value: "words" } });
+    expect(screen.getByTestId("new-epic-tags-help")).toHaveTextContent("Plain words, comma-separated");
+    // a seat key or `quick` typed as a tag never reaches the epic: it would reconfigure a seat, not link a doc
+    fireEvent.change(screen.getByTestId("new-epic-tags"), { target: { value: " Web, python web model:qa=gpt-6-astra, quick" } });
+    expect(screen.getByTestId("new-epic-tags-help")).toHaveTextContent("Library docs tagged web, python link to the epic at design sign-off.");
+    await waitFor(() => expect(screen.getByTestId("new-epic-role-models").querySelectorAll("select").length).toBeGreaterThan(0));
+    fireEvent.click(screen.getByTestId("new-epic-create"));
+    expect(await screen.findByTestId("landed")).toBeInTheDocument();
+    const tags = (ticketBody as Record<string, unknown> | null)?.tags as string[];
+    expect(tags.slice(0, 2)).toEqual(["web", "python"]);
+    expect(tags).toContain("model:qa=claude-fable-5-1");
+    expect(tags).not.toContain("model:qa=gpt-6-astra");
+    expect(tags).not.toContain("quick");
+  });
 });
