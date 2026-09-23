@@ -46,9 +46,12 @@ ONESHOT_EARLY_MAX_S = 90  # CronCreate description: ":00 or :30 fire up to 90 s 
 CRON_EXPIRE_MS = 7 * 24 * 3600 * 1000
 IDLE_COALESCE_MS = 20  # parity §5 "queued notifications at idle": landing together = ONE turn
 MONITOR_START_GRACE_MS = 200  # §5: Claude's Monitor result is committed ≈270 ms after invocation
-# `codex sandbox` takes ≈1 s (measured 1.0-1.8 s) before the wrapped command runs; the grace above is
-# counted from the command's own start (a stderr marker it prints first), bounded by this wait
+# `codex sandbox` takes ≈1 s (measured 1.0-1.8 s) before the wrapped command runs, so a sandboxed watch
+# counts its grace from the command's own start (a stderr marker it prints first), bounded by this wait.
+# From there the window must hold a short command's EOF (measured ≤45 ms after the marker) but not a
+# running command's first batch (marker + BATCH_MS): the unsandboxed 200 ms less bash's ≈70 ms start.
 MONITOR_READY_WAIT_S = 10.0
+MONITOR_READY_GRACE_MS = 120
 READY_MARK = "\x1eedp8-monitor-ready"
 # `codex sandbox` (0.156.0, Windows) cuts a command argument at its first newline, so the wrapped shell
 # gets a fixed one-line stub and the model's command travels in env (measured: multi-line, quotes, exit code)
@@ -884,8 +887,11 @@ class SeatTools:
             m = self._start_ws(call_id, ws["url"], ws.get("protocols"), p["description"], persistent, timeout_ms)
         else:
             m = self._start_monitor(call_id, p["command"], p["description"], persistent, timeout_ms)
+        if self.sandbox_prefix and not ws:
             m.ready.wait(MONITOR_READY_WAIT_S)  # the sandbox's start-up is not the command's time
-        time.sleep(MONITOR_START_GRACE_MS / 1000)  # events inside Claude's ≈270 ms result window attach to it
+            time.sleep(MONITOR_READY_GRACE_MS / 1000)
+        else:
+            time.sleep(MONITOR_START_GRACE_MS / 1000)  # events inside Claude's ≈270 ms result window attach to it
         tail = ("Each event reaches you as a notification while you carry on; no polling, no sleeping. A notification "
                 "is a background event and never the user's reply, even one that lands while you wait for them.")
         if expiry:

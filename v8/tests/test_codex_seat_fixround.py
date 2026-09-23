@@ -144,6 +144,19 @@ def test_1_sandbox_startup_does_not_eat_the_monitor_attach_window(tmp_path):
     t.shutdown()
 
 
+def test_1_sandboxed_running_commands_first_line_stays_out_of_its_result(tmp_path):
+    """oracle r4 (monitor_idle_line): Claude sends a still-running watch's first line standalone, after its
+    batch window; a grace that outlasts BATCH_MS from the command's start would attach it."""
+    h = Host()
+    t = tools_for(tmp_path, h, sandbox_prefix=SLOW_SANDBOX)
+    h.d.turn_started("busy")
+    text, ok = t.call("Monitor", {"command": "echo one; sleep 2; echo two", "description": "idle",
+                                  "persistent": False, "timeout_ms": 30000}, "c1")
+    assert ok and "<event>one" not in text, text
+    assert wait_for(lambda: any("<event>one</event>" in n for n in h.d.pending), 5), h.d.pending
+    t.shutdown()
+
+
 @pytest.mark.skipif(not REAL_CODEX or os.name != "nt", reason="needs codex-cli's Windows sandbox")
 def test_1_sandboxed_multiline_command_runs_whole(tmp_path):
     """`codex sandbox` cuts an argv argument at its first newline (measured on 0.156.0): a multi-line
