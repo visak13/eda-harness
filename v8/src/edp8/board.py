@@ -269,6 +269,9 @@ class Board:
         elif quick:
             # a quick task's words are the owner's request verbatim (its design); its own title stays
             words = words.strip() if words and words.strip() else None
+        elif kind == TicketKind.topic:
+            # t-f5bf848f0f: a topic's purpose is the owner's words, verbatim and immutable like an epic's
+            words = words if words and words.strip() else None
         else:
             words = None
         # §24 finding 11: the cap count and the insert are one atomic step under the board lock, so
@@ -470,17 +473,6 @@ class Board:
                       assignee: str | None = None, design_ref: str | None = None,
                       description: str | None = None, tags: list[str] | None = None,
                       title: str | None = None) -> Ticket:
-        kw = dict(status=status, assignee=assignee, design_ref=design_ref, description=description, tags=tags,
-                  title=title)
-        if is_topic(self.ticket(id_)):  # t-3e246b5e32 (b): a topic's read-check-put-attribute is one locked step
-            with self._lock:
-                return self._ticket_update(actor, id_, **kw)
-        return self._ticket_update(actor, id_, **kw)
-
-    def _ticket_update(self, actor: Participant, id_: str, *, status: TicketStatus | None = None,
-                       assignee: str | None = None, design_ref: str | None = None,
-                       description: str | None = None, tags: list[str] | None = None,
-                       title: str | None = None) -> Ticket:
         t = self.ticket(id_)
         changed: dict[str, Any] = {}
         if is_topic(t):  # adversary 09-23 #5/#7: a topic's seat is its resident sme and its tags are the
@@ -525,9 +517,6 @@ class Board:
                 self._check_seat_tags(actor, t, new_tags)
                 t.tags = new_tags
                 changed["tags"] = t.tags
-                if is_topic(t):  # the attribution rides the same put as the tags (the page reads it here)
-                    from .topics import _now, config
-                    t.topic_config = {**config(self, t), "tags_set_by": {"by": actor.id, "at": _now()}}
         if assignee is not None:
             if actor.role not in (Role.coordinator, Role.architect, Role.engineer, Role.owner):
                 raise BoardError("scope", f"{actor.role} may not assign tickets",
@@ -1930,10 +1919,23 @@ class Board:
             if t is not None:
                 try:
                     epic = self.epic_of(t)  # type: ignore[arg-type]
-                    tags = list(epic.tags or [])
+                    # t-f5bf848f0f: a topic's sme choice is its open receipt, not a tag the owner edits away
+                    tags = self._topic_choice_tags(epic.id) if is_topic(epic) else list(epic.tags or [])
                 except Exception:  # noqa: BLE001 — an orphaned chain means no epic choice
                     tags = []
         return seat_choice.resolve(model, effort, tags, seat_choice.agent_home(), role=role)
+
+    def _topic_choice_tags(self, topic_id: str) -> list[str]:
+        """The sme model + effort the owner picked when opening the topic (a `seat_choice` receipt event,
+        topics.create), as the `model:sme=` / `seat-effort:sme=` tags seat_choice.resolve reads; [] = the
+        role's catalog default."""
+        for ev in self.store.query("event", {"subject_id": topic_id, "kind": EventKind.ticket_updated.value},
+                                   limit=-1, newest_first=True):
+            if "seat_choice" in (ev.data.get("changed") or []):
+                model, effort = ev.data.get("model"), ev.data.get("effort")
+                return ([f"{seat_choice.ROLE_MODEL_TAG}{Role.sme.value}={model}"] if model else []) + (
+                    [f"{seat_choice.EFFORT_TAG}{Role.sme.value}={effort}"] if effort else [])
+        return []
 
     def _epic_id_of(self, ticket_id: str) -> str | None:
         t = self.store.get("ticket", ticket_id)

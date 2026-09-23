@@ -117,3 +117,5 @@
   padding: 8px;
   border-radius: 6px;
 }
+/* t-f5bf848f0f: the owner's words (the topic's purpose), verbatim */
+.words { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 22px; color: var(--ink); }

@@ -5,7 +5,7 @@ proposes (also over MCP: topic_research / topic_propose)."""
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -20,6 +20,9 @@ class TopicIn(BaseModel):
     tags: list[str] = Field(default_factory=list)
     seed_url: str | None = None
     description: str = ""
+    words: str | None = None                                  # the topic's purpose, verbatim (t-f5bf848f0f)
+    model: str | None = None                                  # the sme's model, from GET /v1/models role sme
+    effort: Literal["low", "medium", "high"] | None = None    # capped for a Claude seat at spawn
 
 
 class TagsIn(BaseModel):
@@ -71,7 +74,8 @@ def topics_router(board: Board, actor: Callable[..., Participant], topic_actor: 
 
     @r.post("/v1/topics")
     def topic_create(b: TopicIn, a: Participant = Depends(actor)):
-        out = topics.create(board, a, title=b.title, tags=b.tags, seed_url=b.seed_url, description=b.description)
+        out = topics.create(board, a, title=b.title, tags=b.tags, seed_url=b.seed_url, description=b.description,
+                            words=b.words, model=b.model, effort=b.effort)
         return _ok({"topic": out["topic"].model_dump(mode="json"), "seat": out["seat"]},
                    "the sme seat is queued; it wakes on every message on the topic's thread")
 

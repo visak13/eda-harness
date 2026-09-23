@@ -1,0 +1,22 @@
+PASS epic 1684x875: {"width":640,"left":522,"top":12,"labels":["Title","Your words","Tags (optional)","Model and effort per role","architect modelClaude Fable 5.1GPT-6 Astra","architect effortlowmediumhigh","engineer modelClaude Opus 5.5GPT-6 Sol","engineer effortlowmediumhigh","qa modelClaude Fable 5.1GPT-6 Astra","qa effortlowmediumhigh","adversary modelGPT-6 Astra","adversary effortlowmediumhigh","sme modelClaude Opus 5.5GPT-6 Sol","sme effortlowmediumhigh","Spawn the architect — the pool cannot spawn from here"],"hOverflow":false,"name":"New epic","focused":"new-epic-title"}
+shot after-epic-empty-1684x875.png
+shot after-epic-filled-1684x875.png
+shot after-epic-footer-1684x875.png
+PASS topic 1684x875: {"width":640,"left":522,"top":12,"labels":["Title","Your words","Tags (optional)","The sme's model and effort","sme modelClaude Opus 5.5GPT-6 Sol","sme effortlowmediumhigh","Experts (optional)","Seed URL (optional)"],"hOverflow":false,"name":"Open topic","focused":"topic-open-title"}
+shot after-topic-empty-1684x875.png
+shot after-topic-filled-1684x875.png
+shot after-topic-footer-1684x875.png
+PASS expert links shown once: priya, dana
+shot after-topic-done-links-1684x875.png
+PASS topic page: words="Keep our pytest craft current: fixtures, markers, CI." seat="sme seat sme.topic-bd2c0fabc6 · queued · gpt-6-sol at high"
+shot after-topic-page-1684x875.png
+PASS epic 1280x800: {"width":640,"left":320,"top":12,"labels":["Title","Your words","Tags (optional)","Model and effort per role","architect modelClaude Fable 5.1GPT-6 Astra","architect effortlowmediumhigh","engineer modelClaude Opus 5.5GPT-6 Sol","engineer effortlowmediumhigh","qa modelClaude Fable 5.1GPT-6 Astra","qa effortlowmediumhigh","adversary modelGPT-6 Astra","adversary effortlowmediumhigh","sme modelClaude Opus 5.5GPT-6 Sol","sme effortlowmediumhigh","Spawn the architect — the pool cannot spawn from here"],"hOverflow":false,"name":"New epic","focused":"new-epic-title"}
+shot after-epic-empty-1280x800.png
+shot after-epic-filled-1280x800.png
+shot after-epic-footer-1280x800.png
+PASS topic 1280x800: {"width":640,"left":320,"top":12,"labels":["Title","Your words","Tags (optional)","The sme's model and effort","sme modelClaude Opus 5.5GPT-6 Sol","sme effortlowmediumhigh","Experts (optional)","Seed URL (optional)"],"hOverflow":false,"name":"Open topic","focused":"topic-open-title"}
+shot after-topic-empty-1280x800.png
+shot after-topic-filled-1280x800.png
+shot after-topic-footer-1280x800.png
+ALL PASS
+side by side: compare-after-empty-1280x800.png, compare-after-empty-1684x875.png, compare-after-filled-1280x800.png, compare-after-filled-1684x875.png, compare-after-footer-1280x800.png, compare-after-footer-1684x875.png

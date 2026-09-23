@@ -104,3 +104,7 @@
   padding: 12px 0;
   gap: 8px;
 }
+/* t-f5bf848f0f: the Open-topic dialog's one-time expert links (done state) */
+.links { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.links li { display: flex; flex-direction: column; gap: 2px; font-size: 13px; line-height: 20px; }
+.secret { font-family: Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; user-select: all; }

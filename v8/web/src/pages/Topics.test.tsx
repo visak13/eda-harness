@@ -58,7 +58,8 @@ describe("Library topics", () => {
     expect(within(dlg).getByTestId("topic-open-create")).toBeDisabled();
     fireEvent.change(within(dlg).getByTestId("topic-open-seed"), { target: { value: "https://tokio.rs/tokio/tutorial" } });
     fireEvent.click(within(dlg).getByTestId("topic-open-create"));
-    await waitFor(() => expect(body).toEqual({ title: "Rust async", tags: ["rust", "async"], seed_url: "https://tokio.rs/tokio/tutorial" }));
+    await waitFor(() => expect(body).toMatchObject({ title: "Rust async", tags: ["rust", "async"], seed_url: "https://tokio.rs/tokio/tutorial" }));
+    await waitFor(() => expect(screen.queryByTestId("topic-open-dialog")).toBeNull()); // no experts: straight to the topic
   });
 
   it("shows docs, thread, experts, seat and who set the tags; the owner edits the tags", async () => {

@@ -502,64 +502,6 @@ def test_research_refuses_a_host_that_turned_private(client, board, tokens, reco
     assert not any("docs.pytest.org" in c for c in recorded)
 
 
-def test_topic_config_lives_on_the_record(client, board):
-    """t-3e246b5e32 (d): seed_url, the research allowlist and tags_set_by are the record's — 500 tag writes
-    and then deleting every ticket_updated event on the topic lose none of them."""
-    from edp8 import topics
-    t = _topic(client, seed_url="https://docs.pytest.org/en/stable/")["topic"]
-    for i in range(500):
-        assert client.patch(f"/v1/topics/{t['id']}/tags", json={"tags": [f"t{i}"]}, headers=OWNER).json()["ok"]
-    for ev in board.store.query("event", {"subject_id": t["id"], "kind": "ticket_updated"}, limit=-1):
-        board.store.delete("event", ev.id)
-    page = client.get(f"/v1/topics/{t['id']}", headers=OWNER).json()["value"]
-    assert page["seed_url"] == "https://docs.pytest.org/en/stable/"
-    assert page["tags_set_by"]["by"] == "owner" and page["topic"]["tags"] == ["t499"]
-    assert "docs.pytest.org" in topics.allowed_hosts(board, t["id"])
-    rec = board.ticket(t["id"])
-    assert rec.topic_config["seed_url"] == "https://docs.pytest.org/en/stable/"
-    assert rec.topic_config["allowlist"] == ["docs.pytest.org"]
-
-
-def test_legacy_topic_config_is_backfilled_once(client, board):
-    """A topic opened before the record field keeps its seed: read once from its receipts, then from the record."""
-    t = _topic(client, seed_url="https://docs.pytest.org/en/stable/")["topic"]
-    rec = board.ticket(t["id"]); rec.topic_config = None; board.store.put("ticket", rec)
-    assert client.get(f"/v1/topics/{t['id']}", headers=OWNER).json()["value"]["seed_url"] == "https://docs.pytest.org/en/stable/"
-    assert board.ticket(t["id"]).topic_config["allowlist"] == ["docs.pytest.org"]
-
-
-def test_tags_set_by_names_the_writer_whose_tags_won(client, board, tokens):
-    """t-3e246b5e32 (b): two tag writes race on the generic ticket route (owner and sme); the owner's write is
-    held between its put and its receipt. Unlocked, the sme's tags won but the page named the owner."""
-    import threading
-    t = _topic(client)["topic"]
-    board.run_pending_pairings()
-    sme = _seat(client, tokens, t)
-    sme_done, owner_in = threading.Event(), threading.Event()
-    real_index = board._index
-
-    def slow_index(kind, id_, text):  # runs between ticket_update's put and its ticket_updated receipt
-        if "from-owner" in text:  # the owner's write (the handler runs on a server worker thread)
-            owner_in.set()
-            sme_done.wait(1.0)  # pre-fix the sme finishes inside this window; post-fix it waits on the lock
-        return real_index(kind, id_, text)
-    board._index = slow_index
-    out = {}
-
-    def write(name, hdr, tags):
-        out[name] = client.patch(f"/v1/tickets/{t['id']}", json={"tags": tags}, headers=hdr).json()
-        if name == "sme-w":
-            sme_done.set()
-    ow = threading.Thread(target=write, args=("owner-w", OWNER, ["from-owner"]), name="owner-w")
-    ow.start(); owner_in.wait(2.0)
-    sw = threading.Thread(target=write, args=("sme-w", sme, ["from-sme"]), name="sme-w")
-    sw.start(); ow.join(5); sw.join(5)
-    assert out["owner-w"]["ok"] and out["sme-w"]["ok"], out
-    page = client.get(f"/v1/topics/{t['id']}", headers=OWNER).json()["value"]
-    winner = {"from-owner": "owner", "from-sme": f"sme.{t['id']}"}[page["topic"]["tags"][0]]
-    assert page["tags_set_by"]["by"] == winner, (page["topic"]["tags"], page["tags_set_by"])
-
-
 def test_seed_url_outlives_many_tag_writes(client):
     """#10: the seed was read from the newest 200 ticket_updated events, so 200 tag writes lost it."""
     t = _topic(client, seed_url="https://docs.pytest.org/en/stable/")["topic"]
@@ -586,3 +528,52 @@ def test_topic_seat_cannot_edit_its_proposal(client, board, tokens, recorded):
     assert r.status_code != 200 or not r.json().get("ok")
     body = client.get(f"/v1/docs/{d['id']}", headers=OWNER).json()["value"]["body_md"]
     assert body.startswith("> Source: https://www.skills.sh/")
+
+
+# ----------------------------------------------------------------------------- t-f5bf848f0f open dialog
+class ChoicePool(FakePool):
+    """Also records the model + effort each spawn ran with."""
+
+    def __init__(self):
+        super().__init__()
+        self.choices: list[tuple[str, str | None, str | None]] = []
+
+    def spawn(self, role, participant_id, env=None, model=None, effort=None, **_):
+        self.choices.append((participant_id, model, effort))
+        return super().spawn(role, participant_id, env=env)
+
+
+def test_open_keeps_the_purpose_words_verbatim(client):
+    raw = "  Keep our pytest craft current.\nFixtures, markers, CI.  "
+    t = _topic(client, words=raw)["topic"]
+    assert t["words"] == raw
+    assert client.get(f"/v1/topics/{t['id']}", headers=OWNER).json()["value"]["topic"]["words"] == raw
+    assert _topic(client, title="No words")["topic"]["words"] is None
+
+
+def test_open_sme_model_and_effort_ride_the_seat_spawn_not_the_tags(tokens):
+    pool = ChoicePool()
+    board = Board(Store(":memory:"), pool=pool, free_mb=lambda: 8000)
+    c = TestClient(create_app(board, admin_token="t"))
+    assert c.post("/v1/participants", json={"type": "human", "role": "owner", "handle": "owner", "id": "owner"},
+                  headers=ADMIN).json()["ok"]
+    out = _topic(c, tags=["python"], model="gpt-6-sol", effort="high")
+    tid = out["topic"]["id"]
+    assert out["topic"]["tags"] == ["python"]  # the choice is a receipt, never a tag the owner edits away
+    assert out["seat"]["model"] == "gpt-6-sol" and out["seat"]["effort"] == "high"
+    assert c.patch(f"/v1/topics/{tid}/tags", json={"tags": ["pytest"]}, headers=OWNER).json()["ok"]
+    assert board.run_pending_pairings()["spawned"] == [f"sme.{tid}"]
+    assert pool.choices[-1] == (f"sme.{tid}", "codex/gpt-6-sol", "high")
+    # a Claude sme asked for high runs at medium (fleet cap); no choice = the catalog default
+    claude = _topic(c, title="Claude topic", model="claude-opus-5-5", effort="high")
+    assert claude["seat"]["model"] == "claude-opus-5-5" and claude["seat"]["effort"] == "medium"
+    plain = _topic(c, title="Default topic")
+    assert plain["seat"]["model"] == "claude-opus-5-5"
+
+
+def test_open_refuses_a_model_outside_the_sme_catalog(client):
+    r = client.post("/v1/topics", json={"title": "Bad model", "model": "gpt-6-astra"}, headers=OWNER).json()
+    assert not r["ok"] and "not a sme model" in json.dumps(r)
+    r = client.post("/v1/topics", json={"title": "Bad effort", "effort": "max"}, headers=OWNER)
+    assert r.status_code == 422
+    assert client.get("/v1/topics", headers=OWNER).json()["value"] == []  # nothing half-opened

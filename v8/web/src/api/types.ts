@@ -582,6 +582,8 @@ export interface UploadedArtifact {
 export interface TopicSeat {
   participant: string;
   state: string;
+  model?: string | null;
+  effort?: string | null;
 }
 export interface TopicRow {
   id: string;
@@ -595,6 +597,7 @@ export interface TopicRow {
   experts: number;
   messages: number;
   description?: string;
+  words?: string | null;
 }
 export interface TopicDoc {
   id: string;

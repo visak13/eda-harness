@@ -320,7 +320,10 @@ export const getTopics = () => api<TopicRow[]>("/v1/topics");
 export const getTopicPage = (id: string) => api<TopicPage>(topicPath(id));
 export const getTopicDoc = (id: string, docId: string) =>
   api<DocRecord>(`${topicPath(id)}/docs/${encodeURIComponent(docId)}`);
-export const openTopic = (b: { title: string; tags: string[]; seed_url?: string | null }) =>
+export const openTopic = (b: {
+  title: string; tags: string[]; seed_url?: string | null; words?: string | null;
+  model?: string | null; effort?: "low" | "medium" | "high" | null;
+}) =>
   postJson<{ topic: TicketRecord; seat: TopicSeat }>("/v1/topics", b);
 export const postTopicMessage = (id: string, b: { text: string; kind?: string; reply_to?: string | null }) =>
   postJson<Record<string, unknown>>(`${topicPath(id)}/messages`, b);

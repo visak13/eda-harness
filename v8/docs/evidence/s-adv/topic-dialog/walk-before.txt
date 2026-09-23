@@ -1,0 +1,18 @@
+PASS epic 1684x875: {"width":640,"left":522,"top":12,"labels":["Title","Your words","Tags (optional)","Model and effort per role","architect modelClaude Fable 5.1GPT-6 Astra","architect effortlowmediumhigh","engineer modelClaude Opus 5.5GPT-6 Sol","engineer effortlowmediumhigh","qa modelClaude Fable 5.1GPT-6 Astra","qa effortlowmediumhigh","adversary modelGPT-6 Astra","adversary effortlowmediumhigh","sme modelClaude Opus 5.5GPT-6 Sol","sme effortlowmediumhigh","Spawn the architect — the pool cannot spawn from here"],"hOverflow":false,"name":"New epic","focused":"new-epic-title"}
+shot before-epic-empty-1684x875.png
+shot before-epic-filled-1684x875.png
+shot before-epic-footer-1684x875.png
+PASS topic 1684x875: {"width":640,"left":522,"top":12,"labels":["Title","Tags (optional; the sme adds its own)","Seed URL (optional)"],"hOverflow":false,"name":"Open topic","focused":"topic-open-title"}
+shot before-topic-empty-1684x875.png
+shot before-topic-filled-1684x875.png
+shot before-topic-footer-1684x875.png
+PASS epic 1280x800: {"width":640,"left":320,"top":12,"labels":["Title","Your words","Tags (optional)","Model and effort per role","architect modelClaude Fable 5.1GPT-6 Astra","architect effortlowmediumhigh","engineer modelClaude Opus 5.5GPT-6 Sol","engineer effortlowmediumhigh","qa modelClaude Fable 5.1GPT-6 Astra","qa effortlowmediumhigh","adversary modelGPT-6 Astra","adversary effortlowmediumhigh","sme modelClaude Opus 5.5GPT-6 Sol","sme effortlowmediumhigh","Spawn the architect"],"hOverflow":false,"name":"New epic","focused":"new-epic-title"}
+shot before-epic-empty-1280x800.png
+shot before-epic-filled-1280x800.png
+shot before-epic-footer-1280x800.png
+PASS topic 1280x800: {"width":640,"left":320,"top":12,"labels":["Title","Tags (optional; the sme adds its own)","Seed URL (optional)"],"hOverflow":false,"name":"Open topic","focused":"topic-open-title"}
+shot before-topic-empty-1280x800.png
+shot before-topic-filled-1280x800.png
+shot before-topic-footer-1280x800.png
+ALL PASS
+side by side: compare-before-empty-1280x800.png, compare-before-empty-1684x875.png, compare-before-filled-1280x800.png, compare-before-filled-1684x875.png, compare-before-footer-1280x800.png, compare-before-footer-1684x875.png

@@ -36,7 +36,7 @@ export function TopicPage(): React.JSX.Element {
       <div className={styles.head}>
         <h2 className={styles.headTitle}>{p.topic.title}</h2>
         <span className={ui.tag} data-testid="topic-status">{p.topic.status}</span>
-        <span className={styles.muted} data-testid="topic-seat">sme seat {p.seat.participant} · {p.seat.state}</span>
+        <span className={styles.muted} data-testid="topic-seat">sme seat {p.seat.participant} · {p.seat.state}{p.seat.model ? ` · ${p.seat.model}${p.seat.effort ? ` at ${p.seat.effort}` : ""}` : ""}</span>
         {owner && isOpen ? (
           <button type="button" className={ui.button} disabled={close.isPending} data-testid="topic-close"
             onClick={() => { if (window.confirm("Close this topic? Its sme seat is released.")) close.mutate(); }}>
@@ -45,6 +45,7 @@ export function TopicPage(): React.JSX.Element {
         ) : null}
       </div>
       {close.isError ? <p className={ui.banner} role="alert">{errText(close.error)}</p> : null}
+      {p.topic.words ? <p className={styles.words} data-testid="topic-words">{p.topic.words}</p> : null}
       {p.seed_url ? <p className={styles.muted}>Seed <a href={p.seed_url} target="_blank" rel="noreferrer">{p.seed_url}</a></p> : null}
       <div className={styles.layout}>
         <div className={styles.col}>
