@@ -156,6 +156,16 @@ class BoardClient:
         extra = {"tags": tags, "status": status, "proposes": proposes, "ticket_id": ticket_id}
         return self._request("POST", "/v1/docs", json={**body, **{k: v for k, v in extra.items() if v is not None}})
 
+    # S-SME-SURFACE: a Library topic's sme browses (bounded, receipted) and files proposals
+    def topic_research(self, topic_id: str, query: str | None = None, url: str | None = None) -> dict[str, Any]:
+        return self._request("POST", f"/v1/topics/{topic_id}/research", json={"query": query, "url": url})
+
+    def topic_propose(self, topic_id: str, title: str, body_md: str, source_url: str, doc_type: str = "strategy_hl",
+                      tags: list[str] | None = None, proposes: str | None = None) -> dict[str, Any]:
+        return self._request("POST", f"/v1/topics/{topic_id}/proposals",
+                             json={"title": title, "body_md": body_md, "source_url": source_url, "doc_type": doc_type,
+                                   "tags": tags or [], "proposes": proposes})
+
     def doc_read(self, id_: str, version: int | None = None, offset: int | None = None,
                  limit: int | None = None, section: str | None = None) -> dict[str, Any]:
         return self._request("GET", f"/v1/docs/{id_}", params={"version": version, "offset": offset,

@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import secrets
+import threading
 import time
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -279,6 +280,8 @@ class ServiceEventIn(BaseModel):
 # --------------------------------------------------------------- public-mode reach (S17)
 
 DEFAULT_ADMIN_TOKEN = "dev"
+# one read-modify-write of a tokens file at a time in this process (agent mint, expert mint/revoke)
+_TOKENS_WRITE = threading.RLock()
 
 
 def public_mode() -> bool:
@@ -378,8 +381,13 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         if err:
             raise RuntimeError(err)
 
+    # Fixed ONCE per app (S-SME-SURFACE incident m-c31573e1a2): resolving the env on every call let a test
+    # app's background thread, outliving its monkeypatched EDP8_TOKENS, fall back to the cwd's tokens.json
+    # — the fleet file — and rewrite it. An app writes only the tokens file it was built with.
+    _tokens_path = tokens_file_path()
+
     def _tokens_file() -> Path:
-        return tokens_file_path()
+        return _tokens_path
 
     def _tokens() -> tuple[dict[str, str], dict[str, str]]:
         """(humans, agents) handle -> secret, read from tokens.json (top-level keys are
@@ -410,6 +418,8 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         humans, agents = _tokens()
         secret = (humans if p.type == "human" else agents).get(p.handle.lstrip("@"))
         if secret is None:
+            if p.role == Role.expert:  # S-SME-SURFACE: an expert is never header-only, in any mode
+                return f"X-Token required for expert {p.handle!r} (removed experts have none)"
             if public:  # fail closed: an uncredentialed participant cannot act from the network
                 return f"X-Token required for {p.type} participant {p.handle!r} (public mode)"
             # Human #34 (2026-09-10, P1): once tokens.json exists the board is in token mode — a HUMAN
@@ -423,8 +433,10 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
             return f"X-Token required for {p.type} participant {p.handle!r}"
         return None
 
-    def actor(x_participant: str | None = Header(default=None),
-              x_token: str | None = Header(default=None)) -> Participant:
+    def topic_actor(x_participant: str | None = Header(default=None),
+                    x_token: str | None = Header(default=None)) -> Participant:
+        """Every authenticated participant, experts included — only the topic routes use it, and they
+        scope an expert to its own topic (api_topics)."""
         if not x_participant:
             raise HTTPException(401, "X-Participant header missing (participant id or @handle)")
         try:
@@ -436,6 +448,13 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
             raise HTTPException(401, err)
         return p
 
+    def actor(x_participant: str | None = Header(default=None),
+              x_token: str | None = Header(default=None)) -> Participant:
+        p = topic_actor(x_participant, x_token)
+        if p.role == Role.expert:  # S-SME-SURFACE: an expert's token reaches its topic and nothing else
+            raise HTTPException(403, f"expert {p.handle!r} reaches only its Library topic (/v1/topics/<id>)")
+        return p
+
     def human_verify(handle: str, token: str | None) -> Participant:
         """The /ui/me forms authenticate through the same gate as the API."""
         try:
@@ -445,21 +464,29 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         err = _verify_token(p, token)
         if err:
             raise HTTPException(401, err.replace("X-Token required for", "token required for"))
+        if p.role == Role.expert:  # the legacy /ui forms are not an expert's; its topic page is
+            raise HTTPException(403, f"expert {p.handle!r} reaches only its Library topic")
         return p
 
     def _mint_agent_token(handle: str) -> str | None:
         """Mint and persist a per-seat secret into tokens.json's `agents` map for `handle`,
         returning it. Trusted mode (no tokens.json) → None: nothing to inject, the shell is
         header-only. Rewrites the file atomically-ish; the mtime bump invalidates _tokens cache."""
+        with _TOKENS_WRITE:
+            return _mint_agent_token_locked(handle)
+
+    def _mint_agent_token_locked(handle: str) -> str | None:
         f = _tokens_file()
         if not f.exists():
             return None
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
-            if not isinstance(data, dict):
-                data = {}
-        except (OSError, ValueError):
-            data = {}
+        except (OSError, ValueError) as e:
+            # never rewrite a tokens file we could not read: writing `{}` back would drop every human and
+            # agent credential in it (incident m-c31573e1a2). The pairing queue retries on the next tick.
+            raise RuntimeError(f"cannot read {f}; not minting {handle}: {e}") from e
+        if not isinstance(data, dict):
+            raise RuntimeError(f"{f} is not a JSON object; not minting {handle}")
         agents = data.get("agents")
         if not isinstance(agents, dict):
             agents = {}
@@ -470,6 +497,31 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
         os.replace(tmp, f)
         return secret
+
+    def _write_humans(update) -> None:
+        """Apply `update(data)` to tokens.json atomically (the owner's human map is its top level)."""
+        f = _tokens_file()
+        with _TOKENS_WRITE:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                raise RuntimeError(f"{f} is not a JSON object; not writing it")
+            update(data)
+            tmp = f.with_suffix(f.suffix + ".tmp")
+            tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            os.replace(tmp, f)
+
+    def _mint_human_token(handle: str) -> str | None:
+        """S-SME-SURFACE: an expert's token, minted exactly like the owner's — a top-level handle→secret in
+        tokens.json. Trusted mode (no tokens.json) → None: the caller refuses, an expert is never header-only."""
+        if not _tokens_file().exists():
+            return None
+        secret = secrets.token_urlsafe(24)
+        _write_humans(lambda d: d.__setitem__(handle.lstrip("@"), secret))
+        return secret
+
+    def _revoke_human_token(handle: str) -> None:
+        if _tokens_file().exists():
+            _write_humans(lambda d: d.pop(handle.lstrip("@"), None))
 
     # §24 finding 4: auto-paired qa seats spawn through the board, so give the board the
     # same token minter the service spawn route uses — the seat gets its EDP8_TOKEN injected and can
@@ -563,8 +615,10 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     app.include_router(views_router(board, actor))
     from .api_settings import settings_router
+    from .api_topics import topics_router
     from .api_usage import usage_router
     app.include_router(settings_router(actor))
+    app.include_router(topics_router(board, actor, topic_actor, _mint_human_token, _revoke_human_token))
 
     app.include_router(usage_router(actor))
 

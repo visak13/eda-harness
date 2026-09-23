@@ -106,6 +106,11 @@ RECALL_TICKETS = 3  # context() without a ticket_id carries recall for at most t
 def is_quick(t: Ticket) -> bool:
     """A quick task: a story carrying the `quick` tag (S-QUICK)."""
     return t.kind == TicketKind.story and QUICK_TAG in (t.tags or [])
+
+
+def is_topic(t: Ticket | None) -> bool:
+    """A Library topic (S-SME-SURFACE): its own parentless record, opened and closed by the owner."""
+    return t is not None and t.kind == TicketKind.topic
 # S22 c-0615088222: every feed queue (wake and view) is bounded. Drop policy: when a queue is full the
 # OLDEST queued event is dropped and the queue is marked `resync`; the SSE stream then sends
 # `: resync <cursor>` and ends, and the client reconnects from its last seq — the replay by seq
@@ -228,8 +233,8 @@ class Board:
         if actor.role not in TICKET_CREATORS[kind]:
             raise BoardError("scope", f"{actor.role} may not create a {kind}",
                              f"creators of {kind}: {sorted(r.value for r in TICKET_CREATORS[kind])}")
-        if kind == TicketKind.epic and parent_id:
-            raise BoardError("schema", "an epic has no parent")
+        if kind in (TicketKind.epic, TicketKind.topic) and parent_id:
+            raise BoardError("schema", f"an {kind} has no parent")
         clean_tags = [x.strip() for x in (tags or []) if x.strip()]
         quick = kind == TicketKind.story and QUICK_TAG in clean_tags
         if quick and actor.role != Role.owner:
@@ -237,7 +242,7 @@ class Board:
                              "an architect's story is designed under its epic; drop the tag")
         if kind == TicketKind.story and not parent_id and actor.role == Role.owner and not quick:
             quick, clean_tags = True, [*clean_tags, QUICK_TAG]  # the owner's parentless story IS a quick task
-        if kind != TicketKind.epic:
+        if kind not in (TicketKind.epic, TicketKind.topic):
             if not parent_id and not quick:
                 raise BoardError("schema", f"a {kind} needs parent_id")
             if parent_id:
@@ -273,11 +278,14 @@ class Board:
                 self._enforce_story_cap(parent_id)
             if kind == TicketKind.task and parent_id:
                 self._enforce_task_cap(parent_id)
-            t = Ticket(id=new_id(kind.value[0] if kind != TicketKind.epic else "epic"), kind=kind, work_type=work_type,
+            prefix = kind.value if kind in (TicketKind.epic, TicketKind.topic) else kind.value[0]
+            t = Ticket(id=new_id(prefix), kind=kind, work_type=work_type,
                        title=title, words=words, parent_id=parent_id, assignee=assignee, created_by=actor.id,
                        description=description or "", tags=clean_tags)
             if quick:
                 t.status = TicketStatus.ready  # the words are the design: no design_ref, no sign-off walk
+            if kind == TicketKind.topic:
+                t.status = TicketStatus.in_progress  # a topic is open from birth; only the owner's close ends it
             t.epic_id = t.id if kind == TicketKind.epic else self.epic_of(t).id
             self.store.put("ticket", t)
         self._index("ticket", t.id, self.store._fts_text("ticket", t.model_dump(mode="json")) or t.title)
@@ -529,6 +537,8 @@ class Board:
             self._index("ticket", t.id, self.store._fts_text("ticket", t.model_dump(mode="json")) or t.title)
         if "title" in changed:
             self._emit(t.id, EventKind.ticket_updated, {"changed": ["title"], "title": t.title, "by": actor.id})
+        if "tags" in changed and is_topic(t):  # one list, last write wins, and the page shows who set it
+            self._emit(t.id, EventKind.ticket_updated, {"changed": ["tags"], "tags": t.tags, "by": actor.id})
         if "assignee" in changed:
             self._emit(t.id, EventKind.assigned, {"assignee": t.assignee, "by": actor.id})
         if "status" in changed:
@@ -541,6 +551,9 @@ class Board:
         return t
 
     def _guard_transition(self, actor: Participant, t: Ticket, to: TicketStatus) -> None:
+        if is_topic(t):  # S-SME-SURFACE: a topic has no delivery walk; it is open until the owner closes it
+            raise BoardError("transition", f"topic {t.id} is opened and closed by the owner, not moved",
+                             "the owner closes it from its Library page (POST /v1/topics/<id>/close)")
         legal = TRANSITIONS[t.status]
         if to not in legal:
             raise BoardError("transition", f"{t.kind} {t.id} is {t.status}; cannot go to {to}",
@@ -753,6 +766,8 @@ class Board:
                 # §24.1(a): a terminal epic (done/partial/DROPPED) never re-spawns qa — dropping now
                 # closes its gates too, but excluding dropped here is the belt to that suspenders.
                 self._enqueue_pairing(f"qa.{t.id}", Role.qa.value, t.id)
+            elif is_topic(t) and t.status not in _TERMINAL:  # S-SME-SURFACE: resident until the owner closes
+                self._enqueue_pairing(f"{Role.sme.value}.{t.id}", Role.sme.value, t.id)
 
     def _pairing_epic_active(self, ticket_id: str) -> bool:
         """§24.1(a): the pairing's epic is still active. A qa pairing's ticket IS the epic; a reviewer
@@ -1073,6 +1088,9 @@ class Board:
         Library); `proposes` names the active doc it would become the next version of. Every other
         doc is authored per DOC_AUTHORS and starts active."""
         status = DocStatus(status or DocStatus.active)
+        if status == DocStatus.active and self.topic_of_seat(actor) is not None:
+            raise BoardError("scope", "a topic's sme files proposed docs; the owner activates them",
+                             "topic_propose(...) or doc_create(status='proposed')")
         if status == DocStatus.retired:
             raise BoardError("invalid", "a doc cannot be created retired", "create it active or proposed")
         if status == DocStatus.active and proposes:
@@ -1182,6 +1200,9 @@ class Board:
     def _doc_update_locked(self, actor: Participant, id_: str, *, body_md: str | None = None,
                            title: str | None = None, tags: list[str] | None = None) -> Doc:
         d: Doc = self._get("doc", id_, "doc")
+        if d.status == DocStatus.active and self.topic_of_seat(actor) is not None:
+            raise BoardError("scope", f"{id_} is active; a topic's sme proposes its next version",
+                             f"topic_propose(..., proposes={id_!r}) — the owner approves it in the Library")
         if actor.role not in DOC_AUTHORS[d.doc_type] and actor.role != d.owner_role:
             raise BoardError("scope", f"{actor.role} may not update {d.doc_type} docs")
         if body_md is None and title is None and (tags is None or normalize_tags(tags) == d.tags):
@@ -1491,6 +1512,9 @@ class Board:
                                                   **({"artifacts": m.artifacts} if m.artifacts else {}),
                                                   **({"asked": asked, "note": note} if note else {})})
         self.last_send_note = note
+        if is_topic(t) and t.status not in _TERMINAL and actor.id != t.assignee:
+            from . import topics  # local: topics imports board
+            records.safely(topics.ensure_seat, self, t.id)  # the resident seat stays until the owner closes
         if kind == MessageKind.answer and reply_to:  # S-IMPLICIT: an accepted deviation is a decision
             records.safely(records.decision_from_deviation, self, actor, m)
         if t.status in (TicketStatus.ready, TicketStatus.in_progress):
@@ -2207,7 +2231,22 @@ class Board:
     def close_check(self, p: Participant) -> dict[str, Any]:
         """Everything close_self needs to decide, in one read: the open inbox and the last
         recorded status. The pool release itself happens client-side."""
-        return {"inbox": self.inbox(p), "status": self.last_status(p)}
+        out: dict[str, Any] = {"inbox": self.inbox(p), "status": self.last_status(p)}
+        topic = self.topic_of_seat(p)
+        if topic is not None and topic.status not in _TERMINAL:  # S-SME-SURFACE: resident until the owner closes
+            out["resident"] = f"{topic.id} is open: its sme stays until the owner closes the topic"
+        return out
+
+    def topic_of_seat(self, p: Participant) -> Ticket | None:
+        """The Library topic this participant is the resident sme seat of (sme.<topic-id>, or the topic's
+        assignee), else None (S-SME-SURFACE)."""
+        if p.role != Role.sme:
+            return None
+        t = self.store.get("ticket", p.id.split(".", 1)[1]) if "." in p.id else None
+        if is_topic(t):
+            return t  # type: ignore[return-value]
+        hits = [x for x in self.store.query("ticket", {"assignee": p.id, "kind": TicketKind.topic.value}, limit=5)]
+        return hits[0] if hits else None  # type: ignore[return-value]
 
     def board(self, epic_id: str) -> dict[str, Any]:
         epic = self.ticket(epic_id)
@@ -2398,6 +2437,11 @@ class Board:
             to = d.get("to")
             if d.get("from") == p.id:
                 return out
+            topic = self.store.get("ticket", ev.subject_id)
+            if is_topic(topic) and self._works(p, topic):  # type: ignore[arg-type]
+                # S-SME-SURFACE: the topic's resident seat hears EVERY message on its thread, whoever it
+                # is addressed to — an expert talking to the owner is still something the sme learns from
+                return [Reason.addressed if to == p.id else Reason.on_ticket]
             if to == p.id:
                 out.append(Reason.addressed)
             elif to == p.role.value:  # unresolved role note: my epic only, never fleet-wide

@@ -50,3 +50,12 @@ def isolated_tokens(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytes
     set EDP8_TOKENS themselves (test_human_plane, test_public_mode, test_s20_pool_control …)."""
     if "EDP8_TOKENS" not in os.environ:
         monkeypatch.setenv("EDP8_TOKENS", str(tmp_path_factory.mktemp("tokens") / "absent-tokens.json"))
+
+
+@pytest.fixture(autouse=True)
+def no_pool_watch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test app starts the pool watcher (incident m-c31573e1a2): a seat shell carries EDP_POOL_URL, so
+    create_app() started the real `_pool_watch` daemon thread in tests; it outlived its test, drained a
+    queued pairing and minted into the fleet's tokens.json. A test that wants the watcher sets it itself."""
+    monkeypatch.delenv("EDP_POOL_URL", raising=False)
+    monkeypatch.delenv("EDP8_POOL_WATCH", raising=False)

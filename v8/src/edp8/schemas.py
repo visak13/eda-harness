@@ -27,12 +27,18 @@ class Role(StrEnum):
     adversary = "adversary"
     qa = "qa"
     consultant = "consultant"
+    # S-SME-SURFACE (owner m-de07c37d0c): a named human from the owner's team linked to ONE Library topic;
+    # its token reaches that topic's page, docs and thread and nothing else (service.topic_actor)
+    expert = "expert"
 
 
 class TicketKind(StrEnum):
     epic = "epic"
     story = "story"
     task = "task"
+    # S-SME-SURFACE (owner m-bdfb407429): a Library topic — its own record with no parent, a thread, tags,
+    # docs, experts and one resident sme seat; opened and closed by the owner (edp8.topics)
+    topic = "topic"
 
 
 class WorkType(StrEnum):
@@ -143,6 +149,7 @@ class Relation(StrEnum):
     blocks = "blocks"
     produced = "produced"
     extends = "extends"  # doc -> doc layering: assemble_ruleset composes the chain universal-first
+    has_expert = "has_expert"  # topic -> expert participant (S-SME-SURFACE); written by edp8.topics only
 
 
 class DecisionStatus(StrEnum):
@@ -224,6 +231,9 @@ class EventKind(StrEnum):
     # owner overrode the derived checker: {criterion, from, to, reason, by}
     criterion_checker_overridden = "criterion_checker_overridden"
     service_restarted = "service_restarted"  # launcher restarted a shared service: {service, reason, by, git_rev} (design §22)
+    # S-SME-SURFACE: a topic seat's bounded research fetch: {url, fetched_at, status, bytes, by} — the receipt
+    # a proposal's source URL + fetched-at are stamped from (edp8.topics.propose)
+    topic_fetched = "topic_fetched"
     binding_changed = "binding_changed"  # a decision's binding flag was set: {decision, from, to, reason, by} (D5 audit)
 
 
@@ -519,7 +529,17 @@ class SpawnMode(StrEnum):
     monitor = 'monitor'
 
 
+# S-SME-SURFACE: the tool-facing vocabularies leave out what no seat writes through a generic tool — a topic
+# is opened by the owner (POST /v1/topics), an expert is linked by edp8.topics — so the seat tool surface
+# does not grow (S20 budget) and a seat is never offered a value the board would refuse.
+SeatTicketKind = StrEnum("SeatTicketKind", {k.name: k.value for k in TicketKind if k != TicketKind.topic})
+SeatRelation = StrEnum("SeatRelation", {r.name: r.value for r in Relation if r != Relation.has_expert})
+SeatRole = StrEnum("SeatRole", {r.name: r.value for r in Role if r != Role.expert})
+
 ENUMS: dict[str, type[StrEnum]] = {
+    "SeatTicketKind": SeatTicketKind,
+    "SeatRelation": SeatRelation,
+    "SeatRole": SeatRole,
     'SeatEffort': SeatEffort,
     'SpawnMode': SpawnMode,
     "Role": Role,
@@ -579,6 +599,7 @@ TICKET_CREATORS: dict[TicketKind, set[Role]] = {
     TicketKind.epic: {Role.owner, Role.coordinator},
     TicketKind.story: {Role.architect, Role.owner},  # owner: a quick task (S-QUICK, tag `quick`, parent optional)
     TicketKind.task: {Role.engineer, Role.architect},
+    TicketKind.topic: {Role.owner},  # S-SME-SURFACE: the owner opens a Library topic
 }
 
 # Which roles may write criteria (the parent owner of the ticket).

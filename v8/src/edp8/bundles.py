@@ -46,6 +46,9 @@ from .schemas import (
     Gate,
     MessageKind,
     Relation,
+    SeatRelation,
+    SeatRole,
+    SeatTicketKind,
     Role,
     StatusValue,
     SessionState,
@@ -850,7 +853,7 @@ IDENTITY_TOOLS = [
 
 
 class TicketCreateArgs(BaseModel):
-    kind: TicketKind = Field()
+    kind: SeatTicketKind = Field()
     work_type: WorkType = Field()
     title: str = Field(description="epic: the owner's words verbatim (a short title is derived); story/task: the slice name")
     words: str | None = Field(default=None, description="epic or quick task: the owner's verbatim request; immutable")
@@ -868,7 +871,7 @@ class TicketReadArgs(BaseModel):
 
 
 class TicketQueryArgs(BaseModel):
-    kind: TicketKind | None = Field(default=None)
+    kind: SeatTicketKind | None = Field(default=None)
     work_type: WorkType | None = None
     parent_id: str | None = None
     status: TicketStatus | None = Field(default=None)
@@ -1016,7 +1019,7 @@ class DocEditArgs(DocEdit):
 class DocQueryArgs(BaseModel):
     doc_type: DocType | None = None
     scope: str | None = None
-    owner_role: Role | None = None
+    owner_role: SeatRole | None = None
     tag: str | None = None
     status: Literal["active", "proposed", "retired"] | None = None
 
@@ -1032,13 +1035,13 @@ class DocUpdateArgs(BaseModel):
 class LinkCreateArgs(BaseModel):
     from_id: str = Field(description='subject (blocks: finishes first; extends: the more specific layer)')
     to_id: str = Field(description='object')
-    relation: Relation = Field()
+    relation: SeatRelation = Field()
 
 
 class LinkQueryArgs(BaseModel):
     from_id: str | None = None
     to_id: str | None = None
-    relation: Relation | None = None
+    relation: SeatRelation | None = None
 
 
 class LinkDeleteArgs(BaseModel):
@@ -1235,7 +1238,7 @@ class EventsQueryArgs(BaseModel):
 
 
 class ParticipantsArgs(BaseModel):
-    role: Role | None = None
+    role: SeatRole | None = None
 
 
 def _board(a: BoardArgs) -> dict[str, Any]:
@@ -1294,7 +1297,7 @@ SPAWNABLE_ROLES = frozenset({"architect", "engineer", "qa", "adversary", "sme"})
 
 
 class SpawnArgs(BaseModel):
-    role: Role = Field()
+    role: SeatRole = Field()
     ticket_id: str | None = Field(default=None, description="registers and assigns '<role>.<ticket_id>'")
     participant_id: str | None = Field(default=None, description='explicit pool handle; omit with ticket_id')
     parent_session: str | None = Field(default=None, description='spawning session id')
@@ -1550,6 +1553,8 @@ def _close_self(_: CloseSelfArgs) -> dict[str, Any]:
             for m in inbox))
     if not status:
         owed.append("no status recorded yet")
+    if chk["value"].get("resident"):  # S-SME-SURFACE: a topic's sme is resident until the owner closes it
+        owed.append(chk["value"]["resident"])
     if owed:
         return {"ok": False,
                 "error": {"code": "precondition", "message": " | ".join(owed)},
@@ -1751,6 +1756,45 @@ def _withdraw_decision(a: WithdrawDecisionArgs) -> dict[str, Any]:
 def _withdraw_claim(a: WithdrawClaimArgs) -> dict[str, Any]:
     return get_client().withdraw_claim(a.claim_id, reason=a.reason)
 
+
+class TopicResearchArgs(BaseModel):
+    topic_id: str
+    query: str | None = Field(default=None, description="search skills.sh")
+    url: str | None = Field(default=None, description="read one page: skills.sh, GitHub or the seed host")
+
+
+class TopicProposeArgs(BaseModel):
+    topic_id: str
+    title: str
+    body_md: str = Field(description="what you distilled; the board prepends Source + fetched-at")
+    source_url: str = Field(description="a URL topic_research fetched")
+    doc_type: DocType = DocType.strategy_hl
+    tags: list[str] | None = None
+    proposes: str | None = Field(default=None, description="active doc id this is the next version of")
+
+
+def _topic_research(a: TopicResearchArgs) -> dict[str, Any]:
+    return get_client().topic_research(a.topic_id, query=a.query, url=a.url)
+
+
+def _topic_propose(a: TopicProposeArgs) -> dict[str, Any]:
+    return get_client().topic_propose(a.topic_id, a.title, a.body_md, a.source_url, doc_type=a.doc_type.value,
+                                      tags=a.tags, proposes=a.proposes)
+
+
+# S-SME-SURFACE: the resident sme of a Library topic browses through the board (bounded hosts, receipts)
+TOPIC_TOOLS = [
+    ToolDef("topic_research",
+            "Search skills.sh or read one page for your Library topic (skills.sh, GitHub, the seed host only)",
+            "a topic seat's research step, before proposing a doc",
+            "search results or the page text, plus the fetch receipt",
+            TopicResearchArgs, _topic_research, "knowledge"),
+    ToolDef("topic_propose",
+            "File a proposed Library doc from a page topic_research fetched; the owner approves it",
+            "after research, or to propose the next version of a topic doc",
+            "the proposed doc with Source + fetched-at in its header",
+            TopicProposeArgs, _topic_propose, "knowledge"),
+]
 
 KNOWLEDGE_TOOLS = [
     ToolDef("record_decision",
@@ -2147,7 +2191,7 @@ CLOSE_TOOLS = [
 ALL_TOOLS: dict[str, ToolDef] = {
     t.name: t for t in (
         IDENTITY_TOOLS + TICKET_TOOLS + DOC_TOOLS + THREAD_TOOLS + BOARD_TOOLS + POOL_TOOLS
-        + SEARCH_TOOLS + KNOWLEDGE_TOOLS + RULESET_TOOLS + CONSULT_TOOLS + ARTIFACT_TOOLS + CLOSE_TOOLS
+        + SEARCH_TOOLS + KNOWLEDGE_TOOLS + TOPIC_TOOLS + RULESET_TOOLS + CONSULT_TOOLS + ARTIFACT_TOOLS + CLOSE_TOOLS
     )
 }
 
@@ -2177,7 +2221,7 @@ ROLE_BUNDLES: dict[str, list[str]] = {
            "reap", "resume", "session_query"],
     Role.sme.value: _IDENTITY + _TICKET_RO + _DOC_RW + _THREAD
         + ["find", "participants", "assemble_ruleset", "criterion_query", "criterion_update",
-           "artifact_create", "artifact_read"] + _CLOSING,
+           "artifact_create", "artifact_read", "topic_research", "topic_propose"] + _CLOSING,
     Role.engineer.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD
         + ["find", "participants", "assemble_ruleset", "consult", "consult_status", "artifact_create", "artifact_read"] + _CLOSING,
     Role.adversary.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD
