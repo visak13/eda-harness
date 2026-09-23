@@ -157,14 +157,15 @@ paired A/B promotion with a human confirming) are designed in report-9a85d0418e,
 
 You need [uv](https://docs.astral.sh/uv/), [Node ≥ 24](https://nodejs.org),
 [Claude Code](https://claude.com/claude-code) (`claude` on PATH) and git. Codex CLI is optional.
+Run these in Windows PowerShell from any folder:
 
 ```powershell
 git clone https://github.com/visak13/eda-harness.git
 cd eda-harness
-.\setup.ps1                              # uv sync for the board, broker, pool and contracts
+.\setup.ps1                              # web + Python dependencies for every service; builds the web app
 copy v8\.env.example v8\.env             # the defaults run everything on 127.0.0.1
 .\edp.ps1 start all -WhatIf              # print the plan, change nothing
-.\edp.ps1 start all                      # the first start also builds the web app (npm ci + build)
+.\edp.ps1 start all                      # board, broker, pool, mcp, bridge + supervisor
 .\edp.ps1 status
 ```
 
