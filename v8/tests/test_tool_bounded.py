@@ -133,8 +133,10 @@ def test_spawn_over_cap_returns_running(raw_client, monkeypatch):
 
     monkeypatch.setattr(bundles_mod, "_pool_call", slow_pool)
 
-    coord = _register(raw_client, "coordinator", "coord-bnd")
-    client = BoardClient(participant=coord, admin_token="t", client=raw_client)
+    # the caller is an owner: since S-ADV finding 2 (eaa2640) the spawn tool refuses every role but the
+    # owner and the epic's architect, and this test is about the call cap, not the binding
+    owner = _register(raw_client, "owner", "owner-bnd")
+    client = BoardClient(participant=owner, admin_token="t", client=raw_client)
     set_client(client)
 
     t0 = time.monotonic()

@@ -1397,18 +1397,19 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
                                                       f"own epic" + (f" (target epic {target})" if target else
                                                                       "; target epic could not be resolved")},
                     "hint": "pass ticket_id in your epic"}
-        # the architect is RESIDENT per epic: while architect.<epic> is up, a second architect
-        # seat on one of its stories only steals the assignment — message the resident instead
-        if a.role.value == "architect" and tk and tk.get("kind") != "epic":
-            epic_id = _epic_id(c, tk)
-            resident = _resident_architect(c, epic_id) if epic_id else None
-            if resident and resident != pid:
-                live = c.session_query(participant_id=resident)
-                if live.get("ok") and any(r.get("state") in ("alive", "parked") for r in live.get("value") or []):
-                    return {"ok": False, "error": {"code": "conflict",
-                                                   "message": f"resident architect {resident} is up"},
-                            "hint": f"message_send(ticket_id={ticket_id!r}, to='architect', kind='question') "
-                                    "reaches it; it answers without taking the ticket over"}
+    # the architect is RESIDENT per epic: while architect.<epic> is up, a second architect seat on one
+    # of its stories only steals the assignment — message the resident instead (the owner included;
+    # qa full run on bb17851 caught this check indented under the architect-only branch)
+    if a.role.value == "architect" and tk and tk.get("kind") != "epic":
+        epic_id = _epic_id(c, tk)
+        resident = _resident_architect(c, epic_id) if epic_id else None
+        if resident and resident != pid:
+            live = c.session_query(participant_id=resident)
+            if live.get("ok") and any(r.get("state") in ("alive", "parked") for r in live.get("value") or []):
+                return {"ok": False, "error": {"code": "conflict",
+                                               "message": f"resident architect {resident} is up"},
+                        "hint": f"message_send(ticket_id={ticket_id!r}, to='architect', kind='question') "
+                                "reaches it; it answers without taking the ticket over"}
     got = c.participant_get(pid)
     if not got.get("ok"):
         made = c.participant_create("agent", a.role.value, pid, id=pid)
