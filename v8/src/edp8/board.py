@@ -2000,6 +2000,7 @@ class Board:
         """Deterministic, capped, epic-isolated retrieval over the records (design §4.2).
         Reuses the board's semantic Index when installed; FTS otherwise."""
         semantic = None
+        lesson_semantic = None
         embed_status = None
         source_search = None
         if self.index is not None:
@@ -2009,12 +2010,17 @@ class Board:
             # afterwards left a large epic only its share of 16, so its adaptive per-leg count never filled.
             allow = knowledge.live_scope_ids(self.store, knowledge._epic_id_of(self.store, scope))
             semantic = lambda q: self.index.dense_search(q, k=knowledge.DENSE_FETCH,  # noqa: E731
-                                                         types=set(knowledge.RECORD_TYPES), allow_ids=allow)
+                                                         types=set(knowledge.EPIC_TYPES), allow_ids=allow)
+            # second opinion P2: lessons get their OWN dense pool (type-filtered before truncation), so the
+            # epic's records and the cross-epic lessons can never crowd each other out of one top-k
+            lesson_semantic = lambda q: self.index.dense_search(q, k=knowledge.DENSE_FETCH,  # noqa: E731
+                                                                types={"lesson"})
             embed_status = self.index.status()  # R2-6: report the seeding backend in the receipt
             # R2-7: the source-fallback tier searches the epic's own messages/docs (BM25 ∪ dense)
             source_search = lambda q: self.index.search(q, k=30, types={"message", "doc"})  # noqa: E731
         return knowledge.lookup(self.store, scope, question=question, id=id, path=path,
-                                semantic=semantic, embed_status=embed_status, source_search=source_search)
+                                semantic=semantic, embed_status=embed_status, source_search=source_search,
+                                lesson_semantic=lesson_semantic)
 
     def last_status(self, p: Participant) -> dict[str, Any] | None:
         """The most recent status_recorded event data by this participant on its tickets."""

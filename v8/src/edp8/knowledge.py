@@ -527,11 +527,15 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
            stale_paths: Callable[[Any, str], bool] | None = None,
            ref_now: datetime | None = None,
            embed_status: dict[str, Any] | None = None,
-           source_search: Callable[[str], list[dict[str, Any]]] | None = None) -> dict[str, Any]:
+           source_search: Callable[[str], list[dict[str, Any]]] | None = None,
+           lesson_semantic: Callable[[str], list[dict[str, Any]]] | None = None) -> dict[str, Any]:
     """Deterministic retrieval (design §4.2). Returns {records, body, receipt}.
 
     scope: epic|ticket id — the isolation boundary. question|id|path: the starting point.
     semantic(question)->hits, stale_paths(rec,type)->bool are injected by board.lookup.
+    lesson_semantic(question)->lesson-only dense hits: the lessons' OWN candidate pool, so lessons are
+    type-filtered BEFORE truncation (a pool shared with the epic's records lets either crowd out the other);
+    falls back to `semantic` when not given.
     """
     ref = ref_now or now()
     target_epic = _epic_id_of(store, scope)
@@ -617,16 +621,22 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
     # neither takes an epic record's slot nor is lost under the byte cap.
     lesson_cands = [t for t in ranked if t[2] == "lesson"]
     ranked = [t for t in ranked if t[2] != "lesson"]
-    have_lessons = {t[1] for t in lesson_cands}
-    lesson_seed_ids = _lesson_seeds(store, question, semantic) if not id else []
+    have_lessons = {t[1]: k for k, t in enumerate(lesson_cands)}
+    lesson_seed_ids = _lesson_seeds(store, question, lesson_semantic or semantic) if not id else []
     for i, lid in enumerate(lesson_seed_ids):
         les = store.get("lesson", lid)
-        if les is None or lid in have_lessons or _dropped(les, "lesson"):
+        if les is None or _dropped(les, "lesson"):
             continue
         w = SEED_W_HI - (SEED_W_HI - SEED_W_LO) * (i / max(1, len(lesson_seed_ids) - 1))
         sc, entry = _mk(lid, "lesson", les, w)
         entry["provenance"] = "seed"
-        lesson_cands.append((sc, lid, "lesson", les, entry))
+        k = have_lessons.get(lid)
+        if k is None:
+            lesson_cands.append((sc, lid, "lesson", les, entry))
+        else:  # walked AND directly matched: the seed leg's weight and provenance win (never downgrade)
+            old = lesson_cands[k]
+            if old[4].get("provenance") != "seed" or sc > old[0]:
+                lesson_cands[k] = (sc, lid, "lesson", les, entry)
     lesson_cands.sort(key=lambda x: (x[4].get("provenance") != "seed", -x[0], x[1]))
 
     # C4 noise floor: keep only ranked records at >= RANKED_FLOOR_FRAC of the top score, plus any
@@ -736,6 +746,8 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
         if rec.id not in ranked_allowed_ids:
             continue  # C4: below the noise floor and not rescued by a replaces/part_of link
         entry = {**entry, "section": "ranked"}
+        if rtype == "claim" and getattr(rec, "evidence", None):
+            entry["evidence"] = list(rec.evidence)[:8]  # rendered below, so it counts against the cap
         bsize = len(_json.dumps(entry, ensure_ascii=False).encode("utf-8"))
         if used_bytes + bsize > MAX_BYTES:  # E1: the ranked section runs to the byte cap, not a count
             cut_by_type[rtype] = cut_by_type.get(rtype, 0) + 1

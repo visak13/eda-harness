@@ -967,7 +967,10 @@ def test_board_dense_leg_is_scope_limited(board, rig):
 
     class FakeIndex:
         def dense_search(self, q, k=10, types=None, allow_ids=None):
-            seen.update(k=k, allow=set(allow_ids or ()))
+            if types == {"lesson"}:
+                seen["lesson_allow"] = allow_ids  # the lessons' own pool is cross-epic
+                return []
+            seen.update(k=k, allow=set(allow_ids or ()), types=set(types or ()))
             return [{"type": "decision", "id": da.id, "score": 0.9}]
 
         def search(self, q, k=30, types=None):
@@ -984,6 +987,66 @@ def test_board_dense_leg_is_scope_limited(board, rig):
     assert seen["k"] == knowledge.DENSE_FETCH
     assert da.id in seen["allow"] and les.id in seen["allow"] and db.id not in seen["allow"]
     assert da.id in out["receipt"]["seeds"]
+    assert seen["types"] == set(knowledge.EPIC_TYPES) and seen["lesson_allow"] is None
+
+
+# --------------------------------------------------------------------------- second opinion (run 20260923T002224Z-473cda9a)
+def test_rendered_claim_evidence_counts_against_the_byte_cap(board, rig):
+    # P1: claim evidence is rendered into the body, so it must be budgeted — the receipt said 6,890 B
+    # while the body was 11,407 B
+    epic = make_epic(board, rig)
+    for i in range(20):
+        board.record_claim(rig["engineer"], scope=epic.id, basis=ClaimBasis.measured,
+                           text=f"latency probe {i} " + "measured under load on the shared host " * 3,
+                           evidence=[f"{i:02d}" + "a" * 118 + str(j) for j in range(8)])
+    out = board.lookup(rig["engineer"], scope=epic.id, question="latency probe measured under load")
+    assert out["receipt"]["ranked_returned"] >= 1
+    assert len(out["body"].encode("utf-8")) <= MAX_BYTES
+    assert out["receipt"]["bytes"] <= MAX_BYTES
+
+
+def test_lessons_have_their_own_dense_pool(board, rig):
+    # P2: 48 decisions outscoring the only matching lesson must not push it out of a shared top-k
+    epic = make_epic(board, rig)
+    decs = [board.record_decision(rig["owner"], scope=epic.id, text=f"rule number {i}") for i in range(48)]
+    les = board.record_lesson(rig["architect"], domain="ops", topic="t", text="a lesson about quiet hosts")
+
+    class FakeIndex:
+        def dense_search(self, q, k=10, types=None, allow_ids=None):
+            hits = [{"type": "decision", "id": d.id, "score": 0.9} for d in decs]
+            hits.append({"type": "lesson", "id": les.id, "score": 0.5})
+            return [h for h in hits if types is None or h["type"] in types][:k]
+
+        def search(self, q, k=30, types=None):
+            return []
+
+        def status(self):
+            return {"embeddings_active": True}
+
+        def upsert(self, *a, **kw):
+            pass
+
+    board.index = FakeIndex()
+    out = board.lookup(rig["engineer"], scope=epic.id, question="zzz unmatched words")
+    entry = next(r for r in out["records"] if r["id"] == les.id)
+    assert entry["section"] == "lesson" and entry["provenance"] == "seed"
+
+
+def test_walked_lesson_that_directly_matches_is_upgraded_to_seed(board, rig):
+    # P2: a lesson reached by the walk AND matched by its own seed leg keeps the seed priority
+    epic = make_epic(board, rig)
+    d = board.record_decision(rig["owner"], scope=epic.id, text="restart the pool without a tree kill")
+    old = board.record_lesson(rig["architect"], domain="ops", topic="restart",
+                              text="restart services by pid, never by image")
+    board.store.put("lesson", old.model_copy(update={"created_at": datetime(2020, 1, 1, tzinfo=timezone.utc)}))
+    fresh = [board.record_lesson(rig["architect"], domain="ui", topic=f"c{i}", text=f"colour palette note {i}")
+             for i in range(3)]
+    for les in [old, *fresh]:
+        board._kglink(rig["architect"], d.id, les.id, LinkKind.proves)
+    out = board.lookup(rig["engineer"], scope=epic.id, question="restart")
+    lessons = [r for r in out["records"] if r["section"] == "lesson"]
+    assert old.id in [r["id"] for r in lessons]
+    assert next(r for r in lessons if r["id"] == old.id)["provenance"] == "seed"
 
 
 # --------------------------------------------------------------------------- binding carries forward (m-db71577ddc)
