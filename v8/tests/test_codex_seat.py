@@ -35,12 +35,12 @@ class FakeHost:
         self.steer_ok = steer_ok
         self.d = Delivery(self.start, self.steer)
 
-    def start(self, text: str) -> bool:
+    def start(self, text: str, _mid: str = "") -> bool:
         self.turns.append(text)
         self.d.turn_started("t1")
         return True
 
-    def steer(self, text: str, _tid: str) -> bool:
+    def steer(self, text: str, _tid: str, _mid: str = "") -> bool:
         if self.steer_ok:
             self.steers.append(text)
         return self.steer_ok
@@ -307,6 +307,7 @@ def test_token_never_on_argv_and_board_headers_by_env_name(tmp_path):
     # approval_policy=never refuses every MCP call a server has not pre-approved (drill 2026-09-23)
     assert "approval_policy=never" in argv and 'mcp_servers.edp8.default_tools_approval_mode="approve"' in argv
     assert sum("default_tools_approval_mode" in a for a in argv) == 1  # only the board is pre-approved
+    assert "mcp_servers.edp8.enabled=true" in argv  # an inherited enabled=false never leaves a board-less seat
     assert seat_mod.sandbox_for("reviewer", {}) == "read-only"
     assert seat_mod.sandbox_for("engineer", {}) == "workspace-write"
 
@@ -382,7 +383,7 @@ from edp8.codex_seat.tools import js_len, js_round, js_slice, parse_field  # noq
 
 def test_late_turn_start_response_never_revives_a_completed_turn():
     """#2: the dispatcher processed turn/started + turn/completed before the turn/start RESPONSE."""
-    d = Delivery(lambda _t: True, lambda _t, _i: True)
+    d = Delivery(lambda _t, _m: True, lambda _t, _i, _m: True)
     d.turn_started("T")
     d.turn_completed("T")
     d.turn_started("T")  # the late response
@@ -393,7 +394,7 @@ def test_unknown_start_outcome_is_reconciled_not_blindly_resent(monkeypatch):
     """#3: a timed-out turn/start is resent only when no turn notification ever witnessed it."""
     monkeypatch.setattr(tools_mod, "UNKNOWN_START_S", 0.2)
     calls: list[str] = []
-    d = Delivery(lambda t: calls.append(t) or (None if len(calls) == 1 else True), lambda _t, _i: True)
+    d = Delivery(lambda t, _m: calls.append(t) or (None if len(calls) == 1 else True), lambda _t, _i, _m: True)
     d.enqueue_turn("A")
     d.turn_started("x")  # the server did take it: a notification arrived
     time.sleep(0.4)
@@ -404,12 +405,13 @@ def test_unknown_start_outcome_is_reconciled_not_blindly_resent(monkeypatch):
     assert wait_for(lambda: calls == ["B", "B"], 2)
 
 
-def test_unknown_steer_outcome_is_not_repended():
-    d = Delivery(lambda _t: True, lambda _t, _i: None)
+def test_unknown_steer_outcome_stays_pending_until_witnessed():
+    """superseded by qa adversary #4: a timed-out steer is NOT counted as delivered (see the fix-round tests)."""
+    d = Delivery(lambda _t, _m: True, lambda _t, _i, _m: None)
     d.turn_started("t")
     d.native_started("bash")
     d.deliver("N")
-    assert d.pending == []  # counted as delivered: a resend could land twice
+    assert d.pending == ["N"]
 
 
 def test_exhausted_start_retries_rekick_on_their_own(monkeypatch):
@@ -418,7 +420,7 @@ def test_exhausted_start_retries_rekick_on_their_own(monkeypatch):
     monkeypatch.setattr(tools_mod, "SEND_RETRY_S", 0)
     monkeypatch.setattr(tools_mod, "RETRY_BACKOFF_S", (0.1, 0.2))
     calls: list[str] = []
-    d = Delivery(lambda t: calls.append(t) or len(calls) >= 3, lambda _t, _i: True)
+    d = Delivery(lambda t, _m: calls.append(t) or len(calls) >= 3, lambda _t, _i, _m: True)
     d.enqueue_turn("A")
     assert wait_for(lambda: len(calls) == 3, 2) and calls == ["A"] * 3
 

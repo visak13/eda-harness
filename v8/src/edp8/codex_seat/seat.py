@@ -20,7 +20,6 @@ import os
 import shutil
 import sys
 import time
-import uuid
 from collections.abc import Callable
 from pathlib import Path
 
@@ -87,7 +86,9 @@ def board_args(role: str, mcp_url: str | None = None) -> list[str]:
     # measured 2026-09-23 (codex-cli 0.156.0, drill_codex_seat.py): under approval_policy=never every
     # MCP call fails "MCP tool call requires approval" unless the server pre-approves its tools — edp8
     # is the one server a seat may reach, so its tools are approved (every other server is disabled)
+    # enabled=true: an inherited `[mcp_servers.edp8] enabled=false` must not leave a board-less seat (qa #7)
     return ["-c", f'mcp_servers.{BOARD_SERVER}.url="{base}/mcp/{role}"',
+            "-c", f"mcp_servers.{BOARD_SERVER}.enabled=true",
             "-c", f'mcp_servers.{BOARD_SERVER}.default_tools_approval_mode="approve"',
             "-c", f"mcp_servers.{BOARD_SERVER}.env_http_headers={headers}",
             "-c", f"mcp_servers.{BOARD_SERVER}.startup_timeout_sec=60",
@@ -96,6 +97,24 @@ def board_args(role: str, mcp_url: str | None = None) -> list[str]:
 
 def sandbox_for(role: str, env: dict[str, str]) -> str:
     return env.get("EDP_CODEX_SANDBOX") or ROLE_SANDBOX.get(role, "read-only")
+
+
+def codex_head(codex: str) -> list[str]:
+    """argv head for `codex`: a .py "codex" is the test double (tests/codex_seat/fake_app_server.py)."""
+    return [sys.executable, codex] if codex.endswith(".py") else [codex]
+
+
+def monitor_sandbox_prefix(codex: str, mode: str) -> list[str]:
+    """`codex sandbox` argv that runs a Monitor command under the seat's own sandbox policy (qa adversary
+    #1). Measured 2026-09-23 (codex-cli 0.156.0, Windows restricted token): read-only refuses a write to
+    /c/Temp, workspace-write refuses it outside the cwd and allows it inside, stdout streams line by
+    line, env (EDP8_TOKEN included) passes through, and the command is a descendant of this argv's
+    process (codex → codex-command-runner → bash), so taskkill /T and the runner's job still reach it.
+    The mode is an unquoted TOML fallback string (codex.CMD re-quotes argv through cmd.exe)."""
+    args = [*codex_head(codex), "sandbox", "-c", f"sandbox_mode={mode}"]
+    if mode == "workspace-write":
+        args += ["-c", "sandbox_workspace_write.network_access=true"]
+    return [*args, "--"]
 
 
 class CodexSeat:
@@ -127,7 +146,8 @@ class CodexSeat:
         self.live_servers: list[str] = []
         self.delivery = Delivery(self._start_turn, self._steer, log=self._log)
         tasks = self.env.get("EDP_CODEX_TASKS_DIR") or str(self.log_dir / "tasks" / handle)
-        self.tools = SeatTools(self.delivery, cwd=self.cwd, tasks_dir=tasks, env=self.env, log=self._log)
+        self.tools = SeatTools(self.delivery, cwd=self.cwd, tasks_dir=tasks, env=self.env, log=self._log,
+                               sandbox_prefix=monitor_sandbox_prefix(self.codex, sandbox_for(role, self.env)))
         self.server: AppServer | None = None
         self.last_error: dict | None = None
         self.quota_reported = False
@@ -144,9 +164,7 @@ class CodexSeat:
     # ------------------------------------------------------------------ boot
     def argv(self) -> list[str]:
         cargs, self.disabled_servers = containment_args(self.codex, discover=self._discover, env=self.env, cwd=self.cwd)
-        # a .py "codex" is the test double (tests/codex_seat/fake_app_server.py), run under this python
-        head = [sys.executable, self.codex] if self.codex.endswith(".py") else [self.codex]
-        argv = [*head, "app-server", *cargs, "-c", "approval_policy=never"]
+        argv = [*codex_head(self.codex), "app-server", *cargs, "-c", "approval_policy=never"]
         if self.board:
             argv += board_args(self.role, self.env.get("EDP8_MCP_URL"))
         if sandbox_for(self.role, self.env) == "workspace-write":
@@ -198,9 +216,10 @@ class CodexSeat:
             self.server.stop()  # type: ignore[union-attr]
             raise RuntimeError(f"cannot read the thread's MCP set, refusing an unverified seat: {e}") from e
         self.live_servers = sorted(live)
-        if not live <= allowed:
+        if live != allowed:  # equality (qa #7): an extra server AND a missing board both refuse the seat
             self.server.stop()  # type: ignore[union-attr]
-            raise RuntimeError(f"uncontained MCP servers live in the thread: {sorted(live - allowed)}")
+            raise RuntimeError(f"thread MCP set {sorted(live)} != required {sorted(allowed)}: "
+                               f"uncontained {sorted(live - allowed)}, missing {sorted(allowed - live)}")
 
     def _read_state(self) -> dict | None:
         try:
@@ -230,11 +249,12 @@ class CodexSeat:
     def enqueue_turn(self, text: str) -> None:
         self.delivery.enqueue_turn(text)
 
-    def _start_turn(self, text: str) -> bool | None:
-        """True accepted · False refused (an RPC error: safe to resend) · None unknown (timeout)."""
+    def _start_turn(self, text: str, msg_id: str) -> bool | None:
+        """True accepted · False refused (an RPC error: safe to resend) · None unknown (timeout).
+        `msg_id` is stable across resends of the same input (Delivery), echoed back as the item clientId."""
         if not self.server or not self.thread_id:
             return False
-        params: dict = {"threadId": self.thread_id, "clientUserMessageId": f"edp8-{uuid.uuid4().hex[:12]}",
+        params: dict = {"threadId": self.thread_id, "clientUserMessageId": msg_id,
                         "input": [{"type": "text", "text": text, "text_elements": []}]}
         if self.effort:
             params["effort"] = self.effort
@@ -250,19 +270,19 @@ class CodexSeat:
         self.delivery.turn_started((res or {}).get("turn", {}).get("id"))
         return True
 
-    def _steer(self, text: str, turn_id: str) -> bool | None:
+    def _steer(self, text: str, turn_id: str, msg_id: str) -> bool | None:
         if not self.server or not self.thread_id:
             return False
         try:
             self.server.request("turn/steer", {"threadId": self.thread_id, "expectedTurnId": turn_id,
-                                               "clientUserMessageId": f"edp8-steer-{uuid.uuid4().hex[:12]}",
+                                               "clientUserMessageId": msg_id,
                                                "input": [{"type": "text", "text": text, "text_elements": []}]}, timeout=30)
             return True
         except (RpcError, OSError) as e:
             self._log(f"turn/steer refused: {e}")
             return False
         except TimeoutError as e:
-            self._log(f"turn/steer timed out (outcome unknown, not resent): {e}")
+            self._log(f"turn/steer timed out (outcome unknown: kept pending until witnessed): {e}")
             return None
 
     # ------------------------------------------------------------------ server → us
@@ -278,14 +298,16 @@ class CodexSeat:
             self.delivery.turn_completed(turn.get("id"))
         elif method in ("item/started", "item/completed"):
             item = p.get("item") or {}
+            if item.get("type") == "userMessage":
+                self.delivery.message_seen(item.get("clientId"))  # our input landed: the dedup witness
             native = NATIVE_TOOL_ITEMS.get(item.get("type", ""))
             if native:
                 if item.get("type") == "mcpToolCall":
                     native = f"mcp:{item.get('server')}/{item.get('tool')}"
                 if method == "item/started":
-                    self.delivery.native_started(native)
+                    self.delivery.native_started(native, item.get("id"))
                 else:
-                    self.delivery.native_completed()
+                    self.delivery.native_completed(item.get("id"))  # per item: a parallel sibling keeps running
         self.on_event(method, p)
 
     def _on_request(self, method: str, p: dict) -> dict | None:

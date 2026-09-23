@@ -12,11 +12,14 @@ rows = [json.loads(line) for line in open(sys.argv[1], encoding="utf-8") if line
 wanted = {r["msg"].get("id") for r in rows if r["dir"] == "out" and r["msg"].get("method") in ("turn/start", "turn/steer")}
 for r in rows:
     m, meth = r["msg"], r["msg"].get("method")
-    if meth == "item/started":
+    if meth in ("item/started", "item/completed"):
         it = m["params"].get("item", {})
-        if it.get("type") not in NATIVE:
+        if it.get("type") == "userMessage" and meth == "item/started":  # the steer's receiving witness
+            m = {"method": meth, "params": {"item": {"type": "userMessage", "clientId": it.get("clientId")}}}
+        elif it.get("type") in NATIVE:
+            m = {"method": meth, "params": {"item": {"type": it.get("type"), "server": it.get("server"), "tool": it.get("tool")}}}
+        else:
             continue
-        m = {"method": meth, "params": {"item": {"type": it.get("type"), "server": it.get("server"), "tool": it.get("tool")}}}
     elif meth in KEEP:
         pass
     elif r["dir"] == "out" and meth is None and isinstance(m.get("result"), dict) and "contentItems" in m["result"]:

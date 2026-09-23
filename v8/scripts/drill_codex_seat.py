@@ -8,8 +8,10 @@ proxy on free ports, seeds owner + an epic/story + one agent seat with a minted 
             role card and posts its first message on the story
     wake-a  a board question addressed to the seat reaches it as a Monitor event; it answers on the board
     wake-b  a one-shot CronCreate fire wakes the idle seat; it acts on the prompt (posts the marker)
-    resume  kill the runner tree -> respawn with EDP_CODEX_RESUME=1 -> thread/resume of the SAME
-            thread id -> the seat posts again after resume_self()
+    resume  kill ONLY the runner pid (a crash: no /T) -> every descendant it had (app-server, the
+            model's Monitor watches such as its feed driver) must be gone within 30 s (the runner's
+            kill-on-close job, qa adversary #5) -> respawn with EDP_CODEX_RESUME=1 -> thread/resume of
+            the SAME thread id -> the seat posts again after resume_self()
 
 Every step is logged with UTC timestamps to <out>/drill.json; the runner mirror + event log stay in
 <out>/logs. The seat token travels in env only (asserted against every recorded argv).
@@ -321,8 +323,23 @@ class Drill:
         time.sleep(15)
         state = json.loads((self.logs / "codex-sessions" / f"{self.handle}.json").read_text(encoding="utf-8"))
         tid = state.get("threadId")
-        self.step("resume_kill", pid=self.procs["seat"].pid, thread=tid)
-        kill_tree(self.procs["seat"])
+        runner = self.procs["seat"]
+        before = _descendants(runner.pid)
+        self.step("resume_kill", pid=runner.pid, thread=tid, mode="runner pid only (TerminateProcess, no /T)",
+                  descendants=before)
+        runner.kill()  # the crash mode: the job object, not a tree kill, must take the children
+        runner.wait(15)
+        t_kill = time.time()
+        alive = before
+        while alive and time.time() - t_kill < 30:
+            time.sleep(1)
+            alive = _alive(before)
+        orphans_ok = bool(before) and not alive
+        self.log["result"]["orphans"] = {"passed": orphans_ok, "runner_pid": runner.pid, "descendants_before": before,
+                                         "alive_after_30s": alive, "gone_after_s": round(time.time() - t_kill, 1)}
+        self.step("orphan_check", passed=orphans_ok, descendants=len(before), alive=alive)
+        for pid in alive:  # never leave them behind, whatever the verdict
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
         seq = self.last_seq()
         t0 = time.time()
         self.live_seat = "seat-resume"
@@ -333,12 +350,37 @@ class Drill:
                    and (r.get("msg") or {}).get("method") == "thread/resume"]
         same = bool(resumed) and resumed[0]["msg"]["params"].get("threadId") == tid
         calls = self.tool_calls(t0)
-        passed = bool(got) and same and "edp8.resume_self" in calls
+        passed = bool(got) and same and "edp8.resume_self" in calls and orphans_ok
         self.log["result"]["resume"] = {"passed": passed, "thread": tid, "thread_resume_same_id": same,
                                         "resume_self_called": "edp8.resume_self" in calls, "tool_calls": calls,
                                         "post_resume_message": (got or [{}])[0].get("id")}
         self.step("resume_done", passed=passed, same_thread=same, calls=calls[:12])
         return passed
+
+
+def _descendants(root: int) -> list[int]:
+    """Every live descendant pid of `root` (Win32_Process parent links), read before the kill."""
+    out = subprocess.run(["powershell", "-NoProfile", "-Command",
+                          "Get-CimInstance Win32_Process | % { '{0} {1}' -f $_.ProcessId,$_.ParentProcessId }"],
+                         capture_output=True, text=True, timeout=60).stdout
+    kids: dict[int, list[int]] = {}
+    for line in out.split("\n"):
+        a = line.split()
+        if len(a) == 2 and a[0].isdigit() and a[1].isdigit():
+            kids.setdefault(int(a[1]), []).append(int(a[0]))
+    seen, todo = [], [root]
+    while todo:
+        for c in kids.get(todo.pop(), []):
+            if c not in seen and c != root:
+                seen.append(c)
+                todo.append(c)
+    return seen
+
+
+def _alive(pids: list[int]) -> list[int]:
+    out = subprocess.run(["powershell", "-NoProfile", "-Command", "Get-Process -Id " + ",".join(map(str, pids))
+                          + " -ErrorAction SilentlyContinue | % { $_.Id }"], capture_output=True, text=True, timeout=60).stdout
+    return [int(x) for x in out.split() if x.strip().isdigit()]
 
 
 def _subsequence(want: list[str], got: list[str]) -> bool:

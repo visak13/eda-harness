@@ -24,6 +24,7 @@ import threading
 import time
 from pathlib import Path
 
+from .jobobj import bind_to_kill_job
 from .seat import CodexSeat
 
 
@@ -81,13 +82,18 @@ def main(argv: list[str] | None = None) -> int:
     log_dir = Path(env.get("EDP_LOG_DIR") or (agent_home / ".logs"))
     console_mode = env.get("EDP_CODEX_CONSOLE") == "1"
     state = log_dir / "codex-sessions" / f"{handle}.json"
-    resume = env.get("EDP_CODEX_RESUME") == "1" and state.is_file()
+    # an explicit resume is honoured or refused, never downgraded to a fresh thread: a missing state
+    # file makes seat.start(resume=True) raise below (qa adversary #9)
+    resume = env.get("EDP_CODEX_RESUME") == "1"
     if not resume and state.is_file():
         # a fresh boot must not continue the previous (closed) thread (memory: pi-respawn-continues-closed-session)
         stamp = time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())
         os.replace(state, state.with_name(f"{handle}.{stamp}.{os.getpid()}.{time.time_ns() % 10**9}.json"))
-    # resume=True with a state file that is not a valid threadId makes seat.start() raise (never a
-    # silent fresh thread under a "You were resumed" activation); the pool sees the exit and reaps
+    # resume=True with a missing state file or one without a valid threadId makes seat.start() raise
+    # (never a silent fresh thread under a "You were resumed" activation); the pool sees the exit
+    # every child (app-server, Monitor commands) is born into a kill-on-close job: a runner-only crash
+    # takes them down with it (qa adversary #5)
+    jobbed = bind_to_kill_job()
 
     console: Console | None = None
     seat = CodexSeat(cwd=agent_home, role=role, handle=handle, log_dir=log_dir,
@@ -103,7 +109,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{time.strftime('%H:%M:%S')} codex seat {handle} refused to start: {e}", flush=True)
         seat.tools.shutdown()
         return 2
-    print(f"codex seat {handle} role={role} pid={seat.pid} thread={seat.thread_id} resume={resume} "
+    print(f"codex seat {handle} role={role} pid={seat.pid} thread={seat.thread_id} resume={resume} kill_job={jobbed} "
           f"disabled_mcp={','.join(seat.disabled_servers)}", flush=True)
     print(f"live mcp servers: {seat.live_servers}", flush=True)  # verified ⊆ {edp8} before the first turn
 

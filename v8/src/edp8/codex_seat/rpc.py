@@ -79,9 +79,10 @@ class AppServer:
         self._log_f = open(self.log_path, "a", encoding="utf-8")
         self.proc = subprocess.Popen(
             self.argv, cwd=self.cwd, env=self.env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=open(self.log_path.with_suffix(".stderr.log"), "ab"), text=True, encoding="utf-8",
+            stderr=subprocess.PIPE, text=True, encoding="utf-8",
             errors="replace", bufsize=1, creationflags=self.creationflags)
         threading.Thread(target=self._read, name="codex-rpc-reader", daemon=True).start()
+        threading.Thread(target=self._pump_stderr, name="codex-rpc-stderr", daemon=True).start()
         threading.Thread(target=self._dispatch, name="codex-rpc-dispatch", daemon=True).start()
 
     def alive(self) -> bool:
@@ -152,6 +153,15 @@ class AppServer:
                 fut.set_exception(RpcError(method, {"message": f"app-server exited {self.exit_code}"}))
         self._notes.put(None)
         self.exited.set()
+
+    def _pump_stderr(self) -> None:
+        """app-server stderr → `<mirror>.stderr.log`, line by line THROUGH the redactor (qa adversary #2:
+        a raw file redirect let a secret the server logs reach disk)."""
+        assert self.proc and self.proc.stderr
+        with open(self.log_path.with_suffix(".stderr.log"), "a", encoding="utf-8") as f:
+            for line in self.proc.stderr:
+                f.write(self._redact(line))
+                f.flush()
 
     def _dispatch(self) -> None:
         while True:

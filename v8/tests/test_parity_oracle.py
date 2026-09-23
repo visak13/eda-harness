@@ -124,7 +124,11 @@ def test_codex_live_trace_has_zero_diffs_against_claude():
     codex = po.capture_codex(ref / "codex_raw" / "codex-seat.cases.jsonl")
     assert [po.project(e) for e in po.case_only(codex)] == \
         [po.project(e) for e in po.case_only(json.loads((ref / "codex_trace_final.json").read_text(encoding="utf-8")))]
-    assert po.diff(claude, pi) == [] and po.diff(claude, codex) == []
+    assert po.diff(claude, codex) == []  # projections AND timing (wake delays, cron slots, clock order)
+    # the Pi seat matches in projection only: its wake timing lags Claude's (+8.7 s vs +1.2 s), recorded
+    # in report-e3715c4ed1 as a Pi-path finding (Pi is legacy here, out of this story's scope)
+    ca, cp = po.case_only(claude), po.case_only(pi)
+    assert [po.project(e) for e in ca] == [po.project(e) for e in cp] and po.timing(ca, cp)
     att = [e for e in codex if e["kind"] == "notification_attached"]
     assert {e["attached_to"] for e in att} == {"bash", "Monitor", "TaskStop"}  # steer-after-command case included
     assert any(e["kind"] == "cron_fire" and e["text"] == "ORACLE-ONESHOT" for e in codex)
@@ -137,7 +141,9 @@ def test_capture_codex_shapes():
         {"ts": 2, "dir": "in", "msg": {"id": 7, "method": "item/tool/call", "params": {"tool": "Monitor", "arguments": {"command": "c"}}}},
         {"ts": 3, "dir": "out", "msg": {"id": 7, "result": {"contentItems": [{"type": "inputText", "text": "Watch armed (task abcdefghi).\n\n<system-reminder>\nA\n</system-reminder>"}], "success": True}}},
         {"ts": 4, "dir": "in", "msg": {"method": "item/started", "params": {"item": {"type": "commandExecution"}}}},
-        {"ts": 5, "dir": "out", "msg": {"method": "turn/steer", "params": {"input": [{"text": "<system-reminder>\nB\n</system-reminder>\n\n<system-reminder>\nC\n</system-reminder>"}]}}},
+        {"ts": 5, "dir": "out", "msg": {"method": "turn/steer", "params": {"clientUserMessageId": "s-1", "input": [{"text": "<system-reminder>\nB\n</system-reminder>\n\n<system-reminder>\nC\n</system-reminder>"}]}}},
+        {"ts": 5.2, "dir": "in", "msg": {"method": "item/completed", "params": {"item": {"type": "commandExecution"}}}},
+        {"ts": 5.3, "dir": "in", "msg": {"method": "item/started", "params": {"item": {"type": "userMessage", "clientId": "s-1"}}}},
         {"ts": 6, "dir": "out", "msg": {"method": "turn/start", "params": {"input": [{"text": "<system-reminder>\nD\n</system-reminder>\n<system-reminder>\nE\n</system-reminder>"}]}}},
         {"ts": 7, "dir": "out", "msg": {"method": "turn/start", "params": {"input": [{"text": "ORACLE-X"}]}}},
     ]
@@ -148,7 +154,7 @@ def test_capture_codex_shapes():
     rows += [{"ts": 9, "dir": "in", "msg": {"id": r["ts"], "result": {}}} for r in list(rows)
              if r["msg"].get("method") in ("turn/start", "turn/steer")]
     rows += [{"ts": 10, "dir": "in", "msg": {"method": "item/started", "params": {"item": {"type": "commandExecution"}}}},
-             {"ts": 11, "dir": "out", "msg": {"id": 99, "method": "turn/steer", "params": {"input": [{"text": "<system-reminder>\nLOST\n</system-reminder>"}]}}},
+             {"ts": 11, "dir": "out", "msg": {"id": 99, "method": "turn/steer", "params": {"clientUserMessageId": "s-2", "input": [{"text": "<system-reminder>\nLOST\n</system-reminder>"}]}}},
              {"ts": 12, "dir": "in", "msg": {"id": 99, "error": {"message": "no active turn"}}}]
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / "m.jsonl"
@@ -161,3 +167,47 @@ def test_capture_codex_shapes():
         ("notification_standalone", None), ("notification_standalone", None), ("cron_fire", None)]
     assert tr[1]["text"] == "Watch armed (task abcdefghi)." and tr[2]["text"] == "<system-reminder>\nA\n</system-reminder>"
     assert tr[4]["text"] == "<system-reminder>\nC\n</system-reminder>" and tr[6]["text"].endswith("E\n</system-reminder>")
+    assert tr[3]["ts"] == 5.3  # the RECEIVING boundary (the userMessage witness), not the transport record
+
+
+def test_capture_codex_counts_a_steer_only_at_its_receiving_witness(tmp_path):
+    """qa adversary #10: an ACCEPTED steer the model's input never shows is not a delivered notification, and
+    attached_to is the native tool that completed right before the witness (not the one in flight at send)."""
+    rows = [
+        {"ts": 1, "dir": "in", "msg": {"id": 7, "method": "item/tool/call", "params": {"tool": "Monitor", "arguments": {"command": "c"}}}},
+        {"ts": 2, "dir": "out", "msg": {"id": 7, "result": {"contentItems": [{"type": "inputText", "text": "Watch armed (task abcdefghi)."}], "success": True}}},
+        {"ts": 3, "dir": "in", "msg": {"method": "item/started", "params": {"item": {"type": "commandExecution"}}}},
+        {"ts": 4, "dir": "out", "msg": {"id": 20, "method": "turn/steer", "params": {"clientUserMessageId": "s-a", "input": [{"text": "<system-reminder>\nUNSEEN\n</system-reminder>"}]}}},
+        {"ts": 4.1, "dir": "in", "msg": {"id": 20, "result": {}}},
+        {"ts": 5, "dir": "out", "msg": {"id": 21, "method": "turn/steer", "params": {"clientUserMessageId": "s-b", "input": [{"text": "<system-reminder>\nSEEN\n</system-reminder>"}]}}},
+        {"ts": 5.1, "dir": "in", "msg": {"id": 21, "result": {}}},
+        {"ts": 6, "dir": "in", "msg": {"method": "item/completed", "params": {"item": {"type": "mcpToolCall", "server": "edp8", "tool": "whoami"}}}},
+        {"ts": 7, "dir": "in", "msg": {"method": "item/started", "params": {"item": {"type": "userMessage", "clientId": "s-b"}}}},
+    ]
+    p = tmp_path / "m.jsonl"
+    p.write_text("\n".join(json.dumps(r) for r in rows), encoding="utf-8")
+    tr = po.capture_codex(p)
+    att = [e for e in tr if e["kind"] == "notification_attached"]
+    assert [(e["text"], e["attached_to"], e["ts"]) for e in att] == [("<system-reminder>\nSEEN\n</system-reminder>", "edp8/whoami", 7)]
+
+
+def test_timing_is_compared_not_projected_away():
+    """qa adversary #10: shifting one wake by a minute, or a cron fire before its slot, is a diff."""
+    import copy
+    ref = Path(__file__).resolve().parents[1] / "tests" / "pi_ext" / "oracle_traces"
+    claude = json.loads((ref / "claude_trace_final.json").read_text(encoding="utf-8"))
+    codex = json.loads((ref / "codex_trace_final.json").read_text(encoding="utf-8"))
+    assert po.diff(claude, codex) == []
+    late = copy.deepcopy(codex)
+    i = next(i for i, e in enumerate(late) if e["kind"] == "notification_standalone")
+    for e in late[i:]:
+        e["ts"] += 60  # this wake and everything after it (clock order kept) lands a minute late
+    assert any(d.startswith("TIMING wake NOTIFICATION_STANDALONE") for d in po.diff(claude, late))
+    early = copy.deepcopy(codex)
+    cc = next(e for e in early if e["kind"] == "tool_use" and e["tool"] == "CronCreate")
+    fire = next(e for e in early if e["kind"] == "cron_fire")
+    cc["ts"] = fire["ts"] - 1  # the one-shot "* * * * *" fired one second after its creation: before its slot
+    assert any("TIMING harness cron_fire" in d for d in po.diff(claude, early))
+    shuffled = copy.deepcopy(codex)
+    shuffled[-1]["ts"] -= 3600
+    assert any("run backwards" in d for d in po.diff(claude, shuffled))

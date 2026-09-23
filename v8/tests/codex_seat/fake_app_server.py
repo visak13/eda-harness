@@ -5,7 +5,10 @@ Every turn's text is a tiny script, one directive per line:
     RUN <seconds>             a native commandExecution item runs for that long
     SAY <text>                an agentMessage item
 Anything else is treated as a notification / cron prompt the "model" just reads. Steered input is
-recorded as a userMessage item right after the native item in flight (as codex 0.156.0 does).
+recorded as a userMessage item right after the native item in flight (as codex 0.156.0 does), and
+every userMessage item carries the input's clientUserMessageId as `clientId` (measured 0.156.0).
+`fake_app_server.py sandbox -c ... -- <cmd...>` stands in for `codex sandbox`: it records its argv to
+$FAKE_SANDBOX_LOG and runs the command with inherited stdio.
 Every request/notification it receives is appended to $FAKE_APPSERVER_LOG as JSON lines, so a
 test can read back exactly what the seat sent (turn/start inputs, steers, tool results).
 """
@@ -59,15 +62,15 @@ def item(kind, **kw):
 
 def flush_steers(tid):
     while _steers:
-        text = _steers.pop(0)
-        it = item("userMessage", clientId=None, content=[{"type": "text", "text": text, "text_elements": []}])
+        text, cid = _steers.pop(0)
+        it = item("userMessage", clientId=cid, content=[{"type": "text", "text": text, "text_elements": []}])
         note("item/started", {"threadId": tid, "item": it})
         note("item/completed", {"threadId": tid, "item": it})
 
 
-def run_turn(tid, turn_id, text):
+def run_turn(tid, turn_id, text, cid=None):
     note("turn/started", {"threadId": tid, "turn": {"id": turn_id, "status": "inProgress", "items": []}})
-    um = item("userMessage", clientId=None, content=[{"type": "text", "text": text, "text_elements": []}])
+    um = item("userMessage", clientId=cid, content=[{"type": "text", "text": text, "text_elements": []}])
     note("item/completed", {"threadId": tid, "item": um})
     for line in text.splitlines():
         if line.startswith("CALL "):
@@ -95,6 +98,9 @@ def run_turn(tid, turn_id, text):
 
 def main():
     tid = None
+    if os.environ.get("FAKE_STDERR_VAR"):  # a server that logs a secret on stderr (the sink must redact it)
+        sys.stderr.write(f"boot {os.environ.get(os.environ['FAKE_STDERR_VAR'], '')}\n")
+        sys.stderr.flush()
     for raw in sys.stdin:
         raw = raw.strip()
         if not raw:
@@ -124,19 +130,19 @@ def main():
             _turn["id"] = turn_id
             send({"jsonrpc": "2.0", "id": rid, "result": {"turn": {"id": turn_id, "status": "inProgress", "items": []}}})
             text = "\n".join(i.get("text", "") for i in p.get("input", []))
-            threading.Thread(target=run_turn, args=(tid, turn_id, text), daemon=True).start()
+            threading.Thread(target=run_turn, args=(tid, turn_id, text, p.get("clientUserMessageId")), daemon=True).start()
         elif m == "turn/steer":
             if not _turn["id"] or p.get("expectedTurnId") != _turn["id"]:
                 send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32600, "message": "no active turn"}})
                 continue
-            _steers.append("\n".join(i.get("text", "") for i in p.get("input", [])))
+            _steers.append(("\n".join(i.get("text", "") for i in p.get("input", [])), p.get("clientUserMessageId")))
             send({"jsonrpc": "2.0", "id": rid, "result": {"turnId": _turn["id"]}})
         elif m == "mcpServerStatus/list":
             # edp8 is live only when the argv added it (board seat); FAKE_EXTRA_LIVE simulates a server
             # discovery never saw (e.g. another CODEX_HOME's config) so the fail-closed boot can be tested
             data = [{"name": "chrome-devtools", "runtimeStatus": "disabled", "tools": {}},  # measured 0.156.0 shape
                     {"name": "codex_app", "runtimeStatus": "disabled", "tools": {}}]
-            if any(a.startswith("mcp_servers.edp8.url=") for a in sys.argv):
+            if any(a.startswith("mcp_servers.edp8.url=") for a in sys.argv) and not os.environ.get("FAKE_NO_BOARD"):
                 data.insert(0, {"name": "edp8", "runtimeStatus": "ready", "tools": {"whoami": {}}})
             if os.environ.get("FAKE_EXTRA_LIVE"):
                 data.append({"name": os.environ["FAKE_EXTRA_LIVE"], "runtimeStatus": "ready", "tools": {"x": {}}})
@@ -145,5 +151,15 @@ def main():
             send({"jsonrpc": "2.0", "id": rid, "result": {}})
 
 
+def sandbox(argv):
+    import subprocess
+    if os.environ.get("FAKE_SANDBOX_LOG"):
+        with open(os.environ["FAKE_SANDBOX_LOG"], "a", encoding="utf-8") as f:
+            f.write(json.dumps(argv) + "\n")
+    return subprocess.call(argv[argv.index("--") + 1:])
+
+
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["sandbox"]:
+        sys.exit(sandbox(sys.argv[1:]))
     main()

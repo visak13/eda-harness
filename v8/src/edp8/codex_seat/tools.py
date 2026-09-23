@@ -27,6 +27,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -144,14 +145,17 @@ class Delivery:
     idle, nothing pending      → coalesce IDLE_COALESCE_MS, then ONE turn/start (outbox)
     busy, native tool running  → turn/steer now (lands after that tool's output = "next tool result")
     busy otherwise             → pending: appended to the next seat-tool result; a native tool that
-                                 starts steers them; whatever is left at turn/completed is ONE turn
+                                 starts OR completes steers them; what is left at turn/completed is ONE turn
     Intake order is kept across the idle batch, pending and steers (older entries always go first).
 
-    `start_turn(text)` / `steer(text, turn_id)` are the runner's JSON-RPC calls and return True
-    (accepted), False (explicitly rejected: safe to resend) or None (outcome unknown, e.g. a timeout:
-    never resent blindly; a start is reconciled by the turn notifications, see UNKNOWN_START_S)."""
+    `start_turn(text, msg_id)` / `steer(text, turn_id, msg_id)` are the runner's JSON-RPC calls and return
+    True (accepted), False (explicitly rejected: safe to resend) or None (outcome unknown, e.g. a timeout).
+    Every outgoing input carries a STABLE message id (codex echoes it as the userMessage item's
+    `clientId`, measured 0.156.0); `message_seen(id)` is that witness. An unknown steer keeps its
+    notifications pending (the next delivery path retries them) and a late witness withdraws them; an
+    unknown start is resent under the SAME id only when no witness of any kind arrived (UNKNOWN_START_S)."""
 
-    def __init__(self, start_turn: Callable[[str], bool | None], steer: Callable[[str, str], bool | None],
+    def __init__(self, start_turn: Callable[[str, str], bool | None], steer: Callable[[str, str, str], bool | None],
                  log: Callable[[str], None] | None = None):
         self._start_turn = start_turn
         self._steer = steer
@@ -159,16 +163,23 @@ class Delivery:
         self.lock = threading.RLock()
         self.busy = False
         self.turn_id: str | None = None
-        self.native_in_flight: str | None = None
+        self.native: dict[str, str] = {}  # item id → tool name: every native tool item in flight
         self.pending: list[str] = []
         self._idle_batch: list[str] = []
         self._idle_timer: threading.Timer | None = None
-        self._outbox: deque[str] = deque()
+        self._outbox: deque[tuple[str, str]] = deque()  # (stable message id, text)
         self._settle_hooks: list[Callable[[], str | None]] = []
         self._done_turns: deque[str] = deque(maxlen=64)  # a late turn/start response never revives these
         self._gen = 0  # bumped at every turn/started + turn/completed: the unknown-start watchdog's witness
+        self._seen: deque[str] = deque(maxlen=256)  # message ids codex echoed back (userMessage clientId)
+        self._unconfirmed: dict[str, list[str]] = {}  # timed-out steer id → its notes (re-pended)
         self._retry_timer: threading.Timer | None = None
         self._retry_delay = RETRY_BACKOFF_S[0]
+
+    @property
+    def native_in_flight(self) -> str | None:
+        with self.lock:
+            return next(iter(self.native.values()), None)
 
     # -- state ----------------------------------------------------------------
     def is_idle(self) -> bool:
@@ -191,7 +202,7 @@ class Delivery:
         with self.lock:
             if turn_id:
                 self._done_turns.append(turn_id)
-            self.native_in_flight = None
+            self.native.clear()
         # hooks run OUTSIDE this lock (they take SeatTools.lock, which is taken before this one
         # elsewhere); `busy` stays True meanwhile, so a notification landing now goes to pending
         texts = [t for t in (hook() for hook in self._settle_hooks) if t]
@@ -199,25 +210,51 @@ class Delivery:
             self.busy = False
             self.turn_id = None
             self._gen += 1
-            self._outbox.extend(texts)
+            self._outbox.extend((new_message_id(), t) for t in texts)
             if self.pending:
                 rest = self.pending[:]
                 self.pending.clear()
+                self._unconfirmed.clear()  # they go out now under a new id; a late witness is moot
                 self._log(f"settled: flushing {len(rest)} standalone as one turn")
-                self._outbox.append("\n".join(wrap(n) for n in rest))
+                self._outbox.append((new_message_id(), "\n".join(wrap(n) for n in rest)))
         self.kick()
 
-    def native_started(self, tool: str) -> None:
+    def native_started(self, tool: str, item_id: str | None = None) -> None:
         with self.lock:
-            self.native_in_flight = tool
+            self.native[item_id or tool] = tool
             if self.pending:
                 rest = self.pending[:]
                 self.pending.clear()
                 self._steer_now(rest)
 
-    def native_completed(self) -> None:
+    def native_completed(self, item_id: str | None = None) -> None:
+        """One native item finished (None = all of them). Pending notifications are steered now: while
+        the turn runs, a steer lands right after this tool's output, i.e. as its next tool result."""
         with self.lock:
-            self.native_in_flight = None
+            if item_id is None:
+                self.native.clear()
+            else:
+                self.native.pop(item_id, None)
+            if self.pending and self.busy and self.turn_id:
+                rest = self.pending[:]
+                self.pending.clear()
+                self._steer_now(rest)
+
+    def message_seen(self, msg_id: str | None) -> None:
+        """codex echoed one of our inputs (userMessage item clientId): it was accepted."""
+        if not msg_id:
+            return
+        with self.lock:
+            self._seen.append(msg_id)
+            notes = self._unconfirmed.pop(msg_id, None)
+            for n in notes or ():
+                if n in self.pending:  # the timed-out steer did land: withdraw its re-pended copy
+                    self.pending.remove(n)
+            queued = [e for e in self._outbox if e[0] == msg_id]
+            for e in queued:  # a watchdog-resent start whose first send did land: never a second copy
+                self._outbox.remove(e)
+        if notes:
+            self._log(f"late witness {msg_id}: {len(notes)} re-pended notification(s) withdrawn")
 
     # -- intake ---------------------------------------------------------------
     def deliver(self, notification: str) -> None:
@@ -230,7 +267,7 @@ class Delivery:
                     self._idle_timer.start()
                 return
             older = self._take_idle_batch()  # a turn started inside the coalesce window: those go first
-            if self.busy and self.native_in_flight:
+            if self.busy and self.native:
                 rest = [*older, *self.pending, notification]  # never reordered
                 self.pending.clear()
                 self._steer_now(rest)
@@ -241,7 +278,7 @@ class Delivery:
     def enqueue_turn(self, text: str) -> None:
         """A standalone user turn (cron fire, console input): delivered when idle, in order."""
         with self.lock:
-            self._outbox.append(text)
+            self._outbox.append((new_message_id(), text))
         self.kick()
 
     def attach(self, text: str) -> str:
@@ -249,6 +286,7 @@ class Delivery:
         with self.lock:
             rest = [*self._take_idle_batch(), *self.pending]
             self.pending.clear()
+            self._unconfirmed.clear()  # delivered here; a late steer witness no longer applies
             if not rest:
                 return text
         self._log(f"attach {len(rest)} to a seat tool result")
@@ -272,7 +310,7 @@ class Delivery:
             if not rest:
                 return
             if self.busy or self._outbox:  # a turn started in the coalesce window: treat as busy, oldest first
-                if self.busy and self.native_in_flight:
+                if self.busy and self.native:
                     rest += self.pending
                     self.pending.clear()
                     self._steer_now(rest)
@@ -280,38 +318,46 @@ class Delivery:
                     self.pending[:0] = rest
                 return
             self._log(f"deliver standalone x{len(rest)} {rest[0][:80]!r}")
-            self._outbox.append("\n".join(wrap(n) for n in rest))
+            self._outbox.append((new_message_id(), "\n".join(wrap(n) for n in rest)))
         self.kick()
 
     def _steer_now(self, notes: list[str]) -> None:
+        """(lock held) one turn/steer carrying `notes` under a fresh stable id."""
         text = "\n\n".join(wrap(n) for n in notes)
         tid = self.turn_id
-        ok = self._steer(text, tid) if tid else False
-        self._log(f"steer x{len(notes)} after {self.native_in_flight} ok={ok}")
+        mid = new_message_id("steer")
+        ok = self._steer(text, tid, mid) if tid else False
+        self._log(f"steer {mid} x{len(notes)} after {self.native_in_flight} ok={ok}")
         if ok is False:  # explicitly refused (the turn ended under us): next tool result / settle carries them
             self.pending[:0] = notes
-        # None = unknown outcome (timeout): counted as delivered, since a resend could land twice
+        elif ok is None and mid not in self._seen:
+            # unknown (timeout): never counted as delivered — they stay pending, so the next tool
+            # result / steer / settle carries them; the steer's own late witness withdraws them
+            self.pending[:0] = notes
+            self._unconfirmed[mid] = list(notes)
 
     def kick(self) -> None:
         for attempt in range(SEND_RETRIES + 1):
             with self.lock:
                 if self.busy or not self._outbox:
                     return
-                text = self._outbox.popleft()
+                mid, text = self._outbox.popleft()
                 self.busy = True  # optimistic: turn/started confirms, a failure reverts
                 gen = self._gen
-            ok = self._start_turn(text)
+            ok = self._start_turn(text, mid)
             if ok:
                 with self.lock:
                     self._retry_delay = RETRY_BACKOFF_S[0]
                 return
-            if ok is None:  # unknown: the server may have accepted it; the turn notifications decide
-                self._log("turn/start outcome unknown; reconciling via turn notifications")
-                self._arm_unknown_watchdog(text, gen)
+            if ok is None:  # unknown: the server may have accepted it; the witnesses decide
+                self._log(f"turn/start {mid} outcome unknown; reconciling via turn notifications")
+                self._arm_unknown_watchdog(mid, text, gen)
                 return
             with self.lock:
+                if mid in self._seen:  # refused only because its earlier copy is the running turn
+                    return  # busy stays True: that turn's turn/completed kicks the outbox again
                 self.busy = False
-                self._outbox.appendleft(text)
+                self._outbox.appendleft((mid, text))
             self._log(f"turn/start failed (attempt {attempt + 1}); retrying")
             time.sleep(SEND_RETRY_S)
         self._arm_retry()
@@ -333,18 +379,25 @@ class Delivery:
             self._retry_timer = None
         self.kick()
 
-    def _arm_unknown_watchdog(self, text: str, gen: int) -> None:
+    def _arm_unknown_watchdog(self, mid: str, text: str, gen: int) -> None:
         def check() -> None:
             with self.lock:
+                if mid in self._seen:
+                    return  # codex echoed this very message: accepted, never resent
                 if self._gen != gen or not self.busy or self.turn_id is not None:
                     return  # a turn notification arrived: the start was accepted (or settled)
                 self.busy = False
-                self._outbox.appendleft(text)  # no witness at all: the server never took it
-            self._log("turn/start unknown outcome with no turn seen; resending")
+                self._outbox.appendleft((mid, text))  # the SAME id: a late echo still matches it
+            self._log(f"turn/start {mid} unknown outcome with no witness; resending under the same id")
             self.kick()
         t = threading.Timer(UNKNOWN_START_S, check)
         t.daemon = True
         t.start()
+
+
+def new_message_id(kind: str = "") -> str:
+    """A stable per-input id (codex `clientUserMessageId`, echoed back as the userMessage `clientId`)."""
+    return f"edp8-{kind}-{uuid.uuid4().hex[:12]}" if kind else f"edp8-{uuid.uuid4().hex[:12]}"
 
 
 # ---------------------------------------------------------------------------- schemas
@@ -514,6 +567,7 @@ class Mon:
     ws_close: tuple[int, str] | None = None
     ws_error: str = ""
     order: threading.RLock = field(default_factory=threading.RLock)  # serialises this watch's deliveries
+    io: threading.Lock = field(default_factory=threading.Lock)  # stdout + stderr pumps share one output file
 
 
 @dataclass
@@ -556,7 +610,7 @@ class SeatTools:
     def __init__(self, delivery: Delivery, *, cwd: str | os.PathLike[str], tasks_dir: str | os.PathLike[str],
                  desc_path: str | os.PathLike[str] | None = None, variant: str | None = None,
                  clock: Clock | None = None, env: dict[str, str] | None = None, tick_s: float = 1.0,
-                 log: Callable[[str], None] | None = None):
+                 log: Callable[[str], None] | None = None, sandbox_prefix: list[str] | None = None):
         self.d = delivery
         self.cwd = str(cwd)
         self.tasks_dir = Path(tasks_dir)
@@ -568,6 +622,10 @@ class SeatTools:
         self._log_fn = log
         from .rpc import redactor
         self._redact = redactor(self.env)
+        # argv that runs a Monitor command inside the seat's own codex sandbox (`codex sandbox -c
+        # sandbox_mode=...`): a read-only seat's watch cannot write, a workspace-write seat's only the
+        # workspace — the same policy codex applies to the model's shell (qa adversary #1)
+        self.sandbox_prefix = list(sandbox_prefix or [])
         self.monitors: dict[str, Mon] = {}
         self.jobs: dict[str, Job] = {}
         self.lock = threading.RLock()
@@ -647,9 +705,9 @@ class SeatTools:
                 m.batch_timer.start()
 
     def _append_output(self, m: Mon, s: str) -> None:
-        try:
-            with open(m.output_file, "a", encoding="utf-8", newline="") as f:
-                f.write(s)
+        try:  # Windows "a" mode is seek-then-write: two pumps appending unlocked overwrite each other
+            with m.io, open(m.output_file, "a", encoding="utf-8", newline="") as f:
+                f.write(self._redact(s))  # the model still gets the raw line; the file never holds a secret
         except OSError:
             pass
 
@@ -668,7 +726,7 @@ class SeatTools:
         m = self._new_mon(tool_call_id, description, command, False)
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         try:
-            m.proc = subprocess.Popen([monitor_shell(), "-c", command], cwd=self.cwd, env=self.env,
+            m.proc = subprocess.Popen([*self.sandbox_prefix, monitor_shell(), "-c", command], cwd=self.cwd, env=self.env,
                                       stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                       creationflags=flags)
         except OSError as e:  # qa A13: a spawn failure is a failed Monitor, never a dead seat
@@ -682,8 +740,8 @@ class SeatTools:
 
     def _pump_stderr(self, m: Mon) -> None:
         assert m.proc and m.proc.stderr
-        for chunk in iter(lambda: m.proc.stderr.read1(65536), b""):  # type: ignore[union-attr]
-            self._append_output(m, chunk.decode("utf-8", "replace"))
+        for raw in iter(m.proc.stderr.readline, b""):  # whole lines: a secret never splits across writes
+            self._append_output(m, raw.decode("utf-8", "replace"))
 
     def _pump_stdout(self, m: Mon) -> None:
         assert m.proc and m.proc.stdout
@@ -838,19 +896,21 @@ class SeatTools:
         j.slot = slot
         j.next_fire = slot + j.jitter_s * 1000 if j.recurring else slot - j.jitter_s * 1000
 
-    def _advance(self, j: Job) -> None:
-        """commit the post-fire state BEFORE the send so a slow send never double-fires (qa A9)"""
+    def _advance(self, j: Job, now: float) -> None:
+        """commit the post-fire state BEFORE the send so a slow send never double-fires (qa A9). The next
+        fire is always in the FUTURE: slots missed while busy collapse into the one fire just made (no
+        catch-up replay, qa adversary #3) — recurring next_fire = slot + jitter > now ⇔ slot > now - jitter."""
         if not j.recurring or j.expiring:
             self.jobs.pop(j.id, None)
         else:
-            self._schedule(j, j.slot)
+            self._schedule(j, max(j.slot, now - j.jitter_s * 1000))
 
     def _fire(self, j: Job) -> None:
         with self.lock:
             if j.firing:
                 return
             j.firing = True
-            self._advance(j)
+            self._advance(j, self.clock.now_ms())
         self.log(f"cron fire {j.id} {j.cron}")
         self.d.enqueue_turn(j.prompt)  # parity §4.4: the bare prompt, no envelope
         j.firing = False
@@ -861,9 +921,10 @@ class SeatTools:
             due = sorted((j for j in self.jobs.values() if j.deferred), key=lambda j: j.created_at)
             if not due:
                 return None
+            now = self.clock.now_ms()
             for j in due:
                 j.deferred = False
-                self._advance(j)
+                self._advance(j, now)
         self.log(f"cron deferred fire x{len(due)}: {','.join(j.id for j in due)}")
         return "\n".join(j.prompt for j in due)
 
@@ -878,7 +939,10 @@ class SeatTools:
                 drain = self._deferred_cron_turn()
             for j in list(self.jobs.values()):
                 if j.recurring and not j.expiring and now - j.created_at >= CRON_EXPIRE_MS:
-                    j.expiring = True  # fires one final time, then deleted
+                    # the 7-day deadline itself is the final fire (CronCreate: "fire one final time, then
+                    # are deleted") — never parked until a sparse schedule's next slot (qa adversary #8)
+                    j.expiring = True
+                    j.next_fire = min(j.next_fire, now)
                 if now < j.next_fire or j.deferred or j.firing:
                     continue
                 if self.d.is_idle() and not self.d.pending:

@@ -247,14 +247,18 @@ def capture_codex(path: Path, since: float | None = None, until: float | None = 
       in  item/tool/call {id, params:{tool, arguments}}       → tool_use (the model's dynamic tool call)
       out {id, result:{contentItems[{text}], success}}         → tool_result (+ notification_attached per
                                                                    appended <system-reminder> block)
-      out turn/steer {input[{text}]}                            → notification_attached, attached_to = the
-                                                                   native tool in flight (the steer lands right
-                                                                   after its output: measured, spike 2026-09-22)
+      out turn/steer {clientUserMessageId, input[{text}]}       → notification_attached ONLY when the model's
+                                                                   input shows it: the userMessage item whose
+                                                                   clientId is that id (its ts is the event ts);
+                                                                   attached_to = the native tool that COMPLETED
+                                                                   right before it — the receiving boundary, not
+                                                                   the transport record (qa adversary #10)
       out turn/start {input[{text}]}: "<system-reminder>…"      → notification_standalone; exclude_prefix =
                                                                    a driver prompt; anything else = cron_fire."""
     out: list[dict] = []
     calls: dict = {}  # request id → tool name
-    native = ""
+    last_done = ""  # the native tool whose item/completed came last: what a steer landing now follows
+    steers: dict[str, dict] = {}  # clientUserMessageId → the steer's params, until its userMessage witness
     rows = [json.loads(r) for r in path.read_text(encoding="utf-8").splitlines() if r.strip()]
     # a steer / turn start counts only when the server ACCEPTED it (its response carries `result`, not `error`):
     # an attempted delivery the server refused ("no active turn") never reached the model
@@ -270,12 +274,15 @@ def capture_codex(path: Path, since: float | None = None, until: float | None = 
             calls[m.get("id")] = p.get("tool", "")
             if p.get("tool") in PARITY_TOOLS:
                 out.append({"kind": "tool_use", "tool": p["tool"], "input": p.get("arguments"), "ts": ts})
-        elif d == "in" and method == "item/started":
-            t = (p.get("item") or {}).get("type", "")
-            if t in _CODEX_NATIVE:
-                native = _CODEX_NATIVE[t]
-            elif t == "mcpToolCall":
-                native = f"{p['item'].get('server')}/{p['item'].get('tool')}"
+        elif d == "in" and method == "item/completed" and (p.get("item") or {}).get("type") in (*_CODEX_NATIVE, "mcpToolCall"):
+            it = p["item"]
+            last_done = _CODEX_NATIVE.get(it["type"]) or f"{it.get('server')}/{it.get('tool')}"
+        elif d == "in" and method == "item/started" and (p.get("item") or {}).get("type") == "userMessage":
+            sp = steers.pop((p.get("item") or {}).get("clientId") or "", None)
+            if sp is not None:  # the steer reached the model HERE, right after `last_done`'s output
+                for block in _codex_input_text(sp).split("\n\n<system-reminder>"):
+                    block = block if block.startswith("<system-reminder>") else "<system-reminder>" + block
+                    out.append({"kind": "notification_attached", "text": block, "ts": ts, "attached_to": last_done or "?"})
         elif d == "out" and method is None and m.get("id") in calls and "result" in m:
             tool = calls.pop(m["id"])
             res = m["result"] or {}
@@ -291,9 +298,7 @@ def capture_codex(path: Path, since: float | None = None, until: float | None = 
         elif d == "out" and method in ("turn/steer", "turn/start") and m.get("id") not in accepted:
             continue
         elif d == "out" and method == "turn/steer":
-            for block in _codex_input_text(p).split("\n\n<system-reminder>"):
-                block = block if block.startswith("<system-reminder>") else "<system-reminder>" + block
-                out.append({"kind": "notification_attached", "text": block, "ts": ts, "attached_to": native or "?"})
+            steers[p.get("clientUserMessageId") or ""] = p  # counted when (if) its userMessage witness arrives
         elif d == "out" and method == "turn/start":
             text = _codex_input_text(p)
             if text.startswith("<system-reminder>"):
@@ -364,13 +369,93 @@ def project(ev: dict) -> str:
     return f"{ev['kind'].upper()}\n{canon(ev['text'])}"
 
 
+def _epoch(ts: object) -> float | None:
+    """A trace ts as epoch seconds: Claude's ISO-8601 strings, Pi/codex floats."""
+    if isinstance(ts, (int, float)):
+        return float(ts)
+    if isinstance(ts, str) and ts:
+        from datetime import datetime
+        try:
+            return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            return None
+    return None
+
+
+WAKE_KINDS = ("notification_standalone", "notification_attached", "cron_fire")
+TIMING_ABS_S = 5.0  # a Monitor wake may lag Claude's by this much, or by TIMING_REL of Claude's own delay
+TIMING_REL = 0.5
+CRON_LATE_S = 120.0  # a one-shot fires within this of its slot (busy deferral included); recurring adds jitter
+
+
+def _wake_offsets(trace: list[dict]) -> list[tuple[str, float | None]]:
+    """(projection, seconds since the tool_use that caused it) per wake event; None = no usable ts."""
+    out, cause = [], {}
+    for e in trace:
+        t = _epoch(e.get("ts"))
+        if e["kind"] == "tool_use":
+            cause["last"] = t  # a Monitor's task id first appears in its result; its clock starts at the call
+        elif e["kind"] == "tool_result" and e["tool"] == "Monitor":
+            for tid in _TASK_IN_RESULT.findall(e["text"]):
+                cause[tid] = cause.get("last")
+        elif e["kind"] in ("notification_standalone", "notification_attached"):
+            tids = _TASK_IN_NOTE.findall(e["text"])
+            t0 = cause.get(tids[0]) if tids else None
+            out.append((project(e), None if t is None or t0 is None else t - t0))
+    return out
+
+
+def _cron_slot_violations(trace: list[dict], side: str) -> list[str]:
+    """Every case cron fire lands in its slot: never before (a one-shot on :00/:30 may be ≤90 s early, a
+    recurring job is only ever late by its jitter), never later than CRON_LATE_S (+900 s jitter if recurring)."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+    from edp8.codex_seat.tools import CRON_JITTER_MAX_S, ONESHOT_EARLY_MAX_S, next_match, parse_cron
+    made: dict[str, tuple[float, str, bool]] = {}
+    bad = []
+    for e in trace:
+        t = _epoch(e.get("ts"))
+        if e["kind"] == "tool_use" and e["tool"] == "CronCreate" and t is not None:
+            i = e.get("input") or {}
+            made[str(i.get("prompt", ""))] = (t, str(i.get("cron", "")), i.get("recurring") is not False)
+        elif e["kind"] == "cron_fire" and e["text"].split("\n")[0] in made:
+            t0, cron, recurring = made[e["text"].split("\n")[0]]
+            try:
+                slot = next_match(parse_cron(cron), t0 * 1000) / 1000
+            except ValueError:
+                continue
+            early = ONESHOT_EARLY_MAX_S if (not recurring and cron.split()[0] in ("0", "30")) else 0
+            late = CRON_LATE_S + (CRON_JITTER_MAX_S if recurring else 0)
+            if t is None or not (slot - early - 1 <= t <= slot + late):
+                bad.append(f"TIMING {side} cron_fire {e['text'][:40]!r}: at {t} outside slot {slot} [-{early}s, +{late:.0f}s]")
+    return bad
+
+
+def timing(a: list[dict], b: list[dict]) -> list[str]:
+    """Timestamps are evidence too (qa adversary #10): the projected diff drops them, so this compares
+    each Monitor wake's delay after its Monitor call (Claude vs harness, TIMING_ABS_S / TIMING_REL), checks
+    every cron fire against its own slot on both sides, and refuses a trace whose clock runs backwards."""
+    bad = []
+    for side, tr in (("claude", a), ("harness", b)):
+        ts = [x for x in (_epoch(e.get("ts")) for e in tr) if x is not None]  # every capture_* stamps its events
+        if side == "harness" and any(y < x - 1.0 for x, y in zip(ts, ts[1:])):
+            # (the Claude reference is stitched from several capture windows; a live harness run is one)
+            bad.append(f"TIMING {side}: timestamps run backwards (capture order vs clock)")
+        bad += _cron_slot_violations(tr, side)
+    for (pa, da), (pb, db) in zip(_wake_offsets(a), _wake_offsets(b)):
+        if pa != pb or da is None or db is None:
+            continue
+        if abs(db - da) > max(TIMING_ABS_S, TIMING_REL * da):
+            bad.append(f"TIMING wake {pa.splitlines()[0]}: claude +{da:.1f}s vs harness +{db:.1f}s after its Monitor call")
+    return bad
+
+
 def diff(a: list[dict], b: list[dict]) -> list[str]:
     ca, cb = case_only(a), case_only(b)
     if not ca or not cb:
         return [f"EMPTY TRACE: claude={len(ca)} pi={len(cb)} case events — a capture with nothing to compare is a failure"]
     pa = [project(e) for e in ca]
     pb = [project(e) for e in cb]
-    return list(difflib.unified_diff(pa, pb, "claude", "pi", lineterm="", n=1))
+    return list(difflib.unified_diff(pa, pb, "claude", "pi", lineterm="", n=1)) + timing(ca, cb)
 
 
 def run_both(claude_ref: Path, out_dir: Path | None, harness: str = "pi") -> int:
