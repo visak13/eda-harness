@@ -322,6 +322,8 @@ export interface EpicPage extends ThreadPage {
   /** The epic ticket's tags (seat-model:/seat-effort: among them); absent on an older board. */
   tags?: string[];
   seat_choice?: SeatChoice;
+  /** The live resident architect (the architect assignee, else architect.<epic>) and its seat state. */
+  architect?: { id: string; state: string | null } | null;
   counts: Record<string, number> | null;
   thread: MessageView[];
   docs: DocSummary[];

@@ -162,6 +162,7 @@ export function EpicPage(): React.JSX.Element {
         ticketId={id} kind="epic" title={heading} purpose={data.description || (words !== heading ? words : null)}
         status={epic.status} assignee={epic.assignee ?? row?.assigned_seats[0] ?? null} designRef={design?.id ?? null}
         reviewRequested={data.answerable_gates.some((g) => g.gate === "design_signoff") || undefined}
+        architect={data.architect ?? null}
         actions={<ActionsMenu items={actions} subject={heading} />}
         work={work}
       />

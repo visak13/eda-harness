@@ -647,6 +647,8 @@ def epic_page(board: Board, epic_id: str, include: str | None = None) -> dict[st
             "tags": list(epic.tags or []),
             # owner m-2d7ef9243d: the seat choice every spawn on this epic inherits (read-only label)
             "seat_choice": board.seat_choice_for(epic_id).as_dict(),
+            # who the live resident architect is (t-cf353a4051): {id, state}
+            "architect": bd.get("architect"),
             "counts": bd.get("counts"),
             **thread, "docs": docs, "open_gates": bd.get("open_gates", []),
             "answerable_gates": answerable_gates,

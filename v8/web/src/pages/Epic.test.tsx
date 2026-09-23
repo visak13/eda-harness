@@ -305,6 +305,18 @@ describe("EpicPage", () => {
     expect(await within(drawer).findByTestId("seat-choice")).toHaveTextContent("GPT-6 Astra, effort high");
   });
 
+  it("the header names the live resident architect and its seat state (t-cf353a4051)", async () => {
+    mount(page({ architect: { id: "architect.epic-9", state: "alive" } }));
+    await title();
+    expect(await screen.findByTestId("work-architect")).toHaveTextContent("architect.epic-9 · alive");
+  });
+
+  it("an older board without the architect field renders no Architect row", async () => {
+    mount(page());
+    await title();
+    expect(screen.queryByTestId("work-architect")).toBeNull();
+  });
+
   it("Spawn the architect POSTs the pool spawn with role=architect and shows the hint (promise #18)", async () => {
     let body: Record<string, unknown> | null = null;
     mount(page());

@@ -36,6 +36,8 @@ export interface WorkHeaderProps {
   work: React.ReactNode;
   /** Stops the design link from claiming "review requested" when the page knows better. */
   reviewRequested?: boolean;
+  /** Epic pages: the live resident architect and its seat state (t-cf353a4051). */
+  architect?: { id: string; state: string | null } | null;
 }
 
 function short(text: string | null | undefined): string | null {
@@ -186,6 +188,10 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
           <dt className={styles.label}>Assigned</dt>
           <dd className={styles.value} data-testid="work-assigned">{assignee ? <><Avatar id={assignee} size={28} />{assignee.includes(".") ? assignee.split(".")[0] : assignee}</> : <span className={styles.muted}>Unassigned</span>}</dd>
         </div>
+        {p.architect ? <div>
+          <dt className={styles.label}>Architect</dt>
+          <dd className={styles.value} data-testid="work-architect"><Avatar id={p.architect.id} size={28} />{p.architect.id}{p.architect.state ? <span className={styles.muted}>&nbsp;· {p.architect.state}</span> : null}</dd>
+        </div> : null}
         <div>
           <dt className={styles.label}>Needs attention</dt>
           <dd className={styles.value} data-testid="work-attention">

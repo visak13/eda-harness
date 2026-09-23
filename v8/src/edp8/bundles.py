@@ -1314,7 +1314,7 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
         # seat on one of its stories only steals the assignment — message the resident instead
         if a.role.value == "architect" and tk and tk.get("kind") != "epic":
             epic_id = _epic_id(c, tk)
-            resident = f"architect.{epic_id}" if epic_id else None
+            resident = _resident_architect(c, epic_id) if epic_id else None
             if resident and resident != pid:
                 live = c.session_query(participant_id=resident)
                 if live.get("ok") and any(r.get("state") in ("alive", "parked") for r in live.get("value") or []):
@@ -1392,6 +1392,14 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
             out["hint"] = (out.get("hint") or "") + f"; {ticket_id} stays assigned to {assignee_kept} " \
                           "(pass assign=true to take it over)"
     return out
+
+
+def _resident_architect(c: BoardClient, epic_id: str) -> str:
+    """The epic's resident architect as the board resolves it (Board.resident_architect: the live
+    architect assignee, else architect.<epic>); the convention when the board predates the field."""
+    got = c.board(epic_id)
+    arch = (got.get("value") or {}).get("architect") if got.get("ok") else None
+    return (arch or {}).get("id") or f"architect.{epic_id}"
 
 
 def _epic_id(c: BoardClient, tk: dict[str, Any]) -> str | None:
@@ -2048,7 +2056,7 @@ def _close(a: CloseArgs) -> dict[str, Any]:
     if status not in ("done", "partial"):
         return {"ok": False, "error": {"code": "transition", "message": f"epic {a.epic_id} is {status}, not done/partial"},
                 "hint": "close only after the epic reaches done or partial"}
-    resident = f"architect.{a.epic_id}"
+    resident = (resp["value"].get("architect") or {}).get("id") or f"architect.{a.epic_id}"
     disarm = ["CronDelete <ids you armed>", "TaskStop <monitor>"]
     seat = get_client().session_query(participant_id=resident)
     rows = (seat.get("value") or []) if seat.get("ok") else []

@@ -1311,10 +1311,27 @@ class Board:
         rows = sorted(self.store.query("session", {"participant_id": pid}), key=lambda s: s.created_at)
         return rows[-1].state.value if rows else None  # type: ignore[union-attr]
 
+    def resident_architect(self, epic: Ticket) -> str:
+        """The epic's resident architect: the epic's assignee when it is an architect participant with a
+        live, parked or stalled session (a resident spawned for another epic id keeps its own handle),
+        else the convention architect.<epic>. Every "the architect of this epic" lookup goes through
+        here — delivery, the architect listener, status recipients, spawn and close (t-cf353a4051)."""
+        if epic.assignee:
+            p = self.store.get("participant", epic.assignee)
+            if (p is not None and p.role == Role.architect  # type: ignore[union-attr]
+                    and self.seat_state(epic.assignee) in ("alive", "parked", "stalled")):
+                return epic.assignee
+        return f"architect.{epic.id}"
+
     def seat_for_role(self, role: str, t: Ticket) -> str | None:
         """The seat participant that plays `role` for ticket t: role.<t>, then up the chain to
         role.<epic>, then any role.<sibling> under the epic. A live seat wins; else a registered
-        one (the next shell on it reads its inbox first thing); else None."""
+        one (the next shell on it reads its inbox first thing); else None. The architect is the
+        epic's live resident first (resident_architect)."""
+        if role == Role.architect.value:
+            resident = self.resident_architect(self.epic_of(t))
+            if resident != f"architect.{self.epic_of(t).id}":
+                return resident
         chain: list[str] = []
         cur: Ticket | None = t
         while cur is not None:
@@ -1774,7 +1791,7 @@ class Board:
                                                      "ticket": t.id, "message": m.id, "note": note[:280]})
         recipients: list[str] = []
         epic = self.epic_of(t)
-        arch = f"architect.{epic.id}"
+        arch = self.resident_architect(epic)
         if self.store.get("participant", arch) is not None and arch != actor.id:
             recipients.append(arch)
         owner = self.epic_owner(t.id)
@@ -2074,7 +2091,9 @@ class Board:
         gates = [(t.id, e.data.get("gate")) for t in flat for e in self.open_gates(t.id)]
         return {"epic": tree, "counts": counts, "ready": ready, "in_review": in_review,
                 "open_gates": gates, "words": epic.words or epic.title,
-                "words_header": self._epic_phase_header(epic)}
+                "words_header": self._epic_phase_header(epic),
+                # the resident architect and its seat state, for spawn/close and the epic page (t-cf353a4051)
+                "architect": {"id": (arch := self.resident_architect(epic)), "state": self.seat_state(arch)}}
 
     def _descendants(self, ticket_id: str) -> list[Ticket]:
         out: list[Ticket] = []
@@ -2347,8 +2366,10 @@ class Board:
         d = ev.data
         if d.get("from") == p.id:  # never page the architect for its own action
             return []
+        if p.role != Role.architect:
+            return []
         epic = self._epic_ticket(ev.subject_id)
-        if epic is None or p.id != f"architect.{epic.id}":
+        if epic is None or p.id != self.resident_architect(epic):
             return []
         k = ev.kind
         if k == EventKind.message_sent:
