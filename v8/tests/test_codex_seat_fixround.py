@@ -119,8 +119,10 @@ def test_1_seat_wraps_every_monitor_in_its_role_sandbox(tmp_path, monkeypatch):
         assert wait_for(lambda: sb_log.exists() and sb_log.read_text(encoding="utf-8").strip(), 10)
     finally:
         s.stop()
-    argv = json.loads(sb_log.read_text(encoding="utf-8").splitlines()[0])
-    assert argv[:3] == ["sandbox", "-c", "sandbox_mode=read-only"] and argv[-2:] == ["-c", tools_mod.SANDBOX_STUB]
+    for line in sb_log.read_text(encoding="utf-8").splitlines():  # warm shells and any cold start alike
+        argv = json.loads(line)
+        assert argv[:3] == ["sandbox", "-c", "sandbox_mode=read-only"] and argv[-2] == "-c"
+        assert argv[-1] in (tools_mod.SANDBOX_STUB, tools_mod.WARM_STUB)
     events = (tmp_path / "fake.jsonl").read_text(encoding="utf-8")
     assert "wrapped" in events  # the command itself (carried in env) ran and its line reached the model
 
@@ -155,6 +157,50 @@ def test_1_sandboxed_running_commands_first_line_stays_out_of_its_result(tmp_pat
     assert ok and "<event>one" not in text, text
     assert wait_for(lambda: any("<event>one</event>" in n for n in h.d.pending), 5), h.d.pending
     t.shutdown()
+
+
+def test_1_warm_sandbox_shell_starts_the_command_without_the_sandbox_startup(tmp_path):
+    """oracle r4 timing: the ≈1 s sandbox start-up delayed a watch's events (to=bash +6.4 s vs Claude +1.2 s).
+    A started seat keeps one sandboxed shell warm; each Monitor takes it and the next one is re-warmed."""
+    h = Host()
+    t = tools_for(tmp_path, h, sandbox_prefix=SLOW_SANDBOX)
+    t.start()
+    try:
+        for n in (1, 2):
+            assert wait_for(lambda: t._warm is not None, 10)
+            time.sleep(1.8)  # past SLOW_SANDBOX's 1.5 s start-up
+            h.d.turn_started(f"busy{n}")
+            t0 = time.time()
+            text, ok = t.call("Monitor", {"command": f"echo warm-{n}\necho line-{n}", "description": f"w{n}",
+                                          "persistent": False, "timeout_ms": 30000}, f"c{n}")
+            took = time.time() - t0
+            assert ok and f"warm-{n}" in text and f"line-{n}" in text and "<status>completed" in text, text
+            assert took < 1.0, took  # a cold SLOW_SANDBOX start alone is 1.5 s
+            h.d.turn_completed(f"busy{n}")
+    finally:
+        t.shutdown()
+    assert t._warm is None
+
+
+@pytest.mark.skipif(not REAL_CODEX or os.name != "nt", reason="needs codex-cli's Windows sandbox")
+def test_1_warm_real_sandbox_still_denies_writes(tmp_path):
+    probe = Path("C:/Temp") / f"seat-sandbox-probe-{uuid.uuid4().hex[:8]}"
+    h = Host()
+    t = tools_for(tmp_path, h, sandbox_prefix=seat_mod.monitor_sandbox_prefix(REAL_CODEX, "read-only"))
+    t.start()
+    try:
+        assert wait_for(lambda: t._warm is not None, 10)
+        time.sleep(3)
+        h.d.turn_started("busy")
+        t0 = time.time()
+        res, _ = t.call("Monitor", {"command": f"printf probe > /c/Temp/{probe.name}; echo rc=$?", "description": "wp",
+                                    "persistent": False, "timeout_ms": 60000}, "c1")
+        took = time.time() - t0
+        assert "<status>" in res or wait_for(lambda: any("<status>" in n for n in h.d.pending), 60)
+        events = res + "\n".join(h.d.pending)
+        assert "rc=1" in events and not probe.exists() and took < 0.8, (took, events)
+    finally:
+        t.shutdown()
 
 
 @pytest.mark.skipif(not REAL_CODEX or os.name != "nt", reason="needs codex-cli's Windows sandbox")

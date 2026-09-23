@@ -56,6 +56,8 @@ READY_MARK = "\x1eedp8-monitor-ready"
 # `codex sandbox` (0.156.0, Windows) cuts a command argument at its first newline, so the wrapped shell
 # gets a fixed one-line stub and the model's command travels in env (measured: multi-line, quotes, exit code)
 SANDBOX_STUB = 'echo "$EDP8_MON_READY" >&2; eval "$EDP8_MON_CMD"'
+# the warm shell: reads "<byte length>\n<command>" from stdin, then runs it as SANDBOX_STUB does
+WARM_STUB = 'IFS= read -r n; c=$(head -c "$n"); echo "$EDP8_MON_READY" >&2; eval "$c"'
 SEND_RETRIES = 40  # edp8.ts sendFollowUp: never lose a notification
 SEND_RETRY_S = 0.05
 RETRY_BACKOFF_S = (2.0, 60.0)  # retries exhausted: re-kick on our own, doubling up to 60 s
@@ -637,6 +639,8 @@ class SeatTools:
         # sandbox_mode=...`): a read-only seat's watch cannot write, a workspace-write seat's only the
         # workspace — the same policy codex applies to the model's shell (qa adversary #1)
         self.sandbox_prefix = list(sandbox_prefix or [])
+        self._warm: subprocess.Popen | None = None  # see _spawn_warm
+        self._warm_lock = threading.Lock()
         self.monitors: dict[str, Mon] = {}
         self.jobs: dict[str, Job] = {}
         self.lock = threading.RLock()
@@ -677,9 +681,14 @@ class SeatTools:
     def start(self) -> None:
         self._ticker = threading.Thread(target=self._tick_loop, name="seat-cron", daemon=True)
         self._ticker.start()
+        threading.Thread(target=self._spawn_warm, name="seat-warm-sandbox", daemon=True).start()
 
     def shutdown(self) -> None:
         self._stop.set()
+        with self._warm_lock:
+            warm, self._warm = self._warm, None
+        if warm is not None:
+            kill_tree(warm)
         for m in list(self.monitors.values()):
             self._stop_mon(m)
 
@@ -739,12 +748,14 @@ class SeatTools:
         try:
             script, env = command, self.env
             if self.sandbox_prefix:
-                script = SANDBOX_STUB
-                env = {**(self.env if self.env is not None else os.environ), "EDP8_MON_CMD": command,
-                       "EDP8_MON_READY": READY_MARK}
-            m.proc = subprocess.Popen([*self.sandbox_prefix, monitor_shell(), "-c", script], cwd=self.cwd, env=env,
-                                      stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                      creationflags=flags)
+                m.proc = self._hand_to_warm(command)
+                threading.Thread(target=self._spawn_warm, name="seat-warm-sandbox", daemon=True).start()
+                script = SANDBOX_STUB  # cold fallback: no warm shell was ready
+                env = {**self.env, "EDP8_MON_CMD": command, "EDP8_MON_READY": READY_MARK}
+            if m.proc is None:
+                m.proc = subprocess.Popen([*self.sandbox_prefix, monitor_shell(), "-c", script], cwd=self.cwd, env=env,
+                                          stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                          creationflags=flags)
         except OSError as e:  # qa A13: a spawn failure is a failed Monitor, never a dead seat
             m.ready.set()
             threading.Thread(target=self._end_monitor, args=(m, f"[spawn error: {e}]", "failed",
@@ -756,6 +767,44 @@ class SeatTools:
         threading.Thread(target=self._pump_stdout, args=(m,), daemon=True).start()
         self._arm_timeout(m, persistent, timeout_ms)
         return m
+
+    def _spawn_warm(self) -> None:
+        """Keep one sandboxed shell already past `codex sandbox`'s ≈1 s start-up, waiting on stdin for the
+        next Monitor command (measured: the command starts ≈30 ms after it is written, sandbox intact)."""
+        if not self.sandbox_prefix or self._stop.is_set():
+            return
+        try:
+            p = subprocess.Popen([*self.sandbox_prefix, monitor_shell(), "-c", WARM_STUB], cwd=self.cwd,
+                                 env={**self.env, "EDP8_MON_READY": READY_MARK}, stdin=subprocess.PIPE,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except OSError:
+            return  # the next Monitor takes the cold path
+        with self._warm_lock:
+            old, self._warm = self._warm, p
+            stale = self._stop.is_set()
+        for q in (old, p if stale else None):
+            if q is not None:
+                kill_tree(q)
+        if stale:
+            with self._warm_lock:
+                if self._warm is p:
+                    self._warm = None
+
+    def _hand_to_warm(self, command: str) -> subprocess.Popen | None:
+        """The warm shell, now running `command`; None if there was none alive to take it."""
+        with self._warm_lock:
+            p, self._warm = self._warm, None
+        if p is None or p.poll() is not None or p.stdin is None:
+            return None
+        data = command.encode("utf-8")
+        try:
+            p.stdin.write(f"{len(data)}\n".encode() + data)
+            p.stdin.close()
+        except (OSError, ValueError):
+            kill_tree(p)
+            return None
+        return p
 
     def _pump_stderr(self, m: Mon) -> None:
         assert m.proc and m.proc.stderr
