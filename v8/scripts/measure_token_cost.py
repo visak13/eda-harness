@@ -5,7 +5,7 @@
     .venv/Scripts/python.exe scripts/measure_token_cost.py boot           # card + CLAUDE.md + tools per role
     .venv/Scripts/python.exe scripts/measure_token_cost.py heartbeat      # one real heartbeat per role replayed
 
-"Before" numbers: `git archive e742f69 v8 | tar -x -C <dir>` then EDP8_MEASURE_ROOT=<dir>/v8 with the same commands.
+"Before" numbers, run in v8/: `git archive e742f69 . | tar -x -C <dir>`, then the same commands with EDP8_MEASURE_ROOT=<dir>.
 
 `tools` counts what the audit (note-5294e42a0f) counted: name + description + args JSON schema per
 ToolDef of tools_for_role(role), UTF-8 bytes; `wire` is the MCP tools/list JSON the server really sends.
