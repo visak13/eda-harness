@@ -58,6 +58,7 @@ $SVC = [ordered]@{
   bridge     = @{ port = 0; health = ""; needle = "edp8.slack_bridge" }
   supervisor = @{ port = 0; health = ""; needle = "edp8.supervisor" }
 }
+$ChainImages = @("python.exe", "pythonw.exe", "uv.exe", "edp8-board.exe")
 $START_ORDER = @("board", "broker", "pool", "mcp", "bridge", "supervisor")
 $STOP_ORDER  = @("supervisor", "bridge", "mcp", "pool", "broker", "board")
 
@@ -102,6 +103,9 @@ function PidPair($anchorPid, $needle) {
   for ($i = 0; $i -lt 4; $i++) {
     $p = Proc $cur.ParentProcessId
     if (-not $p -or -not $p.CommandLine -or -not $p.CommandLine.Contains($needle) -or $p.CreationDate -gt $cur.CreationDate) { break }
+    # only launcher images join the chain: a shell (powershell/bash/cmd/claude) whose command line
+    # merely mentions the service must never be stopped
+    if ($ChainImages -notcontains $p.Name.ToLower()) { break }
     $pair = @($p) + $pair
     $cur = $p
   }

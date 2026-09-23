@@ -144,6 +144,28 @@ def test_foreign_listener_on_a_service_port_is_left_alone(tmp_path, fakes):
     assert "Stop-Process" not in r.stdout and "leaving it alone" in r.stderr, r.stdout + r.stderr
 
 
+def test_a_shell_parent_that_mentions_the_service_is_not_in_the_chain(tmp_path):
+    """The ancestor walk takes only launcher images (python/uv/edp8-board): the shell that started a
+    service - here a powershell whose own command line names edp8-board - is never stopped."""
+    port = _free_port()
+    srv = tmp_path / "fake.py"
+    srv.write_text(FAKE_SERVER)
+    shell = subprocess.Popen([PS, "-NoProfile", "-Command", f"& '{sys.executable}' '{srv}' {port} edp8-board"])
+    try:
+        for _ in range(200):
+            try:
+                socket.create_connection(("127.0.0.1", port), timeout=0.2).close()
+                break
+            except OSError:
+                time.sleep(0.05)
+        r = _run(["restart", "board", "-WhatIf"], _hermetic_env(tmp_path, EDP8_PORT=port))
+        m = re.search(r"WHATIF: stop board: Stop-Process -Id ([\d,]+) -Force", r.stdout)
+        assert m, r.stdout + r.stderr
+        assert str(shell.pid) not in m.group(1).split(","), "the launching shell must not join the chain"
+    finally:
+        subprocess.run(["taskkill", "/PID", str(shell.pid), "/T", "/F"], capture_output=True)  # the test's own tree
+
+
 def test_restart_pool_lists_seats_and_refuses_without_force(tmp_path, fakes):
     port = _free_port()
     sessions = [
