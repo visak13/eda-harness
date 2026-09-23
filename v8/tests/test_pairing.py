@@ -1,7 +1,7 @@
-"""S22 §24 rule 3: the board pairs the checker itself. A story reaching in_review spawns
-reviewer.<story> (only when review_required), skipping a live seat; under the RAM floor it queues
-with one feed note and retries; new evidence after the reviewer closed re-pairs; the acceptance
-gate spawns qa.<epic> once. A stub pool records the spawn calls — no real shell, no real RAM."""
+"""S22 §24 rule 3, as narrowed by S-ROLES (s-a0c67e6aa7, dec-0697863338): the board pairs ONE
+checker — qa.<epic> when the acceptance gate opens. A story reaching in_review pairs nothing (reviewer
+is no longer a role); under the RAM floor the qa spawn queues with one feed note and retries; a failed
+spawn is kept for the retry. A stub pool records the spawn calls — no real shell, no real RAM."""
 
 from __future__ import annotations
 
@@ -61,16 +61,16 @@ def make_board(pool, free_mb=4096):
 
 def rig(board):
     roles = {"owner": Role.owner, "coordinator": Role.coordinator, "architect": Role.architect,
-             "engineer": Role.engineer, "reviewer": Role.reviewer, "qa": Role.qa}
+             "engineer": Role.engineer, "qa": Role.qa}
     return {h: board.participant_create("human" if h == "owner" else "agent", r, h)
             for h, r in roles.items()}
 
 
-def review_story_to_in_review(board, r, epic, tags=("review_required",)):
-    """Walk a review_required story to evidence-complete in_review (explicit handoff). A bare drafted
+def story_to_in_review(board, r, epic, tags=("review_required",)):
+    """Walk a (formerly review_required) story to evidence-complete in_review (explicit handoff). A bare drafted
     HOLDING sibling is created first so the single evidence-complete story does not, on its own,
-    release the whole epic and open its acceptance gate (§24 finding 1) — these tests isolate the
-    reviewer pairing; the qa acceptance spawn has its own test."""
+    release the whole epic and open its acceptance gate (§24 finding 1) — this test isolates the
+    story hand-off from the acceptance spawn."""
     board.ticket_create(r["architect"], kind=TicketKind.story, work_type=WorkType.feature,
                         title="hold", parent_id=epic.id)  # drafted → never released → epic stays open
     story = board.ticket_create(r["architect"], kind=TicketKind.story, work_type=WorkType.feature,
@@ -89,126 +89,39 @@ def review_story_to_in_review(board, r, epic, tags=("review_required",)):
     return story, crit
 
 
-def test_in_review_enqueues_and_drain_spawns_reviewer(pool):
+def test_story_in_review_pairs_no_checker(pool):
+    """S-ROLES: a story reaching in_review (even one still tagged review_required) spawns nothing;
+    qa checks every story once, at epic acceptance."""
     board = make_board(pool)
     r = rig(board)
     epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
-    story, _ = review_story_to_in_review(board, r, epic)
-    assert board.ticket(story.id).status == TicketStatus.in_review
-    assert f"reviewer.{story.id}" in board._pending_pairings  # enqueued, not yet spawned
-    assert pool.spawns == []
-    out = board.run_pending_pairings()
-    assert out["spawned"] == [f"reviewer.{story.id}"]
-    assert (Role.reviewer.value, f"reviewer.{story.id}") in pool.spawns
-    # the seat participant exists and the assignee is untouched (a checker is not the doer)
-    assert board.store.get("participant", f"reviewer.{story.id}") is not None
-    assert board.ticket(story.id).assignee == r["engineer"].id
-    # draining again does not re-spawn (the queue was drained)
-    assert board.run_pending_pairings()["spawned"] == []
-
-
-def test_plain_story_pairs_no_reviewer(pool):
-    board = make_board(pool)
-    r = rig(board)
-    epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
-    story, _ = review_story_to_in_review(board, r, epic, tags=())  # not review_required → qa checks
-    assert board.ticket(story.id).status == TicketStatus.in_review
-    assert board._pending_pairings == {}
-    assert board.run_pending_pairings()["spawned"] == []
-
-
-def test_live_reviewer_seat_skips_the_spawn(pool):
-    board = make_board(pool)
-    r = rig(board)
-    epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
-    # pre-register a LIVE reviewer seat for the story-to-be; the story id is not known yet, so drive
-    # the story first, then simulate a live seat and re-trigger via new evidence
-    story, crit = review_story_to_in_review(board, r, epic)
-    board.run_pending_pairings()  # spawns once
-    pool.spawns.clear()
-    seat = f"reviewer.{story.id}"
-    board.session_upsert(id_="sess-live", participant_id=seat, ticket_id=story.id, pool_id="p",
-                         state=SessionState.alive)
-    # new evidence lands while the reviewer seat is live → no re-enqueue, no re-spawn
+    story, crit = story_to_in_review(board, r, epic)
     ev2 = board.doc_create(r["engineer"], doc_type=DocType.report, title="e2", body_md="ok2", scope=epic.id)
-    board.criterion_update(r["engineer"], crit.id, evidence_ref=ev2.id)
-    assert seat not in board._pending_pairings
+    board.criterion_update(r["engineer"], crit.id, evidence_ref=ev2.id)  # new evidence re-pairs nothing
     assert board.run_pending_pairings()["spawned"] == []
-    assert pool.spawns == []
+    assert pool.spawns == [] and not board._pending_pairings
+    assert crit.checked_by == "qa"
 
 
-def test_variant_reviewer_handle_skips_double_spawn(pool):
-    """m-1760540512: dedupe matches ANY live reviewer-role seat bound to the ticket, not only the
-    canonical `reviewer.<story>` id — a variant/suffixed reviewer seat (a re-spawn under another id)
-    must not be double-paired (the live case: reviewer.s-13cd244cc9 beside reviewer.s-ac1c99a2cb)."""
-    board = make_board(pool)
+def _acceptance(board):
     r = rig(board)
     epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
-    story, crit = review_story_to_in_review(board, r, epic)
-    board.run_pending_pairings()
-    pool.spawns.clear()
-    # a live reviewer seat exists under a NON-canonical handle for this same story (no live session
-    # on the canonical reviewer.<story>, so only the broadened match can catch it)
-    variant = f"reviewer.{story.id}.2"
-    board.participant_create("agent", Role.reviewer, variant, id_=variant)
-    board.session_upsert(id_="sess-variant", participant_id=variant, ticket_id=story.id, pool_id="p",
-                         state=SessionState.alive)
-    ev2 = board.doc_create(r["engineer"], doc_type=DocType.report, title="e2", body_md="ok2", scope=epic.id)
-    board.criterion_update(r["engineer"], crit.id, evidence_ref=ev2.id)
-    assert f"reviewer.{story.id}" not in board._pending_pairings
-    assert board.run_pending_pairings()["spawned"] == []
-    assert pool.spawns == []
-
-
-def test_all_reviewer_criteria_verdicted_skips_pairing(pool):
-    """m-1760540512: once every checked_by=reviewer criterion has a verdict there is nothing left to
-    review, so re-derivation / new evidence must not re-pair a reviewer."""
-    from edp8.schemas import Verdict
-
-    board = make_board(pool)
-    r = rig(board)
-    epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
-    story, crit = review_story_to_in_review(board, r, epic)
-    board.run_pending_pairings()
-    reviewer = board.store.get("participant", f"reviewer.{story.id}")
-    assert board._reviewer_pairing_needed(board.ticket(story.id)) is True  # still pending
-    board.criterion_update(reviewer, crit.id, verdict=Verdict.passed)
-    assert board._reviewer_pairing_needed(board.ticket(story.id)) is False  # all verdicted → no re-pair
-    board._rederive_pending_pairings()
-    assert f"reviewer.{story.id}" not in board._pending_pairings
-
-
-def test_re_pairs_when_evidence_lands_after_reviewer_closed(pool):
-    board = make_board(pool)
-    r = rig(board)
-    epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
-    story, crit = review_story_to_in_review(board, r, epic)
-    board.run_pending_pairings()
-    seat = f"reviewer.{story.id}"
-    board.session_upsert(id_="sess-dead", participant_id=seat, ticket_id=story.id, pool_id="p",
-                         state=SessionState.dead, reason="closed by self")
-    pool.spawns.clear()
-    ev2 = board.doc_create(r["engineer"], doc_type=DocType.report, title="e2", body_md="ok2", scope=epic.id)
-    board.criterion_update(r["engineer"], crit.id, evidence_ref=ev2.id)  # new evidence, seat closed
-    assert seat in board._pending_pairings
-    assert board.run_pending_pairings()["spawned"] == [seat]
+    board.gate_open(epic.id, Gate.acceptance)
+    return epic, f"qa.{epic.id}"
 
 
 def test_under_ram_floor_queues_with_one_feed_note(pool):
     board = make_board(pool, free_mb=300)  # below the 500 MB seat floor
-    r = rig(board)
-    epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
-    story, _ = review_story_to_in_review(board, r, epic)
-    seat = f"reviewer.{story.id}"
+    epic, seat = _acceptance(board)
     out = board.run_pending_pairings()
     assert out["queued"] == [seat] and out["spawned"] == []
     assert pool.spawns == []
-    notes = [m for m in board.store.query("message", {"ticket_id": story.id})
+    notes = [m for m in board.store.query("message", {"ticket_id": epic.id})
              if m.created_by == "board" and "queued" in m.text]
     assert len(notes) == 1 and "300 MB free" in notes[0].text
     # a second tick still under the floor does NOT post a second note (retry is quiet)
     board.run_pending_pairings()
-    notes = [m for m in board.store.query("message", {"ticket_id": story.id})
+    notes = [m for m in board.store.query("message", {"ticket_id": epic.id})
              if m.created_by == "board" and "queued" in m.text]
     assert len(notes) == 1
     # RAM frees up → the queued seat spawns on the next tick
@@ -223,25 +136,22 @@ def test_failed_spawn_keeps_the_entry_for_retry_with_one_note(raises):
     pairing. When the pool recovers, the retry spawns it and drains the entry."""
     flaky = FlakyPool(fails=2, raises=raises)  # first two ticks fail, third recovers
     board = Board(Store(":memory:"), pool=flaky, free_mb=lambda: 4096)
-    r = rig(board)
-    epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
-    story, _ = review_story_to_in_review(board, r, epic)
-    seat = f"reviewer.{story.id}"
+    epic, seat = _acceptance(board)
     out = board.run_pending_pairings()  # first attempt fails
     assert out["spawned"] == [] and out["failed"] == [seat]
     assert flaky.spawns == []               # nothing reported as spawned
     assert seat in board._pending_pairings  # kept for the retry
-    notes = [m for m in board.store.query("message", {"ticket_id": story.id})
+    notes = [m for m in board.store.query("message", {"ticket_id": epic.id})
              if m.created_by == "board" and "spawn failed" in m.text]
     assert len(notes) == 1
     board.run_pending_pairings()  # still noted once (the retry is quiet)
-    notes = [m for m in board.store.query("message", {"ticket_id": story.id})
+    notes = [m for m in board.store.query("message", {"ticket_id": epic.id})
              if m.created_by == "board" and "spawn failed" in m.text]
     assert len(notes) == 1
     # third tick: the pool has recovered → the seat finally spawns and leaves the queue
     out3 = board.run_pending_pairings()
     assert out3["spawned"] == [seat]
-    assert (Role.reviewer.value, seat) in flaky.spawns
+    assert (Role.qa.value, seat) in flaky.spawns
     assert seat not in board._pending_pairings
 
 
