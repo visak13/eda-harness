@@ -24,10 +24,19 @@ export function DraftGuardProvider({ children }: { children: React.ReactNode }):
   const dirty = useRef(new Map<string, string | undefined>());
   const queued = useRef(new Map<string, QueryKey>());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // S22 (consult #2, refresh storm): invalidating with the default cancelRefetch:true aborted the
+  // in-flight refetch every window, so under sustained events (one per 150 ms, 1 s API latency) no
+  // refetch ever completed and the page froze until the feed went quiet. Now a key whose refetch is
+  // still in flight stays queued for the next window (it is never cancelled), and its trailing
+  // refetch after it lands picks up every event that arrived meanwhile — one fetch in flight per key.
   const drain = useCallback(() => {
     timer.current = null;
-    for (const queryKey of queued.current.values()) void qc.invalidateQueries({ queryKey, exact: true });
-    queued.current.clear();
+    for (const [hash, queryKey] of queued.current) {
+      if (qc.getQueryCache().get(hash)?.state.fetchStatus === "fetching") continue;
+      queued.current.delete(hash);
+      void qc.invalidateQueries({ queryKey, exact: true }, { cancelRefetch: false });
+    }
+    if (queued.current.size) timer.current = setTimeout(drain, 250);
   }, [qc]);
   const setDirty = useCallback((id: string, value: boolean, subject?: string) => {
     if (value) dirty.current.set(id, subject);
@@ -43,7 +52,16 @@ export function DraftGuardProvider({ children }: { children: React.ReactNode }):
       }
       if (!timer.current && queued.current.size) timer.current = setTimeout(drain, 250);
     }, { watch: true });
-    return () => { stop(); if (timer.current) clearTimeout(timer.current); timer.current = null; };
+    // A deferred key refetches the moment its in-flight fetch lands, not at the next window, so the
+    // newest event is on screen one API round-trip after the in-flight one (≤ 2 × latency).
+    const unwatch = qc.getQueryCache().subscribe((e) => {
+      if (e.type !== "updated" || e.query.state.fetchStatus !== "idle") return;
+      const queryKey = queued.current.get(e.query.queryHash);
+      if (!queryKey) return;
+      queued.current.delete(e.query.queryHash);
+      void qc.invalidateQueries({ queryKey, exact: true }, { cancelRefetch: false });
+    });
+    return () => { stop(); unwatch(); if (timer.current) clearTimeout(timer.current); timer.current = null; };
   }, [qc, drain]);
   const hasDirty = useCallback(() => dirty.current.size > 0, []);
   const value = useMemo(() => ({ setDirty, hasDirty }), [setDirty, hasDirty]);
