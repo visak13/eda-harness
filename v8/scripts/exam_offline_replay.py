@@ -43,13 +43,18 @@ def _snapshot(v8: Path, out: Path) -> tuple[Path, Path]:
 def _cached_query_embedder(out: Path, questions: list[str]):
     search.RAM_FLOOR_GB = REPLAY_RAM_FLOOR_GB
     emb = make_embedder(ram_floor=REPLAY_RAM_FLOOR_GB)
+    if emb.name != "fastembed":
+        raise SystemExit(f"no dense embedder ({getattr(emb, 'fallback_reason', emb.name)}); the replay would be FTS-only")
+    # the cache is valid only for the model that made the document vectors in the .vec cache
+    meta = {"embedder": emb.name, "model": search.EMBED_MODEL, "max_chars": search.EMBED_MAX_CHARS}
     qfile = out / "qvec.json"
-    qcache = json.loads(qfile.read_text(encoding="utf-8")) if qfile.exists() else {}
+    saved = json.loads(qfile.read_text(encoding="utf-8")) if qfile.exists() else {}
+    qcache = saved.get("vectors", {}) if saved.get("meta") == meta else {}
     missing = [q for q in dict.fromkeys(questions) if q not in qcache]
     if missing:
         for q, v in zip(missing, emb.embed(missing, is_query=True)):
             qcache[q] = [float(x) for x in v]
-        qfile.write_text(json.dumps(qcache), encoding="utf-8")
+        qfile.write_text(json.dumps({"meta": meta, "vectors": qcache}), encoding="utf-8")
     raw = emb.embed
 
     def embed(texts: list[str], is_query: bool = False) -> list[list[float]]:
