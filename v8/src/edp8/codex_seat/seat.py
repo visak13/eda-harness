@@ -84,7 +84,11 @@ def board_args(role: str, mcp_url: str | None = None) -> list[str]:
     """The edp8 board as streamable-HTTP MCP, identity headers read from env BY NAME (never argv)."""
     base = (mcp_url or os.environ.get("EDP8_MCP_URL") or "http://127.0.0.1:9402").rstrip("/")
     headers = '{"X-Participant"="EDP_HANDLE","X-Session"="EDP_SPAWN_SESSION_ID","X-Token"="EDP8_TOKEN"}'
+    # measured 2026-09-23 (codex-cli 0.156.0, drill_codex_seat.py): under approval_policy=never every
+    # MCP call fails "MCP tool call requires approval" unless the server pre-approves its tools — edp8
+    # is the one server a seat may reach, so its tools are approved (every other server is disabled)
     return ["-c", f'mcp_servers.{BOARD_SERVER}.url="{base}/mcp/{role}"',
+            "-c", f'mcp_servers.{BOARD_SERVER}.default_tools_approval_mode="approve"',
             "-c", f"mcp_servers.{BOARD_SERVER}.env_http_headers={headers}",
             "-c", f"mcp_servers.{BOARD_SERVER}.startup_timeout_sec=60",
             "-c", f"mcp_servers.{BOARD_SERVER}.tool_timeout_sec=1800"]

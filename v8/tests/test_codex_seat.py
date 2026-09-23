@@ -304,6 +304,9 @@ def test_token_never_on_argv_and_board_headers_by_env_name(tmp_path):
     assert not any("tok-SECRET-123" in a for a in argv)
     assert 'mcp_servers.edp8.url="http://127.0.0.1:9402/mcp/reviewer"' in argv
     assert any(a.startswith("mcp_servers.edp8.env_http_headers=") and '"X-Token"="EDP8_TOKEN"' in a for a in argv)
+    # approval_policy=never refuses every MCP call a server has not pre-approved (drill 2026-09-23)
+    assert "approval_policy=never" in argv and 'mcp_servers.edp8.default_tools_approval_mode="approve"' in argv
+    assert sum("default_tools_approval_mode" in a for a in argv) == 1  # only the board is pre-approved
     assert seat_mod.sandbox_for("reviewer", {}) == "read-only"
     assert seat_mod.sandbox_for("engineer", {}) == "workspace-write"
 
