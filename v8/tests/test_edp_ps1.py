@@ -291,6 +291,18 @@ def test_update_counts_untracked_files_as_dirty(tmp_path):
 
 FAKE_START = r"""param([string]$Only, [string]$Restart, [switch]$NoSupervisor)
 if ($env:FAKE_START_EXIT) { Write-Host "fake start.ps1 failing"; exit ([int]$env:FAKE_START_EXIT) }
+if ($env:FAKE_FAIL_ONLY -and $Only -eq $env:FAKE_FAIL_ONLY) {
+  # like the real start.ps1's "unknown service" / missing-tool path: console stderr, then exit 5
+  [Console]::Error.WriteLine("fake start.ps1: boom-on-stderr"); exit 5
+}
+if (-not $Only -and -not $Restart) {
+  # a plain run starts the supervisor and records its pid, as the real launcher does
+  $log = Join-Path $env:FAKE_LOGDIR ("sup-" + [guid]::NewGuid().ToString("N") + ".log")
+  $p = Start-Process -FilePath $env:FAKE_PY -ArgumentList @($env:FAKE_SLEEP, "edp8.supervisor") -WindowStyle Hidden -PassThru `
+    -RedirectStandardOutput $log -RedirectStandardError "$log.err"
+  New-Item -ItemType Directory -Force $env:EDP8_RUN_DIR | Out-Null
+  Set-Content -Path (Join-Path $env:EDP8_RUN_DIR "supervisor.json") -Value ('{"service": "supervisor", "pid": ' + $p.Id + '}')
+}
 if ($Only -eq "board") {
   # exactly like the real launcher (StartProc): redirected Start-Process = CreateProcess with
   # inherited handles, so the long-lived child also holds whatever pipe this process was given
@@ -337,8 +349,37 @@ def _fake_repo(tmp_path: Path) -> tuple[Path, dict[str, str], int]:
     srv.write_text(FAKE_SERVER)
     port = _free_port()
     env = _hermetic_env(tmp_path, EDP8_PORT=port)
-    env.update(FAKE_PY=sys.executable, FAKE_SRV=str(srv), FAKE_LOGDIR=str(tmp_path),FAKE_BODY=json.dumps({"ok": True, "git_rev": "f00d123"}))
+    sleeper = tmp_path / "fake_sleep.py"
+    sleeper.write_text("import time\ntime.sleep(600)\n")
+    env.update(FAKE_PY=sys.executable, FAKE_SRV=str(srv), FAKE_SLEEP=str(sleeper), FAKE_LOGDIR=str(tmp_path),
+               FAKE_BODY=json.dumps({"ok": True, "git_rev": "f00d123"}))
     return repo, env, port
+
+
+def test_failed_restart_keeps_stderr_and_restores_the_supervisor_it_paused(tmp_path, fakes):
+    """Architect's second live run (m-49fbff3f84): start.ps1 exited 5 with its message on console
+    stderr, no log survived, and the supervisor the restart had paused stayed down."""
+    repo, env, port = _fake_repo(tmp_path)
+    fakes.append(_fake(port, "edp8-board", {"ok": True}))
+    sup = _fake_proc("edp8.supervisor")
+    fakes.append(sup)
+    _record(tmp_path, "supervisor", sup.pid)
+    r = _run_piped(["restart", "board", "-TimeoutSec", "10"], {**env, "FAKE_FAIL_ONLY": "board"}, repo)
+    new_sup = None
+    try:
+        assert r.returncode == 4, r.stdout + r.stderr
+        assert "boom-on-stderr" in r.stdout, "start.ps1's console stderr must be shown: " + r.stdout
+        m = re.search(r"logs kept: (\S+\.log), (\S+\.err)\)", r.stderr)
+        assert m and "boom-on-stderr" in Path(m.group(2)).read_text(), r.stderr
+        assert "restoring the supervisor" in r.stdout, r.stdout
+        rec = json.loads((tmp_path / "run" / "supervisor.json").read_text())
+        new_sup = int(rec["pid"])
+        assert new_sup != sup.pid and sup.poll() is not None, "the paused supervisor is replaced, not left down"
+        assert re.search(r"^supervisor\s+up\s+pid \S*%d" % new_sup, r.stdout, re.M), r.stdout
+        assert "STILL DOWN: board" in r.stderr and "supervisor" not in r.stderr.split("STILL DOWN:")[1], r.stderr
+    finally:
+        if new_sup:
+            subprocess.run(["taskkill", "/PID", str(new_sup), "/T", "/F"], capture_output=True)  # the test's own fake
 
 
 def _listener_pid(port: int) -> int | None:
@@ -403,3 +444,42 @@ def test_update_refuses_a_dirty_tree_unless_forced(tmp_path):
     assert r.returncode == 2 and "refusing to update a dirty tree" in r.stderr, r.stdout + r.stderr
     r = _run(["update", "-WhatIf", "-Force"], env, repo=work)
     assert r.returncode == 0 and "WHATIF: git pull --ff-only" in r.stdout, r.stdout + r.stderr
+
+
+# ── start.ps1 on a running service leaves its run_state alone (architect m-91f66a7aac) ─────────
+
+def test_run_state_adopt_keeps_an_accurate_record_and_fixes_a_stale_one(tmp_path, monkeypatch):
+    from edp8 import run_state
+
+    monkeypatch.setenv("EDP8_RUN_DIR", str(tmp_path))
+    monkeypatch.setattr(run_state, "listener_pid", lambda port: os.getpid())
+    run_state.write("mcp", pid=os.getpid(), port=9402, git_rev="c9f635f")
+    before = (tmp_path / "mcp.json").read_bytes()
+    run_state.adopt("mcp", port=9402)
+    assert (tmp_path / "mcp.json").read_bytes() == before, "an accurate record is left untouched"
+
+    run_state.write("mcp", pid=1, port=9402, git_rev="c9f635f")  # stale pid
+    rec = run_state.adopt("mcp", port=9402)
+    assert rec["pid"] == os.getpid() and rec["git_rev"] == "unknown"
+    import psutil
+    from datetime import datetime
+    own_start = datetime.fromtimestamp(psutil.Process().create_time()).astimezone().isoformat(timespec="seconds")
+    assert rec["started_at"] == own_start, "started_at is the listener's real process start, not now"
+
+
+def test_real_start_ps1_on_a_running_service_changes_no_run_state_file(tmp_path, fakes):
+    port = _free_port()
+    fakes.append(_fake(port, "edp8-board", {"ok": True}))
+    lp = _listener_pid(port)
+    run = tmp_path / "run"
+    run.mkdir()
+    rec = {"service": "board", "pid": lp, "port": port, "git_rev": "0ld0ld0", "started_at": "2026-09-23T04:18:28+05:30",
+           "last_probe": None, "last_ok": None, "last_restart_reason": None, "restarts": 0}
+    (run / "board.json").write_text(json.dumps(rec, indent=2))
+    before = (run / "board.json").read_bytes()
+    env = _hermetic_env(tmp_path, EDP8_PORT=port)
+    env["EDP8_DATA"] = str(tmp_path / "data")  # belt and braces: nothing here may touch the fleet DB
+    r = subprocess.run([PS, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(ROOT / "v8" / "start.ps1"), "-Only", "board"],
+                       env=env, capture_output=True, text=True, timeout=120)
+    assert "already running" in r.stdout, r.stdout + r.stderr
+    assert (run / "board.json").read_bytes() == before, (run / "board.json").read_text()

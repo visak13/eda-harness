@@ -68,6 +68,11 @@ function WriteState($svc, $procId, $port) {
   $pt = if ("$port") { "$port" } else { "" }
   & $py -c "from edp8 import run_state; p=('$pt' and int('$pt')) or None; pid=(run_state.listener_pid(p) if p else run_state.process_pid_matching('edp8.slack_bridge')) or int('$fb' or 0); run_state.write('$svc', pid=pid, port=p, git_rev=run_state.git_rev())" 2>$null
 }
+function AdoptState($svc, $port) {
+  # A service FOUND running keeps an accurate record untouched (S16, m-91f66a7aac): WriteState here
+  # re-stamped started_at/git_rev, so `edp8 status` showed 0 s uptime for never-restarted services.
+  & $py -c "from edp8 import run_state; run_state.adopt('$svc', port=$port)" 2>$null
+}
 function StartProc($file, $argList, $log, $errlog) {
   Start-Process -FilePath $file -ArgumentList $argList -WorkingDirectory $HOMEDIR -WindowStyle Hidden `
     -PassThru -RedirectStandardOutput $log -RedirectStandardError $errlog
@@ -87,7 +92,7 @@ function Build-Web {
 $root = Split-Path -Parent $v8
 
 function Start-Board {
-  if (Probe $BOARD_PORT "/v1/health") { WriteState "board" $null $BOARD_PORT; Write-Host "board    already running on :$BOARD_PORT"; return }
+  if (Probe $BOARD_PORT "/v1/health") { AdoptState "board" $BOARD_PORT; Write-Host "board    already running on :$BOARD_PORT"; return }
   $env:EDP8_HOST = $BIND; $env:EDP8_PORT = "$BOARD_PORT"; $env:EDP8_ADMIN_TOKEN = $ADMIN
   # EDP8_DATA reaches the board too: uploads live under <EDP8_DATA>/uploads (uploads.py). Without
   # it the board wrote v8/uploads into the source tree (qa acceptance, 2026-09-10). An existing
@@ -106,7 +111,7 @@ function Start-Board {
 }
 
 function Start-Broker {
-  if (Probe $BROKER_PORT "/v1/health") { WriteState "broker" $null $BROKER_PORT; Write-Host "broker   already running on :$BROKER_PORT"; return }
+  if (Probe $BROKER_PORT "/v1/health") { AdoptState "broker" $BROKER_PORT; Write-Host "broker   already running on :$BROKER_PORT"; return }
   $brokerDir = Join-Path $root "edp-broker"
   if (-not (Test-Path $brokerDir)) { Write-Host "broker   skipped (no $brokerDir)"; return }
   $env:EDP_BROKER_HOST = $BIND; $env:EDP_BROKER_PORT = "$BROKER_PORT"; $env:EDP_BROKER_DATA = Join-Path $DATA "broker-data"
@@ -118,7 +123,7 @@ function Start-Broker {
 }
 
 function Start-Pool {
-  if (Probe $POOL_PORT "/v1/health") { WriteState "pool" $null $POOL_PORT; Write-Host "pool     already running on :$POOL_PORT"; return }
+  if (Probe $POOL_PORT "/v1/health") { AdoptState "pool" $POOL_PORT; Write-Host "pool     already running on :$POOL_PORT"; return }
   $poolDir = Join-Path $root "edp-pool"; $ppy = Join-Path $poolDir ".venv\Scripts\python.exe"
   if (-not (Test-Path $ppy)) { Write-Host "pool     skipped (no edp-pool venv: $ppy)"; return }
   $env:EDP_POOL_AGENT_HOME = $HOMEDIR; $env:EDP_POOL_HOST = "127.0.0.1"; $env:EDP_POOL_PORT = "$POOL_PORT"
@@ -134,7 +139,7 @@ function Start-Pool {
 }
 
 function Start-Mcp {
-  if (Probe $MCP_PORT "/healthz") { WriteState "mcp" $null $MCP_PORT; Write-Host "mcp      already running on :$MCP_PORT"; return }
+  if (Probe $MCP_PORT "/healthz") { AdoptState "mcp" $MCP_PORT; Write-Host "mcp      already running on :$MCP_PORT"; return }
   $env:EDP8_HOME = $HOMEDIR; $env:EDP8_BOARD_URL = "http://127.0.0.1:$BOARD_PORT"
   $env:EDP_POOL_URL = "http://127.0.0.1:$POOL_PORT"; $env:EDP_BROKER_URL = "http://127.0.0.1:$BROKER_PORT"
   $env:EDP8_MCP_PORT = "$MCP_PORT"; $env:EDP8_MCP_HOST = "127.0.0.1"; $env:PYTHONPATH = Join-Path $v8 "src"

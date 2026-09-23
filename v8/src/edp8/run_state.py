@@ -87,6 +87,30 @@ def write(service: str, *, pid: int, port: int | None, git_rev: str) -> dict[str
     return rec
 
 
+def adopt(service: str, *, port: int) -> dict[str, Any] | None:
+    """Called by the launcher for a service it FOUND running (S16, architect m-91f66a7aac): a
+    record that already names the port's listener is left untouched - re-stamping it made `edp8
+    status` show a 0 s uptime and today's rev for processes that were never restarted. Otherwise
+    the listener is recorded with its real process start time and git_rev "unknown": which code a
+    process loaded is not knowable from the tree."""
+    lp = listener_pid(port)
+    rec = read(service)
+    if rec is not None and lp and int(rec.get("pid") or 0) == lp:
+        return rec
+    if not lp:
+        return rec
+    started = now_iso()
+    try:
+        import psutil
+        started = datetime.fromtimestamp(psutil.Process(lp).create_time()).astimezone().isoformat(timespec="seconds")
+    except Exception:  # noqa: BLE001 — psutil absent / process gone: fall back to now
+        pass
+    rec = {"service": service, "pid": lp, "port": port, "git_rev": "unknown", "started_at": started,
+           "last_probe": None, "last_ok": None, "last_restart_reason": None, "restarts": 0}
+    _path(service).write_text(json.dumps(rec, indent=2), encoding="utf-8")
+    return rec
+
+
 def read(service: str) -> dict[str, Any] | None:
     try:
         return json.loads(_path(service).read_text(encoding="utf-8"))

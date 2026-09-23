@@ -173,9 +173,24 @@ function GuardPool($verb) {
 
 # -- stop / start / restart ---------------------------------------------------------------------
 $script:Stopped = @()
+$script:PausedSupervisor = $false
+$script:Restoring = $false
 function FailDown($code, $msg) {
+  if ($script:Restoring) { throw $msg }   # a failure while restoring is reported by the restore itself
+  # leave the fleet as we found it where we can: a supervisor this run paused comes back (it then
+  # heals what is still down after ~45 s of failed probes); the service that failed stays named
+  if ($script:PausedSupervisor -and ($script:Stopped -contains "supervisor")) {
+    $script:Restoring = $true
+    Say "restoring the supervisor this run paused..."
+    try { Invoke-StartPs1 "supervisor" @(); Wait-Up "supervisor" } catch { Say "   supervisor restore failed: $_" }
+    $script:Restoring = $false
+  }
   if ($script:Stopped.Count -gt 0) { $msg += "; STILL DOWN: $($script:Stopped -join ', ') - fix the cause, then .\edp.ps1 start all" }
   Fail $code $msg
+}
+function Pause-Supervisor {
+  Stop-Svc "supervisor"
+  if ($script:Stopped -contains "supervisor") { $script:PausedSupervisor = $true }
 }
 function Stop-Svc($name) {
   $pair = @(Discover $name)
@@ -211,27 +226,32 @@ function Invoke-StartPs1($label, $extra) {
   # redirection = CreateProcess with inherited handles) handed the CALLER's stdout pipe to the board,
   # and a caller that reads to EOF never returned (architect's live run, m-0c1e43e1c3). So start.ps1
   # runs through a ShellExecute launch (no redirection => no handle inheritance, our environment is
-  # passed), inside a tiny wrapper that redirects start.ps1's streams to a log file and writes its
-  # exit code to a file; we wait for the wrapper process only, not its descendants.
+  # passed), inside a tiny wrapper that sends start.ps1's streams AND its [Console]::Error writes
+  # (its "unknown service" / missing-tool messages) to log files (.NET file handles are not
+  # inheritable) and writes its exit code to a file; we wait for the wrapper process only.
   $tag = "edp-start-{0}-{1}" -f $label, [guid]::NewGuid().ToString("N").Substring(0, 8)
-  $log = Join-Path $env:TEMP "$tag.log"; $rc = Join-Path $env:TEMP "$tag.rc"; $wrap = Join-Path $env:TEMP "$tag.ps1"
+  $log = Join-Path $env:TEMP "$tag.log"; $err = "$log.err"; $rc = Join-Path $env:TEMP "$tag.rc"; $wrap = Join-Path $env:TEMP "$tag.ps1"
   # parameter names stay bare (a quoted '-Only' would bind as a positional string); values are quoted
   $argText = ($extra | ForEach-Object { if ($_ -match '^-[A-Za-z]+$') { $_ } else { "'" + ($_ -replace "'", "''") + "'" } }) -join " "
+  $q = { param($s) "'" + ($s -replace "'", "''") + "'" }
   $body = @(
     '$ErrorActionPreference = "Continue"',
-    ("try {{ & '{0}' {1} *> '{2}'; `$code = `$LASTEXITCODE }} catch {{ `$_ | Out-File -Append '{2}'; `$code = 1 }}" -f ($StartPs1 -replace "'", "''"), $argText, $log),
+    ('$w = New-Object IO.StreamWriter({0}, $true); $w.AutoFlush = $true; [Console]::SetError($w)' -f (& $q $err)),
+    ('try {{ & {0} {1} *> {2}; $code = $LASTEXITCODE }} catch {{ [Console]::Error.WriteLine(("" + $_)); $code = 1 }}' -f (& $q $StartPs1), $argText, (& $q $log)),
     'if ($null -eq $code) { $code = 0 }',
-    ("Set-Content -Path '{0}' -Value `$code" -f $rc)
+    '$w.Close()',
+    ('Set-Content -Path {0} -Value $code' -f (& $q $rc))
   ) -join "`r`n"
   [IO.File]::WriteAllText($wrap, $body, (New-Object Text.UTF8Encoding $true))
   $p = Start-Process -FilePath "powershell.exe" -WindowStyle Hidden -PassThru `
     -ArgumentList @("-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "`"$wrap`"")
-  if (-not $p.WaitForExit($TimeoutSec * 3000)) { FailDown 4 "start.ps1 $($extra -join ' ') did not exit within $($TimeoutSec * 3) s (log $log)" }
-  if (Test-Path $log) { Get-Content $log | ForEach-Object { Say "   | $_" } }
+  $done = $p.WaitForExit($TimeoutSec * 3000)
+  foreach ($f in @($log, $err)) { if (Test-Path $f) { Get-Content $f | ForEach-Object { Say "   | $_" } } }
+  if (-not $done) { FailDown 4 "start.ps1 $($extra -join ' ') did not exit within $($TimeoutSec * 3) s (logs kept: $log, $err)" }
   $code = 1; if (Test-Path $rc) { $code = [int]("" + (Get-Content $rc -Raw)).Trim() }
   Remove-Item $wrap, $rc -Force -ErrorAction SilentlyContinue
-  if ($code -ne 0) { FailDown 4 "start.ps1 $($extra -join ' ') exited $code (log $log)" }
-  Remove-Item $log -Force -ErrorAction SilentlyContinue
+  if ($code -ne 0) { FailDown 4 "start.ps1 $($extra -join ' ') exited $code (logs kept: $log, $err)" }
+  Remove-Item $log, $err -Force -ErrorAction SilentlyContinue
 }
 function Wait-Up($name) {
   # a service is up when its health route answers (port services) or its process chain exists
@@ -278,7 +298,10 @@ function WithSupervisorPaused($t) {
   $t
 }
 function Restart-Set($t) {
-  foreach ($n in $STOP_ORDER) { if ($t -contains $n) { Stop-Svc $n } }
+  foreach ($n in $STOP_ORDER) {
+    if ($t -notcontains $n) { continue }
+    if ($n -eq "supervisor") { Pause-Supervisor } else { Stop-Svc $n }
+  }
   foreach ($n in $START_ORDER) { if ($t -contains $n) { Start-Svc $n } }
   Report-PoolLiveness
 }
@@ -367,7 +390,7 @@ function Do-Update {
 
   # every consumer of an environment is stopped BEFORE that environment changes (Windows locks
   # loaded files: uv sync cannot replace a running edp8-board.exe or a loaded .pyd)
-  Stop-Svc "supervisor"
+  Pause-Supervisor
   foreach ($n in $stopList) { Stop-Svc $n }
   if ($v8Deps -or $v8Py) { Step "uv sync --directory v8" { & uv sync --directory $V8; if ($LASTEXITCODE -ne 0) { FailDown 7 "uv sync (v8) failed" } } }
   if ($restart -contains "pool") { Step "uv sync --directory edp-pool" { & uv sync --directory (Join-Path $RepoRoot "edp-pool"); if ($LASTEXITCODE -ne 0) { FailDown 7 "uv sync (edp-pool) failed" } } }
