@@ -83,10 +83,10 @@ def test_1_readonly_seat_monitor_cannot_write_outside_its_sandbox(tmp_path):
     h = Host()
     t = tools_for(tmp_path, h, sandbox_prefix=seat_mod.monitor_sandbox_prefix(REAL_CODEX, "read-only"))
     h.d.turn_started("busy")  # everything goes to pending
-    t.call("Monitor", {"command": f"printf probe > /c/Temp/{probe.name}; echo rc=$?", "description": "probe",
+    res, _ = t.call("Monitor", {"command": f"printf probe > /c/Temp/{probe.name}; echo rc=$?", "description": "probe",
                        "persistent": False, "timeout_ms": 60000}, "c1")
-    assert wait_for(lambda: any("<status>" in n for n in h.d.pending), 60)
-    events = "\n".join(h.d.pending)
+    assert "<status>" in res or wait_for(lambda: any("<status>" in n for n in h.d.pending), 60)
+    events = res + "\n".join(h.d.pending)
     assert "rc=1" in events and not probe.exists(), events
     t.shutdown()
 
@@ -99,10 +99,10 @@ def test_1_workspace_write_seat_writes_its_workspace_only(tmp_path):
     h = Host()
     t = tools_for(tmp_path, h, cwd=ws, sandbox_prefix=seat_mod.monitor_sandbox_prefix(REAL_CODEX, "workspace-write"))
     h.d.turn_started("busy")
-    t.call("Monitor", {"command": f"printf p > /c/Temp/{probe.name}; echo out=$?; printf p > inside && echo in=ok",
+    res, _ = t.call("Monitor", {"command": f"printf p > /c/Temp/{probe.name}; echo out=$?; printf p > inside && echo in=ok",
                        "description": "ww", "persistent": False, "timeout_ms": 60000}, "c1")
-    assert wait_for(lambda: any("<status>" in n for n in h.d.pending), 60)
-    events = "\n".join(h.d.pending)
+    assert "<status>" in res or wait_for(lambda: any("<status>" in n for n in h.d.pending), 60)
+    events = res + "\n".join(h.d.pending)
     assert "out=1" in events and "in=ok" in events and not probe.exists() and (ws / "inside").exists(), events
     t.shutdown()
 
@@ -120,7 +120,43 @@ def test_1_seat_wraps_every_monitor_in_its_role_sandbox(tmp_path, monkeypatch):
     finally:
         s.stop()
     argv = json.loads(sb_log.read_text(encoding="utf-8").splitlines()[0])
-    assert argv[:3] == ["sandbox", "-c", "sandbox_mode=read-only"] and argv[-2:] == ["-c", "echo wrapped"]
+    assert argv[:3] == ["sandbox", "-c", "sandbox_mode=read-only"] and argv[-2:] == ["-c", tools_mod.SANDBOX_STUB]
+    events = (tmp_path / "fake.jsonl").read_text(encoding="utf-8")
+    assert "wrapped" in events  # the command itself (carried in env) ran and its line reached the model
+
+
+SLOW_SANDBOX = [sys.executable, "-c", "import subprocess, sys, time; time.sleep(1.5); "
+                "sys.exit(subprocess.call(sys.argv[sys.argv.index('--') + 1:]))", "--"]
+
+
+def test_1_sandbox_startup_does_not_eat_the_monitor_attach_window(tmp_path):
+    """oracle r3 regression: `codex sandbox` takes ≈1 s to start the command, so a short Monitor's lines
+    missed its own result (Claude attaches them) and went standalone. The grace counts from the command."""
+    h = Host()
+    t = tools_for(tmp_path, h, sandbox_prefix=SLOW_SANDBOX)
+    h.d.turn_started("busy")
+    text, ok = t.call("Monitor", {"command": "echo first-line; echo second-line", "description": "slow",
+                                  "persistent": False, "timeout_ms": 30000}, "c1")
+    assert ok and "first-line" in text and "second-line" in text and "<status>completed" in text, text
+    assert "edp8-monitor-ready" not in text
+    out = next((tmp_path / "tasks").glob("*.output")).read_text(encoding="utf-8")
+    assert "first-line" in out and "edp8-monitor-ready" not in out, out
+    t.shutdown()
+
+
+@pytest.mark.skipif(not REAL_CODEX or os.name != "nt", reason="needs codex-cli's Windows sandbox")
+def test_1_sandboxed_multiline_command_runs_whole(tmp_path):
+    """`codex sandbox` cuts an argv argument at its first newline (measured on 0.156.0): a multi-line
+    Monitor command must still run every line, keep its quoting and its exit code."""
+    h = Host()
+    t = tools_for(tmp_path, h, sandbox_prefix=seat_mod.monitor_sandbox_prefix(REAL_CODEX, "read-only"))
+    h.d.turn_started("busy")
+    res, _ = t.call("Monitor", {"command": "echo one\necho two\nx='a b'; echo \"$x\"\nexit 3", "description": "ml",
+                       "persistent": False, "timeout_ms": 60000}, "c1")
+    assert "<status>" in res or wait_for(lambda: any("<status>" in n for n in h.d.pending), 60)
+    events = res + "\n".join(h.d.pending)
+    assert "one" in events and "two" in events and "a b" in events and "exit 3" in events, events
+    t.shutdown()
 
 
 # ------------------------------------------------------------------ 2 · secrets never reach disk

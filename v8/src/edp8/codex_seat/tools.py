@@ -46,6 +46,13 @@ ONESHOT_EARLY_MAX_S = 90  # CronCreate description: ":00 or :30 fire up to 90 s 
 CRON_EXPIRE_MS = 7 * 24 * 3600 * 1000
 IDLE_COALESCE_MS = 20  # parity §5 "queued notifications at idle": landing together = ONE turn
 MONITOR_START_GRACE_MS = 200  # §5: Claude's Monitor result is committed ≈270 ms after invocation
+# `codex sandbox` takes ≈1 s (measured 1.0-1.8 s) before the wrapped command runs; the grace above is
+# counted from the command's own start (a stderr marker it prints first), bounded by this wait
+MONITOR_READY_WAIT_S = 10.0
+READY_MARK = "\x1eedp8-monitor-ready"
+# `codex sandbox` (0.156.0, Windows) cuts a command argument at its first newline, so the wrapped shell
+# gets a fixed one-line stub and the model's command travels in env (measured: multi-line, quotes, exit code)
+SANDBOX_STUB = 'echo "$EDP8_MON_READY" >&2; eval "$EDP8_MON_CMD"'
 SEND_RETRIES = 40  # edp8.ts sendFollowUp: never lose a notification
 SEND_RETRY_S = 0.05
 RETRY_BACKOFF_S = (2.0, 60.0)  # retries exhausted: re-kick on our own, doubling up to 60 s
@@ -568,6 +575,7 @@ class Mon:
     ws_error: str = ""
     order: threading.RLock = field(default_factory=threading.RLock)  # serialises this watch's deliveries
     io: threading.Lock = field(default_factory=threading.Lock)  # stdout + stderr pumps share one output file
+    ready: threading.Event = field(default_factory=threading.Event)  # the command itself is running
 
 
 @dataclass
@@ -726,13 +734,21 @@ class SeatTools:
         m = self._new_mon(tool_call_id, description, command, False)
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         try:
-            m.proc = subprocess.Popen([*self.sandbox_prefix, monitor_shell(), "-c", command], cwd=self.cwd, env=self.env,
+            script, env = command, self.env
+            if self.sandbox_prefix:
+                script = SANDBOX_STUB
+                env = {**(self.env if self.env is not None else os.environ), "EDP8_MON_CMD": command,
+                       "EDP8_MON_READY": READY_MARK}
+            m.proc = subprocess.Popen([*self.sandbox_prefix, monitor_shell(), "-c", script], cwd=self.cwd, env=env,
                                       stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                       creationflags=flags)
         except OSError as e:  # qa A13: a spawn failure is a failed Monitor, never a dead seat
+            m.ready.set()
             threading.Thread(target=self._end_monitor, args=(m, f"[spawn error: {e}]", "failed",
                              f'Watch "{description}" could not start ({e})'), daemon=True).start()
             return m
+        if not self.sandbox_prefix:
+            m.ready.set()
         threading.Thread(target=self._pump_stderr, args=(m,), daemon=True).start()
         threading.Thread(target=self._pump_stdout, args=(m,), daemon=True).start()
         self._arm_timeout(m, persistent, timeout_ms)
@@ -741,7 +757,12 @@ class SeatTools:
     def _pump_stderr(self, m: Mon) -> None:
         assert m.proc and m.proc.stderr
         for raw in iter(m.proc.stderr.readline, b""):  # whole lines: a secret never splits across writes
-            self._append_output(m, raw.decode("utf-8", "replace"))
+            s = raw.decode("utf-8", "replace")
+            if not m.ready.is_set() and s.rstrip("\r\n") == READY_MARK:
+                m.ready.set()  # the sandboxed command has started: our marker, not its output
+                continue
+            self._append_output(m, s)
+        m.ready.set()  # stderr closed (the source ended or the sandbox refused it): never wait on it
 
     def _pump_stdout(self, m: Mon) -> None:
         assert m.proc and m.proc.stdout
@@ -863,6 +884,7 @@ class SeatTools:
             m = self._start_ws(call_id, ws["url"], ws.get("protocols"), p["description"], persistent, timeout_ms)
         else:
             m = self._start_monitor(call_id, p["command"], p["description"], persistent, timeout_ms)
+            m.ready.wait(MONITOR_READY_WAIT_S)  # the sandbox's start-up is not the command's time
         time.sleep(MONITOR_START_GRACE_MS / 1000)  # events inside Claude's ≈270 ms result window attach to it
         tail = ("Each event reaches you as a notification while you carry on; no polling, no sleeping. A notification "
                 "is a background event and never the user's reply, even one that lands while you wait for them.")

@@ -177,12 +177,14 @@ class AppServer:
         try:
             result = self.on_request(msg["method"], msg.get("params") or {})
         except Exception as e:  # noqa: BLE001
-            self._write({"jsonrpc": "2.0", "id": msg["id"], "error": {"code": -32603, "message": repr(e)}})
-            return
-        if result is None:
-            self._write({"jsonrpc": "2.0", "id": msg["id"], "error": {"code": -32601, "message": f"unsupported {msg['method']}"}})
+            reply = {"jsonrpc": "2.0", "id": msg["id"], "error": {"code": -32603, "message": repr(e)}}
         else:
-            self._write({"jsonrpc": "2.0", "id": msg["id"], "result": result})
+            reply = ({"jsonrpc": "2.0", "id": msg["id"], "error": {"code": -32601, "message": f"unsupported {msg['method']}"}}
+                     if result is None else {"jsonrpc": "2.0", "id": msg["id"], "result": result})
+        try:
+            self._write(reply)
+        except (OSError, ValueError) as e:  # the app-server closed while a seat tool ran: nobody to answer
+            self._mirror("err", {"reply_dropped": msg["id"], "error": repr(e)})
 
     # ------------------------------------------------------------------ calls
     def request_async(self, method: str, params: dict) -> Future:
