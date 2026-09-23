@@ -129,3 +129,28 @@ describe("subscribeFeed ready cursor (S19 qa)", () => {
     expect(events[0].seq).toBe(42);
   });
 });
+
+// S22 c-0615088222: the board's feed queues are bounded; on overflow it drops the oldest events and
+// ends the stream with `: resync <cursor>`. The client reconnects at once (no backoff, not a
+// failure) from that cursor, so the replay by seq delivers exactly what was dropped.
+describe("subscribeFeed resync (S22)", () => {
+  it("a resync frame reconnects immediately from its cursor and ignores the rest of that stream", async () => {
+    const sinces: string[] = [];
+    server.use(
+      http.get("/v1/feed", ({ request }) => {
+        sinces.push(new URL(request.url).searchParams.get("since") ?? "");
+        if (sinces.length === 1)
+          return sseResponse([": ready 9\n\n", 'data: {"seq":10,"kind":"message_sent"}\n\n', ": resync 10\n\n", 'data: {"seq":99,"kind":"message_sent"}\n\n']);
+        return sseResponse(['data: {"seq":11,"kind":"message_sent"}\n\n', ": ready 11\n\n"]);
+      }),
+    );
+    const events: FeedEvent[] = [];
+    const errors: unknown[] = [];
+    const stop = subscribeFeed((e) => events.push(e), { backoffMs: 60_000, watch: true, onError: (e) => errors.push(e) });
+    await until(() => events.length >= 2, 3000);
+    stop();
+    expect(sinces.slice(0, 2)).toEqual(["-1", "10"]);
+    expect(events.map((e) => e.seq)).toEqual([10, 11]);
+    expect(errors).toEqual([]);
+  });
+});

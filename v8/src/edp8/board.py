@@ -17,7 +17,7 @@ import asyncio
 import logging
 import re
 import threading
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from datetime import datetime
 from typing import Any
 
@@ -94,6 +94,11 @@ _TERMINAL = (TicketStatus.done, TicketStatus.partial, TicketStatus.dropped)
 STORY_CAP = 8    # stories per epic (not counting done/dropped); the owner raises it via a scope gate
 TASK_CAP = 5     # tasks per story (not counting done/dropped)
 CRITERIA_CAP = 6  # criteria written fresh on a story (a folded story carries what it inherits)
+# S22 c-0615088222: every feed queue (wake and view) is bounded. Drop policy: when a queue is full the
+# OLDEST queued event is dropped and the queue is marked `resync`; the SSE stream then sends
+# `: resync <cursor>` and ends, and the client reconnects from its last seq — the replay by seq
+# refills exactly what was dropped. A stalled reader costs at most this many events of memory.
+FEED_QUEUE_MAX = 1000
 
 
 def _dedup(reasons: list[Reason]) -> list[Reason]:
@@ -2460,7 +2465,8 @@ class Board:
         """A wake subscription (default: only events that page this participant) or, with
         `watch`, a view subscription that receives every event (S19: a page renders the whole
         thread, not just the viewer's pages)."""
-        q: asyncio.Queue = asyncio.Queue()
+        q: asyncio.Queue = asyncio.Queue(maxsize=FEED_QUEUE_MAX)
+        q.resync = False  # type: ignore[attr-defined]  # set when _offer dropped an event
         with self._lock:
             (self._watch if watch else self._subs).setdefault(participant_id, []).append(q)
         return q
@@ -2472,14 +2478,35 @@ class Board:
                 if q in lst:
                     lst.remove(q)
 
+    @staticmethod
+    def _offer(q: asyncio.Queue, ev: Event) -> bool:
+        """put_nowait under the bounded-queue drop policy (FEED_QUEUE_MAX): a full queue drops its
+        oldest event and is marked for resync. Returns False when something was dropped."""
+        try:
+            q.put_nowait(ev)
+            return True
+        except asyncio.QueueFull:
+            pass
+        try:
+            q.get_nowait()
+        except asyncio.QueueEmpty:
+            pass
+        q.resync = True  # type: ignore[attr-defined]
+        try:
+            q.put_nowait(ev)
+        except asyncio.QueueFull:
+            pass  # a racing producer refilled it: the resync replay covers this event too
+        return False
+
     def _fanout(self, ev: Event) -> None:
         with self._lock:
             targets = list(self._subs.items())
             watchers = [q for queues in self._watch.values() for q in queues]
         for q in watchers:
             try:
-                q.put_nowait(ev)
-            except Exception as e:  # a full/closed view queue: the page replays by seq on reconnect
+                if not self._offer(q, ev):
+                    _log.warning("view feed queue full: dropped the oldest event, stream will resync")
+            except Exception as e:  # a closed view queue: the page replays by seq on reconnect
                 _log.warning("view feed queue dropped %s: %s", ev.id, e)
         for pid, queues in targets:
             p = self.store.get("participant", pid)
@@ -2487,24 +2514,53 @@ class Board:
                 continue
             for q in queues:
                 try:
-                    q.put_nowait(ev)
-                except Exception as e:  # a full/closed feed queue: the subscriber will replay by seq
+                    if not self._offer(q, ev):
+                        _log.warning("feed queue for %s full: dropped the oldest event, stream will resync", pid)
+                except Exception as e:  # a closed feed queue: the subscriber will replay by seq
                     _log.warning("feed queue for %s dropped %s: %s", pid, ev.id, e)
 
-    def replay(self, p: Participant, since_seq: int, watch: bool = False) -> list[tuple[int, Event]]:
-        """All relevant events after since_seq (every event with `watch`) — paged through in
-        full: a monitor that reconnects far behind must never silently skip the gap
-        (events_since caps one page)."""
-        out: list[tuple[int, Event]] = []
-        cur = since_seq
+    def iter_replay(self, p: Participant, since_seq: int, watch: bool = False,
+                    limit: int | None = None) -> Iterator[tuple[int, Event]]:
+        """Relevant events after since_seq (every event with `watch`), streamed one store page at a
+        time and stopped at `limit` (S22 c-0615088222: /v1/events used to materialise the whole
+        history, then slice). A monitor far behind still gets the whole gap — lazily."""
+        cur, n = since_seq, 0
+        if limit is not None and limit <= 0:
+            return
         while True:
             batch = self.store.events_since(cur, limit=500)
             if not batch:
-                return out
+                return
+            for s, e in batch:
+                cur = s
+                if watch or self.relevant(e, p):
+                    yield s, e
+                    n += 1
+                    if limit is not None and n >= limit:
+                        return
+
+    def replay(self, p: Participant, since_seq: int, watch: bool = False) -> list[tuple[int, Event]]:
+        """All relevant events after since_seq, as a list (small histories and tests; the feed and
+        /v1/events stream iter_replay)."""
+        return list(self.iter_replay(p, since_seq, watch=watch))
+
+    def replay_tail(self, p: Participant, n: int, watch: bool = False) -> list[tuple[int, Event]]:
+        """The last `n` relevant events, oldest first — read backwards a page at a time, so an
+        activity view never loads the whole history to keep its tail."""
+        out: list[tuple[int, Event]] = []
+        cur: int | None = None
+        while len(out) < n:
+            batch = self.store.events_before(cur, limit=500)
+            if not batch:
+                break
             for s, e in batch:
                 cur = s
                 if watch or self.relevant(e, p):
                     out.append((s, e))
+                    if len(out) >= n:
+                        break
+        out.reverse()
+        return out
 
     def find(self, query: str, *, k: int = 10, types: Iterable[str] | None = None,
              epic_id: str | None = None) -> list[dict[str, Any]]:

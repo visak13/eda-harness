@@ -1018,7 +1018,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
                a: Participant = Depends(actor)):
         if subject_id:
             return ok(_dump(board.store.query("event", {"subject_id": subject_id}, limit=limit)))
-        return ok([{"seq": s, **_dump(e)} for s, e in board.replay(a, since, watch=watch)][:limit])
+        return ok([{"seq": s, **_dump(e)} for s, e in board.iter_replay(a, since, watch=watch, limit=limit)])
 
     @app.get("/v1/find")
     def find(q: str, k: int = 10, types: str | None = None, epic_id: str | None = None,
@@ -1184,7 +1184,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
             try:
                 start = since if since >= 0 else board.store.max_seq()
                 cursor = start
-                for s, e in board.replay(a, start, watch=watch):
+                for s, e in board.iter_replay(a, start, watch=watch):
                     cursor = max(cursor, s)
                     yield frame(s, e)
                 # S19 qa (adversary #1): the ready frame carries the cursor so a client that never
@@ -1194,9 +1194,17 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
                 while True:
                     try:
                         e = await asyncio.wait_for(q.get(), timeout=15)
-                        yield frame(board.store.seq_of("event", e.id), e)
                     except asyncio.TimeoutError:
                         yield b": ping\n\n"
+                        continue
+                    if q.resync:
+                        # S22 c-0615088222: the bounded queue dropped its oldest event(s) — tell the
+                        # client and end; it reconnects from `cursor` and the replay refills the gap.
+                        yield f": resync {cursor}\n\n".encode()
+                        return
+                    s = board.store.seq_of("event", e.id)
+                    cursor = max(cursor, s or cursor)
+                    yield frame(s, e)
             finally:
                 board.unsubscribe(a.id, q)
 

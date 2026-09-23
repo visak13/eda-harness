@@ -750,7 +750,7 @@ def feed_line(e: Any) -> str:
 def activity_for(board: Board, viewer: Participant, limit: int = 120) -> list[dict[str, Any]]:
     """Everything relevant to the viewer, newest first, grouped by day (design §4.1) — the
     data behind /ui/activity and /v1/activity."""
-    feed = board.replay(viewer, 0)[-limit:]
+    feed = board.replay_tail(viewer, limit)
     by_day: dict[str, list[dict[str, Any]]] = {}
     for _s, e in reversed(feed):
         by_day.setdefault(e.created_at.strftime("%A %d %b"), []).append(

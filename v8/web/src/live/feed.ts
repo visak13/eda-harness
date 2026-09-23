@@ -34,6 +34,7 @@ export function subscribeFeed(onEvent: (e: FeedEvent) => void, opts: FeedOptions
   const readTimeout = opts.readTimeoutMs ?? 45_000;
   const view = opts.watch ? "&watch=true" : "";
   let failures = 0; // consecutive stream failures; two in a row → poll /v1/events (finding #14)
+  let resync = false; // the server ended the stream with `: resync` — reconnect at once
 
   // Round 2 #9: a 200 whose body never yields (a buffering proxy) or that closes at once (EOF
   // before any frame) used to reset `failures` at the headers and never reach the poll fallback.
@@ -120,8 +121,16 @@ export function subscribeFeed(onEvent: (e: FeedEvent) => void, opts: FeedOptions
               // comment frame (: ready <cursor> / : ping). The ready cursor is where the server's
               // replay ended: adopt it so a reconnect before any data frame resumes from there
               // instead of from -1 (= "now"), which skipped events posted during the gap.
-              const ready = /^:\s*ready\s+(\d+)/.exec(frame);
-              if (ready) since = Math.max(since, Number(ready[1]));
+              const mark = /^:\s*(ready|resync)\s+(\d+)/.exec(frame);
+              if (mark) since = Math.max(since, Number(mark[2]));
+              // S22 c-0615088222: `: resync <cursor>` — the board's bounded queue for this stream
+              // overflowed and dropped its oldest events. Reconnect now from the cursor; the
+              // server's replay by seq delivers exactly the dropped events.
+              if (mark?.[1] === "resync") {
+                resync = true;
+                ctrl.abort();
+                break;
+              }
               continue;
             }
             try {
@@ -135,6 +144,7 @@ export function subscribeFeed(onEvent: (e: FeedEvent) => void, opts: FeedOptions
               opts.onError?.(e);
             }
           }
+          if (resync) break;
         }
       } catch (e) {
         if (stopped) break;
@@ -142,6 +152,10 @@ export function subscribeFeed(onEvent: (e: FeedEvent) => void, opts: FeedOptions
         opts.onError?.(e);
       }
       if (stopped) break;
+      if (resync) {
+        resync = false;
+        continue; // not a failure: reconnect from the resync cursor without backoff
+      }
       if (failures >= 2) {
         await pollFor(30_000);
         continue; // then try the stream again

@@ -19,6 +19,7 @@ import argparse
 import copy
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -117,6 +118,12 @@ def _stream_board_once(board: str, participant: str, since: int) -> int:
         with client.stream("GET", f"{board}/v1/feed", params={"since": last}, headers=headers) as resp:
             resp.raise_for_status()
             for line in resp.iter_lines():
+                # `: ready N` ends the server's catch-up replay; `: resync N` (S22: a bounded feed
+                # queue overflowed) ends the stream. Either cursor is where a reconnect resumes.
+                mark = re.match(r":\s*(?:ready|resync)\s+(\d+)", line or "")
+                if mark:
+                    last = max(last, int(mark.group(1)))
+                    continue
                 if not line or not line.startswith("data: "):
                     continue
                 payload = line[len("data: "):]

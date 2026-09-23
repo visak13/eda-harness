@@ -360,6 +360,15 @@ class Store:
             ).fetchall()
         return [(r["seq"], Event.model_validate_json(r["body"])) for r in rows]
 
+    def events_before(self, seq: int | None, limit: int = 200) -> list[tuple[int, Event]]:
+        """Events before seq (None = the newest), newest first — the tail reader's page."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT seq, body FROM event WHERE (? IS NULL OR seq<?) ORDER BY seq DESC LIMIT ?",
+                (seq, seq, limit),
+            ).fetchall()
+        return [(r["seq"], Event.model_validate_json(r["body"])) for r in rows]
+
     def all_text_units(self) -> list[tuple[str, str, str]]:
         """(type, id, text) for search indexing: docs (title+body), tickets (title), messages (text)."""
         out: list[tuple[str, str, str]] = []

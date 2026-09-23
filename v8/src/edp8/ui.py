@@ -418,7 +418,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
     @r.get(prefix + "/activity",response_class=HTMLResponse)
     def activity_page(as_: str=Query(default="owner",alias="as"),token: str|None=Query(default=None)):
         p=_me(as_,token)
-        feed=board.replay(p,0)[-120:]
+        feed=board.replay_tail(p,120)
         by_day: dict[str,list]= {}
         for _s,e in reversed(feed):
             by_day.setdefault(e.created_at.strftime("%A %d %b"),[]).append(e)
