@@ -597,3 +597,13 @@ def test_force_stops_a_service_from_another_checkout_whatif(tmp_path, fakes):
     assert r.returncode == 0 and "-Force: stopping board, which runs from another checkout" in r.stdout, r.stdout + r.stderr
     assert re.search(r"WHATIF: stop board: Stop-Process -Id [\d,]*%d" % fakes[0].pid, r.stdout), r.stdout
     assert fakes[0].poll() is None
+
+
+def test_start_ps1_status_report_is_never_fatal():
+    """Fresh-clone run (S21): `edp.ps1 start board` brought the board up, then start.ps1 exited 1
+    because `edp8.cli status` wrote "down: bridge" to stderr under "Stop" with redirected streams."""
+    src = (ROOT / "v8" / "start.ps1").read_text(encoding="utf-8-sig")
+    body = src[src.index('Write-Host "fleet state (edp8 status):"'):]
+    call = body.index("& $py -m edp8.cli status")
+    assert body.rindex('$ErrorActionPreference = "Continue"', 0, call) >= 0
+    assert body.index('$ErrorActionPreference = "Stop"', call) > call

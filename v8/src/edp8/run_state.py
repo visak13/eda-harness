@@ -19,12 +19,21 @@ from pathlib import Path
 from typing import Any
 
 # The five shared services the launcher owns (design §22 rule 1). `port` is the listener the
-# supervisor probes; the bridge has no port (matched by command line) so its port is None.
+# supervisor probes; the bridge has no port (matched by command line) so its port is None. Ports
+# come from the same variables the launcher reads from .env, so a second checkout on spare ports
+# never reports (or probes) the fleet's services on the default ports as its own.
+def _env_port(var: str, default: int) -> int:
+    try:
+        return int(os.environ.get(var) or default)
+    except ValueError:
+        return default
+
+
 SERVICES: dict[str, dict[str, Any]] = {
-    "board": {"port": 9400, "health": "/v1/health"},
-    "broker": {"port": 9300, "health": "/v1/health"},
-    "pool": {"port": 9301, "health": "/v1/limits"},
-    "mcp": {"port": 9402, "health": "/healthz"},
+    "board": {"port": _env_port("EDP8_PORT", 9400), "health": "/v1/health"},
+    "broker": {"port": _env_port("EDP_BROKER_PORT", 9300), "health": "/v1/health"},
+    "pool": {"port": _env_port("EDP_POOL_PORT", 9301), "health": "/v1/limits"},
+    "mcp": {"port": _env_port("EDP8_MCP_PORT", 9402), "health": "/healthz"},
     "bridge": {"port": None, "health": None},
 }
 

@@ -30,7 +30,8 @@ def status(_argv: list[str]) -> int:
             print("  ".join("-" * widths[i] for i in range(len(_COLS))))
     down = [r["service"] for r in rows if r.get("state") == "down"]
     if down:
-        print(f"\ndown: {', '.join(down)} — the launcher's supervisor restarts these; "
+        print()  # the gap goes to stdout: an empty stderr line reads as a bare RemoteException in PowerShell 5.1
+        print(f"down: {', '.join(down)} — the launcher's supervisor restarts these; "
               f"`start.* --restart <service>` to force one. Seats never start shared services (design §22).",
               file=sys.stderr)
     return 0

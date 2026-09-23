@@ -130,3 +130,24 @@ def test_snapshot_listening_port_is_up_without_pid_file(monkeypatch, tmp_path):
         srv.close()
     rows = {r["service"]: r for r in run_state.snapshot()}  # listener gone, no pid file → down
     assert rows["tsvc"]["state"] == "down"
+
+
+def test_service_ports_follow_the_launcher_env(tmp_path):
+    """A second checkout on spare ports (fresh-clone run, S21): with no run-state file, status probed
+    the DEFAULT ports and reported the fleet's broker/pool/mcp as the clone's own. The ports now come
+    from the same variables the launcher reads from .env; the status footer's gap goes to stdout."""
+    import subprocess
+    import sys
+
+    env = {k: v for k, v in os.environ.items() if not k.startswith("EDP")}
+    env.update(EDP8_PORT="59518", EDP_BROKER_PORT="59318", EDP_POOL_PORT="59319", EDP8_MCP_PORT="59418",
+               EDP8_RUN_DIR=str(tmp_path / "run"))
+    probe = "from edp8 import run_state as r; print([r.SERVICES[s]['port'] for s in ('board','broker','pool','mcp','bridge')])"
+    out = subprocess.run([sys.executable, "-c", probe], env=env, capture_output=True, text=True, timeout=60)
+    assert out.stdout.strip() == "[59518, 59318, 59319, 59418, None]", out.stdout + out.stderr
+    st = subprocess.run([sys.executable, "-m", "edp8.cli", "status"], env=env, capture_output=True, text=True, timeout=60)
+    assert st.returncode == 0 and all(p in st.stdout for p in ("59518", "59318", "59319", "59418")), st.stdout
+    assert st.stderr.startswith("down: ") and "\n\n" not in st.stderr, st.stderr
+    default = {k: v for k, v in env.items() if k not in ("EDP8_PORT", "EDP_BROKER_PORT", "EDP_POOL_PORT", "EDP8_MCP_PORT")}
+    out = subprocess.run([sys.executable, "-c", probe], env=default, capture_output=True, text=True, timeout=60)
+    assert out.stdout.strip() == "[9400, 9300, 9301, 9402, None]", out.stdout + out.stderr

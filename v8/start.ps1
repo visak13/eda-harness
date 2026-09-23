@@ -224,5 +224,10 @@ if ($Only) {
 Write-Host ""
 Write-Host "fleet state (edp8 status):"
 $env:PYTHONPATH = Join-Path $v8 "src"; $env:EDP8_RUN_DIR = $RUN
-& $py -m edp8.cli status
+# the status report names down services on stderr; under "Stop" in Windows PowerShell 5.1 that line is
+# a terminating error whenever our streams are redirected (edp.ps1's wrapper), so a fresh clone with no
+# bridge failed `start board` after the board was up. The report is informational: never fatal.
+$ErrorActionPreference = "Continue"
+& $py -m edp8.cli status 2>&1 | ForEach-Object { "$_" }
+$ErrorActionPreference = "Stop"
 if ($PUBLIC) { Write-Host "`npublic reach: $PUBLIC  (board bound $BIND; TLS at your reverse proxy — see README)" }
