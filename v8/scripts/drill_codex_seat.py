@@ -72,6 +72,57 @@ def wait_healthy(url: str, timeout: float = 90.0) -> bool:
     return False
 
 
+class PtySeat:
+    """The seat runner under ConPTY (--tui): monitor mode, i.e. the native codex TUI owns the pseudo console
+    exactly as it owns the seat's window under the pool; its screen text goes to <out>/<name>.tui.log so the
+    drill can prove what the owner would SEE. Popen-shaped (pid/poll/kill/wait) for the drill's bookkeeping.
+    Needs pywinpty: run this drill with edp-pool's venv python (the pool spawns Claude seats under it)."""
+
+    def __init__(self, argv: list[str], env: dict[str, str], cwd: Path, screen: Path):
+        import threading
+
+        from winpty import PtyProcess
+        self.p = PtyProcess.spawn(subprocess.list2cmdline(argv), cwd=str(cwd), env=env, dimensions=(50, 200))
+        self.pid = self.p.pid
+        self.screen = screen
+        self._f = open(screen, "a", encoding="utf-8", errors="replace")
+        threading.Thread(target=self._pump, daemon=True).start()
+
+    def _pump(self) -> None:
+        while True:
+            try:
+                data = self.p.read(8192)
+            except Exception:  # noqa: BLE001 — EOF / closed pty
+                return
+            if data:
+                self._f.write(data)
+                self._f.flush()
+
+    def write(self, text: str) -> None:
+        self.p.write(text)
+
+    def poll(self):
+        return None if self.p.isalive() else (self.p.exitstatus if self.p.exitstatus is not None else 0)
+
+    def kill(self) -> None:  # the runner pid only (TerminateProcess, no /T): the crash mode
+        subprocess.run(["taskkill", "/PID", str(self.pid), "/F"], capture_output=True)
+
+    def wait(self, timeout: float | None = None):
+        end = None if timeout is None else time.time() + timeout
+        while self.poll() is None:
+            if end is not None and time.time() > end:
+                raise subprocess.TimeoutExpired(str(self.pid), timeout)
+            time.sleep(0.2)
+        return self.poll()
+
+
+def screen_text(path: Path) -> str:
+    """A ConPTY capture with the terminal control sequences stripped (what a person reads on screen)."""
+    import re
+    raw = path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
+    return re.sub(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|\x1b[()][0-9A-Za-z]|\x1b[=>]", "", raw)
+
+
 def kill_tree(p: subprocess.Popen | None) -> None:
     """Our own child by PID only (never by image — the fleet board shares the exe name)."""
     if p and p.poll() is None:
@@ -83,8 +134,9 @@ def kill_tree(p: subprocess.Popen | None) -> None:
 
 
 class Drill:
-    def __init__(self, out: Path, effort: str, model: str | None):
+    def __init__(self, out: Path, effort: str, model: str | None, tui: bool = False):
         self.out = out
+        self.tui = tui  # monitor mode: the native codex TUI under ConPTY, its screen captured
         self.effort = effort
         self.model = model
         self.log: dict = {"story": "s-10a2b1f9ec", "started": now(), "steps": [], "result": {}}
@@ -185,14 +237,23 @@ class Drill:
             "EDP_ROLE": ROLE, "EDP_HANDLE": self.handle, "EDP_SPAWN_SESSION_ID": f"drill-{secrets.token_hex(4)}",
             "EDP8_TOKEN": self.seat_tok, "EDP8_MCP_URL": self.mcp, "EDP8_BOARD_URL": self.board,
             "EDP_AGENT_HOME": str(V8), "EDP_LOG_DIR": str(self.logs), "EDP_CODEX_EFFORT": self.effort,
-            "EDP_CODEX_CONSOLE": "0", "EDP_CODEX_RESUME": "1" if resume else "0", "PYTHONIOENCODING": "utf-8"})
+            "EDP_CODEX_CONSOLE": "1" if self.tui else "0", "EDP_CODEX_RESUME": "1" if resume else "0",
+            "PYTHONIOENCODING": "utf-8"})
         if self.model:
             env["EDP_CODEX_MODEL"] = self.model
         return env
 
     def start_seat(self, resume: bool) -> None:
-        self.spawn("seat" + ("-resume" if resume else ""), [str(VENV / "python.exe"), "-m", "edp8.codex_seat.run"],
-                   self.seat_env(resume))
+        name = "seat" + ("-resume" if resume else "")
+        argv = [str(VENV / "python.exe"), "-m", "edp8.codex_seat.run"]
+        if not self.tui:
+            self.spawn(name, argv, self.seat_env(resume))
+            return
+        self.argvs.append(argv)
+        self.procs[name] = PtySeat(argv, self.seat_env(resume), V8, self.out / f"{name}.tui.log")
+
+    def screen(self, name: str = "seat") -> str:
+        return screen_text(self.out / f"{name}.tui.log")
 
     def mirror(self) -> list[dict]:
         p = self.logs / f"codex-seat.{self.handle}.jsonl"
@@ -239,7 +300,9 @@ class Drill:
         try:
             if not self.up():
                 return 2
-            ok = self.boot() and self.wake_a() and self.wake_b() and self.resume()
+            ok = self.boot() and self.wake_a() and self.wake_b() and (not self.tui or self.typed()) and self.resume()
+            if self.tui:
+                ok = self.tui_screen() and ok
             self.log["result"]["token_never_on_argv"] = not any(self.seat_tok in a for argv in self.argvs for a in argv)
             ok = ok and self.log["result"]["token_never_on_argv"]
             self.log["result"]["all_passed"] = ok
@@ -317,6 +380,49 @@ class Drill:
                                         "posted_before_fire": early, "wait_s": round(time.time() - t, 1)}
         self.step("wake_b_done", passed=passed, marker=(got or [{}])[0].get("id"),
                   cron_fire_turn=bool(fired), fire_on_time=on_time, fire_turn_accepted=accepted, posted_before_fire=early)
+        return passed
+
+    def typed(self) -> bool:
+        """(--tui) the owner types into the native TUI: it becomes a user turn the model answers, and the
+        runner sees that turn (its busy tracking follows turns it did not start)."""
+        time.sleep(10)
+        t = time.time()
+        seat = self.procs["seat"]
+        if "Update now" in self.screen("seat"):
+            # never type into codex's update modal: Enter there runs `npm install -g @openai/codex` on the
+            # shared host (drill tui1, 2026-09-23 14:19Z, before tui_argv disabled the startup update check)
+            self.log["result"]["typed"] = {"passed": False, "refused": "update modal on screen"}
+            self.step("typed_done", passed=False, refused="update modal on screen")
+            return False
+        seat.write("Reply in this terminal with exactly: TYPED-OK-5")
+        time.sleep(0.5)
+        seat.write("\r")
+        self.step("typed_sent", text="TYPED-OK-5")
+
+        def answered():
+            return [r for r in self.mirror() if r.get("ts", 0) >= t and r.get("dir") == "in"
+                    and (r.get("msg") or {}).get("method") == "item/completed"
+                    and ((r["msg"].get("params") or {}).get("item") or {}).get("type") == "agentMessage"
+                    and "TYPED-OK-5" in str(((r["msg"].get("params") or {}).get("item") or {}).get("text"))]
+        got = self.wait_for(answered, 180, poll=1.0)
+        started = [r for r in self.mirror() if r.get("ts", 0) >= t and (r.get("msg") or {}).get("method") == "turn/started"]
+        passed = bool(got) and bool(started)
+        self.log["result"]["typed"] = {"passed": passed, "runner_saw_turn_started": bool(started),
+                                       "latency_s": round(time.time() - t, 1)}
+        self.step("typed_done", passed=passed, runner_saw_turn_started=bool(started))
+        return passed
+
+    def tui_screen(self) -> bool:
+        """(--tui) what the owner SEES: the native TUI rendered the runner-delivered wakes and the typed turn."""
+        first, again = self.screen("seat"), self.screen("seat-resume")
+        marks = {"wake_a_envelope": "task-notification" in first, "wake_a_answer": "PAPAYA-7" in first,
+                 "cron_fire_turn": "CRON DRILL" in first, "typed_turn": "TYPED-OK-5" in first,
+                 "native_tui": "OpenAI Codex" in first, "resumed_tui": "OpenAI Codex" in again,
+                 "resume_prompt": "You were resumed" in again,
+                 "no_update_modal": "Update now" not in first and "Update now" not in again}
+        passed = all(marks.values())
+        self.log["result"]["tui_screen"] = {"passed": passed, **marks}
+        self.step("tui_screen", passed=passed, **marks)
         return passed
 
     def resume(self) -> bool:
@@ -439,11 +545,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", default=str(V8 / ".logs" / "codex-drill"))
     ap.add_argument("--effort", default="low")
     ap.add_argument("--model", default=None)
+    ap.add_argument("--tui", action="store_true", help="monitor mode: the native codex TUI under ConPTY (edp-pool venv python)")
     a = ap.parse_args(argv)
     out = Path(a.out).resolve()
     if out.exists() and any(out.iterdir()):
         out = out.with_name(out.name + "-" + dt.datetime.now().strftime("%Y%m%dT%H%M%S"))
-    return Drill(out, a.effort, a.model).run()
+    return Drill(out, a.effort, a.model, tui=a.tui).run()
 
 
 if __name__ == "__main__":

@@ -8,8 +8,9 @@ EDP_LOG_DIR) plus:
   EDP_CODEX_SANDBOX   optional override of the per-role sandbox (seat.ROLE_SANDBOX)
   EDP_ACTIVATION      explicit first prompt (park/resume path); default = the role card
   EDP_CODEX_RESUME    "1" → thread/resume the thread recorded in <log_dir>/codex-sessions/<handle>.json
-  EDP_CODEX_CONSOLE   "1" → a visible seat: the conversation is echoed to this console and every line
-                      typed into it becomes a user turn (pool mode "monitor", owner steer m-0259072d19)
+  EDP_CODEX_CONSOLE   "1" → a visible seat (pool mode "monitor"): the NATIVE codex TUI joins this seat's
+                      thread and owns the console, exactly as `claude` does for a Claude seat (owner
+                      rulings m-0259072d19, m-0e7b8fdd7f); the runner keeps the wake plane behind it
 Boot = the role card as the first user turn; whoami → subscribe → Monitor → CronCreate → context are
 the card's own steps, run by the model. The agent home's CLAUDE.md (a Claude seat's standing context)
 is the thread's developer instructions when no AGENTS.md exists, so both harnesses read the same rules.
@@ -19,8 +20,8 @@ from __future__ import annotations
 
 import os
 import signal
+import subprocess
 import sys
-import threading
 import time
 from pathlib import Path
 
@@ -44,34 +45,6 @@ def standing_context(agent_home: Path) -> str | None:
 def resume_prompt(handle: str) -> str:
     return (f"You were resumed: this seat ({handle}) restarted and its Monitor watches and cron jobs are gone "
             "(they are session-only). Call resume_self() first and follow its steps.")
-
-
-class Console:
-    """Echo of the conversation for a visible seat + typed lines as user turns."""
-
-    def __init__(self, seat: CodexSeat):
-        self.seat = seat
-
-    def on_event(self, method: str, p: dict) -> None:
-        item = p.get("item") or {}
-        t = item.get("type")
-        stamp = time.strftime("%H:%M:%S")
-        if method == "item/completed" and t == "agentMessage":
-            print(f"\n{stamp} astra> {item.get('text', '')}", flush=True)
-        elif method == "item/completed" and t == "userMessage":
-            text = " ".join(c.get("text", "") for c in item.get("content") or [])
-            print(f"\n{stamp} input> {text[:400]}{'…' if len(text) > 400 else ''}", flush=True)
-        elif method == "item/started" and t in ("commandExecution", "mcpToolCall", "dynamicToolCall", "fileChange"):
-            what = item.get("command") or f"{item.get('server', '')}/{item.get('tool', '')}".strip("/")
-            print(f"{stamp}   · {t}: {str(what)[:160]}", flush=True)
-        elif method == "turn/completed" and (p.get("turn") or {}).get("error"):
-            print(f"{stamp} turn error: {p['turn']['error'].get('message')}", flush=True)
-
-    def read_stdin(self) -> None:
-        for line in sys.stdin:
-            line = line.rstrip("\r\n")
-            if line.strip():
-                self.seat.enqueue_turn(line)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -99,14 +72,13 @@ def main(argv: list[str] | None = None) -> int:
               "could not bind the kill-on-close job object", flush=True)
         return 2
 
-    console: Console | None = None
-    seat = CodexSeat(cwd=agent_home, role=role, handle=handle, log_dir=log_dir,
+    # monitor mode: the app-server listens on an authenticated loopback websocket (the runner and the TUI
+    # are its two clients); its own console output stays off the seat's console
+    seat = CodexSeat(cwd=agent_home, role=role, handle=handle, log_dir=log_dir, ws=console_mode,
                      developer_instructions=standing_context(agent_home),
-                     on_event=lambda m, p: console.on_event(m, p) if console else None)
-    if console_mode:
-        console = Console(seat)
-        if os.name == "nt":
-            os.system(f"title {handle} (codex seat)")
+                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if console_mode else 0)
+    if console_mode and os.name == "nt":
+        os.system(f"title {handle} (codex seat)")
     try:
         seat.start(resume=resume)  # fail-closed: uncontained MCP set or invalid resume state raise here
     except Exception as e:  # noqa: BLE001
@@ -122,16 +94,44 @@ def main(argv: list[str] | None = None) -> int:
         sys.exit(0)
 
     signal.signal(signal.SIGTERM, _stop)
-    signal.signal(signal.SIGINT, _stop)
+    # monitor mode: Ctrl-C belongs to the TUI (it interrupts the model's turn there), never to the runner
+    signal.signal(signal.SIGINT, signal.SIG_IGN if console_mode else _stop)
 
     activation = env.get("EDP_ACTIVATION") or (resume_prompt(handle) if resume else role_card(agent_home, role))
     seat.enqueue_turn(activation)
-    if console:
-        threading.Thread(target=console.read_stdin, name="console-input", daemon=True).start()
+    if console_mode:
+        return run_tui(seat, handle)
     seat.wait()
     code = seat.server.exit_code if seat.server else 1
     print(f"{time.strftime('%H:%M:%S')} app-server exited {code}", flush=True)
     seat.tools.shutdown()
+    return code or 0
+
+
+def run_tui(seat: CodexSeat, handle: str, materialize_s: float = 120.0) -> int:
+    """Monitor mode (owner ruling m-0e7b8fdd7f): the native codex TUI, joined to the seat's thread, owns
+    this console; the runner prints nothing after its boot banner. `codex resume <thread>` needs the
+    thread's rollout, which exists once the first input has landed, so the TUI starts after that witness.
+    The seat lives as long as the TUI: quitting it (or closing the window) ends the seat, and the job
+    object takes the app-server and every Monitor child with it."""
+    end = time.time() + materialize_s
+    while time.time() < end and seat.alive() and not seat.delivery.seen_any():
+        time.sleep(0.2)
+    if not seat.alive():
+        print(f"{time.strftime('%H:%M:%S')} app-server exited {seat.server.exit_code if seat.server else '?'} "
+              "before the TUI could join", flush=True)
+        seat.tools.shutdown()
+        return 1
+    tui = subprocess.Popen(seat.tui_argv(), cwd=seat.cwd, env=seat.tui_env())
+    code: int | None = None
+    while code is None:
+        code = tui.poll()
+        if code is None and not seat.alive():  # the thread is gone: nothing left for the TUI to show
+            tui.terminate()
+            code = tui.wait()
+        time.sleep(0.2)
+    seat.stop()
+    print(f"{time.strftime('%H:%M:%S')} codex seat {handle}: TUI exited {code}", flush=True)
     return code or 0
 
 

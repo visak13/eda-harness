@@ -122,7 +122,9 @@ class CodexSeat:
                  env: dict[str, str] | None = None, model: str | None = None, effort: str | None = None,
                  codex_bin: str | None = None, board: bool = True, ephemeral: bool = False,
                  developer_instructions: str | None = None, discover: Callable | None = None,
-                 on_event: Callable[[str, dict], None] | None = None, creationflags: int = 0):
+                 on_event: Callable[[str, dict], None] | None = None, creationflags: int = 0,
+                 ws: bool = False):
+        self.ws = ws  # monitor mode: the app-server listens on a loopback websocket the native TUI joins
         self.cwd = str(Path(cwd).resolve())
         self.role = role
         self.handle = handle
@@ -176,7 +178,7 @@ class CodexSeat:
         self.log_dir.mkdir(parents=True, exist_ok=True)
         self.server = AppServer(self.argv(), cwd=self.cwd, env=self.env, log_path=self.log_path,
                                 on_notification=self._on_notification, on_request=self._on_request,
-                                creationflags=self.creationflags)
+                                creationflags=self.creationflags, ws=self.ws)
         self.server.start()
         self.server.request("initialize", {"clientInfo": {"name": "edp8-codex-seat", "title": "edp8 codex seat", "version": "1"},
                                            "capabilities": {"experimentalApi": True, "requestAttestation": False}})
@@ -332,6 +334,21 @@ class CodexSeat:
                                 timeout=60)
         except Exception as e:  # noqa: BLE001
             self._log(f"record_status(blocked) failed: {e}")
+
+    # ------------------------------------------------------------------ native TUI (monitor mode)
+    def tui_argv(self) -> list[str]:
+        """The native codex TUI joined to THIS seat's thread on its app-server (owner ruling m-0e7b8fdd7f):
+        what the owner sees and types into. The ws token reaches it by env NAME, never argv."""
+        from .rpc import WS_TOKEN_ENV
+        assert self.server and self.server.ws_url and self.thread_id
+        # check_for_update_on_startup=false: measured 2026-09-23, a newer codex release (0.156.1) makes the
+        # TUI open on a modal "Update now / Skip" prompt that holds the seat's screen until someone answers
+        return [*codex_head(self.codex), "resume", self.thread_id, "--remote", self.server.ws_url,
+                "--remote-auth-token-env", WS_TOKEN_ENV, "-c", "check_for_update_on_startup=false", "-C", self.cwd]
+
+    def tui_env(self) -> dict[str, str]:
+        assert self.server
+        return dict(self.server.env)  # carries WS_TOKEN_ENV
 
     # ------------------------------------------------------------------ lifecycle
     def alive(self) -> bool:

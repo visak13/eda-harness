@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
+import socket
 import subprocess
 import threading
 import time
@@ -24,7 +26,27 @@ from concurrent.futures import Future
 from pathlib import Path
 from queue import Queue
 
-SECRET_KEYS = ("EDP8_TOKEN", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "CODEX_API_KEY")
+#: the loopback websocket's capability token (monitor mode): the TUI reads it by env NAME
+WS_TOKEN_ENV = "EDP_CODEX_WS_TOKEN"
+SECRET_KEYS = ("EDP8_TOKEN", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "CODEX_API_KEY", WS_TOKEN_ENV)
+
+
+def private_dir(path: Path) -> Path:
+    """A directory only this user can open (codex refuses a non-private socket/token dir, measured)."""
+    path.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":
+        user = os.environ.get("USERNAME") or ""
+        subprocess.run(["icacls", str(path), "/inheritance:r", "/grant:r", f"{user}:(OI)(CI)F"],
+                       capture_output=True, check=True)
+    else:
+        os.chmod(path, 0o700)
+    return path
+
+
+def free_loopback_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
 
 
 def redactor(env: dict[str, str] | None) -> Callable[[str], str]:
@@ -51,8 +73,13 @@ class AppServer:
     def __init__(self, argv: list[str], *, cwd: str, env: dict[str, str], log_path: str | os.PathLike[str],
                  on_notification: Callable[[str, dict], None] | None = None,
                  on_request: Callable[[str, dict], dict | None] | None = None,
-                 creationflags: int = 0):
+                 creationflags: int = 0, ws: bool = False):
         self.argv = argv
+        self.ws = ws  # monitor mode: listen on an authenticated loopback websocket the TUI also joins
+        self.ws_url: str | None = None
+        self.ws_token: str | None = None
+        self._ws = None
+        self._token_file: Path | None = None
         self.cwd = cwd
         self.env = env
         self.log_path = Path(log_path)
@@ -77,13 +104,64 @@ class AppServer:
             assert not (v and any(v in a for a in self.argv)), f"{k} leaked into argv"
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         self._log_f = open(self.log_path, "a", encoding="utf-8")
+        argv = self.argv
+        if self.ws:
+            argv = [*argv, *self._ws_listen_args()]
+        # the ws token is for the TUI (and redaction); the app-server and the model's shell never hold it
+        child_env = {k: v for k, v in self.env.items() if k != WS_TOKEN_ENV}
         self.proc = subprocess.Popen(
-            self.argv, cwd=self.cwd, env=self.env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, text=True, encoding="utf-8",
+            argv, cwd=self.cwd, env=child_env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT if self.ws else subprocess.PIPE, text=True, encoding="utf-8",
             errors="replace", bufsize=1, creationflags=self.creationflags)
+        if self.ws:  # stdout is the server's banner/log: redacted to the stderr sink like stderr
+            threading.Thread(target=self._pump_stderr, args=(self.proc.stdout,), name="codex-rpc-log", daemon=True).start()
+            self._ws_connect()
+        else:
+            threading.Thread(target=self._pump_stderr, name="codex-rpc-stderr", daemon=True).start()
         threading.Thread(target=self._read, name="codex-rpc-reader", daemon=True).start()
-        threading.Thread(target=self._pump_stderr, name="codex-rpc-stderr", daemon=True).start()
         threading.Thread(target=self._dispatch, name="codex-rpc-dispatch", daemon=True).start()
+
+    def _ws_listen_args(self) -> list[str]:
+        """`--listen ws://127.0.0.1:<free port>` behind a capability token: the token lives in a file in
+        an owner-only dir (path on argv, value never) and in env under WS_TOKEN_ENV for the TUI."""
+        port = free_loopback_port()
+        self.ws_token = secrets.token_urlsafe(32)
+        self.env = {**self.env, WS_TOKEN_ENV: self.ws_token}
+        self._redact = redactor(self.env)
+        base = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "edp8-codex-seat"
+        d = private_dir(base / f"{os.getpid()}-{time.time_ns() % 10**9}")
+        self._token_file = d / "ws.token"
+        self._token_file.write_text(self.ws_token, encoding="utf-8")
+        self.ws_url = f"ws://127.0.0.1:{port}"
+        return ["--listen", self.ws_url, "--ws-auth", "capability-token", "--ws-token-file", str(self._token_file)]
+
+    def _ws_connect(self, timeout: float = 60.0) -> None:
+        from .ws import WsClient
+        assert self.proc and self.ws_url
+        host, port = self.ws_url[len("ws://"):].rsplit(":", 1)
+        end = time.time() + timeout
+        last: Exception | None = None
+        while time.time() < end and self.proc.poll() is None:
+            try:
+                self._ws = WsClient(host, int(port), self.ws_token)
+                return
+            except ConnectionRefusedError as e:
+                if "upgrade refused" in str(e):
+                    raise  # a live listener that refuses our token is not a start-up race
+                last = e
+            except OSError as e:
+                last = e
+            time.sleep(0.2)
+        raise RpcError("connect", {"message": f"app-server websocket {self.ws_url} unreachable: {last!r} "
+                                              f"(exit {self.proc.poll()})"})
+
+    def _cleanup_token(self) -> None:
+        if self._token_file:
+            try:
+                self._token_file.unlink(missing_ok=True)
+                self._token_file.parent.rmdir()
+            except OSError:
+                pass
 
     def alive(self) -> bool:
         return self.proc is not None and self.proc.poll() is None
@@ -96,6 +174,8 @@ class AppServer:
         if not self.alive():
             return
         assert self.proc
+        if self._ws is not None:
+            self._ws.close()
         try:
             self.proc.stdin.close()  # type: ignore[union-attr]
             self.proc.wait(timeout=grace)
@@ -123,13 +203,25 @@ class AppServer:
         assert self.proc and self.proc.stdin
         line = json.dumps(msg)  # ASCII-escaped: a lone surrogate from a JS-style UTF-16 slice travels escaped, as JSON.stringify does
         with self._wlock:
-            self.proc.stdin.write(line + "\n")
-            self.proc.stdin.flush()
+            if self._ws is not None:
+                self._ws.send_text(line)
+            else:
+                self.proc.stdin.write(line + "\n")
+                self.proc.stdin.flush()
         self._mirror("out", msg)
+
+    def _messages(self):
+        """Raw JSON-RPC texts from the transport: stdout lines (stdio) or websocket text messages."""
+        assert self.proc and self.proc.stdout
+        if self._ws is None:
+            yield from self.proc.stdout
+            return
+        while (text := self._ws.recv_text()) is not None:
+            yield text
 
     def _read(self) -> None:
         assert self.proc and self.proc.stdout
-        for raw in self.proc.stdout:
+        for raw in self._messages():
             raw = raw.strip()
             if not raw:
                 continue
@@ -152,19 +244,25 @@ class AppServer:
                         fut.set_exception(RpcError(method, msg["error"]))
                     else:
                         fut.set_result(msg.get("result"))
+        if self._ws is not None and self.proc.poll() is None:
+            try:  # the socket dropped under a live server: this seat has lost its thread, end it
+                self.proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.stop(grace=0)
         self.exit_code = self.proc.wait()
+        self._cleanup_token()
         for method, fut in list(self._futures.values()):
             if not fut.done():
                 fut.set_exception(RpcError(method, {"message": f"app-server exited {self.exit_code}"}))
         self._notes.put(None)
         self.exited.set()
 
-    def _pump_stderr(self) -> None:
+    def _pump_stderr(self, stream=None) -> None:
         """app-server stderr → `<mirror>.stderr.log`, line by line THROUGH the redactor (qa adversary #2:
         a raw file redirect let a secret the server logs reach disk)."""
-        assert self.proc and self.proc.stderr
+        assert self.proc and (stream or self.proc.stderr)
         with open(self.log_path.with_suffix(".stderr.log"), "a", encoding="utf-8") as f:
-            for line in self.proc.stderr:
+            for line in stream or self.proc.stderr:
                 f.write(self._redact(line))
                 f.flush()
 

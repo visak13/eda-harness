@@ -254,6 +254,11 @@ class Delivery:
                 self.pending.clear()
                 self._steer_now(rest)
 
+    def seen_any(self) -> bool:
+        """At least one of our inputs has landed in the thread (its rollout now exists)."""
+        with self.lock:
+            return bool(self._seen)
+
     def message_seen(self, msg_id: str | None) -> None:
         """codex echoed one of our inputs (userMessage item clientId): it was accepted."""
         if not msg_id:
