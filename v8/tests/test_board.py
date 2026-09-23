@@ -31,14 +31,14 @@ def board():
 
 @pytest.fixture
 def rig(board):
-    """All eight roles registered as participants, keyed by role name."""
+    """Every role registered as participants, keyed by role name."""
     roles = {
         "owner": Role.owner,
         "coordinator": Role.coordinator,
         "architect": Role.architect,
         "sme": Role.sme,
         "engineer": Role.engineer,
-        "reviewer": Role.reviewer,
+        "adversary": Role.adversary,
         "qa": Role.qa,
         "consultant": Role.consultant,
     }
@@ -110,11 +110,11 @@ def test_engineer_can_write_report(board, rig):
     assert d.doc_type == DocType.report
 
 
-def test_reviewer_cannot_write_criteria(board, rig):
+def test_adversary_cannot_write_criteria(board, rig):
     epic = make_epic(board, rig)
     story = make_story(board, rig, epic)
     with pytest.raises(BoardError) as ei:
-        board.criterion_create(rig["reviewer"], ticket_id=story.id, text="x", check=Check.command,
+        board.criterion_create(rig["adversary"], ticket_id=story.id, text="x", check=Check.command,
                                 checked_by="qa")
     assert ei.value.code == "scope"
 
@@ -224,9 +224,9 @@ def test_verdict_by_wrong_checker_role_refused(board, rig):
                            scope=epic.id)
     board.criterion_update(rig["engineer"], crit.id, evidence_ref=ev.id)
     with pytest.raises(BoardError) as ei:
-        board.criterion_update(rig["reviewer"], crit.id, verdict=Verdict.passed)
+        board.criterion_update(rig["adversary"], crit.id, verdict=Verdict.passed)
     assert ei.value.code == "scope"
-    assert "checked_by qa" in ei.value.message
+    assert "qa/owner only" in ei.value.message  # S-ROLES: qa and owner are the only checker roles
 
 
 def test_epic_criteria_derive_to_qa_ignoring_checked_by(board, rig):
@@ -472,7 +472,7 @@ def test_engineer_relevance_messages_and_own_ticket_status(board, rig):
     # not on the ticket -> not relevant
     other_epic = board.ticket_create(rig["owner"], kind=TicketKind.epic, work_type=WorkType.feature,
                                       title="unrelated")
-    board.ticket_update(rig["coordinator"], other_epic.id, assignee=rig["reviewer"].id)
+    board.ticket_update(rig["coordinator"], other_epic.id, assignee=rig["adversary"].id)
     unrelated_ev = board.store.query("event", {"subject_id": other_epic.id, "kind": EventKind.assigned})[-1]
     assert board.relevant(unrelated_ev, engineer) is False
 
@@ -511,15 +511,15 @@ def test_session_upsert_dead_emits_shell_dead_once(board, rig):
 
 # ------------------------------------------------------------------ review-type criteria checker
 
-def test_review_story_criterion_derives_qa_ignoring_reviewer(board, rig):
-    """§24.1: a review story's criteria are checked by qa; a passed checked_by=reviewer is ignored
-    (the derivation, not a refusal, is the mechanism now)."""
+def test_review_story_criterion_derives_qa_ignoring_a_passed_checker(board, rig):
+    """§24.1: a review story's criteria are checked by qa; a passed checked_by (here the retired
+    reviewer, S-ROLES) is ignored (the derivation, not a refusal, is the mechanism now)."""
     epic = make_epic(board, rig)
     review_story = board.ticket_create(rig["architect"], kind=TicketKind.story, work_type=WorkType.review,
                                         title="review the slice", parent_id=epic.id)
     crit = board.criterion_create(rig["architect"], ticket_id=review_story.id, text="reviewed",
                                    check=Check.verdict, checked_by="reviewer")
-    assert crit.checked_by == "qa"  # reviewer ignored, board derived qa for a review story
+    assert crit.checked_by == "qa"  # passed checker ignored, board derived qa for a review story
 
 
 # ------------------------------------------------------------------ implicit blockers on review stories
@@ -576,13 +576,13 @@ def test_implicit_blocker_review_story_waits_on_sibling_then_auto_promotes(board
 
 def test_my_tickets_and_context_for_checker_roles(board, rig):
     epic = make_epic(board, rig)
-    # a review_required story → the board derives reviewer as its checker (§24.1)
+    # a review_required story → the board derives qa as its checker (S-ROLES: no reviewer role)
     story = board.ticket_create(rig["architect"], kind=TicketKind.story, work_type=WorkType.feature,
                                 title="CLI skeleton", parent_id=epic.id, tags=["review_required"])
     d = design_doc(board, rig, epic.id)
     board.ticket_update(rig["architect"], story.id, design_ref=d.id)
     crit = board.criterion_create(rig["architect"], ticket_id=story.id, text="reviewed", check=Check.verdict)
-    assert crit.checked_by == "reviewer"
+    assert crit.checked_by == "qa"
     board.ticket_update(rig["architect"], story.id, status=TicketStatus.designed)
     board.ticket_update(rig["owner"], story.id, status=TicketStatus.signed_off)
     board.ticket_update(rig["coordinator"], story.id, status=TicketStatus.ready)
@@ -593,11 +593,11 @@ def test_my_tickets_and_context_for_checker_roles(board, rig):
     board.criterion_update(rig["engineer"], crit.id, evidence_ref=ev.id)
     board.ticket_update(rig["engineer"], story.id, status=TicketStatus.in_review)
 
-    # reviewer is not the assignee, but sees the story because it checks a criterion on it
-    reviewer_mine = board.my_tickets(rig["reviewer"])
-    assert any(t.id == story.id for t in reviewer_mine)
-    reviewer_ctx = board.context(rig["reviewer"])
-    assert any(node["ticket"]["id"] == story.id for node in reviewer_ctx["tickets"])
+    # qa is not the assignee, but sees the story because it checks a criterion on it
+    qa_story = board.my_tickets(rig["qa"])
+    assert any(t.id == story.id for t in qa_story)
+    qa_ctx = board.context(rig["qa"])
+    assert any(node["ticket"]["id"] == story.id for node in qa_ctx["tickets"])
 
     # qa acceptance-gate visibility, exercised on a second epic driven fully to done
     other_epic = make_epic(board, rig)
@@ -616,7 +616,7 @@ def test_my_tickets_and_context_for_checker_roles(board, rig):
     assert board.gate_open(other_epic.id, Gate.acceptance) is not None
     assert board.open_gates(other_epic.id, Gate.acceptance)
 
-    # a second, unassigned/uninvolved engineer sees neither the reviewer-checked story nor the
+    # a second, unassigned/uninvolved engineer sees neither the qa-checked story nor the
     # qa acceptance-gated epic: an engineer has no checker-role visibility rule at all
     other_engineer = board.participant_create("agent", Role.engineer, "eng2")
     other_engineer_mine_ids = {t.id for t in board.my_tickets(other_engineer)}
@@ -664,17 +664,17 @@ def test_gate_answered_reaches_the_gate_opener(board, rig):
 
 def test_auto_advance_on_evidence_and_verdicts(board, rig):
     """Explicit handoff walks evidence-complete work to in_review; a review_required
-    story's reviewer verdict then walks in_review -> done. §24.1 release rule: the review story is
+    story's qa verdict (S-ROLES: qa checks every story) then walks in_review -> done. §24.1 release rule: the review story is
     released at the blocker's evidence-complete in_review (before the verdict), exactly once."""
     from edp8.schemas import Check, DocType, EventKind, TicketKind, TicketStatus, WorkType
 
-    owner, arch, eng, rev = rig["owner"], rig["architect"], rig["engineer"], rig["reviewer"]
+    owner, arch, eng, rev = rig["owner"], rig["architect"], rig["engineer"], rig["qa"]
     epic = board.ticket_create(owner, kind=TicketKind.epic, work_type=WorkType.feature, title="auto adv epic")
     s1 = board.ticket_create(arch, kind=TicketKind.story, work_type=WorkType.feature, title="s1",
-                             parent_id=epic.id, tags=["review_required"])  # → checker reviewer
+                             parent_id=epic.id, tags=["review_required"])  # → checker qa
     r1 = board.ticket_create(arch, kind=TicketKind.story, work_type=WorkType.review, title="rev", parent_id=epic.id)
     c1 = board.criterion_create(arch, ticket_id=s1.id, text="x", check=Check.command)
-    assert c1.checked_by == "reviewer"
+    assert c1.checked_by == "qa"
     board.criterion_create(arch, ticket_id=r1.id, text="y", check=Check.verdict)  # review story → qa
     board.ticket_update(arch, s1.id, assignee=eng.id)
     # walk sign-off legally (r1 waits on s1 implicitly; sign both off)
