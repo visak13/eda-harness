@@ -104,10 +104,11 @@
   .panel.edge { flex: 1; width: 100vw !important; border-width: 0; border-radius: 0; }
 }
 
-/* S19 design review (revision3-clean-review.png): a centred modal, 1190 wide at 1440, 52px from the
-   top and bottom; bare = the body draws the one header and owns its own scrolling. */
+/* S19 design review (revision3-clean-review.png): a centred modal, 1190 wide at 1440; t-899d295194 (owner
+   m-9238e165cf): the full viewport height minus a 12px margin. bare = the body draws the one header
+   and owns its own scrolling. */
 .centeredScrim { justify-content: center; align-items: center; }
-.panel.centered { margin: 0; width: min(1190px, calc(100vw - 32px)) !important; max-width: none; height: calc(100vh - 104px); height: calc(100dvh - 104px); border-color: var(--strongline); border-width: 1.5px; }
+.panel.centered { margin: 0; width: min(1190px, calc(100vw - 32px)) !important; max-width: none; height: calc(100vh - 24px); height: calc(100dvh - 24px); border-color: var(--strongline); border-width: 1.5px; }
 .panel.bare .body { padding: 0; overflow: hidden; }
 .held { margin: 0; padding: 8px 24px; }
 @media (max-height: 600px) {

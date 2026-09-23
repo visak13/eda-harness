@@ -8,12 +8,14 @@
 .here { color: var(--ink); }
 .title { font-size: 32px; line-height: 1.2; letter-spacing: -0.7px; margin: 7px 0 6px; font-weight: 800; color: var(--ink); overflow-wrap: anywhere; }
 .purpose { color: var(--muted); margin: 0 0 17px; font-size: 16px; line-height: 1.5; }
-.metadata { display: grid; grid-template-columns: 180px 170px 200px 1fr; gap: 22px; margin: 0; }
+/* t-899d295194 (owner m-9238e165cf): Needs attention is a compact chip IN this row, not a card on its own. */
+.metadata { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 14px 40px; margin: 0; }
+.metadata > div { min-width: 0; }
 .metadata > div { min-width: 0; }
 .label { font-size: 12px; text-transform: uppercase; font-weight: 650; letter-spacing: 0.7px; color: var(--muted); margin-bottom: 7px; }
 .value { display: flex; align-items: center; gap: 8px; min-height: 34px; margin: 0; font-size: 16px; flex-wrap: wrap; }
 .muted { color: var(--muted); }
-.coral { display: inline-flex; align-items: center; gap: 7px; padding: 3px 9px; border: 1px solid var(--strongline); border-radius: 7px; font-size: 14px; font-weight: 600; background: var(--accentwash); color: var(--accentink); }
+.coral { display: inline-flex; align-items: center; gap: 7px; padding: 3px 9px; white-space: nowrap; border: 1px solid var(--strongline); border-radius: 7px; font-size: 14px; font-weight: 600; background: var(--accentwash); color: var(--accentink); }
 .links { display: flex; gap: 10px; margin: 18px 0 0; padding-bottom: 17px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .link {
   display: inline-flex; align-items: center; gap: 8px; min-height: 38px; padding: 7px 13px; font: inherit; font-size: 14px;

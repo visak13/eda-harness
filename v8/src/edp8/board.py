@@ -1705,9 +1705,6 @@ class Board:
                 if self._epic_id_of(m.ticket_id) in mine:  # type: ignore[union-attr]
                     asks.append(m)
 
-        def _is_answered(ask_id: str) -> bool:
-            return bool(self.store.query("message", {"reply_to": ask_id, "kind": MessageKind.answer}, limit=1))
-
         def _ask_live(m: Message) -> bool:
             """An ask dies with its EPIC (or a dropped ticket) — but a DONE ticket in a live
             epic still takes questions (post-hoc reviews are real; drill 2026-09-03)."""
@@ -1725,7 +1722,35 @@ class Board:
                                   f"to={m.created_by!r}, reply_to={m.id!r})")
             return row
 
-        return [_ask_row(m) for m in asks if not _is_answered(m.id) and _ask_live(m)]
+        return [_ask_row(m) for m in asks if not self.ask_resolved(m) and _ask_live(m)]
+
+    def ask_resolved(self, m: Message) -> bool:
+        """Whether a directed question/steer no longer waits on anyone (t-899d295194, c-8f893cc2e8).
+        Resolved when (a) its AGENT author's seat is closed — the latest session is dead, so nobody
+        is left to read an answer (a human author, or an agent that never had a shell, stays open);
+        (b) any kind=answer replies to it; or (c) any message from the ADDRESSEE replies to it — owners
+        answer with notes and mentions, never kind=answer (26 "unanswered" on epic-44a0576511, 18 from
+        closed seats). The one rule the inbox, the epic's Needs attention and the Needs you views read."""
+        author = self.store.get("participant", m.created_by)
+        if (author is not None and author.type == "agent"  # type: ignore[union-attr]
+                and self.seat_state(m.created_by) == "dead"):
+            return True
+        for r in self.store.query("message", {"reply_to": m.id}, limit=200):
+            if r.kind == MessageKind.answer or self._is_addressee(r.created_by, m.to):  # type: ignore[union-attr]
+                return True
+        return False
+
+    def _is_addressee(self, pid: str, to: str | None) -> bool:
+        """pid is who `to` names: the participant id, its @handle/handle, or its bare role."""
+        if not to:
+            return False
+        if pid == to:
+            return True
+        p = self.store.get("participant", pid)
+        if p is None:
+            return False
+        handle = getattr(p, "handle", "") or ""
+        return to in (handle, f"@{handle.lstrip('@')}", handle.lstrip("@")) or to == p.role.value  # type: ignore[union-attr]
 
     def seat_choice_for(self, ticket_id: str | None, *, model: str | None = None,
                         effort: str | None = None) -> seat_choice.SeatChoice:

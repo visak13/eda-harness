@@ -5,22 +5,23 @@
    viewer. Short or narrow screens scroll the whole review as one (S19 D10). */
 .review { min-width: 0; background: var(--panel); }
 .framed { height: 100%; display: flex; flex-direction: column; min-height: 0; }
-.head { flex: none; background: var(--panel); padding: 20px 22px 18px; border-bottom: 1px solid var(--strongline); }
-.crumbRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 36px; }
-.crumb { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); min-width: 0; }
-.crumb a { color: var(--ink); text-decoration: none; }
-.crumb a:hover { text-decoration: underline; }
-.back { height: 32px; width: 32px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--ink); font-size: 18px; }
-.tools { display: flex; align-items: center; gap: 8px; flex: none; }
-.tool { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: var(--ink); font: inherit; font-size: 15px; text-decoration: none; cursor: pointer; }
+.head { flex: none; background: var(--panel); padding: 8px 14px 8px 18px; border-bottom: 1px solid var(--strongline); }
+/* t-899d295194: one compact row (crumb / title · version · state | actions | Open in tab · Close). */
+.bar { display: flex; align-items: center; gap: 10px; min-height: 44px; min-width: 0; }
+.crumb { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--muted); min-width: 0; flex: 0 1 auto; max-width: 28%; }
+.crumb a { color: var(--muted); text-decoration: none; }
+.crumb a:hover { text-decoration: underline; color: var(--ink); }
+.source { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.crumb > svg { flex: none; }
+.back { flex: none; height: 32px; width: 32px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--ink); font-size: 18px; }
+.tools { display: flex; align-items: center; gap: 4px; flex: none; margin-left: auto; }
+.tool { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--ink); font: inherit; font-size: 14px; text-decoration: none; cursor: pointer; white-space: nowrap; }
 .tool:hover { background: var(--secondary); }
 .tool:focus-visible, .back:focus-visible, .help:focus-visible, .versionsSummary:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
-.titleRow { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 6px; }
-.titleBlock { min-width: 0; }
-.title { font: 700 26px/34px "Segoe UI", system-ui, sans-serif; color: var(--ink); margin: 0; overflow-wrap: anywhere; }
-.state { margin: 4px 0 0; font-size: 13px; line-height: 20px; color: var(--muted); display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-.actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.actions button { min-height: 40px; font-size: 16px; padding: 0 14px; }
+.title { flex: 0 1 auto; min-width: 6em; margin: 0; font: 700 17px/24px "Segoe UI", system-ui, sans-serif; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.state { flex: none; margin: 0; font-size: 13px; line-height: 20px; color: var(--muted); display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.actions button { min-height: 34px; font-size: 14px; padding: 0 12px; white-space: nowrap; }
 .approve { background: var(--successwash); border-color: var(--success); color: var(--ink); }
 .approve:hover:not(:disabled) { filter: brightness(0.97); }
 .request { background: var(--accentwash); border-color: var(--accent); color: var(--ink); }
@@ -75,8 +76,7 @@ details[open] > .outlineSummary > svg { transform: none; }
 @media (max-height: 560px), (max-width: 850px) {
   .framed { display: block; height: 100%; overflow-y: auto; }
   .framed .reading, .framed .feedback { overflow: visible; }
-  .head { padding: 14px 16px 12px; }
-  .title { font-size: 22px; line-height: 28px; }
+  .head { padding: 6px 10px 6px 12px; }
   .reading { padding: 20px 16px 24px; }
   .feedback { padding: 20px 16px; }
 }
@@ -87,4 +87,11 @@ details[open] > .outlineSummary > svg { transform: none; }
   .split { grid-template-columns: minmax(0, 1fr); }
   .feedback { border-left: 0; border-top: 1px solid var(--strongline); }
   .tool { padding: 0 6px; }
+  /* Narrow: the row wraps once — crumb / title … Open in tab · Close, then version · state and the actions. */
+  .bar { flex-wrap: wrap; row-gap: 4px; }
+  .crumb { max-width: 40%; }
+  .title { flex: 1 1 0; }
+  .tools { order: 1; }
+  .state { order: 2; }
+  .actions { order: 3; margin-left: auto; }
 }

@@ -531,7 +531,7 @@ def _pending_owner_request(board: Board, t: Any) -> bool:
         return False
     for m in board.store.query("message", {"ticket_id": t.id, "to": owner,
                                            "kind": MessageKind.question}, limit=50, newest_first=True):
-        if not board.store.query("message", {"reply_to": m.id, "kind": MessageKind.answer}, limit=1):
+        if not board.ask_resolved(m):
             return True
     return False
 

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getReviewContext, decideDesign, commentDocument } from "../api/review";
@@ -38,6 +38,22 @@ function SectionOutline({ entries, onJump, placement }: { entries: OutlineEntry[
   </details>;
 }
 
+/** ≤850px: the review panel stacks under the document (DesignReview.module.css), so the outline moves
+ *  to a sticky bar in the doc column. Only ONE outline is ever in the DOM (no hidden duplicate text). */
+const NARROW = "(max-width: 850px)";
+function useNarrow(): boolean {
+  const query = () => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(NARROW).matches;
+  const [narrow, setNarrow] = useState(query);
+  useEffect(() => {
+    const mq = typeof window.matchMedia === "function" ? window.matchMedia(NARROW) : null;
+    if (!mq) return;
+    const on = () => setNarrow(mq.matches);
+    mq.addEventListener?.("change", on);
+    return () => mq.removeEventListener?.("change", on);
+  }, []);
+  return narrow;
+}
+
 export function DesignReview({ docId, version, source, request, children, onLatest, title, versions, onPickVersion, outline, tabHref, onBack }: {
   docId: string; version: number; source: string; request?: string | null; children?: React.ReactNode; onLatest?: (version: number) => void; title?: string;
   /** Every version of the doc: the state line's "Version N" menu (revision3-clean-review.png). */
@@ -52,6 +68,7 @@ export function DesignReview({ docId, version, source, request, children, onLate
   const close = useDrawerClose();
   const menuRef = useRef<HTMLDetailsElement>(null);
   const readingRef = useRef<HTMLDivElement>(null);
+  const narrow = useNarrow();
   // Outline entry i ↔ the i-th rendered body heading: <Markdown> demotes h1–h3 to h2–h4 in document
   // order and the review hides the doc's own title, so order is the join key (as in DocBody).
   function jump(i: number) {
@@ -102,8 +119,8 @@ export function DesignReview({ docId, version, source, request, children, onLate
   </div>;
   const back = onBack ? <button type="button" className={styles.back} aria-label="Back" onClick={onBack}>‹</button> : null;
   const framed = close ? `${styles.review} ${styles.framed}` : styles.review;
-  if (context.isPending) return <section className={framed}><div className={styles.head}><div className={styles.crumbRow}><span className={styles.crumb}>{back}Checking document context…</span>{tools}</div></div></section>;
-  if (context.isError) return <section className={framed}><div className={styles.head}><div className={styles.crumbRow}><span className={styles.crumb}>{back}{title ?? docId}</span>{tools}</div></div><div className={styles.plainScroll}><p role="alert" className={styles.notice}>Cannot use this source for review: {context.error.message}. The document remains readable. <Link to={`/doc/${encodeURIComponent(docId)}?version=${version}`}>Select a linked conversation source</Link></p>{children}</div></section>;
+  if (context.isPending) return <section className={framed}><div className={styles.head}><div className={styles.bar}>{back}<span className={styles.title}>Checking document context…</span>{tools}</div></div></section>;
+  if (context.isError) return <section className={framed}><div className={styles.head}><div className={styles.bar}>{back}<span className={styles.title}>{title ?? docId}</span>{tools}</div></div><div className={styles.plainScroll}><p role="alert" className={styles.notice}>Cannot use this source for review: {context.error.message}. The document remains readable. <Link to={`/doc/${encodeURIComponent(docId)}?version=${version}`}>Select a linked conversation source</Link></p>{children}</div></section>;
   const ctx = context.data;
   const sourcePath = `/${ctx.source_kind === "epic" ? "epic" : "ticket"}/${encodeURIComponent(source)}`;
   const reviewOpen = Boolean(ctx.can_review && ctx.gate_event_id);
@@ -127,32 +144,30 @@ export function DesignReview({ docId, version, source, request, children, onLate
   // with its "Design · Version N · state" line and the two review actions), then the document and
   // the review panel side by side. The document column never changes width (S19 D6).
   return <section className={framed} aria-label="Document review" data-busy={approve.isPending ? "true" : undefined}>
+    {/* t-899d295194 (owner m-9238e165cf "difficult to read in pop-up as the area is limited"): ONE
+        compact row — source crumb / title (single line, ellipsis; full title on hover) · version menu ·
+        state, then the review actions, Open in tab and Close — so the document gets the height back. */}
     <div className={styles.head}>
-      <div className={styles.crumbRow}>
+      <div className={styles.bar}>
         <nav className={styles.crumb} aria-label="Review source">
           {back}
           <Icon name="design" size={18} />
-          <Link to={sourcePath} aria-label={`Back to source: ${ctx.source_title}`}>{ctx.source_title}</Link>
+          <Link to={sourcePath} className={styles.source} aria-label={`Back to source: ${ctx.source_title}`} title={ctx.source_title}>{ctx.source_title}</Link>
           <span aria-hidden="true">/</span>
-          <span>Design review</span>
         </nav>
-        {tools}
-      </div>
-      <div className={styles.titleRow}>
-        <div className={styles.titleBlock}>
-          {title ? <h1 className={styles.title} data-testid="review-title">{title}</h1> : null}
-          <p className={styles.state} data-testid="review-state">Design · {versionMenu}{latestNote ? <> · {latestNote}</> : null}{reviewNote ? <> · {reviewNote}</> : null}</p>
-        </div>
+        {title ? <h1 className={styles.title} data-testid="review-title" title={title}>{title}</h1> : <span className={styles.title}>Design review</span>}
+        <p className={styles.state} data-testid="review-state">Design · {versionMenu}{latestNote ? <> · {latestNote}</> : null}{reviewNote ? <> · {reviewNote}</> : null}</p>
         {reviewOpen ? <div className={styles.actions}>
           {/* Approve stays disabled while unsent feedback exists: approving would strand the note (S19 D8, kept on purpose). */}
           <button className={`${ui.button} ${styles.approve}`} disabled={!ctx.can_approve || dirty || approve.isPending || sent} title={dirty ? "Send or cancel your feedback before approving" : undefined} onClick={() => { if (!pendingWork()) approve.mutate(); }}><Icon name="check" size={18} /> Approve design</button>
           <button className={`${ui.button} ${styles.request}`} disabled={!ctx.can_approve || approve.isPending} onClick={() => { if (!pendingWork()) { setMode("request_changes"); setSent(false); } }}>Request changes</button>
         </div> : null}
+        {tools}
       </div>
     </div>
     <div className={expanded && mode ? `${styles.split} ${styles.splitExpanded}` : styles.split}>
       <div className={styles.reading} ref={readingRef}>
-        {outline?.length ? <SectionOutline entries={outline} onJump={jump} placement="inline" /> : null}
+        {outline?.length && narrow ? <SectionOutline entries={outline} onJump={jump} placement="inline" /> : null}
         {version !== ctx.current_version ? <p role="status" className={styles.notice}>Historical version — comments are allowed; approval requires the current version. {onLatest ? <button className={ui.button} onClick={() => onLatest(ctx.current_version)}>Review latest version (this version’s draft is kept)</button> : null}</p> : null}
         {approve.isError ? <p role="alert" className={styles.notice}>{approve.error.message}</p> : null}
         {sent && !mode ? <p role="status" className={styles.notice}>Design approved at v{version}.</p> : null}
@@ -187,7 +202,7 @@ export function DesignReview({ docId, version, source, request, children, onLate
             <p className={styles.feedbackNote}><Icon name="files" size={16} /> Your {where} draft is preserved.</p>
           </div>
         </>}
-        {outline?.length ? <SectionOutline entries={outline} onJump={jump} placement="side" /> : null}
+        {outline?.length && !narrow ? <SectionOutline entries={outline} onJump={jump} placement="side" /> : null}
       </aside>
     </div>
   </section>;

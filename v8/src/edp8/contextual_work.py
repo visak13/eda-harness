@@ -45,7 +45,7 @@ def contextual_work(board: Board, ticket_id: str, category: HistoryCategory = "a
     asks = []
     if ticket.status != TicketStatus.dropped and board.epic_of(ticket).status not in {TicketStatus.done, TicketStatus.partial, TicketStatus.dropped}:
         for message in board.store.query("message", {"ticket_id": ticket_id, "kind": [MessageKind.question, MessageKind.steer]}, limit=100000):
-            if message.to and not board.store.query("message", {"reply_to": message.id, "kind": MessageKind.answer}, limit=1):
+            if message.to and not board.ask_resolved(message):  # closed-seat asks and addressee replies resolve (c-8f893cc2e8)
                 asks.append({"id": message.id, "kind": message.kind.value, "to": message.to})
     return {"ticket_id": ticket_id, "title": ticket.title, "kind": ticket.kind, "status": ticket.status,
             "owner": board.epic_owner(ticket_id), "requester": ticket.created_by, "assignee": ticket.assignee,
