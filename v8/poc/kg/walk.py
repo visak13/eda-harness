@@ -293,6 +293,9 @@ def _dedupe(seq):
 
 
 if __name__ == "__main__":
+    # Node text carries arrows and dashes; a cp1252 console (Windows default) raised UnicodeEncodeError (qa).
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     start = sys.argv[1] if len(sys.argv) > 1 else "epic-44a0576511"
     body, receipt, _ = walk(start)
     print("== receipt ==")
