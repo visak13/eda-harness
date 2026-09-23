@@ -1829,9 +1829,10 @@ class Board:
         if binding is not None:
             binding = bool(binding)  # F2: a truthy non-bool (binding=1) must meet the gate as True
         epic = knowledge._epic_id_of(self.store, scope) or scope
-        with self.store.transaction():
-            # F3: the predecessors are read and the binding gate checked INSIDE the transaction, so a
-            # set_binding landing between check and commit cannot let a non-architect replace a rule
+        with self.store.transaction(immediate=True):
+            # F3: the predecessors are read and the binding gate checked INSIDE a write-locked
+            # transaction, so a set_binding (from this or another connection) cannot land between
+            # check and commit and let a non-architect replace a rule
             olds = []
             for rid in replaces:
                 old = self.store.get("decision", rid)
@@ -1842,8 +1843,10 @@ class Board:
                 if (knowledge._epic_id_of(self.store, old.scope or "") or old.scope) != epic:
                     raise BoardError("scope", f"decision {rid!r} belongs to another epic than {scope!r}",
                                      "replace only decisions of the new record's own epic")
-                # F8: a replaced decision already has its successor; replace that successor instead
-                if old.status == DecisionStatus.replaced:
+                # F8: a decision that already has a successor (even if later withdrawn) is not replaced
+                # twice; replace that successor instead
+                if old.status == DecisionStatus.replaced or self.store.query(
+                        "kglink", {"to_id": rid, "kind": LinkKind.replaces}, limit=1):
                     raise BoardError("state", f"decision {rid!r} is already replaced",
                                      "replace its live successor, not the superseded record")
                 olds.append(old)
@@ -1949,7 +1952,7 @@ class Board:
         if actor.role not in (Role.architect, Role.owner):
             raise BoardError("scope", f"{actor.role} may not change a decision's binding flag",
                              "only the architect or the owner set binding")
-        with self.store.transaction():  # F3: read and write under one lock, like record_decision
+        with self.store.transaction(immediate=True):  # F3: read + write under the write lock
             d = self.store.get("decision", decision_id)
             if d is None:
                 raise BoardError("not_found", f"decision {decision_id!r} does not exist",

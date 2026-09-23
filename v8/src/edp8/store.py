@@ -59,12 +59,16 @@ class Store:
         self._init()
 
     @contextmanager
-    def transaction(self) -> Iterator[None]:
-        """Nest writes in one atomic unit; publish notifications only after durable commit."""
+    def transaction(self, immediate: bool = False) -> Iterator[None]:
+        """Nest writes in one atomic unit; publish notifications only after durable commit.
+        `immediate=True` takes SQLite's write lock (BEGIN IMMEDIATE) before the body runs, so a
+        read-check-write body is serialised against other connections too, not only this Store."""
         with self._lock:
             outer = self._transaction_depth == 0
             self._transaction_depth += 1
             try:
+                if outer and immediate and not self._conn.in_transaction:
+                    self._conn.execute("BEGIN IMMEDIATE")
                 yield
                 if outer:
                     self._conn.commit()

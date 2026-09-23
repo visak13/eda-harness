@@ -1157,11 +1157,11 @@ def test_f3_binding_gate_checked_inside_the_transaction(board, rig, monkeypatch)
     real_tx = board.store.transaction
     fired = {"n": 0}
 
-    def racing_tx():
+    def racing_tx(*args, **kwargs):
         if fired["n"] == 0:
             fired["n"] += 1
             board.set_binding(rig["owner"], decision_id=rule.id, binding=True, reason="promote")
-        return real_tx()
+        return real_tx(*args, **kwargs)
 
     monkeypatch.setattr(board.store, "transaction", racing_tx)
     with pytest.raises(BoardError) as ei:
@@ -1219,3 +1219,86 @@ def test_f8_replacing_an_already_replaced_decision_refused(board, rig):
     with pytest.raises(BoardError) as ei:
         board.record_decision(rig["owner"], scope=epic.id, text="rival second", replaces=[a.id])
     assert ei.value.code == "state"
+
+
+# --------------------------------------------------------------------------- second opinion on 024e923
+def test_f3_gate_holds_the_write_lock_against_another_connection(tmp_path):
+    # the race the consult reproduced: the owner's set_binding lands from ANOTHER connection after the
+    # engineer's guarded read. With BEGIN IMMEDIATE the other writer cannot get in mid-check.
+    import sqlite3
+    db = str(tmp_path / "kg.db")
+    b1 = Board(Store(db))
+    owner = b1.participant_create("human", Role.owner, "own1")
+    eng = b1.participant_create("agent", Role.engineer, "eng1")
+    epic = b1.ticket_create(owner, kind=TicketKind.epic, work_type=WorkType.feature, title="E")
+    rule = b1.record_decision(owner, scope=epic.id, text="plain rule")
+    b2 = Board(Store(db))
+    b2.store._conn.execute("PRAGMA busy_timeout=50")
+    real_get = b1.store.get
+    seen = {"blocked": None}
+
+    def get_then_race(t, i):
+        o = real_get(t, i)
+        if t == "decision" and i == rule.id and seen["blocked"] is None:
+            try:
+                b2.set_binding(b2.store.get("participant", owner.id), decision_id=rule.id,
+                               binding=True, reason="race")
+                seen["blocked"] = False
+            except sqlite3.OperationalError:
+                seen["blocked"] = True
+        return o
+
+    b1.store.get = get_then_race
+    b1.record_decision(eng, scope=epic.id, text="engineer rewrite", replaces=[rule.id])
+    assert seen["blocked"] is True  # the other connection could not write between check and commit
+
+
+def test_matched_binding_enrichment_stays_inside_the_byte_cap(board, rig):
+    import json
+    epic = make_epic(board, rig)
+    b = board.record_decision(rig["owner"], scope=epic.id, text="quasar rule",
+                              detail="\U0001f600" * 1000, binding=True)
+    out = board.lookup(rig["engineer"], scope=epic.id, question="quasar")
+    payload = len(json.dumps(out["records"], default=str).encode("utf-8"))
+    assert payload == out["receipt"]["bytes"] <= MAX_BYTES
+    entry = next(r for r in out["records"] if r["id"] == b.id)
+    assert entry["section"] == "always" and "detail" not in entry  # text kept, enrichment did not fit
+    assert out["receipt"]["mandatory_overflow"] is False
+
+
+def test_matched_binding_keeps_its_provenance(board, rig):
+    epic = make_epic(board, rig)
+    b = board.record_decision(rig["owner"], scope=epic.id, text="quasar rule", detail="WHY: x", binding=True)
+    out = board.lookup(rig["engineer"], scope=epic.id, question="quasar")
+    entry = next(r for r in out["records"] if r["id"] == b.id)
+    assert entry["provenance"] == "seed" and out["receipt"]["ranked_seed"] == 1
+
+
+def test_f8_withdrawing_the_predecessor_does_not_reopen_it(board, rig):
+    epic = make_epic(board, rig)
+    a = board.record_decision(rig["owner"], scope=epic.id, text="first")
+    board.record_decision(rig["owner"], scope=epic.id, text="second", replaces=[a.id])
+    board.withdraw_decision(rig["owner"], decision_id=a.id, reason="retire")
+    with pytest.raises(BoardError) as ei:
+        board.record_decision(rig["owner"], scope=epic.id, text="rival second", replaces=[a.id])
+    assert ei.value.code == "state"
+
+
+def test_withdrawn_never_replaced_decision_can_still_be_replaced(board, rig):
+    epic = make_epic(board, rig)
+    a = board.record_decision(rig["owner"], scope=epic.id, text="first")
+    board.withdraw_decision(rig["owner"], decision_id=a.id, reason="retire")
+    c = board.record_decision(rig["owner"], scope=epic.id, text="revived", replaces=[a.id])
+    assert c.replaces == [a.id]
+
+
+def test_excerpts_fall_back_when_strong_records_are_all_cut(board, rig):
+    epic = make_epic(board, rig)
+    for i in range(3):
+        board.record_decision(rig["owner"], scope=epic.id, text=f"quasar decision {i}",
+                              detail="\U0001f600" * 1000)
+    board.doc_create(rig["owner"], doc_type=DocType.note, title="quasar note",
+                     body_md="the quasar source says hello", scope=epic.id)
+    out = board.lookup(rig["engineer"], scope=epic.id, question="quasar")
+    assert out["receipt"]["strong_records"] == 0
+    assert out["receipt"]["source_excerpts"] >= 1

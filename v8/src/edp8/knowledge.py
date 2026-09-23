@@ -717,24 +717,26 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
     always_lines: list[str] = []
     always_emitted: set[str] = set()
     # F7: a binding record renders ONCE. When the question also reached it (R2-5), that one entry
-    # carries its detail and history here instead of repeating in "For your question".
-    question_hit = {rec.id for _, _, _, rec, _ in ranked if rec.id in ranked_allowed_ids}
+    # carries its retrieval provenance, and its detail/history when those still fit the byte cap —
+    # the TEXT is mandatory (never cut), the enrichment is optional and budgeted like a ranked record.
+    question_hit = {rec.id: e.get("provenance") for _, _, _, rec, e in ranked if rec.id in ranked_allowed_ids}
     for sc, nid, rec, _full in binding_cands:
-        hit = rec.id in question_hit
         stub = {"id": rec.id, "type": "decision", "text": rec.text, "binding": True,
                 "section": "always", "confirmed": _full["confirmed"], "fresh": _full["fresh"],
                 "score": _full["score"]}
-        if hit:
-            stub["detail"] = _full["detail"]
-            for k in ("source", "history"):
-                if k in _full:
-                    stub[k] = _full[k]
+        enriched = False
+        if rec.id in question_hit:
+            stub["provenance"] = question_hit[rec.id]
+            rich = {**stub, "detail": _full["detail"],
+                    **{k: _full[k] for k in ("source", "history") if k in _full}}
+            if used_bytes + _cost(rich) <= MAX_BYTES:
+                stub, enriched = rich, True
         used_bytes += _cost(stub)
         n_items += 1
         records.append(stub)
         always_emitted.add(rec.id)
         line = _render_line("decision", rec, confirmed=_full["confirmed"], fresh=_full["fresh"],
-                            binding=True, text_only=not hit)
+                            binding=True, text_only=not enriched)
         for h in stub.get("history", []):
             line += f"\n    earlier: {h['text']} (replaced {h['date']})"
         always_lines.append(line)
@@ -809,7 +811,9 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
     # strong records, quote the epic's own messages/doc paragraphs so a not-yet-curated answer is
     # still visible. Counts inside the 8,000-byte budget.
     excerpt_lines: list[str] = []
-    strong = sum(1 for tup in ranked if best.get(tup[1], 0.0) >= RELEVANCE_FLOOR)
+    # counted over what the pack actually RETURNED: a strong record cut by the byte cap answers nothing
+    returned_ids = {r["id"] for r in records if r.get("section") in ("ranked", "always")}
+    strong = sum(1 for tup in ranked if tup[1] in returned_ids and best.get(tup[1], 0.0) >= RELEVANCE_FLOOR)
     if strong < MIN_RELEVANT:
         for ex in _source_excerpts(store, target_epic, question, source_search):
             e = {**ex, "section": "excerpt", "confirmed": False, "binding": False}
