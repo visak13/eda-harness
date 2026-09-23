@@ -1,0 +1,49 @@
+{
+  "leaf_doc_ids": [
+    "strategyll-2f7805d92b"
+  ],
+  "layers": [
+    "strategyll-2f7805d92b"
+  ],
+  "layer_titles": {
+    "strategyll-2f7805d92b": "craft: web e2e (strategy_ll)"
+  },
+  "enforced": [
+    {
+      "text": "- a doer runs the specs it changed; the full suite is qa's, one seat at a time [required]",
+      "layer": "strategyll-2f7805d92b"
+    }
+  ],
+  "index": [
+    {
+      "id": "strategyll-2f7805d92b",
+      "title": "craft: web e2e",
+      "doc_type": "strategy_ll",
+      "tags": [
+        "web"
+      ],
+      "approx_tokens": 34,
+      "line": "strategyll-2f7805d92b \u00b7 craft: web e2e (strategy_ll) \u00b7 web \u00b7 ~34 tokens"
+    }
+  ],
+  "instruction": "enforced lines are inlined; every linked doc is one `index` line \u2014 doc_read(id) the ones your work touches (constructive craft lives there), before you build on them",
+  "approx_tokens": 81,
+  "full_tokens": 31,
+  "oversize": false,
+  "recall": {
+    "items": [
+      {
+        "id": "les-55adfee857",
+        "type": "lesson",
+        "text": "A full browser suite from a doer seat OOMs this host; a doer runs the specs it changed."
+      }
+    ],
+    "receipt": {
+      "question": "A story on the next epic",
+      "returned": 1,
+      "cut": 0,
+      "cap": 8,
+      "more": ""
+    }
+  }
+}
