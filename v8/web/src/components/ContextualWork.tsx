@@ -18,7 +18,8 @@ export interface WorkContext {
   ticket_id: string; title: string; kind: string; status: string; owner: string | null; requester: string; assignee: string | null;
   design_ref: string | null; scope: string; truncated: boolean;
   blockers?: { id: string; title: string; status: string }[];
-  unresolved_asks?: { id: string; kind: string; to: string }[];
+  /** Oldest first; by/at/text on a board with S-UI (the header badge lists and jumps to them). */
+  unresolved_asks?: { id: string; kind: string; to: string; by?: string; at?: string; text?: string }[];
   gates: { id: string; data: { gate: string } }[];
   records: { type: string; group: string; relation: string; record: { id: string; title?: string; note?: string; version?: number; scope?: string; filename?: string; form?: string; content_type?: string; has_content?: boolean } }[];
   events: { id: string; created_at: string; created_by: string; kind: string; data: Record<string, unknown> }[];
@@ -33,6 +34,11 @@ export function useWorkContext(ticketId: string, category = "all") {
 }
 
 /** The header's "Needs attention" line: open gates, unanswered asks, blockers — board facts only. */
+/** The attention line without the unanswered-request part (the header renders that as a control). */
+export function attentionOther(data: Pick<WorkContext, "gates" | "blockers" | "status">): string {
+  return attentionLine({ ...data, unresolved_asks: [] });
+}
+
 export function attentionLine(data: Pick<WorkContext, "gates" | "unresolved_asks" | "blockers" | "status">): string {
   return [
     ...data.gates.map((g) => g.data.gate.replaceAll("_", " ")),

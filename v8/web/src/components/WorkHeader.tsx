@@ -7,7 +7,8 @@ import { useDocDrawer } from "./DocDrawer";
 import { Icon } from "./Icon";
 import { identity } from "../auth/identity";
 import { useViewerFlag } from "./viewerPrefs";
-import { attentionLine, FilesViewer, HistoryViewer, useWorkContext } from "./ContextualWork";
+import { attentionLine, attentionOther, FilesViewer, HistoryViewer, useWorkContext } from "./ContextualWork";
+import { AttentionAsks } from "./AttentionAsks";
 import styles from "./WorkHeader.module.css";
 
 // The one work header shared by the epic and the ticket page (design-a2e5369133 §WorkHeader,
@@ -195,7 +196,9 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
         <div>
           <dt className={styles.label}>Needs attention</dt>
           <dd className={styles.value} data-testid="work-attention">
-            {attention ? <span className={styles.coral}><Icon name="warning" size={18} />{attention}</span>
+            {attention && data ? <span className={styles.coral}><Icon name="warning" size={18} />
+              {attentionOther(data)}{attentionOther(data) && data.unresolved_asks?.length ? " · " : ""}
+              {data.unresolved_asks?.length ? <AttentionAsks asks={data.unresolved_asks} /> : null}</span>
               : <span className={styles.muted}>{ctx.isError ? "Unknown on this board" : ctx.isPending ? "…" : "Nothing open"}</span>}
           </dd>
         </div>

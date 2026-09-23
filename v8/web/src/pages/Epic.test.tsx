@@ -427,3 +427,48 @@ describe("EpicPage", () => {
     expect(await screen.findByTestId("elsewhere")).toBeInTheDocument();
   });
 });
+
+describe("S-UI: the unanswered-request badge is a control (c-7e59da92c3)", () => {
+  const msg = (id: string, text: string, at: string): MessageView =>
+    ({ id, by: "architect.epic-1", to: "owner", kind: "question", text, at, reply_to: null }) as MessageView;
+  const asks = [
+    { id: "m-old", kind: "question", to: "owner", by: "architect.epic-1", at: "2026-09-20T10:00:00Z", text: "Which icon set?" },
+    { id: "m-new", kind: "steer", to: "owner", by: "architect.epic-1", at: "2026-09-21T10:00:00Z", text: "Pick a filter" },
+  ];
+  function withAsks(n: number) {
+    const thread = [msg("m-old", "Which icon set?", asks[0].at), msg("m-new", "Pick a filter", asks[1].at)];
+    mount(page({}, thread));
+    server.use(http.get("/v1/tickets/epic-1/contextual", () => okJson({
+      ticket_id: "epic-1", title: "Upgrade the board UI", kind: "epic", status: "in_progress", owner: "owner", requester: "owner",
+      assignee: null, design_ref: null, gates: [], scope: "epic-1", events: [], blockers: [], records: [],
+      unresolved_asks: asks.slice(0, n) })));
+  }
+
+  it("one ask: clicking the badge scrolls to and highlights that message", async () => {
+    withAsks(1);
+    await title();
+    const badge = await screen.findByTestId("attention-asks");
+    expect(badge.tagName).toBe("BUTTON");
+    expect(badge).toHaveTextContent("1 unanswered request");
+    await screen.findByText("Which icon set?");
+    fireEvent.click(badge);
+    expect(document.getElementById("m-old")).toHaveAttribute("data-highlight", "true");
+    expect(document.querySelectorAll("[data-highlight]")).toHaveLength(1);
+  });
+
+  it("several asks: clicking opens the list oldest first; a row jumps to and highlights its message", async () => {
+    withAsks(2);
+    await title();
+    const badge = await screen.findByTestId("attention-asks");
+    expect(badge).toHaveTextContent("2 unanswered requests");
+    await screen.findByText("Pick a filter");
+    fireEvent.click(badge);
+    const rows = within(await screen.findByTestId("attention-asks-list")).getAllByTestId("attention-ask");
+    expect(rows.map((r) => r.getAttribute("data-ask"))).toEqual(["m-old", "m-new"]);
+    expect(rows[1]).toHaveTextContent("Pick a filter");
+    fireEvent.click(rows[1]);
+    expect(document.getElementById("m-new")).toHaveAttribute("data-highlight", "true");
+    expect(document.getElementById("m-old")).not.toHaveAttribute("data-highlight");
+    expect(screen.queryByTestId("attention-asks-list")).toBeNull();
+  });
+});

@@ -213,7 +213,12 @@ def test_contextual_unanswered_attention_and_answer_transition(rig, kind):
     ticket = b.ticket_create(owner if kind == TicketKind.epic else architect, kind=kind,
                             work_type=WorkType.feature, title="Attention", parent_id=body.ticket_id if kind == TicketKind.story else None)
     ask = b.message_send(architect, ticket_id=ticket.id, to=owner.id, kind=MessageKind.question, text="Please answer")
-    assert contextual_work(b, ticket.id)["unresolved_asks"] == [{"id": ask.id, "kind": "question", "to": owner.id}]
+    assert contextual_work(b, ticket.id)["unresolved_asks"] == [{
+        "id": ask.id, "kind": "question", "to": owner.id,
+        "by": architect.id, "at": ask.created_at.isoformat(), "text": "Please answer"}]  # S-UI: the badge lists them
+    ask2 = b.message_send(architect, ticket_id=ticket.id, to=owner.id, kind=MessageKind.question, text="And this")
+    assert [a["id"] for a in contextual_work(b, ticket.id)["unresolved_asks"]] == [ask.id, ask2.id]  # oldest first
+    b.message_send(owner, ticket_id=ticket.id, to=architect.id, kind=MessageKind.answer, text="Done", reply_to=ask2.id)
     client = TestClient(create_app(b))
     assert client.get(f"/v1/tickets/{ticket.id}/contextual").status_code == 401
     response = client.get(f"/v1/tickets/{ticket.id}/contextual", headers={"X-Participant": owner.id})

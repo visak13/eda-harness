@@ -46,7 +46,11 @@ def contextual_work(board: Board, ticket_id: str, category: HistoryCategory = "a
     if ticket.status != TicketStatus.dropped and board.epic_of(ticket).status not in {TicketStatus.done, TicketStatus.partial, TicketStatus.dropped}:
         for message in board.store.query("message", {"ticket_id": ticket_id, "kind": [MessageKind.question, MessageKind.steer]}, limit=100000):
             if message.to and not board.ask_resolved(message):  # closed-seat asks and addressee replies resolve (c-8f893cc2e8)
-                asks.append({"id": message.id, "kind": message.kind.value, "to": message.to})
+                asks.append({"id": message.id, "kind": message.kind.value, "to": message.to,
+                             # S-UI: the header badge lists them oldest first and jumps to each
+                             "by": message.created_by, "at": message.created_at.isoformat(),
+                             "text": message.text[:160]})
+        asks.sort(key=lambda m: m["at"])
     return {"ticket_id": ticket_id, "title": ticket.title, "kind": ticket.kind, "status": ticket.status,
             "owner": board.epic_owner(ticket_id), "requester": ticket.created_by, "assignee": ticket.assignee,
             "blockers": [{"id": t.id, "title": t.title, "status": t.status} for t in board.blockers(ticket_id) if t.status.value != "done"],
