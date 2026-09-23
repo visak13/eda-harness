@@ -85,13 +85,24 @@ def module_files() -> dict[str, Path]:
 
 
 class CodeIdentity:
-    """sha256 of each retrieval source file, captured ONCE when this process loaded it (rsi is imported
-    at board boot, beside knowledge/search/store). `stale()` names files whose bytes on disk now differ:
-    the running process no longer serves what is on disk, so a run would measure the wrong code."""
+    """sha256 of each retrieval source file AS THIS PROCESS EXECUTED IT: every module records its own
+    SOURCE_SHA256 while it loads; a module this process never imported (exam.py in the board) is hashed
+    from disk. `stale()` names files whose bytes on disk now differ: the running process no longer serves
+    what is on disk, so a run would measure the wrong code. `loaded=None` hashes `files` now (a fresh import)."""
 
-    def __init__(self, files: dict[str, Path] | None = None):
+    def __init__(self, files: dict[str, Path] | None = None, loaded: dict[str, str] | None = None):
         self.files = dict(files if files is not None else module_files())
-        self.loaded = {n: _sha(p.read_bytes()) for n, p in sorted(self.files.items())}
+        self.loaded = dict(sorted(loaded.items())) if loaded is not None else \
+            {n: _sha(p.read_bytes()) for n, p in sorted(self.files.items())}
+
+    @classmethod
+    def from_process(cls) -> "CodeIdentity":
+        files = module_files()
+        loaded = {}
+        for n, p in files.items():
+            mod = sys.modules.get(f"edp8.{n[:-3]}")
+            loaded[n] = getattr(mod, "SOURCE_SHA256", None) or _sha(p.read_bytes())
+        return cls(files, loaded)
 
     def code_hash(self) -> str:
         return _jsha(self.loaded)
@@ -107,20 +118,20 @@ class CodeIdentity:
         return out
 
 
-LOADED = CodeIdentity()
+LOADED = CodeIdentity.from_process()
 
 
 # ----------------------------------------------------------------------------- T1: corpus fingerprint
 def corpus_rows(store: Any) -> dict[str, str]:
-    """One short hash per knowledge row: (status, binding, scope, text+detail) of every decision, claim
-    and lesson, live or retired, plus every kglink (kind, ends) — so an addition, a withdrawal, a
-    count-preserving replacement or a re-link each change the fingerprint (§3 T1)."""
+    """One short hash per knowledge row: EVERY field of every decision, claim and lesson, live or retired
+    (status, binding, text, detail, scope, domains, dates, evidence, counters — anything lookup may read),
+    plus every kglink (kind, ends) — so an addition, a withdrawal, a count-preserving replacement, a
+    re-link or a re-dated/re-domained record each change the fingerprint (§3 T1, widened by the second
+    opinion: a domains edit changed a pack while a narrower fingerprint stayed equal)."""
     rows: dict[str, str] = {}
     for rtype in knowledge.RECORD_TYPES:
         for r in store.query(rtype, limit=10_000_000):
-            d = r.model_dump(mode="json")
-            rows[f"{rtype}:{r.id}"] = _jsha([d.get("status"), bool(d.get("binding")), d.get("scope"),
-                                             d.get("text") or "", d.get("detail") or ""])[:16]
+            rows[f"{rtype}:{r.id}"] = _jsha(r.model_dump(mode="json"))[:16]
     for lk in store.query("kglink", limit=10_000_000):
         rows[f"kglink:{lk.id}"] = _jsha([lk.kind, lk.from_id, lk.to_id])[:16]
     return rows
@@ -180,10 +191,12 @@ def _release(store: Any, run_id: str) -> None:
             store.put("rsi_state", st)
 
 
-def _note_attempt(store: Any, at: datetime, outcome: str, reason: str, run_id: str | None = None) -> None:
+def _note_attempt(store: Any, at: datetime, outcome: str, reason: str, run_id: str | None = None,
+                  **inputs: Any) -> None:
     with store.transaction(immediate=True):
         st = _state(store)
-        st.last_attempt = {"at": at.isoformat(), "outcome": outcome, "reason": reason, "run_id": run_id}
+        st.last_attempt = {"at": at.isoformat(), "outcome": outcome, "reason": reason, "run_id": run_id,
+                           **inputs}
         store.put("rsi_state", st)
 
 
@@ -230,6 +243,9 @@ def load_manifest(path: Path) -> tuple[dict[str, Any], bytes]:
     f = m.get("finding")
     if not isinstance(f, dict) or not f.get("ticket_id") or not f.get("to"):
         raise RsiError("manifest malformed: 'finding' needs ticket_id and to")
+    names = [e.get("name") or Path(e["path"]).stem for e in exams]
+    if len(set(names)) != len(names):
+        raise RsiError("manifest malformed: exam names must be unique (they key the per-question baseline)")
     if not [e for e in exams if not e.get("skip")]:
         raise RsiError("manifest lists no exam with required evidence")
     return m, raw
@@ -251,10 +267,17 @@ def load_exam(entry: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, An
         raise RsiError(f"exam malformed: {entry['path']}: no questions")
     field = entry["required"]
     out = []
+    seen: set[Any] = set()
     for i, q in enumerate(qs, 1):
         req = q.get(field) if isinstance(q, dict) else None
-        if not isinstance(q, dict) or not q.get("epic") or not q.get("question") or not req:
-            raise RsiError(f"exam malformed: {entry['path']} question #{i} needs epic, question and {field}")
+        if not isinstance(q, dict) or not q.get("epic") or not q.get("question") or not isinstance(req, list) \
+                or not req or not all(isinstance(x, str) and x.strip() for x in req):
+            raise RsiError(f"exam malformed: {entry['path']} question #{i} needs epic, question and a "
+                           f"non-empty list of id strings in {field}")
+        n = q.get("n", i)
+        if n in seen:
+            raise RsiError(f"exam malformed: {entry['path']} repeats question n={n}")
+        seen.add(n)
         out.append({"n": q.get("n", i), "epic": q["epic"], "question": q["question"],
                     "required": list(req), "paths": list(q.get("paths") or []), "vec": q.get("vec")})
     return out, corpus, raw
@@ -310,17 +333,44 @@ def _dense_status(index: Any) -> dict[str, Any]:
             "embed_model": st.get("model") or st.get("embedder")}
 
 
+class _Watch:
+    """A pass-through view that RECORDS any exception a retrieval leg raises. knowledge.lookup swallows a
+    failing FTS or dense leg (a seat still gets a pack), which would let a broken leg pass the tripwire;
+    the replay turns what was recorded into an error, so the run fails closed. Seat lookups are unchanged."""
+
+    def __init__(self, inner: Any, errors: list[str], names: set[str]):
+        self._inner, self._errors, self._names = inner, errors, names
+
+    def __getattr__(self, name: str) -> Any:
+        attr = getattr(self._inner, name)
+        if name not in self._names or not callable(attr):
+            return attr
+
+        def call(*a: Any, **k: Any) -> Any:
+            try:
+                return attr(*a, **k)
+            except Exception as e:
+                self._errors.append(f"{name}: {type(e).__name__}: {e}")
+                raise
+        return call
+
+
 def replay(questions: list[dict[str, Any]], exam_name: str, store: Any, index: Any, *, ref_now: datetime,
            paths: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """One seat-identical lookup per question; `present` = required ids that are records IN the pack
     (replaces-history does not count, §0 row 2)."""
     out = []
     for q in questions:
+        errors: list[str] = []
+        s = _Watch(store, errors, {"fts_search"})
+        ix = _Watch(index, errors, {"dense_search", "search", "status"}) if index is not None else None
         try:
-            value = knowledge.wired_lookup(store, index, q["epic"], question=q["question"], ref_now=ref_now,
+            value = knowledge.wired_lookup(s, ix, q["epic"], question=q["question"], ref_now=ref_now,
                                            **(paths or {}))
         except Exception as e:  # fail closed: one broken lookup makes the whole run an error
             raise RsiError(f"lookup failed on {exam_name}#{q['n']}: {type(e).__name__}: {e}") from e
+        if errors:  # a leg failed inside lookup and was swallowed there: still an error here
+            raise RsiError(f"lookup failed on {exam_name}#{q['n']}: retrieval leg {errors[0]}")
         ids = {r.get("id") for r in value.get("records") or []}
         present = [i for i in q["required"] if i in ids]
         out.append({"exam": exam_name, "n": q["n"], "required": q["required"], "present": present,
@@ -447,6 +497,7 @@ def tick(store: Any, index: Any = None, *, board: Any = None, manifest: Path | s
             "policy": P0, "paths": dict(paths or {}), "rubric_hash": None}
         run = RsiRun(id=run_id, trigger=trig, identity=identity, baseline_run=base.id if base else None,
                      verdict="error", started_at=started, created_by="rsi")
+        identity = run.identity  # pydantic copied the dict: later hashes must land on the run's own copy
         target: dict[str, str] = {}
         try:
             mpath = Path(manifest) if manifest else MANIFEST
@@ -467,9 +518,10 @@ def tick(store: Any, index: Any = None, *, board: Any = None, manifest: Path | s
                     per_question += replay(qs, name, s_store, s_index, ref_now=ref, paths=paths)
                 else:
                     per_question += replay(qs, name, store, index, ref_now=ref, paths=paths)
-            # the finding target must exist before a run may pass: a regression nobody can be told of is an error
+            # the finding target (ticket AND addressee) must resolve before a run may pass: a regression
+            # nobody can be told of is an error
             if board is not None:
-                board.ticket(target["ticket_id"])
+                board.resolve_recipient(target["to"], board.ticket(target["ticket_id"]))
             elif not dry_run:
                 raise RsiError("no board to post a finding through")
             run.per_question = per_question
@@ -500,19 +552,25 @@ def _commit(store: Any, board: Any, run: RsiRun, st0: RsiState, rows: dict[str, 
     if run.verdict == "error" and la.get("outcome") == "error" and la.get("reason") == run.error \
             and la.get("corpus_fp") == fp and la.get("code_hash") == ch:
         # the same failure on the same inputs: refresh the attempt, do not pile up identical error rows
-        _note_attempt(store, at, "error", run.error, la.get("run_id"))
+        _note_attempt(store, at, "error", run.error, la.get("run_id"), corpus_fp=fp, code_hash=ch)
         return {"verdict": "error", "run": la.get("run_id"), "error": run.error, "repeat": True}
     prev_regressed = None
     with store.transaction(immediate=True):
         st = _state(store)
+        if not st.in_flight or st.in_flight.get("run_id") != run.id:
+            # our lease expired and another tick took it: its result stands, ours is dropped unwritten
+            return {"verdict": "skipped", "reason": "lease lost before commit", "run": None}
         lc = st.last_consumed or {}
         if lc.get("run_id"):
             prev = store.get("rsi_run", lc["run_id"])
             if prev is not None and prev.verdict == "regressed":
                 prev_regressed = prev
-        if run.verdict == "regressed" and prev_regressed is not None \
-                and prev_regressed.regressions == run.regressions and prev_regressed.finding_msg_id:
-            run.finding_msg_id = prev_regressed.finding_msg_id  # same loss already reported: no second message
+        if run.verdict == "regressed" and prev_regressed is not None and prev_regressed.finding_msg_id \
+                and prev_regressed.regressions == run.regressions \
+                and all(prev_regressed.identity.get(k) == run.identity.get(k)
+                        for k in ("code_hash", "corpus_fp", "manifest_hash", "exam_hashes", "paths")):
+            # a re-tick of the SAME state finding the SAME loss: that finding already describes it
+            run.finding_msg_id = prev_regressed.finding_msg_id
         store.put("rsi_run", run)
         st.last_attempt = {"at": at.isoformat(), "outcome": run.verdict, "reason": run.error or run.trigger,
                            "run_id": run.id, "corpus_fp": fp, "code_hash": ch}

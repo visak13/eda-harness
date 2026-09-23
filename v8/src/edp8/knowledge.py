@@ -12,6 +12,8 @@ optional semantic index and git heads in.
 
 from __future__ import annotations
 
+import hashlib
+from pathlib import Path
 import json as _json
 import math
 import os
@@ -20,6 +22,9 @@ from datetime import datetime
 from typing import Any, Callable
 
 from .schemas import now
+
+# S18 T2: sha256 of the source this process executed, taken as the module loads (edp8.rsi reads it)
+SOURCE_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 RECORD_TYPES = ("decision", "claim", "lesson")
 EPIC_TYPES = ("decision", "claim")  # the epic-isolated types; lessons are filed nowhere
@@ -896,7 +901,9 @@ def wired_lookup(store: Any, index: Any | None, scope: str, *, question: str | N
                  max_hops: int = MAX_HOPS, fts: bool = True, dense: bool = True) -> dict[str, Any]:
     """lookup() wired to the board's semantic Index exactly as a seat's lookup is (Board.lookup delegates
     here), so the RSI tripwire replays the very call a seat makes. `fts`/`dense`/`max_hops` switch one
-    retrieval path off for THIS call only (S18 §9 c3); a seat always gets the defaults."""
+    RECORD retrieval path off for THIS call only (S18 §9 c3); a seat always gets the defaults. Scope:
+    fts=False empties the records' FTS seed leg (and the store-FTS excerpt fallback) but keeps the index's
+    hybrid message/doc excerpt search; dense=False drops the index, so that hybrid excerpt tier goes too."""
     semantic = None
     lesson_semantic = None
     embed_status = None

@@ -18,6 +18,7 @@ Read-only against the board: it never writes records and never loads an embeddin
 
 from __future__ import annotations
 
+import hashlib
 import argparse
 import json
 import re
@@ -25,6 +26,9 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+# S18 T2: sha256 of the source this process executed, taken as the module loads (edp8.rsi reads it)
+SOURCE_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 VERDICTS = {"right": 1.0, "half": 0.5, "miss": 0.0, "invented": 0.0}
 # the architect's grade files (v8/.data/exams/r4) use CORRECT | PARTIAL | WRONG | NOT-IN-PACK

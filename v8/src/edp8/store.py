@@ -7,6 +7,7 @@ is process-local and the service is the single writer.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from contextlib import contextmanager
 from collections.abc import Callable, Iterator
@@ -21,6 +22,9 @@ from typing import Any
 from pydantic import BaseModel
 
 from .schemas import OBJECT_TYPES, Doc, Event, Obj
+
+# S18 T2: sha256 of the source this process executed, taken as the module loads (edp8.rsi reads it)
+SOURCE_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 _INDEXED: dict[str, list[str]] = {
     "participant": ["role", "handle"],

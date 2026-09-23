@@ -6,6 +6,7 @@ ranks it. One writer / many readers guarded by a single RLock.
 
 from __future__ import annotations
 
+from pathlib import Path
 import hashlib
 import math
 import os
@@ -16,6 +17,9 @@ from collections import Counter
 from typing import Iterable, Protocol
 
 import numpy as np
+
+# S18 T2: sha256 of the source this process executed, taken as the module loads (edp8.rsi reads it)
+SOURCE_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 

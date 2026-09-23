@@ -381,6 +381,107 @@ def test_c4_low_ram_and_lost_dense_hold(world):
     assert res["verdict"] == "hold" and "dense unavailable" in res["hold_reason"]
 
 
+# ---------------------------------------------------------------- second opinion 20260923T053423Z-dab188b9
+def test_so1_a_swallowed_leg_failure_is_an_error_not_a_pass(world, monkeypatch):
+    """knowledge.lookup swallows a failing FTS leg for seats; the tripwire must still fail closed."""
+    real = Store.fts_search
+
+    def broken(self, *a, **k):
+        if self.path == ":memory:" and self is not world["store"]:
+            raise RuntimeError("fts index corrupt")
+        return real(self, *a, **k)
+    monkeypatch.setattr(Store, "fts_search", broken)
+    _assert_error_not_consumed(world, _tick(world), "retrieval leg fts_search: RuntimeError")
+
+
+def test_so2_manifest_and_exam_hashes_persist_on_the_run(world):
+    res = _tick(world)
+    run = world["store"].get("rsi_run", res["run"])
+    assert run.identity["manifest_hash"] and list(run.identity["exam_hashes"]) == [str(SYNTHETIC)]
+    assert run.identity["exam_hashes"][str(SYNTHETIC)] == hashlib.sha256(SYNTHETIC.read_bytes()).hexdigest()
+
+
+def test_so3_an_expired_holder_cannot_commit_over_the_new_holder(world, monkeypatch):
+    real = rsi.replay
+
+    def slow(*a, **k):  # while this tick replays, its lease expires and another tick takes it
+        st = rsi._state(world["store"])
+        st.in_flight = {"run_id": "rsi-newholder", "lease_until": (now() + timedelta(minutes=5)).isoformat()}
+        world["store"].put("rsi_state", st)
+        return real(*a, **k)
+    monkeypatch.setattr(rsi, "replay", slow)
+    res = _tick(world)
+    assert res["verdict"] == "skipped" and "lease lost" in res["reason"]
+    assert _runs(world["store"]) == [] and rsi._state(world["store"]).last_pass_run is None
+
+
+@pytest.mark.parametrize("req", ["dec-x", ["dec-x", ""], [1], []])
+def test_so4_required_ids_must_be_a_list_of_id_strings(world, tmp_path, req):
+    e = tmp_path / "exam.json"
+    e.write_text(json.dumps([{"epic": TARGET, "question": "q?", "expected_ids": req}]), encoding="utf-8")
+    m = _manifest(tmp_path, [{"path": str(e), "required": "expected_ids"}])
+    _assert_error_not_consumed(world, _tick(world, manifest=m), "exam malformed")
+
+
+def test_so4_duplicate_question_numbers_and_exam_names_are_errors(world, tmp_path):
+    e = tmp_path / "exam.json"
+    e.write_text(json.dumps([{"n": 1, "epic": TARGET, "question": "a?", "expected_ids": ["dec-a"]},
+                             {"n": 1, "epic": TARGET, "question": "b?", "expected_ids": ["dec-b"]}]),
+                 encoding="utf-8")
+    m = _manifest(tmp_path, [{"path": str(e), "required": "expected_ids"}])
+    _assert_error_not_consumed(world, _tick(world, manifest=m), "repeats question n=1")
+    m2 = _manifest(tmp_path, [{"name": "x", "path": str(SYNTHETIC), "required": "required_ids"},
+                              {"name": "x", "path": str(SYNTHETIC), "required": "required_ids"}], "m2.json")
+    _assert_error_not_consumed(world, _tick(world, manifest=m2), "names must be unique")
+
+
+def test_so5_any_record_field_lookup_reads_changes_the_fingerprint(world):
+    s = world["store"]
+    from edp8.schemas import Lesson
+    s.put("decision", Decision(id="dec-dom", scope=TARGET, text="domains row"))
+    s.put("lesson", Lesson(id="les-1", domain="ui", topic="x", text="a lesson"))
+    fp = rsi.fingerprint(rsi.corpus_rows(s))
+    d = s.get("decision", "dec-dom")
+    d.domains = ["ui"]
+    s.put("decision", d)
+    fp2 = rsi.fingerprint(rsi.corpus_rows(s))
+    les = s.get("lesson", "les-1")
+    les.topic = "y"
+    s.put("lesson", les)
+    assert len({fp, fp2, rsi.fingerprint(rsi.corpus_rows(s))}) == 3
+
+
+def test_so6_loaded_identity_is_what_the_module_executed(monkeypatch):
+    from edp8 import knowledge
+    assert rsi.CodeIdentity.from_process().stale() == []
+    monkeypatch.setattr(knowledge, "SOURCE_SHA256", "0" * 64)  # the process ran older bytes than disk holds
+    ci = rsi.CodeIdentity.from_process()
+    assert ci.loaded["knowledge.py"] == "0" * 64 and ci.stale() == ["knowledge.py"]
+
+
+def test_so7_unresolvable_finding_recipient_is_an_error(world, tmp_path):
+    m = tmp_path / "m.json"
+    m.write_text(json.dumps({"finding": {"ticket_id": TARGET, "to": "nobody.registered"},
+                             "exams": [{"path": str(SYNTHETIC), "required": "required_ids"}]}), encoding="utf-8")
+    _assert_error_not_consumed(world, _tick(world, manifest=m), "nobody.registered")
+
+
+def test_so8_same_loss_under_a_new_identity_gets_its_own_finding(world):
+    _tick(world)
+    r1 = _tick(world, force=True, paths={"fts": False})
+    _add_decisions(world["store"], 20)  # the corpus moves: a new identity, the same loss
+    r2 = _tick(world, paths={"fts": False})
+    assert r1["verdict"] == r2["verdict"] == "regressed"
+    assert r1["finding_msg_id"] != r2["finding_msg_id"] and len(_findings(world["store"])) == 2
+
+
+def test_so9_repeated_identical_errors_stay_one_row(world, tmp_path):
+    bad = tmp_path / "absent.json"
+    for _ in range(4):
+        _tick(world, manifest=bad)
+    assert len(_runs(world["store"])) == 1
+
+
 # ============================================================================ c5 evaluator immutability
 def _hashes(paths):
     return {str(p): hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in paths}
@@ -395,13 +496,14 @@ def test_c5a_manifest_files_and_exam_py_unchanged_by_a_tick(tmp_path):
     b = _board()
     b.store.put("ticket", Ticket(id="epic-44a0576511", kind="epic", work_type="feature", title="x",
                                  epic_id="epic-44a0576511"))
+    b.participant_create("agent", "architect", m["finding"]["to"], id_=m["finding"]["to"])
     res = rsi.tick(b.store, None, board=b, code=_code(tmp_path), free_mb=PLENTY)
     assert res["verdict"] == "pass"
     assert _hashes(files) == before
 
 
 WRITE_ATTRS = {"write_text", "write_bytes", "unlink", "rename", "replace", "rmdir", "mkdir", "touch",
-               "chmod", "remove", "makedirs", "removedirs", "truncate", "writelines"}
+               "chmod", "remove", "makedirs", "removedirs", "truncate", "writelines", "open", "write"}
 ALLOWED_PUT_TYPES = {"policy", "rsi_run", "rsi_state", "message"}
 ALLOWED_BOARD_CALLS = {"ticket", "resolve_recipient", "_index", "_emit"}
 
