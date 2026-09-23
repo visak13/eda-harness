@@ -293,16 +293,29 @@ class Drill:
         self.step("wake_b_sent", message=q["id"], cron=cron)
         t = time.time()
         got = self.wait_for(lambda: [m for m in self.seat_messages(seq) if "CRON-FIRED-9" in m.get("text", "")], 600)
+        # The cron fire is a BARE-prompt turn/start (the prompt text itself, no wake envelope); the steer that
+        # asked for the CronCreate also mentions "CRON DRILL" inside its <task-notification> envelope, so a
+        # substring match over the whole input would count that wake as the fire (qa finding, 2026-09-23).
         fired = [r for r in self.mirror() if r.get("dir") == "out" and (r.get("msg") or {}).get("method") == "turn/start"
-                 and "CRON DRILL" in json.dumps((r["msg"].get("params") or {}).get("input"))]
-        early = bool(got) and not fired
-        self.log["result"]["wake_b"] = {"passed": bool(got) and bool(fired), "steer": q["id"], "cron": cron,
+                 and any(str(i.get("text", "")).startswith("CRON DRILL") for i in ((r["msg"].get("params") or {}).get("input") or []))]
+        marker_ts = _iso_ts((got or [{}])[0].get("created_at"))
+        early = bool(got) and (not fired or (marker_ts is not None and marker_ts < fired[0]["ts"]))
+        # the fire must land in its slot (Claude: at the minute; up to 90 s early only on :00/:30, which the
+        # slot above avoids) and the server must have ACCEPTED that turn/start (a response carrying result)
+        slot_ts = fire.replace(second=0, microsecond=0).timestamp()
+        on_time = bool(fired) and (slot_ts - 5) <= fired[0]["ts"] <= (slot_ts + 75)
+        fire_id = (fired[0]["msg"].get("id") if fired else None)
+        accepted = any(r.get("dir") == "in" and (r.get("msg") or {}).get("id") == fire_id and "result" in (r.get("msg") or {})
+                       for r in self.mirror()) if fire_id is not None else False
+        passed = bool(got) and bool(fired) and not early and on_time and accepted
+        self.log["result"]["wake_b"] = {"passed": passed, "steer": q["id"], "cron": cron,
                                         "marker_message": (got or [{}])[0].get("id"),
-                                        "cron_fire_turn_ts": fired[0]["ts"] if fired else None,
+                                        "cron_fire_turn_ts": fired[0]["ts"] if fired else None, "slot_ts": slot_ts,
+                                        "fire_on_time": on_time, "fire_turn_accepted": accepted,
                                         "posted_before_fire": early, "wait_s": round(time.time() - t, 1)}
-        self.step("wake_b_done", passed=bool(got) and bool(fired), marker=(got or [{}])[0].get("id"),
-                  cron_fire_turn=bool(fired))
-        return bool(got) and bool(fired)
+        self.step("wake_b_done", passed=passed, marker=(got or [{}])[0].get("id"),
+                  cron_fire_turn=bool(fired), fire_on_time=on_time, fire_turn_accepted=accepted, posted_before_fire=early)
+        return passed
 
     def resume(self) -> bool:
         time.sleep(15)
@@ -353,6 +366,16 @@ def _delivered(rows: list[dict], msg_id: str) -> str | None:
         if r.get("dir") == "out" and "result" in m and msg_id in json.dumps(m.get("result")):
             return "tool_result"
     return None
+
+
+def _iso_ts(v: str | None) -> float | None:
+    """Board ISO-8601 UTC timestamp -> epoch seconds (None when absent/unparseable)."""
+    if not v:
+        return None
+    try:
+        return dt.datetime.fromisoformat(v.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
 
 
 def main(argv: list[str] | None = None) -> int:
