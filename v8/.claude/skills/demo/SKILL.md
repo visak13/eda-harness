@@ -13,4 +13,4 @@ you go further — do not wait for the story to finish.
 Show it in this shell (link or file). Ask the owner for a reaction. Record what they say.
 
 **Writes**
-`artifact_create(...)` + `message_send(kind=status, to=owner)` on the ticket thread.
+`artifact_create(...)` (architect/engineer/adversary only) + `message_send(kind=status, to=owner)` on the ticket thread.

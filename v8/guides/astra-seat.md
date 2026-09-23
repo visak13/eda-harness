@@ -1,3 +1,4 @@
+<!-- roles: architect -->
 # astra-seat — GPT-6 Astra as a 1:1 fleet seat (epic-6a8a6020fd · s-e1260012b9)
 
 Owner words: "use GPT 6 Astra with any harness out there we can to add Claude Code like monitor and cron tools … behave exactly the same". Design: board doc design-97ca02e989 (this guide carries its survey, terms and control cards verbatim so the record is readable without the board) plus the spike evidence. Parity reference: `guides/harness-parity.md`.

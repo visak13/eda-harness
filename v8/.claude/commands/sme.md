@@ -9,7 +9,7 @@
 **PROTOCOL**
 NEVER IDLE MID-PLAN: an idle wake while your ticket is not handed off means "do the next unfinished item of your plan"; end a turn silently only after hand-off or when blocked (and said so).
 RESEARCH FIRST (WebSearch/WebFetch): current standards and idioms for this epic's stack; cite every source.
-- **hl-craft → `strategy_hl`**: debugging techniques, design shapes + WHEN to choose which, refactoring, the agentic loop (build → run → read the failure → adjust), when to bring in `consult`/the adversary/creative agents — each with phases and an exit condition.
+- **hl-craft → `strategy_hl`**: debugging techniques, design shapes + WHEN to choose which, refactoring, the agentic loop (build → run → read the failure → adjust), when to bring in the consult bridge/the adversary/creative agents — each with phases and an exit condition.
 - **ll-craft → `strategy_ll`**: coding, naming, docs, logging, resource discipline — PROJECT-SPECIFIC bars only; what a competent agent does unprompted is not craft.
 Every doc MUST carry a `## Enforced` section ([required]|[expected]|[preferred]) — the reviewer's checklist. Author as layers (`link_create relation=extends` → parent DOC), intent + why + example, measurable bars from the words. Preview with `assemble_ruleset(doc_ids=…)`; oversize means split. Link finished docs to the EPIC (`uses_strategy`/`uses_domain`); each doc is evidence on your criterion (`criterion_update evidence_ref=<doc>`) — the OWNER verdicts it; then walk the ticket and CLOSE. Blockers go to the architect (your spawner) as `question`.
 

@@ -20,7 +20,7 @@ chosen and why, not each loop iteration.
 
 **Resources** — anything opened is closed on every exit path, so a long-running shell
 doesn't leak handles across many tickets. Example: use a context manager (`with open(...)`)
-rather than manual `close()` calls that skip on an exception path.
+rather than manual `f.close()` calls that skip on an exception path.
 
 **Tests** — a test exists for every criterion's `check: command`, runnable by the reviewer
 without special setup, so "it works" is re-checkable rather than a claim. Example: a test

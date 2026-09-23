@@ -12,7 +12,7 @@ O/C/A/K to generate the draft itself.
 
 **Do**
 Audit the draft against four questions, one verdict each:
-- **Observation** — what prior approach to this goal-class exists (`find`)? Did the draft
+- **Observation** — what prior approach to this goal-class exists (`find`) (not reviewer/sme)? Did the draft
   use it? Null is fine if none exists.
 - **Comprehension** — does the draft address the root cause or a symptom/proxy? State the
   real goal explicitly.

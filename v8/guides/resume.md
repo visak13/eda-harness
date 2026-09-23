@@ -32,14 +32,14 @@ It is idempotent: call it again after compaction or whenever you are unsure you 
    from its next unbuilt item (plan doc + story thread are the durable memory, not the transcript).
    A resumed seat never trusts an old cursor: this full `context()` is the resync, and its `cursor` seeds
    every later heartbeat `context_delta(cursor=…)` (`get_guide('context-refresh')`).
-4. `record_status` at the next milestone. Never end a turn silently while asks are open or your story is
+4. `record_status` (not owner) at the next milestone. Never end a turn silently while asks are open or your story is
    in_progress.
 
 ## What resume_self is not
 - Not `context()`: context loads your tickets; resume_self re-arms you and lists the asks. Call both, in
   that order (resume_self, then context). Not `context_delta()` either: a delta needs a cursor you can
   trust, and a resumed seat has none until its fresh `context()` returns one.
-- Not `resume(participant_id)`: that is the SPAWNER's tool, which asks the pool to bring a parked or
+- Not `resume(participant_id)`: that is the SPAWNER's tool (owner/architect only), which asks the pool to bring a parked or
   closed seat back. resume_self is what the brought-back seat calls.
 - Not the fresh-boot sequence: a fresh shell still runs whoami → subscribe → Monitor once, cron once →
   context, as its role card says.
@@ -48,6 +48,6 @@ It is idempotent: call it again after compaction or whenever you are unsure you 
 - A seat that never registers after a spawn or a resume shows on your feed as shell_dead / shell_stalled
   (process facts from the pool). A live process that never booted is the gap this guide closes on the
   seat side; detection of that case is a later story.
-- Recovery = `reap(participant_id)` then `resume(participant_id)`: the pool relaunches the seat on its own
+- Recovery (owner/architect only) = `reap(participant_id)` then `resume(participant_id)`: the pool relaunches the seat on its own
   conversation (Claude: fork-resume; Pi: its session file) and types the resume line; the seat calls
   resume_self and follows the steps. Never spawn a second shell on a handle that is still held.

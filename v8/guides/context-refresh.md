@@ -21,7 +21,7 @@ conservatively invalidates metadata. This is explicit resynchronization, not rou
 The complete successful delta envelope is bounded to `EDP8_DELTA_BUDGET_B` (default 12 KB, S20),
 including its constant-size hashed cursor; a cut page carries `omitted` (why + `context_delta(cursor=
 next_cursor)`). Oversized individual events yield an explicit invalidation instead of stalling pagination.
-An `asks_changed` reference requires `inbox()` so resolved,
+An `asks_changed` reference requires `inbox()` (not owner) so resolved,
 reopened and newly addressed asks are not lost. Unchanged asks remain your responsibility.
 
 After consuming a page, save `next_cursor`; continue while `has_more`. The continuation

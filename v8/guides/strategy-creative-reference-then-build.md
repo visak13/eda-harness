@@ -15,7 +15,7 @@ look`.
 2. Look spec — state what "done" looks like against the references (layout, states,
    motion, tone), from the design doc's look spec section.
 3. Build — implement against the spec.
-4. Consultant read — `consult(purpose=visual)` before /demo to the owner; treat findings
+4. Consultant read (not owner/sme) — `consult(purpose=visual)` before /demo to the owner; treat findings
    as input, not a verdict — the consultant is not the sign-off authority, the owner is.
 
 **Exit condition.** The build matches the look spec; the owner has seen it via /demo and

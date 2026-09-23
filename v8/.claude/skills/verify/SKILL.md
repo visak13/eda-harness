@@ -14,4 +14,4 @@ For each criterion on the ticket: run its check (command | path | look | verdict
 record the actual result, do not trust a prior claim without re-running it.
 
 **Writes**
-`doc_update` (report section) + `criterion_update(evidence_ref, verdict)` per criterion.
+`doc_update` (report section) + `criterion_update(evidence_ref, verdict)` per criterion (not owner).

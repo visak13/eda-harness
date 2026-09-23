@@ -15,4 +15,4 @@ creative-reference-then-build, …). Choose one. Record the choice and why befor
 work — do not silently default.
 
 **Writes**
-`doc_create(doc_type=note or plan section: strategy, why)` linked to the story.
+`doc_create(doc_type=note or plan section: strategy, why)` linked to the story (not owner).

@@ -20,7 +20,7 @@ What each kind means:
 - `event.gate_opened` — a human decision is pending; answer if you are the owner, or hold
   if you are not.
 - `event.gate_answered` — the gate above is resolved; proceed.
-- `event.shell_dead` / `shell_stalled` — a child session needs `resume()` or `reap()`.
+- `event.shell_dead` / `shell_stalled` — a child session needs `resume()` or `reap()` (owner/architect only).
 - `message.question` / `steer` / `deviation` / `finding` — someone needs a response from
   you; reply on the same ticket thread.
 - `message.answer` / `status` / `note` — informational; no reply required.

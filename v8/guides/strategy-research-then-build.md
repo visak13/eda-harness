@@ -8,7 +8,7 @@ is cheaper than iterating in the dark.
 domain the engineer has not used in this codebase before.
 
 **Phases**
-1. Research — read docs/source/prior art (`find` first — a domain doc may already answer
+1. Research — read docs/source/prior art (`find` first (not reviewer/sme) — a domain doc may already answer
    this); time-box it; the output is a short note of what's true and what constrains the
    build, not a full report.
 2. Design the slice — given the research, decide the approach for this story specifically

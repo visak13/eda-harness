@@ -4,7 +4,7 @@ Discover names with `describe_objects()`; `describe(type=...)` remains compatibl
 links schemas, relationships and skills rather than embedding their manuals. `describe('enums')`
 lists fixed domains. IDs, scope names, tags, models and free text stay dynamic.
 
-For documents: doc_create → link_create → doc_read → doc_edit(id, expected_version, edits).
+For documents: doc_create → link_create → doc_read → doc_edit(id, expected_version, edits) (architect/engineer/qa/adversary only).
 Every old_text is matched uniquely against the ORIGINAL current body; overlaps or missing /
 ambiguous matches and stale versions write nothing. One success creates one version and a
 compact receipt. Existing doc_update keeps full output unless compact=true. Request
@@ -13,7 +13,7 @@ including version. Section is a unique exact Markdown heading line, offsets sect
 Without range arguments doc_read keeps the old full-body default. Related skills: methodology,
 verify, handoff.
 
-For files: artifact_upload(path, note) → message_send(artifacts=[id], ...). Upload is staged
+For files (architect/engineer/adversary only): artifact_upload(path, note) → message_send(artifacts=[id], ...). Upload is staged
 until the message finalizes it. The caller owns the upload; existing MIME sniffing/25 MB/auth
 rules remain. Never paste image base64 into a model tool argument. Related skill: demo.
 

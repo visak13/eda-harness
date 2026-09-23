@@ -23,7 +23,7 @@ They are framework behaviour, so they live here; CLAUDE.md and every role card p
   guessing among `edp8-board`/python processes (2026-09-08: an engineer killed the fleet board this way).
 - The MCP proxy loads its code at boot: a merged bridge/tool fix reaches only shells that boot
   after the proxy restart. Say so in your hand-off when your change touches `mcp_server`,
-  `bundles`, `consult` or `client`; after such a bridge chore lands, the proxy is respawned (owner
+  `bundles`, `edp8.consult` or `client`; after such a bridge chore lands, the proxy is respawned (owner
   call) and EVERY consult-using seat respawns — a running shell never sees the fix.
 
 ## Use edp.ps1
@@ -40,7 +40,7 @@ runs it. A seat runs only `.\edp.ps1 status` and `-WhatIf`. What it does and why
 - `uv run` re-syncs and cannot replace a running `edp8-board.exe`; run pytest via
   `.venv/Scripts/python.exe` while the fleet board is up.
 
-## Consult
+## Consult (not owner/sme)
 - `consult(purpose=second_opinion)` results can land after your shell closes; WAIT
   (`consult_status`) before hand-off. A `provider_model=unavailable` or 600 s cap is a named gap
   in your report, not a retry loop. Never delete or restore a path your own consult run's log
@@ -53,7 +53,7 @@ runs it. A seat runs only `.\edp.ps1 status` and `-WhatIf`. What it does and why
 - The idle-wake rule is your card's NEVER IDLE MID-PLAN line (doing seats); listening seats (architect after
   sign-off, owner) idle on a quiet board.
 - A turn that returns the harness's weekly-limit text ("You've hit your weekly limit … resets HH:MM")
-  is a BLOCKER, not a quiet end: `record_status(status=blocked)` with the reset time plus a blocker
+  is a BLOCKER (not owner), not a quiet end: `record_status(status=blocked)` with the reset time plus a blocker
   `message_send` (`kind=deviation` to the architect / `question` to the owner). qa lost 40 h to a silent
   end, 2026-09-08/09.
 
@@ -63,6 +63,6 @@ runs it. A seat runs only `.\edp.ps1 status` and `-WhatIf`. What it does and why
 - A message with `from_type=human` is a PERSON: answer them and wait; never treat it as agent chatter.
   Need a human reviewer/expert? `participants(role=…)` lists the team (humans marked); message the
   closest role and their Slack fires.
-- CLOSE (doing seats, in order, pure tools): `inbox()` → act on each until clear →
-  `record_status(status=…)` → `close_self()`. Then stop calling tools. The architect and the owner never
+- CLOSE (doing seats, in order, pure tools) (not owner/architect): `inbox()` → act on each until clear →
+  `record_status(status=…)` → `close_self()` (not owner/architect). Then stop calling tools. The architect and the owner never
   close_self.
