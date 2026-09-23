@@ -1818,12 +1818,16 @@ class Board:
         return {"decisions_set": set_dec, "claims_set": set_clm, "skipped_no_source_date": skipped}
 
     def record_decision(self, actor: Participant, *, scope: str, text: str, detail: str = "",
-                        replaces: list[str] | None = None, binding: bool = False,
+                        replaces: list[str] | None = None, binding: bool | None = None,
                         source: str | None = None, domains: list[str] | None = None) -> Decision:
         """Record what is in force (design §4.1). The decision and any replaces[] flips land in ONE
         transaction, whatever ticket or thread the older decision sat in; a `replaces` kglink and a
-        `came_from` kglink to the source are written alongside. Raises if a replaced id is unknown."""
+        `came_from` kglink to the source are written alongside. Raises if a replaced id is unknown.
+        `binding=None` (the default) inherits: a successor of a binding decision stays binding, so a
+        re-curation cannot silently demote a must-follow rule (m-db71577ddc); pass False to demote."""
         replaces = list(replaces or [])
+        if binding is None:
+            binding = any(getattr(self.store.get("decision", rid), "binding", False) for rid in replaces)
         d = Decision(id=new_id("dec"), scope=scope, text=text, detail=detail or "",
                      status=DecisionStatus.live, replaces=replaces, binding=binding,
                      source=source, decided_by=actor.id, domains=list(domains or []), created_by=actor.id,
@@ -1961,6 +1965,11 @@ class Board:
         if self.index is None:
             return {"embedder": "none", "reason": "no semantic index installed"}
         return self.index.reembed()
+
+    def binding_audit(self) -> dict[str, Any]:
+        """Replaced/withdrawn binding decisions with no live binding successor (m-0cccdead3e)."""
+        orphans = knowledge.binding_orphans(self.store)
+        return {"orphans": orphans, "count": len(orphans)}
 
     def embed_counts(self, scope: str) -> dict[str, Any]:
         """R2 item-3: embedded vs unembedded live records for an epic, so the backfill receipt can

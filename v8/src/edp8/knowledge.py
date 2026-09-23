@@ -482,6 +482,46 @@ def _live_record_count(store: Any, target_epic: str | None) -> int:
     return n
 
 
+_DEC_ID = re.compile(r"\bdec-[0-9a-f]{10}\b")
+
+
+def binding_orphans(store: Any) -> list[dict[str, Any]]:
+    """Audit (m-0cccdead3e): every replaced or withdrawn BINDING decision must have a live binding
+    successor, found forward along replaces links or named (dec-…) in its withdraw reason. Returns the
+    ones that do not, with the live successors they do have, so a re-curation that demoted a
+    must-follow rule is caught instead of silently dropping it from "Always applies"."""
+    decs = {d.id: d for d in store.query("decision", limit=100000)}
+    replaced_by: dict[str, list[str]] = {}
+    for d in decs.values():
+        for rid in getattr(d, "replaces", None) or []:
+            replaced_by.setdefault(rid, []).append(d.id)
+
+    def _status(d: Any) -> str:
+        return getattr(getattr(d, "status", ""), "value", getattr(d, "status", ""))
+
+    out = []
+    for d in decs.values():
+        if not getattr(d, "binding", False) or _status(d) not in ("replaced", "withdrawn"):
+            continue
+        frontier = list(replaced_by.get(d.id, [])) + _DEC_ID.findall(getattr(d, "withdrawn_reason", "") or "")
+        seen: set[str] = {d.id}
+        live: list[str] = []
+        while frontier:
+            sid = frontier.pop()
+            if sid in seen or sid not in decs:
+                continue
+            seen.add(sid)
+            s = decs[sid]
+            if _status(s) == "live":
+                live.append(sid)
+            else:  # a successor that was itself replaced/withdrawn: keep walking forward
+                frontier += replaced_by.get(sid, []) + _DEC_ID.findall(getattr(s, "withdrawn_reason", "") or "")
+        if not any(getattr(decs[s], "binding", False) for s in live):
+            out.append({"id": d.id, "status": _status(d), "scope": getattr(d, "scope", None),
+                        "text": d.text, "live_successors": sorted(live)})
+    return sorted(out, key=lambda o: o["id"])
+
+
 def lookup(store: Any, scope: str, *, question: str | None = None, id: str | None = None,
            path: str | None = None, semantic: Callable[[str], list[dict[str, Any]]] | None = None,
            stale_paths: Callable[[Any, str], bool] | None = None,

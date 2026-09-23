@@ -984,3 +984,43 @@ def test_board_dense_leg_is_scope_limited(board, rig):
     assert seen["k"] == knowledge.DENSE_FETCH
     assert da.id in seen["allow"] and les.id in seen["allow"] and db.id not in seen["allow"]
     assert da.id in out["receipt"]["seeds"]
+
+
+# --------------------------------------------------------------------------- binding carries forward (m-db71577ddc)
+def test_successor_of_binding_decision_inherits_binding(board, rig):
+    epic = make_epic(board, rig)
+    b = board.record_decision(rig["owner"], scope=epic.id, text="never restart the shared board", binding=True)
+    plain = board.record_decision(rig["owner"], scope=epic.id, text="ordinary rule")
+    succ = board.record_decision(rig["engineer"], scope=epic.id, text="never restart the shared board; post the commit",
+                                 replaces=[b.id])
+    assert succ.binding is True  # omitted binding inherits from the replaced binding decision
+    assert board.record_decision(rig["engineer"], scope=epic.id, text="ordinary v2", replaces=[plain.id]).binding is False
+    # an explicit False still demotes (an authored choice, not a silent default)
+    b2 = board.record_decision(rig["owner"], scope=epic.id, text="binding two", binding=True)
+    assert board.record_decision(rig["owner"], scope=epic.id, text="binding two, demoted", replaces=[b2.id],
+                                 binding=False).binding is False
+    out = board.lookup(rig["engineer"], scope=epic.id, question="unrelated words")
+    assert succ.id in [r["id"] for r in out["records"]]
+
+
+def test_binding_audit_flags_orphaned_binding_rules(board, rig):
+    epic = make_epic(board, rig)
+    kept = board.record_decision(rig["owner"], scope=epic.id, text="rule A", binding=True)
+    board.record_decision(rig["owner"], scope=epic.id, text="rule A v2", replaces=[kept.id])  # inherits → ok
+    lost = board.record_decision(rig["owner"], scope=epic.id, text="rule B", binding=True)
+    demoted = board.record_decision(rig["owner"], scope=epic.id, text="rule B v2", replaces=[lost.id], binding=False)
+    gone = board.record_decision(rig["owner"], scope=epic.id, text="rule C", binding=True)
+    recreated = board.record_decision(rig["owner"], scope=epic.id, text="rule C recreated")
+    board.withdraw_decision(rig["owner"], decision_id=gone.id, reason=f"re-curated as {recreated.id}")
+    named = board.record_decision(rig["owner"], scope=epic.id, text="rule D", binding=True)
+    named_succ = board.record_decision(rig["owner"], scope=epic.id, text="rule D recreated", binding=True)
+    board.withdraw_decision(rig["owner"], decision_id=named.id, reason=f"re-curated as {named_succ.id}")
+    audit = board.binding_audit()
+    got = {o["id"]: o for o in audit["orphans"]}
+    assert set(got) == {lost.id, gone.id} and audit["count"] == 2
+    assert got[lost.id]["live_successors"] == [demoted.id] and got[lost.id]["status"] == "replaced"
+    assert got[gone.id]["live_successors"] == [recreated.id] and got[gone.id]["status"] == "withdrawn"
+    # promoting the successors clears the audit
+    board.set_binding(rig["architect"], decision_id=demoted.id, binding=True, reason="restore")
+    board.set_binding(rig["architect"], decision_id=recreated.id, binding=True, reason="restore")
+    assert board.binding_audit()["count"] == 0

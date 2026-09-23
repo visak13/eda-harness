@@ -246,7 +246,7 @@ class BoardClient:
         return self._request("GET", "/v1/find", params={"q": q, "k": k, "types": types, "epic_id": epic_id})
 
     def record_decision(self, scope: str, text: str, detail: str = "", replaces: list[str] | None = None,
-                        binding: bool = False, source: str | None = None,
+                        binding: bool | None = None, source: str | None = None,
                         domains: list[str] | None = None) -> dict[str, Any]:
         return self._request("POST", "/v1/decisions", json={
             "scope": scope, "text": text, "detail": detail, "replaces": replaces or [],

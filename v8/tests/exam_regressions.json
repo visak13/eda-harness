@@ -1,5 +1,20 @@
 [
  {
+  "n": 1,
+  "epic": "epic-44a0576511",
+  "question": "In the Board UI improvements epic, the recovery design gives every seat two positions in its feed rather than one. Why two, and what may never advance them?",
+  "expected": "Because a seat can crash between delivery and action: one position is the transport cursor (what was delivered) and the other is a processed watermark (what the seat actually acted on), and the resume delta is computed from the processed watermark so unresolved asks replay. Neither watermark may be advanced by a bare inbox() or record_status call - an ask stays open until the seat answers that exact message id (reply_to) or the sender resolves it.",
+  "expected_ids": [
+   "dec-8586df26ab"
+  ],
+  "proof_ids": [
+   "m-f60ef8e770",
+   "m-4fcc66f2b8",
+   "m-8be8866fa0"
+  ],
+  "why": "exam4 Q1 regressed after c5 enrichment (m-0cccdead3e): target is seed #3, ranked #9, but the 8 KB pack holds ~5 ranked records of ~1.3 KB after 6 binding"
+ },
+ {
   "n": 17,
   "epic": "epic-1b289d63f9",
   "question": "In the redesigned board interface, if someone types formatting marks or a snippet of page code into a message, what does the reader see, and what does become clickable?",

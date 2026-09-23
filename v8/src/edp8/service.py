@@ -155,7 +155,7 @@ class DecisionIn(BaseModel):
     text: str
     detail: str = ""
     replaces: list[str] = []
-    binding: bool = False
+    binding: bool | None = None  # None = inherit from the replaced decisions
     source: str | None = None
     domains: list[str] = []
 
@@ -899,6 +899,12 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         """R2 item-3: run the in-board bounded re-embed pass for any unit lacking a vector (no
         restart). The board is the only process allowed to hold the model."""
         return ok(board.reembed(), "re-embed pass triggered on the board (bounded batch path)")
+
+    @app.get("/v1/index/binding_audit")
+    def index_binding_audit(a: Participant = Depends(actor)):
+        """Every replaced/withdrawn binding decision must have a live binding successor; lists those
+        that do not (m-0cccdead3e)."""
+        return ok(board.binding_audit(), "binding decisions left without a live binding successor")
 
     @app.get("/v1/index/embed_counts")
     def index_embed_counts(scope: str, a: Participant = Depends(actor)):

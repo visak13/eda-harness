@@ -1569,9 +1569,10 @@ class RecordDecisionArgs(BaseModel):
     replaces: list[str] = Field(default_factory=list,
                                 description="ids of older decisions this supersedes — each is flipped to "
                                 "replaced in the same transaction, whatever ticket or thread it sat in")
-    binding: bool = Field(default=False,
-                          description="true = always handed to agents in scope and never cut by lookup "
-                          "(e.g. a must-follow render)")
+    binding: bool | None = Field(default=None,
+                                 description="true = always handed to agents in scope and never cut by "
+                                 "lookup (e.g. a must-follow render); omit to inherit from the decisions "
+                                 "it replaces (a successor of a binding rule stays binding)")
     source: str | None = Field(default=None, description="the message, doc or attachment id it came from")
     domains: list[str] = Field(default_factory=list, description="domain checklist names it touches")
 
