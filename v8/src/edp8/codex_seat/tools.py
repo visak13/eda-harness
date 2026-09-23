@@ -163,8 +163,9 @@ class Delivery:
     `start_turn(text, msg_id)` / `steer(text, turn_id, msg_id)` are the runner's JSON-RPC calls and return
     True (accepted), False (explicitly rejected: safe to resend) or None (outcome unknown, e.g. a timeout).
     Every outgoing input carries a STABLE message id (codex echoes it as the userMessage item's
-    `clientId`, measured 0.156.0); `message_seen(id)` is that witness. An unknown steer keeps its
-    notifications pending (the next delivery path retries them) and a late witness withdraws them; an
+    `clientId`, measured 0.156.0); `message_seen(id)` is that witness. An unknown steer's notifications
+    are HELD under its id and never resent while the turn runs (it may have landed): its witness drops
+    them, and whatever is still held at turn/completed goes out once, oldest first, with the pending; an
     unknown start is resent under the SAME id only when no witness of any kind arrived (UNKNOWN_START_S)."""
 
     def __init__(self, start_turn: Callable[[str, str], bool | None], steer: Callable[[str, str, str], bool | None],
@@ -184,7 +185,7 @@ class Delivery:
         self._done_turns: deque[str] = deque(maxlen=64)  # a late turn/start response never revives these
         self._gen = 0  # bumped at every turn/started + turn/completed: the unknown-start watchdog's witness
         self._seen: deque[str] = deque(maxlen=256)  # message ids codex echoed back (userMessage clientId)
-        self._unconfirmed: dict[str, list[str]] = {}  # timed-out steer id → its notes (re-pended)
+        self._held: dict[str, list[str]] = {}  # timed-out steer id → its notes (held until witness or settle)
         self._retry_timer: threading.Timer | None = None
         self._retry_delay = RETRY_BACKOFF_S[0]
 
@@ -223,10 +224,11 @@ class Delivery:
             self.turn_id = None
             self._gen += 1
             self._outbox.extend((new_message_id(), t) for t in texts)
-            if self.pending:
-                rest = self.pending[:]
-                self.pending.clear()
-                self._unconfirmed.clear()  # they go out now under a new id; a late witness is moot
+            # a steer still unwitnessed at settle never reached the turn: its held notes go out now, first
+            rest = [n for notes in self._held.values() for n in notes] + self.pending
+            self._held.clear()
+            self.pending.clear()
+            if rest:
                 self._log(f"settled: flushing {len(rest)} standalone as one turn")
                 self._outbox.append((new_message_id(), "\n".join(wrap(n) for n in rest)))
         self.kick()
@@ -258,15 +260,12 @@ class Delivery:
             return
         with self.lock:
             self._seen.append(msg_id)
-            notes = self._unconfirmed.pop(msg_id, None)
-            for n in notes or ():
-                if n in self.pending:  # the timed-out steer did land: withdraw its re-pended copy
-                    self.pending.remove(n)
+            notes = self._held.pop(msg_id, None)  # the timed-out steer did land: it delivered them
             queued = [e for e in self._outbox if e[0] == msg_id]
             for e in queued:  # a watchdog-resent start whose first send did land: never a second copy
                 self._outbox.remove(e)
         if notes:
-            self._log(f"late witness {msg_id}: {len(notes)} re-pended notification(s) withdrawn")
+            self._log(f"late witness {msg_id}: {len(notes)} held notification(s) were delivered by that steer")
 
     # -- intake ---------------------------------------------------------------
     def deliver(self, notification: str) -> None:
@@ -298,7 +297,6 @@ class Delivery:
         with self.lock:
             rest = [*self._take_idle_batch(), *self.pending]
             self.pending.clear()
-            self._unconfirmed.clear()  # delivered here; a late steer witness no longer applies
             if not rest:
                 return text
         self._log(f"attach {len(rest)} to a seat tool result")
@@ -343,10 +341,10 @@ class Delivery:
         if ok is False:  # explicitly refused (the turn ended under us): next tool result / settle carries them
             self.pending[:0] = notes
         elif ok is None and mid not in self._seen:
-            # unknown (timeout): never counted as delivered — they stay pending, so the next tool
-            # result / steer / settle carries them; the steer's own late witness withdraws them
-            self.pending[:0] = notes
-            self._unconfirmed[mid] = list(notes)
+            # unknown (timeout): it may have landed, so it is never resent while the turn runs (a copy
+            # under another id could not be withdrawn); its witness drops the held notes and settle
+            # delivers what is still held (an accepted steer is echoed before its turn completes)
+            self._held[mid] = list(notes)
 
     def kick(self) -> None:
         for attempt in range(SEND_RETRIES + 1):

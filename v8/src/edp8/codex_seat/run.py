@@ -94,6 +94,10 @@ def main(argv: list[str] | None = None) -> int:
     # every child (app-server, Monitor commands) is born into a kill-on-close job: a runner-only crash
     # takes them down with it (qa adversary #5)
     jobbed = bind_to_kill_job()
+    if os.name == "nt" and not jobbed:  # fail-closed: a runner-only crash would orphan its children
+        print(f"{time.strftime('%H:%M:%S')} codex seat {handle} refused to start: "
+              "could not bind the kill-on-close job object", flush=True)
+        return 2
 
     console: Console | None = None
     seat = CodexSeat(cwd=agent_home, role=role, handle=handle, log_dir=log_dir,

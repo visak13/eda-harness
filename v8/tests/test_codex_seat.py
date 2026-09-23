@@ -405,13 +405,17 @@ def test_unknown_start_outcome_is_reconciled_not_blindly_resent(monkeypatch):
     assert wait_for(lambda: calls == ["B", "B"], 2)
 
 
-def test_unknown_steer_outcome_stays_pending_until_witnessed():
-    """superseded by qa adversary #4: a timed-out steer is NOT counted as delivered (see the fix-round tests)."""
-    d = Delivery(lambda _t, _m: True, lambda _t, _i, _m: None)
+def test_unknown_steer_outcome_is_held_until_witnessed():
+    """qa adversary #4 + second opinion 20260923T133344Z-1c7e80e7: a timed-out steer is NOT counted as
+    delivered, and it is held (never resent mid-turn) until its witness or the settle."""
+    turns: list[str] = []
+    d = Delivery(lambda t, _m: turns.append(t) or True, lambda _t, _i, _m: None)
     d.turn_started("t")
     d.native_started("bash")
     d.deliver("N")
-    assert d.pending == ["N"]
+    assert d.pending == [] and turns == []
+    d.turn_completed("t")
+    assert turns == [wrap("N")]
 
 
 def test_exhausted_start_retries_rekick_on_their_own(monkeypatch):

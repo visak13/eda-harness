@@ -419,12 +419,15 @@ def _cron_slot_violations(trace: list[dict], side: str) -> list[str]:
             made[str(i.get("prompt", ""))] = (t, str(i.get("cron", "")), i.get("recurring") is not False)
         elif e["kind"] == "cron_fire" and e["text"].split("\n")[0] in made:
             t0, cron, recurring = made[e["text"].split("\n")[0]]
-            try:
-                slot = next_match(parse_cron(cron), t0 * 1000) / 1000
-            except ValueError:
-                continue
             early = ONESHOT_EARLY_MAX_S if (not recurring and cron.split()[0] in ("0", "30")) else 0
             late = CRON_LATE_S + (CRON_JITTER_MAX_S if recurring else 0)
+            try:
+                slot = next_match(parse_cron(cron), t0 * 1000) / 1000
+                if recurring and t is not None and t - late - 1 > slot:
+                    # a later fire of a recurring job answers to ITS slot: the first one in its late window
+                    slot = next_match(parse_cron(cron), (t - late - 1) * 1000) / 1000
+            except ValueError:
+                continue
             if t is None or not (slot - early - 1 <= t <= slot + late):
                 bad.append(f"TIMING {side} cron_fire {e['text'][:40]!r}: at {t} outside slot {slot} [-{early}s, +{late:.0f}s]")
     return bad

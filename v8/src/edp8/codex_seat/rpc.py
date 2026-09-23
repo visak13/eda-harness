@@ -109,6 +109,11 @@ class AppServer:
 
     # ------------------------------------------------------------------ io
     def _mirror(self, direction: str, msg: dict) -> None:
+        # a streamed delta is a fragment: a secret split across two of them survives per-line redaction,
+        # so its text is persisted as a length only (the item/completed row carries the whole, redacted)
+        p = msg.get("params")
+        if str(msg.get("method", "")).lower().endswith("delta") and isinstance(p, dict) and isinstance(p.get("delta"), str):
+            msg = {**msg, "params": {**p, "delta": f"<delta: {len(p['delta'])} chars, see item/completed>"}}
         with self._llock:
             line = json.dumps({"ts": time.time(), "dir": direction, "msg": msg}, ensure_ascii=False)
             self._log_f.write(self._redact(line).encode("utf-8", "replace").decode("utf-8") + "\n")

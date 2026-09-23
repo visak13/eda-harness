@@ -271,14 +271,16 @@ def test_3_missed_busy_period_yields_one_fire_then_a_future_slot(tmp_path):
 
 
 # ------------------------------------------------------------------ 4 · ids, unknown outcomes, dedup
-def test_4_timed_out_steer_stays_pending_and_is_retried():
+def test_4_timed_out_steer_is_held_not_dropped():
+    # (second opinion 20260923T133344Z-1c7e80e7 B: a mid-turn resend could duplicate it; held until settle)
     h = Host(steer_ok=lambda n: None if n == 1 else True)
     h.d.turn_started("t")
     h.d.native_started("bash", "i1")
     h.d.deliver("N")  # steer #1 times out
-    assert h.d.pending == ["N"]
-    h.d.native_completed("i1")  # the next delivery path retries it
-    assert len(h.steers) == 2 and h.steers[1][0] == wrap("N") and h.d.pending == []
+    h.d.native_completed("i1")
+    assert len(h.steers) == 1 and h.turns == []
+    h.d.turn_completed("t")  # never witnessed: it goes out once at settle
+    assert [t for t, _ in h.turns] == [wrap("N")]
 
 
 def test_4_timed_out_steer_is_never_lost_at_settle():
