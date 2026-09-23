@@ -14,6 +14,8 @@ named tools for the running participant's role.
 from __future__ import annotations
 
 import contextlib
+import copy
+import functools
 import contextvars
 import enum as _enum
 import json
@@ -148,8 +150,8 @@ def _enum_clause(args_model: type[BaseModel]) -> str:
     ef = enum_fields(args_model)
     if not ef:
         return ""
-    parts = [f"{k} one of: {'|'.join(v)}" for k, v in ef.items()]
-    return "Enum args — " + "; ".join(parts) + " (describe('enums') lists every enum). "
+    parts = [f"{k}: {'|'.join(v)}" for k, v in ef.items()]
+    return "Enum args — " + "; ".join(parts) + " (describe('enums')). "
 
 
 def compose_description(what: str, when: str, returns: str, args_model: type[BaseModel]) -> str:
@@ -174,6 +176,13 @@ class ToolDef:
         """The composed MCP description: what · when · enum args (from schema) · returns."""
         return compose_description(self.what, self.when, self.returns, self.args_model)
 
+    @property
+    def input_schema(self) -> dict[str, Any]:
+        """The ADVERTISED argument schema (mcp_server sends it as the tool's parameters): the
+        pydantic schema minus bytes a caller never needs. Validation is unchanged — invoke()
+        still validates against args_model (S20 token-cost rework, s-b123a91d3f)."""
+        return copy.deepcopy(compact_schema(self.args_model))
+
     def schema_inline(self) -> str:
         """The full argument schema on one line — inlined into the hint after the third
         consecutive failure of this tool by one seat (design §19 rule 6)."""
@@ -184,6 +193,38 @@ class ToolDef:
             typ = f"one of {'|'.join(ef[fname])}" if fname in ef else _type_name(field.annotation)
             rows.append(f"{fname} ({req}: {typ})")
         return f"{self.name}({', '.join(rows)})"
+
+
+@functools.cache
+def compact_schema(args_model: type[BaseModel]) -> dict[str, Any]:
+    """args_model's JSON schema with every `title`, empty default (null, "", []) and
+    `additionalProperties` dropped, `anyOf [X, null]` collapsed to X, and `$defs` refs inlined (the def's own docstring
+    description dropped; the field's description stays). Every enum, type,
+    required list, other default and field description survives."""
+    schema = args_model.model_json_schema()
+    defs = schema.get("$defs", {})
+
+    def walk(node: Any, depth: int = 0) -> Any:
+        if isinstance(node, list):
+            return [walk(x, depth) for x in node]
+        if not isinstance(node, dict):
+            return node
+        if "$ref" in node and depth < 8:
+            target = {k: v for k, v in defs[node["$ref"].rsplit("/", 1)[-1]].items() if k != "description"}
+            return walk({**target, **{k: v for k, v in node.items() if k != "$ref"}}, depth + 1)
+        out: dict[str, Any] = {}
+        for k, v in node.items():
+            if k in ("title", "$defs", "additionalProperties") or (k == "default" and v in (None, "", [])):
+                continue
+            out[k] = {p: walk(s, depth) for p, s in v.items()} if k == "properties" else walk(v, depth)
+        alts = out.get("anyOf")
+        if isinstance(alts, list) and len(alts) == 2 and {"type": "null"} in alts:
+            other = next(a for a in alts if a != {"type": "null"})
+            out.pop("anyOf")
+            out = {**other, **out}
+        return out
+
+    return walk(schema)
 
 
 # ----------------------------------------------------------------------------- invoke (the dispatcher)
@@ -319,28 +360,27 @@ class ResumeSelfArgs(BaseModel):
 
 
 class ContextArgs(BaseModel):
-    ticket_id: str | None = Field(default=None, description="a specific ticket id, or omit for all your tickets")
-    verbose: bool = Field(default=False, description="return the full unbounded snapshot (all thread bodies and full doc summaries); default bounds the output to a byte budget and names what was omitted")
+    ticket_id: str | None = Field(default=None, description='one ticket, or omit for all yours')
+    verbose: bool = Field(default=False, description='full unbounded snapshot')
 
 
 class ContextDeltaArgs(BaseModel):
     # not a subclass of ContextArgs: context_delta takes no `verbose` — its behaviour is unchanged by S12.
-    ticket_id: str | None = Field(default=None, description="a specific ticket id, or omit for all your tickets")
-    cursor: str = Field(description="last consumed snapshot/delta cursor for this participant and scope; not a credential")
-    limit: int = Field(default=50, ge=1, le=100, description="maximum change envelopes per page; continue if has_more")
+    ticket_id: str | None = Field(default=None, description='one ticket, or omit for all yours')
+    cursor: str = Field(description='the cursor from your last context/delta')
+    limit: int = Field(default=50, ge=1, le=100, description='max changes per page; continue if has_more')
 
 
 class DescribeObjectsArgs(BaseModel):
-    type: str | None = Field(default=None, description="omit for discovery; object name, ContextSnapshot/ContextDelta/ContextChange, enums or enum:<Name>")
+    type: str | None = Field(default=None, description="omit to list; an object name, a Context* type, 'enums' or 'enum:<Name>'")
 
 
 class DescribeArgs(BaseModel):
-    type: str = Field(description="object type (participant|ticket|criterion|doc|link|message|event|artifact|"
-                      "session), or 'enums' to list every enum, or 'enum:<Name>' for one enum's allowed values")
+    type: str = Field(description="an object type, 'enums', or 'enum:<Name>'")
 
 
 class GetGuideArgs(BaseModel):
-    name: str = Field(description="guide file name (without .md), e.g. 'design-template' or 'feed-format'")
+    name: str = Field(description='guide name without .md')
 
 
 class WhoamiArgs(BaseModel):
@@ -718,55 +758,48 @@ def _get_guide(args: GetGuideArgs) -> dict[str, Any]:
 
 
 IDENTITY_TOOLS = [
-    ToolDef("describe_objects", "Discover object/enum names or inspect a schema with relationships and linked skills",
-            "before choosing a tool or when unsure of an object's contract; omit type to list names",
-            "discovery index or the describe-compatible schema; get_guide('agent-tools') for workflow",
+    ToolDef("describe_objects", "List object/enum names, or one object's schema",
+            "unsure of an object's contract; omit type to list names",
+            'the index or the schema',
             DescribeObjectsArgs, _describe_objects, "identity"),
-    ToolDef("context_delta", "Read bounded participant-relevant changes from a caller-owned context cursor",
-            "on routine heartbeat with sufficient retained context; e.g. context_delta(cursor=last_cursor); not alongside context routinely",
-            "ContextDelta: changed, next_cursor, has_more and optional ContextChange references; resync_required means context(); see get_guide('context-refresh')",
+    ToolDef("context_delta", 'Read what changed for you since a context cursor',
+            'on a heartbeat wake, with your last cursor; not with context() routinely',
+            'changes, next_cursor, has_more (byte-capped, `omitted` names the fetch); resync_required means context()',
             ContextDeltaArgs, lambda a: get_client().context_delta(a.cursor, a.ticket_id, a.limit), "identity"),
     ToolDef("whoami",
-            "Report your registered identity and which tool bundles your role has",
-            "at boot, or whenever you need your handle, role, open tickets or lineage",
-            "the participant record, its open tickets, the bundle list, and the server version",
+            'Your identity, role, open tickets, lineage and tool bundles',
+            'at boot',
+            'the participant, tickets, bundles and server version',
             WhoamiArgs, _whoami, "identity"),
     ToolDef("preflight",
-            "Read host free RAM, live seats vs the pool caps, the fleet-wide codex lane (in flight / "
-            "queued), and any recent codex usage-cap note — idempotent, read-only, ADVISORY (it never blocks)",
-            "before you spawn or consult, to weigh headroom yourself",
-            "the numbers plus rules of thumb; a hint that it is advisory, never a gate",
+            'Host free RAM, live seats vs pool caps, the codex lane and any usage-cap note; advisory, never blocks',
+            'before a spawn or consult',
+            'the numbers and rules of thumb',
             PreflightArgs, _preflight_bounded, "identity"),
     ToolDef("subscribe",
-            "Arm your event feed for this session (one-time setup)",
-            "once, at boot, right after whoami",
-            "the monitor command to run and the heartbeat cron to create",
+            'Arm your event feed (once per session)',
+            'at boot, right after whoami',
+            'the monitor command and heartbeat cron to arm',
             SubscribeArgs, _subscribe, "identity"),
     ToolDef("resume_self",
-            "Resume this seat after a park, a reap, a crash or a respawn: re-arm the wake plane, list the "
-            "open asks and the ordered steps to get back to work (the transcript is history)",
-            "first call of a RESUMED shell (the activation says so), after compaction, or whenever you are unsure "
-            "whether your Monitor/cron are alive; never instead of the fresh-boot sequence",
-            "identity, ordered steps, monitor_cmd + cron to arm, listening contract, open asks with answer_with; "
-            "see get_guide('resume')",
+            'Resume after a park, reap, crash or respawn: re-arm wakes, list open asks and steps',
+            'first call of a resumed shell, after compaction, or when unsure Monitor/cron are alive',
+            "identity, ordered steps, monitor_cmd + cron, open asks; see get_guide('resume')",
             ResumeSelfArgs, _resume_self, "identity"),
     ToolDef("context",
-            "Load everything needed to act on your ticket(s): chain, criteria, docs, thread, open asks. "
-            "Bounded to a byte budget by default (thread bodies + doc summaries clipped, `omitted` names the "
-            "exact fetch call); pass verbose=True for the full snapshot",
-            "at boot after subscribe, after compaction without sufficient context/cursor, or when context_delta requires resynchronization",
-            "ContextSnapshot: existing ticket/doc/message orientation and asks plus a safe cursor for context_delta; see get_guide('context-refresh')",
+            'Load your ticket(s): chain, criteria, docs, thread, open asks; byte-capped unless verbose',
+            'at boot, after compaction without a cursor, or when a delta says resync_required',
+            'ContextSnapshot with a cursor for context_delta; `omitted` names each fetch',
             ContextArgs, _context, "identity"),
     ToolDef("describe",
-            "Look up an object type's shape and one-line contract, or an enum's allowed values "
-            "(type='enums' lists every enum, type='enum:<Name>' returns one)",
-            "when you are unsure of a type's fields or a strict argument's allowed values",
-            "the JSON schema and contract text for a type, or the values for an enum",
+            "An object type's fields and contract, or an enum's values ('enums' = all, 'enum:<Name>' = one)",
+            "unsure of a type's fields or an argument's allowed values",
+            'the schema and contract, or the enum values',
             DescribeArgs, _describe, "identity"),
     ToolDef("get_guide",
-            "Fetch one on-demand reference page (a template, a format spec)",
-            "when a task points you at a named guide, e.g. get_guide('tools')",
-            "the guide's markdown body, or not_found if no such guide exists",
+            'Fetch one reference guide by name',
+            'when a card or task names a guide',
+            "the guide's markdown, or not_found",
             GetGuideArgs, _get_guide, "identity"),
 ]
 
@@ -774,64 +807,51 @@ IDENTITY_TOOLS = [
 
 
 class TicketCreateArgs(BaseModel):
-    kind: TicketKind = Field(description="epic (owner/coordinator) | story (architect) | task (engineer/architect)")
-    work_type: WorkType = Field(description="feature|bug|rnd|creative|review|knowledge|chore")
-    title: str = Field(description="epic: the owner's words verbatim; the board keeps them in `words` and derives "
-                       "a short title (<=80 chars) from the first clause. story/task: names the slice")
-    words: str | None = Field(default=None, description="epic only: the owner's verbatim request, if given "
-                              "separately from a short title; immutable after create")
-    parent_id: str | None = Field(default=None, description="required for story/task: the parent ticket id")
-    assignee: str | None = Field(default=None, description="participant id to assign, if known now")
-    description: str = Field(default="", description="the slice in prose: scope, intent, pointers to files/docs "
-                             "— searchable by find and ticket_query(q=)")
-    tags: list[str] | None = Field(default=None, description="free labels for filtering (ticket_query(tag=))")
+    kind: TicketKind = Field()
+    work_type: WorkType = Field()
+    title: str = Field(description="epic: the owner's words verbatim (a short title is derived); story/task: the slice name")
+    words: str | None = Field(default=None, description="epic only: the owner's verbatim request if the title is short; immutable")
+    parent_id: str | None = Field(default=None, description='required for story/task')
+    assignee: str | None = Field(default=None)
+    description: str = Field(default="", description='scope, intent, pointers to files/docs')
+    tags: list[str] | None = Field(default=None)
 
 
 class TicketReadArgs(BaseModel):
-    ticket_id: str = Field(description="ticket id", validation_alias=AliasChoices("ticket_id", "id"))
-    include: str | None = Field(default=None, description="comma list to narrow: chain,criteria,docs,children,"
-                                "blockers,gates,thread,links — omit for everything")
+    ticket_id: str = Field(validation_alias=AliasChoices("ticket_id", "id"))
+    include: str | None = Field(default=None, description='comma list of chain,criteria,docs,children,blockers,gates,thread,links; omit for all')
     thread_limit: int = Field(default=20, ge=0, le=200,
-                              description="how many of the newest thread messages to include (0 = none, max 200)")
+                              description='newest thread messages to include (0-200)')
 
 
 class TicketQueryArgs(BaseModel):
-    kind: TicketKind | None = Field(default=None, description="epic|story|task")
+    kind: TicketKind | None = Field(default=None)
     work_type: WorkType | None = None
     parent_id: str | None = None
-    status: TicketStatus | None = Field(default=None, description="drafted|designed|signed_off|ready|in_progress|"
-                                        "in_review|blocked|done|partial|dropped")
+    status: TicketStatus | None = Field(default=None)
     assignee: str | None = None
-    epic_id: str | None = Field(default=None, description="every ticket under this epic (any depth)")
+    epic_id: str | None = Field(default=None, description='every ticket under this epic')
     created_by: str | None = None
-    tag: str | None = Field(default=None, description="tickets carrying this tag")
-    q: str | None = Field(default=None, description="words to match in title/description/tags (exact-word search)")
+    tag: str | None = Field(default=None)
+    q: str | None = Field(default=None, description='exact words in title/description/tags')
 
 
 class TicketUpdateArgs(BaseModel):
-    ticket_id: str = Field(description="ticket id", validation_alias=AliasChoices("ticket_id", "id"))
-    status: TicketStatus | None = Field(default=None, description="a legal next status: drafted→designed→signed_off→"
-                                        "ready→in_progress→in_review→done (or blocked/partial/dropped); the "
-                                        "transition guard names what is missing")
-    assignee: str | None = Field(default=None, description="participant id to assign")
-    design_ref: str | None = Field(default=None, description="doc id of the design/plan doc")
-    description: str | None = Field(default=None, description="replace the description (creator/assignee/architect/owner)")
-    tags: list[str] | None = Field(default=None, description="replace the tag list")
-    title: str | None = Field(default=None, description="a short human title (<=80 chars) for an epic or a story "
-                              "(architect/owner); an epic's words stay verbatim")
+    ticket_id: str = Field(validation_alias=AliasChoices("ticket_id", "id"))
+    status: TicketStatus | None = Field(default=None, description='next legal status')
+    assignee: str | None = Field(default=None)
+    design_ref: str | None = Field(default=None, description='design/plan doc id')
+    description: str | None = Field(default=None, description='replaces the description')
+    tags: list[str] | None = Field(default=None, description='replaces the tag list')
+    title: str | None = Field(default=None, description='short title, <=80 chars (architect/owner)')
 
 
 class CriterionCreateArgs(BaseModel):
     ticket_id: str
-    text: str = Field(description="a checkable definition of done")
-    check: Check = Field(description="command|path|look|verdict")
-    checked_by: CheckedBy | None = Field(default=None, description="IGNORED (accepted for one release): "
-                                         "the board DERIVES the checker from the ticket — qa for every "
-                                         "story/task/epic criterion, reviewer only when a story is tagged "
-                                         "review_required, owner for a knowledge ticket. The owner may "
-                                         "override by ALSO passing override_reason")
-    override_reason: str | None = Field(default=None, description="owner-only: a reason to override the "
-                                        "derived checker (recorded as a criterion_checker_overridden event)")
+    text: str = Field()
+    check: Check = Field()
+    checked_by: CheckedBy | None = Field(default=None, description='ignored unless the owner also passes override_reason')
+    override_reason: str | None = Field(default=None, description='owner only: why the derived checker is overridden')
 
 
 class CriterionQueryArgs(BaseModel):
@@ -840,13 +860,13 @@ class CriterionQueryArgs(BaseModel):
 
 class CriterionUpdateArgs(BaseModel):
     model_config = {"extra": "forbid"}  # an unknown kwarg is an ERROR, never a silent drop
-    id: str = Field(description="criterion id")
-    evidence_ref: str | None = Field(default=None, description="doc id (a report) proving the check")
-    verdict: Verdict | None = Field(default=None, description="pending|pass|fail — set after evidence_ref")
-    text: str | None = Field(default=None, description="reword the criterion (authors only, while verdict pending)")
+    id: str = Field()
+    evidence_ref: str | None = Field(default=None, description='report doc id proving the check')
+    verdict: Verdict | None = Field(default=None, description='set after evidence_ref (checker only)')
+    text: str | None = Field(default=None, description='reword (author, while pending)')
     evidence_version: int | None = Field(default=None,
-        description="the doc version this verdict signed off (§14); refused if below the doc's current version")
-    stale_ok: bool = Field(default=False, description="sign the version you read even if the doc has since moved on")
+        description='doc version signed; refused if below current')
+    stale_ok: bool = Field(default=False, description='sign the version you read though the doc moved on')
 
 
 def _ticket_create(a: TicketCreateArgs) -> dict[str, Any]:
@@ -886,52 +906,39 @@ def _criterion_update(a: CriterionUpdateArgs) -> dict[str, Any]:
 
 TICKET_TOOLS = [
     ToolDef("ticket_create",
-            "Create a ticket — epic (owner/coordinator), story (architect), task (engineer/architect). "
-            "Caps (design §24.1): at most 8 open stories per epic (the owner raises it by answering a "
-            "scope gate) and at most 5 tasks per story",
-            "when you own a new slice of work: an epic from the owner's words (given verbatim; the board derives "
-            "a short title), a story, or a task under your story",
-            "the ticket and a hint for the next step, or a scope error when a cap is hit",
+            'Create an epic (owner), story (architect) or task. At most 8 open stories per epic (raised via a scope gate), at most 5 tasks per story',
+            'when you own a new slice of work',
+            'the ticket, or a scope error at a cap',
             TicketCreateArgs, _ticket_create, "ticket"),
     ToolDef("ticket_read",
-            "ONE fat read of a ticket: the record (title, description, tags, status, assignee), its chain up to "
-            "the epic, criteria, docs WITH their relation, children with assignee_role and criteria tally, "
-            "blockers, open gates, the newest thread messages (thread_seq for message_query since_seq), and links",
-            "whenever you need the full state of a ticket — instead of stitching ticket_query + link_query + "
-            "message_query",
-            "the full ticket record",
+            'One read of a ticket: record, chain, criteria, docs, children, blockers, gates, newest thread (thread_seq), links',
+            "when you need a ticket's full state",
+            'the ticket record',
             TicketReadArgs, _ticket_read, "ticket"),
     ToolDef("ticket_query",
-            "List tickets by kind, status, assignee, parent, epic_id (whole subtree), created_by, tag, or q "
-            "(words in title/description/tags)",
-            "to find tickets matching a filter when you do not have the id",
-            "matching ticket records",
+            'List tickets by kind, status, assignee, parent, epic_id subtree, creator, tag or q',
+            'to find tickets without an id',
+            'matching tickets',
             TicketQueryArgs, _ticket_query, "ticket"),
     ToolDef("ticket_update",
-            "Change a ticket's status/assignee/design_ref/description/tags/title, guarded by the transition rules "
-            "(e.g. done needs every criterion passed). title: a short human title (<=80 chars) on an epic or "
-            "story, architect/owner only — an epic's words stay verbatim",
-            "to move your ticket to its next status, (re)assign it, or attach its design; explicitly set in_review only after verification and consult finish (evidence refs alone never hand off)",
-            "the updated ticket, or a transition/scope error naming what is missing",
+            "Change status, assignee, design_ref, description, tags or title, per the transition rules",
+            'to move or assign a ticket; in_review only once verified',
+            'the ticket, or an error naming what is missing',
             TicketUpdateArgs, _ticket_update, "ticket"),
     ToolDef("criterion_create",
-            "Add a checkable definition of done to a ticket. The board DERIVES its checker from the "
-            "ticket (qa for every story/task/epic criterion; reviewer only when a story is tagged "
-            "review_required; owner for a knowledge ticket) — the checked_by argument is accepted for "
-            "one release but ignored unless the owner also passes override_reason. A story carries at "
-            "most 6 freshly-written criteria (a folded story keeps what it inherits)",
-            "before work starts, while you own the ticket, one criterion per checkable fact",
-            "the criterion (its checked_by is the derived checker, or the owner override)",
+            "Add a checkable done-fact. Checker derived: qa (story/task/epic), reviewer (review_required story), owner (knowledge ticket); checked_by needs owner override_reason. Max 6 fresh per story",
+            'before work starts, one per checkable fact',
+            'the criterion with its derived checker',
             CriterionCreateArgs, _criterion_create, "ticket"),
     ToolDef("criterion_query",
             "List a ticket's criteria",
-            "to see what a ticket must satisfy, or which criteria are still pending",
-            "the criterion records",
+            'to see what is pending',
+            'the criteria',
             CriterionQueryArgs, _criterion_query, "ticket"),
     ToolDef("criterion_update",
-            "Record an evidence_ref then a verdict on a criterion (the checker only, never the doer)",
-            "as a reviewer/qa/owner, after the evidence doc exists, to pass or fail a criterion",
-            "the criterion plus a hint on remaining pending criteria",
+            "Set a criterion's evidence_ref, then its verdict (checker only)",
+            'as the checker after the evidence doc exists; a doer attaches evidence_ref only',
+            'the criterion and the pending count',
             CriterionUpdateArgs, _criterion_update, "ticket"),
 ]
 
@@ -939,23 +946,22 @@ TICKET_TOOLS = [
 
 
 class DocCreateArgs(BaseModel):
-    doc_type: DocType = Field(description="design(architect)|strategy_hl/strategy_ll/domain(sme)|report(engineer/"
-                              "reviewer/qa)|note(any)")
+    doc_type: DocType = Field(description='design: architect; strategy_*/domain: sme; report: engineer/reviewer/qa; note: any')
     title: str
     body_md: str
-    scope: str = Field(description="epic_id | domain:<name> | global")
+    scope: str = Field(description='epic id | domain:<name> | global')
 
 
 class DocReadArgs(BaseModel):
-    id: str = Field(description="doc id")
-    version: int | None = Field(default=None, description="a specific version, or omit for latest; reuse returned version for continuation")
-    offset: int | None = Field(default=None, ge=0, description="zero-based character offset; opts into bounded output")
-    limit: int | None = Field(default=None, ge=1, le=32768, description="character bound, default 8192 when bounded")
-    section: str | None = Field(default=None, description="unique exact Markdown heading line; offset is relative to this section")
+    id: str = Field()
+    version: int | None = Field(default=None, description='omit for latest; reuse the returned one to continue')
+    offset: int | None = Field(default=None, ge=0, description='char offset; opts into bounded output')
+    limit: int | None = Field(default=None, ge=1, le=32768, description='chars, default 8192 when bounded')
+    section: str | None = Field(default=None, description='exact heading line; offset is relative to it')
 
 
 class DocEditArgs(DocEdit):
-    id: str = Field(description="doc id")
+    id: str = Field()
 
 
 class DocQueryArgs(BaseModel):
@@ -965,18 +971,16 @@ class DocQueryArgs(BaseModel):
 
 
 class DocUpdateArgs(BaseModel):
-    id: str = Field(description="doc id")
+    id: str = Field()
     body_md: str | None = None
     title: str | None = None
-    compact: bool = Field(default=False, description="return only id/version/changed_fields/read_ref")
+    compact: bool = Field(default=False, description='return only a receipt')
 
 
 class LinkCreateArgs(BaseModel):
-    from_id: str = Field(description="ticket or doc id — the SUBJECT: from_id <relation> to_id "
-                         "(blocks: from_id must finish before to_id may start; "
-                         "extends: from_id is the more specific layer, to_id its parent)")
-    to_id: str = Field(description="doc, artifact or ticket id — the OBJECT of the relation")
-    relation: Relation = Field(description="designed_by|uses_strategy|uses_domain|evidence_for|blocks|produced|extends")
+    from_id: str = Field(description='subject (blocks: finishes first; extends: the more specific layer)')
+    to_id: str = Field(description='object')
+    relation: Relation = Field()
 
 
 class LinkQueryArgs(BaseModel):
@@ -986,7 +990,7 @@ class LinkQueryArgs(BaseModel):
 
 
 class LinkDeleteArgs(BaseModel):
-    id: str = Field(description="link id")
+    id: str = Field()
 
 
 def _doc_create(a: DocCreateArgs) -> dict[str, Any]:
@@ -1022,44 +1026,44 @@ def _link_delete(a: LinkDeleteArgs) -> dict[str, Any]:
 
 
 DOC_TOOLS = [
-    ToolDef("doc_edit", "Atomically apply unique nonoverlapping exact edits against one expected doc version",
-            "for small revisions after doc_read; match every old_text against the original, not intermediate text",
-            "compact id/version/changed_fields/read_ref receipt, or typed conflict/match error; re-read on conflict",
+    ToolDef("doc_edit", 'Apply exact, unique, non-overlapping edits to one doc version atomically',
+            'for small revisions after doc_read; match old_text against the original',
+            'a compact receipt, or a conflict/match error (re-read)',
             DocEditArgs, _doc_edit, "doc"),
     ToolDef("doc_create",
-            "Author a versioned markdown doc — design/strategy_hl/strategy_ll/domain/report/note, per your role",
-            "to record a design, strategy, domain guide, evidence report, or a thread-worthy note",
-            "the doc and a hint to link it to its ticket",
+            'Author a versioned markdown doc',
+            'to record a design, strategy, domain guide, report or note',
+            'the doc; link it to its ticket',
             DocCreateArgs, _doc_create, "doc"),
     ToolDef("doc_read",
-            "Read a doc, latest or a specific version",
-            "when a ticket's design_ref or a link points at a doc you need to act on",
-            "the full doc and versions by default; offset/limit/section returns a bounded version-pinned range with explicit continuation",
+            'Read a doc (latest or a version), whole or a bounded range',
+            'when a ticket or link points at a doc',
+            'the doc; offset/limit/section: a version-pinned range',
             DocReadArgs, _doc_read, "doc"),
     ToolDef("doc_query",
-            "List docs matching doc_type/scope/owner_role filters",
-            "to find the design or strategy docs for an epic when you do not have their ids",
-            "doc summaries",
+            'List docs by doc_type/scope/owner_role',
+            'to find docs without an id',
+            'doc summaries',
             DocQueryArgs, _doc_query, "doc"),
     ToolDef("doc_update",
-            "Revise a doc's body/title; every update is a new version",
-            "to amend a doc you own without losing its history",
-            "the updated doc",
+            "Replace a doc's body/title as a new version",
+            'to amend a doc you own',
+            'the doc (compact=true: a receipt)',
             DocUpdateArgs, _doc_update, "doc"),
     ToolDef("link_create",
-            "Link a ticket/doc to a doc/artifact/ticket with a typed relation",
-            "to attach a design, strategy, evidence, blocker, produced artifact, or doc-layer edge",
-            "the link",
+            'Link from_id <relation> to_id (ticket/doc/artifact)',
+            'to attach a design, strategy, evidence, blocker, artifact or doc layer',
+            'the link',
             LinkCreateArgs, _link_create, "doc"),
     ToolDef("link_query",
-            "List links matching from_id/to_id/relation filters",
-            "to discover what a ticket or doc is linked to",
-            "the link records",
+            'List links by from_id/to_id/relation',
+            'to see what something is linked to',
+            'the links',
             LinkQueryArgs, _link_query, "doc"),
     ToolDef("link_delete",
-            "Remove a link",
-            "to undo a link created in error",
-            "whether it was deleted",
+            'Remove a link',
+            'to undo a link made in error',
+            'whether it was deleted',
             LinkDeleteArgs, _link_delete, "doc"),
 ]
 
@@ -1068,30 +1072,29 @@ DOC_TOOLS = [
 
 class MessageSendArgs(BaseModel):
     ticket_id: str
-    kind: MessageKind = Field(description="question|answer|steer|status|finding|deviation|note")
+    kind: MessageKind = Field()
     text: str
-    to: str | None = Field(default=None, description="participant id, @handle, role, or omit for a thread note")
-    reply_to: str | None = Field(default=None, description="message id this answers")
-    artifacts: list[str] | None = Field(default=None, description="staged artifact IDs owned by you to finalize and attach")
+    to: str | None = Field(default=None, description='participant id, @handle or role; omit for a note')
+    reply_to: str | None = Field(default=None, description='message id answered')
+    artifacts: list[str] | None = Field(default=None, description='your staged artifact ids to attach')
 
 
 class MessageQueryArgs(BaseModel):
-    ticket_id: str | None = Field(default=None, description="the thread to read")
-    to: str | None = Field(default=None, description="only messages addressed to this participant id / role")
-    kind: MessageKind | None = Field(default=None, description="question|answer|steer|status|finding|deviation|note")
-    created_by: str | None = Field(default=None, description="only messages from this participant id")
-    since_seq: int | None = Field(default=None, description="only messages newer than this seq (the last_seq "
-                                  "hint of your previous call, or ticket_read's thread_seq) — the way to poll")
+    ticket_id: str | None = Field(default=None)
+    to: str | None = Field(default=None, description='addressed to this id/role')
+    kind: MessageKind | None = Field(default=None)
+    created_by: str | None = Field(default=None)
+    since_seq: int | None = Field(default=None, description='only newer than this seq (your last last_seq)')
     limit: int = 50
 
 
 class MessageReadArgs(BaseModel):
-    id: str = Field(description="message id", validation_alias=AliasChoices("id", "message_id"))
+    id: str = Field(validation_alias=AliasChoices("id", "message_id"))
 
 
 class GateOpenArgs(BaseModel):
     ticket_id: str
-    gate: Gate = Field(description="design_signoff|poc|demo|adversarial|budget|acceptance")
+    gate: Gate = Field()
     note: str = ""
 
 
@@ -1133,34 +1136,34 @@ def _gates(a: GatesArgs) -> dict[str, Any]:
 
 THREAD_TOOLS = [
     ToolDef("message_send",
-            "Post to a ticket's thread, addressed to a participant/role/@handle or left as a note",
-            "at every milestone, blocker, question, answer or hand-off — an event not sent is work nobody sees",
-            "the message; a question or steer is delivered to the recipient's feed",
+            'Post to a ticket thread, to a participant/role/@handle or as a note',
+            'at every milestone, blocker, question, answer or hand-off',
+            "the message; questions and steers reach the recipient's feed",
             MessageSendArgs, _message_send, "thread"),
     ToolDef("message_query",
-            "List thread messages, oldest first, each with its seq; since_seq returns ONLY what is new",
-            "to read a thread, or to poll it with since_seq (from the last_seq hint or ticket_read's thread_seq)",
-            "the messages and a last_seq hint",
+            'List thread messages oldest first with seq; since_seq returns only newer ones',
+            'to read or poll a thread',
+            'the messages and a last_seq hint',
             MessageQueryArgs, _message_query, "thread"),
     ToolDef("message_read",
-            "Read one message by id with its seq, the message it replies to, and its replies",
-            "to inspect a single message a feed event or reply_to pointed you at",
-            "the message record",
+            'Read one message with its seq, parent and replies',
+            'when a feed event or reply_to names it',
+            'the message',
             MessageReadArgs, _message_read, "thread"),
     ToolDef("gate_open",
-            "Open a human gate on a ticket (precondition: none already open for that gate)",
-            "when work needs a human decision — design sign-off, poc, demo, adversarial, budget, or acceptance",
-            "the gate_opened event; the owner is notified",
+            'Open a human gate on a ticket (one per gate at a time)',
+            'when work needs a human decision',
+            'the gate_opened event; the owner is notified',
             GateOpenArgs, _gate_open, "thread"),
     ToolDef("gate_answer",
-            "Answer an open human gate (owner only)",
-            "as the owner, to resolve a gate a seat opened",
-            "the gate_answered event",
+            'Answer an open human gate (owner only)',
+            'to resolve a gate a seat opened',
+            'the gate_answered event',
             GateAnswerArgs, _gate_answer, "thread"),
     ToolDef("gates",
-            "List a ticket's currently open gates",
-            "to see whether a ticket is waiting on a human decision",
-            "the open gate events",
+            "List a ticket's open gates",
+            'to see if a ticket waits on a human',
+            'the open gates',
             GatesArgs, _gates, "thread"),
 ]
 
@@ -1168,7 +1171,7 @@ THREAD_TOOLS = [
 
 
 class BoardArgs(BaseModel):
-    epic_id: str = Field(description="an epic id, or any ticket under it")
+    epic_id: str = Field(description='an epic, or any ticket under it')
 
 
 class EventsQueryArgs(BaseModel):
@@ -1214,20 +1217,19 @@ def _participants(a: ParticipantsArgs) -> dict[str, Any]:
 
 BOARD_TOOLS = [
     ToolDef("board",
-            "Render an epic's ticket tree with status counts, ready/in_review lists and open gates",
-            "to see the whole epic's state at a glance",
-            "the board view for that epic",
+            "An epic's ticket tree with status counts, ready/in_review lists and open gates",
+            'for the whole epic at a glance',
+            'the board view',
             BoardArgs, _board, "board"),
     ToolDef("events_query",
-            "Read the audit/feed log, by subject or since a sequence number",
-            "to reconstruct what happened on a subject, or to catch up on events since a seq",
-            "matching events",
+            'Read the event log by subject or since a seq',
+            'to reconstruct or catch up on events',
+            'matching events',
             EventsQueryArgs, _events_query, "board"),
     ToolDef("participants",
-            "List the whole team — humans and agent seats — optionally by role; each row carries type, @handle, "
-            "role, and reach (person / live seat / closed seat)",
-            "to find a collaborator: match the role you need, then message_send(to='@'+handle)",
-            "the roster; a hint on reaching a human reviewer",
+            'List humans and seats, optionally by role, with @handle and reach',
+            "to find a collaborator, then message_send(to='@'+handle)",
+            'the roster',
             ParticipantsArgs, _participants, "board"),
 ]
 
@@ -1235,19 +1237,13 @@ BOARD_TOOLS = [
 
 
 class SpawnArgs(BaseModel):
-    role: Role = Field(description="role the new shell will run as (/<role>)")
-    ticket_id: str | None = Field(default=None, description="ticket the shell works on: a participant "
-                                  "'<role>.<ticket_id>' is registered (if missing) and assigned to it")
-    participant_id: str | None = Field(default=None, description="explicit participant id (pool handle); "
-                                       "omit when ticket_id is given")
-    parent_session: str | None = Field(default=None, description="session id spawning this one, for fan-out")
-    assign: bool | None = Field(default=None, description="assign the ticket to the new seat: default only "
-                                "when it is unassigned or its assignee's shell is dead; false = advisor/checker "
-                                "spawn that never touches the assignee; true = take it over explicitly")
-    model: str | None = Field(default=None, description="a models.json seat name (e.g. 'astra') or exact id; "
-                              "omitted = the epic's seat choice (seat-model tag), else the Claude roles column")
-    effort: SeatEffort | None = Field(default=None, description="low | medium | high; omitted = the epic's choice "
-                               "(seat-effort tag). Claude seats are capped at medium")
+    role: Role = Field()
+    ticket_id: str | None = Field(default=None, description="registers and assigns '<role>.<ticket_id>'")
+    participant_id: str | None = Field(default=None, description='explicit pool handle; omit with ticket_id')
+    parent_session: str | None = Field(default=None, description='spawning session id')
+    assign: bool | None = Field(default=None, description='default: only if unassigned/dead; false = checker; true = take over')
+    model: str | None = Field(default=None, description="seat name or id; default: the epic's seat-model tag")
+    effort: SeatEffort | None = Field(default=None, description="default: the epic's seat-effort; Claude caps at medium")
     mode: SpawnMode | None = None
 
 
@@ -1260,12 +1256,10 @@ class InboxArgs(BaseModel):
 
 
 class RecordStatusArgs(BaseModel):
-    status: StatusValue = Field(description="done | deferred | failed | blocked | reviewed | handed_off")
-    note: str = Field(default="", description="one line: what you did / what is left, for the people told")
-    to: str | None = Field(default=None, description="an extra recipient (participant id, @handle or role); "
-                           "your spawner, the epic architect and the epic's human owner are told anyway")
-    ticket_id: str | None = Field(default=None, description="the ticket you worked; omit when you are a "
-                                  "per-ticket seat (<role>.<ticket_id>)")
+    status: StatusValue = Field()
+    note: str = Field(default="", description='one line: done / left')
+    to: str | None = Field(default=None, description='an extra recipient')
+    ticket_id: str | None = Field(default=None, description='omit on a per-ticket seat')
 
 
 class CloseSelfArgs(BaseModel):
@@ -1503,44 +1497,39 @@ def _reap_bounded(a: ReapArgs) -> dict[str, Any]:
 
 POOL_TOOLS = [
     ToolDef("inbox",
-            "Everything addressed to you that still awaits an answer or an action (questions and steers), "
-            "oldest first, each with its answer_with call",
-            "the first thing to call when woken, and step 1 of closing",
-            "the list (empty == clear); a hint on how many items await you",
+            'Questions and steers awaiting you, oldest first, each with answer_with',
+            'first when woken, and step 1 of closing',
+            'the list (empty = clear)',
             InboxArgs, _inbox, "pool"),
     ToolDef("record_status",
-            "Record the outcome of your work on your ticket, with a one-line note; tells your spawner, the "
-            "epic's architect and its human owner (plus `to`)",
-            "at milestones and as step 2 of closing (a resident architect records status and keeps listening)",
-            "the message and who was told",
+            'Record your outcome with a one-line note to your spawner, architect and owner',
+            'at milestones and as step 2 of closing',
+            'the message and who was told',
             RecordStatusArgs, _record_status, "pool"),
     ToolDef("close_self",
-            "End your own shell NOW; refuses (one structured error) while inbox() is non-empty or no status "
-            "is recorded",
-            "step 3 of closing, after inbox is clear and record_status is done",
-            "the release result — then stop calling tools and end the turn",
+            'End your own shell now; refused while inbox is non-empty or no status is recorded',
+            'step 3 of closing',
+            'the release result; then stop calling tools',
             CloseSelfArgs, _close_self, "pool"),
     ToolDef("spawn",
-            "Start a new session for a role on a ticket (fan-out); the seat boots whoami → subscribe → context, "
-            "records status to you when done, and closes itself",
-            "to delegate a story/task to a fresh seat, or spawn a reviewer/qa on a ticket",
-            "the session (or unavailable if the pool adapter is not configured); it returns within the "
-            "call cap — a slow pool yields {status:'running', poll:'session_query'}",
+            'Start a seat for a role on a ticket',
+            'to delegate a story/task or spawn a checker',
+            'the session, or status running (poll session_query)',
             SpawnArgs, _spawn_bounded, "pool"),
     ToolDef("resume",
-            "Resume a parked/stalled session",
-            "to wake a seat that parked or stalled mid-work",
-            "the session, or unavailable; a slow pool yields {status:'running', poll:'session_query'}",
+            'Resume a parked or stalled session',
+            'to wake a stalled seat',
+            'the session, or running/unavailable',
             ResumeArgs, _resume_bounded, "pool"),
     ToolDef("reap",
-            "Tear down a seat's shell (a dead one, or a resident architect at epic close)",
-            "to clear a dead seat, or close the resident architect once the epic is done",
-            "confirmation, or unavailable; a slow pool yields {status:'running', poll:'session_query'}",
+            "Tear down a seat's shell (dead, or the resident architect at epic close)",
+            'to clear a dead seat or close the architect after the epic',
+            'confirmation, or running/unavailable',
             ReapArgs, _reap_bounded, "pool"),
     ToolDef("session_query",
-            "List sessions matching participant/ticket/state filters",
-            "to check whether a seat is live before messaging or spawning it",
-            "matching session records",
+            'List sessions by participant/ticket/state',
+            'to check a seat is live',
+            'matching sessions',
             SessionQueryArgs, _session_query, "pool"),
 ]
 
@@ -1548,10 +1537,10 @@ POOL_TOOLS = [
 
 
 class FindArgs(BaseModel):
-    query: str = Field(description="words or a phrase: exact-word (FTS) and semantic hits are fused")
+    query: str = Field(description='words or a phrase (FTS + semantic)')
     k: int = 10
-    types: str | None = Field(default=None, description="comma list of ticket,doc,message,criterion to restrict to")
-    epic_id: str | None = Field(default=None, description="only hits inside this epic")
+    types: str | None = Field(default=None, description='comma list of ticket,doc,message,criterion')
+    epic_id: str | None = Field(default=None)
 
 
 def _find(a: FindArgs) -> dict[str, Any]:
@@ -1560,10 +1549,9 @@ def _find(a: FindArgs) -> dict[str, Any]:
 
 SEARCH_TOOLS = [
     ToolDef("find",
-            "Search tickets (title/description/tags), criteria, docs and thread messages by words or meaning; "
-            "every hit carries ticket_id and epic_id (and title/status for tickets)",
-            "when you need something across the board and do not have its id — one ticket_read finishes the job",
-            "ranked hits with snippets",
+            'Search tickets, criteria, docs and messages by words or meaning; hits carry ticket_id and epic_id',
+            'to find something without its id',
+            'ranked hits with snippets',
             FindArgs, _find, "search"),
 ]
 
@@ -1571,44 +1559,39 @@ SEARCH_TOOLS = [
 
 
 class RecordDecisionArgs(BaseModel):
-    scope: str = Field(description="the epic or ticket id this decision is in force for (its isolation boundary)")
-    text: str = Field(description="one sentence, at most 240 chars: what is now in force")
-    detail: str = Field(default="", description="WHY the choice was made, in detail (at most 1000 chars)")
+    scope: str = Field(description='epic or ticket id it is in force for')
+    text: str = Field(description='one sentence, <=240 chars')
+    detail: str = Field(default="", description='why, <=1000 chars')
     replaces: list[str] = Field(default_factory=list,
-                                description="ids of older decisions this supersedes — each is flipped to "
-                                "replaced in the same transaction, whatever ticket or thread it sat in")
+                                description='older decision ids it supersedes')
     binding: bool | None = Field(default=None,
-                                 description="true = always handed to agents in scope and never cut by "
-                                 "lookup (e.g. a must-follow render); omit to inherit from the decisions "
-                                 "it replaces (a successor of a binding rule stays binding)")
-    source: str | None = Field(default=None, description="the message, doc or attachment id it came from")
-    domains: list[str] = Field(default_factory=list, description="domain checklist names it touches")
+                                 description='true = always handed to seats in scope; omit to inherit')
+    source: str | None = Field(default=None, description='message, doc or attachment id')
+    domains: list[str] = Field(default_factory=list, description='domain checklist names')
 
 
 class RecordClaimArgs(BaseModel):
-    scope: str = Field(description="the epic or ticket id this claim belongs to")
-    text: str = Field(description="one sentence: something stated but not yet shown")
-    basis: ClaimBasis = Field(default=ClaimBasis.assumption, description="assumption | measured | ruled")
+    scope: str = Field(description='epic or ticket id')
+    text: str = Field(description='one sentence')
+    basis: ClaimBasis = Field(default=ClaimBasis.assumption)
     evidence: list[str] = Field(default_factory=list,
-                                description="attachment, check or commit ids — a claim is a fact only when "
-                                "this is non-empty and basis is measured|ruled")
-    source: str | None = Field(default=None, description="the message or doc id it came from")
+                                description='attachment/check/commit ids; a fact needs these plus measured|ruled')
+    source: str | None = Field(default=None, description='message or doc id')
 
 
 class RecordLessonArgs(BaseModel):
-    domain: str = Field(description="the craft or domain it applies to, e.g. operations, testing, ui")
-    topic: str = Field(description="a short topic key within the domain, e.g. restart, e2e, memory")
-    text: str = Field(description="one sentence: the reusable rule, true beyond the ticket it came from")
+    domain: str = Field(description='e.g. operations, testing, ui')
+    topic: str = Field(description='e.g. restart, e2e')
+    text: str = Field(description='one sentence')
     evidence: list[str] = Field(default_factory=list,
-                                description="the defect, rework, ruling or message ids it was learned from")
+                                description='defect, ruling or message ids')
 
 
 class LookupArgs(BaseModel):
-    scope: str = Field(description="the epic or ticket id to isolate to — never returns another epic's "
-                       "decisions/claims; lessons are found across epics by domain/topic")
-    question: str | None = Field(default=None, description="plain words to search for; or use id/path")
-    id: str | None = Field(default=None, description="an exact record/ticket/doc id to start from")
-    path: str | None = Field(default=None, description="a file path to start from")
+    scope: str = Field(description='epic or ticket id (never crosses epics)')
+    question: str | None = Field(default=None, description='plain words; or use id/path')
+    id: str | None = Field(default=None, description='record/ticket/doc id to start from')
+    path: str | None = Field(default=None, description='file path to start from')
 
 
 def _record_decision(a: RecordDecisionArgs) -> dict[str, Any]:
@@ -1625,25 +1608,25 @@ def _record_claim(a: RecordClaimArgs) -> dict[str, Any]:
 
 
 class WithdrawDecisionArgs(BaseModel):
-    decision_id: str = Field(description="the id of the decision to retract")
-    reason: str = Field(default="", description="one line: why it is being withdrawn (at most 240 chars)")
+    decision_id: str = Field()
+    reason: str = Field(default="", description='one line, <=240 chars')
 
 
 class WithdrawClaimArgs(BaseModel):
-    claim_id: str = Field(description="the id of the claim to retire")
-    reason: str = Field(default="", description="one line: why it is being withdrawn (at most 240 chars)")
+    claim_id: str = Field()
+    reason: str = Field(default="", description='one line, <=240 chars')
 
 
 class SetBindingArgs(BaseModel):
-    decision_id: str = Field(description="the id of the LIVE decision to promote/demote")
-    binding: bool = Field(description="true = always handed to agents in scope; false = ordinary ranked record")
-    reason: str = Field(default="", description="one line: why (at most 240 chars); recorded in the audit event")
+    decision_id: str = Field(description='a live decision')
+    binding: bool = Field()
+    reason: str = Field(default="", description='one line, <=240 chars')
 
 
 class DenseSearchArgs(BaseModel):
-    scope: str = Field(description="an epic or ticket id; the diagnostic is limited to that epic's live records")
-    question: str = Field(description="the natural-language question to rank the records against")
-    k: int = Field(default=10, description="how many top cosine hits to return")
+    scope: str = Field(description='epic or ticket id')
+    question: str = Field()
+    k: int = Field(default=10)
 
 
 def _lookup(a: LookupArgs) -> dict[str, Any]:
@@ -1668,54 +1651,44 @@ def _withdraw_claim(a: WithdrawClaimArgs) -> dict[str, Any]:
 
 KNOWLEDGE_TOOLS = [
     ToolDef("record_decision",
-            "Record what is now in force — one sentence plus WHY, the ids it replaces, and whether it is "
-            "binding; replaced decisions flip in the same transaction across any ticket or thread",
-            "the moment a ruling is made or an agent decides within its authority — before acting on it",
-            "the decision record",
+            'Record what is in force, why, and which decisions it replaces',
+            'the moment a ruling or in-authority decision is made, before acting on it',
+            'the decision',
             RecordDecisionArgs, _record_decision, "knowledge"),
     ToolDef("record_claim",
-            "Record something stated but not yet shown, with its basis and evidence, so assumptions stay "
-            "apart from facts",
-            "when you assert something whose proof is not yet attached",
-            "the claim record",
+            'Record something stated but not yet shown, with basis and evidence',
+            'when you assert something without attached proof',
+            'the claim',
             RecordClaimArgs, _record_claim, "knowledge"),
     ToolDef("record_lesson",
-            "Record a reusable lesson filed by domain/topic, not by epic, so lookup surfaces it from any "
-            "epic in its 'Lessons from elsewhere' section",
-            "when you learn something true beyond this ticket: a pitfall, a host rule, a better approach",
-            "the lesson record",
+            'Record a reusable lesson by domain/topic, surfaced by lookup from any epic',
+            'when you learn something true beyond this ticket',
+            'the lesson',
             RecordLessonArgs, _record_lesson, "knowledge"),
     ToolDef("lookup",
-            "Retrieve the most relevant, current records for a question/id/path inside one epic — binding "
-            "decisions always included, at most 40 records / 16000 bytes, deterministic, with a receipt of "
-            "what was cut; each record labelled confirmed/unconfirmed and fresh/stale",
-            "on resume or before you act, to load current decisions and claims instead of trusting memory",
-            "records + rendered body + receipt",
+            'Current decisions, claims and lessons for a question, id or path in one epic (binding ones always)',
+            'on resume or before acting, instead of trusting memory',
+            'records, rendered body and receipt',
             LookupArgs, _lookup, "knowledge"),
     ToolDef("withdraw_decision",
-            "Retract a decision without a successor: sets its status to withdrawn with a one-line reason, "
-            "keeps the row and its links, and lookup/search never return it again",
-            "when a decision was mistaken or entered in error and no newer decision replaces it",
-            "the withdrawn decision record",
+            'Withdraw a decision with no successor; lookup never returns it again',
+            'when a decision was wrong and nothing replaces it',
+            'the withdrawn decision',
             WithdrawDecisionArgs, _withdraw_decision, "knowledge"),
     ToolDef("withdraw_claim",
-            "Retire a claim without a successor: sets its status to withdrawn with a one-line reason, "
-            "keeps the row and its links, and lookup/search never return it again",
-            "when a claim was superseded (e.g. by a re-curation) or entered in error and no newer claim replaces it",
-            "the withdrawn claim record",
+            'Withdraw a claim with no successor; lookup never returns it again',
+            'when a claim was superseded or wrong and nothing replaces it',
+            'the withdrawn claim',
             WithdrawClaimArgs, _withdraw_claim, "knowledge"),
     ToolDef("set_binding",
-            "Promote or demote a live decision's binding flag (architect or owner only); the id and its "
-            "links stay and a binding_changed audit event records who, when and why",
-            "when re-judging which decisions are truly must-follow for every seat in scope (binding), vs "
-            "ordinary ranked records",
-            "the updated decision record",
+            "Promote or demote a live decision's binding flag (architect/owner); audited",
+            'when re-judging which decisions every seat must follow',
+            'the decision',
             SetBindingArgs, _set_binding, "knowledge"),
     ToolDef("dense_search",
-            "Read-only diagnostic: dense-only cosine top-k over an epic's live records (no BM25, no graph), "
-            "so you can see exactly what the dense seed leg votes for",
-            "when diagnosing why lookup did or did not surface a record for a question",
-            "dense-only ranked hits with cosine scores",
+            "Diagnostic: dense-only cosine top-k over an epic's live records",
+            'when diagnosing why lookup missed a record',
+            'hits with cosine scores',
             DenseSearchArgs, _dense_search, "knowledge"),
 ]
 
@@ -1723,9 +1696,8 @@ KNOWLEDGE_TOOLS = [
 
 
 class AssembleRulesetArgs(BaseModel):
-    ticket_id: str | None = Field(default=None, description="assemble from the strategy/domain docs linked to this "
-                                  "ticket (uses_strategy/uses_domain), inherited up the parent chain")
-    doc_ids: list[str] | None = Field(default=None, description="explicit leaf doc ids to assemble instead")
+    ticket_id: str | None = Field(default=None, description='use its linked strategy/domain docs (inherited up the chain)')
+    doc_ids: list[str] | None = Field(default=None, description='explicit leaf doc ids instead')
 
 
 def _ruleset_leaves_for_ticket(c: BoardClient, ticket_id: str) -> list[str]:
@@ -1801,11 +1773,9 @@ def _assemble_ruleset(a: AssembleRulesetArgs) -> dict[str, Any]:
 
 RULESET_TOOLS = [
     ToolDef("assemble_ruleset",
-            "Compose the layered ruleset for a ticket (or explicit docs): walks doc `extends` chains "
-            "universal-first / most-specific-last, dedupes, and splits into the constructive view (how to "
-            "build) and the enforced view (what a checker verifies)",
-            "at the start of a story/task, to get your working brief from the linked strategy/domain docs",
-            "the ordered layers and both views, or a precondition error on a cycle/missing layer",
+            "Compose a ticket's layered ruleset from its strategy/domain docs into a constructive and an enforced view",
+            'at the start of a story/task, for your working brief',
+            'the layers and both views, or a cycle/missing-layer error',
             AssembleRulesetArgs, _assemble_ruleset, "ruleset"),
 ]
 
@@ -1813,28 +1783,18 @@ RULESET_TOOLS = [
 
 
 class ConsultArgs(BaseModel):
-    question: str = Field(description="what you want a second, independent read on — or the build/delivery brief")
-    purpose: ConsultPurpose = Field(default=ConsultPurpose.second_opinion,
-                          description="adversary|creative|visual|second_opinion|build — selects the consultant's brief")
+    question: str = Field(description='what to read, or the build brief')
+    purpose: ConsultPurpose = Field(default=ConsultPurpose.second_opinion)
     profile: ConsultProfile | None = Field(default=None,
-                          description="override the purpose→profile map: design (read-only advice) | concept "
-                          "(image_gen + asset write) | blender (shell→Blender, asset write) | verify (images in, "
-                          "read-only, structured PASS/FAIL/UNVERIFIED verdict) | direct (read-only inspection → "
-                          "spec). Omit to derive from purpose. Only concept/blender may take write_dir")
+                          description='overrides purpose; only concept/blender write (and take write_dir)')
     context: str = ""
     files: list[str] | None = None
-    ticket_id: str | None = Field(default=None, description="if set, post the answer to this ticket's thread")
+    ticket_id: str | None = Field(default=None, description='post the answer to this thread')
     timeout_s: int = 600
-    write_dir: str | None = Field(default=None, description="a directory Sol may WRITE (assets delivered there, "
-                                  "or files edited in place). Without it Sol is read-only and can only advise")
-    thread_id: str | None = Field(default=None, description="STEER: the thread_id returned by an earlier consult — "
-                                  "resumes that same Sol session (it remembers what it said and did). Omit for a "
-                                  "cold start")
-    images: list[str] | None = Field(default=None, description="image files (png/jpg) to attach — screenshots, "
-                                     "renders, mockups. Attaching is the ONLY way a picture reaches Sol; a path "
-                                     "in the prompt is a no-op")
-    model: ConsultModel | None = Field(default=None, description="consultant model for this call: gpt-6-astra is the only "
-                              "model (gpt-5.6-sol retired 2026-09-10 by owner ruling). Omit for the default")
+    write_dir: str | None = Field(default=None, description='dir the consultant may write; else read-only')
+    thread_id: str | None = Field(default=None, description='resume an earlier consult session')
+    images: list[str] | None = Field(default=None, description='png/jpg files to attach (a path in the prompt is not seen)')
+    model: ConsultModel | None = Field(default=None, description='omit for the default')
 
 
 def _fence_status_line(resp: dict[str, Any], run_id: str | None) -> str:
@@ -1927,8 +1887,8 @@ def _consult(a: ConsultArgs) -> dict[str, Any]:
 
 
 class ConsultStatusArgs(BaseModel):
-    run_id: str = Field(description="the run_id a consult returned (or the newest run when omitted)")
-    verbose: bool = Field(default=False, description="include the write-fence rows (pre_dirty / concurrent_writes / escapes) and the manifest's duplicate answer copy; default returns the compact shape")
+    run_id: str = Field(description='omit for your newest run')
+    verbose: bool = Field(default=False, description='add write-fence rows')
 
 
 # S12 (qa finding 18): consult_status returned `answer` twice (top-level + inside the manifest copy)
@@ -1978,22 +1938,14 @@ def _consult_status(a: ConsultStatusArgs) -> dict[str, Any]:
 
 CONSULT_TOOLS = [
     ToolDef("consult_status",
-            "Look up a consult run by run_id: its manifest status and, when the run produced one, the "
-            "recovered answer (once); also reports the fleet-wide consult lane (in flight / queued) and any "
-            "quota block. Compact by default (write-fence rows omitted, `omitted` names them); verbose=True adds them",
-            "after your own consult returned {status:running} or timed out, or the server restarted mid-run — "
-            "instead of re-asking",
-            "the run's status and recovered answer if any, plus the lane and quota block",
+            "A consult run's status and recovered answer (once), plus the consult lane and quota block",
+            'after a consult returned running or timed out; instead of re-asking',
+            'status, answer if any, lane and quota; verbose adds fence rows',
             ConsultStatusArgs, _consult_status, "consult"),
     ToolDef("consult",
-            "Ask the consultant (GPT Sol/Astra) for adversarial review, creative/visual judgment or a second "
-            "opinion — or, with write_dir, actual DELIVERY (Sol writes/edits files there). Brief it with the "
-            "GOAL, audience, quality bar and reference work, not a step-by-step checklist. thread_id resumes a "
-            "session; images attach pictures; ticket_id posts the answer to that thread",
-            "when a task needs a second independent read or a build the consultant should produce; runs in the "
-            "background — a long run returns a run_id and completes via a consult_done feed event",
-            "the answer with run log and run_id, or {run_id, status:'running', poll:'consult_status'} when it "
-            "exceeds the call cap, or unavailable/timeout/exit on failure",
+            'Ask the consultant for a second opinion, adversarial/creative/visual review, or (write_dir) a build; brief goal and bar',
+            'for an independent read or a build; long runs end with consult_done',
+            'the answer and run_id, or status running (poll consult_status)',
             ConsultArgs, _consult, "consult"),
 ]
 
@@ -2001,19 +1953,19 @@ CONSULT_TOOLS = [
 
 
 class ArtifactCreateArgs(BaseModel):
-    form: ArtifactForm = Field(description="image|file|url|app|repo_ref")
-    uri: str = Field(description="a uri, never a machine path")
+    form: ArtifactForm = Field()
+    uri: str = Field(description='a uri, never a machine path')
     note: str = ""
-    ticket_id: str | None = Field(default=None, description="link this artifact to a ticket (relation=produced)")
+    ticket_id: str | None = Field(default=None, description='link as produced')
 
 
 class ArtifactUploadArgs(BaseModel):
-    path: str = Field(description="local workspace file; opt-in single-host HTTP requires an absolute path inside operator-configured roots")
+    path: str = Field(description='workspace file (HTTP policy: absolute, inside configured roots)')
     note: str = ""
 
 
 class ArtifactReadArgs(BaseModel):
-    id: str = Field(description="artifact id")
+    id: str = Field()
 
 
 def _artifact_create(a: ArtifactCreateArgs) -> dict[str, Any]:
@@ -2025,19 +1977,19 @@ def _artifact_read(a: ArtifactReadArgs) -> dict[str, Any]:
 
 
 ARTIFACT_TOOLS = [
-    ToolDef("artifact_upload", "Stream an allowed workspace file to a staged artifact",
-            "to attach a local file (25 MB cap); use a seat-local adapter or explicitly configured authenticated single-host HTTP policy",
-            "staged artifact; message_send(artifacts=[id]) finalizes it; existing MIME/auth rules apply; see get_guide('agent-tools')",
+    ToolDef("artifact_upload", 'Stage a workspace file (25 MB cap) as an artifact',
+            'to attach a local file',
+            'the staged artifact; message_send(artifacts=[id]) finalizes it',
             ArtifactUploadArgs, lambda a: get_client().artifact_upload(a.path, a.note), "artifact"),
     ToolDef("artifact_create",
-            "Record a produced thing by uri (never a machine path); optionally link it to a ticket",
-            "when you ship an artifact — an image, file, url, app or repo_ref — the owner should see",
-            "the artifact",
+            'Record a produced thing by uri, optionally linked to a ticket',
+            'when you ship something the owner should see',
+            'the artifact',
             ArtifactCreateArgs, _artifact_create, "artifact"),
     ToolDef("artifact_read",
-            "Read one artifact",
-            "to inspect an artifact a ticket or link points at",
-            "the artifact record",
+            'Read one artifact',
+            'when a ticket or link names it',
+            'the artifact',
             ArtifactReadArgs, _artifact_read, "artifact"),
 ]
 
@@ -2068,9 +2020,9 @@ def _close(a: CloseArgs) -> dict[str, Any]:
 
 CLOSE_TOOLS = [
     ToolDef("close",
-            "Confirm an epic is closed (done/partial) and hand back the wiring to disarm",
-            "as the owner, once an epic reaches done/partial, to get the disarm checklist",
-            "the disarm checklist, or a transition error if the epic is not yet closed",
+            'Confirm an epic is closed and get the disarm checklist',
+            'as the owner, once an epic is done/partial',
+            'the checklist, or a transition error',
             CloseArgs, _close, "close"),
 ]
 
@@ -2145,6 +2097,35 @@ for _role_tools in ROLE_BUNDLES.values():
         if _kt not in _role_tools:
             _role_tools.insert(_at, _kt)
             _at += 1
+
+
+# S20 (s-b123a91d3f) token-cost trim: tools a role never invoked in 30 days of seat transcripts
+# (scripts/measure_token_cost.py invoked) and that no role card or skill names. Every tool is still
+# served to some role; a role that needs one back re-adds it here. The invariants above stay: the
+# identity set, record_decision/record_claim/lookup everywhere, close_self last.
+# preflight stays in every bundle (consult lane: the advisory host check is every seat's)
+_S20_UNUSED: dict[str, tuple[str, ...]] = {
+    Role.owner.value: ("gate_open", "inbox", "dense_search", "record_lesson", "withdraw_decision",
+                       "withdraw_claim", "set_binding"),
+    Role.architect.value: ("artifact_read", "dense_search", "gate_answer", "record_lesson", "withdraw_claim",
+                           "withdraw_decision"),
+    Role.engineer.value: ("dense_search", "gate_answer", "gate_open", "gates", "link_delete", "record_lesson",
+                          "set_binding", "withdraw_claim"),
+    Role.adversary.value: ("dense_search", "gate_answer", "link_delete", "record_lesson",
+                           "set_binding", "withdraw_claim", "withdraw_decision"),
+    Role.qa.value: ("artifact_create", "artifact_upload", "dense_search", "doc_query", "events_query", "gate_answer",
+                    "gate_open", "link_delete", "link_query", "record_lesson", "set_binding", "ticket_query",
+                    "withdraw_claim", "withdraw_decision"),
+    Role.reviewer.value: ("artifact_create", "artifact_upload", "dense_search", "doc_edit", "doc_query", "find",
+                          "gate_answer", "gate_open", "gates", "record_lesson", "set_binding",
+                          "ticket_query", "withdraw_claim", "withdraw_decision"),
+    Role.sme.value: ("artifact_create", "artifact_read", "artifact_upload", "dense_search", "doc_edit", "find",
+                     "gate_answer", "gate_open", "gates", "link_delete", "record_lesson", "set_binding",
+                     "withdraw_claim", "withdraw_decision"),
+}
+_S20_UNUSED[Role.coordinator.value] = _S20_UNUSED[Role.owner.value]
+for _role, _unused in _S20_UNUSED.items():
+    ROLE_BUNDLES[_role] = [n for n in ROLE_BUNDLES[_role] if n not in _unused]
 
 
 def tools_for_role(role: str) -> list[ToolDef]:

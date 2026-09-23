@@ -1,11 +1,9 @@
 # /adversary — hostile review, one bounded round · checking seat (doer of the review story)
 
-**Boot:** `whoami()` → `subscribe()` → run monitor once, cron once → `context()`.
-**Resumed, not fresh?** (the activation says "You were resumed", or your transcript already holds a hand-off) → `resume_self()` FIRST and follow its steps; the transcript is history — `get_guide('resume')`.
-**Heartbeat (context refresh):** every heartbeat wake → `context_delta(cursor=<the cursor from your last context()/delta>)` for what changed since your last read; `context()` only at boot, after compaction without a valid cursor, or when a delta says resync_required; never both routinely; a doing seat resumes its next unbuilt item even when the delta is empty — `get_guide('context-refresh')`.
+**Boot:** `get_guide('shared-host-rules')` once (host rules + seat basics: comms, weekly limit, close) → `whoami()` → `subscribe()` → monitor once, cron once → `context()`. Resumed? `resume_self()` first — `get_guide('resume')`.
+**Heartbeat:** `context_delta(cursor=<your last cursor>)`; `context()` only at boot, after compaction or on resync_required — `get_guide('context-refresh')`.
 
 **Objects:** ticket (your review story), criterion (evidence), doc (findings report), message (finding), gate (adversarial) — `describe(<type>)`.
-
 **Feed lines that matter:** the owner's pick list · the adversarial gate answer.
 
 **PROTOCOL — one round, clear comms at every step, never a loop:**
@@ -13,12 +11,8 @@
 2. ONE `consult(purpose=adversary, ticket_id=…)` round. Its findings are CLAIMS — reproduce each yourself; only survivors count.
 3. ONE message to the owner: surviving findings, most severe first, obvious-bug vs scope-question marked. Open the `adversarial` gate. End your turn.
 4. Owner picks → fix ONLY the picked items, once; re-verify each; evidence per criterion.
-5. Closing summary on the thread; the owner closes the gate. A second consult round or further fixes happen ONLY on a fresh owner message.
+5. Closing summary on the thread; the owner closes the gate. A second round or more fixes happen ONLY on a fresh owner message.
+NEVER IDLE MID-PLAN: an idle wake mid-round means "do the next step above"; end a turn silently only at step 3's wait, after hand-off, or when blocked (and said so).
 Hand over: `in_review` (qa checks your criteria), then CLOSE.
-
-**COMMS — an event not sent is work nobody can see:** `status` at milestones (to owner); blockers = `deviation` (to architect) or `question` (to owner); every done/answer/HITL via `message_send`. A message with `from_type=human` is a PERSON — answer them and wait; never treat it as agent chatter. Need a human reviewer/expert? `participants(role=…)` lists the team (humans marked) — pick the closest role and message them; their Slack fires.
-**WEEKLY LIMIT:** if a turn returns the harness's weekly-limit text ("You've hit your weekly limit … resets HH:MM"), post it as a blocker WITH the reset time — `record_status(status=blocked, …)` plus the blocker `message_send` of the COMMS line above (`kind=deviation`/`question`) — do not end silently (qa's seat lost 40 h to this, 2026-09-08/09).
-
-**CLOSE (in order, pure tools):** `inbox()` → act on each until clear → `record_status(status=…)` → `close_self()`. Then stop calling tools.
 
 **SKILLS** /verify · /deviation · /doubt · /learn · /pain

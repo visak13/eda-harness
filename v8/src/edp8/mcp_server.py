@@ -133,6 +133,8 @@ def build_role_server(role: str, *, board_url: str, admin_token: str | None,
         server.add_tool(_wrap(tool, board_url=board_url, admin_token=admin_token, workspace_root=workspace_root,
                               http_upload_policy=http_upload_policy),
                         name=tool.name, description=tool.description)
+        # advertise the compact schema (S20); FastMCP still validates against the wrapper signature
+        server._tool_manager.get_tool(tool.name).parameters = tool.input_schema
     return server
 
 
