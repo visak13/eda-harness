@@ -20,8 +20,10 @@ Do not re-verify anything and do not consult: harvest is one pass over what the 
 
 **Do**
 1. **Lessons.** For each fact true beyond this epic (a pitfall, a host limit, a tool trap, a better
-   approach) that cost rework or a fail verdict here: `lookup(scope=<epic>, question=<the fact>)` —
-   already recorded? skip it. Else `record_lesson(domain, topic, text, evidence=[<message/criterion/report ids>])`,
+   approach) that cost rework or a fail verdict here, list the candidates first, then ONE
+   `lookup(scope=<epic>, question=<the candidates, one line each>)` (a lookup returns up to 16 KB;
+   one per candidate multiplies the harvest's cost) — a candidate a decision or lesson already
+   states is skipped. Else `record_lesson(domain, topic, text, evidence=[<message/criterion/report ids>])`,
    text one sentence. At most 5; none is a valid answer.
 2. **Proposed versions.** For each linked strategy doc where this epic showed a bar MISSING (a failure
    the doc would have prevented) or WRONG (a bar that was followed and caused the failure, or that
