@@ -62,6 +62,17 @@ describe("WorkHeader title bar (S17)", () => {
     expect(sameLine("", "")).toBe(false);
   });
 
+  it("S-UI c-cb386d6be1: a purpose that opens with the title keeps only what follows it", async () => {
+    const { withoutTitle } = await import("./WorkHeader");
+    expect(withoutTitle("Use the bridge. Goal is Astra", "Use the bridge")).toBe("Goal is Astra");
+    expect(withoutTitle("Use the bridge.", "Use the bridge")).toBeNull();
+    expect(withoutTitle("Something else", "Use the bridge")).toBe("Something else");
+    server.use(http.get("/v1/tickets/epic-req/contextual", () => okJson(contextual({ gates: [] }))));
+    renderRoute("/epic/epic-req", "/epic/:id", <WorkHeader ticketId="epic-req" kind="epic" title="Use the codex bridge"
+      purpose="Use the codex bridge. Goal is to use GPT 6 Astra" status="designed" assignee={null} actions={null} work={<div />} />);
+    expect(await screen.findByTestId("work-purpose")).toHaveTextContent(/^Goal is to use GPT 6 Astra$/);
+  });
+
   it("shows the epic title only for assistive tech and drops a duplicate purpose", async () => {
     server.use(http.get("/v1/tickets/epic-req/contextual", () => okJson(contextual({ gates: [] }))));
     renderRoute("/epic/epic-req", "/epic/:id", <WorkHeader ticketId="epic-req" kind="epic" title="Board UI improvements"

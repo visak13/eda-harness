@@ -54,6 +54,20 @@ export function sameLine(a: string | null, b: string | null): boolean {
   return norm(a) !== "" && norm(a) === norm(b);
 }
 
+/** S-UI c-cb386d6be1 (owner: "the title is shown three times"): a purpose line that OPENS with the
+ *  title ("Use the codex bridge … planning. Goal is …") keeps only what follows it; the title
+ *  already sits in the breadcrumb and the rail. Returns null when nothing is left. */
+export function withoutTitle(purpose: string | null, title: string | null): string | null {
+  if (!purpose) return null;
+  if (sameLine(purpose, title)) return null;
+  const t = (title ?? "").trim().replace(/[\s:.;,!?—–-]+$/u, "");
+  if (t && purpose.trim().toLowerCase().startsWith(t.toLowerCase())) {
+    const rest = purpose.trim().slice(t.length).replace(/^[\s:.;,!?—–-]+/u, "");
+    return rest || null;
+  }
+  return purpose;
+}
+
 // Legacy pre-R1 destinations (old Slack pings and bookmarks carry these): the tabbed epic/ticket
 // used ?tab=/#hash; R1 replaced the tabs with the links-row viewers (epic c-bb6cf0d4d6 keeps the
 // old navigation working). documents→the Files viewer, work/overview→the Work viewer, thread is the
@@ -138,7 +152,7 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
   // On an epic the rail and breadcrumb carry it, so the h1 is kept for assistive tech only and a
   // purpose line that merely repeats the title is dropped.
   const purpose = short(p.purpose);
-  const showPurpose = purpose && !sameLine(purpose, p.title) ? purpose : null;
+  const showPurpose = withoutTitle(purpose, p.title);
   const titleHidden = p.kind === "epic"; // qa S17: a collapsed TICKET keeps its only visible title
 
   const viewerTitle = view === "history" ? "History" : view === "work" ? "Work" : "Files & evidence";

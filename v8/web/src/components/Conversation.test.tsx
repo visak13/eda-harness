@@ -43,4 +43,13 @@ describe("Conversation (S17)", () => {
     fireEvent.click(screen.getByTestId("composer-collapsed-bar"));
     expect(screen.getByRole("textbox", { name: "Message" })).toBeVisible();
   });
+
+  it("S-UI c-cb386d6be1: minimized, the message box is one bar — the expand control IS the bar", () => {
+    localStorage.setItem("edp8.ui.owner.composer-collapsed", "1");
+    mount();
+    const bar = screen.getByTestId("composer-collapsed-bar");
+    expect(screen.getByRole("button", { name: "Expand message box" })).toBe(bar);
+    expect(screen.queryByTestId("composer-collapse")).toBeNull();
+    expect(screen.getByTestId("conversation-composer").querySelectorAll("button:not([hidden] *)")).toHaveLength(1);
+  });
 });

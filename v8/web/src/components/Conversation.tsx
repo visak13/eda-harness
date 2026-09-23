@@ -149,19 +149,24 @@ export function Conversation({ ticketId, history, order, onToggleOrder, onReply,
             composer stays MOUNTED while collapsed (hidden, not unmounted), so a draft, its
             attachments and pending uploads survive a collapse/expand. */}
         <div className={styles.composerBar}>
+          {/* S-UI c-cb386d6be1: minimized, the box is ONE slim bar (prompt + expand chevron in the same
+              control) with no band under it; expanded, the small tab on the top edge collapses it. */}
           {composerCollapsed ? (
             <button type="button" className={styles.composerCollapsedBar} data-testid="composer-collapsed-bar"
+              aria-expanded={false} aria-controls={`composer-body-${ticketId}`}
+              aria-label="Expand message box" title="Expand message box"
               onClick={() => setComposerCollapsed(false)}>
-              <Icon name="edit" size={16} /> Write a message…
+              <Icon name="edit" size={16} /> <span className={styles.collapsedPrompt}>Write a message…</span>
+              <span className={styles.chevronUp} aria-hidden="true"><Icon name="chevron" size={16} /></span>
             </button>
-          ) : null}
-          <button type="button" className={styles.composerToggle} data-testid="composer-collapse"
-            aria-expanded={!composerCollapsed} aria-controls={`composer-body-${ticketId}`}
-            aria-label={composerCollapsed ? "Expand message box" : "Collapse message box"}
-            title={composerCollapsed ? "Expand message box" : "Collapse message box"}
-            onClick={() => setComposerCollapsed(!composerCollapsed)}>
-            <span className={composerCollapsed ? styles.chevronUp : styles.chevronDown} aria-hidden="true"><Icon name="chevron" size={18} /></span>
-          </button>
+          ) : (
+            <button type="button" className={styles.composerToggle} data-testid="composer-collapse"
+              aria-expanded aria-controls={`composer-body-${ticketId}`}
+              aria-label="Collapse message box" title="Collapse message box"
+              onClick={() => setComposerCollapsed(true)}>
+              <span className={styles.chevronDown} aria-hidden="true"><Icon name="chevron" size={18} /></span>
+            </button>
+          )}
         </div>
         <div id={`composer-body-${ticketId}`} hidden={composerCollapsed}>{composer}</div>
       </div>
