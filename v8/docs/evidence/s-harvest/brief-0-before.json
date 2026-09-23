@@ -1,29 +1,29 @@
 {
   "leaf_doc_ids": [
-    "strategyll-2f7805d92b"
+    "strategyll-6bce103051"
   ],
   "layers": [
-    "strategyll-2f7805d92b"
+    "strategyll-6bce103051"
   ],
   "layer_titles": {
-    "strategyll-2f7805d92b": "craft: web e2e (strategy_ll)"
+    "strategyll-6bce103051": "craft: web e2e (strategy_ll)"
   },
   "enforced": [
     {
       "text": "- run the full e2e suite before hand-off [required]",
-      "layer": "strategyll-2f7805d92b"
+      "layer": "strategyll-6bce103051"
     }
   ],
   "index": [
     {
-      "id": "strategyll-2f7805d92b",
+      "id": "strategyll-6bce103051",
       "title": "craft: web e2e",
       "doc_type": "strategy_ll",
       "tags": [
         "web"
       ],
       "approx_tokens": 25,
-      "line": "strategyll-2f7805d92b \u00b7 craft: web e2e (strategy_ll) \u00b7 web \u00b7 ~25 tokens"
+      "line": "strategyll-6bce103051 \u00b7 craft: web e2e (strategy_ll) \u00b7 web \u00b7 ~25 tokens"
     }
   ],
   "instruction": "enforced lines are inlined; every linked doc is one `index` line \u2014 doc_read(id) the ones your work touches (constructive craft lives there), before you build on them",
@@ -33,7 +33,7 @@
   "recall": {
     "items": [
       {
-        "id": "les-55adfee857",
+        "id": "les-3b08ac89f4",
         "type": "lesson",
         "text": "A full browser suite from a doer seat OOMs this host; a doer runs the specs it changed."
       }

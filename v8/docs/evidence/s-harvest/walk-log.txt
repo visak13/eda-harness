@@ -1,21 +1,21 @@
-private board pid=12988 http://127.0.0.1:58034 home=C:\Users\aksou\AppData\Local\Temp\harvest-walk-wfno58hb
-seeded: finished=epic-200715bfb1 next=epic-9dad97b1b2 story=s-6cc1faf1af doc=strategyll-2f7805d92b v1
-qa harvest: lesson les-55adfee857; proposals strategyll-33ed645b5b (source={'participant': 'qa.epic-walk', 'ticket': 'epic-200715bfb1'}), strategyll-ebd51c304f
+private board pid=30808 http://127.0.0.1:63398 home=C:\Users\aksou\AppData\Local\Temp\harvest-walk-96i3vdnf
+seeded: finished=epic-a7543ad5c1 next=epic-c02eeb8bb6 story=s-87064a0d33 doc=strategyll-6bce103051 v1
+qa harvest: lesson les-3b08ac89f4; proposals strategyll-3dfca7bf87 (source={'participant': 'qa.epic-walk', 'ticket': 'epic-a7543ad5c1'}), strategyll-b255ca20f9
 brief 0-before: enforced=['- run the full e2e suite before hand-off [required]']
-  ui approve: source: Proposed by qa.epic-walk on epic-200715bfb1 as the next version of strategyll-2f7805d92b
+  ui approve: source: Proposed by qa.epic-walk on epic-a7543ad5c1 as the next version of strategyll-6bce103051
   ui approve: diff: -- run the full e2e suite before hand-off [required] | +- a doer runs the specs it changed; the full suite is qa's, one seat at a time [required]
   ui approve: shot 1-approve-proposal-diff.png
   ui approve: approved in the Library
   ui approve: shot 2-approved.png
 brief 1-after-approve: enforced=["- a doer runs the specs it changed; the full suite is qa's, one seat at a time [required]"]
-  ui reject: source: Proposed by qa.epic-walk on epic-200715bfb1 as the next version of strategyll-2f7805d92b
+  ui reject: source: Proposed by qa.epic-walk on epic-a7543ad5c1 as the next version of strategyll-6bce103051
   ui reject: diff: -- a doer runs the specs it changed; the full suite is qa's, one seat at a time [required] | +- skip the browser suite [required]
   ui reject: shot 3-reject-proposal-diff.png
   ui reject: rejected in the Library
   ui reject: shot 4-rejected.png
 brief 2-after-reject: enforced=["- a doer runs the specs it changed; the full suite is qa's, one seat at a time [required]"]
-target strategyll-2f7805d92b: v2 versions=[1, 2]
-approved strategyll-33ed645b5b: status=retired resolution=approved -> strategyll-2f7805d92b v2
-rejected strategyll-ebd51c304f: status=retired resolution=rejected
+target strategyll-6bce103051: v2 versions=[1, 2]
+approved strategyll-3dfca7bf87: status=retired resolution=approved -> strategyll-6bce103051 v2
+rejected strategyll-b255ca20f9: status=retired resolution=rejected
 RESULT PASS: approve -> brief carries v2; reject -> retired, brief unchanged
-stopped private board pid=12988
+stopped private board pid=30808
