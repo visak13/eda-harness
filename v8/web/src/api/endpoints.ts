@@ -222,3 +222,21 @@ export const epicChoiceTags = (c: EpicSeatChoice): string[] => [
   ...Object.entries(c.roleModels).filter(([r, m]) => r && m).map(([r, m]) => `model:${r}=${m}`),
   `seat-effort:${c.effort}`,
 ];
+
+/** What POST /v1/quick-tasks returns: the new quick story, the engineer seat started on it (null when
+ *  the pool refused the spawn after the create — `spawn_error` says why; the ticket stays open). */
+export interface QuickTaskCreated {
+  ticket: TicketRecord;
+  seat: string | null;
+  spawn_error?: string;
+}
+
+/** POST /v1/quick-tasks — S-QUICK (design-34bf11cc07 §4.2): the owner's one-step quick task. The board
+ *  creates a parentless story tagged `quick` with the words verbatim, spawns `engineer.<story>` on the
+ *  chosen engineer-catalog model and makes it the assignee. The model is sent only when picked. */
+export const createQuickTask = (b: { title: string; words: string; model?: string | null }) =>
+  postJson<QuickTaskCreated>("/v1/quick-tasks", {
+    title: b.title.trim(),
+    words: b.words,
+    ...(b.model ? { model: b.model } : {}),
+  });

@@ -7,6 +7,7 @@ import type { EpicSummaryRow } from "../api/types";
 import { PageHeader } from "../components/PageHeader";
 import { copyProps } from "../copy/pages";
 import { NewEpicDialog } from "../components/NewEpicDialog";
+import { QuickTaskDialog } from "../components/QuickTaskDialog";
 import { Icon } from "../components/Icon";
 import { StatusChip } from "../components/StatusChip";
 import ui from "../components/ui.module.css";
@@ -39,6 +40,8 @@ function tally(row: EpicSummaryRow): { text: string; pct: number | null } {
 export function EpicsPage(): React.JSX.Element {
   const [newEpicOpen, setNewEpicOpen] = useState(false);
   const closeNewEpic = useCallback(() => setNewEpicOpen(false), []);
+  const [quickOpen, setQuickOpen] = useState(false);
+  const closeQuick = useCallback(() => setQuickOpen(false), []);
   const [params, setParams] = useSearchParams();
   const status = params.get("status") ?? "";
   const q = params.get("q") ?? "";
@@ -59,12 +62,20 @@ export function EpicsPage(): React.JSX.Element {
     <>
       <div className={styles.head}>
         <PageHeader title="Epics" subtitle="Every epic on the board and its pulse." />
-        <button type="button" className={styles.newEpic} data-testid="new-epic-open" aria-haspopup="dialog"
-          aria-expanded={newEpicOpen} onClick={() => setNewEpicOpen(true)} {...copyProps("sidebar", "new-epic")}>
-          <Icon name="add" size={18} /> New epic
-        </button>
+        <div className={styles.headActions}>
+          {/* S-QUICK: the owner's own small task, one submit — story + engineer on the chosen model */}
+          <button type="button" className={styles.newEpic} data-testid="quick-task-open" aria-haspopup="dialog"
+            aria-expanded={quickOpen} onClick={() => setQuickOpen(true)} {...copyProps("sidebar", "quick-task")}>
+            <Icon name="play" size={18} /> Quick task
+          </button>
+          <button type="button" className={styles.newEpic} data-testid="new-epic-open" aria-haspopup="dialog"
+            aria-expanded={newEpicOpen} onClick={() => setNewEpicOpen(true)} {...copyProps("sidebar", "new-epic")}>
+            <Icon name="add" size={18} /> New epic
+          </button>
+        </div>
       </div>
       <NewEpicDialog open={newEpicOpen} onClose={closeNewEpic} />
+      <QuickTaskDialog open={quickOpen} onClose={closeQuick} />
 
       <form className={styles.filters} role="search" onSubmit={(e) => e.preventDefault()}>
         <select

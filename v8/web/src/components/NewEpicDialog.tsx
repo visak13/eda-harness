@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -9,6 +9,7 @@ import type { ModelCatalog, PoolCapabilities } from "../api/types";
 import { BoardApiError } from "../api/client";
 import ui from "./ui.module.css";
 import styles from "./NewEpicDialog.module.css";
+import { useModalDialog } from "./useModalDialog";
 
 // Human #22 (2026-09-10): the header "New epic" button was a plate artifact with no handler. It now
 // opens this dialog — the owner card's step 1 without a shell: the words go to the board VERBATIM
@@ -36,8 +37,6 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
   const committed = useRef<{ id: string; hint: string; choice: EpicSeatChoice } | null>(null);
   const busy = useRef(false);
   const panelRef = useRef<HTMLFormElement>(null);
-  const closeRef = useRef(onClose);
-  closeRef.current = onClose;
   const [spawn, setSpawn] = useState(false);
   const [picks, setPicks] = useState<Record<string, string>>({});
   const [effort, setEffort] = useState<Effort>("medium");
@@ -57,31 +56,7 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
   const caps = capsQ.data as PoolCapabilities | undefined;
   const canSpawn = Boolean(caps?.spawn);
 
-  useEffect(() => {
-    if (!open) return;
-    const opener = document.activeElement as HTMLElement | null;
-    const previousOverflow = document.body.style.overflow;
-    const siblings = Array.from(document.body.children).filter((el): el is HTMLElement => el instanceof HTMLElement && !el.contains(panelRef.current));
-    const previousInert = siblings.map((el) => el.inert);
-    siblings.forEach((el) => { el.inert = true; });
-    document.body.style.overflow = "hidden";
-    titleRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { e.preventDefault(); if (!busy.current) closeRef.current(); }
-      if (e.key !== "Tab") return;
-      const items = Array.from(panelRef.current?.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled])') ?? []);
-      const first = items[0], last = items[items.length - 1];
-      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
-      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      siblings.forEach((el, i) => { el.inert = previousInert[i]; });
-      document.body.style.overflow = previousOverflow;
-      opener?.focus();
-    };
-  }, [open]);
+  useModalDialog(open, panelRef, titleRef, busy, onClose);
 
   const create = useMutation({
     mutationFn: async () => {

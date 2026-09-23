@@ -14,23 +14,35 @@ import styles from "./SpawnSeatForm.module.css";
 // no model is sent, so the board resolves the epic's `model:<role>=` tag (else the role's first
 // catalog entry); picking an id names it explicitly. Authorisation and idempotency are the board's;
 // its hint and errors are shown verbatim.
+//
+// S-QUICK (owner m-6914670391): the same form sits on a story's page with the ticket fixed and the
+// roles narrowed to engineer, qa and adversary. A checker (qa, adversary) spawns with the ticket as its
+// scope and NEVER takes the assignee — the assign box is not offered for it (the board refuses too).
 
 const DOING_ROLES = new Set(["engineer", "sme"]);
 
-export function SpawnSeatForm(): React.JSX.Element {
+export function SpawnSeatForm({ ticketId: fixedTicket, roles: onlyRoles }: {
+  /** the ticket the seat works on, fixed (the story page); omitted = the owner types it (Seats page) */
+  ticketId?: string;
+  /** the roles offered, in order; omitted = every role of the catalog */
+  roles?: string[];
+} = {}): React.JSX.Element {
   const qc = useQueryClient();
   const modelsQ = useQuery({ queryKey: ["models"], queryFn: getModels, retry: false });
   const catalog = modelsQ.data as ModelCatalog | undefined;
-  const roles = Object.keys(catalog?.roles ?? {});
+  const catalogRoles = Object.keys(catalog?.roles ?? {});
+  const roles = onlyRoles ? onlyRoles.filter((r) => catalogRoles.includes(r)) : catalogRoles;
   const [role, setRole] = useState("engineer");
-  const [ticket, setTicket] = useState("");
+  const [typed, setTicket] = useState("");
+  const ticket = fixedTicket ?? typed;
   const [picked, setPicked] = useState<string | null>(null);
   const [assignPick, setAssignPick] = useState<boolean | null>(null);
   const activeRole = roles.includes(role) ? role : (roles[0] ?? role);
   const options = catalog?.roles?.[activeRole] ?? [];
   const model = picked && options.includes(picked) ? picked : "";  // "" = the epic's choice
   const fallback = catalog?.defaults?.[activeRole] ?? "";
-  const assign = assignPick ?? DOING_ROLES.has(activeRole);
+  const doing = DOING_ROLES.has(activeRole);
+  const assign = doing && (assignPick ?? true);
   const ticketId = ticket.trim();
   const seatId = ticketId ? `${activeRole}.${ticketId}` : "";
 
@@ -65,11 +77,13 @@ export function SpawnSeatForm(): React.JSX.Element {
             {roles.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
         </label>
-        <label>
-          Ticket
-          <input className={ui.input} value={ticket} placeholder="s-… or epic-…" data-testid="spawn-seat-ticket"
-            onChange={(e) => { setTicket(e.target.value); spawn.reset(); }} />
-        </label>
+        {fixedTicket === undefined ? (
+          <label>
+            Ticket
+            <input className={ui.input} value={ticket} placeholder="s-… or epic-…" data-testid="spawn-seat-ticket"
+              onChange={(e) => { setTicket(e.target.value); spawn.reset(); }} />
+          </label>
+        ) : null}
         <label>
           Model
           <select className={ui.select} value={model} data-testid="spawn-seat-model"
@@ -79,10 +93,16 @@ export function SpawnSeatForm(): React.JSX.Element {
           </select>
         </label>
       </div>
-      <label className={styles.check}>
-        <input type="checkbox" checked={assign} data-testid="spawn-seat-assign" onChange={(e) => setAssignPick(e.target.checked)} />
-        Make this seat the ticket's assignee
-      </label>
+      {doing ? (
+        <label className={styles.check}>
+          <input type="checkbox" checked={assign} data-testid="spawn-seat-assign" onChange={(e) => setAssignPick(e.target.checked)} />
+          Make this seat the ticket's assignee
+        </label>
+      ) : (
+        <p className={styles.note} data-testid="spawn-seat-checker-note">
+          A {activeRole} seat checks the ticket; it never becomes the assignee.
+        </p>
+      )}
       <p className={styles.note} data-testid="spawn-seat-preview">
         {seatId
           ? `Starts ${seatId} on ${model ? modelLabel(model) : `the epic's ${activeRole} model`}${assign ? ` and assigns ${ticketId} to it` : ""}.`

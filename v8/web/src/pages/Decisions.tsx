@@ -172,7 +172,7 @@ function SignoffsTab({
               The epic's full words and the raw markdown excerpt used to fill the card (spacing pass,
               human report 2026-09-10). */}
           <div className={styles.featuredCrumb}>
-            <span className={styles.featuredTag}>Owner sign-off</span>
+            <span className={styles.featuredTag}>{featured.ticket.quick ? "Quick task" : "Owner sign-off"}</span>
             <span className={styles.featuredEpic} title={featured.ticket.epic_title}>
               {featured.ticket.epic_title}
             </span>
@@ -220,8 +220,8 @@ function SignoffsTab({
                   className={styles.moreRow}
                   onClick={(e) => onOpen(s, i + 2, n, e.currentTarget)}
                 >
-                  <span>{s.doc?.title ?? s.ticket.title}</span>
-                  <span className={styles.moreTicket}>{s.ticket.title}</span>
+                  <span>{s.ticket.quick ? s.criterion.text : (s.doc?.title ?? s.ticket.title)}</span>
+                  <span className={styles.moreTicket}>{s.ticket.quick ? `Quick task · ${s.ticket.title}` : s.ticket.title}</span>
                 </button>
               </li>
             ))}

@@ -32,6 +32,7 @@ export const SIDEBAR: PageCopy = {
     { key: "find", label: "Find (Ctrl K)", text: "full-text search across tickets, documents, messages and seats; Enter opens the hit.", control: true },
     { key: "identity", label: "Account (bottom)", text: "who you are on this board; opens the account menu: Settings, What am I looking at?, theme, avatar. Source: /v1/whoami.", control: true },
     { key: "new-epic", label: "New epic", text: "on the Epics page: records your words verbatim as a new epic and offers to spawn its architect; the preview lists who is woken before you confirm.", control: true },
+    { key: "quick-task", label: "Quick task", text: "on the Epics page: opens a small task of your own with your words verbatim and starts an engineer on the model you pick; you check its criteria from Needs you, no architect or qa needed.", control: true },
     { key: "notifications", label: "Notifications", text: "browser alerts for questions and approval requests while a board tab stays open; enable, test or disable them here.", control: true },
   ],
 };
@@ -96,6 +97,7 @@ export const PAGES: Record<string, PageCopy> = {
       { key: "process-strip", label: "Process strip + Change status", text: "as on the epic; \"Ask a role\" messages a role on this ticket with the wake preview.", control: true },
       { key: "documents", label: "Documents / Artifacts", text: "linked docs and uploaded files (drop or paste to upload; a file link opens with your identity).", control: true },
       { key: "thread", label: "Thread", text: "with Reply per message.", control: true },
+      { key: "spawn-seat", label: "Spawn seat", text: "start an engineer, qa or adversary seat on this story on a model from that role's catalog; an engineer can take the story, qa and adversary check it and never become the assignee.", control: true },
     ],
   },
   doc: {

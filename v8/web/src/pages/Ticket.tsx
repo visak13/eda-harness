@@ -7,6 +7,7 @@ import { ProcessStrip, nextActionFor } from "../components/ProcessStrip";
 import { StatusControl } from "../components/StatusControl";
 import { AddCriterion } from "../components/CriterionControls";
 import { AssignControl } from "../components/AssignControl";
+import { SpawnSeatForm } from "../components/SpawnSeatForm";
 import { GateOpenControl } from "../components/GateOpenControl";
 import { GateForm, useRetainedGates } from "../components/GateForm";
 import { LinkDocControl, AskRoleControl } from "../components/TicketAsks";
@@ -81,6 +82,8 @@ export function TicketPage(): React.JSX.Element {
       render: () => <AssignControl ticketId={id} currentAssignee={seat} /> },
     ...(gates.length ? [{ key: "answer-decision", label: "Answer a decision", count: gates.length, gloss: copyItem("epic", "answer-decision").text,
       render: () => <>{gates.map(({ gate: g, closed, onDismiss }) => <GateForm key={`${g.ticket_id}:${g.gate}`} gate={g} closed={closed} onDismiss={onDismiss} />)}</> } as ActionItem] : []),
+    ...(ticket.kind === "story" ? [{ key: "spawn-seat", label: "Spawn seat", gloss: copyItem("ticket", "spawn-seat").text,
+      render: () => <SpawnSeatForm ticketId={id} roles={["engineer", "qa", "adversary"]} /> } as ActionItem] : []),
     { key: "raise-decision", label: "Raise a decision", gloss: copyItem("epic", "raise-decision").text,
       render: () => <GateOpenControl ticketId={id} /> },
     { key: "ask-role", label: "Ask a role", gloss: copyItem("epic", "ask-role").text,

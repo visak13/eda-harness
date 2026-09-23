@@ -90,6 +90,21 @@ describe("Decisions home", () => {
     expect(screen.getByRole("tab", { name: /Sign-offs/ })).toHaveTextContent("2");
   });
 
+  it("a handed-off quick task lists one row per criterion, tagged Quick task (S-QUICK)", async () => {
+    const q = (id: string) => {
+      const row = sign(id, "Quick report");
+      return { ...row, ticket: { ...row.ticket, id: "s-q", title: "Rename the tab", epic_id: "s-q", epic_title: "Rename the tab", quick: true } };
+    };
+    setBoard({ signoffs: [q("1"), q("2")] });
+    mount();
+    const featured = await screen.findByTestId("featured-signoff");
+    expect(within(featured).getByText("Quick task")).toBeInTheDocument();
+    expect(within(featured).getByRole("heading", { name: "criterion 1" })).toBeInTheDocument();
+    const more = screen.getByTestId("more-docs");
+    expect(more).toHaveTextContent("criterion 2");
+    expect(more).toHaveTextContent("Quick task · Rename the tab");
+  });
+
   it("an empty sign-off queue renders one calm sentence", async () => {
     setBoard({});
     mount();

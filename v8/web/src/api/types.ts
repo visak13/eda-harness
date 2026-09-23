@@ -116,7 +116,7 @@ export interface WaitingReason {
 
 export interface SignoffRow {
   criterion: CriterionView;
-  ticket: { id: string; title: string; epic_id: string; epic_title: string; assignee: string | null };
+  ticket: { id: string; title: string; epic_id: string; epic_title: string; assignee: string | null; quick?: boolean };
   doc: { id: string; title: string; doc_type: string; version: number } | null;
   excerpt: string;
 }
