@@ -236,6 +236,9 @@ class SessionIn(BaseModel):
     presence_stale: bool = False  # sweep had no fresh answer for a live row: keep prev state, no event
 
 
+SPAWNABLE_ROLES = frozenset({Role.architect, Role.engineer, Role.qa, Role.adversary, Role.sme})
+
+
 class SessionSpawnIn(BaseModel):
     """Body for POST /v1/sessions/spawn (S20 pool control plane)."""
     role: Role
@@ -1139,6 +1142,15 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     def session_spawn(b: SessionSpawnIn, a: Participant = Depends(actor),
                       idempotency_key: str | None = Header(default=None)):
         _authorize_pool_op(a, b.participant_id, b.ticket_id)
+        if b.role not in SPAWNABLE_ROLES:  # S-ADV finding 1: no owner (or retired) seat is ever minted by a spawn
+            raise BoardError("scope", f"a {b.role.value} seat is not spawned; spawnable roles: "
+                                      f"{sorted(r.value for r in SPAWNABLE_ROLES)}",
+                             "the owner is a human; architect/engineer/qa/adversary/sme are seats")
+        if b.participant_id and b.ticket_id:  # S-ADV finding 4: the handle's epic is the authorised epic
+            pe, te = _target_epic(b.participant_id, None), _target_epic(None, b.ticket_id)
+            if pe and te and pe != te:
+                raise BoardError("scope", f"{b.participant_id!r} belongs to {pe}, not to {te} ({b.ticket_id})",
+                                 "name a ticket in the seat's own epic")
         if b.assign and b.role in (Role.qa, Role.adversary):
             # S-QUICK (owner m-6914670391): a checker spawns with the ticket as its scope, never as its doer
             raise BoardError("scope", f"a {b.role.value} seat checks the ticket and never becomes its assignee",
@@ -1164,6 +1176,9 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         # owner m-2d7ef9243d: the spawn inherits the EPIC's seat choice (seat-model/seat-effort tags)
         # unless the body names its own model/effort; Claude effort high is capped to medium.
         choice = board.seat_choice_for(b.ticket_id, model=b.model, effort=b.effort, role=b.role.value)
+        why = seat_choice.unknown_model(b.role.value, choice.model, seat_choice.agent_home())
+        if why:  # S-ADV finding 10: the catalog is a validation boundary, not a passthrough
+            raise BoardError("invalid", why, "pick an id from GET /v1/models for that role")
         if board.store.get("participant", b.participant_id) is None:
             try:
                 board.participant_create("agent", b.role, b.participant_id, id_=b.participant_id,

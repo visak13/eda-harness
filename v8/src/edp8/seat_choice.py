@@ -148,6 +148,28 @@ def catalog(home: str | os.PathLike | None) -> dict[str, list[str]]:
             if isinstance(ids, list) and any(ids)}
 
 
+def seat_names(home: str | os.PathLike | None) -> set[str]:
+    """The legacy seat names in models.json `seats` (e.g. "astra", "builder") — a spawn may still name one."""
+    seats = _registry(home).get("seats")
+    return {str(k) for k in seats} if isinstance(seats, dict) else set()
+
+
+def unknown_model(role: str | None, model: str | None, home: str | os.PathLike | None) -> str | None:
+    """S-ADV finding 10 (architect m-68e58f99d4): a `model:<role>=<id>` pick and a spawn's model must name
+    an id in that role's catalog (GET /v1/models) or a legacy seat name; the reason with the catalog
+    listed when they do not, None when the choice is fine or the role has no catalog."""
+    if not model or not role:
+        return None
+    if str(model).lower() == CLAUDE:
+        return None
+    allowed = catalog(home).get(role) or []
+    if not allowed:
+        return None
+    if model in allowed or model in seat_names(home):
+        return None
+    return f"{model!r} is not a {role} model; the catalog for {role} is {allowed}"
+
+
 def role_models_for(tags: Iterable[str] | None, home: str | os.PathLike | None) -> dict[str, str | None]:
     """{role: model} each catalog role of an epic runs on (resolve() with no spawn-named model).
     The Epic page shows it; None = the pool's roles column (an old `seat-model:claude` epic)."""

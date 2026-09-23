@@ -372,3 +372,19 @@ def test_rule_spawn_resolves_its_roles_effort_first_then_the_epic_wide_one(cat_h
 def test_role_efforts_for_shows_every_catalog_role(cat_home):
     got = seat_choice.role_efforts_for(["seat-effort:adversary=high", "seat-effort:sme=low"], cat_home)
     assert got == {"architect": None, "engineer": None, "qa": None, "adversary": "high", "sme": "low"}
+
+def test_unknown_model_names_the_catalog_s_adv_10(tmp_path):
+    """S-ADV finding 10: an id outside the role's catalog (and not a legacy seat name) is the reason with the
+    catalog listed; a catalog id, a seat name, "claude" and a role without a catalog pass."""
+    (tmp_path / "models.json").write_text(json.dumps({
+        "seats": {"astra": {"model": "openai-codex/gpt-6-astra"}},
+        "role_models": {"engineer": ["claude-opus-5-5", "gpt-6-sol"], "qa": ["claude-fable-5-1", "gpt-6-astra"]},
+    }), encoding="utf-8")
+    assert seat_choice.unknown_model("engineer", "gpt-6-sol", tmp_path) is None
+    assert seat_choice.unknown_model("engineer", "astra", tmp_path) is None
+    assert seat_choice.unknown_model("engineer", "claude", tmp_path) is None
+    assert seat_choice.unknown_model("sme", "anything", tmp_path) is None
+    assert seat_choice.unknown_model("engineer", None, tmp_path) is None
+    why = seat_choice.unknown_model("engineer", "gpt-6-astra", tmp_path)
+    assert why and "catalog for engineer is ['claude-opus-5-5', 'gpt-6-sol']" in why
+    assert "gpt-does-not-exist" in (seat_choice.unknown_model("qa", "gpt-does-not-exist", tmp_path) or "")

@@ -267,3 +267,135 @@ def test_quick_task_endpoint_carries_the_engineer_effort_s_ui(api):
     r = api["client"].post("/v1/quick-tasks", json={"title": "T2", "words": "w", "effort": "high"}, headers=OWNER)
     assert "seat-effort:engineer=high" in r.json()["value"]["ticket"]["tags"]
     assert api["calls"][-1]["model"] == "claude-opus-5-5" and api["calls"][-1]["effort"] == "medium"
+
+# ----------------------------------------------------------------------------- S-ADV findings (s-966102b3c9)
+ARCH = {"X-Participant": "arch"}
+
+
+def _epic(api, who, title, assignee=None):
+    body = {"kind": "epic", "work_type": "feature", "title": title, **({"assignee": assignee} if assignee else {})}
+    r = api["client"].post("/v1/tickets", json=body, headers=who)
+    assert r.json()["ok"], r.text
+    return r.json()["value"]["id"]
+
+
+def _story(api, who, epic, title="S", work_type="feature"):
+    r = api["client"].post("/v1/tickets", json={"kind": "story", "work_type": work_type, "title": title,
+                                                "parent_id": epic}, headers=who)
+    assert r.json()["ok"], r.text
+    return r.json()["value"]["id"]
+
+
+def test_adv1_spawn_never_mints_an_owner_or_retired_role(api):
+    """S-ADV finding 1: POST /v1/sessions/spawn role=owner (or coordinator/consultant) is refused; no participant."""
+    client = api["client"]
+    epic = _epic(api, OWNER, "X", assignee="arch")
+    for role in ("owner", "coordinator", "consultant"):
+        r = client.post("/v1/sessions/spawn", json={"role": role, "participant_id": f"new-{role}", "ticket_id": epic},
+                        headers=ARCH)
+        assert not r.json()["ok"] and "is not spawned" in r.text, r.text
+        assert not client.get(f"/v1/participants/new-{role}", headers=OWNER).json()["ok"]
+    assert api["calls"] == []
+
+
+def test_adv4_spawn_handle_must_belong_to_the_authorised_epic(api):
+    """S-ADV finding 4: an architect cannot spawn engineer.<story of another epic> by naming its own ticket."""
+    client = api["client"]
+    client.post("/v1/participants", json={"type": "agent", "role": "architect", "handle": "arch2", "id": "arch2"},
+                headers=ADMIN)
+    x = _epic(api, OWNER, "X", assignee="arch")
+    y = _epic(api, OWNER, "Y", assignee="arch2")
+    sy = _story(api, {"X-Participant": "arch2"}, y)
+    r = client.post("/v1/sessions/spawn", json={"role": "engineer", "participant_id": f"engineer.{sy}", "ticket_id": x},
+                    headers=ARCH)
+    assert not r.json()["ok"] and "belongs to" in r.text, r.text
+    assert api["calls"] == []
+    sx = _story(api, ARCH, x)
+    r = client.post("/v1/sessions/spawn", json={"role": "engineer", "participant_id": f"engineer.{sx}", "ticket_id": x},
+                    headers=ARCH)
+    assert r.json()["ok"], r.text
+
+
+def test_adv3_a_checker_never_becomes_the_assignee_on_any_path(api):
+    """S-ADV finding 3: PATCH assignee=qa/adversary is refused by the board itself (any actor), and the MCP
+    spawn tool does not assign an adversary to a feature story; an adversary may do a review story."""
+    from edp8.bundles import ALL_TOOLS, set_client
+    from edp8.client import BoardClient
+    client = api["client"]
+    for pid, role in (("Q", "qa"), ("D", "adversary")):
+        client.post("/v1/participants", json={"type": "agent", "role": role, "handle": pid, "id": pid}, headers=ADMIN)
+    x = _epic(api, OWNER, "X", assignee="arch")
+    s = _story(api, ARCH, x)
+    for who in (OWNER, ARCH):
+        for pid in ("Q", "D"):
+            r = client.patch(f"/v1/tickets/{s}", json={"assignee": pid}, headers=who)
+            assert not r.json()["ok"] and "never becomes its assignee" in r.text, r.text
+    assert client.get(f"/v1/tickets/{s}", headers=OWNER).json()["value"]["assignee"] is None
+    set_client(BoardClient(participant="owner", admin_token="t", client=client))
+    sp = ALL_TOOLS["spawn"]
+    out = sp.handler(sp.args_model(role="adversary", participant_id="D", ticket_id=s))
+    assert out["ok"], out
+    assert client.get(f"/v1/tickets/{s}", headers=OWNER).json()["value"]["assignee"] is None
+    rv = _story(api, ARCH, x, title="review pass", work_type="review")
+    r = client.patch(f"/v1/tickets/{rv}", json={"assignee": "D"}, headers=OWNER)
+    assert r.json()["ok"], r.text  # an adversary can be the doer of a review-type story none of whose criteria it checks
+
+
+def test_adv2_mcp_spawn_binds_the_caller_like_rest(api):
+    """S-ADV finding 2: the spawn TOOL refuses an engineer and a foreign-epic architect; the owner and the
+    epic's own architect spawn."""
+    from edp8.bundles import ALL_TOOLS, set_client
+    from edp8.client import BoardClient
+    client = api["client"]
+    for pid, role in (("E", "engineer"), ("arch2", "architect")):
+        client.post("/v1/participants", json={"type": "agent", "role": role, "handle": pid, "id": pid}, headers=ADMIN)
+    x = _epic(api, OWNER, "X", assignee="arch")
+    s = _story(api, ARCH, x)
+    sp = ALL_TOOLS["spawn"]
+    set_client(BoardClient(participant="E", admin_token="t", client=client))
+    out = sp.handler(sp.args_model(role="engineer", participant_id="E9", ticket_id=s))
+    assert not out["ok"] and "pool control plane" in out["error"]["message"], out
+    set_client(BoardClient(participant="arch2", admin_token="t", client=client))
+    out = sp.handler(sp.args_model(role="engineer", participant_id="E9", ticket_id=s))
+    assert not out["ok"] and "own epic" in out["error"]["message"], out
+    assert api["calls"] == []
+    set_client(BoardClient(participant="arch", admin_token="t", client=client))
+    out = sp.handler(sp.args_model(role="engineer", participant_id="E9", ticket_id=s))
+    assert out["ok"], out
+    assert api["calls"][-1]["participant_id"] == "E9"
+
+
+def test_adv5_seat_tags_are_written_by_the_owner_or_the_epics_own_architect(api):
+    """S-ADV finding 5 (architect m-68e58f99d4): model:<role>= / seat-effort:<role>= on an epic — owner or that
+    epic's architect only; a foreign architect gets a scope error; other tags keep the old rule."""
+    client = api["client"]
+    client.post("/v1/participants", json={"type": "agent", "role": "architect", "handle": "arch2", "id": "arch2"},
+                headers=ADMIN)
+    y = _epic(api, OWNER, "Y", assignee="arch2")
+    r = client.patch(f"/v1/tickets/{y}", json={"tags": ["model:engineer=gpt-6-sol"]}, headers=ARCH)
+    assert not r.json()["ok"] and "seat choice" in r.text, r.text
+    r = client.patch(f"/v1/tickets/{y}", json={"tags": ["model:engineer=gpt-6-sol"]}, headers={"X-Participant": "arch2"})
+    assert r.json()["ok"], r.text
+    r = client.patch(f"/v1/tickets/{y}", json={"tags": ["model:engineer=gpt-6-sol", "seat-effort:qa=high"]}, headers=OWNER)
+    assert r.json()["ok"], r.text
+    r = client.patch(f"/v1/tickets/{y}", json={"tags": ["model:engineer=gpt-6-sol", "seat-effort:qa=high", "python"]},
+                     headers=ARCH)  # a plain tag by a foreign architect: the old creator/assignee/architect rule
+    assert r.json()["ok"], r.text
+
+
+def test_adv10_the_catalog_is_a_validation_boundary(api):
+    """S-ADV finding 10: model:<role>= must name an id in that role's catalog (or a legacy seat name); the tag
+    write and the spawn both refuse an unknown id and list the catalog."""
+    client = api["client"]
+    x = _epic(api, OWNER, "X", assignee="arch")
+    r = client.patch(f"/v1/tickets/{x}", json={"tags": ["model:engineer=gpt-does-not-exist"]}, headers=OWNER)
+    assert not r.json()["ok"] and "catalog for engineer is" in r.text and "gpt-6-sol" in r.text, r.text
+    r = client.patch(f"/v1/tickets/{x}", json={"tags": ["model:engineer=gpt-6-astra"]}, headers=OWNER)
+    assert not r.json()["ok"], r.text  # astra is a qa/adversary id, not an engineer one
+    r = client.patch(f"/v1/tickets/{x}", json={"tags": ["model:engineer=builder"]}, headers=OWNER)
+    assert r.json()["ok"], r.text  # a legacy seat name from models.json `seats` still passes
+    s = _story(api, ARCH, x)
+    r = client.post("/v1/sessions/spawn", json={"role": "engineer", "participant_id": f"engineer.{s}", "ticket_id": s,
+                                                "model": "gpt-does-not-exist"}, headers=OWNER)
+    assert not r.json()["ok"] and "catalog for engineer is" in r.text, r.text
+    assert api["calls"] == []

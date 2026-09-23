@@ -496,13 +496,17 @@ class Board:
                     # S-QUICK: the tag decides who checks and whether a design is needed — fixed at create
                     raise BoardError("scope", f"the `{QUICK_TAG}` tag is set when the owner opens a quick task",
                                      "keep or leave out the tag as it was at create")
+                self._check_seat_tags(actor, t, new_tags)
                 t.tags = new_tags
                 changed["tags"] = t.tags
         if assignee is not None:
             if actor.role not in (Role.coordinator, Role.architect, Role.engineer, Role.owner):
                 raise BoardError("scope", f"{actor.role} may not assign tickets",
                                  "coordinator/architect/owner assign; an engineer assigns its own tasks")
-            self.participant(assignee)
+            doer = self.participant(assignee)
+            why = self.checker_as_doer_reason(t, doer)
+            if why:  # S-ADV finding 3: the invariant holds on every path, not only the REST spawn
+                raise BoardError("scope", why, "spawn a checker without assign; the doer stays the assignee")
             t.assignee = assignee
             changed["assignee"] = assignee
         if design_ref is not None:
@@ -1832,6 +1836,38 @@ class Board:
             return False
         handle = getattr(p, "handle", "") or ""
         return to in (handle, f"@{handle.lstrip('@')}", handle.lstrip("@")) or to == p.role.value  # type: ignore[union-attr]
+
+    SEAT_TAG_PREFIXES = ("model:", "seat-model:", "seat-effort:")
+
+    def _check_seat_tags(self, actor: Participant, t: Ticket, new_tags: list[str]) -> None:
+        """S-ADV findings 5 and 10 (architect m-68e58f99d4): the seat tags of an epic (`model:<role>=`,
+        `seat-effort:<role>=`, the old `seat-model:`/`seat-effort:`) are written by the owner or THAT epic's
+        architect only, and a `model:<role>=<id>` names an id in the role's catalog or a legacy seat name."""
+        old = {x for x in (t.tags or []) if x.startswith(self.SEAT_TAG_PREFIXES)}
+        new = {x for x in new_tags if x.startswith(self.SEAT_TAG_PREFIXES)}
+        if old == new:
+            return
+        if actor.role != Role.owner and not (actor.role == Role.architect
+                                              and self.epic_of(t).id in self.my_epics(actor)):
+            raise BoardError("scope", f"{actor.role.value} {actor.id!r} may not change this epic's seat choice "
+                                      f"(model/effort tags on {self.epic_of(t).id})",
+                             "the owner or the epic's own architect switches models and efforts")
+        home = seat_choice.agent_home()
+        for role, mid in seat_choice.role_models_from_tags(sorted(new - old)).items():
+            why = seat_choice.unknown_model(role, mid, home)
+            if why:
+                raise BoardError("invalid", why, "pick an id from GET /v1/models for that role")
+
+    def checker_as_doer_reason(self, t: Ticket, doer: Participant) -> str | None:
+        """S-QUICK c-3000a9760a: a qa or adversary seat checks a ticket and never becomes its doer, except an
+        adversary on a review-type ticket none of whose criteria it checks. The reason, or None."""
+        if doer.role not in (Role.qa, Role.adversary):
+            return None
+        checks = any(c.checked_by == doer.role.value
+                     for c in self.store.query("criterion", {"ticket_id": t.id}, limit=-1))
+        if doer.role == Role.adversary and t.work_type == WorkType.review and not checks:
+            return None
+        return f"a {doer.role.value} seat checks {t.id} and never becomes its assignee"
 
     def seat_choice_for(self, ticket_id: str | None, *, model: str | None = None,
                         effort: str | None = None, role: str | None = None) -> seat_choice.SeatChoice:

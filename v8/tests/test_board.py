@@ -192,22 +192,18 @@ def test_done_needs_all_criteria_passed(board, rig):
 
 
 def test_verdict_by_doer_refused(board, rig):
-    """A checker who is also the ticket's assignee cannot verdict its own work."""
+    """A checker never becomes the ticket's assignee (S-ADV finding 3 closed the PATCH path that once let a
+    qa seat be the doer of a ticket it checks), so the doer-verdict case is refused at the assignment."""
     epic = make_epic(board, rig)
     d = design_doc(board, rig, epic.id)
     advance_to_designed(board, rig, epic, d, checked_by="qa")
     advance_to_signed_off(board, rig, epic)
     board.ticket_update(rig["coordinator"], epic.id, status=TicketStatus.ready)
-    board.ticket_update(rig["coordinator"], epic.id, assignee=rig["qa"].id)
-    board.ticket_update(rig["qa"], epic.id, status=TicketStatus.in_progress)
-    crit = board.criteria(epic.id)[0]
-    ev = board.doc_create(rig["qa"], doc_type=DocType.report, title="evidence", body_md="ok",
-                           scope=epic.id)
-    board.criterion_update(rig["qa"], crit.id, evidence_ref=ev.id)
     with pytest.raises(BoardError) as ei:
-        board.criterion_update(rig["qa"], crit.id, verdict=Verdict.passed)
+        board.ticket_update(rig["coordinator"], epic.id, assignee=rig["qa"].id)
     assert ei.value.code == "scope"
-    assert "doer" in ei.value.message
+    assert "never becomes its assignee" in ei.value.message
+    assert board.ticket(epic.id).assignee is None
 
 
 def test_verdict_by_wrong_checker_role_refused(board, rig):
@@ -472,7 +468,7 @@ def test_engineer_relevance_messages_and_own_ticket_status(board, rig):
     # not on the ticket -> not relevant
     other_epic = board.ticket_create(rig["owner"], kind=TicketKind.epic, work_type=WorkType.feature,
                                       title="unrelated")
-    board.ticket_update(rig["coordinator"], other_epic.id, assignee=rig["adversary"].id)
+    board.ticket_update(rig["coordinator"], other_epic.id, assignee=rig["sme"].id)  # a checker is never a doer (S-ADV 3)
     unrelated_ev = board.store.query("event", {"subject_id": other_epic.id, "kind": EventKind.assigned})[-1]
     assert board.relevant(unrelated_ev, engineer) is False
 
