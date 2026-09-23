@@ -111,8 +111,9 @@ test("captures", async ({ page }) => {
   const req = page.getByRole("button", { name: "Request changes", exact: true });
   if (await req.count()) { await req.click(); await page.waitForTimeout(500); await shot(page, "04a-design-request-changes"); }
   await page.keyboard.press("Escape"); await page.waitForTimeout(300);
-  await page.getByTestId("work-design").click(); await page.waitForTimeout(600);
-  const [docTab] = await Promise.all([page.context().waitForEvent("page"), page.getByRole("link", { name: "Open in tab" }).click()]);
+  // S22: Escape above closes the request-changes panel, not always the viewer; clicking work-design on an open viewer toggled it shut and the Open in tab link vanished (qa sweep).
+  if (!(await page.getByRole("dialog", { name: "Design", exact: true }).isVisible())) { await page.getByTestId("work-design").click(); await page.waitForTimeout(600); }
+  const [docTab] = await Promise.all([page.context().waitForEvent("page"), page.getByRole("link", { name: /Open in tab/ }).click()]);
   await docTab.waitForLoadState(); await docTab.waitForTimeout(800); await docTab.screenshot({ path: path.join(OUT, "04b-design-open-in-tab.png") });
   fs.writeFileSync(path.join(OUT, "design-open-in-tab.json"), JSON.stringify({ url: docTab.url(), excerpt: (await docTab.locator("body").innerText()).slice(0, 200) }));
   await docTab.close();

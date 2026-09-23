@@ -50,7 +50,7 @@ test.describe("slack-bridge deep links carry identity", () => {
     await page.goto(`${BASE()}/ui/ticket/${fx.story}?as=alice`);
 
     // Destination: the ticket page (its status chip renders).
-    await expect(page.getByTestId("status-chip")).toBeVisible();
+    await expect(page.getByTestId("status-chip").filter({ visible: true }).first()).toBeVisible(); // S19: the summary-row chip is hidden when the section is open
     expect(new URL(page.url()).pathname).toContain(`/ticket/${fx.story}`);
 
     // The first board request went out as alice.
@@ -85,7 +85,7 @@ test.describe("legacy paths redirect into Folio with the filter intact", () => {
     // /ui/epic/{id} is already a Folio destination — the deep link opens the epic page in place.
     await page.goto(`${BASE()}/ui/epic/${fx.epic}?as=owner`);
     await expect.poll(() => new URL(page.url()).pathname).toContain(`/epic/${fx.epic}`);
-    await expect(page.getByRole("tablist")).toBeVisible();
+    await expect(page.getByTestId("composer")).toBeVisible(); // S19 removed the tab strip; the conversation composer marks the epic page
     await expect(page.locator("main h1")).toBeVisible();
   });
 });

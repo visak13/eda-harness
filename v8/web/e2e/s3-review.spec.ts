@@ -48,7 +48,7 @@ test("source deep link, local feedback, optional tab context and exact-version a
     await page.evaluate((id) => { document.documentElement.dataset.theme = id; localStorage.setItem("edp8.theme", id); }, theme.id);
     for (const [width, height] of [[1440, 900], [320, 568], [844, 390]]) {
       await page.setViewportSize({ width, height });
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - innerWidth), { message: `${theme.id} ${width}` }).toBeLessThanOrEqual(0); // qa finding 26: settle after the resize
       await dialog.getByRole("button", { name: "Send feedback", exact: true }).click({ trial: true });
       // @ts-expect-error shared axe adapter has dual playwright-core types
       const audit = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();

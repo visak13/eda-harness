@@ -1,4 +1,4 @@
-import { test, expect, BASE, type Page } from "./fixtures";
+import { test, expect, BASE } from "./fixtures";
 
 // S19 qa (owner m-a168021c98 / art-1cd391eb24): the owner opened the LIVE design doc from the epic
 // page with NO open review (`?doc=<design>` only) and saw (1) a pinned title block wasting space and

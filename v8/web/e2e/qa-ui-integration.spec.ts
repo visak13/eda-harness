@@ -79,7 +79,8 @@ test('representative three-message conversation comparison', async ({ page, requ
   expect(composer!.y).toBeLessThan(780);
   await page.setViewportSize({ width: 320, height: 568 });
   await expect(page.getByTestId('composer-send')).toBeDisabled();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  // qa finding 26: poll — the check right after a resize raced the reflow (steady state is clean since the composer select fix).
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
   await page.evaluate(() => scrollTo(0, 0));
   const first = await page.getByTestId('thread').boundingBox();
   console.log('Narrow conversation geometry', first);
