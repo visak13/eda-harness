@@ -9,7 +9,7 @@ import { StatusChip } from "../components/StatusChip";
 import { ProcessStrip } from "../components/ProcessStrip";
 import { StatusControl } from "../components/StatusControl";
 import { GateOpenControl } from "../components/GateOpenControl";
-import { GateForm } from "../components/GateForm";
+import { GateForm, useRetainedGates } from "../components/GateForm";
 import { AssignControl } from "../components/AssignControl";
 import { AskRoleControl } from "../components/AskRole";
 import { SpawnArchitect } from "../components/SpawnArchitect";
@@ -72,6 +72,8 @@ export function EpicPage(): React.JSX.Element {
   const page = useQuery({ queryKey: ["epic", id, include], queryFn: () => getEpicPage(id, include) });
   const history = useThreadHistory(id, page.data);
   const summary = useQuery({ queryKey: ["epics", "summary", "", ""], queryFn: () => getEpicsSummary() });
+  // S22: before the early returns (a hook); keeps a gate answered elsewhere while its ruling is unsent.
+  const gates = useRetainedGates((page.data?.answerable_gates ?? []).filter((g) => g.gate !== "design_signoff"));
 
   if (page.isPending) return <p className={ui.empty}>Loading epic…</p>;
   if (page.isError)
@@ -90,14 +92,13 @@ export function EpicPage(): React.JSX.Element {
   const row = summary.data?.find((r: EpicSummaryRow) => r.id === id) ?? null;
   const totals = tallyTotals(epic);
   const design = data.docs.find((d) => d.doc_type === "design") ?? null;
-  const gates = data.answerable_gates.filter((g) => g.gate !== "design_signoff");
   const gloss = (k: string) => copyItem("epic", k).text;
 
   const actions: ActionItem[] = [
     { key: "change-status", label: "Change status", gloss: gloss("change-status"), copy: copyProps("epic", "change-status"),
       render: () => <StatusControl ticketId={id} currentStatus={epic.status as TicketStatus} /> },
     ...(gates.length ? [{ key: "answer-decision", label: "Answer a decision", count: gates.length, gloss: gloss("answer-decision"), copy: copyProps("epic", "answer-decision"),
-      render: () => <>{gates.map((g) => <GateForm key={`${g.ticket_id}:${g.gate}`} gate={g} />)}</> } as ActionItem] : []),
+      render: () => <>{gates.map(({ gate: g, closed, onDismiss }) => <GateForm key={`${g.ticket_id}:${g.gate}`} gate={g} closed={closed} onDismiss={onDismiss} />)}</> } as ActionItem] : []),
     { key: "raise-decision", label: "Raise a decision", gloss: gloss("raise-decision"), copy: copyProps("epic", "raise-decision"),
       render: () => <GateOpenControl ticketId={id} /> },
     { key: "assign-spawn", label: "Assign or spawn a seat", gloss: gloss("assign-spawn"), copy: copyProps("epic", "assign-spawn"),

@@ -8,7 +8,7 @@ import { StatusControl } from "../components/StatusControl";
 import { AddCriterion } from "../components/CriterionControls";
 import { AssignControl } from "../components/AssignControl";
 import { GateOpenControl } from "../components/GateOpenControl";
-import { GateForm } from "../components/GateForm";
+import { GateForm, useRetainedGates } from "../components/GateForm";
 import { LinkDocControl, AskRoleControl } from "../components/TicketAsks";
 import { Term } from "../components/Term";
 import { CriterionCard } from "../components/CriterionCard";
@@ -59,6 +59,8 @@ export function TicketPage(): React.JSX.Element {
   const include = hash.startsWith("#m-") ? hash.slice(1) : null;
   const page = useQuery({ queryKey: ["ticket", id, include], queryFn: () => getTicketPage(id, include) });
   const history = useThreadHistory(id, page.data);
+  // S22: before the early returns (a hook); keeps a gate answered elsewhere while its ruling is unsent.
+  const gates = useRetainedGates((page.data?.open_gates ?? []).filter((g) => g.gate !== "design_signoff"));
 
   if (page.isPending) return <p className={ui.empty}>Loading ticket…</p>;
   if (page.isError)
@@ -68,8 +70,7 @@ export function TicketPage(): React.JSX.Element {
       </p>
     );
 
-  const { ticket, epic_id, criteria, docs, assignee, waiting_reason, open_gates } = page.data;
-  const gates = open_gates.filter((g) => g.gate !== "design_signoff");
+  const { ticket, epic_id, criteria, docs, assignee, waiting_reason } = page.data;
   const seat = assignee.handle ?? ticket.assignee ?? null;
   const gloss = (k: string) => copyItem("ticket", k).text;
 
@@ -79,7 +80,7 @@ export function TicketPage(): React.JSX.Element {
     { key: "assign-spawn", label: "Assign or spawn a seat", gloss: copyItem("epic", "assign-spawn").text,
       render: () => <AssignControl ticketId={id} currentAssignee={seat} /> },
     ...(gates.length ? [{ key: "answer-decision", label: "Answer a decision", count: gates.length, gloss: copyItem("epic", "answer-decision").text,
-      render: () => <>{gates.map((g) => <GateForm key={`${g.ticket_id}:${g.gate}`} gate={g} />)}</> } as ActionItem] : []),
+      render: () => <>{gates.map(({ gate: g, closed, onDismiss }) => <GateForm key={`${g.ticket_id}:${g.gate}`} gate={g} closed={closed} onDismiss={onDismiss} />)}</> } as ActionItem] : []),
     { key: "raise-decision", label: "Raise a decision", gloss: copyItem("epic", "raise-decision").text,
       render: () => <GateOpenControl ticketId={id} /> },
     { key: "ask-role", label: "Ask a role", gloss: copyItem("epic", "ask-role").text,

@@ -73,3 +73,15 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* S22: a gate answered elsewhere while this form held an unsent ruling. */
+.closed {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--accentwash);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 19px;
+}

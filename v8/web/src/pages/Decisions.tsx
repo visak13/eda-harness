@@ -23,7 +23,7 @@ import {
 import { getSeats, getPoolCapabilities } from "../api/seats";
 import type { PoolCapabilities } from "../api/types";
 import { Composer } from "../components/Composer";
-import { GateForm } from "../components/GateForm";
+import { GateForm, useRetainedGates } from "../components/GateForm";
 import { AgentLine } from "../components/AgentLine";
 import { RulingDrawer } from "../components/RulingDrawer";
 import { presenceOf } from "./presence";
@@ -300,14 +300,15 @@ function QuestionRowView({ q }: { q: QuestionRow }): React.JSX.Element {
 }
 
 // ------------------------------------------------------------------ Gates
-function GatesTab({ gates }: { gates: GateRow[] }): React.JSX.Element {
+function GatesTab({ gates: open }: { gates: GateRow[] }): React.JSX.Element {
+  const gates = useRetainedGates(open);
   if (gates.length === 0) {
     return <p className={styles.calm}>No open gates. Nothing is waiting on your ruling.</p>;
   }
   return (
     <div className={styles.gates}>
-      {gates.map((g) => (
-        <GateForm key={`${g.ticket_id}:${g.gate}`} gate={g} />
+      {gates.map(({ gate: g, closed, onDismiss }) => (
+        <GateForm key={`${g.ticket_id}:${g.gate}`} gate={g} closed={closed} onDismiss={onDismiss} />
       ))}
     </div>
   );

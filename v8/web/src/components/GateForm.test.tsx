@@ -5,7 +5,7 @@ import { MemoryRouter } from "react-router";
 import { http, HttpResponse } from "msw";
 import { server } from "../test/setup";
 import type { GateRow } from "../api/types";
-import { GateForm } from "./GateForm";
+import { GateForm, useRetainedGates } from "./GateForm";
 
 const gate: GateRow = {
   ticket_id: "epic-1",
@@ -81,5 +81,25 @@ describe("GateForm design_signoff", () => {
     mount(undefined, { ...gate, gate: "design_signoff", event_id: "ev-1" });
     expect(screen.queryByTestId("gate-answer")).toBeNull();
     expect(screen.getByRole("link", { name: "Review design at source" })).toHaveAttribute("href", expect.stringContaining("/epic/epic-1?"));
+  });
+
+  // S22 (consult #3): the gate leaves the open list (answered in another tab) while a ruling is unsent.
+  it("a gate answered elsewhere keeps the form, its unsent text and an 'answered elsewhere' notice", () => {
+    function List({ gates }: { gates: GateRow[] }) {
+      const rows = useRetainedGates(gates);
+      return <>{rows.map(({ gate: g, closed, onDismiss }) => <GateForm key={`${g.ticket_id}:${g.gate}`} gate={g} closed={closed} onDismiss={onDismiss} />)}</>;
+    }
+    const other: GateRow = { ...gate, ticket_id: "epic-2" };
+    const qc = new QueryClient();
+    const ui = (gates: GateRow[]) => <QueryClientProvider client={qc}><MemoryRouter><List gates={gates} /></MemoryRouter></QueryClientProvider>;
+    const { rerender } = render(ui([gate, other]));
+    fireEvent.change(screen.getAllByTestId("gate-answer")[0], { target: { value: "my unsent ruling" } });
+    rerender(ui([])); // live refetch: both gates answered elsewhere
+    expect(screen.getAllByTestId("gate-form")).toHaveLength(1); // only the one holding text is kept
+    expect(screen.getByTestId("gate-answer")).toHaveValue("my unsent ruling");
+    expect(screen.getByTestId("gate-answered-elsewhere")).toBeInTheDocument();
+    expect(screen.queryByTestId("gate-submit")).toBeNull();
+    fireEvent.click(screen.getByTestId("gate-dismiss"));
+    expect(screen.queryByTestId("gate-form")).toBeNull();
   });
 });
