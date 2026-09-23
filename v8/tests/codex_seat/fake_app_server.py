@@ -28,6 +28,7 @@ _results: dict[int, dict] = {}
 _steers: list[str] = []
 _next = [1000]
 _turn = {"id": None}
+_skill_roots: list[str] = []  # skills/extraRoots/set (per app-server, like codex)
 
 
 def log(obj):
@@ -137,6 +138,16 @@ def main():
                 continue
             _steers.append(("\n".join(i.get("text", "") for i in p.get("input", [])), p.get("clientUserMessageId")))
             send({"jsonrpc": "2.0", "id": rid, "result": {"turnId": _turn["id"]}})
+        elif m == "skills/extraRoots/set":
+            _skill_roots[:] = p["extraRoots"]
+            send({"jsonrpc": "2.0", "id": rid, "result": {}})
+        elif m == "skills/list":  # measured 0.156.0 shape: one entry per cwd, each skill at <root>/SKILL.md
+            skills = [{"name": os.path.basename(r), "path": os.path.join(r, "SKILL.md"), "scope": "user", "enabled": True}
+                      for r in _skill_roots if os.path.isfile(os.path.join(r, "SKILL.md"))]
+            skills.append({"name": "imagegen", "path": "C:/x/.codex/skills/.system/imagegen/SKILL.md", "scope": "system",
+                           "enabled": True})
+            send({"jsonrpc": "2.0", "id": rid, "result": {"data": [{"cwd": (p.get("cwds") or [""])[0], "skills": skills,
+                                                                     "errors": []}]}})
         elif m == "mcpServerStatus/list":
             # edp8 is live only when the argv added it (board seat); FAKE_EXTRA_LIVE simulates a server
             # discovery never saw (e.g. another CODEX_HOME's config) so the fail-closed boot can be tested

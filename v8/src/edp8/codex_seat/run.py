@@ -88,6 +88,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"codex seat {handle} role={role} pid={seat.pid} thread={seat.thread_id} resume={resume} kill_job={jobbed} "
           f"disabled_mcp={','.join(seat.disabled_servers)}", flush=True)
     print(f"live mcp servers: {seat.live_servers}", flush=True)  # verified ⊆ {edp8} before the first turn
+    print(f"role skills: {seat.skills}", flush=True)  # the role card's bundle, bound via skills/extraRoots/set
 
     def _stop(*_a):
         seat.stop()

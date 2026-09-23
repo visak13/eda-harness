@@ -281,14 +281,16 @@ FAKE_SERVERS = [{"name": "chrome-devtools", "transport": "stdio"}, {"name": "cua
                 {"name": "edp8", "transport": "streamable_http"}]
 
 
-def test_containment_disables_every_discovered_server_and_tool_injecting_features():
+def test_containment_disables_every_discovered_server_and_only_the_server_injecting_feature():
+    """Owner ruling m-56c204aa9a: a seat is normal codex. Every discovered MCP server is off, and of the
+    features only `apps` (it injects the codex_apps MCP server, measured) — image_generation,
+    browser_use, view_image and the rest keep codex's own values."""
     args, disabled = seat_mod.containment_args("codex", discover=lambda _c: (FAKE_SERVERS, None))
     joined = " ".join(args)
     for s in ("chrome-devtools", "cua_repl", "node_repl", "playwright", "codex_app", "remote-x"):
         assert f"mcp_servers.{s}.enabled=false" in joined and s in disabled
     assert "mcp_servers.edp8.enabled" not in joined  # ours is redefined, not disabled
-    for f in ("apps", "plugins", "browser_use", "computer_use", "multi_agent"):
-        assert f"features.{f}=false" in args
+    assert [a for a in args if a.startswith("features.")] == ["features.apps=false"]
 
 
 def test_containment_fails_closed_on_discovery_error():

@@ -6,17 +6,23 @@
     seat.wait()                        # resident until the app-server exits
 
 Containment (c-1113387020, architect m-c50e181c7f): every MCP server `codex mcp list --json`
-reports is disabled (consult.py's discover-and-disable, fail-closed), the features that inject
-tools outside that list are off (MANAGED_FEATURES_OFF — `apps` alone carries the 73-tool
-`codex_apps` server, p-8b8c035f), the edp8 board is the ONE server added, its identity headers
-come from env by NAME (`env_http_headers`), and `live_mcp_servers()` reads the thread's actual
-set back so a test/drill can assert it is exactly {edp8}.
+reports is disabled (consult.py's discover-and-disable, fail-closed), the edp8 board is the ONE server
+added, its identity headers come from env by NAME (`env_http_headers`), and `live_mcp_servers()` reads
+the thread's actual set back so a test/drill can assert it is exactly {edp8}.
+
+A seat is otherwise NORMAL codex (owner ruling m-56c204aa9a, dec-3dc3047782): every feature keeps
+codex's own value except `apps`, the one feature measured to inject an MCP server (`codex_apps`,
+73 tools; p-8b8c035f, re-measured 2026-09-23 with all other features at their defaults: live set {}).
+The role's skills (the **SKILLS** line of its role card, .claude/skills/<name>) are bound per seat with
+the app-server's `skills/extraRoots/set`, so the seat sees exactly its bundle and nothing is written
+to the tree or to ~/.codex (measured on 0.156.0: per-skill roots are honoured, config.toml untouched).
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import sys
 import time
@@ -28,12 +34,8 @@ from .tools import Delivery, SeatTools
 
 BOARD_SERVER = "edp8"
 
-#: features whose tools/servers bypass `codex mcp list` or reach outside the seat; all forced off
-MANAGED_FEATURES_OFF: tuple[str, ...] = (
-    "apps", "plugins", "remote_plugin", "browser_use", "browser_use_external", "computer_use",
-    "image_generation", "in_app_browser", "multi_agent", "realtime_conversation", "tool_suggest",
-    "skill_mcp_dependency_install", "memories", "goals", "sleep_tool",
-)
+#: role card line naming the role's skill bundle: `**SKILLS** /verify · /deviation · /pain`
+SKILLS_LINE = re.compile(r"^\*\*SKILLS\*\*(.*)$", re.M)
 
 #: codex sandbox per role: doing seats write the workspace, checking seats inspect read-only —
 #: consult.py's two modes ("workspace-write" for build/concept, "read-only" for design/verify)
@@ -64,7 +66,7 @@ def containment_args(codex: str, *, discover: Callable | None = None, env: dict[
                      cwd: str | None = None) -> tuple[list[str], list[str]]:
     """(`-c` args, disabled server names). Fail-closed: a discovery error raises. Discovery runs in the
     LAUNCH context (env/cwd), so it reads the config the launched app-server will load."""
-    from ..consult import HIDDEN_SERVER_FEATURES, discover_mcp_servers, mcp_containment_args, mcp_disabled_names
+    from ..consult import discover_mcp_servers, mcp_containment_args, mcp_disabled_names
     if discover is not None:
         servers, err = discover(codex)
     else:
@@ -72,11 +74,22 @@ def containment_args(codex: str, *, discover: Callable | None = None, env: dict[
     if err:
         raise RuntimeError(f"MCP discovery failed, refusing to start an uncontained seat: {err}")
     servers = [s for s in servers if s["name"] != BOARD_SERVER]  # ours is redefined below
-    args = mcp_containment_args(servers)  # consult.py's path: listed servers + hidden-server features
-    for feat in MANAGED_FEATURES_OFF:
-        if feat not in HIDDEN_SERVER_FEATURES:
-            args += ["-c", f"features.{feat}=false"]
-    return args, mcp_disabled_names(servers)
+    # consult.py's path: every listed server off + HIDDEN_SERVER_FEATURES (apps) off; nothing else
+    return mcp_containment_args(servers), mcp_disabled_names(servers)
+
+
+def role_skill_roots(agent_home: str | os.PathLike[str], role: str) -> list[str]:
+    """The role's skill dirs: the names on its role card's **SKILLS** line that exist as
+    .claude/skills/<name>/SKILL.md; every skill there when the card names none."""
+    home = Path(agent_home)
+    skills = home / ".claude" / "skills"
+    card = home / ".claude" / "commands" / f"{role}.md"
+    m = SKILLS_LINE.search(card.read_text(encoding="utf-8")) if card.is_file() else None
+    if m:
+        names = re.findall(r"/([A-Za-z0-9_-]+)", m.group(1))
+    else:
+        names = sorted(d.name for d in skills.iterdir()) if skills.is_dir() else []
+    return [str((skills / n).resolve()) for n in names if (skills / n / "SKILL.md").is_file()]
 
 
 def board_args(role: str, mcp_url: str | None = None) -> list[str]:
@@ -123,7 +136,7 @@ class CodexSeat:
                  codex_bin: str | None = None, board: bool = True, ephemeral: bool = False,
                  developer_instructions: str | None = None, discover: Callable | None = None,
                  on_event: Callable[[str, dict], None] | None = None, creationflags: int = 0,
-                 ws: bool = False):
+                 ws: bool = False, skill_roots: list[str] | None = None):
         self.ws = ws  # monitor mode: the app-server listens on a loopback websocket the native TUI joins
         self.cwd = str(Path(cwd).resolve())
         self.role = role
@@ -146,6 +159,8 @@ class CodexSeat:
         self._elog = self.log_dir / f"codex-seat.{handle}.events.log"
         self._redact = redactor(self.env)
         self.live_servers: list[str] = []
+        self.skill_roots = role_skill_roots(self.cwd, role) if skill_roots is None else skill_roots
+        self.skills: list[str] = []  # the role skills the app-server's catalog lists (read back at boot)
         self.delivery = Delivery(self._start_turn, self._steer, log=self._log)
         tasks = self.env.get("EDP_CODEX_TASKS_DIR") or str(self.log_dir / "tasks" / handle)
         self.tools = SeatTools(self.delivery, cwd=self.cwd, tasks_dir=tasks, env=self.env, log=self._log,
@@ -183,6 +198,7 @@ class CodexSeat:
         self.server.request("initialize", {"clientInfo": {"name": "edp8-codex-seat", "title": "edp8 codex seat", "version": "1"},
                                            "capabilities": {"experimentalApi": True, "requestAttestation": False}})
         self.server.notify("initialized")
+        self._bind_skills()  # before thread/start|resume: the thread's catalog is built from these roots
         prior = self._read_state() if resume else None
         if resume and not (prior and prior.get("threadId")):
             # a requested resume never silently becomes a fresh thread (the model would be told it resumed)
@@ -207,6 +223,24 @@ class CodexSeat:
         self._write_state()
         self.tools.start()
         return res
+
+    def _bind_skills(self) -> None:
+        """Owner ruling m-56c204aa9a: the role's skills are visible to the seat. Per-seat extra roots on
+        the app-server (the TUI joins the same server, so it sees the same catalog); read back with
+        skills/list so the boot banner and a drill can prove which ones landed."""
+        if not self.skill_roots:
+            return
+        assert self.server
+        try:
+            self.server.request("skills/extraRoots/set", {"extraRoots": self.skill_roots}, timeout=60)
+            res = self.server.request("skills/list", {"cwds": [self.cwd]}, timeout=60)
+        except RpcError as e:  # an older codex without the RPC: the seat runs, the gap is logged
+            self._log(f"skills not bound: {e}")
+            return
+        roots = {os.path.normcase(r) for r in self.skill_roots}
+        self.skills = sorted({k["name"] for e in (res or {}).get("data", []) for k in e.get("skills", [])
+                              if os.path.normcase(str(Path(k.get("path", "")).parent)) in roots})
+        self._log(f"skills bound: {self.skills}")
 
     def _enforce_allowlist(self) -> None:
         """Fail closed BEFORE the first turn: the thread's live MCP set must be exactly what we added
