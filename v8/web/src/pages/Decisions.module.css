@@ -655,3 +655,18 @@ a.convoTitle:hover {
 .replyTicket:hover {
   text-decoration: underline;
 }
+
+/* S-UI: the epic filter beside the title, and the Needs you section first on the page. */
+.titleRow { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.epicFilter { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; min-width: 0; max-width: 100%; }
+.epicFilterLabel { color: var(--muted); white-space: nowrap; }
+.epicFilter select { max-width: 360px; min-width: 12em; }
+.needsYou { margin: 0 0 20px; padding: 14px 16px; border: 1px solid var(--strongline); border-radius: 10px; background: var(--panel); }
+.needsYouTitle { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 18px; }
+.needsYouList { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.needsYouRow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 6px 0; border-top: 1px solid var(--line); }
+.needsYouRow:first-child { border-top: 0; }
+.needsYouKind { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accentink); white-space: nowrap; }
+.needsYouText { display: grid; min-width: 0; }
+.needsYouWhere { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.needsYouExcerpt { font-size: 14px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

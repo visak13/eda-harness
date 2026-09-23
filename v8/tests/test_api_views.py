@@ -417,3 +417,15 @@ def test_replies_to_me_lists_answers_with_the_words_they_answer(client):
     rows = client.get("/v1/me/replies", headers=OWN).json()["value"]
     assert [r["id"] for r in rows] == [ans]
     assert rows[0]["in_reply_to"]["text"] == "did you see my bug list?" and rows[0]["ticket_title"] == "E"
+
+
+def test_s_ui_decisions_rows_carry_their_epic_for_the_epic_filter(rig):
+    """S-UI (c-ef986a3491): the Decisions page defaults to one epic, so every row names its root epic —
+    signoffs (already), questions, gates, resolved and replies."""
+    v = _get(rig, "/v1/me/decisions")
+    assert [q["epic_id"] for q in v["questions"]] == [rig["epic"]]
+    assert {s["ticket"]["epic_id"] for s in v["signoffs"]} == {rig["epic"]}
+    r = rig["client"].post("/v1/me/verdict", json={"criterion_id": rig["kcrit"], "verdict": "pass", "evidence_version": 1,
+                                                    "note": "", "ticket_id": rig["kt"]}, headers=OWN).json()
+    assert r["ok"], r
+    assert {x["epic_id"] for x in _get(rig, "/v1/me/decisions/resolved")} == {rig["epic"]}

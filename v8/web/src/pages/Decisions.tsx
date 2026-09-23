@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import type {
   ConversationRow,
   EpicSummaryRow,
@@ -34,6 +34,8 @@ import { copyProps } from "../copy/pages";
 import { MessageText } from "../components/ArtifactLink";
 import styles from "./Decisions.module.css";
 import { Icon } from "../components/Icon";
+import { recallEpic, rememberEpic } from "../components/currentEpic";
+import ui from "../components/ui.module.css";
 
 // Decisions home (design §4.2 / §16.1 / §18.2, folded S5). The owner's one place to see what needs
 // them: ONE featured sign-off, calm queues (Sign-offs / Questions / Gates / Resolved), their
@@ -55,15 +57,37 @@ export function DecisionsPage(): React.JSX.Element {
   const replies = useQuery({ queryKey: ["me", "replies"], queryFn: () => getReplies(30), retry: false });
   const epics = useQuery({ queryKey: ["epics", "summary"], queryFn: () => getEpicsSummary(), retry: false });
 
+  // S-UI (owner m-ec5a9b86c5 "the decisions page is a mess with questions from all epics"): one epic
+  // at a time. ?epic=<id> (the rail's Needs you link carries the epic in view), else the last epic seen
+  // this session, else all; "All epics" is a choice in the filter, not the default.
+  const [params, setParams] = useSearchParams();
+  const epicParam = params.get("epic");
+  const epicFilter = epicParam ?? recallEpic() ?? ALL;
+  const inEpic = (epicId: string | null | undefined) => epicFilter === ALL || epicId === epicFilter;
+  function chooseEpic(next: string) {
+    if (next !== ALL) rememberEpic(next);
+    setParams((old) => { const q = new URLSearchParams(old); q.set("epic", next); return q; }, { replace: true });
+  }
+
   const d = decisions.data;
   // §18.2: "Waiting on you shows only items that need a human act". A question whose asker seat is
   // closed/dead/reaped cannot receive the answer, so it is not one — it stays visible under the
   // conversations' "Closed seats" row instead (acceptance finding: the tab counted it, 2026-09-08).
   const liveQuestions = useMemo(
-    () => (d?.questions ?? []).filter((q) => !["dead", "reaped", "closed", "done"].includes(q.asker?.seat_state ?? "")),
-    [d?.questions],
+    () => (d?.questions ?? []).filter((q) => !["dead", "reaped", "closed", "done"].includes(q.asker?.seat_state ?? ""))
+      .filter((q) => epicFilter === ALL || q.epic_id === undefined || q.epic_id === epicFilter),
+    [d?.questions, epicFilter],
   );
-  const counts = { ...(d?.counts ?? { signoffs: 0, questions: 0, gates: 0 }), questions: liveQuestions.length };
+  const signoffs = (d?.signoffs ?? []).filter((s) => inEpic(s.ticket.epic_id));
+  const gates = (d?.gates ?? []).filter((g) => inEpic(g.epic));
+  const resolvedRows = (resolved.data ?? []).filter((r) => epicFilter === ALL || r.epic_id === undefined || r.epic_id === epicFilter);
+  const replyRows = (replies.data ?? []).filter((r) => epicFilter === ALL || r.epic_id === undefined || r.epic_id === epicFilter);
+  const convoRows = (conversations.data ?? []).filter((c) => inEpic(c.epic_id ?? c.ticket_id));
+  const counts = { signoffs: signoffs.length, questions: liveQuestions.length, gates: gates.length };
+  const epicOptions = useMemo(() => {
+    const rows = (epics.data ?? []).filter((e) => !["done", "dropped", "partial"].includes(e.status) || e.id === epicFilter);
+    return rows.map((e) => ({ id: e.id, title: e.title }));
+  }, [epics.data, epicFilter]);
 
   // A ticket-id → title map so the questions queue can name a ticket in the owner's words
   // (the inbox rows carry no title). Conversations and epics both supply id → title.
@@ -83,13 +107,27 @@ export function DecisionsPage(): React.JSX.Element {
     { key: "signoffs", label: "Sign-offs", count: counts.signoffs },
     { key: "questions", label: "Questions", count: counts.questions },
     { key: "gates", label: "Gates", count: counts.gates },
-    { key: "resolved", label: "Resolved", count: resolved.data?.length },
+    { key: "resolved", label: "Resolved", count: resolved.data ? resolvedRows.length : undefined },
   ];
 
   return (
     <div className={styles.grid} data-testid="decisions">
       <div className={styles.main}>
-        <h1 className={styles.title}>Decisions</h1>
+        <div className={styles.titleRow}>
+          <h1 className={styles.title}>Decisions</h1>
+          <label className={styles.epicFilter}>
+            <span className={styles.epicFilterLabel}>Epic</span>
+            <select className={ui.select} value={epicFilter} onChange={(e) => chooseEpic(e.target.value)} data-testid="decisions-epic-filter">
+              <option value={ALL}>All epics</option>
+              {epicFilter !== ALL && !epicOptions.some((e) => e.id === epicFilter)
+                ? <option value={epicFilter}>{titleFor(epicFilter)}</option> : null}
+              {epicOptions.map((e) => <option key={e.id} value={e.id}>{e.title}</option>)}
+            </select>
+          </label>
+        </div>
+
+        <NeedsYou questions={liveQuestions} gates={gates} titleFor={titleFor}
+          scope={epicFilter === ALL ? "any epic" : titleFor(epicFilter)} />
 
         <div className={styles.tabs} role="tablist" aria-label="Decisions queues">
           {TABS.map((t) => (
@@ -109,17 +147,17 @@ export function DecisionsPage(): React.JSX.Element {
         {decisions.isError ? (
           <p className={styles.calm}>The board could not be reached. It will reappear when the connection returns.</p>
         ) : tab === "signoffs" ? (
-          <SignoffsTab signoffs={d?.signoffs ?? []} onOpen={openRuling} />
+          <SignoffsTab signoffs={signoffs} onOpen={openRuling} />
         ) : tab === "questions" ? (
           <QuestionsTab questions={liveQuestions} titleFor={titleFor} />
         ) : tab === "gates" ? (
-          <GatesTab gates={d?.gates ?? []} />
+          <GatesTab gates={gates} />
         ) : (
-          <ResolvedTab rows={resolved.data ?? []} titleFor={titleFor} />
+          <ResolvedTab rows={resolvedRows} titleFor={titleFor} />
         )}
 
-        <Replies rows={replies.data ?? []} />
-        <Conversations rows={conversations.data ?? []} people={people.data ?? []} />
+        <Replies rows={replyRows} />
+        <Conversations rows={convoRows} people={people.data ?? []} />
       </div>
 
       <aside className={styles.rail} aria-label="Status">
@@ -631,6 +669,51 @@ function EpicPulse({ epics }: { epics: EpicSummaryRow[] }): React.JSX.Element {
                   ? "None defined"
                   : `${e.criteria.passed} of ${e.criteria.total} criteria passed`}
               </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+// ------------------------------------------------------------------ Needs you (S-UI)
+const ALL = "all";
+
+function threadLink(ticketId: string, epicId: string | null | undefined, messageId?: string): string {
+  const base = ticketId === epicId ? `/epic/${encodeURIComponent(ticketId)}` : `/ticket/${encodeURIComponent(ticketId)}`;
+  return messageId ? `${base}#${encodeURIComponent(messageId)}` : base;
+}
+
+/** First on the page: the open asks and gates addressed to the viewer, for the chosen epic — each
+ *  one line with a jump to where it lives. The tabs below keep the full reply / ruling forms. */
+function NeedsYou({ questions, gates, titleFor, scope }: {
+  questions: QuestionRow[]; gates: GateRow[]; titleFor: (id: string) => string; scope: string;
+}): React.JSX.Element {
+  const n = questions.length + gates.length;
+  return (
+    <section className={styles.needsYou} aria-label="Needs you" data-testid="needs-you">
+      <h2 className={styles.needsYouTitle}>Needs you <span className={styles.tabCount}>{n}</span></h2>
+      {n === 0 ? <p className={styles.calm} data-testid="needs-you-empty">Nothing on {scope} is waiting on you.</p> : (
+        <ul className={styles.needsYouList}>
+          {questions.map((q) => (
+            <li key={q.id} className={styles.needsYouRow} data-testid="needs-you-ask" data-ask={q.id}>
+              <span className={styles.needsYouKind}>{String(q.kind)}</span>
+              <span className={styles.needsYouText}>
+                <span className={styles.needsYouWhere}>{titleFor(q.ticket_id)} · from {String(q.created_by)}</span>
+                <span className={styles.needsYouExcerpt}>{q.text.replace(/\s+/g, " ").slice(0, 160)}</span>
+              </span>
+              <Link className={styles.linkBtn} to={threadLink(q.ticket_id, q.epic_id, q.id)}>Open</Link>
+            </li>
+          ))}
+          {gates.map((g) => (
+            <li key={`${g.ticket_id}:${g.gate}`} className={styles.needsYouRow} data-testid="needs-you-gate">
+              <span className={styles.needsYouKind}>gate</span>
+              <span className={styles.needsYouText}>
+                <span className={styles.needsYouWhere}>{titleFor(g.ticket_id)} · opened by {g.by}</span>
+                <span className={styles.needsYouExcerpt}>{g.gate.replaceAll("_", " ")}{g.note ? ` — ${g.note}` : ""}</span>
+              </span>
+              <Link className={styles.linkBtn} to={threadLink(g.ticket_id, g.epic)}>Open</Link>
             </li>
           ))}
         </ul>

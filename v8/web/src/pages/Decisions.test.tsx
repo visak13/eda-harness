@@ -388,3 +388,51 @@ describe("Decisions coverage pass", () => {
     expect(within(seats).queryByText("Gone")).toBeNull();
   });
 });
+
+describe("S-UI: Decisions defaults to one epic, Needs you first (c-ef986a3491)", () => {
+  const q = (id: string, epic: string, text: string) => ({
+    id, ticket_id: epic === "epic-1" ? "s-a" : "s-b", created_by: "architect.x", to: "owner", kind: "question", text, epic_id: epic,
+    asker: { type: "agent", role: "architect", seat_state: "alive", note: "" }, why: "addressed to you (@owner)" });
+  const fixtures = {
+    epics: ["epic-1", "epic-2"].map((id, i) => ({ id, title: i ? "Space game" : "Board redesign", status: "in_progress", created_at: "x", criteria: { passed: 0, failed: 0, pending: 0, total: 0 }, open_gates: 0, waiting_reason: { reason: "", presence: null, latest_status: null }, assigned_seats: [], latest_status: null })),
+    questions: [q("m-1", "epic-1", "Which icon set?"), q("m-2", "epic-2", "Ship thrust?")],
+    gates: [{ ticket_id: "epic-2", gate: "design_signoff", by: "architect.y", note: null, opened_at: "2026-09-20T10:00:00Z", epic: "epic-2" }],
+    signoffs: [sign("k1", "Report one"), { ...sign("k2", "Report two"), ticket: { ...sign("k2", "x").ticket, epic_id: "epic-2" } }],
+  };
+  function mountAt(url: string) {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    return render(<QueryClientProvider client={qc}><MemoryRouter initialEntries={[url]}><DraftGuardProvider><DecisionsPage /></DraftGuardProvider></MemoryRouter></QueryClientProvider>);
+  }
+  beforeEach(() => { try { sessionStorage.clear(); } catch { /* ignore */ } });
+
+  it("opened from an epic (?epic=) shows only that epic; Needs you sits before the tabs", async () => {
+    setBoard(fixtures);
+    mountAt("/me?epic=epic-1");
+    const needs = await screen.findByTestId("needs-you");
+    await waitFor(() => expect(within(needs).getAllByTestId("needs-you-ask").map((r) => r.getAttribute("data-ask"))).toEqual(["m-1"]));
+    expect(within(needs).queryAllByTestId("needs-you-gate")).toHaveLength(0);
+    expect((screen.getByTestId("decisions-epic-filter") as HTMLSelectElement).value).toBe("epic-1");
+    // Needs you precedes the queues in document order
+    expect(needs.compareDocumentPosition(screen.getByRole("tablist")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /Sign-offs/ })).toHaveTextContent("1");
+    expect(within(needs).getByRole("link", { name: "Open" })).toHaveAttribute("href", "/ticket/s-a#m-1");
+  });
+
+  it("\"All epics\" is a choice, not the default; choosing it shows every epic's asks and gates", async () => {
+    setBoard(fixtures);
+    mountAt("/me?epic=epic-2");
+    const filter = await screen.findByTestId("decisions-epic-filter") as HTMLSelectElement;
+    await waitFor(() => expect(within(screen.getByTestId("needs-you")).getAllByTestId("needs-you-gate")).toHaveLength(1));
+    expect(Array.from(filter.options).map((o) => o.textContent)).toEqual(["All epics", "Board redesign", "Space game"]);
+    fireEvent.change(filter, { target: { value: "all" } });
+    await waitFor(() => expect(within(screen.getByTestId("needs-you")).getAllByTestId("needs-you-ask")).toHaveLength(2));
+    expect(screen.getByRole("tab", { name: /Sign-offs/ })).toHaveTextContent("2");
+  });
+
+  it("with no ?epic= the last epic seen this session is the default", async () => {
+    sessionStorage.setItem("edp8.ui.last-epic", "epic-2");
+    setBoard(fixtures);
+    mountAt("/me");
+    await waitFor(() => expect(within(screen.getByTestId("needs-you")).getAllByTestId("needs-you-ask").map((r) => r.getAttribute("data-ask"))).toEqual(["m-2"]));
+  });
+});

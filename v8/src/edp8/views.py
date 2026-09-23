@@ -379,7 +379,7 @@ def replies_for(board: Board, viewer: Participant, limit: int = 30) -> list[dict
     for m in sorted(seen.values(), key=lambda x: x.created_at, reverse=True)[:limit]:
         parent = board.store.get("message", m.reply_to) if m.reply_to else None
         tk = board.store.get("ticket", m.ticket_id)
-        rows.append({"id": m.id, "ticket_id": m.ticket_id, "ticket_title": tk.title if tk else m.ticket_id,
+        rows.append({"id": m.id, "ticket_id": m.ticket_id, "epic_id": board.epic_of(tk).id if tk else None, "ticket_title": tk.title if tk else m.ticket_id,
                      "created_by": m.created_by, "kind": m.kind.value, "text": m.text,
                      "at": m.created_at.isoformat(), "reply_to": m.reply_to,
                      "in_reply_to": ({"by": parent.created_by, "text": parent.text[:200]} if parent else None)})
@@ -432,7 +432,7 @@ def decisions_for(board: Board, viewer: Participant) -> dict[str, Any]:
     questions = []
     for m in board.inbox(viewer):
         asker = _participant(board, m["created_by"])
-        questions.append({**m, "why": _why_in_inbox(board, viewer, m), "asker": {
+        questions.append({**m, "why": _why_in_inbox(board, viewer, m), "epic_id": _epic_id_of(board, m.get("ticket_id")), "asker": {
             "type": getattr(asker, "type", "agent") if asker else "agent",
             "role": getattr(getattr(asker, "role", None), "value", "unknown") if asker else "unknown",
             "seat_state": seat_state(board, m["created_by"]),
@@ -444,6 +444,13 @@ def decisions_for(board: Board, viewer: Participant) -> dict[str, Any]:
                       "epic": board.epic_of(board.ticket(tid)).id})
     return {"signoffs": signoffs, "questions": questions, "gates": gates,
             "counts": {"signoffs": len(signoffs), "questions": len(questions), "gates": len(gates)}}
+
+
+def _epic_id_of(board: Board, ticket_id: str | None) -> str | None:
+    """The root epic of a ticket (a quick story is its own root); None when it is gone. S-UI: the
+    Decisions page filters every row by epic."""
+    t = board.store.get("ticket", ticket_id) if ticket_id else None
+    return board.epic_of(t).id if t else None
 
 
 def _why_in_inbox(board: Board, viewer: Participant, m: dict[str, Any]) -> str:
@@ -491,7 +498,10 @@ def resolved_for(board: Board, viewer: Participant, limit: int = 30) -> list[dic
             out.append({"at": e.created_at.isoformat(), "kind": "gate", "ticket_id": e.subject_id,
                         "gate": d.get("gate"), "answer": d.get("answer")})
     out.sort(key=lambda r: r["at"], reverse=True)
-    return out[:limit]
+    out = out[:limit]
+    for r in out:  # S-UI: the Decisions page filters by epic
+        r["epic_id"] = _epic_id_of(board, r["ticket_id"])
+    return out
 
 
 # ------------------------------------------------------------------ waiting_reason

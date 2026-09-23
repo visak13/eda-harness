@@ -47,7 +47,10 @@
   font-size: 14px;
   color: var(--ink);
 }
-.fieldLabel { color: var(--muted); }
+/* S-UI (owner m-ec5a9b86c5): the "Type" / "To" labels never wrap ("Ty / pe"), and the kind select keeps
+   room for its longest word, in the chat box and on the Decisions page alike. */
+.fieldLabel { color: var(--muted); white-space: nowrap; flex: none; }
+.field select[data-testid="kind-picker"] { min-width: 8.5em; }
 .selectWrap { position: relative; display: inline-flex; align-items: center; min-width: 0; max-width: 100%; flex: 1 1 auto; }
 /* qa finding 26: a fixed 260px select overflowed a 320px viewport (page scrollWidth 448); it now
    fills the remaining field width, capped at 260px. */

@@ -131,6 +131,8 @@ export interface QuestionRow {
   asker: { type: string; role: string; seat_state: string | null; note: string };
   /** Why this ask is in the viewer's inbox — board-derived, verbatim (design §16.2, promise #21). */
   why?: string;
+  /** S-UI: the root epic of the ticket (the Decisions page filters by it). */
+  epic_id?: string | null;
   [k: string]: unknown; // inbox rows carry additional board fields verbatim
 }
 
@@ -152,8 +154,8 @@ export interface DecisionsHome {
 }
 
 export type ResolvedRow =
-  | { at: ISODateString; kind: "verdict"; ticket_id: string; criterion: string; verdict: string }
-  | { at: ISODateString; kind: "gate"; ticket_id: string; gate: string; answer: string };
+  | { at: ISODateString; kind: "verdict"; ticket_id: string; criterion: string; verdict: string; epic_id?: string | null }
+  | { at: ISODateString; kind: "gate"; ticket_id: string; gate: string; answer: string; epic_id?: string | null };
 
 // --------------------------------------------------------------------------- /v1/me/*
 
@@ -485,6 +487,8 @@ export interface DocHtml {
 export interface ReplyRow {
   id: string;
   ticket_id: string;
+  /** S-UI: the root epic of the ticket (the Decisions page filters by it). */
+  epic_id?: string | null;
   ticket_title: string;
   created_by: string;
   kind: string;

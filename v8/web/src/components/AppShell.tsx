@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { api, BoardApiError } from "../api/client";
-import { getEpicPage, getTicketPage } from "../api/endpoints";
+import { getEpicPage } from "../api/endpoints";
+import { useCurrentEpicId } from "./currentEpic";
 import { identity } from "../auth/identity";
 import { IdentityPanel } from "./IdentityPanel";
 import { DraftGuardProvider } from "../live/useDraftGuard";
@@ -71,13 +72,7 @@ export function AppShell(): React.JSX.Element {
 }
 
 /** CURRENT EPIC (render rail): the epic of the page in view — the epic itself, or a ticket's epic. */
-function CurrentEpic(): React.JSX.Element | null {
-  const location = useLocation();
-  const m = /^\/(epic|ticket)\/([^/]+)/.exec(location.pathname);
-  const kind = m?.[1];
-  const id = m ? decodeURIComponent(m[2]) : "";
-  const ticket = useQuery({ queryKey: ["ticket", id, null], queryFn: () => getTicketPage(id), enabled: kind === "ticket", retry: false });
-  const epicId = kind === "epic" ? id : ticket.data?.epic_id ?? "";
+function CurrentEpic({ epicId }: { epicId: string }): React.JSX.Element | null {
   const epic = useQuery({ queryKey: ["epic", epicId, null], queryFn: () => getEpicPage(epicId), enabled: Boolean(epicId), retry: false });
   if (!epicId) return null;
   const title = epic.data?.title ?? epic.data?.board.epic.title ?? epicId;
@@ -102,6 +97,8 @@ function AppShellChrome(): React.JSX.Element {
   const [helpOpen, setHelpOpen] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
   const activeFamily = navFamily(location.pathname, location.search);
+  // S-UI: Needs you opens the Decisions page on the epic in view
+  const currentEpicId = useCurrentEpicId();
   const findBtnRef = useRef<HTMLButtonElement>(null);
   const closeFind = useCallback(() => {
     setFindOpen(false);
@@ -188,13 +185,13 @@ function AppShellChrome(): React.JSX.Element {
             </Link>
           ))}
           <div className={styles.divider} />
-          <Link to="/me" className={`${styles.navItem} ${activeFamily === "/me" ? styles.active : ""}`}
+          <Link to={currentEpicId ? `/me?epic=${encodeURIComponent(currentEpicId)}` : "/me"} className={`${styles.navItem} ${activeFamily === "/me" ? styles.active : ""}`}
             aria-current={activeFamily === "/me" ? "page" : undefined} {...copyProps("sidebar", "decisions")}>
             <span className={styles.icon} data-nav-icon><Icon name="warning" size={18} /></span>
             <span className={styles.navLabel}>Needs you</span>
             {counts && typeof counts.decisions === "number" ? <span className={`${styles.count} ${styles.coral}`}>{counts.decisions}</span> : null}
           </Link>
-          <CurrentEpic />
+          <CurrentEpic epicId={currentEpicId} />
         </nav>
 
         <div className={styles.lower}>
