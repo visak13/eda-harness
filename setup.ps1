@@ -3,10 +3,22 @@
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 
-foreach ($tool in @("uv", "claude")) {
+foreach ($tool in @("uv", "npm", "claude")) {
   if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
-    throw "'$tool' is not on PATH. Install it first (uv: https://docs.astral.sh/uv/ ; claude: https://claude.com/claude-code)."
+    throw "'$tool' is not on PATH. Install it first (uv: https://docs.astral.sh/uv/ ; Node >= 24: https://nodejs.org ; claude: https://claude.com/claude-code)."
   }
+}
+
+# v8's wheel build hook runs `npm run build` when the web bundle is missing (a fresh clone), which
+# needs the web dependencies first.
+$web = Join-Path $root "v8\web"
+if (-not (Test-Path (Join-Path $web "node_modules"))) {
+  Write-Host "== npm ci: v8\web"
+  $ErrorActionPreference = "Continue"
+  try {
+    npm --prefix $web ci 2>&1 | ForEach-Object { "$_" }
+    if ($LASTEXITCODE -ne 0) { throw "npm ci failed in $web (exit $LASTEXITCODE)" }
+  } finally { $ErrorActionPreference = "Stop" }
 }
 
 foreach ($proj in @("edp-contracts", "edp-broker", "edp-pool", "v8")) {
