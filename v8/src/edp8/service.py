@@ -893,7 +893,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     def lookup(scope: str, question: str | None = None, id: str | None = None,
                path: str | None = None, a: Participant = Depends(actor)):
         return ok(board.lookup(a, scope=scope, question=question, id=id, path=path),
-                  "records: at most 40 / 8000 bytes; binding never cut; receipt names what was cut")
+                  "records: json.dumps(records) at most 8000 bytes; binding never cut; receipt names what was cut")
 
     @app.post("/v1/index/reembed")
     def index_reembed(a: Participant = Depends(actor)):

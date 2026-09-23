@@ -25,7 +25,9 @@ RECORD_TYPES = ("decision", "claim", "lesson")
 EPIC_TYPES = ("decision", "claim")  # the epic-isolated types; lessons are filed nowhere
 MAX_RECORDS = 40
 MAX_BYTES = 8000
-ALWAYS_MAX_BYTES = 2000  # R2-5: the "Always applies" (binding, text-only) section's byte reserve
+# F4: MAX_BYTES bounds the records list exactly as the tool returns it — json.dumps(records) with the
+# default ", " separators and ASCII escapes (mcp_server serializes that way), brackets included.
+LIST_SEP_BYTES = 2
 MAX_HOPS = 2
 SEED_TOP = 8  # R2-6/D4: each leg (FTS, dense) casts at least its top-8 vote, then RRF-fused
 SEED_TOP_CAP = 24  # E1 (steer m-a006bfe2a5): per-leg seed count caps here when scaled by epic size
@@ -249,21 +251,34 @@ def _source_excerpts(store: Any, target_epic: str | None, question: str | None,
     return out
 
 
-def _history_chain(store: Any, rec: Any, _seen: set[str] | None = None) -> list[dict[str, str]]:
+def _jbytes(obj: Any) -> int:
+    """F4: the bytes one record costs in the returned payload (ASCII-escaped, default separators)."""
+    return len(_json.dumps(obj, ensure_ascii=True, default=str).encode("utf-8"))
+
+
+def _history_chain(store: Any, rec: Any, epic: str | None = None,
+                   _seen: set[str] | None = None) -> list[dict[str, str]]:
     """The replaces chain under a live decision (design R2-1): every decision it superseded,
     directly or transitively, newest-first, each tagged with the date it was replaced (the
     created_at of the record that replaced it). Replaced records never rank on their own — they
-    live only here, inline, so 'what was first proposed and why it changed' is answerable."""
+    live only here, inline, so 'what was first proposed and why it changed' is answerable.
+    F1: a predecessor from another epic ends the walk (never rendered), and a withdrawn one is not
+    rendered (its own predecessors still are)."""
     _seen = _seen or set()
+    if epic is None:
+        epic = _epic_id_of(store, getattr(rec, "scope", "") or "")
     out: list[dict[str, str]] = []
     for lk in store.query("kglink", {"from_id": rec.id, "kind": "replaces"}, limit=100):
         old = store.get("decision", lk.to_id)
         if old is None or old.id in _seen:
             continue
         _seen.add(old.id)
-        out.append({"id": old.id, "text": old.text, "date": _as_date(rec.created_at),
-                    **({"source": old.source} if getattr(old, "source", None) else {})})
-        out.extend(_history_chain(store, old, _seen))
+        if _epic_id_of(store, getattr(old, "scope", "") or "") != epic:
+            continue
+        if getattr(old, "status", None) != "withdrawn":
+            out.append({"id": old.id, "text": old.text, "date": _as_date(rec.created_at),
+                        **({"source": old.source} if getattr(old, "source", None) else {})})
+        out.extend(_history_chain(store, old, epic, _seen))
     return out
 
 
@@ -586,7 +601,7 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
     def _mk(nid: str, rtype: str, rec: Any, weight: float) -> tuple[float, dict[str, Any]]:
         confirmed = _confirmed(rec, rtype)
         fresh = not (stale_paths(rec, rtype) if stale_paths else False)
-        history = _history_chain(store, rec) if rtype == "decision" else []
+        history = _history_chain(store, rec, target_epic) if rtype == "decision" else []
         score = (weight * _freshness(_effective_date(rec), ref) * _usefulness(rec, rtype)
                  * _type_weight(rec, rtype))
         entry = {"id": rec.id, "type": rtype, "text": rec.text,
@@ -684,24 +699,47 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
         counts["confirmed" if entry["confirmed"] else "unconfirmed"] += 1
         counts["fresh" if entry["fresh"] else "stale"] += 1
 
-    # --- Section A "Always applies": binding, TEXT ONLY, at most ALWAYS_MAX_BYTES of the budget.
-    # Mandatory overflow trims the lowest-score binding text and says so in the receipt (R2-5).
+    # F4: `used_bytes` is the exact size of json.dumps(records): "[]" plus each record and its ", ".
+    used_bytes = 2
+    n_items = 0
+    cut_by_type: dict[str, int] = {}
+    cut_ids: dict[str, list[str]] = {}
+
+    def _cost(entry: dict[str, Any]) -> int:
+        return _jbytes(entry) + (LIST_SEP_BYTES if n_items else 0)
+
+    def _cut(rtype: str, rid: str) -> None:
+        cut_by_type[rtype] = cut_by_type.get(rtype, 0) + 1
+        cut_ids.setdefault(rtype, []).append(rid)
+
+    # --- Section A "Always applies": binding, TEXT ONLY, never cut (F6 ruling m-391551522d): it takes
+    # what the binding set needs and the ranked section absorbs the rest; the receipt reports always_bytes.
     always_lines: list[str] = []
-    always_bytes = 0
-    binding_trimmed: list[str] = []
+    always_emitted: set[str] = set()
+    # F7: a binding record renders ONCE. When the question also reached it (R2-5), that one entry
+    # carries its detail and history here instead of repeating in "For your question".
+    question_hit = {rec.id for _, _, _, rec, _ in ranked if rec.id in ranked_allowed_ids}
     for sc, nid, rec, _full in binding_cands:
+        hit = rec.id in question_hit
         stub = {"id": rec.id, "type": "decision", "text": rec.text, "binding": True,
                 "section": "always", "confirmed": _full["confirmed"], "fresh": _full["fresh"],
                 "score": _full["score"]}
-        bsize = len(_json.dumps(stub, ensure_ascii=False).encode("utf-8"))
-        if always_bytes + bsize > ALWAYS_MAX_BYTES:
-            binding_trimmed.append(rec.id)
-            continue
+        if hit:
+            stub["detail"] = _full["detail"]
+            for k in ("source", "history"):
+                if k in _full:
+                    stub[k] = _full[k]
+        used_bytes += _cost(stub)
+        n_items += 1
         records.append(stub)
-        always_lines.append(_render_line("decision", rec, confirmed=_full["confirmed"],
-                                          fresh=_full["fresh"], binding=True, text_only=True))
-        always_bytes += bsize
+        always_emitted.add(rec.id)
+        line = _render_line("decision", rec, confirmed=_full["confirmed"], fresh=_full["fresh"],
+                            binding=True, text_only=not hit)
+        for h in stub.get("history", []):
+            line += f"\n    earlier: {h['text']} (replaced {h['date']})"
+        always_lines.append(line)
         _count(stub)
+    always_bytes = used_bytes - 2
 
     # --- Section D "Lessons from elsewhere" (item 3), sized FIRST so its reserve is kept inside the cap:
     # lessons the question matched (seeded or walked), then lessons filed under a domain of a kept
@@ -725,33 +763,33 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
     lesson_bytes = 0
     lesson_entries: list[dict[str, Any]] = []
     for _sc, _nid, _rt, rec, entry in lesson_cands:
-        if len(lesson_lines) >= MAX_LESSONS:
-            break
         entry = {**entry, "section": "lesson", "evidence": list(rec.evidence or [])[:8],
                  "domain": rec.domain, "topic": rec.topic}
-        bsize = len(_json.dumps(entry, ensure_ascii=False).encode("utf-8"))
-        if lesson_bytes + bsize > LESSON_MAX_BYTES or always_bytes + lesson_bytes + bsize > MAX_BYTES:
+        bsize = _cost(entry)
+        if (len(lesson_lines) >= MAX_LESSONS or lesson_bytes + bsize > LESSON_MAX_BYTES
+                or used_bytes + bsize > MAX_BYTES):
+            _cut("lesson", rec.id)  # F5: a lesson the tail could not hold is receipted like any cut
             continue
         lesson_entries.append(entry)
         lesson_lines.append(_render_line("lesson", rec, confirmed=entry["confirmed"], fresh=entry["fresh"],
                                          binding=False))
         lesson_bytes += bsize
+        used_bytes += bsize
+        n_items += 1
 
     # --- Section B "For your question": ranked records, full detail + inline history, up to MAX_BYTES total.
     ranked_lines: list[str] = []
-    used_bytes = always_bytes + lesson_bytes
-    cut_by_type: dict[str, int] = {}
-    cut_ids: dict[str, list[str]] = {}
     for sc, nid, rtype, rec, entry in ranked:
         if rec.id not in ranked_allowed_ids:
             continue  # C4: below the noise floor and not rescued by a replaces/part_of link
+        if rec.id in always_emitted:
+            continue  # F7: a binding record renders once per pack — in "Always applies" only
         entry = {**entry, "section": "ranked"}
         if rtype == "claim" and getattr(rec, "evidence", None):
             entry["evidence"] = list(rec.evidence)[:8]  # rendered below, so it counts against the cap
-        bsize = len(_json.dumps(entry, ensure_ascii=False).encode("utf-8"))
+        bsize = _cost(entry)
         if used_bytes + bsize > MAX_BYTES:  # E1: the ranked section runs to the byte cap, not a count
-            cut_by_type[rtype] = cut_by_type.get(rtype, 0) + 1
-            cut_ids.setdefault(rtype, []).append(rec.id)
+            _cut(rtype, rec.id)
             continue
         records.append(entry)
         line = _render_line(rtype, rec, confirmed=entry["confirmed"], fresh=entry["fresh"],
@@ -760,6 +798,7 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
             line += f"\n    earlier: {h['text']} (replaced {h['date']})"
         ranked_lines.append(line)
         used_bytes += bsize
+        n_items += 1
         _count(entry)
 
     for entry in lesson_entries:  # Section D records follow the ranked ones in `records`
@@ -774,12 +813,13 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
     if strong < MIN_RELEVANT:
         for ex in _source_excerpts(store, target_epic, question, source_search):
             e = {**ex, "section": "excerpt", "confirmed": False, "binding": False}
-            bsize = len(_json.dumps(e, ensure_ascii=False).encode("utf-8"))
+            bsize = _cost(e)
             if used_bytes + bsize > MAX_BYTES:
                 break
             records.append(e)
             excerpt_lines.append(f"- SOURCE {ex['type']} <{ex['id']}> {ex['author']} {ex['date']}: {ex['text']}")
             used_bytes += bsize
+            n_items += 1
 
     body_parts = []
     if always_lines:
@@ -797,13 +837,12 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
         "source_excerpts": len(excerpt_lines), "strong_records": strong,
         "always_applies": len(always_lines), "always_bytes": always_bytes,
         "binding": sum(1 for r in records if r.get("binding")),
-        "binding_trimmed": binding_trimmed, "always_cap": ALWAYS_MAX_BYTES,
         "bytes": used_bytes, "cut_by_type": cut_by_type,
         "cut_ids": {t: ids[:20] for t, ids in cut_ids.items()},
         "fetch": "read a cut record by id via record read / lookup(id=<id>)" if cut_ids else "",
         "cap": {"records": MAX_RECORDS, "bytes": MAX_BYTES},
-        # mandatory overflow = the binding must-follow set could not fit its byte reserve (R2-5)
-        "mandatory_overflow": bool(binding_trimmed),
+        # mandatory overflow = the never-cut binding set alone exceeds the byte cap (F6: reported, not cut)
+        "mandatory_overflow": always_bytes + 2 > MAX_BYTES,
         # R2-6: which seeding backend served this lookup (embeddings vs FTS-only + why)
         "embeddings": embed_status or {"embedder": "none", "reason": "no semantic index wired"},
         # E1: the adaptive per-leg seed count and the epic size it scaled to; E2: seed vs walk provenance

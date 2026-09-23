@@ -1826,33 +1826,49 @@ class Board:
         `binding=None` (the default) inherits: a successor of a binding decision stays binding, so a
         re-curation cannot silently demote a must-follow rule (m-db71577ddc); pass False to demote."""
         replaces = list(replaces or [])
-        replaces_binding = any(getattr(self.store.get("decision", rid), "binding", False) for rid in replaces)
-        # binding is architect/owner-only (m-1637080c9a): setting it, or superseding a binding rule (which
-        # would inherit or demote it), goes through those roles — same gate as set_binding
-        if (binding is True or replaces_binding) and actor.role not in (Role.architect, Role.owner):
-            raise BoardError("forbidden", f"{actor.role} may not record a binding decision or replace one",
-                             "record it non-binding and ask the architect to set_binding, or leave the "
-                             "binding rule's replacement to the architect or owner")
-        if binding is None:
-            binding = replaces_binding
-        d = Decision(id=new_id("dec"), scope=scope, text=text, detail=detail or "",
-                     status=DecisionStatus.live, replaces=replaces, binding=binding,
-                     source=source, decided_by=actor.id, domains=list(domains or []), created_by=actor.id,
-                     decided_at=self._source_date(source))  # when it was decided (source date), not now
+        if binding is not None:
+            binding = bool(binding)  # F2: a truthy non-bool (binding=1) must meet the gate as True
+        epic = knowledge._epic_id_of(self.store, scope) or scope
         with self.store.transaction():
-            self.store.put("decision", d)
-            # a `decides` edge to the scope ticket/epic connects the decision for a lookup by id/path
-            # (derived-edge stand-in for part_of; §3 lists decides as written-on-purpose)
-            if scope:
-                self._kglink(actor, d.id, scope, LinkKind.decides)
+            # F3: the predecessors are read and the binding gate checked INSIDE the transaction, so a
+            # set_binding landing between check and commit cannot let a non-architect replace a rule
+            olds = []
             for rid in replaces:
                 old = self.store.get("decision", rid)
                 if old is None:
                     raise BoardError("not_found", f"decision {rid!r} to replace does not exist",
                                      "pass ids of existing decisions in replaces[]")
+                # F1: a successor may only replace a record of its own epic (withdrawn or not)
+                if (knowledge._epic_id_of(self.store, old.scope or "") or old.scope) != epic:
+                    raise BoardError("scope", f"decision {rid!r} belongs to another epic than {scope!r}",
+                                     "replace only decisions of the new record's own epic")
+                # F8: a replaced decision already has its successor; replace that successor instead
+                if old.status == DecisionStatus.replaced:
+                    raise BoardError("state", f"decision {rid!r} is already replaced",
+                                     "replace its live successor, not the superseded record")
+                olds.append(old)
+            replaces_binding = any(bool(getattr(o, "binding", False)) for o in olds)
+            # binding is architect/owner-only (m-1637080c9a): setting it, or superseding a binding rule
+            # (which would inherit or demote it), goes through those roles — same gate as set_binding
+            if (binding is True or replaces_binding) and actor.role not in (Role.architect, Role.owner):
+                raise BoardError("forbidden", f"{actor.role} may not record a binding decision or replace one",
+                                 "record it non-binding and ask the architect to set_binding, or leave the "
+                                 "binding rule's replacement to the architect or owner")
+            if binding is None:
+                binding = replaces_binding
+            d = Decision(id=new_id("dec"), scope=scope, text=text, detail=detail or "",
+                         status=DecisionStatus.live, replaces=replaces, binding=binding,
+                         source=source, decided_by=actor.id, domains=list(domains or []), created_by=actor.id,
+                         decided_at=self._source_date(source))  # when it was decided (source date), not now
+            self.store.put("decision", d)
+            # a `decides` edge to the scope ticket/epic connects the decision for a lookup by id/path
+            # (derived-edge stand-in for part_of; §3 lists decides as written-on-purpose)
+            if scope:
+                self._kglink(actor, d.id, scope, LinkKind.decides)
+            for old in olds:
                 old.status = DecisionStatus.replaced  # type: ignore[attr-defined]
                 self.store.put("decision", old)
-                self._kglink(actor, d.id, rid, LinkKind.replaces)
+                self._kglink(actor, d.id, old.id, LinkKind.replaces)
             if source:
                 self._kglink(actor, d.id, source, LinkKind.came_from)
         self._index("decision", d.id, self.store._fts_text("decision", d.model_dump(mode="json")) or text)
@@ -1933,16 +1949,16 @@ class Board:
         if actor.role not in (Role.architect, Role.owner):
             raise BoardError("scope", f"{actor.role} may not change a decision's binding flag",
                              "only the architect or the owner set binding")
-        d = self.store.get("decision", decision_id)
-        if d is None:
-            raise BoardError("not_found", f"decision {decision_id!r} does not exist",
-                             "pass the id of an existing decision")
-        if d.status != DecisionStatus.live:
-            raise BoardError("state", f"decision {decision_id!r} is {d.status}, not live",
-                             "binding only means something for a live decision")
-        was = bool(d.binding)
-        d.binding = bool(binding)  # type: ignore[attr-defined]
-        with self.store.transaction():
+        with self.store.transaction():  # F3: read and write under one lock, like record_decision
+            d = self.store.get("decision", decision_id)
+            if d is None:
+                raise BoardError("not_found", f"decision {decision_id!r} does not exist",
+                                 "pass the id of an existing decision")
+            if d.status != DecisionStatus.live:
+                raise BoardError("state", f"decision {decision_id!r} is {d.status}, not live",
+                                 "binding only means something for a live decision")
+            was = bool(d.binding)
+            d.binding = bool(binding)  # type: ignore[attr-defined]
             self.store.put("decision", d)
             self._emit(d.id, EventKind.binding_changed,
                        {"decision": d.id, "from": was, "to": d.binding,

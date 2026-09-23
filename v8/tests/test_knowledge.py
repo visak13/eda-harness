@@ -10,7 +10,7 @@ import pytest
 
 from edp8 import knowledge
 from edp8.board import Board, BoardError
-from edp8.knowledge import ALWAYS_MAX_BYTES, EXCERPT_CHARS, MAX_BYTES, MAX_RECORDS
+from edp8.knowledge import EXCERPT_CHARS, MAX_BYTES, MAX_RECORDS
 from edp8.schemas import (
     Claim,
     ClaimBasis,
@@ -252,8 +252,9 @@ def test_records_payload_within_byte_budget(board, rig):
         board.store.put("kglink", KgLink(id=new_id("kl"), from_id=anchor.id, to_id=d.id,
                                          kind=LinkKind.implements, created_by=rig["owner"].id))
     out = board.lookup(rig["engineer"], scope=epic.id, question="webhooks hosts allow")
-    payload = len(json.dumps(out["records"], ensure_ascii=False).encode("utf-8"))
+    payload = len(json.dumps(out["records"], default=str).encode("utf-8"))  # as mcp_server serializes
     assert payload <= MAX_BYTES, payload
+    assert payload == out["receipt"]["bytes"]  # F4: the receipt measures the exact returned payload
     assert out["receipt"]["cut_by_type"], "expected some records cut"
     assert out["receipt"]["cut_ids"], "receipt must name what was cut"
 
@@ -846,20 +847,21 @@ def test_lookup_renders_replaced_chain_inline(board, rig):
 
 
 # --------------------------------------------------------------------------- R2-5 two-section budget
-def test_always_section_is_text_only_and_capped_and_trims_by_score(board, rig):
+def test_always_section_is_text_only_and_never_cut(board, rig):
+    # F6 ruling (m-391551522d): binding is never cut — no 2,000 B trim; the always section takes what
+    # binding needs, the ranked section absorbs the rest, and the receipt reports always_bytes.
     epic = make_epic(board, rig)
-    for i in range(40):
-        board.record_decision(rig["owner"], scope=epic.id,
-                              text=f"binding rule {i:02d} every seat must follow this host allow policy line",
-                              detail="WHY: a long reason that must never appear in the always section " * 3,
-                              binding=True)
+    ids = [board.record_decision(rig["owner"], scope=epic.id,
+                                 text=f"binding rule {i:02d} every seat must follow this host allow policy line",
+                                 detail="WHY: a long reason that must never appear in the always section " * 3,
+                                 binding=True).id for i in range(40)]
     out = board.lookup(rig["engineer"], scope=epic.id, question="totally unrelated question")
     r = out["receipt"]
-    assert r["always_bytes"] <= ALWAYS_MAX_BYTES
-    assert r["binding_trimmed"], "binding text over the 2000-byte reserve must be trimmed by score"
-    assert r["mandatory_overflow"] is True
     always = [x for x in out["records"] if x.get("section") == "always"]
-    assert always and all("detail" not in x for x in always)  # text only, never detail
+    assert sorted(x["id"] for x in always) == sorted(ids)  # every binding record, none trimmed
+    assert "binding_trimmed" not in r
+    assert r["always_bytes"] > 2000 and r["always_applies"] == 40
+    assert all("detail" not in x for x in always)  # text only, never detail
     assert "Always applies" in out["body"]
 
 
@@ -872,10 +874,13 @@ def test_binding_detail_only_when_it_also_ranks(board, rig):
                                   text="binding standup cadence rule", detail="WHY: ops rhythm", binding=True)
     out = board.lookup(rig["engineer"], scope=epic.id, question="webhook allowlist hosts")
     always = {x["id"] for x in out["records"] if x.get("section") == "always"}
-    assert ranked.id in always and other.id in always  # both must-follow, text-only up top
-    ranked_sec = {x["id"]: x for x in out["records"] if x.get("section") == "ranked"}
-    assert ranked.id in ranked_sec and ranked_sec[ranked.id]["detail"]  # detail only where it ranks
-    assert other.id not in ranked_sec  # unrelated binding does not bridge in via the epic hub
+    assert ranked.id in always and other.id in always  # both must-follow, up top
+    by_id = {x["id"]: x for x in out["records"] if x.get("section") == "always"}
+    # F7: rendered once; the question reached it, so its one entry carries the detail (R2-5)
+    assert by_id[ranked.id]["detail"] and "detail" not in by_id[other.id]
+    assert "WHY: security" in out["body"] and "WHY: ops rhythm" not in out["body"]
+    ranked_sec = {x["id"] for x in out["records"] if x.get("section") == "ranked"}
+    assert ranked.id not in ranked_sec and other.id not in ranked_sec
     assert "Always applies" in out["body"] and "For your question" in out["body"]
 
 
@@ -1102,3 +1107,115 @@ def test_binding_is_gated_to_architect_or_owner_in_record_decision(board, rig):
         assert e2.value.code == "forbidden"
     assert board.store.get("decision", b.id).status == "live"  # the refusal changed nothing
     assert board.record_decision(rig["owner"], scope=epic.id, text="owner rule", binding=True).binding is True
+
+
+# --------------------------------------------------------------------------- qa round (report-fe438fa508)
+def test_f1_cross_epic_replaces_refused(board, rig):
+    a, z = make_epic(board, rig, "Epic A"), make_epic(board, rig, "Epic Z")
+    foreign = board.record_decision(rig["owner"], scope=z.id, text="Z uses the zebra queue")
+    with pytest.raises(BoardError) as ei:
+        board.record_decision(rig["engineer"], scope=a.id, text="A takes over", replaces=[foreign.id])
+    assert ei.value.code == "scope"
+    assert board.store.get("decision", foreign.id).status == DecisionStatus.live
+    board.withdraw_decision(rig["owner"], decision_id=foreign.id, reason="gone")
+    with pytest.raises(BoardError):  # withdrawn or not
+        board.record_decision(rig["engineer"], scope=a.id, text="A takes over", replaces=[foreign.id])
+    assert board.store.get("decision", foreign.id).status == DecisionStatus.withdrawn
+
+
+def test_f1_history_skips_foreign_and_withdrawn_predecessors(board, rig):
+    a, z = make_epic(board, rig, "Epic A"), make_epic(board, rig, "Epic Z")
+    old_a = board.record_decision(rig["owner"], scope=a.id, text="alpha queue first pick")
+    mid_a = board.record_decision(rig["owner"], scope=a.id, text="alpha queue second pick", replaces=[old_a.id])
+    foreign = board.record_decision(rig["owner"], scope=z.id, text="zebra secret text")
+    new_a = board.record_decision(rig["owner"], scope=a.id, text="alpha queue final pick", replaces=[mid_a.id])
+    # legacy rows written before F1: a cross-epic replaces edge, and a withdrawn predecessor
+    board.store.put("kglink", KgLink(id=new_id("kl"), from_id=new_a.id, to_id=foreign.id,
+                                     kind=LinkKind.replaces, created_by=rig["owner"].id))
+    mid = board.store.get("decision", mid_a.id)
+    mid.status = DecisionStatus.withdrawn
+    board.store.put("decision", mid)
+    out = board.lookup(rig["engineer"], scope=a.id, question="alpha queue pick")
+    entry = next(r for r in out["records"] if r["id"] == new_a.id)
+    assert [h["id"] for h in entry["history"]] == [old_a.id]  # withdrawn mid hidden, its chain kept
+    assert "zebra" not in out["body"] and "zebra" not in str(out["records"])
+
+
+def test_f2_truthy_binding_from_engineer_forbidden(board, rig):
+    epic = make_epic(board, rig)
+    with pytest.raises(BoardError) as ei:
+        board.record_decision(rig["engineer"], scope=epic.id, text="sneaky rule", binding=1)
+    assert ei.value.code == "forbidden"
+    assert not board.store.query("decision", {"status": "live"})
+
+
+def test_f3_binding_gate_checked_inside_the_transaction(board, rig, monkeypatch):
+    # an owner set_binding lands after the engineer's call starts but before its transaction opens:
+    # the gate must read the committed flag inside the transaction and refuse the engineer's replace
+    epic = make_epic(board, rig)
+    rule = board.record_decision(rig["owner"], scope=epic.id, text="plain rule")
+    real_tx = board.store.transaction
+    fired = {"n": 0}
+
+    def racing_tx():
+        if fired["n"] == 0:
+            fired["n"] += 1
+            board.set_binding(rig["owner"], decision_id=rule.id, binding=True, reason="promote")
+        return real_tx()
+
+    monkeypatch.setattr(board.store, "transaction", racing_tx)
+    with pytest.raises(BoardError) as ei:
+        board.record_decision(rig["engineer"], scope=epic.id, text="engineer rewrite", replaces=[rule.id])
+    assert ei.value.code == "forbidden"
+    assert board.store.get("decision", rule.id).status == DecisionStatus.live
+
+
+def test_f4_cap_measured_on_exact_payload_with_many_small_records(board, rig):
+    import json
+    epic = make_epic(board, rig)
+    anchor = board.record_decision(rig["owner"], scope=epic.id, text="anchor gizmo widget ünïcode")
+    for i in range(300):
+        d = board.record_decision(rig["owner"], scope=epic.id, text=f"gizmo widget ünïcode {i}")
+        board.store.put("kglink", KgLink(id=new_id("kl"), from_id=anchor.id, to_id=d.id,
+                                         kind=LinkKind.implements, created_by=rig["owner"].id))
+    out = board.lookup(rig["engineer"], scope=epic.id, question="gizmo widget")
+    payload = len(json.dumps(out["records"], default=str).encode("utf-8"))
+    assert payload == out["receipt"]["bytes"] <= MAX_BYTES
+    assert out["receipt"]["cut_by_type"].get("decision")
+
+
+def test_f5_cut_lessons_are_receipted(board, rig):
+    epic = make_epic(board, rig)
+    board.record_decision(rig["owner"], scope=epic.id, text="cache eviction policy rule")
+    big = board.record_lesson(rig["architect"], domain="ops", topic="cache",
+                              text="cache eviction lesson " + "long word " * 170)  # > LESSON_MAX_BYTES
+    small = [board.record_lesson(rig["architect"], domain="ops", topic=f"cache{i}",
+                                 text=f"cache eviction lesson short {i}").id for i in range(5)]
+    out = board.lookup(rig["engineer"], scope=epic.id, question="cache eviction lesson")
+    rc = out["receipt"]
+    emitted = {r["id"] for r in out["records"] if r["type"] == "lesson"}
+    assert big.id not in emitted and len(emitted) == knowledge.MAX_LESSONS
+    cut = set(rc["cut_ids"].get("lesson", []))
+    assert big.id in cut
+    assert cut | emitted == {big.id, *small}
+    assert rc["cut_by_type"]["lesson"] == len(cut)
+
+
+def test_f7_binding_record_renders_once_per_pack(board, rig):
+    epic = make_epic(board, rig)
+    b = board.record_decision(rig["owner"], scope=epic.id, text="binding webhook allowlist rule for hosts",
+                              detail="WHY: security", binding=True)
+    board.record_decision(rig["owner"], scope=epic.id, text="webhook retries back off")
+    out = board.lookup(rig["engineer"], scope=epic.id, question="webhook allowlist hosts")
+    hits = [r for r in out["records"] if r["id"] == b.id]
+    assert len(hits) == 1 and hits[0]["section"] == "always"
+    assert out["body"].count(b.text) == 1
+
+
+def test_f8_replacing_an_already_replaced_decision_refused(board, rig):
+    epic = make_epic(board, rig)
+    a = board.record_decision(rig["owner"], scope=epic.id, text="first")
+    board.record_decision(rig["owner"], scope=epic.id, text="second", replaces=[a.id])
+    with pytest.raises(BoardError) as ei:
+        board.record_decision(rig["owner"], scope=epic.id, text="rival second", replaces=[a.id])
+    assert ei.value.code == "state"
