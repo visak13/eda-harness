@@ -11,7 +11,7 @@ Record — the board writes records itself, deterministically, on events (Board 
   gate answered                  → decision
   pain filed                     → lesson    (the off-board pain file, ingested mtime-gated)
 Every auto-record is created_by=AUTHOR ("board"), deduped by normalised text in its scope, and capped
-per epic (AUTO_CAP); withdraw_decision / withdraw_claim is the undo. No model call, no subprocess, no
+per epic (AUTO_CAP); withdraw_decision / withdraw_claim is the undo. No model call, no child process, no
 network anywhere in this module: a hook is plain reads and writes on the Store.
 """
 
