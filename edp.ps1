@@ -211,6 +211,9 @@ function Under-Root($text) {
 function Foreign-Path($pair) {
   # $null when the chain is this checkout's; else the path to name in the refusal
   foreach ($c in $pair) { if ((Under-Root $c.ExecutablePath) -or (Under-Root $c.CommandLine)) { return $null } }
+  # name the checkout: the venv launcher's path, not a machine-wide uv.exe shim above it
+  $venv = @($pair | Where-Object { $_.ExecutablePath -and $_.ExecutablePath -match "\\\.venv\\" } | Select-Object -First 1)
+  if ($venv.Count -gt 0) { return "" + $venv[0].ExecutablePath }
   $top = $pair[0]
   if ($top.ExecutablePath) { "" + $top.ExecutablePath } else { "" + $top.CommandLine }
 }
