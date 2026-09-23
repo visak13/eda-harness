@@ -286,6 +286,21 @@ def test_c3_regressed_run_posts_exactly_one_finding_even_on_retick(world):
     assert st.last_pass_run == _runs(world["store"])[0].id  # a regression never becomes the baseline
 
 
+def test_c3_finding_goes_to_the_manifest_address_verbatim(world, tmp_path):
+    """The tracked manifest names a seat id; the finding is posted `to` exactly that id (m-fe6450fe8e)."""
+    to = json.loads(rsi.MANIFEST.read_text(encoding="utf-8"))["finding"]["to"]
+    assert to == "architect.epic-6a8a6020fd"
+    world["board"].participant_create("agent", "architect", to, id_=to)
+    m = tmp_path / "m2.json"
+    m.write_text(json.dumps({"finding": {"ticket_id": TARGET, "to": to},
+                             "exams": [{"path": str(SYNTHETIC), "required": "required_ids"}]}), encoding="utf-8")
+    _tick(world, manifest=m)
+    res = _tick(world, manifest=m, force=True, paths={"max_hops": 0})
+    f = _findings(world["store"])
+    assert res["verdict"] == "regressed" and len(f) == 1
+    assert f[0].to == to and f[0].kind == "finding" and f[0].created_by == "rsi"
+
+
 # ============================================================================ c4 fail closed
 def _assert_error_not_consumed(world, res, needle):
     assert res["verdict"] == "error" and needle in (res["error"] or "")
