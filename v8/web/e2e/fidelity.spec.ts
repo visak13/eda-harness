@@ -61,7 +61,11 @@ test.describe("shell fidelity @ 1440×900", () => {
 
     // Focus ring on a nav link: 2px accentink, offset 2px. Keyboard focus so :focus-visible
     // engages (the first Tab lands on the Epics link, the first focusable in the revision3-clean rail).
-    await page.keyboard.press("Tab");
+    // S17 (c-33ffd96baf) put the rail toggle first in the brand row; Tab on until the Epics link is focused.
+    for (let i = 0; i < 4; i++) {
+      await page.keyboard.press("Tab");
+      if (await page.evaluate(() => (document.activeElement?.textContent ?? "").includes("Epics"))) break;
+    }
     const ring = await page.evaluate(() => {
       const el = document.activeElement as HTMLElement;
       const s = getComputedStyle(el);

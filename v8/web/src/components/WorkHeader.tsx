@@ -136,7 +136,7 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
   // purpose line that merely repeats the title is dropped.
   const purpose = short(p.purpose);
   const showPurpose = purpose && !sameLine(purpose, p.title) ? purpose : null;
-  const titleHidden = p.kind === "epic" || collapsed;
+  const titleHidden = p.kind === "epic"; // qa S17: a collapsed TICKET keeps its only visible title
 
   const viewerTitle = view === "history" ? "History" : view === "work" ? "Work" : "Files & evidence";
   const crumbTitle = p.kind === "epic" ? p.title : p.epic?.title ?? p.epic?.id ?? "Epic";

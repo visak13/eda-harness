@@ -49,3 +49,13 @@ def test_thread_rows_carry_html():
     row = views.thread_page(board, epic.id)["thread"][-1]
     assert row["text"] == "**bold** <i>x</i>"
     assert row["html"] == "<p><strong>bold</strong> &lt;i&gt;x&lt;/i&gt;</p>"
+
+
+def test_oversized_message_renders_uncached():
+    # qa S17 adversary: the 4096-entry cache must not retain arbitrarily large texts.
+    big = "x" * (views._MESSAGE_CACHE_MAX_CHARS + 1)
+    before = views._render_message_markdown_cached.cache_info().currsize
+    assert views.render_message_markdown(big).startswith("<p>")
+    assert views._render_message_markdown_cached.cache_info().currsize == before
+    views.render_message_markdown("small")
+    assert views._render_message_markdown_cached.cache_info().currsize == before + 1

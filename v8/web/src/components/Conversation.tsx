@@ -123,7 +123,7 @@ export function Conversation({ ticketId, history, order, onToggleOrder, onReply,
                     {waiting ? <span className={styles.waiting} data-testid="reader-tag">Waiting on you</span> : null}
                     <time dateTime={m.at}>{clock(m.at)}</time>
                     <button type="button" className={styles.reply} data-testid="thread-reply"
-                      onClick={() => { if (!pendingWork()) onReply(m); }}>
+                      onClick={() => { if (!pendingWork()) { setComposerCollapsed(false); onReply(m); } }}>
                       <Icon name="reply" size={16} /> Reply
                     </button>
                   </div>

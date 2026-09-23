@@ -60,8 +60,23 @@ def render_markdown(body: str) -> str:
                      url_schemes=_URL_SCHEMES, link_rel="noopener noreferrer")
 
 
-@functools.lru_cache(maxsize=4096)
+_MESSAGE_CACHE_MAX_CHARS = 16_000
+
+
 def render_message_markdown(text: str) -> str:
+    """Cached for ordinary chat rows; a message above _MESSAGE_CACHE_MAX_CHARS renders uncached so the
+    4096-entry cache stays bounded in bytes, not only in entries (qa S17 adversary finding)."""
+    if len(text or "") > _MESSAGE_CACHE_MAX_CHARS:
+        return _render_message_markdown(text)
+    return _render_message_markdown_cached(text)
+
+
+@functools.lru_cache(maxsize=4096)
+def _render_message_markdown_cached(text: str) -> str:
+    return _render_message_markdown(text)
+
+
+def _render_message_markdown(text: str) -> str:
     """Chat messages through the SAME renderer and nh3 allowlist as docs (S17 c-b1f32f8b33), with two
     chat differences: raw HTML in the text is ESCAPED (shown as typed, never parsed — the html
     block/inline processors are removed), and a single newline is a line break (nl2br), as the

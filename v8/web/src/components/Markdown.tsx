@@ -41,6 +41,16 @@ export function Markdown({ html, className }: { html: string; className?: string
 
 const LINKABLE = /(art-[0-9a-f]{6,}|https?:\/\/[^\s<>"']+)/g;
 
+/** A same-origin in-app URL loses its `token` query in the DOM href (qa S17): copy-link, Ctrl-click and
+ *  middle-click read the href, not the click handler. Other URLs are left as typed. */
+function stripToken(raw: string): string {
+  try {
+    const url = new URL(raw, window.location.href);
+    if (url.origin === window.location.origin && url.searchParams.has("token")) { url.searchParams.delete("token"); return url.toString(); }
+  } catch { /* leave malformed input as typed */ }
+  return raw;
+}
+
 /** Post-process a sanitised message body (S17 c-b1f32f8b33): drop the artifact tokens the attachment
  *  cards already render, and turn bare URLs / `art-…` tokens in TEXT nodes (never inside a link or
  *  code) into links — the plain-text thread linked them, Markdown alone would not. Only builds
@@ -64,7 +74,7 @@ export function linkifyMessageHtml(html: string, strip: string[] = []): string {
       if (i % 2 === 0) { if (p) frag.appendChild(doc.createTextNode(p)); return; }
       const a = doc.createElement("a");
       if (p.startsWith("art-")) { a.setAttribute("href", `${base}/artifact/${encodeURIComponent(p)}`); a.setAttribute("data-testid", "artifact-link"); }
-      else { a.setAttribute("href", p); a.setAttribute("rel", "noopener noreferrer"); }
+      else { a.setAttribute("href", stripToken(p)); a.setAttribute("rel", "noopener noreferrer"); }
       a.textContent = p;
       frag.appendChild(a);
     });
