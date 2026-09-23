@@ -48,6 +48,7 @@ def standing_context(agent_home: Path) -> str:
     home = p.read_text(encoding="utf-8") if p.is_file() and not (agent_home / "AGENTS.md").is_file() else ""
     return f"{home.rstrip()}\n\n{SHELL_NOTE}\n" if home else f"{SHELL_NOTE}\n"
 
+
 def resume_prompt(handle: str) -> str:
     return (f"You were resumed: this seat ({handle}) restarted and its Monitor watches and cron jobs are gone "
             "(they are session-only). Call resume_self() first and follow its steps.")
