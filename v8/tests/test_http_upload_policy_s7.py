@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 
 import pytest
+from fastapi.testclient import TestClient
 from test_context_tools import board, client, rig
 from test_mcp_http import stack, _run, _call, _Server, _free_port
 from edp8.client import BoardClient
@@ -42,8 +43,12 @@ def configured(board, client, rig, tmp_path, monkeypatch):
     monkeypatch.setenv('EDP8_MCP_HOST', '127.0.0.1')
     monkeypatch.setenv('EDP8_TOKEN', 'eng-secret')  # proxy token must not fill missing request credentials
     monkeypatch.delenv('EDP8_PUBLIC_URL', raising=False)
+    # create_app pins its tokens file at build time (808a062, incident m-c31573e1a2), so the `client` app
+    # (built before this fixture set EDP8_TOKENS) never sees these secrets: tests that need the board to
+    # accept eng's token use `app`, built over the same board after the env is in place.
+    app = TestClient(create_app(board, admin_token='t'))
     return {'workspace': workspace, 'scratch': scratch, 'other': other, 'config': config,
-            'data': data, 'tokens': tokens, 'rig': rig}
+            'data': data, 'tokens': tokens, 'rig': rig, 'app': app}
 
 
 def test_real_http_upload_attach_and_identity(board, configured, monkeypatch):
@@ -90,7 +95,8 @@ def test_real_http_upload_attach_and_identity(board, configured, monkeypatch):
         assert call('artifact_upload', path=str(configured['workspace'] / 'large.txt'))['error']['code'] == 'upload_refused'
 
 
-def test_denials_do_not_open_requested_files(configured, client, monkeypatch):
+def test_denials_do_not_open_requested_files(configured, monkeypatch):
+    client = configured['app']
     import edp8.local_upload as local
     def forbidden(*args, **kw):
         pytest.fail('denied request reached file opening')
@@ -113,7 +119,8 @@ def test_denials_do_not_open_requested_files(configured, client, monkeypatch):
     assert policy.upload(good, proof, '', '127.0.0.1')['error']['code'] == 'unavailable'
 
 
-def test_strict_auth_refuses_header_only_legacy_agent(configured, client):
+def test_strict_auth_refuses_header_only_legacy_agent(configured):
+    client = configured['app']
     # Existing trusted-mode whoami remains compatible; new file authorization is stricter.
     configured['tokens'].write_text(json.dumps({'owner': 'owner-secret', 'agents': {}}))
     headers = {'X-Participant': 'eng', 'X-Token': 'invented'}
@@ -139,7 +146,8 @@ def test_invalid_or_remote_configuration_fails_closed(configured, monkeypatch, c
     assert not HttpUploadPolicy.from_environment(url).enabled
 
 
-def test_http_policy_root_cannot_be_retargeted(configured, client):
+def test_http_policy_root_cannot_be_retargeted(configured):
+    client = configured['app']
     if os.name != 'nt': pytest.skip('Windows junction test')
     policy = HttpUploadPolicy.from_environment('http://127.0.0.1:1234')
     root = configured['workspace']
@@ -156,7 +164,8 @@ def test_http_policy_root_cannot_be_retargeted(configured, client):
         backup.rename(root)
 
 
-def test_http_junction_escape_refused(configured, client):
+def test_http_junction_escape_refused(configured):
+    client = configured['app']
     if os.name != 'nt': pytest.skip('Windows junction test')
     junction = configured['workspace'] / 'escape'
     out = subprocess.run(['cmd', '/c', 'mklink', '/J', str(junction), str(configured['other'])], capture_output=True)
