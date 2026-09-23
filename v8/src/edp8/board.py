@@ -94,6 +94,15 @@ _TERMINAL = (TicketStatus.done, TicketStatus.partial, TicketStatus.dropped)
 STORY_CAP = 8    # stories per epic (not counting done/dropped); the owner raises it via a scope gate
 TASK_CAP = 5     # tasks per story (not counting done/dropped)
 CRITERIA_CAP = 6  # criteria written fresh on a story (a folded story carries what it inherits)
+# S-QUICK (design-34bf11cc07 §4.2, owner m-5b3db5cb0d): the owner's own small task is a STORY tagged
+# `quick`, usually with no epic parent. Its words are the design (it starts `ready`, no design_ref), its
+# engineer writes the criteria, and the owner checks them from Needs you — no architect, no qa seat.
+QUICK_TAG = "quick"
+
+
+def is_quick(t: Ticket) -> bool:
+    """A quick task: a story carrying the `quick` tag (S-QUICK)."""
+    return t.kind == TicketKind.story and QUICK_TAG in (t.tags or [])
 # S22 c-0615088222: every feed queue (wake and view) is bounded. Drop policy: when a queue is full the
 # OLDEST queued event is dropped and the queue is marked `resync`; the SSE stream then sends
 # `: resync <cursor>` and ends, and the client reconnects from its last seq — the replay by seq
@@ -218,13 +227,21 @@ class Board:
                              f"creators of {kind}: {sorted(r.value for r in TICKET_CREATORS[kind])}")
         if kind == TicketKind.epic and parent_id:
             raise BoardError("schema", "an epic has no parent")
+        clean_tags = [x.strip() for x in (tags or []) if x.strip()]
+        quick = kind == TicketKind.story and QUICK_TAG in clean_tags
+        if quick and actor.role != Role.owner:
+            raise BoardError("scope", f"only the owner opens a quick task (tag `{QUICK_TAG}`)",
+                             "an architect's story is designed under its epic; drop the tag")
+        if kind == TicketKind.story and not parent_id and actor.role == Role.owner and not quick:
+            quick, clean_tags = True, [*clean_tags, QUICK_TAG]  # the owner's parentless story IS a quick task
         if kind != TicketKind.epic:
-            if not parent_id:
+            if not parent_id and not quick:
                 raise BoardError("schema", f"a {kind} needs parent_id")
-            parent = self._get("ticket", parent_id, "parent ticket")
-            expected = TicketKind.epic if kind == TicketKind.story else TicketKind.story
-            if parent.kind != expected:
-                raise BoardError("schema", f"a {kind} must hang under a {expected}, not a {parent.kind}")
+            if parent_id:
+                parent = self._get("ticket", parent_id, "parent ticket")
+                expected = TicketKind.epic if kind == TicketKind.story else TicketKind.story
+                if parent.kind != expected:
+                    raise BoardError("schema", f"a {kind} must hang under a {expected}, not a {parent.kind}")
         if not title.strip():
             raise BoardError("schema", "title is empty",
                              "an epic's title is derived from the owner's words; a story/task title names the slice")
@@ -241,18 +258,23 @@ class Board:
                 title = self.derive_title(title)
             else:
                 title = title.strip()
+        elif quick:
+            # a quick task's words are the owner's request verbatim (its design); its own title stays
+            words = words.strip() if words and words.strip() else None
         else:
             words = None
         # §24 finding 11: the cap count and the insert are one atomic step under the board lock, so
         # two concurrent creates cannot both read N-1 and both insert (producing N+1 over the cap).
         with self._lock:
-            if kind == TicketKind.story and parent_id:
+            if kind == TicketKind.story and parent_id and not quick:  # the owner's own task is not epic scope
                 self._enforce_story_cap(parent_id)
             if kind == TicketKind.task and parent_id:
                 self._enforce_task_cap(parent_id)
             t = Ticket(id=new_id(kind.value[0] if kind != TicketKind.epic else "epic"), kind=kind, work_type=work_type,
                        title=title, words=words, parent_id=parent_id, assignee=assignee, created_by=actor.id,
-                       description=description or "", tags=[x.strip() for x in (tags or []) if x.strip()])
+                       description=description or "", tags=clean_tags)
+            if quick:
+                t.status = TicketStatus.ready  # the words are the design: no design_ref, no sign-off walk
             t.epic_id = t.id if kind == TicketKind.epic else self.epic_of(t).id
             self.store.put("ticket", t)
         self._index("ticket", t.id, self.store._fts_text("ticket", t.model_dump(mode="json")) or t.title)
@@ -465,6 +487,10 @@ class Board:
                 changed["description"] = True
             if tags is not None:
                 new_tags = [x.strip() for x in tags if x.strip()]
+                if t.kind == TicketKind.story and (QUICK_TAG in new_tags) != is_quick(t):
+                    # S-QUICK: the tag decides who checks and whether a design is needed — fixed at create
+                    raise BoardError("scope", f"the `{QUICK_TAG}` tag is set when the owner opens a quick task",
+                                     "keep or leave out the tag as it was at create")
                 t.tags = new_tags
                 changed["tags"] = t.tags
         if assignee is not None:
@@ -515,7 +541,7 @@ class Board:
         if to == TicketStatus.designed:
             if r != Role.architect and not (r == Role.engineer and t.kind == TicketKind.task):
                 raise BoardError("scope", "only the architect marks a ticket designed (engineer: its tasks)")
-            if t.kind != TicketKind.task and not t.design_ref:
+            if t.kind != TicketKind.task and not t.design_ref and not is_quick(t):
                 raise BoardError("transition", "designed needs a design_ref doc",
                                  "doc_create(doc_type=design) then ticket_update(design_ref=...)")
             if not crits:
@@ -828,8 +854,8 @@ class Board:
         self-verdicted, no paired seat, gating nothing); a knowledge ticket's criteria are the
         **owner**'s single HITL sign-off (the strategy-doc approval). The doer never chooses — this
         removes the blind spot where a story froze on a checker role with no seat."""
-        if t.work_type == WorkType.knowledge:
-            return CheckedBy.owner.value
+        if t.work_type == WorkType.knowledge or is_quick(t):
+            return CheckedBy.owner.value  # S-QUICK: the owner verdicts their own quick task from Needs you
         if t.kind == TicketKind.task:
             # §24.1(d): a task derives to its OWN engineer (the story doer). A task is a checklist,
             # self-verdicted by the doer; no seat is paired and a task gates nothing — deriving it to
@@ -852,9 +878,13 @@ class Board:
             if actor.role not in CRITERION_AUTHORS:
                 raise BoardError("scope", f"{actor.role} may not write criteria",
                                  "the parent owner writes criteria before work: architect (epic/story), engineer (task)")
-            if actor.role == Role.engineer and t.kind != TicketKind.task:
-                raise BoardError("scope", "an engineer writes criteria for its tasks only")
-            if (t.assignee == actor.id and t.kind != TicketKind.task
+            # S-QUICK: a quick task has no architect — its engineer writes the criteria from the owner's
+            # words, and the owner (not the doer) checks them, so the doer-writes guard is waived there.
+            quick = is_quick(t)
+            if actor.role == Role.engineer and t.kind != TicketKind.task and not quick:
+                raise BoardError("scope", "an engineer writes criteria for its tasks only",
+                                 "on a quick task (tag `quick`) the engineer writes them")
+            if (t.assignee == actor.id and t.kind != TicketKind.task and not quick
                     and not (actor.role == Role.architect and t.kind == TicketKind.epic)):
                 # the architect IS the designer of epics/stories — assignment bookkeeping must not
                 # deadlock criteria authoring (pain 2026-08-23 architect epic deadlock)
@@ -970,8 +1000,22 @@ class Board:
         else:
             self._emit(t.id, EventKind.doc_updated,
                        {"criterion": c.id, "verdict": c.verdict, "pending": pending, "by": actor.id})
+        self._reopen_quick_on_fail(self.ticket(t.id), c, actor)
         self._auto_advance(self.ticket(t.id))
         return c
+
+    def _reopen_quick_on_fail(self, t: Ticket, c: Criterion, actor: Participant) -> None:
+        """S-QUICK: the owner's `fail` on a handed-off quick task sends it straight back to its engineer
+        (in_review → in_progress, board-authored) — there is no qa seat to route a failed verdict. The
+        owner's note reaches the thread through record_verdict's message."""
+        if not (is_quick(t) and t.status == TicketStatus.in_review and c.verdict == Verdict.failed
+                and actor.role == Role.owner):
+            return
+        t.status = TicketStatus.in_progress
+        self.store.put("ticket", t)
+        self._emit(t.id, EventKind.status_changed, {"from": "in_review", "to": "in_progress", "by": "board",
+                                                    "note": f"owner failed {c.id} on a quick task"})
+        self._after_status(t)
 
     @staticmethod
     def _consult_inflight(ticket_id: str) -> dict[str, Any] | None:

@@ -853,8 +853,8 @@ class TicketCreateArgs(BaseModel):
     kind: TicketKind = Field()
     work_type: WorkType = Field()
     title: str = Field(description="epic: the owner's words verbatim (a short title is derived); story/task: the slice name")
-    words: str | None = Field(default=None, description="epic only: the owner's verbatim request if the title is short; immutable")
-    parent_id: str | None = Field(default=None, description='required for story/task')
+    words: str | None = Field(default=None, description="epic or quick task: the owner's verbatim request; immutable")
+    parent_id: str | None = Field(default=None, description="required for story/task, except the owner's quick task (tag quick)")
     assignee: str | None = Field(default=None)
     description: str = Field(default="", description='scope, intent, pointers to files/docs')
     tags: list[str] | None = Field(default=None)
@@ -949,7 +949,7 @@ def _criterion_update(a: CriterionUpdateArgs) -> dict[str, Any]:
 
 TICKET_TOOLS = [
     ToolDef("ticket_create",
-            'Create an epic (owner), story (architect) or task. At most 8 open stories per epic (raised via a scope gate), at most 5 tasks per story',
+            'Create an epic (owner), story (architect; owner: a quick task, tag quick, no parent) or task. At most 8 open stories per epic (raised via a scope gate), at most 5 tasks per story',
             'when you own a new slice of work',
             'the ticket, or a scope error at a cap',
             TicketCreateArgs, _ticket_create, "ticket"),

@@ -547,7 +547,7 @@ TRANSITIONS: dict[TicketStatus, set[TicketStatus]] = {
 # Which roles may create which ticket kinds.
 TICKET_CREATORS: dict[TicketKind, set[Role]] = {
     TicketKind.epic: {Role.owner, Role.coordinator},
-    TicketKind.story: {Role.architect},
+    TicketKind.story: {Role.architect, Role.owner},  # owner: a quick task (S-QUICK, tag `quick`, parent optional)
     TicketKind.task: {Role.engineer, Role.architect},
 }
 

@@ -22,7 +22,7 @@ import nh3
 from .avatar_preferences import avatar_preferences_path, load_avatar_preferences
 from .avatars import avatar_id_for
 from . import seat_choice
-from .board import Board, BoardError
+from .board import Board, BoardError, is_quick
 from .schemas import (
     EventKind,
     MessageKind,
@@ -178,6 +178,8 @@ def pending_signoffs(board: Board, viewer: Participant) -> list[tuple[Any, Any, 
         tk = board.store.get("ticket", c.ticket_id)
         if tk is None or tk.status in _TERMINAL:
             continue
+        if is_quick(tk) and tk.status != TicketStatus.in_review:
+            continue  # S-QUICK: the owner rules a quick task once its engineer hands it off, not mid-work
         if not board._owner_scope(viewer, tk.id):
             continue
         out.append((c, tk, board.store.get("doc", c.evidence_ref)))
@@ -423,7 +425,7 @@ def decisions_for(board: Board, viewer: Participant) -> dict[str, Any]:
                           "evidence_ref": c.evidence_ref,
                           "evidence_version": getattr(c, "evidence_version", None)},
             "ticket": {"id": tk.id, "title": tk.title, "epic_id": epic.id,
-                       "epic_title": epic.title, "assignee": tk.assignee},
+                       "epic_title": epic.title, "assignee": tk.assignee, "quick": is_quick(tk)},
             "doc": ({"id": doc.id, "title": doc.title, "doc_type": doc.doc_type.value,
                      "version": doc.version} if doc else None),
             "excerpt": (getattr(doc, "body_md", "") or "")[:300].strip()})

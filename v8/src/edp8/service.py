@@ -23,7 +23,7 @@ from pydantic import BaseModel
 
 from . import pool_adapter
 from . import rsi  # S18: imported at boot so rsi.LOADED hashes the retrieval code this process runs
-from .board import Board, BoardError
+from .board import QUICK_TAG, Board, BoardError
 from .contextual_work import HistoryCategory, contextual_work
 from .design_review import DocumentComment, ReviewDecision, comment, decide, source_context
 from .doc_tools import DocEdit
@@ -233,6 +233,15 @@ class SessionSpawnIn(BaseModel):
     effort: str | None = None  # low | medium | high; omitted = the epic's seat choice (Claude capped at medium)
     mode: str | None = None
     assign: bool = False       # S-ROLES Spawn seat: the spawned seat becomes the ticket's assignee
+
+
+class QuickTaskIn(BaseModel):
+    """Body for POST /v1/quick-tasks (S-QUICK): the owner's words, a short title, the engineer model."""
+    title: str
+    words: str
+    model: str | None = None   # an engineer-catalog id; omitted = the engineer catalog default
+    description: str = ""
+    work_type: WorkType = WorkType.feature
 
 
 class SessionActionIn(BaseModel):
@@ -1076,11 +1085,25 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     def session_spawn(b: SessionSpawnIn, a: Participant = Depends(actor),
                       idempotency_key: str | None = Header(default=None)):
         _authorize_pool_op(a, b.participant_id, b.ticket_id)
+        if b.assign and b.role in (Role.qa, Role.adversary):
+            # S-QUICK (owner m-6914670391): a checker spawns with the ticket as its scope, never as its doer
+            raise BoardError("scope", f"a {b.role.value} seat checks the ticket and never becomes its assignee",
+                             "spawn it without assign; the doer stays the assignee")
         if not pool_adapter.reachable():
             return _pool_down_envelope()
         cached = _idem_get(a, idempotency_key)
         if cached is not None:
             return {**cached, "hint": "idempotent replay: same session, no second shell"}
+        out = _spawn_seat(a, b)
+        if out.get("ok"):
+            _idem_put(a, idempotency_key, out)
+            return out
+        return _pool_result(out)
+
+    def _spawn_seat(a: Participant, b: SessionSpawnIn) -> dict[str, Any]:
+        """Register the seat, mint its token and ask the pool to start it on the resolved seat choice;
+        with `assign`, the new seat becomes the ticket's assignee. Returns the pool envelope (ok or
+        not) — authorisation, reachability and idempotency are the caller's."""
         # pain p-9ba7b6b6: the seat must EXIST on the board before its token is minted, or every
         # MCP call from the new shell 401s "participant X is not registered". Same idempotent step
         # as the board's pairing path (Board._spawn_seat); a handle race is fine.
@@ -1097,15 +1120,42 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         env = {"EDP8_TOKEN": token} if token else None
         out = pool_adapter.spawn(b.role.value, b.participant_id, parent_session=b.parent_session,
                                  model=choice.pool_model, mode=b.mode, env=env, effort=choice.effort)
-        if out.get("ok"):
-            if isinstance(out.get("value"), dict):
-                out["value"]["seat_choice"] = choice.as_dict()
-                if b.assign and b.ticket_id:  # the owner's Spawn seat puts the new seat on the ticket
-                    t = board.ticket_update(a, b.ticket_id, assignee=b.participant_id)
-                    out["value"]["assignee"] = t.assignee
-            _idem_put(a, idempotency_key, out)
-            return out
-        return _pool_result(out)
+        if out.get("ok") and isinstance(out.get("value"), dict):
+            out["value"]["seat_choice"] = choice.as_dict()
+            if b.assign and b.ticket_id:  # the owner's Spawn seat puts the new seat on the ticket
+                t = board.ticket_update(a, b.ticket_id, assignee=b.participant_id)
+                out["value"]["assignee"] = t.assignee
+        return out
+
+    @app.post("/v1/quick-tasks")
+    def quick_task_create(b: QuickTaskIn, a: Participant = Depends(actor),
+                          idempotency_key: str | None = Header(default=None)):
+        """S-QUICK (design-34bf11cc07 §4.2): the owner's one-step quick task — create a parentless story
+        tagged `quick` (it starts ready; the words are its design), spawn `engineer.<story>` on the chosen
+        model and make it the assignee. The pool is probed FIRST so a down pool never leaves a ticket
+        with nobody on it; a spawn the pool refuses after the create keeps the ticket and says so."""
+        if a.role != Role.owner:
+            raise BoardError("scope", f"{a.role.value} may not open a quick task", "the owner opens quick tasks")
+        if not b.title.strip() or not b.words.strip():
+            raise BoardError("schema", "a quick task needs a title and the owner's words")
+        if not pool_adapter.reachable():
+            return _pool_down_envelope()
+        cached = _idem_get(a, idempotency_key)
+        if cached is not None:
+            return {**cached, "hint": "idempotent replay: same quick task, no second ticket"}
+        t = board.ticket_create(a, kind=TicketKind.story, work_type=b.work_type, title=b.title.strip(),
+                                words=b.words, description=b.description, tags=[QUICK_TAG])
+        seat = f"engineer.{t.id}"
+        spawned = _spawn_seat(a, SessionSpawnIn(role=Role.engineer, participant_id=seat, ticket_id=t.id,
+                                                model=b.model or None, assign=True))
+        if not spawned.get("ok"):
+            err = (spawned.get("error") or {}).get("message", "the pool refused the spawn")
+            return {"ok": True, "value": {"ticket": _dump(board.ticket(t.id)), "seat": None, "spawn_error": err},
+                    "hint": f"{t.id} is open but no engineer started ({err}); use Spawn seat on the ticket to retry"}
+        out = ok({"ticket": _dump(board.ticket(t.id)), "seat": seat, "spawn": spawned.get("value")},
+                 f"{t.id} is ready; {seat} is starting on it and will write the plan and criteria")
+        _idem_put(a, idempotency_key, out)
+        return out
 
     @app.post("/v1/sessions/resume")
     def session_resume(b: SessionActionIn, a: Participant = Depends(actor),
