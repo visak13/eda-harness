@@ -60,11 +60,11 @@ def _run(args: list[str], env: dict[str, str], script: Path = SCRIPT, repo: Path
     return subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=120)
 
 
-def _fake(port: int, needle: str, body: dict | list | None = None) -> subprocess.Popen:
+def _fake(port: int, needle: str, body: dict | list | None = None, *extra: str) -> subprocess.Popen:
     env = dict(os.environ)
     if body is not None:
         env["FAKE_BODY"] = json.dumps(body)
-    p = subprocess.Popen([sys.executable, "-c", FAKE_SERVER, str(port), needle], env=env)
+    p = subprocess.Popen([sys.executable, "-c", FAKE_SERVER, str(port), needle, *extra], env=env)
     for _ in range(100):
         try:
             socket.create_connection(("127.0.0.1", port), timeout=0.2).close()
@@ -75,9 +75,10 @@ def _fake(port: int, needle: str, body: dict | list | None = None) -> subprocess
     raise RuntimeError("fake service never listened")
 
 
-def _fake_proc(needle: str) -> subprocess.Popen:
-    """A port-less fake (bridge/supervisor): sleeps, with the needle in its command line."""
-    return subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)", needle])
+def _fake_proc(needle: str, *extra: str) -> subprocess.Popen:
+    """A port-less fake (bridge/supervisor): sleeps, with the needle in its command line. An extra
+    argument naming a checkout path makes the fake that checkout's own service."""
+    return subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)", needle, *extra])
 
 
 def _record(tmp_path: Path, service: str, pid: int) -> None:
@@ -165,7 +166,7 @@ def test_restart_board_whatif_names_the_pid_and_changes_nothing(tmp_path, fakes)
     assert r.returncode == 0, r.stderr
     m = re.search(r"WHATIF: stop board: Stop-Process -Id ([\d,]+) -Force", r.stdout)
     assert m and str(fakes[0].pid) in m.group(1).split(","), r.stdout
-    assert "WHATIF: start board: powershell -File v8\\start.ps1 -Only board" in r.stdout
+    assert "WHATIF: start board on :%d: powershell -File v8\\start.ps1 -Only board" % port in r.stdout
     assert "-> " not in r.stdout, "a -WhatIf run must not execute any step"
     assert fakes[0].poll() is None, "the fake board must survive a -WhatIf restart"
     socket.create_connection(("127.0.0.1", port), timeout=1).close()
@@ -268,7 +269,7 @@ def test_update_whatif_plans_pull_spa_build_and_restart_order(tmp_path):
 def test_update_whatif_stops_a_running_supervisor_first_and_restarts_it_last(tmp_path, fakes):
     """Consult finding 9: the order test must see a REAL supervisor process, not a plan string."""
     work = _repo_with_upstream_change(tmp_path)
-    sup = _fake_proc("edp8.supervisor")
+    sup = _fake_proc("edp8.supervisor", str(work / "v8"))  # the throwaway checkout's own supervisor
     fakes.append(sup)
     env = _hermetic_env(tmp_path)
     _record(tmp_path, "supervisor", sup.pid)
@@ -367,11 +368,11 @@ def _fake_repo(tmp_path: Path) -> tuple[Path, dict[str, str], int]:
     repo = tmp_path / "repo"
     (repo / "v8").mkdir(parents=True)
     (repo / "v8" / "start.ps1").write_text("﻿" + FAKE_START, encoding="utf-8")
-    srv = tmp_path / "fake_board.py"
+    srv = repo / "fake_board.py"  # inside the checkout: its services are its own
     srv.write_text(FAKE_SERVER)
     port = _free_port()
     env = _hermetic_env(tmp_path, EDP8_PORT=port)
-    sleeper = tmp_path / "fake_sleep.py"
+    sleeper = repo / "fake_sleep.py"
     sleeper.write_text("import time\ntime.sleep(600)\n")
     env.update(FAKE_PY=sys.executable, FAKE_SRV=str(srv), FAKE_SLEEP=str(sleeper), FAKE_LOGDIR=str(tmp_path),
                FAKE_BODY=json.dumps({"ok": True, "git_rev": "f00d123"}))
@@ -382,8 +383,8 @@ def test_failed_restart_keeps_stderr_and_restores_the_supervisor_it_paused(tmp_p
     """Architect's second live run (m-49fbff3f84): start.ps1 exited 5 with its message on console
     stderr, no log survived, and the supervisor the restart had paused stayed down."""
     repo, env, port = _fake_repo(tmp_path)
-    fakes.append(_fake(port, "edp8-board", {"ok": True}))
-    sup = _fake_proc("edp8.supervisor")
+    fakes.append(_fake(port, "edp8-board", {"ok": True}, str(repo / "v8")))
+    sup = _fake_proc("edp8.supervisor", str(repo / "v8"))
     fakes.append(sup)
     _record(tmp_path, "supervisor", sup.pid)
     r = _run_piped(["restart", "board", "-TimeoutSec", "10"], {**env, "FAKE_FAIL_ONLY": "board"}, repo)
@@ -409,8 +410,8 @@ def test_unexpected_exception_still_restores_the_paused_supervisor(tmp_path, fak
     (here: the wrapper file cannot be written because TEMP does not exist) skipped it and left the
     supervisor this run paused down. A script-level trap now routes every exception through FailDown."""
     repo, env, port = _fake_repo(tmp_path)
-    fakes.append(_fake(port, "edp8-board", {"ok": True}))
-    sup = _fake_proc("edp8.supervisor")
+    fakes.append(_fake(port, "edp8-board", {"ok": True}, str(repo / "v8")))
+    sup = _fake_proc("edp8.supervisor", str(repo / "v8"))
     fakes.append(sup)
     _record(tmp_path, "supervisor", sup.pid)
     bad_tmp = tmp_path / "temp-is-a-file"   # a nonexistent TEMP gets created; a FILE cannot be a directory
@@ -524,3 +525,75 @@ def test_real_start_ps1_on_a_running_service_changes_no_run_state_file(tmp_path,
                        env=env, capture_output=True, text=True, timeout=120)
     assert "already running" in r.stdout, r.stdout + r.stderr
     assert (run / "board.json").read_bytes() == before, (run / "board.json").read_text()
+
+
+# ── two checkouts on one host (m-17c32d9ed9: a clone's stop took the fleet board) ──────────────
+
+def _checkout(tmp_path: Path, env_text: str | None = None) -> Path:
+    """A second checkout: edp.ps1 only needs <root>/v8 (and its .env) to plan start/stop."""
+    root = tmp_path / "other-checkout"
+    (root / "v8").mkdir(parents=True)
+    if env_text is not None:
+        (root / "v8" / ".env").write_text(env_text)
+    return root
+
+
+def test_a_key_set_twice_in_env_takes_the_last_value_and_warns(tmp_path):
+    first, last = _free_port(), _free_port()
+    root = _checkout(tmp_path, f"EDP8_PORT={first}\nEDP8_OWNER=owner\nEDP8_PORT={last}   # test override\n")
+    env = _hermetic_env(tmp_path)
+    del env["EDP8_PORT"]  # the real environment wins; here only the .env decides
+    r = _run(["start", "board", "-WhatIf"], env, repo=root)
+    assert f"WHATIF: start board on :{last}:" in r.stdout, r.stdout + r.stderr
+    assert re.search(r"warning: .*\.env sets EDP8_PORT more than once; using the last one \(line 3\)", r.stdout), r.stdout
+    assert str(first) not in r.stdout and "EDP8_OWNER more than once" not in r.stdout
+
+
+def test_start_ps1_parses_env_the_same_way(tmp_path):
+    """start.ps1's .env block, run alone against a .env with a duplicated key: last wins, warns,
+    and a value already in the real environment still beats the file."""
+    text = (ROOT / "v8" / "start.ps1").read_text(encoding="utf-8-sig")
+    block = text[text.index('$envFile = Join-Path $v8 ".env"'):text.index("function Env(")]
+    (tmp_path / ".env").write_text("EDP8_PORT=1111\nEDP_POOL_PORT=2222\nEDP8_PORT=3333\nEDP_POOL_PORT=4444\n")
+    probe = tmp_path / "probe.ps1"
+    probe.write_text(f"$v8 = '{tmp_path}'\n{block}\nWrite-Host \"PORT=$env:EDP8_PORT POOL=$env:EDP_POOL_PORT\"\n",
+                     encoding="utf-8-sig")
+    env = {k: v for k, v in os.environ.items() if not k.startswith("EDP")}
+    env["EDP_POOL_PORT"] = "5555"
+    out = subprocess.run([PS, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(probe)], env=env,
+                         capture_output=True, text=True, timeout=60).stdout
+    assert "PORT=3333 POOL=5555" in out, out
+    assert "sets EDP8_PORT more than once; using the last one (line 3)" in out, out
+
+
+def test_stop_refuses_a_service_another_checkout_started_and_stops_its_own(tmp_path, fakes):
+    """The fake board runs from THIS checkout's v8 venv. From a second checkout configured on the
+    same port, `stop board` must refuse (exit 4, naming the foreign path) and leave it running;
+    from this checkout the same stop takes it down."""
+    port = _free_port()
+    fakes.append(_fake(port, "edp8-board", {"ok": True}))
+    other = _checkout(tmp_path)
+    env = _hermetic_env(tmp_path, EDP8_PORT=port)
+    r = _run(["stop", "board"], env, repo=other)
+    assert r.returncode == 4, r.stdout + r.stderr
+    assert "refusing to stop board" in r.stderr and "not started from this checkout" in r.stderr, r.stderr
+    assert str(ROOT / "v8" / ".venv").lower() in r.stderr.lower(), r.stderr  # names the foreign path
+    assert fakes[0].poll() is None
+    socket.create_connection(("127.0.0.1", port), timeout=1).close()
+
+    w = _run(["restart", "board", "-WhatIf"], env, repo=other)
+    assert w.returncode == 4 and "Stop-Process" not in w.stdout, w.stdout + w.stderr
+
+    own = _run(["stop", "board"], env)  # this checkout (the default -RepoRoot) owns it
+    assert own.returncode == 0 and re.search(r"^board\s+stopped", own.stdout, re.M), own.stdout + own.stderr
+    with pytest.raises(OSError):
+        socket.create_connection(("127.0.0.1", port), timeout=1).close()
+
+
+def test_force_stops_a_service_from_another_checkout_whatif(tmp_path, fakes):
+    port = _free_port()
+    fakes.append(_fake(port, "edp8-board", {"ok": True}))
+    r = _run(["stop", "board", "-Force", "-WhatIf"], _hermetic_env(tmp_path, EDP8_PORT=port), repo=_checkout(tmp_path))
+    assert r.returncode == 0 and "-Force: stopping board, which runs from another checkout" in r.stdout, r.stdout + r.stderr
+    assert re.search(r"WHATIF: stop board: Stop-Process -Id [\d,]*%d" % fakes[0].pid, r.stdout), r.stdout
+    assert fakes[0].poll() is None

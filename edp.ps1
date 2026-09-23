@@ -33,17 +33,24 @@ if (-not $RepoRoot) { $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Pat
 $V8 = Join-Path $RepoRoot "v8"
 $StartPs1 = Join-Path $V8 "start.ps1"
 
-# -- the same one .env as start.ps1 (real environment wins) -------------------------------------
+# -- the same one .env as start.ps1 (real environment wins; a key set twice: the LAST line wins, with
+# a warning - an appended override used to be ignored silently, m-17c32d9ed9) ---------------------
 $envFile = Join-Path $V8 ".env"
 if (Test-Path $envFile) {
+  $fromFile = [ordered]@{}; $n = 0
   foreach ($line in Get-Content $envFile) {
+    $n++
     $t = $line.Trim()
     if (-not $t -or $t.StartsWith("#")) { continue }
     $kv = $t -split "=", 2
     if ($kv.Count -eq 2) {
       $k = $kv[0].Trim(); $val = ($kv[1] -split "\s+#", 2)[0].Trim()
-      if (-not [Environment]::GetEnvironmentVariable($k, "Process")) { Set-Item -Path "Env:$k" -Value $val }
+      if ($fromFile.Contains($k)) { Write-Host "edp: warning: $envFile sets $k more than once; using the last one (line $n)" }
+      $fromFile[$k] = $val
     }
+  }
+  foreach ($k in $fromFile.Keys) {
+    if (-not [Environment]::GetEnvironmentVariable($k, "Process")) { Set-Item -Path "Env:$k" -Value $fromFile[$k] }
   }
 }
 function EnvOr($n, $d) { $v = [Environment]::GetEnvironmentVariable($n, "Process"); if ($v) { $v } else { $d } }
@@ -193,9 +200,29 @@ function Pause-Supervisor {
   Stop-Svc "supervisor"
   if ($script:Stopped -contains "supervisor") { $script:PausedSupervisor = $true }
 }
+# A service belongs to this checkout when a process in its chain runs from, or names, a path under
+# $RepoRoot (the venv launcher lives in <repo>\<project>\.venv). A port is only a number: a second
+# checkout configured on the same port would otherwise stop the other tree's service (m-17c32d9ed9).
+$RootNorm = ([IO.Path]::GetFullPath($RepoRoot)).TrimEnd("\") + "\"
+function Under-Root($text) {
+  if (-not $text) { return $false }
+  ($text -replace "/", "\").IndexOf($RootNorm, [StringComparison]::OrdinalIgnoreCase) -ge 0
+}
+function Foreign-Path($pair) {
+  # $null when the chain is this checkout's; else the path to name in the refusal
+  foreach ($c in $pair) { if ((Under-Root $c.ExecutablePath) -or (Under-Root $c.CommandLine)) { return $null } }
+  $top = $pair[0]
+  if ($top.ExecutablePath) { "" + $top.ExecutablePath } else { "" + $top.CommandLine }
+}
 function Stop-Svc($name) {
   $pair = @(Discover $name)
   if ($pair.Count -eq 0) { Say ("{0,-10} not running" -f $name); return }
+  $foreign = Foreign-Path $pair
+  if ($foreign) {
+    $ids0 = ($pair | ForEach-Object { $_.ProcessId }) -join ","
+    if (-not $Force) { FailDown 4 "refusing to stop $name (pid $ids0): it was not started from this checkout ($RootNorm) but from $foreign; -Force stops it anyway" }
+    Say "   -Force: stopping $name, which runs from another checkout ($foreign)"
+  }
   $ids = @($pair | ForEach-Object { [int]$_.ProcessId })
   Step ("stop {0}: Stop-Process -Id {1} -Force (service process chain by command line, no tree kill)" -f $name, ($ids -join ",")) {
     # Kill through a HANDLE opened now and checked against the discovered process's creation time:
@@ -274,7 +301,8 @@ function Start-Svc($name) {
   if ($name -eq "bridge" -and -not (Test-Path (Join-Path $V8 "slack_map.json"))) { Say "bridge     skipped (no v8\slack_map.json)"; return }
   # start.ps1 has no -Only for the supervisor; its plain run is idempotent and starts only what is down.
   $extra = @(); if ($name -ne "supervisor") { $extra = @("-Only", $name) }
-  Step ("start {0}: powershell -File v8\start.ps1 {1}" -f $name, ($extra -join " ")) {
+  $on = ""; if ($SVC[$name].port) { $on = " on :$($SVC[$name].port)" }   # the plan names the port the .env resolved
+  Step ("start {0}{1}: powershell -File v8\start.ps1 {2}" -f $name, $on, ($extra -join " ")) {
     Invoke-StartPs1 $name $extra
     Wait-Up $name
   }

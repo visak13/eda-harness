@@ -17,14 +17,21 @@ $v8 = $PSScriptRoot
 # ── one .env (real environment wins, so a caller can override a line) ───────────────────────────
 $envFile = Join-Path $v8 ".env"
 if (Test-Path $envFile) {
+  # a key set twice: the LAST line wins, with a warning (an appended override used to be ignored)
+  $fromFile = [ordered]@{}; $n = 0
   foreach ($line in Get-Content $envFile) {
+    $n++
     $t = $line.Trim()
     if (-not $t -or $t.StartsWith("#")) { continue }
     $kv = $t -split "=", 2
     if ($kv.Count -eq 2) {
       $k = $kv[0].Trim(); $val = ($kv[1] -split "\s+#", 2)[0].Trim()  # drop an inline comment
-      if (-not [Environment]::GetEnvironmentVariable($k, "Process")) { Set-Item -Path "Env:$k" -Value $val }
+      if ($fromFile.Contains($k)) { Write-Host "start: warning: $envFile sets $k more than once; using the last one (line $n)" }
+      $fromFile[$k] = $val
     }
+  }
+  foreach ($k in $fromFile.Keys) {
+    if (-not [Environment]::GetEnvironmentVariable($k, "Process")) { Set-Item -Path "Env:$k" -Value $fromFile[$k] }
   }
 }
 
