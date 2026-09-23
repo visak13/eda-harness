@@ -4,13 +4,19 @@ import { http, HttpResponse } from "msw";
 
 // identity.ts reads the URL exactly ONCE at module load, so each case sets the URL +
 // sessionStorage, resets the module registry, then dynamically imports a fresh copy.
+const loaded: Array<{ stopAnswering: () => void }> = [];
 async function loadIdentity(href: string) {
   history.replaceState({}, "", href);
   vi.resetModules();
-  return import("./identity");
+  const mod = await import("./identity");
+  loaded.push(mod);
+  await mod.sessionReady; // a copy still asking would adopt a LATER case's answer
+  return mod;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  // Each earlier copy is another "open tab" answering the session handshake: close them.
+  for (const mod of loaded.splice(0)) mod.stopAnswering();
   sessionStorage.clear();
   history.replaceState({}, "", "/ui/");
 });
@@ -64,5 +70,36 @@ describe("identity adapter", () => {
     sessionStorage.setItem("edp8.as", "carol");
     const { identity } = await loadIdentity("/ui/epics");
     expect(identity()).toBe("carol");
+  });
+
+  // S22 (t-f5d27a6f2e): a new tab has its own (empty) sessionStorage. A tab that holds the token
+  // answers the same-origin handshake; the new tab adopts it before first render, URL untouched.
+  it("a tab without a token receives the session from an open tab of the same identity", async () => {
+    const first = await loadIdentity("/ui/?as=alice&token=s3cret");
+    await first.sessionReady;
+    sessionStorage.clear(); // the new tab's storage
+    const second = await loadIdentity("/ui/epic/e-1?as=alice");
+    await second.sessionReady;
+    expect(second.authHeaders()).toEqual({ "X-Participant": "alice", "X-Token": "s3cret" });
+    expect(location.href).not.toContain("token");
+  });
+
+  it("an open tab never hands its token to a tab asking for another identity", async () => {
+    const first = await loadIdentity("/ui/?as=alice&token=s3cret");
+    await first.sessionReady;
+    sessionStorage.clear();
+    const second = await loadIdentity("/ui/?as=bob");
+    await second.sessionReady; // resolves on the timeout
+    expect(second.authHeaders()).toEqual({ "X-Participant": "bob" });
+  });
+
+  it("a tab with no ?as adopts the answering tab's identity", async () => {
+    const first = await loadIdentity("/ui/?as=carol&token=tok-c");
+    await first.sessionReady;
+    sessionStorage.clear();
+    const second = await loadIdentity("/ui/epics");
+    await second.sessionReady;
+    expect(second.identity()).toBe("carol");
+    expect(second.authHeaders()).toEqual({ "X-Participant": "carol", "X-Token": "tok-c" });
   });
 });

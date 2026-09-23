@@ -5,6 +5,7 @@ import { createBrowserRouter, RouterProvider } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "./theme/ThemeProvider";
 import { appRoutes } from "./routes";
+import { sessionReady } from "./auth/identity";
 
 // Router basename tracks the Vite mount prefix (import.meta.env.BASE_URL, e.g. "/ui/"),
 // so the later /ui cutover moves the whole SPA by changing one env var — no route edits.
@@ -17,7 +18,9 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, staleTime: 5_000 } },
 });
 
-createRoot(document.getElementById("root")!).render(
+// S22 (t-f5d27a6f2e): a tab opened without the session asks the open tabs for it first (bounded), so
+// its first /v1/whoami already carries the token instead of painting the identity panel.
+void sessionReady.then(() => createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
@@ -25,4 +28,4 @@ createRoot(document.getElementById("root")!).render(
       </ThemeProvider>
     </QueryClientProvider>
   </StrictMode>,
-);
+));
