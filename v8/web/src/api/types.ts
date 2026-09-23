@@ -43,7 +43,7 @@ export const GATE_KINDS = ["design_signoff", "poc", "demo", "adversarial", "budg
 export type GateKind = (typeof GATE_KINDS)[number];
 
 export const ROLES = [
-  "owner", "coordinator", "architect", "sme", "engineer", "reviewer", "adversary", "qa", "consultant",
+  "owner", "coordinator", "architect", "sme", "engineer", "adversary", "qa", "consultant",
 ] as const;
 export type Role = (typeof ROLES)[number];
 

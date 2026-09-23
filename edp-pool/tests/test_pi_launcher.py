@@ -12,9 +12,9 @@ def test_env_overlay_is_the_pool_contract_minus_claude(monkeypatch, tmp_path):
     monkeypatch.setenv("EDP8_TOKEN", "sekret")
     monkeypatch.setenv("VIRTUAL_ENV", "/pool/venv")
     monkeypatch.setenv("UV_PROJECT", "x")
-    env = pl.build_env_pi("sid-1", "reviewer", "reviewer.s-1", "http://127.0.0.1:9300",
+    env = pl.build_env_pi("sid-1", "qa", "qa.s-1", "http://127.0.0.1:9300",
                           resume=True, activation="reground and continue")
-    assert env["EDP_HARNESS"] == "pi" and env["EDP_ROLE"] == "reviewer" and env["EDP_HANDLE"] == "reviewer.s-1"
+    assert env["EDP_HARNESS"] == "pi" and env["EDP_ROLE"] == "qa" and env["EDP_HANDLE"] == "qa.s-1"
     assert env["EDP_SPAWN_SESSION_ID"] == "sid-1" and env["EDP_PI_RESUME"] == "1"
     assert env["EDP_ACTIVATION"] == "reground and continue"
     assert "CLAUDE_CONFIG_DIR" not in env and "DISABLE_AUTOUPDATER" not in env
@@ -35,7 +35,7 @@ def test_lifecycle_with_a_stand_in_process(monkeypatch, tmp_path):
     # the runner is replaced by a python sleeper so launch/alive/pid/kill/exit_code are exercised for real
     monkeypatch.setattr(pl, "build_argv_pi", lambda _h: [sys.executable, "-c", "import time; time.sleep(30)"])
     sp = pl.PiSpawner(log_dir=str(tmp_path / "logs"), agent_home=str(tmp_path))
-    sp.launch("sid-x", "reviewer", "reviewer.x", model="openai/gpt-6-astra")
+    sp.launch("sid-x", "qa", "qa.x", model="openai/gpt-6-astra")
     assert sp.knows("sid-x") and sp.alive("sid-x") and sp.pid("sid-x")
     assert sp.exit_code("sid-x") is None and sp.session_token("sid-x") is None
     assert sp.viewport_died("sid-x") is False
@@ -52,7 +52,7 @@ def test_visible_mode_opens_pi_tui_with_role_card(monkeypatch, tmp_path):
     """owner steer m-0259072d19: the default (monitor) mode is Pi's interactive TUI in its own
     console, extension loaded, role card first, session file for resume — not the headless runner."""
     (tmp_path / ".claude" / "commands").mkdir(parents=True)
-    (tmp_path / ".claude" / "commands" / "reviewer.md").write_text("# /reviewer card", encoding="utf-8")
+    (tmp_path / ".claude" / "commands" / "qa.md").write_text("# /qa card", encoding="utf-8")
     monkeypatch.setenv("EDP_PI_BIN", "C:/pi/dist/cli.js")
     monkeypatch.setenv("EDP8_TOKEN", "sekret-token")
     seen = {}
@@ -70,20 +70,20 @@ def test_visible_mode_opens_pi_tui_with_role_card(monkeypatch, tmp_path):
 
     monkeypatch.setattr(pl.subprocess, "Popen", fake_popen)
     sp = pl.PiSpawner(log_dir=str(tmp_path / "logs"), agent_home=str(tmp_path))
-    sp.launch("sid-v", "reviewer", "reviewer.v", mode="monitor")
+    sp.launch("sid-v", "qa", "qa.v", mode="monitor")
     argv = seen["argv"]
     assert argv[:2] == ["node", "C:/pi/dist/cli.js"] and "-e" in argv and "--session" in argv
-    assert argv[-1] == "# /reviewer card" and argv[-2] == "--"
+    assert argv[-1] == "# /qa card" and argv[-2] == "--"
     assert "edp8.pi_seat.run" not in argv and not any("sekret" in a for a in argv)
     assert seen["kw"].get("creationflags") == getattr(pl.subprocess, "CREATE_NEW_CONSOLE", 0)
     assert seen["kw"]["env"]["EDP_PI_MODEL"] == "openai-codex/gpt-6-astra"
     # resume with an existing session file and no activation → no first message (Pi resumes the file)
-    sess = tmp_path / "logs" / "pi-sessions" / "reviewer.v.jsonl"
+    sess = tmp_path / "logs" / "pi-sessions" / "qa.v.jsonl"
     sess.write_text("{}", encoding="utf-8")
-    sp.launch("sid-r", "reviewer", "reviewer.v", mode="monitor", resume_session="x")
+    sp.launch("sid-r", "qa", "qa.v", mode="monitor", resume_session="x")
     assert "--" not in seen["argv"]
     # headless stays the RPC runner
-    sp.launch("sid-h", "reviewer", "reviewer.h", mode="headless")
+    sp.launch("sid-h", "qa", "qa.h", mode="headless")
     assert seen["argv"][1:] == ["-m", "edp8.pi_seat.run"]
 
 
@@ -126,7 +126,7 @@ def test_openai_column_binds_model_and_thinking_at_the_spawn_seam(monkeypatch, t
     import json
     (tmp_path / "models.json").write_text(json.dumps({
         "seats": {"astra": {"model": "openai-codex/gpt-6-astra", "harness": "pi", "thinking": "medium"}},
-        "roles": {}, "roles_openai": {"reviewer": "astra"}}), encoding="utf-8")
+        "roles": {}, "roles_openai": {"qa": "astra"}}), encoding="utf-8")
     monkeypatch.delenv("EDP_PI_MODEL", raising=False)
     monkeypatch.delenv("EDP_PI_THINKING", raising=False)
     monkeypatch.setattr(pl, "build_argv_pi", lambda _h: [sys.executable, "-c", "import time; time.sleep(30)"])
@@ -140,10 +140,10 @@ def test_openai_column_binds_model_and_thinking_at_the_spawn_seam(monkeypatch, t
 
     monkeypatch.setattr(pl.subprocess, "Popen", lambda argv, **kw: seen.update(argv=argv, kw=kw) or FakeProc())
     sp = pl.PiSpawner(log_dir=str(tmp_path / "logs"), agent_home=str(tmp_path))
-    sp.launch("s1", "reviewer", "reviewer.1", mode="headless")
+    sp.launch("s1", "qa", "qa.1", mode="headless")
     assert seen["kw"]["env"]["EDP_PI_MODEL"] == "openai-codex/gpt-6-astra"
     assert seen["kw"]["env"]["EDP_PI_THINKING"] == "medium"
-    sp.launch("s2", "reviewer", "reviewer.2", mode="headless", model="openai/gpt-6-astra-fast")
+    sp.launch("s2", "qa", "qa.2", mode="headless", model="openai/gpt-6-astra-fast")
     assert seen["kw"]["env"]["EDP_PI_MODEL"] == "openai/gpt-6-astra-fast"
     sp.launch("s3", "qa", "qa.1", mode="headless")  # unmapped in the openai column → launcher default
     assert seen["kw"]["env"]["EDP_PI_MODEL"] == "openai-codex/gpt-6-astra"

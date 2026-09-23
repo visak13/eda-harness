@@ -48,9 +48,9 @@ def _env_int(name: str, default: int) -> int:
 #   EDP_MAX_TOTAL_SHELLS (10) — every role, the TRUE resource guard (each
 #                               live shell is a full claude process, ~GBs).
 #
-# role="reviewer" is deliberately EXEMPT from the per-role caps and counts
-# under the total only: a reviewer blocking a builder slot is how DESIGN-v6
-# ran with ~2 effective builders (plan 1.2 root cause). Every refusal message
+# Every role other than worker/planner (qa, adversary, …) is EXEMPT from the
+# per-role caps and counts under the total only: a checker blocking a builder
+# slot is how DESIGN-v6 ran with ~2 effective builders (plan 1.2 root cause). Every refusal message
 # NAMES its env knob so the operator can raise it without reading this file.
 
 def _max_workers() -> int:
@@ -965,8 +965,8 @@ class PoolService(Microservice):
     ):
         # ── DESIGN-v7 1.2 capacity model ───────────────────────────────────
         # Per-role throughput caps first (workers, planners), then the
-        # all-roles EDP_MAX_TOTAL_SHELLS resource guard. role="reviewer" is
-        # exempt from the per-role caps ON PURPOSE (a reviewer must never
+        # all-roles EDP_MAX_TOTAL_SHELLS resource guard. A checker (qa) is
+        # exempt from the per-role caps ON PURPOSE (a checker must never
         # block a builder slot) and is counted under the total only. Every
         # refusal NAMES its env knob — the operator's fix is one env var.
         #
@@ -1370,13 +1370,13 @@ class PoolService(Microservice):
 
     def _register_channel_membership(self, role: str, handle: str) -> None:
         """CHANNELS (2026-07-21): every spawn seeds the broker registry —
-        worker/reviewer join their plan's #team channel; a planner joins
+        a worker joins its plan's #team channel; a planner joins
         #leads (the recipe inbox) and its own #team. Merge-write (existing
         members kept). Best-effort: registry down never blocks a spawn."""
         if not self.broker_url:
             return
         chans: list[str] = []
-        if role in ("worker", "reviewer") and ":" in handle:
+        if role == "worker" and ":" in handle:
             chans = [handle.split(":", 1)[0]]
         elif role == "planner" and ":" in handle:
             recipe, step = handle.rsplit(":", 1)

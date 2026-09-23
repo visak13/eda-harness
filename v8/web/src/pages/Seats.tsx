@@ -44,7 +44,7 @@ export function SeatsPage(): React.JSX.Element {
     { category: "concept", value: "presence" },
     { category: "concept", value: "alive" },
     { category: "role", value: "engineer" },
-    { category: "role", value: "reviewer" },
+    { category: "role", value: "adversary" },
     { category: "role", value: "architect" },
     { category: "role", value: "qa" },
   ]);

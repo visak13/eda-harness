@@ -349,8 +349,7 @@ _ROLE_ACTIVATOR = {
     "specialist": "/specialist",
     # v2.2 (2026-05-22): per-decision interrogator.
     "curiosity": "/curiosity",
-    # v2.4 (2026-05-22): recipe-end domain reviewer fork (replaces critic).
-    "reviewer": "/reviewer",
+    # ("reviewer" removed 2026-09-23, S-ROLES s-a0c67e6aa7: not a role; qa checks stories.)
     # F31 (2026-08-18): the final-acceptance shell (advisor seat).
     "acceptor": "/acceptor",
 }

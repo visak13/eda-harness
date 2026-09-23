@@ -14,9 +14,9 @@ def test_env_overlay_is_the_pool_contract_minus_claude(monkeypatch):
     monkeypatch.setenv("VIRTUAL_ENV", "/pool/venv")
     monkeypatch.setenv("UV_PROJECT", "x")
     monkeypatch.setenv("EDP_CODEX_BIN", "C:/codex/codex.exe")
-    env = cl.build_env_codex("sid-1", "reviewer", "reviewer.s-1", "http://127.0.0.1:9300",
+    env = cl.build_env_codex("sid-1", "qa", "qa.s-1", "http://127.0.0.1:9300",
                              resume=True, activation="reground and continue", console=True)
-    assert env["EDP_HARNESS"] == "codex" and env["EDP_ROLE"] == "reviewer" and env["EDP_HANDLE"] == "reviewer.s-1"
+    assert env["EDP_HARNESS"] == "codex" and env["EDP_ROLE"] == "qa" and env["EDP_HANDLE"] == "qa.s-1"
     assert env["EDP_SPAWN_SESSION_ID"] == "sid-1" and env["EDP_CODEX_RESUME"] == "1" and env["EDP_CODEX_CONSOLE"] == "1"
     assert env["EDP_ACTIVATION"] == "reground and continue" and env["EDP_CODEX_BIN"] == "C:/codex/codex.exe"
     assert env["EDP_CODEX_MODEL"] == "gpt-6-astra"
@@ -53,12 +53,12 @@ def test_monitor_mode_opens_its_own_console_headless_is_silent(monkeypatch, tmp_
     monkeypatch.setenv("EDP8_TOKEN", "sekret-token")
     seen = _capture(monkeypatch)
     sp = cl.CodexSpawner(log_dir=str(tmp_path / "logs"), agent_home=str(tmp_path))
-    sp.launch("sid-v", "reviewer", "reviewer.v", mode="monitor", extra_env={"EDP8_TOKEN": "per-seat-tok"})
+    sp.launch("sid-v", "qa", "qa.v", mode="monitor", extra_env={"EDP8_TOKEN": "per-seat-tok"})
     assert seen["argv"][1:] == ["-m", "edp8.codex_seat.run"]
     assert seen["kw"]["creationflags"] == getattr(cl.subprocess, "CREATE_NEW_CONSOLE", 0)
     assert seen["kw"]["env"]["EDP_CODEX_CONSOLE"] == "1" and seen["kw"]["env"]["EDP8_TOKEN"] == "per-seat-tok"
     assert not any("tok" in a for a in seen["argv"])
-    sp.launch("sid-h", "reviewer", "reviewer.h", mode="headless")
+    sp.launch("sid-h", "qa", "qa.h", mode="headless")
     assert seen["kw"]["env"]["EDP_CODEX_CONSOLE"] == "0" and seen["kw"]["stdin"] == cl.subprocess.DEVNULL
     assert seen["kw"]["creationflags"] == getattr(cl.subprocess, "CREATE_NO_WINDOW", 0)
 
@@ -81,7 +81,7 @@ def test_model_and_effort_selection(monkeypatch, tmp_path):
 def test_lifecycle_with_a_stand_in_process(monkeypatch, tmp_path):
     monkeypatch.setattr(cl, "build_argv_codex", lambda _h: [sys.executable, "-c", "import time; time.sleep(30)"])
     sp = cl.CodexSpawner(log_dir=str(tmp_path / "logs"), agent_home=str(tmp_path))
-    sp.launch("sid-x", "reviewer", "reviewer.x")
+    sp.launch("sid-x", "qa", "qa.x")
     assert sp.knows("sid-x") and sp.alive("sid-x") and sp.pid("sid-x")
     assert sp.exit_code("sid-x") is None and sp.session_token("sid-x") is None and sp.pins_session_id("sid-x") is False
     assert sp.viewport_died("sid-x") is False and sp.last_output_ts("sid-x") is not None  # the pool log exists
@@ -134,9 +134,9 @@ def _reload_main(monkeypatch, tmp_path, **env):
 def test_main_wiring_unchanged_when_codex_roles_empty(monkeypatch, tmp_path):
     m = _reload_main(monkeypatch, tmp_path)
     assert not any(type(x).__name__ == "CodexSpawner" for x in _stack(m._spawner))
-    m2 = _reload_main(monkeypatch, tmp_path, EDP_CODEX_ROLES="reviewer")
+    m2 = _reload_main(monkeypatch, tmp_path, EDP_CODEX_ROLES="qa")
     codex = [x for x in _stack(m2._spawner) if type(x).__name__ == "CodexSpawner"]
-    assert codex and "reviewer" in m2._spawner._oc_roles
+    assert codex and "qa" in m2._spawner._oc_roles
 
 
 def _stack(sp):

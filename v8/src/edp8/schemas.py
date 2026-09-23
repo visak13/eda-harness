@@ -22,7 +22,8 @@ class Role(StrEnum):
     architect = "architect"
     sme = "sme"
     engineer = "engineer"
-    reviewer = "reviewer"
+    # "reviewer" is not a role (S-ROLES, owner m-bba708e10e): qa checks stories; the store migrates
+    # old reviewer participants/criteria/docs to qa at open (Store._migrate_reviewer_locked)
     adversary = "adversary"
     qa = "qa"
     consultant = "consultant"
@@ -73,7 +74,6 @@ class Verdict(StrEnum):
 class CheckedBy(StrEnum):
     """The checker role a criterion is verdicted by (a strict subset of Role). A task's criterion
     is `engineer` — the task is the doer's own checklist, self-verdicted, and gates nothing."""
-    reviewer = "reviewer"
     qa = "qa"
     owner = "owner"
     engineer = "engineer"
@@ -286,7 +286,7 @@ class Criterion(Obj):
     ticket_id: str
     text: str
     check: Check
-    checked_by: Literal["reviewer", "qa", "owner", "engineer"]
+    checked_by: Literal["qa", "owner", "engineer"]
     evidence_ref: str | None = None  # doc id (report)
     evidence_version: int | None = None  # the doc version this verdict signed off (design §14 finding 3)
     verdict: Verdict = Verdict.pending
@@ -553,7 +553,7 @@ TICKET_CREATORS: dict[TicketKind, set[Role]] = {
 
 # Which roles may write criteria (the parent owner of the ticket).
 CRITERION_AUTHORS: set[Role] = {Role.architect, Role.engineer}
-CRITERION_CHECKERS: set[Role] = {Role.reviewer, Role.qa, Role.owner}
+CRITERION_CHECKERS: set[Role] = {Role.qa, Role.owner}
 
 # Which roles may author which doc types.
 DOC_AUTHORS: dict[DocType, set[Role]] = {
@@ -561,7 +561,7 @@ DOC_AUTHORS: dict[DocType, set[Role]] = {
     DocType.strategy_hl: {Role.sme},
     DocType.strategy_ll: {Role.sme},
     DocType.domain: {Role.sme},
-    DocType.report: {Role.engineer, Role.reviewer, Role.adversary, Role.qa},
+    DocType.report: {Role.engineer, Role.adversary, Role.qa},
     DocType.note: set(Role),
 }
 
@@ -578,13 +578,12 @@ DESCRIBE: dict[str, str] = {
     "a thread, linked docs and artifacts.",
     "criterion": "A checkable definition of done on a ticket, written by the parent owner before work; "
     "the doer never edits it; the checker records verdict + evidence_ref. The board DERIVES the checker "
-    "from the ticket (design §24.1): qa for a story/epic criterion, reviewer only when a story "
-    "is tagged review_required, engineer for a task criterion (a task is its doer's own checklist, "
+    "from the ticket (design §24.1): qa for a story/epic criterion, engineer for a task criterion (a task is its doer's own checklist, "
     "self-verdicted, gating nothing), owner for a knowledge ticket — criterion_create's checked_by argument is "
     "accepted for one release but ignored unless the owner also passes override_reason (recorded as a "
     "criterion_checker_overridden event). CRUD: create, read, update.",
     "doc": "A versioned markdown knowledge unit: design (architect), strategy_hl/strategy_ll/domain (sme), "
-    "report (engineer/reviewer/qa), note. Every update is a new version. CRUD: create, read, query, update.",
+    "report (engineer/adversary/qa), note. Every update is a new version. CRUD: create, read, query, update.",
     "link": "A typed edge: ticket/doc -> doc/artifact/ticket with a relation. CRUD: create, query, delete.",
     "message": "One unit of a ticket's thread addressed to a participant, role, @handle or nobody. "
     "Kinds: question, answer, steer, status, finding, deviation, note. CRUD: create, read, query.",

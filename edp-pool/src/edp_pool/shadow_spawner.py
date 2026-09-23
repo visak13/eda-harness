@@ -16,7 +16,7 @@ production adapters:
              injected grounding + acceptance), read-only from the plan
              JSON — the worker-close-nudge precedent. Kills the
              check_inbox/read_object boot turns.
-  terminal → the same plan-JSON read: own action (worker/reviewer) or
+  terminal → the same plan-JSON read: own action (worker) or
              plan terminal_status (planner) recorded terminal.
   publish  → broker /v1/publish (ready to the parent, crashed flowback —
              wire-identical to the existing paths).
@@ -55,7 +55,6 @@ from .spawner import Spawner, SpawnMode, SubprocessSpawner
 #: Placeholders: {me} = broker inbox handle, {plan_id}, {recipe_id}.
 ROLE_SPECS: dict[str, str] = {
     "worker": "rx.broker(me)",
-    "reviewer": "rx.broker(me)",
     "curiosity": "rx.broker(me)",
     # ("consult" row deleted 2026-08-12 with the retired consult shell role.)
     "specialist": "rx.broker(me)",
@@ -66,7 +65,7 @@ ROLE_SPECS: dict[str, str] = {
 
 #: default heartbeat per role (seconds) — reflex(pace) overrides live.
 ROLE_HEARTBEAT_S: dict[str, float] = {
-    "worker": 300.0, "reviewer": 300.0, "curiosity": 300.0,
+    "worker": 300.0, "curiosity": 300.0,
     "specialist": 600.0, "planner": 1800.0,
 }
 
@@ -303,7 +302,7 @@ class ShadowSpawner(Spawner):
                 if x.get("batch_group") == grp]
 
     def _compose_brief(self, role: str, handle: str) -> str:
-        if role in ("worker", "reviewer"):
+        if role == "worker":
             a, plan = self._plan_action(handle)
             if not a:
                 return ""
@@ -358,7 +357,7 @@ class ShadowSpawner(Spawner):
         return ""          # planner/curiosity ground themselves (digest)
 
     def _terminal_check(self, role: str, handle: str):
-        if role in ("worker", "reviewer"):
+        if role == "worker":
             def check() -> bool:
                 a, plan = self._plan_action(handle)
                 if not a:

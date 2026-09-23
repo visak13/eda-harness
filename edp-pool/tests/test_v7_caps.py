@@ -39,26 +39,26 @@ def test_planner_cap_env_override(monkeypatch):
     assert not isinstance(res, str) and "EDP_MAX_PLANNERS" in res.message
 
 
-def test_reviewer_is_exempt_from_the_worker_cap(svc):
+def test_qa_is_exempt_from_the_worker_cap(svc):
     # fill the worker cap completely...
     for i in range(6):
         assert isinstance(svc.spawn("worker", f"p:a{i}", None), str)
     assert not isinstance(svc.spawn("worker", "p:a7", None), str)
-    # ...and a reviewer STILL spawns (it counts under the total only).
-    assert isinstance(svc.spawn("reviewer", "p:review", None), str)
+    # ...and a qa STILL spawns (it counts under the total only).
+    assert isinstance(svc.spawn("qa", "p:review", None), str)
 
 
 def test_total_cap_refusal_names_edp_max_total_shells(monkeypatch):
     # Shrink the total so the test doesn't need 10 sessions; mix roles to
-    # prove the guard is all-roles (reviewer included — its exemption is
+    # prove the guard is all-roles (qa included — its exemption is
     # from the PER-ROLE caps, never from the resource guard).
     monkeypatch.setenv("EDP_MAX_TOTAL_SHELLS", "4")
     svc = PoolService(FakeSpawner())
     assert isinstance(svc.spawn("worker", "p:a1", None), str)
     assert isinstance(svc.spawn("planner", "r:s1", None), str)
-    assert isinstance(svc.spawn("reviewer", "p:rev1", None), str)
-    assert isinstance(svc.spawn("reviewer", "p:rev2", None), str)
-    res = svc.spawn("reviewer", "p:rev3", None)
+    assert isinstance(svc.spawn("qa", "p:rev1", None), str)
+    assert isinstance(svc.spawn("qa", "p:rev2", None), str)
+    res = svc.spawn("qa", "p:rev3", None)
     assert not isinstance(res, str)
     assert res.code == "pool_capacity_exceeded"
     assert "max total shells = 4" in res.message
@@ -71,7 +71,7 @@ def test_total_cap_frees_when_a_shell_dies(monkeypatch):
     monkeypatch.setenv("EDP_MAX_TOTAL_SHELLS", "2")
     svc = PoolService(FakeSpawner())
     sid = svc.spawn("worker", "p:a1", None)
-    svc.spawn("reviewer", "p:rev", None)
+    svc.spawn("qa", "p:rev", None)
     assert not isinstance(svc.spawn("worker", "p:a2", None), str)  # full
     svc.spawner.kill(sid)                                          # one dies
     assert isinstance(svc.spawn("worker", "p:a2", None), str)      # slot back

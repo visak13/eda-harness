@@ -11,7 +11,7 @@ import styles from "./AskRole.module.css";
 // resolution note (envelope hint), shown verbatim. Posting invalidates the epic page so the
 // thread shows the question at once.
 
-export const ASK_ROLES = ["architect", "engineer", "reviewer", "qa", "coordinator", "owner"] as const;
+export const ASK_ROLES = ["architect", "engineer", "qa", "adversary", "sme", "owner"] as const;
 export type AskRole = (typeof ASK_ROLES)[number];
 
 export function AskRoleControl({ ticketId }: { ticketId: string }): React.JSX.Element {

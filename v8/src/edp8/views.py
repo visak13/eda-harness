@@ -187,7 +187,7 @@ def pending_signoffs(board: Board, viewer: Participant) -> list[tuple[Any, Any, 
 def signoff_criteria_for_doc(board: Board, viewer: Participant, doc: Any) -> list[Any]:
     """EVERY pending criterion the VIEWER checks whose evidence is THIS doc (any version), for the
     doc reader's inline ruling cards (design §14). A human owner gets the owner-checked ones inside
-    their owner scope; any viewer (qa, reviewer, sme …) gets the ones whose checked_by names their
+    their owner scope; any viewer (qa, sme …) gets the ones whose checked_by names their
     role, id or handle — the reader shows all of them, not the first owner one only (adversary
     finding #8, 2026-09-10)."""
     mine = {viewer.id, viewer.handle or "", viewer.role.value}

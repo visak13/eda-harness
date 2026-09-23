@@ -41,7 +41,7 @@ function RequestReview({
   version: number;
 }): React.JSX.Element {
   const qc = useQueryClient();
-  const [role, setRole] = useState<string>("reviewer");
+  const [role, setRole] = useState<string>("qa");
   const [note, setNote] = useState("");
   const [asked, setAsked] = useState(false);
 

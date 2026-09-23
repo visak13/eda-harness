@@ -15,7 +15,7 @@ blank.
    - bug: impact statement and the likely fix(es), ranked.
    - rnd: the R&D paths to try and how each is judged.
    - creative: the look spec (references, constraints, what "done" looks like).
-5. **Work breakdown** — stories, each with who does what (engineer / reviewer / consultant
+5. **Work breakdown** — stories, each with who does what (engineer / adversary / consultant
    for creative-UI / human teammate) and which strategy_hl/strategy_ll it uses. The last
    story is always the adversarial review.
 6. **Communication plan** — which decisions go to the owner, which to the architect, which
@@ -23,7 +23,7 @@ blank.
 7. **Knowledge domains needed** — names the sme(s) to invoke, domain or craft, and what
    each must cover (becomes the criteria on their knowledge ticket).
 8. **Acceptance criteria for the epic** — checkable: `check` is command | path | look |
-   verdict for each; who checks it (reviewer/qa/owner).
+   verdict for each; who checks it (qa/owner).
 9. **Risks** — named, with the mitigation or the accepted exposure.
 10. **Sizing note** — honest: one story when the work fits one sitting; do not split for
     the sake of splitting, and do not under-size real work into one story either.

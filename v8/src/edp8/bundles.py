@@ -481,7 +481,7 @@ def _lineage(me: str) -> dict[str, Any]:
     return out
 
 
-_LISTENING_ROLES = {"architect", "owner", "coordinator"}
+_LISTENING_ROLES = {"architect", "owner"}
 
 
 def _heartbeat_prompt(participant: str) -> str:
@@ -969,7 +969,7 @@ TICKET_TOOLS = [
             'the ticket, or an error naming what is missing',
             TicketUpdateArgs, _ticket_update, "ticket"),
     ToolDef("criterion_create",
-            "Add a checkable done-fact. Checker derived: qa (story/task/epic), reviewer (review_required story), owner (knowledge ticket); checked_by needs owner override_reason. Max 6 fresh per story",
+            "Add a checkable done-fact. Checker derived: qa (story/epic), engineer (task), owner (knowledge ticket); checked_by needs owner override_reason. Max 6 fresh per story",
             'before work starts, one per checkable fact',
             'the criterion with its derived checker',
             CriterionCreateArgs, _criterion_create, "ticket"),
@@ -989,7 +989,7 @@ TICKET_TOOLS = [
 
 
 class DocCreateArgs(BaseModel):
-    doc_type: DocType = Field(description='design: architect; strategy_*/domain: sme; report: engineer/reviewer/qa; note: any')
+    doc_type: DocType = Field(description='design: architect; strategy_*/domain: sme; report: engineer/adversary/qa; note: any')
     title: str
     body_md: str
     scope: str = Field(description='epic id | domain:<name> | global')
@@ -1368,9 +1368,9 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
     if ticket_id and tk is not None:
         # A checker is never assigned a ticket whose criteria it checks (the doer guard would
         # block its verdicts). But a checker CAN be the doer of a ticket checked by someone
-        # else — e.g. a reviewer doing a review-type story whose criteria are checked by qa.
+        # else — e.g. an adversary doing a review-type story whose criteria are checked by qa.
         assign = True
-        if a.role.value in ("reviewer", "qa"):
+        if a.role.value == "qa":
             crits = c.criterion_query(ticket_id)
             rows = crits.get("value") or []
             assign = bool(rows) and all(x.get("checked_by") != a.role.value for x in rows)
@@ -2108,8 +2108,6 @@ ROLE_BUNDLES: dict[str, list[str]] = {
            "artifact_create", "artifact_read"] + _CLOSING,
     Role.engineer.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD
         + ["find", "participants", "assemble_ruleset", "consult", "consult_status", "artifact_create", "artifact_read"] + _CLOSING,
-    Role.reviewer.value: _IDENTITY + _TICKET_RO + _CHECK + _DOC_RW + _THREAD
-        + ["find", "participants", "assemble_ruleset", "consult", "consult_status", "artifact_create", "artifact_read"] + _CLOSING,
     Role.adversary.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD
         + ["find", "participants", "assemble_ruleset", "consult", "consult_status", "artifact_create", "artifact_read"] + _CLOSING,
     Role.qa.value: _IDENTITY + _TICKET_RO + _CHECK + _DOC_RW + _THREAD + _BOARD
@@ -2127,9 +2125,8 @@ for _role_tools in ROLE_BUNDLES.values():
         else:
             _role_tools.append("artifact_upload")
 
-ROLE_BUNDLES[Role.coordinator.value] = list(ROLE_BUNDLES[Role.owner.value])  # retired seat: explicit, not implicit
-ROLE_BUNDLES[Role.consultant.value] = _IDENTITY + ["ticket_read", "ticket_query", "message_send", "message_query",
-                                                   "find", "inbox"] + _DOC_RO
+# S-ROLES: the retired coordinator and consultant roles have NO bundle (deleted, not aliased); a
+# participant of a role without a bundle gets identity tools only (tools_for_role).
 
 # record_decision/record_claim/lookup are available to EVERY role (design-d2c4f39fc6 §2: the tools
 # any seat calls). Insert before the closing triplet where a doer has one — close_self stays last
@@ -2160,18 +2157,14 @@ _S20_UNUSED: dict[str, tuple[str, ...]] = {
     Role.qa.value: ("artifact_create", "artifact_upload", "dense_search", "doc_query", "events_query", "gate_answer",
                     "gate_open", "link_delete", "link_query", "record_lesson", "set_binding", "ticket_query",
                     "withdraw_claim", "withdraw_decision"),
-    Role.reviewer.value: ("artifact_create", "artifact_upload", "dense_search", "doc_edit", "doc_query", "find",
-                          "gate_answer", "gate_open", "gates", "record_lesson", "set_binding",
-                          "ticket_query", "withdraw_claim", "withdraw_decision"),
     Role.sme.value: ("artifact_create", "artifact_read", "artifact_upload", "dense_search", "doc_edit", "find",
                      "gate_answer", "gate_open", "gates", "link_delete", "record_lesson", "set_binding",
                      "withdraw_claim", "withdraw_decision"),
 }
-_S20_UNUSED[Role.coordinator.value] = _S20_UNUSED[Role.owner.value]
 for _role, _unused in _S20_UNUSED.items():
     ROLE_BUNDLES[_role] = [n for n in ROLE_BUNDLES[_role] if n not in _unused]
 
 
 def tools_for_role(role: str) -> list[ToolDef]:
-    names = ROLE_BUNDLES.get(role, ROLE_BUNDLES[Role.owner.value])
+    names = ROLE_BUNDLES.get(role, _IDENTITY)  # a retired/unknown role never inherits the owner's tools
     return [ALL_TOOLS[n] for n in names if n in ALL_TOOLS]

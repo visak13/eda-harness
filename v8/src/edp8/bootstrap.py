@@ -12,7 +12,6 @@ DEFAULTS = [
     ("architect", "architect", "agent"),
     ("sme", "sme", "agent"),
     ("engineer", "engineer", "agent"),
-    ("reviewer", "reviewer", "agent"),
     ("adversary", "adversary", "agent"),
     ("qa", "qa", "agent"),
 ]

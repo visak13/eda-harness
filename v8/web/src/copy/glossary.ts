@@ -99,7 +99,6 @@ const role: Table = {
   owner: { label: "Owner", meaning: "The human who steers and approves." },
   architect: { label: "Architect", meaning: "Design questions and rulings." },
   engineer: { label: "Engineer", meaning: "Builds the assigned work." },
-  reviewer: { label: "Reviewer", meaning: "Checks the implementation." },
   qa: { label: "QA", meaning: "Verifies the required behavior." },
   sme: { label: "SME", meaning: "Advises on a specialist domain." },
   adversary: { label: "Adversary", meaning: "Hostile review that hunts for hidden faults." },

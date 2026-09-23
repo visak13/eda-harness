@@ -1,4 +1,4 @@
-<!-- roles: architect, engineer, reviewer, qa, adversary -->
+<!-- roles: architect, engineer, qa, adversary -->
 # Pairing with the GPT consultant (consult bridge) — goal, steer, show, generate
 
 The consultant behind `consult` runs as a Codex CLI session on the owner's ChatGPT plan.

@@ -128,6 +128,27 @@ class Store:
             self._conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(type UNINDEXED, id UNINDEXED, text)")
             if self._conn.execute("SELECT count(*) FROM fts").fetchone()[0] == 0:
                 self._fts_rebuild_locked()
+            self.migrated_reviewer = self._migrate_reviewer_locked()
+
+    # S-ROLES (s-a0c67e6aa7, owner m-bba708e10e): "reviewer" is no longer a role — qa checks stories.
+    # (table, indexed column, JSON path) rows still naming it; migrated to qa at every open (idempotent).
+    _REVIEWER_ROWS = (("participant", "role", "$.role"), ("criterion", "checked_by", "$.checked_by"),
+                      ("doc", "owner_role", "$.owner_role"))
+
+    def _migrate_reviewer_locked(self) -> dict[str, int]:
+        """Rewrite every stored reviewer participant / reviewer-checked criterion / reviewer-owned doc
+        to qa, body and index column together, so an old board loads under the reviewer-less Role
+        enum. Returns the count per table (all 0 on a migrated board); the service logs it."""
+        counts: dict[str, int] = {}
+        for t, col, path in self._REVIEWER_ROWS:
+            cur = self._conn.execute(
+                f"UPDATE {t} SET \"{col}\"='qa', body=json_set(body, '{path}', 'qa') WHERE \"{col}\"='reviewer'")
+            counts[t] = cur.rowcount
+        cur = self._conn.execute(
+            "UPDATE doc_versions SET body=json_set(body, '$.owner_role', 'qa') "
+            "WHERE json_extract(body, '$.owner_role')='reviewer'")
+        counts["doc_versions"] = cur.rowcount
+        return counts
 
     def _migrate_columns(self, t: str, cols: list[str]) -> None:
         """A new indexed column on an existing table: ALTER + backfill from the JSON body,

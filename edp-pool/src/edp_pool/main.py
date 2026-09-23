@@ -52,7 +52,7 @@ _claude_spawner = SubprocessSpawner(
     shell_log_dir=_shell_log_dir,
 )
 # PORT-OPENCODE M1 — mixed-fleet opt-in. EDP_OPENCODE_ROLES names the roles
-# routed to the opencode/gpt-5.6 backend (e.g. "worker" or "worker,reviewer");
+# routed to the opencode/gpt-5.6 backend (e.g. "worker" or "worker,qa");
 # EMPTY (the default) keeps the fleet 100% Claude — zero behavior change.
 _oc_roles = {r.strip() for r in
              os.environ.get("EDP_OPENCODE_ROLES", "").split(",") if r.strip()}
@@ -74,7 +74,7 @@ if _oc_roles:
 else:
     _spawner = _claude_spawner
 # epic-6a8a6020fd S2 — resident GPT-6 Astra seats under pi.dev. EDP_PI_ROLES names the roles
-# routed to the Pi backend (e.g. "reviewer"); EMPTY (the default) = zero behaviour change.
+# routed to the Pi backend (e.g. "qa"); EMPTY (the default) = zero behaviour change.
 # CompositeSpawner is backend-agnostic despite its parameter name (it only uses the Spawner
 # surface + the getattr hooks), so it stacks on whatever _spawner already is.
 _pi_roles = {r.strip() for r in

@@ -8,7 +8,7 @@ card and stays up; Monitor lines and cron fires re-wake the model from inside th
 header from env (codex `env_http_headers` names EDP_HANDLE / EDP_SPAWN_SESSION_ID / EDP8_TOKEN) —
 never on argv.
 
-Arming: EDP_CODEX_ROLES="reviewer,qa" routes those roles here (main.py); empty = zero behaviour
+Arming: EDP_CODEX_ROLES="qa,adversary" routes those roles here (main.py); empty = zero behaviour
 change. Per spawn, a models.json seat whose harness is `codex` (e.g. "astra-codex") or a `codex/<id>`
 model lands here too.
 

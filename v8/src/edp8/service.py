@@ -442,7 +442,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         os.replace(tmp, f)
         return secret
 
-    # §24 finding 4: auto-paired reviewer/qa seats spawn through the board, so give the board the
+    # §24 finding 4: auto-paired qa seats spawn through the board, so give the board the
     # same token minter the service spawn route uses — the seat gets its EDP8_TOKEN injected and can
     # authenticate in public mode (trusted mode mints None and injects nothing, unchanged).
     board._mint_token = _mint_agent_token
@@ -1245,7 +1245,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
                     log.warning("pool watcher error: %s", e)
                 try:
                     # design §24 rule 3: drain the checker-pairing queue on the same tick — spawn a
-                    # reviewer/qa whose RAM headroom is now sufficient, retry the ones still under the
+                    # qa seats whose RAM headroom is now sufficient, retry the ones still under the
                     # seat floor (the queued-note guard keeps the retry quiet).
                     res = board.run_pending_pairings()
                     if res.get("spawned"):

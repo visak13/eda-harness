@@ -42,7 +42,7 @@ SKILLS_LINE = re.compile(r"^\*\*SKILLS\*\*(.*)$", re.M)
 ROLE_SANDBOX: dict[str, str] = {
     "engineer": "workspace-write", "sme": "workspace-write", "architect": "workspace-write",
     "qa": "workspace-write", "owner": "workspace-write",
-    "reviewer": "read-only", "adversary": "read-only",
+    "adversary": "read-only",
 }
 
 #: native thread items that are TOOLS (a notification arriving while one runs is steered after it)

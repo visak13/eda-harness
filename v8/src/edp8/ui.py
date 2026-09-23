@@ -344,7 +344,7 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
                  f"{_section_header('Conversations',len(convo_rows))}<div class='convo-list'>{conversations}</div>"
                  f"{avatar_picker_html(p,selected,hidden) if p.type=='human' else ''}")
         # People = humans (taggable, always) + LIVE agent seats (with their ticket + state).
-        # Base-role registry stubs (@engineer, @reviewer…) are empty chairs: tagging them
+        # Base-role registry stubs (@engineer, @qa…) are empty chairs: tagging them
         # reaches nobody, so they do not appear — you talk to agents on their TICKET thread.
         people_rows=[]; people_list=[]
         for c in sorted(board.store.query("participant",{}),key=lambda c:(c.type!="human",c.handle or "")):

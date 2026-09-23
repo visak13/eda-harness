@@ -35,7 +35,6 @@ from .pty_launcher import build_env
 ROLE_AGENTS = {
     "worker": "edp-worker",
     "planner": "edp-agentic-plan",
-    "reviewer": "edp-reviewer",
     "specialist": "edp-specialist",
     "consult": "edp-consult",
     "curiosity": "edp-curiosity",

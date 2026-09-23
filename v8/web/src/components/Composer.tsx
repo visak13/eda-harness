@@ -21,7 +21,7 @@ const draftStores = new WeakMap<object, Map<string, import("./draftStorage").Sto
 // same delivery plan the board uses, so it cannot drift), and after send the board's resolution
 // note is shown verbatim. It never fans out — exactly one `to`.
 
-const ROLES: string[] = ["architect", "engineer", "sme", "qa", "reviewer", "owner"];
+const ROLES: string[] = ["architect", "engineer", "sme", "qa", "adversary", "owner"];
 // Promise #16: every To/Kind option says WHO IT WAKES in one line (visible in the option label and
 // as its title). Copy is local to the composer on purpose — the shared copy table is not touched.
 const ROLE_GLOSS: Record<string, string> = {

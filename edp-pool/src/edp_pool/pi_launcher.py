@@ -8,7 +8,7 @@ Pi (v8/.pi/extensions/edp8.ts), so "alive" == the runner process is running, exa
 shell. Identity reaches the board by header (X-Participant/X-Session/X-Token) from env, as
 `.mcp.json` does for Claude — never on argv.
 
-Arming: EDP_PI_ROLES="reviewer,qa" routes those roles here (main.py); empty = zero behaviour change.
+Arming: EDP_PI_ROLES="qa,adversary" routes those roles here (main.py); empty = zero behaviour change.
 
 Modes (owner steer m-0259072d19, 2026-09-14: "ensure that the gpt shell opens like other shells and
 isnt headless"): the default pool mode "monitor" opens Pi's INTERACTIVE TUI in its own console

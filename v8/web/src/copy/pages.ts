@@ -83,7 +83,7 @@ export const PAGES: Record<string, PageCopy> = {
       { key: "raise-decision", label: "Raise a decision", text: "opens a gate for the owner (design sign-off, demo, scope…). Wakes: the owner, who rules it.", control: true },
       { key: "assign-spawn", label: "Assign or spawn a seat", text: "set who does a story, or spawn its engineer on the fleet host. Assign wakes the assignee (and the owner); Spawn starts a new shell and wakes it at boot.", control: true },
       { key: "spawn-architect", label: "Spawn the architect", text: "starts a new architect shell for this epic (architect.<epic>) through the pool; shown only when the pool can spawn; the board's answer is shown verbatim. Wakes: the new architect seat at boot.", control: true },
-      { key: "ask-role", label: "Ask a role", text: "posts a question on the epic thread addressed to a role (architect, engineer, reviewer, qa, coordinator, owner). Wakes: that role's seat on this epic.", control: true },
+      { key: "ask-role", label: "Ask a role", text: "posts a question on the epic thread addressed to a role (architect, engineer, qa, adversary, sme, owner). Wakes: that role's seat on this epic.", control: true },
       { key: "assigned-seats", label: "Assigned seats", text: "the seats holding stories here; click → the seat's row on Seats. Message wakes that seat; Resume continues its parked shell (POST /v1/sessions/resume).", control: true },
     ],
   },
