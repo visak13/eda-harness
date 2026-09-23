@@ -127,3 +127,28 @@ describe("SettingsPage", () => {
     expect(screen.getByTestId("settings-save")).toBeDisabled();
   });
 });
+
+// S17 c-066a9b347a (owner: "the enable notifications needs to move into settings page"): the
+// per-browser Enable control renders on Settings → Notifications (inside the shell's provider).
+describe("Settings notifications (S17)", () => {
+  it("shows Enable notifications on the Notifications tab, outside the settings form", async () => {
+    const { NotificationCenter } = await import("../components/NotificationCenter");
+    server.use(
+      http.get("/v1/me/avatar", () => HttpResponse.json({ ok: true, value: { kind: "seed", seed: "v", url: null, choices: [] } })),
+      http.get("/v1/me/settings", () => HttpResponse.json({ ok: true, value: stored })),
+    );
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <ThemeProvider>
+          <MemoryRouter initialEntries={["/settings?tab=notifications"]}>
+            <NotificationCenter actor=""><SettingsPage /></NotificationCenter>
+          </MemoryRouter>
+        </ThemeProvider>
+      </QueryClientProvider>,
+    );
+    const enable = await screen.findByRole("button", { name: "Enable notifications" });
+    expect(screen.getByRole("region", { name: "Board notifications" })).toBeInTheDocument();
+    expect(screen.getByTestId("settings-form").contains(enable)).toBe(false);
+  });
+});

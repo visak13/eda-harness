@@ -6,6 +6,7 @@ import { Drawer } from "./Drawer";
 import { useDocDrawer } from "./DocDrawer";
 import { Icon } from "./Icon";
 import { identity } from "../auth/identity";
+import { useViewerFlag } from "./viewerPrefs";
 import { attentionLine, FilesViewer, HistoryViewer, useWorkContext } from "./ContextualWork";
 import styles from "./WorkHeader.module.css";
 
@@ -41,6 +42,13 @@ function short(text: string | null | undefined): string | null {
   if (!text) return null;
   const line = text.trim().split(/\n/)[0] ?? "";
   return line.length > 180 ? `${line.slice(0, 177)}…` : line;
+}
+
+/** Title and purpose line compare equal once case, whitespace and trailing punctuation are ignored
+ *  ("Board UI improvements" vs the words' first line "Board UI improvements:"). */
+export function sameLine(a: string | null, b: string | null): boolean {
+  const norm = (s: string | null) => (s ?? "").trim().replace(/[\s:.;,!?—–-]+$/u, "").replace(/\s+/g, " ").toLowerCase();
+  return norm(a) !== "" && norm(a) === norm(b);
 }
 
 // Legacy pre-R1 destinations (old Slack pings and bookmarks carry these): the tabbed epic/ticket
@@ -120,6 +128,16 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
     return () => mq.removeEventListener?.("change", apply);
   }, []);
 
+  // S17 c-7a3c3ec439: MS-Word-style collapse of the title bar — collapsed, only the topline
+  // (breadcrumb, Actions, the toggle) stays; remembered per viewer and per kind (epic / ticket).
+  const [collapsed, setCollapsed] = useViewerFlag(identity(), `${p.kind}-header-collapsed`);
+  // Item 8 (owner m-8a242679d9): the epic title showed four times (rail, breadcrumb, h1, purpose).
+  // On an epic the rail and breadcrumb carry it, so the h1 is kept for assistive tech only and a
+  // purpose line that merely repeats the title is dropped.
+  const purpose = short(p.purpose);
+  const showPurpose = purpose && !sameLine(purpose, p.title) ? purpose : null;
+  const titleHidden = p.kind === "epic" || collapsed;
+
   const viewerTitle = view === "history" ? "History" : view === "work" ? "Work" : "Files & evidence";
   const crumbTitle = p.kind === "epic" ? p.title : p.epic?.title ?? p.epic?.id ?? "Epic";
   const crumbTo = p.kind === "epic" ? "/epics" : `/epic/${encodeURIComponent(p.epic?.id ?? "")}`;
@@ -136,10 +154,19 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
             <span className={styles.here}>{p.ticketId}</span>
           </>}
         </nav>
-        {p.actions}
+        <div className={styles.toolbar}>
+          {p.actions}
+          <button type="button" className={styles.collapseToggle} data-testid="header-collapse"
+            aria-expanded={!collapsed} aria-controls={`work-header-body-${p.kind}`}
+            aria-label={collapsed ? "Expand title bar" : "Collapse title bar"} title={collapsed ? "Expand title bar" : "Collapse title bar"}
+            onClick={() => setCollapsed(!collapsed)}>
+            <span className={collapsed ? styles.chevronDown : styles.chevronUp} aria-hidden="true"><Icon name="chevron" size={18} /></span>
+          </button>
+        </div>
       </div>
-      <h1 className={styles.title} data-testid="work-title">{p.title}</h1>
-      {short(p.purpose) ? <p className={styles.purpose} data-testid="work-purpose">{short(p.purpose)}</p> : null}
+      <h1 className={titleHidden ? styles.srOnly : styles.title} data-testid="work-title">{p.title}</h1>
+      <div id={`work-header-body-${p.kind}`} hidden={collapsed} data-testid="work-header-body">
+      {showPurpose ? <p className={styles.purpose} data-testid="work-purpose">{showPurpose}</p> : null}
 
       <details className={styles.context} open={contextOpen} onToggle={(e) => setContextOpen(e.currentTarget.open)}>
         <summary className={styles.contextSummary} data-testid="work-context-toggle">
@@ -179,8 +206,9 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
         <button type="button" className={styles.link} onClick={() => choose("work")} data-testid="work-work"><Icon name="work" /> Work</button>
       </div>
       </details>
+      </div>
 
-      <Drawer open={drawerOpen} label={viewerTitle} title={<span className={styles.drawerTitle}>{viewerTitle}
+      <Drawer edge open={drawerOpen} label={viewerTitle} title={<span className={styles.drawerTitle}>{viewerTitle}
         {view !== "work" ? <Link className={styles.openTab} target="_blank" to={`/records/${encodeURIComponent(p.ticketId)}?${new URLSearchParams({ view: view ?? "files", ...(params.get("category") ? { category: params.get("category")! } : {}), as: identity() })}`}>Open in tab <Icon name="external" size={16} /></Link> : null}
       </span>} onClose={() => choose(null)}>
         {view === "history" ? <HistoryViewer ticketId={p.ticketId} /> : view === "work" ? p.work : <FilesViewer ticketId={p.ticketId} />}

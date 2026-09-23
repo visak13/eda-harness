@@ -51,3 +51,40 @@ describe("WorkHeader request deep link (finding 1)", () => {
     expect(screen.queryByTestId("work-search")).toBeNull();
   });
 });
+
+// S17 c-7a3c3ec439 + item 8 (owner m-8a242679d9): the epic title is not repeated in the header, and
+// the title bar collapses Word-style with the state remembered per viewer.
+describe("WorkHeader title bar (S17)", () => {
+  it("treats a purpose line that only repeats the title as a duplicate", async () => {
+    const { sameLine } = await import("./WorkHeader");
+    expect(sameLine("Board UI improvements:", "Board UI improvements")).toBe(true);
+    expect(sameLine("Board UI improvements", "Board UI improvements - phase 2")).toBe(false);
+    expect(sameLine("", "")).toBe(false);
+  });
+
+  it("shows the epic title only for assistive tech and drops a duplicate purpose", async () => {
+    server.use(http.get("/v1/tickets/epic-req/contextual", () => okJson(contextual({ gates: [] }))));
+    renderRoute("/epic/epic-req", "/epic/:id", <WorkHeader ticketId="epic-req" kind="epic" title="Board UI improvements"
+      purpose={"Board UI improvements:\n- more"} status="designed" assignee={null} actions={null} work={<div />} />);
+    const h1 = await screen.findByRole("heading", { level: 1, name: "Board UI improvements" });
+    expect(h1.className).toMatch(/srOnly/);
+    expect(screen.queryByTestId("work-purpose")).toBeNull();
+  });
+
+  it("collapses to the topline and remembers it for the viewer", async () => {
+    localStorage.clear();
+    server.use(http.get("/v1/tickets/epic-req/contextual", () => okJson(contextual({ gates: [] }))));
+    const { fireEvent, cleanup } = await import("@testing-library/react");
+    renderRoute("/epic/epic-req", "/epic/:id", header());
+    const toggle = await screen.findByRole("button", { name: "Collapse title bar" });
+    expect(screen.getByTestId("work-header-body")).toBeVisible();
+    fireEvent.click(toggle);
+    expect(screen.getByTestId("work-header-body")).not.toBeVisible();
+    expect(screen.getByRole("button", { name: "Expand title bar" })).toHaveAttribute("aria-expanded", "false");
+    expect(Object.keys(localStorage).some((k) => k.endsWith(".epic-header-collapsed") && localStorage.getItem(k) === "1")).toBe(true);
+    cleanup();
+    renderRoute("/epic/epic-req", "/epic/:id", header());
+    expect(await screen.findByRole("button", { name: "Expand title bar" })).toBeInTheDocument();
+    expect(screen.getByTestId("work-header-body")).not.toBeVisible();
+  });
+});

@@ -17,8 +17,9 @@ import { GlossaryPanel } from "./GlossaryPanel";
 import { CommandPalette } from "./CommandPalette";
 import { CopyDescriptions } from "./CopyDescriptions";
 import { PendingNavigation } from "./PendingNavigation";
-import { NotificationCenter, NotificationPanel } from "./NotificationCenter";
+import { NotificationCenter } from "./NotificationCenter";
 import { UsageWidget } from "./UsageWidget";
+import { useViewerFlag } from "./viewerPrefs";
 import { copyProps, pageKeyFor } from "../copy/pages";
 import styles from "./AppShell.module.css";
 
@@ -34,11 +35,11 @@ interface Summary {
 
 // The rail per revision3-clean (design-a2e5369133 §AppShell): brand, Epics, Seats, a divider,
 // Needs you with its coral count, the CURRENT EPIC block, then (lower) Usage directly above Find
-// and the account row. Notifications are NOT a rail item between Usage and Find (finding 6): the
-// Board-notifications region lives in the account cluster (always mounted so its worker/authorization
-// keep running, even with the menu closed). There is NO global header any more (owner defect: "the epic header takes
-// many pixels for two buttons"): New epic lives on the Epics page, help and preferences live in
-// the account menu, and a pending live refresh is an inline banner at the top of main.
+// and the account row. Notifications are NOT a rail item (finding 6): Enable/Test live on
+// Settings → Notifications (S17), the worker/authorization run in the always-mounted provider.
+// There is NO global header any more (owner defect: "the epic header takes many pixels for two
+// buttons"): New epic lives on the Epics page, preferences in the account menu, help is the floating
+// top-right button (S17), and a pending live refresh is an inline banner at the top of main.
 const NAV = [
   { to: "/epics", label: "Epics", icon: "epics", count: "epics" as const, copy: "epics" },
   { to: "/seats", label: "Seats", icon: "seats", count: "seats" as const, copy: "seats" },
@@ -88,6 +89,9 @@ function AppShellChrome(): React.JSX.Element {
   const location = useLocation();
   const as = identity();
   const [menuOpen, setMenuOpen] = useState(false);
+  // S17 c-33ffd96baf: the rail collapses to a 64px icon rail and the message list takes the width;
+  // remembered per viewer (localStorage in try/catch). Desktop only — below 768 the rail is the Menu.
+  const [railCollapsed, setRailCollapsed] = useViewerFlag(as, "rail-collapsed");
   const [accountOpen, setAccountOpen] = useState(false);
   const menuRef = useRef<HTMLButtonElement>(null);
   useEffect(() => { setMenuOpen(false); setAccountOpen(false); }, [location.pathname]);
@@ -107,9 +111,10 @@ function AppShellChrome(): React.JSX.Element {
   const pageFraming = framing ?? defaultFraming(location.pathname);
   const pageKey = pageKeyFor(location.pathname);
 
+  const helpRef = useRef<HTMLButtonElement>(null);
   const closeHelp = () => {
     setHelpOpen(false);
-    accountRef.current?.focus();
+    helpRef.current?.focus();
   };
 
   // Ctrl-/ toggles "What am I looking at?"; Ctrl-K opens Find (human defect #12, m-783e725c2f).
@@ -142,7 +147,7 @@ function AppShellChrome(): React.JSX.Element {
   }
 
   const shell = (
-    <div className={styles.shell}>
+    <div className={styles.shell} data-rail={railCollapsed ? "collapsed" : "full"}>
       <div className={styles.mobileBar} data-testid="app-header">
         <button ref={menuRef} type="button" className={styles.menuToggle} aria-label="Workspace navigation"
           aria-expanded={menuOpen} aria-controls="workspace-navigation" onClick={() => setMenuOpen((open) => !open)}>
@@ -159,7 +164,13 @@ function AppShellChrome(): React.JSX.Element {
         }}>
         <div className={styles.brand}>
           <span className={styles.brandmark} aria-hidden="true"><Icon name="library" size={24} /></span>
-          <span>Board</span>
+          <span className={styles.brandText}>Board</span>
+          <button type="button" className={styles.railToggle} data-testid="rail-toggle"
+            aria-controls="workspace-navigation" aria-expanded={!railCollapsed}
+            aria-label={railCollapsed ? "Expand menu" : "Collapse menu"} title={railCollapsed ? "Expand menu" : "Collapse menu"}
+            onClick={() => setRailCollapsed(!railCollapsed)}>
+            <Icon name={railCollapsed ? "forward" : "back"} size={18} />
+          </button>
         </div>
 
         <nav className={styles.nav} aria-label="Sections">
@@ -191,7 +202,7 @@ function AppShellChrome(): React.JSX.Element {
             {...copyProps("sidebar", "find")} aria-haspopup="dialog" aria-expanded={findOpen}
             onClick={() => setFindOpen(true)} data-testid="find-open">
             <Icon name="find" size={18} />
-            <span>Find</span>
+            <span className={styles.navLabel}>Find</span>
             <span className={styles.key}>Ctrl K</span>
           </button>
           <div className={styles.divider} />
@@ -212,19 +223,26 @@ function AppShellChrome(): React.JSX.Element {
               <p className={styles.accountWho}><strong>{as}</strong>{role ? ` · ${role}` : ""}</p>
               <div className={styles.accountLinks}>
                 <Link to="/settings" className={styles.accountLink} data-testid="settings-open" onClick={closeAccount}><Icon name="preferences" size={18} /> Settings</Link>
-                <button type="button" className={styles.accountLink} data-testid="glossary-open" aria-haspopup="dialog" aria-expanded={helpOpen}
-                  onClick={() => { closeAccount(); setHelpOpen((o) => !o); }}><Icon name="help" size={18} /> What am I looking at? <span className={styles.key}>Ctrl /</span></button>
               </div>
-              {/* Notifications now live INSIDE the account menu (S10 c-1165c735b6 / revision3-clean-usage):
-                  no rail row. The worker poll and S5 authorization keep running in the always-mounted
-                  NotificationCenter provider that wraps the shell, even with this menu closed. */}
-              <NotificationPanel />
+              {/* S17 c-066a9b347a: "What am I looking at?" is the floating top-right help button and
+                  Notifications (Enable / Test) live on Settings → Notifications; neither is in this menu.
+                  The worker poll and S5 authorization keep running in the always-mounted
+                  NotificationCenter provider that wraps the shell. */}
               <ThemePicker />
               <AvatarPicker />
             </AnchoredPanel>
           ) : null}
         </div>
       </aside>
+
+      {/* S17 c-066a9b347a (owner: "the what am I looking at can be a tooltip icon in a floating button
+          top-right"): an icon button pinned top-right; its name shows as a tooltip on hover AND focus. */}
+      <button ref={helpRef} type="button" className={styles.helpFab} data-testid="glossary-open" aria-haspopup="dialog"
+        aria-expanded={helpOpen} aria-label="What am I looking at? (Ctrl /)" aria-describedby="help-fab-tip"
+        onClick={() => { setAccountOpen(false); setHelpOpen((o) => !o); }}>
+        <Icon name="help" size={18} />
+        <span id="help-fab-tip" role="tooltip" className={styles.helpTip}>What am I looking at? <span className={styles.tipKey}>Ctrl /</span></span>
+      </button>
 
       <main className={styles.main}>
         <p className={styles.pageFraming} data-testid="page-framing" data-route={location.pathname}>{pageFraming}</p>

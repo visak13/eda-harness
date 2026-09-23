@@ -78,3 +78,13 @@
   padding: 4px 14px;
   color: var(--muted);
 }
+
+/* S17 c-b1f32f8b33: a chat message in the docs' typography, scaled to the thread (16/1.55 body,
+   compact block margins, headings no bigger than 18px). */
+.chatMd { font-size: 16px; line-height: 1.55; overflow-wrap: anywhere; }
+.chatMd :global(p), .chatMd :global(ul), .chatMd :global(ol), .chatMd :global(pre), .chatMd :global(table), .chatMd :global(blockquote) { margin: 0 0 8px; }
+.chatMd > :global(*:last-child) { margin-bottom: 0; }
+.chatMd :global(ul), .chatMd :global(ol) { padding-left: 22px; }
+.chatMd :global(h2), .chatMd :global(h3), .chatMd :global(h4), .chatMd :global(h5), .chatMd :global(h6) { font-size: 18px; line-height: 24px; margin: 12px 0 6px; }
+.chatMd :global(code), .chatMd :global(pre) { font-size: 13px; line-height: 19px; }
+.chatMd :global(table) { width: auto; max-width: 100%; font-size: 14px; }

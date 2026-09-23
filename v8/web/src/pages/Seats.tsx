@@ -122,7 +122,16 @@ export function SeatsPage(): React.JSX.Element {
       {shown.length === 0 ? (
         <p className={styles.empty}>{needle ? `No seat matches “${find.trim()}”.` : "No seats in this group."}</p>
       ) : (
-        <table className={styles.table} tabIndex={0} aria-label="Seats (scroll horizontally)">
+        <table className={styles.table} aria-label="Seats">
+          {/* S17 c-7822cf388d: fixed column shares so the table fills the canvas at 1440 and every
+              row lines up; below 1100px the rows stack as labelled cards (no horizontal scroll). */}
+          <colgroup>
+            <col className={styles.colSeat} />
+            <col className={styles.colTicket} />
+            <col className={styles.colStatus} />
+            <col className={styles.colRefresh} />
+            <col className={styles.colActions} />
+          </colgroup>
           <thead>
             <tr>
               <th>Seat / shell state</th>
@@ -210,7 +219,7 @@ export function SeatTableRow({ seat, caps }: { seat: SeatRow; caps: PoolCapabili
   return (
     <>
       <tr id={seat.id} data-testid="seat-row" data-seat={seat.id} data-presence={presence.kind}>
-        <td>
+        <td data-label="Seat">
           <div className={styles.seatName}>
             <Avatar id={seat.id} size={24} />
             {seat.handle}
@@ -223,7 +232,7 @@ export function SeatTableRow({ seat, caps }: { seat: SeatRow; caps: PoolCapabili
           {presence.detail ? <div className={styles.stateDetail}>{presence.detail}</div> : null}
         </td>
 
-        <td>
+        <td data-label="Assigned ticket">
           {seat.ticket_id ? (
             <Link className={styles.ticketLink} to={`/ticket/${encodeURIComponent(seat.ticket_id)}`}>
               <span className={styles.ticketTitle}>{seat.ticket_title ?? seat.ticket_id}</span>
@@ -234,7 +243,7 @@ export function SeatTableRow({ seat, caps }: { seat: SeatRow; caps: PoolCapabili
           )}
         </td>
 
-        <td>
+        <td data-label="Latest work status">
           {seat.latest_status ? (
             <div data-testid="latest-status">
               <div className={styles.statusText}>{seat.latest_status.text}</div>
@@ -250,14 +259,14 @@ export function SeatTableRow({ seat, caps }: { seat: SeatRow; caps: PoolCapabili
           )}
         </td>
 
-        <td>
+        <td data-label="Last refresh">
           <div className={styles.refresh}>{clock(seat.last_output_at, now)}</div>
           {seat.last_output_at ? (
             <div className={styles.statusMeta}>Output: {clock(seat.last_output_at, now)}</div>
           ) : null}
         </td>
 
-        <td>
+        <td data-label="Actions" className={styles.actionsCell}>
           <div className={styles.actions}>
             <button
               type="button"
@@ -290,7 +299,7 @@ export function SeatTableRow({ seat, caps }: { seat: SeatRow; caps: PoolCapabili
       </tr>
 
       {messaging ? (
-        <tr>
+        <tr className={styles.messageRow}>
           <td colSpan={5}>
             <div className={styles.messagePanel}>
               <p className={styles.deliveryNote} data-testid="seat-delivery-note">

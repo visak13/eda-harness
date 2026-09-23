@@ -88,6 +88,8 @@ export interface MessageView {
   to: string | null;
   kind: string;
   text: string;
+  /** The text rendered as sanitised Markdown by the board (S17; absent on an older board). */
+  html?: string;
   at: ISODateString;
   reply_to: string | null;
   /** Finalised artifact ids carried by the message (absent on an older board). */

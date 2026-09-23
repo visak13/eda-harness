@@ -1,21 +1,25 @@
+/* The panel is a column: the heading row is pinned (S17 c-066a9b347a, owner: "the user context menu
+   doesn't pin the header") and only the body scrolls, so Close and the title stay in view. */
 .panel {
   position: fixed;
   z-index: 30;
   width: min(320px, calc(100vw - 24px));
   max-height: calc(100dvh - 24px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 12px;
-  border: 1px solid var(--strongline);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+  border: 1.5px solid var(--strongline);
   border-radius: 10px;
   background: var(--panel);
   color: var(--ink);
-  box-shadow: 0 12px 32px #0003;
+  box-shadow: 3px 3px 0 var(--line);
   overflow-wrap: anywhere;
 }
-.panel { padding: 16px; border-width: 1.5px; box-shadow: 3px 3px 0 var(--line); }
-.heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
+.heading { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 16px 8px; border-bottom: 1px solid var(--line); background: var(--panel); }
 .heading h2 { font-size: 20px; margin: 0; }
 .heading button { min-height: 28px; padding: 0 4px; border: 0; border-radius: 6px; color: var(--ink); background: transparent; display: inline-flex; align-items: center; cursor: pointer; }
 .heading button:hover { background: var(--secondary); }
 .heading button:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
+.body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 10px 16px 16px; }
+.body:focus-visible { outline: 2px solid var(--accentink); outline-offset: -2px; }

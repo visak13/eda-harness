@@ -1,13 +1,17 @@
 /* Seats (folio-seats plate): a ruled table on the white reading canvas, muted uppercase column
    heads, name-first identity with the id in Consolas, state as a word + dot, flat — no shadow. */
 
+/* S17 c-7822cf388d (owner: "a lot of spacing issues and is difficult to read"): ONE type scale —
+   page title = PageHeader (Georgia 38/1.18 600), column heads 12/16 650 uppercase, cells 14/20,
+   secondary lines 13/18 — and ONE spacing rhythm: 16px cell padding, 4px between a cell's lines. */
 .head {
-  margin-bottom: 28px;
+  margin-bottom: 24px;
 }
 .title {
-  font: 40px/46px Georgia, serif;
+  font: 600 38px/1.18 Georgia, serif;
+  letter-spacing: -1.1px;
   color: var(--ink);
-  margin: 0 0 10px;
+  margin: 0 0 8px;
 }
 .subtitle {
   color: var(--muted);
@@ -20,15 +24,16 @@
 .tabsRow {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 12px 24px;
   justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid var(--line);
-  margin-bottom: 4px;
+  margin-bottom: 8px;
 }
 .tabs {
   display: flex;
-  gap: 24px;
+  flex-wrap: wrap;
+  gap: 4px 24px;
 }
 .tab {
   background: transparent;
@@ -37,11 +42,14 @@
   padding: 10px 2px;
   margin-bottom: -1px;
   color: var(--muted);
+  font: inherit;
   font-size: 14px;
+  line-height: 20px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  white-space: nowrap;
 }
 .tabActive {
   color: var(--ink);
@@ -57,56 +65,76 @@
   outline-offset: 2px;
 }
 
+/* main table { display:block } (app.css, local scroll for doc tables) shrink-wrapped this table to
+   ~60% of the canvas; the seats table is a real full-width table with fixed column shares. */
 .table {
+  display: table;
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 14px;
+  line-height: 20px;
 }
+.colSeat { width: 27%; }
+.colTicket { width: 22%; }
+.colStatus { width: 27%; }
+.colRefresh { width: 11%; }
+.colActions { width: 132px; }
 .table thead th {
   text-align: left;
-  padding: 14px 16px 10px 0;
-  font-size: 10px;
+  vertical-align: bottom;
+  padding: 12px 16px 10px 0;
+  font-size: 12px;
+  line-height: 16px;
   font-weight: 650;
-  letter-spacing: 1.4px;
+  letter-spacing: 0.6px;
   text-transform: uppercase;
   color: var(--muted);
   border-bottom: 1px solid var(--line);
+  overflow-wrap: normal;
 }
 .table tbody td {
   padding: 16px 16px 16px 0;
   border-bottom: 1px solid var(--line);
   vertical-align: top;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
+.table tbody td > * + * { margin-top: 4px; }
 
 .seatName {
   font-weight: 600;
+  font-size: 15px;
   color: var(--ink);
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 .seatRole {
   color: var(--muted);
   font-size: 13px;
-  margin-top: 2px;
+  line-height: 18px;
+  padding-left: 32px;
 }
 .stateLine {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 7px;
-  margin-top: 8px;
+  padding-left: 32px;
   font-size: 13px;
+  line-height: 18px;
   color: var(--ink);
 }
 .stateDetail {
   color: var(--muted);
-  font-size: 12px;
-  margin-top: 4px;
-  max-width: 30ch;
+  font-size: 13px;
+  line-height: 18px;
+  padding-left: 32px;
 }
 .dot {
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   flex: none;
 }
@@ -138,17 +166,16 @@
   display: block;
   font: 12px/18px Consolas, "SFMono-Regular", monospace;
   color: var(--muted);
-  margin-top: 2px;
+  margin-top: 4px;
 }
 
 .statusText {
   color: var(--ink);
-  max-width: 42ch;
 }
 .statusMeta {
   color: var(--muted);
-  font-size: 12px;
-  margin-top: 4px;
+  font-size: 13px;
+  line-height: 18px;
 }
 .refresh {
   color: var(--ink);
@@ -161,8 +188,11 @@
   align-items: flex-start;
 }
 .action {
-  height: 34px;
+  min-height: 36px;
   padding: 0 16px;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  font-family: inherit;
   border: 1px solid var(--strongline);
   border-radius: 6px;
   background: var(--panel);
@@ -204,9 +234,10 @@
   margin-top: 40px;
 }
 .sectionLabel {
-  font-size: 10px;
+  font-size: 12px;
+  line-height: 16px;
   font-weight: 650;
-  letter-spacing: 1.4px;
+  letter-spacing: 0.6px;
   text-transform: uppercase;
   color: var(--muted);
   margin: 0 0 14px;
@@ -224,12 +255,17 @@
   flex-direction: column;
 }
 .personName {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 600;
   color: var(--ink);
 }
 .personRole {
   color: var(--muted);
   font-size: 13px;
+  line-height: 18px;
+  padding-left: 32px;
 }
 
 .empty {
@@ -255,9 +291,9 @@
   font-size: 13px;
 }
 .findLabel {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 650;
-  letter-spacing: 1.4px;
+  letter-spacing: 0.6px;
   text-transform: uppercase;
 }
 .findInput {
@@ -269,8 +305,8 @@
   border-radius: 6px;
   padding: 6px 10px;
   min-width: 0;
-  width: 220px;
-  min-height: 32px;
+  width: 240px;
+  min-height: 36px;
 }
 
 /* The conversation with one seat, in its Message panel (human report m-08822c1496) */
@@ -306,4 +342,41 @@
   font-size: 12px;
   color: var(--muted);
   cursor: pointer;
+}
+
+/* Below 1100px (844 with the rail: a ~550px canvas) the five columns cannot breathe: each seat
+   becomes a labelled card — name and actions on the first row, then ticket / status / refresh as
+   label-value pairs. No horizontal scroll at 844 (c-7822cf388d). */
+@media (max-width: 1099px) {
+  .table, .table tbody, .table tr, .table td { display: block; width: auto; }
+  .table colgroup, .table thead { display: none; }
+  .table tbody tr[data-testid="seat-row"] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px 16px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .table tbody tr[data-testid="seat-row"] > td { padding: 0; border: 0; }
+  .table tbody tr[data-testid="seat-row"] > td:not(:first-child):not(.actionsCell) {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 136px minmax(0, 1fr);
+    gap: 4px 12px;
+  }
+  .table tbody tr[data-testid="seat-row"] > td:not(:first-child):not(.actionsCell)::before {
+    content: attr(data-label);
+    font-size: 12px;
+    line-height: 20px;
+    font-weight: 650;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .table tbody tr[data-testid="seat-row"] > td > * + * { margin-top: 0; }
+  .actionsCell { grid-column: 2; grid-row: 1; }
+  .messageRow td { padding: 0 0 12px; border-bottom: 1px solid var(--line); }
+}
+@media (max-width: 560px) {
+  .table tbody tr[data-testid="seat-row"] > td:not(:first-child):not(.actionsCell) { grid-template-columns: minmax(0, 1fr); gap: 2px; }
 }

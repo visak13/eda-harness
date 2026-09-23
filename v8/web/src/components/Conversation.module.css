@@ -53,3 +53,23 @@
 .historyButton:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
 .historyError { margin: 0; font-size: 13px; color: var(--accentink); }
 @media (max-width: 600px) { .messages { max-height: none; } .thumb { width: 100%; } }
+/* S17 c-7a3c3ec439: Word-style message-box collapse. Expanded, the toggle is a small tab centred on
+   the composer's top edge (no extra row); collapsed, a one-line "Write a message…" bar replaces it. */
+.composerBar { display: flex; align-items: center; gap: 8px; }
+.composer:not([data-collapsed]) .composerBar { position: absolute; top: -6px; left: 50%; transform: translateX(-50%); z-index: 1; }
+.composerToggle {
+  flex: none; display: inline-grid; place-items: center; min-width: 44px; height: 24px; padding: 0 10px;
+  border: 1.5px solid var(--strongline); border-radius: 8px; background: var(--panel); color: var(--ink); cursor: pointer;
+}
+.composer[data-collapsed] .composerToggle { height: 44px; }
+.composerToggle:hover { background: var(--secondary); }
+.composerToggle:focus-visible, .composerCollapsedBar:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
+.composerCollapsedBar {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 14px; text-align: left;
+  border: 1.5px solid var(--strongline); border-radius: 10px; background: var(--panel); color: var(--muted); font: inherit; font-size: 15px; cursor: text;
+}
+.composerCollapsedBar:hover { color: var(--ink); }
+.chevronUp { display: inline-flex; transform: rotate(180deg); }
+.chevronDown { display: inline-flex; }
+.md { color: var(--ink); min-width: 0; }
+.md:empty { display: none; }

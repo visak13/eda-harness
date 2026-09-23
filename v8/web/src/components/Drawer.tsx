@@ -16,6 +16,7 @@ export function Drawer({
   width = 1112,
   children,
   returnFocusTo,
+  edge = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -26,6 +27,10 @@ export function Drawer({
   width?: number;
   children: React.ReactNode;
   returnFocusTo?: HTMLElement | null;
+  /** A flush side sheet (S17 c-f142c65a60, owner: "a gap where information is visible within that
+   *  gap if you scroll"): no inset margins, full height, full width below 960px, so no page content
+   *  shows around the panel. The inset drawer stays the default (ruling geometry c-03436484b6). */
+  edge?: boolean;
 }): React.JSX.Element | null {
   const panelRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
@@ -125,7 +130,7 @@ export function Drawer({
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <div
         ref={panelRef}
-        className={styles.panel}
+        className={edge ? `${styles.panel} ${styles.edge}` : styles.panel}
         style={{ width }}
         role="dialog"
         aria-modal="true"

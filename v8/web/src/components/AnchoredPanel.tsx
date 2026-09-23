@@ -77,6 +77,6 @@ export function AnchoredPanel({ anchor, label, heading, onClose, children, width
     <div className={styles.heading}><h2>{heading ?? label}</h2><button type="button" onClick={() => {
       onClose(); anchor.current?.focus();
     }} aria-label={`Close ${label}`}><Icon name="close" /></button></div>
-    {children}
+    <div className={styles.body} data-testid="anchored-body">{children}</div>
   </div>, document.body);
 }

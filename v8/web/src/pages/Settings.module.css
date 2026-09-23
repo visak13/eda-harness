@@ -11,3 +11,4 @@
 .row input { width: 72px; margin-left: 6px; }
 .actions { display: flex; align-items: center; gap: 12px; }
 .fieldError { color: var(--danger, #b3261e); font-size: 13px; }
+.browserAlerts { border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; max-width: 560px; }

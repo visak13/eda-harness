@@ -16,3 +16,26 @@ describe("Markdown heading demotion (acceptance finding: Library/Doc rendered tw
     expect(container.querySelector("img")?.getAttribute("onerror")).toBeNull();
   });
 });
+
+// S17 c-b1f32f8b33: chat messages render the board's Markdown HTML; bare URLs and art- tokens in
+// text become links (never inside code), attachment tokens are stripped, scripts never survive.
+describe("message Markdown", () => {
+  it("linkifies bare URLs and artifact tokens in text only, and strips attachment ids", async () => {
+    const { linkifyMessageHtml } = await import("./Markdown");
+    const out = linkifyMessageHtml('<p>see https://x.test/a and art-abc1234 and art-dead0001</p><pre><code>https://in.code</code></pre>', ["art-dead0001"]);
+    const doc = new DOMParser().parseFromString(out, "text/html");
+    const hrefs = Array.from(doc.querySelectorAll("a")).map((a) => a.getAttribute("href"));
+    expect(hrefs).toEqual(["https://x.test/a", "/artifact/art-abc1234"]);
+    expect(out).not.toContain("art-dead0001");
+    expect(doc.querySelector("code")?.innerHTML).toBe("https://in.code");
+  });
+
+  it("renders a table and a code fence and drops a script the server would never send", async () => {
+    const { MessageMarkdown } = await import("./Markdown");
+    const { MemoryRouter } = await import("react-router");
+    const { container } = render(<MemoryRouter><MessageMarkdown html={'<table><tr><td>gap</td></tr></table><pre><code class="language-ts">x</code></pre><script>1</script>'} /></MemoryRouter>);
+    expect(container.querySelector("table td")?.textContent).toBe("gap");
+    expect(container.querySelector("pre code")?.textContent).toBe("x");
+    expect(container.querySelector("script")).toBeNull();
+  });
+});

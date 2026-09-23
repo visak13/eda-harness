@@ -4,7 +4,8 @@ Extracted from ui.py so BOTH the legacy HTML renderer (ui.py) and the JSON API
 (api_views.py) compute a view exactly once. Every function is pure over a Board and
 (where identity matters) a Participant; it returns JSON-friendly data (enums as their
 `.value`, datetimes as isoformat) — never HTML, except `render_markdown`/`doc_page`
-which return sanitised document HTML the two renderers share.
+which return sanitised document HTML the two renderers share, and a thread row's `html`
+(`render_message_markdown`, the same renderer with raw HTML escaped).
 
 Strategy Phase 2 (characterise-then-extract): tests/test_views.py pins the legacy HTML
 BEFORE this module existed; ui.py now sources its derivations here with identical output.
@@ -12,6 +13,7 @@ BEFORE this module existed; ui.py now sources its derivations here with identica
 
 from __future__ import annotations
 
+import functools
 from typing import Any
 
 import markdown as _markdown
@@ -55,6 +57,19 @@ def render_markdown(body: str) -> str:
     handler, iframe, SVG/MathML payload or javascript:/data: link to a reader."""
     rendered = _markdown.markdown(body or "", extensions=["fenced_code", "tables", "sane_lists"])
     return nh3.clean(rendered, tags=_ALLOWED_TAGS, attributes=_ALLOWED_ATTRS,
+                     url_schemes=_URL_SCHEMES, link_rel="noopener noreferrer")
+
+
+@functools.lru_cache(maxsize=4096)
+def render_message_markdown(text: str) -> str:
+    """Chat messages through the SAME renderer and nh3 allowlist as docs (S17 c-b1f32f8b33), with two
+    chat differences: raw HTML in the text is ESCAPED (shown as typed, never parsed — the html
+    block/inline processors are removed), and a single newline is a line break (nl2br), as the
+    pre-wrap thread rendered it before. Cached: a thread page re-renders the same 100 rows."""
+    md = _markdown.Markdown(extensions=["fenced_code", "tables", "sane_lists", "nl2br"])
+    md.preprocessors.deregister("html_block")
+    md.inlinePatterns.deregister("html")
+    return nh3.clean(md.convert(text or ""), tags=_ALLOWED_TAGS, attributes=_ALLOWED_ATTRS,
                      url_schemes=_URL_SCHEMES, link_rel="noopener noreferrer")
 
 
@@ -658,6 +673,7 @@ def ticket_page(board: Board, ticket_id: str, include: str | None = None) -> dic
 
 def _msg(m: Any) -> dict[str, Any]:
     return {"id": m.id, "by": m.created_by, "to": m.to, "kind": m.kind.value, "text": m.text,
+            "html": render_message_markdown(m.text),
             "at": m.created_at.isoformat(), "reply_to": m.reply_to,
             "artifacts": list(getattr(m, "artifacts", None) or [])}
 

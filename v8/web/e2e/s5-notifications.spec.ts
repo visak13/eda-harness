@@ -9,20 +9,16 @@ test('integrated feed, real IDB multitab ledger, private display and draft-safe 
     expect(res.ok(), await res.text()).toBe(true); return (await res.json()).value;
   };
   const epic = await post('/v1/tickets', { kind: 'epic', work_type: 'feature', title: 'Notification integration' });
-  await page.goto(`/ui/epic/${epic.id}?as=owner`);
-  // S10 c-1165c735b6: Notifications is no longer a rail row — its UI lives inside the account menu.
-  await page.getByTestId('account-open').click();
+  // S17 c-066a9b347a: Enable notifications lives on Settings → Notifications (no longer the account
+  // menu). Enable there, then return to the epic through the SPA (same tab, same worker).
+  await page.goto(`/ui/settings?as=owner&tab=notifications`);
   const panel = page.getByRole('region', { name: 'Board notifications' });
   await expect(panel).toBeVisible();
   const baseline = page.waitForResponse(res => res.url().includes('/v1/me/notifications?since=-1'));
   await panel.getByRole('button', { name: 'Enable notifications' }).click();
   await baseline;
   await expect(panel.getByRole('status')).toContainText('enabled while');
-  // Close the account menu so its overlay does not cover the conversation driven next. AnchoredPanel's
-  // Escape handler is on the panel element, so a child must hold focus (the Enable button unmounts on
-  // enable) — focus the always-present "Needs you" link, then Escape.
-  await panel.getByRole('link', { name: 'Needs you' }).focus();
-  await page.keyboard.press('Escape');
+  await page.goto(`/ui/epic/${epic.id}?as=owner`);
   await expect(panel).toBeHidden();
   const worker = context.serviceWorkers()[0]; expect(worker).toBeTruthy();
   // Suppress desktop UI only inside this owned test worker; exercise real ledger + handshake.
@@ -75,8 +71,12 @@ test('integrated feed, real IDB multitab ledger, private display and draft-safe 
   await selected.getByRole('textbox', { name: 'Message', exact: true }).fill('');
   await selected.getByRole('button', { name: 'Open waiting request' }).click();
   await expect(selected).toHaveURL(new RegExp(`request=${notification.data.request}#${message.id}`));
-  // Open the account menu so the notifications panel is on screen for the audit and screenshot.
-  await selected.getByTestId('account-open').click();
+  // Audit the request landing, then show the notifications panel (Settings → Notifications, S17)
+  // for the second audit and the screenshot.
+  // @ts-expect-error shared axe adapter has dual playwright-core types
+  const landing = await new AxeBuilder({ page: selected }).withTags(['wcag2a', 'wcag2aa']).analyze();
+  expect(landing.violations.filter(v => v.impact === 'serious' || v.impact === 'critical')).toEqual([]);
+  await selected.goto(`/ui/settings?as=owner&tab=notifications`);
   await expect(selected.getByRole('region', { name: 'Board notifications' })).toBeVisible();
   // @ts-expect-error shared axe adapter has dual playwright-core types
   const audit = await new AxeBuilder({ page: selected }).withTags(['wcag2a', 'wcag2aa']).analyze();

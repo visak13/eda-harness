@@ -53,14 +53,13 @@ describe("page framing landmark", () => {
   });
 });
 
-// The ? lives in the account menu now (design-a2e5369133: no global header).
+// S17 c-066a9b347a: the ? is the floating top-right help button (no longer in the account menu).
 function openGlossary() {
-  fireEvent.click(screen.getByTestId("account-open"));
   fireEvent.click(screen.getByTestId("glossary-open"));
 }
 
 describe("What am I looking at? panel", () => {
-  it("opens from the account menu's ? item and closes on its close button", () => {
+  it("opens from the floating top-right help button and closes on its close button", () => {
     renderShell("/me");
     expect(screen.queryByRole("dialog", { name: "What am I looking at?" })).not.toBeInTheDocument();
     openGlossary();
@@ -81,10 +80,10 @@ describe("What am I looking at? panel", () => {
     expect(screen.queryByRole("dialog", { name: "What am I looking at?" })).not.toBeInTheDocument();
   });
 
-  it("Esc closes the panel and restores focus to the account row that opened it", () => {
+  it("Esc closes the panel and restores focus to the floating help button that opened it", () => {
     renderShell("/me");
     openGlossary();
-    const opener = screen.getByTestId("account-open");
+    const opener = screen.getByTestId("glossary-open");
     expect(screen.getByRole("dialog", { name: "What am I looking at?" })).toBeInTheDocument();
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "What am I looking at?" })).not.toBeInTheDocument();

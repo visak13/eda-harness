@@ -39,6 +39,55 @@
 .liveBtn { margin-left: auto; min-height: 34px; padding: 3px 10px; border: 1.5px solid var(--strongline); border-radius: 8px; background: var(--panel); color: var(--ink); font: inherit; font-size: 14px; cursor: pointer; }
 .liveBtn:hover { background: var(--secondary); }
 .mobileBar, .menuToggle { display: none; }
+
+/* S17 c-33ffd96baf: rail toggle (full 192 ↔ 64px icon rail). Collapsed, labels leave the visual
+   flow but keep their accessible names (clip, not display:none); counts ride the icon corner. */
+.brandText { flex: 1; min-width: 0; }
+.railToggle {
+  flex: none; display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0;
+  border: 1.5px solid transparent; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer;
+}
+.railToggle:hover { background: var(--secondary); border-color: var(--strongline); color: var(--ink); }
+.railToggle:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
+.sidebar, .main { transition: width 120ms ease, margin-left 120ms ease; }
+@media (prefers-reduced-motion: reduce) { .sidebar, .main { transition: none; } }
+@media (min-width: 768px) {
+  .shell[data-rail="collapsed"] .sidebar { width: 64px; padding: 16px 8px; overflow-x: hidden; }
+  .shell[data-rail="collapsed"] .main { margin-left: 64px; }
+  .shell[data-rail="collapsed"] .brand { flex-direction: column; gap: 8px; margin: 0 0 8px; }
+  .shell[data-rail="collapsed"] .brandText,
+  .shell[data-rail="collapsed"] .navLabel,
+  .shell[data-rail="collapsed"] .accountText,
+  .shell[data-rail="collapsed"] [data-testid="usage-open"] > span {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  .shell[data-rail="collapsed"] .current,
+  .shell[data-rail="collapsed"] .key { display: none; }
+  .shell[data-rail="collapsed"] .navItem,
+  .shell[data-rail="collapsed"] .railBtn,
+  .shell[data-rail="collapsed"] [data-testid="usage-open"] { justify-content: center; position: relative; padding: 7px 0; }
+  .shell[data-rail="collapsed"] .count { position: absolute; top: 1px; right: 1px; min-width: 18px; height: 18px; font-size: 11px; }
+  .shell[data-rail="collapsed"] .account { justify-content: center; padding: 6px 0; }
+}
+
+/* S17 c-066a9b347a: "What am I looking at?" as a floating top-right icon button with a tooltip that
+   shows on hover AND keyboard focus. Main reserves the button's lane so it never covers Actions. */
+.helpFab {
+  position: fixed; top: 14px; right: 16px; z-index: 25; width: 40px; height: 40px; padding: 0;
+  display: inline-grid; place-items: center; border: 1.5px solid var(--strongline); border-radius: 50%;
+  background: var(--panel); color: var(--ink); box-shadow: 2px 2px 0 var(--line); cursor: pointer;
+}
+.helpFab:hover { background: var(--secondary); }
+.helpFab[aria-expanded="true"] { background: var(--accentwash); }
+.helpFab:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
+.helpTip {
+  position: absolute; top: calc(100% + 8px); right: 0; width: max-content; max-width: min(260px, calc(100vw - 32px));
+  padding: 6px 10px; border: 1px solid var(--strongline); border-radius: 8px; background: var(--ink); color: var(--panel);
+  font-size: 13px; line-height: 18px; text-align: left; pointer-events: none; opacity: 0; visibility: hidden; transition: opacity 80ms;
+}
+.helpFab:hover .helpTip, .helpFab:focus-visible .helpTip { opacity: 1; visibility: visible; }
+.tipKey { margin-left: 6px; font: 11px Consolas, monospace; opacity: 0.8; }
+@media (min-width: 768px) { .main { padding-right: 72px; } }
 @media (max-width: 767px) {
   .shell { display: flex; flex-direction: column; }
   .mobileBar { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--line); }

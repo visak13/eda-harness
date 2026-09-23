@@ -88,7 +88,7 @@ describe("AppShell", () => {
     expect(screen.queryByRole("link", { name: /Needs you/ })).not.toBeInTheDocument();
   });
 
-  it("opens the account menu (Settings, help, ThemePicker) from the rail's account row and can switch theme", async () => {
+  it("opens the account menu (Settings, ThemePicker) from the rail's account row and can switch theme", async () => {
     renderShell("/me");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Account and preferences" }));
@@ -96,7 +96,10 @@ describe("AppShell", () => {
     expect(dialog).toBeInTheDocument();
     // the Settings page (s-7f663c6322) launches from this menu
     expect(within(dialog).getByTestId("settings-open")).toHaveAttribute("href", "/settings");
-    expect(within(dialog).getByTestId("glossary-open")).toBeInTheDocument();
+    // S17 c-066a9b347a: help is the floating top-right button and Notifications moved to Settings.
+    expect(within(dialog).queryByTestId("glossary-open")).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Enable notifications" })).toBeNull();
+    expect(screen.getByRole("button", { name: "What am I looking at? (Ctrl /)" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("radio", { name: "Ember" }));
     expect(document.documentElement.dataset.theme).toBe("ember");
   });
@@ -180,5 +183,23 @@ describe("AppShell New epic (human #22)", () => {
     expect(btn).toHaveAttribute("aria-expanded", "true");
     fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "New epic" })).not.toBeInTheDocument());
+  });
+});
+
+// S17 c-33ffd96baf: the rail collapses to an icon rail with a visible control, remembered per viewer.
+describe("rail collapse (S17)", () => {
+  it("toggles the rail, keeps item names accessible, and remembers the choice", async () => {
+    localStorage.clear();
+    const view = renderShell("/me");
+    const toggle = screen.getByRole("button", { name: "Collapse menu" });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(toggle);
+    expect(screen.getByRole("button", { name: "Expand menu" })).toHaveAttribute("aria-expanded", "false");
+    expect(document.querySelector('[data-rail="collapsed"]')).not.toBeNull();
+    expect(screen.getByRole("link", { name: /Epics/ })).toBeInTheDocument(); // label clipped, still named
+    expect(Object.keys(localStorage).some((k) => k.endsWith(".rail-collapsed") && localStorage.getItem(k) === "1")).toBe(true);
+    view.unmount();
+    renderShell("/me");
+    expect(screen.getByRole("button", { name: "Expand menu" })).toBeInTheDocument();
   });
 });

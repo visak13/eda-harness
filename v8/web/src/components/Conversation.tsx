@@ -8,6 +8,8 @@ import { dispositionOf, fetchArtifactContent, MessageText, openArtifact, PREVIEW
 import { ThreadHistoryControls, type useThreadHistory } from "./useThreadHistory";
 import { pendingWork } from "./PendingNavigation";
 import { useScrollToHash } from "./useScrollToHash";
+import { useViewerFlag } from "./viewerPrefs";
+import { MessageMarkdown } from "./Markdown";
 import styles from "./Conversation.module.css";
 
 // The conversation canvas per revision3-clean-epic.png: "Conversation · N messages · Today" and a
@@ -90,6 +92,7 @@ export function Conversation({ ticketId, history, order, onToggleOrder, onReply,
   const byId = new Map(thread.map((m) => [m.id, m]));
   useScrollToHash(Boolean(thread.length));
   const last = thread[thread.length - 1]?.at;
+  const [composerCollapsed, setComposerCollapsed] = useViewerFlag(viewer, "composer-collapsed");
   return (
     <section className={styles.conversation} aria-label="Conversation" data-testid="conversation" data-ticket={ticketId}>
       <div className={styles.heading}>
@@ -129,7 +132,11 @@ export function Conversation({ ticketId, history, order, onToggleOrder, onReply,
                       <span>replying to {parent.by === viewer ? "you" : `@${parent.by}`}:</span> {parent.text.slice(0, 160)}
                     </p>
                   ) : null}
-                  <MessageText className={styles.text} text={stripTokens(m.text, m.attachments)} />
+                  {/* S17 c-b1f32f8b33: Markdown from the board's renderer; an older board without
+                      `html` keeps the plain linkified text. */}
+                  {m.html !== undefined
+                    ? <MessageMarkdown className={styles.md} html={m.html} strip={m.attachments?.map((a) => a.id)} />
+                    : <MessageText className={styles.text} text={stripTokens(m.text, m.attachments)} />}
                   {m.attachments?.map((a) => <AttachmentCard key={a.id} a={a} />)}
                 </div>
               </li>
@@ -137,7 +144,27 @@ export function Conversation({ ticketId, history, order, onToggleOrder, onReply,
           })}
         </ul>
       )}
-      <div className={styles.composer} data-testid="conversation-composer">{composer}</div>
+      <div className={styles.composer} data-testid="conversation-composer" data-collapsed={composerCollapsed || undefined}>
+        {/* S17 c-7a3c3ec439: MS-Word-style collapse of the message box, remembered per viewer. The
+            composer stays MOUNTED while collapsed (hidden, not unmounted), so a draft, its
+            attachments and pending uploads survive a collapse/expand. */}
+        <div className={styles.composerBar}>
+          {composerCollapsed ? (
+            <button type="button" className={styles.composerCollapsedBar} data-testid="composer-collapsed-bar"
+              onClick={() => setComposerCollapsed(false)}>
+              <Icon name="edit" size={16} /> Write a message…
+            </button>
+          ) : null}
+          <button type="button" className={styles.composerToggle} data-testid="composer-collapse"
+            aria-expanded={!composerCollapsed} aria-controls={`composer-body-${ticketId}`}
+            aria-label={composerCollapsed ? "Expand message box" : "Collapse message box"}
+            title={composerCollapsed ? "Expand message box" : "Collapse message box"}
+            onClick={() => setComposerCollapsed(!composerCollapsed)}>
+            <span className={composerCollapsed ? styles.chevronUp : styles.chevronDown} aria-hidden="true"><Icon name="chevron" size={18} /></span>
+          </button>
+        </div>
+        <div id={`composer-body-${ticketId}`} hidden={composerCollapsed}>{composer}</div>
+      </div>
     </section>
   );
 }

@@ -8,6 +8,7 @@ import { PageHeader } from "../components/PageHeader";
 import { Tabs } from "../components/Tabs";
 import { ThemePicker } from "../theme/ThemePicker";
 import { AvatarPicker } from "../components/AvatarPicker";
+import { NotificationPanel } from "../components/NotificationCenter";
 import { copyProps } from "../copy/pages";
 import ui from "../components/ui.module.css";
 import styles from "./Settings.module.css";
@@ -80,6 +81,10 @@ export function SettingsPage(): React.JSX.Element {
       {missing ? <p className={ui.banner} role="alert" data-testid="settings-missing">This board predates the settings route; theme and avatar below still save. Restart the board on the current build to enable the rest.</p> : null}
       {err && !forbidden && !missing && !fieldError ? <p className={ui.banner} role="alert">{("hint" in err && err.hint) || err.message}</p> : null}
 
+      {/* S17 c-066a9b347a (owner: "the enable notifications needs to move into settings page"): the
+          per-browser Enable / Disable / Test controls, outside the form so they never submit it. */}
+      {tab === "notifications" ? <div className={styles.browserAlerts}><NotificationPanel /></div> : null}
+
       <form className={styles.form} onSubmit={(e) => { e.preventDefault(); if (!forbidden && !missing) save.mutate(); }} data-testid="settings-form" aria-label={`${tab} settings`}>
         {tab === "profile" ? (
           <section className={styles.section} data-testid="settings-profile">
@@ -111,7 +116,7 @@ export function SettingsPage(): React.JSX.Element {
                 onChange={(e) => patch({ notifications: { ...draft.notifications, browser: e.target.checked } })} />
               I use browser notifications on this board
             </label>
-            <p className={ui.empty}>Browser alerts are enabled per browser from the account menu (Notifications → Enable); this switch records your preference on the board so a new browser can prompt you.</p>
+            <p className={ui.empty}>Browser alerts are enabled per browser with Enable notifications above; this switch records your preference on the board so a new browser can prompt you.</p>
             <QuietHours id="notifications" value={draft.notifications.quiet} onChange={(quiet) => patch({ notifications: { ...draft.notifications, quiet } })} />
           </section>
         ) : null}
