@@ -1,9 +1,4 @@
 @echo off
-setlocal
-set "ROOT=%~dp0"
-powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%v8\scripts\stop-mcp.ps1"
-powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%v8\scripts\stop-pool.ps1"
-powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%v8\scripts\stop-board.ps1"
-powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%v8\scripts\stop-broker.ps1"
-powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%v8\scripts\stop-bridge.ps1"
-endlocal
+rem Thin wrapper: stops the whole fleet through edp.ps1 (safe pid-chain stop, no tree kill).
+rem -Force because a full stop takes the pool (and so every seat) offline by intent.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0edp.ps1" stop all -Force

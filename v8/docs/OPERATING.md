@@ -1,9 +1,13 @@
 # Operating v8 — the owner's guide
 
 ## 1. Start / stop
-- `start-v8.bat` (repo root) — broker on :9300 (inboxes, the wake plane) + board on :9400
-  (web UI at /ui, the state-transfer record) + pool on :9301 (shells), participants registered.
-- `stop-v8.bat` — tears all three down. Docker is NOT required for local use.
+- `edp.ps1` (repo root) is the one ops script: `.\edp.ps1 status`, `.\edp.ps1 start|stop|restart
+  <board|mcp|pool|broker|bridge|supervisor|all>`, `.\edp.ps1 update`; add `-WhatIf` to see the plan.
+  It brings up broker :9300 (inboxes, the wake plane), board :9400 (web UI at /ui, the
+  state-transfer record), pool :9301 (shells), MCP :9402, the Slack bridge and the supervisor.
+  Safe-restart rules: `guides/shared-host-rules.md` § Use edp.ps1.
+- `start-v8.bat` / `stop-v8.bat` are thin wrappers (`edp.ps1 start all` / `edp.ps1 stop all -Force`).
+  Docker is NOT required for local use.
 - The planes: the BOARD holds state (tickets, criteria, docs, gates); the BROKER delivers —
   every addressed message/gate is mirrored to the recipient's inbox, the pool's watchdog
   resumes a parked shell when its inbox grows; each shell's Monitor tails board feed + broker

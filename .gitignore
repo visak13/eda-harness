@@ -93,3 +93,7 @@ review-package/
 
 # Astra seat parity runs (parity_oracle.py --both output)
 v8/.pi/parity/
+
+# Consult/Sol run logs and their manifests, at any depth (S16: a Sol adversarial log was committed)
+.sol/
+*.manifest.json

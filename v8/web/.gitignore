@@ -10,4 +10,9 @@ coverage/
 !e2e/design-reference/*.png
 !e2e/**/*-snapshots/**/*.png
 !e2e/__screenshots__/**/*.png
-!e2e/evidence/s6-usage-*.png
+
+# Run evidence (screenshots, measurement JSON) is written by the specs under e2e/evidence/ and is
+# NOT version-controlled (S16, owner ask m-669eca70f3): cite it on the board (artifact_upload /
+# report doc), not in git. Only the README that says so is tracked.
+e2e/evidence/*
+!e2e/evidence/README.md
