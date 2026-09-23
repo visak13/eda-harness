@@ -1,0 +1,39 @@
+flowchart TB
+  subgraph A["EPIC A — one project's work; decisions and claims stay inside"]
+    D["Decision<br/>One-sentence rule<br/>Why / detail<br/>Binding: yes or no<br/>Replaces: earlier decision IDs<br/>Source: message, doc or attachment<br/>Scope: epic, or a ticket in that epic<br/>State: live / replaced / withdrawn"]
+    C["Claim<br/>One-sentence statement<br/>Basis: assumption / measured / ruled<br/>Evidence: attachment, check or commit<br/>Source: original message or document<br/>Scope: epic, or a ticket in that epic<br/>Confirmed only with evidence AND measured or ruled basis"]
+    OLD["Earlier decision<br/>Kept as replaced history"]
+    WORK["Epic A / its ticket<br/>The work the record belongs to"]
+    D -->|replaces| OLD
+    D -->|decides| WORK
+    C -.->|part_of — derived| WORK
+  end
+  subgraph B["EPIC B — separate work"]
+    OWN["Its own decisions and claims<br/>Epic A's rules never enter Epic B's lookup"]
+  end
+  L["Lesson — shared across epics<br/>One-sentence takeaway<br/>Domain / topic<br/>Evidence: defect, rework or ruling<br/>Used / helped / harmed counts<br/>State: live or retired<br/>Either epic can find it by subject or topic<br/>No epic scope field"]
+  SRC["Thread messages and design docs<br/>Decision notes (ADRs), attachments<br/>Original rule or required reference"]
+  EVID["Reviews, checks and commits<br/>Evidence a claim points to"]
+  OUT["Review outcomes<br/>Defects, rework and rulings"]
+  FILE["Changed file"]
+  D -->|came_from| SRC
+  D -->|must_follow| SRC
+  C -->|proves — stored claim to evidence| EVID
+  L -->|learned_from| OUT
+  EVID -.->|touches — derived from commit| FILE
+  L -. shared lesson access .-> OWN
+  L -. shared lesson access .-> WORK
+  NOTE["Scope wall: decisions and claims never cross epics.<br/>Only lessons are shared.<br/>Named solid arrows are kglink records, not another content box.<br/>Grey arrows show derived connections; green dotted arrows explain access."]
+  classDef record fill:#ffffff,stroke:#215BB3,color:#172B43,stroke-width:2px;
+  classDef lesson fill:#EAF6F1,stroke:#147568,color:#172B43,stroke-width:2px;
+  classDef source fill:#ffffff,stroke:#CFD9E5,color:#172B43;
+  classDef muted fill:#F0F2F5,stroke:#BCC5CF,color:#172B43;
+  class D,C record;
+  class L lesson;
+  class SRC,EVID,OUT source;
+  class OLD,FILE,OWN,NOTE muted;
+  style A fill:#EDF3FC,stroke:#A8BFDF,color:#172B43
+  style B fill:#F0F2F5,stroke:#BCC5CF,color:#172B43
+  linkStyle 0,1,3,4,5 stroke:#215BB3,color:#215BB3,stroke-width:2px
+  linkStyle 2,7 stroke:#66717F,color:#66717F,stroke-width:2px
+  linkStyle 6,8,9 stroke:#147568,color:#147568,stroke-width:2px
