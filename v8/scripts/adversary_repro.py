@@ -231,14 +231,18 @@ def main() -> int:
                f"patch ok={t5.get('ok')} Y.tags={(y.get('ticket') or y).get('tags')}")
 
         # ---- 10. unknown / out-of-role model id accepted ---------------------------------------
-        ok("owner", "PATCH", f"/v1/tickets/{X}", json={"tags": ["model:engineer=gpt-does-not-exist"]})
+        tag10 = call("owner", "PATCH", f"/v1/tickets/{X}", json={"tags": ["model:engineer=gpt-does-not-exist"]})
+        log(f"   tag write model:engineer=gpt-does-not-exist: ok={tag10.get('ok')} "
+            f"{(tag10.get('error') or {}).get('message', '')[:90]!r}")
         SPAWNS.clear()
         sp10 = call("owner", "POST", "/v1/sessions/spawn", json={"role": "engineer", "participant_id": "E10",
-                                                                 "ticket_id": S2})
+                                                                 "ticket_id": S2, "model": "gpt-does-not-exist"})
         got = [s.get("model") for s in SPAWNS]
-        result("10 unknown model id in model:<role>= reaches the pool", bool(sp10.get("ok")) and "codex/gpt-does-not-exist" in got,
-               f"spawn ok={sp10.get('ok')} pool model={got} seat_choice={(sp10.get('value') or {}).get('seat_choice')}")
-        ok("owner", "PATCH", f"/v1/tickets/{X}", json={"tags": []})
+        result("10 unknown model id (tag write or spawn model) reaches the pool",
+               bool(tag10.get("ok")) or (bool(sp10.get("ok")) and "codex/gpt-does-not-exist" in got),
+               f"tag ok={tag10.get('ok')} spawn ok={sp10.get('ok')} pool model={got} "
+               f"{(sp10.get('error') or {}).get('message', '')[:90]!r}")
+        call("owner", "PATCH", f"/v1/tickets/{X}", json={"tags": []})
 
         # ---- 8. duplicate pain id → two lessons ----------------------------------------------
         from edp8 import records  # noqa: E402
