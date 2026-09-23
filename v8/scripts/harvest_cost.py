@@ -162,22 +162,33 @@ def codex_window(rows: list[dict]) -> tuple[float | None, float | None]:
 def codex_tokens(rows: list[dict], start: float, end: float | None) -> dict[str, int]:
     """thread/tokenUsage `total` at the window's end minus the last total before it."""
     keys = ("inputTokens", "cachedInputTokens", "outputTokens", "reasoningOutputTokens", "totalTokens")
-    before = dict.fromkeys(keys, 0)
-    after = dict(before)
     calls = 0
+    # S-ADV finding 6: a codex mirror is appended across threads and each thread's `total` restarts at 0,
+    # so the window is summed PER THREAD (last total in the window minus the last total before it, per
+    # threadId) — never one thread's end minus another thread's start (that went negative)
+    before: dict[str, dict[str, int]] = {}
+    after: dict[str, dict[str, int]] = {}
     for r in rows:
         m = r.get("msg") or {}
         if m.get("method") != "thread/tokenUsage/updated":
             continue
-        total = (m.get("params") or {}).get("tokenUsage", {}).get("total") or {}
+        params = m.get("params") or {}
+        total = (params.get("tokenUsage") or {}).get("total") or {}
+        thread = str(params.get("threadId") or params.get("thread_id") or "")
         ts = r.get("ts") or 0
+        snap = {k: int(total.get(k) or 0) for k in keys}
         if ts < start:
-            before = {k: int(total.get(k) or 0) for k in keys}
-            after = dict(before)
+            before[thread] = snap
+            after.pop(thread, None)
         elif end is None or ts <= end:
-            after = {k: int(total.get(k) or 0) for k in keys}
+            after[thread] = snap
             calls += 1
-    return {"calls": calls, **{k: after[k] - before[k] for k in keys}}
+    out = dict.fromkeys(keys, 0)
+    for thread, a in after.items():
+        b = before.get(thread) or dict.fromkeys(keys, 0)
+        for k in keys:
+            out[k] += a[k] - b[k]
+    return {"calls": calls, **out}
 
 
 # ----------------------------------------------------------------------------- board side
@@ -211,6 +222,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if a.log:
         path = Path(a.log)
+        if not path.is_file():  # S-ADV finding 9: a missing or rotated log is a message, not a traceback
+            print(f"no session log at {path} for {a.participant}", file=sys.stderr)
+            return 2
         kind = "codex" if path.name.startswith("codex-seat.") else "claude"
     else:
         hit = find_log(a.participant)

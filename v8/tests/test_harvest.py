@@ -201,3 +201,23 @@ def test_harvest_cost_splits_records_by_author():
                       "created_at": "2026-09-24T10:02:20+00:00"}]}
     recs = hc.records_in_window(view, hc._ts("2026-09-24T10:00:00Z"), hc._ts("2026-09-24T10:03:00Z"))
     assert sorted((r["id"], r["created_by"]) for r in recs) == [("d-1", "qa.e"), ("les-1", "qa.e"), ("les-2", "board")]
+
+def test_codex_tokens_sums_per_thread_never_across_threads_s_adv_6():
+    """S-ADV finding 6: an appended codex mirror holds several threads whose totals restart at 0; the window
+    is the sum over threads of (last total in the window - last total before it), never negative."""
+    hc = _cost()
+    row = lambda ts, thread, n: {"ts": ts, "msg": {"method": "thread/tokenUsage/updated", "params": {  # noqa: E731
+        "threadId": thread, "tokenUsage": {"total": {"inputTokens": n, "totalTokens": n}}}}}
+    rows = [row(1, "old", 10000), row(11, "new", 100), row(12, "new", 250)]
+    t = hc.codex_tokens(rows, 10, None)
+    assert (t["inputTokens"], t["totalTokens"], t["calls"]) == (250, 250, 2)
+    t = hc.codex_tokens([row(1, "old", 10000), row(11, "old", 10400), row(12, "new", 30)], 10, None)
+    assert t["inputTokens"] == 400 + 30
+
+
+def test_missing_log_is_a_message_not_a_traceback_s_adv_9(capsys):
+    """S-ADV finding 9: --log naming a missing or rotated file exits 2 with one line on stderr."""
+    hc = _cost()
+    rc = hc.main(["--participant", "qa.test", "--log", "__missing_review_log__.jsonl", "--no-board"])
+    assert rc == 2
+    assert "no session log at" in capsys.readouterr().err
