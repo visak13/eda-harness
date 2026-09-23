@@ -116,14 +116,7 @@ test("captures", async ({ page }) => {
   await docTab.waitForLoadState(); await docTab.waitForTimeout(800); await docTab.screenshot({ path: path.join(OUT, "04b-design-open-in-tab.png") });
   fs.writeFileSync(path.join(OUT, "design-open-in-tab.json"), JSON.stringify({ url: docTab.url(), excerpt: (await docTab.locator("body").innerText()).slice(0, 200) }));
   await docTab.close();
-  // Usage widget — wait for the rail widget to mount (it renders once whoami resolves) so the
-  // capture is deterministic rather than racing the navigation.
-  await page.goto(`/ui/epic/${f.epic}?as=owner`);
-  const usage = page.getByTestId("usage-open");
-  await usage.waitFor({ state: "visible", timeout: 15_000 });
-  await usage.click();
-  await page.getByTestId("usage-freshness").waitFor({ timeout: 10_000 }).catch(() => {});
-  await page.waitForTimeout(600); await shot(page, "05-usage");
+  // S19: the Usage widget was removed (no data on this board; owner "only show what works").
   // Ticket page + its Files & evidence card (ticket attachment, c-acd513e457).
   await page.goto(`/ui/ticket/${f.story}?as=owner`); await page.waitForTimeout(800); await shot(page, "06-ticket"); await shot(page, "06-ticket-full", true);
   await page.getByTestId("work-files").click(); await page.waitForTimeout(600); await shot(page, "06b-ticket-files");

@@ -14,9 +14,8 @@ test.beforeEach(async ({ request }) => {
 // deleted — the `#work-details` disclosure, its `work-search` box reached by opening that disclosure,
 // "Work" as an <a> link, the mobile Workspace-navigation menu and the usage↔find slot adjacency. R1
 // replaced all of it with the WorkHeader links row → right Drawer. The behaviors that survive are
-// covered by current specs: usage↔find-open adjacency + Subscription-usage Escape focus in
-// s6-usage.spec.ts; mobile Workspace-navigation / Sections in s2-foundations.spec.ts and
-// s6-usage.spec.ts; the Work drawer + Open-in-tab in s3-workflow.spec.ts and s3-review.spec.ts.
+// covered by current specs (usage↔find adjacency retired with the Usage widget in S19): mobile
+// Workspace-navigation / Sections in s2-foundations.spec.ts; the Work drawer + Open-in-tab in s3-workflow.spec.ts and s3-review.spec.ts.
 for (const width of [320, 390, 1440]) test.skip(`single navigation and retained capabilities ${width}`, async () => {});
 
 // KEPT (finding 9, epic c-bb6cf0d4d6 "existing navigation behaviour is retained"): old Slack pings

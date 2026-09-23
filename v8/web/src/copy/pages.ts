@@ -32,7 +32,6 @@ export const SIDEBAR: PageCopy = {
     { key: "find", label: "Find (Ctrl K)", text: "full-text search across tickets, documents, messages and seats; Enter opens the hit.", control: true },
     { key: "identity", label: "Account (bottom)", text: "who you are on this board; opens the account menu: Settings, What am I looking at?, theme, avatar. Source: /v1/whoami.", control: true },
     { key: "new-epic", label: "New epic", text: "on the Epics page: records your words verbatim as a new epic and offers to spawn its architect; the preview lists who is woken before you confirm.", control: true },
-    { key: "usage", label: "Usage", text: "your subscription windows per provider (5-hour, weekly), read from cached receipts; Refresh re-reads them, it never runs a prompt.", control: true },
     { key: "notifications", label: "Notifications", text: "browser alerts for questions and approval requests while a board tab stays open; enable, test or disable them here.", control: true },
   ],
 };

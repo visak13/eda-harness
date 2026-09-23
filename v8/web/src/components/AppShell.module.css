@@ -1,5 +1,5 @@
 /* Rail per revision3-clean: 192px, rail ground, 1.5px strong right rule, brand 27/800, 46px rows,
-   active row = accent wash + 2px offset shadow; lower group = Usage · Notifications · Find · account. */
+   active row = accent wash + 2px offset shadow; lower group = Find · account (S19: no Usage). */
 .shell { min-height: 100vh; background: var(--bg); color: var(--ink); }
 .sidebar { position: fixed; inset: 0 auto 0 0; width: 192px; background: var(--rail); border-right: 1.5px solid var(--strongline); padding: 22px 12px 16px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
 .brand { display: flex; align-items: center; gap: 10px; font-size: 24px; font-weight: 800; margin: 0 4px 12px; }
@@ -54,15 +54,13 @@
   .shell[data-rail="collapsed"] .brand { flex-direction: column; gap: 8px; margin: 0 0 8px; }
   .shell[data-rail="collapsed"] .brandText,
   .shell[data-rail="collapsed"] .navLabel,
-  .shell[data-rail="collapsed"] .accountText,
-  .shell[data-rail="collapsed"] [data-testid="usage-open"] > span {
+  .shell[data-rail="collapsed"] .accountText {
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
   }
   .shell[data-rail="collapsed"] .current,
   .shell[data-rail="collapsed"] .key { display: none; }
   .shell[data-rail="collapsed"] .navItem,
-  .shell[data-rail="collapsed"] .railBtn,
-  .shell[data-rail="collapsed"] [data-testid="usage-open"] { justify-content: center; position: relative; padding: 7px 0; }
+  .shell[data-rail="collapsed"] .railBtn { justify-content: center; position: relative; padding: 7px 0; }
   .shell[data-rail="collapsed"] .count { position: absolute; top: 1px; right: 1px; min-width: 18px; height: 18px; font-size: 11px; }
   .shell[data-rail="collapsed"] .account { justify-content: center; padding: 6px 0; }
 }

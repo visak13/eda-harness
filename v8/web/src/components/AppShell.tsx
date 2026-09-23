@@ -18,7 +18,6 @@ import { CommandPalette } from "./CommandPalette";
 import { CopyDescriptions } from "./CopyDescriptions";
 import { PendingNavigation } from "./PendingNavigation";
 import { NotificationCenter } from "./NotificationCenter";
-import { UsageWidget } from "./UsageWidget";
 import { useViewerFlag } from "./viewerPrefs";
 import { copyProps, pageKeyFor } from "../copy/pages";
 import styles from "./AppShell.module.css";
@@ -34,12 +33,13 @@ interface Summary {
 }
 
 // The rail per revision3-clean (design-a2e5369133 §AppShell): brand, Epics, Seats, a divider,
-// Needs you with its coral count, the CURRENT EPIC block, then (lower) Usage directly above Find
-// and the account row. Notifications are NOT a rail item (finding 6): Enable/Test live on
+// Needs you with its coral count, the CURRENT EPIC block, then (lower) Find and the account row.
+// No Usage entry (S19, owner m-845b58f25c "only show what works"): /v1/me/usage returns no data on
+// this board (no EDP8_USAGE_CONFIG), so the rail button + widget were removed; the endpoint stays. Notifications are NOT a rail item (finding 6): Enable/Test live on
 // Settings → Notifications (S17), the worker/authorization run in the always-mounted provider.
 // There is NO global header any more (owner defect: "the epic header takes many pixels for two
 // buttons"): New epic lives on the Epics page, preferences in the account menu, help is the floating
-// top-right button (S17), and a pending live refresh is an inline banner at the top of main.
+// top-right button (S17); live refresh applies in place (S19 — no "N new" banner).
 const NAV = [
   { to: "/epics", label: "Epics", icon: "epics", count: "epics" as const, copy: "epics" },
   { to: "/seats", label: "Seats", icon: "seats", count: "seats" as const, copy: "seats" },
@@ -194,9 +194,6 @@ function AppShellChrome(): React.JSX.Element {
         </nav>
 
         <div className={styles.lower}>
-          <div id="shell-usage-slot" data-testid="usage-slot">
-            {whoami.data ? <UsageWidget key={whoami.data.participant.id} actor={whoami.data.participant.id} /> : null}
-          </div>
           <button ref={findBtnRef} className={styles.railBtn} type="button" aria-label="Find (Ctrl-K)"
             {...copyProps("sidebar", "find")} aria-haspopup="dialog" aria-expanded={findOpen}
             onClick={() => setFindOpen(true)} data-testid="find-open">

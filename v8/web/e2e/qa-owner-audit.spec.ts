@@ -34,14 +34,13 @@ test('owner findings: inspect interactive surfaces and retain measurements', asy
   await rail.scrollIntoViewIfNeeded();await page.screenshot({path:`${dir}/legacy-controls.png`,fullPage:true});
   await page.evaluate(()=>scrollTo(0,0));
   const hover=[];
-  for(const label of ['Files & evidence','History','Usage']){
+  for(const label of ['Files & evidence','History']){ // S19: Usage removed from the rail
     const el=page.getByRole('button',{name:label,exact:true});
     await page.mouse.move(0,0);const before=await el.evaluate(e=>{const c=getComputedStyle(e);return [c.backgroundColor,c.color,c.borderColor,c.boxShadow]});
     await el.hover();await page.waitForTimeout(200);const after=await el.evaluate(e=>{const c=getComputedStyle(e);return [c.backgroundColor,c.color,c.borderColor,c.boxShadow]});hover.push({label,before,after});
   }
   evidence.hover=hover;
-  await page.getByRole('button',{name:'Usage',exact:true}).click();
-  const usage=page.getByRole('dialog',{name:'Subscription usage'});evidence.usage={text:await usage.innerText(),box:await usage.boundingBox()};await page.screenshot({path:`${dir}/usage-unlinked.png`});await page.keyboard.press('Escape');
+  await expect(page.getByRole('button',{name:'Usage',exact:true})).toHaveCount(0); // S19: only show what works
   await text.fill('Attachment presentation probe');
   await page.locator('input[type=file]').setInputFiles({name:'qa-evidence.txt',mimeType:'text/plain',buffer:Buffer.from('QA attachment body')});
   await expect(page.getByTestId('composer-send')).toBeEnabled();
@@ -58,13 +57,6 @@ test('owner findings: inspect interactive surfaces and retain measurements', asy
   await page.waitForTimeout(1000); // Bounded observation: SSE keeps networkidle permanently pending.
   evidence.populatedFiles=await page.getByRole('dialog',{name:'Files & evidence',exact:true}).innerText();
   await page.screenshot({path:`${dir}/files-populated.png`});await page.keyboard.press('Escape');
-  await page.route('**/v1/me/usage',r=>r.fulfill({status:503,json:{ok:false,error:{code:'unavailable',message:'Synthetic QA source failure'}}}));
-  await page.reload();
-  const usageFailure=page.waitForResponse(r=>r.url().endsWith('/v1/me/usage')&&r.status()===503);
-  await page.getByRole('button',{name:'Usage',exact:true}).click();
-  await usageFailure;await expect(page.getByRole('dialog',{name:'Subscription usage'})).toContainText('Usage could not be refreshed');
-  evidence.usageError=await page.getByRole('dialog',{name:'Subscription usage'}).innerText();
-  await page.screenshot({path:`${dir}/usage-error.png`});await page.keyboard.press('Escape');
   const links=(evidence.legacyLinks as {href:string|null}[]).filter(x=>x.href?.startsWith('/ui/library'));
   const checks=[];
   for(const link of links){await page.goto(link.href!);await expect(page.locator('main')).not.toContainText('Loading…');checks.push({href:link.href,url:page.url(),main:(await page.locator('main').innerText()).slice(0,1800)});}
