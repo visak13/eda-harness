@@ -53,6 +53,22 @@
 .feedbackNote { margin: 0; font-size: 13px; line-height: 19px; color: var(--muted); display: flex; gap: 6px; align-items: flex-start; }
 .linkButton { border: 0; background: transparent; padding: 0; font: inherit; font-size: 13px; color: var(--ink); text-decoration: underline; cursor: pointer; text-align: left; }
 .reading [data-testid="doc-view"] { display: block; }
+/* S22 section outline: side block under the review guidance (wide); sticky bar in the doc column (narrow). */
+.outlineSide { border-top: 1px solid var(--line); padding-top: 14px; min-width: 0; }
+.outlineInline { display: none; }
+.outlineSummary { display: flex; align-items: center; gap: 6px; cursor: pointer; font: 700 14px/20px "Segoe UI", system-ui, sans-serif; color: var(--ink); list-style: none; border-radius: 6px; }
+.outlineSummary::-webkit-details-marker { display: none; }
+.outlineSummary > svg { transform: rotate(-90deg); transition: transform 120ms ease; flex: none; }
+details[open] > .outlineSummary > svg { transform: none; }
+.outlineSummary:focus-visible, .outlineLink:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
+.outlineCount { font-weight: 400; color: var(--muted); font-size: 12px; }
+.outlineList { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 42vh; overflow-y: auto; }
+.outlineLink { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 5px 8px; border-radius: 6px; font: inherit; font-size: 13px; line-height: 18px; color: var(--ink); cursor: pointer; overflow-wrap: anywhere; }
+.outlineLink:hover { background: var(--panel); }
+.outlineL2 .outlineLink { padding-left: 20px; }
+.outlineL3 .outlineLink { padding-left: 32px; color: var(--muted); }
+.reading [data-testid="doc-view"] :is(h2, h3, h4) { scroll-margin-top: 16px; }
+.reading [data-testid="doc-view"] :is(h2, h3, h4):focus { outline: none; }
 .review p, .review a { overflow-wrap: anywhere; }
 /* Short or narrow screens (844×390, phones): the header stops being a fixed band and the whole
    review scrolls as one, so the document is never squeezed under a 300px header (S19 D10). */
@@ -65,6 +81,9 @@
   .feedback { padding: 20px 16px; }
 }
 @media (max-width: 850px) {
+  .outlineSide { display: none; }
+  .outlineInline { display: block; position: sticky; top: 0; z-index: 2; margin: -8px 0 12px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+  .reading [data-testid="doc-view"] :is(h2, h3, h4) { scroll-margin-top: 64px; }
   .split { grid-template-columns: minmax(0, 1fr); }
   .feedback { border-left: 0; border-top: 1px solid var(--strongline); }
   .tool { padding: 0 6px; }

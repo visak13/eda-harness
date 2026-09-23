@@ -13,12 +13,37 @@ import ui from "./ui.module.css";
 import styles from "./DesignReview.module.css";
 import { readDraft, writeDraft } from "./draftStorage";
 import { pendingWork } from "./PendingNavigation";
+import type { OutlineEntry } from "./DocView";
 
 // Actor/source/version-local drafts; isolated in this tab's session storage.
-export function DesignReview({ docId, version, source, request, children, onLatest, title, versions, onPickVersion, tabHref, onBack }: {
+/** S22 (owner m-94117833e0 "we lost the easy to navigate menu from old"): the section outline — a
+ *  heading jump list — inside the review. Wide: a block in the right panel under the review guidance
+ *  (open). Narrow (≤850px, the panel stacks under the document): a sticky collapsed bar at the top of
+ *  the document column. Every entry is a button; a jump scrolls the heading into view and focuses it. */
+function SectionOutline({ entries, onJump, placement }: { entries: OutlineEntry[]; onJump: (i: number, placement: "side" | "inline") => void; placement: "side" | "inline" }): React.JSX.Element {
+  const ref = useRef<HTMLDetailsElement>(null);
+  return <details ref={ref} className={placement === "side" ? styles.outlineSide : styles.outlineInline} open={placement === "side" ? true : undefined}
+    data-testid={`review-outline-${placement}`}>
+    <summary className={styles.outlineSummary}><Icon name="chevron" size={16} /> On this page <span className={styles.outlineCount}>{entries.length}</span></summary>
+    <nav aria-label="Section outline">
+      <ol className={styles.outlineList}>
+        {entries.map((h, i) => <li key={i} className={styles[`outlineL${h.level}`]}>
+          <button type="button" className={styles.outlineLink} onClick={() => {
+            onJump(i, placement);
+            if (placement === "inline" && ref.current) ref.current.open = false; // the bar must not cover what it jumped to
+          }}>{h.text}</button>
+        </li>)}
+      </ol>
+    </nav>
+  </details>;
+}
+
+export function DesignReview({ docId, version, source, request, children, onLatest, title, versions, onPickVersion, outline, tabHref, onBack }: {
   docId: string; version: number; source: string; request?: string | null; children?: React.ReactNode; onLatest?: (version: number) => void; title?: string;
   /** Every version of the doc: the state line's "Version N" menu (revision3-clean-review.png). */
   versions?: number[]; onPickVersion?: (version: number) => void;
+  /** The document's h1–h3 headings in order (DocView.outlineOf): the section outline. */
+  outline?: OutlineEntry[];
   /** In the viewer: the "Open in tab" target. The dedicated page has none. */
   tabHref?: string;
   /** A nested doc in the viewer: back to the doc that linked it. */
@@ -26,6 +51,16 @@ export function DesignReview({ docId, version, source, request, children, onLate
 }): React.JSX.Element {
   const close = useDrawerClose();
   const menuRef = useRef<HTMLDetailsElement>(null);
+  const readingRef = useRef<HTMLDivElement>(null);
+  // Outline entry i ↔ the i-th rendered body heading: <Markdown> demotes h1–h3 to h2–h4 in document
+  // order and the review hides the doc's own title, so order is the join key (as in DocBody).
+  function jump(i: number) {
+    const el = readingRef.current?.querySelectorAll<HTMLElement>('[data-testid="doc-view"] :is(h2, h3, h4)')[i];
+    if (!el) return;
+    el.scrollIntoView?.({ block: "start", behavior: "smooth" });
+    el.tabIndex = -1;
+    el.focus({ preventScroll: true });
+  }
   const key = `${identity()}:${source}:${docId}:${version}`;
   const draft = useRef(readDraft(key) ?? { text: "", artifacts: [] });
   const [mode, setMode] = useState<"comment" | "request_changes" | null>(draft.current.text ? draft.current.mode ?? "comment" : null);
@@ -116,7 +151,8 @@ export function DesignReview({ docId, version, source, request, children, onLate
       </div>
     </div>
     <div className={expanded && mode ? `${styles.split} ${styles.splitExpanded}` : styles.split}>
-      <div className={styles.reading}>
+      <div className={styles.reading} ref={readingRef}>
+        {outline?.length ? <SectionOutline entries={outline} onJump={jump} placement="inline" /> : null}
         {version !== ctx.current_version ? <p role="status" className={styles.notice}>Historical version — comments are allowed; approval requires the current version. {onLatest ? <button className={ui.button} onClick={() => onLatest(ctx.current_version)}>Review latest version (this version’s draft is kept)</button> : null}</p> : null}
         {approve.isError ? <p role="alert" className={styles.notice}>{approve.error.message}</p> : null}
         {sent && !mode ? <p role="status" className={styles.notice}>Design approved at v{version}.</p> : null}
@@ -151,6 +187,7 @@ export function DesignReview({ docId, version, source, request, children, onLate
             <p className={styles.feedbackNote}><Icon name="files" size={16} /> Your {where} draft is preserved.</p>
           </div>
         </>}
+        {outline?.length ? <SectionOutline entries={outline} onJump={jump} placement="side" /> : null}
       </aside>
     </div>
   </section>;

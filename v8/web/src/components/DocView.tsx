@@ -116,6 +116,7 @@ export function DocView({
   if (signoffNow) signoffDoc.current = docId;
   const reviewing = !!source && signoffDoc.current !== docId;
 
+  const outline = useMemo(() => (q.data ? outlineOf(q.data.html) : []), [q.data]);
   const pick = (v: number) => {
     if (pendingWork()) return;
     setRequested(v);
@@ -137,7 +138,7 @@ export function DocView({
       hideTitle={reviewing}
       reviewing={reviewing}
     />;
-  return reviewing ? <DesignReview key={`${docId}:${source}:${q.data.version}`} docId={docId} source={source} version={q.data.version} title={q.data.title} request={request} versions={q.data.versions} onPickVersion={pick} tabHref={tabHref} onBack={onBack} onLatest={pick}>{content}</DesignReview> : <><DocumentSource key={docId} docId={docId} version={q.data.version} />{content}</>;
+  return reviewing ? <DesignReview key={`${docId}:${source}:${q.data.version}`} docId={docId} source={source} version={q.data.version} title={q.data.title} request={request} versions={q.data.versions} onPickVersion={pick} outline={outline} tabHref={tabHref} onBack={onBack} onLatest={pick}>{content}</DesignReview> : <><DocumentSource key={docId} docId={docId} version={q.data.version} />{content}</>;
 }
 
 function DocBody({
