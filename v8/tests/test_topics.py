@@ -502,6 +502,64 @@ def test_research_refuses_a_host_that_turned_private(client, board, tokens, reco
     assert not any("docs.pytest.org" in c for c in recorded)
 
 
+def test_topic_config_lives_on_the_record(client, board):
+    """t-3e246b5e32 (d): seed_url, the research allowlist and tags_set_by are the record's — 500 tag writes
+    and then deleting every ticket_updated event on the topic lose none of them."""
+    from edp8 import topics
+    t = _topic(client, seed_url="https://docs.pytest.org/en/stable/")["topic"]
+    for i in range(500):
+        assert client.patch(f"/v1/topics/{t['id']}/tags", json={"tags": [f"t{i}"]}, headers=OWNER).json()["ok"]
+    for ev in board.store.query("event", {"subject_id": t["id"], "kind": "ticket_updated"}, limit=-1):
+        board.store.delete("event", ev.id)
+    page = client.get(f"/v1/topics/{t['id']}", headers=OWNER).json()["value"]
+    assert page["seed_url"] == "https://docs.pytest.org/en/stable/"
+    assert page["tags_set_by"]["by"] == "owner" and page["topic"]["tags"] == ["t499"]
+    assert "docs.pytest.org" in topics.allowed_hosts(board, t["id"])
+    rec = board.ticket(t["id"])
+    assert rec.topic_config["seed_url"] == "https://docs.pytest.org/en/stable/"
+    assert rec.topic_config["allowlist"] == ["docs.pytest.org"]
+
+
+def test_legacy_topic_config_is_backfilled_once(client, board):
+    """A topic opened before the record field keeps its seed: read once from its receipts, then from the record."""
+    t = _topic(client, seed_url="https://docs.pytest.org/en/stable/")["topic"]
+    rec = board.ticket(t["id"]); rec.topic_config = None; board.store.put("ticket", rec)
+    assert client.get(f"/v1/topics/{t['id']}", headers=OWNER).json()["value"]["seed_url"] == "https://docs.pytest.org/en/stable/"
+    assert board.ticket(t["id"]).topic_config["allowlist"] == ["docs.pytest.org"]
+
+
+def test_tags_set_by_names_the_writer_whose_tags_won(client, board, tokens):
+    """t-3e246b5e32 (b): two tag writes race on the generic ticket route (owner and sme); the owner's write is
+    held between its put and its receipt. Unlocked, the sme's tags won but the page named the owner."""
+    import threading
+    t = _topic(client)["topic"]
+    board.run_pending_pairings()
+    sme = _seat(client, tokens, t)
+    sme_done, owner_in = threading.Event(), threading.Event()
+    real_index = board._index
+
+    def slow_index(kind, id_, text):  # runs between ticket_update's put and its ticket_updated receipt
+        if "from-owner" in text:  # the owner's write (the handler runs on a server worker thread)
+            owner_in.set()
+            sme_done.wait(1.0)  # pre-fix the sme finishes inside this window; post-fix it waits on the lock
+        return real_index(kind, id_, text)
+    board._index = slow_index
+    out = {}
+
+    def write(name, hdr, tags):
+        out[name] = client.patch(f"/v1/tickets/{t['id']}", json={"tags": tags}, headers=hdr).json()
+        if name == "sme-w":
+            sme_done.set()
+    ow = threading.Thread(target=write, args=("owner-w", OWNER, ["from-owner"]), name="owner-w")
+    ow.start(); owner_in.wait(2.0)
+    sw = threading.Thread(target=write, args=("sme-w", sme, ["from-sme"]), name="sme-w")
+    sw.start(); ow.join(5); sw.join(5)
+    assert out["owner-w"]["ok"] and out["sme-w"]["ok"], out
+    page = client.get(f"/v1/topics/{t['id']}", headers=OWNER).json()["value"]
+    winner = {"from-owner": "owner", "from-sme": f"sme.{t['id']}"}[page["topic"]["tags"][0]]
+    assert page["tags_set_by"]["by"] == winner, (page["topic"]["tags"], page["tags_set_by"])
+
+
 def test_seed_url_outlives_many_tag_writes(client):
     """#10: the seed was read from the newest 200 ticket_updated events, so 200 tag writes lost it."""
     t = _topic(client, seed_url="https://docs.pytest.org/en/stable/")["topic"]

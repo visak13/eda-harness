@@ -312,6 +312,9 @@ class Ticket(Obj):
     description: str = ""  # the slice in prose: scope, intent, pointers — searchable (2026-09-06)
     tags: list[str] = Field(default_factory=list)  # free labels for filtering/grouping
     epic_id: str | None = None  # derived by the board at create time (an epic's own id for an epic)
+    # a Library topic's config on its own record (t-3e246b5e32 (d)): {seed_url, allowlist, tags_set_by};
+    # None on every other ticket and on a topic from before the field (topics.config backfills it once)
+    topic_config: dict[str, Any] | None = None
 
 
 class Criterion(Obj):

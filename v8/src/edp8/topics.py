@@ -140,6 +140,10 @@ def create(board: Board, actor: Participant, *, title: str, tags: list[str] | No
         board._emit(t.id, EventKind.ticket_updated, {"changed": ["seed_url"], "seed_url": seed, "by": actor.id})
     if t.tags:
         board._emit(t.id, EventKind.ticket_updated, {"changed": ["tags"], "tags": t.tags, "by": actor.id})
+    with board._lock:  # t-3e246b5e32 (d): the config is the record's, not rebuilt from receipt events
+        t = topic(board, t.id)
+        t.topic_config = _new_config(seed, actor.id if t.tags else None)
+        board.store.put("ticket", t)
     ensure_seat(board, t.id)
     return {"topic": board.ticket(t.id), "seat": seat_view(board, t.id)}
 
@@ -261,9 +265,34 @@ def _last_update(board: Board, topic_id: str, field: str) -> dict[str, Any] | No
     return None
 
 
+def _now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _new_config(seed: str | None, tags_by: str | None, tags_at: str | None = None) -> dict[str, Any]:
+    host = urlsplit(seed).netloc.lower() if seed else ""
+    return {"seed_url": seed, "allowlist": [host] if host and host not in BASE_HOSTS else [],
+            "tags_set_by": {"by": tags_by, "at": tags_at or _now()} if tags_by else None}
+
+
+def config(board: Board, t: Ticket) -> dict[str, Any]:
+    """t-3e246b5e32 (d): a topic's config — {seed_url, allowlist, tags_set_by} — is read from its record.
+    A topic opened before the record field existed is backfilled ONCE from its receipt events (under the
+    board lock), then never read from events again."""
+    if t.topic_config is not None:
+        return t.topic_config
+    with board._lock:
+        cur = topic(board, t.id)
+        if cur.topic_config is None:
+            seed, tags = _last_update(board, t.id, "seed_url"), _last_update(board, t.id, "tags")
+            cur.topic_config = _new_config(seed.get("seed_url") if seed else None,
+                                           tags.get("by") if tags else None, tags.get("at") if tags else None)
+            board.store.put("ticket", cur)
+        return cur.topic_config
+
+
 def seed_url(board: Board, topic_id: str) -> str | None:
-    u = _last_update(board, topic_id, "seed_url")
-    return u.get("seed_url") if u else None
+    return config(board, topic(board, topic_id)).get("seed_url")
 
 
 def docs(board: Board, topic_id: str) -> list[Any]:
@@ -317,7 +346,7 @@ def page(board: Board, topic_id: str, *, thread_limit: int = 200) -> dict[str, A
     """Everything the topic page shows: the record, who set its tags, its docs, thread, experts and seat.
     Expert tokens are never part of it."""
     t = topic(board, topic_id)
-    tags_by = _last_update(board, t.id, "tags")
+    tags_by = config(board, t).get("tags_set_by")  # t-3e246b5e32 (b): written with the tags, under the lock
     people: dict[str, dict[str, Any]] = {}
 
     def who(pid: str) -> dict[str, Any]:
@@ -366,10 +395,10 @@ MAX_REDIRECTS = 3
 
 
 def allowed_hosts(board: Board, topic_id: str) -> tuple[str, ...]:
-    """skills.sh (search + skill pages), GitHub (a skill's SKILL.md) and the topic's seed-URL host."""
-    seed = seed_url(board, topic_id)
-    host = urlsplit(seed).netloc.lower() if seed else ""
-    return (*BASE_HOSTS, host) if host and host not in BASE_HOSTS else BASE_HOSTS
+    """skills.sh (search + skill pages), GitHub (a skill's SKILL.md) and the topic's seed-URL host (the
+    record's allowlist)."""
+    extra = config(board, topic(board, topic_id)).get("allowlist") or []
+    return (*BASE_HOSTS, *[h for h in extra if h not in BASE_HOSTS])
 
 
 def http_fetch(url: str) -> tuple[int, bytes, str | None]:
