@@ -237,3 +237,20 @@ def test_quick_task_endpoint_keeps_the_ticket_when_the_pool_refuses_the_spawn(ap
     body = r.json()
     assert body["ok"] and body["value"]["seat"] is None and "at capacity" in body["hint"]
     assert body["value"]["ticket"]["assignee"] is None
+
+
+def test_a_checker_spawned_on_a_story_never_takes_the_assignee(api):
+    """c-3000a9760a: qa and adversary spawn with the ticket as their scope and never take the assignee."""
+    client, calls = api["client"], api["calls"]
+    r = client.post("/v1/quick-tasks", json={"title": "T", "words": "w"}, headers=OWNER)
+    tid = r.json()["value"]["ticket"]["id"]
+    for role in ("qa", "adversary"):
+        r = client.post("/v1/sessions/spawn", json={"role": role, "participant_id": f"{role}.{tid}", "ticket_id": tid,
+                                                    "assign": True}, headers=OWNER)
+        assert not r.json()["ok"] and "never becomes its assignee" in r.text
+        r = client.post("/v1/sessions/spawn", json={"role": role, "participant_id": f"{role}.{tid}", "ticket_id": tid,
+                                                    "model": "gpt-6-astra"}, headers=OWNER)
+        assert r.json()["ok"], r.text
+        assert calls[-1]["participant_id"] == f"{role}.{tid}"
+    got = client.get(f"/v1/tickets/{tid}", headers=OWNER).json()["value"]
+    assert got["assignee"] == f"engineer.{tid}"  # the doer stays the assignee
