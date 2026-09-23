@@ -1052,6 +1052,9 @@ class PoolService(Microservice):
                 "model": model, "cwd": self._spawner_agent_home()
                 or os.environ.get("EDP_AGENT_HOME"),
                 "env": dict(env) if env else {},
+                # p-fb874501: the board's resume_self tells a fresh spawn from a continued
+                # conversation by this (and the row's resumed_at) — None = a fresh session
+                "resume_session": resume_session,
             }
             self.sessions[sid] = {
                 "session_id": sid, "role": role, "handle": handle,

@@ -436,3 +436,13 @@ def test_spawn_effort_rides_the_shell_env_and_spawn_settings(client):
     r = client.post("/v1/spawn", json={"role": "planner", "handle": "r:noeff"})
     assert r.status_code == 200
     assert not (svc.spawner.launched[-1]["extra_env"] or {})
+
+
+def test_spawn_settings_record_whether_the_session_continues_an_old_one(client):
+    """p-fb874501 (s-a0c67e6aa7): the board's resume_self reads spawn_settings.resume_session to tell a
+    fresh spawn (None) from a launch that continues an old conversation."""
+    r = client.post("/v1/spawn", json={"role": "planner", "handle": "r:fresh"})
+    assert r.status_code == 200, r.text
+    svc = client.app.state.svc
+    row = svc.sessions[r.json()["session_id"]]
+    assert row["spawn_settings"]["resume_session"] is None and "resumed_at" not in row

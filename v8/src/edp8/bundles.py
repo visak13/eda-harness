@@ -641,6 +641,25 @@ def _context(args: ContextArgs) -> dict[str, Any]:
     return {**resp, "value": bounded}
 
 
+def _session_is_fresh_spawn() -> bool:
+    """True when the caller's CURRENT pool session is a fresh spawn — never resumed (no `resumed_at`)
+    and not launched to continue an old conversation (spawn_settings.resume_session empty). Pain
+    p-fb874501: a participant id respawned after close sees its own earlier work in context(), answers
+    the card's "Resumed?" with yes and posts a false [resumed]. Unknown (no session id, pool down,
+    row missing) answers False, so resume_self keeps its resume behaviour."""
+    sid = my_session_id()
+    if not sid:
+        return False
+    out = _pool_call("sessions", {})
+    rows = out.get("value") if out.get("ok") else None
+    if not isinstance(rows, list):
+        return False
+    row = next((r for r in rows if isinstance(r, dict) and r.get("session_id") == sid), None)
+    if row is None:
+        return False
+    return not row.get("resumed_at") and not (row.get("spawn_settings") or {}).get("resume_session")
+
+
 def _resume_self(_: ResumeSelfArgs) -> dict[str, Any]:
     """The seat-side resume command (owner m-268fc869f5, 2026-09-18). A resumed shell holds a
     transcript whose Monitor and cron died with the old process and that may end in a hand-off;
@@ -653,6 +672,30 @@ def _resume_self(_: ResumeSelfArgs) -> dict[str, Any]:
     asks = client.inbox()
     rows = (asks.get("value") or []) if asks.get("ok") else []
     identity = who.get("value") if who.get("ok") else {"id": client.participant}
+    if _session_is_fresh_spawn():
+        # a fresh spawn: nothing to resume, no [resumed] receipt; the spawn's steer/asks go first
+        rows = sorted(rows, key=lambda r: 0 if isinstance(r, dict) and r.get("kind") == "steer" else 1)
+        return {
+            "ok": True,
+            "value": {
+                "identity": identity,
+                "fresh_spawn": True,
+                "steps": [
+                    "fresh spawn: boot normally, nothing to resume. Your earlier sessions' work is history "
+                    "on the board, not a conversation to continue.",
+                    "1. Arm your wake plane if you have not: `monitor_cmd` under Monitor once, `cron` via "
+                    "CronCreate once (both below).",
+                    f"2. Do the {len(rows)} open ask(s) below first (a steer from your spawner is listed first), "
+                    "each with its answer_with call.",
+                    "3. Continue your role card's boot: context() and the card's protocol.",
+                ],
+                "monitor_cmd": (armed.get("value") or {}).get("monitor_cmd"),
+                "cron": (armed.get("value") or {}).get("cron"),
+                "listening": (armed.get("value") or {}).get("listening"),
+                "open_asks": rows,
+            },
+            "hint": "this session was spawned fresh (the pool row was never resumed); no [resumed] note posted",
+        }
     steps = [
         "1. Arm your wake plane NOW: run `monitor_cmd` under the Monitor tool once, then CronCreate the "
         "`cron` once (both below). Without them nothing wakes you; the old ones died with the old process.",
