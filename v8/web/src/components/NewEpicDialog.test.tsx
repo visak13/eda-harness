@@ -52,7 +52,7 @@ describe("NewEpicDialog (human #22)", () => {
     expect(screen.getByTestId("new-epic-preview")).toHaveTextContent("No seat is woken now");
     expect(screen.getByTestId("new-epic-create")).toHaveTextContent("Create the epic");
     fireEvent.click(screen.getByTestId("new-epic-spawn"));
-    expect(screen.getByTestId("new-epic-preview")).toHaveTextContent(/verbatim.*Claude at effort medium.*spawns role=architect.*wakes/);
+    expect(screen.getByTestId("new-epic-preview")).toHaveTextContent(/verbatim.*model chosen above at effort medium.*spawns role=architect.*wakes/);
     expect(screen.getByTestId("new-epic-create")).toHaveTextContent("Create and spawn the architect");
     fireEvent.click(screen.getByTestId("new-epic-create"));
     await waitFor(() => expect(spawnBody).not.toBeNull());
@@ -61,19 +61,21 @@ describe("NewEpicDialog (human #22)", () => {
       work_type: "feature",
       title: "Readable board",
       words: "Make the board readable for a first-time human. No jargon.",
-      tags: ["seat-model:claude", "seat-effort:medium"],
+      // every catalog role prefilled with its default (S-ROLES)
+      tags: ["model:architect=claude-fable-5-1", "model:engineer=claude-opus-5-5", "model:qa=claude-fable-5-1",
+             "model:adversary=gpt-6-astra", "model:sme=claude-opus-5-5", "seat-effort:medium"],
     });
     expect(spawnBody).toEqual({
       role: "architect",
       participant_id: "architect.epic-new1",
       ticket_id: "epic-new1",
-      model: "claude",
+      model: "claude-fable-5-1",
       effort: "medium",
     });
     expect(await screen.findByTestId("landed")).toBeInTheDocument();
   });
 
-  it("GPT-6 Astra at effort high: the choice rides the epic tags and the spawn body; Claude hides high", async () => {
+  it("one model select per role, prefilled from the catalog; the picks ride the epic tags and the architect spawn", async () => {
     let ticketBody: Record<string, unknown> | null = null;
     let spawnBody: Record<string, unknown> | null = null;
     server.use(
@@ -88,32 +90,34 @@ describe("NewEpicDialog (human #22)", () => {
     );
     mount();
     await screen.findByRole("dialog", { name: "New epic" });
-    // Claude: only low/medium are offered, with the cap explained
-    const effortOptions = () => Array.from((screen.getByTestId("new-epic-effort") as HTMLSelectElement).options).map((o) => o.value);
-    expect(effortOptions()).toEqual(["low", "medium"]);
+    const sel = (r: string) => screen.getByTestId(`new-epic-model-${r}`) as HTMLSelectElement;
+    await waitFor(() => expect(sel("architect")).toBeInTheDocument());
+    const opts = (r: string) => Array.from(sel(r).options).map((o) => o.value);
+    expect(opts("architect")).toEqual(["claude-fable-5-1", "gpt-6-astra"]);
+    expect(opts("engineer")).toEqual(["claude-opus-5-5", "gpt-6-sol"]);
+    expect(opts("adversary")).toEqual(["gpt-6-astra"]);
+    expect(["architect", "engineer", "qa", "adversary", "sme"].map((r) => sel(r).value)).toEqual(
+      ["claude-fable-5-1", "claude-opus-5-5", "claude-fable-5-1", "gpt-6-astra", "claude-opus-5-5"]);
+    expect(Array.from(sel("architect").options).map((o) => o.textContent)).toEqual(["Claude Fable 5.1", "GPT-6 Astra"]);
+    fireEvent.change(sel("architect"), { target: { value: "gpt-6-astra" } });
+    fireEvent.change(sel("engineer"), { target: { value: "gpt-6-sol" } });
+    // effort high with a Claude role left: the cap is explained
+    fireEvent.change(screen.getByTestId("new-epic-effort"), { target: { value: "high" } });
     expect(screen.getByTestId("new-epic-effort-cap")).toHaveTextContent(/capped at effort medium/);
-    fireEvent.change(screen.getByTestId("new-epic-model"), { target: { value: "astra" } });
-    expect(effortOptions()).toEqual(["low", "medium", "high"]);
-    expect(screen.queryByTestId("new-epic-effort-cap")).not.toBeInTheDocument();
-    fireEvent.change(screen.getByTestId("new-epic-effort"), { target: { value: "high" } });
-    expect(screen.getByTestId("new-epic-preview")).toHaveTextContent("GPT-6 Astra at effort high");
-    // switching back to Claude drops high to medium (the cap)
-    fireEvent.change(screen.getByTestId("new-epic-model"), { target: { value: "claude" } });
-    expect((screen.getByTestId("new-epic-effort") as HTMLSelectElement).value).toBe("medium");
-    fireEvent.change(screen.getByTestId("new-epic-model"), { target: { value: "astra" } });
-    fireEvent.change(screen.getByTestId("new-epic-effort"), { target: { value: "high" } });
     fireEvent.change(screen.getByTestId("new-epic-title"), { target: { value: "Astra" } });
     fireEvent.change(screen.getByTestId("new-epic-words"), { target: { value: "Ship it on Astra." } });
     await waitFor(() => expect(screen.getByTestId("new-epic-spawn")).not.toBeDisabled());
     fireEvent.click(screen.getByTestId("new-epic-spawn"));
     fireEvent.click(screen.getByTestId("new-epic-create"));
     await waitFor(() => expect(spawnBody).not.toBeNull());
-    expect((ticketBody as Record<string, unknown> | null)?.tags).toEqual(["seat-model:astra", "seat-effort:high"]);
+    expect((ticketBody as Record<string, unknown> | null)?.tags).toEqual([
+      "model:architect=gpt-6-astra", "model:engineer=gpt-6-sol", "model:qa=claude-fable-5-1",
+      "model:adversary=gpt-6-astra", "model:sme=claude-opus-5-5", "seat-effort:high"]);
     expect(spawnBody).toEqual({
       role: "architect",
       participant_id: "architect.epic-astra",
       ticket_id: "epic-astra",
-      model: "astra",
+      model: "gpt-6-astra",
       effort: "high",
     });
   });

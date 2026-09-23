@@ -310,6 +310,12 @@ export interface SeatChoice {
   note: string | null;
 }
 
+/** GET /v1/models (S-ROLES): the per-role model catalog; `defaults[role]` = its first entry. */
+export interface ModelCatalog {
+  roles: Record<string, string[]>;
+  defaults: Record<string, string>;
+}
+
 export interface ThreadPage {
   thread: MessageView[];
   thread_total?: number;
@@ -322,6 +328,8 @@ export interface EpicPage extends ThreadPage {
   /** The epic ticket's tags (seat-model:/seat-effort: among them); absent on an older board. */
   tags?: string[];
   seat_choice?: SeatChoice;
+  /** S-ROLES: the model each catalog role of this epic runs on (null = the pool's roles column). */
+  role_models?: Record<string, string | null>;
   /** The live resident architect (the architect assignee, else architect.<epic>) and its seat state. */
   architect?: { id: string; state: string | null } | null;
   counts: Record<string, number> | null;

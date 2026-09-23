@@ -1,0 +1,53 @@
+/* S-ROLES: the Seats page "Spawn seat" form — a panel card on the page tokens. */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 0 24px;
+  padding: 16px 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.heading {
+  margin: 0;
+  font: 400 20px/28px Georgia, serif;
+  color: var(--ink);
+}
+.fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ink);
+}
+.fields input, .fields select { min-height: 40px; max-width: 100%; }
+@media (max-width: 800px) {
+  .fields { grid-template-columns: minmax(0, 1fr); }
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--ink);
+}
+.note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--muted);
+}
+.error {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ink);
+}

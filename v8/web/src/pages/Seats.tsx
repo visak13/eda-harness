@@ -15,6 +15,7 @@ import { useViewerAliases } from "../auth/useViewer";
 import { AgentLine } from "../components/AgentLine";
 import { presenceOf } from "./presence";
 import { MessageText } from "../components/ArtifactLink";
+import { SpawnSeatForm } from "../components/SpawnSeatForm";
 import styles from "./Seats.module.css";
 
 const FRAMING = "See who is available, read their latest status, and message or resume a seat.";
@@ -88,6 +89,9 @@ export function SeatsPage(): React.JSX.Element {
           {FRAMING}
         </p>
       </header>
+
+      {/* S-ROLES: spawn any role on any ticket, shown only when the pool reports it can spawn */}
+      {caps?.spawn ? <SpawnSeatForm /> : null}
 
       <div className={styles.tabsRow}>
         <div className={styles.tabs} role="tablist" aria-label="Seat states">

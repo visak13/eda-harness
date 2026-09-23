@@ -201,13 +201,24 @@ export const putSettings = (b: UserSettings) => postJson<UserSettings>("/v1/me/s
 export const sendSlackTestPing = () => postJson<{ delivered: boolean }>("/v1/me/settings/slack/test", {});
 
 /** Atomic explicit title + exact raw words. Omitting title preserves legacy caller behavior. */
-export const createEpic = (words: string, choice?: { model: string; effort: string }, title?: string) =>
+export const createEpic = (words: string, choice?: EpicSeatChoice, title?: string) =>
   postJson<TicketRecord>("/v1/tickets", {
     kind: "epic",
     work_type: "feature",
     title: title === undefined ? words : title.trim(),
     words,
-    // owner m-2d7ef9243d: the seat MODEL + EFFORT every spawn on this epic inherits, recorded as
-    // tags on the epic ticket (edp8/seat_choice.py) — chosen before any launch.
-    ...(choice ? { tags: [`seat-model:${choice.model}`, `seat-effort:${choice.effort}`] } : {}),
+    // S-ROLES (design-34bf11cc07 §4.1): one model per role + the effort every spawn on this epic
+    // inherits, recorded as `model:<role>=<id>` / `seat-effort:` tags (edp8/seat_choice.py).
+    ...(choice ? { tags: epicChoiceTags(choice) } : {}),
   });
+
+/** The per-role models and the epic-wide effort chosen in the new-epic dialog. */
+export interface EpicSeatChoice {
+  roleModels: Record<string, string>;
+  effort: string;
+}
+
+export const epicChoiceTags = (c: EpicSeatChoice): string[] => [
+  ...Object.entries(c.roleModels).filter(([r, m]) => r && m).map(([r, m]) => `model:${r}=${m}`),
+  `seat-effort:${c.effort}`,
+];

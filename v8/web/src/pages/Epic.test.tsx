@@ -305,6 +305,20 @@ describe("EpicPage", () => {
     expect(await within(drawer).findByTestId("seat-choice")).toHaveTextContent("GPT-6 Astra, effort high");
   });
 
+  it("the header shows the model each role's seats run on (S-ROLES)", async () => {
+    mount(page({ role_models: { architect: "gpt-6-astra", engineer: "claude-opus-5-5", qa: "claude-fable-5-1", adversary: "gpt-6-astra", sme: "gpt-6-sol" } }));
+    await title();
+    expect(await screen.findByTestId("work-role-model-architect")).toHaveTextContent("architect GPT-6 Astra");
+    expect(screen.getByTestId("work-role-model-engineer")).toHaveTextContent("engineer Claude Opus 5.5");
+    expect(screen.getByTestId("work-role-model-sme")).toHaveTextContent("sme GPT-6 Sol");
+  });
+
+  it("an older board without role_models renders no Models row", async () => {
+    mount(page());
+    await title();
+    expect(screen.queryByTestId("work-role-models")).not.toBeInTheDocument();
+  });
+
   it("the header names the live resident architect and its seat state (t-cf353a4051)", async () => {
     mount(page({ architect: { id: "architect.epic-9", state: "alive" } }));
     await title();

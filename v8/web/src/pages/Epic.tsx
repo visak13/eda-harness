@@ -164,6 +164,7 @@ export function EpicPage(): React.JSX.Element {
         status={epic.status} assignee={epic.assignee ?? row?.assigned_seats[0] ?? null} designRef={design?.id ?? null}
         reviewRequested={data.answerable_gates.some((g) => g.gate === "design_signoff") || undefined}
         architect={data.architect ?? null}
+        roleModels={data.role_models ?? null}
         actions={<ActionsMenu items={actions} subject={heading} />}
         work={work}
       />

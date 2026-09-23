@@ -50,8 +50,32 @@
   line-height: 20px;
   color: var(--ink);
 }
+/* S-ROLES: one model select per role */
+.roleModels {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.roleModels legend {
+  grid-column: 1 / -1;
+  padding: 0;
+  margin-bottom: 4px;
+}
+.roleModels label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ink);
+  text-transform: capitalize;
+}
+.roleModels select { text-transform: none; }
 @media (max-width: 480px) {
-  .choice {
+  .choice, .roleModels {
     grid-template-columns: 1fr;
   }
 }

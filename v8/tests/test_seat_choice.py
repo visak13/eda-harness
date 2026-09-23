@@ -327,3 +327,21 @@ def test_auto_pairing_uses_the_paired_roles_model(cat_home):
                                tags=["model:qa=gpt-6-astra"])
     assert board._spawn_seat("qa", f"qa.{epic.id}", epic.id) is True
     assert pool.calls[-1]["model"] == "codex/gpt-6-astra"
+
+
+def test_rest_spawn_assign_makes_the_seat_the_assignee(cat_home, monkeypatch):
+    """Spawn seat (Seats page): the owner spawns an engineer on a ready story without the architect,
+    and the story's assignee becomes that engineer."""
+    board = Board(Store(":memory:"))
+    client = TestClient(create_app(board, admin_token="t"))
+    for pid, role, typ in (("owner", "owner", "human"), ("arch", "architect", "agent")):
+        client.post("/v1/participants", json={"type": typ, "role": role, "handle": pid, "id": pid}, headers=ADMIN)
+    calls = _stub_pool(monkeypatch)
+    epic = _epic(client, [])
+    story = _story(client, epic)
+    r = client.post("/v1/sessions/spawn", json={"role": "engineer", "participant_id": f"engineer.{story}",
+                                                "ticket_id": story, "model": "gpt-6-sol", "assign": True},
+                    headers=OWNER)
+    assert r.status_code == 200, r.text
+    assert r.json()["value"]["assignee"] == f"engineer.{story}" and calls[-1]["model"] == "codex/gpt-6-sol"
+    assert client.get(f"/v1/tickets/{story}", headers=OWNER).json()["value"]["assignee"] == f"engineer.{story}"

@@ -232,6 +232,7 @@ class SessionSpawnIn(BaseModel):
     model: str | None = None   # a seat name ("astra") or exact id; omitted = the epic's seat choice
     effort: str | None = None  # low | medium | high; omitted = the epic's seat choice (Claude capped at medium)
     mode: str | None = None
+    assign: bool = False       # S-ROLES Spawn seat: the spawned seat becomes the ticket's assignee
 
 
 class SessionActionIn(BaseModel):
@@ -1096,6 +1097,9 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         if out.get("ok"):
             if isinstance(out.get("value"), dict):
                 out["value"]["seat_choice"] = choice.as_dict()
+                if b.assign and b.ticket_id:  # the owner's Spawn seat puts the new seat on the ticket
+                    t = board.ticket_update(a, b.ticket_id, assignee=b.participant_id)
+                    out["value"]["assignee"] = t.assignee
             _idem_put(a, idempotency_key, out)
             return out
         return _pool_result(out)

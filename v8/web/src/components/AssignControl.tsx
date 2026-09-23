@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { patchTicket } from "../api/endpoints";
-import { getPoolCapabilities, spawnSeat } from "../api/seats";
+import { getPoolCapabilities, modelLabel, spawnSeat } from "../api/seats";
 import { BoardApiError } from "../api/client";
 import type { PoolCapabilities, SeatChoice } from "../api/types";
 import styles from "./AssignControl.module.css";
@@ -10,7 +10,7 @@ import styles from "./AssignControl.module.css";
  *  medium"; a Claude epic that asked for high shows the board's cap note verbatim. */
 export function seatChoiceWords(c: SeatChoice | null | undefined): string {
   if (!c) return "Claude (the fleet default)";
-  const model = c.model == null || c.model === "claude" ? "Claude" : c.model === "astra" ? "GPT-6 Astra" : c.model;
+  const model = c.model == null ? "Claude" : modelLabel(c.model);
   const effort = c.effort ? `, effort ${c.effort}` : "";
   return `${model}${effort}${c.note ? ` — ${c.note}` : ""}`;
 }

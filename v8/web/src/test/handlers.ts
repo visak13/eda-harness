@@ -3,6 +3,14 @@ import { http, HttpResponse } from "msw";
 // Mock handlers return the SAME `{ok, value, hint}` envelope the board does, so a test
 // passing against the mock passes against the server (strategy_ll §5). Handlers here are
 // the shared defaults; a test narrows them with `server.use(...)`.
+export const MODEL_CATALOG = {
+  roles: {
+    architect: ["claude-fable-5-1", "gpt-6-astra"], engineer: ["claude-opus-5-5", "gpt-6-sol"],
+    qa: ["claude-fable-5-1", "gpt-6-astra"], adversary: ["gpt-6-astra"], sme: ["claude-opus-5-5", "gpt-6-sol"],
+  },
+  defaults: { architect: "claude-fable-5-1", engineer: "claude-opus-5-5", qa: "claude-fable-5-1", adversary: "gpt-6-astra", sme: "claude-opus-5-5" },
+};
+
 export const handlers = [
   http.get("/v1/docs/:id/sources", () => HttpResponse.json({ ok: true, value: [{ id: "epic-1", title: "Source work" }] })),
   http.get("/v1/artifacts/:id", ({ params }) => HttpResponse.json({ ok: true, value: { id: params.id, form: "repo_ref", uri: "git:example", note: "Reference", created_by: "owner", created_at: "2026-09-18" } })),
@@ -29,6 +37,8 @@ export const handlers = [
     HttpResponse.json({ ok: true, value: { decisions: 0, epics: 0, seats: 0, library: 0 } }),
   ),
   http.get("/v1/epics/summary", () => HttpResponse.json({ ok: true, value: [] })),
+  // S-ROLES: the per-role model catalog (models.json role_models)
+  http.get("/v1/models", () => HttpResponse.json({ ok: true, value: MODEL_CATALOG, hint: "" })),
   // The live feed: an open stream that never emits (tests that need events override this).
   http.get("/v1/feed", () =>
     new HttpResponse(new ReadableStream(), { headers: { "content-type": "text/event-stream" } }),
