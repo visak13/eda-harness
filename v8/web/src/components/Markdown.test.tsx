@@ -39,3 +39,21 @@ describe("message Markdown", () => {
     expect(container.querySelector("script")).toBeNull();
   });
 });
+
+// t-cb431765fc (c-894f88bd1b): a document fits its column — no sideways scroller inside the design review.
+// jsdom does no layout, so this pins the rules; scripts/reader_walk.mjs measures the pixels on a real board.
+describe("document Markdown fits its column", () => {
+  it("wraps code, table cells and inline code, and nothing in the doc or review CSS scrolls sideways", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const md = readFileSync(resolve(__dirname, "Markdown.module.css"), "utf-8");
+    const review = readFileSync(resolve(__dirname, "DesignReview.module.css"), "utf-8");
+    const rule = (sel: string) => md.split(`.docMd :global(${sel}) {`).slice(1).map((r) => r.split("}")[0]).join(";");
+    expect(rule("pre")).toMatch(/white-space:\s*pre-wrap/);
+    expect(rule("pre")).toMatch(/overflow-wrap:\s*anywhere/);
+    expect(rule("code")).toMatch(/overflow-wrap:\s*anywhere/);
+    expect(md).toMatch(/:global\(td\) \{[^}]*overflow-wrap:\s*anywhere/);
+    expect(rule("img")).toMatch(/max-width:\s*100%/);
+    for (const css of [md, review]) expect(css).not.toMatch(/overflow-x:\s*(auto|scroll)/);
+  });
+});

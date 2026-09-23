@@ -1,0 +1,65 @@
+FAIL tab 1684x875-rail-full reader: {"review":true,"viewport":1684,"left":438,"right":1398,"width":960,"rail":"full","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 904<1717 (auto)"],"commentsAndIndexShown":false,"readingWidth":960,"pageHScroll":false}
+shot before-tab-1684x875-rail-full.png
+FAIL tab 1684x875-rail-full panel: {"review":true,"viewport":1684,"left":324,"right":1512,"width":1188,"rail":"full","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 633<1717 (auto)"],"commentsAndIndexShown":true,"readingWidth":689,"pageHScroll":false}
+shot before-tab-panel-1684x875-rail-full.png
+FAIL pop-up 1684x875-rail-full reader: {"review":true,"viewport":1684,"left":248,"right":1436,"width":1188,"rail":"full","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 904<1717 (auto)"],"commentsAndIndexShown":false,"readingWidth":960,"pageHScroll":false}
+shot before-popup-1684x875-rail-full.png
+FAIL pop-up 1684x875-rail-full panel: {"review":true,"viewport":1684,"left":248,"right":1436,"width":1188,"rail":"full","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 633<1717 (auto)"],"commentsAndIndexShown":true,"readingWidth":689,"pageHScroll":false}
+shot before-popup-panel-1684x875-rail-full.png
+FAIL tab 1684x875-rail-collapsed reader: {"review":true,"viewport":1684,"left":374,"right":1334,"width":960,"rail":"collapsed","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 904<1717 (auto)"],"commentsAndIndexShown":false,"readingWidth":960,"pageHScroll":false}
+shot before-tab-1684x875-rail-collapsed.png
+FAIL tab 1684x875-rail-collapsed panel: {"review":true,"viewport":1684,"left":260,"right":1448,"width":1188,"rail":"collapsed","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 633<1717 (auto)"],"commentsAndIndexShown":true,"readingWidth":689,"pageHScroll":false}
+shot before-tab-panel-1684x875-rail-collapsed.png
+FAIL pop-up 1684x875-rail-collapsed reader: {"review":true,"viewport":1684,"left":248,"right":1436,"width":1188,"rail":"collapsed","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 904<1717 (auto)"],"commentsAndIndexShown":false,"readingWidth":960,"pageHScroll":false}
+shot before-popup-1684x875-rail-collapsed.png
+FAIL pop-up 1684x875-rail-collapsed panel: {"review":true,"viewport":1684,"left":248,"right":1436,"width":1188,"rail":"collapsed","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 633<1717 (auto)"],"commentsAndIndexShown":true,"readingWidth":689,"pageHScroll":false}
+shot before-popup-panel-1684x875-rail-collapsed.png
+FAIL tab 1852x962-rail-full reader: {"review":true,"viewport":1852,"left":522,"right":1482,"width":960,"rail":"full","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 904<1717 (auto)"],"commentsAndIndexShown":false,"readingWidth":960,"pageHScroll":false}
+shot before-tab-1852x962-rail-full.png
+FAIL tab 1852x962-rail-full panel: {"review":true,"viewport":1852,"left":408,"right":1596,"width":1188,"rail":"full","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 633<1717 (auto)"],"commentsAndIndexShown":true,"readingWidth":689,"pageHScroll":false}
+shot before-tab-panel-1852x962-rail-full.png
+FAIL pop-up 1852x962-rail-full reader: {"review":true,"viewport":1852,"left":332,"right":1520,"width":1188,"rail":"full","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 904<1717 (auto)"],"commentsAndIndexShown":false,"readingWidth":960,"pageHScroll":false}
+shot before-popup-1852x962-rail-full.png
+FAIL pop-up 1852x962-rail-full panel: {"review":true,"viewport":1852,"left":332,"right":1520,"width":1188,"rail":"full","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 633<1717 (auto)"],"commentsAndIndexShown":true,"readingWidth":689,"pageHScroll":false}
+shot before-popup-panel-1852x962-rail-full.png
+FAIL tab 1852x962-rail-collapsed reader: {"review":true,"viewport":1852,"left":458,"right":1418,"width":960,"rail":"collapsed","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 904<1717 (auto)"],"commentsAndIndexShown":false,"readingWidth":960,"pageHScroll":false}
+shot before-tab-1852x962-rail-collapsed.png
+FAIL tab 1852x962-rail-collapsed panel: {"review":true,"viewport":1852,"left":344,"right":1532,"width":1188,"rail":"collapsed","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 633<1717 (auto)"],"commentsAndIndexShown":true,"readingWidth":689,"pageHScroll":false}
+shot before-tab-panel-1852x962-rail-collapsed.png
+FAIL pop-up 1852x962-rail-collapsed reader: {"review":true,"viewport":1852,"left":332,"right":1520,"width":1188,"rail":"collapsed","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 904<1717 (auto)"],"commentsAndIndexShown":false,"readingWidth":960,"pageHScroll":false}
+shot before-popup-1852x962-rail-collapsed.png
+FAIL pop-up 1852x962-rail-collapsed panel: {"review":true,"viewport":1852,"left":332,"right":1520,"width":1188,"rail":"collapsed","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 633<1717 (auto)"],"commentsAndIndexShown":true,"readingWidth":689,"pageHScroll":false}
+shot before-popup-panel-1852x962-rail-collapsed.png
+FAIL tab 1280x800-rail-full reader: {"review":true,"viewport":1280,"left":236,"right":1196,"width":960,"rail":"full","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 904<1717 (auto)"],"commentsAndIndexShown":false,"readingWidth":960,"pageHScroll":false}
+shot before-tab-1280x800-rail-full.png
+FAIL tab 1280x800-rail-full panel: {"review":true,"viewport":1280,"left":225,"right":1207,"width":982,"rail":"full","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 513<1717 (auto)"],"commentsAndIndexShown":true,"readingWidth":569,"pageHScroll":false}
+shot before-tab-panel-1280x800-rail-full.png
+FAIL pop-up 1280x800-rail-full reader: {"review":true,"viewport":1280,"left":46,"right":1234,"width":1188,"rail":"full","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 904<1717 (auto)"],"commentsAndIndexShown":false,"readingWidth":960,"pageHScroll":false}
+shot before-popup-1280x800-rail-full.png
+FAIL pop-up 1280x800-rail-full panel: {"review":true,"viewport":1280,"left":46,"right":1234,"width":1188,"rail":"full","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 633<1717 (auto)"],"commentsAndIndexShown":true,"readingWidth":689,"pageHScroll":false}
+shot before-popup-panel-1280x800-rail-full.png
+FAIL tab 1280x800-rail-collapsed reader: {"review":true,"viewport":1280,"left":172,"right":1132,"width":960,"rail":"collapsed","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 904<1717 (auto)"],"commentsAndIndexShown":false,"readingWidth":960,"pageHScroll":false}
+shot before-tab-1280x800-rail-collapsed.png
+FAIL tab 1280x800-rail-collapsed panel: {"review":true,"viewport":1280,"left":97,"right":1207,"width":1110,"rail":"collapsed","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 588<1717 (auto)"],"commentsAndIndexShown":true,"readingWidth":644,"pageHScroll":false}
+shot before-tab-panel-1280x800-rail-collapsed.png
+FAIL pop-up 1280x800-rail-collapsed reader: {"review":true,"viewport":1280,"left":46,"right":1234,"width":1188,"rail":"collapsed","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 904<1717 (auto)"],"commentsAndIndexShown":false,"readingWidth":960,"pageHScroll":false}
+shot before-popup-1280x800-rail-collapsed.png
+FAIL pop-up 1280x800-rail-collapsed panel: {"review":true,"viewport":1280,"left":46,"right":1234,"width":1188,"rail":"collapsed","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 633<1717 (auto)"],"commentsAndIndexShown":true,"readingWidth":689,"pageHScroll":false}
+shot before-popup-panel-1280x800-rail-collapsed.png
+FAIL tab 1920x1080-rail-full reader: {"review":true,"viewport":1920,"left":556,"right":1516,"width":960,"rail":"full","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 904<1717 (auto)"],"commentsAndIndexShown":false,"readingWidth":960,"pageHScroll":false}
+shot before-tab-1920x1080-rail-full.png
+FAIL tab 1920x1080-rail-full panel: {"review":true,"viewport":1920,"left":442,"right":1630,"width":1188,"rail":"full","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 633<1717 (auto)"],"commentsAndIndexShown":true,"readingWidth":689,"pageHScroll":false}
+shot before-tab-panel-1920x1080-rail-full.png
+FAIL pop-up 1920x1080-rail-full reader: {"review":true,"viewport":1920,"left":366,"right":1554,"width":1188,"rail":"full","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 904<1717 (auto)"],"commentsAndIndexShown":false,"readingWidth":960,"pageHScroll":false}
+shot before-popup-1920x1080-rail-full.png
+FAIL pop-up 1920x1080-rail-full panel: {"review":true,"viewport":1920,"left":366,"right":1554,"width":1188,"rail":"full","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 633<1717 (auto)"],"commentsAndIndexShown":true,"readingWidth":689,"pageHScroll":false}
+shot before-popup-panel-1920x1080-rail-full.png
+FAIL tab 1920x1080-rail-collapsed reader: {"review":true,"viewport":1920,"left":492,"right":1452,"width":960,"rail":"collapsed","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 904<1717 (auto)"],"commentsAndIndexShown":false,"readingWidth":960,"pageHScroll":false}
+shot before-tab-1920x1080-rail-collapsed.png
+FAIL tab 1920x1080-rail-collapsed panel: {"review":true,"viewport":1920,"left":378,"right":1566,"width":1188,"rail":"collapsed","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 633<1717 (auto)"],"commentsAndIndexShown":true,"readingWidth":689,"pageHScroll":false}
+shot before-tab-panel-1920x1080-rail-collapsed.png
+FAIL pop-up 1920x1080-rail-collapsed reader: {"review":true,"viewport":1920,"left":366,"right":1554,"width":1188,"rail":"collapsed","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 904<1717 (auto)"],"commentsAndIndexShown":false,"readingWidth":960,"pageHScroll":false}
+shot before-popup-1920x1080-rail-collapsed.png
+FAIL pop-up 1920x1080-rail-collapsed panel: {"review":true,"viewport":1920,"left":366,"right":1554,"width":1188,"rail":"collapsed","pastViewport":false,"toolsOutOfView":0,"innerOverflow":["pre.- 633<1717 (auto)"],"commentsAndIndexShown":true,"readingWidth":689,"pageHScroll":false}
+shot before-popup-panel-1920x1080-rail-collapsed.png
+32 FAIL: tab 1684x875-rail-full reader | tab 1684x875-rail-full panel | pop-up 1684x875-rail-full reader | pop-up 1684x875-rail-full panel | tab 1684x875-rail-collapsed reader | tab 1684x875-rail-collapsed panel | pop-up 1684x875-rail-collapsed reader | pop-up 1684x875-rail-collapsed panel | tab 1852x962-rail-full reader | tab 1852x962-rail-full panel | pop-up 1852x962-rail-full reader | pop-up 1852x962-rail-full panel | tab 1852x962-rail-collapsed reader | tab 1852x962-rail-collapsed panel | pop-up 1852x962-rail-collapsed reader | pop-up 1852x962-rail-collapsed panel | tab 1280x800-rail-full reader | tab 1280x800-rail-full panel | pop-up 1280x800-rail-full reader | pop-up 1280x800-rail-full panel | tab 1280x800-rail-collapsed reader | tab 1280x800-rail-collapsed panel | pop-up 1280x800-rail-collapsed reader | pop-up 1280x800-rail-collapsed panel | tab 1920x1080-rail-full reader | tab 1920x1080-rail-full panel | pop-up 1920x1080-rail-full reader | pop-up 1920x1080-rail-full panel | tab 1920x1080-rail-collapsed reader | tab 1920x1080-rail-collapsed panel | pop-up 1920x1080-rail-collapsed reader | pop-up 1920x1080-rail-collapsed panel

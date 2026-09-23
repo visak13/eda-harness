@@ -48,10 +48,15 @@
 }
 .docMd :global(code) {
   padding: 1px 5px;
+  overflow-wrap: anywhere;
 }
+/* t-cb431765fc (c-894f88bd1b): a document fits its column — a long code line wraps instead of scrolling
+   sideways (the old x-scroll rule here made a 1717px-wide inner scroller in a 904px reading column,
+   which the owner saw as "the design page still overflows"); tables and images shrink to the column too. */
 .docMd :global(pre) {
   padding: 12px 14px;
-  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .docMd :global(pre) code {
   background: transparent;
@@ -71,6 +76,11 @@
   border: 1px solid var(--line);
   padding: 6px 10px;
   text-align: left;
+  overflow-wrap: anywhere;
+}
+.docMd :global(img) {
+  max-width: 100%;
+  height: auto;
 }
 .docMd :global(blockquote) {
   border-left: 3px solid var(--strongline);

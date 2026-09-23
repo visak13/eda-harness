@@ -1,12 +1,12 @@
-"""t-feb26a46d9 (S-SME-SURFACE follow-up): design reader-mode screenshots on a PRIVATE board.
+"""t-feb26a46d9 / t-cb431765fc: design review fit screenshots + overflow measures on a PRIVATE board.
 
     .venv/Scripts/python.exe scripts/reader_walk.py before|after
 
 Seeds an epic with a long design doc (headings, a wide table, a long code line) as its design_ref, then
 scripts/reader_walk.mjs shoots the design in its own tab (/ui/doc/<id>?source=<epic>) and in the pop-up
-(the epic page's Design link) at 1280 and 1920 with the left rail expanded, and measures what is clipped.
+(the epic page's Design link) at four viewports, rail expanded and collapsed, and measures what overflows.
 The board is scripts/adversary_repro.py's harness with its own tokens.json (EDP8_TOKENS); the fleet
-v8/tokens.json mtime is checked before and after. Writes docs/evidence/s-sme-surface/reader/.
+v8/tokens.json mtime is checked before and after. Writes docs/evidence/s-adv/design-overflow/ (was s-sme-surface/reader/ for t-feb26a46d9).
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ sys.path.insert(0, str(V8 / "scripts"))
 import adversary_repro as H  # noqa: E402
 from topic_walk import start_pool  # noqa: E402
 
-OUT = V8 / "docs" / "evidence" / "s-sme-surface" / "reader"
+OUT = V8 / "docs" / "evidence" / "s-adv" / "design-overflow"
 OWNER_SECRET = "walk-owner-secret"
 ARCH, ARCH_SECRET = "architect.reader", "walk-architect-secret"
 
