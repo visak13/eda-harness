@@ -1,0 +1,10 @@
+{
+ "version": 1,
+ "about": "RSI phase-1 tripwire manifest (report-9a85d0418e §9). Every listed exam is only ever READ by edp8.rsi. 'required' names the per-question field holding the record ids that must be in the pack; an exam without required evidence is listed with a 'skip' reason and never run.",
+ "finding": {"ticket_id": "epic-44a0576511", "to": "architect"},
+ "exams": [
+  {"name": "exam_regressions", "path": "tests/exam_regressions.json", "required": "expected_ids"},
+  {"name": "synthetic", "path": "tests/rsi/synthetic.json", "required": "required_ids"},
+  {"name": "exam4", "path": ".data/exams/r4/exam4.json", "skip": "no required evidence (30 proof_ids, 0 expected_ids; private, gitignored)"}
+ ]
+}

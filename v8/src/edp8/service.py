@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from . import pool_adapter
+from . import rsi  # S18: imported at boot so rsi.LOADED hashes the retrieval code this process runs
 from .board import Board, BoardError
 from .contextual_work import HistoryCategory, contextual_work
 from .design_review import DocumentComment, ReviewDecision, comment, decide, source_context
@@ -331,6 +332,10 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         board.ensure_epic_ids()
     except Exception as e:  # noqa: BLE001
         logging.getLogger("edp8.service").warning("epic_id backfill failed: %s", e)
+    try:  # S18 §9 c7: the RSI tables exist on any DB (Store init); the incumbent policy p-0 is written once
+        rsi.ensure_p0(board.store)
+    except Exception as e:  # noqa: BLE001 — never block startup on the monitor's bookkeeping
+        logging.getLogger("edp8.service").warning("rsi p-0 bootstrap failed: %s", e)
     app = FastAPI(title="edp8 board", version="0.8.0")
     app.state.board = board
 
@@ -1266,6 +1271,12 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
                     log.warning("hourly staged-artifact sweep failed: %s", e)
 
         threading.Thread(target=_sweep_loop, name="edp8-upload-sweep", daemon=True).start()
+
+    # S18: the RSI regression tripwire, OFF unless EDP8_RSI=1; the flag is re-read every loop and
+    # app.state.rsi_stop ends it at once.
+    app.state.rsi_stop = None
+    if os.environ.get("EDP8_RSI") == "1":
+        _rsi_thread, app.state.rsi_stop = rsi.start_thread(board)
 
     @app.get("/healthz")
     def healthz():

@@ -2022,28 +2022,9 @@ class Board:
         Reuses the board's semantic Index when installed; FTS otherwise. `ref_now` is the request
         clock: the freshness `now` is read ONCE per lookup (O2), so calls sharing a clock score alike."""
         ref_now = ref_now or now()
-        semantic = None
-        lesson_semantic = None
-        embed_status = None
-        source_search = None
-        if self.index is not None:
-            # D4: the seed leg is DENSE-ONLY so it casts an independent vote alongside FTS in _seed,
-            # instead of one diluted vote inside the BM25+dense fused search().
-            # E5 (finding m-205a352fec): rank WITHIN the scope. A global top-16 filtered to the epic
-            # afterwards left a large epic only its share of 16, so its adaptive per-leg count never filled.
-            allow = knowledge.live_scope_ids(self.store, knowledge._epic_id_of(self.store, scope))
-            semantic = lambda q: self.index.dense_search(q, k=knowledge.DENSE_FETCH,  # noqa: E731
-                                                         types=set(knowledge.EPIC_TYPES), allow_ids=allow)
-            # second opinion P2: lessons get their OWN dense pool (type-filtered before truncation), so the
-            # epic's records and the cross-epic lessons can never crowd each other out of one top-k
-            lesson_semantic = lambda q: self.index.dense_search(q, k=knowledge.DENSE_FETCH,  # noqa: E731
-                                                                types={"lesson"})
-            embed_status = self.index.status()  # R2-6: report the seeding backend in the receipt
-            # R2-7: the source-fallback tier searches the epic's own messages/docs (BM25 ∪ dense)
-            source_search = lambda q: self.index.search(q, k=30, types={"message", "doc"})  # noqa: E731
-        return knowledge.lookup(self.store, scope, question=question, id=id, path=path,
-                                semantic=semantic, embed_status=embed_status, source_search=source_search,
-                                lesson_semantic=lesson_semantic, ref_now=ref_now)
+        # S18: the index wiring lives in knowledge.wired_lookup so the RSI tripwire replays this exact call
+        return knowledge.wired_lookup(self.store, self.index, scope, question=question, id=id, path=path,
+                                      ref_now=ref_now)
 
     def last_status(self, p: Participant) -> dict[str, Any] | None:
         """The most recent status_recorded event data by this participant on its tickets."""

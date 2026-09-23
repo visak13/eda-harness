@@ -36,6 +36,10 @@ _INDEXED: dict[str, list[str]] = {
     "claim": ["scope", "status", "basis"],
     "lesson": ["domain", "topic", "status"],
     "kglink": ["from_id", "to_id", "kind"],
+    # RSI phase 1 (report-9a85d0418e §7): written only by edp8.rsi
+    "policy": ["status", "parent"],
+    "rsi_run": ["verdict", "trigger", "started_at"],
+    "rsi_state": [],
 }
 
 
@@ -114,6 +118,9 @@ class Store:
                 "PRIMARY KEY(doc_id, version))"
             )
             self._conn.execute("CREATE TABLE IF NOT EXISTS seq (name TEXT PRIMARY KEY, n INTEGER)")
+            # RSI §7: at most one incumbent policy, enforced by the DB (not only by edp8.rsi)
+            self._conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS ux_policy_incumbent ON policy("status") '
+                               "WHERE status='incumbent'")
             self._conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(type UNINDEXED, id UNINDEXED, text)")
             if self._conn.execute("SELECT count(*) FROM fts").fetchone()[0] == 0:
                 self._fts_rebuild_locked()

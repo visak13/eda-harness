@@ -409,6 +409,53 @@ class KgLink(Obj):
     kind: LinkKind
 
 
+# ----------------------------------------------------------------------------- RSI (report-9a85d0418e §7)
+# Phase 1 (S18): the self-triggered retrieval regression monitor. Only edp8.rsi writes these three.
+class Policy(Obj):
+    """One tried retrieval policy (a knob set). Phase 1 holds exactly one incumbent, p-0 = the
+    module constants in knowledge.py; later phases add candidates."""
+    status: Literal["candidate", "incumbent", "retired", "rejected"] = "candidate"
+    parent: str | None = None
+    knobs: dict[str, Any] = Field(default_factory=dict)
+    bounds_ref: str | None = None
+    proposed_by: str = ""
+    rationale: str = ""
+
+
+class RsiRun(Obj):
+    """One F0 tripwire run: what triggered it, the full identity it ran under, the per-question
+    evidence and the verdict. Holds are not runs (they live in RsiState.last_attempt)."""
+    trigger: Literal["bootstrap", "T1", "T2", "manual"]
+    stage: Literal["replay", "live"] = "replay"
+    policy_id: str = "p-0"
+    identity: dict[str, Any] = Field(default_factory=dict)
+    per_question: list[dict[str, Any]] = Field(default_factory=list)
+    skipped: list[dict[str, Any]] = Field(default_factory=list)
+    regressions: list[dict[str, Any]] = Field(default_factory=list)
+    f0: dict[str, Any] = Field(default_factory=dict)
+    f1: dict[str, Any] | None = None
+    baseline_run: str | None = None
+    verdict: Literal["pass", "regressed", "error"]
+    hold_reason: str = ""
+    error: str = ""
+    finding_msg_id: str | None = None
+    tokens: dict[str, Any] | None = None
+    wall_s: float | None = None
+    peak_rss_mb: float | None = None
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+
+
+class RsiState(Obj):
+    """The singleton bookkeeping row (id `rsi-state`): attempt, consumed trigger and last pass are
+    kept apart (§3) so a hold or an error never consumes a trigger."""
+    last_attempt: dict[str, Any] | None = None
+    last_consumed: dict[str, Any] | None = None  # {at, run_id, corpus_fp, code_hash, rows}
+    last_pass_run: str | None = None
+    in_flight: dict[str, Any] | None = None  # {run_id, lease_until}
+    story_watermarks: dict[str, int] = Field(default_factory=dict)
+
+
 OBJECT_TYPES: dict[str, type[Obj]] = {
     "participant": Participant,
     "ticket": Ticket,
@@ -423,6 +470,9 @@ OBJECT_TYPES: dict[str, type[Obj]] = {
     "claim": Claim,
     "lesson": Lesson,
     "kglink": KgLink,
+    "policy": Policy,
+    "rsi_run": RsiRun,
+    "rsi_state": RsiState,
 }
 
 # Every strict-valued enum in the model + the consult tool args, keyed by class name.
@@ -553,4 +603,10 @@ DESCRIBE: dict[str, str] = {
     "kglink": "One knowledge-graph edge (part_of|decides|replaces|must_follow|implements|verifies|proves|"
     "came_from|learned_from|touches) between any two records/objects; separate from the product `link`. "
     "lookup walks these; only decides/replaces/must_follow/learned_from are written on purpose.",
+    "policy": "One retrieval policy (knob set) the RSI loop has tried; status candidate|incumbent|retired|"
+    "rejected. Phase 1 holds one incumbent, p-0 = the current constants. Written only by edp8.rsi.",
+    "rsi_run": "One RSI F0 tripwire run (trigger bootstrap|T1|T2|manual, identity, per-question required "
+    "evidence, verdict pass|regressed|error, finding message id). Written only by edp8.rsi.",
+    "rsi_state": "The RSI singleton: last attempt, last consumed trigger, last pass run, single-flight "
+    "lease. Written only by edp8.rsi.",
 }

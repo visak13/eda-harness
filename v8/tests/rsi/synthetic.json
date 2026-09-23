@@ -1,0 +1,265 @@
+{
+ "about": "RSI synthetic fixture (S18, report-9a85d0418e \u00a79 c3). It carries its OWN corpus and a declared embedding ('vec' tags; FixtureEmbedder), loaded into an in-memory store per tick, so each question needs exactly the retrieval paths it names: fts = the FTS seed leg, dense = the dense seed leg, 1-hop / 2-hop = the kglink walk depth. Record texts share no word with any other question; ten padding records fill the dense leg's top-8 so a hop target is never dense-seeded.",
+ "corpus": {
+  "tickets": [
+   {
+    "id": "epic-rsi-synthetic",
+    "kind": "epic",
+    "work_type": "feature",
+    "title": "RSI synthetic fixture",
+    "epic_id": "epic-rsi-synthetic",
+    "status": "in_progress",
+    "created_at": "2026-09-01T00:00:00Z"
+   }
+  ],
+  "decisions": [
+   {
+    "id": "dec-syn-fts",
+    "scope": "epic-rsi-synthetic",
+    "text": "Xylofrond batches flush nightly.",
+    "created_at": "2026-09-01T00:00:00Z",
+    "decided_by": "rsi-fixture"
+   },
+   {
+    "id": "dec-syn-dense",
+    "scope": "epic-rsi-synthetic",
+    "text": "Quorvane gauges stay calibrated weekly.",
+    "created_at": "2026-09-01T00:00:00Z",
+    "decided_by": "rsi-fixture",
+    "vec": [
+     "dense1"
+    ]
+   },
+   {
+    "id": "dec-syn-seed1",
+    "scope": "epic-rsi-synthetic",
+    "text": "Brimwold cache evicts oldest pages.",
+    "created_at": "2026-09-01T00:00:00Z",
+    "decided_by": "rsi-fixture"
+   },
+   {
+    "id": "dec-syn-hop1",
+    "scope": "epic-rsi-synthetic",
+    "text": "Pellucid tiers promote warm entries.",
+    "created_at": "2026-09-01T00:00:00Z",
+    "decided_by": "rsi-fixture"
+   },
+   {
+    "id": "dec-syn-seed2",
+    "scope": "epic-rsi-synthetic",
+    "text": "Corvid ledger stores shipment receipts.",
+    "created_at": "2026-09-01T00:00:00Z",
+    "decided_by": "rsi-fixture"
+   },
+   {
+    "id": "dec-syn-mid2",
+    "scope": "epic-rsi-synthetic",
+    "text": "Tamsin audits reconcile monthly.",
+    "created_at": "2026-09-01T00:00:00Z",
+    "decided_by": "rsi-fixture"
+   },
+   {
+    "id": "dec-syn-hop2",
+    "scope": "epic-rsi-synthetic",
+    "text": "Umbral archives retain seven years.",
+    "created_at": "2026-09-01T00:00:00Z",
+    "decided_by": "rsi-fixture"
+   },
+   {
+    "id": "dec-syn-pad0",
+    "scope": "epic-rsi-synthetic",
+    "text": "Padding alder stays inert.",
+    "created_at": "2026-09-01T00:00:00Z",
+    "decided_by": "rsi-fixture",
+    "vec": [
+     "common",
+     "noise0"
+    ]
+   },
+   {
+    "id": "dec-syn-pad1",
+    "scope": "epic-rsi-synthetic",
+    "text": "Padding birch stays inert.",
+    "created_at": "2026-09-01T00:00:00Z",
+    "decided_by": "rsi-fixture",
+    "vec": [
+     "common",
+     "noise1"
+    ]
+   },
+   {
+    "id": "dec-syn-pad2",
+    "scope": "epic-rsi-synthetic",
+    "text": "Padding cedar stays inert.",
+    "created_at": "2026-09-01T00:00:00Z",
+    "decided_by": "rsi-fixture",
+    "vec": [
+     "common",
+     "noise2"
+    ]
+   },
+   {
+    "id": "dec-syn-pad3",
+    "scope": "epic-rsi-synthetic",
+    "text": "Padding dogwood stays inert.",
+    "created_at": "2026-09-01T00:00:00Z",
+    "decided_by": "rsi-fixture",
+    "vec": [
+     "common",
+     "noise3"
+    ]
+   },
+   {
+    "id": "dec-syn-pad4",
+    "scope": "epic-rsi-synthetic",
+    "text": "Padding elm stays inert.",
+    "created_at": "2026-09-01T00:00:00Z",
+    "decided_by": "rsi-fixture",
+    "vec": [
+     "common",
+     "noise4"
+    ]
+   },
+   {
+    "id": "dec-syn-pad5",
+    "scope": "epic-rsi-synthetic",
+    "text": "Padding fir stays inert.",
+    "created_at": "2026-09-01T00:00:00Z",
+    "decided_by": "rsi-fixture",
+    "vec": [
+     "common",
+     "noise5"
+    ]
+   },
+   {
+    "id": "dec-syn-pad6",
+    "scope": "epic-rsi-synthetic",
+    "text": "Padding ginkgo stays inert.",
+    "created_at": "2026-09-01T00:00:00Z",
+    "decided_by": "rsi-fixture",
+    "vec": [
+     "common",
+     "noise6"
+    ]
+   },
+   {
+    "id": "dec-syn-pad7",
+    "scope": "epic-rsi-synthetic",
+    "text": "Padding hazel stays inert.",
+    "created_at": "2026-09-01T00:00:00Z",
+    "decided_by": "rsi-fixture",
+    "vec": [
+     "common",
+     "noise7"
+    ]
+   },
+   {
+    "id": "dec-syn-pad8",
+    "scope": "epic-rsi-synthetic",
+    "text": "Padding ironwood stays inert.",
+    "created_at": "2026-09-01T00:00:00Z",
+    "decided_by": "rsi-fixture",
+    "vec": [
+     "common",
+     "noise8"
+    ]
+   },
+   {
+    "id": "dec-syn-pad9",
+    "scope": "epic-rsi-synthetic",
+    "text": "Padding juniper stays inert.",
+    "created_at": "2026-09-01T00:00:00Z",
+    "decided_by": "rsi-fixture",
+    "vec": [
+     "common",
+     "noise9"
+    ]
+   }
+  ],
+  "kglinks": [
+   {
+    "id": "kg-syn-1",
+    "from_id": "dec-syn-seed1",
+    "to_id": "dec-syn-hop1",
+    "kind": "decides",
+    "created_at": "2026-09-01T00:00:00Z"
+   },
+   {
+    "id": "kg-syn-2",
+    "from_id": "dec-syn-seed2",
+    "to_id": "dec-syn-mid2",
+    "kind": "decides",
+    "created_at": "2026-09-01T00:00:00Z"
+   },
+   {
+    "id": "kg-syn-3",
+    "from_id": "dec-syn-mid2",
+    "to_id": "dec-syn-hop2",
+    "kind": "decides",
+    "created_at": "2026-09-01T00:00:00Z"
+   }
+  ]
+ },
+ "questions": [
+  {
+   "n": 1,
+   "epic": "epic-rsi-synthetic",
+   "question": "When do xylofrond batches flush?",
+   "required_ids": [
+    "dec-syn-fts"
+   ],
+   "paths": [
+    "fts"
+   ],
+   "vec": [
+    "common"
+   ]
+  },
+  {
+   "n": 2,
+   "epic": "epic-rsi-synthetic",
+   "question": "How often is the tessaline meter adjusted?",
+   "required_ids": [
+    "dec-syn-dense"
+   ],
+   "paths": [
+    "dense"
+   ],
+   "vec": [
+    "common",
+    "dense1"
+   ]
+  },
+  {
+   "n": 3,
+   "epic": "epic-rsi-synthetic",
+   "question": "Which brimwold rule governs eviction?",
+   "required_ids": [
+    "dec-syn-hop1"
+   ],
+   "paths": [
+    "fts",
+    "1-hop"
+   ],
+   "vec": [
+    "common"
+   ]
+  },
+  {
+   "n": 4,
+   "epic": "epic-rsi-synthetic",
+   "question": "What does the corvid ledger feed?",
+   "required_ids": [
+    "dec-syn-hop2"
+   ],
+   "paths": [
+    "fts",
+    "1-hop",
+    "2-hop"
+   ],
+   "vec": [
+    "common"
+   ]
+  }
+ ]
+}

@@ -543,7 +543,8 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
            ref_now: datetime | None = None,
            embed_status: dict[str, Any] | None = None,
            source_search: Callable[[str], list[dict[str, Any]]] | None = None,
-           lesson_semantic: Callable[[str], list[dict[str, Any]]] | None = None) -> dict[str, Any]:
+           lesson_semantic: Callable[[str], list[dict[str, Any]]] | None = None,
+           max_hops: int = MAX_HOPS) -> dict[str, Any]:
     """Deterministic retrieval (design §4.2). Returns {records, body, receipt}.
 
     scope: epic|ticket id — the isolation boundary. question|id|path: the starting point.
@@ -551,6 +552,8 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
     lesson_semantic(question)->lesson-only dense hits: the lessons' OWN candidate pool, so lessons are
     type-filtered BEFORE truncation (a pool shared with the epic's records lets either crowd out the other);
     falls back to `semantic` when not given.
+    max_hops: the BFS depth, MAX_HOPS for every seat; the RSI tripwire (S18) lowers it per call to prove
+    which questions need the 1-hop/2-hop path, without touching the module constant live requests read.
     """
     ref = ref_now or now()
     target_epic = _epic_id_of(store, scope)
@@ -574,7 +577,7 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
     # well each seed matched the question; BFS neighbours still decay from there by link weight.
     best: dict[str, float] = {s: seed_weights.get(s, SEED_W_HI) for s in seeds}
     frontier: dict[str, float] = dict(best)
-    for _hop in range(MAX_HOPS):
+    for _hop in range(max_hops):
         nxt: dict[str, float] = {}
         for nid, w in frontier.items():
             if nid not in seed_set and _find_record(store, nid) is None:
@@ -872,3 +875,46 @@ def lookup(store: Any, scope: str, *, question: str | None = None, id: str | Non
         **counts,
     }
     return {"records": records, "body": body, "receipt": receipt}
+
+
+class _NoFtsStore:
+    """A read view of a Store whose full-text leg returns nothing — the RSI tripwire's "FTS off" switch
+    for ONE lookup call (S18 §9 c3). Every other read passes through unchanged."""
+
+    def __init__(self, store: Any):
+        self._store = store
+
+    def fts_search(self, q: str, *, types: set[str] | None = None, limit: int = 20) -> list[dict[str, Any]]:
+        return []
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._store, name)
+
+
+def wired_lookup(store: Any, index: Any | None, scope: str, *, question: str | None = None,
+                 id: str | None = None, path: str | None = None, ref_now: datetime | None = None,
+                 max_hops: int = MAX_HOPS, fts: bool = True, dense: bool = True) -> dict[str, Any]:
+    """lookup() wired to the board's semantic Index exactly as a seat's lookup is (Board.lookup delegates
+    here), so the RSI tripwire replays the very call a seat makes. `fts`/`dense`/`max_hops` switch one
+    retrieval path off for THIS call only (S18 §9 c3); a seat always gets the defaults."""
+    semantic = None
+    lesson_semantic = None
+    embed_status = None
+    source_search = None
+    if index is not None and dense:
+        # D4: the seed leg is DENSE-ONLY so it casts an independent vote alongside FTS in _seed,
+        # instead of one diluted vote inside the BM25+dense fused search().
+        # E5 (finding m-205a352fec): rank WITHIN the scope. A global top-16 filtered to the epic
+        # afterwards left a large epic only its share of 16, so its adaptive per-leg count never filled.
+        allow = live_scope_ids(store, _epic_id_of(store, scope))
+        semantic = lambda q: index.dense_search(q, k=DENSE_FETCH,  # noqa: E731
+                                                types=set(EPIC_TYPES), allow_ids=allow)
+        # second opinion P2: lessons get their OWN dense pool (type-filtered before truncation), so the
+        # epic's records and the cross-epic lessons can never crowd each other out of one top-k
+        lesson_semantic = lambda q: index.dense_search(q, k=DENSE_FETCH, types={"lesson"})  # noqa: E731
+        embed_status = index.status()  # R2-6: report the seeding backend in the receipt
+        # R2-7: the source-fallback tier searches the epic's own messages/docs (BM25 ∪ dense)
+        source_search = lambda q: index.search(q, k=30, types={"message", "doc"})  # noqa: E731
+    return lookup(store if fts else _NoFtsStore(store), scope, question=question, id=id, path=path,
+                  semantic=semantic, embed_status=embed_status, source_search=source_search,
+                  lesson_semantic=lesson_semantic, ref_now=ref_now, max_hops=max_hops)
