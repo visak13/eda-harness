@@ -21,7 +21,7 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, 
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
-from . import pool_adapter
+from . import pool_adapter, seat_choice
 from . import rsi  # S18: imported at boot so rsi.LOADED hashes the retrieval code this process runs
 from .board import QUICK_TAG, Board, BoardError
 from .contextual_work import HistoryCategory, contextual_work
@@ -253,6 +253,7 @@ class QuickTaskIn(BaseModel):
     title: str
     words: str
     model: str | None = None   # an engineer-catalog id; omitted = the engineer catalog default
+    effort: str | None = None  # S-UI: low|medium|high for the engineer; Claude is capped at medium
     description: str = ""
     work_type: WorkType = WorkType.feature
 
@@ -1197,10 +1198,15 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         if cached is not None:
             return {**cached, "hint": "idempotent replay: same quick task, no second ticket"}
         t = board.ticket_create(a, kind=TicketKind.story, work_type=b.work_type, title=b.title.strip(),
-                                words=b.words, description=b.description, tags=[QUICK_TAG])
+                                words=b.words, description=b.description,
+                                # S-UI: the quick story is its own root, so its seat choice lives on it
+                                tags=[QUICK_TAG,
+                                      *seat_choice.tags_for_role_models({"engineer": b.model or ""}),
+                                      *seat_choice.tags_for_role_efforts({"engineer": b.effort or ""})])
         seat = f"engineer.{t.id}"
         spawned = _spawn_seat(a, SessionSpawnIn(role=Role.engineer, participant_id=seat, ticket_id=t.id,
-                                                model=b.model or None, assign=True))
+                                                model=b.model or None, effort=b.effort or None,
+                                                assign=True))
         if not spawned.get("ok"):
             err = (spawned.get("error") or {}).get("message", "the pool refused the spawn")
             return {"ok": True, "value": {"ticket": _dump(board.ticket(t.id)), "seat": None, "spawn_error": err},

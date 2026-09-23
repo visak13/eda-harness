@@ -230,21 +230,32 @@ export const createEpic = (words: string, choice?: EpicSeatChoice, title?: strin
     work_type: "feature",
     title: title === undefined ? words : title.trim(),
     words,
-    // S-ROLES (design-34bf11cc07 §4.1): one model per role + the effort every spawn on this epic
-    // inherits, recorded as `model:<role>=<id>` / `seat-effort:` tags (edp8/seat_choice.py).
+    // S-ROLES (design-34bf11cc07 §4.1) + S-UI: one model and one effort per role, recorded as
+    // `model:<role>=<id>` / `seat-effort:<role>=<level>` tags (edp8/seat_choice.py).
     ...(choice ? { tags: epicChoiceTags(choice) } : {}),
   });
 
-/** The per-role models and the epic-wide effort chosen in the new-epic dialog. */
+/** The per-role models and efforts chosen in the new-epic dialog or Actions → Models…. */
 export interface EpicSeatChoice {
   roleModels: Record<string, string>;
-  effort: string;
+  roleEfforts: Record<string, string>;
 }
 
 export const epicChoiceTags = (c: EpicSeatChoice): string[] => [
   ...Object.entries(c.roleModels).filter(([r, m]) => r && m).map(([r, m]) => `model:${r}=${m}`),
-  `seat-effort:${c.effort}`,
+  ...Object.entries(c.roleEfforts).filter(([r, e]) => r && e).map(([r, e]) => `seat-effort:${r}=${e}`),
 ];
+
+/** An epic's tags with its seat choice replaced: every `model:<role>=`, `seat-model:` and
+ *  `seat-effort:` entry goes, the new per-role picks come in, every other tag keeps its place. */
+export const withChoiceTags = (tags: string[], c: EpicSeatChoice): string[] => [
+  ...tags.filter((t) => !/^(model:[^=]+=|seat-model:|seat-effort:)/.test(t)),
+  ...epicChoiceTags(c),
+];
+
+/** PATCH /v1/tickets/{id} tags (Actions → Models…): the owner or the architect may. */
+export const setTicketTags = (id: string, tags: string[]) =>
+  postJson<TicketRecord>(`/v1/tickets/${encodeURIComponent(id)}`, { tags }, "PATCH");
 
 /** What POST /v1/quick-tasks returns: the new quick story, the engineer seat started on it (null when
  *  the pool refused the spawn after the create — `spawn_error` says why; the ticket stays open). */
@@ -257,9 +268,10 @@ export interface QuickTaskCreated {
 /** POST /v1/quick-tasks — S-QUICK (design-34bf11cc07 §4.2): the owner's one-step quick task. The board
  *  creates a parentless story tagged `quick` with the words verbatim, spawns `engineer.<story>` on the
  *  chosen engineer-catalog model and makes it the assignee. The model is sent only when picked. */
-export const createQuickTask = (b: { title: string; words: string; model?: string | null }) =>
+export const createQuickTask = (b: { title: string; words: string; model?: string | null; effort?: string | null }) =>
   postJson<QuickTaskCreated>("/v1/quick-tasks", {
     title: b.title.trim(),
     words: b.words,
     ...(b.model ? { model: b.model } : {}),
+    ...(b.effort ? { effort: b.effort } : {}),
   });

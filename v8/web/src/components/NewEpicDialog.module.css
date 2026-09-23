@@ -50,11 +50,11 @@
   line-height: 20px;
   color: var(--ink);
 }
-/* S-ROLES: one model select per role */
+/* S-ROLES + S-UI: one role · model · effort row per role (SeatPicks) */
 .roleModels {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
   margin: 0;
   padding: 0;
   border: 0;

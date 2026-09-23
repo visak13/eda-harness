@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createQuickTask } from "../api/endpoints";
 import { getModels, getPoolCapabilities, modelLabel } from "../api/seats";
+import { clampEffort, SeatPickHead, SeatPickRow, type Effort } from "./SeatPicks";
 import type { ModelCatalog, PoolCapabilities } from "../api/types";
 import { BoardApiError } from "../api/client";
 import ui from "./ui.module.css";
@@ -31,18 +32,21 @@ export function QuickTaskDialog({ open, onClose }: { open: boolean; onClose: () 
   const catalog = modelsQ.data as ModelCatalog | undefined;
   const options = catalog?.roles?.engineer ?? [];
   const model = picked && options.includes(picked) ? picked : (catalog?.defaults?.engineer ?? "");
+  // S-UI: the engineer's effort beside its model (Claude capped at medium)
+  const [effortPick, setEffortPick] = useState<Effort>("medium");
+  const effort = clampEffort(model, effortPick);
   const capsQ = useQuery({ queryKey: ["pool", "capabilities"], queryFn: getPoolCapabilities, retry: false, enabled: open });
   const caps = capsQ.data as PoolCapabilities | undefined;
   const canSpawn = Boolean(caps?.spawn);
   useModalDialog(open, panelRef, titleRef, busy, onClose);
 
   const create = useMutation({
-    mutationFn: () => createQuickTask({ title, words, model: model || null }),
+    mutationFn: () => createQuickTask({ title, words, model: model || null, effort }),
     onSuccess: (res) => {
       void qc.invalidateQueries({ queryKey: ["seats"] });
       void qc.invalidateQueries({ queryKey: ["me", "summary"] });
       const id = res.value.ticket.id;
-      setTitle(""); setWords(""); setPicked(null);
+      setTitle(""); setWords(""); setPicked(null); setEffortPick("medium");
       if (!res.value.seat) { setStranded({ id, hint: res.hint }); return; }
       navigate(`/ticket/${encodeURIComponent(id)}`);
       onClose();
@@ -76,15 +80,12 @@ export function QuickTaskDialog({ open, onClose }: { open: boolean; onClose: () 
         <textarea id="quick-task-words" data-testid="quick-task-words" className={ui.textarea} rows={5} value={words}
           disabled={create.isPending} onChange={(e) => setWords(e.target.value)}
           placeholder="The small task, in your own words. The engineer plans from them verbatim." />
-        <div className={styles.choice}>
-          <label>
-            Engineer model
-            <select className={ui.select} value={model} disabled={create.isPending || !options.length}
-              onChange={(e) => setPicked(e.target.value)} data-testid="quick-task-model">
-              {options.map((id) => <option key={id} value={id}>{modelLabel(id)}</option>)}
-            </select>
-          </label>
-        </div>
+        <fieldset className={styles.roleModels} data-testid="quick-task-role-models">
+          <legend className={ui.sectionLabel}>Engineer model and effort</legend>
+          <SeatPickHead />
+          <SeatPickRow role="engineer" testIdPrefix="quick-task" options={options} model={model} effort={effort}
+            disabled={create.isPending} onModel={setPicked} onEffort={setEffortPick} />
+        </fieldset>
         {modelsQ.isError ? (
           <p className={styles.muted} role="alert" data-testid="quick-task-models-error">
             Could not load the model catalog; the engineer runs on the board's default.
@@ -92,7 +93,7 @@ export function QuickTaskDialog({ open, onClose }: { open: boolean; onClose: () 
         ) : null}
         <p className={styles.preview} data-testid="quick-task-preview">
           {canSpawn
-            ? `Opens a quick task with your words verbatim, starts an engineer on ${model ? modelLabel(model) : "the default engineer model"} and assigns it. The engineer writes a plan and one or two criteria you check; it lands in Needs you when handed off.`
+            ? `Opens a quick task with your words verbatim, starts an engineer on ${model ? modelLabel(model) : "the default engineer model"} at effort ${effort} and assigns it. The engineer writes a plan and one or two criteria you check; it lands in Needs you when handed off.`
             : `The pool cannot start a seat from here${caps?.reason ? ` (${caps.reason})` : ""}, so no quick task is opened.`}
         </p>
         {err ? <p className={ui.banner} role="alert" data-testid="quick-task-error">{err.hint ?? err.message}</p> : null}

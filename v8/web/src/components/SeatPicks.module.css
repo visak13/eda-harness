@@ -1,0 +1,52 @@
+/* S-UI: role · model · effort on one row; the cap note sits last so the selects line up. */
+.row,
+.head {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.9fr) minmax(0, 1.6fr) minmax(88px, 0.7fr) minmax(0, 0.9fr);
+  align-items: center;
+  gap: 10px;
+}
+.head {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.role {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 14px;
+  color: var(--ink);
+}
+.roleName { text-transform: capitalize; white-space: nowrap; }
+.model,
+.effort {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.model select,
+.effort select { width: 100%; min-width: 0; }
+.cap {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+@media (max-width: 560px) {
+  .row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .head { display: none; }
+  .role, .cap { grid-column: 1 / -1; }
+}

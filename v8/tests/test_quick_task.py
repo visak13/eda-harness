@@ -254,3 +254,16 @@ def test_a_checker_spawned_on_a_story_never_takes_the_assignee(api):
         assert calls[-1]["participant_id"] == f"{role}.{tid}"
     got = client.get(f"/v1/tickets/{tid}", headers=OWNER).json()["value"]
     assert got["assignee"] == f"engineer.{tid}"  # the doer stays the assignee
+
+
+def test_quick_task_endpoint_carries_the_engineer_effort_s_ui(api):
+    """S-UI: the quick-task dialog sends an effort beside the model; the story records both as its own
+    per-role tags (it is its own root) and the spawn runs at it — a GPT seat uncapped, Claude capped."""
+    r = api["client"].post("/v1/quick-tasks", json={"title": "T", "words": "w", "model": "gpt-6-sol", "effort": "high"},
+                           headers=OWNER)
+    v = r.json()["value"]
+    assert {"model:engineer=gpt-6-sol", "seat-effort:engineer=high"} <= set(v["ticket"]["tags"])
+    assert api["calls"][-1]["effort"] == "high"
+    r = api["client"].post("/v1/quick-tasks", json={"title": "T2", "words": "w", "effort": "high"}, headers=OWNER)
+    assert "seat-effort:engineer=high" in r.json()["value"]["ticket"]["tags"]
+    assert api["calls"][-1]["model"] == "claude-opus-5-5" and api["calls"][-1]["effort"] == "medium"

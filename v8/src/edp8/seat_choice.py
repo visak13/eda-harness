@@ -11,7 +11,8 @@ STORAGE (least invasive, no schema migration): entries in the EPIC ticket's `tag
     seat-model:<claude|astra|…>    the OLD whole-epic pick, still honoured as a fallback: a
                                    models.json SEAT NAME ("claude" = the Claude `roles` column,
                                    i.e. no per-spawn model: the pool resolves role→seat as today)
-    seat-effort:<low|medium|high>
+    seat-effort:<role>=<low|medium|high>  the per-role effort (S-UI), one per role
+    seat-effort:<low|medium|high>  the OLD whole-epic effort, still honoured as a fallback
 Tags already exist on every ticket, are settable at creation (ticket_create / POST /v1/tickets
 `tags`) and editable later (ticket_update `tags`), are indexed for ticket_query(tag=), and are
 returned by every ticket read — so a spawn path reads the epic once and has the choice. A ticket
@@ -73,7 +74,7 @@ def choice_from_tags(tags: Iterable[str] | None) -> tuple[str | None, str | None
     for t in tags or []:
         if t.startswith(MODEL_TAG):
             model = t[len(MODEL_TAG):].strip() or None
-        elif t.startswith(EFFORT_TAG):
+        elif t.startswith(EFFORT_TAG) and "=" not in t:  # `seat-effort:<role>=` is per role
             effort = t[len(EFFORT_TAG):].strip() or None
     return model, effort
 
@@ -87,6 +88,23 @@ def role_models_from_tags(tags: Iterable[str] | None) -> dict[str, str]:
             if sep and role.strip() and mid.strip():
                 out[role.strip()] = mid.strip()
     return out
+
+
+def role_efforts_from_tags(tags: Iterable[str] | None) -> dict[str, str]:
+    """PURE. The per-role efforts on an epic's tags: `seat-effort:<role>=<level>` → {role: level};
+    last wins; a level outside low/medium/high is dropped."""
+    out: dict[str, str] = {}
+    for t in tags or []:
+        if t.startswith(EFFORT_TAG):
+            role, sep, level = t[len(EFFORT_TAG):].partition("=")
+            if sep and role.strip() and level.strip().lower() in EFFORTS:
+                out[role.strip()] = level.strip().lower()
+    return out
+
+
+def tags_for_role_efforts(picks: dict[str, str] | None) -> list[str]:
+    """PURE. The `seat-effort:<role>=<level>` tags that record per-role efforts (the web dialogs)."""
+    return [f"{EFFORT_TAG}{r}={e}" for r, e in (picks or {}).items() if r and e]
 
 
 def tags_for_choice(model: str | None, effort: str | None) -> list[str]:
@@ -137,6 +155,13 @@ def role_models_for(tags: Iterable[str] | None, home: str | os.PathLike | None) 
     return {r: resolve(None, None, tags, home, role=r).model for r in catalog(home)}
 
 
+def role_efforts_for(tags: Iterable[str] | None, home: str | os.PathLike | None) -> dict[str, str | None]:
+    """{role: effort} each catalog role of an epic runs at (resolve() with no spawn-named effort,
+    so already capped for a Claude seat). The Models dialog shows it; None = the seat's own default."""
+    tags = list(tags or [])
+    return {r: resolve(None, None, tags, home, role=r).effort for r in catalog(home)}
+
+
 def is_pi_seat(model: str | None, agent_home: str | os.PathLike | None) -> bool:
     """A model that runs on the Pi harness: an openai/… id, or a models.json seat whose
     harness is `pi`. Any registry trouble answers False — the pool re-resolves at its own seam."""
@@ -162,7 +187,8 @@ def resolve(model: str | None, effort: str | None, epic_tags: Iterable[str] | No
             agent_home: str | os.PathLike | None, *, role: str | None = None) -> SeatChoice:
     """PURE (given the registry). Model: the spawn's explicit `model` wins, else the epic's
     `model:<role>=` tag, else its old `seat-model:` tag ("claude" = no per-spawn model, the pool's
-    roles column), else the role's first catalog entry. Effort: explicit, else `seat-effort:`;
+    roles column), else the role's first catalog entry. Effort: explicit, else the epic's
+    `seat-effort:<role>=` tag, else its old whole-epic `seat-effort:`;
     outside low/medium/high is dropped; a Claude seat is capped at medium."""
     tags = list(epic_tags or [])
     tag_model, tag_effort = choice_from_tags(tags)
@@ -172,7 +198,8 @@ def resolve(model: str | None, effort: str | None, epic_tags: Iterable[str] | No
         m = None
     elif m is None and role:
         m = (catalog(agent_home).get(role) or [None])[0]
-    e = (effort or tag_effort or "").strip().lower() or None
+    role_effort = role_efforts_from_tags(tags).get(role) if role else None
+    e = (effort or role_effort or tag_effort or "").strip().lower() or None
     if e is not None and e not in EFFORTS:
         e = None
     note = None

@@ -36,17 +36,25 @@ describe("QuickTaskDialog (S-QUICK)", () => {
     }));
     mount();
     expect(await screen.findByRole("dialog", { name: "Quick task" })).toBeInTheDocument();
-    await waitFor(() => expect(opts("quick-task-model")).toEqual(["claude-opus-5-5", "gpt-6-sol"]));
-    expect((screen.getByTestId("quick-task-model") as HTMLSelectElement).value).toBe("claude-opus-5-5");
+    await waitFor(() => expect(opts("quick-task-model-engineer")).toEqual(["claude-opus-5-5", "gpt-6-sol"]));
+    expect((screen.getByTestId("quick-task-model-engineer") as HTMLSelectElement).value).toBe("claude-opus-5-5");
     expect(screen.getByTestId("quick-task-create")).toBeDisabled();
     fireEvent.change(screen.getByTestId("quick-task-title"), { target: { value: "  Rename the tab  " } });
     fireEvent.change(screen.getByTestId("quick-task-words"), { target: { value: "The Seats tab says Sessions. Call it Seats." } });
-    fireEvent.change(screen.getByTestId("quick-task-model"), { target: { value: "gpt-6-sol" } });
+    // S-UI: effort beside the model; a Claude engineer cannot run high, a GPT one can
+    const eff = screen.getByTestId("quick-task-effort-engineer") as HTMLSelectElement;
+    expect(eff.value).toBe("medium");
+    expect(Array.from(eff.options).find((o) => o.value === "high")!.disabled).toBe(true);
+    expect(screen.getByTestId("quick-task-cap-engineer")).toHaveTextContent("Claude: medium max");
+    fireEvent.change(screen.getByTestId("quick-task-model-engineer"), { target: { value: "gpt-6-sol" } });
+    expect(Array.from(eff.options).find((o) => o.value === "high")!.disabled).toBe(false);
+    fireEvent.change(eff, { target: { value: "high" } });
+    expect(screen.getByTestId("quick-task-row-engineer").querySelector("[data-provider-icon='gpt']")).not.toBeNull();
     await waitFor(() => expect(screen.getByTestId("quick-task-create")).not.toBeDisabled());
-    expect(screen.getByTestId("quick-task-preview")).toHaveTextContent("starts an engineer on GPT-6 Sol and assigns it");
+    expect(screen.getByTestId("quick-task-preview")).toHaveTextContent("starts an engineer on GPT-6 Sol at effort high and assigns it");
     fireEvent.click(screen.getByTestId("quick-task-create"));
     expect(await screen.findByTestId("landed")).toBeInTheDocument();
-    expect(bodies).toEqual([{ title: "Rename the tab", words: "The Seats tab says Sessions. Call it Seats.", model: "gpt-6-sol" }]);
+    expect(bodies).toEqual([{ title: "Rename the tab", words: "The Seats tab says Sessions. Call it Seats.", model: "gpt-6-sol", effort: "high" }]);
   });
 
   it("refuses to open a task the pool cannot start, and says why", async () => {

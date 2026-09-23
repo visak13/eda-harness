@@ -345,3 +345,30 @@ def test_rest_spawn_assign_makes_the_seat_the_assignee(cat_home, monkeypatch):
     assert r.status_code == 200, r.text
     assert r.json()["value"]["assignee"] == f"engineer.{story}" and calls[-1]["model"] == "codex/gpt-6-sol"
     assert client.get(f"/v1/tickets/{story}", headers=OWNER).json()["value"]["assignee"] == f"engineer.{story}"
+
+
+# ----------------------------------------------------------------------------- S-UI: effort per role
+
+def test_role_effort_tags_roundtrip_and_never_read_as_the_epic_wide_effort():
+    tags = seat_choice.tags_for_role_efforts({"adversary": "high", "engineer": "low"})
+    assert tags == ["seat-effort:adversary=high", "seat-effort:engineer=low"]
+    assert seat_choice.role_efforts_from_tags(["seat-effort:medium", "seat-effort:qa=bogus", *tags]) == {
+        "adversary": "high", "engineer": "low"}
+    # a per-role entry is not the old whole-epic effort
+    assert seat_choice.choice_from_tags(tags) == (None, None)
+    assert seat_choice.choice_from_tags(["seat-effort:low", *tags]) == (None, "low")
+
+
+def test_rule_spawn_resolves_its_roles_effort_first_then_the_epic_wide_one(cat_home):
+    tags = ["seat-effort:low", "model:adversary=gpt-6-astra", "seat-effort:adversary=high",
+            "seat-effort:engineer=high"]
+    assert seat_choice.resolve(None, None, tags, cat_home, role="adversary").effort == "high"   # GPT: uncapped
+    c = seat_choice.resolve(None, None, tags, cat_home, role="engineer")                       # Claude: capped
+    assert (c.effort, "capped" in (c.note or "")) == ("medium", True)
+    assert seat_choice.resolve(None, None, tags, cat_home, role="qa").effort == "low"          # epic-wide fallback
+    assert seat_choice.resolve(None, "medium", tags, cat_home, role="adversary").effort == "medium"  # spawn wins
+
+
+def test_role_efforts_for_shows_every_catalog_role(cat_home):
+    got = seat_choice.role_efforts_for(["seat-effort:adversary=high", "seat-effort:sme=low"], cat_home)
+    assert got == {"architect": None, "engineer": None, "qa": None, "adversary": "high", "sme": "low"}

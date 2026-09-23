@@ -661,6 +661,8 @@ def epic_page(board: Board, epic_id: str, include: str | None = None) -> dict[st
             "seat_choice": board.seat_choice_for(epic_id).as_dict(),
             # S-ROLES: the model each catalog role of this epic runs on (per-role tag, else default)
             "role_models": seat_choice.role_models_for(epic.tags, seat_choice.agent_home()),
+            # S-UI: the effort each catalog role runs at (`seat-effort:<role>=`, else the epic-wide tag)
+            "role_efforts": seat_choice.role_efforts_for(epic.tags, seat_choice.agent_home()),
             # who the live resident architect is (t-cf353a4051): {id, state}
             "architect": bd.get("architect"),
             "counts": bd.get("counts"),
