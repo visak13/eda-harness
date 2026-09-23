@@ -1290,6 +1290,9 @@ BOARD_TOOLS = [
 # ============================================================================= pool
 
 
+SPAWNABLE_ROLES = frozenset({"architect", "engineer", "qa", "adversary", "sme"})
+
+
 class SpawnArgs(BaseModel):
     role: Role = Field()
     ticket_id: str | None = Field(default=None, description="registers and assigns '<role>.<ticket_id>'")
@@ -1352,12 +1355,48 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
     assign_flag = args.pop("assign", None)
     if not pid:
         pid = f"{a.role.value}.{ticket_id}"
+    if a.role.value not in SPAWNABLE_ROLES:  # S-ADV finding 1 on the tool path
+        return {"ok": False, "error": {"code": "scope", "message": f"a {a.role.value} seat is not spawned"},
+                "hint": f"spawnable roles: {sorted(SPAWNABLE_ROLES)}"}
     tk = None
     if ticket_id:
         got_t = c.ticket_read(ticket_id)
         if not got_t.get("ok"):
             return got_t
         tk = got_t["value"].get("ticket", got_t["value"]) if isinstance(got_t["value"], dict) else None
+    # S-ADV finding 2: the tool binds the caller like REST /v1/sessions/spawn does — the owner spawns any
+    # seat, an architect only seats in its own epic (the target's epic, from the ticket or the handle),
+    # every other role is refused; the board's whoami is the identity, never the endpoint's role
+    me = c.whoami()
+    if not me.get("ok"):
+        return me
+    mine = (me.get("value") or {}).get("participant") or {}
+    my_role = str(mine.get("role") or "")
+    if my_role != "owner":
+        if my_role != "architect":
+            return {"ok": False, "error": {"code": "scope",
+                                           "message": f"role {my_role!r} may not operate the pool control plane"},
+                    "hint": "the owner or the epic's architect spawns seats"}
+        target = _epic_id(c, tk) if tk else None
+        if target is None and pid and "." in pid:
+            got_e = c.ticket_read(pid.split(".", 1)[1])
+            v = got_e.get("value") if got_e.get("ok") else None
+            target = _epic_id(c, v.get("ticket", v)) if isinstance(v, dict) else None
+        my_epics = set()
+        for tid in (me.get("value") or {}).get("tickets") or []:
+            got_m = c.ticket_read(tid)
+            v = got_m.get("value") if got_m.get("ok") else None
+            e = _epic_id(c, v.get("ticket", v)) if isinstance(v, dict) else None
+            if e:
+                my_epics.add(e)
+        if "." in str(mine.get("id") or ""):
+            my_epics.add(str(mine["id"]).split(".", 1)[1])
+        if not target or target not in my_epics:
+            return {"ok": False, "error": {"code": "scope",
+                                           "message": f"architect {mine.get('id')!r} may only operate seats in its "
+                                                      f"own epic" + (f" (target epic {target})" if target else
+                                                                      "; target epic could not be resolved")},
+                    "hint": "pass ticket_id in your epic"}
         # the architect is RESIDENT per epic: while architect.<epic> is up, a second architect
         # seat on one of its stories only steals the assignment — message the resident instead
         if a.role.value == "architect" and tk and tk.get("kind") != "epic":
@@ -1381,10 +1420,13 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
         # block its verdicts). But a checker CAN be the doer of a ticket checked by someone
         # else — e.g. an adversary doing a review-type story whose criteria are checked by qa.
         assign = True
-        if a.role.value == "qa":
+        if a.role.value in ("qa", "adversary"):
+            # S-ADV finding 3: the same checker-never-doer rule the board enforces on ticket_update — an
+            # adversary may do a review-type ticket none of whose criteria it checks; qa never takes one
             crits = c.criterion_query(ticket_id)
             rows = crits.get("value") or []
-            assign = bool(rows) and all(x.get("checked_by") != a.role.value for x in rows)
+            checks = any(x.get("checked_by") == a.role.value for x in rows)
+            assign = a.role.value == "adversary" and tk.get("work_type") == "review" and not checks
         current = tk.get("assignee")
         if assign_flag is False:
             assign = False
@@ -1417,6 +1459,10 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
         epic_tags = list(epic_tk.get("tags") or [])
     choice = seat_choice.resolve(args.get("model"), args.get("effort"), epic_tags, _edp8_home(),
                                  role=str(args.get("role") or "") or None)
+    why = seat_choice.unknown_model(str(args.get("role") or ""), choice.model, _edp8_home())
+    if why:  # S-ADV finding 10
+        return {"ok": False, "error": {"code": "invalid", "message": why},
+                "hint": "pick an id from models() / GET /v1/models for that role"}
     args["model"], args["effort"] = choice.pool_model, choice.effort
     out = _pool_call("spawn", args)
     if not out.get("ok") and "lock" in str(out.get("error", "")).lower():

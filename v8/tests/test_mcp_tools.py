@@ -284,7 +284,11 @@ def test_spawn_with_ticket_id_registers_and_assigns(raw_client, monkeypatch):
     assert story_resp["ok"], story_resp
     story_id = story_resp["value"]["id"]
 
-    set_client(coordinator_client)
+    set_client(coordinator_client)  # S-ADV finding 2: the tool binds the caller like REST — a retired
+    refused = ALL_TOOLS["spawn"].handler(  # coordinator (or any engineer) is refused, the epic's architect spawns
+        ALL_TOOLS["spawn"].args_model(role="engineer", ticket_id=story_id))
+    assert not refused["ok"] and "pool control plane" in refused["error"]["message"], refused
+    set_client(architect_client)
     spawn_resp = ALL_TOOLS["spawn"].handler(
         ALL_TOOLS["spawn"].args_model(role="engineer", ticket_id=story_id))
     assert spawn_resp["ok"], spawn_resp
