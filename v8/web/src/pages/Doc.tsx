@@ -12,8 +12,9 @@ import { Icon } from "../components/Icon";
 // the comment box are DocView's; on the full page nested links navigate normally (no drawer).
 export function DocPage(): React.JSX.Element {
   const { id = "" } = useParams();
-  const [params] = useSearchParams();
-  const versionParam = params.get("version");
+  const [params, setParams] = useSearchParams();
+  // ?v=N (S22 consult #6: what the viewer writes when a version is chosen) or the older ?version=N.
+  const versionParam = params.get("v") ?? params.get("version");
   const version = versionParam ? Number(versionParam) : undefined;
 
   // Round 2 #2: the page no longer runs its own ["doc", id, null] query — that shared "latest" key
@@ -34,7 +35,12 @@ export function DocPage(): React.JSX.Element {
         )}
       </nav>}
       <div className={source ? `${styles.reader} ${styles.review}` : styles.reader}>
-        <DocView docId={id} version={version} onDoc={setDoc} source={source} request={params.get("request")} />
+        <DocView docId={id} version={version} onDoc={setDoc} onPick={(v) => {
+          const p = new URLSearchParams(params);
+          p.delete("version");
+          p.set("v", String(v));
+          setParams(p, { replace: true });
+        }} source={source} request={params.get("request")} />
       </div>
     </div>
   );

@@ -62,6 +62,7 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
       const p = new URLSearchParams(params);
       if (top) p.set("doc", top);
       else p.delete("doc");
+      p.delete("v"); // a version belongs to the doc it was picked on
       setParams(p, { replace: true });
     },
     [params, setParams],
@@ -79,6 +80,7 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
         const next = [...s, id];
         const p = new URLSearchParams(params);
         p.set("doc", id);
+        p.delete("v");
         p.delete("view");
         p.delete("compose");
         setParams(p, { replace: true });
@@ -108,6 +110,18 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
       if (top) setPicked({ id: top, v });
     },
     [top],
+  );
+  // S22 (consult #6): a chosen version is written to the address as ?v=N (replace — no history
+  // entry per click), so reload, copy-link and Open in tab reopen it; no ?v= means latest.
+  const pickVersion = useCallback(
+    (v: number) => {
+      if (!top) return;
+      setPicked({ id: top, v });
+      const p = new URLSearchParams(params);
+      p.set("v", String(v));
+      setParams(p, { replace: true });
+    },
+    [top, params, setParams],
   );
   const shownDoc = topDoc && topDoc.id === top ? topDoc : null;
   const latest = shownDoc ? (shownDoc.versions.length ? Math.max(...shownDoc.versions) : shownDoc.version) : null;
@@ -152,7 +166,7 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
                 data-testid="version-entry"
                 onClick={() => {
                   if (pendingWork()) return;
-                  setPicked({ id: top, v });
+                  pickVersion(v);
                   if (menuRef.current) menuRef.current.open = false;
                 }}
               >
@@ -188,6 +202,7 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
             onOpenDoc={openDoc}
             onOpenTicket={openTicket}
             onVersion={onVersion}
+            onPick={pickVersion}
             onDoc={setTopDoc}
             tabHref={tabHref}
             onBack={stack.length > 1 ? back : undefined}

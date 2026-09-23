@@ -45,6 +45,7 @@ export function DocView({
   onOpenDoc,
   onOpenTicket,
   onVersion,
+  onPick,
   onDoc,
   versionsHosted,
   source,
@@ -63,6 +64,9 @@ export function DocView({
   onOpenTicket?: (id: string) => void;
   /** Reports the version the reader is showing (the drawer's "Open as page" carries it). */
   onVersion?: (v: number) => void;
+  /** The reader CHOSE a version (menu or History pill): the host writes it to the address (?v=N,
+   *  S22 consult #6) so a reload, a copied link or Open in tab reopens that version. */
+  onPick?: (v: number) => void;
   /** Reports the pinned document (title/scope for a host page that must not run its own "latest" query). */
   onDoc?: (doc: DocHtml) => void;
   /** The host renders its own "Versions" menu (the drawer toolbar); the History block then keeps its own label. */
@@ -112,6 +116,11 @@ export function DocView({
   if (signoffNow) signoffDoc.current = docId;
   const reviewing = !!source && signoffDoc.current !== docId;
 
+  const pick = (v: number) => {
+    if (pendingWork()) return;
+    setRequested(v);
+    onPick?.(v);
+  };
   if (q.isPending) return <p className={ui.empty}>Loading document…</p>;
   if (q.isError)
     return (
@@ -123,12 +132,12 @@ export function DocView({
       doc={q.data}
       onOpenDoc={onOpenDoc}
       onOpenTicket={onOpenTicket}
-      onPickVersion={(v) => { if (!pendingWork()) setRequested(v); }}
+      onPickVersion={pick}
       versionsHosted={versionsHosted}
       hideTitle={reviewing}
       reviewing={reviewing}
     />;
-  return reviewing ? <DesignReview key={`${docId}:${source}:${q.data.version}`} docId={docId} source={source} version={q.data.version} title={q.data.title} request={request} versions={q.data.versions} onPickVersion={(v) => { if (!pendingWork()) setRequested(v); }} tabHref={tabHref} onBack={onBack} onLatest={(v) => { if (!pendingWork()) setRequested(v); }}>{content}</DesignReview> : <><DocumentSource key={docId} docId={docId} version={q.data.version} />{content}</>;
+  return reviewing ? <DesignReview key={`${docId}:${source}:${q.data.version}`} docId={docId} source={source} version={q.data.version} title={q.data.title} request={request} versions={q.data.versions} onPickVersion={pick} tabHref={tabHref} onBack={onBack} onLatest={pick}>{content}</DesignReview> : <><DocumentSource key={docId} docId={docId} version={q.data.version} />{content}</>;
 }
 
 function DocBody({
