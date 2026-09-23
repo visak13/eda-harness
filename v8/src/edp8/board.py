@@ -120,6 +120,9 @@ class Board:
         self.store = store
         self.index = index  # edp8.search.Index or None
         self._subs: dict[str, list[asyncio.Queue]] = {}
+        # S19: view subscribers (the web page) get EVERY event, not the wake-filtered subset — a
+        # page shows a whole thread, so a note between two seats must refresh it (chat freeze).
+        self._watch: dict[str, list[asyncio.Queue]] = {}
         self._lock = threading.RLock()
         # Automatic checker pairing (design §24 rule 3): `pool` is the spawn adapter (defaults to
         # edp8.pool_adapter, injected as a stub in tests); `free_mb` reports host free RAM for the
@@ -2407,21 +2410,31 @@ class Board:
             first = False
         return None
 
-    def subscribe(self, participant_id: str) -> asyncio.Queue:
+    def subscribe(self, participant_id: str, watch: bool = False) -> asyncio.Queue:
+        """A wake subscription (default: only events that page this participant) or, with
+        `watch`, a view subscription that receives every event (S19: a page renders the whole
+        thread, not just the viewer's pages)."""
         q: asyncio.Queue = asyncio.Queue()
         with self._lock:
-            self._subs.setdefault(participant_id, []).append(q)
+            (self._watch if watch else self._subs).setdefault(participant_id, []).append(q)
         return q
 
     def unsubscribe(self, participant_id: str, q: asyncio.Queue) -> None:
         with self._lock:
-            lst = self._subs.get(participant_id, [])
-            if q in lst:
-                lst.remove(q)
+            for subs in (self._subs, self._watch):
+                lst = subs.get(participant_id, [])
+                if q in lst:
+                    lst.remove(q)
 
     def _fanout(self, ev: Event) -> None:
         with self._lock:
             targets = list(self._subs.items())
+            watchers = [q for queues in self._watch.values() for q in queues]
+        for q in watchers:
+            try:
+                q.put_nowait(ev)
+            except Exception as e:  # a full/closed view queue: the page replays by seq on reconnect
+                _log.warning("view feed queue dropped %s: %s", ev.id, e)
         for pid, queues in targets:
             p = self.store.get("participant", pid)
             if p is None or not self.relevant(ev, p):  # type: ignore[arg-type]
@@ -2432,9 +2445,10 @@ class Board:
                 except Exception as e:  # a full/closed feed queue: the subscriber will replay by seq
                     _log.warning("feed queue for %s dropped %s: %s", pid, ev.id, e)
 
-    def replay(self, p: Participant, since_seq: int) -> list[tuple[int, Event]]:
-        """All relevant events after since_seq — paged through in full: a monitor that
-        reconnects far behind must never silently skip the gap (events_since caps one page)."""
+    def replay(self, p: Participant, since_seq: int, watch: bool = False) -> list[tuple[int, Event]]:
+        """All relevant events after since_seq (every event with `watch`) — paged through in
+        full: a monitor that reconnects far behind must never silently skip the gap
+        (events_since caps one page)."""
         out: list[tuple[int, Event]] = []
         cur = since_seq
         while True:
@@ -2443,7 +2457,7 @@ class Board:
                 return out
             for s, e in batch:
                 cur = s
-                if self.relevant(e, p):
+                if watch or self.relevant(e, p):
                     out.append((s, e))
 
     def find(self, query: str, *, k: int = 10, types: Iterable[str] | None = None,

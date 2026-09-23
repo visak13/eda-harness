@@ -31,7 +31,6 @@ import { Avatar } from "../components/Avatar";
 import { identity } from "../auth/identity";
 import { useViewerAliases } from "../auth/useViewer";
 import { copyProps } from "../copy/pages";
-import { useDraftGuard } from "../live/useDraftGuard";
 import { MessageText } from "../components/ArtifactLink";
 import styles from "./Decisions.module.css";
 import { Icon } from "../components/Icon";
@@ -39,8 +38,8 @@ import { Icon } from "../components/Icon";
 // Decisions home (design §4.2 / §16.1 / §18.2, folded S5). The owner's one place to see what needs
 // them: ONE featured sign-off, calm queues (Sign-offs / Questions / Gates / Resolved), their
 // conversations, and — on the right — who is alive, the people, and each epic's pulse. Live feed
-// events refresh the queues, but a dirty composer HOLDS the refresh ("N new — refresh") so a
-// half-typed reply is never wiped and the row being answered never jumps (useDraftGuard).
+// events refresh the queues live, drafts included (S19: a held refresh froze the page); a half-typed
+// reply survives because the composer keeps its own state and persists it per ticket/reply.
 
 type Tab = "signoffs" | "questions" | "gates" | "resolved";
 
@@ -48,7 +47,6 @@ export function DecisionsPage(): React.JSX.Element {
   const [tab, setTab] = useState<Tab>("signoffs");
   const [ruling, setRuling] = useState<{ signoff: SignoffRow; k: number; n: number } | null>(null);
   const openerRef = useRef<HTMLElement | null>(null);
-  const { pending, flush } = useDraftGuard();
 
   const decisions = useQuery({ queryKey: ["me", "decisions"], queryFn: getDecisions, retry: false });
   const resolved = useQuery({ queryKey: ["me", "resolved"], queryFn: () => getResolved(30), retry: false });
@@ -92,12 +90,6 @@ export function DecisionsPage(): React.JSX.Element {
     <div className={styles.grid} data-testid="decisions">
       <div className={styles.main}>
         <h1 className={styles.title}>Decisions</h1>
-
-        {pending > 0 ? (
-          <button className={styles.refresh} type="button" onClick={flush} data-testid="page-refresh" aria-live="polite">
-            {pending} new — refresh
-          </button>
-        ) : null}
 
         <div className={styles.tabs} role="tablist" aria-label="Decisions queues">
           {TABS.map((t) => (

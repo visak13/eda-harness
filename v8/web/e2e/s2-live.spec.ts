@@ -33,18 +33,16 @@ test("coalesced delivered burst/replay keeps draft, caret, focus, scroll and ava
   await page.waitForTimeout(350);
   expect(refetches).toBe(initialRequests);
   expect(avatarRequests).toBe(initialAvatars);
+  // S19 (chat freeze): a dirty draft no longer HOLDS its ticket's refresh ("N new" pill retired) —
+  // the burst refetches the page once, coalesced, and the draft DOM/caret/focus/scroll survive it.
   batch = events(fixture.story, 200);
-  await expect(page.getByRole("status").filter({ hasText: "on the board" })).toContainText("40 new");
-  expect(refetches).toBe(initialRequests);
-  await page.waitForTimeout(1100); // replay the same sequence on reconnect
-  await expect(page.getByRole("status").filter({ hasText: "on the board" })).toContainText("40 new");
+  await expect.poll(() => refetches).toBe(initialRequests + 1);
+  await page.waitForTimeout(1100); // replay the same sequence on reconnect: deduped by seq, no refetch
+  expect(refetches).toBe(initialRequests + 1);
+  await expect(page.getByRole("status").filter({ hasText: "on the board" })).toHaveCount(0);
   await expect(draft).toHaveValue("A draft that must survive live refresh");
   expect(await draft.evaluate((el: HTMLTextAreaElement) => el === (window as any).__s2Draft && el.selectionStart === 5 && el.selectionEnd === 10 && document.activeElement === el)).toBe(true);
   expect(await page.evaluate(() => scrollY)).toBe(scroll);
-  await page.getByTestId("live-new").click();
-  await expect.poll(() => refetches).toBe(initialRequests + 1);
-  await expect(draft).toHaveValue("A draft that must survive live refresh");
-  expect(await draft.evaluate((el) => el === (window as any).__s2Draft)).toBe(true);
   expect(await page.evaluate(() => document.querySelector('[data-avatar-for="owner"]') === (window as any).__s2Avatar)).toBe(true);
   expect(avatarRequests).toBe(initialAvatars);
   // Clean-state relevant refresh becomes visible within 2s after a delivered response.

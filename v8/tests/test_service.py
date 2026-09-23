@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from edp8.board import Board
+from edp8.schemas import Event, EventKind
 from edp8.search import Index, NullEmbedder
 from edp8.service import create_app
 from edp8.store import Store
@@ -156,6 +157,37 @@ def test_events_subject_id_filter(client, rig):
     assert body["ok"] is True
     assert all(e["subject_id"] == epic["id"] for e in body["value"])
     assert body["value"]
+
+
+def test_events_watch_includes_notes_the_wake_filter_drops(client, rig):
+    """S19 chat freeze: a note between two seats on the owner's epic does not page the owner, so
+    the wake-filtered replay omits it and an open epic page never refreshed. `watch=true` (the web
+    page's view feed) carries every event, each still tagged for the wake filter via the same
+    replay path the SSE stream uses."""
+    epic = make_epic(client, rig)
+    r = client.post("/v1/messages", json={"ticket_id": epic["id"], "kind": "note", "text": "arch to eng",
+                                          "to": "eng"}, headers=rig["arch"])
+    assert r.json()["ok"], r.text
+    mid = r.json()["value"]["id"]
+
+    def notes(url):
+        return [e["data"].get("message") for e in client.get(url, headers=rig["owner"]).json()["value"]
+                if e["kind"] == "message_sent"]
+
+    assert mid not in notes("/v1/events?since=0")
+    assert mid in notes("/v1/events?since=0&watch=true")
+
+
+def test_board_watch_subscription_gets_every_event():
+    board = Board(Store(":memory:"))
+    wake = board.subscribe("nobody")
+    view = board.subscribe("nobody", watch=True)
+    ev = Event(id="ev-s19", kind=EventKind.ticket_created, subject_id="t-1", data={})
+    board._fanout(ev)
+    assert view.qsize() == 1 and wake.qsize() == 0  # unknown participant: never paged, still sees
+    board.unsubscribe("nobody", view)
+    board._fanout(ev)
+    assert view.qsize() == 1
 
 
 @pytest.mark.skip(reason="SSE /v1/feed's endless generator hangs TestClient's sync stream "

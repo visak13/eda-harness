@@ -129,19 +129,28 @@ describe("Decisions home", () => {
     expect(within(seats).getByText("Shell alive ≠ work progressing")).toBeInTheDocument();
   });
 
-  it("holds the list and shows 'N new — refresh' when a feed event lands under a dirty composer", async () => {
+  it("refreshes the queues live under a dirty composer and keeps the half-typed reply (S19)", async () => {
+    let reads = 0;
     setBoard({
       signoffs: [sign("1", "Oldest report"), sign("2", "Newer report")],
       questions: [{ id: "m-1", ticket_id: "s-1", created_by: "engineer.s-1", to: "owner", kind: "question", text: "which theme?", from_role: "engineer", asker: { type: "agent", role: "engineer", seat_state: "alive", note: "its shell is alive" } }],
     });
+    server.use(http.get("/v1/me/decisions", () => {
+      reads += 1;
+      return HttpResponse.json({ ok: true, value: { signoffs: [], questions: [{ id: "m-1", ticket_id: "s-1", created_by: "engineer.s-1", to: "owner", kind: "question", text: "which theme?", from_role: "engineer", asker: { type: "agent", role: "engineer", seat_state: "alive", note: "its shell is alive" } }], gates: [], counts: { signoffs: 0, questions: 1, gates: 0 } } });
+    }));
     mount();
-    // Open the inline reply composer and type → the composer marks the draft guard dirty.
     fireEvent.click(await screen.findByRole("tab", { name: /Questions/ }));
     fireEvent.click(await screen.findByTestId("reply"));
-    fireEvent.change(await screen.findByTestId("composer-text"), { target: { value: "folio" } });
-    // A live event arrives while the reply is half-typed.
+    const draft = await screen.findByTestId("composer-text");
+    fireEvent.change(draft, { target: { value: "folio" } });
+    const before = reads;
+    // A live event arrives while the reply is half-typed: no "N new — refresh" hold any more.
     act(() => fire!({ seq: 99 }));
-    expect(await screen.findByTestId("page-refresh")).toHaveTextContent("1 new — refresh");
+    await waitFor(() => expect(reads).toBeGreaterThan(before));
+    expect(screen.queryByTestId("page-refresh")).toBeNull();
+    expect(screen.getByTestId("composer-text")).toBe(draft);
+    expect(draft).toHaveValue("folio");
   });
 
   it("frames a question through AgentLine — name-first, id in mono, a reader-relative tag (§15)", async () => {

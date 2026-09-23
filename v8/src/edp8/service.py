@@ -1014,10 +1014,11 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         return ok(board.board(epic_id))
 
     @app.get("/v1/events")
-    def events(subject_id: str | None = None, since: int = 0, limit: int = 200, a: Participant = Depends(actor)):
+    def events(subject_id: str | None = None, since: int = 0, limit: int = 200, watch: bool = False,
+               a: Participant = Depends(actor)):
         if subject_id:
             return ok(_dump(board.store.query("event", {"subject_id": subject_id}, limit=limit)))
-        return ok([{"seq": s, **_dump(e)} for s, e in board.replay(a, since)][:limit])
+        return ok([{"seq": s, **_dump(e)} for s, e in board.replay(a, since, watch=watch)][:limit])
 
     @app.get("/v1/find")
     def find(q: str, k: int = 10, types: str | None = None, epic_id: str | None = None,
@@ -1168,17 +1169,21 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
                   "your listening contract — what wakes you, how to get what does not, how to reach the architect")
 
     @app.get("/v1/feed")
-    async def feed(since: int = Query(default=-1), a: Participant = Depends(actor)):
+    async def feed(since: int = Query(default=-1), watch: bool = Query(default=False),
+                   a: Participant = Depends(actor)):
+        # `watch=true` is the web page's view feed (S19 chat freeze): every event, each still
+        # tagged with `why` (None when it does not page this viewer) so the page can tell its
+        # own pages apart. Default stays the wake-filtered seat feed.
         def frame(s: int | None, e) -> bytes:
             # every event carries WHY this subscriber was woken (design §16.2 rule 5) so a seat
             # can tell a page from a courtesy copy
             return f"data: {json.dumps({'seq': s, 'why': board.why(e, a), **_dump(e)})}\n\n".encode()
 
         async def gen() -> AsyncIterator[bytes]:
-            q = board.subscribe(a.id)
+            q = board.subscribe(a.id, watch=watch)
             try:
                 start = since if since >= 0 else board.store.max_seq()
-                for s, e in board.replay(a, start):
+                for s, e in board.replay(a, start, watch=watch):
                     yield frame(s, e)
                 yield b": ready\n\n"
                 while True:

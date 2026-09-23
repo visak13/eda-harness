@@ -1,80 +1,56 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from "react";
 import { useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { subscribeFeed } from "./feed";
 import { affectedBy } from "./affectedQueries";
 import { attentionChanged } from "./notificationEvents";
 
 interface DraftGuardValue {
-  pending: number;
   hasDirty: () => boolean;
-  flush: () => void;
   setDirty: (id: string, dirty: boolean, subject?: string) => void;
 }
 const DraftGuardContext = createContext<DraftGuardValue | null>(null);
 
-/** One feed and one 250ms window; hold affected draft keys rather than global invalidation.
- * Explicit flush updates data without clearing drafts or remounting their owners. */
+/** One view feed and one 250ms window: each delivered event invalidates only the queries it
+ * affects, coalesced to one refetch per key per window.
+ *
+ * S19 (chat freeze, owner m-845b58f25c): a dirty draft NO LONGER holds live refresh. Holding the
+ * page query while a draft existed — and drafts persist across reloads and hide inside a collapsed
+ * composer — froze the thread until a manual refresh or a send. Drafts are component state keyed by
+ * a stable owner (Composer/GateForm/CriterionCard stay mounted through a background refetch), so a
+ * refresh never touches their text, caret or focus. The dirty registry stays for leave-page guards
+ * (NotificationCenter never navigates away from an unsent draft). */
 export function DraftGuardProvider({ children }: { children: React.ReactNode }): React.JSX.Element {
   const qc = useQueryClient();
-  const [pending, setPending] = useState(0);
   const dirty = useRef(new Map<string, string | undefined>());
   const queued = useRef(new Map<string, QueryKey>());
-  const held = useRef(new Map<string, QueryKey>());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const drain = useCallback(() => {
     timer.current = null;
-    for (const [hash, queryKey] of queued.current) {
-      // A draft may become dirty AFTER an event queued, before the window closes.
-      const blocked = [...dirty.current.values()].some((subject) => !subject || queryKey.includes(subject) || queryKey[0] === "me");
-      if (blocked) { held.current.set(hash, queryKey); setPending((n) => n || 1); }
-      else void qc.invalidateQueries({ queryKey, exact: true });
-    }
+    for (const queryKey of queued.current.values()) void qc.invalidateQueries({ queryKey, exact: true });
     queued.current.clear();
-  }, [qc]);
-  const schedule = useCallback(() => {
-    if (!timer.current && queued.current.size) timer.current = setTimeout(drain, 250);
-  }, [drain]);
-  const flush = useCallback(() => {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = null;
-    const keys = new Map([...queued.current, ...held.current]);
-    queued.current.clear(); held.current.clear(); setPending(0);
-    for (const queryKey of keys.values()) void qc.invalidateQueries({ queryKey, exact: true });
   }, [qc]);
   const setDirty = useCallback((id: string, value: boolean, subject?: string) => {
     if (value) dirty.current.set(id, subject);
-    else {
-      dirty.current.delete(id);
-      for (const [hash, key] of held.current) {
-        const blocked = [...dirty.current.values()].some((scope) => !scope || key.includes(scope) || key[0] === "me");
-        if (!blocked) { queued.current.set(hash, key); held.current.delete(hash); }
-      }
-      if (!held.current.size) setPending(0);
-      schedule();
-    }
-  }, [schedule]);
+    else dirty.current.delete(id);
+  }, []);
   useEffect(() => {
     const stop = subscribeFeed((event) => {
-      if (event.kind === 'message_sent' || event.kind === 'gate_opened') attentionChanged();
-      let withheld = false;
+      // The view feed carries every event; `why` is set only when it pages this viewer.
+      if (event.why && (event.kind === "message_sent" || event.kind === "gate_opened")) attentionChanged();
       const cache = qc.getQueryCache().getAll();
       for (const query of cache) {
-        if (!affectedBy(event, query, cache)) continue;
-        const blocked = [...dirty.current.values()].some((subject) => !subject || query.queryKey.includes(subject) || query.queryKey[0] === "me");
-        if (blocked) { held.current.set(query.queryHash, query.queryKey); withheld = true; }
-        else queued.current.set(query.queryHash, query.queryKey);
+        if (affectedBy(event, query, cache)) queued.current.set(query.queryHash, query.queryKey);
       }
-      if (withheld) setPending((n) => n + 1);
-      schedule();
-    });
+      if (!timer.current && queued.current.size) timer.current = setTimeout(drain, 250);
+    }, { watch: true });
     return () => { stop(); if (timer.current) clearTimeout(timer.current); timer.current = null; };
-  }, [qc, schedule]);
+  }, [qc, drain]);
   const hasDirty = useCallback(() => dirty.current.size > 0, []);
-  const value = useMemo(() => ({ pending, flush, setDirty, hasDirty }), [pending, flush, setDirty, hasDirty]);
+  const value = useMemo(() => ({ setDirty, hasDirty }), [setDirty, hasDirty]);
   return <DraftGuardContext.Provider value={value}>{children}</DraftGuardContext.Provider>;
 }
 export function useDraftGuard(): DraftGuardValue { return useContext(DraftGuardContext) ?? NOOP; }
-const NOOP: DraftGuardValue = { pending: 0, hasDirty: () => false, flush: () => {}, setDirty: () => {} };
+const NOOP: DraftGuardValue = { hasDirty: () => false, setDirty: () => {} };
 export function useDirtyGuard(id: string, isDirty: boolean, subject?: string): void {
   const { setDirty } = useDraftGuard();
   useEffect(() => { setDirty(id, isDirty, subject); }, [id, isDirty, subject, setDirty]);

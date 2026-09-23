@@ -5,7 +5,7 @@ import { api, BoardApiError } from "../api/client";
 import { getEpicPage, getTicketPage } from "../api/endpoints";
 import { identity } from "../auth/identity";
 import { IdentityPanel } from "./IdentityPanel";
-import { DraftGuardProvider, useDraftGuard } from "../live/useDraftGuard";
+import { DraftGuardProvider } from "../live/useDraftGuard";
 import { DocDrawerProvider } from "./DocDrawer";
 import { ThemePicker } from "../theme/ThemePicker";
 import { AvatarPicker } from "./AvatarPicker";
@@ -104,7 +104,6 @@ function AppShellChrome(): React.JSX.Element {
     if (findBtnRef.current?.getClientRects().length) findBtnRef.current.focus();
     else menuRef.current?.focus();
   }, []);
-  const { pending, flush } = useDraftGuard();
   const { framing, terms } = usePageFrameCtx();
   const accountRef = useRef<HTMLButtonElement>(null);
   const closeAccount = useCallback(() => setAccountOpen(false), []);
@@ -246,12 +245,6 @@ function AppShellChrome(): React.JSX.Element {
 
       <main className={styles.main}>
         <p className={styles.pageFraming} data-testid="page-framing" data-route={location.pathname}>{pageFraming}</p>
-        {pending > 0 ? (
-          <div className={styles.liveBanner} role="status" aria-live="polite">
-            <span>{pending} new {pending === 1 ? "update" : "updates"} on the board.</span>
-            <button type="button" className={styles.liveBtn} data-testid="live-new" onClick={flush}>Refresh</button>
-          </div>
-        ) : null}
         <DocDrawerProvider>
           <Outlet />
         </DocDrawerProvider>

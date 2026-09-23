@@ -20,6 +20,9 @@ export interface FeedOptions {
   /** Read watchdog: a stream that yields no bytes for this long is dropped and counted as a
    *  failure (the board pings every 15s; adversary round 2 #9, 2026-09-10). */
   readTimeoutMs?: number;
+  /** The page's VIEW feed (S19): every event, not only the ones that page this viewer. A page
+   *  renders whole threads, so a note between two seats must refresh it too. */
+  watch?: boolean;
 }
 
 /** Subscribe to /v1/feed. Returns a stop function; call it to end the stream. */
@@ -29,6 +32,7 @@ export function subscribeFeed(onEvent: (e: FeedEvent) => void, opts: FeedOptions
   let ctrl: AbortController | null = null;
   const backoff = opts.backoffMs ?? 1000;
   const readTimeout = opts.readTimeoutMs ?? 45_000;
+  const view = opts.watch ? "&watch=true" : "";
   let failures = 0; // consecutive stream failures; two in a row → poll /v1/events (finding #14)
 
   // Round 2 #9: a 200 whose body never yields (a buffering proxy) or that closes at once (EOF
@@ -58,7 +62,7 @@ export function subscribeFeed(onEvent: (e: FeedEvent) => void, opts: FeedOptions
     const until = Date.now() + ms;
     while (!stopped && Date.now() < until) {
       try {
-        const res = await fetch(`/v1/events?since=${Math.max(since, 0)}&limit=200`, { headers: authHeaders() });
+        const res = await fetch(`/v1/events?since=${Math.max(since, 0)}&limit=200${view}`, { headers: authHeaders() });
         if (res.ok) {
           const body = (await res.json()) as { value?: FeedEvent[] };
           for (const ev of body.value ?? []) {
@@ -79,7 +83,7 @@ export function subscribeFeed(onEvent: (e: FeedEvent) => void, opts: FeedOptions
     while (!stopped) {
       ctrl = new AbortController();
       try {
-        const res = await fetch(`/v1/feed?since=${since}`, {
+        const res = await fetch(`/v1/feed?since=${since}${view}`, {
           headers: authHeaders(),
           signal: ctrl.signal,
         });
