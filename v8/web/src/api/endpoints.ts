@@ -253,6 +253,30 @@ export const withChoiceTags = (tags: string[], c: EpicSeatChoice): string[] => [
   ...epicChoiceTags(c),
 ];
 
+/** GET /v1/tickets/{id} — the bare record (tags among it). */
+export const getTicket = (id: string) => api<TicketRecord>(`/v1/tickets/${encodeURIComponent(id)}`);
+
+/** What each role of an epic runs on, from its tags — the SPA's mirror of edp8/seat_choice.resolve
+ *  for a spawn that names nothing: `model:<role>=`, else the old `seat-model:` (not `claude`), else the
+ *  catalog default; `seat-effort:<role>=`, else the epic-wide `seat-effort:`, else medium. */
+export function choiceFromTags(tags: string[], catalog: { roles: Record<string, string[]>; defaults: Record<string, string> }): EpicSeatChoice {
+  const tag = (prefix: string) => tags.filter((t) => t.startsWith(prefix)).map((t) => t.slice(prefix.length));
+  const perRole = (prefix: string) => Object.fromEntries(tag(prefix).filter((v) => v.includes("="))
+    .map((v) => [v.slice(0, v.indexOf("=")).trim(), v.slice(v.indexOf("=") + 1).trim()]));
+  const roleModels = perRole("model:");
+  const roleEfforts = perRole("seat-effort:");
+  const oldModel = tag("seat-model:").filter((v) => v && v !== "claude").pop();
+  const oldEffort = tag("seat-effort:").filter((v) => !v.includes("=")).pop();
+  const roles = Object.keys(catalog.roles);
+  return {
+    roleModels: Object.fromEntries(roles.map((r) => {
+      const m = roleModels[r] ?? oldModel;
+      return [r, m && catalog.roles[r].includes(m) ? m : catalog.defaults[r] ?? catalog.roles[r][0] ?? ""];
+    })),
+    roleEfforts: Object.fromEntries(roles.map((r) => [r, roleEfforts[r] ?? oldEffort ?? "medium"])),
+  };
+}
+
 /** PATCH /v1/tickets/{id} tags (Actions → Models…): the owner or the architect may. */
 export const setTicketTags = (id: string, tags: string[]) =>
   postJson<TicketRecord>(`/v1/tickets/${encodeURIComponent(id)}`, { tags }, "PATCH");

@@ -209,6 +209,23 @@ describe("TicketPage", () => {
     expect(next).toHaveTextContent("Actions → Change status");
   });
 
+  it("S-UI: Actions → Models… on a story reads and writes its EPIC's per-role tags", async () => {
+    mount(ticketPage());
+    let patchedEpic = "";
+    server.use(
+      http.get("/v1/models", () => okJson({ roles: { engineer: ["claude-opus-5-5", "gpt-6-sol"] }, defaults: { engineer: "claude-opus-5-5" } })),
+      http.get("/v1/tickets/epic-1", () => okJson({ id: "epic-1", kind: "epic", tags: ["model:engineer=gpt-6-sol"] })),
+      http.patch("/v1/tickets/:id", ({ params }) => { patchedEpic = String(params.id); return okJson({ id: params.id, tags: [] }); }),
+    );
+    await title();
+    const drawer = await openAction("models");
+    const sel = within(drawer).getByTestId("models-dialog");
+    await waitFor(() => expect((within(sel).getByTestId("models-model-engineer") as HTMLSelectElement).value).toBe("gpt-6-sol"));
+    fireEvent.change(within(sel).getByTestId("models-effort-engineer"), { target: { value: "low" } });
+    fireEvent.click(within(sel).getByTestId("models-save"));
+    await waitFor(() => expect(patchedEpic).toBe("epic-1"));
+  });
+
   it("Change status opens the existing StatusControl under Actions", async () => {
     mount(ticketPage());
     await title();

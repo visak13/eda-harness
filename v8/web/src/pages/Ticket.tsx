@@ -25,6 +25,7 @@ import styles from "./Ticket.module.css";
 import { useThreadHistory } from "../components/useThreadHistory";
 import { WorkHeader } from "../components/WorkHeader";
 import { ActionsMenu, type ActionItem } from "../components/ActionsMenu";
+import { ModelsControl } from "../components/ModelsControl";
 import { Conversation } from "../components/Conversation";
 
 // Ticket page (design-a2e5369133): the SAME WorkHeader as the epic (owner defect: "placeholder
@@ -84,6 +85,8 @@ export function TicketPage(): React.JSX.Element {
       render: () => <>{gates.map(({ gate: g, closed, onDismiss }) => <GateForm key={`${g.ticket_id}:${g.gate}`} gate={g} closed={closed} onDismiss={onDismiss} />)}</> } as ActionItem] : []),
     ...(ticket.kind === "story" ? [{ key: "spawn-seat", label: "Spawn seat", gloss: copyItem("ticket", "spawn-seat").text,
       render: () => <SpawnSeatForm ticketId={id} roles={["engineer", "qa", "adversary"]} /> } as ActionItem] : []),
+    { key: "models", label: "Models…", gloss: "each role's model and effort on this ticket's epic; switch them for the seats spawned next.",
+      render: () => <ModelsControl epicId={epic_id} /> },
     { key: "raise-decision", label: "Raise a decision", gloss: copyItem("epic", "raise-decision").text,
       render: () => <GateOpenControl ticketId={id} /> },
     { key: "ask-role", label: "Ask a role", gloss: copyItem("epic", "ask-role").text,

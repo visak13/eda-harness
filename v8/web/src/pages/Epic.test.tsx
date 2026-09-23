@@ -305,18 +305,38 @@ describe("EpicPage", () => {
     expect(await within(drawer).findByTestId("seat-choice")).toHaveTextContent("GPT-6 Astra, effort high");
   });
 
-  it("the header shows the model each role's seats run on (S-ROLES)", async () => {
+  it("S-UI: no MODELS strip in the header; Actions → Models… shows and switches each role's model and effort", async () => {
     mount(page({ role_models: { architect: "gpt-6-astra", engineer: "claude-opus-5-5", qa: "claude-fable-5-1", adversary: "gpt-6-astra", sme: "gpt-6-sol" } }));
-    await title();
-    expect(await screen.findByTestId("work-role-model-architect")).toHaveTextContent("architect GPT-6 Astra");
-    expect(screen.getByTestId("work-role-model-engineer")).toHaveTextContent("engineer Claude Opus 5.5");
-    expect(screen.getByTestId("work-role-model-sme")).toHaveTextContent("sme GPT-6 Sol");
-  });
-
-  it("an older board without role_models renders no Models row", async () => {
-    mount(page());
+    const tags = ["area:ui", "model:architect=gpt-6-astra", "model:sme=gpt-6-sol", "seat-effort:adversary=high", "seat-effort:medium"];
+    let patched: Record<string, unknown> | null = null;
+    server.use(
+      http.get("/v1/models", () => okJson({
+        roles: { architect: ["claude-fable-5-1", "gpt-6-astra"], engineer: ["claude-opus-5-5", "gpt-6-sol"],
+                 qa: ["claude-fable-5-1", "gpt-6-astra"], adversary: ["gpt-6-astra"], sme: ["claude-opus-5-5", "gpt-6-sol"] },
+        defaults: { architect: "claude-fable-5-1", engineer: "claude-opus-5-5", qa: "claude-fable-5-1", adversary: "gpt-6-astra", sme: "claude-opus-5-5" } })),
+      http.get("/v1/tickets/epic-1", () => okJson({ id: "epic-1", kind: "epic", tags })),
+      http.patch("/v1/tickets/epic-1", async ({ request }) => { patched = (await request.json()) as Record<string, unknown>; return okJson({ id: "epic-1", tags: patched.tags }, "updated"); }),
+    );
     await title();
     expect(screen.queryByTestId("work-role-models")).not.toBeInTheDocument();
+    expect(screen.queryByText("Models", { selector: "dt" })).not.toBeInTheDocument();
+    const drawer = await openAction("models");
+    const sel = (k: string, r: string) => within(drawer).getByTestId(`models-${k}-${r}`) as HTMLSelectElement;
+    await waitFor(() => expect(sel("model", "architect").value).toBe("gpt-6-astra"));
+    expect(within(drawer).getByTestId("models-dialog")).toBeInTheDocument();
+    expect(["architect", "engineer", "qa", "adversary", "sme"].map((r) => sel("model", r).value))
+      .toEqual(["gpt-6-astra", "claude-opus-5-5", "claude-fable-5-1", "gpt-6-astra", "gpt-6-sol"]);
+    expect(["architect", "adversary", "qa"].map((r) => sel("effort", r).value)).toEqual(["medium", "high", "medium"]);
+    expect(within(drawer).getByTestId("models-row-architect").querySelector("[data-provider-icon='gpt']")).not.toBeNull();
+    expect(within(drawer).getByTestId("models-save")).toBeDisabled(); // nothing changed yet
+    fireEvent.change(sel("model", "engineer"), { target: { value: "gpt-6-sol" } });
+    fireEvent.change(sel("effort", "engineer"), { target: { value: "high" } });
+    fireEvent.click(within(drawer).getByTestId("models-save"));
+    await waitFor(() => expect(patched).not.toBeNull());
+    expect(patched!.tags).toEqual(["area:ui",
+      "model:architect=gpt-6-astra", "model:engineer=gpt-6-sol", "model:qa=claude-fable-5-1", "model:adversary=gpt-6-astra", "model:sme=gpt-6-sol",
+      "seat-effort:architect=medium", "seat-effort:engineer=high", "seat-effort:qa=medium", "seat-effort:adversary=high", "seat-effort:sme=medium"]);
+    expect(await within(drawer).findByTestId("models-saved")).toBeInTheDocument();
   });
 
   it("the header names the live resident architect and its seat state (t-cf353a4051)", async () => {

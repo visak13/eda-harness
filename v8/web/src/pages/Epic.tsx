@@ -27,6 +27,7 @@ import { useThreadHistory } from "../components/useThreadHistory";
 import { WorkHeader } from "../components/WorkHeader";
 import { ActionsMenu, type ActionItem } from "../components/ActionsMenu";
 import { Conversation } from "../components/Conversation";
+import { ModelsControl } from "../components/ModelsControl";
 
 // The epic page per revision3-clean-epic.png (design-a2e5369133): WorkHeader (topline + Actions ▾,
 // title, purpose, metadata, links) over the conversation canvas with the composer under it. Every
@@ -110,6 +111,8 @@ export function EpicPage(): React.JSX.Element {
           {row.assigned_seats.map((s) => <AssignedSeatRow key={s} seatId={s} epicId={id} />)}
         </div> : null}
       </> },
+    { key: "models", label: "Models…", gloss: "each role's model and effort on this epic; switch them for the seats spawned next.",
+      render: () => <ModelsControl epicId={id} /> },
     { key: "ask-role", label: "Ask a role", gloss: gloss("ask-role"), copy: copyProps("epic", "ask-role"),
       render: () => <AskRoleControl ticketId={id} /> },
     { key: "add-criterion", label: "Add an acceptance criterion", gloss: gloss("overview"), copy: copyProps("epic", "overview"),
@@ -164,7 +167,6 @@ export function EpicPage(): React.JSX.Element {
         status={epic.status} assignee={epic.assignee ?? row?.assigned_seats[0] ?? null} designRef={design?.id ?? null}
         reviewRequested={data.answerable_gates.some((g) => g.gate === "design_signoff") || undefined}
         architect={data.architect ?? null}
-        roleModels={data.role_models ?? null}
         actions={<ActionsMenu items={actions} subject={heading} />}
         work={work}
       />

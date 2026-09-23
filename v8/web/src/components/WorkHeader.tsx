@@ -8,7 +8,6 @@ import { Icon } from "./Icon";
 import { identity } from "../auth/identity";
 import { useViewerFlag } from "./viewerPrefs";
 import { attentionLine, FilesViewer, HistoryViewer, useWorkContext } from "./ContextualWork";
-import { modelLabel } from "../api/seats";
 import styles from "./WorkHeader.module.css";
 
 // The one work header shared by the epic and the ticket page (design-a2e5369133 §WorkHeader,
@@ -39,8 +38,6 @@ export interface WorkHeaderProps {
   reviewRequested?: boolean;
   /** Epic pages: the live resident architect and its seat state (t-cf353a4051). */
   architect?: { id: string; state: string | null } | null;
-  /** Epic pages (S-ROLES): the model each role's seats run on, {role: model id}. */
-  roleModels?: Record<string, string | null> | null;
 }
 
 function short(text: string | null | undefined): string | null {
@@ -194,16 +191,6 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
         {p.architect ? <div>
           <dt className={styles.label}>Architect</dt>
           <dd className={styles.value} data-testid="work-architect"><Avatar id={p.architect.id} size={28} />{p.architect.id}{p.architect.state ? <span className={styles.muted}>&nbsp;· {p.architect.state}</span> : null}</dd>
-        </div> : null}
-        {p.roleModels && Object.keys(p.roleModels).length ? <div className={styles.wide}>
-          <dt className={styles.label}>Models</dt>
-          <dd className={styles.value} data-testid="work-role-models">
-            <ul className={styles.roleModels}>
-              {Object.entries(p.roleModels).map(([role, m]) => (
-                <li key={role} data-testid={`work-role-model-${role}`}><span className={styles.muted}>{role}</span> {modelLabel(m)}</li>
-              ))}
-            </ul>
-          </dd>
         </div> : null}
         <div>
           <dt className={styles.label}>Needs attention</dt>

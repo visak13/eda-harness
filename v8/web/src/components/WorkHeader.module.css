@@ -29,7 +29,6 @@
 .openTab { margin-left: auto; font: inherit; font-size: 14px; color: var(--ink); display: inline-flex; align-items: center; gap: 6px; text-decoration: underline; }
 /* S-ROLES: the per-role models row spans the grid */
 .wide { grid-column: 1 / -1; }
-.roleModels { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0; padding: 0; list-style: none; }
 @media (max-width: 1100px) { .metadata { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .metadata { grid-template-columns: minmax(0, 1fr); } .title { font-size: 26px; } }
 

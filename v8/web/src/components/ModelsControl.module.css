@@ -1,0 +1,15 @@
+.models {
+  display: grid;
+  gap: 10px;
+}
+.note {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--muted);
+}
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
