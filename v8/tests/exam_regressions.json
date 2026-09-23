@@ -15,6 +15,36 @@
   "why": "exam4 Q1 regressed after c5 enrichment (m-0cccdead3e): target is seed #3, ranked #9, but the 8 KB pack holds ~5 ranked records of ~1.3 KB after 6 binding"
  },
  {
+  "n": 11,
+  "epic": "epic-44a0576511",
+  "question": "In the Board UI improvements epic, how are the usage numbers collected today - automatically, or by hand?",
+  "expected": "They are captured only within a session by an authorised operator-side standalone collector; no permanent scheduled automation is installed, and wiring one up is a deployment step still awaiting the owner. The widget therefore refreshes on its own timer but shows an honest unavailable/stale state rather than pretending the reading is live.",
+  "expected_ids": [
+   "dec-c6d1dc4d24"
+  ],
+  "proof_ids": [
+   "m-58bca3fdcc",
+   "m-ac2c9e6cd4",
+   "m-7745128160"
+  ],
+  "why": "exam4 Q11 regressed after c5 (m-2808739af1): the pre-pass pack held dec-6afa6a8ff2/dec-1af3fb54dd; their enriched successors dec-c6d1dc4d24/dec-5599e7d436 now rank 6/7 (dense 16) behind ~5 ranked slots in 8 KB after 1.9 KB of 9 binding texts"
+ },
+ {
+  "n": 14,
+  "epic": "epic-1b289d63f9",
+  "question": "In the Folio React redesign of the edp8 board, what was the checking seat first allowed to do about the problems it found, and what is it allowed to do now?",
+  "expected": "At first it only reported findings and the engineer was respawned to fix them. The human widened its mandate: the qa seat now reviews adversarially, folds the findings in and fixes them itself on its own paths, then verdicts against the fixed HEAD without respawning an engineer, escalating to the architect only when a fix would change the design.",
+  "expected_ids": [
+   "dec-2725a796b9",
+   "dec-29851c74cb"
+  ],
+  "proof_ids": [
+   "m-531ba12258",
+   "m-e492299b77"
+  ],
+  "why": "exam4 Q14 regressed after c5 (m-2808739af1): dec-2725a796b9 (unchanged, dense rank 2) now ranks 9 behind ~5 ranked slots in 8 KB; the direct mandate record dec-29851c74cb ranks 33 and is not dense-seeded ('checking seat' vs 'qa' wording)"
+ },
+ {
   "n": 17,
   "epic": "epic-1b289d63f9",
   "question": "In the redesigned board interface, if someone types formatting marks or a snippet of page code into a message, what does the reader see, and what does become clickable?",
