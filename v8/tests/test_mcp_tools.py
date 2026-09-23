@@ -361,3 +361,20 @@ def test_consult_refuses_every_model_but_astra(monkeypatch, tmp_path):
     assert out["ok"] is False and out["error"]["code"] == "model_retired"
     assert "gpt-6-astra" in out["error"]["message"]
 
+
+
+def test_reap_binds_the_caller_like_spawn(raw_client, monkeypatch):
+    """adversary 09-23 #1: the reap tool went straight to the pool — any caller on any /mcp/<role> endpoint
+    (an expert included) could reap any seat. It binds the caller like spawn: owner any, architect its own
+    epic, every other role refused, before the pool is touched."""
+    import edp8.bundles as bundles_mod
+    calls = []
+    monkeypatch.setattr(bundles_mod, "_pool_call", lambda fn, kw: calls.append((fn, kw)) or {"ok": True, "value": {}})
+    eng = register(raw_client, "engineer", "eng-reap")
+    set_client(make_client(raw_client, eng))
+    r = ALL_TOOLS["reap"].handler(ALL_TOOLS["reap"].args_model(participant_id="sme.topic-other"))
+    assert not r["ok"] and "pool control plane" in r["error"]["message"] and calls == []
+    owner = register(raw_client, "owner", "owner-reap")
+    set_client(make_client(raw_client, owner))
+    r = ALL_TOOLS["reap"].handler(ALL_TOOLS["reap"].args_model(participant_id="sme.topic-other"))
+    assert r["ok"] and calls == [("reap", {"participant_id": "sme.topic-other"})]

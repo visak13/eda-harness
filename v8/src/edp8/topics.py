@@ -15,6 +15,7 @@ and fetched-at from that receipt, never from the seat's word.
 from __future__ import annotations
 
 import html as _html
+import ipaddress
 import json
 import re
 import time
@@ -46,6 +47,9 @@ from .store import new_id
 
 SEAT_ROLE = Role.sme.value
 _HANDLE = re.compile(r"^[a-z0-9][a-z0-9_.\-]{1,39}$")
+# adversary 09-23 #2: tokens.json's top level holds the humans AND the `agents` map — an expert named
+# "agents" would replace every minted seat secret with a string; the key is reserved
+_RESERVED_HANDLES = frozenset({"agents", "owner"})
 EXPERT_KINDS = (MessageKind.note, MessageKind.question, MessageKind.answer)
 
 
@@ -58,6 +62,20 @@ def topic(board: Board, topic_id: str) -> Ticket:
     if not is_topic(t):
         raise BoardError("not_found", f"{topic_id} is not a Library topic", "GET /v1/topics lists them")
     return t
+
+
+def _private_host(host: str) -> bool:
+    """Loopback, link-local, private and unspecified IP literals, and localhost names (an IP-literal check:
+    a public name that resolves privately is not caught here)."""
+    h = host.strip("[]").lower()
+    if not h or h == "localhost" or h.endswith(".localhost") or h.endswith(".local"):
+        return True
+    try:
+        ip = ipaddress.ip_address(h)
+    except ValueError:
+        return False
+    return (ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_unspecified or ip.is_reserved
+            or ip.is_multicast)
 
 
 def _owner_only(actor: Participant, what: str) -> None:
@@ -81,6 +99,9 @@ def create(board: Board, actor: Participant, *, title: str, tags: list[str] | No
         u = urlsplit(seed)
         if u.scheme != "https" or not u.netloc:
             raise BoardError("invalid", f"seed URL {seed!r} is not an https URL", "give an https:// page")
+        if _private_host(u.hostname or ""):  # adversary 09-23 #9: the seed host joins the research allowlist
+            raise BoardError("invalid", f"seed URL host {u.hostname!r} is a local or private address",
+                             "the seed is a public https site")
     t = board.ticket_create(actor, kind=TicketKind.topic, work_type=WorkType.knowledge, title=title.strip(),
                             description=description or "", tags=normalize_tags(tags))
     if seed:
@@ -116,14 +137,15 @@ def close(board: Board, actor: Participant, topic_id: str) -> Ticket:
     """The owner closes the topic: status done (board-authored — topics have no delivery walk), the seat
     released through the pool, the thread read-only. Docs and proposals stay in the Library."""
     _owner_only(actor, "closes a Library topic")
-    t = topic(board, topic_id)
-    _open(t)
-    old = t.status
-    t.status = TicketStatus.done
-    board.store.put("ticket", t)
-    board._emit(t.id, EventKind.status_changed, {"from": old.value, "to": "done", "by": actor.id,
-                                                 "note": "topic closed by the owner"})
-    board._pending_pairings.pop(seat_id(t.id), None)
+    with board._lock:  # adversary 09-23 #4: a tag write that read the open ticket must not put it back open
+        t = topic(board, topic_id)
+        _open(t)
+        old = t.status
+        t.status = TicketStatus.done
+        board.store.put("ticket", t)
+        board._emit(t.id, EventKind.status_changed, {"from": old.value, "to": "done", "by": actor.id,
+                                                     "note": "topic closed by the owner"})
+        board._pending_pairings.pop(seat_id(t.id), None)
     try:
         board._pool_adapter().close(seat_id(t.id), f"topic {t.id} closed by the owner")
     except Exception:  # noqa: BLE001 — a pool hiccup never keeps a topic open; the owner can reap the seat
@@ -136,7 +158,8 @@ def set_tags(board: Board, actor: Participant, topic_id: str, tags: list[str]) -
     t = topic(board, topic_id)
     if actor.role != Role.owner and actor.id != t.assignee:
         raise BoardError("forbidden", "the owner or the topic's sme sets its tags")
-    return board.ticket_update(actor, t.id, tags=normalize_tags(tags))
+    with board._lock:  # adversary 09-23 #4: serialised with close(), so a tag write never re-opens a closed topic
+        return board.ticket_update(actor, t.id, tags=normalize_tags(tags))
 
 
 # ----------------------------------------------------------------------------- experts
@@ -167,6 +190,8 @@ def add_expert(board: Board, actor: Participant, topic_id: str, *, handle: str, 
     if not _HANDLE.match(h):
         raise BoardError("invalid", f"{handle!r} is not a handle",
                          "2–40 of a-z 0-9 . _ -, starting with a letter or digit")
+    if h in _RESERVED_HANDLES:
+        raise BoardError("invalid", f"{handle!r} is a reserved name", "pick the person's own handle")
     with board._lock:
         p = board.participant_create("human", Role.expert, h, id_=h)
         token = mint(h)
@@ -197,7 +222,7 @@ def remove_expert(board: Board, actor: Participant, topic_id: str, expert_id: st
 # ----------------------------------------------------------------------------- read
 def _last_update(board: Board, topic_id: str, field: str) -> dict[str, Any] | None:
     rows = board.store.query("event", {"subject_id": topic_id, "kind": EventKind.ticket_updated.value},
-                             limit=200, newest_first=True)
+                             limit=-1, newest_first=True)  # adversary 09-23 #10: the seed outlives 200 tag writes
     for ev in rows:
         if field in (ev.data.get("changed") or []):
             return {**ev.data, "at": ev.created_at.isoformat()}

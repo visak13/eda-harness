@@ -1347,6 +1347,44 @@ def _pool_call(fn_name: str, kwargs: dict[str, Any]) -> dict[str, Any]:
     return fn(**kwargs)
 
 
+def _pool_caller_check(c: BoardClient, tk: dict[str, Any] | None, pid: str | None) -> dict[str, Any] | None:
+    """S-ADV finding 2 (spawn) and adversary 09-23 #1 (reap): the tool binds the caller like REST — the owner
+    operates any seat, an architect only seats in its own epic (the target's epic, from the ticket or the
+    handle), every other role is refused; the board's whoami is the identity, never the endpoint's role."""
+    me = c.whoami()
+    if not me.get("ok"):
+        return me
+    mine = (me.get("value") or {}).get("participant") or {}
+    my_role = str(mine.get("role") or "")
+    if my_role == "owner":
+        return None
+    if my_role != "architect":
+        return {"ok": False, "error": {"code": "scope",
+                                       "message": f"role {my_role!r} may not operate the pool control plane"},
+                "hint": "the owner or the epic's architect spawns and reaps seats"}
+    target = _epic_id(c, tk) if tk else None
+    if target is None and pid and "." in pid:
+        got_e = c.ticket_read(pid.split(".", 1)[1])
+        v = got_e.get("value") if got_e.get("ok") else None
+        target = _epic_id(c, v.get("ticket", v)) if isinstance(v, dict) else None
+    my_epics = set()
+    for tid in (me.get("value") or {}).get("tickets") or []:
+        got_m = c.ticket_read(tid)
+        v = got_m.get("value") if got_m.get("ok") else None
+        e = _epic_id(c, v.get("ticket", v)) if isinstance(v, dict) else None
+        if e:
+            my_epics.add(e)
+    if "." in str(mine.get("id") or ""):
+        my_epics.add(str(mine["id"]).split(".", 1)[1])
+    if not target or target not in my_epics:
+        return {"ok": False, "error": {"code": "scope",
+                                       "message": f"architect {mine.get('id')!r} may only operate seats in its "
+                                                  f"own epic" + (f" (target epic {target})" if target else
+                                                                  "; target epic could not be resolved")},
+                "hint": "pass ticket_id in your epic"}
+    return None
+
+
 def _spawn(a: SpawnArgs) -> dict[str, Any]:
     args = a.model_dump()
     ticket_id = args.pop("ticket_id", None)
@@ -1367,39 +1405,9 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
         if not got_t.get("ok"):
             return got_t
         tk = got_t["value"].get("ticket", got_t["value"]) if isinstance(got_t["value"], dict) else None
-    # S-ADV finding 2: the tool binds the caller like REST /v1/sessions/spawn does — the owner spawns any
-    # seat, an architect only seats in its own epic (the target's epic, from the ticket or the handle),
-    # every other role is refused; the board's whoami is the identity, never the endpoint's role
-    me = c.whoami()
-    if not me.get("ok"):
-        return me
-    mine = (me.get("value") or {}).get("participant") or {}
-    my_role = str(mine.get("role") or "")
-    if my_role != "owner":
-        if my_role != "architect":
-            return {"ok": False, "error": {"code": "scope",
-                                           "message": f"role {my_role!r} may not operate the pool control plane"},
-                    "hint": "the owner or the epic's architect spawns seats"}
-        target = _epic_id(c, tk) if tk else None
-        if target is None and pid and "." in pid:
-            got_e = c.ticket_read(pid.split(".", 1)[1])
-            v = got_e.get("value") if got_e.get("ok") else None
-            target = _epic_id(c, v.get("ticket", v)) if isinstance(v, dict) else None
-        my_epics = set()
-        for tid in (me.get("value") or {}).get("tickets") or []:
-            got_m = c.ticket_read(tid)
-            v = got_m.get("value") if got_m.get("ok") else None
-            e = _epic_id(c, v.get("ticket", v)) if isinstance(v, dict) else None
-            if e:
-                my_epics.add(e)
-        if "." in str(mine.get("id") or ""):
-            my_epics.add(str(mine["id"]).split(".", 1)[1])
-        if not target or target not in my_epics:
-            return {"ok": False, "error": {"code": "scope",
-                                           "message": f"architect {mine.get('id')!r} may only operate seats in its "
-                                                      f"own epic" + (f" (target epic {target})" if target else
-                                                                      "; target epic could not be resolved")},
-                    "hint": "pass ticket_id in your epic"}
+    refused = _pool_caller_check(c, tk, pid)
+    if refused:
+        return refused
     # the architect is RESIDENT per epic: while architect.<epic> is up, a second architect seat on one
     # of its stories only steals the assignment — message the resident instead (the owner included;
     # qa full run on bb17851 caught this check indented under the architect-only branch)
@@ -1573,6 +1581,9 @@ def _resume(a: ResumeArgs) -> dict[str, Any]:
 
 
 def _reap(a: ReapArgs) -> dict[str, Any]:
+    refused = _pool_caller_check(get_client(), None, a.participant_id)  # adversary 09-23 #1
+    if refused:
+        return refused
     return _pool_call("reap", a.model_dump())
 
 

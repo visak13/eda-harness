@@ -472,6 +472,13 @@ class Board:
                       title: str | None = None) -> Ticket:
         t = self.ticket(id_)
         changed: dict[str, Any] = {}
+        if is_topic(t):  # adversary 09-23 #5/#7: a topic's seat is its resident sme and its tags are the
+            if assignee is not None:  # owner's or the sme's, on every path (not only /v1/topics)
+                raise BoardError("scope", f"topic {t.id} is worked by its resident sme seat",
+                                 "the board assigns sme.<topic>; the owner closes the topic")
+            if tags is not None and actor.role != Role.owner and actor.id != t.assignee:
+                raise BoardError("scope", "the owner or the topic's sme sets its tags",
+                                 "PATCH /v1/topics/<id>/tags as the owner, or ticket_update as the sme")
         if title is not None:
             # Ruling #32: the title is a short human title, settable by the architect or the owner on an
             # epic or a story; an epic's `words` are immutable — nothing after create writes them.
@@ -1200,9 +1207,14 @@ class Board:
     def _doc_update_locked(self, actor: Participant, id_: str, *, body_md: str | None = None,
                            title: str | None = None, tags: list[str] | None = None) -> Doc:
         d: Doc = self._get("doc", id_, "doc")
-        if d.status == DocStatus.active and self.topic_of_seat(actor) is not None:
-            raise BoardError("scope", f"{id_} is active; a topic's sme proposes its next version",
-                             f"topic_propose(..., proposes={id_!r}) — the owner approves it in the Library")
+        if self.topic_of_seat(actor) is not None:
+            if d.status == DocStatus.active:
+                raise BoardError("scope", f"{id_} is active; a topic's sme proposes its next version",
+                                 f"topic_propose(..., proposes={id_!r}) — the owner approves it in the Library")
+            # adversary 09-23 #6: a proposal's Source · fetched-at header is the board's stamp from a receipt;
+            # an edit would forge it — the seat files a fresh proposal instead
+            raise BoardError("scope", f"{id_} carries a board-stamped source; a topic's sme does not edit docs",
+                             "topic_propose(...) files a new proposal (proposes=<doc> for a next version)")
         if actor.role not in DOC_AUTHORS[d.doc_type] and actor.role != d.owner_role:
             raise BoardError("scope", f"{actor.role} may not update {d.doc_type} docs")
         if body_md is None and title is None and (tags is None or normalize_tags(tags) == d.tags):

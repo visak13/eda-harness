@@ -419,3 +419,66 @@ def test_proposal_needs_a_fetched_source_and_never_activates(client, board, toke
     assert d["proposes"] == active["id"]
     assert not client.post(f"/v1/docs/{d['id']}/approve", headers=sme).json()["ok"]
     assert client.post(f"/v1/docs/{d['id']}/approve", headers=OWNER).json()["ok"]
+
+
+# ----------------------------------------------------------------------------- adversary 09-23 (qa, epic-6a8a6020fd)
+def test_reserved_expert_handles_are_refused(client, tokens):
+    """#2: an expert named `agents` replaced tokens.json's agents map with a string."""
+    t = _topic(client)["topic"]
+    for handle in ("agents", "owner"):
+        r = client.post(f"/v1/topics/{t['id']}/experts", json={"handle": handle}, headers=OWNER).json()
+        assert not r["ok"], handle
+    assert isinstance(json.loads(tokens.read_text(encoding="utf-8"))["agents"], dict)
+
+
+def test_generic_ticket_route_keeps_topic_seat_and_tags(client):
+    """#5/#7: PATCH /v1/tickets let an engineer take the assignment (and research) and an architect set tags."""
+    t = _topic(client)["topic"]
+    r = client.patch(f"/v1/tickets/{t['id']}", json={"assignee": "eng"}, headers={"X-Participant": "eng"}).json()
+    assert not r["ok"] and "resident" in r["error"]["message"]
+    r = client.patch(f"/v1/tickets/{t['id']}", json={"assignee": "arch"}, headers={"X-Participant": "arch"}).json()
+    assert not r["ok"]
+    r = client.patch(f"/v1/tickets/{t['id']}", json={"tags": ["outsider"]}, headers={"X-Participant": "arch"}).json()
+    assert not r["ok"] and "tags" in r["error"]["message"]
+    page = client.get(f"/v1/topics/{t['id']}", headers=OWNER).json()["value"]
+    assert page["seat"]["participant"] == f"sme.{t['id']}" and page["topic"]["tags"] == []
+    assert client.get(f"/v1/tickets/{t['id']}", headers=OWNER).json()["value"]["assignee"] == f"sme.{t['id']}"
+    # the owner and the sme still write the one list through the generic route too
+    assert client.patch(f"/v1/tickets/{t['id']}", json={"tags": ["kept"]}, headers=OWNER).json()["ok"]
+
+
+def test_seed_url_refuses_local_and_private_hosts(client):
+    """#9: the seed host joins the research allowlist, so a loopback/metadata/private seed made the seat an SSRF."""
+    for bad in ("https://127.0.0.1/private", "https://169.254.169.254/latest", "https://localhost/x",
+                "https://10.0.0.5/x", "https://[::1]/x", "https://box.local/x"):
+        r = client.post("/v1/topics", json={"title": "loop", "seed_url": bad}, headers=OWNER).json()
+        assert not r["ok"] and "private" in r["error"]["message"], bad
+    assert client.post("/v1/topics", json={"title": "ok", "seed_url": "https://docs.pytest.org/"}, headers=OWNER).json()["ok"]
+
+
+def test_seed_url_outlives_many_tag_writes(client):
+    """#10: the seed was read from the newest 200 ticket_updated events, so 200 tag writes lost it."""
+    t = _topic(client, seed_url="https://docs.pytest.org/en/stable/")["topic"]
+    for i in range(205):
+        assert client.patch(f"/v1/topics/{t['id']}/tags", json={"tags": [f"t{i}"]}, headers=OWNER).json()["ok"]
+    page = client.get(f"/v1/topics/{t['id']}", headers=OWNER).json()["value"]
+    assert page["seed_url"] == "https://docs.pytest.org/en/stable/"
+
+
+def test_topic_seat_cannot_edit_its_proposal(client, board, tokens, recorded):
+    """#6: the seat could PATCH a proposed doc and forge the board-stamped Source · fetched-at header."""
+    t = _topic(client)["topic"]
+    board.run_pending_pairings()
+    sme = _agent(tokens, f"sme.{t['id']}")
+    url = "https://www.skills.sh/wshobson/agents/python-testing-patterns"
+    assert client.post(f"/v1/topics/{t['id']}/research", json={"url": url}, headers=sme).json()["ok"]
+    d = client.post(f"/v1/topics/{t['id']}/proposals", json={"title": "x", "body_md": "## Enforced\n- a [required]\n",
+                                                              "source_url": url}, headers=sme).json()["value"]["doc"]
+    forged = "> Source: https://never-fetched.example/ · fetched-at 2099-01-01\n\nfabricated"
+    r = client.patch(f"/v1/docs/{d['id']}", json={"body_md": forged}, headers=sme).json()
+    assert not r["ok"] and "stamped" in r["error"]["message"]
+    r = client.post(f"/v1/docs/{d['id']}/edit", json={"edits": [{"op": "replace", "old": "a [required]", "new": "b"}]},
+                    headers=sme)
+    assert r.status_code != 200 or not r.json().get("ok")
+    body = client.get(f"/v1/docs/{d['id']}", headers=OWNER).json()["value"]["body_md"]
+    assert body.startswith("> Source: https://www.skills.sh/")
