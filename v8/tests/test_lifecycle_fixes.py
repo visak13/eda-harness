@@ -50,10 +50,10 @@ def test_steer_surfaces_in_context(client, rig):
 
 
 def test_seat_participant_sees_its_ticket_unassigned(client, rig):
-    client.post("/v1/participants", json={"type": "agent", "role": "reviewer",
-                                          "handle": f"reviewer.{rig['epic']}", "id": f"reviewer.{rig['epic']}"},
+    client.post("/v1/participants", json={"type": "agent", "role": "qa",
+                                          "handle": f"qa.{rig['epic']}", "id": f"qa.{rig['epic']}"},
                 headers=ADMIN)
-    who = client.get("/v1/whoami", headers={"X-Participant": f"reviewer.{rig['epic']}"}).json()["value"]
+    who = client.get("/v1/whoami", headers={"X-Participant": f"qa.{rig['epic']}"}).json()["value"]
     assert rig["epic"] in who["tickets"]  # named for the ticket -> surfaced even unassigned
 
 
@@ -112,7 +112,7 @@ def test_architect_and_owner_have_no_close_self():
     from edp8.bundles import ROLE_BUNDLES
     assert "close_self" not in ROLE_BUNDLES["architect"] and "close_self" not in ROLE_BUNDLES["owner"]
     assert {"inbox", "record_status"} <= set(ROLE_BUNDLES["architect"])
-    for r in ("engineer", "reviewer", "qa", "adversary", "sme"):
+    for r in ("engineer", "qa", "adversary", "sme"):
         assert ROLE_BUNDLES[r][-3:] == ["inbox", "record_status", "close_self"]
     assert "finish" not in ALL_TOOLS and "park" not in ALL_TOOLS
 
@@ -179,7 +179,7 @@ def test_open_design_signoff_gate_blocks_auto_ready_until_answered(client, rig):
     d = client.post("/v1/docs", json={"doc_type": "design", "title": "d", "body_md": "x", "scope": epic},
                     headers=H).json()["value"]["id"]
     client.patch(f"/v1/tickets/{s}", json={"design_ref": d}, headers=H)
-    client.post("/v1/criteria", json={"ticket_id": s, "text": "c", "check": "verdict", "checked_by": "reviewer"}, headers=H)
+    client.post("/v1/criteria", json={"ticket_id": s, "text": "c", "check": "verdict", "checked_by": "qa"}, headers=H)
     # design_signoff needs a designed epic (design_ref + a criterion → phase `designed`), 2026-09-08.
     client.post("/v1/criteria", json={"ticket_id": epic, "text": "ec", "check": "command"}, headers=H)
     de = client.post("/v1/docs", json={"doc_type": "design", "title": "de", "body_md": "x", "scope": epic},
