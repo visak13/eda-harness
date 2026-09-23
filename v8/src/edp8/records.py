@@ -248,6 +248,7 @@ def lessons_from_pains(board: Any, path: Path | None = None) -> list[Any]:
                                  topic=one_line(d["symptom"], 60), text=text, evidence=[d["id"]])
         out.append(le)
         texts.add(norm(text))
+        known.add(d["id"])  # S-ADV finding 8: the same pain id twice in one file makes one lesson
         auto += 1
     return out
 

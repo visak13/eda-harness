@@ -347,3 +347,13 @@ def test_assemble_ruleset_appends_recall(board, rig):
     tool = ALL_TOOLS["assemble_ruleset"]
     out = tool.handler(tool.args_model(ticket_id=s.id))
     assert out["ok"] and d.id in {i["id"] for i in out["value"]["recall"]["items"]}
+
+def test_the_same_pain_id_twice_in_one_file_makes_one_lesson(board, rig, tmp_path):
+    """S-ADV finding 8: a pain re-filed under its own id (an edited symptom) is one lesson, not two."""
+    f = tmp_path / "pain-points.jsonl"
+    _pain(f, id="p-one", symptom="first symptom")
+    _pain(f, id="p-one", symptom="updated symptom")
+    records._pain_seen.clear()
+    made = records.lessons_from_pains(board, f)
+    assert len(made) == 1 and made[0].evidence == ["p-one"]
+    assert len(_auto(board, "lesson")) == 1
