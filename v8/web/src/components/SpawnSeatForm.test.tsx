@@ -25,7 +25,7 @@ describe("SpawnSeatForm (S-ROLES)", () => {
     mount(<SpawnSeatForm />);
     await waitFor(() => expect(opts("spawn-seat-role")).toEqual(["architect", "engineer", "qa", "adversary", "sme"]));
     expect((screen.getByTestId("spawn-seat-role") as HTMLSelectElement).value).toBe("engineer");
-    expect(opts("spawn-seat-model")).toEqual(["claude-opus-5-5", "gpt-6-sol"]);
+    expect(opts("spawn-seat-model")).toEqual(["", "claude-opus-5-5", "gpt-6-sol"]);  // "" = the epic's choice
     expect(screen.getByTestId("spawn-seat-assign")).toBeChecked();
     expect(screen.getByTestId("spawn-seat-submit")).toBeDisabled();
     fireEvent.change(screen.getByTestId("spawn-seat-ticket"), { target: { value: " s-1 " } });
@@ -36,7 +36,7 @@ describe("SpawnSeatForm (S-ROLES)", () => {
     expect(body).toEqual({ role: "engineer", participant_id: "engineer.s-1", ticket_id: "s-1", model: "gpt-6-sol", assign: true });
   });
 
-  it("a checker role is never made the assignee by default, and switching role resets the model to its default", async () => {
+  it("a checker role is never made the assignee by default, and switching role resets the model to the epic's choice", async () => {
     let body: Record<string, unknown> | null = null;
     server.use(http.post("/v1/sessions/spawn", async ({ request }) => {
       body = (await request.json()) as Record<string, unknown>;
@@ -46,13 +46,15 @@ describe("SpawnSeatForm (S-ROLES)", () => {
     await waitFor(() => expect(opts("spawn-seat-role")).toContain("adversary"));
     fireEvent.change(screen.getByTestId("spawn-seat-model"), { target: { value: "gpt-6-sol" } });
     fireEvent.change(screen.getByTestId("spawn-seat-role"), { target: { value: "adversary" } });
-    expect(opts("spawn-seat-model")).toEqual(["gpt-6-astra"]);
-    expect((screen.getByTestId("spawn-seat-model") as HTMLSelectElement).value).toBe("gpt-6-astra");
+    expect(opts("spawn-seat-model")).toEqual(["", "gpt-6-astra"]);
+    expect((screen.getByTestId("spawn-seat-model") as HTMLSelectElement).value).toBe("");
     expect(screen.getByTestId("spawn-seat-assign")).not.toBeChecked();
     fireEvent.change(screen.getByTestId("spawn-seat-ticket"), { target: { value: "epic-9" } });
     fireEvent.click(screen.getByTestId("spawn-seat-submit"));
     await waitFor(() => expect(body).not.toBeNull());
-    expect(body).toEqual({ role: "adversary", participant_id: "adversary.epic-9", ticket_id: "epic-9", model: "gpt-6-astra" });
+    // the epic's choice sends no model: the board resolves the epic's model:adversary= tag
+    expect(screen.getByTestId("spawn-seat-preview")).toHaveTextContent("Starts adversary.epic-9 on the epic's adversary model.");
+    expect(body).toEqual({ role: "adversary", participant_id: "adversary.epic-9", ticket_id: "epic-9" });
   });
 
   it("shows the board's refusal verbatim", async () => {

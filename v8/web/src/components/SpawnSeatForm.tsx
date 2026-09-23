@@ -10,8 +10,10 @@ import styles from "./SpawnSeatForm.module.css";
 // the models.json catalog, on any ticket, on a model from THAT role's catalog, without going through
 // the architect (the owner may spawn an engineer when the architect's subscription is exhausted). The
 // seat id is `<role>.<ticket>`; doing roles (engineer, sme) take the ticket as its assignee by default
-// — a checker (qa, adversary) never becomes the assignee. Authorisation and idempotency are the
-// board's; its hint and errors are shown verbatim.
+// — a checker (qa, adversary) never becomes the assignee. The model defaults to "the epic's choice":
+// no model is sent, so the board resolves the epic's `model:<role>=` tag (else the role's first
+// catalog entry); picking an id names it explicitly. Authorisation and idempotency are the board's;
+// its hint and errors are shown verbatim.
 
 const DOING_ROLES = new Set(["engineer", "sme"]);
 
@@ -26,7 +28,8 @@ export function SpawnSeatForm(): React.JSX.Element {
   const [assignPick, setAssignPick] = useState<boolean | null>(null);
   const activeRole = roles.includes(role) ? role : (roles[0] ?? role);
   const options = catalog?.roles?.[activeRole] ?? [];
-  const model = picked && options.includes(picked) ? picked : (catalog?.defaults?.[activeRole] ?? "");
+  const model = picked && options.includes(picked) ? picked : "";  // "" = the epic's choice
+  const fallback = catalog?.defaults?.[activeRole] ?? "";
   const assign = assignPick ?? DOING_ROLES.has(activeRole);
   const ticketId = ticket.trim();
   const seatId = ticketId ? `${activeRole}.${ticketId}` : "";
@@ -50,7 +53,7 @@ export function SpawnSeatForm(): React.JSX.Element {
       data-testid="spawn-seat-form"
       onSubmit={(e) => {
         e.preventDefault();
-        if (ticketId && model && !spawn.isPending) spawn.mutate();
+        if (ticketId && options.length && !spawn.isPending) spawn.mutate();
       }}
     >
       <h2 className={styles.heading}>Spawn seat</h2>
@@ -71,6 +74,7 @@ export function SpawnSeatForm(): React.JSX.Element {
           Model
           <select className={ui.select} value={model} data-testid="spawn-seat-model"
             onChange={(e) => setPicked(e.target.value)}>
+            <option value="">{`Epic's choice${fallback ? ` (else ${modelLabel(fallback)})` : ""}`}</option>
             {options.map((id) => <option key={id} value={id}>{modelLabel(id)}</option>)}
           </select>
         </label>
@@ -81,7 +85,7 @@ export function SpawnSeatForm(): React.JSX.Element {
       </label>
       <p className={styles.note} data-testid="spawn-seat-preview">
         {seatId
-          ? `Starts ${seatId} on ${modelLabel(model)}${assign ? ` and assigns ${ticketId} to it` : ""}.`
+          ? `Starts ${seatId} on ${model ? modelLabel(model) : `the epic's ${activeRole} model`}${assign ? ` and assigns ${ticketId} to it` : ""}.`
           : "Name the ticket the seat works on."}
       </p>
       {err ? <p className={styles.error} role="alert" data-testid="spawn-seat-error">{err.hint ?? err.message}</p> : null}
@@ -91,7 +95,7 @@ export function SpawnSeatForm(): React.JSX.Element {
         </p>
       ) : null}
       <div>
-        <button type="submit" className={`${ui.button} ${ui.buttonPrimary}`} disabled={!ticketId || !model || spawn.isPending} data-testid="spawn-seat-submit">
+        <button type="submit" className={`${ui.button} ${ui.buttonPrimary}`} disabled={!ticketId || !options.length || spawn.isPending} data-testid="spawn-seat-submit">
           {spawn.isPending ? "Spawning…" : "Spawn seat"}
         </button>
       </div>
