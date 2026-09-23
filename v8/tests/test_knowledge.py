@@ -991,7 +991,7 @@ def test_successor_of_binding_decision_inherits_binding(board, rig):
     epic = make_epic(board, rig)
     b = board.record_decision(rig["owner"], scope=epic.id, text="never restart the shared board", binding=True)
     plain = board.record_decision(rig["owner"], scope=epic.id, text="ordinary rule")
-    succ = board.record_decision(rig["engineer"], scope=epic.id, text="never restart the shared board; post the commit",
+    succ = board.record_decision(rig["architect"], scope=epic.id, text="never restart the shared board; post the commit",
                                  replaces=[b.id])
     assert succ.binding is True  # omitted binding inherits from the replaced binding decision
     assert board.record_decision(rig["engineer"], scope=epic.id, text="ordinary v2", replaces=[plain.id]).binding is False
@@ -1024,3 +1024,18 @@ def test_binding_audit_flags_orphaned_binding_rules(board, rig):
     board.set_binding(rig["architect"], decision_id=demoted.id, binding=True, reason="restore")
     board.set_binding(rig["architect"], decision_id=recreated.id, binding=True, reason="restore")
     assert board.binding_audit()["count"] == 0
+
+
+def test_binding_is_gated_to_architect_or_owner_in_record_decision(board, rig):
+    # m-1637080c9a: a non-architect cannot mint a binding rule, nor replace one (inherit or demote)
+    epic = make_epic(board, rig)
+    with pytest.raises(BoardError) as e1:
+        board.record_decision(rig["engineer"], scope=epic.id, text="engineer tries binding", binding=True)
+    assert e1.value.code == "forbidden" and "set_binding" in e1.value.to_dict()["hint"]
+    b = board.record_decision(rig["architect"], scope=epic.id, text="architect rule", binding=True)
+    for kw in ({}, {"binding": False}):
+        with pytest.raises(BoardError) as e2:
+            board.record_decision(rig["engineer"], scope=epic.id, text="engineer supersedes", replaces=[b.id], **kw)
+        assert e2.value.code == "forbidden"
+    assert board.store.get("decision", b.id).status == "live"  # the refusal changed nothing
+    assert board.record_decision(rig["owner"], scope=epic.id, text="owner rule", binding=True).binding is True

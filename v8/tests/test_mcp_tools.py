@@ -92,8 +92,11 @@ def test_record_and_lookup_through_tools(raw_client, board):
     assert old["ok"], old
     new = ALL_TOOLS["record_decision"].handler(
         ALL_TOOLS["record_decision"].args_model(scope=epic_id, text="allow-list hosts only",
-                                                replaces=[old["value"]["id"]], binding=True))
+                                                replaces=[old["value"]["id"]]))
     assert new["ok"], new
+    refused = ALL_TOOLS["record_decision"].handler(  # binding is architect/owner-only (m-1637080c9a)
+        ALL_TOOLS["record_decision"].args_model(scope=epic_id, text="engineer binding", binding=True))
+    assert not refused["ok"] and refused["error"]["code"] == "forbidden", refused
     out = ALL_TOOLS["lookup"].handler(ALL_TOOLS["lookup"].args_model(scope=epic_id, question="hosts"))
     assert out["ok"], out
     ids = [r["id"] for r in out["value"]["records"]]

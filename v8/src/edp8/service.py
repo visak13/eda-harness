@@ -500,7 +500,8 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     @app.exception_handler(BoardError)
     async def _board_error(_: Request, e: BoardError):
-        return JSONResponse(status_code=409 if e.code in ("transition", "conflict") else 400, content=e.to_dict())
+        status = 409 if e.code in ("transition", "conflict") else 403 if e.code == "forbidden" else 400
+        return JSONResponse(status_code=status, content=e.to_dict())
 
     @app.exception_handler(HTTPException)
     async def _http_error(_: Request, e: HTTPException):

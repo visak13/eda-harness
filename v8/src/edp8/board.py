@@ -1826,8 +1826,15 @@ class Board:
         `binding=None` (the default) inherits: a successor of a binding decision stays binding, so a
         re-curation cannot silently demote a must-follow rule (m-db71577ddc); pass False to demote."""
         replaces = list(replaces or [])
+        replaces_binding = any(getattr(self.store.get("decision", rid), "binding", False) for rid in replaces)
+        # binding is architect/owner-only (m-1637080c9a): setting it, or superseding a binding rule (which
+        # would inherit or demote it), goes through those roles — same gate as set_binding
+        if (binding is True or replaces_binding) and actor.role not in (Role.architect, Role.owner):
+            raise BoardError("forbidden", f"{actor.role} may not record a binding decision or replace one",
+                             "record it non-binding and ask the architect to set_binding, or leave the "
+                             "binding rule's replacement to the architect or owner")
         if binding is None:
-            binding = any(getattr(self.store.get("decision", rid), "binding", False) for rid in replaces)
+            binding = replaces_binding
         d = Decision(id=new_id("dec"), scope=scope, text=text, detail=detail or "",
                      status=DecisionStatus.live, replaces=replaces, binding=binding,
                      source=source, decided_by=actor.id, domains=list(domains or []), created_by=actor.id,
