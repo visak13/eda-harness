@@ -27,6 +27,23 @@ export function stripScopeId(title: string): string {
   return title.replace(/\s*\((?:epic|s|t)-[\w.-]+\)\s*$/, "").trim();
 }
 
+/** Reader mode (owner m-8d2c74d289): the doc page and the doc drawer open on the document alone;
+ *  the side panel (review/comment box, outline, ownership, history) is a toggle, remembered per
+ *  browser. Default is reader; a pending sign-off for the viewer always shows the panel. */
+export const READER_KEY = "edp8.doc.reader";
+export function readerPref(): boolean {
+  try {
+    return localStorage.getItem(READER_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+export function writeReaderPref(on: boolean): void {
+  try {
+    localStorage.setItem(READER_KEY, on ? "1" : "0");
+  } catch { /* the choice lives in memory for this view */ }
+}
+
 export type OutlineEntry = { level: 1 | 2 | 3; text: string };
 
 /** h1/h2/h3 headings of the doc's html, in document order (empty when DOMParser is unavailable). */
@@ -202,12 +219,17 @@ function DocBody({
   const signoffSeen = useRef<string | null>(null);
   if (signoffNow) signoffSeen.current = doc.id;
   const hasSignoff = signoffNow || signoffSeen.current === doc.id;
+  const [reader, setReader] = useState<boolean>(readerPref);
+  const panelHidden = reader && !hasSignoff && !reviewing;
+  function toggleReader() {
+    setReader((r) => { writeReaderPref(!r); return !r; });
+  }
   const isLatest = doc.version === latest;
   const scopeHref = doc.scope.startsWith("epic-")
     ? `/epic/${encodeURIComponent(doc.scope)}`
     : `/ticket/${encodeURIComponent(doc.scope)}`;
   return (
-    <div className={`${styles.doc} ${hasSignoff ? styles.withPane : ""} ${reviewing ? styles.reviewDoc : ""}`} data-testid="doc-view">
+    <div className={`${styles.doc} ${hasSignoff ? styles.withPane : ""} ${reviewing ? styles.reviewDoc : ""} ${panelHidden ? styles.readerOnly : ""}`} data-testid="doc-view" data-reader={panelHidden ? "1" : "0"}>
       <div className={styles.reading}>
         {/* S19 D5: the review viewer (revision3-clean-review.png) shows only the document — its
             header already names type and version, so no technical meta line and no side pane. */}
@@ -219,6 +241,18 @@ function DocBody({
           <span className={styles.versionNow} data-testid="version-now">
             v{doc.version} · {isLatest ? "latest" : `pinned (latest v${latest})`}
           </span>
+          {hasSignoff ? null : (
+            <button
+              type="button"
+              className={styles.readerToggle}
+              onClick={toggleReader}
+              aria-pressed={panelHidden}
+              data-testid="doc-reader-toggle"
+              title={panelHidden ? "Show the review, outline and history panel" : "Hide the panel and read the document alone"}
+            >
+              {panelHidden ? "Show panel" : "Reader mode"}
+            </button>
+          )}
         </p>}
         {!hideTitle && (
           <h1 className={styles.title} data-testid="doc-title">
@@ -234,7 +268,7 @@ function DocBody({
         {reviewing ? null : <DocControls docId={doc.id} scope={doc.scope} version={doc.version} scopeIsThread={scopeIsTicket} />}
       </div>
 
-      {reviewing ? null : <aside className={styles.side} data-testid="doc-side">
+      {reviewing || panelHidden ? null : <aside className={styles.side} data-testid="doc-side">
         <div className={styles.sideSticky}>
           {hasSignoff ? (
             <section className={styles.pane} aria-label="Your sign-off">

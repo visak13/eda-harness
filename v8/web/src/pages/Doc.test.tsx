@@ -40,6 +40,7 @@ describe("DocPage", () => {
   });
 
   it("version pills show the versions with the latest marked", async () => {
+    localStorage.setItem("edp8.doc.reader", "0"); // the pills live in the side panel (reader mode hides it)
     server.use(http.get("/v1/docs/design-1/html", () => okJson(doc())));
     renderRoute("/doc/design-1", "/doc/:id", <DocPage />);
     // Human #30: versions collapse to "vN · latest" on the meta line + a menu holding every pill

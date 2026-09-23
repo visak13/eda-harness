@@ -92,6 +92,7 @@ describe("DocDrawer (§17)", () => {
 // type, "Open in tab", ONE version menu labelled "Versions" whose entries switch the pinned version.
 describe("DocDrawer toolbar (Astra #36 item 2)", () => {
   it("shows the doc type, the Open in tab link and a Versions menu that switches the version", async () => {
+    localStorage.setItem("edp8.doc.reader", "0"); // the history lives in the side panel (reader mode hides it)
     server.use(
       http.get("/v1/docs/d1/html", ({ request }) => {
         const v = new URL(request.url).searchParams.get("version");

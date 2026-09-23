@@ -1,9 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { beforeEach, describe, it, expect } from "vitest";
 import { screen, waitFor, fireEvent, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { server } from "../test/setup";
 import { http, okJson, renderRoute } from "../pages/testUtils";
-import { DocView, stripScopeId } from "./DocView";
+import { DocView, READER_KEY, stripScopeId } from "./DocView";
 import type { DocHtml } from "../api/types";
 
 function doc(over: Partial<DocHtml> = {}): DocHtml {
@@ -21,7 +21,48 @@ function doc(over: Partial<DocHtml> = {}): DocHtml {
   };
 }
 
+/** Reader mode is the default; the side-pane tests open the panel first (owner m-8d2c74d289). */
+async function showPanel(): Promise<void> {
+  const toggle = await screen.findByTestId("doc-reader-toggle");
+  if (toggle.textContent === "Show panel") fireEvent.click(toggle);
+}
+
 describe("DocView", () => {
+  beforeEach(() => localStorage.removeItem(READER_KEY));
+
+  it("opens in reader mode: no side pane, a Show panel toggle that reveals it and remembers the choice", async () => {
+    server.use(http.get("/v1/docs/design-1/html", () => okJson(doc({ html: "<h2>One</h2>" }))));
+    renderRoute("/x", "/x", <DocView docId="design-1" />);
+    await screen.findByText("One");
+    expect(screen.queryByTestId("doc-side")).not.toBeInTheDocument();
+    expect(screen.getByTestId("doc-view")).toHaveAttribute("data-reader", "1");
+    const toggle = screen.getByTestId("doc-reader-toggle");
+    expect(toggle).toHaveTextContent("Show panel");
+    fireEvent.click(toggle);
+    expect(await screen.findByTestId("doc-side")).toBeInTheDocument();
+    expect(screen.getByTestId("doc-reader-toggle")).toHaveTextContent("Reader mode");
+    expect(localStorage.getItem(READER_KEY)).toBe("0");
+    fireEvent.click(screen.getByTestId("doc-reader-toggle"));
+    expect(screen.queryByTestId("doc-side")).not.toBeInTheDocument();
+    expect(localStorage.getItem(READER_KEY)).toBe("1");
+  });
+
+  it("a remembered panel choice reopens with the panel; a pending sign-off always shows it", async () => {
+    localStorage.setItem(READER_KEY, "0");
+    server.use(http.get("/v1/docs/design-1/html", () => okJson(doc())));
+    renderRoute("/x", "/x", <DocView docId="design-1" />);
+    expect(await screen.findByTestId("doc-side")).toBeInTheDocument();
+  });
+
+  it("a pending sign-off shows the panel even in reader mode, with no toggle to hide it", async () => {
+    localStorage.setItem(READER_KEY, "1");
+    server.use(http.get("/v1/docs/design-1/html", () =>
+      okJson(doc({ signoff_criterion: { id: "c-1", text: "accept", ticket_id: "s-1" } }))));
+    renderRoute("/x", "/x", <DocView docId="design-1" />);
+    expect(await screen.findByTestId("doc-side")).toBeInTheDocument();
+    expect(screen.queryByTestId("doc-reader-toggle")).not.toBeInTheDocument();
+  });
+
   it("shows the loading state, then an error banner on failure", async () => {
     server.use(http.get("/v1/docs/design-1/html", () => new HttpResponse(null, { status: 500 })));
     renderRoute("/x", "/x", <DocView docId="design-1" />);
@@ -172,6 +213,7 @@ describe("DocView side pane (Astra #36 item 2)", () => {
       ),
     );
     renderRoute("/x", "/x", <DocView docId="design-1" />);
+    await showPanel();
     const outline = await screen.findByTestId("doc-outline");
     const buttons = within(outline).getAllByRole("button");
     expect(buttons.map((b) => b.textContent)).toEqual(["Intro", "Scope", "Detail"]);
@@ -193,6 +235,7 @@ describe("DocView side pane (Astra #36 item 2)", () => {
     server.use(http.get("/v1/docs/design-1/html", () => okJson(doc({ scope: "s-9", doc_type: "strategy_ll" }))));
     const opened: string[] = [];
     renderRoute("/x", "/x", <DocView docId="design-1" onOpenTicket={(id) => opened.push(id)} />);
+    await showPanel();
     const own = await screen.findByTestId("doc-ownership");
     const terms = Array.from(own.querySelectorAll("dt")).map((d) => d.textContent);
     const defs = Array.from(own.querySelectorAll("dd")).map((d) => d.textContent);
@@ -213,6 +256,7 @@ describe("DocView side pane (Astra #36 item 2)", () => {
       }),
     );
     renderRoute("/x", "/x", <DocView docId="design-1" />);
+    await showPanel();
     const history = await screen.findByTestId("doc-history");
     expect(history.tagName).toBe("DETAILS");
     expect(history).toHaveAttribute("aria-label", "Versions"); // e2e getByLabel("Versions") on the page

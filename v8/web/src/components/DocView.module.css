@@ -230,3 +230,26 @@ details[open] > .historySummary::after {
 .reviewDoc .body :global(p) { margin: 0 0 12px; }
 .reviewDoc .body :global(ul), .reviewDoc .body :global(ol) { margin: 0 0 12px; padding-left: 22px; }
 .reviewDoc .body :global(li) { margin: 0 0 2px; }
+
+/* Reader mode (owner m-8d2c74d289): one column, the reading pane keeps its measure and centres. */
+.readerOnly {
+  grid-template-columns: minmax(0, 1fr);
+}
+.readerOnly .reading {
+  max-width: 760px;
+  margin: 0 auto;
+}
+.readerToggle {
+  margin-left: auto;
+  padding: 0 8px;
+  height: 20px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--accentink);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.readerToggle:hover { border-color: var(--strongline); }
