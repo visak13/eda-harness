@@ -174,11 +174,14 @@ function Start-Supervisor {
 }
 
 function Stop-One($svc) {
+  # NO /T (S16): every seat shell is a child of the pool, and the supervisor restarts through this
+  # function, so a tree kill here took the whole fleet down with a pool restart. Operators use
+  # ..\edp.ps1 restart <svc>, which stops the service's own process chain by id.
   $rec = & $py -c "import json;from edp8 import run_state;r=run_state.read('$svc');print(json.dumps(r) if r else '')" 2>$null
   if ($rec) { $o = $rec | ConvertFrom-Json
-    if ($o.pid) { if (Get-Process -Id $o.pid -ErrorAction SilentlyContinue) { & cmd /c "taskkill /PID $o.pid /T /F >nul 2>&1" } }
+    if ($o.pid) { if (Get-Process -Id $o.pid -ErrorAction SilentlyContinue) { & cmd /c "taskkill /PID $o.pid /F >nul 2>&1" } }
     if ($o.port) { Get-NetTCPConnection -LocalPort $o.port -State Listen -ErrorAction SilentlyContinue |
-        ForEach-Object { if (Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue) { & cmd /c "taskkill /PID $_.OwningProcess /T /F >nul 2>&1" } } }
+        ForEach-Object { if (Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue) { & cmd /c "taskkill /PID $_.OwningProcess /F >nul 2>&1" } } }
   }
 }
 

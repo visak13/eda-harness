@@ -123,14 +123,14 @@ function Discover($name) {
     if ($rproc -and $rproc.CommandLine -and $rproc.CommandLine.Contains($s.needle)) { $anchor = $rp }
   }
   if (-not $anchor) { return @() }
-  $pair = @(PidPair $anchor $s.needle)
-  # never act on a listener that is not the expected service (e.g. a foreign process on the port)
-  $ok = @($pair | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($s.needle) })
-  if ($ok.Count -eq 0) {
-    [Console]::Error.WriteLine("edp: $name port $($s.port) is held by pid $anchor, whose command line lacks '$($s.needle)'; leaving it alone")
+  # authenticate the ANCHOR before walking: a foreign listener (or a process that merely names the
+  # service in an argument but is not a launcher image) is never acted on, nor are its ancestors
+  $a = Proc $anchor
+  if (-not $a -or -not $a.CommandLine -or -not $a.CommandLine.Contains($s.needle) -or ($ChainImages -notcontains $a.Name.ToLower())) {
+    [Console]::Error.WriteLine("edp: $name port $($s.port) is held by pid $anchor, which is not a '$($s.needle)' launcher process; leaving it alone")
     return @()
   }
-  $ok
+  @(PidPair $anchor $s.needle)
 }
 function Health($name) {
   $s = $SVC[$name]
@@ -148,6 +148,11 @@ function StartedOf($h, $pair) {
   if ($h -and $h.started_at) { return "" + $h.started_at }
   if ($pair.Count -gt 0) { return ($pair[0].CreationDate).ToString("yyyy-MM-ddTHH:mm:sszzz") + " (process)" }
   "-"
+}
+function ChainText($name, $pair) {
+  # outermost first; the listener (the pid netstat and `edp8 status` name) is marked with *
+  $lp = ListenerPid $SVC[$name].port
+  (($pair | ForEach-Object { if ([int]$_.ProcessId -eq $lp) { "$($_.ProcessId)*" } else { "$($_.ProcessId)" } }) -join "/")
 }
 
 # -- pool seats: the shells a pool stop takes offline ------------------------------------------------
@@ -167,40 +172,88 @@ function GuardPool($verb) {
 }
 
 # -- stop / start / restart ---------------------------------------------------------------------
+$script:Stopped = @()
+function FailDown($code, $msg) {
+  if ($script:Stopped.Count -gt 0) { $msg += "; STILL DOWN: $($script:Stopped -join ', ') - fix the cause, then .\edp.ps1 start all" }
+  Fail $code $msg
+}
 function Stop-Svc($name) {
   $pair = @(Discover $name)
   if ($pair.Count -eq 0) { Say ("{0,-10} not running" -f $name); return }
   $ids = @($pair | ForEach-Object { [int]$_.ProcessId })
   Step ("stop {0}: Stop-Process -Id {1} -Force (service process chain by command line, no tree kill)" -f $name, ($ids -join ",")) {
-    foreach ($i in $ids) { Stop-Process -Id $i -Force -ErrorAction SilentlyContinue }
-    $deadline = (Get-Date).AddSeconds(15)
-    while ((Get-Date) -lt $deadline) {
-      $alive = @($ids | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })
-      $port = $SVC[$name].port
-      if ($alive.Count -eq 0 -and -not (ListenerPid $port)) { break }
-      Start-Sleep -Milliseconds 250
+    # Kill through a HANDLE opened now and checked against the discovered process's creation time:
+    # a pid that exited and was reused since discovery is skipped, never killed (pid-reuse race).
+    $handles = @()
+    foreach ($c in $pair) {
+      $h = Get-Process -Id ([int]$c.ProcessId) -ErrorAction SilentlyContinue
+      if (-not $h) { continue }
+      try { $null = $h.Handle } catch { continue }   # opens + caches the handle that Kill() then uses
+      if ([math]::Abs(($h.StartTime - $c.CreationDate).TotalSeconds) -gt 1) { Say "  skip pid $($c.ProcessId): reused since discovery"; continue }
+      $handles += $h
     }
-    $alive = @($ids | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })
-    if ($alive.Count -gt 0) { Fail 1 "$name still running: pid $($alive -join ',')" }
+    foreach ($h in $handles) { try { $h.Kill() } catch { } }   # Stop-Process -Id semantics, bound to the handle
+    foreach ($h in $handles) { $null = $h.WaitForExit(15000) }
+    $alive = @($handles | Where-Object { -not $_.HasExited } | ForEach-Object { $_.Id })
+    if ($alive.Count -gt 0) { FailDown 1 "$name still running: pid $($alive -join ',')" }
+    $deadline = (Get-Date).AddSeconds(10)
+    while ((Get-Date) -lt $deadline -and (ListenerPid $SVC[$name].port)) { Start-Sleep -Milliseconds 250 }
+    if (ListenerPid $SVC[$name].port) { FailDown 1 "$name port $($SVC[$name].port) still has a listener after the stop" }
     $rs = Join-Path $RunDir "$name.json"
     if (Test-Path $rs) { Remove-Item $rs -Force }
+    $script:Stopped += $name
     Say ("{0,-10} stopped (pid {1})" -f $name, ($ids -join ","))
   }
 }
-function Start-Svc($name) {
-  # start.ps1 has no -Only for the supervisor; its plain run is idempotent and starts only what is down.
-  $argsList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $StartPs1)
-  if ($name -ne "supervisor") { $argsList += @("-Only", $name) }
-  Step ("start {0}: powershell -File v8\start.ps1 {1}" -f $name, ($(if ($name -ne "supervisor") { "-Only $name" } else { "" }))) {
-    & powershell.exe @argsList | Out-Host
-    if ($SVC[$name].port) {
-      $deadline = (Get-Date).AddSeconds($TimeoutSec)
-      while ((Get-Date) -lt $deadline -and -not (Health $name)) { Start-Sleep -Milliseconds 500 }
-      $h = Health $name
-      if (-not $h) { Fail 4 "$name did not answer $($SVC[$name].health) within $TimeoutSec s (see v8\.data\$name.err)" }
-    } else { $h = $null }
+function Invoke-StartPs1($label, $extra) {
+  # start.ps1 Start-Process'es long-lived services that inherit its handles. Whatever pipe start.ps1
+  # holds, the service then holds for its whole life: piping start.ps1 (or launching it with
+  # redirection = CreateProcess with inherited handles) handed the CALLER's stdout pipe to the board,
+  # and a caller that reads to EOF never returned (architect's live run, m-0c1e43e1c3). So start.ps1
+  # runs through a ShellExecute launch (no redirection => no handle inheritance, our environment is
+  # passed), inside a tiny wrapper that redirects start.ps1's streams to a log file and writes its
+  # exit code to a file; we wait for the wrapper process only, not its descendants.
+  $tag = "edp-start-{0}-{1}" -f $label, [guid]::NewGuid().ToString("N").Substring(0, 8)
+  $log = Join-Path $env:TEMP "$tag.log"; $rc = Join-Path $env:TEMP "$tag.rc"; $wrap = Join-Path $env:TEMP "$tag.ps1"
+  # parameter names stay bare (a quoted '-Only' would bind as a positional string); values are quoted
+  $argText = ($extra | ForEach-Object { if ($_ -match '^-[A-Za-z]+$') { $_ } else { "'" + ($_ -replace "'", "''") + "'" } }) -join " "
+  $body = @(
+    '$ErrorActionPreference = "Continue"',
+    ("try {{ & '{0}' {1} *> '{2}'; `$code = `$LASTEXITCODE }} catch {{ `$_ | Out-File -Append '{2}'; `$code = 1 }}" -f ($StartPs1 -replace "'", "''"), $argText, $log),
+    'if ($null -eq $code) { $code = 0 }',
+    ("Set-Content -Path '{0}' -Value `$code" -f $rc)
+  ) -join "`r`n"
+  [IO.File]::WriteAllText($wrap, $body, (New-Object Text.UTF8Encoding $true))
+  $p = Start-Process -FilePath "powershell.exe" -WindowStyle Hidden -PassThru `
+    -ArgumentList @("-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "`"$wrap`"")
+  if (-not $p.WaitForExit($TimeoutSec * 3000)) { FailDown 4 "start.ps1 $($extra -join ' ') did not exit within $($TimeoutSec * 3) s (log $log)" }
+  if (Test-Path $log) { Get-Content $log | ForEach-Object { Say "   | $_" } }
+  $code = 1; if (Test-Path $rc) { $code = [int]("" + (Get-Content $rc -Raw)).Trim() }
+  Remove-Item $wrap, $rc -Force -ErrorAction SilentlyContinue
+  if ($code -ne 0) { FailDown 4 "start.ps1 $($extra -join ' ') exited $code (log $log)" }
+  Remove-Item $log -Force -ErrorAction SilentlyContinue
+}
+function Wait-Up($name) {
+  # a service is up when its health route answers (port services) or its process chain exists
+  $deadline = (Get-Date).AddSeconds($TimeoutSec)
+  while ($true) {
+    $h = Health $name
     $pair = @(Discover $name)
-    Say ("{0,-10} up   pid {1}  rev {2}  started_at {3}" -f $name, (($pair | ForEach-Object { $_.ProcessId }) -join "/"), (RevOf $name $h), (StartedOf $h $pair))
+    $ok = ($pair.Count -gt 0) -and ((-not $SVC[$name].port) -or $h)
+    if ($ok -or (Get-Date) -gt $deadline) { break }
+    Start-Sleep -Milliseconds 500
+  }
+  if (-not $ok) { FailDown 4 "$name is not up after $TimeoutSec s (health $($SVC[$name].health); see v8\.data\$name.err)" }
+  $script:Stopped = @($script:Stopped | Where-Object { $_ -ne $name })
+  Say ("{0,-10} up   pid {1}  rev {2}  started_at {3}" -f $name, (ChainText $name $pair), (RevOf $name $h), (StartedOf $h $pair))
+}
+function Start-Svc($name) {
+  if ($name -eq "bridge" -and -not (Test-Path (Join-Path $V8 "slack_map.json"))) { Say "bridge     skipped (no v8\slack_map.json)"; return }
+  # start.ps1 has no -Only for the supervisor; its plain run is idempotent and starts only what is down.
+  $extra = @(); if ($name -ne "supervisor") { $extra = @("-Only", $name) }
+  Step ("start {0}: powershell -File v8\start.ps1 {1}" -f $name, ($extra -join " ")) {
+    Invoke-StartPs1 $name $extra
+    Wait-Up $name
   }
 }
 function Report-PoolLiveness {
@@ -218,6 +271,17 @@ function Targets($svc, $order) {
   if (-not $SVC.Contains($svc)) { Fail 5 "unknown service '$svc' (board|mcp|pool|broker|bridge|supervisor|all)" }
   @($svc)
 }
+function WithSupervisorPaused($t) {
+  # the supervisor restarts whatever it sees down (via start.ps1 -Restart); pause it around any
+  # restart of another service so the two never race, and bring it back last
+  if (($t -notcontains "supervisor") -and (@(Discover "supervisor").Count -gt 0)) { return @("supervisor") + $t }
+  $t
+}
+function Restart-Set($t) {
+  foreach ($n in $STOP_ORDER) { if ($t -contains $n) { Stop-Svc $n } }
+  foreach ($n in $START_ORDER) { if ($t -contains $n) { Start-Svc $n } }
+  Report-PoolLiveness
+}
 
 # -- status -----------------------------------------------------------------------------------
 function Show-Status {
@@ -231,39 +295,54 @@ function Show-Status {
       service    = $name
       state      = $state
       port       = $(if ($SVC[$name].port) { $SVC[$name].port } else { "-" })
-      pid        = $(if ($pair.Count) { ($pair | ForEach-Object { $_.ProcessId }) -join "/" } else { "-" })
+      pid        = $(if ($pair.Count) { ChainText $name $pair } else { "-" })
       rev        = RevOf $name $h
       started_at = $(if ($pair.Count) { StartedOf $h $pair } else { "-" })
     }
   }
   $rows | Format-Table -AutoSize | Out-String -Width 200 | Write-Host
-  Say "pid = the service's process chain, outermost first; started_at from /healthz when the service reports it, else the process start."
-  Say "HEAD $((& git -C $RepoRoot rev-parse --short HEAD 2>$null))"
+  Say "pid = the service's process chain, outermost first, * = the port's listener; started_at from /healthz when the service reports it, else the process start."
+  Say "HEAD $((& git --no-optional-locks -C $RepoRoot rev-parse --short HEAD 2>$null))"
+}
+function DownCore {
+  @(@("board", "broker", "pool", "mcp") | Where-Object { -not (Health $_) }) + @(@("supervisor") | Where-Object { @(Discover $_).Count -eq 0 })
 }
 
 # -- update ------------------------------------------------------------------------------------
 function Do-Update {
-  $dirty = @(& git -C $RepoRoot status --porcelain --untracked-files=no)
+  # dirty = modified tracked files AND untracked non-ignored files (they could leak into a build);
+  # --no-optional-locks: even this read must not refresh the index under -WhatIf
+  $dirty = @(& git --no-optional-locks -C $RepoRoot status --porcelain)
   if ($dirty.Count -gt 0 -and -not $Force) {
-    Say "working tree has $($dirty.Count) modified tracked file(s), e.g.:"
+    Say "working tree is dirty: $($dirty.Count) modified or untracked path(s), e.g.:"
     $dirty | Select-Object -First 10 | ForEach-Object { Say "  $_" }
     Fail 2 "refusing to update a dirty tree without -Force (commit or ask the seats that own these files)"
   }
-  $old = (& git -C $RepoRoot rev-parse HEAD).Trim()
+  $old = (& git --no-optional-locks -C $RepoRoot rev-parse HEAD).Trim()
   if ($WhatIf) {
     # no fetch under -WhatIf: plan from the last-fetched upstream ref
-    $new = (& git -C $RepoRoot rev-parse "@{u}" 2>$null)
+    $new = (& git --no-optional-locks -C $RepoRoot rev-parse "@{u}" 2>$null)
     if (-not $new) { Fail 6 "no upstream branch configured for $(& git -C $RepoRoot rev-parse --abbrev-ref HEAD)" }
     $new = $new.Trim()
-    Say "WHATIF: git pull --ff-only  (plan from last-fetched upstream $($new.Substring(0,7)); HEAD $($old.Substring(0,7)))"
+    # model --ff-only exactly: upstream behind/equal = no-op; both sides ahead = diverged = refused
+    $lr = ("" + (& git --no-optional-locks -C $RepoRoot rev-list --left-right --count "HEAD...@{u}")).Trim() -split "\s+"
+    $ahead = [int]$lr[0]; $behind = [int]$lr[1]
+    if ($behind -gt 0 -and $ahead -gt 0) { Fail 6 "HEAD and upstream have diverged ($ahead ahead, $behind behind): git pull --ff-only would refuse" }
+    if ($behind -eq 0) { $new = $old }
+    Say "WHATIF: git pull --ff-only  (plan from last-fetched upstream $($new.Substring(0,7)): $behind commit(s) to pull; HEAD $($old.Substring(0,7)), $ahead local commit(s) ahead)"
   } else {
     Say "-> git pull --ff-only"
     & git -C $RepoRoot pull --ff-only
     if ($LASTEXITCODE -ne 0) { Fail 6 "git pull --ff-only failed (diverged? resolve by hand); nothing restarted" }
     $new = (& git -C $RepoRoot rev-parse HEAD).Trim()
   }
-  if ($old -eq $new) { Say "already up to date at $($old.Substring(0,7)); nothing to restart"; return }
-  $changed = @(& git -C $RepoRoot diff --name-only $old $new)
+  if ($old -eq $new) {
+    # a re-run after a failed update lands here with services still down: say so, never "all fine"
+    $down = @(DownCore)
+    if ($down.Count -gt 0) { Fail 9 "already at $($old.Substring(0,7)) but DOWN: $($down -join ', ') (an earlier update failed?) - .\edp.ps1 start all" }
+    Say "already up to date at $($old.Substring(0,7)); nothing to restart"; return
+  }
+  $changed = @(& git --no-optional-locks -C $RepoRoot diff --name-only $old $new)
   Say "$($changed.Count) file(s) change between $($old.Substring(0,7)) and $($new.Substring(0,7))"
   $v8Py   = @($changed | Where-Object { $_ -match '^v8/(src/|pyproject\.toml|uv\.lock|hatch_build\.py)' }).Count -gt 0
   $v8Deps = @($changed | Where-Object { $_ -match '^v8/(pyproject\.toml|uv\.lock|hatch_build\.py)' }).Count -gt 0
@@ -272,9 +351,6 @@ function Do-Update {
   $poolCh = @($changed | Where-Object { $_ -match '^edp-pool/' }).Count -gt 0
   $brkCh  = @($changed | Where-Object { $_ -match '^edp-broker/' }).Count -gt 0
 
-  # restart order: supervisor off first (it would restart what we stop), board (the SPA + deps
-  # need it down: uv sync cannot replace a running edp8-board.exe), broker, pool, mcp, bridge,
-  # supervisor back last.
   $restart = @()
   if ($v8Py -or $web) { $restart += "board" }
   if ($brkCh) { $restart += "broker" }
@@ -285,21 +361,22 @@ function Do-Update {
   if ($restart.Count -eq 0) { Say "no service code changed; nothing to restart"; return }
   if ($restart -contains "pool") { GuardPool "restart" }
   if ($restart -contains "mcp") { Say "NOTE: mcp restarts: every running seat keeps the old MCP code until it respawns (shared-host rules)." }
-  Say ("restart plan: supervisor(stop) -> {0} -> supervisor(start)" -f ($restart -join " -> "))
+  $restart = @($START_ORDER | Where-Object { $restart -contains $_ })
+  $stopList = @($STOP_ORDER | Where-Object { $restart -contains $_ })
+  Say ("restart plan: supervisor(stop) -> stop {0} -> sync/build -> start {1} -> supervisor(start)" -f ($stopList -join ","), ($restart -join ","))
 
+  # every consumer of an environment is stopped BEFORE that environment changes (Windows locks
+  # loaded files: uv sync cannot replace a running edp8-board.exe or a loaded .pyd)
   Stop-Svc "supervisor"
-  if ($restart -contains "board") { Stop-Svc "board" }
-  if ($v8Deps -or $v8Py) { Step "uv sync --directory v8" { & uv sync --directory $V8; if ($LASTEXITCODE -ne 0) { Fail 7 "uv sync failed" } } }
-  if ($poolCh -and ($restart -contains "pool")) { Step "uv sync --directory edp-pool" { & uv sync --directory (Join-Path $RepoRoot "edp-pool") } }
-  if ($brkCh) { Step "uv sync --directory edp-broker" { & uv sync --directory (Join-Path $RepoRoot "edp-broker") } }
+  foreach ($n in $stopList) { Stop-Svc $n }
+  if ($v8Deps -or $v8Py) { Step "uv sync --directory v8" { & uv sync --directory $V8; if ($LASTEXITCODE -ne 0) { FailDown 7 "uv sync (v8) failed" } } }
+  if ($restart -contains "pool") { Step "uv sync --directory edp-pool" { & uv sync --directory (Join-Path $RepoRoot "edp-pool"); if ($LASTEXITCODE -ne 0) { FailDown 7 "uv sync (edp-pool) failed" } } }
+  if ($brkCh) { Step "uv sync --directory edp-broker" { & uv sync --directory (Join-Path $RepoRoot "edp-broker"); if ($LASTEXITCODE -ne 0) { FailDown 7 "uv sync (edp-broker) failed" } } }
   if ($web) {
-    if ($webDep) { Step "npm --prefix v8\web ci" { & npm --prefix (Join-Path $V8 "web") ci; if ($LASTEXITCODE -ne 0) { Fail 8 "npm ci failed" } } }
-    Step "npm --prefix v8\web run build (SPA)" { & npm --prefix (Join-Path $V8 "web") run build; if ($LASTEXITCODE -ne 0) { Fail 8 "SPA build failed" } }
+    if ($webDep) { Step "npm --prefix v8\web ci" { & npm --prefix (Join-Path $V8 "web") ci; if ($LASTEXITCODE -ne 0) { FailDown 8 "npm ci failed" } } }
+    Step "npm --prefix v8\web run build (SPA)" { & npm --prefix (Join-Path $V8 "web") run build; if ($LASTEXITCODE -ne 0) { FailDown 8 "SPA build failed" } }
   }
-  foreach ($name in $restart) {
-    if ($name -ne "board") { Stop-Svc $name }
-    Start-Svc $name
-  }
+  foreach ($n in $restart) { Start-Svc $n }
   Report-PoolLiveness
   Start-Svc "supervisor"
 }
@@ -308,7 +385,15 @@ function Do-Update {
 switch ($Command.ToLower()) {
   "status" { Show-Status }
   "start" {
-    if ($Service -eq "all") { Step "start all: powershell -File v8\start.ps1 (idempotent; supervisor included)" { & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $StartPs1 | Out-Host } }
+    if ($Service -eq "all") {
+      Step "start all: powershell -File v8\start.ps1 (idempotent; supervisor included)" {
+        Invoke-StartPs1 "all" @()
+        foreach ($n in $START_ORDER) {
+          if ($n -eq "bridge" -and -not (Test-Path (Join-Path $V8 "slack_map.json"))) { continue }
+          Wait-Up $n
+        }
+      }
+    }
     else { foreach ($n in (Targets $Service $START_ORDER)) { Start-Svc $n } }
   }
   "stop" {
@@ -323,10 +408,7 @@ switch ($Command.ToLower()) {
     $t = @(Targets $Service $STOP_ORDER)
     if ($t -contains "pool") { GuardPool "restart" }
     if ($t -contains "mcp") { Say "NOTE: mcp restart: every running seat keeps the old MCP code until it respawns (shared-host rules)." }
-    foreach ($n in $t) { Stop-Svc $n }
-    $up = @($START_ORDER | Where-Object { $t -contains $_ })
-    foreach ($n in $up) { Start-Svc $n }
-    Report-PoolLiveness
+    Restart-Set (WithSupervisorPaused $t)
   }
   "update" { Do-Update }
   default {

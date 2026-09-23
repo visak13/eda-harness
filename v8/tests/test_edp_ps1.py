@@ -75,12 +75,23 @@ def _fake(port: int, needle: str, body: dict | list | None = None) -> subprocess
     raise RuntimeError("fake service never listened")
 
 
+def _fake_proc(needle: str) -> subprocess.Popen:
+    """A port-less fake (bridge/supervisor): sleeps, with the needle in its command line."""
+    return subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)", needle])
+
+
+def _record(tmp_path: Path, service: str, pid: int) -> None:
+    run = tmp_path / "run"
+    run.mkdir(exist_ok=True)
+    (run / f"{service}.json").write_text(json.dumps({"service": service, "pid": pid, "git_rev": "t"}))
+
+
 @pytest.fixture
 def fakes():
     procs: list[subprocess.Popen] = []
     yield procs
-    for p in procs:
-        p.kill()
+    for p in procs:  # the venv python is a launcher + interpreter pair: kill the test's own fake tree
+        subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], capture_output=True)
 
 
 # ── static invariants ───────────────────────────────────────────────────────────────────────────
@@ -105,9 +116,20 @@ def test_script_never_kills_by_image_or_by_tree():
     assert not re.search(r"/IM\b", code, re.I)
     assert not re.search(r"(?<![\w-])/T\b", code), "no tree kill: seat shells are pool children"
     assert not re.search(r"Stop-Process\b[^\n]*-Name", code, re.I)
-    assert re.search(r"Stop-Process -Id", code)
+    assert not re.search(r"Get-Process\s+-Name|Get-Process\s+['\"]?[a-z]", code, re.I), "never select by image"
+    # the kill goes through a handle opened by pid and checked against the discovered creation time
+    assert re.search(r"Get-Process -Id", code) and "$h.Kill()" in code and "StartTime - $c.CreationDate" in code
     for form in ("&&", "||", "??"):
         assert form not in code, f"PS7-only operator {form}"
+
+
+def test_start_ps1_stop_one_has_no_tree_kill():
+    """The supervisor restarts through start.ps1 -Restart (Stop-One): a /T there kills every seat
+    with a pool restart (consult finding 4 on c7aa5b7)."""
+    src = (ROOT / "v8" / "start.ps1").read_text(encoding="utf-8-sig")
+    body = src[src.index("function Stop-One"):src.index("function Restart-One")]
+    code = "\n".join(line.split("#", 1)[0] for line in body.splitlines())
+    assert "taskkill" in code and not re.search(r"(?<![\w-])/T\b", code)
 
 
 # ── -WhatIf against fake services ───────────────────────────────────────────────────────────────
@@ -225,10 +247,152 @@ def test_update_whatif_plans_pull_spa_build_and_restart_order(tmp_path):
     assert "WHATIF: git pull --ff-only" in out
     assert "WHATIF: npm --prefix v8\\web run build (SPA)" in out
     assert "edp-pool changed; the pool is NOT restarted without -Force" in out
-    assert "restart plan: supervisor(stop) -> board -> supervisor(start)" in out
+    assert "restart plan: supervisor(stop) -> stop board -> sync/build -> start board -> supervisor(start)" in out
     assert out.index("npm --prefix v8\\web run build") < out.index("WHATIF: start board")
-    assert "-> " not in out.replace("supervisor(stop) -> board -> supervisor(start)", "")
+    assert not re.search(r"^-> ", out, re.M), "a -WhatIf run must not execute any step"
     assert _git(work, "rev-parse", "HEAD") == head, "-WhatIf must not pull"
+
+
+def test_update_whatif_stops_a_running_supervisor_first_and_restarts_it_last(tmp_path, fakes):
+    """Consult finding 9: the order test must see a REAL supervisor process, not a plan string."""
+    work = _repo_with_upstream_change(tmp_path)
+    sup = _fake_proc("edp8.supervisor")
+    fakes.append(sup)
+    env = _hermetic_env(tmp_path)
+    _record(tmp_path, "supervisor", sup.pid)
+    out = _run(["update", "-WhatIf"], env, repo=work).stdout
+    stop = re.search(r"WHATIF: stop supervisor: Stop-Process -Id [\d,]*\b%d\b" % sup.pid, out)
+    assert stop, out
+    assert stop.start() < out.index("WHATIF: npm --prefix v8\\web run build") < out.index("WHATIF: start board")
+    assert out.rindex("WHATIF: start supervisor") > out.index("WHATIF: start board")
+    assert sup.poll() is None
+
+
+def test_update_whatif_models_ff_only_when_local_is_ahead_and_flags_down_services(tmp_path):
+    """Upstream behind HEAD = `git pull --ff-only` is a no-op; with services down (every hermetic
+    port is empty) the re-run must fail loudly, not report "up to date" (consult finding 6)."""
+    work = _repo_with_upstream_change(tmp_path)
+    _git(work, "pull", "-q", "--ff-only")
+    (work / "local.txt").write_text("x\n")
+    _git(work, "add", "local.txt"); _git(work, "commit", "-qm", "local ahead")
+    r = _run(["update", "-WhatIf"], _hermetic_env(tmp_path), repo=work)
+    assert "0 commit(s) to pull" in r.stdout, r.stdout
+    assert r.returncode == 9 and "DOWN: board, broker, pool, mcp, supervisor" in r.stderr, r.stdout + r.stderr
+
+
+def test_update_counts_untracked_files_as_dirty(tmp_path):
+    work = _repo_with_upstream_change(tmp_path)
+    (work / "v8" / "web" / "stray.ts").write_text("untracked\n")
+    r = _run(["update", "-WhatIf"], _hermetic_env(tmp_path), repo=work)
+    assert r.returncode == 2 and "?? v8/web/stray.ts" in r.stdout, r.stdout + r.stderr
+
+
+# ── real (non -WhatIf) start/restart against a fake start.ps1 ──────────────────────────────────
+
+FAKE_START = r"""param([string]$Only, [string]$Restart, [switch]$NoSupervisor)
+if ($env:FAKE_START_EXIT) { Write-Host "fake start.ps1 failing"; exit ([int]$env:FAKE_START_EXIT) }
+if ($Only -eq "board") {
+  # exactly like the real launcher (StartProc): redirected Start-Process = CreateProcess with
+  # inherited handles, so the long-lived child also holds whatever pipe this process was given
+  $log = Join-Path $env:FAKE_LOGDIR ("board-" + [guid]::NewGuid().ToString("N") + ".log")
+  Start-Process -FilePath $env:FAKE_PY -ArgumentList @($env:FAKE_SRV, $env:EDP8_PORT, "edp8-board") -WindowStyle Hidden `
+    -RedirectStandardOutput $log -RedirectStandardError "$log.err"
+}
+Write-Host "fake start.ps1 -Only $Only done"
+exit 0
+"""
+
+
+def _run_piped(args: list[str], env: dict[str, str], repo: Path, timeout: float = 90):
+    """Like _run, but stdout/stderr are pipes read by threads and we wait on the PROCESS, so a
+    descendant that inherited the pipe shows up as 'hung' instead of hanging pytest (subprocess.run's
+    communicate() waits for pipe EOF even after its timeout kill)."""
+    import threading
+
+    cmd = [PS, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(SCRIPT), *args, "-RepoRoot", str(repo)]
+    p = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    bufs: dict[str, list[str]] = {"out": [], "err": []}
+    readers = [threading.Thread(target=lambda s=s, k=k: bufs[k].extend(s), daemon=True)
+               for s, k in ((p.stdout, "out"), (p.stderr, "err"))]
+    for t in readers:
+        t.start()
+    try:
+        p.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        p.kill()
+        pytest.fail("edp.ps1 did not exit (hung): " + "".join(bufs["out"]))
+    for t in readers:
+        t.join(5)
+    if any(t.is_alive() for t in readers):
+        pytest.fail("edp.ps1 exited but its stdout pipe stayed open: a started service inherited the "
+                    "caller's pipe, so a caller that reads to EOF hangs (m-0c1e43e1c3)")
+    return subprocess.CompletedProcess(cmd, p.returncode, "".join(bufs["out"]), "".join(bufs["err"]))
+
+
+def _fake_repo(tmp_path: Path) -> tuple[Path, dict[str, str], int]:
+    repo = tmp_path / "repo"
+    (repo / "v8").mkdir(parents=True)
+    (repo / "v8" / "start.ps1").write_text("﻿" + FAKE_START, encoding="utf-8")
+    srv = tmp_path / "fake_board.py"
+    srv.write_text(FAKE_SERVER)
+    port = _free_port()
+    env = _hermetic_env(tmp_path, EDP8_PORT=port)
+    env.update(FAKE_PY=sys.executable, FAKE_SRV=str(srv), FAKE_LOGDIR=str(tmp_path),FAKE_BODY=json.dumps({"ok": True, "git_rev": "f00d123"}))
+    return repo, env, port
+
+
+def _listener_pid(port: int) -> int | None:
+    out = subprocess.run([PS, "-NoProfile", "-Command",
+                          f"(Get-NetTCPConnection -LocalPort {port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1).OwningProcess"],
+                         capture_output=True, text=True, timeout=30).stdout.strip()
+    return int(out) if out else None
+
+
+def test_real_restart_returns_through_a_pipe_and_replaces_the_chain(tmp_path):
+    """The architect's live run hung (m-0c1e43e1c3): start.ps1's Start-Process child inherited the
+    caller's stdout pipe. Here stdout IS a pipe (capture_output) and the call must return, stop the
+    old chain by pid, and print the new chain with the listener marked."""
+    repo, env, port = _fake_repo(tmp_path)
+    env["EDP8_PORT"] = str(port)
+    first = _run_piped(["start", "board", "-TimeoutSec", "20"], env, repo)
+    try:
+        assert first.returncode == 0, first.stdout + first.stderr
+        old = _listener_pid(port)
+        assert old and re.search(r"^board\s+up\s+pid \S*%d\*\s+rev f00d123" % old, first.stdout, re.M), first.stdout
+
+        r = _run_piped(["restart", "board", "-TimeoutSec", "20"], env, repo)  # would time out (120 s) if it hung
+        assert r.returncode == 0, r.stdout + r.stderr
+        new = _listener_pid(port)
+        assert new and new != old, (old, new)
+        assert re.search(r"^board\s+stopped \(pid [\d,]*\b%d\b" % old, r.stdout, re.M), r.stdout
+        assert re.search(r"^board\s+up\s+pid \S*%d\*" % new, r.stdout, re.M), r.stdout
+        assert subprocess.run([PS, "-NoProfile", "-Command", f"Get-Process -Id {old} -ErrorAction SilentlyContinue"],
+                              capture_output=True, text=True).stdout.strip() == ""
+    finally:
+        pid = _listener_pid(port)
+        if pid:
+            subprocess.run([PS, "-NoProfile", "-Command", f"Stop-Process -Id {pid} -Force"], capture_output=True)
+
+
+def test_a_failed_start_is_reported_as_a_failure(tmp_path):
+    """Consult finding 5: a launcher exit code != 0, or a service that never comes up, is exit 4."""
+    repo, env, port = _fake_repo(tmp_path)
+    r = _run_piped(["start", "board", "-TimeoutSec", "3"], {**env, "FAKE_START_EXIT": "3"}, repo)
+    assert r.returncode == 4 and "exited 3" in r.stderr and " up " not in r.stdout, r.stdout + r.stderr
+    (repo / "v8" / "slack_map.json").write_text("{}")  # so the bridge is not skipped
+    r = _run_piped(["start", "bridge", "-TimeoutSec", "3"], env, repo)  # launcher ok, no bridge process
+    assert r.returncode == 4 and "bridge is not up" in r.stderr, r.stdout + r.stderr
+
+
+def test_restart_pauses_a_running_supervisor(tmp_path, fakes):
+    port = _free_port()
+    fakes.append(_fake(port, "edp8-board", {"ok": True}))
+    sup = _fake_proc("edp8.supervisor")
+    fakes.append(sup)
+    _record(tmp_path, "supervisor", sup.pid)
+    out = _run(["restart", "board", "-WhatIf"], _hermetic_env(tmp_path, EDP8_PORT=port)).stdout
+    order = [out.index(s) for s in ("WHATIF: stop supervisor", "WHATIF: stop board", "WHATIF: start board", "WHATIF: start supervisor")]
+    assert order == sorted(order), out
 
 
 def test_update_refuses_a_dirty_tree_unless_forced(tmp_path):

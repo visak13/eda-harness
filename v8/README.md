@@ -19,8 +19,10 @@ Ten objects, six invariants, role-scoped MCP bundles. Spec: `../claude/docs/desi
 
 The launcher owns these. **Seats never start, stop or restart a shared service** (design §22) — a
 test that needs a server starts a private instance on a free port (`edp8-board --port 0 --data <tmp>`).
-`start.* --restart <service>` is the only supported way to make a code change live; it records a
-`service_restarted` event on the board. `edp8 status` shows each service's pid, port, git rev,
+On Windows, `..\edp.ps1` (repo root) is the only supported way to start, stop, restart or update a
+service (`.\edp.ps1 status | start | stop | restart <svc|all> | update`, `-WhatIf` = plan only; safe
+pid-chain stops, never a tree kill — see `guides/shared-host-rules.md` § Use edp.ps1). On Linux,
+`start.sh --restart <service>` makes a code change live; it records a `service_restarted` event on the board. `edp8 status` shows each service's pid, port, git rev,
 uptime and last restart; a service whose port is listening reads **up** even when it was not
 launcher-started (no pid file). `start.*` leaves a supervisor that probes every 15 s and restarts a
 service after three failed probes (or when its process is alive but its listener is gone); it also
@@ -36,8 +38,8 @@ the pids recorded in its own `EDP8_RUN_DIR`, so a private/test fleet can never t
 4. `npm --prefix web ci`   — web deps.
 5. `npx --prefix web playwright install chromium`   — only if you will run the win32 visual/e2e specs.
 6. `copy .env.example .env`   — then edit ports/secrets if the defaults do not suit.
-7. `.\start.ps1`   — brings up board, broker, pool, mcp, bridge; prints pids + URLs; builds the SPA if `src\edp8\webapp\dist` is missing.
-8. Open the printed board URL (`http://127.0.0.1:9400/ui`). `.\stop.ps1` brings it all down.
+7. `..\edp.ps1 start all`   — brings up board, broker, pool, mcp, bridge + supervisor (via `start.ps1`); builds the SPA if `src\edp8\webapp\dist` is missing; `..\edp.ps1 status` prints pids, revs, started_at.
+8. Open the board URL (`http://127.0.0.1:9400/ui`). `..\edp.ps1 stop all -Force` brings it all down (`-Force`: the pool takes the seats offline).
 
 ## Fresh machine — Linux
 
