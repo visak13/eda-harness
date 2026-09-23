@@ -39,6 +39,7 @@ class FakeWsServer:
 
     def __init__(self, token: str):
         self.token = token
+        self.heads: list[str] = []  # every upgrade request received (to prove a token was never sent)
         self.sock = socket.socket()
         self.sock.bind(("127.0.0.1", 0))
         self.sock.listen(4)
@@ -58,6 +59,7 @@ class FakeWsServer:
         while b"\r\n\r\n" not in buf:
             buf += c.recv(4096)
         head = buf.split(b"\r\n\r\n")[0].decode()
+        self.heads.append(head)
         hdr = {k.strip().lower(): v.strip() for k, v in (ln.split(":", 1) for ln in head.split("\r\n")[1:] if ":" in ln)}
         if hdr.get("authorization") != f"Bearer {self.token}":
             c.sendall(b"HTTP/1.1 401 Unauthorized\r\ncontent-length: 0\r\n\r\n")
@@ -244,3 +246,94 @@ def test_run_tui_stops_the_tui_when_the_thread_is_gone():
     t0 = __import__("time").time()
     run_mod.run_tui(seat, "reviewer.x")  # returns only once the TUI is gone
     assert seat.stopped and __import__("time").time() - t0 < 30
+
+
+# --------------------------------------------------------------- second opinion on 16a6797 (consult c92728dc)
+
+def test_so_1_token_is_never_sent_to_a_listener_that_is_not_our_app_server(tmp_path):
+    """#1: the port is free when chosen, not reserved; a local process that takes it in the gap must not
+    receive the bearer. Here the listener is this test process, never a descendant of the seat's child."""
+    srv = FakeWsServer("tok")
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    a = AppServer(["codex", "app-server"], cwd=str(tmp_path), env={}, log_path=tmp_path / "m.jsonl", ws=True)
+    a.proc, a.ws_url, a.ws_token = child, f"ws://127.0.0.1:{srv.port}", "tok"
+    try:
+        with pytest.raises(getattr(rpc_mod, "ListenerNotOurs", rpc_mod.RpcError), match="not this seat's app-server"):
+            a._ws_connect(timeout=5)
+        assert not any("Bearer" in h for h in srv.heads) and a._ws is None
+    finally:
+        child.kill()
+        srv.close()
+
+
+_OWN_LISTENER = r"""
+import socket, time
+s = socket.socket(); s.bind(("127.0.0.1", 0)); s.listen(1)
+print(s.getsockname()[1], flush=True)
+c, _ = s.accept(); c.recv(4096)
+c.sendall(b"HTTP/1.1 101 Switching Protocols\r\n\r\n")
+time.sleep(30)
+"""
+
+
+def test_so_1_our_own_app_server_listener_is_accepted(tmp_path):
+    """#1 counterpart: a listener owned by the seat's child (or its descendant) gets the upgrade."""
+    child = subprocess.Popen([sys.executable, "-c", _OWN_LISTENER], stdout=subprocess.PIPE, text=True)
+    port = int(child.stdout.readline())
+    a = AppServer(["codex", "app-server"], cwd=str(tmp_path), env={}, log_path=tmp_path / "m.jsonl", ws=True)
+    a.proc, a.ws_url, a.ws_token = child, f"ws://127.0.0.1:{port}", "tok"
+    try:
+        a._ws_connect(timeout=10)
+        assert a._ws is not None
+        a._ws.close()
+    finally:
+        child.kill()
+
+
+def test_so_2_close_is_bounded_while_a_send_is_stalled_on_a_server_that_stopped_reading():
+    """#2: a send blocked by a full buffer holds the write lock; close() must still return, and it fails
+    the blocked send so AppServer.stop() reaches its kill fallback."""
+    import time as _t
+    lsock = socket.socket()
+    lsock.bind(("127.0.0.1", 0))
+    lsock.listen(1)
+    port = lsock.getsockname()[1]
+    held = []
+
+    def serve():  # accept + 101, then never read again
+        c, _ = lsock.accept()
+        held.append(c)
+        c.recv(4096)
+        c.sendall(b"HTTP/1.1 101 Switching Protocols\r\n\r\n")
+    threading.Thread(target=serve, daemon=True).start()
+    c = WsClient("127.0.0.1", port, "tok")
+    errors = []
+
+    def flood():
+        try:
+            for _ in range(10_000):
+                c.send_text("x" * 1_000_000)
+        except OSError as e:
+            errors.append(e)
+    t = threading.Thread(target=flood, daemon=True)
+    t.start()
+    _t.sleep(1.5)  # the send buffer is full by now: flood() is blocked inside sendall, holding the lock
+    assert t.is_alive()
+    closer = threading.Thread(target=c.close, daemon=True)
+    closer.start()
+    closer.join(5)
+    assert not closer.is_alive(), "close() blocked behind the stalled send"
+    t.join(10)
+    assert not t.is_alive() and errors, "the stalled send was not failed by close()"
+    lsock.close()
+    for h in held:
+        h.close()
+
+
+def test_so_3_the_tui_never_starts_when_the_first_turn_never_landed():
+    """#3: on the materialize timeout the thread may have no rollout, so `codex resume` cannot join;
+    the seat stops cleanly instead of launching a TUI that fails."""
+    seat = _FakeSeat([sys.executable, "-c", "raise SystemExit('the TUI must not start')"], seen_after=10**9)
+    seat.tui_argv = lambda: pytest.fail("TUI launched without a landed first turn")
+    assert run_mod.run_tui(seat, "reviewer.x", materialize_s=0.5) == 1
+    assert seat.stopped

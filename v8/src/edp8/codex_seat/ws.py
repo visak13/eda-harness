@@ -14,6 +14,7 @@ import os
 import socket
 import struct
 import threading
+from collections.abc import Callable
 
 
 class WsClosed(ConnectionError):
@@ -21,8 +22,17 @@ class WsClosed(ConnectionError):
 
 
 class WsClient:
-    def __init__(self, host: str, port: int, token: str | None = None, timeout: float = 10.0):
+    def __init__(self, host: str, port: int, token: str | None = None, timeout: float = 10.0,
+                 verify_peer: Callable[[socket.socket], None] | None = None):
         self.sock = socket.create_connection((host, port), timeout=timeout)
+        if verify_peer is not None:
+            # before the bearer leaves this process: a port freed for the app-server can be taken by any
+            # local process in the gap, and it would receive the capability token (second opinion #1)
+            try:
+                verify_peer(self.sock)
+            except BaseException:
+                self.sock.close()
+                raise
         key = base64.b64encode(os.urandom(16)).decode()
         auth = f"Authorization: Bearer {token}\r\n" if token else ""
         self.sock.sendall((f"GET / HTTP/1.1\r\nHost: {host}:{port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
@@ -100,13 +110,20 @@ class WsClient:
         except (OSError, WsClosed):
             return None
 
-    def close(self) -> None:
-        try:
-            with self._wlock:
+    def close(self, grace: float = 1.0) -> None:
+        """Bounded: a send blocked on a server that stopped reading holds the write lock forever, so the
+        close frame is best-effort within `grace` and the socket is then shut down under it, which fails
+        the blocked send (second opinion #2)."""
+        if self._wlock.acquire(timeout=grace):
+            try:
+                self.sock.settimeout(grace)
                 self.sock.sendall(self._frame(0x8, b""))
-        except OSError:
-            pass
-        try:
-            self.sock.close()
-        except OSError:
-            pass
+            except OSError:
+                pass
+            finally:
+                self._wlock.release()
+        for step in (lambda: self.sock.shutdown(socket.SHUT_RDWR), self.sock.close):
+            try:
+                step()
+            except OSError:
+                pass

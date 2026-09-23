@@ -111,7 +111,8 @@ def main(argv: list[str] | None = None) -> int:
 def run_tui(seat: CodexSeat, handle: str, materialize_s: float = 120.0) -> int:
     """Monitor mode (owner ruling m-0e7b8fdd7f): the native codex TUI, joined to the seat's thread, owns
     this console; the runner prints nothing after its boot banner. `codex resume <thread>` needs the
-    thread's rollout, which exists once the first input has landed, so the TUI starts after that witness.
+    thread's rollout, which exists once the first input has landed, so the TUI starts after that witness
+    (and never without it: the seat stops instead).
     The seat lives as long as the TUI: quitting it (or closing the window) ends the seat, and the job
     object takes the app-server and every Monitor child with it."""
     end = time.time() + materialize_s
@@ -120,6 +121,12 @@ def run_tui(seat: CodexSeat, handle: str, materialize_s: float = 120.0) -> int:
     if not seat.alive():
         print(f"{time.strftime('%H:%M:%S')} app-server exited {seat.server.exit_code if seat.server else '?'} "
               "before the TUI could join", flush=True)
+        seat.tools.shutdown()
+        return 1
+    if not seat.delivery.seen_any():  # no rollout yet: `codex resume` could not join (second opinion #3)
+        print(f"{time.strftime('%H:%M:%S')} codex seat {handle}: the first turn never landed in {materialize_s:.0f} s; "
+              "stopping without a TUI", flush=True)
+        seat.stop()
         seat.tools.shutdown()
         return 1
     tui = subprocess.Popen(seat.tui_argv(), cwd=seat.cwd, env=seat.tui_env())

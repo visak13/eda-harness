@@ -69,6 +69,10 @@ class RpcError(RuntimeError):
         self.error = error
 
 
+class ListenerNotOurs(RpcError):
+    """The ws port is held by a process that is not this seat's app-server (fail-closed, never retried)."""
+
+
 class AppServer:
     def __init__(self, argv: list[str], *, cwd: str, env: dict[str, str], log_path: str | os.PathLike[str],
                  on_notification: Callable[[str, dict], None] | None = None,
@@ -143,8 +147,10 @@ class AppServer:
         last: Exception | None = None
         while time.time() < end and self.proc.poll() is None:
             try:
-                self._ws = WsClient(host, int(port), self.ws_token)
+                self._ws = WsClient(host, int(port), self.ws_token, verify_peer=self._verify_listener)
                 return
+            except ListenerNotOurs:
+                raise
             except ConnectionRefusedError as e:
                 if "upgrade refused" in str(e):
                     raise  # a live listener that refuses our token is not a start-up race
@@ -154,6 +160,26 @@ class AppServer:
             time.sleep(0.2)
         raise RpcError("connect", {"message": f"app-server websocket {self.ws_url} unreachable: {last!r} "
                                               f"(exit {self.proc.poll()})"})
+
+    def _verify_listener(self, sock: socket.socket) -> None:
+        """The listener at the other end of `sock` must be our app-server (its pid or a descendant), or the
+        token is never sent: the port was free when chosen, not reserved until the child bound it."""
+        import psutil
+        assert self.proc
+        mine = sock.getsockname()[:2]
+        peer = sock.getpeername()[:2]
+        owner = None
+        for c in psutil.net_connections(kind="tcp"):
+            if c.laddr and c.raddr and tuple(c.laddr)[:2] == tuple(peer) and tuple(c.raddr)[:2] == tuple(mine):
+                owner = c.pid
+                break
+        try:
+            ours = {self.proc.pid, *(p.pid for p in psutil.Process(self.proc.pid).children(recursive=True))}
+        except psutil.Error:
+            ours = {self.proc.pid}
+        if owner is None or owner not in ours:
+            raise ListenerNotOurs("connect", {"message": f"{self.ws_url} is served by pid {owner}, not this seat's "
+                                                        f"app-server {self.proc.pid}: the token was not sent"})
 
     def _cleanup_token(self) -> None:
         if self._token_file:
