@@ -32,7 +32,7 @@ def board():
 @pytest.fixture
 def rig(board):
     roles = {"owner": Role.owner, "coordinator": Role.coordinator, "architect": Role.architect,
-             "engineer": Role.engineer, "reviewer": Role.reviewer, "qa": Role.qa}
+             "engineer": Role.engineer, "qa": Role.qa}
     return {h: board.participant_create("human" if h == "owner" else "agent", r, h)
             for h, r in roles.items()}
 
@@ -60,8 +60,8 @@ def advance_to_designed(board, rig, ticket, doc, checked_by="qa"):
 # ------------------------------------------------------------------ §24.1 derivation
 
 def test_checker_derivation_per_ticket_kind(board, rig):
-    """qa is the default (plain story/task/review-story/epic); reviewer only for a non-review story
-    tagged review_required; owner for a knowledge ticket."""
+    """qa checks every story/review-story/epic, review_required or not (S-ROLES: no reviewer role);
+    owner for a knowledge ticket."""
     epic = make_epic(board, rig)
     assert board.checker_for(epic) == "qa"
     story = make_story(board, rig, epic)
@@ -69,7 +69,7 @@ def test_checker_derivation_per_ticket_kind(board, rig):
                                   check=Check.command).checked_by == "qa"
     rr = make_story(board, rig, epic, tags=["review_required"])
     assert board.criterion_create(rig["architect"], ticket_id=rr.id, text="a",
-                                  check=Check.command).checked_by == "reviewer"
+                                  check=Check.command).checked_by == "qa"
     rv = board.ticket_create(rig["architect"], kind=TicketKind.story, work_type=WorkType.review,
                              title="rv", parent_id=epic.id, tags=["review_required"])
     assert board.criterion_create(rig["architect"], ticket_id=rv.id, text="a",
@@ -86,7 +86,7 @@ def test_checker_derivation_per_ticket_kind(board, rig):
 
 def test_task_criterion_is_self_verdicted_by_its_engineer(board, rig):
     """§24.1(d): a task is the doer's own checklist — its engineer records evidence AND the verdict
-    (no doer guard, no paired seat), and the task auto-advances to done. A reviewer/qa cannot
+    (no doer guard, no paired seat), and the task auto-advances to done. A qa cannot
     verdict a task criterion (it is not theirs)."""
     epic = make_epic(board, rig)
     story = make_story(board, rig, epic)
@@ -143,7 +143,7 @@ def test_checked_by_argument_ignored_unless_owner_override(board, rig):
 
 def test_describe_criterion_states_derivation():
     d = DESCRIBE["criterion"].lower()
-    for token in ("derives", "qa", "review_required", "knowledge", "override_reason"):
+    for token in ("derives", "qa", "knowledge", "override_reason"):  # review_required no longer derives (S-ROLES)
         assert token in d, f"describe('criterion') must state derivation; missing {token!r}"
 
 
