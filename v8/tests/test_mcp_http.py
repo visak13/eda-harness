@@ -161,3 +161,46 @@ def test_missing_token_is_refused_through_the_proxy(public_stack):
     _, res = _run(_call(f"{public_stack['mcp']}/mcp/engineer", {"X-Participant": "eng.s1"}, "whoami"))
     out = json.loads(res.content[0].text)
     assert out.get("ok") is not True  # header-only is 401 at the board → not an ok envelope
+
+
+# --------------------------------------------------------------- t-3e246b5e32 (a) tools follow the board role
+@pytest.fixture
+def expert_stack(tmp_path, monkeypatch):
+    """PUBLIC-mode board with an expert (a human linked to one Library topic) and an engineer seat."""
+    import json as _json
+    tf = tmp_path / "tokens.json"
+    tf.write_text(_json.dumps({"owner": "ownersecret", "exp.ada": "expsecret",
+                               "agents": {"eng.s1": "engsecret"}}), encoding="utf-8")
+    monkeypatch.setenv("EDP8_PUBLIC_URL", "http://host.example:9400")
+    monkeypatch.setenv("EDP8_TOKENS", str(tf))
+    monkeypatch.delenv("EDP8_TOKEN", raising=False)
+    board = Board(Store(":memory:"))
+    bport, mport = _free_port(), _free_port()
+    board_app = create_app(board, admin_token="realsecret")
+    tc = TestClient(board_app)
+    for pid, role, typ in [("owner", "owner", "human"), ("exp.ada", "expert", "human"), ("eng.s1", "engineer", "agent")]:
+        assert tc.post("/v1/participants", json={"type": typ, "role": role, "handle": pid, "id": pid},
+                       headers={"X-Admin": "realsecret"}).json()["ok"]
+    monkeypatch.setenv("EDP8_BOARD_URL", f"http://127.0.0.1:{bport}")
+    monkeypatch.setenv("EDP8_ADMIN_TOKEN", "realsecret")
+    with _Server(board_app, bport), _Server(mcp_server.build_http_app(), mport):
+        yield {"mcp": f"http://127.0.0.1:{mport}", "board": f"http://127.0.0.1:{bport}"}
+
+
+def test_expert_gets_zero_tools_on_every_role_path(expert_stack):
+    import json
+    hdr = {"X-Participant": "exp.ada", "X-Token": "expsecret"}
+    for role in sorted(ROLE_BUNDLES):
+        names, res = _run(_call(f"{expert_stack['mcp']}/mcp/{role}", hdr, "whoami"))
+        assert names == [], (role, names)
+        out = json.loads(res.content[0].text)
+        assert out["ok"] is False and out["error"]["code"] == "unauthorized", (role, out)
+
+
+def test_seat_naming_another_roles_path_gets_only_its_own_tools(expert_stack):
+    hdr = {"X-Participant": "eng.s1", "X-Token": "engsecret"}
+    names, _ = _run(_call(f"{expert_stack['mcp']}/mcp/owner", hdr))
+    assert "spawn" not in names and "reap" not in names  # owner-only tools stay the owner's
+    assert set(names) == set(ROLE_BUNDLES["owner"]) & set(ROLE_BUNDLES["engineer"])
+    own, _ = _run(_call(f"{expert_stack['mcp']}/mcp/engineer", hdr))
+    assert set(own) == set(ROLE_BUNDLES["engineer"])

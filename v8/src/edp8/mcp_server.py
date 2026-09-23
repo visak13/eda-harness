@@ -31,7 +31,9 @@ from dataclasses import replace
 
 from .http_upload import HttpUploadPolicy
 
+import anyio
 from mcp.server.mcpserver import Context, MCPServer
+from mcp_types import ListToolsResult
 from mcp.server.streamable_http_manager import StreamableHTTPASGIApp, StreamableHTTPSessionManager
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import Field
@@ -42,6 +44,7 @@ from starlette.routing import Route
 
 from .bundles import ROLE_BUNDLES, ToolDef, bind_request, invoke, set_client, tools_for_role
 from .client import BoardClient
+from .schemas import Role
 
 STARTED_AT = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
@@ -86,13 +89,61 @@ def _identity_from(ctx: Context | None) -> tuple[str | None, str | None, str | N
             os.environ.get("EDP8_TOKEN") or None)
 
 
+# t-3e246b5e32 (a): the tools a caller gets are bound to its BOARD role (whoami), never to the
+# /mcp/<role> path it names — an expert (or any caller the board refuses) gets zero tools on every
+# path, and a seat naming another role's path gets only the tools both roles share.
+_ROLE_TTL_S = 60.0
+_role_cache: dict[tuple[str, str | None, str | None], tuple[float, str]] = {}
+
+
+def _caller_role(board_url: str, admin_token: str | None, participant: str | None, token: str | None) -> str | None:
+    """The caller's role per the board's whoami, or None when the board refuses the caller (an expert's
+    403, a missing/wrong token's 401, an unknown handle). Only an accepted role is cached (60 s), so a
+    freshly minted token is never locked out. BoardUnreachable propagates: a board outage is an error
+    to the client, never a silently empty tool list it would cache for the session."""
+    key = (board_url, participant, token)
+    now = time.monotonic()
+    hit = _role_cache.get(key)
+    if hit and now - hit[0] < _ROLE_TTL_S:
+        return hit[1]
+    resp = BoardClient(base_url=board_url, participant=participant, admin_token=admin_token, token=token).whoami()
+    try:
+        role = resp["value"]["participant"]["role"] if resp.get("ok") else None
+    except (KeyError, TypeError):
+        role = None
+    if role:
+        _role_cache[key] = (now, role)
+    return role
+
+
+def allowed_tool_names(path_role: str, caller_role: str | None) -> set[str]:
+    """Tools a caller with board role `caller_role` may use on /mcp/<path_role>: the intersection of
+    both roles' bundles; nothing at all for an expert or a caller the board refused."""
+    if not caller_role or caller_role == Role.expert.value:
+        return set()
+    return {t.name for t in tools_for_role(path_role)} & {t.name for t in tools_for_role(caller_role)}
+
+
+def _refused(tool_name: str, path_role: str, caller_role: str | None) -> str:
+    """`unauthorized` when the board refused the caller outright, `forbidden` when its role lacks the tool."""
+    who = f"role {caller_role!r}" if caller_role else "a caller the board refuses"
+    return json.dumps({"ok": False, "error": {
+        "code": "forbidden" if caller_role else "unauthorized",
+        "message": f"tool {tool_name!r} is not available to {who} on /mcp/{path_role}"},
+        "hint": "tools follow your board role (whoami), not the /mcp/<role> path"})
+
+
 def _wrap(tool: ToolDef, *, board_url: str, admin_token: str | None, workspace_root: Path | None = None,
-          http_upload_policy: HttpUploadPolicy | None = None):
+          http_upload_policy: HttpUploadPolicy | None = None, path_role: str | None = None):
     """Build a function whose signature mirrors tool.args_model's fields (flat input schema)
     plus a Context parameter the SDK injects; the request identity binds the BoardClient."""
 
     def call(ctx: Context, **kwargs: Any) -> str:
         participant, session, token = _identity_from(ctx)
+        if path_role is not None:
+            caller_role = _caller_role(board_url, admin_token, participant, token)
+            if tool.name not in allowed_tool_names(path_role, caller_role):
+                return _refused(tool.name, path_role, caller_role)
         client = BoardClient(base_url=board_url, participant=participant, admin_token=admin_token,
                              token=token, workspace_root=workspace_root)
         request_tool = tool
@@ -124,14 +175,31 @@ def _wrap(tool: ToolDef, *, board_url: str, admin_token: str | None, workspace_r
     return call
 
 
+class _RoleServer(MCPServer):
+    """One /mcp/<role> endpoint whose tools/list is filtered per request by the caller's board role."""
+
+    def __init__(self, *args: Any, path_role: str, board_url: str, admin_token: str | None, **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        self._path_role, self._board_url, self._admin_token = path_role, board_url, admin_token
+
+    async def _handle_list_tools(self, ctx, params) -> ListToolsResult:
+        context = Context(request_context=ctx, mcp_server=self, input_params=params, subscriptions=self._subscriptions)
+        participant, _, token = _identity_from(context)
+        caller_role = await anyio.to_thread.run_sync(
+            _caller_role, self._board_url, self._admin_token, participant, token)
+        allowed = allowed_tool_names(self._path_role, caller_role)
+        return ListToolsResult(tools=[t for t in await self.list_tools() if t.name in allowed])
+
+
 def build_role_server(role: str, *, board_url: str, admin_token: str | None,
                       workspace_root: Path | None = None,
                       http_upload_policy: HttpUploadPolicy | None = None) -> MCPServer:
-    server = MCPServer("edp8", version="0.8.0",
-                       instructions=f"edp8 board tools for role {role!r} (server {VERSION})")
+    server = _RoleServer("edp8", version="0.8.0",
+                         instructions=f"edp8 board tools for role {role!r} (server {VERSION})",
+                         path_role=role, board_url=board_url, admin_token=admin_token)
     for tool in tools_for_role(role):
         server.add_tool(_wrap(tool, board_url=board_url, admin_token=admin_token, workspace_root=workspace_root,
-                              http_upload_policy=http_upload_policy),
+                              http_upload_policy=http_upload_policy, path_role=role),
                         name=tool.name, description=tool.description)
         # advertise the compact schema (S20); FastMCP still validates against the wrapper signature
         server._tool_manager.get_tool(tool.name).parameters = tool.input_schema
