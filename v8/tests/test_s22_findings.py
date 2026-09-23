@@ -40,7 +40,7 @@ class StubPool:
 
 def rig(board):
     roles = {"owner": Role.owner, "coordinator": Role.coordinator, "architect": Role.architect,
-             "engineer": Role.engineer, "reviewer": Role.reviewer, "qa": Role.qa}
+             "engineer": Role.engineer, "qa": Role.qa}
     return {h: board.participant_create("human" if h == "owner" else "agent", r, h)
             for h, r in roles.items()}
 
@@ -149,9 +149,10 @@ def test_finding4_auto_seat_spawns_with_minted_token():
     board = make_board(pool, free_mb=lambda: 4096, mint_token=mint)
     r = rig(board)
     epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
-    story_to_in_review(board, r, epic)  # review_required → reviewer paired
+    story_to_in_review(board, r, epic)  # the only story evidence-complete → acceptance → qa paired
     board.run_pending_pairings()
-    assert pool.envs and pool.envs[0] == {"EDP8_TOKEN": f"secret-reviewer.{minted[0].split('.', 1)[1]}"}
+    assert minted == [f"qa.{epic.id}"]
+    assert pool.envs and pool.envs[0] == {"EDP8_TOKEN": f"secret-qa.{epic.id}"}
 
     # trusted mode: no minter → env is None (header-only, unchanged)
     pool2 = StubPool()
@@ -174,11 +175,11 @@ def test_finding4_minter_exception_fails_closed_keeps_pairing_queued():
     board = make_board(pool, free_mb=lambda: 4096, mint_token=boom)
     r = rig(board)
     epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
-    story, _ = story_to_in_review(board, r, epic)
+    story_to_in_review(board, r, epic)
     out = board.run_pending_pairings()
     assert pool.spawns == []                       # nothing spawned token-less
-    assert out["spawned"] == [] and f"reviewer.{story.id}" in out["failed"]
-    assert f"reviewer.{story.id}" in board._pending_pairings  # kept for the retry
+    assert out["spawned"] == [] and f"qa.{epic.id}" in out["failed"]
+    assert f"qa.{epic.id}" in board._pending_pairings  # kept for the retry
 
 
 # --------------------------------------------------------------- finding 6: _released story-only
@@ -246,19 +247,18 @@ def test_finding7_unreleased_blocker_walks_ready_successor_back():
 
 # --------------------------------------------------------------- finding 3: survive a restart
 def test_finding3_pending_pairings_rederived_on_new_board():
-    """A board built on a store that already holds a reviewer-checked in_review story and an epic
-    with an open acceptance gate re-derives both pairings — a restart between enqueue and drain
-    loses nothing."""
+    """A board built on a store that already holds an epic with an open acceptance gate re-derives
+    the qa pairing — a restart between enqueue and drain loses nothing. An in_review story (even a
+    review_required one) re-derives nothing (S-ROLES: no reviewer role)."""
     store = Store(":memory:")
     board = Board(store, free_mb=lambda: 4096)
     r = rig(board)
     epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
-    story, _ = story_to_in_review(board, r, epic, title="S")  # review_required → reviewer wanted
+    story, _ = story_to_in_review(board, r, epic, title="S")
     board.gate_open(epic.id, Gate.acceptance)  # qa wanted
     # a fresh Board over the SAME store (a restart) starts with an empty queue, then re-derives it
     board2 = Board(store, free_mb=lambda: 4096)
-    assert f"reviewer.{story.id}" in board2._pending_pairings
-    assert f"qa.{epic.id}" in board2._pending_pairings
+    assert set(board2._pending_pairings) == {f"qa.{epic.id}"}
 
 
 def test_finding3_rederive_skips_a_live_seat():
@@ -266,41 +266,28 @@ def test_finding3_rederive_skips_a_live_seat():
     board = Board(store, free_mb=lambda: 4096)
     r = rig(board)
     epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
-    story, _ = story_to_in_review(board, r, epic, title="S")
-    board.session_upsert(id_="sess", participant_id=f"reviewer.{story.id}", ticket_id=story.id,
+    story_to_in_review(board, r, epic, title="S")
+    board.gate_open(epic.id, Gate.acceptance)
+    board.session_upsert(id_="sess", participant_id=f"qa.{epic.id}", ticket_id=epic.id,
                          pool_id="p", state=SessionState.alive)
     board2 = Board(store, free_mb=lambda: 4096)
-    assert f"reviewer.{story.id}" not in board2._pending_pairings  # a live seat is not re-paired
+    assert f"qa.{epic.id}" not in board2._pending_pairings  # a live seat is not re-paired
 
 
-# --------------------------------------------------------------- finding 5: criteria drive pairing
-def test_finding5_review_required_frozen_once_a_story_has_criteria():
+# --------------------------------------------------------------- finding 5, retired by S-ROLES
+def test_finding5_review_required_is_a_plain_tag_now():
+    """S-ROLES: review_required no longer retargets the checker (qa checks every story), so the tag
+    freeze is gone — adding it after criteria is allowed and leaves checked_by=qa."""
     board = make_board()
     r = rig(board)
     epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
     story = board.ticket_create(r["architect"], kind=TicketKind.story, work_type=WorkType.feature,
-                                title="S", parent_id=epic.id)  # no review_required tag
-    board.criterion_create(r["architect"], ticket_id=story.id, text="c", check=Check.command)
-    with pytest.raises(BoardError) as ei:  # adding the tag now would retarget a derived checker
-        board.ticket_update(r["architect"], story.id, tags=["review_required"])
-    assert ei.value.code == "scope" and "frozen" in ei.value.message
-    # an unrelated tag edit that leaves review_required membership unchanged is still allowed
-    board.ticket_update(r["architect"], story.id, tags=["hot"])
-    assert "hot" in board.ticket(story.id).tags
-
-
-def test_finding5_pairing_reads_persisted_criteria_not_tags():
-    board = make_board()
-    r = rig(board)
-    epic = board.ticket_create(r["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
-    story = board.ticket_create(r["architect"], kind=TicketKind.story, work_type=WorkType.feature,
-                                title="S", parent_id=epic.id, tags=["review_required"])
-    board.criterion_create(r["architect"], ticket_id=story.id, text="c", check=Check.command)
-    # criterion persisted checked_by=reviewer; now strip the tag out-of-band (as a stale mutation)
-    t = board.ticket(story.id)
-    t.tags = []
-    board.store.put("ticket", t)
-    assert board._story_wants_reviewer(board.ticket(story.id)) is True  # criteria win, not tags
+                                title="S", parent_id=epic.id)
+    crit = board.criterion_create(r["architect"], ticket_id=story.id, text="c", check=Check.command)
+    board.ticket_update(r["architect"], story.id, tags=["review_required"])
+    assert "review_required" in board.ticket(story.id).tags
+    assert board.store.get("criterion", crit.id).checked_by == "qa"
+    assert not hasattr(board, "_story_wants_reviewer")
 
 
 # --------------------------------------------------------------- finding 11: caps under the lock
