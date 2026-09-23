@@ -95,8 +95,9 @@ function RunStateRev($name) {
 # shims above them). An ancestor must carry the service's needle AND be created no later than its
 # child: Windows reuses pids, so a stale ParentProcessId can name an unrelated process (memory
 # windows-stale-ppid-tree-walk). Children are only same-command-line copies, never seat shells.
-function PidPair($anchorPid, $needle) {
-  $a = Proc $anchorPid
+function PidPair($a, $needle) {
+  # $a is the ANCHOR PROCESS RECORD that Discover authenticated - never re-queried by pid, so a pid
+  # reused between authentication and the chain walk can not swap in an unrelated process
   if (-not $a) { return @() }
   $pair = @($a)
   $cur = $a
@@ -130,7 +131,7 @@ function Discover($name) {
     [Console]::Error.WriteLine("edp: $name port $($s.port) is held by pid $anchor, which is not a '$($s.needle)' launcher process; leaving it alone")
     return @()
   }
-  @(PidPair $anchor $s.needle)
+  @(PidPair $a $s.needle)
 }
 function Health($name) {
   $s = $SVC[$name]
@@ -202,8 +203,10 @@ function Stop-Svc($name) {
     $handles = @()
     foreach ($c in $pair) {
       $h = Get-Process -Id ([int]$c.ProcessId) -ErrorAction SilentlyContinue
-      if (-not $h) { continue }
-      try { $null = $h.Handle } catch { continue }   # opens + caches the handle that Kill() then uses
+      if (-not $h) { continue }   # exited since discovery
+      # opens + caches the handle that Kill() then uses; a process we cannot open is still running and
+      # must be reported, not silently skipped as if it had been stopped
+      try { $null = $h.Handle } catch { FailDown 1 "$name pid $($c.ProcessId) cannot be opened for stop ($_)" }
       if ([math]::Abs(($h.StartTime - $c.CreationDate).TotalSeconds) -gt 1) { Say "  skip pid $($c.ProcessId): reused since discovery"; continue }
       $handles += $h
     }
@@ -335,7 +338,7 @@ function DownCore {
 function Do-Update {
   # dirty = modified tracked files AND untracked non-ignored files (they could leak into a build);
   # --no-optional-locks: even this read must not refresh the index under -WhatIf
-  $dirty = @(& git --no-optional-locks -C $RepoRoot status --porcelain)
+  $dirty = @(& git --no-optional-locks -C $RepoRoot status --porcelain --untracked-files=all)
   if ($dirty.Count -gt 0 -and -not $Force) {
     Say "working tree is dirty: $($dirty.Count) modified or untracked path(s), e.g.:"
     $dirty | Select-Object -First 10 | ForEach-Object { Say "  $_" }
@@ -405,6 +408,12 @@ function Do-Update {
 }
 
 # -- dispatch --------------------------------------------------------------------------------------
+# an unexpected exception (missing tool, I/O error, Start-Process failure) must not leave the fleet
+# with the supervisor this run paused still down: it goes through FailDown like a named failure
+trap {
+  if ($script:Restoring) { break }
+  FailDown 1 ("unexpected error: " + $_.Exception.Message)
+}
 switch ($Command.ToLower()) {
   "status" { Show-Status }
   "start" {

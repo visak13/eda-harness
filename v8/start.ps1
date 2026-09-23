@@ -172,7 +172,8 @@ $SERVICES = [ordered]@{ board = ${function:Start-Board}; broker = ${function:Sta
 function Start-Supervisor {
   if ($NoSupervisor) { return }
   $st = & $py -c "from edp8 import run_state; r=run_state.read('supervisor'); print(r['pid'] if r else '')" 2>$null
-  if ($st) { Write-Host "supervisor already running pid $st"; return }
+  # a record alone is not a running supervisor (qa S16): a crashed supervisor leaves its file behind
+  if ($st -and (Get-Process -Id ([int]$st) -ErrorAction SilentlyContinue)) { Write-Host "supervisor already running pid $st"; return }
   $env:EDP8_BOARD_URL = "http://127.0.0.1:$BOARD_PORT"; $env:EDP8_ADMIN_TOKEN = $ADMIN; $env:PYTHONPATH = Join-Path $v8 "src"
   $p = StartProc $py @("-m","edp8.supervisor") (Join-Path $DATA "supervisor.log") (Join-Path $DATA "supervisor.err")
   Write-Host "supervisor up pid $($p.Id)  (probes every 15s; restarts through this launcher)"
@@ -184,9 +185,9 @@ function Stop-One($svc) {
   # ..\edp.ps1 restart <svc>, which stops the service's own process chain by id.
   $rec = & $py -c "import json;from edp8 import run_state;r=run_state.read('$svc');print(json.dumps(r) if r else '')" 2>$null
   if ($rec) { $o = $rec | ConvertFrom-Json
-    if ($o.pid) { if (Get-Process -Id $o.pid -ErrorAction SilentlyContinue) { & cmd /c "taskkill /PID $o.pid /F >nul 2>&1" } }
+    if ($o.pid) { if (Get-Process -Id $o.pid -ErrorAction SilentlyContinue) { & cmd /c "taskkill /PID $($o.pid) /F >nul 2>&1" } }
     if ($o.port) { Get-NetTCPConnection -LocalPort $o.port -State Listen -ErrorAction SilentlyContinue |
-        ForEach-Object { if (Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue) { & cmd /c "taskkill /PID $_.OwningProcess /F >nul 2>&1" } } }
+        ForEach-Object { if (Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue) { & cmd /c "taskkill /PID $($_.OwningProcess) /F >nul 2>&1" } } }
   }
 }
 

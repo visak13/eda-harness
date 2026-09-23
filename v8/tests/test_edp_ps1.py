@@ -130,6 +130,18 @@ def test_start_ps1_stop_one_has_no_tree_kill():
     body = src[src.index("function Stop-One"):src.index("function Restart-One")]
     code = "\n".join(line.split("#", 1)[0] for line in body.splitlines())
     assert "taskkill" in code and not re.search(r"(?<![\w-])/T\b", code)
+    # qa S16 (adversary #7): inside a double-quoted string `$o.pid` expands to "@{pid=..}.pid", so the
+    # supervisor's stop was a malformed taskkill that never stopped anything; the pid must be $( )-wrapped
+    assert "/PID $o.pid" not in code and "/PID $_.OwningProcess" not in code, code
+    assert "/PID $($o.pid)" in code and "/PID $($_.OwningProcess)" in code, code
+
+
+def test_start_ps1_supervisor_record_alone_is_not_a_running_supervisor():
+    """qa S16 (adversary #8): a crashed supervisor leaves supervisor.json behind; start.ps1 must check
+    the recorded pid is alive before saying 'already running' (else edp.ps1 start supervisor fails 4)."""
+    src = (ROOT / "v8" / "start.ps1").read_text(encoding="utf-8-sig")
+    body = src[src.index("function Start-Supervisor"):src.index("function Stop-One")]
+    assert re.search(r"\$st -and \(Get-Process -Id", body), body
 
 
 # ── -WhatIf against fake services ───────────────────────────────────────────────────────────────
@@ -287,6 +299,16 @@ def test_update_counts_untracked_files_as_dirty(tmp_path):
     assert r.returncode == 2 and "?? v8/web/stray.ts" in r.stdout, r.stdout + r.stderr
 
 
+def test_update_dirty_check_ignores_status_showuntrackedfiles_config(tmp_path):
+    """qa S16 (adversary #4): `git status --porcelain` honours status.showUntrackedFiles=no, which
+    would hide untracked files from the dirty check; the script asks for them explicitly."""
+    work = _repo_with_upstream_change(tmp_path)
+    _git(work, "config", "status.showUntrackedFiles", "no")
+    (work / "v8" / "web" / "stray.ts").write_text("untracked\n")
+    r = _run(["update", "-WhatIf"], _hermetic_env(tmp_path), repo=work)
+    assert r.returncode == 2 and "?? v8/web/stray.ts" in r.stdout, r.stdout + r.stderr
+
+
 # ── real (non -WhatIf) start/restart against a fake start.ps1 ──────────────────────────────────
 
 FAKE_START = r"""param([string]$Only, [string]$Restart, [switch]$NoSupervisor)
@@ -380,6 +402,25 @@ def test_failed_restart_keeps_stderr_and_restores_the_supervisor_it_paused(tmp_p
     finally:
         if new_sup:
             subprocess.run(["taskkill", "/PID", str(new_sup), "/T", "/F"], capture_output=True)  # the test's own fake
+
+
+def test_unexpected_exception_still_restores_the_paused_supervisor(tmp_path, fakes):
+    """qa S16 (adversary #5): restoration lived only in explicit FailDown calls; a thrown exception
+    (here: the wrapper file cannot be written because TEMP does not exist) skipped it and left the
+    supervisor this run paused down. A script-level trap now routes every exception through FailDown."""
+    repo, env, port = _fake_repo(tmp_path)
+    fakes.append(_fake(port, "edp8-board", {"ok": True}))
+    sup = _fake_proc("edp8.supervisor")
+    fakes.append(sup)
+    _record(tmp_path, "supervisor", sup.pid)
+    bad_tmp = tmp_path / "temp-is-a-file"   # a nonexistent TEMP gets created; a FILE cannot be a directory
+    bad_tmp.write_text("not a directory")
+    bad_tmp = str(bad_tmp)
+    r = _run_piped(["restart", "board", "-TimeoutSec", "10"], {**env, "TEMP": bad_tmp, "TMP": bad_tmp}, repo)
+    assert r.returncode == 1 and "unexpected error" in r.stderr, r.stdout + r.stderr
+    assert "restoring the supervisor" in r.stdout, "the trap must reach FailDown's restore: " + r.stdout
+    assert sup.poll() is not None, "the supervisor was paused (stopped) before the exception"
+    assert "STILL DOWN:" in r.stderr and "supervisor" in r.stderr.split("STILL DOWN:")[1], r.stderr
 
 
 def _listener_pid(port: int) -> int | None:
