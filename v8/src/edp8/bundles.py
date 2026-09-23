@@ -910,7 +910,7 @@ class CriterionUpdateArgs(BaseModel):
     evidence_version: int | None = Field(default=None,
         description='doc version signed; refused if below current')
     stale_ok: bool = Field(default=False, description='sign the version you read though the doc moved on')
-    note: str = Field(default="", description='why, with a verdict; the board records it as a claim')
+    note: str = ''  # why, with a verdict; the board keeps it as a claim (S-IMPLICIT)
 
 
 def _ticket_create(a: TicketCreateArgs) -> dict[str, Any]:
