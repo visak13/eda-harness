@@ -14,6 +14,22 @@ function mount() {
   renderRoute("/doc/design-test", "/doc/:id", <DesignReview docId="design-test" version={2} source="epic-review" request="ev-review" />);
 }
 describe("source-bound design review", () => {
+  it("S19: one header per revision3-clean-review.png — the review panel sits beside the document; Cancel clears the feedback", async () => {
+    mount();
+    expect(await screen.findByTestId("review-state")).toHaveTextContent("Design · Version 2 · Review requested");
+    expect(screen.getByRole("link", { name: "Back to source: Review source" })).toBeInTheDocument();
+    // Only the two review actions in the header; commenting is the panel's link.
+    expect(screen.queryAllByRole("button", { name: "Comment without requesting changes" })).toHaveLength(1);
+    expect(screen.getByRole("complementary", { name: "Your review" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Request changes" }));
+    const panel = screen.getByRole("complementary", { name: "Request changes" });
+    expect(panel).toHaveTextContent("Regarding: design-test · v2");
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Clarify the retry" } });
+    expect(screen.getByRole("button", { name: "Send feedback" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.getByRole("button", { name: "Approve design" })).toBeEnabled();
+  });
   it("keeps an authorized nested document readable when the proposed source is unrelated", async () => {
     server.use(http.get("/v1/docs/design-nested/context", () => HttpResponse.json({ ok: false, error: "not linked", hint: "Choose a linked source" }, { status: 400 })));
     renderRoute("/doc/design-nested", "/doc/:id", <DesignReview docId="design-nested" version={1} source="epic-unrelated"><p>Authorized nested document body</p></DesignReview>);
@@ -28,7 +44,7 @@ describe("source-bound design review", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Request changes" }));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Please clarify the retry" } });
     expect(screen.getByRole("button", { name: "Approve design" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send feedback" }));
     await waitFor(() => expect(body).toMatchObject({ ticket_id: "epic-review", design_ref: "design-test", reviewed_version: 2, gate_event_id: "ev-review", decision: "request_changes", feedback: "Please clarify the retry" }));
     expect(await screen.findByText(/Design remains unapproved/)).toBeInTheDocument();
   });
@@ -38,12 +54,12 @@ describe("source-bound design review", () => {
     mount();
     fireEvent.click(await screen.findByRole("button", { name: "Comment without requesting changes" }));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Keep this comment" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send comment" }));
     await screen.findByText(/offline/);
     expect(screen.getByRole("textbox")).toHaveValue("Keep this comment");
     cleanup(); mount();
     expect(await screen.findByRole("textbox")).toHaveValue("Keep this comment");
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send comment" }));
     await waitFor(() => expect(bodies).toHaveLength(2));
     expect(bodies[0].idempotency_key).toBe(bodies[1].idempotency_key);
   });

@@ -24,3 +24,8 @@
   border: 1px solid var(--line);
   border-radius: 12px;
 }
+
+/* S19: the dedicated review page is the viewer's layout (revision3-clean-review.png) at page width:
+   the review draws its own header and panes, so the frame adds no padding. */
+.page:has(.review) { max-width: 1190px; }
+.reader.review { padding: 0; overflow: clip; border-color: var(--strongline); border-width: 1.5px; }

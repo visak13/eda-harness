@@ -226,6 +226,15 @@ def test_avatar_svg_headers_and_palette(rig):
     assert r2.status_code == 200 and "<svg" in r2.text
 
 
+def test_avatar_svg_role_address_draws_the_role_bot(rig):
+    """S19: the design-review "To architect" chip addresses a ROLE; it drew the unknown "?" face."""
+    from edp8.avatars import role_avatar_svg, system_avatar_svg
+    role = rig["client"].get("/v1/avatars/architect.svg").text
+    assert role == role_avatar_svg("architect", None, 36)
+    assert role != system_avatar_svg(36, unknown=True)
+    assert rig["client"].get("/v1/avatars/nobody-at-all.svg").text == system_avatar_svg(36, unknown=True)
+
+
 def test_me_avatar_get_put_persists_across_app(rig):
     got = _get(rig, "/v1/me/avatar")
     assert got["avatar_id"] in {f"human-{n:02d}" for n in range(1, 9)}

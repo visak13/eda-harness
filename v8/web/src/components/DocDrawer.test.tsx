@@ -88,10 +88,44 @@ describe("DocDrawer (§17)", () => {
   });
 });
 
-// Astra ruling #36 item (2): the drawer header is the reader's toolbar — doc type, "Open as
-// page", ONE version menu labelled "Versions" whose entries switch the reader's pinned version.
+// Astra ruling #36 item (2): outside a conversation the drawer header is the reader's toolbar — doc
+// type, "Open in tab", ONE version menu labelled "Versions" whose entries switch the pinned version.
 describe("DocDrawer toolbar (Astra #36 item 2)", () => {
-  it("shows the doc type, the Open as page link and a Versions menu that switches the version", async () => {
+  it("shows the doc type, the Open in tab link and a Versions menu that switches the version", async () => {
+    server.use(
+      http.get("/v1/docs/d1/html", ({ request }) => {
+        const v = new URL(request.url).searchParams.get("version");
+        const n = v ? Number(v) : 2;
+        return ok({ ...docHtml("d1", `<p>body v${n}</p>`), version: n, versions: [1, 2] });
+      }),
+    );
+    renderDrawer("/library/documents?doc=d1");
+    const panel = await screen.findByTestId("drawer-panel");
+    await within(panel).findByText("body v2");
+    expect(within(panel).getByRole("heading", { level: 1, name: "Doc d1" })).toBeInTheDocument();
+    const header = panel.querySelector("header")!;
+    expect(within(header).getByText("design")).toBeInTheDocument(); // the toolbar's doc type
+    expect(within(panel).getByRole("link", { name: "Open in tab" })).toHaveAttribute("href", expect.stringContaining("/doc/d1?version=2&as="));
+    const menu = within(panel).getByLabelText("Versions");
+    expect(menu.tagName).toBe("DETAILS");
+    expect(menu.querySelector("summary")?.textContent).toContain("v2 · Latest");
+    const entries = within(menu).getAllByTestId("version-entry");
+    expect(entries.map((e) => e.textContent)).toEqual(["v1", "v2 · latest"]);
+    expect(within(panel).getByTestId("doc-history")).toHaveAttribute("aria-label", "History");
+
+    fireEvent.click(entries[0]);
+    await within(panel).findByText("body v1");
+    expect(within(panel).getByTestId("version-now")).toHaveTextContent("v1 · pinned (latest v2)");
+    expect(menu.querySelector("summary")?.textContent).toContain("v1 · Pinned");
+    expect(within(panel).getByRole("link", { name: "Open in tab" })).toHaveAttribute("href", expect.stringContaining("/doc/d1?version=1&as="));
+  });
+});
+
+// S19 (revision3-clean-review.png): opened from a conversation the doc is a design review — a centred
+// viewer whose ONE header is the review's: source crumb, "Open in tab", a labelled Close, the title
+// and "Design · Version N" as the version menu. No drawer toolbar above it, no meta line, no side pane.
+describe("DocDrawer design review viewer (S19)", () => {
+  it("draws one review header with Open in tab, Close and the version menu", async () => {
     server.use(
       http.get("/v1/docs/d1/html", ({ request }) => {
         const v = new URL(request.url).searchParams.get("version");
@@ -102,29 +136,19 @@ describe("DocDrawer toolbar (Astra #36 item 2)", () => {
     renderDrawer("/epic/epic-1?doc=d1");
     const panel = await screen.findByTestId("drawer-panel");
     await within(panel).findByText("body v2");
+    expect(panel.querySelector("header")).toBeNull();
     expect(within(panel).getByRole("heading", { level: 1, name: "Doc d1" })).toBeInTheDocument();
-    const header = panel.querySelector("header")!;
-    expect(within(header).getByText("design")).toBeInTheDocument(); // the toolbar's doc type
-    expect(within(panel).getByRole("link", { name: "Open in tab" })).toHaveAttribute(
-      "href",
-      expect.stringContaining("/doc/d1?version=2&source=epic-1&as="),
-    );
-    // Exactly one "Versions"-labelled container in the drawer; it holds every entry.
+    expect(within(panel).queryByTestId("doc-meta")).toBeNull();
+    expect(within(panel).queryByTestId("doc-side")).toBeNull();
+    expect(within(panel).getByRole("link", { name: /Open in tab/ })).toHaveAttribute("href", expect.stringContaining("/doc/d1?version=2&source=epic-1&as="));
     const menu = within(panel).getByLabelText("Versions");
-    expect(menu.tagName).toBe("DETAILS");
-    expect(menu.querySelector("summary")?.textContent).toContain("v2 · Latest");
+    expect(menu.querySelector("summary")?.textContent).toContain("Version 2");
     const entries = within(menu).getAllByTestId("version-entry");
-    expect(entries.map((e) => e.textContent)).toEqual(["v1", "v2 · latest"]);
-    // The History block keeps its own label so the toolbar menu is the one "Versions" element.
-    expect(within(panel).getByTestId("doc-history")).toHaveAttribute("aria-label", "History");
-
+    expect(entries.map((e) => e.textContent)).toEqual(["Version 1", "Version 2 · latest"]);
     fireEvent.click(entries[0]);
     await within(panel).findByText("body v1");
-    expect(within(panel).getByTestId("version-now")).toHaveTextContent("v1 · pinned (latest v2)");
-    expect(menu.querySelector("summary")?.textContent).toContain("v1 · Pinned");
-    expect(within(panel).getByRole("link", { name: "Open in tab" })).toHaveAttribute(
-      "href",
-      expect.stringContaining("/doc/d1?version=1&source=epic-1&as="),
-    );
+    expect(within(panel).getByRole("link", { name: /Open in tab/ })).toHaveAttribute("href", expect.stringContaining("/doc/d1?version=1&source=epic-1&as="));
+    fireEvent.click(within(panel).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByTestId("drawer-panel")).toBeNull());
   });
 });

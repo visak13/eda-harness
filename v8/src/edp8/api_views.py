@@ -31,6 +31,7 @@ from .avatars import (
     role_avatar_svg,
     system_avatar_svg,
 )
+from .avatar_templates import BOT_TEMPLATES
 from .board import Board
 from .schemas import Participant
 
@@ -149,7 +150,11 @@ def views_router(board: Board, actor: Callable[..., Participant]) -> APIRouter:
             svg = human_avatar_svg(palette, size)
         else:
             p = views._participant(board, pid)
-            if p is None:
+            if p is None and pid in BOT_TEMPLATES and pid not in ("unknown", "system"):
+                # A role address ("architect" — the design-review "To" chip, S19) draws that
+                # role's bot, not the unknown "?" face.
+                svg = role_avatar_svg(pid, None, size)
+            elif p is None:
                 svg = system_avatar_svg(size, unknown=True)
             elif p.type == "human":
                 svg = human_avatar_svg(avatar_id_for(p, views._prefs()), size)

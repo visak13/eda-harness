@@ -43,7 +43,7 @@ describe("DocView", () => {
     fireEvent.change(screen.getByLabelText("Conversation source"), { target: { value: "epic-1" } });
     fireEvent.click(await screen.findByRole("button", { name: "Comment without requesting changes" }));
     fireEvent.change(screen.getByLabelText("Message"), { target: { value: "looks good" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send comment" }));
     await waitFor(() => expect(body).not.toBeNull());
     expect(body).toMatchObject({ text: "looks good", ticket_id: "epic-1", design_ref: "design-1", reviewed_version: 2 });
     expect(await screen.findByText("Comment posted to the source conversation.")).toBeInTheDocument();

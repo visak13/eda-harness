@@ -46,10 +46,12 @@ const NAV = [
 ] as const;
 
 // Human #38 (m-4e303d7b27, 2026-09-11): the sidebar highlight is by ROUTE FAMILY, not by exact path.
-export function navFamily(pathname: string): "/me" | "/epics" | "/seats" | "/library/tickets" | "/settings" | null {
+export function navFamily(pathname: string, search = ""): "/me" | "/epics" | "/seats" | "/library/tickets" | "/settings" | null {
   if (pathname === "/me" || pathname.startsWith("/me/")) return "/me";
   if (/^\/(epics|epic|ticket|records)(\/|$)/.test(pathname)) return "/epics";
   if (/^\/seats(\/|$)/.test(pathname)) return "/seats";
+  // S19 D11: a design opened in its own tab from a review belongs to the source's (Epics) family.
+  if (/^\/doc\//.test(pathname) && new URLSearchParams(search).has("source")) return "/epics";
   if (/^\/(library|doc|artifact)(\/|$)/.test(pathname)) return "/library/tickets";
   if (/^\/settings(\/|$)/.test(pathname)) return "/settings";
   return null;
@@ -97,7 +99,7 @@ function AppShellChrome(): React.JSX.Element {
   useEffect(() => { setMenuOpen(false); setAccountOpen(false); }, [location.pathname]);
   const [helpOpen, setHelpOpen] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
-  const activeFamily = navFamily(location.pathname);
+  const activeFamily = navFamily(location.pathname, location.search);
   const findBtnRef = useRef<HTMLButtonElement>(null);
   const closeFind = useCallback(() => {
     setFindOpen(false);

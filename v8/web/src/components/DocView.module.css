@@ -214,3 +214,19 @@ details[open] > .historySummary::after {
     position: static;
   }
 }
+
+/* S19 D4/D5: inside the design review the document is the whole column — no side pane, no negative
+   drawer margin — and reads in the render's sans type: body 16/26, the doc heading bold 22, the
+   numbered sections bold 17 (revision3-clean-review.png). <Markdown> demotes h1→h2, h2→h3, h3→h4. */
+.doc.reviewDoc { display: block; margin: 0; }
+.reviewDoc .reading { padding: 0; gap: 0; }
+.reviewDoc .body :global(.doc-md) { font-size: 16px; line-height: 26px; }
+.reviewDoc .body :global(h1), .reviewDoc .body :global(h2), .reviewDoc .body :global(h3), .reviewDoc .body :global(h4) {
+  font-family: "Segoe UI", system-ui, sans-serif; font-weight: 700; letter-spacing: 0; color: var(--ink);
+}
+.reviewDoc .body :global(h1), .reviewDoc .body :global(h2) { font-size: 22px; line-height: 30px; margin: 0 0 12px; }
+.reviewDoc .body :global(h3) { font-size: 17px; line-height: 24px; margin: 22px 0 8px; }
+.reviewDoc .body :global(h4) { font-size: 16px; line-height: 24px; margin: 18px 0 6px; }
+.reviewDoc .body :global(p) { margin: 0 0 12px; }
+.reviewDoc .body :global(ul), .reviewDoc .body :global(ol) { margin: 0 0 12px; padding-left: 22px; }
+.reviewDoc .body :global(li) { margin: 0 0 2px; }

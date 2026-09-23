@@ -31,7 +31,7 @@ test("source deep link, local feedback, optional tab context and exact-version a
   await expect(dialog).toBeVisible();
   await dialog.getByLabel("Versions", { exact: true }).locator("summary").click();
   await dialog.getByTestId("version-entry").first().click();
-  await expect(dialog.getByTestId("version-now")).toContainText("v2");
+  await expect(dialog.getByTestId("version-now")).toContainText("Version 2"); // S19: the review header version menu; the pick is refused while the upload is pending
   await page.keyboard.press("Escape"); await expect(dialog).toBeVisible();
   release();
   await expect(dialog.getByText(/Uploading 1 attachment/)).toHaveCount(0);
@@ -49,7 +49,7 @@ test("source deep link, local feedback, optional tab context and exact-version a
     for (const [width, height] of [[1440, 900], [320, 568], [844, 390]]) {
       await page.setViewportSize({ width, height });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-      await dialog.getByRole("button", { name: "Send", exact: true }).click({ trial: true });
+      await dialog.getByRole("button", { name: "Send feedback", exact: true }).click({ trial: true });
       // @ts-expect-error shared axe adapter has dual playwright-core types
       const audit = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
       expect(audit.violations.filter((v) => v.impact === "serious" || v.impact === "critical"), `${theme.id}/${width}`).toEqual([]);
@@ -57,7 +57,7 @@ test("source deep link, local feedback, optional tab context and exact-version a
   }
   await page.setViewportSize({ width: 1440, height: 900 });
   const sent = page.waitForResponse((res) => res.url().endsWith("/v1/gates/decide"));
-  await dialog.getByRole("button", { name: "Send", exact: true }).click();
+  await dialog.getByRole("button", { name: "Send feedback", exact: true }).click();
   expect((await (await sent).json()).value.decision).toBe("request_changes");
   await expect(dialog.getByText(/Design remains unapproved/)).toBeVisible();
   const epicRecord = await request.get(`${BASE()}/v1/tickets/${epic.id}`, { headers: { "X-Participant": "owner" } });

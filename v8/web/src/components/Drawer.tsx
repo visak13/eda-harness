@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import styles from "./Drawer.module.css";
 import { Icon } from "./Icon";
@@ -8,6 +8,12 @@ import { Icon } from "./Icon";
 // a pure shell: open/close, a title header, focus trap, Esc → onClose, focus restored to
 // `returnFocusTo` (or whatever was focused when it opened), and body scroll locked while open.
 // Everything domain-specific is `children`.
+
+/** The open drawer's close (with its busy-hold check) for a body that draws its own header
+ *  (`bare`, S19 design review). null outside a drawer. */
+const DrawerCloseContext = createContext<(() => void) | null>(null);
+export function useDrawerClose(): (() => void) | null { return useContext(DrawerCloseContext); }
+
 export function Drawer({
   open,
   onClose,
@@ -17,6 +23,8 @@ export function Drawer({
   children,
   returnFocusTo,
   edge = false,
+  bare = false,
+  centered = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -31,6 +39,12 @@ export function Drawer({
    *  gap if you scroll"): no inset margins, full height, full width below 960px, so no page content
    *  shows around the panel. The inset drawer stays the default (ruling geometry c-03436484b6). */
   edge?: boolean;
+  /** No header row: the body draws its own title and close (useDrawerClose). S19: the design
+   *  review viewer per revision3-clean-review.png has ONE header (source crumb, Open in tab, Close). */
+  bare?: boolean;
+  /** A centred modal (revision3-clean-review.png: 1190 wide, 52px from the top and bottom at
+   *  1440×900) instead of the right-hand panel. */
+  centered?: boolean;
 }): React.JSX.Element | null {
   const panelRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
@@ -126,11 +140,11 @@ export function Drawer({
   if (!open) return null;
 
   return createPortal(
-    <div className={styles.scrim} onMouseDown={requestClose} data-testid="drawer-scrim" data-drawer-width={width}>
+    <div className={centered ? `${styles.scrim} ${styles.centeredScrim}` : styles.scrim} onMouseDown={requestClose} data-testid="drawer-scrim" data-drawer-width={width}>
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <div
         ref={panelRef}
-        className={edge ? `${styles.panel} ${styles.edge}` : styles.panel}
+        className={[styles.panel, edge ? styles.edge : "", centered ? styles.centered : "", bare ? styles.bare : ""].filter(Boolean).join(" ")}
         style={{ width }}
         role="dialog"
         aria-modal="true"
@@ -140,13 +154,15 @@ export function Drawer({
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={onKeyDown}
       >
-        <header className={styles.header}>
+        {bare ? null : <header className={styles.header}>
           <div className={styles.title}>{title}</div>
           <button type="button" className={styles.close} aria-label="Close" onClick={requestClose}>
             <Icon name="close" />
           </button>
-        </header>
-        <div className={styles.body}>{held ? <p role="status">Wait for the pending upload or send before closing. Your draft is kept.</p> : null}{children}</div>
+        </header>}
+        <DrawerCloseContext.Provider value={requestClose}>
+          <div className={styles.body}>{held ? <p role="status" className={styles.held}>Wait for the pending upload or send before closing. Your draft is kept.</p> : null}{children}</div>
+        </DrawerCloseContext.Provider>
       </div>
     </div>, document.body,
   );

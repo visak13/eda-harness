@@ -49,8 +49,13 @@ export function DocView({
   versionsHosted,
   source,
   request,
+  tabHref,
+  onBack,
 }: {
   source?: string | null;
+  /** The viewer's "Open in tab" target and nested-doc back (drawn by the review header, S19). */
+  tabHref?: string;
+  onBack?: () => void;
   request?: string | null;
   docId: string;
   version?: number | null;
@@ -116,7 +121,7 @@ export function DocView({
       hideTitle={!!source}
       reviewing={!!source}
     />;
-  return source ? <DesignReview key={`${docId}:${source}:${q.data.version}`} docId={docId} source={source} version={q.data.version} title={q.data.title} request={request} onLatest={(v) => { if (!pendingWork()) setRequested(v); }}>{content}</DesignReview> : <><DocumentSource key={docId} docId={docId} version={q.data.version} />{content}</>;
+  return source ? <DesignReview key={`${docId}:${source}:${q.data.version}`} docId={docId} source={source} version={q.data.version} title={q.data.title} request={request} versions={q.data.versions} onPickVersion={(v) => { if (!pendingWork()) setRequested(v); }} tabHref={tabHref} onBack={onBack} onLatest={(v) => { if (!pendingWork()) setRequested(v); }}>{content}</DesignReview> : <><DocumentSource key={docId} docId={docId} version={q.data.version} />{content}</>;
 }
 
 function DocBody({
@@ -185,9 +190,11 @@ function DocBody({
     ? `/epic/${encodeURIComponent(doc.scope)}`
     : `/ticket/${encodeURIComponent(doc.scope)}`;
   return (
-    <div className={`${styles.doc} ${hasSignoff ? styles.withPane : ""}`} data-testid="doc-view">
+    <div className={`${styles.doc} ${hasSignoff ? styles.withPane : ""} ${reviewing ? styles.reviewDoc : ""}`} data-testid="doc-view">
       <div className={styles.reading}>
-        <p className={styles.meta} data-testid="doc-meta">
+        {/* S19 D5: the review viewer (revision3-clean-review.png) shows only the document — its
+            header already names type and version, so no technical meta line and no side pane. */}
+        {reviewing ? null : <p className={styles.meta} data-testid="doc-meta">
           <span>{doc.doc_type.replace(/_/g, " ")}</span>
           <span aria-hidden="true">·</span>
           <span className={ui.idMono}>{doc.id}</span>
@@ -195,7 +202,7 @@ function DocBody({
           <span className={styles.versionNow} data-testid="version-now">
             v{doc.version} · {isLatest ? "latest" : `pinned (latest v${latest})`}
           </span>
-        </p>
+        </p>}
         {!hideTitle && (
           <h1 className={styles.title} data-testid="doc-title">
             {stripScopeId(doc.title)}
@@ -210,7 +217,7 @@ function DocBody({
         {reviewing ? null : <DocControls docId={doc.id} scope={doc.scope} version={doc.version} scopeIsThread={scopeIsTicket} />}
       </div>
 
-      <aside className={styles.side} data-testid="doc-side">
+      {reviewing ? null : <aside className={styles.side} data-testid="doc-side">
         <div className={styles.sideSticky}>
           {hasSignoff ? (
             <section className={styles.pane} aria-label="Your sign-off">
@@ -288,7 +295,7 @@ function DocBody({
             </details>
           ) : null}
         </div>
-      </aside>
+      </aside>}
     </div>
   );
 }

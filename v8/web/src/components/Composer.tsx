@@ -122,6 +122,13 @@ export interface ComposerProps {
   /** §4.2 "Expand": when given, a control opens the same composer in the right Drawer (or back).
    *  `expanded` says which side this instance is on; `onToggle` moves the draft across. */
   expand?: { expanded: boolean; onToggle: () => void };
+  /** "panel" (S19, revision3-clean-review.png feedback column): no card frame, a plain textarea, a
+   *  tools row "Mention · Attach · ⤢" and an actions row "<sendLabel> · Cancel". Default "card". */
+  variant?: "card" | "panel";
+  /** Send button text (panel: "Send feedback"). */
+  sendLabel?: string;
+  /** Shows a Cancel beside Send (panel variant); the host closes its panel, the draft is kept. */
+  onCancel?: () => void;
 }
 
 export function Composer(props: ComposerProps): React.JSX.Element {
@@ -147,6 +154,9 @@ function ComposerInstance({
   initialArtifacts,
   onArtifactsChange,
   expand,
+  variant = "card",
+  sendLabel = "Send",
+  onCancel,
 }: ComposerProps): React.JSX.Element {
   const qc = useQueryClient();
   if (!draftStores.has(qc)) draftStores.set(qc, new Map());
@@ -306,11 +316,37 @@ function ComposerInstance({
   }, [pendingUploads, send.isPending]);
 
   const kindFixed = kinds.length <= 1;
+  const panel = variant === "panel";
+  const showRecipient = (showTo || to != null) && !hideRecipient;
+  const expandButton = expand ? (
+    <button
+      type="button"
+      className={panel ? styles.tool : styles.expand}
+      disabled={pendingUploads > 0 || send.isPending}
+      onClick={expand.onToggle}
+      aria-label={expand.expanded ? "Collapse the composer back into the page" : "Expand the composer into the drawer"}
+      title={panel ? (expand.expanded ? "Collapse" : "Expand") : undefined}
+      data-testid="composer-expand"
+    >
+      <Icon name={expand.expanded ? "collapse" : "expand"} />{panel ? null : <> {expand.expanded ? "Collapse" : "Expand"}</>}
+    </button>
+  ) : null;
+  const sendButton = (
+    <button
+      className={styles.send}
+      type="button"
+      disabled={send.isPending || pendingUploads > 0 || (text.trim().length === 0 && artifacts.length === 0)}
+      onClick={trySend}
+      data-testid="composer-send"
+    >
+      {confirming ? "Send anyway — wakes nobody" : sendLabel}
+    </button>
+  );
 
 
   return (
     <section
-      className={`${styles.composer} ${dragOver ? styles.dragging : ""}`}
+      className={`${styles.composer} ${panel ? styles.panel : ""} ${dragOver ? styles.dragging : ""}`}
       data-testid="composer"
       data-busy={pendingUploads > 0 || send.isPending ? "true" : undefined}
       {...dropProps}
@@ -328,8 +364,8 @@ function ComposerInstance({
         </div>
       ) : null}
 
-      <div className={styles.controls}>
-        {(showTo || to != null) && !hideRecipient ? (
+      {showRecipient || !kindFixed || (expand && !panel) ? <div className={styles.controls}>
+        {showRecipient ? (
           <label className={styles.field}>
             <span className={styles.fieldLabel}>To</span>
             <span className={styles.selectWrap}>
@@ -368,19 +404,8 @@ function ComposerInstance({
             ) : null}
           </label>
         )}
-        {expand ? (
-          <button
-            type="button"
-            className={styles.expand}
-            disabled={pendingUploads > 0 || send.isPending}
-            onClick={expand.onToggle}
-            aria-label={expand.expanded ? "Collapse the composer back into the page" : "Expand the composer into the drawer"}
-            data-testid="composer-expand"
-          >
-            <Icon name={expand.expanded ? "collapse" : "expand"} /> {expand.expanded ? "Collapse" : "Expand"}
-          </button>
-        ) : null}
-      </div>
+        {panel ? null : expandButton}
+      </div> : null}
 
       <textarea
         ref={taRef}
@@ -458,7 +483,8 @@ function ComposerInstance({
         <input ref={fileRef} type="file" multiple hidden onChange={(e) => { void ingestFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} />
         <button type="button" className={styles.tool} onClick={() => { const at = taRef.current?.selectionStart ?? text.length; setText((t) => `${t.slice(0, at)}@${t.slice(at)}`); taRef.current?.focus(); requestAnimationFrame(() => { taRef.current?.setSelectionRange(at + 1, at + 1); mentions.refresh(); }); }}><Icon name="mention" /> Mention</button>
         <button type="button" className={styles.tool} onClick={() => fileRef.current?.click()} data-testid="composer-attach"><Icon name="attach" /> Attach</button>
-        <button
+        {panel ? expandButton : null}
+        {panel ? null : <button
           ref={helpBtnRef}
           type="button"
           className={styles.tool}
@@ -469,7 +495,7 @@ function ComposerInstance({
           data-testid="composer-help-toggle"
         >
           <Icon name="help" />
-        </button>
+        </button>}
         {/* Wake preview — the board's plan, verbatim, as the render's one delivery line; every
             per-recipient reason sits in its title. The preview cannot drift from delivery. */}
         {preview.data ? (
@@ -480,16 +506,14 @@ function ComposerInstance({
               : preview.data.note || "Nobody will be woken."}
           </span>
         ) : <span className={styles.delivery} />}
-        <button
-          className={styles.send}
-          type="button"
-          disabled={send.isPending || pendingUploads > 0 || (text.trim().length === 0 && artifacts.length === 0)}
-          onClick={trySend}
-          data-testid="composer-send"
-        >
-          {confirming ? "Send anyway — wakes nobody" : "Send"}
-        </button>
+        {panel ? null : sendButton}
       </div>
+      {panel ? (
+        <div className={styles.actionsRow}>
+          {sendButton}
+          {onCancel ? <button type="button" className={styles.cancel} onClick={onCancel} disabled={send.isPending} data-testid="composer-cancel">Cancel</button> : null}
+        </div>
+      ) : null}
 
       {helpOpen ? (
         <ComposerHelp

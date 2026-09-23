@@ -106,7 +106,7 @@ test('Needs you negative ruling must not sign off a design', async ({ page, requ
   await dialog.getByRole('button', { name: 'Request changes', exact: true }).click();
   await dialog.getByRole('textbox', { name: 'Message', exact: true }).fill('Do not approve; changes required');
   const sent = page.waitForResponse(r => r.url().endsWith('/v1/gates/decide'));
-  await dialog.getByRole('button', { name: 'Send', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Send feedback', exact: true }).click();
   const response = await sent;
   expect(response.ok()).toBe(true);
   expect(response.request().postDataJSON()).toMatchObject({ ticket_id: epic.id, design_ref: doc.id, gate_event_id: gate.id, reviewed_version: 1, decision: 'request_changes' });
@@ -128,7 +128,7 @@ test('ordinary comment leaves clean current design approvable', async ({ page, r
   await expect(page.getByRole('button', { name: 'Approve design', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Comment without requesting changes' }).click();
   await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Ordinary comment, not a request for changes.');
-  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await page.getByRole('button', { name: 'Send comment', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Message', exact: true })).toHaveValue('');
   await expect(page.getByRole('button', { name: 'Approve design', exact: true })).toBeEnabled();
 });

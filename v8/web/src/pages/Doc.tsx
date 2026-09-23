@@ -20,18 +20,21 @@ export function DocPage(): React.JSX.Element {
   // refetched on every feed invalidation and moved the reader's body under it. DocView pins the
   // version and reports the document it shows.
   const [doc, setDoc] = useState<DocHtml | null>(null);
+  // S19 D11: opened from a review ("Open in tab"), the review header's crumb is the way back to the
+  // source conversation (by its title) — no second crumb with the raw scope id.
+  const source = params.get("source");
 
   return (
     <div className={styles.page}>
-      <nav className={styles.crumb} aria-label="Breadcrumb">
+      {source ? null : <nav className={styles.crumb} aria-label="Breadcrumb">
         {doc ? (
           <Link to={`/epic/${encodeURIComponent(doc.scope)}`}><Icon name="back" /> {doc.scope}</Link>
         ) : (
           <Link to="/library/documents"><Icon name="back" /> Library</Link>
         )}
-      </nav>
-      <div className={styles.reader}>
-        <DocView docId={id} version={version} onDoc={setDoc} source={params.get("source")} request={params.get("request")} />
+      </nav>}
+      <div className={source ? `${styles.reader} ${styles.review}` : styles.reader}>
+        <DocView docId={id} version={version} onDoc={setDoc} source={source} request={params.get("request")} />
       </div>
     </div>
   );

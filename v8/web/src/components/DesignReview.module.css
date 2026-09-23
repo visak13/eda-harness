@@ -1,34 +1,71 @@
-/* Design review per revision3-clean-review.png: a crumb ("Epic / Design review"), the document
-   title with its "Design · Version N · state" line, Approve (sage) / Request changes (coral) on
-   the right; the feedback panel beside the document when a mode is open. */
-.review { min-width: 0; padding: 0 16px 16px; background: var(--panel); border-bottom: 1px solid var(--strongline); }
-.head { position: sticky; top: 0; z-index: 2; background: var(--panel); padding: 14px 0 12px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
-.crumb { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
+/* Design review per revision3-clean-review.png (dec-23c1a38a6e; S19 c-4bc0090b1d). One header: the
+   crumb row ("Epic / Design review" · Open in tab · Close), then the title with its "Design · Version
+   N · state" line and Approve (sage) / Request changes (coral). Below it the document (left, fixed
+   width) and the review panel (right, rail-toned) side by side, each scrolling on its own inside the
+   viewer. Short or narrow screens scroll the whole review as one (S19 D10). */
+.review { min-width: 0; background: var(--panel); }
+.framed { height: 100%; display: flex; flex-direction: column; min-height: 0; }
+.head { flex: none; background: var(--panel); padding: 20px 22px 18px; border-bottom: 1px solid var(--strongline); }
+.crumbRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 36px; }
+.crumb { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); min-width: 0; }
 .crumb a { color: var(--ink); text-decoration: none; }
 .crumb a:hover { text-decoration: underline; }
-.titleRow { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 12px; }
+.back { height: 32px; width: 32px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--ink); font-size: 18px; }
+.tools { display: flex; align-items: center; gap: 8px; flex: none; }
+.tool { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: var(--ink); font: inherit; font-size: 15px; text-decoration: none; cursor: pointer; }
+.tool:hover { background: var(--secondary); }
+.tool:focus-visible, .back:focus-visible, .help:focus-visible, .versionsSummary:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
+.titleRow { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 6px; }
 .titleBlock { min-width: 0; }
-.title { font: 700 26px/32px "Segoe UI", system-ui, sans-serif; color: var(--ink); margin: 0; overflow-wrap: anywhere; }
-.state { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+.title { font: 700 26px/34px "Segoe UI", system-ui, sans-serif; color: var(--ink); margin: 0; overflow-wrap: anywhere; }
+.state { margin: 4px 0 0; font-size: 13px; line-height: 20px; color: var(--muted); display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.muted { font-size: 13px; color: var(--muted); }
-.approve { background: var(--successwash); border-color: var(--success); color: var(--success); }
+.actions button { min-height: 40px; font-size: 16px; padding: 0 14px; }
+.approve { background: var(--successwash); border-color: var(--success); color: var(--ink); }
 .approve:hover:not(:disabled) { filter: brightness(0.97); }
-.request { background: var(--accentwash); border-color: var(--accent); color: var(--accentink); }
+.request { background: var(--accentwash); border-color: var(--accent); color: var(--ink); }
 .request:hover:not(:disabled) { filter: brightness(0.97); }
 .notice { margin: 0 0 12px; font-size: 14px; }
-.feedback { min-width: 0; margin-block: 0 16px; padding: 20px; background: var(--rail); border-left: 1px solid var(--strongline); display: flex; flex-direction: column; gap: 10px; }
-.feedbackTitle { margin: 0; font-size: 20px; }
-.feedbackMeta { margin: 0; font-size: 13px; line-height: 19px; color: var(--muted); }
+.versionsMenu { position: relative; display: inline-block; }
+.versionsSummary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 2px; color: var(--muted); border-radius: 4px; }
+.versionsSummary::-webkit-details-marker { display: none; }
+.versionsSummary:hover { color: var(--ink); text-decoration: underline; }
+.versionsList { position: absolute; left: 0; top: calc(100% + 6px); z-index: 5; min-width: 180px; padding: 6px; display: flex; flex-direction: column; gap: 2px; background: var(--panel); border: 1px solid var(--strongline); border-radius: 8px; box-shadow: 0 12px 32px #261b2330; }
+.versionEntry { text-align: left; min-height: 36px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--ink); font: inherit; font-size: 14px; cursor: pointer; }
+.versionEntry:hover { background: var(--secondary); }
+.versionActive { font-weight: 600; background: var(--secondary); }
+.split { display: grid; grid-template-columns: minmax(0, 1.38fr) minmax(0, 1fr); }
+.framed .split { flex: 1; min-height: 0; }
+.reading { min-width: 0; padding: 28px 28px 32px; }
+.framed .reading, .framed .feedback { overflow-y: auto; min-height: 0; }
+.plainScroll { padding: 24px; }
+.framed .plainScroll { flex: 1; overflow-y: auto; min-height: 0; }
+.splitExpanded { grid-template-columns: minmax(0, 1fr); }
+.splitExpanded .reading { display: none; }
+.feedback { min-width: 0; padding: 28px 22px 22px; background: var(--rail); border-left: 1px solid var(--strongline); display: flex; flex-direction: column; gap: 12px; }
+.feedbackTitle { margin: 0; font: 700 20px/26px "Segoe UI", system-ui, sans-serif; color: var(--ink); }
+.feedbackMeta { margin: -6px 0 0; font-size: 13px; line-height: 19px; color: var(--muted); }
 .feedbackTo, .feedbackAction { margin: 0; display: flex; align-items: center; gap: 10px; font-size: 14px; }
 .feedbackTo > span:first-child, .feedbackAction > span:first-child { color: var(--muted); }
-.toChip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 8px; border: 1.5px solid var(--strongline); border-radius: 8px; background: var(--panel); }
-.feedbackNote { margin: 0; font-size: 13px; line-height: 19px; color: var(--muted); display: flex; gap: 6px; align-items: flex-start; flex-wrap: wrap; }
-.linkButton { border: 0; background: transparent; padding: 0; font: inherit; color: var(--accentink); text-decoration: underline; cursor: pointer; }
-.split { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; }
-.reading { min-width: 0; }
-.split .reading [data-testid="doc-side"] { display: none; }
-.split .reading [data-testid="doc-view"] { display: block; }
-@media (max-width: 850px) { .split { grid-template-columns: minmax(0, 1fr); } .feedback { border-left: 0; } }
-.expanded { width: 100%; margin-block: 16px; }
+.toChip { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; box-sizing: border-box; padding: 0 12px 0 10px; border: 1.5px solid var(--strongline); border-radius: 8px; background: var(--panel); }
+.help { display: inline-flex; color: var(--muted); border-radius: 50%; cursor: help; }
+.feedbackFoot { margin-top: 4px; padding-top: 18px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.feedbackNote { margin: 0; font-size: 13px; line-height: 19px; color: var(--muted); display: flex; gap: 6px; align-items: flex-start; }
+.linkButton { border: 0; background: transparent; padding: 0; font: inherit; font-size: 13px; color: var(--ink); text-decoration: underline; cursor: pointer; text-align: left; }
+.reading [data-testid="doc-view"] { display: block; }
 .review p, .review a { overflow-wrap: anywhere; }
+/* Short or narrow screens (844×390, phones): the header stops being a fixed band and the whole
+   review scrolls as one, so the document is never squeezed under a 300px header (S19 D10). */
+@media (max-height: 560px), (max-width: 850px) {
+  .framed { display: block; height: 100%; overflow-y: auto; }
+  .framed .reading, .framed .feedback { overflow: visible; }
+  .head { padding: 14px 16px 12px; }
+  .title { font-size: 22px; line-height: 28px; }
+  .reading { padding: 20px 16px 24px; }
+  .feedback { padding: 20px 16px; }
+}
+@media (max-width: 850px) {
+  .split { grid-template-columns: minmax(0, 1fr); }
+  .feedback { border-left: 0; border-top: 1px solid var(--strongline); }
+  .tool { padding: 0 6px; }
+}

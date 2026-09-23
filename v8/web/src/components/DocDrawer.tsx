@@ -113,6 +113,11 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
   const latest = shownDoc ? (shownDoc.versions.length ? Math.max(...shownDoc.versions) : shownDoc.version) : null;
   const pickedVersion = picked && picked.id === top ? picked.v : undefined;
 
+  const tabHref = top ? `/doc/${encodeURIComponent(top)}?${new URLSearchParams({ ...(shownDoc ? { version: String(shownDoc.version) } : {}), ...(source ? { source } : {}), ...(params.get("request") ? { request: params.get("request")! } : {}), as: identity() })}` : undefined;
+  // S19 (revision3-clean-review.png): a doc opened from a conversation is a design review — a centred
+  // viewer with ONE header drawn by DesignReview (crumb · Open in tab · Close · version menu), not this
+  // toolbar stacked above a second review header.
+  const review = Boolean(source);
   const title = (
     <div className={styles.toolbar}>
       {stack.length > 1 ? (
@@ -125,7 +130,7 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
         <Link
           className={styles.asPage}
           target="_blank"
-          to={`/doc/${encodeURIComponent(top)}?${new URLSearchParams({ ...(shownDoc ? { version: String(shownDoc.version) } : {}), ...(source ? { source } : {}), ...(params.get("request") ? { request: params.get("request")! } : {}), as: identity() })}`}
+          to={tabHref!}
         >
           Open in tab
         </Link>
@@ -168,6 +173,8 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
         title={title}
         label={shownDoc ? shownDoc.doc_type.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase()) : "Document"}
         returnFocusTo={returnFocus.current}
+        bare={review}
+        centered={review}
       >
         {top ? (
           <DocView
@@ -180,6 +187,8 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
             onOpenTicket={openTicket}
             onVersion={onVersion}
             onDoc={setTopDoc}
+            tabHref={tabHref}
+            onBack={stack.length > 1 ? back : undefined}
             versionsHosted
           />
         ) : null}
