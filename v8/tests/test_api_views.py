@@ -39,7 +39,7 @@ def rig(client):
         assert r["ok"], r
         return r["value"]
 
-    for pid, role, typ in [("owner", "owner", "human"), ("ravi", "reviewer", "human"),
+    for pid, role, typ in [("owner", "owner", "human"), ("ravi", "qa", "human"),
                            ("arch", "architect", "agent"), ("craft", "sme", "agent")]:
         post("/v1/participants", {"type": typ, "role": role, "handle": pid, "id": pid}, ADMIN)
     epic = post("/v1/tickets", {"kind": "epic", "work_type": "feature", "title": "Galaxy site"}, OWN)["id"]
@@ -338,7 +338,7 @@ def test_seats_lists_agent_seats_closed_and_humans(rig):
 
     # A parked seat and a CLOSED (dead + reason) seat, each its own participant + session.
     for pid, role, state, sid, reason in [
-        (f"reviewer.{story}", "reviewer", "parked", "sid-parked", ""),
+        (f"adversary.{story}", "adversary", "parked", "sid-parked", ""),
         (f"qa.{story}", "qa", "dead", "sid-dead", "closed by self: work completed; session saved"),
     ]:
         c.post("/v1/participants", json={"type": "agent", "role": role, "handle": pid, "id": pid}, headers=ADMIN)
@@ -367,18 +367,18 @@ def test_seats_lists_agent_seats_closed_and_humans(rig):
     assert closed["reason"] == "closed by self: work completed; session saved"
 
     # The parked seat is present; the sme seat 'craft' never had a session → state None (unknown).
-    assert seats[f"reviewer.{story}"]["state"] == "parked"
+    assert seats[f"adversary.{story}"]["state"] == "parked"
     assert seats["craft"]["state"] is None
     assert seats["craft"]["latest_status"] is None  # never recorded a status
 
     # Alive sorts before parked before dead (folio-seats order).
     order = [s["id"] for s in val["seats"]]
-    assert order.index(seat) < order.index(f"reviewer.{story}") < order.index(f"qa.{story}")
+    assert order.index(seat) < order.index(f"adversary.{story}") < order.index(f"qa.{story}")
 
 
 def test_seats_readable_by_any_participant(rig):
     """Seats is not owner-scoped — any authenticated participant sees the roster (parity with
-    /v1/sessions). A reviewer gets the same shape as the owner."""
+    /v1/sessions). A qa gets the same shape as the owner."""
     r = rig["client"].get("/v1/seats", headers=RAVI).json()
     assert r["ok"], r
     assert "seats" in r["value"] and "people" in r["value"]
