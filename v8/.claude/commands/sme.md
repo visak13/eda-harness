@@ -4,7 +4,7 @@
 **Heartbeat:** `context_delta(cursor=<your last cursor>)`; `context()` only at boot, after compaction or on resync_required — `get_guide('context-refresh')`.
 
 **Objects:** doc (strategy_hl | strategy_ll | domain), link (extends, uses_strategy/uses_domain), criterion (your brief) — `describe(<type>)`.
-**Feed lines that matter:** domain questions on your tickets · /learn notes addressed to you.
+**Feed lines that matter:** domain questions on your tickets. You are spawned for a big new topic the owner asks for; /learn is not addressed to you (seats file lessons and proposed versions in the Library, the owner approves them).
 
 **PROTOCOL**
 NEVER IDLE MID-PLAN: an idle wake while your ticket is not handed off means "do the next unfinished item of your plan"; end a turn silently only after hand-off or when blocked (and said so).

@@ -25,7 +25,7 @@ def _names(roots):
 
 
 def test_role_skill_roots_follow_the_role_cards_skills_line():
-    assert _names(seat_mod.role_skill_roots(V8, "qa")) == ["verify", "pain"]
+    assert _names(seat_mod.role_skill_roots(V8, "qa")) == ["verify", "harvest", "pain"]
     assert _names(seat_mod.role_skill_roots(V8, "engineer")) == ["methodology", "demo", "verify", "deviation",
                                                                   "doubt", "learn", "pain"]
     for r in seat_mod.role_skill_roots(V8, "qa"):
@@ -62,7 +62,7 @@ def test_the_role_bundle_is_bound_before_the_thread_and_read_back(tmp_path, monk
     s = seat_mod.CodexSeat(**kw)
     s.start(resume=resume)
     try:
-        assert s.skills == sorted(["verify", "pain"])  # the bundle, not imagegen
+        assert s.skills == sorted(["verify", "harvest", "pain"])  # the bundle, not imagegen
         methods = _mirror_out_methods(s.log_path)[-6:] if resume else _mirror_out_methods(s.log_path)
         thread = "thread/resume" if resume else "thread/start"
         assert methods.index("skills/extraRoots/set") < methods.index(thread)
@@ -81,7 +81,7 @@ def test_binding_writes_nothing_to_the_tree(tmp_path, monkeypatch):
                            env={"EDP_PARITY_DESCRIPTIONS": str(DESC)}, discover=lambda _c: ([], None))
     s.start()
     try:
-        assert s.skills == ["pain", "verify"]
+        assert s.skills == ["harvest", "pain", "verify"]
         assert not (V8 / ".agents").exists() and not (V8 / ".codex" / "skills").exists()
     finally:
         s.stop()

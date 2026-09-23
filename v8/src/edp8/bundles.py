@@ -854,7 +854,7 @@ class TicketCreateArgs(BaseModel):
     work_type: WorkType = Field()
     title: str = Field(description="epic: the owner's words verbatim (a short title is derived); story/task: the slice name")
     words: str | None = Field(default=None, description="epic or quick task: the owner's verbatim request; immutable")
-    parent_id: str | None = Field(default=None, description="required for story/task, except the owner's quick task (tag quick)")
+    parent_id: str | None = None  # story/task: required, except the owner's quick task (the tool description says so)
     assignee: str | None = Field(default=None)
     description: str = Field(default="", description='scope, intent, pointers to files/docs')
     tags: list[str] | None = Field(default=None)
@@ -893,7 +893,7 @@ class CriterionCreateArgs(BaseModel):
     ticket_id: str
     text: str = Field()
     check: Check = Field()
-    checked_by: CheckedBy | None = Field(default=None, description='ignored unless the owner also passes override_reason')
+    checked_by: CheckedBy | None = None  # the tool description: needs the owner's override_reason
     override_reason: str | None = Field(default=None, description='owner only: why the derived checker is overridden')
 
 
@@ -904,7 +904,7 @@ class CriterionQueryArgs(BaseModel):
 class CriterionUpdateArgs(BaseModel):
     model_config = {"extra": "forbid"}  # an unknown kwarg is an ERROR, never a silent drop
     id: str = Field()
-    evidence_ref: str | None = Field(default=None, description='report doc id proving the check')
+    evidence_ref: str | None = None  # the report doc id proving the check
     verdict: Verdict | None = Field(default=None, description='set after evidence_ref (checker only)')
     text: str | None = Field(default=None, description='reword (author, while pending)')
     evidence_version: int | None = Field(default=None,
@@ -960,12 +960,12 @@ TICKET_TOOLS = [
             'the ticket record',
             TicketReadArgs, _ticket_read, "ticket"),
     ToolDef("ticket_query",
-            'List tickets by kind, status, assignee, parent, epic_id subtree, creator, tag or q',
+            'List tickets matching the filter args',
             'to find tickets without an id',
             'matching tickets',
             TicketQueryArgs, _ticket_query, "ticket"),
     ToolDef("ticket_update",
-            "Change status, assignee, design_ref, description, tags or title, per the transition rules",
+            "Change the args given, per the transition rules",
             'to move or assign a ticket; in_review only once verified',
             'the ticket, or an error naming what is missing',
             TicketUpdateArgs, _ticket_update, "ticket"),
@@ -1296,8 +1296,8 @@ class SpawnArgs(BaseModel):
     participant_id: str | None = Field(default=None, description='explicit pool handle; omit with ticket_id')
     parent_session: str | None = Field(default=None, description='spawning session id')
     assign: bool | None = Field(default=None, description='default: only if unassigned/dead; false = checker; true = take over')
-    model: str | None = Field(default=None, description="seat name or id; default: the epic's seat-model tag")
-    effort: SeatEffort | None = Field(default=None, description="default: the epic's seat-effort; Claude caps at medium")
+    model: str | None = Field(default=None, description="seat or model id; default: epic tag")
+    effort: SeatEffort | None = Field(default=None, description="default: epic tag; Claude caps at medium")
     mode: SpawnMode | None = None
 
 
@@ -1635,11 +1635,12 @@ class RecordClaimArgs(BaseModel):
 
 
 class RecordLessonArgs(BaseModel):
-    domain: str = Field(description='e.g. operations, testing, ui')
-    topic: str = Field(description='e.g. restart, e2e')
-    text: str = Field(description='one sentence')
-    evidence: list[str] = Field(default_factory=list,
-                                description='defect, ruling or message ids')
+    # S-HARVEST: no field descriptions — record_lesson is back in every /learn seat's bundle and must
+    # fit the tightest S20 surface budget; the tool description names the fields.
+    domain: str
+    topic: str
+    text: str
+    evidence: list[str] = Field(default_factory=list)
 
 
 class LookupArgs(BaseModel):
@@ -1716,8 +1717,8 @@ KNOWLEDGE_TOOLS = [
             'the claim',
             RecordClaimArgs, _record_claim, "knowledge"),
     ToolDef("record_lesson",
-            'Record a reusable lesson by domain/topic, surfaced by lookup from any epic',
-            'when you learn something true beyond this ticket',
+            'Record a lesson: domain, topic, one sentence, evidence ids',
+            '/learn or /harvest',
             'the lesson',
             RecordLessonArgs, _record_lesson, "knowledge"),
     ToolDef("lookup",
@@ -2172,17 +2173,17 @@ for _role_tools in ROLE_BUNDLES.values():
 _S20_UNUSED: dict[str, tuple[str, ...]] = {
     Role.owner.value: ("gate_open", "inbox", "dense_search", "record_lesson", "withdraw_decision",
                        "withdraw_claim", "set_binding"),
-    Role.architect.value: ("artifact_read", "dense_search", "gate_answer", "record_lesson", "withdraw_claim",
+    Role.architect.value: ("artifact_read", "dense_search", "gate_answer", "withdraw_claim",
                            "withdraw_decision"),
-    Role.engineer.value: ("dense_search", "gate_answer", "gate_open", "gates", "link_delete", "record_lesson",
+    Role.engineer.value: ("dense_search", "gate_answer", "gate_open", "gates", "link_delete",
                           "set_binding", "withdraw_claim"),
-    Role.adversary.value: ("dense_search", "gate_answer", "link_delete", "record_lesson",
+    Role.adversary.value: ("dense_search", "gate_answer", "link_delete",
                            "set_binding", "withdraw_claim", "withdraw_decision"),
     Role.qa.value: ("artifact_create", "artifact_upload", "dense_search", "doc_query", "events_query", "gate_answer",
-                    "gate_open", "link_delete", "link_query", "record_lesson", "set_binding", "ticket_query",
+                    "gate_open", "link_delete", "link_query", "set_binding", "ticket_query",
                     "withdraw_claim", "withdraw_decision"),
     Role.sme.value: ("artifact_create", "artifact_read", "artifact_upload", "dense_search", "doc_edit", "find",
-                     "gate_answer", "gate_open", "gates", "link_delete", "record_lesson", "set_binding",
+                     "gate_answer", "gate_open", "gates", "link_delete", "set_binding",
                      "withdraw_claim", "withdraw_decision"),
 }
 for _role, _unused in _S20_UNUSED.items():
