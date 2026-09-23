@@ -9,6 +9,7 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { http, HttpResponse } from "msw";
 import { server } from "./setup";
+import { MODEL_CATALOG } from "./handlers";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { appRoutes } from "../routes";
 
@@ -273,6 +274,7 @@ function installBoard(): void {
     http.get("/v1/activity", () => ok(ACTIVITY)),
     http.get("/v1/seats", () => ok(SEATS)),
     http.get("/v1/pool/capabilities", () => ok(CAPS)),
+    http.get("/v1/models", () => ok(MODEL_CATALOG)),
     http.get("/v1/messages", () => ok([])),
     http.get("/v1/events", () => ok([])),
     http.post("/v1/messages/resolve", () => ok({ to: null, wakes: [], plan: [], note: "nobody is woken" })),

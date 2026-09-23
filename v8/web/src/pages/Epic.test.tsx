@@ -234,7 +234,7 @@ describe("EpicPage", () => {
     fireEvent.change(within(work).getByLabelText("Work type"), { target: { value: "feature" } });
     expect(within(work).queryAllByText("Bravo")).toHaveLength(0);
     fireEvent.change(within(work).getByLabelText("Work type"), { target: { value: "" } });
-    fireEvent.change(within(work).getByLabelText("Assignee contains"), { target: { value: "reviewer" } });
+    fireEvent.change(within(work).getByLabelText("Assignee contains"), { target: { value: "qa" } });
     expect(within(work).queryAllByText("Alpha")).toHaveLength(0);
     fireEvent.change(within(work).getByLabelText("Assignee contains"), { target: { value: "nobody" } });
     expect(within(work).getByText("No tickets match these filters.")).toBeInTheDocument();
@@ -284,18 +284,18 @@ describe("EpicPage", () => {
   it("Ask a role posts a question addressed to the chosen role on the epic thread (promise #17)", async () => {
     let body: Record<string, unknown> | null = null;
     mount(page());
-    server.use(http.post("/v1/messages", async ({ request }) => { body = (await request.json()) as Record<string, unknown>; return okJson({ id: "m-9", unresolved_mentions: [] }, "delivered to reviewer.epic-1 (the epic's reviewer)"); }));
+    server.use(http.post("/v1/messages", async ({ request }) => { body = (await request.json()) as Record<string, unknown>; return okJson({ id: "m-9", unresolved_mentions: [] }, "delivered to qa.epic-1 (the epic's qa)"); }));
     await title();
     const drawer = await openAction("ask-role");
     fireEvent.click(within(drawer).getByTestId("ask-role-toggle"));
     expect(within(drawer).getByTestId("ask-role-wake")).toHaveTextContent("architect.epic-1");
-    fireEvent.change(within(drawer).getByLabelText("Role"), { target: { value: "reviewer" } });
-    expect(within(drawer).getByTestId("ask-role-wake")).toHaveTextContent("reviewer.epic-1");
+    fireEvent.change(within(drawer).getByLabelText("Role"), { target: { value: "qa" } });
+    expect(within(drawer).getByTestId("ask-role-wake")).toHaveTextContent("qa.epic-1");
     fireEvent.change(within(drawer).getByLabelText("Question"), { target: { value: "is the verdict in?" } });
     fireEvent.click(within(drawer).getByTestId("ask-role-send"));
     await waitFor(() => expect(body).not.toBeNull());
-    expect(body!).toEqual({ ticket_id: "epic-1", kind: "question", to: "reviewer", text: "is the verdict in?" });
-    expect(await within(drawer).findByTestId("ask-role-sent")).toHaveTextContent("delivered to reviewer.epic-1");
+    expect(body!).toEqual({ ticket_id: "epic-1", kind: "question", to: "qa", text: "is the verdict in?" });
+    expect(await within(drawer).findByTestId("ask-role-sent")).toHaveTextContent("delivered to qa.epic-1");
   });
 
   it("Assign or spawn says which model + effort the epic's seats run on (owner m-2d7ef9243d)", async () => {

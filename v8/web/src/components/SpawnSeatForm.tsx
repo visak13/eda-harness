@@ -25,8 +25,8 @@ export function SpawnSeatForm(): React.JSX.Element {
   const [picked, setPicked] = useState<string | null>(null);
   const [assignPick, setAssignPick] = useState<boolean | null>(null);
   const activeRole = roles.includes(role) ? role : (roles[0] ?? role);
-  const options = catalog?.roles[activeRole] ?? [];
-  const model = picked && options.includes(picked) ? picked : (catalog?.defaults[activeRole] ?? "");
+  const options = catalog?.roles?.[activeRole] ?? [];
+  const model = picked && options.includes(picked) ? picked : (catalog?.defaults?.[activeRole] ?? "");
   const assign = assignPick ?? DOING_ROLES.has(activeRole);
   const ticketId = ticket.trim();
   const seatId = ticketId ? `${activeRole}.${ticketId}` : "";
