@@ -1,0 +1,41 @@
+private board pid=30648 http://127.0.0.1:61319 pool=http://127.0.0.1:61318 home=C:\Users\aksou\AppData\Local\Temp\topic-walk-p23v0msf (tokens C:\Users\aksou\AppData\Local\Temp\topic-walk-p23v0msf\tokens.json)
+PASS owner opens a topic: topic-41c9b78c24 kind=topic parent=None assignee=sme.topic-41c9b78c24 seat={'participant': 'sme.topic-41c9b78c24', 'state': 'queued'}
+PASS resident sme spawned via the pool: pool got role=sme handle=sme.topic-41c9b78c24 token=yes
+PASS sme searches skills.sh: receipt=https://www.skills.sh/api/search top=['wshobson/agents/python-testing-patterns', 'wshobson/agents/temporal-python-testing', 'mindrally/skills/python-testing']
+PASS sme reads a real skills.sh page: url=https://www.skills.sh/wshobson/agents/python-testing-patterns status=200 bytes=111920 fetched_at=2026-09-23T22:02:24+00:00 text[:120]='Skills\n\nPacks Topics Official Audits Docs\n\nNavigate\nPacks Topics Official Audits Docs\n\nskills / wshobson / agents / pyth'
+PASS sme files a proposed doc with source + fetched-at: strategyhl-b30f0e965a status=proposed header=['> Source: https://www.skills.sh/wshobson/agents/python-testing-patterns · fetched-at 2026-09-23T22:02:24+00:00 (topic topic-41c9b78c24, research by sme.topic-41c9b78c24)']
+PASS sme cannot activate a doc: doc_create active → a topic's sme files proposed docs; the owner activates them
+PASS sme sets tags: tags=['python', 'pytest', 'testing'] set_by={'by': 'sme.topic-41c9b78c24', 'at': '2026-09-23T22:02:24.850883+00:00'}
+PASS owner adds an expert: expert=dana listed=['dana'] link=/ui/library/topics/topic-41c9b78c24?as=dana&token=<redacted>
+PASS sme wakes on the expert's message: feed frame kind=message_sent why=on your ticket from=dana
+PASS sme answers on the thread and updates the docs as a proposed version: answer=m-31b185252e proposal=strategyhl-6e35039a48 proposes=strategyhl-b30f0e965a (owner approved strategyhl-b30f0e965a first: strategyhl-b30f0e965a is the active doc)
+PASS sme wakes on the owner's message: why=on your ticket
+PASS expert reaches only its topic: refused={'/v1/whoami': 403, '/v1/knowledge': 403, '/v1/tickets': 403, '/v1/topics': 403} own topic doc=200
+  ui: shot after-01-library-topics.png
+  ui: shot after-02-open-topic-dialog.png
+  ui: tags: TAGS python pytest testing set by sme.topic-41c9b78c24 · 2026-09-23 22:02 Edit
+  ui: shot after-03-topic-page-owner.png
+  ui: tags after owner edit: TAGS python pytest testing owner-picked set by owner · 2026-09-23 22:02 Edit
+  ui: shot after-04-owner-edited-tags.png
+  ui: shot after-05-expert-view.png
+PASS owner edits the sme's tags (last write wins, shown with who): tags=['python', 'pytest', 'testing', 'owner-picked'] set_by={'by': 'owner', 'at': '2026-09-23T22:02:39.096940+00:00'}
+PASS owner removes the expert and closes the topic: remove=200 expert after=401 topic status=done
+thread: [('board', 'note', 'owner added expert @dana (Dana (QA lead)) to this topic.'), ('dana', 'note', 'From our suite: we also forbid sleep() in tests — use freeze'), ('sme.topic-41c9b78c24', 'answer', 'Agreed — the skills.sh page covers time control with freezeg'), ('owner', 'note', 'Thanks both — keep it short.')]
+stopped private board pid=30648; pool spawns=['sme.topic-41c9b78c24', 'sme.topic-41c9b78c24']
+PASS fleet tokens.json untouched: mtime before=1790199711.0666065 after=1790199711.0666065
+
+RESULT owner opens a topic PASS — topic-41c9b78c24 kind=topic parent=None assignee=sme.topic-41c9b78c24 seat={'participant': 'sme.topic-41c9b78c24', 'state': 'queued'}
+RESULT resident sme spawned via the pool PASS — pool got role=sme handle=sme.topic-41c9b78c24 token=yes
+RESULT sme searches skills.sh PASS — receipt=https://www.skills.sh/api/search top=['wshobson/agents/python-testing-patterns', 'wshobson/agents/temporal-python-testing', 'mindrally/skills/python-testing']
+RESULT sme reads a real skills.sh page PASS — url=https://www.skills.sh/wshobson/agents/python-testing-patterns status=200 bytes=111920 fetched_at=2026-09-23T22:02:24+00:00 text[:120]='Skills\n\nPacks Topics Official Audits Docs\n\nNavigate\nPacks Topics Official Audits Docs\n\nskills / wshobson / agents / pyth'
+RESULT sme files a proposed doc with source + fetched-at PASS — strategyhl-b30f0e965a status=proposed header=['> Source: https://www.skills.sh/wshobson/agents/python-testing-patterns · fetched-at 2026-09-23T22:02:24+00:00 (topic topic-41c9b78c24, research by sme.topic-41c9b78c24)']
+RESULT sme cannot activate a doc PASS — doc_create active → a topic's sme files proposed docs; the owner activates them
+RESULT sme sets tags PASS — tags=['python', 'pytest', 'testing'] set_by={'by': 'sme.topic-41c9b78c24', 'at': '2026-09-23T22:02:24.850883+00:00'}
+RESULT owner adds an expert PASS — expert=dana listed=['dana'] link=/ui/library/topics/topic-41c9b78c24?as=dana&token=<redacted>
+RESULT sme wakes on the expert's message PASS — feed frame kind=message_sent why=on your ticket from=dana
+RESULT sme answers on the thread and updates the docs as a proposed version PASS — answer=m-31b185252e proposal=strategyhl-6e35039a48 proposes=strategyhl-b30f0e965a (owner approved strategyhl-b30f0e965a first: strategyhl-b30f0e965a is the active doc)
+RESULT sme wakes on the owner's message PASS — why=on your ticket
+RESULT expert reaches only its topic PASS — refused={'/v1/whoami': 403, '/v1/knowledge': 403, '/v1/tickets': 403, '/v1/topics': 403} own topic doc=200
+RESULT owner edits the sme's tags (last write wins, shown with who) PASS — tags=['python', 'pytest', 'testing', 'owner-picked'] set_by={'by': 'owner', 'at': '2026-09-23T22:02:39.096940+00:00'}
+RESULT owner removes the expert and closes the topic PASS — remove=200 expert after=401 topic status=done
+RESULT fleet tokens.json untouched PASS — mtime before=1790199711.0666065 after=1790199711.0666065

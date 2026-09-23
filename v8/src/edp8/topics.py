@@ -228,9 +228,14 @@ def doc_for(board: Board, topic_id: str, doc_id: str) -> Any:
 
 
 def seat_view(board: Board, topic_id: str) -> dict[str, Any]:
+    """The seat's latest session state (alive|parked|dead|stalled, mirrored from the pool); before the pool
+    reports a session: queued (pairing pending), spawned (the pool took it) or not spawned."""
     pid = seat_id(topic_id)
-    return {"participant": pid, "state": board.seat_state(pid) or ("queued" if pid in board._pending_pairings
-                                                                    else "not spawned")}
+    state = board.seat_state(pid)
+    if state is None:
+        state = ("queued" if pid in board._pending_pairings
+                 else "spawned" if board.store.get("participant", pid) is not None else "not spawned")
+    return {"participant": pid, "state": state}
 
 
 def fetches(board: Board, topic_id: str, n: int = 10) -> list[dict[str, Any]]:

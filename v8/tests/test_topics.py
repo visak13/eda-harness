@@ -244,9 +244,12 @@ def test_topic_is_its_own_record_listed_in_the_library(client, board):
 
 def test_seat_spawned_through_the_pairing_queue(client, board, pool, tokens):
     t = _topic(client)["topic"]
+    assert client.get(f"/v1/topics/{t['id']}", headers=OWNER).json()["value"]["seat"]["state"] == "queued"
     assert board.run_pending_pairings()["spawned"] == [f"sme.{t['id']}"]
     role, pid, env = pool.spawned[-1]
     assert role == "sme" and pid == f"sme.{t['id']}" and env and env["EDP8_TOKEN"]
+    # before the pool mirrors a session the page says spawned, never "not spawned"
+    assert client.get(f"/v1/topics/{t['id']}", headers=OWNER).json()["value"]["seat"]["state"] == "spawned"
 
 
 def test_tags_one_list_last_write_wins_with_who(client, board, tokens):
