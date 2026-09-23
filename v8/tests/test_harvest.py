@@ -134,3 +134,70 @@ def test_qa_harvest_records_approve_carries_the_new_version_reject_leaves_it(cli
     r = client.post(f"/v1/docs/{bad['id']}/reject", headers=OWNER).json()["value"]["doc"]
     assert r["status"] == "retired" and r["resolution"] == "rejected"
     assert _enforced(client, rig["stories"][1]) == [new_bar]
+
+
+# ----------------------------------------------------------------------------- scripts/harvest_cost.py
+def _cost():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("harvest_cost", V8 / "scripts" / "harvest_cost.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _asst(ts, mid, usage=None, tools=()):
+    content = [{"type": "tool_use", "name": n, "input": i} for n, i in tools] or [{"type": "text", "text": "x"}]
+    return {"type": "assistant", "timestamp": ts, "message": {"id": mid, "content": content,
+                                                              "usage": usage or {"input_tokens": 1, "output_tokens": 1}}}
+
+
+def test_harvest_cost_claude_window_counts_each_api_call_once():
+    hc = _cost()
+    u = {"input_tokens": 10, "cache_creation_input_tokens": 100, "cache_read_input_tokens": 1000, "output_tokens": 5}
+    rows = [_asst("2026-09-24T10:00:00Z", "m0", tools=[("mcp__edp8__criterion_update", {})]),  # verdicts: before
+            _asst("2026-09-24T10:01:00Z", "m1", u, [("Skill", {"skill": "harvest"})]),
+            _asst("2026-09-24T10:02:00Z", "m2", u, [("mcp__edp8__record_lesson", {})]),
+            _asst("2026-09-24T10:02:00Z", "m2", u, [("mcp__edp8__doc_create", {"status": "proposed"})]),  # same call
+            _asst("2026-09-24T10:03:00Z", "m3", u, [("mcp__edp8__close_self", {})]),
+            _asst("2026-09-24T10:09:00Z", "m4", u)]  # after close: not counted
+    start, end = hc.claude_window(rows)
+    assert (hc._iso(start), hc._iso(end)) == ("2026-09-24T10:01:00Z", "2026-09-24T10:03:00Z")
+    assert hc.claude_tokens(rows, start, end) == {"calls": 3, "input_tokens": 30, "cache_creation_input_tokens": 300,
+                                                  "cache_read_input_tokens": 3000, "output_tokens": 15}
+
+
+def test_harvest_cost_codex_window_is_a_total_delta_and_ignores_the_boot_skill_catalog():
+    hc = _cost()
+
+    def usage(ts, inp, out):
+        return {"ts": ts, "msg": {"method": "thread/tokenUsage/updated", "params": {"tokenUsage": {"total": {
+            "inputTokens": inp, "cachedInputTokens": 0, "outputTokens": out, "reasoningOutputTokens": 0,
+            "totalTokens": inp + out}}}}}
+
+    def item(ts, **it):
+        return {"ts": ts, "msg": {"method": "item/started", "params": {"item": it}}}
+
+    rows = [{"ts": 1, "msg": {"id": 3, "result": {"skills": [{"path": r"C:\v8\.claude\skills\harvest\SKILL.md"}]}}},
+            usage(5, 1000, 50),
+            item(10, type="commandExecution", command="Get-Content .claude/skills/harvest/SKILL.md"),
+            item(11, type="mcpToolCall", tool="record_lesson", arguments={}),
+            usage(12, 1600, 90),
+            item(13, type="mcpToolCall", tool="close_self", arguments={}),
+            usage(20, 9000, 900)]
+    start, end = hc.codex_window(rows)
+    assert (start, end) == (10, 13)
+    t = hc.codex_tokens(rows, start, end)
+    assert (t["inputTokens"], t["outputTokens"], t["calls"]) == (600, 40, 1)
+
+
+def test_harvest_cost_splits_records_by_author():
+    hc = _cost()
+    view = {"lessons": [{"id": "les-1", "created_by": "qa.e", "created_at": "2026-09-24T10:02:00+00:00"},
+                        {"id": "les-2", "created_by": "board", "created_at": "2026-09-24T10:02:30+00:00"},
+                        {"id": "les-0", "created_by": "eng", "created_at": "2026-09-23T10:00:00+00:00"}],
+            "docs": [{"id": "d-1", "status": "proposed", "proposes": "s-1", "source": {}, "created_by": "qa.e",
+                      "created_at": "2026-09-24T10:02:10+00:00"},
+                     {"id": "d-2", "status": "active", "source": None, "created_by": "owner",
+                      "created_at": "2026-09-24T10:02:20+00:00"}]}
+    recs = hc.records_in_window(view, hc._ts("2026-09-24T10:00:00Z"), hc._ts("2026-09-24T10:03:00Z"))
+    assert sorted((r["id"], r["created_by"]) for r in recs) == [("d-1", "qa.e"), ("les-1", "qa.e"), ("les-2", "board")]
