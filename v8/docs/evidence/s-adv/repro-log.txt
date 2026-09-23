@@ -1,0 +1,18 @@
+private board pid=11560 http://127.0.0.1:64203 fake pool http://127.0.0.1:64202 home=C:\Users\aksou\AppData\Local\Temp\adv-repro-aajkw4cz
+seeded X=epic-16b5e652d9 (architect A) Y=epic-53869fa971 (architect A2) S=s-d11a117fd2 (engineer E)
+   participant new-owner read: {"ok": true, "value": {"id": "new-owner", "created_at": "2026-09-23T20:15:06.514541Z", "created_by": "registry", "type": "agent", "role": "owner", "handle": "new-owner", "location": null, "model": nul
+REPRO     1 architect mints an owner via /v1/sessions/spawn: spawn ok=True error='' participant new-owner role=owner
+REPRO     4 architect spawns engineer.<other epic> by naming its own ticket: spawn ok=True pool got handles=['engineer.epic-53869fa971'] error=''
+REPRO     3a PATCH assignee=qa/adversary accepted: engineer→Q ok=True engineer→D ok=True owner→Q ok=True assignee now=Q
+REPRO     3b MCP spawn(role=adversary, ticket_id=<unassigned story>) assigns the adversary: mcp ok=True assignee=D pool=1 spawn(s)
+NOT-REPRO 3c MCP spawn(role=qa) on a story with an assignee keeps the doer: mcp ok=True assignee=E
+REPRO     2 MCP spawn tool as an engineer reaches the pool: tool ok=True error='' pool spawns=1
+   (REST spawn as engineer: ok=False status=None "role 'engineer' may not operate the pool control plane")
+REPRO     5 architect A sets model tags on epic Y (architect A2's): patch ok=True Y.tags=['model:engineer=gpt-6-sol']
+REPRO     10 unknown model id in model:<role>= reaches the pool: spawn ok=True pool model=['codex/gpt-does-not-exist'] seat_choice={'model': 'gpt-does-not-exist', 'effort': None, 'note': None}
+REPRO     8 one pain id filed twice makes two lessons: lessons=2 evidence=[['p-one'], ['p-one']]
+REPRO     6 harvest_cost.codex_tokens goes negative across threads: inputTokens=-9900 totalTokens=-9900
+REPRO     9 harvest_cost --log <missing> tracebacks: rc=1 stderr_tail="\x1b[1;35mFileNotFoundError\x1b[0m: \x1b[35m[Errno 2] No such file or directory: '__missing_review_log__.json"
+REPRO     7 http_get 10 s total deadline is checked only after a blocking read: ReadTimeout: https://raw.githubusercontent.com/x/y/main/SKILL.md took longer than 10 s at t=18.0 ::   File "C:\Projects\Learning\eda-base3\v8\src\edp8\library.py", line 108, in http_get
+RESULT: 11/12 findings reproduced
+stopped private board pid=11560
