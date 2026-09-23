@@ -6,7 +6,7 @@ import { http, HttpResponse } from "msw";
 import type { FeedEvent } from "../live/feed";
 import { server } from "../test/setup";
 import { DraftGuardProvider } from "../live/useDraftGuard";
-import { DecisionsPage } from "./Decisions";
+import { DecisionsPage, EPIC_OPTION_CHARS, optionLabel } from "./Decisions";
 
 // Control the feed so the draft-guard integration test can fire an event deterministically.
 let fire: ((e: FeedEvent) => void) | null = null;
@@ -434,5 +434,16 @@ describe("S-UI: Decisions defaults to one epic, Needs you first (c-ef986a3491)",
     setBoard(fixtures);
     mountAt("/me");
     await waitFor(() => expect(within(screen.getByTestId("needs-you")).getAllByTestId("needs-you-ask").map((r) => r.getAttribute("data-ask"))).toEqual(["m-2"]));
+  });
+});
+
+describe("epic filter option labels (owner m-da56b879e4)", () => {
+  it("a sentence-long epic title is cut to EPIC_OPTION_CHARS with an ellipsis; a short one is untouched", () => {
+    const long = "Use the codex bridge to interact with Sol and coordinate with it on planning and more words";
+    const label = optionLabel(long);
+    expect(label.length).toBe(EPIC_OPTION_CHARS);
+    expect(label.endsWith("…")).toBe(true);
+    expect(long.startsWith(label.slice(0, -1))).toBe(true);
+    expect(optionLabel("Space game")).toBe("Space game");
   });
 });

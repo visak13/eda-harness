@@ -86,7 +86,7 @@ export function DecisionsPage(): React.JSX.Element {
   const counts = { signoffs: signoffs.length, questions: liveQuestions.length, gates: gates.length };
   const epicOptions = useMemo(() => {
     const rows = (epics.data ?? []).filter((e) => !["done", "dropped", "partial"].includes(e.status) || e.id === epicFilter);
-    return rows.map((e) => ({ id: e.id, title: e.title }));
+    return rows.map((e) => ({ id: e.id, title: optionLabel(e.title) }));
   }, [epics.data, epicFilter]);
 
   // A ticket-id → title map so the questions queue can name a ticket in the owner's words
@@ -120,7 +120,7 @@ export function DecisionsPage(): React.JSX.Element {
             <select className={ui.select} value={epicFilter} onChange={(e) => chooseEpic(e.target.value)} data-testid="decisions-epic-filter">
               <option value={ALL}>All epics</option>
               {epicFilter !== ALL && !epicOptions.some((e) => e.id === epicFilter)
-                ? <option value={epicFilter}>{titleFor(epicFilter)}</option> : null}
+                ? <option value={epicFilter}>{optionLabel(titleFor(epicFilter))}</option> : null}
               {epicOptions.map((e) => <option key={e.id} value={e.id}>{e.title}</option>)}
             </select>
           </label>
@@ -678,6 +678,15 @@ function EpicPulse({ epics }: { epics: EpicSummaryRow[] }): React.JSX.Element {
 }
 
 // ------------------------------------------------------------------ Needs you (S-UI)
+/** An epic's words can run to a sentence; a native <select> popup takes the longest option's width,
+ *  so a long title made the epic-filter popup page-wide with its text clipped (owner m-da56b879e4).
+ *  The option shows the first EPIC_OPTION_CHARS characters; the full title stays on the epic page. */
+export const EPIC_OPTION_CHARS = 60;
+export function optionLabel(title: string): string {
+  const t = title.trim();
+  return t.length > EPIC_OPTION_CHARS ? `${t.slice(0, EPIC_OPTION_CHARS - 1).trimEnd()}…` : t;
+}
+
 const ALL = "all";
 
 function threadLink(ticketId: string, epicId: string | null | undefined, messageId?: string): string {
