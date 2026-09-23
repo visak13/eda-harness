@@ -206,7 +206,9 @@ def test_timing_is_compared_not_projected_away():
     early = copy.deepcopy(codex)
     cc = next(e for e in early if e["kind"] == "tool_use" and e["tool"] == "CronCreate")
     fire = next(e for e in early if e["kind"] == "cron_fire")
-    cc["ts"] = fire["ts"] - 1  # the one-shot "* * * * *" fired one second after its creation: before its slot
+    # created 1 ms before its fire: the "* * * * *" slot is then the NEXT minute, so the fire is early
+    # (a whole second back can straddle the real slot when the fire landed <1 s after it, as in r6)
+    cc["ts"] = fire["ts"] - 0.001
     assert any("TIMING harness cron_fire" in d for d in po.diff(claude, early))
     shuffled = copy.deepcopy(codex)
     shuffled[-1]["ts"] -= 3600
