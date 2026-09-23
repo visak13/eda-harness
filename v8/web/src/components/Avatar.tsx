@@ -1,5 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { authHeaders, identity } from "../auth/identity";
+import { Icon } from "./Icon";
+import { modelProvider, PROVIDER_ICONS, ROLE_ICONS, seatRole } from "./iconPaths";
 import styles from "./Avatar.module.css";
 
 // Authenticated identity SVGs share owned object URLs. Saving bumps only the current person's
@@ -69,7 +71,31 @@ function useAvatarImage(id: string, size: number, v: number): string | undefined
   return image?.key === key ? image.url : undefined;
 }
 
+/** S-UI (owner m-ec5a9b86c5): an AGENT seat (`<role>.<ticket>` or a bare role) shows its role glyph
+ *  instead of the generic generated avatar; a person keeps their picture. */
 export function Avatar({ id, size = 24, className }: { id: string; size?: number; className?: string }): React.JSX.Element {
+  const role = seatRole(id);
+  if (role) return <RoleAvatar id={id} role={role} size={size} className={className} />;
+  return <PictureAvatar id={id} size={size} className={className} />;
+}
+
+function RoleAvatar({ id, role, size, className }: { id: string; role: keyof typeof ROLE_ICONS; size: number; className?: string }): React.JSX.Element {
+  const glyph = size >= 28 ? 18 : 16;
+  return (
+    <span className={`${styles.avatar} ${styles.role} ${styles[role] ?? ""} ${className ?? ""}`} style={{ width: size, height: size }}
+      aria-hidden="true" data-testid="avatar" data-avatar-for={id} data-role-icon={role}>
+      <Icon name={ROLE_ICONS[role]} size={glyph} />
+    </span>
+  );
+}
+
+/** The provider glyph (Claude / GPT) beside a model name; nothing for an unknown provider. */
+export function ProviderIcon({ model, size = 16 }: { model: string | null | undefined; size?: 16 | 18 }): React.JSX.Element | null {
+  const p = modelProvider(model);
+  return p ? <span className={styles.provider} data-provider-icon={p} title={p === "gpt" ? "GPT (codex seat)" : "Claude"}><Icon name={PROVIDER_ICONS[p]} size={size} /></span> : null;
+}
+
+function PictureAvatar({ id, size, className }: { id: string; size: number; className?: string }): React.JSX.Element {
   useAvatarVersion();
   const v = participantVersions.get(id) ?? 0;
   const src = useAvatarImage(id, size, v);

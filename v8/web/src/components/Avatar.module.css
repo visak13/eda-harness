@@ -4,3 +4,18 @@
   background: var(--panel);
   vertical-align: middle;
 }
+/* S-UI: an agent seat shows its role glyph on the role's tint (the generated avatars' palette). */
+.role {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  color: #fff;
+  background: #5865f2;
+}
+.architect { background: #5865f2; }
+.engineer { background: #2e9c64; }
+.qa { background: #168aad; }
+.adversary { background: #c84455; }
+.sme { background: #7c3aed; }
+.provider { display: inline-flex; align-items: center; color: var(--muted); margin-right: 4px; vertical-align: middle; }

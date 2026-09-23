@@ -46,7 +46,14 @@ export const ICON_PATHS = {
   "status-blocked": "M8 2h8l6 6v8l-6 6H8l-6-6V8ZM7 12h10",
   "status-done": "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20ZM7 12l3 3 7-7",
   "status-partial": "m3 6 2 2 4-4M12 6h9M3 14h6v6H3ZM12 17h9",
-  "status-dropped": "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20ZM5 19 19 5"
+  "status-dropped": "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20ZM5 19 19 5",
+  "role-architect": "M12 2v3M10 7a2 2 0 1 0 4 0 2 2 0 0 0-4 0M11 9 5 21M13 9l6 12M7 16h10",
+  "role-engineer": "M15 3a5 5 0 0 0-5 6l-7 7a2 2 0 0 0 3 3l7-7a5 5 0 0 0 6-5l-3 3-3-1-1-3Z",
+  "role-qa": "M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM15 15l6 6M7 10l2 2 4-4",
+  "role-adversary": "M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16ZM12 1v6M12 17v6M1 12h6M17 12h6",
+  "role-sme": "M2 9l10-5 10 5-10 5ZM6 11v5q6 4 12 0v-5M22 9v6",
+  "provider-claude": "M12 3v18M4 7.5l16 9M4 16.5l16-9",
+  "provider-gpt": "M12 2l9 5v10l-9 5-9-5V7ZM12 7l4 2.5v5L12 17l-4-2.5v-5Z"
 } as const;
 export type IconName = keyof typeof ICON_PATHS;
 export const STATUS_ICONS = {
@@ -73,3 +80,25 @@ export const STATUS_LABELS = {
   "partial": "Partial",
   "dropped": "Dropped"
 } as const;
+/** S-UI (owner m-ec5a9b86c5): one glyph per seat role and per model provider, same stroke family. */
+export const ROLE_ICONS = {
+  "architect": "role-architect",
+  "engineer": "role-engineer",
+  "qa": "role-qa",
+  "adversary": "role-adversary",
+  "sme": "role-sme"
+} as const satisfies Record<string, IconName>;
+export type SeatRole = keyof typeof ROLE_ICONS;
+/** The role of an AGENT seat id (`engineer.s-…`, `architect.epic-…`, or a bare role); null for a person. */
+export function seatRole(id: string | null | undefined): SeatRole | null {
+  const head = (id ?? "").split(".")[0];
+  return Object.prototype.hasOwnProperty.call(ROLE_ICONS, head) ? head as SeatRole : null;
+}
+export const PROVIDER_ICONS = { "claude": "provider-claude", "gpt": "provider-gpt" } as const satisfies Record<string, IconName>;
+/** The provider of a model id: GPT (`gpt-…`, `codex/…`, `openai…`) or Claude (`claude-…`, the `claude` seat). */
+export function modelProvider(model: string | null | undefined): keyof typeof PROVIDER_ICONS | null {
+  const m = (model ?? "").toLowerCase();
+  if (m.startsWith("gpt-") || m.startsWith("codex/") || m.startsWith("openai")) return "gpt";
+  if (m.startsWith("claude")) return "claude";
+  return null;
+}

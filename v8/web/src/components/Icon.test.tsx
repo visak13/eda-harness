@@ -1,10 +1,11 @@
 import { it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { Icon } from "./Icon";
-import { ICON_PATHS, STATUS_ICONS, type IconName } from "./iconPaths";
+import { ICON_PATHS, PROVIDER_ICONS, ROLE_ICONS, STATUS_ICONS, modelProvider, seatRole, type IconName } from "./iconPaths";
+import { Avatar, ProviderIcon } from "./Avatar";
 import { StatusChip } from "./StatusChip";
-it("all 46 approved glyphs use named currentColor paths, no generic fallback", () => {
-  expect(Object.keys(ICON_PATHS)).toHaveLength(46);
+it("all 53 approved glyphs use named currentColor paths, no generic fallback", () => {
+  expect(Object.keys(ICON_PATHS)).toHaveLength(53);
   const { container } = render(<>{(Object.keys(ICON_PATHS) as IconName[]).map((name) => <Icon key={name} name={name} />)}</>);
   for (const svg of container.querySelectorAll("svg")) {
     expect(svg).toHaveAttribute("stroke", "currentColor"); expect(svg).toHaveAttribute("aria-hidden", "true");
@@ -16,4 +17,27 @@ it("every known status has shape plus literal glossary word, unknown never becom
   expect(container.querySelectorAll("svg")).toHaveLength(10);
   for (const chip of screen.getAllByTestId("status-chip")) expect(chip.textContent?.length).toBeGreaterThan(0);
   expect(container.querySelector('[data-status="future_state"] svg')).toBeNull();
+});
+it("S-UI: one glyph per seat role and per provider, resolved from seat ids and model ids", () => {
+  expect(Object.values(ROLE_ICONS)).toEqual(["role-architect", "role-engineer", "role-qa", "role-adversary", "role-sme"]);
+  expect(Object.values(PROVIDER_ICONS)).toEqual(["provider-claude", "provider-gpt"]);
+  const names = [...Object.values(ROLE_ICONS), ...Object.values(PROVIDER_ICONS)];
+  const { container } = render(<>{names.map((n) => <Icon key={n} name={n} />)}</>);
+  for (const n of names) expect(container.querySelector(`svg[data-icon="${n}"] path`)?.getAttribute("d")).toBe(ICON_PATHS[n]);
+  expect(seatRole("engineer.s-32ddc49d96")).toBe("engineer");
+  expect(seatRole("architect.epic-6a8a6020fd")).toBe("architect");
+  expect(seatRole("qa")).toBe("qa");
+  expect(seatRole("owner")).toBeNull();
+  expect(seatRole("constructor")).toBeNull();
+  expect(modelProvider("gpt-6-astra")).toBe("gpt");
+  expect(modelProvider("codex/gpt-6-sol")).toBe("gpt");
+  expect(modelProvider("claude-opus-5-5")).toBe("claude");
+  expect(modelProvider("")).toBeNull();
+});
+it("S-UI: an agent seat's avatar is its role glyph (no fetch); a person keeps the picture", () => {
+  const { container } = render(<><Avatar id="engineer.s-1" /><Avatar id="adversary.epic-2" size={28} /><ProviderIcon model="gpt-6-astra" /><ProviderIcon model="claude-fable-5-1" /><ProviderIcon model="mystery" /></>);
+  expect(container.querySelector('[data-avatar-for="engineer.s-1"] svg[data-icon="role-engineer"]')).not.toBeNull();
+  expect(container.querySelector('[data-avatar-for="adversary.epic-2"]')).toHaveAttribute("data-role-icon", "adversary");
+  expect(container.querySelector("img")).toBeNull();
+  expect([...container.querySelectorAll("[data-provider-icon]")].map((e) => e.getAttribute("data-provider-icon"))).toEqual(["gpt", "claude"]);
 });
