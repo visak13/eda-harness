@@ -326,7 +326,7 @@ class Drill:
         runner = self.procs["seat"]
         before = _descendants(runner.pid)
         self.step("resume_kill", pid=runner.pid, thread=tid, mode="runner pid only (TerminateProcess, no /T)",
-                  descendants=before)
+                  descendants=[f"{p['pid']} {p['name']}" for p in before])
         runner.kill()  # the crash mode: the job object, not a tree kill, must take the children
         runner.wait(15)
         t_kill = time.time()
@@ -337,9 +337,10 @@ class Drill:
         orphans_ok = bool(before) and not alive
         self.log["result"]["orphans"] = {"passed": orphans_ok, "runner_pid": runner.pid, "descendants_before": before,
                                          "alive_after_30s": alive, "gone_after_s": round(time.time() - t_kill, 1)}
-        self.step("orphan_check", passed=orphans_ok, descendants=len(before), alive=alive)
-        for pid in alive:  # never leave them behind, whatever the verdict
-            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
+        self.step("orphan_check", passed=orphans_ok, descendants=len(before),
+                  alive=[f"{p['pid']} {p['name']} {p['cmd'][:100]}" for p in alive])
+        for p in _alive(alive):  # never leave them behind, whatever the verdict (identity re-checked, no /T)
+            subprocess.run(["taskkill", "/PID", str(p["pid"]), "/F"], capture_output=True)
         seq = self.last_seq()
         t0 = time.time()
         self.live_seat = "seat-resume"
@@ -358,29 +359,42 @@ class Drill:
         return passed
 
 
-def _descendants(root: int) -> list[int]:
-    """Every live descendant pid of `root` (Win32_Process parent links), read before the kill."""
+def _procs() -> dict[int, dict]:
+    """pid → {ppid, created (FILETIME ticks), name, cmd} for every live process."""
     out = subprocess.run(["powershell", "-NoProfile", "-Command",
-                          "Get-CimInstance Win32_Process | % { '{0} {1}' -f $_.ProcessId,$_.ParentProcessId }"],
-                         capture_output=True, text=True, timeout=60).stdout
-    kids: dict[int, list[int]] = {}
+                          "Get-CimInstance Win32_Process | % { '{0}|{1}|{2}|{3}|{4}' -f $_.ProcessId,$_.ParentProcessId,"
+                          "$_.CreationDate.ToFileTimeUtc(),$_.Name,(($_.CommandLine -replace '[|\\r\\n]',' '))}"],
+                         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60).stdout
+    rows: dict[int, dict] = {}
     for line in out.split("\n"):
-        a = line.split()
-        if len(a) == 2 and a[0].isdigit() and a[1].isdigit():
-            kids.setdefault(int(a[1]), []).append(int(a[0]))
-    seen, todo = [], [root]
+        a = line.rstrip("\r").split("|", 4)
+        if len(a) == 5 and a[0].isdigit() and a[1].isdigit() and a[2].isdigit():
+            rows[int(a[0])] = {"ppid": int(a[1]), "created": int(a[2]), "name": a[3], "cmd": a[4][:160]}
+    return rows
+
+
+def _descendants(root: int) -> list[dict]:
+    """Every live descendant of `root`, read before the kill. Windows keeps a dead parent's pid in
+    ParentProcessId and reuses pids, so a child counts only when it was created AFTER its parent (the
+    stale-ppid guard); identity is (pid, creation time), never the pid alone."""
+    rows = _procs()
+    if root not in rows:
+        return []
+    seen: list[dict] = []
+    todo = [root]
     while todo:
-        for c in kids.get(todo.pop(), []):
-            if c not in seen and c != root:
-                seen.append(c)
+        par = todo.pop()
+        for c, r in rows.items():
+            if r["ppid"] == par and c != root and r["created"] >= rows[par]["created"] and all(x["pid"] != c for x in seen):
+                seen.append({"pid": c, **r})
                 todo.append(c)
     return seen
 
 
-def _alive(pids: list[int]) -> list[int]:
-    out = subprocess.run(["powershell", "-NoProfile", "-Command", "Get-Process -Id " + ",".join(map(str, pids))
-                          + " -ErrorAction SilentlyContinue | % { $_.Id }"], capture_output=True, text=True, timeout=60).stdout
-    return [int(x) for x in out.split() if x.strip().isdigit()]
+def _alive(procs: list[dict]) -> list[dict]:
+    """The members of `procs` still running: same pid AND same creation time (a reused pid is not alive)."""
+    rows = _procs()
+    return [p for p in procs if p["pid"] in rows and rows[p["pid"]]["created"] == p["created"]]
 
 
 def _subsequence(want: list[str], got: list[str]) -> bool:
