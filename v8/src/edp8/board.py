@@ -21,7 +21,7 @@ from collections.abc import Iterable, Iterator
 from datetime import datetime
 from typing import Any
 
-from . import knowledge, seat_choice
+from . import knowledge, records, seat_choice
 from .schemas import (
     CRITERION_AUTHORS,
     CRITERION_CHECKERS,
@@ -100,6 +100,7 @@ CRITERIA_CAP = 6  # criteria written fresh on a story (a folded story carries wh
 # `quick`, usually with no epic parent. Its words are the design (it starts `ready`, no design_ref), its
 # engineer writes the criteria, and the owner checks them from Needs you — no architect, no qa seat.
 QUICK_TAG = "quick"
+RECALL_TICKETS = 3  # context() without a ticket_id carries recall for at most this many tickets (S-IMPLICIT)
 
 
 def is_quick(t: Ticket) -> bool:
@@ -283,6 +284,8 @@ class Board:
         self._emit(t.id, EventKind.ticket_created, {"kind": kind, "parent_id": parent_id, "by": actor.id})
         if assignee:
             self._emit(t.id, EventKind.assigned, {"assignee": assignee})
+        if quick:  # S-IMPLICIT: a quick task gets its tagged Library docs like a signed-off epic
+            records.safely(self.autolink_library, t.id, trigger="quick task")
         return t
 
     def ticket(self, id_: str) -> Ticket:
@@ -839,6 +842,11 @@ class Board:
             return False
         return True
 
+    def autolink_library(self, ticket_id: str, *, trigger: str) -> list[dict[str, Any]]:
+        """S-IMPLICIT: link the Library docs whose tags match this epic/quick task (library.autolink)."""
+        from .library import autolink  # local: library imports board
+        return autolink(self, ticket_id, trigger=trigger)
+
     def _pairing_note(self, ticket_id: str, text: str) -> None:
         """Post one board-authored thread note (the queued-pairing notice)."""
         m = Message(id=new_id("m"), ticket_id=ticket_id, to=None, kind=MessageKind.note, text=text,
@@ -927,7 +935,10 @@ class Board:
 
     def criterion_update(self, actor: Participant, id_: str, *, evidence_ref: str | None = None,
                          verdict: Verdict | None = None, text: str | None = None,
-                         evidence_version: int | None = None, stale_ok: bool = False) -> Criterion:
+                         evidence_version: int | None = None, stale_ok: bool = False,
+                         note: str = "") -> Criterion:
+        """`note`: the checker's one-line reason with a verdict; the board records it as a claim
+        (S-IMPLICIT, records.claim_from_verdict) — no seat calls record_claim for it."""
         c: Criterion = self._get("criterion", id_, "criterion")
         t = self.ticket(c.ticket_id)
         if text is not None:
@@ -1002,6 +1013,8 @@ class Board:
         else:
             self._emit(t.id, EventKind.doc_updated,
                        {"criterion": c.id, "verdict": c.verdict, "pending": pending, "by": actor.id})
+        if verdict is not None and note.strip():
+            records.safely(records.claim_from_verdict, self, actor, c, note)
         self._reopen_quick_on_fail(self.ticket(t.id), c, actor)
         self._auto_advance(self.ticket(t.id))
         return c
@@ -1474,6 +1487,8 @@ class Board:
                                                   **({"artifacts": m.artifacts} if m.artifacts else {}),
                                                   **({"asked": asked, "note": note} if note else {})})
         self.last_send_note = note
+        if kind == MessageKind.answer and reply_to:  # S-IMPLICIT: an accepted deviation is a decision
+            records.safely(records.decision_from_deviation, self, actor, m)
         if t.status in (TicketStatus.ready, TicketStatus.in_progress):
             # a new fact on the thread (typically the consult result note) re-evaluates a held advance
             self._auto_advance(self.ticket(t.id))
@@ -1574,7 +1589,12 @@ class Board:
     def gate_answer(self, actor: Participant, ticket_id: str, gate: Gate, answer: str) -> Event:
         """Legacy acceptance-only path; negative feedback must use typed review decisions."""
         with self._lock, self.store.transaction():
-            return self._gate_answer_locked(actor, ticket_id, gate, answer)
+            ev = self._gate_answer_locked(actor, ticket_id, gate, answer)
+        # S-IMPLICIT: the answered gate is a decision; a signed-off design pulls in its tagged Library docs
+        records.safely(records.decision_from_gate, self, actor, ticket_id, gate, answer, ev.data.get("message"))
+        if gate == Gate.design_signoff:
+            records.safely(self.autolink_library, ticket_id, trigger="design_signoff")
+        return ev
 
     def _gate_answer_locked(self, actor: Participant, ticket_id: str, gate: Gate, answer: str) -> Event:
         if actor.role not in HUMAN_GATE_ANSWERERS:
@@ -1602,8 +1622,9 @@ class Board:
             if offence:
                 raise BoardError("transition", offence,
                                  "fix the named criterion or link, then answer the gate again")
-        self.message_send(actor, ticket_id=ticket_id, to=None, kind=MessageKind.answer, text=f"[{gate}] {answer}")
-        ev = self._emit(ticket_id, EventKind.gate_answered, {"gate": gate, "answer": answer, "by": actor.id})
+        am = self.message_send(actor, ticket_id=ticket_id, to=None, kind=MessageKind.answer, text=f"[{gate}] {answer}")
+        ev = self._emit(ticket_id, EventKind.gate_answered, {"gate": gate, "answer": answer, "by": actor.id,
+                                                             "message": am.id})
         if gate == Gate.design_signoff:
             # c-c80f7cd8f0: the human's word IS the acceptance (a rejection is a steer, not a gate
             # answer — the lint above already refused a non-go), so the board carries the epic to
@@ -1714,6 +1735,8 @@ class Board:
         return self._context_reader_instance
 
     def context(self, p: Participant, ticket_id: str | None = None) -> dict[str, Any]:
+        # S-IMPLICIT: newly filed pains become lessons before the read (mtime-gated: a no-op when unchanged)
+        records.safely(records.lessons_from_pains, self)
         # Store lock holds the snapshot and its watermark at one read boundary.
         with self._lock, self.store._lock:
             out = self._context_snapshot(p, ticket_id)
@@ -1733,6 +1756,9 @@ class Board:
         for t in tickets:
             view = self.ticket_view(t.id)
             strategy_links = view.get("strategy_links", False)
+            if ticket_id or len(tickets) <= RECALL_TICKETS:
+                # S-IMPLICIT: recall hits ride along (records.recall: FTS + graph, capped, no model call)
+                view["recall"] = records.safely(records.recall, self.store, t.id) or {"items": []}
             out["tickets"].append(view)
             if strategy_links and not out["hint"]:
                 out["hint"] = (f"strategy/domain docs are linked: run assemble_ruleset(ticket_id={t.id!r}) "

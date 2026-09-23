@@ -230,7 +230,7 @@ def record_verdict(board: Board, actor: Participant, *, criterion_id: str, verdi
 
     v = Verdict(verdict)
     c = board.criterion_update(actor, criterion_id.strip(), verdict=v,
-                               evidence_version=evidence_version, stale_ok=stale_ok)
+                               evidence_version=evidence_version, stale_ok=stale_ok, note=note)
     msg_id = None
     if note.strip() and ticket_id and ticket_id.strip():
         tk = board.store.get("ticket", ticket_id.strip())

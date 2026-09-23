@@ -910,6 +910,7 @@ class CriterionUpdateArgs(BaseModel):
     evidence_version: int | None = Field(default=None,
         description='doc version signed; refused if below current')
     stale_ok: bool = Field(default=False, description='sign the version you read though the doc moved on')
+    note: str = Field(default="", description='why, with a verdict; the board records it as a claim')
 
 
 def _ticket_create(a: TicketCreateArgs) -> dict[str, Any]:
@@ -944,7 +945,7 @@ def _criterion_query(a: CriterionQueryArgs) -> dict[str, Any]:
 
 def _criterion_update(a: CriterionUpdateArgs) -> dict[str, Any]:
     return get_client().criterion_update(a.id, evidence_ref=a.evidence_ref, verdict=a.verdict, text=a.text,
-                                         evidence_version=a.evidence_version, stale_ok=a.stale_ok)
+                                         evidence_version=a.evidence_version, stale_ok=a.stale_ok, note=a.note)
 
 
 TICKET_TOOLS = [
@@ -1828,6 +1829,10 @@ def _assemble_ruleset(a: AssembleRulesetArgs) -> dict[str, Any]:
     if out.oversize:
         hint = f"OVERSIZE (~{out.approx_tokens} inlined tokens): the layering is a scoping defect — split it, don't truncate"
     value = out.model_dump(exclude_none=True)
+    if a.ticket_id:  # S-IMPLICIT: the brief carries the ticket's recall hits (board-side, no model call)
+        got = c.recall(a.ticket_id)
+        if got.get("ok"):
+            value["recall"] = got["value"]
     if skipped:
         value["skipped_layers"] = skipped
         hint += f"; NOTE: {len(skipped)} dangling layer(s) skipped: {skipped}"

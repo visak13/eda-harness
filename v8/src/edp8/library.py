@@ -199,3 +199,43 @@ def import_skill(board: Board, actor: Participant, url: str, *, scope: str = "gl
         d = board.doc_create(actor, doc_type=DocType.strategy_hl, title=title, body_md=doc_body, scope=scope,
                              tags=all_tags, source_url=key)
         return {"doc": d, "created": True, "fetched": fetched}
+
+
+# ----------------------------------------------------------------------------- auto-link (S-IMPLICIT)
+def plain_tags(tags: list[str] | None) -> set[str]:
+    """The tags that can match a Library doc: words only — `model:<role>=…`, `seat-model:…` and other
+    key:value / key=value tags configure seats, and `quick` marks the ticket kind, so none of them link."""
+    return {t for t in normalize_tags(tags) if ":" not in t and "=" not in t and t != "quick"}
+
+
+def autolink(board: Board, ticket_id: str, *, trigger: str) -> list[dict[str, Any]]:
+    """Link every ACTIVE strategy/domain doc whose tags intersect the ticket's (and its epic's) plain tags
+    — uses_domain for a domain doc, uses_strategy otherwise — and post one board note on the ticket naming
+    each doc and its link id so the architect or owner can unlink it (link_delete). Already-linked docs are
+    skipped. Returns [{doc, title, tags, link}] of the new links; no note when nothing was linked."""
+    from . import records  # local: records is the board-authored identity
+
+    t = board.ticket(ticket_id)
+    want = plain_tags([*(board.epic_of(t).tags or []), *(t.tags or [])])
+    if not want:
+        return []
+    have = {lk.to_id for rel in (Relation.uses_strategy, Relation.uses_domain)
+            for lk in board.store.query("link", {"from_id": t.id, "relation": rel}, limit=-1)}
+    out: list[dict[str, Any]] = []
+    for dtype in KNOWLEDGE_DOC_TYPES:
+        for d in board.store.query("doc", {"doc_type": dtype}, limit=-1):
+            if d.status != DocStatus.active or d.id in have:
+                continue
+            hit = sorted(want & set(d.tags or []))
+            if not hit:
+                continue
+            rel = Relation.uses_domain if dtype == DocType.domain.value else Relation.uses_strategy
+            lk = board.link_create(records.board_actor(), from_id=t.id, to_id=d.id, relation=rel)
+            out.append({"doc": d.id, "title": d.title, "tags": hit, "link": lk.id, "relation": rel.value})
+            have.add(d.id)
+    if out:
+        lines = "; ".join(f"{o['doc']} \"{o['title']}\" (tags {', '.join(o['tags'])}; {o['relation']} {o['link']})"
+                          for o in out)
+        board._pairing_note(t.id, f"Library auto-link at {trigger}: linked {len(out)} doc(s) by tag — {lines}. "
+                                  "Unlink one with link_delete(<link id>).")
+    return out

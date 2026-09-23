@@ -115,6 +115,7 @@ class CriterionPatch(BaseModel):
     text: str | None = None
     evidence_version: int | None = None  # the doc version this verdict signs off (design §14)
     stale_ok: bool = False  # rule an older doc version deliberately
+    note: str = ""  # the checker's reason with a verdict; the board records it as a claim (S-IMPLICIT)
 
 
 class DocIn(BaseModel):
@@ -694,7 +695,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     @app.patch("/v1/criteria/{id_}")
     def criterion_update(id_: str, b: CriterionPatch, a: Participant = Depends(actor)):
         c = board.criterion_update(a, id_, evidence_ref=b.evidence_ref, verdict=b.verdict, text=b.text,
-                                   evidence_version=b.evidence_version, stale_ok=b.stale_ok)
+                                   evidence_version=b.evidence_version, stale_ok=b.stale_ok, note=b.note)
         pending = [x.id for x in board.criteria(c.ticket_id) if x.verdict != Verdict.passed]
         return ok(_dump(c), f"{len(pending)} criteria not yet passed on {c.ticket_id}" if pending else
                   "all criteria passed; the ticket can be marked done by its checker")
@@ -950,6 +951,14 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         no graph). Shows what the dense seed leg votes for, which the fused lookup hides."""
         return ok(board.dense_diagnostic(a, scope=scope, question=question, k=k),
                   "dense-only cosine top-k, scope-limited to the epic's live records")
+
+    @app.get("/v1/recall")
+    def recall(ticket_id: str, a: Participant = Depends(actor)):
+        """S-IMPLICIT: the ticket's recall section (records.recall — FTS + graph, capped, no model call);
+        assemble_ruleset appends it to the brief."""
+        from . import records
+        board.ticket(ticket_id)  # 404 on an unknown ticket
+        return ok(records.recall(board.store, ticket_id), "decisions/claims/lessons for this ticket, capped")
 
     @app.get("/v1/lookup")
     def lookup(scope: str, question: str | None = None, id: str | None = None,

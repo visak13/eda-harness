@@ -142,10 +142,11 @@ class BoardClient:
 
     def criterion_update(self, id_: str, evidence_ref: str | None = None,
                          verdict: str | None = None, text: str | None = None,
-                         evidence_version: int | None = None, stale_ok: bool = False) -> dict[str, Any]:
+                         evidence_version: int | None = None, stale_ok: bool = False,
+                         note: str = "") -> dict[str, Any]:
         return self._request("PATCH", f"/v1/criteria/{id_}",
                              json={"evidence_ref": evidence_ref, "verdict": verdict, "text": text,
-                                   "evidence_version": evidence_version, "stale_ok": stale_ok})
+                                   "evidence_version": evidence_version, "stale_ok": stale_ok, "note": note})
 
     # ------------------------------------------------------------------ docs / links / artifacts
     def doc_create(self, doc_type: str, title: str, body_md: str, scope: str, tags: list[str] | None = None,
@@ -283,6 +284,9 @@ class BoardClient:
                path: str | None = None) -> dict[str, Any]:
         return self._request("GET", "/v1/lookup",
                              params={"scope": scope, "question": question, "id": id, "path": path})
+
+    def recall(self, ticket_id: str) -> dict[str, Any]:
+        return self._request("GET", "/v1/recall", params={"ticket_id": ticket_id})
 
     def dense_search(self, scope: str, question: str, k: int = 10) -> dict[str, Any]:
         return self._request("GET", "/v1/index/dense_search",
