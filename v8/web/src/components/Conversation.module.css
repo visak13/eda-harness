@@ -1,5 +1,8 @@
 /* Conversation canvas per revision3-clean-epic.png. */
-.conversation { display: flex; flex-direction: column; min-width: 0; padding-top: 16px; gap: 12px; }
+/* The conversation is the last block of the epic and story pages and its composer is pinned, so the
+   page's 40px bottom padding (.main) only showed as a blank band under the message box at the page end
+   (owner m-de07c37d0c): the block swallows all but 12px of it — the composer's own padding is the gap. */
+.conversation { display: flex; flex-direction: column; min-width: 0; padding-top: 16px; gap: 12px; margin-bottom: -28px; }
 .heading { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .heading h2 { font-size: 20px; margin: 0; }
 .heading span { font-size: 13px; color: var(--muted); }
@@ -61,7 +64,7 @@
   flex: none; display: inline-grid; place-items: center; min-width: 44px; height: 24px; padding: 0 10px;
   border: 1.5px solid var(--strongline); border-radius: 8px; background: var(--panel); color: var(--ink); cursor: pointer;
 }
-.composer[data-collapsed] { padding: 4px 0; margin-top: 0; }
+.composer[data-collapsed] { padding: 4px 0 8px; margin-top: 0; }
 .composerToggle:hover { background: var(--secondary); }
 .composerToggle:focus-visible, .composerCollapsedBar:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
 .composerCollapsedBar {

@@ -2,6 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { authHeaders, identity } from "../auth/identity";
 import { Icon } from "./Icon";
 import { modelProvider, PROVIDER_ICONS, ROLE_ICONS, seatRole } from "./iconPaths";
+import { agentAvatarSvg } from "./agentAvatars";
 import styles from "./Avatar.module.css";
 
 // Authenticated identity SVGs share owned object URLs. Saving bumps only the current person's
@@ -79,13 +80,14 @@ export function Avatar({ id, size = 24, className }: { id: string; size?: number
   return <PictureAvatar id={id} size={size} className={className} />;
 }
 
+/** Owner m-ff00fad1ec: an agent seat is an illustrated character in the people avatars' language (same
+ *  rounded square, torso and ink — see agentAvatars.ts), with one emblem naming its role. The stroke glyph
+ *  in ROLE_ICONS stays for pickers and the Models dialog. */
 function RoleAvatar({ id, role, size, className }: { id: string; role: keyof typeof ROLE_ICONS; size: number; className?: string }): React.JSX.Element {
-  const glyph = size >= 28 ? 18 : 16;
   return (
     <span className={`${styles.avatar} ${styles.role} ${styles[role] ?? ""} ${className ?? ""}`} style={{ width: size, height: size }}
-      aria-hidden="true" data-testid="avatar" data-avatar-for={id} data-role-icon={role}>
-      <Icon name={ROLE_ICONS[role]} size={glyph} />
-    </span>
+      aria-hidden="true" data-testid="avatar" data-avatar-for={id} data-role-icon={role}
+      dangerouslySetInnerHTML={{ __html: agentAvatarSvg(role, size) }} />
   );
 }
 

@@ -34,9 +34,14 @@ it("S-UI: one glyph per seat role and per provider, resolved from seat ids and m
   expect(modelProvider("claude-opus-5-5")).toBe("claude");
   expect(modelProvider("")).toBeNull();
 });
-it("S-UI: an agent seat's avatar is its role glyph (no fetch); a person keeps the picture", () => {
+it("S-UI / m-ff00fad1ec: an agent seat's avatar is its illustrated role character (no fetch); a person keeps the picture", () => {
   const { container } = render(<><Avatar id="engineer.s-1" /><Avatar id="adversary.epic-2" size={28} /><ProviderIcon model="gpt-6-astra" /><ProviderIcon model="claude-fable-5-1" /><ProviderIcon model="mystery" /></>);
-  expect(container.querySelector('[data-avatar-for="engineer.s-1"] svg[data-icon="role-engineer"]')).not.toBeNull();
+  const eng = container.querySelector('[data-avatar-for="engineer.s-1"] svg');
+  expect(eng).not.toBeNull();
+  expect(eng).toHaveAttribute("viewBox", "0 0 36 36"); // the people avatars' canvas
+  expect(eng?.innerHTML).toContain('d="M4 36c1-9 7-13 14-13s13 4 14 13"'); // the same torso as avatars.py
+  expect(eng?.innerHTML).toContain("#EABF3B"); // the engineer's hard hat
+  expect(container.querySelector('[data-avatar-for="adversary.epic-2"] svg')?.getAttribute("width")).toBe("28");
   expect(container.querySelector('[data-avatar-for="adversary.epic-2"]')).toHaveAttribute("data-role-icon", "adversary");
   expect(container.querySelector("img")).toBeNull();
   expect([...container.querySelectorAll("[data-provider-icon]")].map((e) => e.getAttribute("data-provider-icon"))).toEqual(["gpt", "claude"]);
