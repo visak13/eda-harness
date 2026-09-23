@@ -46,7 +46,9 @@ try {
       const toggle = page.getByTestId("composer-collapse");
       if ((await toggle.getAttribute("aria-expanded")) === "true") await toggle.click();
       await shot("epic-composer-min");
-      await toggle.click();
+      // after: minimized, the bar itself is the expand control (the tab is gone)
+      const bar = page.getByTestId("composer-collapsed-bar");
+      await ((await bar.count()) ? bar : toggle).click();
     });
 
     // Composer type dropdown (the label that wrapped).
