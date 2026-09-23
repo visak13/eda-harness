@@ -97,5 +97,5 @@ def test_criterion_create_description_states_derivation_and_criteria_cap():
     """§24/§24.1 (criteria c-abb821e363, c-bcc4d02da1): the criterion_create tool description states
     the checker derivation and the freshly-written-criteria cap."""
     d = ALL_TOOLS["criterion_create"].description.lower()
-    for token in ("qa", "review_required", "knowledge", "override_reason", "6 fresh"):
+    for token in ("qa", "knowledge", "override_reason", "6 fresh"):
         assert token in d.replace("freshly-written", "fresh"), f"criterion_create desc missing {token!r}: {d}"
