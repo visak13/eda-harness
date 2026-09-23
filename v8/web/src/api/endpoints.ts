@@ -30,6 +30,10 @@ import type {
   UploadedArtifact,
   ArtifactRecord,
   UserSettings,
+  ExpertAdded,
+  TopicPage,
+  TopicRow,
+  TopicSeat,
 } from "./types";
 
 function qs(params: Record<string, string | number | null | undefined>): string {
@@ -299,3 +303,22 @@ export const createQuickTask = (b: { title: string; words: string; model?: strin
     ...(b.model ? { model: b.model } : {}),
     ...(b.effort ? { effort: b.effort } : {}),
   });
+
+// ------------------------------------------------------------------ S-SME-SURFACE (s-698224fca8) Library topics
+// An expert's token reaches only the /v1/topics/{id}* reads and the thread post; everything else is the owner's.
+const topicPath = (id: string) => `/v1/topics/${encodeURIComponent(id)}`;
+export const getTopics = () => api<TopicRow[]>("/v1/topics");
+export const getTopicPage = (id: string) => api<TopicPage>(topicPath(id));
+export const getTopicDoc = (id: string, docId: string) =>
+  api<DocRecord>(`${topicPath(id)}/docs/${encodeURIComponent(docId)}`);
+export const openTopic = (b: { title: string; tags: string[]; seed_url?: string | null }) =>
+  postJson<{ topic: TicketRecord; seat: TopicSeat }>("/v1/topics", b);
+export const postTopicMessage = (id: string, b: { text: string; kind?: string; reply_to?: string | null }) =>
+  postJson<Record<string, unknown>>(`${topicPath(id)}/messages`, b);
+export const setTopicTags = (id: string, tags: string[]) =>
+  postJson<TicketRecord>(`${topicPath(id)}/tags`, { tags }, "PATCH");
+export const addTopicExpert = (id: string, b: { handle: string; name?: string }) =>
+  postJson<ExpertAdded>(`${topicPath(id)}/experts`, b);
+export const removeTopicExpert = (id: string, expertId: string) =>
+  apiEnvelope<{ removed: string }>(`${topicPath(id)}/experts/${encodeURIComponent(expertId)}`, { method: "DELETE" });
+export const closeTopic = (id: string) => postJson<TicketRecord>(`${topicPath(id)}/close`, {});

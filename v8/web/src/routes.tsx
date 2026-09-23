@@ -10,6 +10,7 @@ import {
   EpicPage,
   EpicsPage,
   LibraryPage,
+  TopicPage,
   NotFoundPage,
   SeatsPage,
   TicketPage,
@@ -40,6 +41,7 @@ export const appRoutes: RouteObject[] = [
       { path: "settings", element: <SettingsPage /> },
       { path: "library", element: <RedirectTo to="/library/knowledge" /> },
       { path: "library/:section", element: <LibraryPage /> },
+      { path: "library/topics/:id", element: <TopicPage /> },
       // Legacy paths keep their shape but redirect to Library (preserving ?as=).
       { path: "tickets", element: <RedirectTo to="/library/tickets" /> },
       { path: "activity", element: <RedirectTo to="/library/history" /> },

@@ -9,6 +9,7 @@ import ui from "../components/ui.module.css";
 import { ArtifactLink } from "../components/ArtifactLink";
 import styles from "./Library.module.css";
 import { KnowledgeSection } from "./Knowledge";
+import { TopicsSection } from "./Topics";
 
 // S-LIBRARY (design-34bf11cc07 §4.3): Knowledge (strategies, domains, lessons) is the first section and
 // the rail's Library item lands on it.
@@ -16,7 +17,7 @@ import { KnowledgeSection } from "./Knowledge";
 // History over one workspace. Tickets is the cross-epic table with the seven legacy filters bound
 // to the query string (parity test_tickets_page_filters); History is the day-grouped activity
 // replay (parity /ui/activity). The legacy /ui/tickets and /ui/activity paths redirect here.
-const SECTIONS = ["knowledge", "documents", "artifacts", "links", "tickets", "history"] as const;
+const SECTIONS = ["knowledge", "topics", "documents", "artifacts", "links", "tickets", "history"] as const;
 type Section = (typeof SECTIONS)[number];
 
 export function LibraryPage(): React.JSX.Element {
@@ -41,6 +42,7 @@ export function LibraryPage(): React.JSX.Element {
       </nav>
 
       {active === "knowledge" ? <KnowledgeSection /> : null}
+      {active === "topics" ? <TopicsSection /> : null}
       {active === "documents" ? <DocumentsSection /> : null}
       {active === "artifacts" ? <ArtifactsSection /> : null}
       {active === "links" ? <LinksSection /> : null}

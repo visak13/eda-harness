@@ -8,6 +8,7 @@ export { EpicPage } from "./Epic";
 export { TicketPage } from "./Ticket";
 export { DocPage } from "./Doc";
 export { LibraryPage } from "./Library";
+export { TopicPage } from "./TopicPage";
 export { ArtifactPage } from "./Artifact";
 
 // DecisionsPage is G2's, now landed (pages/Decisions.tsx).

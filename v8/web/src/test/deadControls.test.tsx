@@ -271,6 +271,19 @@ function installBoard(): void {
       new HttpResponse("hello", { headers: { "content-type": "text/plain", "content-disposition": 'attachment; filename="notes.txt"' } }),
     ),
     http.get("/v1/library", () => ok(LIBRARY)),
+    http.get("/v1/topics", () => ok([{ id: "topic-1", title: "Python testing", tags: ["python"], status: "open", created_at: "2026-09-24T10:00:00Z",
+      created_by: "owner", seat: { participant: "sme.topic-1", state: "live" }, docs: 1, experts: 1, messages: 1 }])),
+    http.get("/v1/topics/:id", () => ok({
+      topic: { id: "topic-1", title: "Python testing", tags: ["python"], status: "open", created_at: "2026-09-24T10:00:00Z", created_by: "owner",
+        seat: { participant: "sme.topic-1", state: "live" }, docs: 1, experts: 1, messages: 1, description: "" },
+      seed_url: "https://docs.pytest.org/en/stable/", tags_set_by: { by: "sme.topic-1", at: "2026-09-24T10:05:00Z" },
+      docs: [{ id: "strategyhl-9", doc_type: "strategy_hl", title: "pytest patterns", version: 1, status: "proposed", tags: [], summary: "",
+        source_url: "https://www.skills.sh/a/b/c", created_by: "sme.topic-1", created_at: "2026-09-24T10:04:00Z" }],
+      thread: [{ id: "m-1", created_at: "2026-09-24T10:06:00Z", created_by: "priya", to: null, kind: "question", text: "fixtures?",
+        reply_to: null, from: { id: "priya", role: "expert", type: "human" } }],
+      experts: [{ id: "priya", handle: "priya", created_at: "2026-09-24T10:02:00Z" }],
+      seat: { participant: "sme.topic-1", state: "live" }, fetches: [], viewer: { id: "owner", role: "owner" },
+    })),
     http.get("/v1/knowledge", () => ok(KNOWLEDGE_VIEW)),
     http.get("/v1/docs/:id/diff", () => ok(KNOWLEDGE_DIFF)),
     http.get("/v1/activity", () => ok(ACTIVITY)),
@@ -428,6 +441,20 @@ describe("dead-control lint over the real route table (human #26)", () => {
   it("/library/knowledge", async () => {
     await walk("/library/knowledge?k=strategyhl-2");
     await screen.findByTestId("knowledge-approve");
+    await settle();
+    expectNoDead();
+  });
+
+  it("/library/topics", async () => {
+    await walk("/library/topics");
+    await screen.findByTestId("topic-row");
+    await settle();
+    expectNoDead();
+  });
+
+  it("/library/topics/topic-1", async () => {
+    await walk("/library/topics/topic-1");
+    await screen.findByTestId("topic-thread");
     await settle();
     expectNoDead();
   });

@@ -577,3 +577,75 @@ export interface UploadedArtifact {
   note?: string;
   [k: string]: unknown;
 }
+
+// ------------------------------------------------------------------ S-SME-SURFACE (s-698224fca8) Library topics
+export interface TopicSeat {
+  participant: string;
+  state: string;
+}
+export interface TopicRow {
+  id: string;
+  title: string;
+  tags: string[];
+  status: "open" | "closed";
+  created_at: string;
+  created_by: string;
+  seat: TopicSeat;
+  docs: number;
+  experts: number;
+  messages: number;
+  description?: string;
+}
+export interface TopicDoc {
+  id: string;
+  doc_type: string;
+  title: string;
+  version: number;
+  status: string;
+  tags: string[];
+  summary: string;
+  proposes?: string | null;
+  source_url?: string | null;
+  created_by: string;
+  created_at: string;
+}
+export interface TopicMessage {
+  id: string;
+  created_at: string;
+  created_by: string;
+  to: string | null;
+  kind: string;
+  text: string;
+  reply_to: string | null;
+  from: { id: string; role: string | null; type: string };
+}
+export interface TopicExpert {
+  id: string;
+  handle: string;
+  created_at: string;
+}
+export interface TopicFetch {
+  url: string;
+  requested?: string;
+  status: number;
+  bytes?: number;
+  kind?: string;
+  fetched_at: string;
+  by: string;
+}
+export interface TopicPage {
+  topic: TopicRow;
+  seed_url: string | null;
+  tags_set_by: { by: string | null; at: string | null } | null;
+  docs: TopicDoc[];
+  thread: TopicMessage[];
+  experts: TopicExpert[];
+  seat: TopicSeat;
+  fetches: TopicFetch[];
+  viewer: { id: string; role: string };
+}
+export interface ExpertAdded {
+  expert: { id: string; handle: string };
+  token: string;
+  link: string;
+}
