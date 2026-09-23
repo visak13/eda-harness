@@ -71,7 +71,7 @@ def test_knowledge_tools_available_to_every_role():
 
 def test_close_self_stays_last_for_doers():
     # inserting the knowledge tools must not displace the closing triplet's terminal close_self
-    for role in ("engineer", "reviewer", "sme", "qa", "adversary"):
+    for role in ("engineer", "sme", "qa", "adversary"):
         assert ROLE_BUNDLES[role][-1] == "close_self", role
 
 
@@ -112,13 +112,13 @@ def test_full_flow(raw_client, board):
     architect_id = register(raw_client, "architect", "arch1")
     coordinator_id = register(raw_client, "coordinator", "coord1")
     engineer_id = register(raw_client, "engineer", "eng1")
-    reviewer_id = register(raw_client, "reviewer", "rev1")
+    adversary_id = register(raw_client, "adversary", "adv1")
 
     owner_client = make_client(raw_client, owner_id)
     architect_client = make_client(raw_client, architect_id)
     coordinator_client = make_client(raw_client, coordinator_id)
     engineer_client = make_client(raw_client, engineer_id)
-    reviewer_client = make_client(raw_client, reviewer_id)
+    adversary_client = make_client(raw_client, adversary_id)
 
     def use(client):
         set_client(client)
@@ -190,11 +190,11 @@ def test_full_flow(raw_client, board):
         ALL_TOOLS["ticket_update"].args_model(id=epic_id, status="in_review"))
     assert in_review["ok"], in_review
 
-    # reviewer: verdict + done  (checked_by was qa; use owner to close as owner is also a checker)
-    use(reviewer_client)
+    # a non-checker (adversary) cannot verdict; qa can (S-ROLES: reviewer retired)
+    use(adversary_client)
     bad_verdict = ALL_TOOLS["criterion_update"].handler(
         ALL_TOOLS["criterion_update"].args_model(id=crit_id, verdict="pass"))
-    assert bad_verdict["ok"] is False  # checked_by=qa, reviewer cannot verdict it
+    assert bad_verdict["ok"] is False  # checked_by=qa, an adversary cannot verdict it
     assert bad_verdict["error"]["code"] == "scope"
 
     qa_id = register(raw_client, "qa", "qa1")
