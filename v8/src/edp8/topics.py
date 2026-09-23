@@ -18,6 +18,7 @@ import html as _html
 import ipaddress
 import json
 import re
+import socket
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -64,18 +65,51 @@ def topic(board: Board, topic_id: str) -> Ticket:
     return t
 
 
+_SHARED_SPACE = ipaddress.ip_network("100.64.0.0/10")  # carrier-grade NAT; some clouds serve metadata here
+
+
 def _private_host(host: str) -> bool:
-    """Loopback, link-local, private and unspecified IP literals, and localhost names (an IP-literal check:
-    a public name that resolves privately is not caught here)."""
-    h = host.strip("[]").lower()
+    """Loopback, link-local (169.254.169.254 metadata), private, shared, unspecified, reserved and multicast
+    IP literals (IPv4-mapped IPv6 unwrapped, a zone id dropped), and localhost/.local names. A literal check;
+    `_refuse_private` adds the post-resolution check for names."""
+    h = host.strip("[]").lower().split("%", 1)[0]
     if not h or h == "localhost" or h.endswith(".localhost") or h.endswith(".local"):
         return True
     try:
         ip = ipaddress.ip_address(h)
     except ValueError:
         return False
+    if ip.version == 6 and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
     return (ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_unspecified or ip.is_reserved
-            or ip.is_multicast)
+            or ip.is_multicast or (ip.version == 4 and ip in _SHARED_SPACE))
+
+
+def _resolve(host: str) -> list[str]:
+    """Every address `host` resolves to (A and AAAA)."""
+    return sorted({ai[4][0] for ai in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)})
+
+
+# tests replace this with a fixed table; production is the system resolver
+RESOLVE = _resolve
+
+
+def _refuse_private(host: str, what: str, code: str = "invalid") -> None:
+    """t-3e246b5e32 (c): refuse a host that IS, or RESOLVES TO, a loopback/private/link-local/metadata
+    address — a public-looking name pointed at 127.0.0.1 or 169.254.169.254 made the seat an SSRF.
+    A name that does not resolve is refused too (fail closed). Known limit: the fetch re-resolves, so a
+    DNS-rebinding host that flips between this check and the connect is not caught here."""
+    if _private_host(host):
+        raise BoardError(code, f"{what} host {host!r} is a local or private address", "use a public https site")
+    try:
+        addrs = RESOLVE(host.strip("[]"))
+    except (OSError, UnicodeError) as e:
+        raise BoardError(code, f"{what} host {host!r} does not resolve ({type(e).__name__})",
+                         "use a public https site") from e
+    bad = [a for a in addrs if _private_host(a)]
+    if bad or not addrs:
+        raise BoardError(code, f"{what} host {host!r} resolves to a local or private address "
+                               f"({', '.join(bad) or 'none'})", "use a public https site")
 
 
 def _owner_only(actor: Participant, what: str) -> None:
@@ -99,9 +133,7 @@ def create(board: Board, actor: Participant, *, title: str, tags: list[str] | No
         u = urlsplit(seed)
         if u.scheme != "https" or not u.netloc:
             raise BoardError("invalid", f"seed URL {seed!r} is not an https URL", "give an https:// page")
-        if _private_host(u.hostname or ""):  # adversary 09-23 #9: the seed host joins the research allowlist
-            raise BoardError("invalid", f"seed URL host {u.hostname!r} is a local or private address",
-                             "the seed is a public https site")
+        _refuse_private(u.hostname or "", "seed URL")  # adversary 09-23 #9: the seed host joins the allowlist
     t = board.ticket_create(actor, kind=TicketKind.topic, work_type=WorkType.knowledge, title=title.strip(),
                             description=description or "", tags=normalize_tags(tags))
     if seed:
@@ -375,6 +407,7 @@ def fetch(url: str, hosts: tuple[str, ...]) -> tuple[str, int, bytes]:
     cur = url.strip()
     for _ in range(MAX_REDIRECTS + 1):
         _check_host(cur, hosts)
+        _refuse_private(urlsplit(cur).hostname or "", "research", code="forbidden")  # every hop, post-resolution
         try:
             status, body, loc = FETCH(cur)
         except httpx.HTTPError as e:

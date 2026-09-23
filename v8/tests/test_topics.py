@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 
 os.environ.setdefault("EDP8_EMBEDDER", "none")
 
@@ -41,6 +42,25 @@ class FakePool:
     def reap(self, participant_id, **_):
         self.closed.append(participant_id)
         return {"ok": True}
+
+
+# t-3e246b5e32 (c): seed and research hosts are resolved before use; tests never hit real DNS
+PUBLIC_DNS = {"docs.pytest.org": ["104.21.0.1"], "skills.sh": ["76.76.21.21"], "www.skills.sh": ["76.76.21.21"],
+              "github.com": ["140.82.112.3"], "raw.githubusercontent.com": ["185.199.108.133"],
+              "evil.example.com": ["93.184.216.34"]}
+
+
+@pytest.fixture(autouse=True)
+def dns(monkeypatch):
+    from edp8 import topics
+    table = dict(PUBLIC_DNS)
+
+    def resolve(host):
+        if host not in table:
+            raise socket.gaierror(11001, "getaddrinfo failed")
+        return table[host]
+    monkeypatch.setattr(topics, "RESOLVE", resolve, raising=False)
+    return table
 
 
 @pytest.fixture
@@ -454,6 +474,32 @@ def test_seed_url_refuses_local_and_private_hosts(client):
         r = client.post("/v1/topics", json={"title": "loop", "seed_url": bad}, headers=OWNER).json()
         assert not r["ok"] and "private" in r["error"]["message"], bad
     assert client.post("/v1/topics", json={"title": "ok", "seed_url": "https://docs.pytest.org/"}, headers=OWNER).json()["ok"]
+
+
+def test_seed_host_is_checked_after_resolution(client, dns):
+    """t-3e246b5e32 (c): a public-looking NAME that resolves to loopback/private/metadata is refused, even
+    from the owner; so is one that does not resolve."""
+    dns.update({"loop.example.com": ["127.0.0.1"], "lan.example.com": ["93.184.216.34", "10.1.2.3"],
+                "meta.example.com": ["169.254.169.254"], "v6.example.com": ["::ffff:127.0.0.1"],
+                "cgnat.example.com": ["100.100.100.200"]})
+    for host in ("loop", "lan", "meta", "v6", "cgnat"):
+        r = client.post("/v1/topics", json={"title": "x", "seed_url": f"https://{host}.example.com/p"},
+                        headers=OWNER).json()
+        assert not r["ok"] and "resolves to a local or private address" in r["error"]["message"], (host, r)
+    r = client.post("/v1/topics", json={"title": "x", "seed_url": "https://nowhere.example.com/"}, headers=OWNER).json()
+    assert not r["ok"] and "does not resolve" in r["error"]["message"]
+
+
+def test_research_refuses_a_host_that_turned_private(client, board, tokens, recorded, dns):
+    """t-3e246b5e32 (c): the seed resolved public at create, then re-pointed at 127.0.0.1 — the research
+    fetch re-checks every hop after resolution and never calls FETCH."""
+    t = _topic(client, seed_url="https://docs.pytest.org/en/stable/")["topic"]
+    board.run_pending_pairings()
+    sme = _seat(client, tokens, t)
+    dns["docs.pytest.org"] = ["127.0.0.1"]
+    r = client.post(f"/v1/topics/{t['id']}/research", json={"url": "https://docs.pytest.org/en/stable/"}, headers=sme)
+    assert r.status_code == 403 and "private" in r.text
+    assert not any("docs.pytest.org" in c for c in recorded)
 
 
 def test_seed_url_outlives_many_tag_writes(client):
