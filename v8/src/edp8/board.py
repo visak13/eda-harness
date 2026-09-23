@@ -875,10 +875,10 @@ class Board:
                 return False
             if token:  # a present minter returning None is trusted mode (no tokens.json) → header-only
                 env = {"EDP8_TOKEN": token}
-        choice = self.seat_choice_for(ticket_id)  # owner m-2d7ef9243d: the epic's model + effort
+        choice = self.seat_choice_for(ticket_id, role=role)  # the epic's per-role model + effort
         try:
             res = self._pool_adapter().spawn(role, participant_id, env=env,
-                                             model=choice.model, effort=choice.effort)
+                                             model=choice.pool_model, effort=choice.effort)
         except Exception as e:  # noqa: BLE001 — a pool hiccup keeps the seat registered; retry next tick
             _log.warning("pairing spawn for %s failed: %s", participant_id, e)
             return False
@@ -1758,10 +1758,10 @@ class Board:
         return to in (handle, f"@{handle.lstrip('@')}", handle.lstrip("@")) or to == p.role.value  # type: ignore[union-attr]
 
     def seat_choice_for(self, ticket_id: str | None, *, model: str | None = None,
-                        effort: str | None = None) -> seat_choice.SeatChoice:
-        """The model + effort a spawn on `ticket_id` runs with (owner m-2d7ef9243d): the explicit
-        arguments win, else the EPIC's seat-model / seat-effort tags (seat_choice.py); no ticket
-        or no epic = no choice (the pool's role→seat default). Never raises."""
+                        effort: str | None = None, role: str | None = None) -> seat_choice.SeatChoice:
+        """The model + effort a spawn of `role` on `ticket_id` runs with (owner m-2d7ef9243d, S-ROLES):
+        the explicit arguments win, else the EPIC's `model:<role>=` / seat-model / seat-effort tags,
+        else the role's catalog default (seat_choice.py). Never raises."""
         tags: list[str] = []
         if ticket_id:
             t = self.store.get("ticket", ticket_id)
@@ -1771,7 +1771,7 @@ class Board:
                     tags = list(epic.tags or [])
                 except Exception:  # noqa: BLE001 — an orphaned chain means no epic choice
                     tags = []
-        return seat_choice.resolve(model, effort, tags, seat_choice.agent_home())
+        return seat_choice.resolve(model, effort, tags, seat_choice.agent_home(), role=role)
 
     def _epic_id_of(self, ticket_id: str) -> str | None:
         t = self.store.get("ticket", ticket_id)

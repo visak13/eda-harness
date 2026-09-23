@@ -1082,7 +1082,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         # as the board's pairing path (Board._spawn_seat); a handle race is fine.
         # owner m-2d7ef9243d: the spawn inherits the EPIC's seat choice (seat-model/seat-effort tags)
         # unless the body names its own model/effort; Claude effort high is capped to medium.
-        choice = board.seat_choice_for(b.ticket_id, model=b.model, effort=b.effort)
+        choice = board.seat_choice_for(b.ticket_id, model=b.model, effort=b.effort, role=b.role.value)
         if board.store.get("participant", b.participant_id) is None:
             try:
                 board.participant_create("agent", b.role, b.participant_id, id_=b.participant_id,
@@ -1092,7 +1092,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         token = _mint_agent_token(b.participant_id)
         env = {"EDP8_TOKEN": token} if token else None
         out = pool_adapter.spawn(b.role.value, b.participant_id, parent_session=b.parent_session,
-                                 model=choice.model, mode=b.mode, env=env, effort=choice.effort)
+                                 model=choice.pool_model, mode=b.mode, env=env, effort=choice.effort)
         if out.get("ok"):
             if isinstance(out.get("value"), dict):
                 out["value"]["seat_choice"] = choice.as_dict()
@@ -1147,6 +1147,15 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
             _idem_put(a, idempotency_key, out)
             return out
         return _pool_result(out)
+
+    @app.get("/v1/models")
+    def models_catalog(a: Participant = Depends(actor)):
+        """S-ROLES: the per-role model catalog (models.json `role_models`, first entry = the role's
+        default) — the new-epic dialog, the Epic page and Spawn seat read this one list."""
+        from . import seat_choice
+        cat = seat_choice.catalog(seat_choice.agent_home())
+        return ok({"roles": cat, "defaults": {r: ids[0] for r, ids in cat.items()}},
+                  "a GPT id runs on the codex seat, a Claude id on the Claude seat")
 
     @app.get("/v1/pool/capabilities")
     def pool_capabilities(a: Participant = Depends(actor)):

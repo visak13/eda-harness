@@ -211,3 +211,119 @@ def test_auto_pairing_spawn_inherits_the_epic_choice(home):
     assert pool.calls[-1]["model"] == "astra" and pool.calls[-1]["effort"] == "high"
     assert board.seat_choice_for(None).as_dict() == {"model": None, "effort": None, "note": None}
     assert board.seat_choice_for("t-missing").model is None
+
+
+# ----------------------------------------------------------------------------- S-ROLES: one model per role
+
+OWNER_TABLE = {"architect": ["claude-fable-5-1", "gpt-6-astra"], "engineer": ["claude-opus-5-5", "gpt-6-sol"],
+               "qa": ["claude-fable-5-1", "gpt-6-astra"], "adversary": ["gpt-6-astra"],
+               "sme": ["claude-opus-5-5", "gpt-6-sol"]}
+
+
+@pytest.fixture
+def cat_home(home):
+    """The `home` registry plus the owner's per-role catalog (models.json `role_models`)."""
+    raw = json.loads((home / "models.json").read_text(encoding="utf-8"))
+    raw["role_models"] = OWNER_TABLE
+    (home / "models.json").write_text(json.dumps(raw), encoding="utf-8")
+    return home
+
+
+def test_shipped_models_json_carries_the_owners_per_role_catalog_exactly():
+    from pathlib import Path
+    v8 = Path(__file__).resolve().parents[1]
+    assert seat_choice.catalog(v8) == OWNER_TABLE  # the validator side: edp-pool test_seats_registry
+
+
+def test_role_tags_roundtrip():
+    tags = seat_choice.tags_for_role_models({"architect": "gpt-6-astra", "engineer": "claude-opus-5-5"})
+    assert tags == ["model:architect=gpt-6-astra", "model:engineer=claude-opus-5-5"]
+    assert seat_choice.role_models_from_tags(["seat-model:astra", "model:bad", *tags]) == {
+        "architect": "gpt-6-astra", "engineer": "claude-opus-5-5"}
+
+
+def test_rule_spawn_named_model_wins_over_the_role_tag(cat_home):
+    c = seat_choice.resolve("claude-opus-5-5", None, ["model:engineer=gpt-6-sol"], cat_home, role="engineer")
+    assert c.model == "claude-opus-5-5"
+
+
+def test_rule_role_tag_wins_over_old_seat_model_tag_and_catalog(cat_home):
+    tags = ["seat-model:astra", "model:engineer=gpt-6-sol"]
+    assert seat_choice.resolve(None, None, tags, cat_home, role="engineer").model == "gpt-6-sol"
+    # the tag is per role: qa has none, so it falls to the old whole-epic tag
+    assert seat_choice.resolve(None, None, tags, cat_home, role="qa").model == "astra"
+
+
+def test_rule_old_seat_model_tag_still_honoured(cat_home):
+    assert seat_choice.resolve(None, None, ["seat-model:astra"], cat_home, role="architect").model == "astra"
+    # "claude" there keeps meaning the pool's roles column
+    assert seat_choice.resolve(None, None, ["seat-model:claude"], cat_home, role="architect").model is None
+
+
+def test_rule_missing_falls_to_the_first_catalog_entry(cat_home):
+    for role, ids in OWNER_TABLE.items():
+        assert seat_choice.resolve(None, None, [], cat_home, role=role).model == ids[0]
+    assert seat_choice.resolve(None, None, [], cat_home, role="owner").model is None  # not in the catalog
+    assert seat_choice.resolve(None, None, [], cat_home).model is None               # no role given
+
+
+def test_gpt_id_routes_to_the_codex_seat_and_is_not_effort_capped(cat_home):
+    c = seat_choice.resolve(None, "high", ["model:adversary=gpt-6-astra"], cat_home, role="adversary")
+    assert (c.model, c.pool_model, c.effort, c.note) == ("gpt-6-astra", "codex/gpt-6-astra", "high", None)
+    c = seat_choice.resolve(None, "high", [], cat_home, role="engineer")  # Claude default: capped
+    assert (c.model, c.pool_model, c.effort) == ("claude-opus-5-5", "claude-opus-5-5", "medium")
+    assert seat_choice.SeatChoice("astra", None).pool_model == "astra"  # seat names pass through
+
+
+def test_role_models_for_shows_every_catalog_role(cat_home):
+    got = seat_choice.role_models_for(["model:qa=gpt-6-astra"], cat_home)
+    assert got == {"architect": "claude-fable-5-1", "engineer": "claude-opus-5-5", "qa": "gpt-6-astra",
+                   "adversary": "gpt-6-astra", "sme": "claude-opus-5-5"}
+
+
+def test_catalog_is_empty_on_registry_trouble(tmp_path):
+    assert seat_choice.catalog(None) == {}
+    assert seat_choice.catalog(tmp_path) == {}
+    (tmp_path / "models.json").write_text("{not json", encoding="utf-8")
+    assert seat_choice.catalog(tmp_path) == {}
+
+
+def test_rest_spawn_per_role_routes_gpt_to_codex_and_claude_by_id(cat_home, monkeypatch):
+    board = Board(Store(":memory:"))
+    client = TestClient(create_app(board, admin_token="t"))
+    for pid, role, typ in (("owner", "owner", "human"), ("arch", "architect", "agent")):
+        client.post("/v1/participants", json={"type": typ, "role": role, "handle": pid, "id": pid}, headers=ADMIN)
+    calls = _stub_pool(monkeypatch)
+    epic = _epic(client, seat_choice.tags_for_role_models({"architect": "gpt-6-astra", "engineer": "gpt-6-sol"}))
+    story = _story(client, epic)
+    r = client.post("/v1/sessions/spawn", json={"role": "engineer", "participant_id": f"engineer.{story}",
+                                                "ticket_id": story}, headers=OWNER)
+    assert r.status_code == 200, r.text
+    assert calls[-1]["model"] == "codex/gpt-6-sol"
+    assert r.json()["value"]["seat_choice"]["model"] == "gpt-6-sol"
+    p = client.get(f"/v1/participants/engineer.{story}", headers=OWNER).json()["value"]
+    assert p.get("model") == "gpt-6-sol"  # provenance is the catalog id the owner chose
+    r = client.post("/v1/sessions/spawn", json={"role": "qa", "participant_id": f"qa.{epic}",
+                                                "ticket_id": epic}, headers=OWNER)
+    assert r.status_code == 200 and calls[-1]["model"] == "claude-fable-5-1"  # catalog default, Claude seat
+    page = client.get(f"/v1/epics/{epic}/page", headers=OWNER).json()["value"]
+    assert page["role_models"]["architect"] == "gpt-6-astra" and page["role_models"]["qa"] == "claude-fable-5-1"
+    got = client.get("/v1/models", headers=OWNER).json()["value"]
+    assert got["roles"] == OWNER_TABLE and got["defaults"]["engineer"] == "claude-opus-5-5"
+
+
+def test_auto_pairing_uses_the_paired_roles_model(cat_home):
+    class StubPool:
+        calls: list[dict] = []
+
+        def spawn(self, role, participant_id, **kw):
+            self.calls.append({"role": role, **kw})
+            return {"ok": True}
+
+    pool = StubPool()
+    board = Board(Store(":memory:"), pool=pool, free_mb=lambda: 4096)
+    owner = board.participant_create("human", Role.owner, "owner")
+    epic = board.ticket_create(owner, kind=TicketKind.epic, work_type=WorkType.feature, title="E",
+                               tags=["model:qa=gpt-6-astra"])
+    assert board._spawn_seat("qa", f"qa.{epic.id}", epic.id) is True
+    assert pool.calls[-1]["model"] == "codex/gpt-6-astra"

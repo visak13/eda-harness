@@ -1361,8 +1361,9 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
             v = (got_e or {}).get("value") if (got_e or {}).get("ok") else None
             epic_tk = (v.get("ticket", v) if isinstance(v, dict) else {}) or {}
         epic_tags = list(epic_tk.get("tags") or [])
-    choice = seat_choice.resolve(args.get("model"), args.get("effort"), epic_tags, _edp8_home())
-    args["model"], args["effort"] = choice.model, choice.effort
+    choice = seat_choice.resolve(args.get("model"), args.get("effort"), epic_tags, _edp8_home(),
+                                 role=str(args.get("role") or "") or None)
+    args["model"], args["effort"] = choice.pool_model, choice.effort
     out = _pool_call("spawn", args)
     if not out.get("ok") and "lock" in str(out.get("error", "")).lower():
         # board said dead, pool lock says staffed (pain 2026-09-01 11:19) — resolve with the
