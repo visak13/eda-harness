@@ -133,7 +133,12 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
   // toolbar stacked above a second review header.
   // Only once the document has loaded: while it is loading or failed, DocView draws no review
   // header, so the toolbar (with its Close) must stay (S19 qa, adversary #4).
-  const review = Boolean(source) && shownDoc !== null;
+  // qa finding 27 (final sweep): a doc that carries the viewer's sign-off criteria is NOT reviewed by
+  // DesignReview (DocView keeps the classic reader + SignoffPane, latched like DocView.signoffDoc), so
+  // this toolbar must stay or the dialog has no Close and no Open in tab (r1-captures :115).
+  const signoffSeen = useRef<string | null>(null);
+  if (shownDoc && ((shownDoc.signoff_criteria?.length ?? 0) > 0 || Boolean(shownDoc.signoff_criterion))) signoffSeen.current = shownDoc.id;
+  const review = Boolean(source) && shownDoc !== null && signoffSeen.current !== shownDoc.id;
   const title = (
     <div className={styles.toolbar}>
       {stack.length > 1 ? (

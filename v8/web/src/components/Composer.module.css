@@ -48,10 +48,14 @@
   color: var(--ink);
 }
 .fieldLabel { color: var(--muted); }
-.selectWrap { position: relative; display: inline-flex; align-items: center; }
+.selectWrap { position: relative; display: inline-flex; align-items: center; min-width: 0; max-width: 100%; flex: 1 1 auto; }
+/* qa finding 26: a fixed 260px select overflowed a 320px viewport (page scrollWidth 448); it now
+   fills the remaining field width, capped at 260px. */
 .toAvatar { position: absolute; left: 8px; pointer-events: none; }
 .field select {
   max-width: 260px;
+  width: 100%;
+  min-width: 0;
   min-height: 34px;
   border: 1.5px solid var(--strongline);
   border-radius: 8px;
