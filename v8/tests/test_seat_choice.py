@@ -215,8 +215,8 @@ def test_auto_pairing_spawn_inherits_the_epic_choice(home):
 
 # ----------------------------------------------------------------------------- S-ROLES: one model per role
 
-OWNER_TABLE = {"architect": ["claude-fable-5-1", "gpt-6-astra"], "engineer": ["claude-opus-5-5", "gpt-6-sol"],
-               "qa": ["claude-fable-5-1", "gpt-6-astra"], "adversary": ["gpt-6-astra"],
+OWNER_TABLE = {"architect": ["claude-fable-5-1", "claude-opus-5-5", "gpt-6-astra"], "engineer": ["claude-opus-5-5", "gpt-6-sol"],
+               "qa": ["claude-fable-5-1", "claude-opus-5-5", "gpt-6-astra"], "adversary": ["gpt-6-astra"],
                "sme": ["claude-opus-5-5", "gpt-6-sol"]}
 
 
