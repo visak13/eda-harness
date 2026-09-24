@@ -317,6 +317,9 @@ def test_token_never_on_argv_and_board_headers_by_env_name(tmp_path):
 # ------------------------------------------------------------------ end to end on the fake app-server
 @pytest.fixture
 def fake_seat(tmp_path, monkeypatch):
+    # Exercise role defaults regardless of this host's launch policy.
+    monkeypatch.delenv("EDP_SKIP_PERMISSIONS", raising=False)
+    monkeypatch.delenv("EDP_CODEX_SANDBOX", raising=False)
     log = tmp_path / "fake.jsonl"
     monkeypatch.setenv("FAKE_APPSERVER_LOG", str(log))
     s = seat_mod.CodexSeat(cwd=V8, role="engineer", handle="engineer.fake", log_dir=tmp_path,
@@ -567,5 +570,4 @@ def test_js_string_number_and_nullish_semantics(tmp_path):
     ht, te = make_tools(tmp_path, variant="expiry")
     text, _ = te.call("Monitor", {"command": "exit 0", "description": "r", "timeout_ms": 30000}, "c")
     assert "expires in 1m" in text  # Math.round(0.5) = 1, Python round() would say 0m
-
 
