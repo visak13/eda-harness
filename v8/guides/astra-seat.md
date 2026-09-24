@@ -1,6 +1,16 @@
 <!-- roles: architect -->
 # astra-seat — GPT-6 Astra as a 1:1 fleet seat (epic-6a8a6020fd · s-e1260012b9)
 
+## Launch permissions (owner ruling 2026-09-24, m-4327ba0431)
+
+Codex seats honor the host's `EDP_SKIP_PERMISSIONS=1` as `danger-full-access`,
+including Monitor shell commands. `EDP_CODEX_SANDBOX` is an explicit override and
+takes precedence. Without either setting, the existing per-role sandbox applies.
+The approval policy remains `never`. This is a launch-time choice: restart the
+affected seats to apply it; the board, pool, broker and MCP services need no restart
+for this launcher-only change. Existing seats retain their current permissions.
+See the [official sandbox setting reference](https://learn.chatgpt.com/docs/config-file/config-reference).
+
 Owner words: "use GPT 6 Astra with any harness out there we can to add Claude Code like monitor and cron tools … behave exactly the same". Design: board doc design-97ca02e989 (this guide carries its survey, terms and control cards verbatim so the record is readable without the board) plus the spike evidence. Parity reference: `guides/harness-parity.md`.
 
 ## 1. The fidelity requirement, decomposed (what "exactly the same" needs from a harness)

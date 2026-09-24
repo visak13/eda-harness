@@ -6,6 +6,7 @@ EDP_LOG_DIR) plus:
   EDP_CODEX_MODEL     default gpt-6-astra
   EDP_CODEX_EFFORT    optional reasoning effort (low|medium|high)
   EDP_CODEX_SANDBOX   optional override of the per-role sandbox (seat.ROLE_SANDBOX)
+  EDP_SKIP_PERMISSIONS "1" selects danger-full-access, unless EDP_CODEX_SANDBOX overrides it
   EDP_ACTIVATION      explicit first prompt (park/resume path); default = the role card
   EDP_CODEX_RESUME    "1" → thread/resume the thread recorded in <log_dir>/codex-sessions/<handle>.json
   EDP_CODEX_CONSOLE   "1" → a visible seat (pool mode "monitor"): the NATIVE codex TUI joins this seat's

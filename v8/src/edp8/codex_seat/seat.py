@@ -109,7 +109,11 @@ def board_args(role: str, mcp_url: str | None = None) -> list[str]:
 
 
 def sandbox_for(role: str, env: dict[str, str]) -> str:
-    return env.get("EDP_CODEX_SANDBOX") or ROLE_SANDBOX.get(role, "read-only")
+    # Match the pool's existing skip-permissions switch for Claude seats.
+    # Explicit per-seat sandbox configuration remains the highest-priority choice.
+    return (env.get("EDP_CODEX_SANDBOX")
+            or ("danger-full-access" if env.get("EDP_SKIP_PERMISSIONS") == "1" else None)
+            or ROLE_SANDBOX.get(role, "read-only"))
 
 
 def codex_head(codex: str) -> list[str]:
@@ -124,6 +128,8 @@ def monitor_sandbox_prefix(codex: str, mode: str) -> list[str]:
     line, env (EDP8_TOKEN included) passes through, and the command is a descendant of this argv's
     process (codex → codex-command-runner → bash), so taskkill /T and the runner's job still reach it.
     The mode is an unquoted TOML fallback string (codex.CMD re-quotes argv through cmd.exe)."""
+    if mode == "danger-full-access":
+        return []
     args = [*codex_head(codex), "sandbox", "-c", f"sandbox_mode={mode}"]
     if mode == "workspace-write":
         args += ["-c", "sandbox_workspace_write.network_access=true"]
@@ -415,5 +421,3 @@ def idle_waiter(seat: CodexSeat, timeout: float) -> bool:
             return True
         time.sleep(0.2)
     return False
-
-
