@@ -473,6 +473,17 @@ class Board:
                       assignee: str | None = None, design_ref: str | None = None,
                       description: str | None = None, tags: list[str] | None = None,
                       title: str | None = None) -> Ticket:
+        kw = dict(status=status, assignee=assignee, design_ref=design_ref, description=description, tags=tags,
+                  title=title)
+        if is_topic(self.ticket(id_)):  # t-3e246b5e32 (b): a topic's read-check-put-attribute is one locked step
+            with self._lock:
+                return self._ticket_update(actor, id_, **kw)
+        return self._ticket_update(actor, id_, **kw)
+
+    def _ticket_update(self, actor: Participant, id_: str, *, status: TicketStatus | None = None,
+                       assignee: str | None = None, design_ref: str | None = None,
+                       description: str | None = None, tags: list[str] | None = None,
+                       title: str | None = None) -> Ticket:
         t = self.ticket(id_)
         changed: dict[str, Any] = {}
         if is_topic(t):  # adversary 09-23 #5/#7: a topic's seat is its resident sme and its tags are the
@@ -517,6 +528,9 @@ class Board:
                 self._check_seat_tags(actor, t, new_tags)
                 t.tags = new_tags
                 changed["tags"] = t.tags
+                if is_topic(t):  # the attribution rides the same put as the tags (the page reads it here)
+                    from .topics import _now, config
+                    t.topic_config = {**config(self, t), "tags_set_by": {"by": actor.id, "at": _now()}}
         if assignee is not None:
             if actor.role not in (Role.coordinator, Role.architect, Role.engineer, Role.owner):
                 raise BoardError("scope", f"{actor.role} may not assign tickets",
