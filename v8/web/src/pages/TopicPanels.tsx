@@ -94,7 +94,7 @@ export function TopicExperts({ page }: { page: TopicPage }): React.JSX.Element {
       {add.isError ? <p className={ui.banner} role="alert">{errText(add.error)}</p> : null}
       {added ? (
         <div role="status" data-testid="topic-expert-link">
-          <p className={styles.muted}>Send {added.expert.handle} this link now. It carries their token, which is not shown again.</p>
+          <p className={styles.muted}>Send {added.expert.handle} this link now. It signs them in once (within a day) and then stops working; their token never appears in it.</p>
           <p className={styles.secret}>{`${window.location.origin}${added.link}`}</p>
           <button type="button" className={ui.button} onClick={() => setAdded(null)}>Done</button>
         </div>

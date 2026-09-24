@@ -89,6 +89,19 @@ describe("AppShell", () => {
     expect(screen.queryByRole("link", { name: /Needs you/ })).not.toBeInTheDocument();
   });
 
+  it("hides Epics, Seats and Needs you for an expert (whoami answers 403) — t-3e246b5e32 (e)", async () => {
+    server.use(
+      http.get("/v1/whoami", () =>
+        HttpResponse.json({ ok: false, error: "expert 'dana' reaches only its Library topic" }, { status: 403 }),
+      ),
+    );
+    renderShell("/me");
+    await waitFor(() => expect(screen.queryByRole("link", { name: /Needs you/ })).not.toBeInTheDocument());
+    const names = screen.getAllByRole("link").map((l) => l.textContent?.replace(/\d+$/, "").trim());
+    expect(names).toEqual(["Library"]);
+    expect(screen.queryByTestId("identity-panel")).not.toBeInTheDocument();
+  });
+
   it("opens the account menu (Settings, ThemePicker) from the rail's account row and can switch theme", async () => {
     renderShell("/me");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

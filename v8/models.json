@@ -55,13 +55,13 @@
     "qa": "advisor"
   },
   "role_models": {
-    "architect": ["claude-fable-5-1", "gpt-6-astra"],
+    "architect": ["claude-fable-5-1", "claude-opus-5-5", "gpt-6-astra"],
     "engineer": ["claude-opus-5-5", "gpt-6-sol"],
     "qa": ["claude-fable-5-1", "gpt-6-astra"],
     "adversary": ["gpt-6-astra"],
     "sme": ["claude-opus-5-5", "gpt-6-sol"]
   },
-  "_role_models_note": "2026-09-23 S-ROLES (design-34bf11cc07 §4.1, owner m-bba708e10e, ids measured m-405e024f62): the per-role catalog the new-epic dialog and Spawn seat pick from; first entry = the role's default. An epic records `model:<role>=<id>` tags; a GPT id runs on the codex seat (the board hands the pool codex/<id>), a Claude id on the Claude seat. Supersedes the roles column for any spawn tied to an epic.",
+  "_role_models_note": "2026-09-24 owner m-fa6ebacf22: claude-opus-5-5 added to the architect catalog to test opus as architect (Fable stays the default). 2026-09-23 S-ROLES (design-34bf11cc07 §4.1, owner m-bba708e10e, ids measured m-405e024f62): the per-role catalog the new-epic dialog and Spawn seat pick from; first entry = the role's default. An epic records `model:<role>=<id>` tags; a GPT id runs on the codex seat (the board hands the pool codex/<id>), a Claude id on the Claude seat. Supersedes the roles column for any spawn tied to an epic.",
   "_window_note": "2026-08-06 user ruling: auto_compact is 350k on EVERY seat — one number, no per-seat window tuning. The rule stands: compaction must land at turn boundaries; a role that ROUTINELY nears its window is a scoping defect to split.",
   "_v8_note": "2026-08-27 v8 role names: architect/sme/engineer/adversary/qa (reviewer retired 2026-09-23 S-ROLES; coordinator retired — the owner shell orchestrates); architect + qa on the advisor (Fable) seat; engineer builder; adversary checker; others judgment.",
   "roles_openai": {

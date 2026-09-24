@@ -138,6 +138,10 @@ function AppShellChrome(): React.JSX.Element {
 
   const handle = whoami.data?.participant.handle ?? as;
   const role = whoami.data?.participant.role ?? "";
+  // t-3e246b5e32 (e): an expert reaches only its Library topic — the board answers its whoami with 403 (no
+  // other signed-in participant gets that), so the rail hides what would 403: Epics, Seats and Needs you.
+  const expert = role === "expert" || (whoami.error instanceof BoardApiError && whoami.error.status === 403);
+  const nav = expert ? NAV.filter((item) => item.to === "/library/knowledge") : NAV;
   const counts = summary.data;
 
   // Design §4.1: a 401 from the identity probe renders the inline identity panel.
@@ -174,7 +178,7 @@ function AppShellChrome(): React.JSX.Element {
         </div>
 
         <nav className={styles.nav} aria-label="Sections">
-          {NAV.map((item) => (
+          {nav.map((item) => (
             <Link key={item.to} to={item.to}
               className={`${styles.navItem} ${activeFamily === item.to ? styles.active : ""}`}
               aria-current={activeFamily === item.to ? "page" : undefined}
@@ -184,6 +188,7 @@ function AppShellChrome(): React.JSX.Element {
               {item.count && counts && typeof counts[item.count] === "number" ? <span className={styles.count}>{counts[item.count]}</span> : null}
             </Link>
           ))}
+          {expert ? null : (<>
           <div className={styles.divider} />
           <Link to={currentEpicId ? `/me?epic=${encodeURIComponent(currentEpicId)}` : "/me"} className={`${styles.navItem} ${activeFamily === "/me" ? styles.active : ""}`}
             aria-current={activeFamily === "/me" ? "page" : undefined} {...copyProps("sidebar", "decisions")}>
@@ -192,6 +197,7 @@ function AppShellChrome(): React.JSX.Element {
             {counts && typeof counts.decisions === "number" ? <span className={`${styles.count} ${styles.coral}`}>{counts.decisions}</span> : null}
           </Link>
           <CurrentEpic epicId={currentEpicId} />
+          </>)}
         </nav>
 
         <div className={styles.lower}>

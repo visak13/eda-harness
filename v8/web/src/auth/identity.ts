@@ -124,9 +124,45 @@ function askSession(): Promise<void> {
   });
 }
 
-/** Resolves once this tab's session is settled — immediately when it already holds a token, else
- *  after the same-origin handshake (≤ ASK_TIMEOUT_MS). main.tsx renders after it. */
-export const sessionReady: Promise<void> = askSession().finally(answerAsks);
+/** t-3e246b5e32 (e): an expert's link carries a one-time `?code=`, never the token (history, referrers and
+ *  proxy logs keep query strings). The code leaves the address bar at once and is redeemed ONCE by POST
+ *  for the expert's handle + token, which go to this tab's sessionStorage like any other session. A spent
+ *  or expired code leaves the tab without a token (whoami then shows the identity panel). */
+function redeemCode(): Promise<void> {
+  let code: string | null = null;
+  try {
+    const url = new URL(location.href);
+    code = url.searchParams.get("code");
+    if (!code) return Promise.resolve();
+    url.searchParams.delete("code");
+    history.replaceState({}, "", url);
+  } catch {
+    return Promise.resolve();
+  }
+  return fetch("/v1/expert-session", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  })
+    .then((r) => r.json())
+    .then((env: { ok?: boolean; value?: { as: string; token: string } }) => {
+      if (!env?.ok || !env.value) return;
+      try {
+        sessionStorage.setItem("edp8.token", env.value.token);
+        sessionStorage.setItem("edp8.as", env.value.as);
+      } catch {
+        /* storage unavailable: the in-memory token still serves this tab */
+      }
+      AS = env.value.as;
+      TOKEN = env.value.token;
+    })
+    .catch(() => undefined);
+}
+
+/** Resolves once this tab's session is settled — an expert link's code redeemed first, then immediately
+ *  when the tab holds a token, else after the same-origin handshake (≤ ASK_TIMEOUT_MS). main.tsx renders
+ *  after it. */
+export const sessionReady: Promise<void> = redeemCode().then(askSession).finally(answerAsks);
 
 /** Stop answering session asks (tests load several module copies in one realm). */
 export function stopAnswering(): void {

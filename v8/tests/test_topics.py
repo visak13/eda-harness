@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+from urllib.parse import parse_qs, urlsplit
 
 os.environ.setdefault("EDP8_EMBEDDER", "none")
 
@@ -107,6 +108,10 @@ def _expert(client, topic_id, handle="dana"):
                     headers=OWNER).json()
     assert r["ok"], r
     v = r["value"]
+    code = parse_qs(urlsplit(v["link"]).query)["code"][0]  # t-3e246b5e32 (e): the link carries a code, not a token
+    s = client.post("/v1/expert-session", json={"code": code}).json()
+    assert s["ok"] and s["value"]["as"] == handle, s
+    v["token"] = s["value"]["token"]
     return v, {"X-Participant": handle, "X-Token": v["token"]}
 
 
@@ -180,7 +185,7 @@ def test_expert_add_list_remove_and_token_shown_once(client, tokens):
     e = v["expert"]
     assert e["type"] == "human" and e["role"] == "expert" and e["handle"] == "dana"
     assert json.loads(tokens.read_text(encoding="utf-8"))["dana"] == v["token"]  # minted like the owner's
-    assert v["token"] in v["link"] and t["id"] in v["link"]
+    assert v["token"] not in v["link"] and "token=" not in v["link"] and t["id"] in v["link"]
     page = client.get(f"/v1/topics/{t['id']}", headers=OWNER).json()["value"]
     assert [x["handle"] for x in page["experts"]] == ["dana"]
     assert v["token"] not in json.dumps(page)  # never shown again
@@ -188,6 +193,21 @@ def test_expert_add_list_remove_and_token_shown_once(client, tokens):
     assert not client.post(f"/v1/topics/{t['id']}/experts", json={"handle": "dana"}, headers=OWNER).json()["ok"]
     assert client.post(f"/v1/topics/{t['id']}/experts", json={"handle": "eve"},
                        headers={"X-Participant": "eng"}).status_code == 403
+
+
+def test_expert_link_code_works_once(client, tokens):
+    """t-3e246b5e32 (e): the add result carries no token and its link a one-time code: the first redeem signs
+    the expert in, a second (a replayed link from history or a referrer) is refused; a guessed code too."""
+    t = _topic(client)["topic"]
+    r = client.post(f"/v1/topics/{t['id']}/experts", json={"handle": "dana"}, headers=OWNER).json()["value"]
+    secret = json.loads(tokens.read_text(encoding="utf-8"))["dana"]
+    assert "token" not in r and secret not in json.dumps(r)
+    code = parse_qs(urlsplit(r["link"]).query)["code"][0]
+    first = client.post("/v1/expert-session", json={"code": code})
+    assert first.json()["value"] == {"as": "dana", "token": secret}
+    again = client.post("/v1/expert-session", json={"code": code})
+    assert again.status_code == 401 and "already used" in again.text
+    assert client.post("/v1/expert-session", json={"code": "guess"}).status_code == 401
 
 
 def test_expert_needs_token_mode(board, monkeypatch, tmp_path):

@@ -38,6 +38,33 @@ describe("identity adapter", () => {
     expect(authHeaders()).toEqual({ "X-Participant": "alice", "X-Token": "s3cret" });
   });
 
+  // t-3e246b5e32 (e): an expert link carries a one-time code, never the token; the tab redeems it once.
+  it("redeems an expert link's ?code once for the session and strips it from the URL", async () => {
+    const posted: string[] = [];
+    server.use(
+      http.post("/v1/expert-session", async ({ request }) => {
+        const { code } = (await request.json()) as { code: string };
+        posted.push(code);
+        return posted.length === 1
+          ? HttpResponse.json({ ok: true, value: { as: "dana", token: "exp-secret" } })
+          : HttpResponse.json({ ok: false, error: "already used" }, { status: 401 });
+      }),
+    );
+    const { identity, authHeaders } = await loadIdentity("/ui/library/topics/topic-1?as=dana&code=c0de");
+    expect(posted).toEqual(["c0de"]);
+    expect(new URL(location.href).searchParams.get("code")).toBeNull();
+    expect(location.href).not.toContain("exp-secret");
+    expect(identity()).toBe("dana");
+    expect(authHeaders()).toEqual({ "X-Participant": "dana", "X-Token": "exp-secret" });
+
+    // the same link opened again (history, a forwarded mail) gets no session
+    for (const mod of loaded.splice(0)) mod.stopAnswering();
+    sessionStorage.clear();
+    const again = await loadIdentity("/ui/library/topics/topic-1?as=dana&code=c0de");
+    expect(posted).toEqual(["c0de", "c0de"]);
+    expect("X-Token" in again.authHeaders()).toBe(false);
+  });
+
   it("every request carries X-Participant and X-Token", async () => {
     await loadIdentity("/ui/?as=bob&token=tok-9");
     const { api } = await import("../api/client");
