@@ -34,6 +34,9 @@ runs it. A seat runs only `.\edp.ps1 status` and `-WhatIf`. What it does and why
 - Never run the full web e2e suite (`npx playwright test`) from an engineer seat: it spawns its
   own board + chromium and has OOM-killed the host and reaped the fleet board. Run the specs you
   changed; the full run is qa's, one seat at a time.
+- Commit by explicit path: `git commit -m "..." -- <your paths>`. A plain `git commit` after `git add <file>`
+  commits EVERY staged hunk, including a sibling's (6db3ff8 swept t-3e246b5e32's staged files under a
+  models.json chore). Check `git status --short` for foreign staged entries first; never rewrite to repair.
 - Spawn threshold (owner ruling m-783ec47f35, 2026-09-24): 400 MB free RAM is enough headroom to
   spawn any shell. Do not hold spawns, feed re-arms or restarts for "free > 2 GB" or "> 3 GB"; run
   the remaining tasks of an epic in parallel seats. Restarts still run in the foreground, one
