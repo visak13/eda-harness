@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-from .schemas import CodeContext, Participant, QuoteContext, QuoteLocator, QuoteStored, Role
+from .schemas import LINE_MAX, CodeContext, Participant, QuoteContext, QuoteLocator, QuoteStored, Role, _escaped_len
 
 MAX_QUOTES = 20
 TEXT_MAX_B = 4096      # a passage, in UTF-8 bytes (the S4 snippet cap)
@@ -18,7 +18,8 @@ NOTE_MAX = 2000        # the sender's note on one passage (steer m-d735e11c27)
 CONTEXT_REACH = 3      # a doc quote's context must sit within this many lines of its range
 PASSAGE_CAP = 600      # passage chars a byte-bounded read (context, delta, feed) renders per quote
 NOTE_CAP = 400         # note chars a byte-bounded read renders per quote
-QUOTED_CAP = 2000      # the whole rendered block in a byte-bounded read (20 x the per-quote caps is too much)
+QUOTED_CAP_B = 2000    # the whole rendered block in a byte-bounded read, in JSON-escaped bytes
+VERSION_MAX = 10**9    # past this a version is a producer bug (and overflows SQLite INTEGER)
 HEADING_MAX = 200      # a derived heading is one doc line; stored clipped
 
 
@@ -27,10 +28,10 @@ MISMATCH, MISSING = "quote_mismatch", "quote_source_missing"  # the route answer
 
 class _LocatorIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    line_start: int | None = Field(default=None, ge=1)
-    line_end: int | None = Field(default=None, ge=1)
-    char_start: int | None = Field(default=None, ge=0)
-    char_end: int | None = Field(default=None, ge=0)
+    line_start: int | None = Field(default=None, ge=1, le=LINE_MAX)
+    line_end: int | None = Field(default=None, ge=1, le=LINE_MAX)
+    char_start: int | None = Field(default=None, ge=0, le=VERSION_MAX)
+    char_end: int | None = Field(default=None, ge=0, le=VERSION_MAX)
     heading: str | None = None  # accepted and ignored: the board derives it
 
 
@@ -45,7 +46,7 @@ class QuoteIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     source: Literal["doc", "message", "code"]
     id: str | None = Field(default=None, min_length=1, max_length=128)
-    version: int | None = Field(default=None, ge=1)
+    version: int | None = Field(default=None, ge=1, le=VERSION_MAX)
     locator: _LocatorIn | None = None
     text: str | None = None
     context: _ContextIn | None = None
@@ -229,6 +230,24 @@ def _clip(s: str, n: int | None) -> str:
     return s if n is None or len(s) <= n else s[:n].rstrip() + f"… (+{len(s) - n} chars; message_read for all)"
 
 
+def _clip_b(s: str, max_b: int) -> str:
+    """`s` clipped to `max_b` JSON-escaped bytes (what a bounded read pays: an emoji costs 12), on a
+    code-point boundary, with a marker naming the full read."""
+    if _escaped_len(s) <= max_b:
+        return s
+    lo, hi = 0, len(s)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        lo, hi = (mid, hi) if _escaped_len(s[:mid]) <= max_b else (lo, mid - 1)
+    return s[:lo].rstrip() + f"… (+{len(s) - lo} chars; message_read for all)"
+
+
+def _lines(s: str) -> list[str]:
+    """Every line break Python knows (CR, CRLF, U+2028, VT, ...), so no break a markdown or terminal
+    reader honours can slip a sender's line past the prefix (consult finding: a bare CR did)."""
+    return s.splitlines() or [""]
+
+
 def source_line(q: QuoteStored) -> str:
     """`— design-… v11 §14.5 L12-15`, `— m-… (author)` or `— code path:Lx-y @sha7`."""
     if q.source == "doc":
@@ -242,29 +261,31 @@ def source_line(q: QuoteStored) -> str:
 
 def render_quote(q: QuoteStored, capped: bool = False) -> str:
     passage = _clip(q.text, PASSAGE_CAP if capped else None)
-    out = [*("> " + ln if ln else ">" for ln in passage.split("\n")), source_line(q)]
+    out = [*("> " + ln.rstrip() if ln.strip() else ">" for ln in _lines(passage)), source_line(q)]
     if q.note:  # the sender's words: continuation lines are indented, so a note can never pose as a
-        # verified `> passage` / `— source` pair (C18 review finding)
-        note = _clip(q.note, NOTE_CAP if capped else None).split("\n")
+        # verified `> passage` / `— source` pair (C18 review + consult findings)
+        note = _lines(_clip(q.note, NOTE_CAP if capped else None))
         out.append("note: " + "\n      ".join(ln.rstrip() for ln in note))
     return "\n".join(out)
 
 
 def render_quotes(quotes: list[QuoteStored], capped: bool = False) -> str:
     block = "\n\n".join(render_quote(q, capped) for q in quotes)
-    return _clip(block, QUOTED_CAP) if capped else block
+    return _clip_b(block, QUOTED_CAP_B) if capped else block
 
 
 def compact(q: QuoteStored) -> dict[str, Any]:
-    """A quote's reference without its bodies (text, context, note, snippet): what a byte-bounded
-    read keeps beside the rendered `quoted` block."""
-    return q.model_dump(mode="json", include={"source", "id", "version", "author", "locator", "sha"},
-                        exclude_none=True)
+    """A quote's reference without its bodies (text, context, note, snippet, heading): what a
+    byte-bounded read keeps beside the rendered `quoted` block."""
+    return q.model_dump(mode="json", include={"source": True, "id": True, "version": True, "author": True,
+                                              "sha": True, "locator": {"line_start", "line_end", "char_start",
+                                                                       "char_end"}}, exclude_none=True)
 
 
-def with_quotes(row: dict[str, Any], m: Any, capped: bool = False) -> dict[str, Any]:
+def with_quotes(row: dict[str, Any], m: Any, capped: bool = False, refs: bool = True) -> dict[str, Any]:
     """`row` with the rendered `quoted` block placed just before `text`, so an agent reads the cited
-    passages above the message. A capped read also replaces raw `quotes` with compact references."""
+    passages above the message. A capped read replaces raw `quotes` with compact references, or with
+    only `quotes_count` when `refs` is False (an ask row, which no bounded pass may drop)."""
     quotes = getattr(m, "quotes", None) or []
     if not quotes:
         return row
@@ -276,6 +297,9 @@ def with_quotes(row: dict[str, Any], m: Any, capped: bool = False) -> dict[str, 
         if k != "quoted":
             out[k] = v
     out.setdefault("quoted", quoted)
-    if capped or "quotes" in out:
+    if not refs:
+        out.pop("quotes", None)
+        out["quotes_count"] = len(quotes)
+    elif capped or "quotes" in out:
         out["quotes"] = [compact(q) for q in quotes] if capped else [q.model_dump(mode="json") for q in quotes]
     return out

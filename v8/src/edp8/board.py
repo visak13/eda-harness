@@ -468,10 +468,11 @@ class Board:
         m = self._get("message", id_, "message")
         row = with_quotes({**m.model_dump(mode="json"), **code_row(m, None)}, m)  # S4/C18: whole snippet + quotes
         row["seq"] = self.store.seq_of("message", m.id)
-        row["replies"] = [r.model_dump(mode="json") for r in self.store.query("message", {"reply_to": m.id})]
+        row["replies"] = [with_quotes(r.model_dump(mode="json"), r, capped=True)
+                          for r in self.store.query("message", {"reply_to": m.id})]
         if m.reply_to:
             parent = self.store.get("message", m.reply_to)
-            row["in_reply_to"] = parent.model_dump(mode="json") if parent else None
+            row["in_reply_to"] = with_quotes(parent.model_dump(mode="json"), parent, capped=True) if parent else None
         return row
 
     def criteria(self, ticket_id: str) -> list[Criterion]:
@@ -1876,7 +1877,7 @@ class Board:
             return self.epic_of(tk).status not in _TERMINAL  # type: ignore[arg-type]
 
         def _ask_row(m: Message) -> dict[str, Any]:
-            row = with_quotes(m.model_dump(mode="json"), m, capped=True)
+            row = with_quotes(m.model_dump(mode="json"), m, capped=True, refs=False)  # asks survive every pass
             sender = self.store.get("participant", m.created_by)
             row["from_type"] = getattr(sender, "type", "agent") if sender else "agent"
             row["from_role"] = getattr(getattr(sender, "role", None), "value", "unknown") if sender else "unknown"
