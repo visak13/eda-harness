@@ -16,3 +16,4 @@ src/edp8/webapp/dist/
 web/node_modules/
 .pi/tasks/
 node_modules/
+.tools/
