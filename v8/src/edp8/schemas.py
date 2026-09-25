@@ -495,6 +495,39 @@ def code_row(m: Any, snippet_cap: int | None = ANCHOR_SNIPPET_CAP_B) -> dict[str
     return {"code_context": raw, "code_anchor": cc.anchor(snippet_cap)}
 
 
+class QuoteLocator(BaseModel):
+    """Where a quote sits in its source AS STORED. A doc: `heading` (derived by the board, the nearest
+    markdown heading at or above line_start) + 1-based inclusive lines of that version's body_md. A
+    message: an optional 0-based, end-exclusive character range of its text. A code quote keeps its
+    place in `QuoteStored.code`."""
+    heading: str | None = None
+    line_start: int | None = None
+    line_end: int | None = None
+    char_start: int | None = None
+    char_end: int | None = None
+
+
+class QuoteContext(BaseModel):
+    before: str = ""  # the line(s) just before the passage
+    after: str = ""   # the line(s) just after it
+
+
+class QuoteStored(BaseModel):
+    """One quote of a message AS STORED (design-10b21760d9 §14.5): plain fields, no validators, for the
+    same reason as CodeAnchor. The door rules live in edp8.quotes; the board verified `text` against
+    the source when the message was sent, so `text` is what that source said then."""
+    source: Literal["doc", "message", "code"]
+    id: str | None = None          # doc id | message id; None for code
+    version: int | None = None     # doc version quoted
+    author: str | None = None      # a message source's author, stored so the render needs no lookup
+    locator: QuoteLocator = Field(default_factory=QuoteLocator)
+    text: str
+    context: QuoteContext | None = None
+    note: str | None = None        # the sender's comment on this passage (steer m-d735e11c27)
+    sha: str                       # sha256 hex of text
+    code: CodeAnchor | None = None  # a code quote: the S4 anchor (its snippet is `text`)
+
+
 class Message(Obj):
     ticket_id: str
     to: str | None = None  # participant id | role | @handle | None (thread note)
@@ -503,6 +536,7 @@ class Message(Obj):
     reply_to: str | None = None
     document_context: DocumentContext | None = None
     code_context: CodeAnchor | None = None  # epic-91fcd3b370 S4: the code anchor a tag carries
+    quotes: list[QuoteStored] = Field(default_factory=list)  # C18: ordered, verified at send; older rows have none
     status: StatusValue | None = None  # set on kind=status messages written by record_status
     # finalised upload artifacts this message carries (R1): ids only, bytes stay behind the
     # authenticated /v1/artifacts/{id}/content route; older rows have none.
@@ -789,7 +823,12 @@ DESCRIBE: dict[str, str] = {
     "Kinds: question, answer, steer, status, finding, deviation, note. An optional code_context anchors code: "
     "{repo_root (absolute), path (relative, forward slashes, no '..'), line_start<=line_end (1-based), commit "
     "(40-hex, or null outside git), dirty, snippet (<=4096 UTF-8 bytes), snippet_sha (sha256 hex of snippet)}; "
-    "reads render it as `path:Lx-y @sha7[dirty]` plus the fenced snippet. CRUD: create, read, query.",
+    "reads render it as `path:Lx-y @sha7[dirty]` plus the fenced snippet. An optional ordered quotes[] (<=20) "
+    "cites passages: {source doc|message|code, id, version (doc), locator {line_start, line_end} (doc, 1-based) "
+    "or {char_start, char_end} (message, optional), text (<=4096 B, must occur in that source up to whitespace), "
+    "context {before, after}, note (<=2000 chars), code (source code: a code_context object)}; a quote the "
+    "board cannot verify is a 422 quote_mismatch / quote_source_missing. Reads render each as `> passage` "
+    "plus `— <source> v<N> §<heading> L<a-b>` in `quoted`, above text. CRUD: create, read, query.",
     "event": "Board-emitted audit + feed item (status_changed, gate_opened, ...). CRUD: query.",
     "artifact": "A produced thing by uri (never a machine path). CRUD: create, read, query.",
     "session": "A running/parked shell for a participant on a ticket (pool-owned). CRUD: read, query.",

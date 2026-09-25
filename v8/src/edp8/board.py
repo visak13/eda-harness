@@ -63,10 +63,12 @@ from .schemas import (
     TicketStatus,
     Verdict,
     WorkType,
+    QuoteStored,
     code_row,
     normalize_tags,
     now,
 )
+from .quotes import render_quotes, with_quotes
 from .store import Store, new_id
 
 _MENTION_RX = re.compile(r"@([A-Za-z0-9][A-Za-z0-9_.\-]*)")
@@ -440,16 +442,31 @@ class Board:
             # #37(a) (Astra, 2026-09-10): rows[-0:] is the WHOLE thread — 0 means none.
             tail = rows[-thread_limit:] if thread_limit > 0 else []
             # S4: a code anchor rides as `code_anchor` (snippet capped) so the snapshot stays bounded
-            out["thread"] = [{**m.model_dump(mode="json"), **code_row(m), "seq": seq} for seq, m in tail]
+            out["thread"] = [with_quotes({**m.model_dump(mode="json"), **code_row(m), "seq": seq}, m, capped=True)
+                             for seq, m in tail]
             out["thread_seq"] = rows[-1][0] if rows else 0
             out["thread_total"] = len(rows)
         if "links" in want:
             out["links"] = [lk.model_dump(mode="json") for lk in (*self.links(from_id=t.id), *self.links(to_id=t.id))]
         return out
 
+    def doc_comments(self, doc_id: str, version: int | None = None) -> list[dict[str, Any]]:
+        """Messages commenting on a doc (version): a design-review comment (`document_context`) or a
+        message quoting it (C18, design-10b21760d9 §14.5), oldest first, quotes rendered."""
+        self.doc(doc_id, version)  # an unknown doc/version is a not_found error, not an empty list
+        out = []
+        for seq, m in self.store.query_body_like("message", f'"{doc_id}"'):
+            dc = m.document_context
+            by_review = dc is not None and dc.design_ref == doc_id and version in (None, dc.reviewed_version)
+            by_quote = any(q.source == "doc" and q.id == doc_id and version in (None, q.version) for q in m.quotes)
+            if by_review or by_quote:
+                out.append(with_quotes({**m.model_dump(mode="json"), "seq": seq,
+                                        "via": "review" if by_review else "quote"}, m))
+        return out
+
     def message_read(self, id_: str) -> dict[str, Any]:
         m = self._get("message", id_, "message")
-        row = {**m.model_dump(mode="json"), **code_row(m, None)}  # S4: the whole snippet, rendered
+        row = with_quotes({**m.model_dump(mode="json"), **code_row(m, None)}, m)  # S4/C18: whole snippet + quotes
         row["seq"] = self.store.seq_of("message", m.id)
         row["replies"] = [r.model_dump(mode="json") for r in self.store.query("message", {"reply_to": m.id})]
         if m.reply_to:
@@ -1528,19 +1545,22 @@ class Board:
 
     def message_send(self, actor: Participant, *, ticket_id: str, to: str | None, kind: MessageKind,
                      text: str, reply_to: str | None = None, artifacts: list[str] | None = None,
-                     code_context: CodeContext | None = None) -> Message:
+                     code_context: CodeContext | None = None, quotes: list[QuoteStored] | None = None) -> Message:
         t = self.ticket(ticket_id)
         asked = to
         to, note = self.resolve_recipient(to, t)
         if reply_to:
             self._get("message", reply_to, "message")
         m = Message(id=new_id("m"), ticket_id=ticket_id, to=to, kind=kind, text=text, reply_to=reply_to,
-                    created_by=actor.id, artifacts=list(artifacts or []), code_context=code_context)
+                    created_by=actor.id, artifacts=list(artifacts or []), code_context=code_context,
+                    quotes=list(quotes or []))
         self.store.put("message", m)
         self._index("message", m.id, text)
         mentioned = self.mentions(text, exclude={actor.id, to} if to else {actor.id})
         self._emit(t.id, EventKind.message_sent, {"message": m.id, "to": to, "kind": kind, "from": actor.id,
                                                   "from_type": actor.type, "from_role": actor.role.value,
+                                                  # C18: the cited passages ride above the preview
+                                                  **({"quoted": render_quotes(m.quotes, capped=True)} if m.quotes else {}),
                                                   "text": text[:280], "mentions": mentioned,
                                                   **({"artifacts": m.artifacts} if m.artifacts else {}),
                                                   **({"asked": asked, "note": note} if note else {})})
@@ -1856,7 +1876,7 @@ class Board:
             return self.epic_of(tk).status not in _TERMINAL  # type: ignore[arg-type]
 
         def _ask_row(m: Message) -> dict[str, Any]:
-            row = m.model_dump(mode="json")
+            row = with_quotes(m.model_dump(mode="json"), m, capped=True)
             sender = self.store.get("participant", m.created_by)
             row["from_type"] = getattr(sender, "type", "agent") if sender else "agent"
             row["from_role"] = getattr(getattr(sender, "role", None), "value", "unknown") if sender else "unknown"

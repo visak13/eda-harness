@@ -160,6 +160,8 @@ class MessageIn(BaseModel):
     # epic-91fcd3b370 S4: a code anchor. Taken raw and validated in the route, so a bad field is a
     # 400 naming `code_context.<field>` (FastAPI's body validation would answer an unnamed 422).
     code_context: Any = None
+    # C18 (design-10b21760d9 §14.5): ordered quotes, taken raw and verified in the route (edp8.quotes)
+    quotes: Any = None
 
 
 def code_context_in(raw: Any) -> CodeContext | None:
@@ -610,7 +612,8 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     @app.exception_handler(BoardError)
     async def _board_error(_: Request, e: BoardError):
-        status = 409 if e.code in ("transition", "conflict") else 403 if e.code == "forbidden" else 400
+        status = (409 if e.code in ("transition", "conflict") else 403 if e.code == "forbidden"
+                  else 422 if e.code in ("quote_mismatch", "quote_source_missing") else 400)
         return JSONResponse(status_code=status, content=e.to_dict())
 
     @app.exception_handler(HTTPException)
@@ -972,11 +975,14 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         was_staged = [x for x in (b.artifacts or [])
                       if getattr(board.store.get("artifact", x), "staged", False)]
         code_context = code_context_in(b.code_context)  # before any artifact is finalised: a 400 changes nothing
+        from .quotes import quotes_in
+        with board._lock, board.store._lock:  # C18: verified against the sources before anything changes
+            quotes = quotes_in(board, a, b.quotes)
         if b.artifacts:
             board.artifact_finalise(a, artifact_ids=b.artifacts, ticket_id=b.ticket_id)
         try:
             m = board.message_send(a, ticket_id=b.ticket_id, to=b.to, kind=b.kind, text=b.text, reply_to=b.reply_to,
-                                   artifacts=b.artifacts, code_context=code_context)
+                                   artifacts=b.artifacts, code_context=code_context, quotes=quotes)
         except Exception:
             if was_staged:  # all-or-nothing: the message failed, so nothing it carried becomes visible
                 board.artifact_unfinalise(artifact_ids=was_staged, ticket_id=b.ticket_id)
@@ -1092,7 +1098,8 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         rows = board.store.query_seq("message", {"ticket_id": ticket_id, "to": to, "kind": kind,
                                                  "created_by": created_by}, since_seq=since_seq, limit=100000)
         rows = rows[-limit:] if since_seq is None else rows[:limit]
-        out = [{**_dump(m), "seq": seq} for seq, m in rows]
+        from .quotes import with_quotes
+        out = [with_quotes({**_dump(m), "seq": seq}, m) for seq, m in rows]  # C18: quotes rendered above text
         return ok(out, f"last_seq={rows[-1][0] if rows else (since_seq or 0)}; pass it as since_seq next time "
                        "to get only what is new")
 
@@ -1118,6 +1125,12 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         ids.update(t.id for t in board.store.query("ticket", limit=100000) if t.design_ref == id_)
         ids.update(c.ticket_id for c in board.store.query("criterion", limit=100000) if c.evidence_ref == id_)
         return ok([{"id": ident, "title": board.ticket(ident).title} for ident in sorted(ids)])
+
+    @app.get("/v1/docs/{id_}/comments")
+    def doc_comments(id_: str, version: int | None = None, a: Participant = Depends(actor)):
+        rows = board.doc_comments(id_, version)
+        return ok(rows, f"{len(rows)} comment(s) on {id_}{f' v{version}' if version else ''}: design-review "
+                        "comments and messages quoting it")
 
     @app.get("/v1/docs/{id_}/context")
     def document_context(id_: str, source: str, version: int, request: str | None = None,

@@ -294,6 +294,16 @@ class Store:
         model = OBJECT_TYPES[type_]
         return [(r["seq"], model.model_validate_json(r["body"])) for r in rows]
 
+    def query_body_like(self, type_: str, needle: str, limit: int = 100000) -> list[tuple[int, Obj]]:
+        """(seq, row) of `type_` whose JSON body contains `needle` literally, oldest first: a cheap
+        prefilter for a field no column indexes (C18 doc comments); the caller filters exactly."""
+        esc = needle.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+        with self._lock:
+            rows = self._conn.execute(f"SELECT seq, body FROM {type_} WHERE body LIKE ? ESCAPE '!' "
+                                      "ORDER BY seq LIMIT ?", (f"%{esc}%", limit)).fetchall()
+        model = OBJECT_TYPES[type_]
+        return [(r["seq"], model.model_validate_json(r["body"])) for r in rows]
+
     def thread_count(self, ticket_id: str) -> int:
         """Full direct-source total without fetching/deserializing message bodies."""
         with self._lock:

@@ -570,10 +570,15 @@ def _bound_snapshot(snap: dict[str, Any], *, thread_keep: int, thread_head: int,
         total = tv.get("thread_total", len(rows))
         kept = rows[-thread_keep:] if thread_keep > 0 else []
         tv["thread"] = [{**r, "text": _clip(r.get("text"), thread_head),
+                         # C18: the rendered quotes get a few bodies' room, never unbounded; a tighter
+                         # pass drops the compact refs too (message_read has them)
+                         **({"quoted": _clip(r["quoted"], 4 * thread_head)} if r.get("quoted") else {}),
+                         **({"quotes": []} if r.get("quotes") and thread_head < _THREAD_HEAD else {}),
                          # S4: a tighter pass keeps a code anchor's first line (path:Lx-y @sha) only
                          **({"code_anchor": r["code_anchor"].split("\n", 1)[0]}
                             if r.get("code_anchor") and thread_head < _THREAD_HEAD else {})} for r in kept]
-        if total > len(kept) or any(len(r.get("text") or "") > thread_head for r in rows):
+        if total > len(kept) or any(len(r.get("text") or "") > thread_head
+                                    or len(r.get("quoted") or "") > 4 * thread_head for r in rows):
             hit.add("thread")
         if total > len(kept):
             tv["thread_omitted"] = total - len(kept)
@@ -1134,20 +1139,21 @@ class MessageSendArgs(BaseModel):
     ticket_id: str
     kind: MessageKind = Field()
     text: str
-    to: str | None = Field(default=None, description='id, @handle or role; omit = note')
-    reply_to: str | None = Field(default=None, description='message id answered')
+    to: str | None = Field(default=None, description='id/@handle/role; omit=note')
+    reply_to: str | None = Field(default=None, description='id answered')
     artifacts: list[str] | None = Field(default=None, description='staged artifact ids')
     # S4 code anchor; the board validates it (a 400 names the field), rules in describe('message'). No
     # description: the S20 surface budget (test_s20_token_cost) had 6 B of headroom on the architect.
     code_context: dict | None = None
+    quotes: list[dict] | None = None  # C18: rules in describe('message'); no description (S20 budget)
 
 
 class MessageQueryArgs(BaseModel):
     ticket_id: str | None = Field(default=None)
-    to: str | None = Field(default=None, description='addressed to this id/role')
+    to: str | None = Field(default=None, description='addressee id/role')
     kind: MessageKind | None = Field(default=None)
     created_by: str | None = Field(default=None)
-    since_seq: int | None = Field(default=None, description='only newer than this seq (your last last_seq)')
+    since_seq: int | None = Field(default=None, description='newer than your last last_seq')
     limit: int = 50
 
 
@@ -1173,7 +1179,8 @@ class GatesArgs(BaseModel):
 
 def _message_send(a: MessageSendArgs) -> dict[str, Any]:
     return get_client().message_send(ticket_id=a.ticket_id, kind=a.kind, text=a.text, to=a.to,
-                                     reply_to=a.reply_to, artifacts=a.artifacts, code_context=a.code_context)
+                                     reply_to=a.reply_to, artifacts=a.artifacts, code_context=a.code_context,
+                                     quotes=a.quotes)
 
 
 def _message_query(a: MessageQueryArgs) -> dict[str, Any]:
@@ -1199,9 +1206,9 @@ def _gates(a: GatesArgs) -> dict[str, Any]:
 
 THREAD_TOOLS = [
     ToolDef("message_send",
-            'Post to a ticket thread, to a participant/role/@handle or as a note',
-            'at every milestone, blocker, question, answer or hand-off',
-            "the message; questions and steers reach the recipient's feed",
+            'Post to a ticket thread: a participant/role/@handle, or a note',
+            'milestones, blockers, questions, answers, hand-offs',
+            "the message; asks reach the recipient's feed",
             MessageSendArgs, _message_send, "thread"),
     ToolDef("message_query",
             'List thread messages oldest first with seq; since_seq returns only newer ones',

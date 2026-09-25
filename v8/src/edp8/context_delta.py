@@ -14,6 +14,7 @@ import secrets
 import time
 
 from .board import BoardError
+from .quotes import with_quotes
 from .schemas import code_row
 
 MAX_AGE = 86400
@@ -140,6 +141,10 @@ class ContextReader:
             if relevant:
                 change = self._change(seq, event)
                 cost = len(json.dumps(change).encode()) + 2
+                if cost > budget // 2 and 'quoted' in change:
+                    # C18: heavy quotes shrink to their source lines before the row is given up
+                    change['quoted'] = '\n'.join(ln for ln in change['quoted'].split('\n') if ln.startswith('— '))
+                    cost = len(json.dumps(change).encode()) + 2
                 if cost > budget // 2 and 'code_anchor' in change:
                     # S4: a heavy code anchor shrinks to its anchor line before the row is given up
                     change['code_anchor'] = change['code_anchor'].split('\n', 1)[0]
@@ -199,7 +204,7 @@ class ContextReader:
                        actor=message.created_by, recipient=message.to,
                        text=message.text[:TEXT_HEAD], truncated=len(message.text) > TEXT_HEAD,
                        **code_row(message))  # S4: the anchor, snippet capped
-            return row
+            return with_quotes(row, message, capped=True)  # C18: cited passages above the text
         for typ, tool, arg in [('ticket', 'ticket_read', 'ticket_id'), ('doc', 'doc_read', 'id'),
                                ('criterion', 'criterion_query', 'ticket_id'), ('artifact', 'artifact_read', 'id')]:
             obj = b.store.get(typ, event.subject_id)

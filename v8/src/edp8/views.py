@@ -720,7 +720,9 @@ def _msg(m: Any) -> dict[str, Any]:
             "at": m.created_at.isoformat(), "reply_to": m.reply_to,
             "artifacts": list(getattr(m, "artifacts", None) or []),
             # S4: the code anchor for the ticket page's code card (the SPA renders the snippet as text)
-            "code_context": m.code_context.model_dump(mode="json") if getattr(m, "code_context", None) else None}
+            "code_context": m.code_context.model_dump(mode="json") if getattr(m, "code_context", None) else None,
+            # C18: verified quotes for the quote cards (C19)
+            "quotes": [q.model_dump(mode="json") for q in (getattr(m, "quotes", None) or [])]}
 
 
 def _attachments(board: Board, ids: list[str]) -> list[dict[str, Any]]:

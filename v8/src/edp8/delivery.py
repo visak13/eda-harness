@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from . import broker_adapter
 from .board import Board, BoardError
+from .quotes import render_quotes
 from .schemas import Event, EventKind, Message, MessageKind, Reason
 
 
@@ -64,7 +65,10 @@ def after_message(board: Board, actor_id: str, m: Message) -> None:
         targets.append(pid)
     for to in targets:
         broker_adapter.publish(actor_id, to, m.kind.value,
-                               {"ticket_id": m.ticket_id, "text": m.text, "board_msg_id": m.id,
+                               {"ticket_id": m.ticket_id,
+                                # C18: the cited passages, rendered, above the text
+                                **({"quoted": render_quotes(m.quotes, capped=True)} if m.quotes else {}),
+                                "text": m.text, "board_msg_id": m.id,
                                 # attachment refs only (R1): the recipient fetches bytes with its own identity
                                 **({"artifacts": list(m.artifacts)} if m.artifacts else {})})
         try:
