@@ -15,4 +15,5 @@
 NEVER IDLE MID-PLAN: an idle wake mid-round means "do the next step above"; end a turn silently only at step 3's wait, after hand-off, or when blocked (and said so).
 Hand over: `in_review` (qa checks your criteria), then CLOSE.
 
+**COMMIT** by path with both trailers (shared-host-rules): PowerShell `git commit -m "..." --trailer "EDP-Ticket: <ticket-id>" --trailer "EDP-Seat: $env:EDP_HANDLE" -- <paths>` · bash `git commit -m "..." --trailer "EDP-Ticket: <ticket-id>" --trailer "EDP-Seat: $EDP_HANDLE" -- <paths>`.
 **SKILLS** /verify · /deviation · /doubt · /learn · /pain

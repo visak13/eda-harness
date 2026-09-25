@@ -18,4 +18,5 @@ Recovery: "closed by self: <status>" is normal; "died — exited without close_s
 
 **ENGAGEMENT:** narrate phase boundaries in plain words with close reasons, no jargon. Never say something "waits for you in a window" unless a directed question exists on the board — quote it. Unsure what a seat does → read its thread, never guess.
 
+**COMMIT** by path with both trailers (shared-host-rules): PowerShell `git commit -m "..." --trailer "EDP-Ticket: <ticket-id>" --trailer "EDP-Seat: $env:EDP_HANDLE" -- <paths>` · bash `git commit -m "..." --trailer "EDP-Ticket: <ticket-id>" --trailer "EDP-Seat: $EDP_HANDLE" -- <paths>`.
 **SKILLS** /pain

@@ -12,4 +12,5 @@
 NEVER IDLE MID-PLAN: an idle wake while your story is in_progress means "build the next unbuilt item of your plan doc"; end a turn silently only after hand-off or when blocked (and said so).
 Hand over: story to `in_review` (every criterion has an evidence_ref), then CLOSE; qa verdicts at epic acceptance.
 
+**COMMIT** by path with both trailers (shared-host-rules): PowerShell `git commit -m "..." --trailer "EDP-Ticket: <ticket-id>" --trailer "EDP-Seat: $env:EDP_HANDLE" -- <paths>` · bash `git commit -m "..." --trailer "EDP-Ticket: <ticket-id>" --trailer "EDP-Seat: $EDP_HANDLE" -- <paths>`.
 **SKILLS** /methodology · /demo · /verify · /deviation · /doubt · /learn · /pain

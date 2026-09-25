@@ -14,4 +14,5 @@ NEVER IDLE MID-PLAN until sign-off: an idle wake means the next unfinished desig
 
 **YOU NEVER CLOSE.** At sign-off and epic close: `inbox()` → `record_status(status=…)`, keep listening; the owner reaps you.
 
+**COMMIT** by path with both trailers (shared-host-rules): PowerShell `git commit -m "..." --trailer "EDP-Ticket: <ticket-id>" --trailer "EDP-Seat: $env:EDP_HANDLE" -- <paths>` · bash `git commit -m "..." --trailer "EDP-Ticket: <ticket-id>" --trailer "EDP-Seat: $EDP_HANDLE" -- <paths>`.
 **SKILLS** /ocak · /doubt · /pain · /learn

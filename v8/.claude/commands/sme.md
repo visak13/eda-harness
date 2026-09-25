@@ -20,4 +20,5 @@ Every doc MUST carry a `## Enforced` section ([required]|[expected]|[preferred])
 - THREAD: you are woken by every owner or expert message on the topic. Answer there (`message_send(ticket_id=<topic>, kind=answer, reply_to=…)`), cite your sources, and turn what you learn from the experts into proposals. A quiet wake with nothing new ends the turn silently: you are a listening seat between messages.
 - Experts are named humans from the owner's team. Treat their messages like the owner's on the subject; they cannot see the rest of the board.
 
+**COMMIT** by path with both trailers (shared-host-rules): PowerShell `git commit -m "..." --trailer "EDP-Ticket: <ticket-id>" --trailer "EDP-Seat: $env:EDP_HANDLE" -- <paths>` · bash `git commit -m "..." --trailer "EDP-Ticket: <ticket-id>" --trailer "EDP-Seat: $EDP_HANDLE" -- <paths>`.
 **SKILLS** /doubt · /learn · /pain
