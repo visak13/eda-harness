@@ -18,6 +18,7 @@ const { chromium } = require("playwright");
 
 const BOARD = process.env.EDP8_BOARD_URL ?? "http://127.0.0.1:9400";
 const SEAT = process.env.EDP_HANDLE;
+const BRANCH = require("node:child_process").execSync("git branch --show-current", { cwd: __dirname }).toString().trim();
 const TOKEN = process.env.EDP8_TOKEN;
 const V8 = path.resolve(__dirname, "..", "..");
 const CODER_JSON = path.join(V8, ".data", "code", "user", "coder.json");
@@ -59,7 +60,14 @@ const check = (ok, what) => { L(`${ok ? "PASS" : "FAIL"} ${what}`); if (!ok) fai
   const scmText = async () => {
     await cmd("View: Show Source Control");
     await page.waitForTimeout(4000);
-    return (await f.locator(".part.sidebar").innerText()).replace(/\s+/g, " ").slice(0, 300);
+    return (await f.locator(".part.sidebar").innerText()).replace(/\s+/g, " ");
+  };
+  // the Changes rows' descriptions: a subfolder when the root is the repository, the full path when
+  // degraded (the Graph pane is left out: commit subjects may quote a C:\ path)
+  const absChange = async () => {
+    const d = await f.locator(".scm-view .monaco-list-row .label-description").allInnerTexts();
+    L(`  ${d.length} change descriptions read`);
+    return d.find((t) => /[A-Za-z]:\\/.test(t)) ?? null;
   };
   const openUi = async (search = "") => {
     const sep = search ? "&" : "?";
@@ -77,9 +85,15 @@ const check = (ok, what) => { L(`${ok ? "PASS" : "FAIL"} ${what}`); if (!ok) fai
         await workbench();
         L(`${name}: frame url ${codeFrame()?.url()}`);
         const scm = await scmText();
-        L(`${name}: scm "${scm}"`);
+        L(`${name}: scm "${scm.slice(0, 300)}"`);
         await shot(`form-${name}`);
-        check(/eda-base3|main/.test(scm) && !/no source control|initialize repository|no folder/i.test(scm), `${name}: the folder ${folder} opens as a git repository (not a phantom)`);
+        // healthy = the repository's branch, and its changes listed relative (a degraded root lists each by full path)
+        const abs = await absChange();
+        L(`${name}: first change listed by absolute path: ${abs ?? "none"}`);
+        const healthy = scm.includes(`on "${BRANCH}"`) && !/no source control providers|initialize repository|open a folder/i.test(scm) && !abs;
+        check(name === "slashc" ? healthy : !healthy, name === "slashc"
+          ? `${name}: the SPA's /c:/ form opens v8 as the git repository, changes listed relative`
+          : `${name}: the C:\\ form a CLI positional redirects to is degraded (changes listed by full path), so no positional default`);
       }
     } else if (mode === "nohistory") {
       // run right after `.\edp.ps1 restart code` with coder.json's query removed: start-code seeds v8
@@ -90,8 +104,10 @@ const check = (ok, what) => { L(`${ok ? "PASS" : "FAIL"} ${what}`); if (!ok) fai
       L(`5 iframe src ${await page.locator("iframe").first().getAttribute("src")}; frame url ${codeFrame()?.url()}`);
       check((frameQuery().get("folder") ?? "") === slashC(V8), "5 with no code-server history a plain /ui/code opens v8 (in the /c:/ form)");
       const scm = await scmText();
-      L(`5 scm "${scm}"`);
-      check(/main/.test(scm) && !/initialize repository|no folder/i.test(scm) && !/C:\\Projects/.test(scm), "5 the v8 default opens as the git repository (changes listed relative, not by full path)");
+      L(`5 scm "${scm.slice(0, 300)}"`);
+      const abs = await absChange();
+      L(`5 first change listed by absolute path: ${abs ?? "none"}`);
+      check(scm.includes(`on "${BRANCH}"`) && !/no source control providers|initialize repository|open a folder/i.test(scm) && !abs,"5 the v8 default opens as the git repository (changes listed relative, not by full path)");
       await shot("5-no-history-v8");
     } else {
       const other = path.join(V8, "web");

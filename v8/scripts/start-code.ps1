@@ -184,8 +184,11 @@ WriteUtf8 $config ("# written by scripts\start-code.ps1 on every start; edits ar
 # measured on 4.138 as a degraded workspace (title without its drive, every change listed by full path).
 $coderJson = Join-Path $userDir "coder.json"
 $coder = $null
-if (Test-Path $coderJson) { try { $coder = Get-Content $coderJson -Raw | ConvertFrom-Json } catch { $coder = $null } }
-if ((Test-Path $coderJson) -and -not $coder) {
+$coderRaw = ""
+if (Test-Path $coderJson) { $coderRaw = "" + (Get-Content $coderJson -Raw) }  # an empty file reads as $null
+# code-server reads an empty file as {} (no history), so only real non-JSON is left alone
+if ($coderRaw.Trim()) { try { $coder = $coderRaw | ConvertFrom-Json } catch { $coder = $null } }
+if ($coderRaw.Trim() -and -not $coder) {
   Write-Host "default folder: coder.json unreadable; left as is"
 } elseif (-not ($coder -and $coder.query -and ($coder.query.folder -or $coder.query.workspace))) {
   $defaultFolder = "/" + ($v8 -replace '\\', '/').TrimEnd("/")
