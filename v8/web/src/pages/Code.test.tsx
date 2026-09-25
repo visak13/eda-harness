@@ -39,10 +39,10 @@ function mount(path = "/code", status: Partial<CodeStatus> | "error" = {}, hostn
 }
 
 describe("CodePage", () => {
-  it("embeds code-server at the port the board reports, opening the board's tree in the /c:/ form", async () => {
+  it("embeds code-server at the port the board reports with no folder, so it reopens its last folder", async () => {
     mount();
     const frame = await screen.findByTestId("code-frame");
-    expect(frame.getAttribute("src")).toBe("http://127.0.0.1:9555/?folder=/c:/Projects/Learning/eda-base3/v8");
+    expect(frame.getAttribute("src")).toBe("http://127.0.0.1:9555/");
     expect(screen.getByTestId("code-state")).toHaveTextContent("code-server 4.138.0 · running");
     expect(screen.getByTestId("code-newwindow")).toHaveAttribute("href", frame.getAttribute("src"));
     expect(screen.getByTestId("code-newwindow")).toHaveAttribute("target", "_blank");

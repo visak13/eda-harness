@@ -81,11 +81,16 @@ function encodePath(path: string): string {
 }
 
 /** The code-server URL for the iframe (and for "Open in new window"). `base` is the service URL
- *  the board reports (`http://127.0.0.1:<port>/`); `fallbackFolder` is the board's own tree. */
+ *  the board reports (`http://127.0.0.1:<port>/`); `fallbackFolder` is the board's own tree.
+ *  A plain /code (no folder, no file) sends NO folder: code-server then reopens its last folder or
+ *  workspace (coder.json), and only with no history its CLI default (t-6356c06c40). */
 export function embedUrl(base: string, link: CodeLink, fallbackFolder: string | null): string {
   const url = new URL(base);
-  // An explicitly rejected root must never redirect its relative file into another workspace.
-  const folder = link.invalid.includes("folder") ? null : link.folder ?? normalizeFolder(fallbackFolder);
+  // An explicitly rejected root must never redirect its relative file into another workspace; the
+  // fallback tree only resolves a deep-linked file, never a plain open.
+  const folder = link.invalid.includes("folder")
+    ? null
+    : link.folder ?? (link.file ? normalizeFolder(fallbackFolder) : null);
   const params: string[] = [];
   // code-server reads `folder` raw (no `+` decoding): encode with %20 etc., keep `/` and `:` readable
   if (folder) params.push(`folder=${encodeURIComponent(folder).replace(/%2F/g, "/").replace(/%3A/g, ":")}`);

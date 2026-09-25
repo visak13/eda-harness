@@ -55,9 +55,20 @@ describe("embedUrl", () => {
   const BASE = "http://127.0.0.1:9410/";
   const payloadOf = (u: string) => JSON.parse(new URL(u).searchParams.get("payload")!);
 
-  it("opens the board's own tree in the /c:/ form when the link names no folder", () => {
-    const u = embedUrl(BASE, parseCodeLink(""), String.raw`C:\Projects\Learning\eda-base3\v8`);
-    expect(u).toBe("http://127.0.0.1:9410/?folder=/c:/Projects/Learning/eda-base3/v8");
+  // t-6356c06c40: a plain open sends no folder, so code-server reopens its last folder/workspace
+  // (and only with no history its CLI default); any ?folder= would override that memory.
+  it.each(["", "?line=10", "?folder=", "?file="])("a plain open (%s) sends no folder, so code-server reopens its last folder", search => {
+    const u = embedUrl(BASE, parseCodeLink(search), String.raw`C:\Projects\Learning\eda-base3\v8`);
+    expect(u).toBe("http://127.0.0.1:9410/");
+  });
+
+  it("a deep-linked file with no folder resolves against the board's own tree in the /c:/ form", () => {
+    const u = embedUrl(BASE, parseCodeLink("?file=src/edp8/board.py&line=7"), String.raw`C:\Projects\Learning\eda-base3\v8`);
+    expect(new URL(u).searchParams.get("folder")).toBe("/c:/Projects/Learning/eda-base3/v8");
+    expect(payloadOf(u)).toEqual([
+      ["openFile", "vscode-remote://127.0.0.1:9410/c:/Projects/Learning/eda-base3/v8/src/edp8/board.py:7"],
+      ["gotoLineMode", "true"],
+    ]);
   });
 
   it.each(["//server/share/repo", "relative", "C:/a/../b"])("never opens a fallback file for rejected root %s", folder => {
