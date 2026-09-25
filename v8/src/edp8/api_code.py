@@ -31,10 +31,21 @@ def _home() -> Path:
     return Path(os.environ.get("EDP8_HOME", str(Path(__file__).resolve().parents[2]))).resolve()
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Whatever listens on the port must not steer the board's probe to another URL."""
+
+    def redirect_request(self, *_args, **_kwargs):
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
 def probe(port: int, timeout: float = _PROBE_TIMEOUT_S) -> bool:
-    """code-server answers GET /healthz 200 with status alive|expired; expired only means idle."""
+    """code-server answers GET /healthz 200 with status alive|expired; expired only means idle.
+    A redirect, any other status, a refusal or a timeout all count as not running."""
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=timeout) as r:
+        with _OPENER.open(f"http://127.0.0.1:{port}/healthz", timeout=timeout) as r:
             return r.status == 200
     except (urllib.error.URLError, OSError, ValueError):
         return False

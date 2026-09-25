@@ -82,6 +82,31 @@ def test_up_with_version_from_run_file(board_env):
         srv.shutdown()
 
 
+class _Redirect(_Healthz):
+    def do_GET(self):  # noqa: N802 — /healthz redirects to a URL that would answer 200
+        if self.path == "/healthz":
+            self.send_response(302)
+            self.send_header("Location", "/ok")
+            self.end_headers()
+            return
+        super().do_GET() if self.path != "/ok" else self._ok()
+
+    def _ok(self):
+        self.send_response(200)
+        self.end_headers()
+
+
+def test_probe_does_not_follow_redirects(board_env):
+    client, _, mp = board_env
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), _Redirect)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        mp.setenv("EDP_CODE_PORT", str(srv.server_address[1]))
+        assert client.get("/v1/code", headers=AUTH).json()["value"]["running"] is False
+    finally:
+        srv.shutdown()
+
+
 def test_garbage_run_file_and_bad_port_env(board_env):
     client, tmp, mp = board_env
     mp.setenv("EDP_CODE_PORT", "not-a-port")
