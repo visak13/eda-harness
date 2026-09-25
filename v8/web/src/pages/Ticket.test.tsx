@@ -1,8 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
 import { uploadArtifact } from "../api/endpoints";
-import { screen, within, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, within, waitFor, fireEvent } from "@testing-library/react";
 import { HttpResponse } from "msw";
-import { useLocation } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation, useNavigationType } from "react-router";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { DocDrawerProvider } from "../components/DocDrawer";
 import { server } from "../test/setup";
 import { http, okJson, renderRoute } from "./testUtils";
 import { TicketPage } from "./Ticket";
@@ -421,5 +423,54 @@ describe("TicketPage linked-documents drop target (promise #19)", () => {
     fireEvent.drop(card, { dataTransfer: { files: [new File(["x"], "shot.png", { type: "image/png" })] } });
     expect(await within(card).findByRole("alert")).toHaveTextContent(/Upload failed/);
     expect(within(card).queryByTestId("attached-artifact")).not.toBeInTheDocument();
+  });
+});
+
+// C10 (design-10b21760d9 §13): /ticket/<epic id> is not the epic's page. Once the page loads with
+// kind=epic it REPLACES the entry with /epic/<id>, keeping the query and the #m- anchor, so Back
+// does not bounce through the ticket view; a story id stays put.
+function EpicProbe(): React.JSX.Element {
+  const { pathname, search, hash } = useLocation();
+  return <span data-testid="epic-probe" data-nav={useNavigationType()}>{pathname + search + hash}</span>;
+}
+
+function mountEpicRedirect(path: string, kind: "epic" | "story", id: string) {
+  const data = ticketPage({ ticket: { ...ticketPage().ticket, id, kind } });
+  server.use(http.get(`/v1/tickets/${id}/page`, () => okJson(data)));
+  server.use(http.get(`/v1/tickets/${id}/transitions`, () => okJson({ status: data.ticket.status, transitions: [] })));
+  server.use(http.get("/v1/pool/capabilities", () => okJson({ resume_parked: true, resume_closed: false, park: true, spawn: false, reason: "no pool in tests" })));
+  server.use(http.post("/v1/messages/resolve", () => okJson({ to: null, wakes: [], plan: [], note: "" })));
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter initialEntries={[path]}>
+        <DocDrawerProvider>
+          <Routes>
+            <Route path="/ticket/:id" element={<TicketPage />} />
+            <Route path="/epic/:id" element={<EpicProbe />} />
+          </Routes>
+        </DocDrawerProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+describe("TicketPage epic redirect (C10)", () => {
+  it.each([
+    ["/ticket/epic-1", "/epic/epic-1"],
+    ["/ticket/epic-1?as=owner", "/epic/epic-1?as=owner"],
+    ["/ticket/epic-1?as=owner#m-abc123", "/epic/epic-1?as=owner#m-abc123"],
+    ["/ticket/epic-1#m-abc123", "/epic/epic-1#m-abc123"],
+  ])("%s lands on %s by history replace", async (from, to) => {
+    mountEpicRedirect(from, "epic", "epic-1");
+    const probe = await screen.findByTestId("epic-probe");
+    expect(probe).toHaveTextContent(to);
+    expect(probe).toHaveAttribute("data-nav", "REPLACE");
+  });
+
+  it("a story id stays on /ticket/", async () => {
+    mountEpicRedirect("/ticket/s-1?as=owner#m-abc123", "story", "s-1");
+    await screen.findByText("Build the epic page", { selector: "h1" });
+    expect(screen.queryByTestId("epic-probe")).not.toBeInTheDocument();
   });
 });

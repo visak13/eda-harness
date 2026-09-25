@@ -1,5 +1,5 @@
-import { useCallback, useState } from "react";
-import { useLocation, useParams } from "react-router";
+import { useCallback, useEffect, useState } from "react";
+import { useLocation, useNavigate, useParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getTicketPage, finalizeArtifacts } from "../api/endpoints";
 import type { MessageView, TicketStatus, UploadedArtifact } from "../api/types";
@@ -57,14 +57,21 @@ export function TicketPage(): React.JSX.Element {
   }, [id, qc]);
   const docsDrop = useDropUpload(id, onAttached);
 
-  const { hash } = useLocation();
+  const { hash, search } = useLocation();
+  const navigate = useNavigate();
   const include = hash.startsWith("#m-") ? hash.slice(1) : null;
   const page = useQuery({ queryKey: ["ticket", id, include], queryFn: () => getTicketPage(id, include) });
+  // C10 (design-10b21760d9 §13): an epic has its own page. A /ticket/<epic id> link (the VS Code
+  // chat's, an old bookmark) replaces itself with /epic/<id>, query and #m- anchor kept.
+  const isEpic = page.data?.ticket.kind === "epic";
+  useEffect(() => {
+    if (isEpic) navigate(`/epic/${encodeURIComponent(id)}${search}${hash}`, { replace: true });
+  }, [isEpic, id, search, hash, navigate]);
   const history = useThreadHistory(id, page.data);
   // S22: before the early returns (a hook); keeps a gate answered elsewhere while its ruling is unsent.
   const gates = useRetainedGates((page.data?.open_gates ?? []).filter((g) => g.gate !== "design_signoff"));
 
-  if (page.isPending) return <p className={ui.empty}>Loading ticket…</p>;
+  if (page.isPending || isEpic) return <p className={ui.empty}>Loading ticket…</p>;
   if (page.isError)
     return (
       <p className={ui.banner} role="alert">
