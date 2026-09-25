@@ -998,7 +998,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         hint = "delivered to the recipient's feed; end your turn if you are waiting for an answer"
         # unresolved_mentions: @handles that match no participant — the message posted, but nobody
         # was woken for these (design §4.1). The caller surfaces them so a typo'd @handle is visible.
-        return ok({**_dump(m), "unresolved_mentions": views.unresolved_mentions(board, b.text)},
+        return ok({**_dump(m), "unresolved_mentions": views.unresolved_mentions(board, b.text, m.quotes)},
                   f"{note}; {hint}" if note else hint)
 
     @app.post("/v1/status")

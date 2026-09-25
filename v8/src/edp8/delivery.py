@@ -61,7 +61,7 @@ def after_message(board: Board, actor_id: str, m: Message) -> None:
     targets: list[str] = []
     if m.to and _is_participant(board, m.to):
         targets.append(m.to)
-    for pid in board.mentions(m.text, exclude={actor_id, *(t for t in targets)}):
+    for pid in board.message_mentions(m, exclude={actor_id, *(t for t in targets)}):  # C23: notes too
         targets.append(pid)
     for to in targets:
         broker_adapter.publish(actor_id, to, m.kind.value,

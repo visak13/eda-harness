@@ -107,12 +107,13 @@ def search_ticket_ids(board: Board, q: str, *, types: set[str] | None = None,
     return [h["id"] for h in board.store.fts_search(q, types=types or {"ticket"}, limit=limit)]
 
 
-def unresolved_mentions(board: Board, text: str) -> list[str]:
-    """@handles in text that match no participant — the message posts, but nobody is woken
-    for these. De-duped, order preserved (parity with ui.py's _MENTION_RX check)."""
+def unresolved_mentions(board: Board, text: str, quotes: list[Any] | None = None) -> list[str]:
+    """@handles in text (and, C23, in the quotes' notes) that match no participant — the message
+    posts, but nobody is woken for these. De-duped, order preserved (parity with ui.py's _MENTION_RX check)."""
     from .board import _mention_handles
 
-    bad = [h for h in _mention_handles(text) if not _participant_by_handle(board, h)]
+    bad = [h for src in Board.mention_sources(text, quotes) for h in _mention_handles(src)
+           if not _participant_by_handle(board, h)]
     return list(dict.fromkeys(bad))
 
 
@@ -472,7 +473,8 @@ def _why_in_inbox(board: Board, viewer: Participant, m: dict[str, Any]) -> str:
         return f"addressed to you (@{viewer.handle})"
     if to == viewer.role.value:
         return f"addressed to your role ({viewer.role.value})"
-    if viewer.id in board.mentions(m.get("text") or ""):
+    notes = [q.get("note") or "" for q in m.get("quotes") or []]  # C23: a note mention counts
+    if any(viewer.id in board.mentions(src) for src in [m.get("text") or "", *notes]):
         return "mentioned you"
     if board.epic_owner(m["ticket_id"]) == viewer.id:
         return "you own this epic"

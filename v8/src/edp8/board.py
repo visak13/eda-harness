@@ -1429,6 +1429,20 @@ class Board:
                 out.append(pid)
         return out
 
+    @staticmethod
+    def mention_sources(text: str, quotes: list[Any] | None) -> list[str]:
+        """The texts a message's @mentions come from: its text, then every quote's note (C23).
+        Kept apart so a code fence left open in one cannot swallow the next."""
+        return [text or "", *(q.note for q in (quotes or []) if getattr(q, "note", None))]
+
+    def message_mentions(self, m: Message, *, exclude: set[str] | None = None) -> list[str]:
+        """Participant ids a message @mentions in its text OR in a quote's note (C23): same
+        exclusions and unknown-handle-is-prose rule as `mentions`, one entry per participant."""
+        out: list[str] = []
+        for src in self.mention_sources(m.text, m.quotes):
+            out += [p for p in self.mentions(src, exclude=exclude) if p not in out]
+        return out
+
     def epic_owner(self, ticket_id: str) -> str | None:
         """The human who owns a ticket's epic (its creator when that is an owner-role
         participant). None for agent-created epics — there is NO fallback to a shared
@@ -1567,7 +1581,7 @@ class Board:
                     quotes=list(quotes or []))
         self.store.put("message", m)
         self._index("message", m.id, text)
-        mentioned = self.mentions(text, exclude={actor.id, to} if to else {actor.id})
+        mentioned = self.message_mentions(m, exclude={actor.id, to} if to else {actor.id})
         self._emit(t.id, EventKind.message_sent, {"message": m.id, "to": to, "kind": kind, "from": actor.id,
                                                   "from_type": actor.type, "from_role": actor.role.value,
                                                   # C18: the cited passages ride above the preview
