@@ -113,7 +113,8 @@ against its source when you send.
 - **The draft tray:** the quotes wait as chips above the chat composer, one per quote, showing the
   source, the passage and an editable note. **↑**/**↓** reorder them and **×** removes one. While the
   chat panel is hidden the status bar shows **EDP draft: N → <thread>**; click it to show the chat.
-  The drafts survive a reload of the window.
+  The drafts survive a reload of the window. They belong to the board and person signed in: after
+  signing in as someone else you see that person's drafts, never yours.
 - **Mentions, paths and board objects in notes:** every note box (the comment box, the reader and message
   popovers, the chip notes) completes `@`, `#` and `$` as the composer does (next section).
 - **Send:** press `Ctrl+Enter` in the composer (the text is optional when quotes are attached). The
@@ -147,6 +148,27 @@ picks, **Escape** closes the list and keeps what you typed.
   (board UI); a decision opens its row in the Decisions tab (VS Code) or the History drawer on
   Decisions (board UI, which has no decision page). `$5`, `$env:X` and `$` inside code never open the
   list. Board UI and VS Code.
+
+## Known behaviours and limits (edp-code 0.13.3)
+
+- **Dropping files into chat needs `Shift`.** VS Code takes a plain drop itself and opens the file; only
+  a drop with `Shift` held reaches the chat. An extension cannot change this. The paperclip's tooltip
+  says so; the paperclip and pasting a screenshot need no `Shift`.
+- **`Ctrl+Alt+Q` on AltGr keyboards** is designed not to interfere with typing (above) but has not been
+  tried on a physical AltGr keyboard. Report anything odd.
+- **Firefox console warnings.** Firefox logs a few `style-src` Content-Security-Policy warnings when the
+  chat or reader opens. Nothing looks different; the policy is kept strict on purpose.
+- **Sign-out and switching person.** Signing out clears the chat, Inbox, Docs, Decisions and any open
+  reader. Signing in as someone else shows only their data and drafts. A refused sign-in (401) does the
+  same.
+- **A tab you may not read.** When the board refuses one tab (403, for example Decisions on an epic you
+  are not a seat on) only that tab says so; the chat, feed and drafts stay.
+- **Connection drops.** If the board stops answering, the chat reconnects on its own and falls back to
+  polling; missed messages are fetched when it recovers. **Load older** reaches any gap.
+- **Using another machine (teammates).** Install `vscode-ext/edp-code/edp-code.vsix` in your own VS Code,
+  set `edp.boardUrl` to `https://msi.tail884b19.ts.net` (you must be on the tailnet), then run
+  **EDP: Sign in to board** with your handle and token. The Code tab itself stays on the board host
+  only (above). Full steps: `guides/tailnet-public-mode.md` §5.
 
 ## The built-in git UI is not guarded
 
