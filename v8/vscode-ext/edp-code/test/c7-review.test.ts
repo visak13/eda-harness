@@ -4,6 +4,9 @@ import { FeedClient } from '../src/core/feed';
 import { InboxHost } from '../src/vscode/inbox';
 import type { Board } from '../src/core/api';
 import { ChatController } from '../src/vscode/chat';
+import { ThreadStore } from '../src/core/thread';
+import { locateInSource as extensionLocate } from '../src/core/quoteMatch';
+import { locateInSource as webLocate } from '../../../web/src/components/quoteMatch';
 
 const creds = async () => ({ participant: 'review', token: 'throwaway' });
 
@@ -88,4 +91,27 @@ it('C7: message after thread snapshot but before open completes is discarded', a
   expect(c.ticket.id).toBe(id);
   expect(board.message).not.toHaveBeenCalled();
   expect(c.store.items).toHaveLength(0);
+});
+
+it('C7: resync after 101 missed messages retains an unreachable history hole', async () => {
+  const id = 's-0123456789';
+  const row = (seq: number) => ({ id: `m-${String(seq).padStart(10, '0')}`, seq, by: 'arch', to: null, kind: 'note', text: `message ${seq}`, at: '2026-09-25T00:00:00Z', reply_to: null, code_context: null });
+  const store = new ThreadStore(id);
+  store.loadPage({ thread: [row(1)], thread_total: 1, thread_before: null });
+  const c = Object.assign(Object.create(ChatController.prototype), {
+    store, board: () => ({ thread: async () => ({ thread: Array.from({ length: 100 }, (_, i) => row(i + 3)), thread_total: 102, thread_before: 3 }) }),
+    post: vi.fn(), provider: { noteUnseen() {} }, log: vi.fn(),
+  });
+  await c.reload();
+  expect(c.log).not.toHaveBeenCalled();
+  expect(store.items).toHaveLength(101);
+  expect(store.has(row(2).id)).toBe(false);
+  expect(store.before).toBeNull();
+});
+
+it('C7: both source matchers discard literal Markdown link text inside code', () => {
+  for (const locate of [extensionLocate, webLocate]) {
+    expect(locate('`[x](y)`', '[x](y)', '')).toBeNull();
+    expect(locate('```\n[x](y)\n```', '[x](y)', '')).toBeNull();
+  }
 });

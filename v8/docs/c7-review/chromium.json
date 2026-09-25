@@ -5,7 +5,7 @@
     "insidePopover": false
   },
   "chat": {
-    "csp": "default-src 'none'; script-src 'nonce-72i1UYgT5J7tfZf4iBgu6Q=='; style-src 'nonce-72i1UYgT5J7tfZf4iBgu6Q=='; img-src data:; form-action 'none'; base-uri 'none'",
+    "csp": "default-src 'none'; script-src 'nonce-Zx7SQ5aVOAUCJJRL4vTZGA=='; style-src 'nonce-Zx7SQ5aVOAUCJJRL4vTZGA=='; img-src data:; form-action 'none'; base-uri 'none'",
     "styles": [
       {
         "nonce": "",
@@ -13,7 +13,7 @@
         "size": 2384
       },
       {
-        "nonce": "72i1UYgT5J7tfZf4iBgu6Q==",
+        "nonce": "Zx7SQ5aVOAUCJJRL4vTZGA==",
         "rules": 279,
         "size": 26042
       }
@@ -22,7 +22,7 @@
     "tokenInHtml": false
   },
   "reader": {
-    "csp": "default-src 'none'; script-src 'nonce-klRkFr4/MDp6JJfXk1e+WA=='; style-src 'nonce-klRkFr4/MDp6JJfXk1e+WA=='; form-action 'none'; base-uri 'none'",
+    "csp": "default-src 'none'; script-src 'nonce-2hRheDR6XX0uFsbSC2y7bQ=='; style-src 'nonce-2hRheDR6XX0uFsbSC2y7bQ=='; form-action 'none'; base-uri 'none'",
     "styles": [
       {
         "nonce": "",
@@ -30,7 +30,7 @@
         "size": 2384
       },
       {
-        "nonce": "klRkFr4/MDp6JJfXk1e+WA==",
+        "nonce": "2hRheDR6XX0uFsbSC2y7bQ==",
         "rules": 82,
         "size": 8455
       }
@@ -40,5 +40,6 @@
   },
   "readerAfterSignout": "Review\nA visible passage for quoting.\n",
   "cspConsole": [],
-  "browser": "151.0.7922.34"
+  "browser": "151.0.7922.34",
+  "otherIdentityDraft": "private draft from identity A"
 }
