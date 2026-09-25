@@ -569,7 +569,10 @@ def _bound_snapshot(snap: dict[str, Any], *, thread_keep: int, thread_head: int,
         rows = tv.get("thread") or []
         total = tv.get("thread_total", len(rows))
         kept = rows[-thread_keep:] if thread_keep > 0 else []
-        tv["thread"] = [{**r, "text": _clip(r.get("text"), thread_head)} for r in kept]
+        tv["thread"] = [{**r, "text": _clip(r.get("text"), thread_head),
+                         # S4: a tighter pass keeps a code anchor's first line (path:Lx-y @sha) only
+                         **({"code_anchor": r["code_anchor"].split("\n", 1)[0]}
+                            if r.get("code_anchor") and thread_head < _THREAD_HEAD else {})} for r in kept]
         if total > len(kept) or any(len(r.get("text") or "") > thread_head for r in rows):
             hit.add("thread")
         if total > len(kept):

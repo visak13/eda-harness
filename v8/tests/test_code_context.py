@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 from edp8.board import Board
 from edp8.bundles import ALL_TOOLS, set_client
 from edp8.client import BoardClient
-from edp8.schemas import ANCHOR_SNIPPET_CAP_B, SNIPPET_MAX_B, CodeContext
+from edp8.schemas import ANCHOR_SNIPPET_CAP_B, SNIPPET_MAX_B, CodeAnchor, CodeContext, Message
 from edp8.service import create_app
 from edp8.store import Store
 
@@ -112,14 +112,24 @@ def test_snippet_at_the_cap_and_posix_root_are_accepted(client, story):
     ({"path": "src//board.py"}, "code_context.path"),
     ({"path": "src/"}, "code_context.path"),
     ({"path": "src/board.py\x00.txt"}, "code_context.path"),
-    ({"line_start": 20, "line_end": 10}, "line_end"),
+    ({"line_start": 20, "line_end": 10}, "code_context.line_end"),
+    ({"line_start": 10 ** 40, "line_end": 10 ** 40}, "code_context.line_start"),
+    ({"path": "a/\u202eyp.exe"}, "code_context.path"),  # RTL override: renders spoofed
+    ({"path": "a\u0085b"}, "code_context.path"),         # C1 NEL
+    ({"path": "a\u2028b"}, "code_context.path"),         # line separator
+    ({"path": "a/b::$DATA"}, "code_context.path"),       # NTFS stream
+    ({"path": " a.py"}, "code_context.path"),
+    ({"path": "a/b "}, "code_context.path"),
+    ({"path": "a`b.py"}, "code_context.path"),           # would close the anchor's inline span
+    ({"repo_root": "C:/r\n"}, "code_context.repo_root"),
+    ({"lineStart": 3}, "code_context.lineStart"),         # a typo is named, not dropped
     ({"line_start": 0}, "code_context.line_start"),
     ({"commit": "not-a-sha"}, "code_context.commit"),
     ({"commit": SHA.upper()}, "code_context.commit"),
     ({"commit": SHA[:39]}, "code_context.commit"),
     ({"snippet": "x" * (SNIPPET_MAX_B + 1)}, "code_context.snippet"),
     ({"snippet": "é" * (SNIPPET_MAX_B // 2) + "a"}, "code_context.snippet"),  # 4097 bytes, 2049 chars
-    ({"snippet_sha": "0" * 64}, "snippet_sha"),
+    ({"snippet_sha": "0" * 64}, "code_context.snippet_sha"),
     ({"repo_root": "relative/root"}, "code_context.repo_root"),
 ])
 def test_invalid_code_context_is_a_400_naming_the_field(client, story, over, field):
@@ -129,6 +139,24 @@ def test_invalid_code_context_is_a_400_naming_the_field(client, story, over, fie
     assert field in msg, msg
     # nothing was posted
     assert client.get("/v1/messages", headers=OWNER, params={"ticket_id": story}).json()["value"] == []
+
+
+def test_non_object_code_context_is_a_400(client, story):
+    for bad in ("src/a.py:L1", [1, 2], 7):
+        r = send(client, story, bad)
+        assert r.status_code == 400 and "code_context: must be an object" in r.json()["error"]["message"], r.text
+
+
+def test_a_stored_anchor_that_later_rules_refuse_still_loads(client, story):
+    """The store re-validates rows on read: the door rules must not apply there, or one tightening
+    of them makes an old message, and with it its whole thread, unreadable (review finding 1)."""
+    old = CodeAnchor(**anchor(path="./legacy.py"))  # accepted by 726d466, refused since 1e3195a
+    m = Message(id="m-legacy", ticket_id=story, kind="note", text="old tag", created_by="owner", code_context=old)
+    client.app.state.board.store.put("message", m)
+    got = client.get("/v1/messages/m-legacy", headers=ENG).json()["value"]
+    assert got["code_anchor"].startswith("`./legacy.py:L10-12")
+    page = client.get(f"/v1/tickets/{story}/page", headers=OWNER).json()["value"]
+    assert page["thread"][-1]["code_context"]["path"] == "./legacy.py"
 
 
 def test_missing_field_is_named(client, story):
@@ -166,7 +194,8 @@ def test_context_and_delta_render_the_anchor_within_the_caps(client, story):
     out = dl.handler(dl.args_model(cursor=base["cursor"]))["value"]
     msgs = [c for c in out["changes"] if c.get("object_type") == "message"]
     assert [m["code_anchor"].split("\n", 1)[0] for m in msgs] == [
-        "`src/edp8/board.py:L1-60 @0123456` (snippet clipped to 1024 of %d B; message_read for all)"
+        # the cap is in JSON-escaped bytes: 14 clipped lines' \n cost 2 each, so 1010 raw bytes fit
+        "`src/edp8/board.py:L1-60 @0123456` (snippet clipped to 1010 of %d B; message_read for all)"
         % len(big.encode()),
         "`src/edp8/board.py:L10-12 @0123456`"]
     assert len(json.dumps(out).encode()) <= 12_000
@@ -177,11 +206,38 @@ def test_context_and_delta_render_the_anchor_within_the_caps(client, story):
     assert big in full["code_anchor"] and "clipped" not in full["code_anchor"]
 
 
-def test_clip_never_splits_a_code_point():
-    snippet = "é" * 600  # 1200 bytes; the 1024 cap lands on a character boundary either way
-    cc = CodeContext(**anchor(snippet=snippet))
-    body = cc.anchor(1023).split("\n")[2]
-    assert body == "é" * 511
+def test_clip_is_in_escaped_bytes_and_never_splits_a_code_point():
+    cc = CodeContext(**anchor(snippet="é" * 600))  # each é costs 6 escaped bytes (é)
+    assert cc.anchor(1023).split("\n")[2] == "é" * 170
+    heavy = CodeContext(**anchor(snippet="\x01" * 1024))  # 1 UTF-8 byte, 6 escaped bytes each
+    assert len(json.dumps(heavy.anchor(ANCHOR_SNIPPET_CAP_B))) < ANCHOR_SNIPPET_CAP_B + 300
+    assert CodeContext(**anchor()).anchor(0).startswith("`src/edp8/board.py:L10-12 @0123456` (snippet omitted")
+
+
+def test_heavy_anchor_never_drops_its_message_from_the_delta(client, story):
+    set_client(BoardClient(participant="eng", admin_token="t", client=client))
+    ctx, dl = ALL_TOOLS["context"], ALL_TOOLS["context_delta"]
+    base = ctx.handler(ctx.args_model())["value"]
+    long_path = "/".join(["d" * 50] * 19) + "/f.py"  # ~970 chars, rendered twice in the row
+    r = send(client, story, anchor(snippet='"\\' * 1500, path=long_path), text="界" * 600)
+    assert r.status_code == 200, r.text
+    out = dl.handler(dl.args_model(cursor=base["cursor"]))["value"]
+    row = next(c for c in out["changes"] if c.get("object_id") == r.json()["value"]["id"])
+    assert row["object_type"] == "message" and row["read_ref"]["tool"] == "message_read"
+    assert row["code_anchor"].startswith(f"`{long_path}:L10-12")
+
+
+def test_tighter_context_pass_keeps_only_the_anchor_line(client, story):
+    set_client(BoardClient(participant="eng", admin_token="t", client=client))
+    for i in range(3):
+        send(client, story, anchor(snippet=f"# {i}\n" + "\x01" * 1000), text="x" * 3000)
+    from edp8.bundles import _bound_snapshot
+    ctx = ALL_TOOLS["context"]
+    full = ctx.handler(ctx.args_model(verbose=True))["value"]
+    snap, _ = _bound_snapshot(full, thread_keep=1, thread_head=120, doc_head=120, words_head=400)  # pass 2
+    rows = [r for r in snap["tickets"][0]["thread"] if r.get("code_anchor")]
+    assert rows and all("\n" not in r["code_anchor"] for r in rows)
+    assert rows[-1]["code_anchor"].startswith("`src/edp8/board.py:L10-12 @0123456` (snippet clipped")
 
 
 # ------------------------------------------------------------------------------ MCP tool

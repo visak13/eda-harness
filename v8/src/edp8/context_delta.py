@@ -140,6 +140,10 @@ class ContextReader:
             if relevant:
                 change = self._change(seq, event)
                 cost = len(json.dumps(change).encode()) + 2
+                if cost > budget // 2 and 'code_anchor' in change:
+                    # S4: a heavy code anchor shrinks to its anchor line before the row is given up
+                    change['code_anchor'] = change['code_anchor'].split('\n', 1)[0]
+                    cost = len(json.dumps(change).encode()) + 2
                 if cost > budget // 2:
                     # Never stall on an accepted but unusually large ID/metadata field.
                     change = {'event_id': event.id, 'seq': seq, 'kind': event.kind.value,

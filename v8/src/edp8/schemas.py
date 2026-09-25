@@ -8,14 +8,15 @@ except these shapes (returned by `describe`).
 from __future__ import annotations
 
 import hashlib
+import json
 import re
+import unicodedata
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import PureWindowsPath
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
-from pydantic_core import PydanticCustomError
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 # ----------------------------------------------------------------------------- enums
 
@@ -359,16 +360,68 @@ class DocumentContext(BaseModel):
 
 
 SNIPPET_MAX_B = 4096  # CodeContext.snippet cap in UTF-8 bytes (design-449b628cdd §4)
+LINE_MAX = 10_000_000  # a line number past this is a producer bug, not a file
 
 
-class CodeContext(BaseModel):
-    """A code anchor on a message (epic-91fcd3b370 S4): the lines a person selected in the Code
-    tab. The EDP extension produces it (strategyll-ab18531441); the board only validates it, so a
-    bad anchor is refused at the door instead of misleading an agent later."""
+def _escaped_len(s: str) -> int:
+    """Bytes `s` costs inside a JSON string as the MCP client serialises it (ASCII-escaped)."""
+    return len(json.dumps(s, ensure_ascii=True)) - 2
+
+
+def _bad_char(ch: str) -> bool:
+    """Control (C0/C1), format (bidi overrides, zero-width) and line/paragraph separators: a path
+    or root carrying one renders spoofed or breaks the anchor line."""
+    return unicodedata.category(ch) in ("Cc", "Cf", "Zl", "Zp")
+
+
+class CodeAnchor(BaseModel):
+    """A message's code anchor AS STORED (epic-91fcd3b370 S4): plain fields, no validators. The store
+    re-validates every row on read, so the door rules live on CodeContext below — a later tightening
+    of them can never make an already-stored message (and with it its whole thread) unreadable."""
+    repo_root: str
+    path: str
+    line_start: int
+    line_end: int
+    commit: str | None = None
+    dirty: bool = False
+    snippet: str
+    snippet_sha: str
+
+    def at(self) -> str:
+        """`path:L10-20 @abc1234[dirty]` (or `@no-git`), the compact anchor agents read."""
+        at = f"@{self.commit[:7]}{'[dirty]' if self.dirty else ''}" if self.commit else "@no-git"
+        return f"{self.path}:L{self.line_start}-{self.line_end} {at}"
+
+    def anchor(self, snippet_cap: int | None = None) -> str:
+        """The anchor plus the snippet in a fence longer than any backtick run in it, so code that
+        contains ``` cannot break out. `snippet_cap` bounds the snippet in JSON-escaped bytes (what a
+        byte-bounded read actually pays: a control char costs 6) and clips on a code-point boundary;
+        message_read passes None and gets the whole snippet. `snippet_cap=0` gives the anchor line only."""
+        snippet, clipped = self.snippet, ""
+        if snippet_cap is not None and _escaped_len(snippet) > snippet_cap:
+            lo, hi = 0, len(snippet)  # the longest prefix whose escaped form fits
+            while lo < hi:
+                mid = (lo + hi + 1) // 2
+                lo, hi = (mid, hi) if _escaped_len(snippet[:mid]) <= snippet_cap else (lo, mid - 1)
+            total = len(snippet.encode("utf-8"))
+            snippet = snippet[:lo]
+            if not snippet:
+                return f"`{self.at()}` (snippet omitted, {total} B; message_read for it)"
+            clipped = f" (snippet clipped to {len(snippet.encode('utf-8'))} of {total} B; message_read for all)"
+        fence = "`" * max(3, *(len(r) + 1 for r in re.findall(r"`+", snippet)), 0)
+        return f"`{self.at()}`{clipped}\n{fence}\n{snippet}\n{fence}"
+
+
+class CodeContext(CodeAnchor):
+    """The door rules for a code anchor (design-449b628cdd §4): the EDP extension produces it
+    (strategyll-ab18531441); POST /v1/messages validates it here, so a bad anchor is a 400 that names
+    the field instead of misleading an agent later. Every error is located on a field."""
+    model_config = ConfigDict(extra="forbid")  # a typo (`lineStart`) is named, not dropped
+
     repo_root: str = Field(min_length=1, max_length=1024)  # absolute: the git root, else the open folder
     path: str = Field(min_length=1, max_length=1024)       # relative to repo_root, forward slashes
-    line_start: int = Field(ge=1)                         # 1-based, inclusive
-    line_end: int = Field(ge=1)
+    line_start: int = Field(ge=1, le=LINE_MAX)            # 1-based, inclusive
+    line_end: int = Field(ge=1, le=LINE_MAX)
     commit: str | None = None                             # 40-hex HEAD sha; None = not a git repo
     dirty: bool = False
     snippet: str
@@ -377,6 +430,8 @@ class CodeContext(BaseModel):
     @field_validator("repo_root")
     @classmethod
     def _absolute(cls, v: str) -> str:
+        if any(_bad_char(ch) for ch in v):
+            raise ValueError("must not contain control or format characters")
         if not (PureWindowsPath(v).is_absolute() or v.startswith("/")):
             raise ValueError("must be an absolute path")
         return v
@@ -386,12 +441,20 @@ class CodeContext(BaseModel):
     def _relative(cls, v: str) -> str:
         if "\\" in v:
             raise ValueError("must use forward slashes")
-        if v.startswith("/") or re.match(r"^[A-Za-z]:", v):
-            raise ValueError("must be relative to repo_root")
-        if any(seg in ("", ".", "..") for seg in v.split("/")):
-            raise ValueError("must be normalised: no '..', '.' or empty segments")
-        if any(ord(ch) < 32 or ord(ch) == 127 for ch in v):
-            raise ValueError("must not contain control characters")
+        if v.startswith("/") or ":" in v:  # a drive (C:x) or an NTFS stream (a::$DATA)
+            raise ValueError("must be relative to repo_root (no '/' start, no ':')")
+        if any(seg in ("", ".", "..") or seg != seg.strip() for seg in v.split("/")):
+            raise ValueError("must be normalised: no '..', '.', empty or space-padded segments")
+        if "`" in v or any(_bad_char(ch) for ch in v):
+            raise ValueError("must not contain backticks, control or format characters")
+        return v
+
+    @field_validator("line_end")
+    @classmethod
+    def _order(cls, v: int, info: ValidationInfo) -> int:
+        start = info.data.get("line_start")
+        if start is not None and v < start:
+            raise ValueError("must be >= line_start")
         return v
 
     @field_validator("commit")
@@ -408,30 +471,13 @@ class CodeContext(BaseModel):
             raise ValueError(f"must be at most {SNIPPET_MAX_B} UTF-8 bytes")
         return v
 
-    @model_validator(mode="after")
-    def _consistent(self) -> "CodeContext":
-        if self.line_end < self.line_start:
-            raise PydanticCustomError("line_order", "line_end must be >= line_start")
-        if self.snippet_sha != hashlib.sha256(self.snippet.encode("utf-8")).hexdigest():
-            raise PydanticCustomError("snippet_sha", "snippet_sha must be the sha256 hex of snippet")
-        return self
-
-    def at(self) -> str:
-        """`path:L10-20 @abc1234[dirty]` (or `@no-git`), the compact anchor agents read."""
-        at = f"@{self.commit[:7]}{'[dirty]' if self.dirty else ''}" if self.commit else "@no-git"
-        return f"{self.path}:L{self.line_start}-{self.line_end} {at}"
-
-    def anchor(self, snippet_cap: int | None = None) -> str:
-        """The anchor plus the snippet in a fence longer than any backtick run in it, so code that
-        contains ``` cannot break out. `snippet_cap` (bytes) clips on a code-point boundary for the
-        byte-bounded reads; message_read passes None and gets the whole snippet."""
-        snippet, clipped = self.snippet, ""
-        raw = snippet.encode("utf-8")
-        if snippet_cap is not None and len(raw) > snippet_cap:
-            snippet = raw[:max(0, snippet_cap)].decode("utf-8", "ignore")
-            clipped = f" (snippet clipped to {len(snippet.encode('utf-8'))} of {len(raw)} B; message_read for all)"
-        fence = "`" * max(3, *(len(r) + 1 for r in re.findall(r"`+", snippet)), 0)
-        return f"`{self.at()}`{clipped}\n{fence}\n{snippet}\n{fence}"
+    @field_validator("snippet_sha")
+    @classmethod
+    def _digest(cls, v: str, info: ValidationInfo) -> str:
+        snippet = info.data.get("snippet")
+        if snippet is not None and v != hashlib.sha256(snippet.encode("utf-8")).hexdigest():
+            raise ValueError("must be the sha256 hex of snippet")
+        return v
 
 
 ANCHOR_SNIPPET_CAP_B = 1024  # snippet bytes a byte-bounded read (context, context_delta) carries
@@ -439,7 +485,7 @@ ANCHOR_SNIPPET_CAP_B = 1024  # snippet bytes a byte-bounded read (context, conte
 
 def code_row(m: Any, snippet_cap: int | None = ANCHOR_SNIPPET_CAP_B) -> dict[str, Any]:
     """The agent-facing form of a message's code anchor: `code_anchor` (rendered, snippet clipped to
-    `snippet_cap`). A capped (byte-bounded) read also drops the raw snippet from `code_context`, since
+    `snippet_cap` escaped bytes). A capped (byte-bounded) read also drops the raw snippet from `code_context`, since
     the anchor already carries it; an uncapped read (message_read) keeps the record intact. Empty for
     a message without one, so callers can always `**code_row(m)`."""
     cc = getattr(m, "code_context", None)
@@ -456,7 +502,7 @@ class Message(Obj):
     text: str
     reply_to: str | None = None
     document_context: DocumentContext | None = None
-    code_context: CodeContext | None = None  # epic-91fcd3b370 S4: the code anchor a tag carries
+    code_context: CodeAnchor | None = None  # epic-91fcd3b370 S4: the code anchor a tag carries
     status: StatusValue | None = None  # set on kind=status messages written by record_status
     # finalised upload artifacts this message carries (R1): ids only, bytes stay behind the
     # authenticated /v1/artifacts/{id}/content route; older rows have none.

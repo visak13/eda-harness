@@ -159,21 +159,23 @@ class MessageIn(BaseModel):
     artifacts: list[str] | None = None  # staged upload ids to finalise onto this ticket (§18.1)
     # epic-91fcd3b370 S4: a code anchor. Taken raw and validated in the route, so a bad field is a
     # 400 naming `code_context.<field>` (FastAPI's body validation would answer an unnamed 422).
-    code_context: dict[str, Any] | None = None
+    code_context: Any = None
 
 
-def code_context_in(raw: dict[str, Any] | None) -> CodeContext | None:
+def code_context_in(raw: Any) -> CodeContext | None:
     """Validate a message's code anchor; a bad field is a BoardError (400) that names it."""
     if raw is None:
         return None
+    if not isinstance(raw, dict):
+        raise BoardError("schema", f"code_context: must be an object, not {type(raw).__name__}",
+                         "send the anchor as an object; see describe('message') for its fields")
     try:
         return CodeContext.model_validate(raw)
     except ValidationError as e:
         bad = []
         for err in e.errors():
             loc = ".".join(str(x) for x in err.get("loc", ()))
-            where = f"code_context.{loc}" if loc else f"code_context.{err.get('type')}"
-            bad.append(f"{where}: {err.get('msg')}")
+            bad.append(f"code_context{'.' + loc if loc else ''}: {err.get('msg')}")
         raise BoardError("schema", "; ".join(bad),
                          "fix the named code_context field; see describe('message') for the anchor rules") from None
 
