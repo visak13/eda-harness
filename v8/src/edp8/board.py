@@ -18,7 +18,7 @@ import logging
 import re
 import threading
 from collections.abc import Iterable, Iterator
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from . import knowledge, records, seat_choice
@@ -354,7 +354,8 @@ class Board:
         self._after_status(epic)
 
     def children(self, ticket_id: str) -> list[Ticket]:
-        return self.store.query("ticket", {"parent_id": ticket_id})  # type: ignore[return-value]
+        # every child: the store's default 500-row window would silently cut a long-lived epic (C17 second opinion)
+        return self.store.query("ticket", {"parent_id": ticket_id}, limit=100000)  # type: ignore[return-value]
 
     # ------------------------------------------------------------------ caps (design §24.1)
     def _open_stories(self, epic_id: str) -> list[Ticket]:
@@ -2267,7 +2268,8 @@ class Board:
                                 limit=100000)
 
         def when(d: Decision) -> datetime:
-            return d.decided_at or d.created_at
+            at = d.decided_at or d.created_at  # a legacy naive stamp is UTC; mixing both must not 500 the list
+            return at if at.tzinfo else at.replace(tzinfo=timezone.utc)
 
         rows.sort(key=lambda d: when(d), reverse=True)  # newest first, then binding live ones lifted (stable)
         rows.sort(key=lambda d: not (d.binding and d.status == DecisionStatus.live))

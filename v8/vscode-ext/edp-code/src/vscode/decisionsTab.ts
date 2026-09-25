@@ -24,6 +24,8 @@ const isAuth = (e: unknown) => {
 export class DecisionsHost implements vscode.Disposable {
   private state: DecisionsState | null = null;
   private gen = 0;
+  /** bumped by a clear (sign-out, identity switch) or a scope change: a write begun before it never submits or settles */
+  private epoch = 0;
   private timer?: ReturnType<typeof setTimeout>;
   private disposed = false;
   /** the reason prompt (tests stub it) */
@@ -39,12 +41,12 @@ export class DecisionsHost implements vscode.Disposable {
   /** a listed decision: an event on it (binding changed) re-reads the list */
   has(id: string): boolean { return !!this.state?.rows.some(r => r.id === id); }
 
-  clear(): void { ++this.gen; this.state = null; clearTimeout(this.timer); }
+  clear(): void { ++this.gen; ++this.epoch; this.state = null; clearTimeout(this.timer); }
 
   async openScope(): Promise<void> {
     const sc = this.scope();
     if (!sc) { this.clear(); return; }
-    if (this.state?.scope !== sc.id) this.state = { scope: sc.id, rows: [], canManage: false, loading: true, error: null };
+    if (this.state?.scope !== sc.id) { ++this.epoch; this.state = { scope: sc.id, rows: [], canManage: false, loading: true, error: null }; }
     await this.refresh();
   }
 
@@ -74,11 +76,13 @@ export class DecisionsHost implements vscode.Disposable {
       const err = e as BoardError;
       const keep = this.state?.scope === sc.id ? this.state : null;
       const why = err?.status === 403 ? `You cannot read this epic's decisions: ${err.message}`
-        : err?.status === 404 || err?.code === 'not_found' ? `The board has no decision list for ${sc.id} (${err.message}). It may predate C17.`
+        : err?.status === 404 || err?.status === 405 || err?.code === 'not_found' ? `The board has no decision list for ${sc.id} (${err.message}). It may predate C17.`
         : `Could not list the decisions: ${err?.message ?? String(e)}`;
       // a refusal (403) means this viewer may not read the list: nothing read earlier stays on screen
       const refused = err?.status === 403;
-      this.state = { scope: sc.id, rows: refused ? [] : keep?.rows ?? [], canManage: refused ? false : keep?.canManage ?? false, loading: false, error: why };
+      // a write in flight keeps its guard: only its own settle clears `busy`
+      this.state = { scope: sc.id, rows: refused ? [] : keep?.rows ?? [], canManage: refused ? false : keep?.canManage ?? false, loading: false, error: why,
+        busy: keep?.busy ?? null, notice: keep?.notice ?? null };
       if (isAuth(e)) { this.emit(); this.onAuthFail(e); return; }
     }
     this.emit();
@@ -102,29 +106,31 @@ export class DecisionsHost implements vscode.Disposable {
   }
 
   withdraw(id: string): Promise<void> {
-    return this.write(id, 'withdraw', async r => {
+    return this.write(id, 'withdraw', async (r, current) => {
       const reason = await this.ask({ title: `EDP: Withdraw ${r.id}`, prompt: `“${clip(r.text)}”: why is it withdrawn? The reason stays on the record.`,
         placeHolder: 'Reason (required, one line)', ignoreFocusOut: true, validateInput: t => reasonProblem('withdraw', t) });
-      if (reason === undefined) return null;
+      if (reason === undefined || !current()) return null;
       await this.board().withdrawDecision(r.id, reason.trim());
       return `Withdrawn: ${r.id}.`;
     });
   }
 
   binding(id: string, on: boolean): Promise<void> {
-    return this.write(id, 'binding', async r => {
+    return this.write(id, 'binding', async (r, current) => {
       if (r.binding === on) return `${r.id} is already ${on ? 'binding' : 'not binding'}.`;
       const reason = await this.ask({ title: `EDP: ${on ? 'Make' : 'Stop making'} ${r.id} binding`,
         prompt: on ? 'Binding decisions are always handed to agents in scope. Why? (optional)' : 'Agents will no longer always get it. Why? (optional)',
         placeHolder: `Reason (optional, at most ${REASON_MAX} characters)`, ignoreFocusOut: true, validateInput: t => reasonProblem('binding', t) });
-      if (reason === undefined) return null;
+      if (reason === undefined || !current()) return null;
       await this.board().setBinding(r.id, on, reason.trim());
       return `${r.id} is ${on ? 'binding' : 'no longer binding'}.`;
     });
   }
 
-  /** One write on a listed live row, for a viewer the board said may manage; `null` from `run` = cancelled. */
-  private async write(id: string, what: 'withdraw' | 'binding', run: (r: DecisionRow) => Promise<string | null>): Promise<void> {
+  /** One write on a listed live row, for a viewer the board said may manage; `null` from `run` = cancelled.
+   *  `current()` (checked after the reason prompt, before the write is sent) is false once the identity or the
+   *  scope changed, or the row is no longer a live row this viewer may change: the old prompt's answer is dropped. */
+  private async write(id: string, what: 'withdraw' | 'binding', run: (r: DecisionRow, current: () => boolean) => Promise<string | null>): Promise<void> {
     const r = this.row(id);
     const st = this.state;
     if (!r || !st || !rowActions(r, st.canManage)[what]) {
@@ -134,15 +140,22 @@ export class DecisionsHost implements vscode.Disposable {
     }
     if (st.busy) return; // one write at a time; the buttons are disabled meanwhile
     st.busy = id; st.notice = null; this.emit();
+    const e0 = this.epoch;
+    const current = () => {
+      const now = this.row(id);
+      return e0 === this.epoch && !!now && !!this.state && rowActions(now, this.state.canManage)[what];
+    };
     let text: string | null;
     try {
-      text = await run(r);
+      text = await run(r, current);
     } catch (e) {
+      if (e0 !== this.epoch) return; // another identity or scope: this write's outcome is not theirs to see
       if (isAuth(e)) this.onAuthFail(e);
       this.log(`decisions: ${what} refused (${(e as BoardError)?.code ?? 'error'})`);
       this.settle(id, false, (e as Error)?.message ?? String(e));
       return;
     }
+    if (e0 !== this.epoch) return;
     if (text === null) { this.settle(id, null, ''); return; }
     this.settle(id, true, text);
     await this.refresh(); // a newer generation: a read in flight from before the write is dropped

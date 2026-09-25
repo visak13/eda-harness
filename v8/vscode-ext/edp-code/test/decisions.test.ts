@@ -170,6 +170,56 @@ describe('DecisionsHost', () => {
     await m.h.withdraw(D2);
     expect(withdrawDecision).not.toHaveBeenCalled();
   });
+  it('a reason answered after a sign-out or identity switch is dropped: nothing sent, nothing settled into the new state', async () => {
+    const withdrawDecision = vi.fn(async () => dec(D1)), setBinding = vi.fn(async () => dec(D1));
+    const t = host({ scopeDecisions: async () => list([dec(D1)]), withdrawDecision, setBinding });
+    await t.h.openScope();
+    let answer!: (v: string | undefined) => void;
+    t.h.ask = vi.fn(() => new Promise<string | undefined>(r => (answer = r)));
+    const w = t.h.withdraw(D1);
+    t.h.clear(); // identity B
+    await t.h.openScope();
+    const n = t.posts.length;
+    answer('stale reason');
+    await w;
+    expect(withdrawDecision).not.toHaveBeenCalled();
+    expect(t.posts.length).toBe(n);
+    expect(t.last()).toMatchObject({ busy: null, notice: null });
+    const b = t.h.binding(D1, true);
+    t.h.clear();
+    await t.h.openScope();
+    answer('');
+    await b;
+    expect(setBinding).not.toHaveBeenCalled();
+    t.h.dispose();
+  });
+  it('a failed re-read while a write is in flight keeps the write guard: no second write starts', async () => {
+    let fail = false, done!: () => void;
+    const setBinding = vi.fn(() => new Promise<BoardDecision>(r => (done = () => r(dec(D1)))));
+    const withdrawDecision = vi.fn(async () => dec(D2));
+    const t = host({ scopeDecisions: async () => { if (fail) throw new BoardError('io', 'board away', 502); return list([dec(D1), dec(D2)]); }, setBinding, withdrawDecision });
+    await t.h.openScope();
+    const b = t.h.binding(D1, true);
+    await vi.waitFor(() => expect(setBinding).toHaveBeenCalled());
+    fail = true;
+    await t.h.refresh();
+    expect(t.last()).toMatchObject({ busy: D1, error: expect.stringContaining('board away') });
+    await t.h.withdraw(D2);
+    expect(withdrawDecision).not.toHaveBeenCalled();
+    fail = false;
+    done();
+    await b;
+    expect(t.last()).toMatchObject({ busy: null, notice: { id: D1, ok: true } });
+    t.h.dispose();
+  });
+  it('a board without the list route (404 or 405) says it may predate C17', async () => {
+    for (const status of [404, 405]) {
+      const t = host({ scopeDecisions: async () => { throw new BoardError('http', 'Method Not Allowed', status); } });
+      await t.h.openScope();
+      expect(t.last().error).toContain('may predate C17');
+      t.h.dispose();
+    }
+  });
   it('a row opens its source: the message in its thread, a doc in the reader; unknown ids do nothing', async () => {
     const t = host({ scopeDecisions: async () => list([dec(D1, { source: M1, source_kind: 'message', source_ticket: S1 }), dec(D2, { source: DOC, source_kind: 'doc' })]) });
     await t.h.openScope();

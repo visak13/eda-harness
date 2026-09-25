@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient
 
 from edp8 import broker_adapter, delivery
 from edp8.board import Board
-from edp8.schemas import DECISION_DETAIL_MAX, DECISION_TEXT_MAX
+from edp8.schemas import DECISION_DETAIL_MAX, DECISION_TEXT_MAX, TicketStatus
 from edp8.service import create_app
 from edp8.store import Store
 
@@ -137,6 +137,34 @@ def test_refused_to_non_participants_with_a_typed_403(rig):
 def test_unknown_scope_is_a_typed_refusal_not_a_500(rig):
     code, j = _list(rig, "s-doesnotexist")
     assert code < 500 and j["ok"] is False
+
+
+def test_mixed_naive_and_aware_stamps_sort_without_a_500(rig):
+    b = rig["board"]
+    a = _decide(rig, rig["epic"], "legacy naive stamp")
+    z = _decide(rig, rig["epic"], "aware stamp")
+    d = b.store.get("decision", a["id"])
+    d.decided_at = d.created_at.replace(tzinfo=None) + timedelta(minutes=5)  # a legacy row: naive, UTC by convention
+    b.store.put("decision", d)
+    code, j = _list(rig, rig["epic"])
+    assert code == 200 and j["ok"], j
+    assert [r["id"] for r in j["value"]["decisions"]] == [a["id"], z["id"]]
+
+
+def test_an_epic_past_500_children_still_lists_its_last_story(rig):
+    b = rig["board"]
+    tmpl = b.store.get("ticket", rig["other"])
+    last = None
+    for i in range(501):  # done stories: history, not against the open-story cap
+        last = tmpl.model_copy(update={"id": f"s-f{i:09x}", "status": TicketStatus.done})
+        b.store.put("ticket", last)
+    dec = _decide(rig, rig["epic"], "on the 501st story")
+    d = b.store.get("decision", dec["id"])
+    d.scope = last.id
+    b.store.put("decision", d)
+    code, j = _list(rig, rig["epic"])
+    assert code == 200 and j["ok"], j
+    assert last.id in j["value"]["tickets"] and [r["id"] for r in j["value"]["decisions"]] == [dec["id"]]
 
 
 # --------------------------------------------------------------------------- the 240-char 500

@@ -616,10 +616,12 @@ export class ChatController implements vscode.Disposable, TagTarget {
   /** Show a message in the Chat tab: its thread opens (a story's message opens that story's thread), older pages
    *  load until the thread holds it, then the view scrolls to it and marks it. */
   async openMessage(ticketId: string, messageId: string): Promise<void> {
+    const n = this.opening; // a pick made while this runs wins: the source never takes the user back
     await ChatViewProvider.reveal();
+    if (n !== this.opening) return;
     if (this.store?.ticketId !== ticketId) {
       await this.open(ticketId);
-      if (this.store?.ticketId !== ticketId) return; // the open failed (already said) or another pick won
+      if (this.opening !== n + 1 || this.store?.ticketId !== ticketId) return; // the open failed (already said) or another pick won
     }
     const store = this.store;
     for (let i = 0; i < SOURCE_PAGES_MAX && !store.has(messageId) && store.before != null; i++) {
@@ -628,6 +630,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
       if (this.addAnchors(fresh, store.ticketId)) this.refreshUncommitted();
       this.post({ type: 'prepend', v: 1, ticketId: store.ticketId, items: fresh, hasOlder: store.before != null });
     }
+    if (store !== this.store) return;
     if (!store.has(messageId)) {
       void vscode.window.showWarningMessage(`EDP: ${messageId} is not in the thread of ${ticketId} as far back as this panel reads.`);
       return;
