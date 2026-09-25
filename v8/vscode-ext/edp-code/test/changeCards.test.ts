@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { isRepoPath, parseInbound, type ChatState, type CommitCard } from '../src/core/chatProtocol';
 import { cardOf, CARD_FILES, type Indexed } from '../src/core/commits';
 import { S, sameRows, uncommittedCard, workFiles } from '../src/core/uncommitted';
-import { commitCardEl, insertByTime, placeCards, renderCommits, renderUnlinked, seatLabel, unlinkedLabel } from '../webview/cards';
+import { commitCardEl, insertByTime, markerEl, placeMarkers, renderMarkers, seatLabel } from '../webview/cards';
 
 const SHA = 'a'.repeat(40);
 
@@ -115,43 +115,58 @@ function msg(id: string, at: string): HTMLElement {
 }
 const order = (list: HTMLElement) => Array.from(list.children).map(n => (n as HTMLElement).dataset.id ?? (n as HTMLElement).dataset.sha!.slice(0, 1));
 
-describe('cards in the timeline (jsdom)', () => {
-  it('a card shows seat, subject, sha7 and files with +/-; clicks post openDiff', () => {
+describe('commit cards (Commits tab) and markers (Chat) (jsdom)', () => {
+  it('a card shows seat, subject, sha7; folded it lists no files; the head toggles, Open all posts the multi-diff', () => {
     const posted: unknown[] = [];
-    const el = commitCardEl(card('c', '2026-09-25T07:00:00Z'), m => posted.push(m));
+    const toggles: boolean[] = [];
+    const el = commitCardEl(card('c', '2026-09-25T07:00:00Z'), m => posted.push(m), false, o => toggles.push(o));
     expect(el.querySelector('.cm-seat')!.textContent).toBe('engineer.s-0123456789');
     expect(el.querySelector('.cm-sha')!.textContent).toBe('ccccccc');
     expect(el.querySelector('.cm-subject')!.textContent).toBe('subject c');
+    expect(el.querySelector('.cm-head')!.getAttribute('aria-expanded')).toBe('false');
+    expect(el.querySelectorAll('.cf').length).toBe(0);
+    (el.querySelector('.cm-head') as HTMLButtonElement).click();
+    expect(toggles).toEqual([true]);
+    (el.querySelector('.cm-open') as HTMLButtonElement).click();
+    expect(posted).toEqual([{ type: 'openDiff', sha: 'c'.repeat(40) }]);
+  });
+  it('expanded: files with +/-; a file posts its diff', () => {
+    const posted: unknown[] = [];
+    const el = commitCardEl(card('c', '2026-09-25T07:00:00Z'), m => posted.push(m), true, () => {}, 'C13 tabs');
+    expect(el.querySelector('.cm-head')!.getAttribute('aria-expanded')).toBe('true');
+    expect(el.querySelector('.cm-story')!.textContent).toBe('C13 tabs');
     expect(Array.from(el.querySelectorAll('.cf')).map(b => b.textContent)).toEqual(['Mv8/a.ts+3−1', 'Av8/b.pngbinary']);
     (el.querySelectorAll('.cf')[0] as HTMLButtonElement).click();
-    (el.querySelector('.cm-head') as HTMLButtonElement).click();
-    expect(posted).toEqual([{ type: 'openDiff', sha: 'c'.repeat(40), path: 'v8/a.ts' }, { type: 'openDiff', sha: 'c'.repeat(40) }]);
+    expect(posted).toEqual([{ type: 'openDiff', sha: 'c'.repeat(40), path: 'v8/a.ts' }]);
   });
-  it('agent text is text: a subject with markup creates no element', () => {
-    const el = commitCardEl(card('d', '2026-09-25T07:00:00Z', { subject: '<img src=x onerror=alert(1)>' }), () => {});
+  it('agent text is text: a subject with markup creates no element (card and marker)', () => {
+    const c = card('d', '2026-09-25T07:00:00Z', { subject: '<img src=x onerror=alert(1)>' });
+    const el = commitCardEl(c, () => {}, true, () => {});
     expect(el.querySelector('img')).toBeNull();
     expect(el.querySelector('.cm-subject')!.textContent).toBe('<img src=x onerror=alert(1)>');
+    const m = markerEl(c, () => {});
+    expect(m.querySelector('img')).toBeNull();
+    expect(m.querySelector('.cmark-subject')!.textContent).toBe('<img src=x onerror=alert(1)>');
   });
-  it('cards interleave with messages by time, and survive an older-page prepend', () => {
+  it('a marker is one line (sha7 + subject) that jumps to its commit', () => {
+    const jumps: string[] = [];
+    const m = markerEl(card('e', '2026-09-25T07:00:00Z'), s => jumps.push(s));
+    expect(m.textContent).toBe('⎇eeeeeeesubject e');
+    m.click();
+    expect(jumps).toEqual(['e'.repeat(40)]);
+  });
+  it("markers interleave with messages by time, only for the thread's own commits, and survive an older-page prepend", () => {
     const list = document.createElement('div');
     list.append(msg('m1', '2026-09-25T07:00:00Z'), msg('m3', '2026-09-25T09:00:00Z'));
-    const s = { commits: [card('b', '2026-09-25T10:00:00Z'), card('a', '2026-09-25T08:00:00Z')] } as unknown as ChatState;
-    renderCommits(s, list, () => {});
+    const commits = [card('b', '2026-09-25T10:00:00Z', { thread: true }), card('s', '2026-09-25T09:30:00Z', { thread: false }), card('a', '2026-09-25T08:00:00Z', { thread: true })];
+    renderMarkers(commits, list, () => {});
     expect(order(list)).toEqual(['m1', 'a', 'm3', 'b']);
-    insertByTime(list, commitCardEl(card('e', '2026-09-25T06:00:00Z'), () => {}));
+    insertByTime(list, markerEl(card('e', '2026-09-25T06:00:00Z'), () => {}));
     expect(order(list)).toEqual(['e', 'm1', 'a', 'm3', 'b']);
     list.prepend(msg('m0', '2026-09-25T05:00:00Z'));
     list.prepend(list.querySelector('[data-sha^="a"]')!); // out of place, as a prepend leaves it
-    placeCards(list);
+    placeMarkers(list);
     expect(order(list)).toEqual(['m0', 'e', 'm1', 'a', 'm3', 'b']);
-  });
-  it('the unlinked list (C9: behind the Unlinked chip) holds the unlinked cards', () => {
-    const box = document.createElement('div');
-    const s = { ticket: { id: 'epic-0123456789', kind: 'epic', title: 'E', status: 'x' }, unlinked: [card('f', '2026-09-25T07:00:00Z', { attribution: 'none', seat: null, seatVia: null })] } as unknown as ChatState;
-    renderUnlinked(box, s, () => {});
-    expect(box.querySelector('.cm-seat')!.textContent).toBe('unlinked');
-    expect(unlinkedLabel(s)).toEqual({ text: 'Unlinked · 1', aria: 'Unlinked commits: 1' });
-    renderUnlinked(box, { ...s, unlinked: [] }, () => {});
-    expect(box.textContent).toContain('Every commit in the window names a ticket.');
+    expect(list.querySelectorAll('.commit').length).toBe(0); // full cards left the chat
   });
 });

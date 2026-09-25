@@ -9,14 +9,17 @@ import { accessibleName, filterPeople } from '../src/core/people';
 import { at } from '../src/core/render';
 import { bodyFragment } from './render';
 import { applyKinds, forgetMisses, markPaths, onPathClick, PathPicker } from './pathTags';
-import { appendCommits, appendUnlinked, commitCount, placeCards, renderCommits, renderUncommitted, renderUnlinked, uncommittedLabel, unlinkedLabel } from './cards';
-import { restoreLocal } from '../src/core/viewState';
+import { commitCount, insertByTime, markerEl, mergeCommits, mergeUnlinked, placeMarkers, renderMarkers } from './cards';
+import { markSeen, restoreLocal } from '../src/core/viewState';
 import { initAttach } from './attach';
+import { TabBar, type TabCtx } from './tabs';
+import { TABS } from './registry';
 
 declare function acquireVsCodeApi(): { postMessage(m: unknown): void; getState(): unknown; setState(s: unknown): void };
 const vscode = acquireVsCodeApi();
 
-// drafts, kind and what is folded (C9): per viewer, in the webview state only, never on the board
+// drafts, kind, the active tab, what is folded and the commits seen (C9, C13): per viewer, in the webview
+// state only, never on the board
 const local = restoreLocal(vscode.getState());
 const persist = () => vscode.setState(local);
 
@@ -79,18 +82,6 @@ strip.setAttribute('aria-label', 'Stories');
 strip.hidden = true;
 header.append(strip);
 
-// the folded bands: chips that expand in place, collapsed by default (per viewer, webview state)
-const bands = el('div', 'bands');
-bands.id = 'bands';
-const ucChip = el('button', 'band-chip');
-ucChip.id = 'uncommitted-toggle';
-ucChip.type = 'button';
-ucChip.setAttribute('aria-controls', 'uncommitted');
-const ulChip = el('button', 'band-chip');
-ulChip.id = 'unlinked-toggle';
-ulChip.type = 'button';
-ulChip.setAttribute('aria-controls', 'unlinked');
-bands.append(ucChip, ulChip);
 const notice = el('div', 'notice');
 notice.id = 'notice';
 
@@ -171,18 +162,15 @@ toolSlot.append(hashBtn);
 const attach = initAttach({ box: cbox, slot: toolSlot, ta, err: sendErr, status: acStatus, ticket: () => state?.ticket?.id ?? null,
   post: m => post(m), onChange: () => { sendBtn.disabled = pendingTicket !== null || attach.busy(); } });
 
-// what the chips expand to, in place above the thread (bounded, scrolls)
-const pinned = el('div', 'pinned');
-pinned.id = 'pinned';
-const uncommittedBox = el('section', 'uncommitted');
-uncommittedBox.id = 'uncommitted';
-uncommittedBox.setAttribute('aria-label', 'Uncommitted changes');
-const unlinkedBox = el('section', 'unlinked-box');
-unlinkedBox.id = 'unlinked';
-unlinkedBox.setAttribute('aria-label', 'Unlinked commits');
-pinned.append(uncommittedBox, unlinkedBox);
-
-app.append(header, bands, notice, pinned, timeline, composer);
+// C13: the tab bar under the header; every tab's panel fills the rest of the height, so no band competes
+// with the thread for it (C9's chips were squeezed to nothing by a long thread: flex-shrink by basis)
+let chatUnread = 0;
+/** the Chat timeline's scroll when the user left it away from the bottom (null: it follows the bottom) */
+let chatScroll: number | null = null;
+let focusSha: string | undefined;
+const tabs = new TabBar(TABS, local.tab, id => select(id));
+tabs.panelOf('chat').append(timeline, composer);
+app.append(header, tabs.bar, notice, tabs.panels);
 
 // -- rendering ---------------------------------------------------------------------------------------
 const FEED_LABEL: Record<FeedStatus, string> = {
@@ -318,33 +306,41 @@ Click to open another thread` : 'Pick a ticket or epic';
   arch.setAttribute('aria-label', arch.title);
 }
 
-/** The chips row and what it expands to. Both collapsed unless this viewer opened them. */
-function renderBands() {
-  const s = state!;
-  bands.hidden = !s.ticket;
-  const uc = uncommittedLabel(s.uncommitted);
-  ucChip.textContent = uc.text;
-  ucChip.setAttribute('aria-label', uc.aria);
-  ucChip.title = `${uc.aria}. Click to ${local.fold.uncommitted ? 'fold' : 'expand'}.`;
-  ucChip.setAttribute('aria-expanded', String(local.fold.uncommitted));
-  ucChip.dataset.dirty = String((s.uncommitted?.total ?? 0) > 0);
-  uncommittedBox.hidden = !s.ticket || !local.fold.uncommitted;
-  if (!uncommittedBox.hidden) renderUncommitted(uncommittedBox, s.uncommitted, local.fold.allSeats, post, all => {
-    local.fold.allSeats = all;
-    persist();
-    renderBands();
-    uncommittedBox.querySelector<HTMLElement>('#uncommitted-all')?.focus();
-  });
-  const epicOpen = s.ticket?.kind === 'epic';
-  ulChip.hidden = !epicOpen;
-  const ul = unlinkedLabel(s);
-  ulChip.textContent = ul.text;
-  ulChip.setAttribute('aria-label', ul.aria);
-  ulChip.title = `${ul.aria}. Click to ${local.fold.unlinked ? 'fold' : 'expand'}.`;
-  ulChip.setAttribute('aria-expanded', String(local.fold.unlinked));
-  unlinkedBox.hidden = !epicOpen || !local.fold.unlinked;
-  if (!unlinkedBox.hidden) renderUnlinked(unlinkedBox, s, post);
+// -- tabs (C13) ---------------------------------------------------------------------------------------
+function tabCtx(): TabCtx | null {
+  if (!state) return null;
+  const c: TabCtx = { state, local, post: m => post(m), persist, select: (id, o) => select(id, o), chatUnread, focusSha };
+  return c;
 }
+
+/** Render the active tab (Chat renders itself) and every badge. */
+function renderTab() {
+  const c = tabCtx();
+  tabs.bar.hidden = !state?.ticket;
+  if (c && state?.ticket && tabs.current !== 'chat') {
+    TABS.find(t => t.id === tabs.current)!.render(tabs.panelOf(tabs.current), c);
+    focusSha = c.focusSha; // the Commits tab consumed it
+  }
+  tabs.badges(tabCtx());
+}
+
+function badges() { tabs.badges(tabCtx()); }
+
+function select(id: string, o: { focus?: boolean; sha?: string } = {}) {
+  if (!tabs.has(id)) return;
+  const from = tabs.current;
+  if (from === 'chat' && id !== 'chat') chatScroll = nearBottom() ? null : timeline.scrollTop;
+  local.tab = id;
+  persist();
+  if (id === 'chat') chatUnread = 0;
+  if (o.sha) focusSha = o.sha;
+  tabs.show(id, o.focus);
+  if (id === 'chat' && from !== 'chat') { if (chatScroll === null) toBottom(); else timeline.scrollTop = chatScroll; }
+  renderTab();
+}
+
+/** A Chat marker: open the commit in the Commits tab, expanded and focused. */
+const jump = (sha: string) => select('commits', { sha });
 
 /** 2 lines empty, one more per line of text, 8 at most; then it scrolls. */
 function grow() {
@@ -419,8 +415,7 @@ function renderAll() {
   olderBtn.disabled = false;
   sendBtn.disabled = pendingTicket !== null;
   renderItems(s.items);
-  renderCommits(s, list, post);
-  renderBands();
+  renderMarkers(s.commits, list, jump);
   composer.hidden = !s.ticket;
   attach.reset(s.ticket?.id ?? null, s.pending ?? [], s.artifacts ?? []);
   renderChip();
@@ -429,6 +424,10 @@ function renderAll() {
   grow();
   timeline.setAttribute('aria-live', 'off'); // the initial state is not announced
   toBottom();
+  chatScroll = null;
+  // a scope seen for the first time: its commits so far are not "new"; the badge counts later ones
+  if (s.ticket && !(s.ticket.id in local.seen) && markSeen(local, s.ticket.id, s.commits)) persist();
+  renderTab();
 }
 
 // -- autocomplete (WAI-ARIA listbox half; strategyll-86c5b5068f §1) ------------------------------------
@@ -544,8 +543,6 @@ strip.addEventListener('keydown', e => {
 strip.addEventListener('focusout', e => { const to = e.relatedTarget as Node | null; if (to && !strip.contains(to) && to !== storiesBtn) setStoriesOpen(false); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !strip.hidden) { e.preventDefault(); setStoriesOpen(false); storiesBtn.focus(); } });
 document.addEventListener('click', e => { if (!strip.hidden && !strip.contains(e.target as Node)) setStoriesOpen(false); });
-ucChip.addEventListener('click', () => { local.fold.uncommitted = !local.fold.uncommitted; persist(); if (state) renderBands(); });
-ulChip.addEventListener('click', () => { local.fold.unlinked = !local.fold.unlinked; persist(); if (state) renderBands(); });
 olderBtn.addEventListener('click', () => { olderBtn.disabled = true; post({ type: 'loadOlder' }); });
 
 // -- host messages -----------------------------------------------------------------------------------
@@ -578,6 +575,7 @@ window.addEventListener('message', (ev: MessageEvent) => {
         if (next) list.insertBefore(node, next); else list.append(node);
       }
       if (stick) toBottom();
+      if (tabs.current !== 'chat') { chatUnread += fresh.length; badges(); }
       break;
     }
     case 'prepend': {
@@ -592,29 +590,37 @@ window.addEventListener('message', (ev: MessageEvent) => {
       timeline.setAttribute('aria-live', 'off');
       const k = known();
       list.prepend(...fresh.map(i => messageEl(i, k)));
-      placeCards(list);
+      placeMarkers(list);
       timeline.scrollTop += timeline.scrollHeight - h0;
       break;
     }
     case 'commits': {
       if (!state || state.ticket?.id !== m.ticketId) return;
-      const stick = nearBottom();
-      timeline.setAttribute('aria-live', 'polite');
-      list.querySelector('.empty')?.remove();
-      appendCommits(state, m.items, list, post);
-      if (appendUnlinked(state, m.unlinked)) renderBands();
-      if (stick) toBottom();
+      const { all, fresh } = mergeCommits(state.commits ?? [], m.items);
+      state.commits = all;
+      const un = state.ticket.kind === 'epic' ? mergeUnlinked(state.unlinked ?? [], m.unlinked) : null;
+      if (un) state.unlinked = un;
+      const mine = fresh.filter(c => c.thread);
+      if (mine.length) {
+        const stick = nearBottom();
+        timeline.setAttribute('aria-live', 'polite');
+        list.querySelector('.empty')?.remove();
+        for (const c of [...mine].reverse()) insertByTime(list, markerEl(c, jump));
+        if (stick) toBottom();
+      }
+      if (tabs.current === 'commits') renderTab(); else badges();
       break;
     }
     case 'uncommitted':
       if (!state) return;
       state.uncommitted = m.card;
-      renderBands();
+      if (tabs.current === 'changes') renderTab(); else badges();
       break;
     case 'stories':
       if (!state) return;
       state.stories = m.stories;
       renderStories();
+      if (tabs.current === 'commits') renderTab(); // the epic's cards are labelled by story title
       break;
     case 'feed':
       if (state) state.feed = m.status;

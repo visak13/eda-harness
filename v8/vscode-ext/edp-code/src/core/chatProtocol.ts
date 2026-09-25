@@ -75,6 +75,12 @@ export type CommitCard = {
   more: number;
   /** false: the commit is not in this clone ("pull to see this change") */
   local: boolean;
+  /** C13: the commit names the open thread's own ticket set, so the Chat tab shows it as a marker; the
+   *  rest of an epic scope's commits (its stories') show only in the Commits tab */
+  thread?: boolean;
+  /** C13: at epic scope, the story the commit belongs to (named directly or through one of its tasks);
+   *  null: it names the epic itself. The view labels the card with the story's title. */
+  story?: string | null;
 };
 /** The live uncommitted chip: the shared tree's working tree + index vs HEAD. Names no seat (dec-8dfe3d97af).
  *  C9 option (a): rows the open epic touched come first, flagged; `scoped` counts them (null: no scope). */
@@ -117,7 +123,8 @@ export type ChatState = {
   /** the epic the open thread belongs to (the ticket itself when an epic is open) */
   epic: TicketRef | null;
   stories: StoryRow[];
-  /** C5: the open thread's change cards (newest first), the epic's collapsed unlinked commits, the live card */
+  /** C5/C13: the open scope's change cards (newest first; `thread` marks the Chat markers), the epic's
+   *  unlinked commits, the live uncommitted card */
   commits: CommitCard[];
   unlinked: CommitCard[];
   uncommitted: UncommittedCard | null;
@@ -139,7 +146,7 @@ export type HostToView =
   | { type: 'append'; v: 1; ticketId: string; items: ChatMessage[] }
   | { type: 'prepend'; v: 1; ticketId: string; items: ChatMessage[]; hasOlder: boolean }
   | { type: 'stories'; v: 1; stories: StoryRow[] }
-  /** C5: new commits for the open thread (live on a HEAD move) */
+  /** C5/C13: new commits for the open scope (live on a HEAD move) */
   | { type: 'commits'; v: 1; ticketId: string; items: CommitCard[]; unlinked: CommitCard[] }
   | { type: 'uncommitted'; v: 1; card: UncommittedCard | null }
   | { type: 'feed'; v: 1; status: FeedStatus }
@@ -148,8 +155,9 @@ export type HostToView =
   /** a Tag selection put a chip in `ticketId`'s composer (null: the chip is gone); `focus` moves focus to the composer */
   | { type: 'insertCode'; v: 1; ticketId: string; chip: ChipView | null; focus: boolean }
   | { type: 'error'; v: 1; text: string }
-  /** C11: the #-picker rows for the `findPaths` with this `seq` (the view drops a stale answer) */
-  | { type: 'paths'; v: 1; seq: number; items: PathHit[] }
+  /** C11: the #-picker rows for the `findPaths` with this `seq` (the view drops a stale answer); C13: `up`
+   *  is the query one level up from the level listed (null at the git root or for a fuzzy answer) */
+  | { type: 'paths'; v: 1; seq: number; items: PathHit[]; up?: string | null }
   /** C11: what each checked path is in this workspace; `missing` ones stay plain text */
   | { type: 'pathKinds'; v: 1; kinds: Record<string, PathKind>; missing: string[] }
   /** C12: sizes/thumbnails the view asked for */

@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest';
 import { parseInbound, type UncommittedCard } from '../src/core/chatProtocol';
 import { anchorPath, inScope, sameRows, touchedPaths, uncommittedCard, type WorkFile } from '../src/core/uncommitted';
 import { FOLDED, restoreLocal } from '../src/core/viewState';
-import { renderUncommitted, uncommittedLabel } from '../webview/cards';
 
 const work: WorkFile[] = [
   { path: 'v8/a.ts', status: 'M' }, { path: 'v8/b.ts', status: 'M' }, { path: 'v8/new.md', oldPath: 'v8/old.md', status: 'R' },
@@ -74,58 +73,19 @@ describe('parseInbound: openUncommitted.scoped', () => {
 });
 
 describe('restoreLocal: the per-viewer fold state survives a reload', () => {
-  it('nothing saved: everything folded, kind note', () =>
-    expect(restoreLocal(undefined)).toEqual({ v: 1, drafts: {}, kind: 'note', fold: FOLDED }));
+  const base = { v: 1, drafts: {}, kind: 'note', fold: FOLDED, tab: 'chat', seen: {} };
+  it('nothing saved: the scope open, the rest folded, kind note, the Chat tab', () =>
+    expect(restoreLocal(undefined)).toEqual(base));
   it('round-trips what the view saved (JSON, as getState/setState do)', () => {
-    const saved = { v: 1, drafts: { 'epic-0123456789': 'half a thought' }, kind: 'steer', fold: { uncommitted: true, unlinked: false, allSeats: true } };
+    const saved = { v: 1, drafts: { 'epic-0123456789': 'half a thought' }, kind: 'steer', fold: { scoped: false, unlinked: true, allSeats: true },
+      tab: 'commits', seen: { 'epic-0123456789': '2026-09-25T07:00:00.000Z' } };
     expect(restoreLocal(JSON.parse(JSON.stringify(saved)))).toEqual(saved);
   });
-  it('a 0.4.0 state (no fold) keeps drafts and folds everything', () =>
-    expect(restoreLocal({ v: 1, drafts: { 's-0123456789': 'x' }, kind: 'question' })).toEqual({ v: 1, drafts: { 's-0123456789': 'x' }, kind: 'question', fold: FOLDED }));
+  it('a 0.4.0 state (no fold) keeps drafts and takes the defaults', () =>
+    expect(restoreLocal({ v: 1, drafts: { 's-0123456789': 'x' }, kind: 'question' })).toEqual({ ...base, drafts: { 's-0123456789': 'x' }, kind: 'question' }));
   it('garbage never throws and never smuggles fields', () => {
-    expect(restoreLocal({ v: 1, drafts: { bad: 'x', 's-0123456789': 7 }, kind: 'rm -rf', fold: { uncommitted: 'yes', extra: true } }))
-      .toEqual({ v: 1, drafts: {}, kind: 'note', fold: FOLDED });
-    for (const g of [null, 7, 'x', [], { v: 2, fold: { uncommitted: true } }]) expect(restoreLocal(g).fold).toEqual(FOLDED);
-  });
-});
-
-describe('the Uncommitted chip and its list (jsdom)', () => {
-  const card: UncommittedCard = uncommittedCard(work, { kind: 'epic', paths: new Set(['v8/b.ts']) });
-  it('the chip reads n/N; clean and unscoped variants', () => {
-    expect(uncommittedLabel(card).text).toBe('Uncommitted · 1/4');
-    expect(uncommittedLabel(card).aria).toBe('Uncommitted changes: 1 file this epic touched, 4 files across all seats');
-    expect(uncommittedLabel(null).text).toBe('Uncommitted · clean');
-    expect(uncommittedLabel(uncommittedCard(work)).text).toBe('Uncommitted · 4');
-  });
-  it("scoped: only the epic's rows, a show-all toggle with the rest's count, a scoped multi-diff", () => {
-    const box = document.createElement('div');
-    const posts: unknown[] = [];
-    let all: boolean | undefined;
-    renderUncommitted(box, card, false, m => posts.push(m), a => (all = a));
-    expect([...box.querySelectorAll('.cf')].map(b => (b as HTMLElement).dataset.path)).toEqual(['v8/b.ts']);
-    expect(box.querySelector('#uncommitted-open')!.textContent).toBe('Uncommitted changes — this epic1 file');
-    const t = box.querySelector<HTMLButtonElement>('#uncommitted-all')!;
-    expect(t.textContent).toBe('show all seats (3 more)');
-    t.click();
-    expect(all).toBe(true);
-    box.querySelector<HTMLButtonElement>('#uncommitted-open')!.click();
-    expect(posts).toEqual([{ type: 'openUncommitted', scoped: true }]);
-  });
-  it('all seats: every row, the epic rows marked, an unscoped multi-diff, a way back', () => {
-    const box = document.createElement('div');
-    const posts: unknown[] = [];
-    renderUncommitted(box, card, true, m => posts.push(m), () => {});
-    expect(box.querySelectorAll('.cf').length).toBe(4);
-    expect(box.querySelectorAll('li.touched').length).toBe(1);
-    expect(box.querySelector('#uncommitted-all')!.textContent).toBe('only this epic (1)');
-    box.querySelector<HTMLButtonElement>('#uncommitted-open')!.click();
-    expect(posts).toEqual([{ type: 'openUncommitted' }]);
-  });
-  it('nothing this epic touched: says so, and the toggle still reaches the rest', () => {
-    const box = document.createElement('div');
-    renderUncommitted(box, uncommittedCard(work, { kind: 'epic', paths: new Set() }), false, () => {}, () => {});
-    expect(box.textContent).toContain('No uncommitted file is one this epic touched.');
-    expect(box.querySelector<HTMLButtonElement>('#uncommitted-open')!.disabled).toBe(true);
-    expect(box.querySelector('#uncommitted-all')!.textContent).toBe('show all seats (4 more)');
+    expect(restoreLocal({ v: 1, drafts: { bad: 'x', 's-0123456789': 7 }, kind: 'rm -rf', fold: { uncommitted: 'yes', extra: true }, tab: '<b>', seen: { bad: 'x', 's-0123456789': 'not a date' } }))
+      .toEqual(base);
+    for (const g of [null, 7, 'x', [], { v: 2, fold: { scoped: false } }]) expect(restoreLocal(g).fold).toEqual(FOLDED);
   });
 });

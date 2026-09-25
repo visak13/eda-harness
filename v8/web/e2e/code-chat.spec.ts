@@ -165,7 +165,7 @@ test("sign in, open the chat in the right column, pick the epic: its own thread,
   await expect(c.locator(`.story[data-id="${storyA}"] .st-unread`)).toHaveText("1"); // never viewed: its one message
   await expect(c.locator(`.story[data-id="${storyB}"] .st-unread`)).toHaveCount(0);
   await expect(c.locator(".msg .body", { hasText: "Alpha story only" })).toHaveCount(0); // never merged
-  // C9: the header is one line; the stories fold into a dropdown that reaches every story; the bands are chips, collapsed
+  // C9: the header is one line; the stories fold into a dropdown that reaches every story
   const hb = await c.locator("header.hdr").boundingBox();
   const pb = await c.locator("#pick").boundingBox();
   expect(hb!.height).toBeLessThan(pb!.height * 1.6);
@@ -177,9 +177,10 @@ test("sign in, open the chat in the right column, pick the epic: its own thread,
   await expect(c.locator("#pick")).toHaveAttribute("title", new RegExp(`drafted · architect @${ARCH().replace(/[.]/g, "\.")}`));
   await expect(c.locator("#stories")).toBeHidden();
   await expect(c.locator("#stories-toggle .st-unread")).toHaveText("1");
-  await expect(c.locator("#uncommitted-toggle")).toHaveAttribute("aria-expanded", "false");
-  await expect(c.locator("#uncommitted")).toBeHidden();
-  await expect(c.locator("#unlinked")).toBeHidden();
+  // C13: the chips gave way to a tab bar under the header; Chat is the default tab
+  await expect(c.locator("[role=tablist] [role=tab]")).toHaveText([/^Chat/, /^Changes/, /^Commits/]);
+  await expect(c.locator("#tab-chat")).toHaveAttribute("aria-selected", "true");
+  await expect(c.locator("#uncommitted-toggle")).toHaveCount(0);
   await c.locator("#stories-toggle").click();
   await expect(c.locator("#stories .story")).toHaveCount(2);
   await expect(c.locator("#stories .story").nth(0)).toBeVisible();

@@ -17,7 +17,7 @@ import { render } from '../core/render';
 import { fromMessageRow, fromThreadRow, ThreadStore } from '../core/thread';
 import { creds, signIn } from './auth';
 import { ChatViewProvider, CHAT_VIEW } from './chatView';
-import { cardOf, naming, storyCounts, unlinked as unlinkedOf, type Indexed } from '../core/commits';
+import { cardOf, inScope as commitsInScope, storyCounts, unlinked as unlinkedOf, type Indexed } from '../core/commits';
 import { anchorPath, inScope, sameRows, touchedPaths, uncommittedCard, type Scope } from '../core/uncommitted';
 import { Changes } from './changes';
 import { Attachments } from './attachments';
@@ -148,7 +148,9 @@ export class ChatController implements vscode.Disposable, TagTarget {
         return;
       }
       case 'findPaths': {
-        this.post({ type: 'paths', v: 1, seq: m.seq, items: await this.paths.find(m.q) });
+        // always answer: the picker holds its navigation keys until this seq's rows arrive
+        const lv = await this.paths.find(m.q).catch(() => ({ rows: [], up: null }));
+        this.post({ type: 'paths', v: 1, seq: m.seq, items: lv.rows, up: lv.up });
         return;
       }
       case 'checkPaths': {
@@ -583,14 +585,37 @@ export class ChatController implements vscode.Disposable, TagTarget {
     if (chip && this.store) this.placeChip(this.store.ticketId, chip);
   }
 
-  // -- change cards (C5 s-ab8e69650e) --------------------------------------------------------------
-  /** The open thread's ticket set: a story and its tasks; an epic (or a task) itself. An epic thread
-   *  never shows its stories' commits: those are the strip counts (architect ruling m-2e3b14065e). */
-  private commitIds(): Set<string> {
+  // -- change cards (C5 s-ab8e69650e; C13 Commits tab) ---------------------------------------------
+  /** The open thread's ticket set: a story and its tasks; an epic (or a task) itself. An epic's Chat tab
+   *  never shows its stories' commits (architect ruling m-2e3b14065e): those are its Commits tab. */
+  private threadIds(): Set<string> {
     const t = this.ticket;
     if (!t) return new Set();
     if (t.kind !== 'story') return new Set([t.id]);
     return new Set([t.id, ...this.tree.filter(x => x.parent_id === t.id).map(x => x.id)]);
+  }
+
+  /** The Commits tab's scope (design §13.1): a story with its tasks; an epic with every ticket of it. */
+  private scopeIds(): Set<string> {
+    if (this.ticket?.kind !== 'epic') return this.threadIds();
+    return new Set([this.ticket.id, ...this.tree.map(x => x.id)]);
+  }
+
+  private scopeCards(cs: Indexed[]): CommitCard[] {
+    const epicScope = this.ticket?.kind === 'epic';
+    return commitsInScope(cs, this.threadIds(), this.scopeIds()).map(({ c, thread }) =>
+      ({ ...this.card(c), thread, ...(epicScope ? { story: this.storyOf(c.tickets) } : {}) }));
+  }
+
+  /** The epic's story a commit belongs to: the first named ticket that is a story, or a task's parent story. */
+  private storyOf(tickets: string[]): string | null {
+    const stories = new Set(this.stories.map(s => s.id));
+    for (const id of tickets) {
+      if (stories.has(id)) return id;
+      const p = this.tree.find(x => x.id === id)?.parent_id;
+      if (p && stories.has(p)) return p;
+    }
+    return null;
   }
 
   /** A subject-attributed card names the ticket's assignee as its seat (labelled in the view). */
@@ -599,7 +624,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
 
   private recomputeCommits(): void {
     const all = this.changes.commits;
-    this.commits = naming(all, this.commitIds()).map(this.card);
+    this.commits = this.scopeCards(all);
     this.unlinked = this.ticket?.kind === 'epic' ? unlinkedOf(all).slice(0, UNLINKED_MAX).map(this.card) : [];
     const tasksOf = new Map<string, string[]>();
     for (const x of this.tree) if (x.kind === 'task' && x.parent_id) tasksOf.set(x.parent_id, [...(tasksOf.get(x.parent_id) ?? []), x.id]);
@@ -611,12 +636,12 @@ export class ChatController implements vscode.Disposable, TagTarget {
   private onCommits(added: Indexed[]): void {
     const t = this.ticket;
     if (!t) return;
-    const items = naming(added, this.commitIds()).map(this.card);
+    const items = this.scopeCards(added);
     const un = t.kind === 'epic' ? unlinkedOf(added).map(this.card) : [];
     this.recomputeCommits();
     if (items.length || un.length) {
       this.post({ type: 'commits', v: 1, ticketId: t.id, items, unlinked: un });
-      this.provider.noteUnseen(items.length);
+      this.provider.noteUnseen(items.filter(c => c.thread).length);
     }
     if (this.stories.length) this.post({ type: 'stories', v: 1, stories: this.stories });
     this.refreshUncommitted();

@@ -100,17 +100,9 @@ function subsequence(hay: string, q: string): boolean {
   return j === q.length;
 }
 
-/** The picker rows for `query`: case-insensitive; the basename's prefix ranks first, then a basename
- *  substring, a path substring, and a subsequence of the path; shorter paths first, then A-Z. An
- *  empty query lists the top-level folders, then the top-level files, each A-Z. At most `cap` rows. */
-export function matchPaths(entries: readonly PathHit[], query: string, cap = PATH_HITS_MAX): PathHit[] {
-  const q = query.toLowerCase().replace(/\\/g, '/').replace(/\/+$/, '');
-  const byName = (a: PathHit, b: PathHit) => a.path.length - b.path.length || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
-  if (!q) {
-    const top = entries.filter(e => !e.path.includes('/'));
-    const az = (a: PathHit, b: PathHit) => a.path.localeCompare(b.path, undefined, { sensitivity: 'base' });
-    return [...top.filter(e => e.kind === 'folder').sort(az), ...top.filter(e => e.kind === 'file').sort(az)].slice(0, cap);
-  }
+/** Fuzzy rows for `q` (lower case): the basename's prefix ranks first, then a basename substring, a path
+ *  substring, and a subsequence of the path; shorter paths first, then A-Z. */
+function fuzzy(entries: readonly PathHit[], q: string, cap: number): PathHit[] {
   const scored: [number, PathHit][] = [];
   for (const e of entries) {
     const p = e.path.toLowerCase();
@@ -120,6 +112,100 @@ export function matchPaths(entries: readonly PathHit[], query: string, cap = PAT
   }
   return scored.sort((a, b) => a[0] - b[0] || byName(a[1], b[1])).slice(0, cap).map(x => x[1]);
 }
+
+const byName = (a: PathHit, b: PathHit) => a.path.length - b.path.length || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+const az = (a: PathHit, b: PathHit) => a.path.localeCompare(b.path, undefined, { sensitivity: 'base' });
+const parentOf = (p: string) => { const i = p.lastIndexOf('/'); return i < 0 ? '' : p.slice(0, i); };
+
+/** One level of the tree (C13, shell completion, owner m-28122bc446): the children of `dir` (lower case,
+ *  '' = the git root), folders then files, A-Z. A level whose only entry is one folder opens that folder
+ *  instead (architect m-f1b57a4176). `dir` in the answer is the real-cased level listed. */
+export function levelOf(entries: readonly PathHit[], dir: string): { dir: string; rows: PathHit[] } {
+  let at = dir.toLowerCase();
+  let real = at ? entries.find(e => e.kind === 'folder' && e.path.toLowerCase() === at)?.path ?? dir : '';
+  let rows = entries.filter(e => parentOf(e.path.toLowerCase()) === at);
+  while (rows.length === 1 && rows[0].kind === 'folder') {
+    real = rows[0].path;
+    at = real.toLowerCase();
+    rows = entries.filter(e => parentOf(e.path.toLowerCase()) === at);
+  }
+  return { dir: real, rows: [...rows.filter(e => e.kind === 'folder').sort(az), ...rows.filter(e => e.kind === 'file').sort(az)] };
+}
+
+/** The picker's answer: the rows, the level they list (null: a fuzzy answer, no level), and the query
+ *  that goes one level up (null: at the top, or no level). */
+export type Level = { rows: PathHit[]; level: string | null; up: string | null };
+
+const depth = (d: string) => (d ? d.split('/').length : 0);
+
+/** The query that lists folder `dir` (root-relative), written from `home` (the open workspace folder's
+ *  path in the repo): home itself is the empty query, an ancestor of home is `../` per level, anything else
+ *  its root-relative path with a `/`. A token is always root-relative; only the query says `..`. */
+export function queryFor(dir: string, home: string): string {
+  const d = dir.toLowerCase(), h = home.toLowerCase();
+  if (d === h) return '';
+  if (!d || h.startsWith(`${d}/`)) return '../'.repeat(depth(h) - depth(d));
+  return `${dir}/`;
+}
+
+/** The picker rows for `query`, case-insensitive, at most `cap`, as seen from `home`.
+ *  - '' lists home (the open workspace folder's level; the git root when the folder is the repo).
+ *  - Leading `../` (or a bare `..`) climb from home, one level each, never above the git root.
+ *  - The text up to the last `/` names the level (a root-relative folder, or one under home); the rest
+ *    filters it: the level's own matches first (basename prefix, substring, subsequence), then fuzzy
+ *    matches deeper under it, so a name typed at the top still finds a deep file.
+ *  - A `/` path that is no folder (`code/webview`) is matched fuzzily across the whole tree. */
+export function findLevel(entries: readonly PathHit[], query: string, home = '', cap = PATH_HITS_MAX): Level {
+  let q = query.toLowerCase().replace(/\\/g, '/');
+  let from = home.toLowerCase();
+  let climbed = false;
+  while (q === '..' || q.startsWith('../')) { climbed = true; from = parentOf(from); q = q === '..' ? '' : q.slice(3); }
+  const cut = q.lastIndexOf('/');
+  const sub = cut < 0 ? '' : q.slice(0, cut).replace(/\/+$/, '');
+  const leaf = q.slice(cut + 1);
+  const isFolder = (d: string) => !d || entries.some(e => e.kind === 'folder' && e.path.toLowerCase() === d);
+  const under = (b: string, x: string) => (b ? (x ? `${b}/${x}` : b) : x);
+  let dir: string | null;
+  if (climbed) dir = under(from, sub);
+  else if (!sub) dir = from;
+  // a name under home wins over the same name at the root (`docs/` from v8 is v8/docs; ../docs/ is the root's)
+  else dir = isFolder(under(from, sub)) ? under(from, sub) : isFolder(sub) ? sub : null;
+  if (dir === null || !isFolder(dir)) return { rows: fuzzy(entries, q.replace(/\/+$/, ''), cap), level: null, up: null };
+  const lv = levelOf(entries, dir);
+  const up = upFrom(entries, lv.dir, home);
+  if (!leaf) return { rows: lv.rows.slice(0, cap), level: lv.dir, up };
+  const mine: [number, PathHit][] = [];
+  for (const e of lv.rows) {
+    const b = base(e.path.toLowerCase());
+    const s = b.startsWith(leaf) ? 0 : b.includes(leaf) ? 1 : subsequence(b, leaf) ? 2 : -1;
+    if (s >= 0) mine.push([s, e]);
+  }
+  const first = mine.sort((a, b) => a[0] - b[0] || byName(a[1], b[1])).map(x => x[1]);
+  if (first.length >= cap) return { rows: first.slice(0, cap), level: lv.dir, up };
+  const seen = new Set(first);
+  const lvl = lv.dir.toLowerCase();
+  const deeper = entries.filter(e => !seen.has(e) && (!lvl || e.path.toLowerCase().startsWith(`${lvl}/`)));
+  return { rows: [...first, ...fuzzy(deeper, leaf, cap - first.length)], level: lv.dir, up };
+}
+
+/** The query one level up from `level`: its parent, skipping parents that would auto-descend straight
+ *  back here (their only entry is the folder we came from); null at the git root. */
+function upFrom(entries: readonly PathHit[], level: string, home: string): string | null {
+  if (!level) return null;
+  let p = parentOf(level);
+  while (levelOf(entries, p).dir.toLowerCase() === level.toLowerCase()) {
+    if (!p) return null;
+    p = parentOf(p);
+  }
+  return queryFor(p, home);
+}
+
+/** The picker rows only (see findLevel). */
+export const matchPaths = (entries: readonly PathHit[], query: string, cap = PATH_HITS_MAX, home = ''): PathHit[] =>
+  findLevel(entries, query, home, cap).rows;
+
+/** Shell completion keys (C13): the query that opens folder `h` (its children listed next). */
+export const descendQuery = (h: PathHit) => `${h.path}/`;
 
 /** The index rows: every file and every folder above one, in no particular order. */
 export function indexRows(files: readonly string[]): PathHit[] {

@@ -2,20 +2,22 @@
 // Per workspace folder in a git repo: `git ls-files --cached --others --exclude-standard` (exact
 // .gitignore) through execFile with the git extension's git and a timeout, minus `files.exclude`;
 // outside git: workspace.findFiles under files.exclude. Paths are repo-relative (the folder's path in
-// the repo prefixes them), folders derive from files. Built lazily on the first `#`, rebuilt after file
+// the repo prefixes them), folders derive from files. C13: the whole repo is indexed (ls-files at its
+// root), so `#../` climbs from the open folder (`home`) to the git root and its siblings, never above. Built lazily on the first `#`, rebuilt after file
 // creates/deletes (debounced), never per keystroke. Links resolve by stat against the same roots.
 import { execFile } from 'node:child_process';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { PathHit, PathKind } from '../core/chatProtocol';
-import { excluder, indexRows, matchPaths, parseLsFilesZ } from '../core/paths';
+import { excluder, findLevel, indexRows, parseLsFilesZ, type Level } from '../core/paths';
 import { gitApi } from './repo';
 
 const GIT_TIMEOUT_MS = 10_000;
 const FIND_MAX = 20_000;
 const REBUILD_MS = 2_000;
 
-type Root = { uri: vscode.Uri; rows: PathHit[] };
+/** `home`: the first workspace folder's path in this repo ('' when the folder is the repo root) */
+type Root = { uri: vscode.Uri; rows: PathHit[]; home: string };
 
 function lsFiles(exe: string, cwd: string): Promise<string> {
   return new Promise((res, rej) => {
@@ -40,6 +42,8 @@ export class PathIndex implements vscode.Disposable {
     this.subs.push(w, w.onDidCreate(stale), w.onDidDelete(stale),
       vscode.workspace.onDidChangeWorkspaceFolders(stale),
       vscode.workspace.onDidChangeConfiguration(e => { if (e.affectsConfiguration('files.exclude')) stale(); }));
+    // a repo the git extension opens late (a parent folder's) turns a findFiles index into the repo's
+    void gitApi().then(api => { if (api && !this.disposed) this.subs.push(api.onDidOpenRepository(stale)); });
   }
 
   /** A create/delete: rebuild once things settle, only if the index was ever built. */
@@ -67,14 +71,15 @@ export class PathIndex implements vscode.Disposable {
           // files.exclude is relative to the workspace folder; the paths are relative to the repo
           const prefix = posix(path.relative(repo.rootUri.fsPath, f.uri.fsPath));
           const pre = prefix && !prefix.startsWith('..') ? `${prefix}/` : '';
-          const files = parseLsFilesZ(await lsFiles(exe, f.uri.fsPath)).filter(p => !ex(pre && p.startsWith(pre) ? p.slice(pre.length) : p));
           const key = repo.rootUri.fsPath;
           const had = byRoot.get(key);
-          const rows = indexRows(files);
-          byRoot.set(key, { uri: repo.rootUri, rows: had ? dedupe([...had.rows, ...rows]) : rows });
+          if (had) continue; // one folder already indexed the whole repo; the first folder stays home
+          // the whole repo, so # can climb out of the folder (C13); files.exclude still applies inside it
+          const files = parseLsFilesZ(await lsFiles(exe, repo.rootUri.fsPath)).filter(p => !(pre && p.startsWith(pre) ? ex(p.slice(pre.length)) : !pre && ex(p)));
+          byRoot.set(key, { uri: repo.rootUri, rows: indexRows(files), home: pre.replace(/\/$/, '') });
         } else {
           const uris = await vscode.workspace.findFiles(new vscode.RelativePattern(f, '**/*'), undefined, FIND_MAX);
-          byRoot.set(f.uri.fsPath, { uri: f.uri, rows: indexRows(uris.map(u => posix(path.relative(f.uri.fsPath, u.fsPath)))) });
+          byRoot.set(f.uri.fsPath, { uri: f.uri, rows: indexRows(uris.map(u => posix(path.relative(f.uri.fsPath, u.fsPath)))), home: '' });
         }
       } catch (e) {
         this.log(`paths: index of ${f.name} failed (${(e as Error).message})`);
@@ -85,11 +90,11 @@ export class PathIndex implements vscode.Disposable {
     return roots;
   }
 
-  /** The #-picker rows for a query (across roots, capped). */
-  async find(q: string): Promise<PathHit[]> {
+  /** The #-picker rows for a query (across roots, capped), seen from the first root's home folder. */
+  async find(q: string): Promise<Level> {
     const roots = await this.index();
     const all = roots.length === 1 ? roots[0].rows : dedupe(roots.flatMap(r => r.rows));
-    return matchPaths(all, q);
+    return findLevel(all, q, roots[0]?.home ?? '');
   }
 
   /** What `rel` is under the first root that has it, by stat (a gitignored path that exists still links). */

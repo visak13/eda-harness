@@ -60,22 +60,38 @@ button:disabled { opacity: 0.6; cursor: default; }
   border-radius: 8px; padding: 0 5px; font-size: 0.8em;
 }
 
-/* the folded bands: one row of chips */
-.bands { display: flex; gap: 4px; padding: 0 6px 4px; flex: 0 0 auto; flex-wrap: wrap; }
-.band-chip {
-  font-size: 0.85em; padding: 0 8px; border-radius: 10px; white-space: nowrap;
-  border-color: var(--vscode-input-border, var(--vscode-widget-border, transparent)); color: var(--vscode-descriptionForeground);
+/* C13: the tab bar under the header, and the panels that fill the rest. Each panel is the ONLY flexible
+   box below the bar, so nothing competes with it for height (C9's chips lost that contest to the thread). */
+.tabbar { display: flex; gap: 2px; padding: 0 6px; flex: 0 0 auto; border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, transparent)); }
+.tab {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px 2px; border: none; border-radius: 0;
+  border-bottom: 2px solid transparent; color: var(--vscode-descriptionForeground); white-space: nowrap;
 }
-.band-chip[data-dirty="true"] { color: var(--vscode-foreground); }
-.band-chip[aria-expanded="true"] { background: var(--vscode-list-inactiveSelectionBackground, var(--vscode-list-hoverBackground)); color: var(--vscode-foreground); }
-.band-chip::after { content: " ▸"; }
-.band-chip[aria-expanded="true"]::after { content: " ▾"; }
+.tab:hover { background: none; color: var(--vscode-foreground); }
+.tab[aria-selected="true"] { color: var(--vscode-foreground); border-bottom-color: var(--vscode-panelTitle-activeBorder, var(--vscode-focusBorder)); }
+.tab-badge { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); border-radius: 8px; padding: 0 5px; font-size: 0.8em; }
+.panels { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.panel { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.panel-changes, .panel-commits { overflow-y: auto; padding: 0 6px 6px; }
+.tab-top { display: flex; align-items: baseline; gap: 6px; padding: 6px 2px 4px; }
+.tab-sum { flex: 1 1 auto; min-width: 0; color: var(--vscode-descriptionForeground); }
+.act {
+  flex: 0 0 auto; font-size: 0.9em; padding: 0 8px; color: var(--vscode-textLink-foreground);
+  border-color: var(--vscode-input-border, var(--vscode-widget-border, transparent));
+}
+.group { margin: 4px 0; border: 1px solid var(--vscode-widget-border, var(--vscode-input-border, transparent)); border-radius: 2px; }
+.group-head { display: flex; align-items: center; gap: 4px; padding-right: 4px; }
+.group-toggle { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 6px; padding: 3px 6px; border-radius: 0; font-weight: 600; }
+.group-caret { width: 1em; flex: 0 0 auto; color: var(--vscode-descriptionForeground); font-weight: normal; }
+.group-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-count { font-weight: normal; color: var(--vscode-descriptionForeground); }
+.group-body { border-top: 1px solid var(--vscode-widget-border, transparent); }
 
 .notice { padding: 4px 8px; color: var(--vscode-descriptionForeground); display: flex; gap: 6px; align-items: center; }
 .notice .err { color: var(--vscode-errorForeground); }
 .signin { color: var(--vscode-textLink-foreground); }
 
-.timeline { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 8px; border-top: 1px solid var(--vscode-widget-border, transparent); }
+.timeline { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 8px; }
 .older { display: block; margin: 6px auto; color: var(--vscode-textLink-foreground); }
 .empty { color: var(--vscode-descriptionForeground); }
 .msg { padding: 6px 0; border-bottom: 1px solid var(--vscode-widget-border, transparent); }
@@ -166,35 +182,36 @@ textarea {
 .tool.hash { padding: 0 6px; font-weight: 600; color: var(--vscode-icon-foreground, var(--vscode-foreground)); }
 .tool.hash:hover { background: var(--vscode-toolbar-hoverBackground); }
 
-body.vscode-high-contrast .code-card, body.vscode-high-contrast .cbox, body.vscode-high-contrast .stories, body.vscode-high-contrast .band-chip,
+body.vscode-high-contrast .code-card, body.vscode-high-contrast .cbox, body.vscode-high-contrast .stories,
 body.vscode-high-contrast .people, body.vscode-high-contrast .chip { border: 1px solid var(--vscode-contrastBorder); }
 body.vscode-reduce-motion * { transition: none !important; animation: none !important; }
 
-/* change cards (C5): commits in the timeline, the pinned uncommitted card, the epic's unlinked commits */
+/* change cards (C5, C13): commit cards in the Commits tab, file rows in both list tabs, markers in the Chat */
 .st-commits { font-size: 0.8em; color: var(--vscode-descriptionForeground); }
 .story.active .st-commits { color: inherit; }
-.pinned { flex: 0 1 auto; padding: 0 6px 4px; display: flex; flex-direction: column; gap: 4px; max-height: 40vh; overflow-y: auto; }
-.pinned:not(:has(> :not([hidden]))) { display: none; }
-.touched .cf-path { font-weight: 600; }
-.uc-all { display: block; margin: 2px 6px 4px; font-size: 0.85em; color: var(--vscode-textLink-foreground); }
-.unlinked-box { border: 1px solid var(--vscode-widget-border, var(--vscode-input-border, transparent)); border-radius: 2px; }
-.commit, .uncommitted {
-  margin: 6px 0; border: 1px solid var(--vscode-widget-border, var(--vscode-input-border, transparent));
+.commit {
+  margin: 4px 0; border: 1px solid var(--vscode-widget-border, var(--vscode-input-border, transparent));
   border-left: 3px solid var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-focusBorder)); border-radius: 2px;
 }
-.uncommitted { margin: 0; border-left-color: var(--vscode-gitDecoration-untrackedResourceForeground, var(--vscode-focusBorder)); }
 .commit.att-none { border-left-color: var(--vscode-descriptionForeground); }
-.cm-head, .uc-head { display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 4px 6px; border-radius: 0; }
-.uc-head { flex-direction: row; justify-content: space-between; align-items: baseline; font-weight: 600; }
-.uc-count { font-weight: normal; color: var(--vscode-descriptionForeground); }
+.cm-row { display: flex; align-items: flex-start; gap: 4px; padding-right: 4px; }
+.cm-head { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 4px 6px; border-radius: 0; }
+.cm-open { margin-top: 4px; }
+.cm-caret { width: 1em; color: var(--vscode-descriptionForeground); }
+.cm-story { color: var(--vscode-descriptionForeground); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40ch; }
+/* C13: a commit in the Chat timeline is one line that opens it in the Commits tab */
+.cmark {
+  display: flex; gap: 6px; align-items: baseline; width: 100%; margin: 2px 0; padding: 1px 4px; font-size: 0.9em; white-space: nowrap;
+  color: var(--vscode-descriptionForeground); border-left: 2px solid var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-focusBorder)); border-radius: 0;
+}
+.cmark-subject { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--vscode-foreground); }
 .cm-meta { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; font-size: 0.9em; }
 .cm-icon { color: var(--vscode-descriptionForeground); }
 .cm-seat { font-weight: 600; }
 .cm-seat.via-assignee, .cm-seat.via-none { font-weight: normal; font-style: italic; }
 .cm-sha { font-family: var(--vscode-editor-font-family); color: var(--vscode-textLink-foreground); }
 .cm-subject { overflow-wrap: anywhere; }
-.cm-files { list-style: none; margin: 0; padding: 0 0 4px; max-height: 12em; overflow-y: auto; }
-.uc-files { max-height: 8em; }
+.cm-files { list-style: none; margin: 0; padding: 0 0 4px; }
 .cf { display: flex; gap: 6px; width: 100%; padding: 1px 6px; align-items: baseline; font-size: 0.9em; }
 .cf-st { font-family: var(--vscode-editor-font-family); width: 1.2em; flex: 0 0 auto; color: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-foreground)); }
 .cf-st.st-A, .cf-st.st-U { color: var(--vscode-gitDecoration-addedResourceForeground); }
@@ -205,8 +222,8 @@ body.vscode-reduce-motion * { transition: none !important; animation: none !impo
 .cf-del { color: var(--vscode-gitDecoration-deletedResourceForeground); }
 .cf-bin { color: var(--vscode-descriptionForeground); }
 .cm-more { padding: 0 6px 4px; font-size: 0.85em; color: var(--vscode-descriptionForeground); }
-.ul-list { max-height: 30vh; overflow-y: auto; }
-body.vscode-high-contrast .commit, body.vscode-high-contrast .uncommitted { border: 1px solid var(--vscode-contrastBorder); }
+body.vscode-high-contrast .commit, body.vscode-high-contrast .group, body.vscode-high-contrast .act { border: 1px solid var(--vscode-contrastBorder); }
+body.vscode-high-contrast .tab[aria-selected="true"] { border-bottom-color: var(--vscode-contrastActiveBorder, var(--vscode-contrastBorder)); }
 
 /* C12 attachments: the clip button, the staged list in the composer box, the drop veil, and a message's
    thumbnails / file rows. Thumbnails are data: URIs the host made; colours are --vscode-* only. */

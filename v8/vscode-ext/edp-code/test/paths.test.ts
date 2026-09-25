@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  activeHashTag, excluder, foldersOf, globToRegExp, indexRows, matchPaths, parseLsFilesZ, pathCandidate, pathToken, type PathHit,
+  activeHashTag, descendQuery, excluder, foldersOf, globToRegExp, findLevel, indexRows, levelOf, matchPaths, parseLsFilesZ, pathCandidate, pathToken, queryFor, type PathHit,
 } from '../src/core/paths';
 
 describe('activeHashTag: when # opens the picker', () => {
@@ -133,4 +133,80 @@ describe('pathCandidate: which inline code spans may be links', () => {
 
   it.each(['npm test', 'foo', '../etc/passwd', '/abs/x', 'C:/x/y', 'a\\b.ts', '.', '', 'src/x.ts:L1-5 @abc1234'])(
     'not %j', t => expect(pathCandidate(t)).toBeUndefined());
+});
+
+describe('shell completion levels (C13, owner m-28122bc446)', () => {
+  const rows: PathHit[] = indexRows(['v8/web/src/app.tsx', 'v8/web/package.json', 'v8/edp8/board.py', 'v8/README.md', 'v8/vscode-ext/edp-code/src/core/paths.ts']);
+  it('# at a root holding one folder opens that folder (tokens keep the v8/ prefix)', () => {
+    expect(matchPaths(rows, '').map(h => h.path)).toEqual(['v8/edp8', 'v8/vscode-ext', 'v8/web', 'v8/README.md']);
+    expect(levelOf(rows, '').dir).toBe('v8');
+  });
+  it('a level whose only entry is one folder auto-descends (vscode-ext → edp-code → its children)', () =>
+    expect(matchPaths(rows, 'v8/vscode-ext/').map(h => h.path)).toEqual(['v8/vscode-ext/edp-code/src/core/paths.ts']));
+  it('`folder/` lists that folder: folders, then files, A-Z', () =>
+    expect(matchPaths(rows, 'v8/web/').map(h => h.path)).toEqual(['v8/web/src', 'v8/web/package.json']));
+  it('typing filters the current level first, then deeper matches under it', () => {
+    expect(matchPaths(rows, 'v8/web/s').map(h => h.path)).toEqual(['v8/web/src', 'v8/web/package.json', 'v8/web/src/app.tsx']);
+    expect(matchPaths(rows, 'ed').map(h => h.path).slice(0, 3)).toEqual(['v8/edp8', 'v8/README.md', 'v8/vscode-ext/edp-code']);
+    expect(matchPaths(rows, 'paths.ts').map(h => h.path)).toEqual(['v8/vscode-ext/edp-code/src/core/paths.ts']);
+  });
+  it('a typed slash path jumps straight in; a slash path that is no folder stays fuzzy', () => {
+    expect(matchPaths(rows, 'v8/edp8/b').map(h => h.path)).toEqual(['v8/edp8/board.py']);
+    expect(matchPaths(rows, 'core/paths')[0].path).toBe('v8/vscode-ext/edp-code/src/core/paths.ts');
+  });
+  it('descendQuery; up from a level skips a parent that would auto-descend straight back', () => {
+    expect(descendQuery({ path: 'v8/web', kind: 'folder' })).toBe('v8/web/');
+    expect(findLevel(rows, 'v8/web/').up).toBe('v8/');
+    expect(findLevel(rows, 'v8/web/s').up).toBe('v8/');
+    // v8/vscode-ext/ auto-descends to …/src/core; up lands on v8 (vscode-ext, edp-code, src would bounce back)
+    expect(findLevel(rows, 'v8/vscode-ext/')).toMatchObject({ level: 'v8/vscode-ext/edp-code/src/core', up: 'v8/' });
+    // the root holds v8 alone: v8's level has no up (the root would open v8 again)
+    expect(findLevel(rows, '')).toMatchObject({ level: 'v8', up: null });
+    expect(findLevel(rows, 'core/paths').up).toBeNull(); // a fuzzy answer has no level
+  });
+});
+
+describe('# from an open workspace folder inside the repo: home and ../ (architect m-f5222f812f)', () => {
+  const repo: PathHit[] = indexRows(['v8/web/a.ts', 'v8/edp8/board.py', 'v8/README.md', 'edp-pool/pool.py', 'edp-pool/cfg/x.json', 'docs/guide.md', 'README.md']);
+  const HOME = 'v8';
+  it("'' lists the home folder (v8's children), up is ../", () => {
+    const lv = findLevel(repo, '', HOME);
+    expect(lv.rows.map(h => h.path)).toEqual(['v8/edp8', 'v8/web', 'v8/README.md']);
+    expect(lv).toMatchObject({ level: 'v8', up: '../' });
+  });
+  it('../ lists the git root; ../../ stops there; a bare .. too', () => {
+    const root = ['docs', 'edp-pool', 'v8', 'README.md'];
+    expect(findLevel(repo, '../', HOME).rows.map(h => h.path)).toEqual(root);
+    expect(findLevel(repo, '../../', HOME).rows.map(h => h.path)).toEqual(root);
+    expect(findLevel(repo, '..', HOME).rows.map(h => h.path)).toEqual(root);
+    expect(findLevel(repo, '../', HOME)).toMatchObject({ level: '', up: null });
+  });
+  it('../ed filters the root; ../edp-pool/ opens the sibling; picks stay root-relative (no ..)', () => {
+    expect(findLevel(repo, '../ed', HOME).rows[0]).toEqual({ path: 'edp-pool', kind: 'folder' });
+    const lv = findLevel(repo, '../edp-pool/', HOME);
+    expect(lv.rows.map(h => h.path)).toEqual(['edp-pool/cfg', 'edp-pool/pool.py']);
+    expect(lv.up).toBe('../');
+    expect(lv.rows.every(h => !h.path.includes('..'))).toBe(true);
+  });
+  it('a root-relative folder path and a home-relative one both open', () => {
+    expect(findLevel(repo, 'edp-pool/', HOME).level).toBe('edp-pool');
+    expect(findLevel(repo, 'web/', HOME).level).toBe('v8/web');
+    expect(findLevel(repo, 'v8/web/', HOME)).toMatchObject({ level: 'v8/web', up: '' });
+  });
+  it('a name at both home and the root opens home\'s (review: docs/ from v8 is v8/docs); ../docs/ is the root\'s', () => {
+    const both = indexRows(['v8/docs/a.md', 'v8/web/x.ts', 'docs/root.md']);
+    expect(findLevel(both, 'docs/', HOME)).toMatchObject({ level: 'v8/docs' });
+    expect(findLevel(both, 'docs/', HOME).rows.map(h => h.path)).toEqual(['v8/docs/a.md']);
+    expect(findLevel(both, '../docs/', HOME).rows.map(h => h.path)).toEqual(['docs/root.md']);
+    expect(findLevel(both, 'v8/docs/', HOME).level).toBe('v8/docs'); // a full root-relative path still opens
+  });
+  it('typing at home filters home, then deeper under home', () =>
+    expect(findLevel(repo, 'bo', HOME).rows.map(h => h.path)).toEqual(['v8/edp8/board.py']));
+  it('queryFor: home is empty, ancestors are ../ per level, anything else its path', () => {
+    expect(queryFor('v8', 'v8')).toBe('');
+    expect(queryFor('', 'v8/web')).toBe('../../');
+    expect(queryFor('v8', 'v8/web')).toBe('../');
+    expect(queryFor('edp-pool', 'v8')).toBe('edp-pool/');
+    expect(queryFor('', '')).toBe('');
+  });
 });

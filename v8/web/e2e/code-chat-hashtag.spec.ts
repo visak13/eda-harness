@@ -88,7 +88,9 @@ test.beforeAll(async ({ browser, board: _board }) => {
   g(["init", "-q", "-b", "main"]); g(["add", "src", "docs", ".gitignore", "gen"]); g(["commit", "-q", "-m", "fixture"]);
   fs.writeFileSync(path.join(process.env.EDP8_E2E_HOME!, "tokens.json"), JSON.stringify({ owner: OWNER_TOKEN }));
   await call("GET", "/v1/participants/owner", undefined, asOwner); // token mode is live
-  cs = await startCodeServer(tmp, { "edp.boardUrl": BASE(), "edp.sharedTreePaths": [repo], "files.exclude": { "**/secret-excluded": true } });
+  // C13: the last test opens a subfolder of the repo, as the live Code tab opens v8 inside eda-base3
+  cs = await startCodeServer(tmp, { "edp.boardUrl": BASE(), "edp.sharedTreePaths": [repo], "files.exclude": { "**/secret-excluded": true },
+    "git.openRepositoryInParentFolders": "always" });
   page = await browser.newPage();
   await page.goto(`http://127.0.0.1:${cs.port}/?folder=${folderParam(repo)}`);
   await expect(page.locator("div.monaco-workbench")).toBeVisible({ timeout: 60_000 });
@@ -162,7 +164,6 @@ test("no picker after a word character or inside a code span", async () => {
 });
 
 test("keyboard picks: a file tag and a folder tag in one message; Enter picks, never sends, while the list is open", async () => {
-  const c = chat();
   await composer().click();
   await composer().pressSequentially("compare #helpers");
   await expect(options().first()).toHaveAttribute("data-path", "src/util/helpers.ts", { timeout: 10_000 });
@@ -175,7 +176,7 @@ test("keyboard picks: a file tag and a folder tag in one message; Enter picks, n
   await composer().press("ArrowDown");
   await composer().press("ArrowUp");
   await expect(composer()).toHaveAttribute("aria-activedescendant", "path-0");
-  await composer().press("Tab");
+  await composer().press("Enter"); // C13: Enter inserts a folder; Tab/→ open it (shell completion)
   await expect(composer()).toHaveValue("compare `src/util/helpers.ts` with `src/util/` ");
   await composer().pressSequentially("and `src/missing.ts` too");
   await page.screenshot({ path: shot("two-tags-in-composer.png") });
@@ -212,6 +213,38 @@ test("in the panel: the file tag opens in the editor, the folder tag reveals in 
   await expect(board.locator("button.path-link", { hasText: "nope/x.md" })).toHaveCount(0);
 });
 
+test("C13 shell completion: Tab/→ open a folder, Backspace at / and ← go up, Enter inserts (owner m-28122bc446)", async () => {
+  const c = chat();
+  await composer().fill("");
+  await composer().click();
+  await composer().pressSequentially("#");
+  await expect(options().first()).toHaveAttribute("data-path", "docs", { timeout: 10_000 });
+  await composer().press("Tab");
+  await expect(composer()).toHaveValue("#docs/");
+  await expect(options().first()).toHaveAttribute("data-path", "docs/guide.md", { timeout: 10_000 });
+  await page.screenshot({ path: shot("shell-tab-into-docs.png") });
+  await composer().press("Backspace");
+  await expect(composer()).toHaveValue("#");
+  await expect(options().first()).toHaveAttribute("data-path", "docs", { timeout: 10_000 });
+  // typing filters the level; → opens the highlighted folder
+  await composer().pressSequentially("sr");
+  await expect(options().first()).toHaveAttribute("data-path", "src", { timeout: 10_000 });
+  await composer().press("ArrowRight");
+  await expect(composer()).toHaveValue("#src/");
+  await expect(options().first()).toHaveAttribute("data-path", "src/util", { timeout: 10_000 });
+  await composer().press("ArrowRight");
+  await expect(composer()).toHaveValue("#src/util/");
+  await expect(options().first()).toHaveAttribute("data-path", "src/util/helpers.ts", { timeout: 10_000 });
+  await page.screenshot({ path: shot("shell-arrow-into-src-util.png") });
+  await composer().press("ArrowLeft");
+  await expect(composer()).toHaveValue("#src/");
+  await expect(options().first()).toHaveAttribute("data-path", "src/util", { timeout: 10_000 });
+  await composer().press("Enter");
+  await expect(composer()).toHaveValue("`src/util/` ");
+  await expect(c.locator("#paths")).toBeHidden();
+  await composer().fill("");
+});
+
 test("the # button in the tool slot opens the picker at the caret", async () => {
   const c = chat();
   await composer().fill("");
@@ -225,5 +258,39 @@ test("the # button in the tool slot opens the picker at the caret", async () => 
   await composer().press("Enter");
   await expect(composer()).toHaveValue("look at `docs/guide.md` ");
   await page.screenshot({ path: shot("hash-button.png") });
+  await composer().fill("");
+});
+
+test("C13 #../ from a workspace folder inside the repo: # opens at the folder, ../ lists the git root, a sibling is picked root-relative", async () => {
+  // the live Code tab opens v8 inside the eda-base3 repo; here the workspace is the fixture repo's src/
+  await page.goto(`http://127.0.0.1:${cs!.port}/?folder=${folderParam(path.join(repo, "src"))}`);
+  await expect(page.locator("div.monaco-workbench")).toBeVisible({ timeout: 60_000 });
+  await runCommand("EDP: Open chat");
+  await expect(chat().locator("#pick")).toBeVisible({ timeout: 20_000 });
+  await chat().locator("#pick").click();
+  await expect(quickRow(page, "Hash story")).toBeVisible({ timeout: 15_000 });
+  await quickRow(page, "Hash story").click();
+  await expect(chat().locator("#crumb-current")).toHaveText("Hash story", { timeout: 20_000 });
+  await composer().click();
+  await composer().pressSequentially("#");
+  // home: the open folder's children, their paths still repo-relative
+  await expect(options().first()).toHaveAttribute("data-path", "src/util", { timeout: 15_000 });
+  await expect(options()).toHaveCount(2);
+  await page.screenshot({ path: shot("home-level-src.png") });
+  await composer().pressSequentially("../");
+  await expect(options().first()).toHaveAttribute("data-path", "docs", { timeout: 10_000 });
+  const root = await options().evaluateAll(els => els.map(e => (e as HTMLElement).dataset.path));
+  expect(root).toEqual(expect.arrayContaining(["docs", "gen", "src", "untracked-note.md"]));
+  await page.screenshot({ path: shot("dotdot-git-root.png") });
+  // ../../ stops at the git root
+  await composer().pressSequentially("../");
+  await expect(composer()).toHaveValue("#../../");
+  await expect(options().first()).toHaveAttribute("data-path", "docs", { timeout: 10_000 });
+  // typing after ../ filters the root; Enter picks a root-relative token (never ..)
+  await composer().fill("");
+  await composer().pressSequentially("#../do");
+  await expect(options().first()).toHaveAttribute("data-path", "docs", { timeout: 10_000 });
+  await composer().press("Enter");
+  await expect(composer()).toHaveValue("`docs/` ");
   await composer().fill("");
 });

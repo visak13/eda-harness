@@ -26,7 +26,7 @@ let tmp = "";
 let repo = "";
 let cs: CodeServer | null = null;
 let page: Page;
-let storyA = "", taskA = "", storyB = "";
+let storyA = "", taskA = "";
 const sha: Record<string, string> = {};
 const ENG = () => `engineer.${storyA}`;
 const timing: Record<string, number> = {};
@@ -40,7 +40,6 @@ async function call(method: string, p: string, body?: unknown, who: Record<strin
 }
 const asOwner = { "X-Participant": "owner", "X-Token": OWNER_TOKEN };
 const agentTok = (id: string) => `c5-agent-${id.replace(/\W/g, "")}`;
-const asAgent = (id: string) => ({ "X-Participant": id, "X-Token": agentTok(id) });
 
 // -- the fixture repo: real commits, fixed times so cards and messages order deterministically ---------
 let tick = Math.floor(Date.now() / 1000) - 3 * 3600;
@@ -79,8 +78,11 @@ function makeRepo(): void {
 const quick = (p: Page) => p.locator(".quick-input-widget");
 const quickRow = (p: Page, text: string | RegExp) => quick(p).locator(".monaco-list-row", { hasText: text }).first();
 async function runCommand(title: string): Promise<void> {
-  await page.keyboard.press("F1");
-  await expect(quick(page)).toBeVisible();
+  // F1 is lost while key focus sits in a webview frame (or moves to an editor just opened): retry it
+  await expect(async () => {
+    if (!(await quick(page).isVisible())) await page.keyboard.press("F1");
+    await expect(quick(page)).toBeVisible({ timeout: 1_500 });
+  }).toPass({ timeout: 15_000 });
   await quick(page).locator("input").fill(`>${title}`);
   await quickRow(page, title).click();
 }
@@ -99,7 +101,19 @@ async function openStory(id: string): Promise<void> {
   if ((await c.locator("#stories-toggle").getAttribute("aria-expanded")) !== "true") await c.locator("#stories-toggle").click();
   await c.locator(`.story[data-id="${id}"]`).click();
 }
-const card = (key: string) => chat().locator(`#timeline .commit[data-sha="${sha[key]}"]`);
+// C13: commits are expandable cards in the Commits tab and one-line markers in the Chat timeline
+const card = (key: string) => chat().locator(`#panel-commits .commit[data-sha="${sha[key]}"]`);
+const marker = (key: string) => chat().locator(`#timeline .cmark[data-sha="${sha[key]}"]`);
+const tab = async (id: string) => { await chat().locator(`#tab-${id}`).click(); await expect(chat().locator(`#tab-${id}`)).toHaveAttribute("aria-selected", "true"); };
+/** Painted, not merely laid out: a real height, and the point at its middle hits the element (C9's chips
+ *  toggled but their box was squeezed to ~0 px by a long thread, and toBeVisible() passed anyway). */
+async function painted(l: ReturnType<FrameLocator["locator"]>, minHeight = 12): Promise<void> {
+  await expect.poll(() => l.evaluate((e, min) => {
+    const r = e.getBoundingClientRect();
+    const hit = e.ownerDocument.elementFromPoint(r.x + Math.min(8, r.width / 2), r.y + Math.min(r.height / 2, 8));
+    return r.height >= min && !!hit && (e === hit || e.contains(hit));
+  }, minHeight), { timeout: 5_000 }).toBe(true);
+}
 const activeTab = () => page.locator(".tabs-container .tab.active");
 
 test.beforeAll(async ({ browser, board: _board }) => {
@@ -108,10 +122,12 @@ test.beforeAll(async ({ browser, board: _board }) => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "edp-c5-"));
   const arch = { "X-Participant": "arch" };
   storyA = (await call("POST", "/v1/tickets", { kind: "story", work_type: "feature", title: "Story Alpha", parent_id: EPIC() }, arch)).id;
-  storyB = (await call("POST", "/v1/tickets", { kind: "story", work_type: "feature", title: "Story Beta", parent_id: EPIC() }, arch)).id;
+  await call("POST", "/v1/tickets", { kind: "story", work_type: "feature", title: "Story Beta", parent_id: EPIC() }, arch); // Story Beta: a second story in the strip
   await call("POST", "/v1/participants", { type: "agent", role: "engineer", handle: ENG(), id: ENG() });
   taskA = (await call("POST", "/v1/tickets", { kind: "task", work_type: "feature", title: "Alpha task", parent_id: storyA, assignee: ENG() }, arch)).id;
   await call("POST", "/v1/messages", { ticket_id: storyA, kind: "note", text: "Alpha thread message, newer than every fixture commit" }, { "X-Participant": ENG() });
+  // a long epic thread (the owner's: 100+ messages), the case C9's chips failed on
+  for (let i = 0; i < 150; i++) await call("POST", "/v1/messages", { ticket_id: EPIC(), kind: "note", text: `epic chatter ${i}: ${"words ".repeat(12)}` }, { "X-Participant": "arch" });
   fs.writeFileSync(path.join(process.env.EDP8_E2E_HOME!, "tokens.json"), JSON.stringify({ owner: OWNER_TOKEN, [ENG()]: agentTok(ENG()) }));
   await call("GET", "/v1/participants/owner", undefined, asOwner);
   makeRepo();
@@ -130,7 +146,7 @@ test.afterAll(async () => {
   if (tmp && !process.env.C5_KEEP_TMP) fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 3 });
 });
 
-test("the epic thread: only epic-named commits, the Stories strip counts, unlinked commits collapsed", async () => {
+test("the epic: Chat shows only epic-named commits as markers; Commits aggregates the epic and its stories, labelled; Unlinked collapsed at the bottom", async () => {
   await runCommand("EDP: Sign in to board");
   await typeInput("owner", "EDP: board participant id");
   await typeInput(OWNER_TOKEN, "EDP: token for owner");
@@ -139,149 +155,200 @@ test("the epic thread: only epic-named commits, the Stories strip counts, unlink
   await quickRow(page, "Spike epic").click();
   const c = chat();
   await expect(c.locator("#crumb-current")).toHaveText("Spike epic", { timeout: 20_000 });
-  await expect(card("epic")).toBeVisible({ timeout: 20_000 });
-  await expect(card("epic").locator(".cm-seat")).toHaveText(`architect.${EPIC()}`);
-  // a story's commits never show in the epic thread (m-2e3b14065e): only its strip count
-  await expect(card("alpha")).toHaveCount(0);
-  await expect(card("task")).toHaveCount(0);
+  // one header row, then the tab bar; Chat is the default
+  await expect(c.locator("[role=tablist] [role=tab]")).toHaveText([/^Chat/, /^Changes/, /^Commits/]);
+  await expect(c.locator("#tab-chat")).toHaveAttribute("aria-selected", "true");
+  const hb = await c.locator("header.hdr").boundingBox(), tb = await c.locator(".tabbar").boundingBox();
+  expect(tb!.y).toBeGreaterThanOrEqual(hb!.y + hb!.height - 1);
+  // the long thread really is long
+  expect(await c.locator("#timeline").evaluate(e => e.scrollHeight > 2 * e.clientHeight)).toBe(true);
+  await expect(marker("epic")).toHaveCount(1, { timeout: 20_000 });
+  await expect(marker("epic")).toContainText(sha.epic.slice(0, 7));
+  await expect(marker("alpha")).toHaveCount(0); // m-2e3b14065e: a story's commits never mark the epic chat
+  await expect(c.locator("#timeline .commit")).toHaveCount(0); // full cards left the chat
   await expect(c.locator(`.story[data-id="${storyA}"] .st-commits`)).toHaveText("⎇ 2");
-  await expect(c.locator(`.story[data-id="${storyB}"] .st-commits`)).toHaveCount(0);
-  // C9: Unlinked is a chip, collapsed by default, expanding in place
-  await expect(c.locator("#unlinked")).toBeHidden();
-  await expect(c.locator("#unlinked-toggle")).toHaveText("Unlinked · 2");
-  await expect(c.locator("#unlinked-toggle")).toHaveAttribute("aria-expanded", "false");
-  await c.locator("#unlinked-toggle").click();
-  await expect(c.locator("#unlinked-toggle")).toHaveAttribute("aria-expanded", "true");
-  await expect(c.locator(`#unlinked .commit[data-sha="${sha.unlinked}"] .cm-seat`)).toHaveText("unlinked");
-  await expect(c.locator(`#unlinked .commit[data-sha="${sha.root}"]`)).toBeVisible();
-  await page.screenshot({ path: shot("epic-thread.png") });
-  await c.locator("#unlinked-toggle").click();
-  await expect(c.locator("#unlinked")).toBeHidden();
+  await tab("commits");
+  await expect(card("epic")).toBeVisible();
+  const shas = await c.locator("#panel-commits .cm-list > .commit").evaluateAll(els => els.map(e => (e as HTMLElement).dataset.sha));
+  expect(shas).toEqual([sha.epic, sha.task, sha.alpha]); // newest first
+  await expect(card("alpha").locator(".cm-story")).toHaveText("Story Alpha");
+  await expect(card("epic").locator(".cm-story")).toHaveText("epic");
+  await expect(card("epic").locator(".cm-seat")).toHaveText(`architect.${EPIC()}`);
+  await expect(c.locator("#panel-commits > .group").last()).toHaveId("commits-unlinked");
+  await expect(c.locator("#commits-unlinked-toggle")).toHaveAttribute("aria-expanded", "false");
+  await expect(c.locator("#commits-unlinked-toggle")).toContainText("Unlinked2");
+  await c.locator("#commits-unlinked-toggle").click();
+  await expect(c.locator("#commits-unlinked-toggle")).toHaveAttribute("aria-expanded", "true");
+  await painted(c.locator(`#commits-unlinked .commit[data-sha="${sha.unlinked}"]`));
+  await expect(c.locator(`#commits-unlinked .commit[data-sha="${sha.unlinked}"] .cm-seat`)).toHaveText("unlinked");
+  await page.screenshot({ path: shot("epic-commits-tab.png") });
+  // keyboard: Enter on the focused header folds it again
+  await c.locator("#commits-unlinked-toggle").focus();
+  await page.keyboard.press("Enter");
+  await expect(c.locator("#commits-unlinked-toggle")).toHaveAttribute("aria-expanded", "false");
+  await expect(c.locator("#commits-unlinked .commit")).toHaveCount(0);
 });
 
-test("the story thread: trailer and subject-attributed cards with seat, subject, sha7, files ±, in time order", async () => {
+test("switching threads keeps the tab; a story's Commits: trailer and subject-attributed cards expand by click to files ±", async () => {
   const c = chat();
   await openStory(storyA);
   await expect(c.locator("#crumb-current")).toHaveText("Story Alpha", { timeout: 15_000 });
+  await expect(c.locator("#tab-commits")).toHaveAttribute("aria-selected", "true");
   const a = card("alpha");
-  await expect(a).toBeVisible();
   await expect(a.locator(".cm-seat")).toHaveText(ENG());
   await expect(a.locator(".cm-sha")).toHaveText(sha.alpha.slice(0, 7));
   await expect(a.locator(".cm-subject")).toHaveText("feat: alpha work");
+  await expect(a.locator(".cm-story")).toHaveCount(0);
+  await expect(a.locator(".cf")).toHaveCount(0); // folded
+  await a.locator(".cm-head").click();
+  await expect(a.locator(".cm-head")).toHaveAttribute("aria-expanded", "true");
   await expect(a.locator(".cf")).toHaveText(["Adocs/alpha.md+2−0", "Msrc/sample.py+1−2"]);
-  // the task's commit carries its id in the subject only: seat = the task's assignee, labelled
+  await painted(a.locator(".cf").first());
   await expect(card("task").locator(".cm-seat")).toHaveText(`${ENG()} (assignee)`);
-  await expect(c.locator("#unlinked")).toBeHidden();
-  // cards interleave with messages by time: both fixture commits are older than the thread message
+  await expect(c.locator("#commits-unlinked")).toHaveCount(0);
+  await page.screenshot({ path: shot("story-commits-tab.png") });
+  // the Chat: both commits as markers, before the (newer) thread message
+  await tab("chat");
   const order = await c.locator("#timeline .items > *").evaluateAll(els => els.map(e => (e as HTMLElement).dataset.sha ?? (e as HTMLElement).dataset.id ?? e.className));
   const iMsg = order.findIndex(x => typeof x === "string" && x.startsWith("m-"));
+  expect(order.indexOf(sha.alpha)).toBeGreaterThanOrEqual(0);
   expect(order.indexOf(sha.alpha)).toBeLessThan(iMsg);
   expect(order.indexOf(sha.task)).toBeGreaterThan(order.indexOf(sha.alpha));
-  await page.screenshot({ path: shot("story-thread-cards.png") });
+  await page.screenshot({ path: shot("story-chat-markers.png") });
 });
 
-test("a file row opens the side-by-side diff (added file against an empty side); the card opens the multi-diff", async () => {
+test("a Chat marker opens its commit in the Commits tab, expanded and focused", async () => {
   const c = chat();
-  await card("alpha").locator(`.cf[data-path="src/sample.py"]`).click();
+  await marker("task").click();
+  await expect(c.locator("#tab-commits")).toHaveAttribute("aria-selected", "true");
+  await expect(card("task").locator(".cm-head")).toHaveAttribute("aria-expanded", "true");
+  await expect(card("task").locator(".cm-head")).toBeFocused();
+  await expect(card("task").locator(".cf")).toHaveText(["Asrc/task.py+1−0"]);
+});
+
+test("a file row opens the side-by-side diff (added file against an empty side); Open all opens the multi-diff", async () => {
+  const a = card("alpha");
+  await a.locator(`.cf[data-path="src/sample.py"]`).click();
   await expect(page.locator(".monaco-diff-editor").first()).toBeVisible({ timeout: 15_000 });
   await expect(activeTab()).toContainText(`src/sample.py (${sha.alpha.slice(0, 7)})`);
   await expect(page.locator(".monaco-diff-editor .view-line", { hasText: "value_3 = 33" }).first()).toBeVisible();
   await page.screenshot({ path: shot("file-diff-modified.png") });
-  await card("alpha").locator(`.cf[data-path="docs/alpha.md"]`).click();
+  await a.locator(`.cf[data-path="docs/alpha.md"]`).click();
   await expect(activeTab()).toContainText(`docs/alpha.md (${sha.alpha.slice(0, 7)})`, { timeout: 15_000 });
   await expect(page.locator(".monaco-diff-editor .view-line", { hasText: "new doc" }).first()).toBeVisible();
   await expect(page.locator(".notifications-toasts .notification-toast", { hasText: /Unable to resolve|FileNotFound|nonexistent/i })).toHaveCount(0);
-  await page.screenshot({ path: shot("file-diff-added.png") });
-  await card("alpha").locator(".cm-head").click();
+  await a.locator(".cm-open").click();
   await expect(activeTab()).toContainText(`${sha.alpha.slice(0, 7)} feat: alpha work`, { timeout: 15_000 });
   await expect(page.locator(".view-line", { hasText: "value_3 = 33" }).first()).toBeVisible({ timeout: 15_000 });
   await expect(page.locator(".view-line", { hasText: "new doc" }).first()).toBeVisible();
   await page.screenshot({ path: shot("card-multi-diff.png") });
 });
 
-test("the epic's rename + delete commit opens without errors (old path on the left, deleted side empty)", async () => {
+test("the epic's unlinked rename + delete commit opens without errors (old path on the left, deleted side empty)", async () => {
   const c = chat();
   await c.locator("#crumb-epic").click();
   await expect(c.locator("#crumb-current")).toHaveText("Spike epic", { timeout: 15_000 });
-  await c.locator("#unlinked-toggle").click();
-  const u = c.locator(`#unlinked .commit[data-sha="${sha.unlinked}"]`);
-  await expect(u.locator(".cf")).toHaveText(["Ddocs/gone.md+0−1", "Rsrc/old_name.py → src/new_name.py+0−0"]);
+  await c.locator("#commits-unlinked-toggle").click();
+  const u = c.locator(`#commits-unlinked .commit[data-sha="${sha.unlinked}"]`);
   await u.locator(".cm-head").click();
+  await expect(u.locator(".cf")).toHaveText(["Ddocs/gone.md+0−1", "Rsrc/old_name.py → src/new_name.py+0−0"]);
+  await u.locator(".cm-open").click();
   await expect(activeTab()).toContainText(`${sha.unlinked.slice(0, 7)} chore: rename and delete, no ticket`, { timeout: 15_000 });
   await u.locator(`.cf[data-path="docs/gone.md"]`).click();
   await expect(activeTab()).toContainText(`docs/gone.md (${sha.unlinked.slice(0, 7)})`, { timeout: 15_000 });
   await expect(page.locator(".monaco-diff-editor .view-line", { hasText: "to be deleted" }).first()).toBeVisible();
   await expect(page.locator(".notifications-toasts .notification-toast", { hasText: /Unable to resolve|FileNotFound|nonexistent/i })).toHaveCount(0);
-  await c.locator("#unlinked-toggle").click();
+  await c.locator("#commits-unlinked-toggle").click();
   await openStory(storyA);
   await expect(c.locator("#crumb-current")).toHaveText("Story Alpha", { timeout: 15_000 });
 });
 
-test("a new commit naming the open story appears as a card within 10 s, no reload; the strip count follows", async () => {
+test("a new commit naming the open story: Commits badge + card while on another tab, a Chat marker within 10 s, no reload; the strip count follows", async () => {
   const c = chat();
+  await tab("chat");
+  await expect(c.locator("#tab-commits .tab-badge")).toHaveCount(0);
   write("src/live.py", "live = 1\n");
   g(["add", "src/live.py"]);
   const t0 = Date.now();
   commit("live", "feat: live commit", `EDP-Ticket: ${storyA}\nEDP-Seat: ${ENG()}`, Math.floor(Date.now() / 1000));
-  await expect(card("live")).toBeVisible({ timeout: 10_000 });
-  timing.commit_to_card_ms = Date.now() - t0;
-  await expect(card("live").locator(".cf")).toHaveText(["Asrc/live.py+1−0"]);
-  await expect(c.locator(`.story[data-id="${storyA}"] .st-commits`)).toHaveText("⎇ 3");
-  // appended at the bottom: newer than the thread message
+  await expect(marker("live")).toBeVisible({ timeout: 10_000 });
+  timing.commit_to_marker_ms = Date.now() - t0;
   const last = await c.locator("#timeline .items > *").last().getAttribute("data-sha");
-  expect(last).toBe(sha.live);
-  await page.screenshot({ path: shot("live-commit-card.png") });
+  expect(last).toBe(sha.live); // newer than the thread message: at the bottom
+  await expect(c.locator("#tab-commits .tab-badge")).toHaveText("1");
+  await expect(c.locator("#tab-commits")).toHaveAttribute("aria-label", "Commits, 1 new commit");
+  await expect(c.locator(`.story[data-id="${storyA}"] .st-commits`)).toHaveText("⎇ 3");
+  await page.screenshot({ path: shot("live-commit-marker-badge.png") });
+  await tab("commits");
+  await expect(c.locator("#panel-commits .cm-list > .commit").first()).toHaveAttribute("data-sha", sha.live);
+  await expect(c.locator("#tab-commits .tab-badge")).toHaveCount(0); // seen
 });
 
-test("the Uncommitted chip: collapsed, clean, then scoped to this epic's files with a show-all toggle; opens diffs; names no seat; the fold survives a reload", async () => {
+test("Changes on the long epic thread: this epic's files open first, all seats folded; every group header expands and collapses by a real click and by keyboard, painted; diffs; state survives a reload", async () => {
   const c = chat();
-  await expect(c.locator("#uncommitted-toggle")).toHaveText("Uncommitted · clean", { timeout: 15_000 });
-  await expect(c.locator("#uncommitted")).toBeHidden();
-  await c.locator("#uncommitted-toggle").click();
-  await expect(c.locator("#uncommitted-open")).toContainText("clean");
+  await c.locator("#crumb-epic").click();
+  await expect(c.locator("#crumb-current")).toHaveText("Spike epic", { timeout: 15_000 });
+  await tab("changes");
+  await expect(c.locator("#changes-summary")).toHaveText("The shared tree is clean", { timeout: 15_000 });
+  await expect(c.locator("#changes-open-all")).toBeDisabled();
   const t0 = Date.now();
   write("src/sample.py", fs.readFileSync(path.join(repo, "src/sample.py"), "utf8") + "value_99 = 99\n");
   write("notes/untracked.md", "scratch\n");
-  await expect(c.locator(`#uncommitted .cf[data-path="src/sample.py"]`)).toBeVisible({ timeout: 5_000 });
-  timing.save_to_uncommitted_ms = Date.now() - t0;
-  // option (a): src/sample.py is in a commit of this epic's story, notes/untracked.md in none: behind "show all seats"
-  await expect(c.locator("#uncommitted-toggle")).toHaveText("Uncommitted · 1/2", { timeout: 5_000 });
-  await expect(c.locator(`#uncommitted .cf[data-path="notes/untracked.md"]`)).toHaveCount(0);
-  await expect(c.locator("#uncommitted-open")).toContainText("this epic");
-  await expect(c.locator("#uncommitted-open")).toContainText("1 file");
-  await page.screenshot({ path: shot("uncommitted-epic-only.png") });
-  await c.locator("#uncommitted-open").click();
+  await expect(c.locator(`#changes-scoped .cf[data-path="src/sample.py"]`)).toBeVisible({ timeout: 5_000 });
+  timing.save_to_changes_ms = Date.now() - t0;
+  // option (a): src/sample.py is in a commit of this epic's story, notes/untracked.md in none
+  await expect(c.locator("#tab-changes .tab-badge")).toHaveText("1");
+  await expect(c.locator("#changes-summary")).toHaveText("2 files uncommitted in the shared tree");
+  await expect(c.locator("#changes-scoped-toggle")).toHaveAttribute("aria-expanded", "true");
+  await painted(c.locator(`#changes-scoped .cf[data-path="src/sample.py"]`));
+  await expect(c.locator("#changes-all-toggle")).toContainText("All seats1 more");
+  await expect(c.locator("#changes-all-toggle")).toHaveAttribute("aria-expanded", "false");
+  await expect(c.locator(`.cf[data-path="notes/untracked.md"]`)).toHaveCount(0);
+  // the C9 bug (m-53858f39c4): a real click must expand AND paint the group, on a 150-message thread
+  await c.locator("#changes-all-toggle").click();
+  await expect(c.locator("#changes-all-toggle")).toHaveAttribute("aria-expanded", "true");
+  await painted(c.locator(`#changes-all .cf[data-path="notes/untracked.md"]`));
+  await page.screenshot({ path: shot("changes-tab-expanded.png") });
+  await c.locator("#changes-scoped-toggle").click();
+  await expect(c.locator("#changes-scoped-toggle")).toHaveAttribute("aria-expanded", "false");
+  await expect(c.locator("#changes-scoped .cf")).toHaveCount(0);
+  await c.locator("#changes-scoped-toggle").focus();
+  await page.keyboard.press("Enter");
+  await expect(c.locator("#changes-scoped-toggle")).toHaveAttribute("aria-expanded", "true");
+  await page.keyboard.press("Space");
+  await expect(c.locator("#changes-scoped-toggle")).toHaveAttribute("aria-expanded", "false");
+  await page.keyboard.press("Space");
+  await painted(c.locator(`#changes-scoped .cf[data-path="src/sample.py"]`));
+  await expect(c.locator("#panel-changes .cm-seat")).toHaveCount(0); // names no seat
+  // scoped multi-diff, then the reload: the webview is disposed and re-resolved
+  await c.locator("#changes-open-scoped").click();
   await expect(activeTab()).toContainText("Uncommitted changes — this epic", { timeout: 15_000 });
-  await expect(c.locator("#uncommitted-all")).toHaveText("show all seats (1 more)");
-  await c.locator("#uncommitted-all").click();
-  await expect(c.locator(`#uncommitted .cf[data-path="notes/untracked.md"]`)).toBeVisible({ timeout: 5_000 });
-  await expect(c.locator("#uncommitted-open")).toContainText("2 files");
-  // the fold state is the viewer's own (webview state): hiding the side bar disposes the webview, showing it re-resolves it
+  await activeTab().click(); // Firefox keeps key focus in the webview frame; F1 must reach the workbench
   await runCommand("View: Toggle Secondary Side Bar Visibility");
   await expect(page.locator(".part.auxiliarybar")).toBeHidden({ timeout: 10_000 });
   await runCommand("View: Toggle Secondary Side Bar Visibility");
   await expect(page.locator(".part.auxiliarybar")).toBeVisible({ timeout: 10_000 });
-  await expect(c.locator("#crumb-current")).toHaveText("Story Alpha", { timeout: 20_000 });
-  await expect(c.locator("#uncommitted-toggle")).toHaveAttribute("aria-expanded", "true");
-  await expect(c.locator("#uncommitted-all")).toHaveAttribute("aria-pressed", "true");
-  await expect(c.locator(`#uncommitted .cf[data-path="notes/untracked.md"]`)).toBeVisible({ timeout: 5_000 });
-  await expect(c.locator("#uncommitted .cm-seat")).toHaveCount(0);
-  await expect(c.locator("#uncommitted")).not.toContainText(ENG());
-  await page.screenshot({ path: shot("uncommitted-card.png") });
-  await c.locator(`#uncommitted .cf[data-path="src/sample.py"]`).click();
+  await expect(c.locator("#crumb-current")).toHaveText("Spike epic", { timeout: 20_000 });
+  await expect(c.locator("#tab-changes")).toHaveAttribute("aria-selected", "true");
+  await expect(c.locator("#changes-all-toggle")).toHaveAttribute("aria-expanded", "true");
+  await painted(c.locator(`#changes-all .cf[data-path="notes/untracked.md"]`));
+  await page.screenshot({ path: shot("changes-after-reload.png") });
+  await c.locator(`#changes-scoped .cf[data-path="src/sample.py"]`).click();
   await expect(activeTab()).toContainText("src/sample.py (uncommitted)", { timeout: 15_000 });
   await expect(page.locator(".monaco-diff-editor .view-line", { hasText: "value_99 = 99" }).first()).toBeVisible();
-  await c.locator("#uncommitted-open").click();
+  await c.locator("#changes-open-all").click();
   await expect(activeTab()).toContainText("Uncommitted changes — all seats", { timeout: 15_000 });
   await expect(page.locator(".view-line", { hasText: "scratch" }).first()).toBeVisible({ timeout: 15_000 });
-  await page.screenshot({ path: shot("uncommitted-multi-diff.png") });
-  // committing it empties the card again
+  await page.screenshot({ path: shot("changes-multi-diff.png") });
+  // committing it empties the tab again
   g(["add", "-A"]);
   commit("wip", "chore: wip, no ticket", undefined, Math.floor(Date.now() / 1000));
-  await expect(c.locator("#uncommitted-open")).toContainText("clean", { timeout: 10_000 });
+  await expect(c.locator("#changes-summary")).toHaveText("The shared tree is clean", { timeout: 10_000 });
+  await expect(c.locator("#tab-changes .tab-badge")).toHaveCount(0);
 });
 
 test("the webview never gets git or board access: no fetch or X-Token in the bundle", async () => {
   const js = fs.readFileSync(path.join(path.dirname(VSIX), "dist", "webview.js"), "utf8");
   expect(js).not.toMatch(/X-Token|EDP8_TOKEN|fetch\(|XMLHttpRequest|WebSocket/);
 });
+

@@ -108,8 +108,64 @@ describe('PathPicker: the # list in the composer', () => {
     expect(picker.isOpen).toBe(false);
     type(ta.value + '#edp');
     picker.onPaths({ type: 'paths', v: 1, seq: lastSeq(), items: [{ path: 'v8/edp8', kind: 'folder' }] });
-    expect(key('Tab').handled).toBe(true);
+    expect(key('Enter').handled).toBe(true);
     expect(ta.value).toBe('look at `v8/edp8/board.py` `v8/edp8/` ');
+  });
+
+  // C13 (owner m-28122bc446, criterion c-6b8ea6657b): shell completion
+  it('Tab or → on a folder descends: the query becomes `folder/` and that level is asked for', () => {
+    type('see #');
+    picker.onPaths({ type: 'paths', v: 1, seq: lastSeq(), items: [{ path: 'v8/edp8', kind: 'folder' }, { path: 'v8/web', kind: 'folder' }] });
+    expect(key('Tab')).toEqual({ handled: true, prevented: true });
+    expect(ta.value).toBe('see #v8/edp8/');
+    expect(sent[sent.length - 1]).toMatchObject({ type: 'findPaths', q: 'v8/edp8/' });
+    picker.onPaths({ type: 'paths', v: 1, seq: lastSeq(), items: [{ path: 'v8/edp8/api', kind: 'folder' }, { path: 'v8/edp8/board.py', kind: 'file' }] });
+    expect(key('ArrowRight')).toEqual({ handled: true, prevented: true });
+    expect(ta.value).toBe('see #v8/edp8/api/');
+    expect(ta.selectionStart).toBe(ta.value.length);
+  });
+  it('keys before the host answers are held, never applied to the old level (Tab Tab, Tab Enter, Backspace twice)', () => {
+    type('see #');
+    picker.onPaths({ type: 'paths', v: 1, seq: lastSeq(), items: [{ path: 'v8/.claude', kind: 'folder' }, { path: 'v8/web', kind: 'folder' }], up: '../' });
+    key('ArrowDown');
+    key('Tab');
+    expect(ta.value).toBe('see #v8/web/');
+    const asked = sent.length;
+    expect(key('Tab')).toEqual({ handled: true, prevented: true });   // not #v8/.claude/
+    expect(key('Enter')).toEqual({ handled: true, prevented: true }); // no insert of an old row
+    expect(key('Backspace')).toEqual({ handled: true, prevented: true });
+    expect(ta.value).toBe('see #v8/web/');
+    expect(sent.length).toBe(asked);
+    picker.onPaths({ type: 'paths', v: 1, seq: lastSeq(), items: [{ path: 'v8/web/src', kind: 'folder' }], up: '' });
+    key('Tab');
+    expect(ta.value).toBe('see #v8/web/src/');
+  });
+
+  it("Tab on a file inserts it; → on a file is the caret's own key", () => {
+    type('#v8/edp8/');
+    picker.onPaths({ type: 'paths', v: 1, seq: lastSeq(), items: [{ path: 'v8/edp8/board.py', kind: 'file' }] });
+    expect(key('ArrowRight').handled).toBe(false);
+    expect(key('Tab').handled).toBe(true);
+    expect(ta.value).toBe('`v8/edp8/board.py` ');
+  });
+  it('Backspace right after a `/` and ← go up one level; Backspace mid-name deletes as usual', () => {
+    type('x #v8/edp8/');
+    picker.onPaths({ type: 'paths', v: 1, seq: lastSeq(), items: [{ path: 'v8/edp8/board.py', kind: 'file' }], up: 'v8/' });
+    expect(key('Backspace')).toEqual({ handled: true, prevented: true });
+    expect(ta.value).toBe('x #v8/');
+    expect(sent[sent.length - 1]).toMatchObject({ q: 'v8/' });
+    type('x #v8/we');
+    picker.onPaths({ type: 'paths', v: 1, seq: lastSeq(), items: [{ path: 'v8/web', kind: 'folder' }], up: '' });
+    expect(key('Backspace').handled).toBe(false); // mid-name: a plain Backspace
+    expect(key('ArrowLeft').handled).toBe(true);
+    expect(ta.value).toBe('x #');
+    // home (v8) in a bigger repo: ← climbs to the git root as `../`
+    picker.onPaths({ type: 'paths', v: 1, seq: lastSeq(), items: [{ path: 'v8/web', kind: 'folder' }], up: '../' });
+    expect(key('ArrowLeft').handled).toBe(true);
+    expect(ta.value).toBe('x #../');
+    picker.onPaths({ type: 'paths', v: 1, seq: lastSeq(), items: [{ path: 'edp-pool', kind: 'folder' }], up: null });
+    expect(key('ArrowLeft').handled).toBe(false); // the git root is the top: ← moves the caret
+    expect(key('Backspace').handled).toBe(false);
   });
 
   it('Up wraps, Escape closes, keys pass through when closed', () => {

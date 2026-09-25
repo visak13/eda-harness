@@ -116,6 +116,14 @@ export const index = (cs: Commit[]): Indexed[] => cs.map(c => ({ ...c, ...attrib
 export const naming = (cs: Indexed[], ids: ReadonlySet<string>) => cs.filter(c => c.tickets.some(t => ids.has(t)));
 export const unlinked = (cs: Indexed[]) => cs.filter(c => c.attribution === 'none');
 
+/** C13 Commits tab: the commits naming the scope (a story + its tasks, or an epic + every ticket of it),
+ *  newest first as indexed; `thread` marks those naming the open thread's own set, which alone show in the
+ *  Chat tab as markers (an epic chat never shows its stories' commits, ruling m-2e3b14065e). */
+export function inScope(cs: Indexed[], threadIds: ReadonlySet<string>, scopeIds: ReadonlySet<string>): { c: Indexed; thread: boolean }[] {
+  const all = new Set([...threadIds, ...scopeIds]);
+  return naming(cs, all).map(c => ({ c, thread: c.tickets.some(t => threadIds.has(t)) }));
+}
+
 /** Per story: the number of commits naming the story or one of its tasks (each commit counted once). */
 export function storyCounts(cs: Indexed[], storyIds: string[], tasksOf: ReadonlyMap<string, string[]>): Map<string, number> {
   const out = new Map<string, number>();

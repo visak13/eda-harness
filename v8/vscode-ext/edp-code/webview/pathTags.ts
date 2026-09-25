@@ -1,10 +1,11 @@
 // #-tags in the view (C11 s-35ccc6d35f; design-10b21760d9 §13): the `#` picker in the composer and the
 // path links in rendered messages. The view never reads the workspace: the host answers `findPaths`
 // with rows and `checkPaths` with kinds. The picker mirrors the @ popup's WAI-ARIA listbox keys
-// (strategyll-86c5b5068f §1). Everything is set with textContent.
+// (strategyll-86c5b5068f §1) and navigates like shell completion (C13, owner m-28122bc446): Tab or →
+// on a folder opens it, ← or Backspace at a `/` goes up, Enter inserts. Everything is set with textContent.
 import type { HostToView, PathHit, PathKind, ViewToHost } from '../src/core/chatProtocol';
 import { CHECK_PATHS_MAX } from '../src/core/chatProtocol';
-import { activeHashTag, pathCandidate, pathToken } from '../src/core/paths';
+import { activeHashTag, descendQuery, pathCandidate, pathToken } from '../src/core/paths';
 
 type Intent = ViewToHost extends infer T ? (T extends unknown ? Omit<T, 'v'> : never) : never;
 type Post = (m: Intent) => void;
@@ -17,6 +18,10 @@ export class PathPicker {
   private range: { start: number; end: number } | null = null;
   private seq = 0;
   private asked: { seq: number; q: string } | null = null;
+  /** The seq of the last answer shown; while it trails `asked`, the rows (and `up`) belong to the old query. */
+  private answered = 0;
+  /** the host's query for one level up from the rows shown (null: the git root, or a fuzzy answer) */
+  private up: string | null = null;
 
   constructor(private ta: HTMLTextAreaElement, private post: Post, private status: HTMLElement,
     private onAccept: () => void) {
@@ -37,6 +42,7 @@ export class PathPicker {
     this.items = [];
     this.range = null;
     this.asked = null;
+    this.up = null;
     if (was) { this.ta.removeAttribute('aria-activedescendant'); this.ta.setAttribute('aria-controls', 'people'); }
   }
 
@@ -55,7 +61,9 @@ export class PathPicker {
   onPaths(m: Extract<HostToView, { type: 'paths' }>): void {
     if (!this.asked || m.seq !== this.asked.seq || !this.range) return;
     const wasOpen = !this.list.hidden;
+    this.answered = m.seq;
     this.items = m.items;
+    this.up = m.up ?? null;
     if (!this.items.length) {
       this.list.hidden = true;
       this.ta.removeAttribute('aria-activedescendant');
@@ -110,17 +118,55 @@ export class PathPicker {
     this.onAccept();
   }
 
-  /** The @ popup's keys; true = handled (Enter never sends while the list is open). */
+  /** The live `#` query (the text between `#` and the caret). */
+  private get query(): string | null {
+    return this.range ? this.ta.value.slice(this.range.start + 1, this.range.end) : null;
+  }
+
+  /** Replace the `#query` with `#q` (caret after it) and list that level. */
+  private setQuery(q: string): void {
+    const r = this.range;
+    if (!r) return;
+    const v = this.ta.value;
+    this.ta.value = `${v.slice(0, r.start)}#${q}${v.slice(r.end)}`;
+    const c = r.start + 1 + q.length;
+    this.ta.setSelectionRange(c, c);
+    this.active = 0;
+    this.status.textContent = q ? `In ${q}` : 'Top level';
+    this.onAccept();
+    this.update();
+  }
+
+  /** The @ popup's keys plus shell completion; true = handled (Enter never sends while the list is open). */
   onKey(e: KeyboardEvent): boolean {
+    const q = this.query;
+    // a pick or a level move before the host answered the last query would act on the old level's rows
+    // (Tab Tab descending into a sibling): drop the key until the answer lands; typing is never held
+    if (this.asked && this.asked.seq !== this.answered && (this.isOpen || this.up !== null)
+      && (['Tab', 'ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown', 'Enter'].includes(e.key) || (e.key === 'Backspace' && q?.endsWith('/')))) {
+      e.preventDefault();
+      return true;
+    }
+    // ← in a listed level, Backspace right after a `/` (`v8/web/`, `../`): one level up, as the host said;
+    // at the git root there is no up and the key does what it always does
+    if (q !== null && this.up !== null && this.asked?.q === q && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey
+      && ((e.key === 'ArrowLeft' && this.isOpen) || (e.key === 'Backspace' && q.endsWith('/')))) {
+      e.preventDefault();
+      this.setQuery(this.up);
+      return true;
+    }
     if (!this.isOpen) {
       // the list is empty (no match) but a # query is live: Escape still dismisses it
       if (e.key === 'Escape' && this.range) { e.preventDefault(); e.stopPropagation(); this.close(); return true; }
       return false;
     }
     const n = this.items.length;
+    const h = this.items[this.active];
     if (e.key === 'ArrowDown') { e.preventDefault(); this.active = (this.active + 1) % n; this.render(); return true; }
     if (e.key === 'ArrowUp') { e.preventDefault(); this.active = (this.active - 1 + n) % n; this.render(); return true; }
-    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); this.accept(); return true; }
+    // Tab or → on a folder descends into it; Tab on a file inserts it, → on a file moves the caret as usual
+    if ((e.key === 'Tab' || e.key === 'ArrowRight') && h?.kind === 'folder' && !e.shiftKey) { e.preventDefault(); this.setQuery(descendQuery(h)); return true; }
+    if (e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey)) { e.preventDefault(); this.accept(); return true; }
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); this.close(); return true; }
     return false;
   }
