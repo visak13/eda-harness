@@ -4,7 +4,7 @@
 // read once and inlined with a fresh nonce per resolve; nothing is fetched after the HTML.
 import * as vscode from 'vscode';
 import { chatHtml } from '../core/chatHtml';
-import { inboundType, parseInbound, refusedAttach, refusedSendTicket, type HostToView, type ViewToHost } from '../core/chatProtocol';
+import { inboundType, parseInbound, refusedAttach, refusedInbox, refusedSendTicket, type HostToView, type ViewToHost } from '../core/chatProtocol';
 
 export const CHAT_VIEW = 'edp.chat';
 
@@ -85,6 +85,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       if (t) this.post({ type: 'sendFailed', v: 1, ticketId: t, text: 'Not sent: the message was refused (too long, or the recipient is no longer reachable).' });
       const at = refusedAttach(raw); // C12: an empty, unnamed or oversize file
       if (at) this.post({ type: 'attachFailed', v: 1, ticketId: at.ticketId, name: at.name, text: `Not attached: ${at.name}: the file could not be sent to the host.` });
+      const ik = refusedInbox(raw); // C15: an empty or oversize answer, a Fail without a note
+      if (ik) this.post({ type: 'inboxDone', v: 1, key: ik, ok: false, text: 'Not sent: the answer was refused (empty, too long, or a Fail with no note).' });
       return;
     }
     if (m.type === 'ready') {

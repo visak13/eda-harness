@@ -3,6 +3,7 @@
 // never headers, bodies or the Creds object (design §9, a token in the extension leaks).
 import type { Anchor } from './anchor';
 import type { BoardArtifact } from './attachments';
+import { gatePath, type DecisionsHome, type InboxGate, type verdictBody } from './inbox';
 import type { Reachable } from './people';
 import type { MessageRow, ThreadPage } from './thread';
 
@@ -121,5 +122,11 @@ export function boardClient(baseUrl: string, creds: () => Promise<Creds | undefi
     },
     artifact: (id: string) => call<BoardArtifact>('GET', `/v1/artifacts/${encodeURIComponent(id)}`),
     content,
+    // the Inbox (C15): what waits on the viewer, and the three writes that answer it
+    decisions: () => call<DecisionsHome>('GET', '/v1/me/decisions'),
+    verdict: (b: ReturnType<typeof verdictBody>) => call<{ criterion: unknown; message: string | null }>('POST', '/v1/me/verdict', b),
+    gateAnswer: (g: InboxGate, answer: string) => call<unknown>('POST', gatePath(g), { answer }),
+    doc: (id: string, version: number) =>
+      call<{ id: string; title: string; version: number; body_md: string }>('GET', `/v1/docs/${encodeURIComponent(id)}?version=${version}`),
   };
 }

@@ -14,6 +14,7 @@ import { markSeen, restoreLocal } from '../src/core/viewState';
 import { initAttach } from './attach';
 import { TabBar, type TabCtx } from './tabs';
 import { TABS } from './registry';
+import { inboxDone } from './views/inbox';
 import { isSendKey, sendChord } from '../src/core/composerKeys';
 
 declare function acquireVsCodeApi(): { postMessage(m: unknown): void; getState(): unknown; setState(s: unknown): void };
@@ -666,6 +667,21 @@ window.addEventListener('message', (ev: MessageEvent) => {
       break;
     case 'artifacts':
       attach.infos(m.items);
+      break;
+    case 'inbox': { // C15: the open scope's list, re-read
+      if (!state || state.ticket?.id !== m.ticketId) return;
+      const panel = tabs.panelOf('inbox');
+      panel.dataset.reads = String(Number(panel.dataset.reads ?? 0) + 1); // a settle signal for the smoke
+      // an unchanged re-read never rebuilds the rows: a button under the pointer stays the same button
+      if (JSON.stringify(state.inbox) === JSON.stringify(m.inbox)) return;
+      state.inbox = m.inbox;
+      if (tabs.current === 'inbox') renderTab(); else badges();
+      break;
+    }
+    case 'inboxDone':
+      inboxDone(state, local, m);
+      persist();
+      if (tabs.current === 'inbox') renderTab(); else badges();
       break;
     case 'error':
       olderBtn.disabled = false;

@@ -3,6 +3,8 @@
 // `me` is {id, handle} only. The host validates every inbound message with `parseInbound` before
 // acting; anything else is dropped and logged by type only.
 
+import { INBOX_KEY, INBOX_TEXT_MAX, VERDICTS, type InboxState, type InboxVerdict } from './inbox';
+
 export const PROTOCOL_V = 1 as const;
 
 export const SEND_KINDS = ['note', 'question', 'steer', 'finding', 'answer'] as const;
@@ -139,6 +141,8 @@ export type ChatState = {
   /** C12: the open thread's staged uploads, and what the host already knows about its artifacts */
   pending?: PendingAttachment[];
   artifacts?: ArtifactInfo[];
+  /** C15: what waits on the viewer in the open scope (null: signed out, or nothing picked) */
+  inbox?: InboxState | null;
 };
 
 export type HostToView =
@@ -165,7 +169,11 @@ export type HostToView =
   /** C12: the open thread's staged uploads changed (the whole list) */
   | { type: 'pending'; v: 1; ticketId: string; pending: PendingAttachment[] }
   /** C12: an upload was refused; the draft is untouched */
-  | { type: 'attachFailed'; v: 1; ticketId: string; name: string; text: string };
+  | { type: 'attachFailed'; v: 1; ticketId: string; name: string; text: string }
+  /** C15: the open scope's Inbox (the whole list; `ticketId` is the scope it was read for) */
+  | { type: 'inbox'; v: 1; ticketId: string; inbox: InboxState }
+  /** C15: a row's write settled: ok, the row left the list; not ok, `text` is why (the board's own words) */
+  | { type: 'inboxDone'; v: 1; key: string; ok: boolean; text: string };
 
 export type ViewToHost =
   | { v: 1; type: 'ready' }
@@ -196,13 +204,23 @@ export type ViewToHost =
   /** C12: size/thumbnail for attachments now in view (the host answers with `artifacts`) */
   | { v: 1; type: 'resolveArtifacts'; ids: string[] }
   /** C12: open an attachment of a message in the open thread (full size in an editor tab, or save) */
-  | { v: 1; type: 'openArtifact'; messageId: string; id: string };
+  | { v: 1; type: 'openArtifact'; messageId: string; id: string }
+  /** C15: reply to a question row (an answer to its asker, threaded under it) */
+  | { v: 1; type: 'inboxAnswer'; key: string; text: string }
+  /** C15: pass or fail a sign-off row, for the evidence version the row showed */
+  | { v: 1; type: 'inboxVerdict'; key: string; verdict: InboxVerdict; note: string; version: number }
+  /** C15: rule on a gate row */
+  | { v: 1; type: 'inboxGate'; key: string; text: string }
+  /** C15: a sign-off row's evidence in an editor tab; a design gate's review on the board */
+  | { v: 1; type: 'inboxOpen'; key: string }
+  | { v: 1; type: 'inboxRefresh' };
 
 const TYPES = new Set(['ready', 'pickTicket', 'loadOlder', 'send', 'dropCode', 'openCode', 'openBoard', 'signIn']);
 const PATH_TYPES = new Set(['findPaths', 'checkPaths', 'openPath']);
 const HANDLE = /^[A-Za-z0-9][A-Za-z0-9_.\-]{0,127}$/;
 const DIFF_TYPES = new Set(['openDiff', 'openUncommitted']);
 const ATTACH_TYPES = new Set(['attach', 'dropAttachment', 'resolveArtifacts', 'openArtifact']);
+const INBOX_TYPES = new Set(['inboxAnswer', 'inboxVerdict', 'inboxGate', 'inboxOpen', 'inboxRefresh']);
 /** The webview refuses a file over this before posting it: a transport guard for postMessage memory,
  *  NOT the upload rule (the board's cap and type allowlist decide, and their refusal is shown). */
 export const ATTACH_TRANSPORT_MAX = 64 * 1024 * 1024;
@@ -213,11 +231,28 @@ export const ATTACH_TRANSPORT_MAX = 64 * 1024 * 1024;
 export function parseInbound(raw: unknown, handles: ReadonlySet<string> = new Set()): ViewToHost | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
-  if (r.v !== PROTOCOL_V || typeof r.type !== 'string' || !(TYPES.has(r.type) || DIFF_TYPES.has(r.type) || PATH_TYPES.has(r.type) || ATTACH_TYPES.has(r.type))) return null;
+  if (r.v !== PROTOCOL_V || typeof r.type !== 'string' || !(TYPES.has(r.type) || DIFF_TYPES.has(r.type) || PATH_TYPES.has(r.type) || ATTACH_TYPES.has(r.type) || INBOX_TYPES.has(r.type))) return null;
   const str = (k: string) => (typeof r[k] === 'string' ? (r[k] as string) : undefined);
   switch (r.type) {
-    case 'ready': case 'loadOlder': case 'signIn':
+    case 'ready': case 'loadOlder': case 'signIn': case 'inboxRefresh':
       return { v: 1, type: r.type };
+    case 'inboxAnswer': case 'inboxGate': {
+      const key = str('key'), text = str('text');
+      const want = r.type === 'inboxAnswer' ? 'q:' : 'g:';
+      if (!key || !INBOX_KEY.test(key) || !key.startsWith(want) || text === undefined || !text.trim() || text.length > INBOX_TEXT_MAX) return null;
+      return { v: 1, type: r.type, key, text };
+    }
+    case 'inboxVerdict': {
+      const key = str('key'), verdict = str('verdict'), note = str('note') ?? '', version = r.version;
+      if (!key || !INBOX_KEY.test(key) || !key.startsWith('c:') || !verdict || !(VERDICTS as readonly string[]).includes(verdict)) return null;
+      if (note.length > INBOX_TEXT_MAX || (verdict === 'fail' && !note.trim())) return null;
+      if (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 1) return null;
+      return { v: 1, type: 'inboxVerdict', key, verdict: verdict as InboxVerdict, note, version };
+    }
+    case 'inboxOpen': {
+      const key = str('key');
+      return key && INBOX_KEY.test(key) && !key.startsWith('q:') ? { v: 1, type: 'inboxOpen', key } : null;
+    }
     case 'pickTicket': {
       if (r.id === undefined) return { v: 1, type: 'pickTicket' };
       const id = str('id');
@@ -339,6 +374,13 @@ export function refusedAttach(raw: unknown): { ticketId: string; name: string } 
   const r = raw as Record<string, unknown>;
   if (r.type !== 'attach' || typeof r.ticketId !== 'string' || !TICKET_ID.test(r.ticketId)) return undefined;
   return { ticketId: r.ticketId, name: typeof r.name === 'string' ? r.name.replace(/[\u0000-\u001f\u007f]/g, '_').slice(0, NAME_MAX) : 'file' };
+}
+
+/** A refused Inbox write is answered too (C15), so its row's buttons never stay disabled. */
+export function refusedInbox(raw: unknown): string | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  return (r.type === 'inboxAnswer' || r.type === 'inboxGate' || r.type === 'inboxVerdict') && typeof r.key === 'string' && INBOX_KEY.test(r.key) ? r.key : undefined;
 }
 
 /** The inbound type for a log line (never the payload). */

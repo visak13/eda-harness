@@ -4,6 +4,7 @@
 import type { Tab } from './tabs';
 import { changesTab } from './views/changes';
 import { commitsTab } from './views/commits';
+import { inboxTab } from './views/inbox';
 
 /** The Chat tab: the thread and the composer, which main.ts builds into its panel (C3/C4/C11/C12). The
  *  badge counts messages that arrived while another tab was showing. */
@@ -14,4 +15,4 @@ export const chatTab: Tab = {
   render: () => {},
 };
 
-export const TABS: readonly Tab[] = [chatTab, changesTab, commitsTab];
+export const TABS: readonly Tab[] = [chatTab, changesTab, commitsTab, inboxTab];

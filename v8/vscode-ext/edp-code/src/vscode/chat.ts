@@ -25,6 +25,8 @@ import { attachText, INLINE_IMAGES, pickStaged } from '../core/attachments';
 import type { AttachmentRef } from '../core/chatProtocol';
 import { PathIndex } from './pathIndex';
 import { gitApi } from './repo';
+import { InboxHost, type InboxScope } from './inbox';
+import { DocProvider } from './docs';
 import type { TagTarget } from './tag';
 
 const LAST_PICK = 'edp.chat.lastTicket';
@@ -61,6 +63,8 @@ export class ChatController implements vscode.Disposable, TagTarget {
   private paths: PathIndex;
   /** C12: uploads staged per thread, artifact sizes/thumbnails, full-size opens */
   private attach: Attachments;
+  /** C15: the open scope's Inbox (questions, sign-offs, gates waiting on the viewer) */
+  private inbox: InboxHost;
   private tree: Ticket[] = [];
   private commits: CommitCard[] = [];
   private unlinked: CommitCard[] = [];
@@ -82,6 +86,8 @@ export class ChatController implements vscode.Disposable, TagTarget {
     this.provider = new ChatViewProvider(ctx, this, log);
     this.attach = new Attachments(ctx, board, log);
     this.paths = new PathIndex(log);
+    this.inbox = new InboxHost(board, boardUrl, () => this.inboxScope(), m => this.post(m), ref => this.attach.open(ref),
+      e => this.fail(e, 'could not use the Inbox'), log);
     this.changes = new Changes(ctx, {
       onCommits: added => this.onCommits(added),
       onReset: () => this.onCommitsReset(),
@@ -92,7 +98,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
   register(): vscode.Disposable[] {
     return [
       vscode.window.registerWebviewViewProvider(CHAT_VIEW, this.provider, { webviewOptions: { retainContextWhenHidden: false } }),
-      this.provider, this,
+      this.provider, this, new DocProvider(this.board).register(),
     ];
   }
 
@@ -106,6 +112,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
       items: this.store?.items ?? [], hasOlder: this.store?.before != null, chip: this.chipOf(this.ticket?.id), feed: this.feedStatus, notice: this.notice,
       pending: this.attach.pendingOf(this.ticket?.id),
       artifacts: this.attach.known((this.store?.items ?? []).flatMap(i => (i.attachments ?? []).map(a => a.id))),
+      inbox: this.inbox.snapshot(this.ticket?.id),
     };
   }
 
@@ -159,6 +166,11 @@ export class ChatController implements vscode.Disposable, TagTarget {
         return;
       }
       case 'openPath': return this.paths.open(m.path);
+      case 'inboxAnswer': return this.inbox.answer(m.key, m.text);
+      case 'inboxVerdict': return this.inbox.verdict(m.key, m.verdict, m.note, m.version);
+      case 'inboxGate': return this.inbox.gate(m.key, m.text);
+      case 'inboxOpen': return this.inbox.openRow(m.key);
+      case 'inboxRefresh': return this.inbox.refresh();
       case 'signIn': {
         if (await signIn(this.ctx, this.board)) await this.restart();
         return;
@@ -211,7 +223,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
     if (!(await creds(this.ctx))) {
       ++this.opening;
       this.store = undefined; this.ticket = null; this.epic = null; this.stories = []; this.unread.clear(); this.chips.clear(); this.attach.clear();
-      this.anchors.clear(); this.anchorsFor = null;
+      this.anchors.clear(); this.anchorsFor = null; this.inbox.clear();
       this.opened = this.opening; this.pendingChip = undefined;
       this.feedStatus = 'signed-out';
       this.notice = 'Sign in to the board to read and send.';
@@ -244,6 +256,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
   dispose(): void {
     this.changes.dispose();
     this.attach.dispose();
+    this.inbox.dispose();
     this.paths.dispose();
     this.feed?.dispose();
     this.feed = undefined;
@@ -306,7 +319,9 @@ export class ChatController implements vscode.Disposable, TagTarget {
       this.syncUnread();
       this.notice = null;
       void this.ctx.workspaceState.update(LAST_PICK, t.id);
+      const inbox = this.inbox.open(); // sets the new scope's (loading) list before the state goes out
       this.postState();
+      void inbox;
       this.settleOpen(n);
       void this.countUnread(n);
     } catch (e) {
@@ -391,6 +406,8 @@ export class ChatController implements vscode.Disposable, TagTarget {
   private async onEvent(ev: FeedEvent): Promise<void> {
     const subject = ev.subject_id;
     if (!subject || !this.threadSet().has(subject)) return;
+    // C15: a question, a gate or a verdict in scope changes what waits on the viewer
+    if (this.ticket && scopeTickets(this.ticket, this.tree).has(subject)) this.inbox.schedule();
     if (ev.kind === 'status_changed') {
       const to = typeof ev.data?.to === 'string' ? ev.data.to : undefined;
       if (!to) return;
@@ -703,6 +720,15 @@ export class ChatController implements vscode.Disposable, TagTarget {
       added = true;
     }
     return added;
+  }
+
+  /** The Inbox's scope (C15): the picked scope's own tickets (the C14 set), with every title the host knows. */
+  private inboxScope(): InboxScope | null {
+    const t = this.ticket;
+    if (!t || !this.store) return null;
+    const titles = new Map<string, string>();
+    for (const x of [...this.tree, ...this.stories, ...(this.epic ? [this.epic] : []), t]) titles.set(x.id, x.title);
+    return { id: t.id, ids: scopeTickets(t, this.tree), titles };
   }
 
   // -- picker --------------------------------------------------------------------------------------

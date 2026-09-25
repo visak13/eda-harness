@@ -4,6 +4,7 @@
 // Pure: whatever getState returns is untrusted (an older build's shape, or nothing), so every field is
 // checked and falls back to its default.
 import { SEND_KINDS, TICKET_ID, type SendKind } from './chatProtocol';
+import { INBOX_KEY, INBOX_TEXT_MAX } from './inbox';
 
 export type Fold = {
   /** Changes tab: the group of files the open scope touched is expanded */
@@ -20,6 +21,8 @@ export type ViewLocal = {
   tab: string;
   /** per scope (ticket id): the time of the newest commit seen in its Commits tab; the badge counts newer ones */
   seen: Record<string, string>;
+  /** C15: unsent Inbox answers, rulings and sign-off notes, by row key */
+  inbox: Record<string, string>;
 };
 
 /** The scope's own files open; the other seats' files and the unlinked commits folded. */
@@ -27,6 +30,8 @@ export const FOLDED: Fold = { scoped: true, allSeats: false, unlinked: false };
 export const TAB_ID = /^[a-z][a-z0-9-]{0,31}$/;
 /** at most this many scopes remember their seen marker (oldest dropped) */
 export const SEEN_MAX = 50;
+/** at most this many unsent Inbox drafts are kept */
+export const INBOX_DRAFTS_MAX = 50;
 
 export function restoreLocal(saved: unknown): ViewLocal {
   const s = (saved && typeof saved === 'object' ? saved : {}) as Record<string, unknown>;
@@ -45,7 +50,13 @@ export function restoreLocal(saved: unknown): ViewLocal {
       if (TICKET_ID.test(k) && typeof v === 'string' && !Number.isNaN(Date.parse(v))) seen[k] = v;
     }
   }
-  return { v: 1, drafts, kind, fold: { scoped: flag('scoped'), allSeats: flag('allSeats'), unlinked: flag('unlinked') }, tab, seen: bound(seen) };
+  const inbox: Record<string, string> = {};
+  if (ok && s.inbox && typeof s.inbox === 'object') {
+    for (const [k, v] of Object.entries(s.inbox as Record<string, unknown>)) {
+      if (INBOX_KEY.test(k) && typeof v === 'string' && v && v.length <= INBOX_TEXT_MAX && Object.keys(inbox).length < INBOX_DRAFTS_MAX) inbox[k] = v;
+    }
+  }
+  return { v: 1, drafts, kind, fold: { scoped: flag('scoped'), allSeats: flag('allSeats'), unlinked: flag('unlinked') }, tab, seen: bound(seen), inbox };
 }
 
 /** Keep the SEEN_MAX most recent markers. */
