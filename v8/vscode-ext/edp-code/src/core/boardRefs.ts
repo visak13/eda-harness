@@ -33,11 +33,27 @@ export function kindLabel(k: RefKind): string {
   return { epic: 'epic', story: 'story', task: 'task', design: 'design', strategy_hl: 'hl', strategy_ll: 'll', report: 'report', decision: 'decision' }[k];
 }
 
+/** Whether the caret after `left` sits in code a closed-span strip misses: a fence (``` or ~~~) opened and not
+ *  yet closed, or an odd backtick on the caret's line (second opinion 20260925T194748Z-c11490bb). */
+const FENCE = /^[ \t]*(`{3,}|~{3,})/;
+function inOpenCode(left: string): boolean {
+  const lines = left.split('\n');
+  let fence: string | null = null;
+  for (const l of lines.slice(0, -1)) {
+    const m = FENCE.exec(l);
+    if (m) fence = fence === null ? m[1][0] : fence === m[1][0] ? null : fence;
+  }
+  if (fence !== null) return true;
+  const last = lines[lines.length - 1];
+  if (FENCE.test(last)) return true;
+  return (stripCode(last).match(/`/g) ?? []).length % 2 === 1;
+}
+
 /** The `$` token under the caret, or null. `start` is the offset of the `$`, `query` what follows it. */
 export function activeRef(text: string, caret: number): { start: number; query: string } | null {
   const left = stripCode(text).slice(0, caret);
   const m = /(^|[\s(["'])\$([A-Za-z][\w-]*)$/.exec(left);
-  if (!m) return null;
+  if (!m || inOpenCode(text.slice(0, caret))) return null;
   // `$env:X` — the word is followed by a ':' (the caret sits after it, or the text right of it has one)
   if (text.charAt(caret) === ':') return null;
   return { start: caret - m[2].length - 1, query: m[2] };

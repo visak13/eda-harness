@@ -94,6 +94,53 @@ describe('RefPicker (the composer)', () => {
   });
 });
 
+describe('RefPicker second-opinion fixes (20260925T194748Z-c11490bb)', () => {
+  beforeEach(() => { document.body.replaceChildren(); });
+
+  it("the old query's rows are not pickable once the query moved: '$des' rows, then '$dec' + Enter before the answer", () => {
+    const sent: Sent[] = [];
+    const ta = field('$des');
+    const p = new RefPicker(ta, m => sent.push(m), document.createElement('div'), () => {});
+    p.update();
+    p.onRefs({ type: 'refs', v: 1, seq: sent[0].seq as number, items: [rows[1]] });
+    expect(p.isOpen).toBe(true);
+    ta.value = '$dec'; ta.setSelectionRange(4, 4);
+    p.update();
+    expect(p.isOpen).toBe(false);
+    expect(p.onKey(key('Enter'))).toBe(false);
+    expect(ta.value).toBe('$dec');
+    p.onRefs({ type: 'refs', v: 1, seq: sent[1].seq as number, items: [rows[2]] });
+    expect(p.onKey(key('Enter'))).toBe(true);
+    expect(ta.value).toBe('$dec-bf6aab8b73 (C3 no longer waits) ');
+  });
+
+  it("closing leaves the @ list's links alone: '$s @o' with the people list open keeps its aria state", () => {
+    const ta = field('$s @o');
+    ta.setAttribute('aria-controls', 'people');
+    const sent: Sent[] = [];
+    const p = new RefPicker(ta, m => sent.push(m), document.createElement('div'), () => {});
+    ta.setSelectionRange(2, 2);
+    p.update();
+    p.onRefs({ type: 'refs', v: 1, seq: sent[0].seq as number, items: rows });
+    expect(ta.getAttribute('aria-controls')).toBe('refs');
+    // the caret moves after '@o': the people picker takes the field, then the $ picker closes
+    ta.setSelectionRange(5, 5);
+    ta.setAttribute('aria-controls', 'people');
+    ta.setAttribute('aria-activedescendant', 'p-0');
+    p.update();
+    expect(p.isOpen).toBe(false);
+    expect(ta.getAttribute('aria-controls')).toBe('people');
+    expect(ta.getAttribute('aria-activedescendant')).toBe('p-0');
+    // closed while it owned them: aria-controls goes back to the people list
+    ta.setSelectionRange(2, 2);
+    p.update();
+    p.onRefs({ type: 'refs', v: 1, seq: sent[1].seq as number, items: rows });
+    p.onKey(key('Escape'));
+    expect(ta.getAttribute('aria-controls')).toBe('people');
+    expect(ta.hasAttribute('aria-activedescendant')).toBe(false);
+  });
+});
+
 describe('NoteCompletion (quote note boxes) has the $ list', () => {
   it('a note box asks, shows and picks with the same keys; the box never sees a picked Enter', () => {
     document.body.replaceChildren();

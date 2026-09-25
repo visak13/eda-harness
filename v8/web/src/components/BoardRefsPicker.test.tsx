@@ -118,7 +118,21 @@ describe("$ picker in the composer", () => {
     const ta = screen.getByTestId("composer-text") as HTMLTextAreaElement;
     await waitFor(() => { typeAt(ta, "per $C3"); expect(screen.getByTestId("refs-menu")).toBeInTheDocument(); });
     expect(screen.getAllByRole("option")[0].getAttribute("data-ref")).toBe("dec-bf6aab8b73");
+    // the textarea names the list and its active row (second opinion 20260925T194748Z-c11490bb)
+    expect(ta.getAttribute("aria-expanded")).toBe("true");
+    expect(ta.getAttribute("aria-controls")).toBe(screen.getByTestId("refs-menu").id);
+    const active = () => document.getElementById(ta.getAttribute("aria-activedescendant") ?? "");
+    expect(active()?.getAttribute("aria-selected")).toBe("true");
+    const n = screen.getAllByRole("option").length;
+    if (n > 1) {
+      fireEvent.keyDown(ta, { key: "ArrowDown" });
+      expect(active()).toBe(screen.getAllByRole("option")[1]);
+      fireEvent.keyDown(ta, { key: "ArrowUp" });
+    }
+    expect(active()?.getAttribute("data-ref")).toBe("dec-bf6aab8b73");
     fireEvent.keyDown(ta, { key: "Enter" });
+    expect(ta.getAttribute("aria-expanded")).toBe("false");
+    expect(ta.hasAttribute("aria-activedescendant")).toBe(false);
     expect(ta.value).toBe("per $dec-bf6aab8b73 (C3 no longer waits on the Code tab's S6 review) ");
     fireEvent.keyDown(ta, { key: "Enter", ctrlKey: true });
     await waitFor(() => expect(sent.text).toBe("per $dec-bf6aab8b73 (C3 no longer waits on the Code tab's S6 review)"));

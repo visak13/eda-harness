@@ -20,7 +20,7 @@ export class RefPicker {
   private dismissed: string | null = null;
 
   constructor(public field: Field, private post: FindRefs, private status: HTMLElement,
-    private onAccept: () => void, private ids: { list: string; opt: string } = { list: 'refs', opt: 'ref' }) {
+    private onAccept: () => void, private ids: { list: string; opt: string; people?: string } = { list: 'refs', opt: 'ref', people: 'people' }) {
     const l = document.createElement('ul');
     l.className = 'people refs';
     l.id = ids.list;
@@ -38,7 +38,17 @@ export class RefPicker {
     this.items = [];
     this.range = null;
     this.asked = null;
-    if (was) this.field.removeAttribute('aria-activedescendant');
+    if (was) this.release();
+  }
+
+  /** Drop the field's listbox links only while they point at this list: the @ or # picker may own them now
+   *  (second opinion 20260925T194748Z-c11490bb: `$s @o` lost the people list's active option). */
+  private release(): void {
+    const f = this.field;
+    if (f.getAttribute('aria-activedescendant')?.startsWith(`${this.ids.opt}-`)) f.removeAttribute('aria-activedescendant');
+    if (f.getAttribute('aria-controls') === this.ids.list) {
+      if (this.ids.people) f.setAttribute('aria-controls', this.ids.people); else f.removeAttribute('aria-controls');
+    }
   }
 
   /** The caret moved or the text changed: ask the host for the rows of the $ word under the caret. */
@@ -52,6 +62,8 @@ export class RefPicker {
     this.dismissed = null;
     this.range = { start: t.start, end: caret };
     if (this.asked?.q === t.query) return;
+    // the shown rows answer the old query: never pickable once the query moved (second opinion 20260925T194748Z-c11490bb)
+    if (!this.list.hidden) { this.list.hidden = true; this.items = []; this.release(); }
     this.asked = { seq: ++lastSeq, q: t.query };
     this.post({ type: 'findRefs', q: t.query, seq: lastSeq });
   }
@@ -63,7 +75,7 @@ export class RefPicker {
     this.items = cleanRows(m.items);
     if (!this.items.length) {
       this.list.hidden = true;
-      this.field.removeAttribute('aria-activedescendant');
+      this.release();
       this.status.textContent = 'No matching board objects';
       return;
     }

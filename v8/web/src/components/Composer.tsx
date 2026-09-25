@@ -467,14 +467,21 @@ function ComposerInstance({
         onClick={refreshPickers}
         onBlur={refs.close}
         aria-label="Message"
+        // the focused textarea names the open @ or $ list and its active row (second opinion 20260925T194748Z-c11490bb)
+        aria-autocomplete="list"
+        aria-expanded={mentions.menu.open || refs.menu.open}
+        aria-controls={mentions.menu.open ? `${idRef.current}-mentions` : refs.menu.open ? `${idRef.current}-refs` : undefined}
+        aria-activedescendant={mentions.menu.open ? `${idRef.current}-mentions-${mentions.menu.index}`
+          : refs.menu.open ? `${idRef.current}-refs-${refs.menu.index}` : undefined}
         data-testid="composer-text"
       />
 
       {mentions.menu.open ? (
-        <ul className={styles.mentions} role="listbox" data-testid="mentions-menu">
+        <ul id={`${idRef.current}-mentions`} className={styles.mentions} role="listbox" data-testid="mentions-menu">
           {mentions.menu.items.map((p, i) => (
             <li
               key={p.id}
+              id={`${idRef.current}-mentions-${i}`}
               role="option"
               aria-selected={i === mentions.menu.index}
               className={i === mentions.menu.index ? styles.mentionActive : ""}

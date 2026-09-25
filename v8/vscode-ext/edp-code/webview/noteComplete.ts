@@ -19,7 +19,7 @@ export class NoteCompletion {
   constructor(rows: () => PersonRow[], find: FindPaths & FindRefs, status: HTMLElement, prefix: string) {
     const dummy = document.createElement('textarea');
     const ids = { people: `${prefix}-people`, paths: `${prefix}-paths` };
-    this.refs = new RefPicker(dummy, find, status, () => this.changed(), { list: `${prefix}-refs`, opt: `${prefix}-ref` });
+    this.refs = new RefPicker(dummy, find, status, () => this.changed(), { list: `${prefix}-refs`, opt: `${prefix}-ref`, people: ids.people });
     this.people = new PeoplePicker(dummy, rows, status, () => this.changed(), { list: ids.people, opt: `${prefix}-p` });
     this.paths = new PathPicker(dummy, find, status, () => this.changed(), { list: ids.paths, opt: `${prefix}-path`, people: ids.people });
   }

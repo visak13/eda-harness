@@ -12,7 +12,7 @@ import { DOC_SCHEME, parseDocPath } from '../core/docUri';
 import { lineSpan } from '../core/anchor';
 import { anchorFor } from './tag';
 import { mentionRows, noteToken, pathRows, refRows, type NoteCompletionRow } from '../core/noteCompletion';
-import type { RefRow } from '../core/boardRefs';
+import { activeRef, type RefRow } from '../core/boardRefs';
 
 const TRAY_KEY = 'edp.quotes.tray';
 export const QUOTE_CONTROLLER = 'edp.quotes';
@@ -79,6 +79,8 @@ export class QuoteHost implements vscode.Disposable {
     const line = doc.lineAt(pos.line).text.slice(0, pos.character);
     const t = noteToken(line, pos.character);
     if (!t) return null;
+    // C24: `$` needs the whole box (the ':' right of `$env|`, an earlier fence line, a closing backtick)
+    if (t.kind === '$' && !activeRef(doc.getText(), doc.offsetAt(pos))) return null;
     const rows = t.kind === '@' ? mentionRows(this.chat.peopleRows(), t.query)
       : t.kind === '$' ? refRows(await this.chat.findRefs(t.query)) : pathRows((await this.chat.findPaths(t.query)).rows);
     const range = new vscode.Range(pos.line, t.start, pos.line, pos.character);
