@@ -14,6 +14,7 @@ import { markSeen, restoreLocal } from '../src/core/viewState';
 import { initAttach } from './attach';
 import { TabBar, type TabCtx } from './tabs';
 import { TABS } from './registry';
+import { isSendKey, sendChord } from '../src/core/composerKeys';
 
 declare function acquireVsCodeApi(): { postMessage(m: unknown): void; getState(): unknown; setState(s: unknown): void };
 const vscode = acquireVsCodeApi();
@@ -111,7 +112,8 @@ toSel.setAttribute('aria-label', 'To (optional)');
 const ta = el('textarea');
 ta.id = 'composer';
 ta.rows = MIN_ROWS;
-ta.placeholder = 'Message… @ to mention, # for a file or folder · Enter sends, Shift+Enter newline';
+// C14 (owner m-db09472a68): the board UI's chord; Enter is a newline
+ta.placeholder = `Message… @ to mention, # for a file or folder · ${sendChord(navigator.platform || navigator.userAgent)} to send`;
 ta.setAttribute('aria-label', 'Message');
 ta.setAttribute('aria-autocomplete', 'list');
 ta.setAttribute('aria-controls', 'people');
@@ -506,7 +508,7 @@ ta.addEventListener('keydown', e => {
     if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); acAccept(); return; }
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); acClose(); return; }
   }
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  if (isSendKey(e)) { e.preventDefault(); send(); } // a plain Enter inserts a newline (the textarea's default)
 });
 ta.addEventListener('keyup', e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { acUpdate(); pathPicker.update(); } });
 onPathClick(list, post);

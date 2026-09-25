@@ -54,8 +54,8 @@ function untrackedRow(out: Map<string, WorkFile>, path: string) {
 export const CARD_ROWS = 200;
 
 /** What the open thread counts as "its own" (C9, option (a)): the paths its tickets touched, and
- *  whether that is an epic or a lone ticket. */
-export type Scope = { paths: ReadonlySet<string>; kind: 'epic' | 'ticket' };
+ *  whether that is an epic, a story (C14) or a lone ticket. */
+export type Scope = { paths: ReadonlySet<string>; kind: 'epic' | 'story' | 'ticket' };
 
 /** A row belongs to the scope when its path, or a rename's old path, was touched. */
 export const inScope = (f: { path: string; oldPath?: string }, paths: ReadonlySet<string>) =>
@@ -108,4 +108,26 @@ export function touchedPaths(commits: readonly { tickets: string[]; files: { pat
     for (const f of c.files) { out.add(f.path); if (f.oldPath) out.add(f.oldPath); }
   }
   return out;
+}
+
+type ScopeTicket = { id: string; kind: string; parent_id?: string | null };
+
+/** The tickets the picked scope owns (C14): an epic, every ticket of its tree; a story, itself and its
+ *  tasks; any other ticket, itself. `tree` is the epic's tickets (the change cards' set), never narrowed. */
+export function scopeTickets(ticket: ScopeTicket, tree: readonly ScopeTicket[]): Set<string> {
+  if (ticket.kind === 'epic') return new Set([ticket.id, ...tree.map(x => x.id)]);
+  if (ticket.kind === 'story') return new Set([ticket.id, ...tree.filter(x => x.parent_id === ticket.id).map(x => x.id)]);
+  return new Set([ticket.id]);
+}
+
+/** The picked scope's own paths (C14): commits naming one of its tickets, and the anchors on messages
+ *  on those tickets' threads only (an anchor carries the thread it was read from). */
+export function openScope(ticket: ScopeTicket, tree: readonly ScopeTicket[],
+  commits: readonly { tickets: string[]; files: { path: string; oldPath?: string }[] }[],
+  anchors: Iterable<{ thread: string; path: string }>): Scope {
+  const ids = scopeTickets(ticket, tree);
+  const own: string[] = [];
+  for (const a of anchors) if (ids.has(a.thread)) own.push(a.path);
+  const kind = ticket.kind === 'epic' ? 'epic' : ticket.kind === 'story' ? 'story' : 'ticket';
+  return { kind, paths: touchedPaths(commits, ids, own) };
 }

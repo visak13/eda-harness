@@ -307,12 +307,20 @@ test("@-autocomplete shows role · ticket · title, ranks this epic first; two c
   await page.keyboard.press("Tab");
   await ta.pressSequentially("thanks");
   await expect(ta).toHaveValue(`please check @${ARCH()} and @${ENG()} thanks`);
+  // C14 (owner m-db09472a68): the board UI's chord. The hint names it; a plain Enter is a newline, never a send
+  await expect(ta).toHaveAttribute("placeholder", /· Ctrl\+Enter to send$/);
   await page.keyboard.press("Enter");
+  await expect(ta).toHaveValue(`please check @${ARCH()} and @${ENG()} thanks\n`);
+  await ta.pressSequentially("second line");
+  await expect(ta).toHaveValue(`please check @${ARCH()} and @${ENG()} thanks\nsecond line`);
+  await page.waitForTimeout(1_000);
+  expect((await call("GET", `/v1/tickets/${EPIC()}/thread`, undefined, asOwner)).thread.some((m: any) => m.text.startsWith("please check"))).toBe(false);
+  await page.keyboard.press("Control+Enter");
   await expect(ta).toHaveValue("", { timeout: 10_000 });
   let msg: any;
   await expect.poll(async () => {
     const rows = (await call("GET", `/v1/tickets/${EPIC()}/thread`, undefined, asOwner)).thread;
-    msg = rows.find((m: any) => m.text === `please check @${ARCH()} and @${ENG()} thanks`);
+    msg = rows.find((m: any) => m.text === `please check @${ARCH()} and @${ENG()} thanks\nsecond line`);
     return !!msg;
   }, { timeout: 10_000 }).toBe(true);
   expect(msg.by).toBe("owner");
@@ -346,7 +354,7 @@ test("a failed send keeps the draft", async () => {
   await cut(); // the board is unreachable: the POST fails
   await ta.click();
   await ta.pressSequentially("this must survive a failed send");
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("Control+Enter");
   await expect(c.locator("#send-error")).toContainText("Not sent", { timeout: 20_000 });
   await expect(ta).toHaveValue("this must survive a failed send");
   await page.screenshot({ path: shot("send-failed-draft-kept.png") });

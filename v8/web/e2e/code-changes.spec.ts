@@ -5,6 +5,7 @@
 // Browser: Chromium by default; CHAT_BROWSER=stockff runs the installed Firefox (moz-firefox channel,
 // m-5dcb142053). Run one browser at a time.
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -26,7 +27,7 @@ let tmp = "";
 let repo = "";
 let cs: CodeServer | null = null;
 let page: Page;
-let storyA = "", taskA = "";
+let storyA = "", storyB = "", taskA = "";
 const sha: Record<string, string> = {};
 const ENG = () => `engineer.${storyA}`;
 const timing: Record<string, number> = {};
@@ -122,7 +123,7 @@ test.beforeAll(async ({ browser, board: _board }) => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "edp-c5-"));
   const arch = { "X-Participant": "arch" };
   storyA = (await call("POST", "/v1/tickets", { kind: "story", work_type: "feature", title: "Story Alpha", parent_id: EPIC() }, arch)).id;
-  await call("POST", "/v1/tickets", { kind: "story", work_type: "feature", title: "Story Beta", parent_id: EPIC() }, arch); // Story Beta: a second story in the strip
+  storyB = (await call("POST", "/v1/tickets", { kind: "story", work_type: "feature", title: "Story Beta", parent_id: EPIC() }, arch)).id; // Story Beta: a second story in the strip
   await call("POST", "/v1/participants", { type: "agent", role: "engineer", handle: ENG(), id: ENG() });
   taskA = (await call("POST", "/v1/tickets", { kind: "task", work_type: "feature", title: "Alpha task", parent_id: storyA, assignee: ENG() }, arch)).id;
   await call("POST", "/v1/messages", { ticket_id: storyA, kind: "note", text: "Alpha thread message, newer than every fixture commit" }, { "X-Participant": ENG() });
@@ -345,6 +346,58 @@ test("Changes on the long epic thread: this epic's files open first, all seats f
   commit("wip", "chore: wip, no ticket", undefined, Math.floor(Date.now() / 1000));
   await expect(c.locator("#changes-summary")).toHaveText("The shared tree is clean", { timeout: 10_000 });
   await expect(c.locator("#tab-changes .tab-badge")).toHaveCount(0);
+});
+
+test("C14: the Changes tab follows the scope picker: epic → story → epic changes the first group's title, rows and badge; the epic's other files fold into All seats", async () => {
+  const c = chat();
+  // an anchor on Story Beta's thread: the epic's file, never Story Alpha's (C14: anchors per thread)
+  const snippet = "beta = 1";
+  await call("POST", "/v1/messages", { ticket_id: storyB, kind: "note", text: "beta anchor",
+    code_context: { repo_root: repo, path: "notes/beta.md", line_start: 1, line_end: 1, commit: null, dirty: true, snippet,
+      snippet_sha: createHash("sha256").update(snippet).digest("hex") } }, { "X-Participant": "arch" });
+  write("src/sample.py", fs.readFileSync(path.join(repo, "src/sample.py"), "utf8") + "value_c14 = 14\n"); // Story Alpha's commit
+  write("src/task.py", "task = 14\n"); // Story Alpha's task's commit
+  write("src/epic.py", "epic = 14\n"); // the epic's own commit
+  write("notes/beta.md", "beta = 1\n"); // anchored on Story Beta's thread
+  write("notes/nobody.md", "nobody\n"); // no ticket touched it
+  const scoped = async (title: string, rows: string[], badge: string, more: string) => {
+    await expect(c.locator("#changes-scoped-toggle")).toContainText(title, { timeout: 15_000 });
+    await expect(c.locator("#changes-scoped .cf")).toHaveCount(rows.length, { timeout: 15_000 });
+    expect(await c.locator("#changes-scoped .cf").evaluateAll(els => els.map(e => (e as HTMLElement).dataset.path))).toEqual(rows);
+    await expect(c.locator("#tab-changes .tab-badge")).toHaveText(badge);
+    await expect(c.locator("#changes-all-toggle")).toContainText(`All seats${more} more`);
+    await expect(c.locator("#changes-all-toggle")).toHaveAttribute("aria-expanded", "false");
+  };
+  // a sibling story's live message event carries no code_context: its anchor is read when a thread of
+  // the epic is (re)opened, so start from Story Alpha, then epic → story → epic
+  await openStory(storyA);
+  await expect(c.locator("#crumb-current")).toHaveText("Story Alpha", { timeout: 15_000 });
+  // epic: the whole tree
+  await c.locator("#crumb-epic").click();
+  await expect(c.locator("#crumb-current")).toHaveText("Spike epic", { timeout: 15_000 });
+  await tab("changes");
+  if ((await c.locator("#changes-all-toggle").getAttribute("aria-expanded")) === "true") await c.locator("#changes-all-toggle").click();
+  await scoped("This epic", ["notes/beta.md", "src/epic.py", "src/sample.py", "src/task.py"], "4", "1");
+  await page.screenshot({ path: shot("c14-epic-scope.png") });
+  // story: only Story Alpha and its task; the epic's and Story Beta's files count in All seats
+  await openStory(storyA);
+  await expect(c.locator("#crumb-current")).toHaveText("Story Alpha", { timeout: 15_000 });
+  await expect(c.locator("#tab-changes")).toHaveAttribute("aria-selected", "true");
+  await scoped("This story", ["src/sample.py", "src/task.py"], "2", "3");
+  await expect(c.locator("#tab-changes")).toHaveAttribute("aria-label", "Changes, 2 files this story touched, 5 files uncommitted across all seats");
+  await page.screenshot({ path: shot("c14-story-scope.png") });
+  await c.locator("#changes-all-toggle").click();
+  await expect(c.locator("#changes-all .cf")).toHaveCount(3);
+  expect(await c.locator("#changes-all .cf").evaluateAll(els => els.map(e => (e as HTMLElement).dataset.path))).toEqual(["notes/beta.md", "notes/nobody.md", "src/epic.py"]);
+  await c.locator("#changes-all-toggle").click();
+  // back to the epic
+  await c.locator("#crumb-epic").click();
+  await expect(c.locator("#crumb-current")).toHaveText("Spike epic", { timeout: 15_000 });
+  await scoped("This epic", ["notes/beta.md", "src/epic.py", "src/sample.py", "src/task.py"], "4", "1");
+  await page.screenshot({ path: shot("c14-epic-again.png") });
+  g(["add", "-A"]);
+  commit("c14", "chore: c14 wip, no ticket", undefined, Math.floor(Date.now() / 1000));
+  await expect(c.locator("#changes-summary")).toHaveText("The shared tree is clean", { timeout: 10_000 });
 });
 
 test("the webview never gets git or board access: no fetch or X-Token in the bundle", async () => {

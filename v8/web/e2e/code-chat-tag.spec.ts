@@ -180,7 +180,7 @@ test("ctrl+alt+m with the thread open: chip, no palette; the send carries code_c
   await expect(c.locator("#composer")).toBeFocused();
   await page.screenshot({ path: shot("chip-in-composer.png") });
   await c.locator("#composer").pressSequentially("why is this block here?");
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("Control+Enter");
   await expect(c.locator("#code-chip")).toBeHidden({ timeout: 10_000 });
   await expect(c.locator("#composer")).toHaveValue("");
   const m = await sentMessage("why is this block here?");
@@ -218,7 +218,7 @@ test("right-click → Tag selection: chip; a second tag replaces it; removing it
   await c.locator("#code-chip-remove").click();
   await expect(c.locator("#code-chip")).toBeHidden();
   await c.locator("#composer").pressSequentially("plain note after removing the chip");
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("Control+Enter");
   await expect(c.locator("#composer")).toHaveValue("", { timeout: 10_000 });
   const m = await sentMessage("plain note after removing the chip");
   expect(m.code_context ?? null).toBeNull();
@@ -256,7 +256,7 @@ test("a dirty buffer marks the chip and the sent anchor dirty", async () => {
   await page.keyboard.press("Control+Alt+M");
   await expect(c.locator("#code-chip-label")).toHaveText(`src/sample.py:L2-3 @${head.slice(0, 7)}[dirty]`, { timeout: 10_000 });
   await c.locator("#composer").pressSequentially("dirty lines");
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("Control+Enter");
   const m = await sentMessage("dirty lines");
   expect(m.code_context).toMatchObject({ line_start: 2, line_end: 3, dirty: true });
   expect(m.text).toContain(`src/sample.py:L2-3 @${head.slice(0, 7)}[dirty]`);

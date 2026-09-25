@@ -181,7 +181,7 @@ test("keyboard picks: a file tag and a folder tag in one message; Enter picks, n
   await composer().pressSequentially("and `src/missing.ts` too");
   await page.screenshot({ path: shot("two-tags-in-composer.png") });
   expect((await call("GET", `/v1/messages?ticket_id=${story}`, undefined, asOwner)).length).toBe(0); // nothing sent yet
-  await composer().press("Enter");
+  await composer().press("Control+Enter");
   await expect(composer()).toHaveValue("", { timeout: 10_000 });
   const m = await sentMessage("compare ");
   expect(m.text).toBe("compare `src/util/helpers.ts` with `src/util/` and `src/missing.ts` too");

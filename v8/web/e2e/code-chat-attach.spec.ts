@@ -190,7 +190,7 @@ test("clip button: the chosen file uploads, shows as a chip, and the send carrie
   const ta = c.locator("#composer");
   await ta.click();
   await ta.pressSequentially("clip attach");
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("Control+Enter");
   await expect(ta).toHaveValue("", { timeout: 10_000 });
   await expect(c.locator("#attachments")).toBeHidden();
   const m = await sentWith("clip attach");
@@ -211,7 +211,7 @@ test("drag-drop onto the composer uploads and sends with the id", async () => {
   }, [...PNG_SMALL]);
   await expect(c.locator("#attachments .pend-name", { hasText: "dropped.png" })).toBeVisible({ timeout: 15_000 });
   await c.locator("#composer").click();
-  await page.keyboard.press("Enter"); // attachments-only: the host names the file in the text
+  await page.keyboard.press("Control+Enter"); // attachments-only: the host names the file in the text
   const m = await sentWith(/^Attached: `dropped\.png`$/);
   expect(m.artifacts).toHaveLength(1);
   await expect(c.locator(`.msg[data-id="${m.id}"] img.att-thumb`)).toBeVisible({ timeout: 15_000 });
@@ -236,7 +236,7 @@ test("pasting a screenshot uploads it under a pasted-… name and sends with the
   }, [...PNG_SMALL]).then(native => note("paste_event_constructor_carried_files", native));
   await expect(c.locator("#attachments .pend-name", { hasText: /^pasted-\d{8}-\d{6}\.png$/ })).toBeVisible({ timeout: 15_000 });
   await ta.pressSequentially("pasted shot");
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("Control+Enter");
   const m = await sentWith("pasted shot");
   expect(m.artifacts).toHaveLength(1);
   const art = await call("GET", `/v1/artifacts/${m.artifacts[0]}`, undefined, asOwner);

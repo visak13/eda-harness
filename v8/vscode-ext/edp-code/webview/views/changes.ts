@@ -63,7 +63,7 @@ export function renderChanges(panel: HTMLElement, ctx: TabCtx): void {
         out.push(group({ id: 'changes-all', title: 'All seats', count: `${restN} more`, open: ctx.local.fold.allSeats, onToggle: flip('allSeats'),
           body: () => {
             const b = document.createElement('div');
-            b.append(list(rest, ctx, 'Uncommitted files of the other seats'));
+            b.append(list(rest, ctx, `Uncommitted files outside this ${scope}`));
             if (card.more) b.append(note(`+${card.more} more (Open all shows every file)`));
             return b;
           } }));

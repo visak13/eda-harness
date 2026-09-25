@@ -87,8 +87,8 @@ export type CommitCard = {
 export type UncommittedCard = {
   files: CardFile[]; more: number; total: number; at: string;
   scoped: number | null;
-  /** what `scoped` is measured against: the open thread's epic, or a lone ticket with its tasks */
-  scope: 'epic' | 'ticket' | null;
+  /** what `scoped` is measured against: the picked epic, the picked story with its tasks (C14), or a lone ticket */
+  scope: 'epic' | 'story' | 'ticket' | null;
 };
 
 /** An @-list row, labelled in the host (strategyll-5e3ecdb625 §2): the view sets it with textContent. */
