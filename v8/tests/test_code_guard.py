@@ -383,7 +383,9 @@ def test_e2e_gate_login_sets_cookie_then_relays_and_refuses_replay():
     asyncio.run(run())
 
 
-def test_e2e_gate_mid_connection_no_cookie_401_and_login_answered():
+def test_e2e_gate_mid_connection_closes_unanswered_and_keeps_the_token():
+    # second opinion 20260925T191655Z-01833b5d: a local answer written while an upstream response is
+    # still streaming lands inside its body; mid-connection the guard closes without answering
     async def run():
         seen = []
         up, task, g = await _gated(seen)
@@ -393,14 +395,43 @@ def test_e2e_gate_mid_connection_no_cookie_401_and_login_answered():
             assert out.endswith(b"ok")
             w.write(head(f"Host: 127.0.0.1:{port}"))  # the cookie dropped on a pooled connection
             await w.drain()
-            assert (await asyncio.wait_for(r.read(4096), 5)).startswith(b"HTTP/1.1 401")
+            assert await asyncio.wait_for(r.read(4096), 5) == b""
             assert len(seen) == 1
             r, w, out = await _roundtrip(port, head(f"Host: 127.0.0.1:{port}", f"Cookie: {GUARD_COOKIE}={g.gate}"))
             tok, _ = mint_token(KEY)
             w.write(head(f"Host: 127.0.0.1:{port}", target=f"/__edp/login?t={tok}"))
             await w.drain()
-            out = await asyncio.wait_for(r.read(4096), 5)
-            assert out.startswith(b"HTTP/1.1 302") and b"Location: /\r\n" in out
+            assert await asyncio.wait_for(r.read(4096), 5) == b""
+            # the retry on a fresh connection still signs in: the token was not spent
+            _, w, out = await _roundtrip(port, head(f"Host: 127.0.0.1:{port}", target=f"/__edp/login?t={tok}"))
+            assert out.startswith(b"HTTP/1.1 302")
+        finally:
+            task.cancel(); up.close()
+    asyncio.run(run())
+
+
+def test_e2e_gate_pipelined_request_behind_a_streaming_body_gets_no_local_answer():
+    async def run():
+        async def slow(r, w):  # answers with a body it finishes only later
+            await r.readuntil(b"\r\n\r\n")
+            w.write(b"HTTP/1.1 200 OK\r\nContent-Length: 12\r\n\r\nsix..."); await w.drain()
+            await asyncio.sleep(0.5)
+            w.write(b"rest.."); await w.drain()
+            w.close()
+        up = await asyncio.start_server(slow, "127.0.0.1", 0)
+        g = Guard(0, f"tcp:127.0.0.1:{up.sockets[0].getsockname()[1]}", [], "s3cret", KEY)
+        ready = asyncio.Event()
+        task = asyncio.create_task(g.serve(ready=ready))
+        await ready.wait()
+        try:
+            r, w = await asyncio.open_connection("127.0.0.1", g.port)
+            w.write(head(f"Host: 127.0.0.1:{g.port}", target="/healthz") + head(f"Host: 127.0.0.1:{g.port}"))
+            await w.drain()
+            got = b""
+            while chunk := await asyncio.wait_for(r.read(4096), 5):
+                got += chunk
+            # the connection is cut (the streaming body may be truncated), never answered locally
+            assert b"401" not in got and b"code guard" not in got and got.count(b"HTTP/1.1") <= 1
         finally:
             task.cancel(); up.close()
     asyncio.run(run())

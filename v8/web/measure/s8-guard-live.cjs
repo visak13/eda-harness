@@ -75,8 +75,14 @@ const check = (ok, what) => { L(`${ok ? "PASS" : "FAIL"} ${what}`); if (!ok) fai
     check(await f.locator("input[type=password]").count() === 0, "no password prompt in the frame");
     const quick = f.locator(".quick-input-widget");
     const cmd = async (t) => {
-      for (let i = 0; i < 5 && !(await quick.isVisible()); i++) { await f.locator("div.monaco-workbench").press("F1"); await page.waitForTimeout(700); }
-      await quick.locator("input").fill(`>${t}`);
+      // top level (no board frame) a focused terminal keeps F1: put focus in the editor first
+      const input = quick.locator("input");
+      for (let i = 0; i < 5 && !(await input.isVisible()); i++) {
+        if (i) await f.locator(".monaco-editor .view-lines").first().click({ timeout: 5000 }).catch(() => {});
+        await page.keyboard.press(i % 2 ? "Control+Shift+P" : "F1");
+        await page.waitForTimeout(1000);
+      }
+      await input.fill(`>${t}`);
       await quick.locator(".monaco-list-row", { hasText: t }).first().click();
     };
     const answer = async (title, v, pickText) => {

@@ -95,7 +95,10 @@ def code_status() -> dict[str, Any]:
     }
 
 
-def code_router(actor: Callable[..., Participant], render_markdown: Callable[[str], str]) -> APIRouter:
+def code_router(actor: Callable[..., Participant], render_markdown: Callable[[str], str],
+                credentialed: Callable[[Participant], bool] = lambda _p: False) -> APIRouter:
+    """``credentialed(p)``: p authenticated with a minted token (not a trusted-mode header alone);
+    the default refuses every code session."""
     router = APIRouter()
 
     @router.get("/v1/code/external/{port}/{target_path:path}")
@@ -129,6 +132,11 @@ def code_router(actor: Callable[..., Participant], render_markdown: Callable[[st
             return JSONResponse(status_code=403, content={
                 "ok": False, "error": {"code": "forbidden", "message": "only the board's human owner opens the Code tab"},
                 "hint": "the code session is minted for the owner's browser; agents never get one"})
+        if not credentialed(who):
+            # trusted mode takes X-Participant on its own: any local caller could claim the owner
+            return JSONResponse(status_code=403, content={
+                "ok": False, "error": {"code": "forbidden", "message": "the Code tab needs the owner's minted token (tokens.json)"},
+                "hint": "a header-only identity never gets a code session"})
         if not request.client or not _local(request.client.host) or not _local(request.url.hostname):
             return JSONResponse(status_code=403, content={
                 "ok": False, "error": {"code": "forbidden", "message": "Code sessions are minted on the board host only"},

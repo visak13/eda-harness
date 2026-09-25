@@ -17,7 +17,10 @@ import { ADMIN, REPO_DIR } from "./board";
 
 const CODE_PORT = process.env.EDP_CODE_PORT ?? "9410";
 const SHOTS = path.join(REPO_DIR, "web", "e2e", "evidence", "code-tab");
-const as = "as=owner";
+// a code session needs a minted owner token: a trusted-mode X-Participant header alone never mints one
+const OWNER_TOKEN = "s8-owner-tok-7d41c2e9a0";
+const AGENT_TOKEN = "s8-agent-tok-19be6f0c33";
+const as = `as=owner&token=${OWNER_TOKEN}`;
 
 async function codeServiceUp(): Promise<boolean> {
   try {
@@ -45,6 +48,7 @@ test.describe("code service up", () => {
       method: "POST", headers: { "content-type": "application/json", "X-Admin": ADMIN },
       body: JSON.stringify({ type: "agent", role: "engineer", handle: "engineer.e2e", id: "engineer.e2e" }),
     });
+    fs.writeFileSync(path.join(home, "tokens.json"), JSON.stringify({ owner: OWNER_TOKEN, agents: { "engineer.e2e": AGENT_TOKEN } }));
     expect(await codeServiceUp(), `code-server is not answering on :${CODE_PORT} — run .\\edp.ps1 start code`).toBe(true);
   });
 
@@ -107,7 +111,7 @@ test.describe("code service up", () => {
   });
 
   test("an agent seat gets no code session: a named state, never a frame (s-17c13096e5)", async ({ page }) => {
-    await page.goto("/ui/code?as=engineer.e2e", { waitUntil: "load" });
+    await page.goto(`/ui/code?as=engineer.e2e&token=${AGENT_TOKEN}`, { waitUntil: "load" });
     await expect(page.getByTestId("code-no-session")).toContainText("only the board's human owner opens the Code tab");
     await expect(page.getByTestId("code-frame")).toHaveCount(0);
     // and the guard itself refuses a caller with no cookie, whatever Origin it claims

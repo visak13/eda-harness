@@ -223,6 +223,22 @@ def test_session_refused_off_the_board_host(tmp_path, monkeypatch, mint_env):
             assert r.status_code == 403 and "token" not in r.text
 
 
+def test_session_refused_to_a_header_only_owner_in_trusted_mode(tmp_path, monkeypatch):
+    # second opinion 20260925T191655Z-01833b5d: with no tokens.json any local caller can claim the owner
+    monkeypatch.setenv("EDP8_HOME", str(tmp_path))
+    monkeypatch.setenv("EDP8_RUN_DIR", str(tmp_path / ".run"))
+    monkeypatch.setenv("EDP8_PUBLIC", "0")
+    monkeypatch.setenv("EDP8_TOKENS", str(tmp_path / "absent-tokens.json"))
+    (tmp_path / ".run").mkdir()
+    (tmp_path / ".run" / "code.json").write_text(json.dumps({"service": "code", "mint_key": MINT_KEY}))
+    app = create_app(Board(Store(":memory:")), admin_token="t")
+    with TestClient(app, base_url="http://127.0.0.1:9400", client=("127.0.0.1", 1234)) as client:
+        assert client.post("/v1/participants", json={"id": "alice", "handle": "alice", "role": "owner", "type": "human"},
+                           headers={"X-Admin": "t"}).status_code == 200
+        r = client.post("/v1/code/session", headers={"X-Participant": "alice"})
+        assert r.status_code == 403 and "token" not in r.json().get("value", {})
+
+
 def test_session_503_without_a_mint_key(mint_env):
     client, tmp = mint_env
     (tmp / ".run" / "code.json").write_text(json.dumps({"service": "code"}))

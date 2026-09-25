@@ -31,8 +31,9 @@ function mount(path = "/code", status: Partial<CodeStatus> | "error" = {}, hostn
       ? ok({ token: `tok${mints}`, expires_at: 1 })
       : HttpResponse.json({ ok: false, error: { code: "forbidden", message: "only the board's human owner opens the Code tab" }, hint: "" }, { status: 403 });
   }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route path="code" element={<CodePage hostname={hostname} />} />
@@ -41,7 +42,7 @@ function mount(path = "/code", status: Partial<CodeStatus> | "error" = {}, hostn
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  return { calls: () => calls, mints: () => mints };
+  return { calls: () => calls, mints: () => mints, client };
 }
 
 /** The frame loads the guard's login URL; `next` is the embed URL the guard redirects to. */
@@ -125,6 +126,34 @@ describe("CodePage", () => {
     expect(framed(win.location.href)).toEqual({ origin: "http://127.0.0.1:9555", token: "tok2", target: "http://127.0.0.1:9555/" });
     expect(m.mints()).toBe(2);
     open.mockRestore();
+  });
+
+  it("a feed invalidation of the code queries neither remints nor reloads the frame", async () => {
+    const m = mount();
+    const src = (await screen.findByTestId("code-frame")).getAttribute("src");
+    const before = m.calls();
+    await m.client.invalidateQueries({ queryKey: ["code"] });
+    await waitFor(() => expect(m.calls()).toBeGreaterThan(before));
+    expect(screen.getByTestId("code-frame").getAttribute("src")).toBe(src);
+    expect(m.mints()).toBe(1);
+  });
+
+  it("a frame shown again after a board error signs in with a fresh token, never the spent one", async () => {
+    const m = mount();
+    expect(framed((await screen.findByTestId("code-frame")).getAttribute("src")!).token).toBe("tok1");
+    server.use(http.get("/v1/code", () => HttpResponse.json({ ok: false, error: { code: "http", message: "board down" }, hint: "" }, { status: 502 }), { once: true }));
+    await m.client.invalidateQueries({ queryKey: ["code", "status"] });
+    await screen.findByTestId("code-board-error");
+    fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+    await waitFor(() => expect(framed(screen.getByTestId("code-frame").getAttribute("src")!).token).toBe("tok2"));
+  });
+
+  it.each(["::1", "127.0.0.2"])("a board opened as %s is asked to use 127.0.0.1 or localhost (the guard answers only those)", async (host) => {
+    const m = mount("/code", {}, host);
+    expect(await screen.findByTestId("code-host-name")).toHaveTextContent("Open the board as 127.0.0.1 or localhost");
+    expect(screen.queryByTestId("code-frame")).toBeNull();
+    expect(screen.queryByTestId("code-newwindow")).toBeNull();
+    expect(m.mints()).toBe(0);
   });
 
   it("a board error is its own state with Retry, never a blank frame", async () => {

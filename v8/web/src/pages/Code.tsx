@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { getCodeFaq, getCodeStatus, mintCodeSession } from "../api/endpoints";
@@ -38,12 +38,25 @@ export function CodePage({ hostname = window.location.hostname }: { hostname?: s
   const local = isLoopbackHost(hostname);
   const s = status.data;
   const src = s ? embedUrl(guardBase(s.url, hostname), link, s.default_folder) : null;
-  // one token per frame URL, spent by the guard on load: never refetched while the frame lives
-  const session = useQuery({
-    queryKey: ["code", "session", src], queryFn: mintCodeSession, enabled: !!(src && s?.running && local),
-    staleTime: Infinity, gcTime: 0, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false,
-  });
-  const frameSrc = src && session.data !== undefined ? (session.data ? loginUrl(src, session.data.token) : src) : null;
+  // the guard answers only these two names, and its SameSite=Strict cookie needs the same one as the page
+  const guardHost = ["localhost", "127.0.0.1"].includes(hostname.toLowerCase());
+  const showFrame = !!(local && guardHost && src && s?.running && !status.isError);
+  // One token per iframe lifetime, spent by the guard on load. Kept out of the query cache: a feed
+  // invalidation must not remint (and reload the editor), and a frame shown again after an error state
+  // must not reuse a spent token (second opinion 20260925T191655Z-01833b5d).
+  const [attempt, setAttempt] = useState(0);
+  const [session, setSession] = useState<{ for: string; url?: string; error?: unknown } | null>(null);
+  useEffect(() => {
+    if (!showFrame || !src) { setSession(null); return; }
+    let live = true;
+    setSession({ for: src });
+    mintCodeSession().then(
+      (m) => { if (live) setSession({ for: src, url: m ? loginUrl(src, m.token) : src }); },
+      (e: unknown) => { if (live) setSession({ for: src, error: e }); },
+    );
+    return () => { live = false; };
+  }, [showFrame, src, attempt]);
+  const frameSrc = session?.for === src ? session.url ?? null : null;
   const openNewWindow = (e: React.MouseEvent<HTMLAnchorElement>): void => {
     if (!src) return;
     e.preventDefault();
@@ -60,6 +73,12 @@ export function CodePage({ hostname = window.location.hostname }: { hostname?: s
     body = (
       <State testid="code-host-only" title="Code runs on the board host only">
         <p>The editor listens on the board host's loopback address, so it opens only in a browser on that machine. Nothing is exposed to this one.</p>
+      </State>
+    );
+  } else if (!guardHost) {
+    body = (
+      <State testid="code-host-name" title="Open the board as 127.0.0.1 or localhost">
+        <p>The editor signs in with a cookie that only travels between pages under the same name. Open the board at <code>http://127.0.0.1{window.location.port ? `:${window.location.port}` : ""}/ui/code</code> or at localhost.</p>
       </State>
     );
   } else if (status.isPending) {
@@ -81,12 +100,12 @@ export function CodePage({ hostname = window.location.hostname }: { hostname?: s
         </button>
       </State>
     );
-  } else if (session.isError) {
+  } else if (session?.error !== undefined) {
     body = (
       <State testid="code-no-session" title="The board did not open a code session">
         <p>{session.error instanceof Error ? session.error.message : "POST /v1/code/session failed."}</p>
         <p>The editor opens only for the board's owner, signed in on the board host.</p>
-        <button type="button" className={styles.retry} onClick={() => void session.refetch()} {...copyProps("code", "retry")}>Retry</button>
+        <button type="button" className={styles.retry} onClick={() => setAttempt((n) => n + 1)} {...copyProps("code", "retry")}>Retry</button>
       </State>
     );
   } else if (!frameSrc) {
@@ -118,7 +137,7 @@ export function CodePage({ hostname = window.location.hostname }: { hostname?: s
         <Link to="/code/faq" target="_blank" rel="noopener" className={styles.action} data-testid="code-faq" {...copyProps("code", "faq")}>
           <Icon name="help" size={16} /> FAQ
         </Link>
-        {src && s?.running && local ? (
+        {src && s?.running && local && guardHost ? (
           <a href={src} target="_blank" rel="noopener noreferrer" onClick={openNewWindow} className={styles.action} data-testid="code-newwindow" {...copyProps("code", "new-window")}>
             <Icon name="external" size={16} /> Open in new window
           </a>

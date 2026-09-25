@@ -356,19 +356,15 @@ class Guard:
                         raise Refused(400, "Bad Request", "an upgrade is only relayed as a connection's first request")
                 except Refused as r:
                     # a browser never changes Host on a pooled connection; anything that does is
-                    # cut off: the refused request is never relayed and the connection closes. A
-                    # missing guard cookie is answered (a browser does not pipeline, so the previous
-                    # response is complete), then the connection closes
+                    # cut off: the refused request is never relayed and the connection closes
+                    # without an answer (an upstream response may still be streaming, and a local
+                    # answer would land inside its body; second opinion 20260925T191655Z-01833b5d)
                     _log(f"refused {r.status} mid-connection: {r.detail}")
-                    if r.status == 401:
-                        cwriter.write(refusal(r))
-                        await cwriter.drain()
                     return
                 if facts["login"] is not None:
-                    # the iframe's login navigation may reuse a pooled connection: answered here, the
-                    # previous response being complete (no pipelining), then the connection closes
-                    cwriter.write(self.login(facts["login"]))
-                    await cwriter.drain()
+                    # the same for a login on a pooled connection: closed unanswered and the token
+                    # NOT spent, so the browser's retry on a fresh connection signs in
+                    _log("login mid-connection: closed for a fresh connection")
                     return
             await asyncio.wait(tasks)
         except Refused as r:

@@ -655,7 +655,10 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     # epic-91fcd3b370 S3: where code-server is (port from EDP_CODE_PORT) and whether it is up; the FAQ
     from .api_code import code_router
     from .views import render_markdown
-    app.include_router(code_router(actor, render_markdown))
+    # s-17c13096e5: the guard session is minted only for a human whose token was checked (a minted
+    # secret in tokens.json that actor() compared), never on a trusted-mode header alone
+    app.include_router(code_router(actor, render_markdown,
+                                   credentialed=lambda p: p.type == "human" and p.handle.lstrip("@") in _tokens()[0]))
 
     # identity -----------------------------------------------------------------
     @app.get("/v1/whoami")
