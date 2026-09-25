@@ -33,5 +33,55 @@ npm run package     # tsc + esbuild -> dist/extension.js -> edp-code.vsix (here,
 extensions dir on every start; restarting the service (`.\edp.ps1 restart code`, an owner action) or
 "Developer: Reload Window" after it picks up a new build. Bump `version` in package.json with each rebuild.
 
+## Install on a teammate machine (desktop VS Code)
+
+For a teammate who works in their own desktop VS Code on their own clone, not in this host's Code tab
+(code-server :9410 stays loopback-only). Board side (tailnet access, participant, token) is the owner's
+runbook: `guides/tailnet-public-mode.md` §5 "Add a teammate".
+
+1. **Get the vsix.** Download the `edp-code-<version>.vsix` artifact from the board (story
+   s-6a52d6545a, or the newest one on the epic), or build it from a clone with `npm ci; npm run package` here.
+2. **Install it.** VS Code 1.138 or newer (`engines.vscode`). Extensions view → `…` → **Install from VSIX…**,
+   or from a terminal: `code --install-extension edp-code-<version>.vsix --force`. It needs the built-in Git
+   extension (enabled by default). Remove it with `code --uninstall-extension edp.edp-code`.
+3. **Open your clone of the repo** as the workspace folder (File → Open Folder…, the folder that holds `.git`).
+   Code cards and change cards resolve by the repo-relative path inside *this* clone; the host's absolute
+   path in a card is never used. A card for a commit you have not pulled yet says
+   **"… is not in this clone; pull to see this change."** — pull, then click again.
+4. **Point it at the board.** *Available after the tailnet switch* (public mode is not live yet; the
+   owner turns it on): install Tailscale, sign in to the tailnet you were invited to, then in
+   **Settings → User** set **`edp.boardUrl`** to `https://msi.tail884b19.ts.net`. In `settings.json`:
+   ```json
+   "edp.boardUrl": "https://msi.tail884b19.ts.net"
+   ```
+   **The token rule:** the extension sends your participant id and token only to a loopback URL
+   (`http://127.0.0.1…`, `localhost`, `[::1]`) or an `https://` URL; any other URL — e.g.
+   `http://msi:9400` or `http://100.x.y.z:9400` — is refused before a request is made
+   (`unsafeBoardUrl` in `src/core/api.ts`). Redirects are not followed, so the token never leaves that origin.
+5. **Sign in.** Command palette → **EDP: Sign in to board** → your participant id (e.g. `ravi`), then the
+   token the owner sent you privately. Both are checked against the board and kept only in VS Code's
+   SecretStorage (never in settings or logs). **EDP: Sign out of board** removes them.
+6. **Open the chat.** **EDP: Open chat** (the chat view sits in the secondary side bar, right of the editor;
+   **View → Appearance → Secondary Side Bar** if it is hidden) → **EDP: Chat: open a ticket or epic thread…**.
+
+Differences from the host's Code tab: the `⎇ … seats live` badge and the guarded git commands name
+the fleet's shared tree (`edp.sharedTreePaths`), which is not on your machine, so the badge stays hidden
+unless you list your clone there; the "Uncommitted changes" card shows *your* clone's uncommitted edits.
+
+## Install on the host's Code tab (:9410)
+
+`scripts\start-code.ps1` reinstalls the newest vsix here on every service start. To replace the
+installed build in place without restarting code-server (then **Developer: Reload Window** in the tab),
+from `v8\`:
+
+```powershell
+# the service's own dirs (start-code.ps1: $serverDir, $node, $userDir, $extDir); never the default code-server dirs
+$srv = ".tools\code-server\4.138.0\code-server-4.138.0-windows-amd64"   # vscode-ext\code-server.lock.json
+$env:EXTENSIONS_GALLERY = "{}"                                           # no gallery fetches on a CLI install
+& "$srv\lib\node.exe" $srv --user-data-dir .data\code\user --extensions-dir .data\code\extensions --install-extension vscode-ext\edp-code\edp-code.vsix --force
+& "$srv\lib\node.exe" $srv --user-data-dir .data\code\user --extensions-dir .data\code\extensions --list-extensions --show-versions   # edp.edp-code@<version>
+# uninstall: & "$srv\lib\node.exe" $srv --user-data-dir .data\code\user --extensions-dir .data\code\extensions --uninstall-extension edp.edp-code
+```
+
 Layout: `src/core` is pure (no `vscode` import) and holds all anchor/API/seat/git logic; `src/vscode` adapts
 editor objects. The extension runs in the Node extension host (`extensionKind: ["workspace"]`).

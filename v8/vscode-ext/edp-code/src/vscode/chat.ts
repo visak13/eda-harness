@@ -9,7 +9,7 @@ import { BoardError, type Board, type Ticket } from '../core/api';
 import type { ChatState, FeedStatus, HostToView, StoryRow, TicketRef, ViewToHost } from '../core/chatProtocol';
 import type { CommitCard, UncommittedCard } from '../core/chatProtocol';
 import { chipForSend, chipView, newChip, type Chip } from '../core/chip';
-import { codeTarget } from '../core/codeTarget';
+import { COMMIT, codeTarget, pullText, safeRelPath } from '../core/codeTarget';
 import { FeedClient, type FeedEvent } from '../core/feed';
 import { epicArchitect, personRows, type Reachable } from '../core/people';
 import { render } from '../core/render';
@@ -417,20 +417,27 @@ export class ChatController implements vscode.Disposable, TagTarget {
     const api = await gitApi();
     const roots = api?.repositories.map(r => r.rootUri.fsPath) ?? []; // repo-relative paths resolve against git roots only
     const exists = new Map<string, boolean>();
+    const has = new Map<string, boolean>();
+    const rel = safeRelPath(cc.path);
+    const sha = cc.commit && COMMIT.test(cc.commit) ? cc.commit : undefined;
     await Promise.all(roots.map(async r => {
-      const rel = cc.path;
+      if (sha) has.set(r, await this.changes.hasCommit(r, sha));
+      if (!rel) return;
       try { await vscode.workspace.fs.stat(vscode.Uri.joinPath(vscode.Uri.file(r), ...rel.split('/'))); exists.set(r, true); }
       catch { exists.set(r, false); }
     }));
-    const t = codeTarget(cc, roots, r => exists.get(r) === true);
+    const t = codeTarget(cc, roots, r => exists.get(r) === true, r => has.get(r) === true);
     if ('error' in t) { void vscode.window.showWarningMessage(`EDP: ${t.error}`); return; }
+    // the anchored commit is in no local repo (a teammate's clone behind the host): not an error (C6)
+    if ('pull' in t) { void vscode.window.showWarningMessage(`EDP: ${t.path} @ ${pullText(t.pull)}`); return; }
+    if (t.missingCommit && t.commit) void vscode.window.showWarningMessage(`EDP: anchored at ${pullText(t.commit)} This is the clone's own copy; the lines may differ.`);
     const uri = vscode.Uri.joinPath(vscode.Uri.file(t.root), ...t.path.split('/'));
     const doc = await vscode.workspace.openTextDocument(uri);
     const last = Math.min(t.line_end, doc.lineCount) - 1;
     const first = Math.min(t.line_start, doc.lineCount) - 1;
     const range = new vscode.Range(first, 0, last, doc.lineAt(last).text.length);
     await vscode.window.showTextDocument(doc, { selection: range, preview: true, viewColumn: vscode.ViewColumn.Active });
-    if (t.commit) {
+    if (t.commit && !t.missingCommit) {
       const head = api?.getRepository(uri)?.state.HEAD?.commit;
       if (head && head !== t.commit) void vscode.window.setStatusBarMessage(`EDP: anchored at ${t.commit.slice(0, 7)}; HEAD is ${head.slice(0, 7)}, lines may have moved`, 8_000);
     }

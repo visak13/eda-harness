@@ -6,6 +6,7 @@ import { execFile } from 'node:child_process';
 import * as vscode from 'vscode';
 import type { UncommittedCard } from '../core/chatProtocol';
 import { commitWindow, index, logArgs, mergeNewer, parseLog, type Indexed } from '../core/commits';
+import { COMMIT, pullText } from '../core/codeTarget';
 import { cardTitle, diffArgs, fileTitle, sides, workSides } from '../core/diffSides';
 import { sameRows, uncommittedCard, workFiles, type RawChange, type WorkFile } from '../core/uncommitted';
 import { sharedTreePaths } from './badge';
@@ -214,14 +215,20 @@ export class Changes implements vscode.Disposable {
     return (this.empty ??= (await run(this.exe, this.repo!.rootUri.fsPath, ['hash-object', '-t', 'tree', '--stdin'], '')).trim());
   }
 
+  /** The commit object is in the repo at `root` (a teammate's clone may not have pulled it yet).
+   *  Only a full COMMIT-shaped sha reaches git; anything else is "absent". */
+  async hasCommit(root: string, sha: string): Promise<boolean> {
+    if (!COMMIT.test(sha)) return false;
+    return run(this.exe, root, ['cat-file', '-e', `${sha}^{commit}`]).then(() => true, () => false);
+  }
+
   /** A file row (path) opens vscode.diff; the card opens the multi-file diff. Only shas and paths in
    *  the host's own index are opened (the webview can name nothing else). */
   async openDiff(sha: string, path?: string): Promise<void> {
     await this.reading;
     const c = this.bySha.get(sha);
     if (!c || !this.repo || !this.api) { void vscode.window.showWarningMessage('EDP: that commit is not in this window\'s history (pull to see this change).'); return; }
-    const present = await run(this.exe, this.repo.rootUri.fsPath, ['cat-file', '-e', `${sha}^{commit}`]).then(() => true, () => false);
-    if (!present) { void vscode.window.showWarningMessage(`EDP: ${sha.slice(0, 7)} is not in this clone; pull to see this change.`); return; }
+    if (!(await this.hasCommit(this.repo.rootUri.fsPath, sha))) { void vscode.window.showWarningMessage(`EDP: ${pullText(sha)}`); return; }
     const empty = await this.emptyTree();
     if (path !== undefined) {
       const f = c.files.find(x => x.path === path);
