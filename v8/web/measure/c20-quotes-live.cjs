@@ -62,7 +62,7 @@ const selectWords = (loc, n) => loc.evaluate((el, n) => {
   const shot = (n) => page.screenshot({ path: path.join(OUT, `${n}.png`) });
   const text = `C20 live check (${which}): three quotes in one message, sent from VS Code through the :9410 guard`;
   try {
-    await page.goto(`${BOARD}/ui/code?as=${encodeURIComponent(SEAT)}&token=${encodeURIComponent(TOKEN)}`);
+    await page.goto(`${BOARD}/ui/code?folder=${encodeURIComponent("C:/Projects/Learning/eda-base3/v8")}&as=${encodeURIComponent(SEAT)}&token=${encodeURIComponent(TOKEN)}`);
     const frameEl = page.locator("iframe").first();
     await frameEl.waitFor({ timeout: 30000 });
     const f = page.frameLocator("iframe").first();
