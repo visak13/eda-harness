@@ -43,7 +43,9 @@ export function codeTarget(a: CodeRef, roots: string[], exists: (root: string, r
   if (commit && hasCommit && COMMIT.test(commit)) {
     const both = withFile.find(r => hasCommit(r, commit));
     if (both) return at(both);
-    if (!ordered.some(r => hasCommit(r, commit))) return withFile.length ? at(withFile[0], true) : { pull: commit, path: rel };
+    // the root we open lacks the commit even when another open repo has it: flag it
+    if (withFile.length) return at(withFile[0], true);
+    if (!ordered.some(r => hasCommit(r, commit))) return { pull: commit, path: rel };
   }
   if (!withFile.length) return { error: `${rel} is not in any open repo${roots.length ? '' : ' (no git repo is open)'}` };
   return at(withFile[0]);

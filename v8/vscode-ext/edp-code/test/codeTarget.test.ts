@@ -58,6 +58,12 @@ describe('codeTarget on a second clone', () => {
     expect(codeTarget(b, [clone], () => true, () => false)).toMatchObject({ root: clone, missingCommit: true });
   });
 
+  it('flags missingCommit when the root with the file lacks the commit that another open repo has', () => {
+    const other = 'D:\\work\\other';
+    const t = codeTarget(b, [clone, other], (r) => r === clone, (r) => r === other);
+    expect(t).toMatchObject({ root: clone, missingCommit: true });
+  });
+
   it('keeps the file-only rule when the commit is elsewhere locally but the file moved away', () => {
     expect(codeTarget(b, [clone], () => false, () => true)).toEqual({ error: 'v8/src/edp8/board.py is not in any open repo' });
   });
