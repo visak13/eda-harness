@@ -81,7 +81,10 @@ def test_start_flags_bind_loopback_and_disable_update_telemetry_proxy():
     for flag in ("--auth\", \"none", "--disable-telemetry", "--disable-update-check", "--disable-proxy",
                  "--config", "--user-data-dir", "--extensions-dir"):
         assert flag in src, flag
-    assert '"--bind-addr", "${BINDHOST}:$PORT"' in src and '$BINDHOST = "127.0.0.1"' in src
+    assert '$BINDHOST = "127.0.0.1"' in src
+    # s-03c7e9168b: code-server is on a per-start named pipe, never a TCP port; the guard holds the port
+    assert '"--socket", $PIPE' in src and '"--bind-addr"' not in src
+    assert '$PIPE = "\\\\.\\pipe\\edp-code-$PORT-"' in src and '"edp8.code_guard", "--port", "$PORT"' in src
     # the env strip is by prefix (dec-ea925a2d30), scoped to the launch and the CLI installs
     assert "'^EDP8?_'" in src and "WithoutFleetEnv {" in src
 
@@ -167,6 +170,17 @@ def test_a_spare_port_instance_starts_healthy_and_stops_only_itself(tmp_path):
         state = json.loads((tmp_path / "run" / "code.json").read_text(encoding="utf-8"))
         assert state["service"] == "code" and state["port"] == port and state["version"] == LOCK["version"]
         assert state["sha256"] == LOCK["sha256"] and state["pid"] and state["started_at"]
+        # s-03c7e9168b: the guard holds the port and refuses a rebinding Host; code-server has no TCP port
+        assert state["guard_pid"] and state["socket"].startswith(f"\\\\.\\pipe\\edp-code-{port}-")
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/", headers={"Host": f"evil.invalid:{port}"})
+        with pytest.raises(urllib.error.HTTPError) as refused:
+            urllib.request.urlopen(req, timeout=5)
+        assert refused.value.code == 421
+        listeners = subprocess.run([PS, "-NoProfile", "-Command",
+                                    f"$ids = @({state['pid']}) + @(Get-CimInstance Win32_Process -Filter 'ParentProcessId={state['pid']}' | ForEach-Object {{ [int]$_.ProcessId }}); "
+                                    "Get-NetTCPConnection -State Listen | Where-Object { $ids -contains [int]$_.OwningProcess } | Measure-Object | ForEach-Object Count"],
+                                   capture_output=True, text=True, timeout=60).stdout.strip()
+        assert listeners == "0", listeners
         cfg = (tmp_path / "data" / "config.yaml").read_text(encoding="utf-8")
         assert f"bind-addr: 127.0.0.1:{port}" in cfg and "auth: none" in cfg and "password" not in cfg
         settings = json.loads((tmp_path / "data" / "user" / "User" / "settings.json").read_text(encoding="utf-8"))
