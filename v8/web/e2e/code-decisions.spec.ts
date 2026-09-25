@@ -195,12 +195,19 @@ test("as a seat of another epic: the tab says it cannot read the list, and the p
   await signIn(stranger, STRANGER_TOKEN);
   await openThread("Story Rules");
   const c = chat();
+  // C26 rule 1: a composer draft typed before the 403 stays, and the feed stays live
+  await expect(c.locator("#feed-status")).toHaveText("live", { timeout: 20_000 });
+  await tab("chat");
+  await c.locator("#composer").fill("a draft typed before the Decisions tab");
   await tab("decisions");
   await expect(c.locator("#decisions-error")).toContainText("You cannot read this epic's decisions", { timeout: 20_000 });
   await expect(c.locator("#decisions-error")).toContainText("is not a participant of");
   await expect(c.locator("#panel-decisions .de-row")).toHaveCount(0);
   await tab("chat");
   await expect(c.locator(".msg").first()).toBeVisible(); // still reading the thread: a 403 on the list is not a sign-out
+  await expect(c.locator("#composer")).toHaveValue("a draft typed before the Decisions tab");
+  await expect(c.locator("#feed-status")).toHaveText("live");
+  await expect(c.locator("#notice")).toBeHidden();
   await page.screenshot({ path: shot("decisions-stranger-403.png") });
 });
 
