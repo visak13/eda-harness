@@ -96,6 +96,21 @@ export interface MessageView {
   artifacts?: string[];
   /** Attachment cards resolved by the board (absent on an older board). */
   attachments?: MessageAttachment[];
+  /** A code anchor tagged from the Code tab (epic-91fcd3b370 S4; null/absent otherwise). */
+  code_context?: CodeContext | null;
+}
+
+/** A message's code anchor (board `CodeContext`): the lines someone selected in the Code tab. */
+export interface CodeContext {
+  repo_root: string;
+  path: string;
+  line_start: number;
+  line_end: number;
+  /** 40-hex HEAD sha, or null when the folder is not a git repo. */
+  commit: string | null;
+  dirty: boolean;
+  snippet: string;
+  snippet_sha: string;
 }
 
 /** GET/PUT /v1/me/settings (s-7f663c6322): a person's profile, notification and Slack settings.

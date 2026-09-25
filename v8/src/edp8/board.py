@@ -35,6 +35,7 @@ from .schemas import (
     Claim,
     ClaimBasis,
     ClaimStatus,
+    CodeContext,
     Criterion,
     Decision,
     DecisionStatus,
@@ -62,6 +63,7 @@ from .schemas import (
     TicketStatus,
     Verdict,
     WorkType,
+    code_row,
     normalize_tags,
     now,
 )
@@ -437,7 +439,8 @@ class Board:
             rows = self.store.query_seq("message", {"ticket_id": t.id}, limit=100000)
             # #37(a) (Astra, 2026-09-10): rows[-0:] is the WHOLE thread — 0 means none.
             tail = rows[-thread_limit:] if thread_limit > 0 else []
-            out["thread"] = [{**m.model_dump(mode="json"), "seq": seq} for seq, m in tail]
+            # S4: a code anchor rides as `code_anchor` (snippet capped) so the snapshot stays bounded
+            out["thread"] = [{**m.model_dump(mode="json"), **code_row(m), "seq": seq} for seq, m in tail]
             out["thread_seq"] = rows[-1][0] if rows else 0
             out["thread_total"] = len(rows)
         if "links" in want:
@@ -446,7 +449,7 @@ class Board:
 
     def message_read(self, id_: str) -> dict[str, Any]:
         m = self._get("message", id_, "message")
-        row = m.model_dump(mode="json")
+        row = {**m.model_dump(mode="json"), **code_row(m, None)}  # S4: the whole snippet, rendered
         row["seq"] = self.store.seq_of("message", m.id)
         row["replies"] = [r.model_dump(mode="json") for r in self.store.query("message", {"reply_to": m.id})]
         if m.reply_to:
@@ -1524,14 +1527,15 @@ class Board:
         return {"to": resolved, "wakes": wakes, "plan": wakes, "note": note}
 
     def message_send(self, actor: Participant, *, ticket_id: str, to: str | None, kind: MessageKind,
-                     text: str, reply_to: str | None = None, artifacts: list[str] | None = None) -> Message:
+                     text: str, reply_to: str | None = None, artifacts: list[str] | None = None,
+                     code_context: CodeContext | None = None) -> Message:
         t = self.ticket(ticket_id)
         asked = to
         to, note = self.resolve_recipient(to, t)
         if reply_to:
             self._get("message", reply_to, "message")
         m = Message(id=new_id("m"), ticket_id=ticket_id, to=to, kind=kind, text=text, reply_to=reply_to,
-                    created_by=actor.id, artifacts=list(artifacts or []))
+                    created_by=actor.id, artifacts=list(artifacts or []), code_context=code_context)
         self.store.put("message", m)
         self._index("message", m.id, text)
         mentioned = self.mentions(text, exclude={actor.id, to} if to else {actor.id})

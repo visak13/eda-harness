@@ -14,6 +14,7 @@ import secrets
 import time
 
 from .board import BoardError
+from .schemas import code_row
 
 MAX_AGE = 86400
 MAX_SCAN = 500
@@ -192,7 +193,8 @@ class ContextReader:
             row.update(object_type='message', object_id=message.id,
                        read_ref={'tool': 'message_read', 'id': message.id},
                        actor=message.created_by, recipient=message.to,
-                       text=message.text[:TEXT_HEAD], truncated=len(message.text) > TEXT_HEAD)
+                       text=message.text[:TEXT_HEAD], truncated=len(message.text) > TEXT_HEAD,
+                       **code_row(message))  # S4: the anchor, snippet capped
             return row
         for typ, tool, arg in [('ticket', 'ticket_read', 'ticket_id'), ('doc', 'doc_read', 'id'),
                                ('criterion', 'criterion_query', 'ticket_id'), ('artifact', 'artifact_read', 'id')]:

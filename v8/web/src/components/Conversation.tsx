@@ -10,6 +10,7 @@ import { pendingWork } from "./PendingNavigation";
 import { useScrollToHash } from "./useScrollToHash";
 import { useViewerFlag } from "./viewerPrefs";
 import { MessageMarkdown } from "./Markdown";
+import { CodeCard } from "./CodeCard";
 import styles from "./Conversation.module.css";
 
 // The conversation canvas per revision3-clean-epic.png: "Conversation · N messages · Today" and a
@@ -137,6 +138,7 @@ export function Conversation({ ticketId, history, order, onToggleOrder, onReply,
                   {m.html !== undefined
                     ? <MessageMarkdown className={styles.md} html={m.html} strip={m.attachments?.map((a) => a.id)} />
                     : <MessageText className={styles.text} text={stripTokens(m.text, m.attachments)} />}
+                  {m.code_context ? <CodeCard c={m.code_context} /> : null}
                   {m.attachments?.map((a) => <AttachmentCard key={a.id} a={a} />)}
                 </div>
               </li>

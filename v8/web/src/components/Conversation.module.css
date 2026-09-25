@@ -55,6 +55,15 @@
 .historyButton:disabled { opacity: 0.6; cursor: default; }
 .historyButton:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
 .historyError { margin: 0; font-size: 13px; color: var(--accentink); }
+/* epic-91fcd3b370 S4: the code card under a message tagged from the Code tab */
+.codeCard { margin: 10px 0 0; border: 1px solid var(--strongline); border-radius: 8px; background: var(--panel); min-width: 0; overflow: hidden; }
+.codeHead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 10px; font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--line); }
+.codePath { color: var(--ink); font: 600 13px Consolas, "SF Mono", ui-monospace, monospace; overflow-wrap: anywhere; min-width: 0; }
+.codeSha { font: 12px Consolas, "SF Mono", ui-monospace, monospace; }
+.codeDirty { font-size: 11px; font-weight: 600; padding: 0 5px; border: 1px solid var(--accentink); color: var(--accentink); border-radius: 4px; }
+.codeOpen { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; color: var(--accentink); min-height: 30px; }
+.codeOpen:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
+.codeSnippet { margin: 0; padding: 8px 10px; max-height: 320px; overflow: auto; font: 13px/1.5 Consolas, "SF Mono", ui-monospace, monospace; color: var(--ink); background: var(--bg); white-space: pre; tab-size: 4; }
 @media (max-width: 600px) { .messages { max-height: none; } .thumb { width: 100%; } }
 /* S17 c-7a3c3ec439: Word-style message-box collapse. Expanded, the toggle is a small tab centred on
    the composer's top edge (no extra row); collapsed, a one-line "Write a message…" bar replaces it. */

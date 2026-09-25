@@ -226,10 +226,13 @@ class BoardClient:
 
     # ------------------------------------------------------------------ messages / gates
     def message_send(self, ticket_id: str, kind: str, text: str, to: str | None = None,
-                     reply_to: str | None = None, artifacts: list[str] | None = None) -> dict[str, Any]:
-        return self._request("POST", "/v1/messages",
-                             json={"ticket_id": ticket_id, "to": to, "kind": kind, "text": text,
-                                   "reply_to": reply_to, "artifacts": artifacts or []})
+                     reply_to: str | None = None, artifacts: list[str] | None = None,
+                     code_context: dict[str, Any] | None = None) -> dict[str, Any]:
+        body = {"ticket_id": ticket_id, "to": to, "kind": kind, "text": text,
+                "reply_to": reply_to, "artifacts": artifacts or []}
+        if code_context is not None:  # omitted when absent, so an older board never sees the key
+            body["code_context"] = code_context
+        return self._request("POST", "/v1/messages", json=body)
 
     def message_query(self, ticket_id: str | None = None, to: str | None = None, kind: str | None = None,
                       limit: int = 50, since_seq: int | None = None, created_by: str | None = None) -> dict[str, Any]:

@@ -1131,9 +1131,12 @@ class MessageSendArgs(BaseModel):
     ticket_id: str
     kind: MessageKind = Field()
     text: str
-    to: str | None = Field(default=None, description='participant id, @handle or role; omit for a note')
+    to: str | None = Field(default=None, description='id, @handle or role; omit = note')
     reply_to: str | None = Field(default=None, description='message id answered')
-    artifacts: list[str] | None = Field(default=None, description='your staged artifact ids to attach')
+    artifacts: list[str] | None = Field(default=None, description='staged artifact ids')
+    # S4 code anchor; the board validates it (a 400 names the field), rules in describe('message'). No
+    # description: the S20 surface budget (test_s20_token_cost) had 6 B of headroom on the architect.
+    code_context: dict | None = None
 
 
 class MessageQueryArgs(BaseModel):
@@ -1167,7 +1170,7 @@ class GatesArgs(BaseModel):
 
 def _message_send(a: MessageSendArgs) -> dict[str, Any]:
     return get_client().message_send(ticket_id=a.ticket_id, kind=a.kind, text=a.text, to=a.to,
-                                     reply_to=a.reply_to, artifacts=a.artifacts)
+                                     reply_to=a.reply_to, artifacts=a.artifacts, code_context=a.code_context)
 
 
 def _message_query(a: MessageQueryArgs) -> dict[str, Any]:

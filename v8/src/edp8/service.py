@@ -20,7 +20,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from . import pool_adapter, seat_choice
 from . import rsi  # S18: imported at boot so rsi.LOADED hashes the retrieval code this process runs
@@ -35,6 +35,7 @@ from .schemas import (
     Check,
     ClaimBasis,
     ClaimStatus,
+    CodeContext,
     DocStatus,
     DocType,
     EventKind,
@@ -156,6 +157,25 @@ class MessageIn(BaseModel):
     text: str
     reply_to: str | None = None
     artifacts: list[str] | None = None  # staged upload ids to finalise onto this ticket (§18.1)
+    # epic-91fcd3b370 S4: a code anchor. Taken raw and validated in the route, so a bad field is a
+    # 400 naming `code_context.<field>` (FastAPI's body validation would answer an unnamed 422).
+    code_context: dict[str, Any] | None = None
+
+
+def code_context_in(raw: dict[str, Any] | None) -> CodeContext | None:
+    """Validate a message's code anchor; a bad field is a BoardError (400) that names it."""
+    if raw is None:
+        return None
+    try:
+        return CodeContext.model_validate(raw)
+    except ValidationError as e:
+        bad = []
+        for err in e.errors():
+            loc = ".".join(str(x) for x in err.get("loc", ()))
+            where = f"code_context.{loc}" if loc else f"code_context.{err.get('type')}"
+            bad.append(f"{where}: {err.get('msg')}")
+        raise BoardError("schema", "; ".join(bad),
+                         "fix the named code_context field; see describe('message') for the anchor rules") from None
 
 
 class StatusIn(BaseModel):
@@ -945,11 +965,12 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         # artifact id raises here and nothing (message or artifact) becomes visible.
         was_staged = [x for x in (b.artifacts or [])
                       if getattr(board.store.get("artifact", x), "staged", False)]
+        code_context = code_context_in(b.code_context)  # before any artifact is finalised: a 400 changes nothing
         if b.artifacts:
             board.artifact_finalise(a, artifact_ids=b.artifacts, ticket_id=b.ticket_id)
         try:
             m = board.message_send(a, ticket_id=b.ticket_id, to=b.to, kind=b.kind, text=b.text, reply_to=b.reply_to,
-                                   artifacts=b.artifacts)
+                                   artifacts=b.artifacts, code_context=code_context)
         except Exception:
             if was_staged:  # all-or-nothing: the message failed, so nothing it carried becomes visible
                 board.artifact_unfinalise(artifact_ids=was_staged, ticket_id=b.ticket_id)

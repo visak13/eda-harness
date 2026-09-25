@@ -718,7 +718,9 @@ def _msg(m: Any) -> dict[str, Any]:
     return {"id": m.id, "by": m.created_by, "to": m.to, "kind": m.kind.value, "text": m.text,
             "html": render_message_markdown(m.text),
             "at": m.created_at.isoformat(), "reply_to": m.reply_to,
-            "artifacts": list(getattr(m, "artifacts", None) or [])}
+            "artifacts": list(getattr(m, "artifacts", None) or []),
+            # S4: the code anchor for the ticket page's code card (the SPA renders the snippet as text)
+            "code_context": m.code_context.model_dump(mode="json") if getattr(m, "code_context", None) else None}
 
 
 def _attachments(board: Board, ids: list[str]) -> list[dict[str, Any]]:

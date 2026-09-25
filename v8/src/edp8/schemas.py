@@ -7,11 +7,15 @@ except these shapes (returned by `describe`).
 
 from __future__ import annotations
 
+import hashlib
+import re
 from datetime import UTC, datetime
 from enum import StrEnum
+from pathlib import PureWindowsPath
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic_core import PydanticCustomError
 
 # ----------------------------------------------------------------------------- enums
 
@@ -354,6 +358,95 @@ class DocumentContext(BaseModel):
     reviewed_version: int = Field(ge=1)
 
 
+SNIPPET_MAX_B = 4096  # CodeContext.snippet cap in UTF-8 bytes (design-449b628cdd §4)
+
+
+class CodeContext(BaseModel):
+    """A code anchor on a message (epic-91fcd3b370 S4): the lines a person selected in the Code
+    tab. The EDP extension produces it (strategyll-ab18531441); the board only validates it, so a
+    bad anchor is refused at the door instead of misleading an agent later."""
+    repo_root: str = Field(min_length=1, max_length=1024)  # absolute: the git root, else the open folder
+    path: str = Field(min_length=1, max_length=1024)       # relative to repo_root, forward slashes
+    line_start: int = Field(ge=1)                         # 1-based, inclusive
+    line_end: int = Field(ge=1)
+    commit: str | None = None                             # 40-hex HEAD sha; None = not a git repo
+    dirty: bool = False
+    snippet: str
+    snippet_sha: str                                      # sha256 hex of exactly `snippet`
+
+    @field_validator("repo_root")
+    @classmethod
+    def _absolute(cls, v: str) -> str:
+        if not (PureWindowsPath(v).is_absolute() or v.startswith("/")):
+            raise ValueError("must be an absolute path")
+        return v
+
+    @field_validator("path")
+    @classmethod
+    def _relative(cls, v: str) -> str:
+        if "\\" in v:
+            raise ValueError("must use forward slashes")
+        if v.startswith("/") or re.match(r"^[A-Za-z]:", v):
+            raise ValueError("must be relative to repo_root")
+        if any(seg in ("", "..") for seg in v.split("/")):
+            raise ValueError("must not contain '..' or empty segments")
+        return v
+
+    @field_validator("commit")
+    @classmethod
+    def _sha(cls, v: str | None) -> str | None:
+        if v is not None and not re.fullmatch(r"[0-9a-f]{40}", v):
+            raise ValueError("must be a 40-char lower-case hex sha, or null outside git")
+        return v
+
+    @field_validator("snippet")
+    @classmethod
+    def _cap(cls, v: str) -> str:
+        if len(v.encode("utf-8")) > SNIPPET_MAX_B:
+            raise ValueError(f"must be at most {SNIPPET_MAX_B} UTF-8 bytes")
+        return v
+
+    @model_validator(mode="after")
+    def _consistent(self) -> "CodeContext":
+        if self.line_end < self.line_start:
+            raise PydanticCustomError("line_order", "line_end must be >= line_start")
+        if self.snippet_sha != hashlib.sha256(self.snippet.encode("utf-8")).hexdigest():
+            raise PydanticCustomError("snippet_sha", "snippet_sha must be the sha256 hex of snippet")
+        return self
+
+    def at(self) -> str:
+        """`path:L10-20 @abc1234[dirty]` (or `@no-git`), the compact anchor agents read."""
+        at = f"@{self.commit[:7]}{'[dirty]' if self.dirty else ''}" if self.commit else "@no-git"
+        return f"{self.path}:L{self.line_start}-{self.line_end} {at}"
+
+    def anchor(self, snippet_cap: int | None = None) -> str:
+        """The anchor plus the snippet in a fence longer than any backtick run in it, so code that
+        contains ``` cannot break out. `snippet_cap` (bytes) clips on a code-point boundary for the
+        byte-bounded reads; message_read passes None and gets the whole snippet."""
+        snippet, clipped = self.snippet, ""
+        raw = snippet.encode("utf-8")
+        if snippet_cap is not None and len(raw) > snippet_cap:
+            snippet = raw[:max(0, snippet_cap)].decode("utf-8", "ignore")
+            clipped = f" (snippet clipped to {len(snippet.encode('utf-8'))} of {len(raw)} B; message_read for all)"
+        fence = "`" * max(3, *(len(r) + 1 for r in re.findall(r"`+", snippet)), 0)
+        return f"`{self.at()}`{clipped}\n{fence}\n{snippet}\n{fence}"
+
+
+ANCHOR_SNIPPET_CAP_B = 1024  # snippet bytes a byte-bounded read (context, context_delta) carries
+
+
+def code_row(m: Any, snippet_cap: int | None = ANCHOR_SNIPPET_CAP_B) -> dict[str, Any]:
+    """The agent-facing form of a message's code anchor: `code_anchor` (rendered, snippet clipped to
+    `snippet_cap`). A capped (byte-bounded) read also drops the raw snippet from `code_context`, since
+    the anchor already carries it; an uncapped read (message_read) keeps the record intact. Empty for
+    a message without one, so callers can always `**code_row(m)`."""
+    cc = getattr(m, "code_context", None)
+    if cc is None:
+        return {}
+    raw = cc.model_dump(mode="json", exclude={"snippet"} if snippet_cap is not None else None)
+    return {"code_context": raw, "code_anchor": cc.anchor(snippet_cap)}
+
+
 class Message(Obj):
     ticket_id: str
     to: str | None = None  # participant id | role | @handle | None (thread note)
@@ -361,6 +454,7 @@ class Message(Obj):
     text: str
     reply_to: str | None = None
     document_context: DocumentContext | None = None
+    code_context: CodeContext | None = None  # epic-91fcd3b370 S4: the code anchor a tag carries
     status: StatusValue | None = None  # set on kind=status messages written by record_status
     # finalised upload artifacts this message carries (R1): ids only, bytes stay behind the
     # authenticated /v1/artifacts/{id}/content route; older rows have none.
@@ -644,7 +738,10 @@ DESCRIBE: dict[str, str] = {
     "query(doc_type, scope, tag, status), update.",
     "link": "A typed edge: ticket/doc -> doc/artifact/ticket with a relation. CRUD: create, query, delete.",
     "message": "One unit of a ticket's thread addressed to a participant, role, @handle or nobody. "
-    "Kinds: question, answer, steer, status, finding, deviation, note. CRUD: create, read, query.",
+    "Kinds: question, answer, steer, status, finding, deviation, note. An optional code_context anchors code: "
+    "{repo_root (absolute), path (relative, forward slashes, no '..'), line_start<=line_end (1-based), commit "
+    "(40-hex, or null outside git), dirty, snippet (<=4096 UTF-8 bytes), snippet_sha (sha256 hex of snippet)}; "
+    "reads render it as `path:Lx-y @sha7[dirty]` plus the fenced snippet. CRUD: create, read, query.",
     "event": "Board-emitted audit + feed item (status_changed, gate_opened, ...). CRUD: query.",
     "artifact": "A produced thing by uri (never a machine path). CRUD: create, read, query.",
     "session": "A running/parked shell for a participant on a ticket (pool-owned). CRUD: read, query.",
