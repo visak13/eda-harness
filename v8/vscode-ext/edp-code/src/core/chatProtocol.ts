@@ -11,6 +11,8 @@ export type SendKind = (typeof SEND_KINDS)[number];
 export const TEXT_MAX = 32_768;
 export const TICKET_ID = /^(epic|s|t)-[0-9a-f]{10}$/;
 export const MESSAGE_ID = /^m-[0-9a-f]{10}$/;
+/** A code chip the host holds (C4): the view only ever sees this id and a display label. */
+export const CHIP_ID = /^k-[0-9a-f]{12}$/;
 
 export type CodeContext = {
   repo_root: string; path: string; line_start: number; line_end: number;
@@ -36,6 +38,18 @@ export type PersonRow = {
   detail: string;
 };
 
+/** The composer's code chip as the view shows it (C4 s-a34658f02f). Display only: the anchor itself
+ *  (repo_root, path, snippet_sha) stays in the host, and a send names the chip by `id`. */
+export type ChipView = {
+  id: string;
+  /** `path:Lx-y @sha7[dirty]`, the S5 rendered anchor line */
+  label: string;
+  /** the first lines of the snippet, for a glance; the full snippet is what gets sent */
+  preview: string;
+  lines: number;
+  truncated: boolean;
+};
+
 export type FeedStatus = 'connecting' | 'live' | 'reconnecting' | 'polling' | 'signed-out' | 'stopped';
 
 export type ChatState = {
@@ -50,6 +64,8 @@ export type ChatState = {
   people: PersonRow[];
   items: ChatMessage[];
   hasOlder: boolean;
+  /** the open thread's code chip, if a Tag selection put one there */
+  chip: ChipView | null;
   feed: FeedStatus;
   notice: string | null;
 };
@@ -62,6 +78,8 @@ export type HostToView =
   | { type: 'feed'; v: 1; status: FeedStatus }
   | { type: 'sent'; v: 1; ticketId: string; id: string }
   | { type: 'sendFailed'; v: 1; ticketId: string; text: string }
+  /** a Tag selection put a chip in `ticketId`'s composer (null: the chip is gone); `focus` moves focus to the composer */
+  | { type: 'insertCode'; v: 1; ticketId: string; chip: ChipView | null; focus: boolean }
   | { type: 'error'; v: 1; text: string };
 
 export type ViewToHost =
@@ -69,12 +87,14 @@ export type ViewToHost =
   | { v: 1; type: 'pickTicket'; id?: string }
   | { v: 1; type: 'loadOlder' }
   /** `ticketId` is the thread the user sees: the host refuses a send whose ticket is not the open one */
-  | { v: 1; type: 'send'; ticketId: string; text: string; kind: SendKind; to?: string; replyTo?: string }
+  | { v: 1; type: 'send'; ticketId: string; text: string; kind: SendKind; to?: string; replyTo?: string; chipId?: string }
+  /** the user removed the composer's code chip */
+  | { v: 1; type: 'dropCode'; ticketId: string; chipId: string }
   | { v: 1; type: 'openCode'; messageId: string }
   | { v: 1; type: 'openBoard'; ticketId: string; messageId?: string }
   | { v: 1; type: 'signIn' };
 
-const TYPES = new Set(['ready', 'pickTicket', 'loadOlder', 'send', 'openCode', 'openBoard', 'signIn']);
+const TYPES = new Set(['ready', 'pickTicket', 'loadOlder', 'send', 'dropCode', 'openCode', 'openBoard', 'signIn']);
 const HANDLE = /^[A-Za-z0-9][A-Za-z0-9_.\-]{0,127}$/;
 
 /** The inbound gate. `handles` are the ids/handles of the last `people` list sent to the view (a
@@ -109,7 +129,16 @@ export function parseInbound(raw: unknown, handles: ReadonlySet<string> = new Se
         if (!rt || !MESSAGE_ID.test(rt)) return null;
         out.replyTo = rt;
       }
+      if (r.chipId !== undefined) {
+        const c = str('chipId');
+        if (!c || !CHIP_ID.test(c)) return null;
+        out.chipId = c;
+      }
       return out;
+    }
+    case 'dropCode': {
+      const ticketId = str('ticketId'), chipId = str('chipId');
+      return ticketId && TICKET_ID.test(ticketId) && chipId && CHIP_ID.test(chipId) ? { v: 1, type: 'dropCode', ticketId, chipId } : null;
     }
     case 'openCode': {
       const id = str('messageId');

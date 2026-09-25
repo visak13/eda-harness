@@ -98,7 +98,13 @@ foot.append(hint, sendBtn);
 const sendErr = el('div', 'send-error');
 sendErr.id = 'send-error';
 sendErr.setAttribute('role', 'alert');
-composer.append(opts, peopleList, ta, acStatus, sendErr, foot);
+// the code chip a Tag selection puts here (C4): display only; the host holds the anchor
+const chipBox = el('div', 'chip');
+chipBox.id = 'code-chip';
+chipBox.setAttribute('role', 'group');
+chipBox.setAttribute('aria-label', 'Tagged lines, sent with this message');
+chipBox.hidden = true;
+composer.append(opts, peopleList, chipBox, ta, acStatus, sendErr, foot);
 
 app.append(header, crumbs, strip, notice, timeline, composer);
 
@@ -213,6 +219,36 @@ function renderTo() {
   toSel.value = [...toSel.options].some(o => o.value === cur) ? cur : '';
 }
 
+const PLACEHOLDER = ta.placeholder;
+function renderChip() {
+  const c = state?.ticket ? state.chip : null;
+  chipBox.replaceChildren();
+  chipBox.hidden = !c;
+  ta.placeholder = c ? 'Add a note about the tagged lines… @ to mention' : PLACEHOLDER;
+  if (!c) return;
+  const head = el('div', 'chip-head');
+  const label = el('code', 'chip-label', c.label);
+  label.id = 'code-chip-label';
+  const meta = el('span', 'chip-meta', `${c.lines} ${c.lines === 1 ? 'line' : 'lines'}${c.truncated ? ' · snippet truncated to 4096 B' : ''}`);
+  const x = el('button', 'chip-remove', '×');
+  x.type = 'button';
+  x.id = 'code-chip-remove';
+  x.title = 'Remove the tagged lines';
+  x.setAttribute('aria-label', `Remove the tagged lines ${c.label}`);
+  x.addEventListener('click', () => dropChip());
+  head.append(label, meta, x);
+  chipBox.append(head, el('pre', 'chip-preview', c.preview));
+}
+
+function dropChip() {
+  const s = state;
+  if (!s?.ticket || !s.chip) return;
+  post({ type: 'dropCode', ticketId: s.ticket.id, chipId: s.chip.id });
+  s.chip = null;
+  renderChip();
+  ta.focus();
+}
+
 function renderAll() {
   const s = state!;
   pickBtn.textContent = s.ticket ? `${s.ticket.kind === 'epic' ? 'Epic' : s.ticket.kind === 'task' ? 'Task' : 'Story'}: ${s.ticket.title}` : 'Pick a ticket or epic…';
@@ -237,6 +273,7 @@ function renderAll() {
   sendBtn.disabled = pendingTicket !== null;
   renderItems(s.items);
   composer.hidden = !s.ticket;
+  renderChip();
   ta.value = s.ticket ? local.drafts[s.ticket.id] ?? '' : '';
   kindSel.value = local.kind;
   timeline.setAttribute('aria-live', 'off'); // the initial state is not announced
@@ -318,18 +355,21 @@ ta.addEventListener('keydown', e => {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); acClose(); return; }
   }
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  // Backspace at the very start of the message removes the chip, like a token in a field
+  if (e.key === 'Backspace' && state?.chip && ta.selectionStart === 0 && ta.selectionEnd === 0) { e.preventDefault(); dropChip(); }
 });
 ta.addEventListener('keyup', e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) acUpdate(); });
 
 function send() {
   if (pendingTicket || !state?.ticket) return;
   const text = ta.value;
-  if (!text.trim()) return;
+  if (!text.trim()) { if (state.chip) sendErr.textContent = 'Add a note about the tagged lines.'; return; }
   if (text.length > TEXT_MAX) { sendErr.textContent = `Too long: ${text.length} of ${TEXT_MAX} characters.`; return; }
   pendingTicket = state.ticket.id;
   sendBtn.disabled = true;
   sendErr.textContent = '';
-  post({ type: 'send', ticketId: pendingTicket, text, kind: kindSel.value as SendKind, ...(toSel.value ? { to: toSel.value } : {}) });
+  post({ type: 'send', ticketId: pendingTicket, text, kind: kindSel.value as SendKind, ...(toSel.value ? { to: toSel.value } : {}),
+    ...(state.chip ? { chipId: state.chip.id } : {}) });
 }
 
 composer.addEventListener('submit', e => { e.preventDefault(); send(); });
@@ -405,6 +445,12 @@ window.addEventListener('message', (ev: MessageEvent) => {
       pendingTicket = null;
       sendBtn.disabled = false;
       if (state?.ticket?.id === m.ticketId) sendErr.textContent = m.text; // the draft stays in the composer
+      break;
+    case 'insertCode':
+      if (!state || state.ticket?.id !== m.ticketId) return; // the host re-sends it in the next state
+      state.chip = m.chip;
+      renderChip();
+      if (m.chip && m.focus) { ta.focus(); const c = ta.value.length; ta.setSelectionRange(c, c); }
       break;
     case 'error':
       olderBtn.disabled = false;

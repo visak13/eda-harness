@@ -17,8 +17,9 @@ export type Ticket = { id: string; kind: string; title: string; status: string; 
 export type MessageKind = 'question' | 'steer' | 'finding' | 'note';
 export type MessageIn = { ticket_id: string; to: string; kind: MessageKind; text: string; code_context: Anchor };
 export type Message = { id: string; ticket_id: string; to: string | null; kind: string; text: string };
-/** A chat send (C3): `to` empty = a thread note, mentions do the waking; no code_context yet (C4). */
-export type ChatSend = { ticket_id: string; to: string | null; kind: string; text: string; reply_to: string | null };
+/** A chat send (C3): `to` empty = a thread note, mentions do the waking; a composer code chip adds
+ *  `code_context` (C4), always the host's own anchor. */
+export type ChatSend = { ticket_id: string; to: string | null; kind: string; text: string; reply_to: string | null; code_context?: Anchor };
 
 export class BoardError extends Error {
   constructor(public code: string, msg: string, public status: number) { super(msg); }

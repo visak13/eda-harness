@@ -4,15 +4,19 @@
 // the open epic + its stories; raw events never reach the webview. Threads are never merged
 // (dec-8dfe3d97af): one ThreadStore per open ticket.
 import * as vscode from 'vscode';
+import type { Anchor } from '../core/anchor';
 import { BoardError, type Board, type Ticket } from '../core/api';
 import type { ChatState, FeedStatus, HostToView, StoryRow, TicketRef, ViewToHost } from '../core/chatProtocol';
+import { chipForSend, chipView, newChip, type Chip } from '../core/chip';
 import { codeTarget } from '../core/codeTarget';
 import { FeedClient, type FeedEvent } from '../core/feed';
 import { epicArchitect, personRows, type Reachable } from '../core/people';
+import { render } from '../core/render';
 import { fromMessageRow, fromThreadRow, ThreadStore } from '../core/thread';
 import { creds, signIn } from './auth';
 import { ChatViewProvider, CHAT_VIEW } from './chatView';
 import { gitApi } from './repo';
+import type { TagTarget } from './tag';
 
 const LAST_PICK = 'edp.chat.lastTicket';
 const LAST_SEEN = 'edp.chat.lastSeen'; // ticket id -> ISO time the thread was last open
@@ -20,7 +24,7 @@ const LAST_SEEN = 'edp.chat.lastSeen'; // ticket id -> ISO time the thread was l
 type Item = vscode.QuickPickItem & { id?: string };
 const ref = (t: Ticket): TicketRef => ({ id: t.id, kind: t.kind, title: t.title, status: t.status });
 
-export class ChatController implements vscode.Disposable {
+export class ChatController implements vscode.Disposable, TagTarget {
   readonly provider: ChatViewProvider;
   private feed?: FeedClient;
   private feedStatus: FeedStatus = 'connecting';
@@ -41,6 +45,8 @@ export class ChatController implements vscode.Disposable {
   private me: { id: string; handle: string } | null = null;
   private notice: string | null = null;
   private opening = 0;
+  /** per thread: the code chip a Tag selection put in its composer (C4); the anchor never leaves the host */
+  private chips = new Map<string, Chip>();
 
   constructor(private ctx: vscode.ExtensionContext, private board: () => Board, private boardUrl: () => string,
     private log: (line: string) => void) {
@@ -59,7 +65,7 @@ export class ChatController implements vscode.Disposable {
     return {
       type: 'state', v: 1, me: this.me, ticket: this.ticket, epic: this.epic, stories: this.stories,
       architect: epicArchitect(this.people, this.epic?.id ?? null), people: this.rows(),
-      items: this.store?.items ?? [], hasOlder: this.store?.before != null, feed: this.feedStatus, notice: this.notice,
+      items: this.store?.items ?? [], hasOlder: this.store?.before != null, chip: this.chipOf(this.ticket?.id), feed: this.feedStatus, notice: this.notice,
     };
   }
 
@@ -75,7 +81,11 @@ export class ChatController implements vscode.Disposable {
     switch (m.type) {
       case 'pickTicket': return m.id ? this.open(m.id) : this.pick();
       case 'loadOlder': return this.loadOlder();
-      case 'send': return this.send(m.ticketId, m.text, m.kind, m.to ?? null, m.replyTo ?? null);
+      case 'send': return this.send(m.ticketId, m.text, m.kind, m.to ?? null, m.replyTo ?? null, m.chipId);
+      case 'dropCode': {
+        if (this.chips.get(m.ticketId)?.id === m.chipId) this.chips.delete(m.ticketId);
+        return;
+      }
       case 'openCode': return this.openCode(m.messageId);
       case 'openBoard': {
         const base = this.boardUrl().replace(/\/+$/, '');
@@ -132,7 +142,7 @@ export class ChatController implements vscode.Disposable {
     this.people = [];
     if (!(await creds(this.ctx))) {
       ++this.opening;
-      this.store = undefined; this.ticket = null; this.epic = null; this.stories = []; this.unread.clear();
+      this.store = undefined; this.ticket = null; this.epic = null; this.stories = []; this.unread.clear(); this.chips.clear();
       this.feedStatus = 'signed-out';
       this.notice = 'Sign in to the board to read and send.';
       this.postState();
@@ -338,17 +348,29 @@ export class ChatController implements vscode.Disposable {
     } catch (e) { if (store === this.store) answer([]); this.fail(e, 'could not load older messages'); }
   }
 
-  private async send(ticketId: string, text: string, kind: string, to: string | null, replyTo: string | null): Promise<void> {
+  private async send(ticketId: string, text: string, kind: string, to: string | null, replyTo: string | null, chipId?: string): Promise<void> {
     const store = this.store;
     // the view names the thread it shows; a send for any other thread is refused, never re-targeted
     if (!store || store.ticketId !== ticketId) {
       this.post({ type: 'sendFailed', v: 1, ticketId, text: 'Not sent: that thread is no longer open.' });
       return;
     }
+    // a chip send carries the host's own anchor, and the S5 rendered anchor line in its text for agents
+    // that do not read code_context; a chip id the host does not hold is refused, never guessed
+    const c = chipForSend(this.chips.get(ticketId), chipId);
+    if ('error' in c) {
+      this.post({ type: 'sendFailed', v: 1, ticketId, text: c.error });
+      this.post({ type: 'insertCode', v: 1, ticketId, chip: this.chipOf(ticketId), focus: false });
+      return;
+    }
+    const chip = c.chip;
     try {
-      const m = await this.board().send({ ticket_id: store.ticketId, to, kind, text, reply_to: replyTo });
+      const m = await this.board().send({ ticket_id: store.ticketId, to, kind, reply_to: replyTo,
+        ...(chip ? { text: render(chip.anchor, text, chip.truncated), code_context: chip.anchor } : { text }) });
+      if (chip && this.chips.get(ticketId)?.id === chip.id) this.chips.delete(ticketId);
       const fresh = store.merge([fromMessageRow(m, 0)]);
       this.post({ type: 'sent', v: 1, ticketId, id: m.id });
+      if (chip) this.post({ type: 'insertCode', v: 1, ticketId, chip: this.chipOf(ticketId), focus: false });
       if (store === this.store && fresh.length) this.post({ type: 'append', v: 1, ticketId: store.ticketId, items: fresh });
       const un = m.unresolved_mentions ?? [];
       if (un.length) void vscode.window.showWarningMessage(`EDP: sent, but nobody is registered as ${un.map(h => '@' + h).join(', ')}`);
@@ -381,6 +403,28 @@ export class ChatController implements vscode.Disposable {
       const head = api?.getRepository(uri)?.state.HEAD?.commit;
       if (head && head !== t.commit) void vscode.window.setStatusBarMessage(`EDP: anchored at ${t.commit.slice(0, 7)}; HEAD is ${head.slice(0, 7)}, lines may have moved`, 8_000);
     }
+  }
+
+  // -- Tag selection (C4 s-a34658f02f) -------------------------------------------------------------
+  /** the view was resolved in this window and not disposed (a hidden view still counts) */
+  get chatResolved(): boolean { return this.provider.isOpen; }
+  get threadOpen(): boolean { return !!this.store; }
+
+  private chipOf(ticketId: string | undefined) {
+    const c = ticketId ? this.chips.get(ticketId) : undefined;
+    return c ? chipView(c) : null;
+  }
+
+  /** Reveal the view and put the chip in the open thread's composer (one chip per composer: a new tag
+   *  replaces it). With no thread open the picker comes first; a cancelled pick inserts nothing. */
+  async insertChip(anchor: Anchor, truncated: boolean, pickFirst: boolean): Promise<void> {
+    const chip = newChip(anchor, truncated);
+    await ChatViewProvider.reveal();
+    if (pickFirst || !this.store) await this.pick();
+    const ticketId = this.store?.ticketId;
+    if (!ticketId) return;
+    this.chips.set(ticketId, chip);
+    this.post({ type: 'insertCode', v: 1, ticketId, chip: chipView(chip), focus: true });
   }
 
   // -- picker --------------------------------------------------------------------------------------

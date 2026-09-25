@@ -1,10 +1,13 @@
 // EDP: Tag selection on board… (design §4 item 1; strategyll-ab18531441 §1, §3).
-// anchor (captured FIRST) -> person -> ticket -> note -> kind -> POST /v1/messages.
+// anchor (captured FIRST) -> route (C4, design-10b21760d9 §4.1):
+// - chat view resolved in this window -> reveal it, code chip in the open thread's composer;
+// - otherwise the S5 palette chain: person -> ticket -> note -> kind -> POST /v1/messages.
 import * as vscode from 'vscode';
-import { buildAnchor, type Sel } from '../core/anchor';
+import { buildAnchor, type Anchor, type Sel } from '../core/anchor';
 import type { Board, MessageKind } from '../core/api';
 import { render } from '../core/render';
 import { liveSeats, people, ticketChoices } from '../core/seats';
+import { tagRoute } from '../core/tagRoute';
 import { credsOrSignIn } from './auth';
 import { pick, separator } from './pickers';
 import { gitApi, headAndDirty } from './repo';
@@ -12,7 +15,24 @@ import { gitApi, headAndDirty } from './repo';
 type Item = vscode.QuickPickItem & { id?: string };
 const KINDS: MessageKind[] = ['question', 'steer', 'finding', 'note'];
 
-export async function tagSelection(ctx: vscode.ExtensionContext, board: () => Board, boardUrl: () => string): Promise<void> {
+/** The chat side of the route (ChatController): no view resolved in this window = the palette chain. */
+export interface TagTarget {
+  readonly chatResolved: boolean;
+  readonly threadOpen: boolean;
+  /** reveal the view and put the chip in the open thread's composer; `pickFirst` opens the thread picker first */
+  insertChip(anchor: Anchor, truncated: boolean, pickFirst: boolean): Promise<void>;
+}
+
+export async function tagSelection(ctx: vscode.ExtensionContext, board: () => Board, boardUrl: () => string, chat?: TagTarget): Promise<void> {
+  const captured = await captureAnchor();
+  if (!captured) return;
+  const route = tagRoute({ chatResolved: !!chat?.chatResolved, threadOpen: !!chat?.threadOpen });
+  if (chat && route !== 'palette') return chat.insertChip(captured.anchor, captured.truncated, route === 'pickThenChip');
+  return paletteChain(ctx, board, boardUrl, captured.anchor, captured.truncated);
+}
+
+/** The anchor, taken from the active editor before any picker or view takes focus. */
+async function captureAnchor(): Promise<{ anchor: Anchor; truncated: boolean } | undefined> {
   const editor = vscode.window.activeTextEditor;
   if (!editor) { void vscode.window.showInformationMessage('EDP: open a file and select lines to tag.'); return; }
   const doc = editor.document;
@@ -25,14 +45,15 @@ export async function tagSelection(ctx: vscode.ExtensionContext, board: () => Bo
   const git = await headAndDirty(await gitApi(), doc);
   const repoRoot = git.repoRoot ?? vscode.workspace.getWorkspaceFolder(doc.uri)?.uri.fsPath;
   if (!repoRoot) { void vscode.window.showWarningMessage('EDP: this file is outside every git repo and workspace folder; it cannot be tagged.'); return; }
-  let built: ReturnType<typeof buildAnchor>;
   try {
-    built = buildAnchor({ repoRoot, fsPath: doc.uri.fsPath, lines, sel: s, commit: git.commit, dirty: git.dirty });
+    return buildAnchor({ repoRoot, fsPath: doc.uri.fsPath, lines, sel: s, commit: git.commit, dirty: git.dirty });
   } catch (e) {
     void vscode.window.showWarningMessage(`EDP: ${(e as Error).message}`); return;
   }
-  const { anchor, truncated } = built;
+}
 
+/** The S5 palette chain, unchanged: person -> ticket -> note -> kind -> send. */
+async function paletteChain(ctx: vscode.ExtensionContext, board: () => Board, boardUrl: () => string, anchor: Anchor, truncated: boolean): Promise<void> {
   if (!(await credsOrSignIn(ctx, board))) return;
   const client = board();
 

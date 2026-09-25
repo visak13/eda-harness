@@ -27,7 +27,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
     cmd('edp.signOut', async () => { await signOut(ctx); badge.refresh(0); void chat.restart(); }),
     cmd('edp.chat.open', () => ChatViewProvider.reveal()),
     cmd('edp.chat.pick', async () => { await ChatViewProvider.reveal(); await chat.pick(); }),
-    cmd('edp.tagSelection', () => tagSelection(ctx, board, boardUrl)),
+    cmd('edp.tagSelection', () => tagSelection(ctx, board, boardUrl, chat)),
     cmd('edp.showSeats', () => showSeats(badge, boardUrl)),
     cmd('edp.checkout', () => guarded('checkout', ctx, board)),
     cmd('edp.merge', () => guarded('merge', ctx, board)),
