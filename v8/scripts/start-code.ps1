@@ -178,6 +178,24 @@ function WithoutFleetEnv([scriptblock]$block) {
 # the inner bind: the guard holds $PORT; the password comes by $HASHED_PASSWORD at launch, never from here
 WriteUtf8 $config ("# written by scripts\start-code.ps1 on every start; edits are overwritten`nbind-addr: ${BINDHOST}:$INNER`nauth: password`ncert: false`n")
 
+# -- default folder (t-6356c06c40): a plain /ui/code sends no ?folder=, so code-server reopens the last
+# folder/workspace it recorded in coder.json. With no such history the board's tree (v8) is seeded
+# there in the /c:/ form. Not a CLI positional: code-server path.resolve()s that into a `C:\...` redirect,
+# measured on 4.138 as a degraded workspace (title without its drive, every change listed by full path).
+$coderJson = Join-Path $userDir "coder.json"
+$coder = $null
+if (Test-Path $coderJson) { try { $coder = Get-Content $coderJson -Raw | ConvertFrom-Json } catch { $coder = $null } }
+if ((Test-Path $coderJson) -and -not $coder) {
+  Write-Host "default folder: coder.json unreadable; left as is"
+} elseif (-not ($coder -and $coder.query -and ($coder.query.folder -or $coder.query.workspace))) {
+  $defaultFolder = "/" + ($v8 -replace '\\', '/').TrimEnd("/")
+  if ($defaultFolder -match '^/([A-Za-z]):') { $defaultFolder = "/" + $Matches[1].ToLower() + $defaultFolder.Substring(2) }
+  if (-not $coder) { $coder = New-Object PSObject }
+  $coder | Add-Member -NotePropertyName query -NotePropertyValue ([pscustomobject]@{ folder = $defaultFolder }) -Force
+  WriteUtf8 $coderJson ($coder | ConvertTo-Json -Depth 10)
+  Write-Host "default folder: no last folder/workspace; seeded $defaultFolder"
+} else { Write-Host "default folder: code-server reopens its last folder/workspace" }
+
 # -- pinned extension list ------------------------------------------------------------------------
 $pins = @(Get-Content (Join-Path $v8 "vscode-ext\extensions.txt") | ForEach-Object { $_.Trim() } | Where-Object { $_ -and -not $_.StartsWith("#") })
 $extLock = (Get-Content (Join-Path $v8 "vscode-ext\extensions.lock.json") -Raw | ConvertFrom-Json).extensions
