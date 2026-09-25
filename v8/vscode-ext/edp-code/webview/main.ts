@@ -3,7 +3,7 @@
 // Everything that is not a message body is set with textContent. View-local UI (drafts, kind) lives in
 // setState; board data is always re-sent by the host on `ready`.
 import type { ChatMessage, ChatState, FeedStatus, HostToView, PersonRow, SendKind, StoryRow, ViewToHost } from '../src/core/chatProtocol';
-import { SEND_KINDS } from '../src/core/chatProtocol';
+import { SEND_KINDS, TEXT_MAX } from '../src/core/chatProtocol';
 import { activeMention } from '../src/core/mentions';
 import { accessibleName, filterPeople } from '../src/core/people';
 import { at } from '../src/core/render';
@@ -18,7 +18,8 @@ const local: Local = { v: 1, drafts: saved?.v === 1 && saved.drafts ? saved.draf
 const persist = () => vscode.setState(local);
 
 let state: ChatState | null = null;
-let sending = false;
+/** the thread a send is in flight for: its answer (sent / sendFailed) names the same ticket */
+let pendingTicket: string | null = null;
 type Intent = ViewToHost extends infer T ? (T extends unknown ? Omit<T, 'v'> : never) : never;
 const post = (m: Intent) => vscode.postMessage({ v: 1, ...m });
 
@@ -232,6 +233,8 @@ function renderAll() {
   renderStories();
   renderTo();
   olderBtn.hidden = !s.hasOlder;
+  olderBtn.disabled = false;
+  sendBtn.disabled = pendingTicket !== null;
   renderItems(s.items);
   composer.hidden = !s.ticket;
   ta.value = s.ticket ? local.drafts[s.ticket.id] ?? '' : '';
@@ -319,13 +322,14 @@ ta.addEventListener('keydown', e => {
 ta.addEventListener('keyup', e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) acUpdate(); });
 
 function send() {
-  if (sending || !state?.ticket) return;
+  if (pendingTicket || !state?.ticket) return;
   const text = ta.value;
   if (!text.trim()) return;
-  sending = true;
+  if (text.length > TEXT_MAX) { sendErr.textContent = `Too long: ${text.length} of ${TEXT_MAX} characters.`; return; }
+  pendingTicket = state.ticket.id;
   sendBtn.disabled = true;
   sendErr.textContent = '';
-  post({ type: 'send', text, kind: kindSel.value as SendKind, ...(toSel.value ? { to: toSel.value } : {}) });
+  post({ type: 'send', ticketId: pendingTicket, text, kind: kindSel.value as SendKind, ...(toSel.value ? { to: toSel.value } : {}) });
 }
 
 composer.addEventListener('submit', e => { e.preventDefault(); send(); });
@@ -339,9 +343,7 @@ window.addEventListener('message', (ev: MessageEvent) => {
   if (!m || typeof m !== 'object' || m.v !== 1) return;
   switch (m.type) {
     case 'state':
-      state = m;
-      sending = false;
-      sendBtn.disabled = false;
+      state = m; // a send in flight stays in flight: its answer still comes
       renderAll();
       break;
     case 'append': {
@@ -350,11 +352,19 @@ window.addEventListener('message', (ev: MessageEvent) => {
       const fresh = m.items.filter(i => !have.has(i.id));
       if (!fresh.length) return;
       const stick = nearBottom();
-      state.items.push(...fresh);
       timeline.setAttribute('aria-live', 'polite');
       list.querySelector('.empty')?.remove();
       const k = known();
-      for (const i of fresh) list.append(messageEl(i, k));
+      for (const i of fresh) {
+        // in time order: a late arrival goes before the first message that is newer than it
+        const t = Date.parse(i.created_at);
+        const idx = state.items.findIndex(x => Date.parse(x.created_at) > t);
+        const node = messageEl(i, k);
+        if (idx < 0) { state.items.push(i); list.append(node); continue; }
+        const next = list.querySelector(`.msg[data-id="${state.items[idx].id}"]`);
+        state.items.splice(idx, 0, i);
+        if (next) list.insertBefore(node, next); else list.append(node);
+      }
       if (stick) toBottom();
       break;
     }
@@ -383,17 +393,21 @@ window.addEventListener('message', (ev: MessageEvent) => {
       setFeed(m.status);
       break;
     case 'sent':
-      sending = false;
+      if (m.ticketId !== pendingTicket) return;
+      pendingTicket = null;
       sendBtn.disabled = false;
-      ta.value = '';
-      saveDraft();
+      delete local.drafts[m.ticketId];
+      persist();
+      if (state?.ticket?.id === m.ticketId) ta.value = '';
       break;
     case 'sendFailed':
-      sending = false;
+      if (pendingTicket && m.ticketId !== pendingTicket) return;
+      pendingTicket = null;
       sendBtn.disabled = false;
-      sendErr.textContent = m.text; // the draft stays in the composer
+      if (state?.ticket?.id === m.ticketId) sendErr.textContent = m.text; // the draft stays in the composer
       break;
     case 'error':
+      olderBtn.disabled = false;
       notice.hidden = false;
       notice.replaceChildren(el('span', 'err', m.text));
       break;

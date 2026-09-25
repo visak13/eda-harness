@@ -23,8 +23,8 @@ export function activate(ctx: vscode.ExtensionContext): void {
   const cmd = (id: string, fn: (...a: any[]) => unknown) => vscode.commands.registerCommand(id, fn);
 
   ctx.subscriptions.push(out, badge, ...chat.register(),
-    cmd('edp.signIn', async () => { if (await signIn(ctx, board)) { badge.refresh(0); if (chat.provider.isOpen) void chat.restart(); } }),
-    cmd('edp.signOut', async () => { await signOut(ctx); badge.refresh(0); if (chat.provider.isOpen) void chat.restart(); }),
+    cmd('edp.signIn', async () => { if (await signIn(ctx, board)) { badge.refresh(0); void chat.restart(); } }),
+    cmd('edp.signOut', async () => { await signOut(ctx); badge.refresh(0); void chat.restart(); }),
     cmd('edp.chat.open', () => ChatViewProvider.reveal()),
     cmd('edp.chat.pick', async () => { await ChatViewProvider.reveal(); await chat.pick(); }),
     cmd('edp.tagSelection', () => tagSelection(ctx, board, boardUrl)),

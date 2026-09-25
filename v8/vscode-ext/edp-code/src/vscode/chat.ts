@@ -26,6 +26,12 @@ export class ChatController implements vscode.Disposable {
   private feedStatus: FeedStatus = 'connecting';
   private ready?: Promise<void>;
   private readyResolve?: () => void;
+  private readyDone = false;
+  /** feed events are handled one at a time, in seq order (a slow message fetch never reorders appends) */
+  private chain: Promise<void> = Promise.resolve();
+  /** per story: the ids of messages not yet seen (the strip count is the set size; a message counts once) */
+  private unread = new Map<string, Set<string>>();
+  private booted = false;
   private store?: ThreadStore;
   private ticket: TicketRef | null = null;
   private epic: TicketRef | null = null;
@@ -69,7 +75,7 @@ export class ChatController implements vscode.Disposable {
     switch (m.type) {
       case 'pickTicket': return m.id ? this.open(m.id) : this.pick();
       case 'loadOlder': return this.loadOlder();
-      case 'send': return this.send(m.text, m.kind, m.to ?? null, m.replyTo ?? null);
+      case 'send': return this.send(m.ticketId, m.text, m.kind, m.to ?? null, m.replyTo ?? null);
       case 'openCode': return this.openCode(m.messageId);
       case 'openBoard': {
         const base = this.boardUrl().replace(/\/+$/, '');
@@ -89,12 +95,20 @@ export class ChatController implements vscode.Disposable {
 
   private setFeed(s: FeedStatus) {
     this.feedStatus = s;
+    if (s === 'live') { this.readyDone = true; this.readyResolve?.(); }
+    else if (this.readyDone) this.armReady(); // the next open waits for the next `: ready`
     if (s === 'signed-out') this.notice = 'Sign in to the board to read and send.';
     this.post({ type: 'feed', v: 1, status: s });
     if (s === 'signed-out') this.postState();
   }
 
+  private armReady() {
+    this.readyDone = false;
+    this.ready = new Promise<void>(r => (this.readyResolve = r));
+  }
+
   private async boot(): Promise<void> {
+    this.booted = true;
     if (!(await creds(this.ctx))) {
       this.feedStatus = 'signed-out';
       this.notice = 'Sign in to the board to read and send.';
@@ -107,12 +121,23 @@ export class ChatController implements vscode.Disposable {
     else this.postState();
   }
 
-  /** After a sign-in: a fresh feed and a reload of the open thread. */
+  /** After a sign-in or sign-out: a fresh feed and a reload of the open thread, or, signed out, an
+   *  empty view (nothing read under the old identity stays on screen). A no-op before the first resolve. */
   async restart(): Promise<void> {
+    if (!this.booted) return;
     this.feed?.dispose();
     this.feed = undefined;
     this.notice = null;
     this.me = null;
+    this.people = [];
+    if (!(await creds(this.ctx))) {
+      ++this.opening;
+      this.store = undefined; this.ticket = null; this.epic = null; this.stories = []; this.unread.clear();
+      this.feedStatus = 'signed-out';
+      this.notice = 'Sign in to the board to read and send.';
+      this.postState();
+      return;
+    }
     this.startFeed();
     const id = this.ticket?.id ?? this.ctx.workspaceState.get<string>(LAST_PICK);
     if (id) await this.open(id); else this.postState();
@@ -120,17 +145,20 @@ export class ChatController implements vscode.Disposable {
 
   private startFeed(): void {
     if (this.feed) return; // one stream per window; a re-resolve never opens a second one
-    this.ready = new Promise<void>(r => (this.readyResolve = r));
+    this.armReady();
     this.feedStatus = 'connecting';
     this.feed = new FeedClient({
       baseUrl: this.boardUrl(), creds: () => creds(this.ctx), fetch,
-      onEvent: ev => void this.onEvent(ev).catch(e => this.log(`chat: event ${ev.kind} failed (${(e as Error)?.name})`)),
+      onEvent: ev => this.enqueue(() => this.onEvent(ev), `event ${ev.kind}`),
       onStatus: s => this.setFeed(s),
-      onReady: () => { this.readyResolve?.(); },
-      onResync: () => void this.reload(),
+      onResync: () => this.enqueue(() => this.reload(), 'resync'),
       log: line => this.log(line),
     });
     this.feed.start(-1);
+  }
+
+  private enqueue(job: () => Promise<void>, what: string): void {
+    this.chain = this.chain.then(job).catch(e => this.log(`chat: ${what} failed (${(e as Error)?.name ?? 'error'})`));
   }
 
   dispose(): void {
@@ -165,19 +193,27 @@ export class ChatController implements vscode.Disposable {
       }
       const storyTickets = epic ? (await b.tickets({ parent_id: epic.id })).filter(x => x.kind === 'story') : [];
       if (n !== this.opening) return; // a newer pick won
-      this.markSeen(this.ticket?.id); // leaving a thread: everything on it was seen
-      this.ticket = ref(t);
-      this.epic = epic ? ref(epic) : null;
-      this.markSeen(t.id);
-      await this.ctx.workspaceState.update(LAST_PICK, t.id);
-      this.store = new ThreadStore(t.id);
-      this.stories = storyTickets.map(s => ({ ...ref(s), unread: 0 }));
-      this.notice = null;
       // subscribe before loading (strategyll-1a201146c8 §4): wait for `: ready`, at most 5 s
-      await Promise.race([this.ready ?? Promise.resolve(), new Promise(r => setTimeout(r, 5_000))]);
+      if (this.feedStatus !== 'signed-out' && !this.readyDone) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([this.ready ?? Promise.resolve(), new Promise<void>(r => (timer = setTimeout(r, 5_000)))]);
+        clearTimeout(timer);
+      }
+      const store = new ThreadStore(t.id);
       const [page] = await Promise.all([b.thread(t.id), this.loadPeople(b)]);
       if (n !== this.opening) return;
-      this.store.loadPage(page);
+      store.loadPage(page);
+      // only now does the host switch: until the page is in, sends and events still belong to the old thread
+      this.markSeen(this.ticket?.id); // leaving a thread: everything on it was seen
+      if (epic?.id !== this.epic?.id) this.unread.clear();
+      this.ticket = ref(t);
+      this.epic = epic ? ref(epic) : null;
+      this.store = store;
+      this.stories = storyTickets.map(s => ({ ...ref(s), unread: 0 }));
+      this.markSeen(t.id);
+      this.syncUnread();
+      this.notice = null;
+      void this.ctx.workspaceState.update(LAST_PICK, t.id);
       this.postState();
       void this.countUnread(n);
     } catch (e) {
@@ -208,16 +244,29 @@ export class ChatController implements vscode.Disposable {
       if (s.id === this.ticket?.id) return;
       try {
         const page = await b.thread(s.id);
+        if (n !== this.opening || s.id === this.ticket?.id) return;
         const since = seen[s.id] ? Date.parse(seen[s.id]) : 0;
-        s.unread = page.thread.filter(r => Date.parse(r.at) > since && r.by !== this.me?.id).length;
-      } catch { /* the strip keeps 0 */ }
+        const set = this.unreadSet(s.id); // a union: a live event that already counted a message is not counted twice
+        for (const r of page.thread) if (Date.parse(r.at) > since && r.by !== this.me?.id) set.add(r.id);
+      } catch { /* the strip keeps what it has */ }
     }));
-    if (n === this.opening) this.post({ type: 'stories', v: 1, stories: this.stories });
+    if (n === this.opening) { this.syncUnread(); this.post({ type: 'stories', v: 1, stories: this.stories }); }
+  }
+
+  private unreadSet(id: string): Set<string> {
+    let set = this.unread.get(id);
+    if (!set) this.unread.set(id, (set = new Set()));
+    return set;
+  }
+
+  private syncUnread(): void {
+    for (const s of this.stories) s.unread = this.unread.get(s.id)?.size ?? 0;
   }
 
   private markSeen(id: string | undefined): void {
     if (!id) return;
     const seen = { ...(this.ctx.workspaceState.get<Record<string, string>>(LAST_SEEN) ?? {}), [id]: new Date().toISOString() };
+    this.unread.delete(id);
     const s = this.stories.find(x => x.id === id);
     if (s) s.unread = 0;
     void this.ctx.workspaceState.update(LAST_SEEN, seen);
@@ -228,7 +277,8 @@ export class ChatController implements vscode.Disposable {
     const store = this.store;
     if (!store) return;
     try {
-      const fresh = store.merge((await this.board().thread(store.ticketId)).thread.map(r => fromThreadRow(store.ticketId, r)));
+      const fresh = store.merge((await this.board().thread(store.ticketId)).thread.map(r => fromThreadRow(store.ticketId, r)))
+        .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at) || a.seq - b.seq);
       if (store === this.store && fresh.length) {
         this.post({ type: 'append', v: 1, ticketId: store.ticketId, items: fresh });
         this.provider.noteUnseen(fresh.length);
@@ -241,9 +291,12 @@ export class ChatController implements vscode.Disposable {
     if (!subject || !this.threadSet().has(subject)) return;
     if (ev.kind === 'status_changed') {
       const to = typeof ev.data?.to === 'string' ? ev.data.to : undefined;
+      if (!to) return;
       const s = this.stories.find(x => x.id === subject);
-      if (to && s) { s.status = to; this.post({ type: 'stories', v: 1, stories: this.stories }); }
-      if (to && this.ticket?.id === subject) { this.ticket = { ...this.ticket, status: to }; }
+      if (s) s.status = to;
+      if (this.ticket?.id === subject) this.ticket = { ...this.ticket, status: to };
+      if (this.epic?.id === subject) this.epic = { ...this.epic, status: to };
+      this.postState();
       return;
     }
     if (ev.kind !== 'message_sent') return;
@@ -252,7 +305,9 @@ export class ChatController implements vscode.Disposable {
     const store = this.store;
     if (store && subject === store.ticketId) {
       if (store.has(mid)) return;
-      const m = await this.board().message(mid); // the event carries a preview, never code_context
+      let m;
+      try { m = await this.board().message(mid); } // the event carries a preview, never code_context
+      catch (e) { this.log(`chat: message fetch failed (${(e as BoardError)?.code ?? 'error'}); reloading`); return this.reload(); }
       const fresh = store.merge([fromMessageRow(m, ev.seq)]);
       if (store === this.store && fresh.length) {
         this.post({ type: 'append', v: 1, ticketId: store.ticketId, items: fresh });
@@ -262,34 +317,44 @@ export class ChatController implements vscode.Disposable {
       return;
     }
     const s = this.stories.find(x => x.id === subject);
-    if (s && ev.created_by !== this.me?.id) {
-      s.unread += 1;
+    const from = typeof ev.data?.from === 'string' ? ev.data.from : ev.created_by; // events carry the sender in data.from
+    if (s && from !== this.me?.id) {
+      this.unreadSet(s.id).add(mid);
+      this.syncUnread();
       this.post({ type: 'stories', v: 1, stories: this.stories });
     }
   }
 
   private async loadOlder(): Promise<void> {
     const store = this.store;
-    if (!store || store.before == null) return;
+    if (!store) return;
+    // always answered, so the view's "older" button never stays disabled
+    const answer = (items: ReturnType<ThreadStore['loadOlder']>) =>
+      this.post({ type: 'prepend', v: 1, ticketId: store.ticketId, items, hasOlder: store.before != null });
+    if (store.before == null) { answer([]); return; }
     try {
       const fresh = store.loadOlder(await this.board().thread(store.ticketId, store.before));
-      if (store === this.store) this.post({ type: 'prepend', v: 1, ticketId: store.ticketId, items: fresh, hasOlder: store.before != null });
-    } catch (e) { this.fail(e, 'could not load older messages'); }
+      if (store === this.store) answer(fresh);
+    } catch (e) { if (store === this.store) answer([]); this.fail(e, 'could not load older messages'); }
   }
 
-  private async send(text: string, kind: string, to: string | null, replyTo: string | null): Promise<void> {
+  private async send(ticketId: string, text: string, kind: string, to: string | null, replyTo: string | null): Promise<void> {
     const store = this.store;
-    if (!store) { this.post({ type: 'sendFailed', v: 1, text: 'Pick a ticket first.' }); return; }
+    // the view names the thread it shows; a send for any other thread is refused, never re-targeted
+    if (!store || store.ticketId !== ticketId) {
+      this.post({ type: 'sendFailed', v: 1, ticketId, text: 'Not sent: that thread is no longer open.' });
+      return;
+    }
     try {
       const m = await this.board().send({ ticket_id: store.ticketId, to, kind, text, reply_to: replyTo });
       const fresh = store.merge([fromMessageRow(m, 0)]);
-      this.post({ type: 'sent', v: 1, id: m.id });
+      this.post({ type: 'sent', v: 1, ticketId, id: m.id });
       if (store === this.store && fresh.length) this.post({ type: 'append', v: 1, ticketId: store.ticketId, items: fresh });
       const un = m.unresolved_mentions ?? [];
       if (un.length) void vscode.window.showWarningMessage(`EDP: sent, but nobody is registered as ${un.map(h => '@' + h).join(', ')}`);
     } catch (e) {
       // the draft stays in the composer
-      this.post({ type: 'sendFailed', v: 1, text: `Not sent: ${(e as Error).message}` });
+      this.post({ type: 'sendFailed', v: 1, ticketId, text: `Not sent: ${(e as Error).message}` });
     }
   }
 
@@ -297,7 +362,7 @@ export class ChatController implements vscode.Disposable {
     const cc = this.store?.get(messageId)?.code_context;
     if (!cc) return;
     const api = await gitApi();
-    const roots = [...(api?.repositories.map(r => r.rootUri.fsPath) ?? []), ...(vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath) ?? [])];
+    const roots = api?.repositories.map(r => r.rootUri.fsPath) ?? []; // repo-relative paths resolve against git roots only
     const exists = new Map<string, boolean>();
     await Promise.all(roots.map(async r => {
       const rel = cc.path;

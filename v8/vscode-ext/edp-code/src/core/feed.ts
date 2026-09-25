@@ -202,7 +202,9 @@ export class FeedClient {
         const wait = Math.round(delay * (0.8 + 0.4 * rnd()));
         this.log(`feed drop ${(e as Error)?.message ?? 'error'}; retry in ${(wait / 1000).toFixed(1)}s`);
         this.setStatus('reconnecting');
-        if (this.failures >= 2) {
+        // polling needs a cursor: before the first `: ready` there is none, and `since=0` would replay
+        // the board's whole history, so a cold start keeps retrying the stream instead
+        if (this.failures >= 2 && this.since >= 0) {
           try { await this.pollFor(this.o.pollForMs ?? 30_000); } catch (pe) {
             if (pe instanceof AuthStop) { this.setStatus('signed-out'); this.stopped = true; break; }
           }

@@ -60,15 +60,16 @@ export type HostToView =
   | { type: 'prepend'; v: 1; ticketId: string; items: ChatMessage[]; hasOlder: boolean }
   | { type: 'stories'; v: 1; stories: StoryRow[] }
   | { type: 'feed'; v: 1; status: FeedStatus }
-  | { type: 'sent'; v: 1; id: string }
-  | { type: 'sendFailed'; v: 1; text: string }
+  | { type: 'sent'; v: 1; ticketId: string; id: string }
+  | { type: 'sendFailed'; v: 1; ticketId: string; text: string }
   | { type: 'error'; v: 1; text: string };
 
 export type ViewToHost =
   | { v: 1; type: 'ready' }
   | { v: 1; type: 'pickTicket'; id?: string }
   | { v: 1; type: 'loadOlder' }
-  | { v: 1; type: 'send'; text: string; kind: SendKind; to?: string; replyTo?: string }
+  /** `ticketId` is the thread the user sees: the host refuses a send whose ticket is not the open one */
+  | { v: 1; type: 'send'; ticketId: string; text: string; kind: SendKind; to?: string; replyTo?: string }
   | { v: 1; type: 'openCode'; messageId: string }
   | { v: 1; type: 'openBoard'; ticketId: string; messageId?: string }
   | { v: 1; type: 'signIn' };
@@ -93,10 +94,11 @@ export function parseInbound(raw: unknown, handles: ReadonlySet<string> = new Se
       return id && TICKET_ID.test(id) ? { v: 1, type: 'pickTicket', id } : null;
     }
     case 'send': {
-      const text = str('text'), kind = str('kind');
+      const text = str('text'), kind = str('kind'), ticketId = str('ticketId');
+      if (!ticketId || !TICKET_ID.test(ticketId)) return null;
       if (text === undefined || !text.trim() || text.length > TEXT_MAX) return null;
       if (!kind || !(SEND_KINDS as readonly string[]).includes(kind)) return null;
-      const out: ViewToHost = { v: 1, type: 'send', text, kind: kind as SendKind };
+      const out: ViewToHost = { v: 1, type: 'send', ticketId, text, kind: kind as SendKind };
       if (r.to !== undefined && r.to !== '') {
         const to = str('to');
         if (!to || !HANDLE.test(to) || !handles.has(to)) return null;
@@ -122,6 +124,14 @@ export function parseInbound(raw: unknown, handles: ReadonlySet<string> = new Se
     }
   }
   return null;
+}
+
+/** A refused `send` still gets an answer, so the composer never stays stuck: its ticket id when it
+ *  is well-formed (the view ignores answers for other threads). */
+export function refusedSendTicket(raw: unknown): string | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  return r.type === 'send' && typeof r.ticketId === 'string' && TICKET_ID.test(r.ticketId) ? r.ticketId : undefined;
 }
 
 /** The inbound type for a log line (never the payload). */

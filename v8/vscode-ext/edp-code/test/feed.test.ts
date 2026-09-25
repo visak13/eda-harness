@@ -111,6 +111,19 @@ describe('FeedClient', () => {
     expect(t.c.pendingTimers).toBe(0);
   });
 
+  it('a cold start with the board down never polls from 0 (no history replay); it keeps retrying the stream', async () => {
+    const { f, calls } = fakeFetch([
+      () => new Response('down', { status: 502 }), () => new Response('down', { status: 502 }), () => new Response('down', { status: 502 }),
+    ]);
+    const t = client(f, { backoffMs: 1000 });
+    t.c.start(-1);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(calls.some(c => c.url.includes('/v1/events'))).toBe(false);
+    expect(calls.filter(c => c.url.includes('/v1/feed?since=-1')).length).toBeGreaterThanOrEqual(3);
+    t.c.dispose();
+    expect(t.c.pendingTimers).toBe(0);
+  });
+
   it('45 s of silence aborts the stream and counts a failure', async () => {
     const a = stream();
     const { f, calls } = fakeFetch([() => new Response(a.body)]);

@@ -4,7 +4,7 @@
 // read once and inlined with a fresh nonce per resolve; nothing is fetched after the HTML.
 import * as vscode from 'vscode';
 import { chatHtml } from '../core/chatHtml';
-import { inboundType, parseInbound, type HostToView, type ViewToHost } from '../core/chatProtocol';
+import { inboundType, parseInbound, refusedSendTicket, type HostToView, type ViewToHost } from '../core/chatProtocol';
 
 export const CHAT_VIEW = 'edp.chat';
 
@@ -77,7 +77,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 
   private onMessage(raw: unknown): void {
     const m = parseInbound(raw, this.host.handles());
-    if (!m) { this.log(`chat: dropped inbound ${inboundType(raw)}`); return; }
+    if (!m) {
+      this.log(`chat: dropped inbound ${inboundType(raw)}`);
+      const t = refusedSendTicket(raw); // a refused send is answered, so the composer never stays disabled
+      if (t) this.post({ type: 'sendFailed', v: 1, ticketId: t, text: 'Not sent: the message was refused (too long, or the recipient is no longer reachable).' });
+      return;
+    }
     if (m.type === 'ready') {
       this.ready = true;
       const q = this.queue.splice(0);
