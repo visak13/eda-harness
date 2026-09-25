@@ -78,10 +78,15 @@ def test_scripts_never_kill_by_image_or_touch_global_state():
 
 def test_start_flags_bind_loopback_and_disable_update_telemetry_proxy():
     src = SCRIPTS["start-code.ps1"].read_text(encoding="utf-8")
-    for flag in ("--auth\", \"none", "--disable-telemetry", "--disable-update-check", "--disable-proxy",
+    for flag in ("--disable-telemetry", "--disable-update-check", "--disable-proxy",
                  "--config", "--user-data-dir", "--extensions-dir"):
         assert flag in src, flag
-    assert '"--bind-addr", "${BINDHOST}:$PORT"' in src and '$BINDHOST = "127.0.0.1"' in src
+    assert '$BINDHOST = "127.0.0.1"' in src
+    # s-03c7e9168b: code-server binds a random inner loopback port with --auth password and a per-start
+    # secret passed only by environment; the guard holds the service port
+    assert '"--bind-addr", "${BINDHOST}:$INNER", "--auth", "password"' in src and '"--auth", "none"' not in src
+    assert '"edp8.code_guard", "--port", "$PORT", "--upstream", "tcp:${BINDHOST}:$INNER"' in src
+    assert "$env:HASHED_PASSWORD = $s" in src and "CODE_GUARD_SESSION" in src and "$SECRET" not in src.split("$flags = @(")[1].split(")")[0]
     # the env strip is by prefix (dec-ea925a2d30), scoped to the launch and the CLI installs
     assert "'^EDP8?_'" in src and "WithoutFleetEnv {" in src
 
@@ -167,8 +172,23 @@ def test_a_spare_port_instance_starts_healthy_and_stops_only_itself(tmp_path):
         state = json.loads((tmp_path / "run" / "code.json").read_text(encoding="utf-8"))
         assert state["service"] == "code" and state["port"] == port and state["version"] == LOCK["version"]
         assert state["sha256"] == LOCK["sha256"] and state["pid"] and state["started_at"]
+        # s-03c7e9168b: the guard holds the port and refuses a rebinding Host; the loopback Host gets the
+        # workbench with no login; code-server's own inner port answers a cookie-less hit with its login
+        inner = state["inner_port"]
+        assert state["guard_pid"] and inner and inner != port
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/", headers={"Host": f"evil.invalid:{port}"})
+        with pytest.raises(urllib.error.HTTPError) as refused:
+            urllib.request.urlopen(req, timeout=5)
+        assert refused.value.code == 421
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=10) as r:
+            assert r.status == 200 and "/login" not in r.url and b"workbench.js" in r.read()
+        with urllib.request.urlopen(f"http://127.0.0.1:{inner}/", timeout=10) as r:
+            assert r.url.split("?")[0].endswith("/login") and b'type="password"' in r.read()
+        owner = subprocess.run([PS, "-NoProfile", "-Command", f"(Get-CimInstance Win32_Process -Filter 'ProcessId={_listener(port)}').CommandLine"],
+                               capture_output=True, text=True, timeout=60).stdout
+        assert "edp8.code_guard" in owner and f"--port {port}" in owner, owner
         cfg = (tmp_path / "data" / "config.yaml").read_text(encoding="utf-8")
-        assert f"bind-addr: 127.0.0.1:{port}" in cfg and "auth: none" in cfg and "password" not in cfg
+        assert f"bind-addr: 127.0.0.1:{inner}" in cfg and "auth: password" in cfg and "hashed-password" not in cfg
         settings = json.loads((tmp_path / "data" / "user" / "User" / "settings.json").read_text(encoding="utf-8"))
         assert settings["extensions.autoUpdate"] is False
         assert {a["prefix"] for a in settings["gitlens.autolinks"]} == {"t-", "s-", "epic-", "m-"}

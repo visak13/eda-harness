@@ -71,9 +71,11 @@ $SVC = [ordered]@{
   mcp        = @{ port = [int](EnvOr "EDP8_MCP_PORT" "9402");   health = "/healthz";   needle = "edp8.mcp_server" }
   bridge     = @{ port = 0; health = ""; needle = "edp8.slack_bridge" }
   supervisor = @{ port = 0; health = ""; needle = "edp8.supervisor" }
-  # code-server: a node.exe pair (wrapper + the listening server) running from the pinned install; the
-  # needle is the install path, never node.exe (other seats run node)
-  code       = @{ port = [int](EnvOr "EDP_CODE_PORT" "9410"); health = "/healthz"; needle = ".tools\code-server\"; images = @("node.exe")
+  # code-server: a node.exe pair running from the pinned install on a random inner loopback port, behind
+  # the host guard (s-03c7e9168b: edp8.code_guard, the venv python pair, holds the port; its --tag names
+  # the install).
+  # The needle is the install path, never node.exe/python.exe (other seats run both)
+  code       = @{ port = [int](EnvOr "EDP_CODE_PORT" "9410"); health = "/healthz"; needle = ".tools\code-server\"; images = @("node.exe", "python.exe")
                   start = "scripts\start-code.ps1"; stop = "scripts\stop-code.ps1" }
 }
 $ChainImages = @("python.exe", "pythonw.exe", "uv.exe", "edp8-board.exe")

@@ -58,6 +58,26 @@ def test_chunked_body_forces_close():
     assert facts["chunked"] and b"Connection: close" in fwd and b"keep-alive" not in fwd
 
 
+def test_session_cookie_injected_and_client_session_replaced():
+    fwd, _ = check_head(head("Host: 127.0.0.1:9410", "Cookie: a=1; code-server-session=forged; b=2"), 9410, ORIGINS, "s3cret")
+    text = fwd.decode()
+    assert "Cookie: a=1; b=2; code-server-session=s3cret" in text and "forged" not in text
+    assert text.count("Cookie:") == 1
+    fwd, _ = check_head(head("Host: 127.0.0.1:9410"), 9410, ORIGINS, "s3cret")
+    assert b"Cookie: code-server-session=s3cret" in fwd
+
+
+def test_no_session_leaves_cookies_alone():
+    fwd, _ = check_head(head("Host: 127.0.0.1:9410", "Cookie: a=1"), 9410, ORIGINS)
+    assert b"Cookie: a=1" in fwd and b"code-server-session" not in fwd
+
+
+def test_refused_request_never_carries_the_secret():
+    with pytest.raises(Refused) as e:
+        check_head(head("Host: evil.invalid:9410"), 9410, ORIGINS, "s3cret")
+    assert "s3cret" not in str(e.value.detail) and b"s3cret" not in __import__("edp8.code_guard", fromlist=["refusal"]).refusal(e.value)
+
+
 # -- end to end through a live guard and a fake upstream ------------------------------------------
 
 async def _fake_upstream(seen):

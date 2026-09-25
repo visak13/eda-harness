@@ -1,14 +1,21 @@
-# Start the `code` service: code-server on 127.0.0.1:<EDP_CODE_PORT> (default 9410), auth none
+# Start the `code` service: code-server behind the host guard on 127.0.0.1:<EDP_CODE_PORT> (default 9410)
 # (s-3c8c2512d6; design-449b628cdd section 4; strategyhl-e69dbbae06 + strategyhl-f300df15cb; S1 report-b90f1f63df).
 #
 #   scripts\start-code.ps1                     install if needed, seed settings, install missing pinned
 #                                              extensions, launch, wait for /healthz, write .run\code.json
 #   scripts\start-code.ps1 -SkipExtensions     leave the extensions dir as it is (tests)
 #
-# Idempotent: our own server already listening on the port is left running. A foreign listener on the
-# port fails loudly and is never killed. The bind is loopback only: with --auth none the socket is the
-# only fence (anyone who reaches the port owns the host through the terminal), so any other
-# EDP_CODE_HOST is refused. Every EDP_* / EDP8_* variable is removed from the server's environment
+# DNS-rebinding guard (s-03c7e9168b, design-628b968271, steer m-b7adc0f74f): edp8.code_guard (the
+# edp8 venv python) holds 127.0.0.1:<port>. It refuses a Host other than 127.0.0.1/localhost:<port>
+# (421) and a WebSocket Origin outside its allowlist (403), and relays the rest to code-server on a
+# random free inner 127.0.0.1 port, adding the session cookie of a per-start secret. code-server runs
+# --auth password with that secret as $HASHED_PASSWORD, so a page that reaches the inner port directly
+# meets the login wall, and the owner never sees a login. The secret travels only by environment.
+# .run\code.json records both pids and the inner port; stop-code.ps1 stops both by recorded pid.
+#
+# Idempotent: our own service already on the port is left running. A foreign listener on the
+# port fails loudly and is never killed. Every bind is loopback only (anyone who reaches code-server
+# owns the host through the terminal), so any other EDP_CODE_HOST is refused. Every EDP_* / EDP8_* variable is removed from the server's environment
 # (dec-ea925a2d30: terminals and extensions must not inherit seat or board secrets, DB or run dirs);
 # the removal is scoped to the launch, so a seat shell that runs this script keeps its own env.
 # Stop with scripts\stop-code.ps1. Seats start/stop ONLY this service (shared-host rules).
@@ -43,9 +50,15 @@ $RUN = EnvOr "EDP8_RUN_DIR" (Join-Path $HOMEDIR ".run")
 $DATA = EnvOr "EDP_CODE_DATA" (Join-Path $v8 ".data\code")
 $PORT = [int](EnvOr "EDP_CODE_PORT" "9410")
 $BINDHOST = EnvOr "EDP_CODE_HOST" "127.0.0.1"
-$BOARD = "http://127.0.0.1:" + (EnvOr "EDP8_PORT" "9400")
+$BOARDPORT = EnvOr "EDP8_PORT" "9400"
+$BOARD = "http://127.0.0.1:$BOARDPORT"
+# the guard's WebSocket Origin allowlist beyond its own two origins: the board, and the public board
+# origin in public mode (s-03c7e9168b; code-server itself still refuses an Origin that is not its Host)
+$ORIGINS = @($BOARD, "http://localhost:$BOARDPORT")
+$PUBLIC = EnvOr "EDP8_PUBLIC_URL" ""
+if ($PUBLIC) { try { $u = [Uri]$PUBLIC; $ORIGINS += $u.GetLeftPart([UriPartial]::Authority) } catch { } }
 if (@("127.0.0.1", "localhost") -notcontains $BINDHOST.ToLower()) {
-  Fail 2 "refusing EDP_CODE_HOST=${BINDHOST}: code-server runs with --auth none, so it binds 127.0.0.1 only"
+  Fail 2 "refusing EDP_CODE_HOST=${BINDHOST}: code-server (behind its guard) binds 127.0.0.1 only"
 }
 $BINDHOST = "127.0.0.1"
 
@@ -59,6 +72,22 @@ $userDir = Join-Path $DATA "user"
 $extDir = Join-Path $DATA "extensions"
 $config = Join-Path $DATA "config.yaml"
 $stateFile = Join-Path $RUN "code.json"
+# DNS-rebinding guard (s-03c7e9168b, design-628b968271 + steer m-b7adc0f74f): the host-allowlist
+# guard (edp8.code_guard, the edp8 venv's python) owns 127.0.0.1:$PORT; code-server sits on a random
+# free inner 127.0.0.1 port with --auth password and a per-start secret only the guard holds, so a
+# rebinding page that finds the inner port meets the login wall. (A named pipe kills every extension
+# host on Windows: code-server hands sockets to it over IPC, ENOTSUP, m-9ef1667f16.)
+$PY = Join-Path $v8 ".venv\Scripts\python.exe"
+function FreePort {
+  $l = New-Object Net.Sockets.TcpListener([Net.IPAddress]::Loopback, 0); $l.Start()
+  try { $l.LocalEndpoint.Port } finally { $l.Stop() }
+}
+$INNER = FreePort
+while ($INNER -eq $PORT) { $INNER = FreePort }
+# the secret is code-server's $HASHED_PASSWORD value (a non-argon2 value is compared to the session
+# cookie verbatim); it travels only by environment and is never written to disk or a command line
+$rng = [Security.Cryptography.RandomNumberGenerator]::Create(); $sb = New-Object byte[] 32; $rng.GetBytes($sb)
+$SECRET = -join ($sb | ForEach-Object { $_.ToString("x2") })
 New-Item -ItemType Directory -Force $RUN, $DATA, $userDir, $extDir, (Join-Path $userDir "User") | Out-Null
 
 function Proc($procId) { Get-CimInstance Win32_Process -Filter "ProcessId=$procId" -ErrorAction SilentlyContinue }
@@ -66,11 +95,18 @@ function IsOurs($p) { $p -and $p.ExecutablePath -and $p.ExecutablePath.StartsWit
 function ListenerPid { $c = Get-NetTCPConnection -LocalPort $PORT -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; if ($c) { [int]$c.OwningProcess } else { $null } }
 function Healthy { try { (Invoke-WebRequest "http://127.0.0.1:$PORT/healthz" -UseBasicParsing -TimeoutSec 3).StatusCode -eq 200 } catch { $false } }
 function GitRev { try { ("" + (& git -C $v8 rev-parse --short HEAD 2>$null)).Trim() } catch { "" } }
-function WriteState($p) {
+# this port's guard: edp8.code_guard for --port $PORT, tagged with this install (the venv launcher or
+# the interpreter it runs; both carry the same arguments)
+function IsGuard($p) {
+  $p -and $p.CommandLine -and $p.CommandLine -match 'edp8\.code_guard' -and $p.CommandLine -match ('--port\s+' + $PORT + '(\s|$)') -and
+    $p.CommandLine.IndexOf($toolsNorm, [StringComparison]::OrdinalIgnoreCase) -ge 0
+}
+function WriteState($p, $g, $inner) {
   $state = [ordered]@{
     service = "code"; pid = [int]$p.ProcessId; port = $PORT; version = $lock.version; sha256 = $lock.sha256
     git_rev = (GitRev); started_at = (Get-Date).ToString("yyyy-MM-ddTHH:mm:sszzz")
     creation_date = $p.CreationDate.ToString("o"); install_dir = $installDir
+    inner_port = $inner; guard_pid = [int]$g.ProcessId; guard_creation_date = $g.CreationDate.ToString("o")
     last_probe = $null; last_ok = $null; last_restart_reason = $null; restarts = 0
   }
   WriteUtf8 $stateFile ($state | ConvertTo-Json)
@@ -80,20 +116,19 @@ function WriteState($p) {
 $lp = ListenerPid
 if ($lp) {
   $p = Proc $lp
-  if (-not (IsOurs $p)) { Fail 3 "port $PORT is held by pid $lp ($($p.Name) $($p.ExecutablePath)), not this code-server; leaving it alone" }
-  # the listener is the server's child: the record names the outermost ancestor that is also ours
-  $root = $p
-  for ($i = 0; $i -lt 3; $i++) {
-    $pp = Proc $root.ParentProcessId
-    if ((IsOurs $pp) -and $pp.CreationDate -le $root.CreationDate) { $root = $pp } else { break }
+  if (IsGuard $p) {
+    $rec = $null; try { $rec = Get-Content $stateFile -Raw | ConvertFrom-Json } catch { }
+    $srv = $null; if ($rec -and $rec.pid) { $srv = Proc ([int]$rec.pid) }
+    if (-not ((IsOurs $srv) -and (Healthy))) { Fail 3 "port $PORT is held by this service's guard (pid $lp) but no healthy code-server is recorded behind it: restart it (.\edp.ps1 restart code)" }
+    $pinned = ([IO.Path]::GetFullPath($installDir)).TrimEnd("\") + "\"
+    if (-not $srv.ExecutablePath.StartsWith($pinned, [StringComparison]::OrdinalIgnoreCase)) {
+      Write-Host "code     running on 127.0.0.1:$PORT from $($srv.ExecutablePath), NOT the pinned $($lock.version): restart it (.\edp.ps1 restart code)"
+    } else { Write-Host "code     already running on 127.0.0.1:$PORT (guard pid $lp, code-server pid $($srv.ProcessId) on inner port $($rec.inner_port))" }
+    exit 0
   }
-  # adopt it when the record is missing or names another process (a stale record from an earlier run)
-  $rec = $null; try { $rec = Get-Content $stateFile -Raw | ConvertFrom-Json } catch { }
-  if (-not $rec -or [int]$rec.pid -ne [int]$root.ProcessId) { WriteState $root }
-  $pinned = ([IO.Path]::GetFullPath($installDir)).TrimEnd("\") + "\"
-  if (-not $root.ExecutablePath.StartsWith($pinned, [StringComparison]::OrdinalIgnoreCase)) {
-    Write-Host "code     running on 127.0.0.1:$PORT from $($root.ExecutablePath), NOT the pinned $($lock.version): restart it (.\edp.ps1 restart code)"
-  } else { Write-Host "code     already running on 127.0.0.1:$PORT (pid $($root.ProcessId))" }
+  if (-not (IsOurs $p)) { Fail 3 "port $PORT is held by pid $lp ($($p.Name) $($p.ExecutablePath)), not this code-server; leaving it alone" }
+  # code-server bound to the port itself: a start from before the guard (s-03c7e9168b)
+  Write-Host "code     running on 127.0.0.1:$PORT WITHOUT the host guard (pid $lp, a pre-guard start): restart it (.\edp.ps1 restart code)"
   exit 0
 }
 
@@ -117,7 +152,8 @@ function WithoutFleetEnv([scriptblock]$block) {
 }
 
 # -- config.yaml: our own, so a flag-less launch never falls back to :8080 with a password ---------
-WriteUtf8 $config ("# written by scripts\start-code.ps1 on every start; edits are overwritten`nbind-addr: ${BINDHOST}:$PORT`nauth: none`ncert: false`n")
+# the inner bind: the guard holds $PORT; the password comes by $HASHED_PASSWORD at launch, never from here
+WriteUtf8 $config ("# written by scripts\start-code.ps1 on every start; edits are overwritten`nbind-addr: ${BINDHOST}:$INNER`nauth: password`ncert: false`n")
 
 # -- pinned extension list ------------------------------------------------------------------------
 $pins = @(Get-Content (Join-Path $v8 "vscode-ext\extensions.txt") | ForEach-Object { $_.Trim() } | Where-Object { $_ -and -not $_.StartsWith("#") })
@@ -237,12 +273,17 @@ if ($SkipExtensions) {
 }
 
 # -- launch ---------------------------------------------------------------------------------------
+if (-not (Test-Path $PY)) { Fail 4 "the host guard needs the edp8 venv python ($PY); run uv sync in v8" }
 $flags = @(
-  "`"$serverDir`"", "--bind-addr", "${BINDHOST}:$PORT", "--auth", "none",
+  "`"$serverDir`"", "--bind-addr", "${BINDHOST}:$INNER", "--auth", "password",
   "--disable-telemetry", "--disable-update-check", "--disable-proxy",
   "--config", "`"$config`"", "--user-data-dir", "`"$userDir`"", "--extensions-dir", "`"$extDir`""
 )
+$guardFlags = @("-m", "edp8.code_guard", "--port", "$PORT", "--upstream", "tcp:${BINDHOST}:$INNER")
+foreach ($o in $ORIGINS) { $guardFlags += @("--allow-origin", $o) }
+$guardFlags += @("--tag", "`"$installDir`"")
 $log = Join-Path $RUN "code.log"; $err = Join-Path $RUN "code.err.log"
+$glog = Join-Path $RUN "code.guard.log"; $gerr = Join-Path $RUN "code.guard.err.log"
 # Start-Process -Redirect* creates the child with handle inheritance on, so a server started from
 # here would inherit THIS shell's stdout/stderr: a caller reading our output to EOF (a pipe, pytest, a
 # seat's tool) would then wait for the server to exit. So the server is started by a tiny wrapper
@@ -253,31 +294,47 @@ $pidFile = Join-Path $RUN "code.launch.pid"; $wrap = Join-Path $RUN "code.launch
 Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
 $body = @(
   '$ErrorActionPreference = "Stop"',
+  # the per-start secret: to code-server as $HASHED_PASSWORD (it deletes the variable after reading, so
+  # terminals never inherit it), then to the guard as CODE_GUARD_SESSION; never on a command line
+  '$s = $env:CODE_GUARD_HANDOFF; Remove-Item Env:CODE_GUARD_HANDOFF',
+  '$env:HASHED_PASSWORD = $s',
   # Keep the original app port in a URL-parseable path. The board sends the browser a loopback-only
   # redirect; it never proxies app traffic. {{port}} in a URL port is invalid before substitution.
   ('$env:VSCODE_PROXY_URI = {0}' -f (& $q "$BOARD/v1/code/external/{{port}}/")),
   ('$p =Start-Process -FilePath {0} -ArgumentList @({1}) -WorkingDirectory {2} -WindowStyle Hidden -PassThru -RedirectStandardOutput {3} -RedirectStandardError {4}' -f
     (& $q $node), (($flags | ForEach-Object { & $q $_ }) -join ", "), (& $q $v8), (& $q $log), (& $q $err)),
-  ('Set-Content -Path {0} -Value $p.Id -Encoding ascii' -f (& $q $pidFile))
+  'Remove-Item Env:HASHED_PASSWORD; $env:CODE_GUARD_SESSION = $s',
+  ('$g =Start-Process -FilePath {0} -ArgumentList @({1}) -WorkingDirectory {2} -WindowStyle Hidden -PassThru -RedirectStandardOutput {3} -RedirectStandardError {4}' -f
+    (& $q $PY), (($guardFlags | ForEach-Object { & $q $_ }) -join ", "), (& $q $v8), (& $q $glog), (& $q $gerr)),
+  ('Set-Content -Path {0} -Value @($p.Id, $g.Id) -Encoding ascii' -f (& $q $pidFile))
 ) -join "`r`n"
 WriteUtf8 $wrap $body
 WithoutFleetEnv {
-  $w = Start-Process -FilePath "powershell.exe" -WindowStyle Hidden -PassThru `
-    -ArgumentList @("-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "`"$wrap`"")
+  $env:CODE_GUARD_HANDOFF = $SECRET
+  try {
+    $w = Start-Process -FilePath "powershell.exe" -WindowStyle Hidden -PassThru `
+      -ArgumentList @("-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "`"$wrap`"")
+  } finally { Remove-Item Env:CODE_GUARD_HANDOFF -ErrorAction SilentlyContinue }
   if (-not $w.WaitForExit(30000)) { Fail 6 "the launch wrapper did not exit within 30 s ($wrap)" }
 }
 Remove-Item $wrap -Force -ErrorAction SilentlyContinue
 if (-not (Test-Path $pidFile)) { Fail 6 "the launch wrapper recorded no server pid (see $err)" }
-$serverPid = [int]("" + (Get-Content $pidFile -Raw)).Trim(); Remove-Item $pidFile -Force
+$pids = @(Get-Content $pidFile | ForEach-Object { ("" + $_).Trim() } | Where-Object { $_ }); Remove-Item $pidFile -Force
+if ($pids.Count -lt 2) { Fail 6 "the launch wrapper recorded no guard pid (see $err / $gerr; stop with scripts\stop-code.ps1)" }
+$serverPid = [int]$pids[0]; $guardPid = [int]$pids[1]
 $script:proc = Get-Process -Id $serverPid -ErrorAction SilentlyContinue
+$script:gproc = Get-Process -Id $guardPid -ErrorAction SilentlyContinue
+# the records are taken now, while both are alive: stop-code.ps1 finds either by them after a failure
+$root = Proc $serverPid; $groot = Proc $guardPid
+if ($root -and $groot) { WriteState $root $groot $INNER }
 if (-not $script:proc) { Fail 6 "code-server pid $serverPid exited at once; see $err" }
+if (-not $script:gproc) { Fail 6 "the guard pid $guardPid exited at once; see $gerr (stop with scripts\stop-code.ps1)" }
 $deadline = (Get-Date).AddSeconds($TimeoutSec)
 while ((Get-Date) -lt $deadline -and -not (Healthy)) {
   if ($script:proc.HasExited) { Fail 6 "code-server exited ($($script:proc.ExitCode)) before /healthz answered; see $err" }
+  if ($script:gproc.HasExited) { Fail 6 "the guard exited ($($script:gproc.ExitCode)) before /healthz answered; see $gerr (stop with scripts\stop-code.ps1)" }
   Start-Sleep -Milliseconds 500
 }
-if (-not (Healthy)) { Fail 6 "code-server pid $($script:proc.Id) did not answer /healthz within $TimeoutSec s; see $log / $err (stop it with scripts\stop-code.ps1)" }
-$root = Proc $script:proc.Id
-WriteState $root
-Write-Host "code     up   pid $($script:proc.Id)  http://127.0.0.1:$PORT  (code-server $($lock.version))"
+if (-not (Healthy)) { Fail 6 "code-server pid $serverPid behind guard pid $guardPid did not answer /healthz within $TimeoutSec s; see $log / $err / $gerr (stop it with scripts\stop-code.ps1)" }
+Write-Host "code     up   guard pid $guardPid http://127.0.0.1:$PORT -> code-server pid $serverPid on 127.0.0.1:$INNER (auth password, guard-held)  (code-server $($lock.version))"
 exit 0

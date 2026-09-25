@@ -1,9 +1,13 @@
 """Host-allowlist guard in front of code-server (s-03c7e9168b, design-628b968271).
 
-code-server runs with ``--auth none`` and no hostname allowlist, so a DNS-rebinding page
-(``evil.example:9410`` resolving to 127.0.0.1) could read files and drive a terminal. Rebinding
-reaches ANY loopback TCP port, so code-server listens on a named pipe (``--socket``) that no browser
-can reach, and this guard owns the TCP port and relays to the pipe only after checking each request:
+code-server has no hostname allowlist, so a DNS-rebinding page (``evil.example:9410`` resolving to
+127.0.0.1) could read files and drive a terminal. Rebinding reaches ANY loopback TCP port, so the
+guard owns the service port and code-server sits on a random inner 127.0.0.1 port with
+``--auth password`` and a per-start secret (``$HASHED_PASSWORD``; code-server compares the session
+cookie to it verbatim). The guard adds that cookie to every request it relays, so the owner never
+sees a login, while a page that reaches the inner port directly meets the login wall. (A named pipe
+was tried first: code-server hands each connection's socket to the extension host over IPC, which
+Windows node cannot do for a pipe, ENOTSUP, m-9ef1667f16.) Each request is checked first:
 
 - the request target is origin-form (``/...``), else 400;
 - ``Host`` is exactly one of ``127.0.0.1:<port>`` / ``localhost:<port>``, else 421;
@@ -15,8 +19,11 @@ prefers ``X-Forwarded-Host`` over ``Host``. Every request on a keep-alive connec
 body is delimited by ``Content-Length``, a chunked body turns the connection into ``Connection:
 close`` (forwarded raw, nothing parsed after it). After an upgrade the bytes are relayed raw.
 
-    python -m edp8.code_guard --port 9410 --upstream pipe:\\\\.\\pipe\\edp-code-<rand> \\
+    CODE_GUARD_SESSION=<secret> python -m edp8.code_guard --port 9410 --upstream tcp:127.0.0.1:<inner> \\
         --allow-origin http://127.0.0.1:9400 [--tag <install dir>]
+
+The secret comes only by environment and is removed from it at start; client-sent session cookies
+are replaced, never forwarded.
 
 ``--tag`` is ignored; it puts the code-server install path in this process's command line, the
 needle edp.ps1 uses to recognise the ``code`` service.
@@ -25,9 +32,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 
 MAX_HEAD = 64 * 1024
+SESSION_COOKIE = "code-server-session"
+SESSION_ENV = "CODE_GUARD_SESSION"
 _DROP = {"x-forwarded-host", "x-forwarded-for", "x-forwarded-proto", "x-forwarded-port", "forwarded"}
 
 
@@ -45,9 +55,11 @@ def allowed_origins(port: int, extra: list[str]) -> set[str]:
     return {f"http://{h}" for h in allowed_hosts(port)} | {o.rstrip("/").lower() for o in extra if o}
 
 
-def check_head(head: bytes, port: int, origins: set[str]) -> tuple[bytes, dict]:
+def check_head(head: bytes, port: int, origins: set[str], session: str | None = None) -> tuple[bytes, dict]:
     """Validate one request head; return the head to forward and facts about it.
 
+    With ``session``, the forwarded head carries ``code-server-session=<session>`` in place of any
+    session cookie the client sent (code-server's password login, supplied by the guard).
     Raises Refused for a request the guard must not relay.
     """
     try:
@@ -62,7 +74,7 @@ def check_head(head: bytes, port: int, origins: set[str]) -> tuple[bytes, dict]:
     if not target.startswith("/"):
         raise Refused(400, "Bad Request", "only origin-form request targets are relayed")
     kept = [lines[0]]
-    hosts, origin, upgrade, conn, length, chunked = [], None, False, "", 0, False
+    hosts, origin, upgrade, conn, length, chunked, cookies = [], None, False, "", 0, False, []
     for line in lines[1:]:
         if not line:
             continue
@@ -91,7 +103,13 @@ def check_head(head: bytes, port: int, origins: set[str]) -> tuple[bytes, dict]:
                 raise Refused(400, "Bad Request", "bad Content-Length")
         elif key == "transfer-encoding":
             chunked = True
+        elif key == "cookie" and session is not None:
+            cookies += [c.strip() for c in value.split(";")
+                        if c.strip() and not c.strip().lower().startswith(SESSION_COOKIE)]
+            continue
         kept.append(line)
+    if session is not None:
+        kept.append("Cookie: " + "; ".join(cookies + [f"{SESSION_COOKIE}={session}"]))
     if len(hosts) != 1 or hosts[0] not in allowed_hosts(port):
         raise Refused(421, "Misdirected Request", f"Host {hosts!r} is not 127.0.0.1:{port} or localhost:{port}")
     is_ws = upgrade and "upgrade" in conn
@@ -149,8 +167,8 @@ async def _read_head(reader: asyncio.StreamReader) -> bytes | None:
 
 
 class Guard:
-    def __init__(self, port: int, upstream: str, extra_origins: list[str]):
-        self.port, self.upstream, self.extra = port, upstream, extra_origins
+    def __init__(self, port: int, upstream: str, extra_origins: list[str], session: str | None = None):
+        self.port, self.upstream, self.extra, self.session = port, upstream, extra_origins, session
         self.origins = allowed_origins(port, extra_origins)
 
     async def handle(self, creader: asyncio.StreamReader, cwriter: asyncio.StreamWriter) -> None:
@@ -160,7 +178,7 @@ class Guard:
             head = await _read_head(creader)
             if head is None:
                 return
-            fwd, facts = check_head(head, self.port, self.origins)
+            fwd, facts = check_head(head, self.port, self.origins, self.session)
             ureader, uwriter = await open_upstream(self.upstream)
             # responses flow back raw; requests are checked one head at a time
             tasks.append(asyncio.create_task(_pump(ureader, cwriter)))
@@ -182,7 +200,7 @@ class Guard:
                 if head is None:
                     break
                 try:
-                    fwd, facts = check_head(head, self.port, self.origins)
+                    fwd, facts = check_head(head, self.port, self.origins, self.session)
                 except Refused as r:
                     # a browser never changes Host on a pooled connection; anything that does is
                     # cut off: the refused request is never relayed and the connection closes
@@ -238,8 +256,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--allow-origin", action="append", default=[])
     ap.add_argument("--tag", default="")
     a = ap.parse_args(argv)
+    # the session secret comes by environment (never argv, which any local process can list) and
+    # leaves it at once
+    session = os.environ.pop(SESSION_ENV, None) or None
     try:
-        asyncio.run(Guard(a.port, a.upstream, a.allow_origin).serve())
+        asyncio.run(Guard(a.port, a.upstream, a.allow_origin, session).serve())
     except KeyboardInterrupt:
         pass
     return 0
