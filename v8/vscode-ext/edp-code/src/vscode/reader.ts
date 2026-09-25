@@ -47,6 +47,8 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
   private quotes: QuoteHost | null = null;
   /** C20: a reveal asked for a doc version whose panel is not open yet, by `id@version` */
   private reveals = new Map<string, { from: number; to: number }>();
+  /** C26 rule 2: the identity generation, bumped only by reset(); a panel's own load counter is refresh-only */
+  private viewer = 0;
 
   constructor(private ctx: vscode.ExtensionContext, private board: () => Board, private log: (line: string) => void,
     private onAuthFail: (e: unknown) => void = () => {}) {}
@@ -113,7 +115,7 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
 
   /** The viewer signed in as someone else: forget the role. */
   reset(): void {
-    this.role = null; this.sources.clear(); this.reveals.clear();
+    ++this.viewer; this.role = null; this.sources.clear(); this.reveals.clear();
     for (const p of this.panels) {
       p.panel.title = `${p.id} v${p.version}`;
       p.next(); p.source = null; p.reveal = null; p.selection = { from: 0, to: 0, text: '' };
@@ -297,12 +299,13 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
     if (!ok) void vscode.window.showWarningMessage(`EDP: ${text}`);
   }
 
-  /** Run one write, then read the panel again (the gate closes, the proposal retires). */
+  /** Run one write, then read the panel again (the gate closes, the proposal retires). A refresh landing mid-write
+   *  never drops its result (C26 Q4): only another identity does, and reset() has already cleared the panel. */
   private async write(p: ReaderPanel, what: ReaderWrite, run: () => Promise<string>): Promise<void> {
-    const state = p.state;
-    try { const text = await run(); if (p.state !== state) return; this.done(p, what, true, text); }
+    const viewer = this.viewer;
+    try { const text = await run(); if (viewer !== this.viewer) return; this.done(p, what, true, text); }
     catch (e) {
-      if (p.state !== state) return;
+      if (viewer !== this.viewer) return;
       const err = e as BoardError;
       if (identityFailed(e)) this.onAuthFail(e);
       this.done(p, what, false, err?.message ?? String(e));
@@ -333,10 +336,12 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
   /** The title-bar Request changes: the feedback in an input box. */
   private async requestChangesPrompt(p: ReaderPanel): Promise<void> {
     const original = p.state.doc;
+    const viewer = this.viewer;
     const v = p.state.doc?.version ?? p.version;
     const feedback = await vscode.window.showInputBox({ title: `EDP: Request changes on ${p.id} v${v}`, prompt: 'Your feedback goes to the architect with this version',
       placeHolder: 'What to change…', ignoreFocusOut: true, validateInput: t => (t.trim() ? null : 'Request changes needs feedback.') });
-    if (feedback === undefined || !original || p.state.doc !== original) return;
+    // a refresh re-reads the same version (a new object): only another identity or an unloaded panel drops the feedback
+    if (feedback === undefined || !original || viewer !== this.viewer || p.state.doc?.id !== original.id || p.state.doc.version !== original.version) return;
     await this.requestChanges(p, feedback);
   }
 

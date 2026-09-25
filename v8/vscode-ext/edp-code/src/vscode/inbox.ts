@@ -21,7 +21,9 @@ const DEBOUNCE_MS = 600;
 
 export class InboxHost implements vscode.Disposable {
   private state: InboxState | null = null;
+  /** C26 rule 2: `gen` orders reads (a refresh bumps it); `viewer` is the identity, bumped only by clear() */
   private gen = 0;
+  private viewer = 0;
   private timer?: ReturnType<typeof setTimeout>;
   private disposed = false;
   /** the evidence version this viewer last opened, by sign-off row: a verdict rules on what was read, so a
@@ -39,13 +41,13 @@ export class InboxHost implements vscode.Disposable {
     return this.state && this.state.scope === scopeId ? this.state : null;
   }
 
-  /** Forget everything (signed out). */
-  clear(): void { ++this.gen; this.state = null; this.opened.clear(); clearTimeout(this.timer); }
+  /** Forget everything (signed out, or another identity). */
+  clear(): void { ++this.viewer; ++this.gen; this.state = null; this.opened.clear(); clearTimeout(this.timer); }
 
   /** A new scope is open: an empty, loading list now, then the board's. */
   async open(): Promise<void> {
     const sc = this.scope();
-    if (!sc) { this.clear(); return; }
+    if (!sc) { ++this.gen; this.state = null; clearTimeout(this.timer); return; }
     if (this.state?.scope !== sc.id) this.state = { scope: sc.id, items: [], loading: true, error: null };
     await this.refresh();
   }
@@ -92,9 +94,10 @@ export class InboxHost implements vscode.Disposable {
     this.post({ type: 'inboxDone', v: 1, key, ok, text });
   }
 
-  /** Run one write for a listed row; the row leaves the list on success, the refusal shows on it otherwise. */
+  /** Run one write for a listed row; the row leaves the list on success, the refusal shows on it otherwise. A refresh
+   *  (the feed event the write itself causes included) never drops the result (C26 Q3): only another identity does. */
   private async write(key: string, run: (i: InboxItem) => Promise<string>, want: InboxItem['type']): Promise<void> {
-    const gen = this.gen;
+    const viewer = this.viewer;
     const i = this.row(key);
     if (!i || i.type !== want) {
       this.done(key, false, 'This item is no longer waiting on you here.');
@@ -103,17 +106,18 @@ export class InboxHost implements vscode.Disposable {
     }
     try {
       const text = await run(i);
-      if (gen !== this.gen) return;
+      if (viewer !== this.viewer) return;
       // a read already in flight began before this write landed and would list the row again: drop it
       ++this.gen;
       this.opened.delete(key);
       if (this.state) this.state = { ...this.state, items: this.state.items.filter(x => x.key !== key) };
       this.done(key, true, text);
     } catch (e) {
-      if (gen !== this.gen) return;
+      if (viewer !== this.viewer) return;
       const err = e as BoardError;
-      if (authFailed(e)) this.onAuthFail(e);
+      // the refusal settles the row first; a 401 then clears the viewer
       this.done(key, false, err?.message ?? String(e));
+      if (authFailed(e)) { this.onAuthFail(e); return; }
     }
     this.schedule();
   }
@@ -156,7 +160,7 @@ export class InboxHost implements vscode.Disposable {
   /** A sign-off's evidence in an editor tab (a doc at the row's version, or the artifact); a design gate's
    *  review in the EDP reader (C16). */
   async openRow(key: string): Promise<void> {
-    const gen = this.gen;
+    const viewer = this.viewer;
     const b = this.board();
     const i = this.row(key);
     if (!i) return;
@@ -182,7 +186,7 @@ export class InboxHost implements vscode.Disposable {
       }
       void vscode.window.showWarningMessage(`EDP: the evidence ${ref} is not a doc or an artifact this panel can open.`);
     } catch (e) {
-      if (gen !== this.gen) return;
+      if (viewer !== this.viewer) return;
       const err = e as BoardError;
       if (authFailed(e)) { this.onAuthFail(e); return; }
       this.log(`inbox: open failed (${err?.code ?? 'error'})`);

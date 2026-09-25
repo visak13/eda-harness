@@ -43,7 +43,6 @@ export interface QuoteChat {
 export class QuoteHost implements vscode.Disposable {
   private tray: Tray;
   private identity: string | null = null;
-  private gen = 0;
   /** per thread: the draft the board refused on the last send */
   private invalid = new Map<string, string>();
   private ctl: vscode.CommentController;
@@ -73,7 +72,6 @@ export class QuoteHost implements vscode.Disposable {
   setIdentity(viewer: { origin: string; participant: string } | null): void {
     const key = viewer ? trayKey(viewer.origin, viewer.participant) : null;
     if (key === this.identity) return;
-    ++this.gen;
     this.identity = key;
     this.tray = new Tray(key ? restoreTray(this.ctx.workspaceState.get(key)) : undefined);
     this.invalid.clear();
@@ -140,9 +138,11 @@ export class QuoteHost implements vscode.Disposable {
       .map(d => ({ key: d.key, from: d.quote.locator!.line_start!, to: d.quote.locator!.line_end!, note: d.quote.note ?? '', label: d.label }));
   }
 
-  /** Add a draft to the open thread (the picker first when none is open). The thread it went to, or undefined. */
+  /** Add a draft to the open thread (the picker first when none is open). The thread it went to, or undefined.
+   *  C26 Q5: the draft is the user's own selection, so a first chat boot during the pick (no identity, then one)
+   *  keeps it; only a switch from one identity to another drops it. */
   async add(d: Draft): Promise<string | undefined> {
-    const gen = this.gen;
+    const who = this.identity;
     let t = this.chat.target();
     if (!t) {
       await vscode.commands.executeCommand('edp.chat.open');
@@ -150,7 +150,10 @@ export class QuoteHost implements vscode.Disposable {
       t = id ? this.chat.target() : null;
       if (!t || t.id !== id) { void vscode.window.setStatusBarMessage('EDP: no thread was opened, so the quote was not added', 6_000); return; }
     }
-    if (!this.identity || gen !== this.gen) return;
+    if (!this.identity || (who !== null && who !== this.identity)) {
+      void vscode.window.setStatusBarMessage('EDP: the board sign-in changed, so the quote was not added', 6_000);
+      return;
+    }
     if (!this.tray.add(t.id, d)) {
       void vscode.window.showWarningMessage(`EDP: ${t.title} already holds 20 quotes, the most one message can carry. Send or remove some first.`);
       return;
@@ -225,14 +228,14 @@ export class QuoteHost implements vscode.Disposable {
   }
 
   private async addFromReply(r: vscode.CommentReply): Promise<void> {
-    const gen = this.gen;
+    const who = this.identity;
     const th = r?.thread;
     if (!th?.range) return;
     const note = r.text ?? '';
     try {
       const doc = await vscode.workspace.openTextDocument(th.uri);
       const d = await this.draftOf(doc, th.range, note);
-      if (gen !== this.gen) return;
+      if (who !== null && who !== this.identity) return; // another identity: the box stays for them to re-add
       if ('error' in d) { void vscode.window.showWarningMessage(`EDP: ${d.error}`); return; }
       const went = await this.add(d);
       if (went) th.dispose(); // the tray's own marker replaces the box
