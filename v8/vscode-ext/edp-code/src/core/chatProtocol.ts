@@ -36,7 +36,8 @@ export const ATTACH_MAX = 20;
 export type AttachmentRef = { id: string; name: string; contentType: string; image: boolean };
 /** What the host learned about an artifact when the view asked (lazily, for rows in view): its size, and for
  *  an image a downscaled `data:` URI. `file`: shown as a file row (not an image, or over the thumbnail caps). */
-export type ArtifactInfo = { id: string; size: number | null; thumb: string | null; state: 'thumb' | 'file' | 'error'; note?: string };
+/** `retry`: a passing failure (board unreachable, worker timeout): shown now, never cached, asked again on the next render. */
+export type ArtifactInfo = { id: string; size: number | null; thumb: string | null; state: 'thumb' | 'file' | 'error'; note?: string; retry?: true };
 /** A staged upload waiting in the open thread's composer; the host holds it until a send carries it. */
 export type PendingAttachment = { id: string; name: string; size: number; contentType: string };
 /** A valid attachment file name: 1..255 chars, no control characters. */

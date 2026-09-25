@@ -15,7 +15,7 @@ export const THUMB_MAX_PIXELS = 24_000_000;
 export const PASS_THROUGH_MAX = 512 * 1024;
 
 export type Dims = { w: number; h: number };
-export type Thumb = { ok: true; dataUri: string; w: number; h: number } | { ok: false; reason: string };
+export type Thumb = { ok: true; dataUri: string; w: number; h: number } | { ok: false; reason: string; transient?: true };
 
 const u32 = (b: Uint8Array, o: number) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
 const u16be = (b: Uint8Array, o: number) => (b[o] << 8) | b[o + 1];

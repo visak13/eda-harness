@@ -54,6 +54,8 @@ export function initAttach(o: {
   let pending: PendingAttachment[] = [];
   let uploading = 0;
   const known = new Map<string, ArtifactInfo>();
+  /** a known info that will not change; a `retry` one (board unreachable, worker timeout) is asked for again on the next render */
+  const settled = (id: string) => { const i = known.get(id); return !!i && !i.retry; };
 
   // -- the composer: a clip button in #composer-tools, drop onto the box, paste into the text ---------------
   const input = el('input');
@@ -153,7 +155,7 @@ export function initAttach(o: {
   let flush: ReturnType<typeof setTimeout> | undefined;
   /** batch the ids that came into view; one request per ATTACH_MAX ids */
   const want = (id: string) => {
-    if (known.has(id)) return;
+    if (settled(id)) return;
     wanted.add(id);
     flush ??= setTimeout(function send() {
       const ids = [...wanted].slice(0, ATTACH_MAX);
@@ -205,7 +207,7 @@ export function initAttach(o: {
       b.addEventListener('click', () => o.post({ type: 'openArtifact', messageId: m.id, id: a.id }));
       fill(b, a);
       (b as HTMLElement & { _ref?: AttachmentRef })._ref = a;
-      if (!known.has(a.id)) { if (io) io.observe(b); else want(a.id); } // lazy: only rows that scroll into view
+      if (!settled(a.id)) { if (io) io.observe(b); else want(a.id); } // lazy: only rows that scroll into view
       row.append(b);
     }
     return row;

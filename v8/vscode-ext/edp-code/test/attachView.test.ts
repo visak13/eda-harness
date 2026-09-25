@@ -164,4 +164,19 @@ describe('lazy resolve', () => {
     await new Promise(r => setTimeout(r, 80));
     expect(s.posts).toEqual([{ type: 'resolveArtifacts', ids: ['art-abcdefabcd'] }]); // a known one is never asked again
   });
+
+  it('a passing failure (retry) shows now and is asked for again on the next render', async () => {
+    const s = setup();
+    const m: ChatMessage = { type: 'message', seq: 1, id: 'm-0123456789', ticket_id: T, created_at: '', created_by: 'o', to: null, kind: 'note', text: '',
+      reply_to: null, code_context: null, attachments: [{ id: A, name: 'a.png', contentType: 'image/png', image: true }] };
+    const row = s.ui.render(m)!;
+    document.body.append(row);
+    s.ui.infos([{ id: A, size: null, thumb: null, state: 'error', note: 'board unreachable', retry: true }]);
+    expect(row.querySelector('.att-note')!.textContent).toBe('unavailable: board unreachable');
+    await new Promise(r => setTimeout(r, 80));
+    s.posts.length = 0;
+    s.ui.render(m);
+    await new Promise(r => setTimeout(r, 80));
+    expect(s.posts).toEqual([{ type: 'resolveArtifacts', ids: [A] }]);
+  });
 });

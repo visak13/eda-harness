@@ -54,13 +54,21 @@ const EXT: Record<string, string> = {
  *  trailing dot/space, ≤100 chars, never a device name; the sniffed type's extension when it has none. */
 export function safeFileName(name: string, id: string, contentType: string): string {
   let n = (name || '').replace(/\\/g, '/').split('/').pop() ?? '';
-  n = n.replace(/[\u0000-\u001f\u007f<>:"|?*]/g, '_').replace(/[. ]+$/, '').trim();
-  if (/^(con|prn|aux|nul|com\d|lpt\d)(\.|$)/i.test(n)) n = `_${n}`;
+  const strip = (s: string) => s.replace(/[. ]+$/, '').trim();
+  n = strip(n.replace(/[\u0000-\u001f\u007f<>:"|?*]/g, '_'));
+  if (/^(con|prn|aux|nul|conin\$|conout\$|(com|lpt)[0-9¹²³])(\.|$)/i.test(n)) n = `_${n}`;
   if (!n || n === '.' || n === '..') n = id;
-  if (n.length > 100) { const dot = n.lastIndexOf('.'); const ext = dot > 0 && n.length - dot <= 10 ? n.slice(dot) : ''; n = n.slice(0, 100 - ext.length) + ext; }
+  if (n.length > 100) { const dot = n.lastIndexOf('.'); const ext = dot > 0 && n.length - dot <= 10 ? n.slice(dot) : ''; n = strip(n.slice(0, 100 - ext.length)) + ext; }
   const ext = EXT[contentType];
-  return ext && !/\.[A-Za-z0-9]{1,8}$/.test(n) ? `${n}.${ext}` : n;
+  if (!ext) return n;
+  // the board sniffs the type from the bytes; the extension decides how VS Code opens the file, so it must agree:
+  // an image or a binary type always gets its own; a text type only when the name claims a binary one
+  const cur = (/\.([A-Za-z0-9]{1,8})$/.exec(n)?.[1] ?? '').toLowerCase().replace('jpeg', 'jpg');
+  if (cur === ext) return n;
+  const binaryType = /^image\/(png|jpeg|gif|webp)$|^application\/(pdf|zip)$/.test(contentType);
+  return !cur || binaryType || BINARY_EXT.has(cur) ? `${n}.${ext}` : n;
 }
+const BINARY_EXT = new Set(['png', 'jpg', 'gif', 'webp', 'pdf', 'zip', 'exe', 'dll', 'bin']);
 
 /** The staged uploads a send may carry: every id must be one the host holds for that thread. */
 export function pickStaged(held: readonly PendingAttachment[], ids: readonly string[]): { ok: PendingAttachment[] } | { error: string } {

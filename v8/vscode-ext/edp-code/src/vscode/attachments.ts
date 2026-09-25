@@ -71,7 +71,7 @@ export class Attachments implements vscode.Disposable {
     if (hit) return Promise.resolve(hit);
     let p = this.inflight.get(ref.id);
     if (!p) {
-      p = this.fetchInfo(ref).then(i => { this.infos.set(i); return i; }).finally(() => this.inflight.delete(ref.id));
+      p = this.fetchInfo(ref).then(i => { if (!i.retry) this.infos.set(i); return i; }).finally(() => this.inflight.delete(ref.id));
       this.inflight.set(ref.id, p);
     }
     return p;
@@ -86,13 +86,14 @@ export class Attachments implements vscode.Disposable {
       }
       const c = await b.content(ref.id);
       const t = await this.thumbs.thumb(c.bytes!, ref.contentType);
-      return t.ok ? { id: ref.id, size: c.size, thumb: t.dataUri, state: 'thumb' } : { id: ref.id, size: c.size, thumb: null, state: 'file', note: t.reason };
+      return t.ok ? { id: ref.id, size: c.size, thumb: t.dataUri, state: 'thumb' }
+        : { id: ref.id, size: c.size, thumb: null, state: 'file', note: t.reason, ...(t.transient ? { retry: true as const } : {}) };
     } catch (e) {
       const err = e as BoardError;
       // a recorded artifact (url, repo path) has no stored bytes: a file row, not an error
       if (err?.code === 'not_found') return { id: ref.id, size: null, thumb: null, state: 'file', note: 'no stored content' };
       this.log(`attachments: ${ref.id} unavailable (${err?.code ?? 'error'})`);
-      return { id: ref.id, size: null, thumb: null, state: 'error', note: err?.message ?? 'unavailable' };
+      return { id: ref.id, size: null, thumb: null, state: 'error', note: err?.message ?? 'unavailable', retry: true };
     }
   }
 

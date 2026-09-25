@@ -82,6 +82,19 @@ describe('pure helpers', () => {
     expect(safeFileName('notes. ', A, 'text/plain')).toBe('notes.txt');
     expect(safeFileName('x'.repeat(300) + '.json', A, 'application/json')).toHaveLength(100);
   });
+  it('safeFileName: every Windows device name is prefixed; a cut name loses a trailing dot/space', () => {
+    for (const d of ['COM¹.png', 'LPT²', 'CONIN$', 'conout$.txt', 'com9', 'aux.md']) expect(safeFileName(d, A, 'text/plain').startsWith('_')).toBe(true);
+    expect(safeFileName('comet.txt', A, 'text/plain')).toBe('comet.txt');
+    const cut = safeFileName('a'.repeat(99) + ' tail-without-extension', A, 'application/octet-stream');
+    expect(cut).toBe('a'.repeat(99));
+  });
+  it('safeFileName: the extension agrees with the sniffed type, so the tab opens it right', () => {
+    expect(safeFileName('notes.txt', A, 'image/png')).toBe('notes.txt.png'); // a PNG named .txt: image preview, not garbage text
+    expect(safeFileName('x.png', A, 'text/plain')).toBe('x.png.txt');       // text named .png: a text tab, not a broken image
+    expect(safeFileName('shot.jpeg', A, 'image/jpeg')).toBe('shot.jpeg');
+    expect(safeFileName('build.log', A, 'text/plain')).toBe('build.log');   // a text name stays
+    expect(safeFileName('icon.svg', A, 'image/svg+xml')).toBe('icon.svg');
+  });
   it('pickStaged: every id must be held for the thread', () => {
     const held = [{ id: A, name: 'a', size: 1, contentType: 'text/plain' }];
     expect(pickStaged(held, [A])).toEqual({ ok: held });
