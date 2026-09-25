@@ -33,3 +33,11 @@ export function mentionedHandles(text: string, people: { handle: string; id: str
   }
   return out;
 }
+
+/** C23: the text the wake preview resolves for a draft whose quotes carry notes. The board reads the text and
+ *  each note on its own, so a fence left open in one source is closed here before joining; otherwise it would
+ *  swallow the next source's @mentions in the preview while delivery still notifies them. */
+export function previewMentionText(text: string, notes: (string | null | undefined)[]): string {
+  const close = (s: string) => ((s.match(/```/g)?.length ?? 0) % 2 ? `${s}\n\`\`\`` : s);
+  return [text, ...notes.filter((n): n is string => Boolean(n))].map(close).join("\n\n");
+}

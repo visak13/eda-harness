@@ -6,7 +6,7 @@ import { getPeople, getQuotesSupported, resolveMessage, sendMessage, type SendMe
 import { useDirtyGuard } from "../live/useDraftGuard";
 import { useDropUpload } from "./useDropUpload";
 import { useMentions } from "./useMentions";
-import { mentionedHandles } from "./mentions";
+import { mentionedHandles, previewMentionText } from "./mentions";
 import styles from "./Composer.module.css";
 import { Icon } from "./Icon";
 import { identity } from "../auth/identity";
@@ -238,8 +238,7 @@ function ComposerInstance({
   // delivery; nothing is sent (design §16.1). Enabled once there is a target to preview.
   // Round 2 #7: the draft's @mentions are part of the plan, so the preview carries the text (debounced).
   // C23: the board resolves @mentions in the quotes' notes too, so the preview carries them.
-  const noteText = tray.map((r) => r.quote.note ?? "").filter(Boolean).join("\n\n");
-  const draftText = noteText ? `${text}\n\n${noteText}` : text;
+  const draftText = previewMentionText(text, tray.map((r) => r.quote.note));
   const [previewText, setPreviewText] = useState("");
   useEffect(() => {
     const t = setTimeout(() => setPreviewText(draftText), 250);

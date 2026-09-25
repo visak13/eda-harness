@@ -39,6 +39,7 @@ async function call(method: string, p: string, body?: unknown, who: Record<strin
   return j.value;
 }
 const asOwner = { "X-Participant": "owner", "X-Token": OWNER_TOKEN };
+const TOKUSER_TOKEN = "c23-tokuser-tok-3f9a1c7e02"; // C23: the picked person reads their own wake feed
 const arch = { "X-Participant": "arch" };
 
 // -- workbench ------------------------------------------------------------------------------------
@@ -128,7 +129,7 @@ test.beforeAll(async ({ browser, board: _board }) => {
   const g = (a: string[]) => execFileSync("git", ["-c", "user.name=e2e", "-c", "user.email=e2e@example.invalid", ...a], { cwd: repo, encoding: "utf8" });
   g(["init", "-q", "-b", "main"]); g(["add", "src/sample.py"]); g(["commit", "-q", "-m", "fixture"]);
   head = g(["rev-parse", "HEAD"]).trim();
-  fs.writeFileSync(path.join(process.env.EDP8_E2E_HOME!, "tokens.json"), JSON.stringify({ owner: OWNER_TOKEN }));
+  fs.writeFileSync(path.join(process.env.EDP8_E2E_HOME!, "tokens.json"), JSON.stringify({ owner: OWNER_TOKEN, tokuser: TOKUSER_TOKEN }));
   await call("GET", "/v1/participants/owner", undefined, asOwner); // token mode is live
   cs = await startCodeServer(tmp, { "edp.boardUrl": BASE() });
   page = await browser.newPage();
@@ -281,6 +282,10 @@ test("the status bar reveals the chat; reorder, remove, Reply, Ctrl+Enter sends 
   const ev = (await call("GET", `/v1/events?subject_id=${story}`, undefined, asOwner))
     .find((e: any) => e.kind === "message_sent" && e.data.message === m.id);
   expect(ev.data.mentions).toContain(who);
+  // ... and the picked person's own wake feed carries it (the seed's one other human is tokuser)
+  expect(who).toBe("tokuser");
+  const woke = await call("GET", "/v1/events?since=0&limit=500", undefined, { "X-Participant": "tokuser", "X-Token": TOKUSER_TOKEN });
+  expect(woke.some((e: any) => e.kind === "message_sent" && e.data.message === m.id)).toBe(true);
   fs.writeFileSync(shot("quotes-message.json"), JSON.stringify({ id: m.id, reply_to: m.reply_to, quotes: q, mentions: ev.data.mentions }, null, 1));
   const cards = msgEl(m.id).locator(".quote-card");
   await expect(cards).toHaveCount(3, { timeout: 10_000 });

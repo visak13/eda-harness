@@ -51,6 +51,16 @@ describe("MentionInput", () => {
     expect(entered).toBe(1);
   });
 
+  it("an IME-composing Enter does not pick (the host's Enter handler gets it and checks isComposing)", async () => {
+    let entered = 0;
+    wrap(<Note onEnter={() => entered++} />);
+    const el = screen.getByTestId("note") as HTMLInputElement;
+    await waitFor(() => { typeAt(el, "@vi"); expect(screen.getByTestId("note-mentions-menu")).toBeInTheDocument(); });
+    fireEvent.keyDown(el, { key: "Enter", isComposing: true });
+    expect(el.value).toBe("@vi");
+    expect(entered).toBe(1); // the host's own handler sees it and must check isComposing itself (QuoteLayer does)
+  });
+
   it("arrows move the highlight, Tab picks, Escape closes", async () => {
     wrap(<Note />);
     const el = screen.getByTestId("note") as HTMLInputElement;

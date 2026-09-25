@@ -165,7 +165,7 @@ export function QuoteLayer(): React.JSX.Element | null {
   useEffect(() => {
     if (!pick) return;
     const onEsc = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
+      if (e.key !== "Escape" || e.isComposing) return; // an IME's Escape cancels the composition only
       // C23: Esc in the note's open @ picker closes the picker only, not the popover
       if (e.target instanceof HTMLElement && e.target.dataset.mentionsOpen) return;
       e.stopPropagation(); e.preventDefault();
@@ -237,7 +237,7 @@ export function QuoteLayer(): React.JSX.Element | null {
     <div ref={boxRef} className={styles.popover} style={{ left, top }} role="dialog" aria-label="Quote the selection"
       data-testid="quote-popover"
       onKeyDown={(e) => {
-        if (e.key === "Enter") { e.preventDefault(); void add(); }
+        if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); void add(); } // an IME's Enter confirms text
       }}>
       <MentionInput inputRef={noteRef} wrapClassName={styles.noteWrap} className={styles.note} value={note} onValue={setNote} maxLength={2000}
         placeholder="Note on this passage (optional). @ to notify someone" aria-label="Note on this passage" data-testid="quote-note" />
