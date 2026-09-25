@@ -7,6 +7,7 @@ import { ChatController } from '../src/vscode/chat';
 import { ThreadStore } from '../src/core/thread';
 import { locateInSource as extensionLocate } from '../src/core/quoteMatch';
 import { locateInSource as webLocate } from '../../../web/src/components/quoteMatch';
+import { DocReader } from '../src/vscode/reader';
 
 const creds = async () => ({ participant: 'review', token: 'throwaway' });
 
@@ -114,4 +115,13 @@ it('C7: both source matchers discard literal Markdown link text inside code', ()
     expect(locate('`[x](y)`', '[x](y)', '')).toBeNull();
     expect(locate('```\n[x](y)\n```', '[x](y)', '')).toBeNull();
   }
+});
+
+it('C7: refreshing a reader with 401 retains doc content and proposal actions', async () => {
+  const refused = async () => { throw Object.assign(new Error('unauthorized'), { status: 401 }); };
+  const r = Object.assign(Object.create(DocReader.prototype), { board: () => ({ doc: refused, latestDoc: refused }), onAuthFail: vi.fn() });
+  const p = { id: 'design-1111111111', version: 1, state: { doc: { body: 'old private document' }, canResolve: true }, next: () => 1, current: () => true, post: vi.fn() };
+  await r.load(p);
+  expect(p.state).toMatchObject({ doc: { body: 'old private document' }, canResolve: true, error: 'Sign in to the board to read this doc.' });
+  expect(r.onAuthFail).toHaveBeenCalledOnce();
 });
