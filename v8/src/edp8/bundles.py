@@ -1482,6 +1482,13 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
         return {"ok": False, "error": {"code": "invalid", "message": why},
                 "hint": "pick an id from models() / GET /v1/models for that role"}
     args["model"], args["effort"] = choice.pool_model, choice.effort
+    # C8 (s-a4fd5df319): this tool calls the pool directly, so it must carry the seat's EDP8_TOKEN like
+    # POST /v1/sessions/spawn does — a token-less seat 401s in public mode. Fail closed: no token, no spawn.
+    minted = c.seat_token(pid, ticket_id)
+    if not minted.get("ok"):
+        return minted
+    if (minted.get("value") or {}).get("env"):
+        args["env"] = minted["value"]["env"]
     out = _pool_call("spawn", args)
     if not out.get("ok") and "lock" in str(out.get("error", "")).lower():
         # board said dead, pool lock says staffed (pain 2026-09-01 11:19) — resolve with the

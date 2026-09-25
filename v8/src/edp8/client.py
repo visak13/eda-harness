@@ -312,6 +312,11 @@ class BoardClient:
                              json={"participant_id": participant_id, "ticket_id": ticket_id, "pool_id": pool_id,
                                    "state": state, "resume_token": resume_token, "reason": reason})
 
+    def seat_token(self, participant_id: str, ticket_id: str | None = None) -> dict[str, Any]:
+        """C8: get-or-mint the spawn env ({"EDP8_TOKEN": ...} or null in trusted mode) for a seat."""
+        return self._request("POST", "/v1/sessions/seat-token",
+                             json={"participant_id": participant_id, "ticket_id": ticket_id})
+
     def session_query(self, participant_id: str | None = None, ticket_id: str | None = None,
                       state: str | None = None) -> dict[str, Any]:
         return self._request("GET", "/v1/sessions", params={"participant_id": participant_id,

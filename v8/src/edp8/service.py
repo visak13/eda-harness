@@ -1220,6 +1220,30 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
                            "restarts it — retry shortly, or run `start.* --restart pool`."},
                 "hint": "seats never start the pool themselves (design §22); the launcher owns it"}
 
+    def _seat_secret(handle: str) -> str | None:
+        """Get-or-mint a seat's secret: its existing `agents` entry, else a freshly minted one. Trusted mode
+        (no tokens.json) → None. Never rotates, so a spawn the pool then refuses (the seat is alive) cannot
+        lock the live shell out — and a respawn keeps the secret the pool's resume re-injects anyway."""
+        with _TOKENS_WRITE:
+            if not _tokens_file().exists():
+                return None
+            existing = _tokens()[1].get(handle.lstrip("@"))
+            return existing or _mint_agent_token_locked(handle)
+
+    @app.post("/v1/sessions/seat-token")
+    def session_seat_token(b: SessionActionIn, a: Participant = Depends(actor)):
+        """C8 (s-a4fd5df319): the spawn env for a seat the MCP `spawn` tool starts. That tool calls the
+        pool directly, so without this its seats had no EDP8_TOKEN and 401 in public mode. Same authz as
+        /v1/sessions/spawn (owner any seat, architect its own epic); agents with a spawnable role only."""
+        _authorize_pool_op(a, b.participant_id, b.ticket_id)
+        p = board.store.get("participant", b.participant_id)
+        if p is None or p.type != "agent" or p.role not in SPAWNABLE_ROLES:
+            raise BoardError("scope", f"{b.participant_id!r} is not a registered seat of a spawnable role",
+                             "register the seat first (spawn does), then ask for its token")
+        token = _seat_secret(b.participant_id)
+        return ok({"env": {"EDP8_TOKEN": token} if token else None},
+                  "pass value.env to the pool spawn; null = trusted mode (no tokens.json), header-only seat")
+
     @app.post("/v1/sessions/spawn")
     def session_spawn(b: SessionSpawnIn, a: Participant = Depends(actor),
                       idempotency_key: str | None = Header(default=None)):
