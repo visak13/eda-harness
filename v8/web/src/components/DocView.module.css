@@ -253,3 +253,5 @@ details[open] > .historySummary::after {
   cursor: pointer;
 }
 .readerToggle:hover { border-color: var(--strongline); }
+/* C19: the passage a quote card opened the doc at. */
+.body [data-quote-focus] { background: var(--accentwash); box-shadow: -8px 0 0 var(--accentwash), 8px 0 0 var(--accentwash); border-radius: 2px; }

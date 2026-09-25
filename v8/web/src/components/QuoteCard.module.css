@@ -1,0 +1,21 @@
+/* C19 quote cards (above a message's text) and the composer's quote chips. */
+.card { margin: 6px 0 8px; padding: 0; border: 1px solid var(--line); border-left: 3px solid var(--accentink); border-radius: 6px; background: var(--bg); min-width: 0; overflow: hidden; }
+.card[data-source="code"] { border-left-color: var(--strongline); }
+.card[data-source="code"] > figure { margin: 0; border: 0; border-radius: 0; }
+.passage { margin: 0; padding: 8px 12px; max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.5; color: var(--ink); }
+.foot { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 12px 6px; font-size: 13px; color: var(--muted); }
+.source { display: inline-flex; align-items: center; gap: 5px; color: var(--accentink); min-height: 28px; overflow-wrap: anywhere; }
+.source:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
+.note { margin: 0; padding: 6px 12px 8px; border-top: 1px solid var(--line); font-size: 14px; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.note span { font-weight: 600; color: var(--muted); margin-right: 4px; }
+
+.chips { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.chip { border: 1px solid var(--strongline); border-left: 3px solid var(--accentink); border-radius: 6px; background: var(--bg); padding: 6px 8px; display: grid; gap: 4px; min-width: 0; }
+.chip[data-invalid] { border-color: var(--accentink); border-style: dashed; }
+.chipHead { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.chipLabel { flex: 1 1 auto; min-width: 0; font: 600 12px Consolas, "SF Mono", ui-monospace, monospace; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chipHead button { flex: none; display: inline-grid; place-items: center; min-width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); cursor: pointer; }
+.chipHead button:disabled { opacity: 0.4; cursor: default; }
+.chipHead button:focus-visible, .chipNote:focus-visible { outline: 2px solid var(--accentink); outline-offset: 1px; }
+.chipText { margin: 0; font-size: 13px; line-height: 1.45; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.chipNote { height: 28px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); font: inherit; font-size: 13px; min-width: 0; }

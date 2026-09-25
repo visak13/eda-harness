@@ -156,6 +156,7 @@ export function EpicPage(): React.JSX.Element {
       kinds={[...(reply ? KINDS_REPLY : KINDS_DEFAULT)]}
       showTo to={reply?.by} replyTo={reply?.id} replyToBy={reply?.by} onCancelReply={() => setReply(null)}
       expand={expand}
+      quotes
       placeholder="Write a message… use @ to mention someone. Type = Steer to steer this epic."
     />}</ExpandableComposer>
   );

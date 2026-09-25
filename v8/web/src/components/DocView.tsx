@@ -9,6 +9,8 @@ import { SignoffPane } from "./SignoffPane";
 import { DocControls } from "./DocControls";
 import { DesignReview } from "./DesignReview";
 import { pendingWork } from "./PendingNavigation";
+import { docSource, quoteRegionRef } from "./QuoteLayer";
+import { findRendered } from "./quoteMatch";
 import ui from "./ui.module.css";
 import styles from "./DocView.module.css";
 
@@ -69,7 +71,11 @@ export function DocView({
   request,
   tabHref,
   onBack,
+  focusLines,
 }: {
+  /** C19: `a-b` — the quoted source lines a quote card opened the doc at; the reader scrolls to and
+   *  marks their rendered passage. */
+  focusLines?: string | null;
   source?: string | null;
   /** The viewer's "Open in tab" target and nested-doc back (drawn by the review header, S19). */
   tabHref?: string;
@@ -154,6 +160,7 @@ export function DocView({
       versionsHosted={versionsHosted}
       hideTitle={reviewing}
       reviewing={reviewing}
+      focusLines={focusLines}
     />;
   return reviewing ? <DesignReview key={`${docId}:${source}:${q.data.version}`} docId={docId} source={source} version={q.data.version} title={q.data.title} request={request} versions={q.data.versions} onPickVersion={pick} outline={outline} tabHref={tabHref} onBack={onBack} onLatest={pick}>{content}</DesignReview> : <><DocumentSource key={docId} docId={docId} version={q.data.version} />{content}</>;
 }
@@ -166,7 +173,9 @@ function DocBody({
   versionsHosted,
   hideTitle,
   reviewing,
+  focusLines,
 }: {
+  focusLines?: string | null;
   doc: DocHtml;
   onOpenDoc?: (id: string) => void;
   onOpenTicket?: (id: string) => void;
@@ -186,6 +195,11 @@ function DocBody({
   // a comment posts "[doc id vN] text" to that ticket's thread.
   const scopeIsTicket = !doc.scope.includes(":") && doc.scope !== "global";
 
+  // C19: the body is a quotable region at the version shown; a quote falls back to the doc's own
+  // ticket when no thread composer is on screen (the full /doc page).
+  const regionRef = quoteRegionRef({ kind: "doc", id: doc.id, version: doc.version, ticketId: scopeIsTicket ? doc.scope : null });
+  const setBody = (el: HTMLDivElement | null) => { bodyRef.current = el; regionRef(el); };
+  useQuoteFocus(bodyRef, doc, focusLines);
 
   // Intercept nested doc/ticket links (design §17: they open in the same drawer, no page load).
   function onBodyClick(e: React.MouseEvent) {
@@ -260,7 +274,7 @@ function DocBody({
           </h1>
         )}
 
-        <div ref={bodyRef} onClick={onBodyClick} className={styles.body}>
+        <div ref={setBody} onClick={onBodyClick} className={styles.body} data-testid="doc-body">
           <Markdown html={doc.html} />
         </div>
 
@@ -349,4 +363,39 @@ function DocBody({
       </aside>}
     </div>
   );
+}
+
+/** C19: a quote card opened this doc at `a-b` (source lines of this version): find their rendered
+ *  passage in the body, scroll it into view and mark the blocks it spans (data-quote-focus). */
+function useQuoteFocus(bodyRef: React.RefObject<HTMLDivElement | null>, doc: DocHtml, focusLines: string | null | undefined): void {
+  useEffect(() => {
+    const m = /^(\d+)(?:-(\d+))?$/.exec(focusLines ?? "");
+    const body = bodyRef.current;
+    if (!m || !body) return;
+    const a = Number(m[1]), b = Number(m[2] ?? m[1]);
+    let cancelled = false;
+    const marked: Element[] = [];
+    void docSource(doc.id, doc.version).then((src) => {
+      if (cancelled) return;
+      const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+      const nodes: Text[] = [];
+      let text = "";
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) { nodes.push(n as Text); text += (n as Text).data; }
+      const hit = findRendered(text, src, a, b);
+      if (!hit) return;
+      const range = document.createRange();
+      let at = 0;
+      for (const n of nodes) {
+        const end = at + n.data.length;
+        if (hit.start >= at && hit.start < end) range.setStart(n, hit.start - at);
+        if (hit.end > at && hit.end <= end) { range.setEnd(n, hit.end - at); break; }
+        at = end;
+      }
+      for (const el of Array.from(body.querySelectorAll("p, li, pre, blockquote, tr, h2, h3, h4, h5, h6, dd, dt"))) {
+        if (range.intersectsNode(el) && !el.querySelector("p, li, pre, tr")) { el.setAttribute("data-quote-focus", "1"); marked.push(el); }
+      }
+      (marked[0] ?? range.startContainer.parentElement)?.scrollIntoView?.({ block: "center" });
+    }).catch(() => {});
+    return () => { cancelled = true; for (const el of marked) el.removeAttribute("data-quote-focus"); };
+  }, [bodyRef, doc.id, doc.version, doc.html, focusLines]);
 }

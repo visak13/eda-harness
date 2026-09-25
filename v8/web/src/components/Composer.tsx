@@ -12,6 +12,8 @@ import { Icon } from "./Icon";
 import { identity } from "../auth/identity";
 import { readDraft, writeDraft } from "./draftStorage";
 import { Avatar } from "./Avatar";
+import { QuoteChips } from "./QuoteCard";
+import { quoteTray, registerQuoteTarget, useQuoteTray } from "./quoteTray";
 const draftStores = new WeakMap<object, Map<string, import("./draftStorage").StoredDraft>>();
 
 // The object-attached composer (design §4.2/§13/§16.1/§18.1). The conversation is IMPLICIT — the
@@ -129,6 +131,9 @@ export interface ComposerProps {
   sendLabel?: string;
   /** Shows a Cancel beside Send (panel variant); the host closes its panel, the draft is kept. */
   onCancel?: () => void;
+  /** C19: this is the thread's composer — quotes picked from docs and messages (QuoteLayer) land here
+   *  as chips and go out as `quotes[]`. */
+  quotes?: boolean;
 }
 
 export function Composer(props: ComposerProps): React.JSX.Element {
@@ -157,6 +162,7 @@ function ComposerInstance({
   variant = "card",
   sendLabel = "Send",
   onCancel,
+  quotes: takesQuotes = false,
 }: ComposerProps): React.JSX.Element {
   const qc = useQueryClient();
   if (!draftStores.has(qc)) draftStores.set(qc, new Map());
@@ -197,7 +203,11 @@ function ComposerInstance({
   const firstKind = useRef(kinds[0]);
   useEffect(() => { if (firstKind.current !== kinds[0]) { setKind(kinds[0]); firstKind.current = kinds[0]; } }, [kinds[0]]);
   const idRef = useRef(`composer-${Math.random().toString(36).slice(2)}`);
-  const dirty = text.trim().length > 0 || artifacts.length > 0;
+  // C19: this thread's quote tray (the chips), and "a Quote goes to this composer" while it is mounted.
+  const tray = useQuoteTray(takesQuotes ? ticketId : null);
+  useEffect(() => (takesQuotes ? registerQuoteTarget(ticketId) : undefined), [takesQuotes, ticketId]);
+  const [badQuote, setBadQuote] = useState<number | null>(null);
+  const dirty = text.trim().length > 0 || artifacts.length > 0 || tray.length > 0;
 
   const previousTo = useRef(toProp);
   useEffect(() => {
@@ -252,7 +262,7 @@ function ComposerInstance({
   // Round 2 #8: the mutation carries the draft it SUBMITTED; on success only that draft is cleared —
   // text typed while the post was in flight survives — and a second Ctrl+Enter while pending is a no-op.
   const send = useMutation({
-    mutationFn: (draft: { text: string; artifacts: string[] }) =>
+    mutationFn: (draft: { text: string; artifacts: string[]; quotes: typeof tray }) =>
       submit({
         ticket_id: ticketId,
         kind,
@@ -260,12 +270,15 @@ function ComposerInstance({
         to,
         reply_to: replyTo,
         artifacts: draft.artifacts.length ? draft.artifacts : undefined,
+        quotes: draft.quotes.length ? draft.quotes.map((q) => q.quote) : undefined,
       }).then((r) => ({ ...r, draft })),
     onSuccess: ({ value, hint, draft }) => {
       setSentNote(hint || "Sent.");
       setUnresolved(value.unresolved_mentions ?? []);
       setText((t) => (t.trim() === draft.text ? "" : t));
       setArtifacts((a) => a.filter((id) => !draft.artifacts.includes(id)));
+      if (draft.quotes.length) quoteTray.removeSent(ticketId, draft.quotes.map((q) => q.key));
+      setBadQuote(null);
       setConfirming(false);
       if (draftKey) {
         const remaining = { text: text.trim() === draft.text ? "" : text, artifacts: artifacts.filter((id) => !draft.artifacts.includes(id)), kind, to, toPicked };
@@ -278,18 +291,23 @@ function ComposerInstance({
         void qc.invalidateQueries({ queryKey });
       }
     },
+    onError: (e) => {
+      // A 422 names the quote the board could not verify ("quotes[1]: …"): that chip is marked.
+      const m = /quotes\[(\d+)\]/.exec(e instanceof Error ? e.message : "");
+      setBadQuote(m ? Number(m[1]) : null);
+    },
   });
 
   const inFlight = useRef(false); // synchronous guard: isPending flips only on the next render
   function trySend() {
     if (send.isPending || inFlight.current || pendingUploads > 0) return;
-    if (text.trim().length === 0 && artifacts.length === 0) return;
+    if (text.trim().length === 0 && artifacts.length === 0 && tray.length === 0) return;
     if (needsConfirm && !confirming) {
       setConfirming(true); // one confirm step when a question/deviation would wake nobody
       return;
     }
     inFlight.current = true;
-    send.mutate({ text: text.trim(), artifacts: [...artifacts] }, { onSettled: () => (inFlight.current = false) });
+    send.mutate({ text: text.trim(), artifacts: [...artifacts], quotes: [...tray] }, { onSettled: () => (inFlight.current = false) });
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -335,7 +353,7 @@ function ComposerInstance({
     <button
       className={styles.send}
       type="button"
-      disabled={send.isPending || pendingUploads > 0 || (text.trim().length === 0 && artifacts.length === 0)}
+      disabled={send.isPending || pendingUploads > 0 || (text.trim().length === 0 && artifacts.length === 0 && tray.length === 0)}
       onClick={trySend}
       data-testid="composer-send"
     >
@@ -406,6 +424,8 @@ function ComposerInstance({
         )}
         {panel ? null : expandButton}
       </div> : null}
+
+      {takesQuotes ? <QuoteChips ticketId={ticketId} disabled={send.isPending} invalid={badQuote} /> : null}
 
       <textarea
         ref={taRef}

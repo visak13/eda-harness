@@ -88,3 +88,5 @@
 .md:empty { display: none; }
 /* S-UI: the ask the header's "unanswered request" badge jumped to */
 .msg[data-highlight="true"] { background: var(--accentwash); box-shadow: inset 3px 0 0 var(--accentink); transition: background 0.3s; }
+/* C19: a quote card link scrolls to the quoted message and flashes it. */
+.msg[data-flash] { outline: 2px solid var(--accentink); outline-offset: 4px; border-radius: 6px; transition: outline-color 0.3s; }

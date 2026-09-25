@@ -98,6 +98,34 @@ export interface MessageView {
   attachments?: MessageAttachment[];
   /** A code anchor tagged from the Code tab (epic-91fcd3b370 S4; null/absent otherwise). */
   code_context?: CodeContext | null;
+  /** C18 verified quotes, in order (absent on a pre-C18 board; [] when none). */
+  quotes?: Quote[];
+}
+
+/** One quote a message carries, as the board stores it (C18, design-10b21760d9 §14.5): `text` is what
+ *  the source said at that version; the board verified it and derived `locator.heading` and `sha`. */
+export interface Quote {
+  source: "doc" | "message" | "code";
+  id?: string | null;
+  version?: number | null;
+  author?: string | null;
+  locator?: { heading?: string | null; line_start?: number | null; line_end?: number | null; char_start?: number | null; char_end?: number | null };
+  text: string;
+  context?: { before: string; after: string } | null;
+  note?: string | null;
+  sha?: string;
+  code?: CodeContext | null;
+}
+
+/** A quote as the composer sends it (the board re-derives heading and sha). */
+export interface QuoteIn {
+  source: "doc" | "message";
+  id: string;
+  version?: number;
+  locator: { line_start: number; line_end: number } | { char_start: number; char_end: number };
+  text: string;
+  context?: { before: string; after: string };
+  note?: string;
 }
 
 /** A message's code anchor (board `CodeContext`): the lines someone selected in the Code tab. */

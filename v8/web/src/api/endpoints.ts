@@ -5,6 +5,7 @@
 // filter change is one place, and an absent filter is omitted rather than sent as "".
 import { api, apiEnvelope, postJson } from "./client";
 import type {
+  QuoteIn,
   ActivityDay,
   ConversationRow,
   ReplyRow,
@@ -96,6 +97,8 @@ export interface SendMessage {
   to?: string | null;
   reply_to?: string | null;
   artifacts?: string[];
+  /** C18 ordered quotes (doc passages, message passages), each with an optional note. */
+  quotes?: QuoteIn[];
 }
 /** POST /v1/messages — returns the sent message (with unresolved_mentions) and the board's
  *  recipient-resolution note (envelope hint), which the Composer shows verbatim. */
@@ -340,3 +343,18 @@ export const closeTopic = (id: string) => postJson<TicketRecord>(`${topicPath(id
 // epic-91fcd3b370 S3: the Code tab reads the service port/state from the board, never the bundle.
 export const getCodeStatus = (): Promise<CodeStatus> => api<CodeStatus>("/v1/code");
 export const getCodeFaq = (): Promise<CodeFaq> => api<CodeFaq>("/v1/code/faq");
+
+// ------------------------------------------------------------------ C19 quotes
+/** One doc version's markdown source (immutable per version): what a doc quote is verified against. */
+export const getDocSource = (id: string, version: number) =>
+  api<DocRecord>(`/v1/docs/${encodeURIComponent(id)}${qs({ version })}`);
+/** One message (its ticket, for a quote card's link to a message on another thread). */
+export const getMessage = (id: string) => api<{ id: string; ticket_id: string; text: string }>(`/v1/messages/${encodeURIComponent(id)}`);
+/** Does this board take `quotes[]` on messages (C18)? Its message contract names them; a pre-C18
+ *  board's does not, and it would silently drop them, so the SPA offers no Quote there. */
+export const getQuotesSupported = async (): Promise<boolean> => {
+  const r = await fetch("/v1/describe/message");
+  if (!r.ok) return false;
+  const body = await r.json().catch(() => null);
+  return typeof body?.value?.contract === "string" && body.value.contract.includes("quotes[]");
+};

@@ -11,6 +11,8 @@ import { useScrollToHash } from "./useScrollToHash";
 import { useViewerFlag } from "./viewerPrefs";
 import { MessageMarkdown } from "./Markdown";
 import { CodeCard } from "./CodeCard";
+import { QuoteCard } from "./QuoteCard";
+import { quoteRegionRef } from "./QuoteLayer";
 import styles from "./Conversation.module.css";
 
 // The conversation canvas per revision3-clean-epic.png: "Conversation · N messages · Today" and a
@@ -135,9 +137,14 @@ export function Conversation({ ticketId, history, order, onToggleOrder, onReply,
                   ) : null}
                   {/* S17 c-b1f32f8b33: Markdown from the board's renderer; an older board without
                       `html` keeps the plain linkified text. */}
-                  {m.html !== undefined
-                    ? <MessageMarkdown className={styles.md} html={m.html} strip={m.attachments?.map((a) => a.id)} />
-                    : <MessageText className={styles.text} text={stripTokens(m.text, m.attachments)} />}
+                  {/* C19: the message's verified quotes, as cards above its text. */}
+                  {m.quotes?.map((q, i) => <QuoteCard key={`${m.id}:q${i}`} q={q} />)}
+                  {/* C19: the text is a quotable region (QuoteLayer maps a selection back to m.text). */}
+                  <div ref={quoteRegionRef({ kind: "message", id: m.id, ticketId, author: m.by, text: m.text })}>
+                    {m.html !== undefined
+                      ? <MessageMarkdown className={styles.md} html={m.html} strip={m.attachments?.map((a) => a.id)} />
+                      : <MessageText className={styles.text} text={stripTokens(m.text, m.attachments)} />}
+                  </div>
                   {m.code_context ? <CodeCard c={m.code_context} /> : null}
                   {m.attachments?.map((a) => <AttachmentCard key={a.id} a={a} />)}
                 </div>

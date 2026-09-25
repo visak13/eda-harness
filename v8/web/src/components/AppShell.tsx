@@ -8,6 +8,7 @@ import { identity } from "../auth/identity";
 import { IdentityPanel } from "./IdentityPanel";
 import { DraftGuardProvider } from "../live/useDraftGuard";
 import { DocDrawerProvider } from "./DocDrawer";
+import { QuoteLayer } from "./QuoteLayer";
 import { ThemePicker } from "../theme/ThemePicker";
 import { AvatarPicker } from "./AvatarPicker";
 import { AnchoredPanel } from "./AnchoredPanel";
@@ -268,6 +269,7 @@ function AppShellChrome(): React.JSX.Element {
         <DocDrawerProvider>
           <Outlet />
         </DocDrawerProvider>
+        <QuoteLayer />
       </main>
 
       <GlossaryPanel open={helpOpen} onClose={closeHelp} framing={pageFraming} terms={terms} page={pageKey} />

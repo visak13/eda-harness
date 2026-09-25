@@ -63,6 +63,7 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
       if (top) p.set("doc", top);
       else p.delete("doc");
       p.delete("v"); // a version belongs to the doc it was picked on
+      p.delete("line"); // so do quoted lines (C19)
       setParams(p, { replace: true });
     },
     [params, setParams],
@@ -81,6 +82,7 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
         const p = new URLSearchParams(params);
         p.set("doc", id);
         p.delete("v");
+        p.delete("line");
         p.delete("view");
         p.delete("compose");
         setParams(p, { replace: true });
@@ -212,6 +214,7 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
             tabHref={tabHref}
             onBack={stack.length > 1 ? back : undefined}
             versionsHosted
+            focusLines={params.get("line")}
           />
         ) : null}
       </Drawer>

@@ -186,6 +186,7 @@ export function TicketPage(): React.JSX.Element {
         onCancelReply={() => setReply(null)}
         placeholder={reply ? `Reply to @${reply.by}` : `Write a message as @${as}… use @ to mention someone.`}
         expand={expand}
+        quotes
       />
     )}</ExpandableComposer>
   );

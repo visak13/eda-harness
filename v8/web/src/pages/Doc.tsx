@@ -40,7 +40,7 @@ export function DocPage(): React.JSX.Element {
           p.delete("version");
           p.set("v", String(v));
           setParams(p, { replace: true });
-        }} source={source} request={params.get("request")} />
+        }} source={source} request={params.get("request")} focusLines={params.get("line")} />
       </div>
     </div>
   );

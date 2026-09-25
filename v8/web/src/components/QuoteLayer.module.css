@@ -1,0 +1,57 @@
+/* C19: the selection popover (Quote + optional note) and the "quoted into …" toast. */
+.popover {
+  position: fixed;
+  z-index: 1000;
+  width: min(332px, calc(100vw - 16px));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1.5px solid var(--strongline);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 2px 2px 0 var(--line);
+  color: var(--ink);
+}
+.note {
+  flex: 1 1 180px;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--strongline);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+}
+.quote {
+  flex: none;
+  height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--buttonink);
+  font-weight: 600;
+  cursor: pointer;
+}
+.quote:disabled { opacity: 0.6; cursor: default; }
+.note:focus-visible, .quote:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
+.error { flex: 1 1 100%; margin: 0; font-size: 13px; color: var(--accentink); }
+.toast {
+  position: fixed;
+  z-index: 1000;
+  right: 16px;
+  bottom: 16px;
+  max-width: min(420px, calc(100vw - 32px));
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--strongline);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 14px;
+  box-shadow: 2px 2px 0 var(--line);
+}
