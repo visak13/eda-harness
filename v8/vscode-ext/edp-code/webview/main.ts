@@ -11,6 +11,7 @@ import { bodyFragment } from './render';
 import { applyKinds, forgetMisses, markPaths, onPathClick, PathPicker } from './pathTags';
 import { appendCommits, appendUnlinked, commitCount, placeCards, renderCommits, renderUncommitted, renderUnlinked, uncommittedLabel, unlinkedLabel } from './cards';
 import { restoreLocal } from '../src/core/viewState';
+import { initAttach } from './attach';
 
 declare function acquireVsCodeApi(): { postMessage(m: unknown): void; getState(): unknown; setState(s: unknown): void };
 const vscode = acquireVsCodeApi();
@@ -166,6 +167,10 @@ hashBtn.addEventListener('mousedown', e => e.preventDefault()); // keep the care
 hashBtn.addEventListener('click', () => pathPicker.insertHash());
 toolSlot.append(hashBtn);
 
+// C12: attachments: the clip button in the tool slot, drop onto the box, paste into the text, and the staged list
+const attach = initAttach({ box: cbox, slot: toolSlot, ta, err: sendErr, status: acStatus, ticket: () => state?.ticket?.id ?? null,
+  post: m => post(m), onChange: () => { sendBtn.disabled = pendingTicket !== null || attach.busy(); } });
+
 // what the chips expand to, in place above the thread (bounded, scrolls)
 const pinned = el('div', 'pinned');
 pinned.id = 'pinned';
@@ -218,6 +223,8 @@ function messageEl(m: ChatMessage, k: ReadonlySet<string>): HTMLElement {
   markPaths(body, post); // C11: backticked paths that exist here become links
   a.append(h, body);
   if (m.code_context) a.append(codeCard(m));
+  const atts = attach.render(m); // C12
+  if (atts) a.append(atts);
   return a;
 }
 
@@ -415,6 +422,7 @@ function renderAll() {
   renderCommits(s, list, post);
   renderBands();
   composer.hidden = !s.ticket;
+  attach.reset(s.ticket?.id ?? null, s.pending ?? [], s.artifacts ?? []);
   renderChip();
   ta.value = s.ticket ? local.drafts[s.ticket.id] ?? '' : '';
   kindSel.value = local.kind;
@@ -507,13 +515,16 @@ onPathClick(list, post);
 function send() {
   if (pendingTicket || !state?.ticket) return;
   const text = ta.value;
-  if (!text.trim()) { if (state.chip) sendErr.textContent = 'Add a note about the tagged lines.'; return; }
+  const files = attach.ids();
+  if (attach.busy()) { sendErr.textContent = 'Wait for the attachments to finish uploading.'; return; }
+  if (!text.trim() && !files.length) { if (state.chip) sendErr.textContent = 'Add a note about the tagged lines.'; return; }
+  if (!text.trim() && state.chip) { sendErr.textContent = 'Add a note about the tagged lines.'; return; }
   if (text.length > TEXT_MAX) { sendErr.textContent = `Too long: ${text.length} of ${TEXT_MAX} characters.`; return; }
   pendingTicket = state.ticket.id;
   sendBtn.disabled = true;
   sendErr.textContent = '';
   post({ type: 'send', ticketId: pendingTicket, text, kind: kindSel.value as SendKind, ...(toSel.value ? { to: toSel.value } : {}),
-    ...(state.chip ? { chipId: state.chip.id } : {}) });
+    ...(state.chip ? { chipId: state.chip.id } : {}), ...(files.length ? { attachmentIds: files } : {}) });
 }
 
 composer.addEventListener('submit', e => { e.preventDefault(); send(); });
@@ -637,6 +648,16 @@ window.addEventListener('message', (ev: MessageEvent) => {
       break;
     case 'pathKinds':
       applyKinds(list, m);
+      break;
+    case 'pending': // C12
+      if (state?.ticket?.id === m.ticketId) state.pending = m.pending;
+      attach.setPending(m.ticketId, m.pending);
+      break;
+    case 'attachFailed':
+      attach.failed(m.ticketId, m.text);
+      break;
+    case 'artifacts':
+      attach.infos(m.items);
       break;
     case 'error':
       olderBtn.disabled = false;

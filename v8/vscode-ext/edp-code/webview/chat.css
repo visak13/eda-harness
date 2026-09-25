@@ -207,3 +207,38 @@ body.vscode-reduce-motion * { transition: none !important; animation: none !impo
 .cm-more { padding: 0 6px 4px; font-size: 0.85em; color: var(--vscode-descriptionForeground); }
 .ul-list { max-height: 30vh; overflow-y: auto; }
 body.vscode-high-contrast .commit, body.vscode-high-contrast .uncommitted { border: 1px solid var(--vscode-contrastBorder); }
+
+/* C12 attachments: the clip button, the staged list in the composer box, the drop veil, and a message's
+   thumbnails / file rows. Thumbnails are data: URIs the host made; colours are --vscode-* only. */
+.tool.attach { padding: 0 6px; color: var(--vscode-icon-foreground, var(--vscode-foreground)); }
+.tool.attach:hover { background: var(--vscode-toolbar-hoverBackground); }
+.cbox { position: relative; }
+.pending { list-style: none; margin: 0; padding: 4px 4px 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.pend {
+  display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 1px 2px 1px 6px; border-radius: 3px;
+  background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); font-size: 0.9em;
+}
+.pend.uploading { padding-right: 6px; font-style: italic; }
+.pend-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.pend-size { opacity: 0.8; white-space: nowrap; }
+.pend-remove { padding: 0 5px; color: inherit; }
+.pend-remove:hover { background: var(--vscode-toolbar-hoverBackground); }
+.drop-veil {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none;
+  border: 2px dashed var(--vscode-focusBorder); border-radius: 3px;
+  background: var(--vscode-editor-background); color: var(--vscode-foreground); opacity: 0.92;
+}
+.atts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.att {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 3px 6px; text-align: left;
+  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, transparent)); border-radius: 3px;
+  background: var(--vscode-textCodeBlock-background, transparent); color: var(--vscode-foreground);
+}
+.att:hover { border-color: var(--vscode-focusBorder); }
+.att-image { padding: 2px; }
+.att-thumb { display: block; max-width: 100%; max-height: 240px; height: auto; border-radius: 2px; }
+.att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; color: var(--vscode-textLink-foreground); }
+.att-size, .att-note { color: var(--vscode-descriptionForeground); font-size: 0.85em; white-space: nowrap; }
+.att-error .att-note { color: var(--vscode-errorForeground); }
+.att-loading .att-name { opacity: 0.8; }
+body.vscode-high-contrast .att, body.vscode-high-contrast .pend { border: 1px solid var(--vscode-contrastBorder); }

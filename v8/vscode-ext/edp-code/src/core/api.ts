@@ -2,6 +2,7 @@
 // sink are injected, so tests stub them. The log sink receives `method path -> status (ms)` only:
 // never headers, bodies or the Creds object (design §9, a token in the extension leaks).
 import type { Anchor } from './anchor';
+import type { BoardArtifact } from './attachments';
 import type { Reachable } from './people';
 import type { MessageRow, ThreadPage } from './thread';
 
@@ -19,7 +20,13 @@ export type MessageIn = { ticket_id: string; to: string; kind: MessageKind; text
 export type Message = { id: string; ticket_id: string; to: string | null; kind: string; text: string };
 /** A chat send (C3): `to` empty = a thread note, mentions do the waking; a composer code chip adds
  *  `code_context` (C4), always the host's own anchor. */
-export type ChatSend = { ticket_id: string; to: string | null; kind: string; text: string; reply_to: string | null; code_context?: Anchor };
+export type ChatSend = { ticket_id: string; to: string | null; kind: string; text: string; reply_to: string | null; code_context?: Anchor;
+  /** C12: staged upload ids; the board finalises them with the message, all-or-nothing */
+  artifacts?: string[] };
+/** C12: `POST /v1/artifacts/upload` answers the staged artifact. */
+export type Staged = BoardArtifact & { staged: true; content_type: string };
+/** C12: an artifact's bytes (`GET /v1/artifacts/{id}/content`); `bytes` is null for a size-only probe. */
+export type Content = { bytes: Uint8Array | null; type: string; size: number | null };
 
 export class BoardError extends Error {
   constructor(public code: string, msg: string, public status: number) { super(msg); }
@@ -41,6 +48,15 @@ export type Board = ReturnType<typeof boardClient>;
 export function boardClient(baseUrl: string, creds: () => Promise<Creds | undefined>, f: typeof fetch = fetch,
   log: (line: string) => void = () => {}, timeoutMs = TIMEOUT_MS) {
   async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown, override?: Creds): Promise<T> {
+    const res = await request(method, path, body, override);
+    const env = (await res.json().catch(() => null)) as Envelope<T> | null;
+    if (!env || typeof env !== 'object' || !('ok' in env)) throw new BoardError('bad_response', `HTTP ${res.status} from ${method} ${path}`, res.status);
+    if (!env.ok) throw new BoardError(env.error?.code ?? 'error', env.error?.message ?? `HTTP ${res.status}`, res.status);
+    return env.value;
+  }
+  /** One board request: the creds headers, the timeout, no redirects. A FormData body goes as multipart
+   *  (fetch sets the boundary); anything else as JSON. */
+  async function request(method: 'GET' | 'POST', path: string, body?: unknown, override?: Creds, signal?: AbortSignal): Promise<Response> {
     const refused = unsafeBoardUrl(baseUrl);
     if (refused) throw new BoardError('unsafe_board_url', refused, 0);
     const c = override ?? await creds();
@@ -50,9 +66,9 @@ export function boardClient(baseUrl: string, creds: () => Promise<Creds | undefi
     try {
       res = await f(new URL(path, baseUrl), {
         // manual: a redirect must never carry X-Token to another origin (fetch strips only Authorization)
-        method, signal: AbortSignal.timeout(timeoutMs), redirect: 'manual',
-        headers: { 'X-Participant': c.participant, 'X-Token': c.token, ...(body ? { 'Content-Type': 'application/json' } : {}) },
-        body: body ? JSON.stringify(body) : undefined,
+        method, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs), redirect: 'manual',
+        headers: { 'X-Participant': c.participant, 'X-Token': c.token, ...(body && !(body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}) },
+        body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined,
       });
     } catch (e) {
       const name = (e as Error)?.name;
@@ -62,10 +78,24 @@ export function boardClient(baseUrl: string, creds: () => Promise<Creds | undefi
         timedOut ? `board did not answer within ${timeoutMs / 1000} s (${method} ${path})` : `board unreachable at ${new URL(baseUrl).origin}`, 0);
     }
     log(`${method} ${path} -> ${res.status} (${Date.now() - t0} ms)`);
-    const env = (await res.json().catch(() => null)) as Envelope<T> | null;
-    if (!env || typeof env !== 'object' || !('ok' in env)) throw new BoardError('bad_response', `HTTP ${res.status} from ${method} ${path}`, res.status);
-    if (!env.ok) throw new BoardError(env.error?.code ?? 'error', env.error?.message ?? `HTTP ${res.status}`, res.status);
-    return env.value;
+    return res;
+  }
+  /** An artifact's bytes, or (`probe`) only its type and Content-Length with the body cancelled. A refusal
+   *  is the board's envelope, surfaced like any other call. */
+  async function content(id: string, probe = false): Promise<Content> {
+    const path = `/v1/artifacts/${encodeURIComponent(id)}/content`;
+    const ctl = new AbortController();
+    const res = await request('GET', path, undefined, undefined, ctl.signal);
+    if (res.status !== 200) {
+      const env = (await res.json().catch(() => null)) as Envelope<unknown> | null;
+      if (env && typeof env === 'object' && 'ok' in env && !env.ok) throw new BoardError(env.error?.code ?? 'error', env.error?.message ?? `HTTP ${res.status}`, res.status);
+      throw new BoardError('bad_response', `HTTP ${res.status} from GET ${path}`, res.status);
+    }
+    const len = Number(res.headers.get('content-length'));
+    const type = (res.headers.get('content-type') ?? '').split(';')[0].trim();
+    if (probe) { ctl.abort(); await res.body?.cancel().catch(() => {}); return { bytes: null, type, size: Number.isFinite(len) && len >= 0 ? len : null }; }
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    return { bytes, type, size: bytes.byteLength };
   }
   return {
     participants: () => call<Participant[]>('GET', '/v1/participants'),
@@ -82,5 +112,14 @@ export function boardClient(baseUrl: string, creds: () => Promise<Creds | undefi
     message: (id: string) => call<MessageRow>('GET', `/v1/messages/${encodeURIComponent(id)}`),
     people: () => call<Reachable[]>('GET', '/v1/me/people'),
     send: (m: ChatSend) => call<MessageRow & { unresolved_mentions?: string[] }>('POST', '/v1/messages', m),
+    // attachments (C12): the board sniffs the type and enforces the cap; a refusal is its own message
+    upload: (ticketId: string, name: string, bytes: Uint8Array) => {
+      const form = new FormData();
+      form.append('file', new Blob([bytes as Uint8Array<ArrayBuffer>]), name);
+      form.append('ticket_id', ticketId);
+      return call<Staged>('POST', '/v1/artifacts/upload', form);
+    },
+    artifact: (id: string) => call<BoardArtifact>('GET', `/v1/artifacts/${encodeURIComponent(id)}`),
+    content,
   };
 }

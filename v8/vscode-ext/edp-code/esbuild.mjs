@@ -11,6 +11,11 @@ await esbuild.build({
   outfile: 'dist/extension.js', sourcemap: !production, sourcesContent: false,
   minify: production, logLevel: 'warning',
 });
+// C12: the thumbnail worker (pngjs + jpeg-js) runs off the extension host's thread
+await esbuild.build({
+  entryPoints: ['src/core/thumbWorker.ts'], bundle: true, format: 'cjs', platform: 'node', target: 'node24',
+  outfile: 'dist/thumbWorker.js', sourcemap: false, minify: production, logLevel: 'warning',
+});
 await esbuild.build({
   entryPoints: { webview: 'webview/main.ts', 'webview-css': 'webview/chat.css' }, bundle: true,
   format: 'iife', platform: 'browser', target: ['es2022'], outdir: 'dist', splitting: false,

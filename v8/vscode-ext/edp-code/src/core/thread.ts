@@ -2,29 +2,39 @@
 // webview never assumes an earlier message arrived). Pure: page rows and live rows merge by message
 // id, order is the board's storage seq, older pages prepend. One store per open ticket: threads are
 // never merged (dec-8dfe3d97af).
-import type { ChatMessage, CodeContext } from './chatProtocol';
+import type { AttachmentRef, ChatMessage, CodeContext } from './chatProtocol';
+import { attachmentRefs, type BoardAttachment } from './attachments';
 
 /** A `GET /v1/tickets/{id}/thread` row. */
 export type ThreadRow = {
   id: string; seq: number; by: string; to: string | null; kind: string; text: string;
   at: string; reply_to: string | null; code_context: CodeContext | null;
+  /** C12: attachment cards (id, form, filename, content type), never bytes */
+  attachments?: BoardAttachment[];
 };
 /** A `GET /v1/messages/{id}` row (the live path; no seq, no html). */
 export type MessageRow = {
   id: string; ticket_id: string; created_at: string; created_by: string; to: string | null;
   kind: string; text: string; reply_to: string | null; code_context?: CodeContext | null;
+  /** C12: artifact ids only; the host resolves names before the row reaches the view */
+  artifacts?: string[];
 };
 export type ThreadPage = { thread: ThreadRow[]; thread_total: number; thread_before: number | null };
 
 export const fromThreadRow = (ticketId: string, r: ThreadRow): ChatMessage => ({
   type: 'message', seq: r.seq, id: r.id, ticket_id: ticketId, created_at: r.at, created_by: r.by,
   to: r.to ?? null, kind: r.kind, text: r.text, reply_to: r.reply_to ?? null, code_context: r.code_context ?? null,
+  ...withAttachments(attachmentRefs(r.attachments)),
 });
 
+const withAttachments = (a: AttachmentRef[]) => (a.length ? { attachments: a } : {});
+
 /** `seq` comes from the feed event that announced the message. */
-export const fromMessageRow = (m: MessageRow, seq: number): ChatMessage => ({
+/** `refs`: the message's artifacts, resolved by the host (C12). */
+export const fromMessageRow = (m: MessageRow, seq: number, refs: AttachmentRef[] = []): ChatMessage => ({
   type: 'message', seq, id: m.id, ticket_id: m.ticket_id, created_at: m.created_at, created_by: m.created_by,
   to: m.to ?? null, kind: m.kind, text: m.text, reply_to: m.reply_to ?? null, code_context: m.code_context ?? null,
+  ...withAttachments(refs),
 });
 
 export class ThreadStore {

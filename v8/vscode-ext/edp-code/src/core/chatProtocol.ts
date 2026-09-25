@@ -23,7 +23,24 @@ export type CodeContext = {
 export type ChatMessage = {
   type: 'message'; seq: number; id: string; ticket_id: string; created_at: string; created_by: string;
   to: string | null; kind: string; text: string; reply_to: string | null; code_context: CodeContext | null;
+  /** C12: the message's attached artifacts (names and types only; bytes stay in the host) */
+  attachments?: AttachmentRef[];
 };
+
+// -- attachments (C12 s-85dd35a166; design §13 row C12) ----------------------------------------------
+export const ARTIFACT_ID = /^art-[0-9a-f]{10}$/;
+export const NAME_MAX = 255;
+/** At most this many attachments per message, and per resolve request. */
+export const ATTACH_MAX = 20;
+/** One attachment of a message, as the board lists it. `image`: the board serves it inline (png/jpeg/gif/webp). */
+export type AttachmentRef = { id: string; name: string; contentType: string; image: boolean };
+/** What the host learned about an artifact when the view asked (lazily, for rows in view): its size, and for
+ *  an image a downscaled `data:` URI. `file`: shown as a file row (not an image, or over the thumbnail caps). */
+export type ArtifactInfo = { id: string; size: number | null; thumb: string | null; state: 'thumb' | 'file' | 'error'; note?: string };
+/** A staged upload waiting in the open thread's composer; the host holds it until a send carries it. */
+export type PendingAttachment = { id: string; name: string; size: number; contentType: string };
+/** A valid attachment file name: 1..255 chars, no control characters. */
+export const isAttachName = (n: string) => n.length > 0 && n.length <= NAME_MAX && !/[\u0000-\u001f\u007f]/.test(n);
 
 export type TicketRef = { id: string; kind: string; title: string; status: string };
 export type StoryRow = TicketRef & { unread: number; /** C5: commits naming the story or its tasks */ commits?: number };
@@ -111,6 +128,9 @@ export type ChatState = {
   chip: ChipView | null;
   feed: FeedStatus;
   notice: string | null;
+  /** C12: the open thread's staged uploads, and what the host already knows about its artifacts */
+  pending?: PendingAttachment[];
+  artifacts?: ArtifactInfo[];
 };
 
 export type HostToView =
@@ -130,14 +150,22 @@ export type HostToView =
   /** C11: the #-picker rows for the `findPaths` with this `seq` (the view drops a stale answer) */
   | { type: 'paths'; v: 1; seq: number; items: PathHit[] }
   /** C11: what each checked path is in this workspace; `missing` ones stay plain text */
-  | { type: 'pathKinds'; v: 1; kinds: Record<string, PathKind>; missing: string[] };
+  | { type: 'pathKinds'; v: 1; kinds: Record<string, PathKind>; missing: string[] }
+  /** C12: sizes/thumbnails the view asked for */
+  | { type: 'artifacts'; v: 1; ticketId: string; items: ArtifactInfo[] }
+  /** C12: the open thread's staged uploads changed (the whole list) */
+  | { type: 'pending'; v: 1; ticketId: string; pending: PendingAttachment[] }
+  /** C12: an upload was refused; the draft is untouched */
+  | { type: 'attachFailed'; v: 1; ticketId: string; name: string; text: string };
 
 export type ViewToHost =
   | { v: 1; type: 'ready' }
   | { v: 1; type: 'pickTicket'; id?: string }
   | { v: 1; type: 'loadOlder' }
   /** `ticketId` is the thread the user sees: the host refuses a send whose ticket is not the open one */
-  | { v: 1; type: 'send'; ticketId: string; text: string; kind: SendKind; to?: string; replyTo?: string; chipId?: string }
+  | { v: 1; type: 'send'; ticketId: string; text: string; kind: SendKind; to?: string; replyTo?: string; chipId?: string;
+      /** C12: staged uploads the host holds for this thread; with some, `text` may be empty */
+      attachmentIds?: string[] }
   /** the user removed the composer's code chip */
   | { v: 1; type: 'dropCode'; ticketId: string; chipId: string }
   | { v: 1; type: 'openCode'; messageId: string }
@@ -152,12 +180,23 @@ export type ViewToHost =
   /** C11: inline code spans in rendered messages that look like paths: which exist here? */
   | { v: 1; type: 'checkPaths'; paths: string[] }
   /** C11: a path link: a file opens in the editor, a folder reveals in the Explorer */
-  | { v: 1; type: 'openPath'; path: string };
+  | { v: 1; type: 'openPath'; path: string }
+  /** C12: upload a file for `ticketId`'s composer (clip, drop or paste) */
+  | { v: 1; type: 'attach'; ticketId: string; name: string; bytes: Uint8Array }
+  | { v: 1; type: 'dropAttachment'; ticketId: string; id: string }
+  /** C12: size/thumbnail for attachments now in view (the host answers with `artifacts`) */
+  | { v: 1; type: 'resolveArtifacts'; ids: string[] }
+  /** C12: open an attachment of a message in the open thread (full size in an editor tab, or save) */
+  | { v: 1; type: 'openArtifact'; messageId: string; id: string };
 
 const TYPES = new Set(['ready', 'pickTicket', 'loadOlder', 'send', 'dropCode', 'openCode', 'openBoard', 'signIn']);
 const PATH_TYPES = new Set(['findPaths', 'checkPaths', 'openPath']);
 const HANDLE = /^[A-Za-z0-9][A-Za-z0-9_.\-]{0,127}$/;
 const DIFF_TYPES = new Set(['openDiff', 'openUncommitted']);
+const ATTACH_TYPES = new Set(['attach', 'dropAttachment', 'resolveArtifacts', 'openArtifact']);
+/** The webview refuses a file over this before posting it: a transport guard for postMessage memory,
+ *  NOT the upload rule (the board's cap and type allowlist decide, and their refusal is shown). */
+export const ATTACH_TRANSPORT_MAX = 64 * 1024 * 1024;
 
 /** The inbound gate. `handles` are the ids/handles of the last `people` list sent to the view (a
  *  `to` must be one of them). Only the known keys of each type are copied out: extra keys are
@@ -165,7 +204,7 @@ const DIFF_TYPES = new Set(['openDiff', 'openUncommitted']);
 export function parseInbound(raw: unknown, handles: ReadonlySet<string> = new Set()): ViewToHost | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
-  if (r.v !== PROTOCOL_V || typeof r.type !== 'string' || !(TYPES.has(r.type) || DIFF_TYPES.has(r.type) || PATH_TYPES.has(r.type))) return null;
+  if (r.v !== PROTOCOL_V || typeof r.type !== 'string' || !(TYPES.has(r.type) || DIFF_TYPES.has(r.type) || PATH_TYPES.has(r.type) || ATTACH_TYPES.has(r.type))) return null;
   const str = (k: string) => (typeof r[k] === 'string' ? (r[k] as string) : undefined);
   switch (r.type) {
     case 'ready': case 'loadOlder': case 'signIn':
@@ -178,7 +217,9 @@ export function parseInbound(raw: unknown, handles: ReadonlySet<string> = new Se
     case 'send': {
       const text = str('text'), kind = str('kind'), ticketId = str('ticketId');
       if (!ticketId || !TICKET_ID.test(ticketId)) return null;
-      if (text === undefined || !text.trim() || text.length > TEXT_MAX) return null;
+      const att = r.attachmentIds === undefined ? [] : artifactIds(r.attachmentIds);
+      if (!att) return null;
+      if (text === undefined || (!text.trim() && !att.length) || text.length > TEXT_MAX) return null;
       if (!kind || !(SEND_KINDS as readonly string[]).includes(kind)) return null;
       const out: ViewToHost = { v: 1, type: 'send', ticketId, text, kind: kind as SendKind };
       if (r.to !== undefined && r.to !== '') {
@@ -196,7 +237,29 @@ export function parseInbound(raw: unknown, handles: ReadonlySet<string> = new Se
         if (!c || !CHIP_ID.test(c)) return null;
         out.chipId = c;
       }
+      if (att.length) out.attachmentIds = att;
       return out;
+    }
+    case 'attach': {
+      const ticketId = str('ticketId'), name = str('name');
+      if (!ticketId || !TICKET_ID.test(ticketId) || !name || !isAttachName(name)) return null;
+      const b = r.bytes;
+      const bytes = b instanceof Uint8Array ? b : b instanceof ArrayBuffer ? new Uint8Array(b)
+        : ArrayBuffer.isView(b) ? new Uint8Array(b.buffer, b.byteOffset, b.byteLength) : null;
+      if (!bytes || bytes.byteLength === 0 || bytes.byteLength > ATTACH_TRANSPORT_MAX) return null;
+      return { v: 1, type: 'attach', ticketId, name, bytes };
+    }
+    case 'dropAttachment': {
+      const ticketId = str('ticketId'), id = str('id');
+      return ticketId && TICKET_ID.test(ticketId) && id && ARTIFACT_ID.test(id) ? { v: 1, type: 'dropAttachment', ticketId, id } : null;
+    }
+    case 'resolveArtifacts': {
+      const ids = artifactIds(r.ids);
+      return ids && ids.length ? { v: 1, type: 'resolveArtifacts', ids } : null;
+    }
+    case 'openArtifact': {
+      const m = str('messageId'), id = str('id');
+      return m && MESSAGE_ID.test(m) && id && ARTIFACT_ID.test(id) ? { v: 1, type: 'openArtifact', messageId: m, id } : null;
     }
     case 'dropCode': {
       const ticketId = str('ticketId'), chipId = str('chipId');
@@ -245,12 +308,28 @@ export function parseInbound(raw: unknown, handles: ReadonlySet<string> = new Se
   return null;
 }
 
+/** 1..ATTACH_MAX distinct well-formed artifact ids, or null. */
+function artifactIds(raw: unknown): string[] | null {
+  if (!Array.isArray(raw) || raw.length > ATTACH_MAX) return null;
+  if (!raw.every(x => typeof x === 'string' && ARTIFACT_ID.test(x))) return null;
+  return [...new Set(raw as string[])];
+}
+
 /** A refused `send` still gets an answer, so the composer never stays stuck: its ticket id when it
  *  is well-formed (the view ignores answers for other threads). */
 export function refusedSendTicket(raw: unknown): string | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const r = raw as Record<string, unknown>;
   return r.type === 'send' && typeof r.ticketId === 'string' && TICKET_ID.test(r.ticketId) ? r.ticketId : undefined;
+}
+
+/** A refused `attach` is answered too (C12), so the view's upload count never sticks: the ticket and a
+ *  display name when both are usable. */
+export function refusedAttach(raw: unknown): { ticketId: string; name: string } | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  if (r.type !== 'attach' || typeof r.ticketId !== 'string' || !TICKET_ID.test(r.ticketId)) return undefined;
+  return { ticketId: r.ticketId, name: typeof r.name === 'string' ? r.name.replace(/[\u0000-\u001f\u007f]/g, '_').slice(0, NAME_MAX) : 'file' };
 }
 
 /** The inbound type for a log line (never the payload). */

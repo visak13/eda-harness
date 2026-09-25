@@ -20,6 +20,9 @@ import { ChatViewProvider, CHAT_VIEW } from './chatView';
 import { cardOf, naming, storyCounts, unlinked as unlinkedOf, type Indexed } from '../core/commits';
 import { anchorPath, inScope, sameRows, touchedPaths, uncommittedCard, type Scope } from '../core/uncommitted';
 import { Changes } from './changes';
+import { Attachments } from './attachments';
+import { attachText, INLINE_IMAGES, pickStaged } from '../core/attachments';
+import type { AttachmentRef } from '../core/chatProtocol';
 import { PathIndex } from './pathIndex';
 import { gitApi } from './repo';
 import type { TagTarget } from './tag';
@@ -56,6 +59,8 @@ export class ChatController implements vscode.Disposable, TagTarget {
   private changes: Changes;
   /** C11: the #-picker's workspace file/folder index, and the resolver behind path links */
   private paths: PathIndex;
+  /** C12: uploads staged per thread, artifact sizes/thumbnails, full-size opens */
+  private attach: Attachments;
   private tree: Ticket[] = [];
   private commits: CommitCard[] = [];
   private unlinked: CommitCard[] = [];
@@ -74,6 +79,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
   constructor(private ctx: vscode.ExtensionContext, private board: () => Board, private boardUrl: () => string,
     private log: (line: string) => void) {
     this.provider = new ChatViewProvider(ctx, this, log);
+    this.attach = new Attachments(ctx, board, log);
     this.paths = new PathIndex(log);
     this.changes = new Changes(ctx, {
       onCommits: added => this.onCommits(added),
@@ -97,6 +103,8 @@ export class ChatController implements vscode.Disposable, TagTarget {
       commits: this.ticket ? this.commits : [], unlinked: this.ticket ? this.unlinked : [], uncommitted: this.ucPosted,
       architect: epicArchitect(this.people, this.epic?.id ?? null), people: this.rows(),
       items: this.store?.items ?? [], hasOlder: this.store?.before != null, chip: this.chipOf(this.ticket?.id), feed: this.feedStatus, notice: this.notice,
+      pending: this.attach.pendingOf(this.ticket?.id),
+      artifacts: this.attach.known((this.store?.items ?? []).flatMap(i => (i.attachments ?? []).map(a => a.id))),
     };
   }
 
@@ -112,7 +120,18 @@ export class ChatController implements vscode.Disposable, TagTarget {
     switch (m.type) {
       case 'pickTicket': if (m.id) return this.open(m.id); await this.pick(); return;
       case 'loadOlder': return this.loadOlder();
-      case 'send': return this.send(m.ticketId, m.text, m.kind, m.to ?? null, m.replyTo ?? null, m.chipId);
+      case 'send': return this.send(m.ticketId, m.text, m.kind, m.to ?? null, m.replyTo ?? null, m.chipId, m.attachmentIds ?? []);
+      case 'attach': return this.upload(m.ticketId, m.name, m.bytes);
+      case 'dropAttachment': {
+        this.post({ type: 'pending', v: 1, ticketId: m.ticketId, pending: this.attach.drop(m.ticketId, m.id) });
+        return;
+      }
+      case 'resolveArtifacts': return this.resolveArtifacts(m.ids);
+      case 'openArtifact': {
+        const ref = this.store?.get(m.messageId)?.attachments?.find(a => a.id === m.id);
+        if (ref) await this.attach.open(ref); // only an attachment of a message in the open thread
+        return;
+      }
       case 'dropCode': {
         if (this.chips.get(m.ticketId)?.id === m.chipId) this.chips.delete(m.ticketId);
         return;
@@ -188,7 +207,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
     this.people = [];
     if (!(await creds(this.ctx))) {
       ++this.opening;
-      this.store = undefined; this.ticket = null; this.epic = null; this.stories = []; this.unread.clear(); this.chips.clear();
+      this.store = undefined; this.ticket = null; this.epic = null; this.stories = []; this.unread.clear(); this.chips.clear(); this.attach.clear();
       this.anchors.clear(); this.anchorsFor = null;
       this.opened = this.opening; this.pendingChip = undefined;
       this.feedStatus = 'signed-out';
@@ -221,6 +240,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
 
   dispose(): void {
     this.changes.dispose();
+    this.attach.dispose();
     this.paths.dispose();
     this.feed?.dispose();
     this.feed = undefined;
@@ -383,7 +403,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
       let m;
       try { m = await this.board().message(mid); } // the event carries a preview, never code_context
       catch (e) { this.log(`chat: message fetch failed (${(e as BoardError)?.code ?? 'error'}); reloading`); return this.reload(); }
-      const fresh = store.merge([fromMessageRow(m, ev.seq)]);
+      const fresh = store.merge([fromMessageRow(m, ev.seq, await this.attach.refs(m.artifacts))]);
       if (this.addAnchors(fresh)) this.refreshUncommitted();
       if (store === this.store && fresh.length) {
         this.post({ type: 'append', v: 1, ticketId: store.ticketId, items: fresh });
@@ -415,7 +435,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
     } catch (e) { if (store === this.store) answer([]); this.fail(e, 'could not load older messages'); }
   }
 
-  private async send(ticketId: string, text: string, kind: string, to: string | null, replyTo: string | null, chipId?: string): Promise<void> {
+  private async send(ticketId: string, text: string, kind: string, to: string | null, replyTo: string | null, chipId?: string, attachmentIds: string[] = []): Promise<void> {
     const store = this.store;
     // the view names the thread it shows; a send for any other thread is refused, never re-targeted
     if (!store || store.ticketId !== ticketId) {
@@ -431,11 +451,23 @@ export class ChatController implements vscode.Disposable, TagTarget {
       return;
     }
     const chip = c.chip;
+    // C12: only uploads this host staged for this thread; an unknown id is refused, never guessed
+    const staged = pickStaged(this.attach.pendingOf(ticketId), attachmentIds);
+    if ('error' in staged) {
+      this.post({ type: 'sendFailed', v: 1, ticketId, text: staged.error });
+      this.post({ type: 'pending', v: 1, ticketId, pending: this.attach.pendingOf(ticketId) });
+      return;
+    }
+    const files = staged.ok;
+    const body = files.length ? attachText(text, files.map(f => f.name)) : text; // an attachments-only send names its files
     try {
       const m = await this.board().send({ ticket_id: store.ticketId, to, kind, reply_to: replyTo,
-        ...(chip ? { text: render(chip.anchor, text, chip.truncated), code_context: chip.anchor } : { text }) });
+        ...(files.length ? { artifacts: files.map(f => f.id) } : {}),
+        ...(chip ? { text: render(chip.anchor, body, chip.truncated), code_context: chip.anchor } : { text: body }) });
+      if (files.length) this.post({ type: 'pending', v: 1, ticketId, pending: this.attach.sent(ticketId, files.map(f => f.id)) });
       if (chip && this.chips.get(ticketId)?.id === chip.id) this.chips.delete(ticketId);
-      const fresh = store.merge([fromMessageRow(m, 0)]);
+      const refs: AttachmentRef[] = files.map(f => ({ id: f.id, name: f.name, contentType: f.contentType, image: INLINE_IMAGES.has(f.contentType) }));
+      const fresh = store.merge([fromMessageRow(m, 0, refs)]);
       if (this.addAnchors(fresh)) this.refreshUncommitted();
       this.post({ type: 'sent', v: 1, ticketId, id: m.id });
       if (chip) this.post({ type: 'insertCode', v: 1, ticketId, chip: this.chipOf(ticketId), focus: false });
@@ -446,6 +478,35 @@ export class ChatController implements vscode.Disposable, TagTarget {
       // the draft stays in the composer
       this.post({ type: 'sendFailed', v: 1, ticketId, text: `Not sent: ${(e as Error).message}` });
     }
+  }
+
+  // -- attachments (C12 s-85dd35a166) -------------------------------------------------------------
+  /** Upload one file for a thread's composer; a refusal is the board's own message and the draft stays. */
+  private async upload(ticketId: string, name: string, bytes: Uint8Array): Promise<void> {
+    if (!this.store || this.store.ticketId !== ticketId) {
+      this.post({ type: 'attachFailed', v: 1, ticketId, name, text: `Not attached: that thread is no longer open.` });
+      return;
+    }
+    try {
+      this.post({ type: 'pending', v: 1, ticketId, pending: await this.attach.upload(ticketId, name, bytes) });
+    } catch (e) {
+      const err = e as BoardError;
+      if (err?.status === 401 || err?.status === 403 || err?.code === 'not_signed_in') this.fail(e, `could not attach ${name}`);
+      this.post({ type: 'attachFailed', v: 1, ticketId, name, text: `Not attached: ${name}: ${err?.message ?? String(e)}` });
+    }
+  }
+
+  /** The view asks for attachments now in view (lazy, architect m-1a33d88bc7): only ids on the open thread's
+   *  messages are resolved; each answer is posted as it lands. */
+  private async resolveArtifacts(ids: string[]): Promise<void> {
+    const store = this.store;
+    if (!store) return;
+    const refs = new Map<string, AttachmentRef>();
+    for (const i of store.items) for (const a of i.attachments ?? []) if (ids.includes(a.id)) refs.set(a.id, a);
+    await Promise.all([...refs.values()].map(async r => {
+      const info = await this.attach.resolve(r);
+      if (store === this.store) this.post({ type: 'artifacts', v: 1, ticketId: store.ticketId, items: [info] });
+    }));
   }
 
   private async openCode(messageId: string): Promise<void> {
