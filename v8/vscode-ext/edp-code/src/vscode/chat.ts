@@ -20,6 +20,7 @@ import { ChatViewProvider, CHAT_VIEW } from './chatView';
 import { cardOf, naming, storyCounts, unlinked as unlinkedOf, type Indexed } from '../core/commits';
 import { anchorPath, inScope, sameRows, touchedPaths, uncommittedCard, type Scope } from '../core/uncommitted';
 import { Changes } from './changes';
+import { PathIndex } from './pathIndex';
 import { gitApi } from './repo';
 import type { TagTarget } from './tag';
 
@@ -53,6 +54,8 @@ export class ChatController implements vscode.Disposable, TagTarget {
   private opening = 0;
   /** C5 change cards: the shared tree's commit index, the open epic's tickets (tasks, assignees), the cards */
   private changes: Changes;
+  /** C11: the #-picker's workspace file/folder index, and the resolver behind path links */
+  private paths: PathIndex;
   private tree: Ticket[] = [];
   private commits: CommitCard[] = [];
   private unlinked: CommitCard[] = [];
@@ -71,6 +74,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
   constructor(private ctx: vscode.ExtensionContext, private board: () => Board, private boardUrl: () => string,
     private log: (line: string) => void) {
     this.provider = new ChatViewProvider(ctx, this, log);
+    this.paths = new PathIndex(log);
     this.changes = new Changes(ctx, {
       onCommits: added => this.onCommits(added),
       onReset: () => this.onCommitsReset(),
@@ -124,6 +128,15 @@ export class ChatController implements vscode.Disposable, TagTarget {
         void vscode.env.openExternal(vscode.Uri.parse(boardTicketUrl(this.boardUrl(), m.ticketId, m.messageId)));
         return;
       }
+      case 'findPaths': {
+        this.post({ type: 'paths', v: 1, seq: m.seq, items: await this.paths.find(m.q) });
+        return;
+      }
+      case 'checkPaths': {
+        this.post({ type: 'pathKinds', v: 1, ...(await this.paths.kinds(m.paths)) });
+        return;
+      }
+      case 'openPath': return this.paths.open(m.path);
       case 'signIn': {
         if (await signIn(this.ctx, this.board)) await this.restart();
         return;
@@ -208,6 +221,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
 
   dispose(): void {
     this.changes.dispose();
+    this.paths.dispose();
     this.feed?.dispose();
     this.feed = undefined;
   }

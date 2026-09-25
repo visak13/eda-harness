@@ -8,6 +8,7 @@ import { activeMention } from '../src/core/mentions';
 import { accessibleName, filterPeople } from '../src/core/people';
 import { at } from '../src/core/render';
 import { bodyFragment } from './render';
+import { applyKinds, forgetMisses, markPaths, onPathClick, PathPicker } from './pathTags';
 import { appendCommits, appendUnlinked, commitCount, placeCards, renderCommits, renderUncommitted, renderUnlinked, uncommittedLabel, unlinkedLabel } from './cards';
 import { restoreLocal } from '../src/core/viewState';
 
@@ -118,7 +119,7 @@ toSel.setAttribute('aria-label', 'To (optional)');
 const ta = el('textarea');
 ta.id = 'composer';
 ta.rows = MIN_ROWS;
-ta.placeholder = 'Message… @ to mention · Enter sends, Shift+Enter newline';
+ta.placeholder = 'Message… @ to mention, # for a file or folder · Enter sends, Shift+Enter newline';
 ta.setAttribute('aria-label', 'Message');
 ta.setAttribute('aria-autocomplete', 'list');
 ta.setAttribute('aria-controls', 'people');
@@ -152,6 +153,18 @@ chipBox.setAttribute('aria-label', 'Tagged lines, sent with this message');
 chipBox.hidden = true;
 cbox.append(chipBox, ta, tools);
 composer.append(peopleList, cbox, acStatus, sendErr);
+
+// C11: the # picker (files and folders) beside the @ list, and its button in C9's tool slot
+const pathPicker = new PathPicker(ta, m => post(m), acStatus, () => { saveDraft(); grow(); });
+composer.prepend(pathPicker.list);
+const hashBtn = el('button', 'tool hash', '#');
+hashBtn.id = 'tag-path';
+hashBtn.type = 'button';
+hashBtn.title = 'Tag a file or folder (#)';
+hashBtn.setAttribute('aria-label', 'Tag a file or folder');
+hashBtn.addEventListener('mousedown', e => e.preventDefault()); // keep the caret where it is
+hashBtn.addEventListener('click', () => pathPicker.insertHash());
+toolSlot.append(hashBtn);
 
 // what the chips expand to, in place above the thread (bounded, scrolls)
 const pinned = el('div', 'pinned');
@@ -202,6 +215,7 @@ function messageEl(m: ChatMessage, k: ReadonlySet<string>): HTMLElement {
   h.append(t, open);
   const body = el('div', 'body');
   body.append(bodyFragment(document, m.text, k));
+  markPaths(body, post); // C11: backticked paths that exist here become links
   a.append(h, body);
   if (m.code_context) a.append(codeCard(m));
   return a;
@@ -472,11 +486,12 @@ function saveDraft() {
   persist();
 }
 
-ta.addEventListener('input', () => { saveDraft(); grow(); acUpdate(); sendErr.textContent = ''; });
-ta.addEventListener('click', acUpdate);
-ta.addEventListener('blur', () => setTimeout(acClose, 0));
+ta.addEventListener('input', () => { saveDraft(); grow(); acUpdate(); pathPicker.update(); sendErr.textContent = ''; });
+ta.addEventListener('click', () => { acUpdate(); pathPicker.update(); });
+ta.addEventListener('blur', () => setTimeout(() => { acClose(); pathPicker.close(); }, 0));
 ta.addEventListener('keydown', e => {
   if (e.isComposing || e.keyCode === 229) return; // IME: never send or pick mid-composition
+  if (pathPicker.onKey(e)) return; // the # list takes the keys while it is open, as the @ list does
   const open = !peopleList.hidden && acItems.length > 0;
   if (open) {
     if (e.key === 'ArrowDown') { e.preventDefault(); acActive = (acActive + 1) % acItems.length; acRender(); return; }
@@ -486,7 +501,8 @@ ta.addEventListener('keydown', e => {
   }
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
 });
-ta.addEventListener('keyup', e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) acUpdate(); });
+ta.addEventListener('keyup', e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { acUpdate(); pathPicker.update(); } });
+onPathClick(list, post);
 
 function send() {
   if (pendingTicket || !state?.ticket) return;
@@ -527,6 +543,7 @@ window.addEventListener('message', (ev: MessageEvent) => {
   if (!m || typeof m !== 'object' || m.v !== 1) return;
   switch (m.type) {
     case 'state':
+      forgetMisses(); // a path created since is asked about again
       state = m; // a send in flight stays in flight: its answer still comes
       renderAll();
       break;
@@ -614,6 +631,12 @@ window.addEventListener('message', (ev: MessageEvent) => {
         acStatus.textContent = `Tagged lines ${m.chip.label} will be sent with this message`;
         ta.focus(); const c = ta.value.length; ta.setSelectionRange(c, c);
       }
+      break;
+    case 'paths':
+      pathPicker.onPaths(m);
+      break;
+    case 'pathKinds':
+      applyKinds(list, m);
       break;
     case 'error':
       olderBtn.disabled = false;

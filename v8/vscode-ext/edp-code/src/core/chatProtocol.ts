@@ -34,6 +34,15 @@ export const SHA = /^[0-9a-f]{40}$/;
 export const isRepoPath = (p: string) =>
   p.length > 0 && p.length <= 4096 && !/[\\\0]/.test(p) && !p.startsWith('/') && !/^[A-Za-z]:/.test(p) && !p.split('/').includes('..');
 
+// -- #-tags (C11 s-35ccc6d35f): a tag is a backticked repo-relative path in the text ----------------
+/** A path a #-tag can carry and a link can open: repo-relative, no backtick or control character, no trailing `/`. */
+export const isTagPath = (p: string) => isRepoPath(p) && !/[`\u0000-\u001f\u007f]/.test(p) && !p.endsWith('/');
+export type PathKind = 'file' | 'folder';
+/** One #-picker row. `path` has no trailing `/`; the inserted token adds it for a folder. */
+export type PathHit = { path: string; kind: PathKind };
+/** At most this many paths per `checkPaths` */
+export const CHECK_PATHS_MAX = 200;
+
 export type CardFile = {
   path: string; oldPath?: string; status: string; add: number | null; del: number | null;
   /** C9 uncommitted rows: a path the open epic (or lone ticket) touched */
@@ -117,7 +126,11 @@ export type HostToView =
   | { type: 'sendFailed'; v: 1; ticketId: string; text: string }
   /** a Tag selection put a chip in `ticketId`'s composer (null: the chip is gone); `focus` moves focus to the composer */
   | { type: 'insertCode'; v: 1; ticketId: string; chip: ChipView | null; focus: boolean }
-  | { type: 'error'; v: 1; text: string };
+  | { type: 'error'; v: 1; text: string }
+  /** C11: the #-picker rows for the `findPaths` with this `seq` (the view drops a stale answer) */
+  | { type: 'paths'; v: 1; seq: number; items: PathHit[] }
+  /** C11: what each checked path is in this workspace; `missing` ones stay plain text */
+  | { type: 'pathKinds'; v: 1; kinds: Record<string, PathKind>; missing: string[] };
 
 export type ViewToHost =
   | { v: 1; type: 'ready' }
@@ -133,9 +146,16 @@ export type ViewToHost =
   | { v: 1; type: 'openDiff'; sha: string; path?: string }
   /** `scoped`: the multi-diff opens only the rows the open epic touched (C9) */
   | { v: 1; type: 'openUncommitted'; path?: string; scoped?: true }
-  | { v: 1; type: 'signIn' };
+  | { v: 1; type: 'signIn' }
+  /** C11: the #-picker's query (the text after `#`); `seq` pairs the answer */
+  | { v: 1; type: 'findPaths'; q: string; seq: number }
+  /** C11: inline code spans in rendered messages that look like paths: which exist here? */
+  | { v: 1; type: 'checkPaths'; paths: string[] }
+  /** C11: a path link: a file opens in the editor, a folder reveals in the Explorer */
+  | { v: 1; type: 'openPath'; path: string };
 
 const TYPES = new Set(['ready', 'pickTicket', 'loadOlder', 'send', 'dropCode', 'openCode', 'openBoard', 'signIn']);
+const PATH_TYPES = new Set(['findPaths', 'checkPaths', 'openPath']);
 const HANDLE = /^[A-Za-z0-9][A-Za-z0-9_.\-]{0,127}$/;
 const DIFF_TYPES = new Set(['openDiff', 'openUncommitted']);
 
@@ -145,7 +165,7 @@ const DIFF_TYPES = new Set(['openDiff', 'openUncommitted']);
 export function parseInbound(raw: unknown, handles: ReadonlySet<string> = new Set()): ViewToHost | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
-  if (r.v !== PROTOCOL_V || typeof r.type !== 'string' || !(TYPES.has(r.type) || DIFF_TYPES.has(r.type))) return null;
+  if (r.v !== PROTOCOL_V || typeof r.type !== 'string' || !(TYPES.has(r.type) || DIFF_TYPES.has(r.type) || PATH_TYPES.has(r.type))) return null;
   const str = (k: string) => (typeof r[k] === 'string' ? (r[k] as string) : undefined);
   switch (r.type) {
     case 'ready': case 'loadOlder': case 'signIn':
@@ -205,6 +225,21 @@ export function parseInbound(raw: unknown, handles: ReadonlySet<string> = new Se
       if (r.messageId === undefined) return { v: 1, type: 'openBoard', ticketId: t };
       const m = str('messageId');
       return m && MESSAGE_ID.test(m) ? { v: 1, type: 'openBoard', ticketId: t, messageId: m } : null;
+    }
+    case 'findPaths': {
+      const q = str('q'), seq = r.seq;
+      if (q === undefined || q.length > 1024 || /[`\r\n]/.test(q)) return null;
+      return typeof seq === 'number' && Number.isSafeInteger(seq) && seq >= 0 ? { v: 1, type: 'findPaths', q, seq } : null;
+    }
+    case 'checkPaths': {
+      const ps = r.paths;
+      if (!Array.isArray(ps) || ps.length > CHECK_PATHS_MAX) return null;
+      if (!ps.every(p => typeof p === 'string' && isTagPath(p))) return null;
+      return { v: 1, type: 'checkPaths', paths: [...new Set(ps as string[])] };
+    }
+    case 'openPath': {
+      const p = str('path');
+      return p && isTagPath(p) ? { v: 1, type: 'openPath', path: p } : null;
     }
   }
   return null;

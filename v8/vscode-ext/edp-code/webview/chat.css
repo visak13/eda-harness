@@ -156,6 +156,16 @@ textarea {
 .opt .d { font-size: 0.85em; color: var(--vscode-descriptionForeground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .opt.active .d { color: inherit; }
 
+/* #-tags (C11): the # picker reuses the @ list; path links in messages; the # button in the tool slot */
+.path-opt { flex-direction: row; align-items: baseline; gap: 6px; }
+.path-opt .h { white-space: nowrap; }
+.path-opt .d { min-width: 0; }
+.path-link { display: inline; padding: 0; margin: 0; border: 0; background: none; font: inherit; color: var(--vscode-textLink-foreground); cursor: pointer; }
+.path-link code { color: inherit; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
+.path-link:hover code { color: var(--vscode-textLink-activeForeground); text-decoration-style: solid; }
+.tool.hash { padding: 0 6px; font-weight: 600; color: var(--vscode-icon-foreground, var(--vscode-foreground)); }
+.tool.hash:hover { background: var(--vscode-toolbar-hoverBackground); }
+
 body.vscode-high-contrast .code-card, body.vscode-high-contrast .cbox, body.vscode-high-contrast .stories, body.vscode-high-contrast .band-chip,
 body.vscode-high-contrast .people, body.vscode-high-contrast .chip { border: 1px solid var(--vscode-contrastBorder); }
 body.vscode-reduce-motion * { transition: none !important; animation: none !important; }
