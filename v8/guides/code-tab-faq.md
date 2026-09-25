@@ -106,6 +106,9 @@ against its source when you send.
   source, the passage and an editable note. **↑**/**↓** reorder them and **×** removes one. While the
   chat panel is hidden the status bar shows **EDP draft: N → <thread>**; click it to show the chat.
   The drafts survive a reload of the window.
+- **Mentions and paths in notes:** every note box (the comment box, the reader and message popovers, the
+  chip notes) completes `@` (board people and live seats) and `#` (files and folders of the workspace)
+  as the composer does.
 - **Send:** press `Ctrl+Enter` in the composer (the text is optional when quotes are attached). The
   message carries every chip in order, together with any code chip, attachments or Reply target.
   If the board refuses one quote (its source changed), that chip is marked and nothing is sent;

@@ -7,6 +7,8 @@ import type { HostToReader, ReaderComment, ReaderMark, ReaderState, ReaderToHost
 import { approveReason, FEEDBACK_MAX, NOTE_MAX, SIGNOFF_TIP } from '../src/core/reader'; // value imports: core/reader has no vscode or node import
 import { isSendKey, sendChord } from '../src/core/composerKeys';
 import { diffLines, lineRange, renderDoc } from './readerRender';
+import type { PersonRow } from '../src/core/chatProtocol';
+import { NoteCompletion } from './noteComplete';
 
 declare function acquireVsCodeApi(): { postMessage(m: unknown): void; getState(): unknown; setState(s: unknown): void };
 const vscode = acquireVsCodeApi();
@@ -245,6 +247,14 @@ function addQuote(): void {
 
 function closeQuote(): void { qPop.hidden = true; qSel = null; qBtn.hidden = true; }
 
+// C20 (owner m-5a9111ce12): the chat composer's @ people and # path completion on the note box; the host sends
+// the people with the marks and answers findPaths from the chat's path index
+let people: PersonRow[] = [];
+const acLive = el('div', 'sr-only');
+acLive.setAttribute('aria-live', 'polite');
+document.body.append(acLive);
+const noteComplete = new NoteCompletion(() => people, m => post(m), acLive, 'rdn');
+noteComplete.attach(qNote, qPop); // before the note's own keys: a pick's Enter/Escape stops there
 qNote.addEventListener('keydown', e => {
   if (e.isComposing || e.keyCode === 229) return;
   if (isSendKey(e)) { e.preventDefault(); addQuote(); }
@@ -438,7 +448,8 @@ window.addEventListener('message', (ev: MessageEvent) => {
     document.body.dataset.loaded = m.loading ? 'no' : 'yes';
     return;
   }
-  if (m.type === 'marks') { marks = m.marks; paintMarks(); return; }
+  if (m.type === 'marks') { marks = m.marks; people = m.people ?? []; paintMarks(); return; }
+  if (m.type === 'paths') { noteComplete.onPaths(m); return; }
   if (m.type === 'startQuote') { openQuote(); return; }
   if (m.type === 'reveal') { reveal(m.from, m.to); return; }
   if (m.type === 'quoted') { outcome = { ok: m.ok, text: m.text }; renderStatus(); return; }

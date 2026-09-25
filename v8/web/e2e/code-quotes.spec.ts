@@ -28,7 +28,7 @@ test.describe.configure({ mode: "serial", timeout: 240_000 });
 let tmp = "", repo = "", head = "";
 let cs: CodeServer | null = null;
 let page: Page;
-let story = "", design = "", ask = "";
+let story = "", design = "", ask = "", who = ""; // who: the handle picked from the @ list
 const typedLost: string[] = []; // Firefox: comment-box notes the harness could not type (entered on the chip)
 const DESIGN_MD = "# Quote design\n\n## 14.5 Quote + note\n\nEvery quote carries **its note** and a locator the board verifies.\n\n## 14.7 Tray\n\nThe tray keeps its order until the send.\n";
 
@@ -163,13 +163,19 @@ test("a chat message passage: select it, Quote, a note, Add to chat -> a chip", 
   await c.locator("#quote-selection").click();
   await expect(c.locator("#quote-pop")).toBeVisible();
   await expect(c.locator("#quote-pop-note")).toBeFocused();
-  await page.keyboard.type("Yes, keep it.");
+  // the note box has the composer's @ list (owner m-5a9111ce12)
+  await page.keyboard.type("Yes, keep it. @");
+  await expect(c.locator("#qn-people")).toBeVisible({ timeout: 5_000 });
+  who = (await c.locator("#qn-people li").first().getAttribute("data-handle"))!;
+  await page.screenshot({ path: shot("1a-message-note-at-list.png") });
+  await page.keyboard.press("Enter");
+  await expect(c.locator("#quote-pop-note")).toHaveValue(`Yes, keep it. @${who} `);
   await page.screenshot({ path: shot("1-message-popover.png") });
   await page.keyboard.press("Control+Enter");
   await expect(c.locator("#quote-pop")).toBeHidden();
   await expect(chips()).toHaveCount(1, { timeout: 10_000 });
   await expect(chips().nth(0)).toHaveAttribute("data-source", "message");
-  await expect(chips().nth(0).locator(".qchip-note")).toHaveValue("Yes, keep it.");
+  await expect(chips().nth(0).locator(".qchip-note")).toHaveValue(`Yes, keep it. @${who} `);
   // open the design from the Docs tab while the chat is still shown
   await c.locator("#tab-docs").click();
   await c.locator(`#panel-docs .dc-row[data-id="${design}"] .dc-open`).click({ timeout: 30_000 });
@@ -185,7 +191,13 @@ test("chat hidden: a reader passage joins the draft, the status bar counts it, t
   await expect(r.locator("#rd-quote-sel")).toBeVisible({ timeout: 5_000 });
   await r.locator("#rd-quote-sel").click();
   await expect(r.locator("#rd-quote-pop")).toBeVisible();
-  await r.locator("#rd-quote-note").pressSequentially("Is the locator per line?");
+  // and the composer's # path list: the host answers from the workspace
+  await r.locator("#rd-quote-note").pressSequentially("Is the locator per line? #sample");
+  await expect(r.locator("#rdn-paths")).toBeVisible({ timeout: 10_000 });
+  await expect(r.locator("#rdn-paths li").first()).toContainText("sample.py");
+  await page.screenshot({ path: shot("2a-reader-note-hash-list.png") });
+  await r.locator("#rd-quote-note").press("Enter");
+  await expect(r.locator("#rd-quote-note")).toHaveValue("Is the locator per line? `src/sample.py` ");
   await page.screenshot({ path: shot("2-reader-popover-chat-hidden.png") });
   await r.locator("#rd-quote-add").click();
   await expect(r.locator("#rd-status")).toContainText("Added", { timeout: 10_000 });
@@ -205,6 +217,13 @@ test("chat hidden: Ctrl+Alt+Q on a code range opens the inline comment box; Add 
     const box = page.locator(".review-widget").last();
     await expect(box).toBeVisible({ timeout: 10_000 });
     await page.keyboard.type(note);
+    if (a === 4 && !STOCK_FF) { // the comment box's @ completion (the `comment`-scheme provider)
+      await page.keyboard.type(` @${who.slice(0, 3)}`);
+      await expect(page.locator(".suggest-widget .monaco-list-row", { hasText: `@${who}` }).first()).toBeVisible({ timeout: 10_000 });
+      await page.screenshot({ path: shot("3a-comment-box-at-completion.png") });
+      await page.keyboard.press("Enter");
+      await expect(box.locator(".comment-form .monaco-editor .view-lines").first()).toContainText(`@${who}`);
+    }
     // Playwright's Firefox routes typed text to the webview frame that last had focus: measured here, text typed
     // into the main editor was dropped too, while chords (Ctrl+Alt+Q) still reach the workbench. There the note is
     // entered on the draft's chip in the chat instead (the tray's note field), below.
@@ -232,7 +251,7 @@ test("the status bar reveals the chat; reorder, remove, Reply, Ctrl+Enter sends 
   if (typedLost.includes("These lines pick the order.")) {
     await expect(chips().nth(1).locator(".qchip-note")).toHaveValue("");
     await chips().nth(1).locator(".qchip-note").pressSequentially("These lines pick the order.");
-  } else await expect(chips().nth(1).locator(".qchip-note")).toHaveValue("These lines pick the order.");
+  } else await expect(chips().nth(1).locator(".qchip-note")).toHaveValue(new RegExp(`^These lines pick the order\. @${who}`));
   await msgEl(ask).locator(".reply").click();
   await expect(c.locator("#reply-bar")).toBeVisible();
   await c.locator("#composer").click();
@@ -253,10 +272,10 @@ test("the status bar reveals the chat; reorder, remove, Reply, Ctrl+Enter sends 
   const q = row.quotes as any[];
   expect(m.reply_to).toBe(ask);
   expect(q.map(x => x.source)).toEqual(["message", "code", "doc"]);
-  expect(q[0]).toMatchObject({ id: ask, text: expect.stringContaining("its order"), note: "Yes, keep it." });
+  expect(q[0]).toMatchObject({ id: ask, text: expect.stringContaining("its order"), note: `Yes, keep it. @${who} ` });
   expect(q[1].code).toMatchObject({ path: "src/sample.py", line_start: 4, line_end: 6, commit: head });
-  expect(q[1].note).toBe("These lines pick the order.");
-  expect(q[2]).toMatchObject({ id: design, version: 1, note: "Is the locator per line?", text: expect.stringContaining("carries") });
+  expect(q[1].note).toMatch(STOCK_FF ? /^These lines pick the order\.$/ : new RegExp(`^These lines pick the order\. @${who}`));
+  expect(q[2]).toMatchObject({ id: design, version: 1, note: "Is the locator per line? `src/sample.py` ", text: expect.stringContaining("carries") });
   fs.writeFileSync(shot("quotes-message.json"), JSON.stringify({ id: m.id, reply_to: m.reply_to, quotes: q }, null, 1));
   const cards = msgEl(m.id).locator(".quote-card");
   await expect(cards).toHaveCount(3, { timeout: 10_000 });

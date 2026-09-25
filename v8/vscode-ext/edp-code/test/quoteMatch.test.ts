@@ -135,3 +135,13 @@ describe("second-opinion cases (consult 20260925T165214Z-20898b7d)", () => {
     expect(displayPassage("Fish &#38; chips")).toBe("Fish & chips");
   });
 });
+
+describe("astral entities (C20 second opinion)", () => {
+  it("an entity that decodes to a surrogate pair keeps later offsets on their source chars", () => {
+    const src = "&#128512; hello";
+    const r = locateInSource(src, "hello", "\u{1F600} ");
+    expect(r?.text).toBe("hello");
+    const both = locateInSource(src, "\u{1F600} hello");
+    expect(both?.text).toBe(src);
+  });
+});

@@ -33,7 +33,7 @@ import { DecisionsHost } from './decisionsTab';
 import type { TagTarget } from './tag';
 import { QuoteHost, type QuoteChat } from './quotes';
 import { messageDraft } from '../core/quotes';
-import type { QuoteChip, QuoteView } from '../core/chatProtocol';
+import type { PathHit, PersonRow, QuoteChip, QuoteView } from '../core/chatProtocol';
 
 const LAST_PICK = 'edp.chat.lastTicket';
 const LAST_SEEN = 'edp.chat.lastSeen'; // ticket id -> ISO time the thread was last open
@@ -151,6 +151,10 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
     this.post({ type: 'quotes', v: 1, ticketId, quotes, focus, ...(text ? { text } : {}) });
   }
   onMarks(): void { this.reader.pushMarks(); }
+  peopleRows(): PersonRow[] { return this.rows(); }
+  findPaths(q: string): Promise<{ rows: PathHit[]; up: string | null }> {
+    return this.paths.find(q).then(l => ({ rows: l.rows, up: l.up ?? null }), () => ({ rows: [], up: null }));
+  }
 
   handles(): ReadonlySet<string> {
     // C22: a reply goes to its parent's author, who may not be in the people list (a closed seat): anyone who wrote
@@ -397,6 +401,7 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
       this.people = await b.people();
       const missing = [...new Set(this.people.map(p => p.seat_ticket).filter((x): x is string => !!x && !this.titles.has(x)))];
       await Promise.all(missing.map(id => b.ticket(id).then(t => this.titles.set(id, t.title), () => {})));
+      this.reader.pushMarks(); // the readers' note boxes list the same people (C20)
     } catch (e) {
       this.log(`chat: people unavailable (${(e as BoardError)?.code ?? 'error'})`);
     }

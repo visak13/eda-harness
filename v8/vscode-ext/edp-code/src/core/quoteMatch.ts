@@ -81,7 +81,8 @@ export function projectMarkdown(src: string): Projection {
           const m = ENTITY.exec(line.slice(i));
           const out = m ? entityText(m[0]) : null;
           if (m && out !== null) {
-            for (const c of out) if (significant(c)) { chars.push(c); at.push(lineStart + i); }
+            // one map entry per UTF-16 unit: an astral entity (&#128512;) decodes to a surrogate pair
+            for (const c of out) if (significant(c)) for (const u of c.split("")) { chars.push(u); at.push(lineStart + i); }
             i += m[0].length; continue;
           }
         }

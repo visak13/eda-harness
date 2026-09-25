@@ -175,3 +175,13 @@ describe('protocol', () => {
     expect(quoteViews('x')).toEqual([]);
   });
 });
+
+describe('package.json (architect m-db0d013529)', () => {
+  it('binds Ctrl+Alt+Q only in quotable editors with a selection, and nothing to Ctrl+Shift+Q', async () => {
+    const pkg = JSON.parse((await import('node:fs')).readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+    const kb = pkg.contributes.keybindings as { command: string; key: string; when: string }[];
+    expect(kb.some(k => /ctrl\+shift\+q/i.test(k.key))).toBe(false);
+    const q = kb.filter(k => k.command.startsWith('edp.quote.'));
+    expect(q).toEqual([{ command: 'edp.quote.comment', key: 'ctrl+alt+q', when: 'editorTextFocus && editorHasSelection && (resourceScheme == file || resourceScheme == edp-doc)' }]);
+  });
+});

@@ -75,7 +75,7 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
   pushMarks(): void { for (const p of this.panels) this.postMarks(p); }
 
   private postMarks(p: ReaderPanel): void {
-    p.post({ type: 'marks', v: 1, marks: this.quotes?.docMarks(p.id, p.version) ?? [], thread: null });
+    p.post({ type: 'marks', v: 1, marks: this.quotes?.docMarks(p.id, p.version) ?? [], thread: null, people: this.quotes?.people() ?? [] });
   }
 
   /** C20: Ctrl+Alt+Q or the reader's context menu: open the quote box on the active reader's selection. */
@@ -195,6 +195,11 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
       case 'openLink': await vscode.env.openExternal(vscode.Uri.parse(m.href)); return;
       case 'selection': p.selection = { from: m.from, to: m.to, text: m.text }; return;
       case 'addQuote': return this.addQuote(p, m.from, m.to, m.text, m.before, m.note);
+      case 'findPaths': { // always answer: the picker holds its navigation keys until this seq's rows arrive
+        const lv = await (this.quotes?.findPaths(m.q) ?? Promise.resolve({ rows: [], up: null }));
+        p.post({ type: 'paths', v: 1, seq: m.seq, items: lv.rows, up: lv.up });
+        return;
+      }
     }
   }
 

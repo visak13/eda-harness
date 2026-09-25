@@ -4,8 +4,8 @@
 // setState; board data is always re-sent by the host on `ready`.
 import type { ChatMessage, ChatState, FeedStatus, HostToView, PersonRow, SendKind, StoryRow, ViewToHost } from '../src/core/chatProtocol';
 import { SEND_KINDS, TEXT_MAX } from '../src/core/chatProtocol';
-import { activeMention } from '../src/core/mentions';
-import { accessibleName, filterPeople } from '../src/core/people';
+import { NoteCompletion } from './noteComplete';
+import { PeoplePicker } from './peoplePicker';
 import { at } from '../src/core/render';
 import { bodyFragment } from './render';
 import { applyKinds, forgetMisses, markPaths, onPathClick, PathPicker } from './pathTags';
@@ -123,11 +123,6 @@ ta.setAttribute('aria-label', 'Message');
 ta.setAttribute('aria-autocomplete', 'list');
 ta.setAttribute('aria-controls', 'people');
 ta.setAttribute('aria-describedby', 'ac-status');
-const peopleList = el('ul', 'people');
-peopleList.id = 'people';
-peopleList.setAttribute('role', 'listbox');
-peopleList.setAttribute('aria-label', 'People');
-peopleList.hidden = true;
 const acStatus = el('div', 'sr-only');
 acStatus.id = 'ac-status';
 acStatus.setAttribute('aria-live', 'polite');
@@ -157,9 +152,13 @@ replyBar.setAttribute('role', 'group');
 replyBar.setAttribute('aria-label', 'Replying to');
 replyBar.hidden = true;
 // C20: the draft quotes (quote + note from code, docs and messages) above the text, in send order
-const quoteChips = new QuoteChips(m => post(m), acStatus);
+// C20 (owner m-5a9111ce12): the quote note boxes get the composer's @ and # completion
+const noteComplete = new NoteCompletion(() => state?.people ?? [], m => post(m), acStatus, 'qn');
+const quoteChips = new QuoteChips(m => post(m), acStatus, noteComplete);
 cbox.append(replyBar, quoteChips.box, chipBox, ta, tools);
-composer.append(peopleList, cbox, acStatus, sendErr);
+// the @ list (strategyll-86c5b5068f §1); the C20 quote note boxes reuse the same picker class
+const people = new PeoplePicker(ta, () => state?.people ?? [], acStatus, () => { saveDraft(); grow(); });
+composer.append(people.list, cbox, acStatus, sendErr);
 
 // C11: the # picker (files and folders) beside the @ list, and its button in C9's tool slot
 const pathPicker = new PathPicker(ta, m => post(m), acStatus, () => { saveDraft(); grow(); });
@@ -180,7 +179,7 @@ const attach = initAttach({ box: cbox, slot: toolSlot, ta, err: sendErr, status:
 // C13: the tab bar under the header; every tab's panel fills the rest of the height, so no band competes
 // with the thread for it (C9's chips were squeezed to nothing by a long thread: flex-shrink by basis)
 // C20: Quote + note on a selection inside a message (a button by the selection, or Ctrl+Alt+Q)
-const quoter = new MessageQuoter(list, () => state?.ticket?.id ?? null, m => post(m), acStatus);
+const quoter = new MessageQuoter(list, () => state?.ticket?.id ?? null, m => post(m), acStatus, noteComplete);
 let chatUnread = 0;
 /** the Chat timeline's scroll when the user left it away from the bottom (null: it follows the bottom) */
 let chatScroll: number | null = null;
@@ -550,85 +549,22 @@ function renderAll() {
   renderTab();
 }
 
-// -- autocomplete (WAI-ARIA listbox half; strategyll-86c5b5068f §1) ------------------------------------
-let acItems: PersonRow[] = [];
-let acActive = 0;
-let acRange: { start: number; end: number } | null = null;
-
-function acClose() {
-  peopleList.hidden = true;
-  ta.removeAttribute('aria-activedescendant');
-  acItems = [];
-  acRange = null;
-}
-
-function acRender() {
-  peopleList.replaceChildren(...acItems.map((p, i) => {
-    const li = el('li', `opt${i === acActive ? ' active' : ''}`);
-    li.id = `p-${i}`;
-    li.setAttribute('role', 'option');
-    li.setAttribute('aria-selected', String(i === acActive));
-    li.setAttribute('aria-label', accessibleName(p));
-    li.dataset.handle = p.handle;
-    li.append(el('span', 'h', `@${p.handle}`), el('span', `d ${p.type}`, p.detail));
-    li.addEventListener('mousedown', e => { e.preventDefault(); acActive = i; acAccept(); });
-    return li;
-  }));
-  ta.setAttribute('aria-activedescendant', `p-${acActive}`);
-  peopleList.querySelector('.active')?.scrollIntoView({ block: 'nearest' });
-}
-
-function acUpdate() {
-  const caret = ta.selectionStart ?? ta.value.length;
-  const m = ta.selectionStart === ta.selectionEnd ? activeMention(ta.value, caret) : undefined;
-  if (!m || !state) return acClose();
-  const items = filterPeople(state.people, m.query);
-  if (!items.length) return acClose();
-  const wasOpen = !peopleList.hidden;
-  acItems = items;
-  acRange = { start: m.start, end: caret };
-  if (!wasOpen || acActive >= items.length) acActive = 0;
-  peopleList.hidden = false;
-  acRender();
-  acStatus.textContent = `${items.length} ${items.length === 1 ? 'person' : 'people'}`;
-}
-
-function acAccept() {
-  const p = acItems[acActive];
-  if (!p || !acRange) return acClose();
-  const ins = `@${p.handle} `;
-  const v = ta.value;
-  ta.value = v.slice(0, acRange.start) + ins + v.slice(acRange.end);
-  const c = acRange.start + ins.length;
-  ta.setSelectionRange(c, c);
-  acClose();
-  saveDraft();
-  grow();
-  ta.focus();
-}
-
 function saveDraft() {
   if (!state?.ticket) return;
   if (ta.value) local.drafts[state.ticket.id] = ta.value; else delete local.drafts[state.ticket.id];
   persist();
 }
 
-ta.addEventListener('input', () => { saveDraft(); grow(); acUpdate(); pathPicker.update(); sendErr.textContent = ''; });
-ta.addEventListener('click', () => { acUpdate(); pathPicker.update(); });
-ta.addEventListener('blur', () => setTimeout(() => { acClose(); pathPicker.close(); }, 0));
+ta.addEventListener('input', () => { saveDraft(); grow(); people.update(); pathPicker.update(); sendErr.textContent = ''; });
+ta.addEventListener('click', () => { people.update(); pathPicker.update(); });
+ta.addEventListener('blur', () => setTimeout(() => { people.close(); pathPicker.close(); }, 0));
 ta.addEventListener('keydown', e => {
   if (e.isComposing || e.keyCode === 229) return; // IME: never send or pick mid-composition
   if (pathPicker.onKey(e)) return; // the # list takes the keys while it is open, as the @ list does
-  const open = !peopleList.hidden && acItems.length > 0;
-  if (open) {
-    if (e.key === 'ArrowDown') { e.preventDefault(); acActive = (acActive + 1) % acItems.length; acRender(); return; }
-    if (e.key === 'ArrowUp') { e.preventDefault(); acActive = (acActive - 1 + acItems.length) % acItems.length; acRender(); return; }
-    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); acAccept(); return; }
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); acClose(); return; }
-  }
+  if (people.onKey(e)) return;
   if (isSendKey(e)) { e.preventDefault(); send(); } // a plain Enter inserts a newline (the textarea's default)
 });
-ta.addEventListener('keyup', e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { acUpdate(); pathPicker.update(); } });
+ta.addEventListener('keyup', e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { people.update(); pathPicker.update(); } });
 onPathClick(list, post);
 
 function send() {
@@ -793,6 +729,7 @@ window.addEventListener('message', (ev: MessageEvent) => {
       break;
     case 'paths':
       pathPicker.onPaths(m);
+      noteComplete.onPaths(m);
       break;
     case 'pathKinds':
       applyKinds(list, m);

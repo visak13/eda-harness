@@ -180,10 +180,11 @@ describe('PathPicker: the # list in the composer', () => {
 
   it('drops a stale answer (an older query)', () => {
     type('#a');
+    const first = lastSeq();
     type('#ab');
-    picker.onPaths({ type: 'paths', v: 1, seq: 1, items: [{ path: 'a', kind: 'folder' }] });
+    picker.onPaths({ type: 'paths', v: 1, seq: first, items: [{ path: 'a', kind: 'folder' }] });
     expect(picker.isOpen).toBe(false);
-    picker.onPaths({ type: 'paths', v: 1, seq: 2, items: [{ path: 'ab.ts', kind: 'file' }] });
+    picker.onPaths({ type: 'paths', v: 1, seq: lastSeq(), items: [{ path: 'ab.ts', kind: 'file' }] });
     expect(picker.isOpen).toBe(true);
   });
 
@@ -199,6 +200,6 @@ describe('PathPicker: the # list in the composer', () => {
     ta.setSelectionRange(3, 3);
     picker.insertHash();
     expect(ta.value).toBe('see #');
-    expect(sent).toEqual([{ type: 'findPaths', q: '', seq: 1 }]);
+    expect(sent).toEqual([{ type: 'findPaths', q: '', seq: expect.any(Number) }]);
   });
 });

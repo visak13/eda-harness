@@ -415,3 +415,6 @@ body.vscode-high-contrast .reply-bar { border: 1px solid var(--vscode-contrastBo
 .quote-pop-add { color: var(--vscode-button-foreground); background: var(--vscode-button-background); padding: 2px 10px; }
 .quote-pop-add:hover { background: var(--vscode-button-hoverBackground); }
 .quote-pop-cancel { padding: 2px 10px; color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); background: var(--vscode-button-secondaryBackground, transparent); }
+/* C20: the @ and # lists of a quote note box; in a popover they open below it (the popover sits under a selection
+   that may be near the top of the view) */
+.quote-pop > .people { top: 100%; bottom: auto; }

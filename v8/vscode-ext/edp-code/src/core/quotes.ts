@@ -105,6 +105,7 @@ export function messageDraft(m: { id: string; text: string; created_by: string }
   const span = locateInSource(m.text, selected, before);
   if (!span) return { error: 'Could not find that passage in the message; select it again.' };
   const text = capped(span.text);
+  if (!text.trim()) return { error: 'Could not find that passage in the message; select it again.' };
   const end = span.start + text.length;
   return {
     key: newKey(), where: null, label: `${m.id} (${m.created_by})`,

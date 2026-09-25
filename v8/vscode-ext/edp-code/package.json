@@ -328,7 +328,7 @@
       {
         "command": "edp.quote.comment",
         "key": "ctrl+alt+q",
-        "when": "editorTextFocus && editorHasSelection"
+        "when": "editorTextFocus && editorHasSelection && (resourceScheme == file || resourceScheme == edp-doc)"
       }
     ],
     "configuration": {

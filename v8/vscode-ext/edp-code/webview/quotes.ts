@@ -8,6 +8,7 @@ import { isSendKey, sendChord } from '../src/core/composerKeys';
 import { quoteSourceLabel } from '../src/core/quoteLabel';
 import { displayPassage } from '../src/core/quoteMatch';
 import { at } from '../src/core/render';
+import type { NoteCompletion } from './noteComplete';
 
 type Intent = ViewToHost extends infer T ? (T extends unknown ? Omit<T, 'v'> : never) : never;
 type Post = (m: Intent) => void;
@@ -71,11 +72,13 @@ function card(m: ChatMessage, q: QuoteView, i: number, post: Post): HTMLElement 
 /** The open thread's draft quotes in the composer. */
 export class QuoteChips {
   readonly box = el('ol', 'quote-chips');
-  private noteTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** a note typed and not yet posted, with the thread it was typed in (a thread switch must not re-address it) */
+  private noteTimers = new Map<string, { t: ReturnType<typeof setTimeout>; ticket: string | null }>();
   private rows: QuoteChip[] = [];
   private ticket: string | null = null;
 
-  constructor(private post: Post, private status: HTMLElement) {
+  /** `complete`: @ and # completion on the note fields (C20, owner m-5a9111ce12) */
+  constructor(private post: Post, private status: HTMLElement, private complete?: NoteCompletion) {
     this.box.id = 'quote-chips';
     this.box.setAttribute('aria-label', 'Quotes sent with this message, in order');
     this.box.hidden = true;
@@ -87,7 +90,8 @@ export class QuoteChips {
   /** Show `rows` for `ticket`; a note being typed keeps its caret. */
   render(ticket: string | null, rows: QuoteChip[]): void {
     const active = document.activeElement as HTMLInputElement | null;
-    const typing = active?.classList?.contains('qchip-note') ? { key: active.dataset.key, s: active.selectionStart, e: active.selectionEnd, v: active.value } : null;
+    let typing = active?.classList?.contains('qchip-note') ? { key: active.dataset.key, s: active.selectionStart, e: active.selectionEnd, v: active.value } : null;
+    if (ticket !== this.ticket) { this.flush(); typing = null; } // another thread's rows: post the old thread's notes first
     this.ticket = ticket;
     this.rows = rows;
     this.box.replaceChildren(...rows.map((r, i) => this.chip(r, i)));
@@ -123,9 +127,11 @@ export class QuoteChips {
     note.placeholder = 'Note on this passage (optional)';
     note.dataset.key = r.key;
     note.setAttribute('aria-label', `Note on quote ${i + 1}`);
+    this.complete?.attach(note, this.box.parentElement ?? this.box, () => note.dispatchEvent(new Event('input')));
     note.addEventListener('input', () => {
-      clearTimeout(this.noteTimers.get(r.key));
-      this.noteTimers.set(r.key, setTimeout(() => this.flushNote(r.key, note.value), 300));
+      const ticket = this.ticket;
+      clearTimeout(this.noteTimers.get(r.key)?.t);
+      this.noteTimers.set(r.key, { t: setTimeout(() => this.flushNote(r.key, note.value), 300), ticket });
     });
     note.addEventListener('blur', () => { if (this.noteTimers.has(r.key)) this.flushNote(r.key, note.value); });
     li.append(head, text, note);
@@ -142,9 +148,11 @@ export class QuoteChips {
   }
 
   private flushNote(key: string, note: string): void {
-    clearTimeout(this.noteTimers.get(key));
+    const pending = this.noteTimers.get(key);
+    clearTimeout(pending?.t);
     this.noteTimers.delete(key);
-    if (this.ticket) this.post({ type: 'quoteNote', ticketId: this.ticket, key, note });
+    const ticketId = pending ? pending.ticket : this.ticket;
+    if (ticketId) this.post({ type: 'quoteNote', ticketId, key, note });
   }
 
   private act(m: { type: 'quoteMove'; key: string; by: -1 | 1 } | { type: 'quoteDrop'; key: string }, said: string): void {
@@ -182,7 +190,8 @@ export class MessageQuoter {
   private sel: Picked | null = null;
   private timer?: ReturnType<typeof setTimeout>;
 
-  constructor(private list: HTMLElement, private ticket: () => string | null, private post: Post, private status: HTMLElement) {
+  constructor(private list: HTMLElement, private ticket: () => string | null, private post: Post, private status: HTMLElement,
+    complete?: NoteCompletion) {
     this.btn.id = 'quote-selection';
     this.btn.hidden = true;
     this.btn.addEventListener('mousedown', e => e.preventDefault()); // keep the selection
@@ -204,6 +213,7 @@ export class MessageQuoter {
     const acts = el('div', 'quote-pop-acts');
     acts.append(add, cancel);
     this.pop.append(el('div', 'quote-pop-text'), this.note, acts);
+    complete?.attach(this.note, this.pop); // before the note's own keys: a pick's Enter/Escape stops there
     this.note.addEventListener('keydown', e => {
       if (e.isComposing || e.keyCode === 229) return;
       if (isSendKey(e)) { e.preventDefault(); this.add(); }

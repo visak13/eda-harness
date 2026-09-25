@@ -7,10 +7,11 @@
 // thread) until it is sent or removed.
 import * as vscode from 'vscode';
 import { codeDraft, chipOf, docSourceDraft, quotesForSend, refusedKey, restoreTray, Tray, type Draft, type DraftWhere, type QuoteIn } from '../core/quotes';
-import type { QuoteChip } from '../core/chatProtocol';
+import type { PathHit, PersonRow, QuoteChip } from '../core/chatProtocol';
 import { DOC_SCHEME, parseDocPath } from '../core/docUri';
 import { lineSpan } from '../core/anchor';
 import { anchorFor } from './tag';
+import { mentionRows, noteToken, pathRows, type NoteCompletionRow } from '../core/noteCompletion';
 
 const TRAY_KEY = 'edp.quotes.tray';
 export const QUOTE_CONTROLLER = 'edp.quotes';
@@ -27,6 +28,9 @@ export interface QuoteChat {
   onChips(ticketId: string, chips: QuoteChip[], focus: boolean, text?: string): void;
   /** the reader panels' draft markers changed */
   onMarks(): void;
+  /** C20 (owner m-5a9111ce12): the @ list's labelled people and the # picker's rows, for note boxes outside the chat */
+  peopleRows(): PersonRow[];
+  findPaths(q: string): Promise<{ rows: PathHit[]; up: string | null }>;
 }
 
 export class QuoteHost implements vscode.Disposable {
@@ -58,8 +62,35 @@ export class QuoteHost implements vscode.Disposable {
       vscode.commands.registerCommand('edp.quote.addToChat', (r: vscode.CommentReply) => this.addFromReply(r)),
       vscode.commands.registerCommand('edp.quote.cancel', (r: vscode.CommentReply | vscode.CommentThread) => ('thread' in r ? r.thread : r).dispose()),
       vscode.commands.registerCommand('edp.quote.remove', (t: vscode.CommentThread | vscode.Comment) => this.removeMarker(t)),
+      // C20 (owner m-5a9111ce12): @ people and # paths in the comment boxes, as in the composer
+      vscode.languages.registerCompletionItemProvider({ scheme: 'comment' }, { provideCompletionItems: (doc, pos) => this.complete(doc, pos) }, '@', '#', '/'),
       this,
     ];
+  }
+
+  /** The completion list for the @ or # token at the caret of a comment box (null: not in one). */
+  private async complete(doc: vscode.TextDocument, pos: vscode.Position): Promise<vscode.CompletionList | null> {
+    const line = doc.lineAt(pos.line).text.slice(0, pos.character);
+    const t = noteToken(line, pos.character);
+    if (!t) return null;
+    const rows = t.kind === '@' ? mentionRows(this.chat.peopleRows(), t.query) : pathRows((await this.chat.findPaths(t.query)).rows);
+    const range = new vscode.Range(pos.line, t.start, pos.line, pos.character);
+    const typed = line.slice(t.start);
+    const kinds: Record<NoteCompletionRow['kind'], vscode.CompletionItemKind> = {
+      person: vscode.CompletionItemKind.User, file: vscode.CompletionItemKind.File,
+      folder: vscode.CompletionItemKind.Folder, descend: vscode.CompletionItemKind.Folder,
+    };
+    const items = rows.map((r, i) => {
+      const it = new vscode.CompletionItem(r.label, kinds[r.kind]);
+      it.insertText = r.insert;
+      it.detail = r.detail;
+      it.range = range;
+      it.filterText = typed; // the rows are already filtered and ranked (a role match is not a prefix of the label)
+      it.sortText = String(i).padStart(4, '0');
+      if (r.kind === 'descend') it.command = { command: 'editor.action.triggerSuggest', title: 'List inside' };
+      return it;
+    });
+    return new vscode.CompletionList(items, true); // incomplete: asked again as the query grows
   }
 
   // -- the tray -------------------------------------------------------------------------------------------
@@ -69,6 +100,10 @@ export class QuoteHost implements vscode.Disposable {
   }
 
   /** The drafts of `id` at `version` quoted from the reader or its source, for the reader's inline markers. */
+  /** the chat's @ people rows and # path rows, for the reader's note box (C20, owner m-5a9111ce12) */
+  people(): PersonRow[] { return this.chat.peopleRows(); }
+  findPaths(q: string): Promise<{ rows: PathHit[]; up: string | null }> { return this.chat.findPaths(q); }
+
   docMarks(id: string, version: number): { key: string; from: number; to: number; note: string; label: string }[] {
     return this.tray.all().filter(d => d.quote.source === 'doc' && d.quote.id === id && d.quote.version === version)
       .map(d => ({ key: d.key, from: d.quote.locator!.line_start!, to: d.quote.locator!.line_end!, note: d.quote.note ?? '', label: d.label }));

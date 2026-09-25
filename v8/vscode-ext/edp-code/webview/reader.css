@@ -109,3 +109,15 @@ body.vscode-high-contrast .rd-review, body.vscode-high-contrast .rd-proposal, bo
   resize: vertical; font: inherit; padding: 4px;
   color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent);
 }
+/* C20: the @ and # lists of the quote note box (the chat composer's look), below the popover */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.rd-quote-pop > .people {
+  position: absolute; left: 6px; right: 6px; top: 100%; max-height: 16em; overflow-y: auto; margin: 0; padding: 2px 0;
+  list-style: none; background: var(--vscode-editorSuggestWidget-background, var(--vscode-input-background));
+  border: 1px solid var(--vscode-editorSuggestWidget-border, var(--vscode-focusBorder)); z-index: 22;
+}
+.rd-quote-pop > .people[hidden] { display: none; }
+.rd-quote-pop .opt { display: flex; flex-direction: column; padding: 2px 6px; cursor: pointer; }
+.rd-quote-pop .opt.active { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
+.rd-quote-pop .opt .h { font-weight: 600; }
+.rd-quote-pop .opt .d { font-size: 0.85em; color: var(--vscode-descriptionForeground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

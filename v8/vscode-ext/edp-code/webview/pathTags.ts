@@ -10,24 +10,31 @@ import { activeHashTag, descendQuery, pathCandidate, pathToken } from '../src/co
 type Intent = ViewToHost extends infer T ? (T extends unknown ? Omit<T, 'v'> : never) : never;
 type Post = (m: Intent) => void;
 
-/** The composer's # picker. main.ts routes input, caret moves, keys and host answers here. */
+type Field = HTMLTextAreaElement | HTMLInputElement;
+/** the one message a picker sends: the host answers it with `paths` rows for this `seq` */
+export type FindPaths = (m: { type: 'findPaths'; q: string; seq: number }) => void;
+/** one seq counter for every picker in this view, so an answer reaches only the picker that asked (C20: the
+ *  composer and the quote note boxes each have one) */
+let lastSeq = 0;
+
+/** A # picker on a text field (the composer, a C20 quote note). The view routes input, caret moves, keys and
+ *  the host's answers here; `field` can be re-pointed at another field (the quote chips share one picker). */
 export class PathPicker {
   readonly list: HTMLUListElement;
   private items: PathHit[] = [];
   private active = 0;
   private range: { start: number; end: number } | null = null;
-  private seq = 0;
   private asked: { seq: number; q: string } | null = null;
   /** The seq of the last answer shown; while it trails `asked`, the rows (and `up`) belong to the old query. */
   private answered = 0;
   /** the host's query for one level up from the rows shown (null: the git root, or a fuzzy answer) */
   private up: string | null = null;
 
-  constructor(private ta: HTMLTextAreaElement, private post: Post, private status: HTMLElement,
-    private onAccept: () => void) {
+  constructor(public ta: Field, private post: FindPaths, private status: HTMLElement,
+    private onAccept: () => void, private ids: { list: string; opt: string; people: string } = { list: 'paths', opt: 'path', people: 'people' }) {
     const l = document.createElement('ul');
     l.className = 'people paths';
-    l.id = 'paths';
+    l.id = ids.list;
     l.setAttribute('role', 'listbox');
     l.setAttribute('aria-label', 'Files and folders');
     l.hidden = true;
@@ -43,7 +50,7 @@ export class PathPicker {
     this.range = null;
     this.asked = null;
     this.up = null;
-    if (was) { this.ta.removeAttribute('aria-activedescendant'); this.ta.setAttribute('aria-controls', 'people'); }
+    if (was) { this.ta.removeAttribute('aria-activedescendant'); this.ta.setAttribute('aria-controls', this.ids.people); }
   }
 
   /** The caret moved or the text changed: ask the host for the rows of the # under the caret. */
@@ -53,8 +60,8 @@ export class PathPicker {
     if (!t) return this.close();
     this.range = { start: t.start, end: caret };
     if (this.asked?.q === t.query) return;
-    this.asked = { seq: ++this.seq, q: t.query };
-    this.post({ type: 'findPaths', q: t.query, seq: this.seq });
+    this.asked = { seq: ++lastSeq, q: t.query };
+    this.post({ type: 'findPaths', q: t.query, seq: lastSeq });
   }
 
   /** The host's rows; an answer to an older query is dropped. */
@@ -72,7 +79,7 @@ export class PathPicker {
     }
     if (!wasOpen || this.active >= this.items.length) this.active = 0;
     this.list.hidden = false;
-    this.ta.setAttribute('aria-controls', 'paths');
+    this.ta.setAttribute('aria-controls', this.ids.list);
     this.render();
     this.status.textContent = `${this.items.length} ${this.items.length === 1 ? 'file or folder' : 'files and folders'}`;
   }
@@ -81,7 +88,7 @@ export class PathPicker {
     this.list.replaceChildren(...this.items.map((h, i) => {
       const li = document.createElement('li');
       li.className = `opt path-opt${i === this.active ? ' active' : ''}`;
-      li.id = `path-${i}`;
+      li.id = `${this.ids.opt}-${i}`;
       li.setAttribute('role', 'option');
       li.setAttribute('aria-selected', String(i === this.active));
       li.setAttribute('aria-label', `${h.kind} ${h.path}${h.kind === 'folder' ? '/' : ''}`);
@@ -98,7 +105,7 @@ export class PathPicker {
       li.addEventListener('mousedown', e => { e.preventDefault(); this.active = i; this.accept(); });
       return li;
     }));
-    this.ta.setAttribute('aria-activedescendant', `path-${this.active}`);
+    this.ta.setAttribute('aria-activedescendant', `${this.ids.opt}-${this.active}`);
     this.list.querySelector('.active')?.scrollIntoView({ block: 'nearest' });
   }
 
