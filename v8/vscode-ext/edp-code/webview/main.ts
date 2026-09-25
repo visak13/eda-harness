@@ -1,0 +1,403 @@
+// The chat webview (design-10b21760d9 §4.1; strategyll-1a201146c8, -86c5b5068f, -5e3ecdb625). It holds
+// no credentials and makes no network call: it renders what the host posts and posts intents back.
+// Everything that is not a message body is set with textContent. View-local UI (drafts, kind) lives in
+// setState; board data is always re-sent by the host on `ready`.
+import type { ChatMessage, ChatState, FeedStatus, HostToView, PersonRow, SendKind, StoryRow, ViewToHost } from '../src/core/chatProtocol';
+import { SEND_KINDS } from '../src/core/chatProtocol';
+import { activeMention } from '../src/core/mentions';
+import { accessibleName, filterPeople } from '../src/core/people';
+import { at } from '../src/core/render';
+import { bodyFragment } from './render';
+
+declare function acquireVsCodeApi(): { postMessage(m: unknown): void; getState(): unknown; setState(s: unknown): void };
+const vscode = acquireVsCodeApi();
+
+type Local = { v: 1; drafts: Record<string, string>; kind: SendKind };
+const saved = vscode.getState() as Partial<Local> | undefined;
+const local: Local = { v: 1, drafts: saved?.v === 1 && saved.drafts ? saved.drafts : {}, kind: saved?.kind ?? 'note' };
+const persist = () => vscode.setState(local);
+
+let state: ChatState | null = null;
+let sending = false;
+type Intent = ViewToHost extends infer T ? (T extends unknown ? Omit<T, 'v'> : never) : never;
+const post = (m: Intent) => vscode.postMessage({ v: 1, ...m });
+
+// -- DOM ---------------------------------------------------------------------------------------------
+const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string) => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+};
+
+const app = document.getElementById('app')!;
+const header = el('header', 'hdr');
+const pickBtn = el('button', 'pick', 'Pick a ticket or epic…');
+pickBtn.id = 'pick';
+pickBtn.title = 'Pick a ticket or epic';
+const arch = el('span', 'arch');
+arch.id = 'architect';
+const feedDot = el('span', 'feed');
+feedDot.id = 'feed-status';
+feedDot.setAttribute('role', 'status');
+header.append(pickBtn, arch, feedDot);
+
+const crumbs = el('nav', 'crumbs');
+crumbs.id = 'crumbs';
+crumbs.setAttribute('aria-label', 'Thread');
+const strip = el('div', 'stories');
+strip.id = 'stories';
+strip.setAttribute('role', 'list');
+strip.setAttribute('aria-label', 'Stories');
+const notice = el('div', 'notice');
+notice.id = 'notice';
+
+const timeline = el('div', 'timeline');
+timeline.id = 'timeline';
+timeline.setAttribute('role', 'log');
+timeline.setAttribute('aria-label', 'Messages');
+const olderBtn = el('button', 'older', 'Load older messages');
+olderBtn.id = 'older';
+const list = el('div', 'items');
+timeline.append(olderBtn, list);
+
+const composer = el('form', 'composer');
+composer.id = 'composer-form';
+const opts = el('div', 'opts');
+const kindSel = el('select');
+kindSel.id = 'kind';
+kindSel.setAttribute('aria-label', 'Kind');
+for (const k of SEND_KINDS) kindSel.append(new Option(k, k));
+const toSel = el('select');
+toSel.id = 'to';
+toSel.setAttribute('aria-label', 'To (optional)');
+opts.append(el('span', 'lbl', 'kind'), kindSel, el('span', 'lbl', 'to'), toSel);
+const ta = el('textarea');
+ta.id = 'composer';
+ta.rows = 3;
+ta.placeholder = 'Message… @ to mention';
+ta.setAttribute('aria-label', 'Message');
+ta.setAttribute('aria-autocomplete', 'list');
+ta.setAttribute('aria-controls', 'people');
+ta.setAttribute('aria-describedby', 'ac-status');
+const peopleList = el('ul', 'people');
+peopleList.id = 'people';
+peopleList.setAttribute('role', 'listbox');
+peopleList.setAttribute('aria-label', 'People');
+peopleList.hidden = true;
+const acStatus = el('div', 'sr-only');
+acStatus.id = 'ac-status';
+acStatus.setAttribute('aria-live', 'polite');
+const foot = el('div', 'foot');
+const hint = el('span', 'hint', 'Enter sends · Shift+Enter newline');
+const sendBtn = el('button', 'send', 'Send');
+sendBtn.id = 'send';
+sendBtn.type = 'submit';
+foot.append(hint, sendBtn);
+const sendErr = el('div', 'send-error');
+sendErr.id = 'send-error';
+sendErr.setAttribute('role', 'alert');
+composer.append(opts, peopleList, ta, acStatus, sendErr, foot);
+
+app.append(header, crumbs, strip, notice, timeline, composer);
+
+// -- rendering ---------------------------------------------------------------------------------------
+const FEED_LABEL: Record<FeedStatus, string> = {
+  connecting: 'connecting…', live: 'live', reconnecting: 'reconnecting…', polling: 'polling', 'signed-out': 'signed out', stopped: 'stopped',
+};
+
+function setFeed(s: FeedStatus) {
+  feedDot.textContent = FEED_LABEL[s];
+  feedDot.dataset.status = s;
+}
+
+const known = () => new Set((state?.people ?? []).flatMap(p => [p.handle, p.id]).concat(state?.me ? [state.me.handle, state.me.id] : []));
+
+function fmtTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const same = new Date().toDateString() === d.toDateString();
+  return same ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function messageEl(m: ChatMessage, k: ReadonlySet<string>): HTMLElement {
+  const a = el('article', `msg kind-${m.kind}`);
+  a.dataset.id = m.id;
+  a.setAttribute('aria-label', `${m.created_by}, ${m.kind}`);
+  const h = el('header', 'mh');
+  h.append(el('span', 'by', m.created_by), el('span', 'kind', m.kind));
+  if (m.to) h.append(el('span', 'to', `→ ${m.to}`));
+  const t = el('time', 'at', fmtTime(m.created_at));
+  t.dateTime = m.created_at;
+  const open = el('button', 'board-link', '↗');
+  open.title = 'Open on the board';
+  open.setAttribute('aria-label', 'Open on the board');
+  open.addEventListener('click', () => post({ type: 'openBoard', ticketId: m.ticket_id, messageId: m.id }));
+  h.append(t, open);
+  const body = el('div', 'body');
+  body.append(bodyFragment(document, m.text, k));
+  a.append(h, body);
+  if (m.code_context) a.append(codeCard(m));
+  return a;
+}
+
+function codeCard(m: ChatMessage): HTMLElement {
+  const c = m.code_context!;
+  const b = el('button', 'code-card');
+  b.type = 'button';
+  b.title = `Open ${c.path} at lines ${c.line_start}-${c.line_end}`;
+  const head = el('span', 'cc-head', at(c));
+  const lines = c.snippet.split('\n');
+  const pre = el('pre', 'cc-snippet', lines.slice(0, 12).join('\n') + (lines.length > 12 ? `\n… ${lines.length - 12} more lines` : ''));
+  b.append(head, pre);
+  b.addEventListener('click', () => post({ type: 'openCode', messageId: m.id }));
+  return b;
+}
+
+function nearBottom() { return timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight < 40; }
+function toBottom() { timeline.scrollTop = timeline.scrollHeight; }
+
+function renderItems(items: ChatMessage[]) {
+  const k = known();
+  list.replaceChildren(...items.map(m => messageEl(m, k)));
+  if (!items.length) list.append(el('p', 'empty', state?.ticket ? 'No messages on this thread yet.' : ''));
+}
+
+function storyEl(s: StoryRow, open: string | undefined): HTMLElement {
+  const b = el('button', `story${s.id === open ? ' active' : ''}`);
+  b.type = 'button';
+  b.setAttribute('role', 'listitem');
+  b.dataset.id = s.id;
+  b.title = `${s.id} · ${s.title}`;
+  b.append(el('span', 'st-title', s.title), el('span', `st-status status-${s.status}`, s.status));
+  if (s.unread > 0) {
+    const u = el('span', 'st-unread', s.unread > 99 ? '99+' : String(s.unread));
+    u.setAttribute('aria-label', `${s.unread} new`);
+    b.append(u);
+  }
+  b.addEventListener('click', () => post({ type: 'pickTicket', id: s.id }));
+  return b;
+}
+
+function renderStories() {
+  const s = state!;
+  strip.replaceChildren(...s.stories.map(x => storyEl(x, s.ticket?.id)));
+  strip.hidden = !s.epic || s.stories.length === 0;
+}
+
+function renderCrumbs() {
+  const s = state!;
+  crumbs.replaceChildren();
+  if (!s.ticket) { crumbs.hidden = true; return; }
+  crumbs.hidden = false;
+  if (s.epic && s.epic.id !== s.ticket.id) {
+    const back = el('button', 'crumb epic', s.epic.title);
+    back.id = 'crumb-epic';
+    back.title = `Back to the epic thread (${s.epic.id})`;
+    back.addEventListener('click', () => post({ type: 'pickTicket', id: s.epic!.id }));
+    crumbs.append(back, el('span', 'sep', '›'));
+  }
+  const cur = el('span', 'crumb current', s.ticket.title);
+  cur.id = 'crumb-current';
+  cur.setAttribute('aria-current', 'page');
+  cur.title = `${s.ticket.id} · ${s.ticket.kind} · ${s.ticket.status}`;
+  crumbs.append(cur, el('span', 'tid', `${s.ticket.id} · ${s.ticket.status}`));
+}
+
+function renderTo() {
+  const cur = toSel.value;
+  toSel.replaceChildren(new Option('— thread (mentions wake) —', ''));
+  for (const p of state?.people ?? []) toSel.append(new Option(`${p.handle} (${p.type === 'human' ? 'human' : p.role})`, p.id));
+  toSel.value = [...toSel.options].some(o => o.value === cur) ? cur : '';
+}
+
+function renderAll() {
+  const s = state!;
+  pickBtn.textContent = s.ticket ? `${s.ticket.kind === 'epic' ? 'Epic' : s.ticket.kind === 'task' ? 'Task' : 'Story'}: ${s.ticket.title}` : 'Pick a ticket or epic…';
+  arch.textContent = s.epic ? `Architect: ${s.architect ? '@' + s.architect : 'none live'}` : '';
+  arch.hidden = !s.epic;
+  setFeed(s.feed);
+  notice.replaceChildren();
+  notice.hidden = !s.notice;
+  if (s.notice) {
+    notice.append(el('span', '', s.notice));
+    if (s.feed === 'signed-out') {
+      const b = el('button', 'signin', 'Sign in');
+      b.addEventListener('click', () => post({ type: 'signIn' }));
+      notice.append(b);
+    }
+  }
+  renderCrumbs();
+  renderStories();
+  renderTo();
+  olderBtn.hidden = !s.hasOlder;
+  renderItems(s.items);
+  composer.hidden = !s.ticket;
+  ta.value = s.ticket ? local.drafts[s.ticket.id] ?? '' : '';
+  kindSel.value = local.kind;
+  timeline.setAttribute('aria-live', 'off'); // the initial state is not announced
+  toBottom();
+}
+
+// -- autocomplete (WAI-ARIA listbox half; strategyll-86c5b5068f §1) ------------------------------------
+let acItems: PersonRow[] = [];
+let acActive = 0;
+let acRange: { start: number; end: number } | null = null;
+
+function acClose() {
+  peopleList.hidden = true;
+  ta.removeAttribute('aria-activedescendant');
+  acItems = [];
+  acRange = null;
+}
+
+function acRender() {
+  peopleList.replaceChildren(...acItems.map((p, i) => {
+    const li = el('li', `opt${i === acActive ? ' active' : ''}`);
+    li.id = `p-${i}`;
+    li.setAttribute('role', 'option');
+    li.setAttribute('aria-selected', String(i === acActive));
+    li.setAttribute('aria-label', accessibleName(p));
+    li.dataset.handle = p.handle;
+    li.append(el('span', 'h', `@${p.handle}`), el('span', `d ${p.type}`, p.detail));
+    li.addEventListener('mousedown', e => { e.preventDefault(); acActive = i; acAccept(); });
+    return li;
+  }));
+  ta.setAttribute('aria-activedescendant', `p-${acActive}`);
+  peopleList.querySelector('.active')?.scrollIntoView({ block: 'nearest' });
+}
+
+function acUpdate() {
+  const caret = ta.selectionStart ?? ta.value.length;
+  const m = ta.selectionStart === ta.selectionEnd ? activeMention(ta.value, caret) : undefined;
+  if (!m || !state) return acClose();
+  const items = filterPeople(state.people, m.query);
+  if (!items.length) return acClose();
+  const wasOpen = !peopleList.hidden;
+  acItems = items;
+  acRange = { start: m.start, end: caret };
+  if (!wasOpen || acActive >= items.length) acActive = 0;
+  peopleList.hidden = false;
+  acRender();
+  acStatus.textContent = `${items.length} ${items.length === 1 ? 'person' : 'people'}`;
+}
+
+function acAccept() {
+  const p = acItems[acActive];
+  if (!p || !acRange) return acClose();
+  const ins = `@${p.handle} `;
+  const v = ta.value;
+  ta.value = v.slice(0, acRange.start) + ins + v.slice(acRange.end);
+  const c = acRange.start + ins.length;
+  ta.setSelectionRange(c, c);
+  acClose();
+  saveDraft();
+  ta.focus();
+}
+
+function saveDraft() {
+  if (!state?.ticket) return;
+  if (ta.value) local.drafts[state.ticket.id] = ta.value; else delete local.drafts[state.ticket.id];
+  persist();
+}
+
+ta.addEventListener('input', () => { saveDraft(); acUpdate(); sendErr.textContent = ''; });
+ta.addEventListener('click', acUpdate);
+ta.addEventListener('blur', () => setTimeout(acClose, 0));
+ta.addEventListener('keydown', e => {
+  if (e.isComposing || e.keyCode === 229) return; // IME: never send or pick mid-composition
+  const open = !peopleList.hidden && acItems.length > 0;
+  if (open) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); acActive = (acActive + 1) % acItems.length; acRender(); return; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); acActive = (acActive - 1 + acItems.length) % acItems.length; acRender(); return; }
+    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); acAccept(); return; }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); acClose(); return; }
+  }
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+});
+ta.addEventListener('keyup', e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) acUpdate(); });
+
+function send() {
+  if (sending || !state?.ticket) return;
+  const text = ta.value;
+  if (!text.trim()) return;
+  sending = true;
+  sendBtn.disabled = true;
+  sendErr.textContent = '';
+  post({ type: 'send', text, kind: kindSel.value as SendKind, ...(toSel.value ? { to: toSel.value } : {}) });
+}
+
+composer.addEventListener('submit', e => { e.preventDefault(); send(); });
+kindSel.addEventListener('change', () => { local.kind = kindSel.value as SendKind; persist(); });
+pickBtn.addEventListener('click', () => post({ type: 'pickTicket' }));
+olderBtn.addEventListener('click', () => { olderBtn.disabled = true; post({ type: 'loadOlder' }); });
+
+// -- host messages -----------------------------------------------------------------------------------
+window.addEventListener('message', (ev: MessageEvent) => {
+  const m = ev.data as HostToView;
+  if (!m || typeof m !== 'object' || m.v !== 1) return;
+  switch (m.type) {
+    case 'state':
+      state = m;
+      sending = false;
+      sendBtn.disabled = false;
+      renderAll();
+      break;
+    case 'append': {
+      if (!state || state.ticket?.id !== m.ticketId) return;
+      const have = new Set(state.items.map(i => i.id));
+      const fresh = m.items.filter(i => !have.has(i.id));
+      if (!fresh.length) return;
+      const stick = nearBottom();
+      state.items.push(...fresh);
+      timeline.setAttribute('aria-live', 'polite');
+      list.querySelector('.empty')?.remove();
+      const k = known();
+      for (const i of fresh) list.append(messageEl(i, k));
+      if (stick) toBottom();
+      break;
+    }
+    case 'prepend': {
+      if (!state || state.ticket?.id !== m.ticketId) return;
+      const have = new Set(state.items.map(i => i.id));
+      const fresh = m.items.filter(i => !have.has(i.id));
+      state.items.unshift(...fresh);
+      state.hasOlder = m.hasOlder;
+      olderBtn.hidden = !m.hasOlder;
+      olderBtn.disabled = false;
+      const h0 = timeline.scrollHeight;
+      timeline.setAttribute('aria-live', 'off');
+      const k = known();
+      list.prepend(...fresh.map(i => messageEl(i, k)));
+      timeline.scrollTop += timeline.scrollHeight - h0;
+      break;
+    }
+    case 'stories':
+      if (!state) return;
+      state.stories = m.stories;
+      renderStories();
+      break;
+    case 'feed':
+      if (state) state.feed = m.status;
+      setFeed(m.status);
+      break;
+    case 'sent':
+      sending = false;
+      sendBtn.disabled = false;
+      ta.value = '';
+      saveDraft();
+      break;
+    case 'sendFailed':
+      sending = false;
+      sendBtn.disabled = false;
+      sendErr.textContent = m.text; // the draft stays in the composer
+      break;
+    case 'error':
+      notice.hidden = false;
+      notice.replaceChildren(el('span', 'err', m.text));
+      break;
+  }
+});
+
+post({ type: 'ready' });

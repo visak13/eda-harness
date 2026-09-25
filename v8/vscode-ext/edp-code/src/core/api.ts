@@ -2,6 +2,8 @@
 // sink are injected, so tests stub them. The log sink receives `method path -> status (ms)` only:
 // never headers, bodies or the Creds object (design §9, a token in the extension leaks).
 import type { Anchor } from './anchor';
+import type { Reachable } from './people';
+import type { MessageRow, ThreadPage } from './thread';
 
 export type Creds = { participant: string; token: string };
 export type Envelope<T> = { ok: true; value: T; hint?: string } | { ok: false; error: { code: string; message: string }; hint?: string };
@@ -11,10 +13,12 @@ export type Session = {
   id: string; participant_id: string; ticket_id: string | null; state: 'alive' | 'stalled' | 'dead' | 'parked';
   created_at?: string; last_output_at?: string | null; presence_stale_since?: string | null;
 };
-export type Ticket = { id: string; kind: string; title: string; status: string; assignee: string | null; epic_id?: string | null };
+export type Ticket = { id: string; kind: string; title: string; status: string; assignee: string | null; epic_id?: string | null; parent_id?: string | null };
 export type MessageKind = 'question' | 'steer' | 'finding' | 'note';
 export type MessageIn = { ticket_id: string; to: string; kind: MessageKind; text: string; code_context: Anchor };
 export type Message = { id: string; ticket_id: string; to: string | null; kind: string; text: string };
+/** A chat send (C3): `to` empty = a thread note, mentions do the waking; no code_context yet (C4). */
+export type ChatSend = { ticket_id: string; to: string | null; kind: string; text: string; reply_to: string | null };
 
 export class BoardError extends Error {
   constructor(public code: string, msg: string, public status: number) { super(msg); }
@@ -69,5 +73,13 @@ export function boardClient(baseUrl: string, creds: () => Promise<Creds | undefi
     sessions: () => call<Session[]>('GET', '/v1/sessions'),
     tickets: (q: Record<string, string> = {}) => call<Ticket[]>('GET', `/v1/tickets${Object.keys(q).length ? `?${new URLSearchParams(q)}` : ''}`),
     sendMessage: (m: MessageIn) => call<Message>('POST', '/v1/messages', m),
+    // chat (C3, design-10b21760d9 §4.1)
+    me: () => creds().then(c => (c ? call<Participant>('GET', `/v1/participants/${encodeURIComponent(c.participant)}`) : undefined)),
+    ticket: (id: string) => call<Ticket>('GET', `/v1/tickets/${encodeURIComponent(id)}`),
+    thread: (id: string, before?: number | null) =>
+      call<ThreadPage>('GET', `/v1/tickets/${encodeURIComponent(id)}/thread${before ? `?before=${before}` : ''}`),
+    message: (id: string) => call<MessageRow>('GET', `/v1/messages/${encodeURIComponent(id)}`),
+    people: () => call<Reachable[]>('GET', '/v1/me/people'),
+    send: (m: ChatSend) => call<MessageRow & { unresolved_mentions?: string[] }>('POST', '/v1/messages', m),
   };
 }

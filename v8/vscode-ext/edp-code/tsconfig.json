@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "es2023",
-    "lib": ["es2023"],
+    "lib": ["es2023", "dom", "dom.iterable"],
     "module": "preserve",
     "moduleResolution": "bundler",
     "strict": true,
@@ -11,5 +11,5 @@
     "verbatimModuleSyntax": false,
     "types": ["node", "vscode"]
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.mts"]
+  "include": ["src/**/*.ts", "webview/**/*.ts", "test/**/*.ts", "vitest.config.mts"]
 }

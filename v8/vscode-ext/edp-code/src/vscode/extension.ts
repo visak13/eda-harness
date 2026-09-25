@@ -4,6 +4,8 @@ import * as vscode from 'vscode';
 import { boardClient } from '../core/api';
 import { creds, signIn, signOut } from './auth';
 import { Badge, showSeats } from './badge';
+import { ChatController } from './chat';
+import { ChatViewProvider } from './chatView';
 import { guarded } from './guardedGit';
 import { tagSelection } from './tag';
 import { openExternalTerminal } from './terminal';
@@ -17,11 +19,14 @@ export function activate(ctx: vscode.ExtensionContext): void {
   const boardUrl = () => vscode.workspace.getConfiguration('edp').get<string>('boardUrl') || 'http://127.0.0.1:9400';
   const board = () => boardClient(boardUrl(), () => creds(ctx), fetch, line => out.info(line));
   const badge = new Badge(ctx, board, line => out.info(line));
+  const chat = new ChatController(ctx, board, boardUrl, line => out.info(line));
   const cmd = (id: string, fn: (...a: any[]) => unknown) => vscode.commands.registerCommand(id, fn);
 
-  ctx.subscriptions.push(out, badge,
-    cmd('edp.signIn', async () => { if (await signIn(ctx, board)) badge.refresh(0); }),
-    cmd('edp.signOut', async () => { await signOut(ctx); badge.refresh(0); }),
+  ctx.subscriptions.push(out, badge, ...chat.register(),
+    cmd('edp.signIn', async () => { if (await signIn(ctx, board)) { badge.refresh(0); if (chat.provider.isOpen) void chat.restart(); } }),
+    cmd('edp.signOut', async () => { await signOut(ctx); badge.refresh(0); if (chat.provider.isOpen) void chat.restart(); }),
+    cmd('edp.chat.open', () => ChatViewProvider.reveal()),
+    cmd('edp.chat.pick', async () => { await ChatViewProvider.reveal(); await chat.pick(); }),
     cmd('edp.tagSelection', () => tagSelection(ctx, board, boardUrl)),
     cmd('edp.showSeats', () => showSeats(badge, boardUrl)),
     cmd('edp.checkout', () => guarded('checkout', ctx, board)),

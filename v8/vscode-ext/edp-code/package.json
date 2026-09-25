@@ -1,31 +1,112 @@
 {
   "name": "edp-code",
   "displayName": "EDP",
-  "description": "Tag a code selection to anyone on the EDP board; live-seats badge, guarded git and an external terminal for the fleet's shared tree.",
+  "description": "Chat on EDP tickets and epics beside the editor, tag a code selection to anyone on the board; live-seats badge, guarded git and an external terminal for the fleet's shared tree.",
   "publisher": "edp",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "private": true,
   "license": "UNLICENSED",
-  "engines": { "vscode": "^1.138.0" },
-  "extensionKind": ["workspace"],
+  "engines": {
+    "vscode": "^1.138.0"
+  },
+  "extensionKind": [
+    "workspace"
+  ],
   "main": "./dist/extension.js",
-  "extensionDependencies": ["vscode.git"],
-  "activationEvents": ["onStartupFinished"],
+  "extensionDependencies": [
+    "vscode.git"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "contributes": {
+    "viewsContainers": {
+      "secondarySidebar": [
+        {
+          "id": "edp-chat",
+          "title": "EDP Chat",
+          "icon": "media/chat.svg"
+        }
+      ]
+    },
+    "views": {
+      "edp-chat": [
+        {
+          "type": "webview",
+          "id": "edp.chat",
+          "name": "Chat",
+          "contextualTitle": "EDP Chat"
+        }
+      ]
+    },
     "commands": [
-      { "command": "edp.signIn", "title": "Sign in to board", "category": "EDP" },
-      { "command": "edp.signOut", "title": "Sign out of board", "category": "EDP" },
-      { "command": "edp.tagSelection", "title": "Tag selection on board…", "category": "EDP" },
-      { "command": "edp.showSeats", "title": "Show live seats", "category": "EDP" },
-      { "command": "edp.checkout", "title": "Checkout… (guarded)", "category": "EDP" },
-      { "command": "edp.merge", "title": "Merge… (guarded)", "category": "EDP" },
-      { "command": "edp.pull", "title": "Pull (guarded)", "category": "EDP" },
-      { "command": "edp.openExternalTerminal", "title": "Open external terminal here", "category": "EDP" }
+      {
+        "command": "edp.signIn",
+        "title": "Sign in to board",
+        "category": "EDP"
+      },
+      {
+        "command": "edp.signOut",
+        "title": "Sign out of board",
+        "category": "EDP"
+      },
+      {
+        "command": "edp.tagSelection",
+        "title": "Tag selection on board…",
+        "category": "EDP"
+      },
+      {
+        "command": "edp.showSeats",
+        "title": "Show live seats",
+        "category": "EDP"
+      },
+      {
+        "command": "edp.checkout",
+        "title": "Checkout… (guarded)",
+        "category": "EDP"
+      },
+      {
+        "command": "edp.merge",
+        "title": "Merge… (guarded)",
+        "category": "EDP"
+      },
+      {
+        "command": "edp.pull",
+        "title": "Pull (guarded)",
+        "category": "EDP"
+      },
+      {
+        "command": "edp.openExternalTerminal",
+        "title": "Open external terminal here",
+        "category": "EDP"
+      },
+      {
+        "command": "edp.chat.open",
+        "title": "Open chat",
+        "category": "EDP"
+      },
+      {
+        "command": "edp.chat.pick",
+        "title": "Chat: open a ticket or epic thread…",
+        "category": "EDP"
+      }
     ],
     "menus": {
-      "editor/context": [{ "command": "edp.tagSelection", "when": "editorTextFocus", "group": "9_cutcopypaste@99" }]
+      "editor/context": [
+        {
+          "command": "edp.tagSelection",
+          "when": "editorTextFocus",
+          "group": "9_cutcopypaste@99"
+        }
+      ]
     },
-    "keybindings": [{ "command": "edp.tagSelection", "key": "ctrl+alt+m", "when": "editorTextFocus" }],
+    "keybindings": [
+      {
+        "command": "edp.tagSelection",
+        "key": "ctrl+alt+m",
+        "when": "editorTextFocus"
+      }
+    ],
     "configuration": {
       "title": "EDP",
       "properties": {
@@ -37,7 +118,9 @@
         },
         "edp.sharedTreePaths": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "scope": "machine",
           "description": "Folders that are the fleet's shared tree. Empty means the v8 repo root the service was started for."
@@ -45,10 +128,22 @@
         "edp.externalTerminal": {
           "type": "object",
           "scope": "machine",
-          "default": { "kind": "pwsh", "exe": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" },
+          "default": {
+            "kind": "pwsh",
+            "exe": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+          },
           "properties": {
-            "kind": { "type": "string", "enum": ["pwsh", "cmd", "git-bash"] },
-            "exe": { "type": "string" }
+            "kind": {
+              "type": "string",
+              "enum": [
+                "pwsh",
+                "cmd",
+                "git-bash"
+              ]
+            },
+            "exe": {
+              "type": "string"
+            }
           },
           "description": "The shell `EDP: Open external terminal here` launches: kind and a real .exe path (git-bash: Git\\git-bash.exe)."
         }
@@ -62,10 +157,14 @@
     "package": "npm run build && vsce package --no-dependencies --allow-missing-repository --skip-license -o edp-code.vsix"
   },
   "devDependencies": {
+    "@types/markdown-it": "14.2.0",
     "@types/node": "24.13.6",
     "@types/vscode": "1.138.0",
     "@vscode/vsce": "4.0.0",
+    "dompurify": "3.4.15",
     "esbuild": "0.28.2",
+    "jsdom": "30.0.1",
+    "markdown-it": "15.0.2",
     "typescript": "7.0.2",
     "vitest": "5.0.0"
   }

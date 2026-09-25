@@ -1,5 +1,6 @@
 src/**
 test/**
+webview/**
 node_modules/**
 **/*.map
 esbuild.mjs
