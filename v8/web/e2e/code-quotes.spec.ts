@@ -276,7 +276,12 @@ test("the status bar reveals the chat; reorder, remove, Reply, Ctrl+Enter sends 
   expect(q[1].code).toMatchObject({ path: "src/sample.py", line_start: 4, line_end: 6, commit: head });
   expect(q[1].note).toMatch(STOCK_FF ? /^These lines pick the order\.$/ : new RegExp(`^These lines pick the order\. @${who}`));
   expect(q[2]).toMatchObject({ id: design, version: 1, note: "Is the locator per line? `src/sample.py` ", text: expect.stringContaining("carries") });
-  fs.writeFileSync(shot("quotes-message.json"), JSON.stringify({ id: m.id, reply_to: m.reply_to, quotes: q }, null, 1));
+  // C23 (s-93ddb7fd1a): the text names nobody; the @ picked in a NOTE wakes that person (event mentions)
+  expect(m.text).not.toContain("@");
+  const ev = (await call("GET", `/v1/events?subject_id=${story}`, undefined, asOwner))
+    .find((e: any) => e.kind === "message_sent" && e.data.message === m.id);
+  expect(ev.data.mentions).toContain(who);
+  fs.writeFileSync(shot("quotes-message.json"), JSON.stringify({ id: m.id, reply_to: m.reply_to, quotes: q, mentions: ev.data.mentions }, null, 1));
   const cards = msgEl(m.id).locator(".quote-card");
   await expect(cards).toHaveCount(3, { timeout: 10_000 });
   await msgEl(m.id).scrollIntoViewIfNeeded();
