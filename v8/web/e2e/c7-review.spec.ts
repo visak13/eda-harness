@@ -20,7 +20,7 @@ async function call(method: string, route: string, body?: unknown) {
   return result.value;
 }
 let story: string, design: string;
-test.beforeAll(async ({ board }) => {
+test.beforeAll(async ({ board: _board }) => {
   story = (await call('POST', '/v1/tickets', { kind: 'story', work_type: 'feature', title: 'C7 review fixture', parent_id: EPIC() })).id;
   design = (await call('POST', '/v1/docs', { doc_type: 'design', title: 'C7 design', body_md: '# Review\n\nA visible passage for quoting.\n', scope: EPIC() })).id;
   await call('PATCH', '/v1/tickets/' + story, { design_ref: design });
