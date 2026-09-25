@@ -1,0 +1,23 @@
+{
+  "beforeReload": {
+    "composer": "half a thought, unsent",
+    "reply": "Owner: which way for the reload fixture?",
+    "inbox": "half an answer, unsent"
+  },
+  "afterReload": {
+    "composer": "half a thought, unsent",
+    "reply": "Owner: which way for the reload fixture?",
+    "inbox": "half an answer, unsent"
+  },
+  "otherIdentity": {
+    "composer": "",
+    "reply": null,
+    "inbox": null
+  },
+  "ownerAgain": {
+    "composer": "half a thought, unsent",
+    "reply": "Owner: which way for the reload fixture?",
+    "inbox": "half an answer, unsent"
+  },
+  "browser": "156.0.1"
+}
