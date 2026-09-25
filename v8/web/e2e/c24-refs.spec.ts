@@ -107,7 +107,7 @@ test("$ picks a story, a doc and a decision in the composer and a note; the text
   await pick(page, menu, decision);
   await expect(ta).toHaveValue(`see $${other} (C2 smoke target) and $${design} (C2 smoke design) per $${decision} (C2 smoke ruling: $ references board objects) `);
 
-  // 3. a quote note: select a doc passage, Ctrl+Alt+Q, '$C2' in the note → pick the decision → add.
+  // 3. a quote note: select a doc passage, Ctrl+Alt+Q, '$C2' in the note → pick the decision, the story, the doc → add.
   await page.goto(`${BASE()}/ui/ticket/${story}?as=owner&doc=${design}&v=1`);
   await expect(page.getByTestId("doc-body")).toContainText("Dollar references point at board objects.");
   await selectText(page, "[data-testid=doc-body]", "Dollar references point at board objects.");
@@ -120,7 +120,11 @@ test("$ picks a story, a doc and a decision in the composer and a note; the text
   await shot(page, "03-note-picker");
   await pick(page, noteMenu, decision);
   await expect(pop).toBeVisible(); // Enter picked; it did not add the quote
-  await expect(pop.getByTestId("quote-note")).toHaveValue(`ruled in $${decision} (C2 smoke ruling: $ references board objects) `);
+  await page.keyboard.type("for $C2");
+  await pick(page, noteMenu, other);
+  await page.keyboard.type("see $C2");
+  await pick(page, noteMenu, design);
+  await expect(pop.getByTestId("quote-note")).toHaveValue(`ruled in $${decision} (C2 smoke ruling: $ references board objects) for $${other} (C2 smoke target) see $${design} (C2 smoke design) `);
   await page.keyboard.press("Enter");
   await expect(pop).toBeHidden();
 
@@ -135,13 +139,13 @@ test("$ picks a story, a doc and a decision in the composer and a note; the text
   const msgs = await call("GET", `/v1/messages?ticket_id=${story}`, undefined, owner);
   const sent = msgs.find((m: any) => (m.text as string).startsWith("see $"));
   for (const id of [other, design, decision]) expect(sent.text).toContain(`$${id} (`);
-  expect(sent.quotes[0].note).toContain(`$${decision} (`);
+  for (const id of [other, design, decision]) expect(sent.quotes[0].note).toContain(`$${id} (`);
 
-  // 6. the chips: three in the text, one in the quote card's note; each opens its target.
+  // 6. the chips: three in the text, three in the quote card's note; each opens its target.
   const row = page.getByTestId("thread-message").filter({ hasText: "see" }).last();
   await row.scrollIntoViewIfNeeded();
   const chips = row.getByTestId("ref-chip");
-  await expect(chips).toHaveCount(4);
+  await expect(chips).toHaveCount(6);
   await expect(row.locator(`[data-ref="${other}"]`).first()).toHaveText("story · C2 smoke target");
   await shot(page, "04-chips");
   await row.locator(`[data-testid=message-md] [data-ref="${design}"], [data-ref="${design}"]`).first().click();

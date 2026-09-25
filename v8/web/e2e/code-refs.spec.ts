@@ -160,7 +160,7 @@ test("the composer: '$C2' lists this epic's story, doc and decision; Enter picks
   await expect(composer()).toHaveValue(`see $${other} (C2 smoke target) and $${design} (C2 smoke design) per $${decision} (C2 smoke ruling: $ references board objects) `);
 });
 
-test("a quote note: '$C2' in the popover note picks the decision; the send carries the ids", async () => {
+test("a quote note: '$C2' in the popover note picks a decision, a story and a doc; the send carries the ids", async () => {
   const c = chat();
   await selectIn(c, `.msg[data-id="${ask}"] > .body`, "covers the dollar picker");
   await expect(c.locator("#quote-selection")).toBeVisible({ timeout: 5_000 });
@@ -171,7 +171,11 @@ test("a quote note: '$C2' in the popover note picks the decision; the send carri
   await page.screenshot({ path: shot("03-note-picker.png") });
   await pick("#qn-refs", decision);
   await expect(c.locator("#quote-pop")).toBeVisible(); // Enter picked; it did not add the quote
-  await expect(c.locator("#quote-pop-note")).toHaveValue(`ruled in $${decision} (C2 smoke ruling: $ references board objects) `);
+  await page.keyboard.type("for $C2");
+  await pick("#qn-refs", other);
+  await page.keyboard.type("see $C2");
+  await pick("#qn-refs", design);
+  await expect(c.locator("#quote-pop-note")).toHaveValue(`ruled in $${decision} (C2 smoke ruling: $ references board objects) for $${other} (C2 smoke target) see $${design} (C2 smoke design) `);
   await page.keyboard.press("Control+Enter");
   await expect(c.locator("#quote-pop")).toBeHidden();
   await expect(c.locator("#quote-chips > li.qchip")).toHaveCount(1, { timeout: 10_000 });
@@ -184,14 +188,14 @@ test("a quote note: '$C2' in the popover note picks the decision; the send carri
     return !!sent;
   }, { timeout: 20_000 }).toBe(true);
   for (const id of [other, design, decision]) expect(sent.text).toContain(`$${id} (`);
-  expect(sent.quotes[0].note).toContain(`$${decision} (`);
+  for (const id of [other, design, decision]) expect(sent.quotes[0].note).toContain(`$${id} (`);
   fs.writeFileSync(shot("sent-message.json"), JSON.stringify({ id: sent.id, text: sent.text, note: sent.quotes[0].note }, null, 1));
 });
 
 test("chips: the doc opens the reader, the decision its Decisions row, the story its board page", async () => {
   const c = chat();
   const msg = c.locator(".msg", { hasText: "see" }).last();
-  await expect(msg.locator("button.ref-chip")).toHaveCount(4, { timeout: 15_000 });
+  await expect(msg.locator("button.ref-chip")).toHaveCount(6, { timeout: 15_000 });
   await expect(msg.locator(`button.ref-chip[data-ref="${other}"]`).first()).toContainText("C2 smoke target");
   await msg.scrollIntoViewIfNeeded();
   await page.screenshot({ path: shot("04-chips.png") });
