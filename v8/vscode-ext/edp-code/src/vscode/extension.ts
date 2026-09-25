@@ -20,7 +20,8 @@ export function activate(ctx: vscode.ExtensionContext): void {
   const requests = new ViewerRequests(() => chat.clearViewer());
   const board = () => requests.board(boardUrl(), () => creds(ctx), line => out.info(line));
   const badge = new Badge(ctx, board, line => out.info(line));
-  const chat = new ChatController(ctx, board, boardUrl, line => out.info(line), () => { requests.invalidate(); badge.clear(); }, () => requests.resume());
+  const hooks = viewerHooks(requests, badge);
+  const chat = new ChatController(ctx, board, boardUrl, line => out.info(line), hooks.cancel, hooks.resume);
   const cmd = (id: string, fn: (...a: any[]) => unknown) => vscode.commands.registerCommand(id, fn);
 
   ctx.subscriptions.push(out, badge, ...chat.register(),
@@ -37,6 +38,14 @@ export function activate(ctx: vscode.ExtensionContext): void {
     cmd('edp.pull', () => guarded('pull', ctx, board)),
     cmd('edp.openExternalTerminal', (uri?: vscode.Uri) => openExternalTerminal(uri)),
   );
+}
+
+/** A cleared viewer drops its requests and hides its badge; a resumed one re-arms the badge (C25). */
+export function viewerHooks(requests: Pick<ViewerRequests, 'invalidate' | 'resume'>, badge: Pick<Badge, 'clear' | 'refresh'>) {
+  return {
+    cancel: () => { requests.invalidate(); badge.clear(); },
+    resume: () => { requests.resume(); badge.refresh(0); },
+  };
 }
 
 export function deactivate(): void {}

@@ -67,6 +67,10 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
   private notice: string | null = null;
   private opening = 0;
   private viewer = 0;
+  /** C25: the (board, participant, token) the live viewer was started for; null once it is cleared */
+  private viewerKey: string | null = null;
+  /** C25: restarts run one at a time, so two sign-in signals never abort each other's requests */
+  private restarting: Promise<unknown> = Promise.resolve();
   private pendingEvents?: { generation: number; events: FeedEvent[] };
   /** C5 change cards: the shared tree's commit index, the open epic's tickets (tasks, assignees), the cards */
   private changes: Changes;
@@ -294,7 +298,7 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
   /** After a sign-in or sign-out: a fresh feed and a reload of the open thread, or, signed out, an
    *  empty view (nothing read under the old identity stays on screen). A no-op before the first resolve. */
   clearViewer(): void {
-    ++this.viewer;
+    ++this.viewer; this.viewerKey = null;
     this.cancelViewer();
     ++this.opening; this.opened = this.opening; this.pendingEvents = undefined;
     const feed = this.feed; this.feed = undefined; feed?.dispose();
@@ -309,18 +313,32 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
     this.postState();
   }
 
+  /** Serialised (C25): sign-in fires both secrets.onDidChange and the command; the second is a no-op
+   *  when the stored creds and board URL still equal the live viewer's. Resolves after the reopen. */
   async restart(): Promise<void> {
-    this.clearViewer();
-    const viewer = this.viewer;
+    const run = this.restarting.then(() => this.restartNow());
+    this.restarting = run.catch(() => undefined);
+    const next = await run;
+    await next?.reopen;
+  }
+
+  /** The viewer switch itself; the thread reopen is returned, not awaited, so it never holds the queue. */
+  private async restartNow(): Promise<{ reopen: Promise<void> } | undefined> {
     const c = await creds(this.ctx);
-    if (viewer !== this.viewer || !c) return;
+    const key = c ? JSON.stringify([this.boardUrl(), c.participant, c.token]) : null;
+    if (key !== null && key === this.viewerKey) return;
+    this.clearViewer();
+    if (!c) return;
     this.resumeViewer();
+    this.notice = null;
     this.quotes.setIdentity({ origin: this.boardUrl(), participant: c.participant });
     this.docProvider?.resume();
     if (!this.booted) return;
+    this.viewerKey = key;
     this.startFeed();
     const id = this.ctx.workspaceState.get<string>(LAST_PICK);
-    if (id) await this.open(id); else this.postState();
+    if (!id) { this.postState(); return; }
+    return { reopen: this.open(id) };
   }
 
   private startFeed(): void {
@@ -954,7 +972,7 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
     });
     qp.show();
     try {
-      const all = await this.board().tickets();
+      const all = await this.pickTickets();
       const live = (t: Ticket) => !['done', 'cancelled', 'closed'].includes(t.status);
       const item = (t: Ticket): Item => ({ label: t.title, description: t.id, detail: `${t.kind} · ${t.status}${t.assignee ? ` · ${t.assignee}` : ''}`, id: t.id });
       const epics = all.filter(t => t.kind === 'epic' && live(t));
@@ -966,13 +984,24 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
       qp.busy = false;
     } catch (e) {
       qp.dispose();
-      this.fail(e, 'could not list tickets');
+      // C25: never a silent empty picker; a viewer switch that outlived its one retry is said out loud
+      if ((e as BoardError)?.code === 'viewer_changed') void vscode.window.showErrorMessage(`EDP: could not list tickets: ${(e as Error).message}`);
+      else this.fail(e, 'could not list tickets');
       return;
     }
     const id = await chosen;
     if (!id) return undefined;
     await this.open(id);
     return this.store?.ticketId === id ? id : undefined;
+  }
+
+  /** A pick racing a restart (C25): a viewer_changed abort waits for that restart and retries once. */
+  private async pickTickets(): Promise<Ticket[]> {
+    try { return await this.board().tickets(); } catch (e) {
+      if ((e as BoardError)?.code !== 'viewer_changed') throw e;
+      await this.restarting;
+      return await this.board().tickets();
+    }
   }
 
   private fail(e: unknown, what: string) {
