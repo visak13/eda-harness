@@ -37,9 +37,17 @@ describe('confirmDetail', () => {
   });
 });
 
-describe('terminalLaunch', () => {
-  it('git-bash opens with --cd', () =>
-    expect(terminalLaunch('git-bash', 'C:\\Program Files\\Git\\git-bash.exe', 'C:\\v8')).toEqual({ exe: 'C:\\Program Files\\Git\\git-bash.exe', args: ['--cd=C:\\v8'] }));
-  it('pwsh / cmd take the cwd only', () => expect(terminalLaunch('pwsh', 'pwsh.exe', 'C:\\v8').args).toEqual([]));
-  it('a .cmd/.bat is refused (cannot spawn without a shell)', () => expect(() => terminalLaunch('cmd', 'C:\\x\\start.cmd', 'C:\\v8')).toThrow(/\.exe/));
+describe('terminalLaunch (cmd /c start gives the shell its own console)', () => {
+  it('pwsh: start "" /D "<cwd>" "<exe>", every piece quoted', () =>
+    expect(terminalLaunch('pwsh', 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', 'C:\\Program Files\\my repo')).toEqual({
+      file: 'C:\\Windows\\System32\\cmd.exe',
+      commandLine: '/d /c start "" /D "C:\\Program Files\\my repo" "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"',
+    }));
+  it('git-bash also gets --cd', () =>
+    expect(terminalLaunch('git-bash', 'C:\\Program Files\\Git\\git-bash.exe', 'C:\\v8').commandLine).toBe('/d /c start "" /D "C:\\v8" "C:\\Program Files\\Git\\git-bash.exe" "--cd=C:\\v8"'));
+  it('a .cmd/.bat is refused', () => expect(() => terminalLaunch('cmd', 'C:\\x\\start.cmd', 'C:\\v8')).toThrow(/\.exe/));
+  it.each(['C:\\a&calc', 'C:\\a"b', 'C:\\100%x', 'C:\\a|b', 'C:\\a^b', 'C:\\a>b'])('a folder with a cmd metacharacter is refused: %s', cwd =>
+    expect(() => terminalLaunch('pwsh', 'C:\\p\\powershell.exe', cwd)).toThrow(/cmd\.exe would interpret/));
+  it('an exe with a metacharacter is refused', () => expect(() => terminalLaunch('pwsh', 'C:\\a&b\\x.exe', 'C:\\v8')).toThrow(/exe path/));
+  it('an unknown kind is refused', () => expect(() => terminalLaunch('zsh' as never, 'C:\\x.exe', 'C:\\v8')).toThrow(/kind/));
 });

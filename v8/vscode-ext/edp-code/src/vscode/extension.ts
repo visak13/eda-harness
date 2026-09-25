@@ -16,7 +16,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
   const out = vscode.window.createOutputChannel('EDP', { log: true });
   const boardUrl = () => vscode.workspace.getConfiguration('edp').get<string>('boardUrl') || 'http://127.0.0.1:9400';
   const board = () => boardClient(boardUrl(), () => creds(ctx), fetch, line => out.info(line));
-  const badge = new Badge(ctx, board);
+  const badge = new Badge(ctx, board, line => out.info(line));
   const cmd = (id: string, fn: (...a: any[]) => unknown) => vscode.commands.registerCommand(id, fn);
 
   ctx.subscriptions.push(out, badge,

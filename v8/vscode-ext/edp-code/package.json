@@ -3,7 +3,7 @@
   "displayName": "EDP",
   "description": "Tag a code selection to anyone on the EDP board; live-seats badge, guarded git and an external terminal for the fleet's shared tree.",
   "publisher": "edp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "license": "UNLICENSED",
   "engines": { "vscode": "^1.138.0" },
@@ -45,7 +45,7 @@
         "edp.externalTerminal": {
           "type": "object",
           "scope": "machine",
-          "default": { "kind": "pwsh", "exe": "pwsh.exe" },
+          "default": { "kind": "pwsh", "exe": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" },
           "properties": {
             "kind": { "type": "string", "enum": ["pwsh", "cmd", "git-bash"] },
             "exe": { "type": "string" }

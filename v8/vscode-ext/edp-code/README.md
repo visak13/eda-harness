@@ -10,7 +10,15 @@ The EDP extension for the Code tab's code-server (design-449b628cdd §4, epic-91
 | `EDP: Checkout… / Merge… / Pull (guarded)` | A modal listing live seats and `git status --porcelain` paths, then system git. The built-in Source Control view is NOT guarded and cannot be vetoed. |
 | `EDP: Open external terminal here` | Launches `edp.externalTerminal` (pwsh / cmd / git-bash, a real `.exe`) detached in the folder. |
 
-Settings: `edp.boardUrl` (default `http://127.0.0.1:9400`; creds go only to loopback or https), `edp.sharedTreePaths`, `edp.externalTerminal`.
+Settings: `edp.boardUrl` (default `http://127.0.0.1:9400`; creds go only to loopback or https), `edp.sharedTreePaths`, `edp.externalTerminal`
+(default Windows PowerShell 5.1 by absolute path; pwsh 7 is not installed on this host). All three are **machine-scoped**:
+in code-server set them in `<user-data>/Machine/settings.json` (Settings → "Remote" tab). A machine setting in
+`User/settings.json` is not reliably applied in a remote window (measured in the S5 smoke: the badge and board URL fell back to
+the defaults).
+
+The external terminal is started with `cmd.exe /d /c start "" /D "<folder>" "<exe>"`, so it gets a console of its own (a shell
+spawned directly with no stdio reads NUL and exits at once). A folder or exe path holding a cmd metacharacter
+(`" % ^ & | < > !`) is refused rather than escaped.
 
 ## Build, test, install
 

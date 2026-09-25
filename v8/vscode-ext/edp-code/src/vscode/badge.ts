@@ -21,8 +21,9 @@ export class Badge implements vscode.Disposable {
   private subs: vscode.Disposable[] = [];
   private watched = new Set<Repository>();
   private seq = 0;
+  private lastKey = '';
 
-  constructor(private ctx: vscode.ExtensionContext, private board: () => Board) {
+  constructor(private ctx: vscode.ExtensionContext, private board: () => Board, private log: (line: string) => void = () => {}) {
     this.item.name = 'EDP live seats';
     this.item.command = 'edp.showSeats';
     const every = setInterval(() => this.refresh(), 30_000);
@@ -55,7 +56,14 @@ export class Badge implements vscode.Disposable {
     const api = await gitApi();
     if (!api) return undefined;
     const paths = sharedTreePaths(this.ctx);
-    return api.repositories.find(r => inSharedTree(r.rootUri.fsPath, paths));
+    const repo = api.repositories.find(r => inSharedTree(r.rootUri.fsPath, paths));
+    const roots = api.repositories.map(r => r.rootUri.fsPath).join(', ');
+    const key = `${roots} / ${paths.join(', ')}`;
+    if (key !== this.lastKey) { // paths only (never creds): why the badge is shown or hidden
+      this.lastKey = key;
+      this.log(`badge: repos [${roots}] shared tree [${paths.join(', ')}] -> ${repo ? 'shown' : 'hidden'}`);
+    }
+    return repo;
   }
 
   private async update(): Promise<void> {

@@ -40,10 +40,23 @@ export function confirmDetail(seats: Array<{ handle: string; ticket_id: string |
 
 export type TerminalKind = 'pwsh' | 'cmd' | 'git-bash';
 
-/** argv for the external terminal. The exe must be a real .exe: a .cmd/.bat needs a shell to spawn. */
-export function terminalLaunch(kind: TerminalKind, exe: string, cwd: string): { exe: string; args: string[] } {
+/** cmd.exe metacharacters (and `"`): a path carrying one could break out of `start`'s quoted arguments. */
+const CMD_META = /["%^&|<>!\r\n]/;
+
+/** The external terminal launch. A shell spawned directly with `stdio: 'ignore'` reads NUL as stdin and
+ *  exits at once (measured 2026-09-25: direct and conhost-hosted launches both died), so the shell is
+ *  started through `cmd.exe /d /c start "" /D <cwd> <exe>`: `start` gives it a fresh console of its own.
+ *  The command line is built here and passed verbatim; every piece is quoted, and a cwd or exe holding a
+ *  cmd metacharacter is refused rather than escaped. The exe must be a real .exe. */
+export function terminalLaunch(kind: TerminalKind, exe: string, cwd: string, comspec = 'C:\\Windows\\System32\\cmd.exe'):
+  { file: string; commandLine: string } {
   if (!exe) throw new Error('edp.externalTerminal.exe is empty');
   if (path.win32.extname(exe).toLowerCase() !== '.exe') throw new Error(`edp.externalTerminal.exe must be a .exe (got ${exe})`);
   if (!['pwsh', 'cmd', 'git-bash'].includes(kind)) throw new Error(`edp.externalTerminal.kind must be pwsh, cmd or git-bash (got ${kind})`);
-  return { exe, args: kind === 'git-bash' ? [`--cd=${cwd}`] : [] };
+  for (const [what, v] of [['exe', exe], ['folder', cwd]] as const) {
+    if (CMD_META.test(v)) throw new Error(`the ${what} path contains a character cmd.exe would interpret (" % ^ & | < > !): ${v}`);
+  }
+  const q = (s: string) => `"${s}"`;
+  const args = kind === 'git-bash' ? [q(`--cd=${cwd}`)] : [];
+  return { file: comspec, commandLine: ['/d', '/c', 'start', '""', '/D', q(cwd), q(exe), ...args].join(' ') };
 }
