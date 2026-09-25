@@ -87,6 +87,12 @@ async function typeInput(value: string, title: string): Promise<void> {
 /** The chat webview's document: two iframes deep. The workbench overlays webview iframes outside the
  *  part that hosts them; ours is the only webview this window opens. */
 const chat = (): FrameLocator => page.locator("iframe.webview").first().contentFrame().locator("#active-frame").contentFrame();
+/** C9: stories live in the header's Stories dropdown; open it, then click the story. */
+async function openStory(id: string): Promise<void> {
+  const c = chat();
+  if ((await c.locator("#stories-toggle").getAttribute("aria-expanded")) !== "true") await c.locator("#stories-toggle").click();
+  await c.locator(`.story[data-id="${id}"]`).click();
+}
 const shot = (name: string) => { fs.mkdirSync(EVIDENCE, { recursive: true }); return path.join(EVIDENCE, name); };
 
 function makeRepo(): void {
@@ -138,7 +144,7 @@ test.afterAll(async () => {
   if (tmp && !process.env.C3_KEEP_TMP) fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 3 });
 });
 
-test("sign in, open the chat in the right column, pick the epic: its own thread, Stories strip, architect", async () => {
+test("sign in, open the chat in the right column, pick the epic: its own thread, one-line header with the Stories dropdown, architect", async () => {
   await runCommand("EDP: Sign in to board");
   await typeInput("owner", "EDP: board participant id");
   await typeInput(OWNER_TOKEN, "EDP: token for owner");
@@ -148,7 +154,9 @@ test("sign in, open the chat in the right column, pick the epic: its own thread,
   await quickRow(page, "Spike epic").click();
   const c = chat();
   await expect(c.locator("#crumb-current")).toHaveText("Spike epic", { timeout: 20_000 });
-  await expect(c.locator("#architect")).toHaveText(`Architect: @${ARCH()}`);
+  await expect(c.locator("#architect")).toHaveText(`@${ARCH()}`);
+  await expect(c.locator("#architect")).toHaveAttribute("title", `Architect: @${ARCH()}`);
+  await expect(c.locator("#ticket-status")).toHaveText("drafted");
   await expect(c.locator("#feed-status")).toHaveText("live", { timeout: 15_000 });
   await expect(c.locator(".msg .body", { hasText: "Epic kickoff" })).toBeVisible();
   await expect(c.locator(".story")).toHaveCount(2);
@@ -157,6 +165,28 @@ test("sign in, open the chat in the right column, pick the epic: its own thread,
   await expect(c.locator(`.story[data-id="${storyA}"] .st-unread`)).toHaveText("1"); // never viewed: its one message
   await expect(c.locator(`.story[data-id="${storyB}"] .st-unread`)).toHaveCount(0);
   await expect(c.locator(".msg .body", { hasText: "Alpha story only" })).toHaveCount(0); // never merged
+  // C9: the header is one line; the stories fold into a dropdown that reaches every story; the bands are chips, collapsed
+  const hb = await c.locator("header.hdr").boundingBox();
+  const pb = await c.locator("#pick").boundingBox();
+  expect(hb!.height).toBeLessThan(pb!.height * 1.6);
+  for (const id of ["#crumb-current", "#ticket-status", "#architect", "#stories-toggle", "#feed-status"]) {
+    const b = await c.locator(id).boundingBox();
+    if (!b) continue; // a narrow panel folds status and architect into the picker's tooltip (checked below)
+    expect(Math.abs(b.y + b.height / 2 - (pb!.y + pb!.height / 2)), id).toBeLessThan(4);
+  }
+  await expect(c.locator("#pick")).toHaveAttribute("title", new RegExp(`drafted · architect @${ARCH().replace(/[.]/g, "\.")}`));
+  await expect(c.locator("#stories")).toBeHidden();
+  await expect(c.locator("#stories-toggle .st-unread")).toHaveText("1");
+  await expect(c.locator("#uncommitted-toggle")).toHaveAttribute("aria-expanded", "false");
+  await expect(c.locator("#uncommitted")).toBeHidden();
+  await expect(c.locator("#unlinked")).toBeHidden();
+  await c.locator("#stories-toggle").click();
+  await expect(c.locator("#stories .story")).toHaveCount(2);
+  await expect(c.locator("#stories .story").nth(0)).toBeVisible();
+  await expect(c.locator("#stories .story").nth(1)).toBeVisible();
+  await page.screenshot({ path: shot("stories-dropdown.png") });
+  await page.keyboard.press("Escape");
+  await expect(c.locator("#stories")).toBeHidden();
   // right-hand column: the auxiliary bar sits right of the editor
   const aux = await page.locator(".part.auxiliarybar").boundingBox();
   const ed = await page.locator(".part.editor").boundingBox();
@@ -178,9 +208,10 @@ test("a message posted from outside the panel appears within 5 s; a story messag
 
 test("clicking a story opens its separate thread; the breadcrumb returns to the epic", async () => {
   const c = chat();
-  await c.locator(`.story[data-id="${storyA}"]`).click();
+  await openStory(storyA);
   await expect(c.locator("#crumb-current")).toHaveText("Story Alpha", { timeout: 15_000 });
   await expect(c.locator("#crumb-epic")).toHaveText("Spike epic");
+  await expect(c.locator("#stories")).toBeHidden(); // picking closes the dropdown
   await expect(c.locator(".msg .body", { hasText: "Alpha story only message" })).toBeVisible();
   await expect(c.locator(".msg .body", { hasText: "Epic kickoff" })).toHaveCount(0);
   await expect(c.locator(`.story[data-id="${storyA}"] .st-unread`)).toHaveCount(0);
@@ -211,6 +242,34 @@ test("clicking a code card opens the file at line_start..line_end", async () => 
   await expect(page.locator(".statusbar-item", { hasText: /Ln 5, Col \d+ \(\d+ selected\)/ })).toBeVisible({ timeout: 10_000 });
   await expect(page.locator(".monaco-editor .view-line", { hasText: "value_3 = 3" }).first()).toBeVisible();
   await page.screenshot({ path: shot("code-card-opened.png") });
+});
+
+test("the composer starts at 2 lines, grows with its text to 8, then scrolls; kind and To sit in its toolbar", async () => {
+  const c = chat();
+  const ta = c.locator("#composer");
+  const lineH = await ta.evaluate(e => parseFloat(getComputedStyle(e).lineHeight));
+  const pad = await ta.evaluate(e => parseFloat(getComputedStyle(e).paddingTop) + parseFloat(getComputedStyle(e).paddingBottom));
+  const h = async () => (await ta.boundingBox())!.height;
+  expect(Math.abs(await h() - (2 * lineH + pad))).toBeLessThan(3);
+  // kind and To are in the composer's toolbar, on the Send button's line
+  const send = (await c.locator("#send").boundingBox())!;
+  for (const id of ["#kind", "#to"]) {
+    const b = (await c.locator(id).boundingBox())!;
+    expect(Math.abs(b.y + b.height / 2 - (send.y + send.height / 2)), id).toBeLessThan(4);
+  }
+  await expect(c.locator(".ctools #composer-tools")).toHaveCount(1); // the C11/C12 slot
+  await ta.click();
+  for (let i = 1; i <= 5; i++) { await ta.pressSequentially(`line ${i}`); await page.keyboard.press("Shift+Enter"); }
+  await ta.pressSequentially("line 6");
+  expect(Math.abs(await h() - (6 * lineH + pad))).toBeLessThan(3);
+  for (let i = 7; i <= 12; i++) { await page.keyboard.press("Shift+Enter"); await ta.pressSequentially(`line ${i}`); }
+  expect(Math.abs(await h() - (8 * lineH + pad))).toBeLessThan(3);
+  expect(await ta.evaluate(e => getComputedStyle(e).overflowY)).toBe("auto");
+  await page.screenshot({ path: shot("composer-8-lines.png") });
+  await ta.fill("");
+  await ta.press("a");
+  await ta.press("Backspace");
+  expect(Math.abs(await h() - (2 * lineH + pad))).toBeLessThan(3);
 });
 
 test("@-autocomplete shows role · ticket · title, ranks this epic first; two chosen mentions land in the event", async () => {

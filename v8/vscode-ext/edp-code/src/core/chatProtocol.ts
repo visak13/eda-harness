@@ -34,7 +34,11 @@ export const SHA = /^[0-9a-f]{40}$/;
 export const isRepoPath = (p: string) =>
   p.length > 0 && p.length <= 4096 && !/[\\\0]/.test(p) && !p.startsWith('/') && !/^[A-Za-z]:/.test(p) && !p.split('/').includes('..');
 
-export type CardFile = { path: string; oldPath?: string; status: string; add: number | null; del: number | null };
+export type CardFile = {
+  path: string; oldPath?: string; status: string; add: number | null; del: number | null;
+  /** C9 uncommitted rows: a path the open epic (or lone ticket) touched */
+  touched?: boolean;
+};
 /** One commit as a timeline card. `seat` is the EDP-Seat trailer, or the ticket's assignee (`seatVia`). */
 export type CommitCard = {
   type: 'commit'; sha: string; at: string; subject: string; tickets: string[];
@@ -45,8 +49,14 @@ export type CommitCard = {
   /** false: the commit is not in this clone ("pull to see this change") */
   local: boolean;
 };
-/** The pinned live card: the shared tree's working tree + index vs HEAD. Names no seat (dec-8dfe3d97af). */
-export type UncommittedCard = { files: CardFile[]; more: number; total: number; at: string };
+/** The live uncommitted chip: the shared tree's working tree + index vs HEAD. Names no seat (dec-8dfe3d97af).
+ *  C9 option (a): rows the open epic touched come first, flagged; `scoped` counts them (null: no scope). */
+export type UncommittedCard = {
+  files: CardFile[]; more: number; total: number; at: string;
+  scoped: number | null;
+  /** what `scoped` is measured against: the open thread's epic, or a lone ticket with its tasks */
+  scope: 'epic' | 'ticket' | null;
+};
 
 /** An @-list row, labelled in the host (strategyll-5e3ecdb625 §2): the view sets it with textContent. */
 export type PersonRow = {
@@ -121,7 +131,8 @@ export type ViewToHost =
   | { v: 1; type: 'openBoard'; ticketId: string; messageId?: string }
   /** C5: a file row (`path`) opens vscode.diff, the card itself (no path) the multi-diff */
   | { v: 1; type: 'openDiff'; sha: string; path?: string }
-  | { v: 1; type: 'openUncommitted'; path?: string }
+  /** `scoped`: the multi-diff opens only the rows the open epic touched (C9) */
+  | { v: 1; type: 'openUncommitted'; path?: string; scoped?: true }
   | { v: 1; type: 'signIn' };
 
 const TYPES = new Set(['ready', 'pickTicket', 'loadOlder', 'send', 'dropCode', 'openCode', 'openBoard', 'signIn']);
@@ -179,7 +190,8 @@ export function parseInbound(raw: unknown, handles: ReadonlySet<string> = new Se
       return p && isRepoPath(p) ? { v: 1, type: 'openDiff', sha, path: p } : null;
     }
     case 'openUncommitted': {
-      if (r.path === undefined) return { v: 1, type: 'openUncommitted' };
+      if (r.scoped !== undefined && r.scoped !== true) return null;
+      if (r.path === undefined) return r.scoped ? { v: 1, type: 'openUncommitted', scoped: true } : { v: 1, type: 'openUncommitted' };
       const p = str('path');
       return p && isRepoPath(p) ? { v: 1, type: 'openUncommitted', path: p } : null;
     }

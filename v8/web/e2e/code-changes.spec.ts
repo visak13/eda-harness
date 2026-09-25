@@ -93,6 +93,12 @@ async function typeInput(value: string, title: string): Promise<void> {
 }
 const chat = (): FrameLocator => page.locator("iframe.webview").first().contentFrame().locator("#active-frame").contentFrame();
 const shot = (name: string) => { fs.mkdirSync(EVIDENCE, { recursive: true }); return path.join(EVIDENCE, name); };
+/** C9: stories live in the header's Stories dropdown; open it, then click the story. */
+async function openStory(id: string): Promise<void> {
+  const c = chat();
+  if ((await c.locator("#stories-toggle").getAttribute("aria-expanded")) !== "true") await c.locator("#stories-toggle").click();
+  await c.locator(`.story[data-id="${id}"]`).click();
+}
 const card = (key: string) => chat().locator(`#timeline .commit[data-sha="${sha[key]}"]`);
 const activeTab = () => page.locator(".tabs-container .tab.active");
 
@@ -140,19 +146,22 @@ test("the epic thread: only epic-named commits, the Stories strip counts, unlink
   await expect(card("task")).toHaveCount(0);
   await expect(c.locator(`.story[data-id="${storyA}"] .st-commits`)).toHaveText("⎇ 2");
   await expect(c.locator(`.story[data-id="${storyB}"] .st-commits`)).toHaveCount(0);
-  const details = c.locator("#unlinked details");
-  await expect(details).toHaveJSProperty("open", false);
-  await expect(c.locator("#unlinked-summary")).toHaveText("Unlinked commits (2)");
-  await c.locator("#unlinked-summary").click();
+  // C9: Unlinked is a chip, collapsed by default, expanding in place
+  await expect(c.locator("#unlinked")).toBeHidden();
+  await expect(c.locator("#unlinked-toggle")).toHaveText("Unlinked · 2");
+  await expect(c.locator("#unlinked-toggle")).toHaveAttribute("aria-expanded", "false");
+  await c.locator("#unlinked-toggle").click();
+  await expect(c.locator("#unlinked-toggle")).toHaveAttribute("aria-expanded", "true");
   await expect(c.locator(`#unlinked .commit[data-sha="${sha.unlinked}"] .cm-seat`)).toHaveText("unlinked");
   await expect(c.locator(`#unlinked .commit[data-sha="${sha.root}"]`)).toBeVisible();
   await page.screenshot({ path: shot("epic-thread.png") });
-  await c.locator("#unlinked-summary").click();
+  await c.locator("#unlinked-toggle").click();
+  await expect(c.locator("#unlinked")).toBeHidden();
 });
 
 test("the story thread: trailer and subject-attributed cards with seat, subject, sha7, files ±, in time order", async () => {
   const c = chat();
-  await c.locator(`.story[data-id="${storyA}"]`).click();
+  await openStory(storyA);
   await expect(c.locator("#crumb-current")).toHaveText("Story Alpha", { timeout: 15_000 });
   const a = card("alpha");
   await expect(a).toBeVisible();
@@ -194,7 +203,7 @@ test("the epic's rename + delete commit opens without errors (old path on the le
   const c = chat();
   await c.locator("#crumb-epic").click();
   await expect(c.locator("#crumb-current")).toHaveText("Spike epic", { timeout: 15_000 });
-  await c.locator("#unlinked-summary").click();
+  await c.locator("#unlinked-toggle").click();
   const u = c.locator(`#unlinked .commit[data-sha="${sha.unlinked}"]`);
   await expect(u.locator(".cf")).toHaveText(["Ddocs/gone.md+0−1", "Rsrc/old_name.py → src/new_name.py+0−0"]);
   await u.locator(".cm-head").click();
@@ -203,8 +212,8 @@ test("the epic's rename + delete commit opens without errors (old path on the le
   await expect(activeTab()).toContainText(`docs/gone.md (${sha.unlinked.slice(0, 7)})`, { timeout: 15_000 });
   await expect(page.locator(".monaco-diff-editor .view-line", { hasText: "to be deleted" }).first()).toBeVisible();
   await expect(page.locator(".notifications-toasts .notification-toast", { hasText: /Unable to resolve|FileNotFound|nonexistent/i })).toHaveCount(0);
-  await c.locator("#unlinked-summary").click();
-  await c.locator(`.story[data-id="${storyA}"]`).click();
+  await c.locator("#unlinked-toggle").click();
+  await openStory(storyA);
   await expect(c.locator("#crumb-current")).toHaveText("Story Alpha", { timeout: 15_000 });
 });
 
@@ -224,16 +233,38 @@ test("a new commit naming the open story appears as a card within 10 s, no reloa
   await page.screenshot({ path: shot("live-commit-card.png") });
 });
 
-test("the pinned uncommitted card: clean, then lists an edit within 5 s, opens its diff and the multi-diff; names no seat", async () => {
+test("the Uncommitted chip: collapsed, clean, then scoped to this epic's files with a show-all toggle; opens diffs; names no seat; the fold survives a reload", async () => {
   const c = chat();
-  await expect(c.locator("#uncommitted-open")).toContainText("clean", { timeout: 15_000 });
+  await expect(c.locator("#uncommitted-toggle")).toHaveText("Uncommitted · clean", { timeout: 15_000 });
+  await expect(c.locator("#uncommitted")).toBeHidden();
+  await c.locator("#uncommitted-toggle").click();
+  await expect(c.locator("#uncommitted-open")).toContainText("clean");
   const t0 = Date.now();
   write("src/sample.py", fs.readFileSync(path.join(repo, "src/sample.py"), "utf8") + "value_99 = 99\n");
   write("notes/untracked.md", "scratch\n");
   await expect(c.locator(`#uncommitted .cf[data-path="src/sample.py"]`)).toBeVisible({ timeout: 5_000 });
   timing.save_to_uncommitted_ms = Date.now() - t0;
+  // option (a): src/sample.py is in a commit of this epic's story, notes/untracked.md in none: behind "show all seats"
+  await expect(c.locator("#uncommitted-toggle")).toHaveText("Uncommitted · 1/2", { timeout: 5_000 });
+  await expect(c.locator(`#uncommitted .cf[data-path="notes/untracked.md"]`)).toHaveCount(0);
+  await expect(c.locator("#uncommitted-open")).toContainText("this epic");
+  await expect(c.locator("#uncommitted-open")).toContainText("1 file");
+  await page.screenshot({ path: shot("uncommitted-epic-only.png") });
+  await c.locator("#uncommitted-open").click();
+  await expect(activeTab()).toContainText("Uncommitted changes — this epic", { timeout: 15_000 });
+  await expect(c.locator("#uncommitted-all")).toHaveText("show all seats (1 more)");
+  await c.locator("#uncommitted-all").click();
   await expect(c.locator(`#uncommitted .cf[data-path="notes/untracked.md"]`)).toBeVisible({ timeout: 5_000 });
   await expect(c.locator("#uncommitted-open")).toContainText("2 files");
+  // the fold state is the viewer's own (webview state): hiding the side bar disposes the webview, showing it re-resolves it
+  await runCommand("View: Toggle Secondary Side Bar Visibility");
+  await expect(page.locator(".part.auxiliarybar")).toBeHidden({ timeout: 10_000 });
+  await runCommand("View: Toggle Secondary Side Bar Visibility");
+  await expect(page.locator(".part.auxiliarybar")).toBeVisible({ timeout: 10_000 });
+  await expect(c.locator("#crumb-current")).toHaveText("Story Alpha", { timeout: 20_000 });
+  await expect(c.locator("#uncommitted-toggle")).toHaveAttribute("aria-expanded", "true");
+  await expect(c.locator("#uncommitted-all")).toHaveAttribute("aria-pressed", "true");
+  await expect(c.locator(`#uncommitted .cf[data-path="notes/untracked.md"]`)).toBeVisible({ timeout: 5_000 });
   await expect(c.locator("#uncommitted .cm-seat")).toHaveCount(0);
   await expect(c.locator("#uncommitted")).not.toContainText(ENG());
   await page.screenshot({ path: shot("uncommitted-card.png") });

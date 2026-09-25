@@ -8,14 +8,14 @@ import { activeMention } from '../src/core/mentions';
 import { accessibleName, filterPeople } from '../src/core/people';
 import { at } from '../src/core/render';
 import { bodyFragment } from './render';
-import { appendCommits, appendUnlinked, commitCount, placeCards, renderCommits, renderUncommitted, renderUnlinked } from './cards';
+import { appendCommits, appendUnlinked, commitCount, placeCards, renderCommits, renderUncommitted, renderUnlinked, uncommittedLabel, unlinkedLabel } from './cards';
+import { restoreLocal } from '../src/core/viewState';
 
 declare function acquireVsCodeApi(): { postMessage(m: unknown): void; getState(): unknown; setState(s: unknown): void };
 const vscode = acquireVsCodeApi();
 
-type Local = { v: 1; drafts: Record<string, string>; kind: SendKind };
-const saved = vscode.getState() as Partial<Local> | undefined;
-const local: Local = { v: 1, drafts: saved?.v === 1 && saved.drafts ? saved.drafts : {}, kind: saved?.kind ?? 'note' };
+// drafts, kind and what is folded (C9): per viewer, in the webview state only, never on the board
+const local = restoreLocal(vscode.getState());
 const persist = () => vscode.setState(local);
 
 let state: ChatState | null = null;
@@ -32,25 +32,63 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
   return e;
 };
 
+/** the composer starts at 2 lines and grows with its text to 8, then scrolls (C9) */
+const MIN_ROWS = 2;
+const MAX_ROWS = 8;
+
 const app = document.getElementById('app')!;
+// C9: ONE header line: [‹ epic] [picker: open thread ▾] [status] [@architect] [Stories ▾] [feed dot]
 const header = el('header', 'hdr');
-const pickBtn = el('button', 'pick', 'Pick a ticket or epic…');
+header.setAttribute('aria-label', 'Thread');
+const back = el('button', 'crumb epic');
+back.id = 'crumb-epic';
+back.type = 'button';
+const sep = el('span', 'sep', '›');
+sep.setAttribute('aria-hidden', 'true');
+const pickBtn = el('button', 'pick');
 pickBtn.id = 'pick';
-pickBtn.title = 'Pick a ticket or epic';
+pickBtn.type = 'button';
+const pickText = el('span', 'pick-text', 'Pick a ticket or epic…');
+const cur = el('span', 'crumb current');
+cur.id = 'crumb-current';
+const caret = el('span', 'caret', '▾');
+caret.setAttribute('aria-hidden', 'true');
+pickBtn.append(pickText, cur, caret);
+const tStatus = el('span', 'tstatus');
+tStatus.id = 'ticket-status';
 const arch = el('span', 'arch');
 arch.id = 'architect';
+const storiesBtn = el('button', 'stories-btn');
+storiesBtn.id = 'stories-toggle';
+storiesBtn.type = 'button';
+storiesBtn.setAttribute('aria-haspopup', 'true');
+storiesBtn.setAttribute('aria-controls', 'stories');
+storiesBtn.setAttribute('aria-expanded', 'false');
 const feedDot = el('span', 'feed');
 feedDot.id = 'feed-status';
 feedDot.setAttribute('role', 'status');
-header.append(pickBtn, arch, feedDot);
+header.append(back, sep, pickBtn, tStatus, arch, storiesBtn, feedDot);
 
-const crumbs = el('nav', 'crumbs');
-crumbs.id = 'crumbs';
-crumbs.setAttribute('aria-label', 'Thread');
+// the Stories dropdown (replaces the C3 strip): every story thread, with unread and commit counts
 const strip = el('div', 'stories');
 strip.id = 'stories';
 strip.setAttribute('role', 'list');
 strip.setAttribute('aria-label', 'Stories');
+strip.hidden = true;
+header.append(strip);
+
+// the folded bands: chips that expand in place, collapsed by default (per viewer, webview state)
+const bands = el('div', 'bands');
+bands.id = 'bands';
+const ucChip = el('button', 'band-chip');
+ucChip.id = 'uncommitted-toggle';
+ucChip.type = 'button';
+ucChip.setAttribute('aria-controls', 'uncommitted');
+const ulChip = el('button', 'band-chip');
+ulChip.id = 'unlinked-toggle';
+ulChip.type = 'button';
+ulChip.setAttribute('aria-controls', 'unlinked');
+bands.append(ucChip, ulChip);
 const notice = el('div', 'notice');
 notice.id = 'notice';
 
@@ -63,21 +101,24 @@ olderBtn.id = 'older';
 const list = el('div', 'items');
 timeline.append(olderBtn, list);
 
+// C9: one composer box: the chip, a text area that starts at 2 lines and grows to 8, and a toolbar with
+// kind/to and Send. `#composer-tools` is the empty slot C11 (#-tag) and C12 (attach) add buttons to.
 const composer = el('form', 'composer');
 composer.id = 'composer-form';
-const opts = el('div', 'opts');
+const cbox = el('div', 'cbox');
 const kindSel = el('select');
 kindSel.id = 'kind';
+kindSel.title = 'Kind';
 kindSel.setAttribute('aria-label', 'Kind');
 for (const k of SEND_KINDS) kindSel.append(new Option(k, k));
 const toSel = el('select');
 toSel.id = 'to';
+toSel.title = 'To (optional): mentions wake people either way';
 toSel.setAttribute('aria-label', 'To (optional)');
-opts.append(el('span', 'lbl', 'kind'), kindSel, el('span', 'lbl', 'to'), toSel);
 const ta = el('textarea');
 ta.id = 'composer';
-ta.rows = 3;
-ta.placeholder = 'Message… @ to mention';
+ta.rows = MIN_ROWS;
+ta.placeholder = 'Message… @ to mention · Enter sends, Shift+Enter newline';
 ta.setAttribute('aria-label', 'Message');
 ta.setAttribute('aria-autocomplete', 'list');
 ta.setAttribute('aria-controls', 'people');
@@ -90,12 +131,16 @@ peopleList.hidden = true;
 const acStatus = el('div', 'sr-only');
 acStatus.id = 'ac-status';
 acStatus.setAttribute('aria-live', 'polite');
-const foot = el('div', 'foot');
-const hint = el('span', 'hint', 'Enter sends · Shift+Enter newline');
+const tools = el('div', 'ctools');
+tools.setAttribute('role', 'toolbar');
+tools.setAttribute('aria-label', 'Message options');
+const toolSlot = el('span', 'tool-slot');
+toolSlot.id = 'composer-tools';
 const sendBtn = el('button', 'send', 'Send');
 sendBtn.id = 'send';
 sendBtn.type = 'submit';
-foot.append(hint, sendBtn);
+sendBtn.title = 'Send (Enter)';
+tools.append(toolSlot, kindSel, toSel, el('span', 'spacer'), sendBtn);
 const sendErr = el('div', 'send-error');
 sendErr.id = 'send-error';
 sendErr.setAttribute('role', 'alert');
@@ -105,19 +150,21 @@ chipBox.id = 'code-chip';
 chipBox.setAttribute('role', 'group');
 chipBox.setAttribute('aria-label', 'Tagged lines, sent with this message');
 chipBox.hidden = true;
-composer.append(opts, peopleList, chipBox, ta, acStatus, sendErr, foot);
+cbox.append(chipBox, ta, tools);
+composer.append(peopleList, cbox, acStatus, sendErr);
 
-// C5: the pinned live "Uncommitted changes — all seats" card and the epic's collapsed unlinked commits
+// what the chips expand to, in place above the thread (bounded, scrolls)
 const pinned = el('div', 'pinned');
 pinned.id = 'pinned';
 const uncommittedBox = el('section', 'uncommitted');
 uncommittedBox.id = 'uncommitted';
-uncommittedBox.setAttribute('aria-label', 'Uncommitted changes — all seats');
-const unlinkedBox = el('div', 'unlinked-box');
+uncommittedBox.setAttribute('aria-label', 'Uncommitted changes');
+const unlinkedBox = el('section', 'unlinked-box');
 unlinkedBox.id = 'unlinked';
+unlinkedBox.setAttribute('aria-label', 'Unlinked commits');
 pinned.append(uncommittedBox, unlinkedBox);
 
-app.append(header, crumbs, strip, notice, pinned, timeline, composer);
+app.append(header, bands, notice, pinned, timeline, composer);
 
 // -- rendering ---------------------------------------------------------------------------------------
 const FEED_LABEL: Record<FeedStatus, string> = {
@@ -202,32 +249,98 @@ function storyEl(s: StoryRow, open: string | undefined): HTMLElement {
 function renderStories() {
   const s = state!;
   strip.replaceChildren(...s.stories.map(x => storyEl(x, s.ticket?.id)));
-  strip.hidden = !s.epic || s.stories.length === 0;
+  const show = !!s.epic && s.stories.length > 0;
+  storiesBtn.hidden = !show;
+  if (!show) setStoriesOpen(false);
+  const unread = s.stories.reduce((n, x) => n + x.unread, 0);
+  storiesBtn.replaceChildren(el('span', 'sb-label', `Stories ${s.stories.length}`));
+  if (unread) {
+    const u = el('span', 'st-unread', unread > 99 ? '99+' : String(unread));
+    storiesBtn.append(u);
+  }
+  storiesBtn.append(el('span', 'caret', '▾'));
+  storiesBtn.title = `${s.stories.length} stories${unread ? `, ${unread} new messages` : ''}: open a story thread`;
+  storiesBtn.setAttribute('aria-label', storiesBtn.title);
 }
 
-function renderCrumbs() {
+function setStoriesOpen(open: boolean, focus = false) {
+  strip.hidden = !open;
+  storiesBtn.setAttribute('aria-expanded', String(open));
+  if (open && focus) strip.querySelector<HTMLElement>('.story')?.focus();
+}
+
+/** The one-line header: the breadcrumb back to the epic, the picker (it names the open thread), the
+ *  thread's status and the epic's architect. The id/kind live in tooltips. */
+function renderHeader() {
   const s = state!;
-  crumbs.replaceChildren();
-  if (!s.ticket) { crumbs.hidden = true; return; }
-  crumbs.hidden = false;
-  if (s.epic && s.epic.id !== s.ticket.id) {
-    const back = el('button', 'crumb epic', s.epic.title);
-    back.id = 'crumb-epic';
-    back.title = `Back to the epic thread (${s.epic.id})`;
-    back.addEventListener('click', () => post({ type: 'pickTicket', id: s.epic!.id }));
-    crumbs.append(back, el('span', 'sep', '›'));
+  const t = s.ticket;
+  const inStory = !!(t && s.epic && s.epic.id !== t.id);
+  back.hidden = sep.hidden = !inStory;
+  if (inStory) {
+    back.textContent = s.epic!.title;
+    back.title = `Back to the epic thread: ${s.epic!.title} (${s.epic!.id})`;
   }
-  const cur = el('span', 'crumb current', s.ticket.title);
-  cur.id = 'crumb-current';
-  cur.setAttribute('aria-current', 'page');
-  cur.title = `${s.ticket.id} · ${s.ticket.kind} · ${s.ticket.status}`;
-  crumbs.append(cur, el('span', 'tid', `${s.ticket.id} · ${s.ticket.status}`));
+  pickText.hidden = !!t;
+  cur.hidden = !t;
+  cur.textContent = t?.title ?? '';
+  if (t) cur.setAttribute('aria-current', 'page'); else cur.removeAttribute('aria-current');
+  pickBtn.title = t ? `${t.title}
+${t.kind} ${t.id} · ${t.status}${s.epic ? ` · architect ${s.architect ? '@' + s.architect : 'none live'}` : ''}
+Click to open another thread` : 'Pick a ticket or epic';
+  tStatus.hidden = !t;
+  tStatus.textContent = t?.status ?? '';
+  tStatus.dataset.status = t?.status ?? '';
+  tStatus.title = t ? `Status: ${t.status}` : '';
+  arch.hidden = !s.epic;
+  arch.textContent = s.epic ? (s.architect ? `@${s.architect}` : 'no architect') : '';
+  arch.title = s.epic ? `Architect: ${s.architect ? '@' + s.architect : 'none live'}` : '';
+  arch.setAttribute('aria-label', arch.title);
+}
+
+/** The chips row and what it expands to. Both collapsed unless this viewer opened them. */
+function renderBands() {
+  const s = state!;
+  bands.hidden = !s.ticket;
+  const uc = uncommittedLabel(s.uncommitted);
+  ucChip.textContent = uc.text;
+  ucChip.setAttribute('aria-label', uc.aria);
+  ucChip.title = `${uc.aria}. Click to ${local.fold.uncommitted ? 'fold' : 'expand'}.`;
+  ucChip.setAttribute('aria-expanded', String(local.fold.uncommitted));
+  ucChip.dataset.dirty = String((s.uncommitted?.total ?? 0) > 0);
+  uncommittedBox.hidden = !s.ticket || !local.fold.uncommitted;
+  if (!uncommittedBox.hidden) renderUncommitted(uncommittedBox, s.uncommitted, local.fold.allSeats, post, all => {
+    local.fold.allSeats = all;
+    persist();
+    renderBands();
+    uncommittedBox.querySelector<HTMLElement>('#uncommitted-all')?.focus();
+  });
+  const epicOpen = s.ticket?.kind === 'epic';
+  ulChip.hidden = !epicOpen;
+  const ul = unlinkedLabel(s);
+  ulChip.textContent = ul.text;
+  ulChip.setAttribute('aria-label', ul.aria);
+  ulChip.title = `${ul.aria}. Click to ${local.fold.unlinked ? 'fold' : 'expand'}.`;
+  ulChip.setAttribute('aria-expanded', String(local.fold.unlinked));
+  unlinkedBox.hidden = !epicOpen || !local.fold.unlinked;
+  if (!unlinkedBox.hidden) renderUnlinked(unlinkedBox, s, post);
+}
+
+/** 2 lines empty, one more per line of text, 8 at most; then it scrolls. */
+function grow() {
+  const cs = getComputedStyle(ta);
+  const line = parseFloat(cs.lineHeight) || 18;
+  const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+  ta.style.height = 'auto';
+  const max = line * MAX_ROWS + pad;
+  const h = Math.max(line * MIN_ROWS + pad, Math.min(ta.scrollHeight, max));
+  ta.style.height = `${Math.ceil(h)}px`;
+  ta.style.overflowY = ta.scrollHeight > max + 1 ? 'auto' : 'hidden';
 }
 
 function renderTo() {
   const cur = toSel.value;
-  toSel.replaceChildren(new Option('— thread (mentions wake) —', ''));
-  for (const p of state?.people ?? []) toSel.append(new Option(`${p.handle} (${p.type === 'human' ? 'human' : p.role})`, p.id));
+  toSel.replaceChildren(new Option('to: thread', ''));
+  for (const p of state?.people ?? []) toSel.append(new Option(`to: ${p.handle} (${p.type === 'human' ? 'human' : p.role})`, p.id));
   toSel.value = [...toSel.options].some(o => o.value === cur) ? cur : '';
 }
 
@@ -267,9 +380,7 @@ function dropChip() {
 
 function renderAll() {
   const s = state!;
-  pickBtn.textContent = s.ticket ? `${s.ticket.kind === 'epic' ? 'Epic' : s.ticket.kind === 'task' ? 'Task' : 'Story'}: ${s.ticket.title}` : 'Pick a ticket or epic…';
-  arch.textContent = s.epic ? `Architect: ${s.architect ? '@' + s.architect : 'none live'}` : '';
-  arch.hidden = !s.epic;
+  renderHeader();
   setFeed(s.feed);
   notice.replaceChildren();
   notice.hidden = !s.notice;
@@ -281,7 +392,6 @@ function renderAll() {
       notice.append(b);
     }
   }
-  renderCrumbs();
   renderStories();
   renderTo();
   olderBtn.hidden = !s.hasOlder;
@@ -289,12 +399,12 @@ function renderAll() {
   sendBtn.disabled = pendingTicket !== null;
   renderItems(s.items);
   renderCommits(s, list, post);
-  renderUncommitted(uncommittedBox, s.uncommitted, !!s.ticket, post);
-  renderUnlinked(unlinkedBox, s, post);
+  renderBands();
   composer.hidden = !s.ticket;
   renderChip();
   ta.value = s.ticket ? local.drafts[s.ticket.id] ?? '' : '';
   kindSel.value = local.kind;
+  grow();
   timeline.setAttribute('aria-live', 'off'); // the initial state is not announced
   toBottom();
 }
@@ -352,6 +462,7 @@ function acAccept() {
   ta.setSelectionRange(c, c);
   acClose();
   saveDraft();
+  grow();
   ta.focus();
 }
 
@@ -361,7 +472,7 @@ function saveDraft() {
   persist();
 }
 
-ta.addEventListener('input', () => { saveDraft(); acUpdate(); sendErr.textContent = ''; });
+ta.addEventListener('input', () => { saveDraft(); grow(); acUpdate(); sendErr.textContent = ''; });
 ta.addEventListener('click', acUpdate);
 ta.addEventListener('blur', () => setTimeout(acClose, 0));
 ta.addEventListener('keydown', e => {
@@ -392,6 +503,20 @@ function send() {
 composer.addEventListener('submit', e => { e.preventDefault(); send(); });
 kindSel.addEventListener('change', () => { local.kind = kindSel.value as SendKind; persist(); });
 pickBtn.addEventListener('click', () => post({ type: 'pickTicket' }));
+back.addEventListener('click', () => { if (state?.epic) post({ type: 'pickTicket', id: state.epic.id }); });
+storiesBtn.addEventListener('click', e => { e.stopPropagation(); setStoriesOpen(strip.hidden === true, e.detail === 0); });
+strip.addEventListener('click', e => { if ((e.target as HTMLElement).closest('.story')) setStoriesOpen(false); });
+strip.addEventListener('keydown', e => {
+  const rows = [...strip.querySelectorAll<HTMLElement>('.story')];
+  const i = rows.indexOf(document.activeElement as HTMLElement);
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setStoriesOpen(false); storiesBtn.focus(); }
+  else if (e.key === 'ArrowDown' && rows.length) { e.preventDefault(); rows[(i + 1) % rows.length].focus(); }
+  else if (e.key === 'ArrowUp' && rows.length) { e.preventDefault(); rows[(i - 1 + rows.length) % rows.length].focus(); }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !strip.hidden) { e.preventDefault(); setStoriesOpen(false); storiesBtn.focus(); } });
+document.addEventListener('click', e => { if (!strip.hidden && !strip.contains(e.target as Node)) setStoriesOpen(false); });
+ucChip.addEventListener('click', () => { local.fold.uncommitted = !local.fold.uncommitted; persist(); if (state) renderBands(); });
+ulChip.addEventListener('click', () => { local.fold.unlinked = !local.fold.unlinked; persist(); if (state) renderBands(); });
 olderBtn.addEventListener('click', () => { olderBtn.disabled = true; post({ type: 'loadOlder' }); });
 
 // -- host messages -----------------------------------------------------------------------------------
@@ -447,14 +572,14 @@ window.addEventListener('message', (ev: MessageEvent) => {
       timeline.setAttribute('aria-live', 'polite');
       list.querySelector('.empty')?.remove();
       appendCommits(state, m.items, list, post);
-      appendUnlinked(unlinkedBox, state, m.unlinked, post);
+      if (appendUnlinked(state, m.unlinked)) renderBands();
       if (stick) toBottom();
       break;
     }
     case 'uncommitted':
       if (!state) return;
       state.uncommitted = m.card;
-      renderUncommitted(uncommittedBox, m.card, !!state.ticket, post);
+      renderBands();
       break;
     case 'stories':
       if (!state) return;
@@ -471,7 +596,7 @@ window.addEventListener('message', (ev: MessageEvent) => {
       sendBtn.disabled = false;
       delete local.drafts[m.ticketId];
       persist();
-      if (state?.ticket?.id === m.ticketId) ta.value = '';
+      if (state?.ticket?.id === m.ticketId) { ta.value = ''; grow(); }
       break;
     case 'sendFailed':
       if (pendingTicket && m.ticketId !== pendingTicket) return;

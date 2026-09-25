@@ -8,7 +8,7 @@ import type { Anchor } from '../core/anchor';
 import { BoardError, type Board, type Ticket } from '../core/api';
 import { boardTicketUrl } from '../core/boardLinks';
 import type { ChatState, FeedStatus, HostToView, StoryRow, TicketRef, ViewToHost } from '../core/chatProtocol';
-import type { CommitCard, UncommittedCard } from '../core/chatProtocol';
+import type { CodeContext, CommitCard, UncommittedCard } from '../core/chatProtocol';
 import { chipForSend, chipView, newChip, type Chip } from '../core/chip';
 import { COMMIT, codeTarget, pullText, safeRelPath } from '../core/codeTarget';
 import { FeedClient, type FeedEvent } from '../core/feed';
@@ -18,6 +18,7 @@ import { fromMessageRow, fromThreadRow, ThreadStore } from '../core/thread';
 import { creds, signIn } from './auth';
 import { ChatViewProvider, CHAT_VIEW } from './chatView';
 import { cardOf, naming, storyCounts, unlinked as unlinkedOf, type Indexed } from '../core/commits';
+import { anchorPath, inScope, sameRows, touchedPaths, uncommittedCard, type Scope } from '../core/uncommitted';
 import { Changes } from './changes';
 import { gitApi } from './repo';
 import type { TagTarget } from './tag';
@@ -55,6 +56,11 @@ export class ChatController implements vscode.Disposable, TagTarget {
   private tree: Ticket[] = [];
   private commits: CommitCard[] = [];
   private unlinked: CommitCard[] = [];
+  /** C9 uncommitted scope: the anchors on the open epic's (or lone ticket's) messages, by message id,
+   *  and the key (epic id, else ticket id) they belong to; the chip last posted, to post only changes */
+  private anchors = new Map<string, Pick<CodeContext, 'repo_root' | 'path'>>();
+  private anchorsFor: string | null = null;
+  private ucPosted: UncommittedCard | null = null;
   /** per thread: the code chip a Tag selection put in its composer (C4); the anchor never leaves the host */
   private chips = new Map<string, Chip>();
   /** a tag made while an open() was in flight: the thread that open lands on gets it (C4 review #2) */
@@ -68,7 +74,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
     this.changes = new Changes(ctx, {
       onCommits: added => this.onCommits(added),
       onReset: () => this.onCommitsReset(),
-      onUncommitted: card => this.onUncommitted(card),
+      onUncommitted: () => this.refreshUncommitted(),
     }, log);
   }
 
@@ -81,9 +87,10 @@ export class ChatController implements vscode.Disposable, TagTarget {
 
   // -- ChatHost ------------------------------------------------------------------------------------
   snapshot(): ChatState {
+    this.ucPosted = this.ucCard();
     return {
       type: 'state', v: 1, me: this.me, ticket: this.ticket, epic: this.epic, stories: this.stories,
-      commits: this.ticket ? this.commits : [], unlinked: this.ticket ? this.unlinked : [], uncommitted: this.changes.uncommitted,
+      commits: this.ticket ? this.commits : [], unlinked: this.ticket ? this.unlinked : [], uncommitted: this.ucPosted,
       architect: epicArchitect(this.people, this.epic?.id ?? null), people: this.rows(),
       items: this.store?.items ?? [], hasOlder: this.store?.before != null, chip: this.chipOf(this.ticket?.id), feed: this.feedStatus, notice: this.notice,
     };
@@ -107,7 +114,11 @@ export class ChatController implements vscode.Disposable, TagTarget {
         return;
       }
       case 'openDiff': return this.changes.openDiff(m.sha, m.path);
-      case 'openUncommitted': return this.changes.openUncommitted(m.path);
+      case 'openUncommitted': {
+        const sc = m.scoped ? this.scope() : null;
+        if (!sc) return this.changes.openUncommitted(m.path);
+        return this.changes.openUncommitted(m.path, f => inScope(f, sc.paths), `Uncommitted changes — this ${sc.kind}`);
+      }
       case 'openCode': return this.openCode(m.messageId);
       case 'openBoard': {
         void vscode.env.openExternal(vscode.Uri.parse(boardTicketUrl(this.boardUrl(), m.ticketId, m.messageId)));
@@ -165,6 +176,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
     if (!(await creds(this.ctx))) {
       ++this.opening;
       this.store = undefined; this.ticket = null; this.epic = null; this.stories = []; this.unread.clear(); this.chips.clear();
+      this.anchors.clear(); this.anchorsFor = null;
       this.opened = this.opening; this.pendingChip = undefined;
       this.feedStatus = 'signed-out';
       this.notice = 'Sign in to the board to read and send.';
@@ -248,6 +260,9 @@ export class ChatController implements vscode.Disposable, TagTarget {
       this.store = store;
       this.stories = storyTickets.map(s => ({ ...ref(s), unread: 0 }));
       this.tree = [...tree.filter(x => x.id !== t.id && x.id !== epic?.id), t, ...(epic && epic.id !== t.id ? [epic] : [])];
+      const key = epic?.id ?? t.id;
+      if (key !== this.anchorsFor) { this.anchors.clear(); this.anchorsFor = key; }
+      this.addAnchors(store.items);
       this.recomputeCommits();
       this.markSeen(t.id);
       this.syncUnread();
@@ -281,17 +296,22 @@ export class ChatController implements vscode.Disposable, TagTarget {
   private async countUnread(n: number): Promise<void> {
     const seen = this.ctx.workspaceState.get<Record<string, string>>(LAST_SEEN) ?? {};
     const b = this.board();
-    await Promise.all(this.stories.map(async s => {
-      if (s.id === this.ticket?.id) return;
+    const epic = this.epic && this.epic.id !== this.ticket?.id ? this.epic.id : null;
+    let anchored = false;
+    await Promise.all([...this.stories.map(s => s.id), ...(epic ? [epic] : [])].map(async id => {
+      if (id === this.ticket?.id) return;
       try {
-        const page = await b.thread(s.id);
-        if (n !== this.opening || s.id === this.ticket?.id) return;
+        const page = await b.thread(id);
+        if (n !== this.opening || id === this.ticket?.id) return;
+        if (this.addAnchors(page.thread)) anchored = true; // C9: the epic's anchors scope the uncommitted chip
+        const s = this.stories.find(x => x.id === id);
+        if (!s) return;
         const since = seen[s.id] ? Date.parse(seen[s.id]) : 0;
         const set = this.unreadSet(s.id); // a union: a live event that already counted a message is not counted twice
         for (const r of page.thread) if (Date.parse(r.at) > since && r.by !== this.me?.id) set.add(r.id);
       } catch { /* the strip keeps what it has */ }
     }));
-    if (n === this.opening) { this.syncUnread(); this.post({ type: 'stories', v: 1, stories: this.stories }); }
+    if (n === this.opening) { this.syncUnread(); this.post({ type: 'stories', v: 1, stories: this.stories }); if (anchored) this.refreshUncommitted(); }
   }
 
   private unreadSet(id: string): Set<string> {
@@ -350,6 +370,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
       try { m = await this.board().message(mid); } // the event carries a preview, never code_context
       catch (e) { this.log(`chat: message fetch failed (${(e as BoardError)?.code ?? 'error'}); reloading`); return this.reload(); }
       const fresh = store.merge([fromMessageRow(m, ev.seq)]);
+      if (this.addAnchors(fresh)) this.refreshUncommitted();
       if (store === this.store && fresh.length) {
         this.post({ type: 'append', v: 1, ticketId: store.ticketId, items: fresh });
         this.provider.noteUnseen(fresh.length);
@@ -375,6 +396,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
     if (store.before == null) { answer([]); return; }
     try {
       const fresh = store.loadOlder(await this.board().thread(store.ticketId, store.before));
+      if (store === this.store && this.addAnchors(fresh)) this.refreshUncommitted();
       if (store === this.store) answer(fresh);
     } catch (e) { if (store === this.store) answer([]); this.fail(e, 'could not load older messages'); }
   }
@@ -400,6 +422,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
         ...(chip ? { text: render(chip.anchor, text, chip.truncated), code_context: chip.anchor } : { text }) });
       if (chip && this.chips.get(ticketId)?.id === chip.id) this.chips.delete(ticketId);
       const fresh = store.merge([fromMessageRow(m, 0)]);
+      if (this.addAnchors(fresh)) this.refreshUncommitted();
       this.post({ type: 'sent', v: 1, ticketId, id: m.id });
       if (chip) this.post({ type: 'insertCode', v: 1, ticketId, chip: this.chipOf(ticketId), focus: false });
       if (store === this.store && fresh.length) this.post({ type: 'append', v: 1, ticketId: store.ticketId, items: fresh });
@@ -521,6 +544,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
       this.provider.noteUnseen(items.length);
     }
     if (this.stories.length) this.post({ type: 'stories', v: 1, stories: this.stories });
+    this.refreshUncommitted();
   }
 
   /** The index was (re)read: the whole view follows. */
@@ -530,8 +554,40 @@ export class ChatController implements vscode.Disposable, TagTarget {
     this.postState();
   }
 
-  private onUncommitted(card: UncommittedCard | null): void {
+  // -- the uncommitted chip, scoped to the open epic (C9, option (a)) ------------------------------
+  /** What the open thread counts as its own: every ticket of the epic (or the lone ticket and its
+   *  tasks), through the commits naming them and the anchors on their messages. */
+  scope(): Scope | null {
+    if (!this.ticket) return null;
+    const root = this.changes.root;
+    const anchors: string[] = [];
+    for (const cc of this.anchors.values()) { const p = anchorPath(cc, root); if (p) anchors.push(p); }
+    return { kind: this.epic ? 'epic' : 'ticket', paths: touchedPaths(this.changes.commits, new Set(this.tree.map(x => x.id)), anchors) };
+  }
+
+  private ucCard(): UncommittedCard | null {
+    const work = this.changes.uncommitted;
+    return work.length ? uncommittedCard([...work], this.scope()) : null;
+  }
+
+  /** Post the chip only when its rows or counts changed. */
+  private refreshUncommitted(): void {
+    const card = this.ucCard();
+    if (sameRows(card, this.ucPosted)) return;
+    this.ucPosted = card;
     this.post({ type: 'uncommitted', v: 1, card });
+  }
+
+  /** Remember the anchors of messages on the scope's threads; true when one was new. */
+  private addAnchors(rows: readonly { id: string; code_context?: CodeContext | null }[]): boolean {
+    let added = false;
+    for (const r of rows) {
+      const cc = r.code_context;
+      if (!cc || typeof cc.path !== 'string' || typeof cc.repo_root !== 'string' || this.anchors.has(r.id)) continue;
+      this.anchors.set(r.id, { repo_root: cc.repo_root, path: cc.path });
+      added = true;
+    }
+    return added;
   }
 
   // -- picker --------------------------------------------------------------------------------------

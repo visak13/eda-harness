@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { isRepoPath, parseInbound, type ChatState, type CommitCard } from '../src/core/chatProtocol';
 import { cardOf, CARD_FILES, type Indexed } from '../src/core/commits';
 import { S, sameRows, uncommittedCard, workFiles } from '../src/core/uncommitted';
-import { commitCardEl, insertByTime, placeCards, renderCommits, renderUnlinked, seatLabel } from '../webview/cards';
+import { commitCardEl, insertByTime, placeCards, renderCommits, renderUnlinked, seatLabel, unlinkedLabel } from '../webview/cards';
 
 const SHA = 'a'.repeat(40);
 
@@ -85,8 +85,9 @@ describe('workFiles (uncommitted vs HEAD)', () => {
   });
   it('the card carries no seat and caps its rows', () => {
     const files = Array.from({ length: 205 }, (_, i) => ({ path: `f${String(i).padStart(3, '0')}`, status: 'M' as const }));
-    const card = uncommittedCard(files, new Date('2026-09-25T07:00:00Z'));
-    expect(Object.keys(card).sort()).toEqual(['at', 'files', 'more', 'total']);
+    const card = uncommittedCard(files, null, new Date('2026-09-25T07:00:00Z'));
+    expect(Object.keys(card).sort()).toEqual(['at', 'files', 'more', 'scope', 'scoped', 'total']);
+    expect([card.scoped, card.scope]).toEqual([null, null]);
     expect([card.files.length, card.more, card.total]).toEqual([200, 5, 205]);
     expect(sameRows(card, uncommittedCard(files))).toBe(true);
     expect(sameRows(card, null)).toBe(false);
@@ -144,14 +145,13 @@ describe('cards in the timeline (jsdom)', () => {
     placeCards(list);
     expect(order(list)).toEqual(['m0', 'e', 'm1', 'a', 'm3', 'b']);
   });
-  it('the unlinked section is an epic-only, collapsed <details>', () => {
+  it('the unlinked list (C9: behind the Unlinked chip) holds the unlinked cards', () => {
     const box = document.createElement('div');
-    renderUnlinked(box, { ticket: { id: 'epic-0123456789', kind: 'epic', title: 'E', status: 'x' }, unlinked: [card('f', '2026-09-25T07:00:00Z', { attribution: 'none', seat: null, seatVia: null })] } as unknown as ChatState, () => {});
-    const d = box.querySelector('details')!;
-    expect(d.open).toBe(false);
-    expect(d.querySelector('summary')!.textContent).toBe('Unlinked commits (1)');
-    expect(d.querySelector('.cm-seat')!.textContent).toBe('unlinked');
-    renderUnlinked(box, { ticket: { id: 's-0123456789', kind: 'story', title: 'S', status: 'x' }, unlinked: [] } as unknown as ChatState, () => {});
-    expect(box.hidden).toBe(true);
+    const s = { ticket: { id: 'epic-0123456789', kind: 'epic', title: 'E', status: 'x' }, unlinked: [card('f', '2026-09-25T07:00:00Z', { attribution: 'none', seat: null, seatVia: null })] } as unknown as ChatState;
+    renderUnlinked(box, s, () => {});
+    expect(box.querySelector('.cm-seat')!.textContent).toBe('unlinked');
+    expect(unlinkedLabel(s)).toEqual({ text: 'Unlinked · 1', aria: 'Unlinked commits: 1' });
+    renderUnlinked(box, { ...s, unlinked: [] }, () => {});
+    expect(box.textContent).toContain('Every commit in the window names a ticket.');
   });
 });

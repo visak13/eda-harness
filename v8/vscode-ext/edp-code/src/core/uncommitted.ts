@@ -53,11 +53,59 @@ function untrackedRow(out: Map<string, WorkFile>, path: string) {
 
 export const CARD_ROWS = 200;
 
-export function uncommittedCard(files: WorkFile[], now = new Date()): UncommittedCard {
-  const rows: CardFile[] = files.slice(0, CARD_ROWS).map(f => ({ path: f.path, ...(f.oldPath ? { oldPath: f.oldPath } : {}), status: f.status, add: null, del: null }));
-  return { files: rows, more: Math.max(0, files.length - CARD_ROWS), total: files.length, at: now.toISOString() };
+/** What the open thread counts as "its own" (C9, option (a)): the paths its tickets touched, and
+ *  whether that is an epic or a lone ticket. */
+export type Scope = { paths: ReadonlySet<string>; kind: 'epic' | 'ticket' };
+
+/** A row belongs to the scope when its path, or a rename's old path, was touched. */
+export const inScope = (f: { path: string; oldPath?: string }, paths: ReadonlySet<string>) =>
+  paths.has(f.path) || (!!f.oldPath && paths.has(f.oldPath));
+
+/** The chip's rows: with a scope, the rows it touched come first (flagged) and `scoped` counts them
+ *  all, so the cap never hides one of them behind other seats' files. */
+export function uncommittedCard(files: WorkFile[], scope: Scope | null = null, now = new Date()): UncommittedCard {
+  const row = (f: WorkFile, touched: boolean): CardFile =>
+    ({ path: f.path, ...(f.oldPath ? { oldPath: f.oldPath } : {}), status: f.status, add: null, del: null, ...(touched ? { touched: true } : {}) });
+  const mine = scope ? files.filter(f => inScope(f, scope.paths)) : [];
+  const rest = scope ? files.filter(f => !inScope(f, scope.paths)) : files;
+  const rows = [...mine.map(f => row(f, true)), ...rest.map(f => row(f, false))].slice(0, CARD_ROWS);
+  return { files: rows, more: Math.max(0, files.length - CARD_ROWS), total: files.length, at: now.toISOString(),
+    scoped: scope ? mine.length : null, scope: scope?.kind ?? null };
 }
 
 /** Same rows as last time (a debounced refresh that changed nothing posts nothing). */
 export const sameRows = (a: UncommittedCard | null, b: UncommittedCard | null) =>
-  JSON.stringify(a && { f: a.files, t: a.total }) === JSON.stringify(b && { f: b.files, t: b.total });
+  JSON.stringify(a && { f: a.files, t: a.total, s: a.scoped, k: a.scope }) === JSON.stringify(b && { f: b.files, t: b.total, s: b.scoped, k: b.scope });
+export const sameWork = (a: WorkFile[], b: WorkFile[]) => JSON.stringify(a) === JSON.stringify(b);
+
+/** A message anchor's path relative to the shared repo's root (C9). The anchor's `repo_root` is the
+ *  git root it was taken in; when that is the same repo (compared case-insensitively, `\` = `/`) the
+ *  path is used as is, a nested root prefixes its sub-path, and a parent root strips it (null when the
+ *  file is outside the repo). Another machine's root (a teammate's clone) keeps the repo-relative path. */
+export function anchorPath(cc: { repo_root: string; path: string }, repoRoot: string | null): string | null {
+  const path = cc.path.replace(/\\/g, '/');
+  if (!path || path.startsWith('/') || path.split('/').includes('..')) return null;
+  if (!repoRoot) return path;
+  const trim = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '');
+  const a = trim(cc.repo_root), r = trim(repoRoot);
+  const al = a.toLowerCase(), rl = r.toLowerCase();
+  if (al === rl) return path;
+  if (al.startsWith(rl + '/')) return `${a.slice(r.length + 1)}/${path}`;
+  if (rl.startsWith(al + '/')) {
+    const pre = rl.slice(al.length + 1) + '/';
+    return path.toLowerCase().startsWith(pre) ? path.slice(pre.length) : null;
+  }
+  return path;
+}
+
+/** The paths a set of tickets touched: every file (and rename source) of the commits naming one of
+ *  them, plus the anchors on their messages. */
+export function touchedPaths(commits: readonly { tickets: string[]; files: { path: string; oldPath?: string }[] }[],
+  ids: ReadonlySet<string>, anchors: Iterable<string>): Set<string> {
+  const out = new Set<string>(anchors);
+  for (const c of commits) {
+    if (!c.tickets.some(t => ids.has(t))) continue;
+    for (const f of c.files) { out.add(f.path); if (f.oldPath) out.add(f.oldPath); }
+  }
+  return out;
+}

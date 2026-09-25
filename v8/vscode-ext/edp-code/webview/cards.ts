@@ -1,7 +1,8 @@
 // Change cards in the chat timeline (C5 s-ab8e69650e; design §4.1-4.2). A commit card shows seat,
 // subject, sha7 and its files with +/-; the card opens the multi-diff, a file row that file's diff. The
-// pinned "Uncommitted changes — all seats" card names no seat (dec-8dfe3d97af). Everything is set with
-// textContent; the view only names a sha/path, and the host opens only what its own index holds.
+// Uncommitted chip names no seat (dec-8dfe3d97af); C9 folds it and Unlinked into chips (design §13).
+// Everything is set with textContent; the view only names a sha/path, and the host opens only what its
+// own index holds.
 import type { CardFile, ChatState, CommitCard, UncommittedCard, ViewToHost } from '../src/core/chatProtocol';
 
 type Intent = ViewToHost extends infer T ? (T extends unknown ? Omit<T, 'v'> : never) : never;
@@ -111,54 +112,85 @@ export function appendCommits(s: ChatState, items: CommitCard[], list: HTMLEleme
   return fresh;
 }
 
-// -- pinned area: uncommitted card + the epic's unlinked commits ---------------------------------------
-export function renderUncommitted(box: HTMLElement, card: UncommittedCard | null, open: boolean, post: Post): void {
+// -- the folded bands (C9): the Uncommitted and Unlinked chips and what they expand to ------------------
+/** The Uncommitted chip's text and its spoken name. With a scope it reads `n/N`: n files this epic
+ *  touched, N in the whole shared tree. */
+export function uncommittedLabel(card: UncommittedCard | null): { text: string; aria: string } {
+  const n = card?.total ?? 0;
+  if (!n) return { text: 'Uncommitted · clean', aria: 'Uncommitted changes: the shared tree is clean' };
+  const files = (k: number) => `${k} file${k === 1 ? '' : 's'}`;
+  if (card?.scoped == null) return { text: `Uncommitted · ${n}`, aria: `Uncommitted changes: ${files(n)}` };
+  return { text: `Uncommitted · ${card.scoped}/${n}`, aria: `Uncommitted changes: ${files(card.scoped)} this ${card.scope ?? 'epic'} touched, ${files(n)} across all seats` };
+}
+
+export function unlinkedLabel(s: ChatState): { text: string; aria: string } {
+  const n = s.unlinked?.length ?? 0;
+  const cap = n >= 100 ? ', newest 100' : '';
+  return { text: `Unlinked · ${n}${n >= 100 ? '+' : ''}`, aria: `Unlinked commits: ${n}${cap}` };
+}
+
+/** The expanded Uncommitted list. Scoped (option (a)): only the rows this epic touched, with a
+ *  "show all seats (M more)" toggle for the rest; the button opens the multi-diff of what is listed. */
+export function renderUncommitted(box: HTMLElement, card: UncommittedCard | null, allSeats: boolean, post: Post, onAllSeats: (all: boolean) => void): void {
   box.replaceChildren();
-  box.hidden = !open;
-  if (!open) return;
+  const n = card?.total ?? 0;
+  const scoped = card?.scoped ?? null;
+  const all = scoped === null || allSeats;
+  const shown = all ? n : scoped;
+  const who = all ? 'all seats' : `this ${card?.scope ?? 'epic'}`;
   const head = el('button', 'uc-head');
   head.type = 'button';
   head.id = 'uncommitted-open';
-  const n = card?.total ?? 0;
-  head.title = n ? 'Open every uncommitted change against HEAD (multi-diff)' : 'The shared tree has no uncommitted change';
-  head.append(el('span', 'uc-title', 'Uncommitted changes — all seats'), el('span', 'uc-count', n ? `${n} file${n === 1 ? '' : 's'}` : 'clean'));
-  head.disabled = !n;
-  head.addEventListener('click', () => post({ type: 'openUncommitted' }));
+  head.title = shown ? `Open ${who === 'all seats' ? 'every' : "this epic's"} uncommitted change against HEAD (multi-diff)` : 'Nothing to open';
+  head.append(el('span', 'uc-title', `Uncommitted changes — ${who}`),
+    el('span', 'uc-count', !n ? 'clean' : shown ? `${shown} file${shown === 1 ? '' : 's'}` : 'none'));
+  head.disabled = !shown;
+  head.addEventListener('click', () => post(all ? { type: 'openUncommitted' } : { type: 'openUncommitted', scoped: true }));
   box.append(head);
-  if (!card || !n) return;
-  const ul = el('ul', 'cm-files uc-files');
-  ul.setAttribute('aria-label', 'Uncommitted files');
-  for (const f of card.files) ul.append(fileRow(f, () => post({ type: 'openUncommitted', path: f.path }), false));
-  box.append(ul);
-  if (card.more) box.append(el('div', 'cm-more', `+${card.more} more (open the card for all)`));
+  if (card && n) {
+    const rows = card.files.filter(f => all || f.touched);
+    if (rows.length) {
+      const ul = el('ul', 'cm-files uc-files');
+      ul.setAttribute('aria-label', 'Uncommitted files');
+      for (const f of rows) {
+        const li = fileRow(f, () => post({ type: 'openUncommitted', path: f.path }), false);
+        if (all && f.touched) li.classList.add('touched');
+        ul.append(li);
+      }
+      box.append(ul);
+    } else box.append(el('div', 'cm-more', `No uncommitted file is one this ${card.scope ?? 'epic'} touched.`));
+    if (all && card.more) box.append(el('div', 'cm-more', `+${card.more} more (open the list for all)`));
+  }
+  if (scoped !== null && n > scoped) {
+    const t = el('button', 'uc-all', allSeats ? `only this ${card?.scope ?? 'epic'} (${scoped})` : `show all seats (${n - scoped} more)`);
+    t.type = 'button';
+    t.id = 'uncommitted-all';
+    t.setAttribute('aria-pressed', String(allSeats));
+    t.addEventListener('click', () => onAllSeats(!allSeats));
+    box.append(t);
+  }
 }
 
+/** The expanded Unlinked list (epic threads only): commits naming no ticket, newest first. */
 export function renderUnlinked(box: HTMLElement, s: ChatState, post: Post): void {
-  const wasOpen = (box.querySelector('details') as HTMLDetailsElement | null)?.open ?? false;
   box.replaceChildren();
-  const show = s.ticket?.kind === 'epic';
-  box.hidden = !show;
-  if (!show) return;
-  const d = el('details', 'unlinked');
-  d.open = wasOpen;
-  const n = s.unlinked?.length ?? 0;
-  const sum = el('summary', '', `Unlinked commits (${n}${n >= 100 ? ', newest 100' : ''})`);
-  sum.id = 'unlinked-summary';
   const listEl = el('div', 'ul-list');
   for (const c of s.unlinked ?? []) listEl.append(commitCardEl(c, post));
-  if (!n) listEl.append(el('p', 'empty', 'Every commit in the window names a ticket.'));
-  d.append(sum, listEl);
-  box.append(d);
+  if (!s.unlinked?.length) listEl.append(el('p', 'empty', 'Every commit in the window names a ticket.'));
+  box.append(listEl);
 }
 
-export function appendUnlinked(box: HTMLElement, s: ChatState, items: CommitCard[], post: Post): void {
-  if (!items.length || s.ticket?.kind !== 'epic') return;
+/** New unlinked commits (a HEAD move); true when the list changed. */
+export function appendUnlinked(s: ChatState, items: CommitCard[]): boolean {
+  if (!items.length || s.ticket?.kind !== 'epic') return false;
   const have = new Set((s.unlinked ?? []).map(c => c.sha));
-  s.unlinked = [...items.filter(c => !have.has(c.sha)), ...(s.unlinked ?? [])].slice(0, 100);
-  renderUnlinked(box, s, post);
+  const fresh = items.filter(c => !have.has(c.sha));
+  if (!fresh.length) return false;
+  s.unlinked = [...fresh, ...(s.unlinked ?? [])].slice(0, 100);
+  return true;
 }
 
-/** The Stories strip row's commit count. */
+/** A Stories row's commit count. */
 export function commitCount(n: number): HTMLElement {
   const c = el('span', 'st-commits', `⎇ ${n}`);
   c.title = `${n} commit${n === 1 ? '' : 's'} name this story or its tasks`;

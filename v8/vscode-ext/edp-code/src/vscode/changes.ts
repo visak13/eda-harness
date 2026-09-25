@@ -4,11 +4,10 @@
 // every parse is in src/core. Paths from git are repo-relative and resolve against repo.rootUri only.
 import { execFile } from 'node:child_process';
 import * as vscode from 'vscode';
-import type { UncommittedCard } from '../core/chatProtocol';
 import { commitWindow, index, logArgs, mergeNewer, parseLog, type Indexed } from '../core/commits';
 import { COMMIT, pullText } from '../core/codeTarget';
 import { cardTitle, diffArgs, fileTitle, sides, workSides } from '../core/diffSides';
-import { sameRows, uncommittedCard, workFiles, type RawChange, type WorkFile } from '../core/uncommitted';
+import { sameWork, workFiles, type RawChange, type WorkFile } from '../core/uncommitted';
 import { sharedTreePaths } from './badge';
 import type { API, Change, Repository } from './git.d';
 import { inSharedTree } from '../core/seats';
@@ -30,7 +29,8 @@ export type ChangesEvents = {
   onCommits(added: Indexed[]): void;
   /** history was rewritten or the repo changed: re-read everything */
   onReset(): void;
-  onUncommitted(card: UncommittedCard | null): void;
+  /** the shared tree's uncommitted rows changed (the controller scopes them to the open thread, C9) */
+  onUncommitted(): void;
 };
 
 export class Changes implements vscode.Disposable {
@@ -41,7 +41,6 @@ export class Changes implements vscode.Disposable {
   private head?: string;
   private empty?: string;
   private work: WorkFile[] = [];
-  private card: UncommittedCard | null = null;
   private subs: vscode.Disposable[] = [];
   private repoSubs: vscode.Disposable[] = [];
   private headTimer?: ReturnType<typeof setTimeout>;
@@ -53,7 +52,9 @@ export class Changes implements vscode.Disposable {
   constructor(private ctx: vscode.ExtensionContext, private ev: ChangesEvents, private log: (line: string) => void) {}
 
   get commits(): Indexed[] { return this.all; }
-  get uncommitted(): UncommittedCard | null { return this.card; }
+  get uncommitted(): readonly WorkFile[] { return this.work; }
+  /** the shared tree's repo root (fsPath), for resolving message anchors (C9) */
+  get root(): string | null { return this.repo?.rootUri.fsPath ?? null; }
   get ready(): boolean { return !!this.repo; }
 
   /** Idempotent: find the repo, read the window, watch it. */
@@ -88,7 +89,7 @@ export class Changes implements vscode.Disposable {
     this.repo = repo;
     this.empty = undefined;
     this.log(`changes: repo ${repo ? repo.rootUri.fsPath : 'none'}`);
-    if (!repo) { this.all = []; this.bySha.clear(); this.head = undefined; this.setCard([]); this.ev.onReset(); return; }
+    if (!repo) { this.all = []; this.bySha.clear(); this.head = undefined; this.setWork([]); this.ev.onReset(); return; }
     this.repoSubs.push(repo.state.onDidChange(() => {
       // a burst of git state events is one read
       clearTimeout(this.headTimer);
@@ -195,15 +196,13 @@ export class Changes implements vscode.Disposable {
     const repo = this.repo;
     if (!repo || this.disposed) return;
     const s = repo.state;
-    this.setCard(workFiles(this.raw(s.indexChanges), this.raw(s.workingTreeChanges), this.raw(s.untrackedChanges)));
+    this.setWork(workFiles(this.raw(s.indexChanges), this.raw(s.workingTreeChanges), this.raw(s.untrackedChanges)));
   }
 
-  private setCard(files: WorkFile[]) {
+  private setWork(files: WorkFile[]) {
+    if (sameWork(files, this.work)) return;
     this.work = files;
-    const next = files.length ? uncommittedCard(files) : null;
-    if (sameRows(next, this.card)) return;
-    this.card = next;
-    this.ev.onUncommitted(next);
+    this.ev.onUncommitted();
   }
 
   // -- diffs ---------------------------------------------------------------------------------------
@@ -242,11 +241,13 @@ export class Changes implements vscode.Disposable {
       c.files.map(f => { const s = sides(c, f, empty, this.at, this.toGit); return [s.label, s.l, s.r]; }));
   }
 
-  async openUncommitted(path?: string): Promise<void> {
+  /** A file row (path) opens its diff; the chip's button the multi-diff of every row, or with `only`
+   *  (C9: the open epic's scope) of the rows it keeps, titled `title`. */
+  async openUncommitted(path?: string, only?: (f: WorkFile) => boolean, title = 'Uncommitted changes — all seats'): Promise<void> {
     if (!this.repo || !this.api) return;
     await this.repo.status().catch(() => {});
     await this.readWork();
-    const files = path !== undefined ? this.work.filter(f => f.path === path) : this.work;
+    const files = path !== undefined ? this.work.filter(f => f.path === path) : only ? this.work.filter(only) : this.work;
     if (path !== undefined && !files.length) { void vscode.window.showInformationMessage(`EDP: ${path} has no uncommitted change now.`); return; }
     if (!files.length) return;
     const empty = await this.emptyTree();
@@ -256,7 +257,7 @@ export class Changes implements vscode.Disposable {
         `${path} (uncommitted)`, { preview: true });
       return;
     }
-    await vscode.commands.executeCommand('vscode.changes', 'Uncommitted changes — all seats',
+    await vscode.commands.executeCommand('vscode.changes', title,
       files.map(f => { const s = workSides(f, this.at, this.toGit); return [s.label, s.l, s.r]; }));
   }
 
