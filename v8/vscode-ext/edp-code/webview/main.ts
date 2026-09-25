@@ -624,6 +624,7 @@ window.addEventListener('message', (ev: MessageEvent) => {
   if (!m || typeof m !== 'object' || m.v !== 1) return;
   switch (m.type) {
     case 'state':
+      if (!m.me && !m.ticket) { Object.assign(local, restoreLocal(null)); pendingTicket = null; pendingReply = null; persist(); }
       forgetMisses(); // a path created since is asked about again
       state = m; // a send in flight stays in flight: its answer still comes
       renderAll();
@@ -655,14 +656,18 @@ window.addEventListener('message', (ev: MessageEvent) => {
       if (!state || state.ticket?.id !== m.ticketId) return;
       const have = new Set(state.items.map(i => i.id));
       const fresh = m.items.filter(i => !have.has(i.id));
-      state.items.unshift(...fresh);
+      state.items.push(...fresh);
+      state.items.sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at) || a.seq - b.seq || a.id.localeCompare(b.id));
       state.hasOlder = m.hasOlder;
       olderBtn.hidden = !m.hasOlder;
       olderBtn.disabled = false;
       const h0 = timeline.scrollHeight;
       timeline.setAttribute('aria-live', 'off');
       const k = known();
-      list.prepend(...fresh.map(i => messageEl(i, k)));
+      for (const i of fresh) {
+        const next = state.items.slice(state.items.indexOf(i) + 1).map(x => list.querySelector(`.msg[data-id="${x.id}"]`)).find(Boolean);
+        list.insertBefore(messageEl(i, k), next ?? null);
+      }
       // C22: replies whose parent just loaded show its excerpt now
       for (const b of list.querySelectorAll<HTMLElement>('.reply-quote.unloaded')) fillParent(b);
       if (replyOf()) renderTo(); // a restored reply's author may be reachable now

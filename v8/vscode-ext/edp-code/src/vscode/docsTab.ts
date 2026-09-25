@@ -90,6 +90,7 @@ export class DocsHost implements vscode.Disposable {
       const err = e as BoardError;
       this.state = { scope: sc.id, docs: this.state?.scope === sc.id ? this.state.docs : [], loading: false, error: `Could not list the docs: ${err?.message ?? String(e)}` };
       if (err?.status === 401 || err?.status === 403 || err?.code === 'not_signed_in') {
+        this.state = { ...this.state!, docs: [] };
         this.post({ type: 'docs', v: 1, ticketId: sc.id, docs: this.state });
         this.onAuthFail(e);
         return;
@@ -122,15 +123,16 @@ export class DocsHost implements vscode.Disposable {
 
   /** Compare two versions of a listed doc: pick both (the current one first in the list). */
   async compareRow(id: string): Promise<void> {
+    const gen = this.gen;
     const d = this.row(id);
     if (!d) return;
     if (d.version < 2) { void vscode.window.showInformationMessage(`EDP: ${d.id} has only v1.`); return; }
     const all = Array.from({ length: d.version }, (_, i) => d.version - i);
     const item = (v: number) => ({ label: `v${v}`, description: v === d.version ? 'current' : undefined, v });
     const a = await vscode.window.showQuickPick(all.map(item), { title: `EDP: compare ${d.title}: first version`, placeHolder: 'Pick one version' });
-    if (!a) return;
+    if (!a || gen !== this.gen) return;
     const b = await vscode.window.showQuickPick(all.filter(v => v !== a.v).map(item), { title: `EDP: compare ${d.title} v${a.v} with…`, placeHolder: 'The older version goes on the left' });
-    if (!b) return;
+    if (!b || gen !== this.gen) return;
     try { await this.openDiff(d.id, a.v, b.v); } catch (e) { this.fail(e, d.id); }
   }
 

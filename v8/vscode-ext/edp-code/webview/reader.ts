@@ -441,6 +441,7 @@ window.addEventListener('message', (ev: MessageEvent) => {
   const m = ev.data as HostToReader;
   if (!m || m.v !== 1) return;
   if (m.type === 'doc') {
+    if (!m.doc) { local.feedback = ''; persist(); outcome = null; marks = []; people = []; closeQuote(); qNote.value = ''; qText.textContent = ''; }
     const moved = state?.doc?.id !== m.doc?.id || state?.doc?.version !== m.doc?.version;
     state = m;
     if (moved) { busy = null; }

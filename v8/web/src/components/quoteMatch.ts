@@ -32,7 +32,7 @@ export function projectPlain(text: string): Projection {
 
 // Line-level markers a renderer turns into structure (never into selectable text).
 const LINE_MARKER = /^(\s{0,3}(?:>\s?)*)\s*(?:#{1,6}\s+|(?:\d{1,9}[.)]|[-*+])\s+(?:\[[ xX]\]\s+)?)?/;
-const FENCE = /^\s{0,3}(```|~~~)/;
+const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 const RULE = /^\s{0,3}(?:(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,})$/;
 const TABLE_SEP = /^\s*\|?\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)*\|?\s*$/;
 // A reference-style link definition renders nothing: `[id]: /target "title"`.
@@ -58,15 +58,35 @@ export function projectMarkdown(src: string): Projection {
   const chars: string[] = [];
   const at: number[] = [];
   let lineStart = 0;
+  let fence: string | null = null;
+  let codeEnd = -1;
   while (lineStart <= src.length) {
     let lineEnd = src.indexOf("\n", lineStart);
     if (lineEnd === -1) lineEnd = src.length;
     const line = src.slice(lineStart, lineEnd);
-    if (!(FENCE.test(line) || RULE.test(line) || TABLE_SEP.test(line) || REF_DEF.test(line))) {
-      const marker = LINE_MARKER.exec(line)?.[0].length ?? 0;
+    const f = FENCE.exec(line);
+    const fenceLine = codeEnd < lineStart && f && (!fence ||
+      (f[1][0] === fence[0] && f[1].length >= fence.length && !f[2].trim()));
+    if (fenceLine) fence = fence ? null : f![1];
+    if (!fenceLine && (fence || codeEnd >= lineStart || !(RULE.test(line) || TABLE_SEP.test(line) || REF_DEF.test(line)))) {
+      const marker = fence || codeEnd >= lineStart ? 0 : LINE_MARKER.exec(line)?.[0].length ?? 0;
       let i = marker;
       while (i < line.length) {
         const ch = line[i];
+        const absolute = lineStart + i;
+        if (!fence && absolute > codeEnd && ch === '`') {
+          const run = /^`+/.exec(line.slice(i))![0];
+          const rest = src.slice(absolute + run.length);
+          const matches = /`+/g;
+          let close: RegExpExecArray | null;
+          while ((close = matches.exec(rest))) {
+            if (close[0].length === run.length) { codeEnd = absolute + run.length + close.index + run.length - 1; break; }
+          }
+        }
+        if (fence || absolute <= codeEnd) {
+          if (significant(ch)) { chars.push(ch); at.push(absolute); }
+          i++; continue;
+        }
         if (ch === "!" && line[i + 1] === "[") { // an image: its alt text is an attribute, not text
           const m = /^!\[[^\]]*\]\([^)]*\)/.exec(line.slice(i));
           if (m) { i += m[0].length; continue; }
@@ -130,6 +150,11 @@ export function locateInSource(src: string, selected: string, before = ""): Sour
   // An entity maps to its "&"; extend the end over the whole entity so the slice stays verbatim.
   const ent = src[last] === "&" ? ENTITY.exec(src.slice(last)) : null;
   const end = last + (ent ? ent[0].length : 1);
+  // Literal selections (notably code) keep their selected punctuation at both edges.
+  const literal = src.lastIndexOf(selected, start);
+  if (literal >= 0 && literal + selected.length >= end) {
+    return { start: literal, end: literal + selected.length, text: selected };
+  }
   return { start, end, text: src.slice(start, end) };
 }
 

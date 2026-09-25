@@ -14,7 +14,7 @@ import { COMMIT, codeTarget, pullText, safeRelPath } from '../core/codeTarget';
 import { FeedClient, type FeedEvent } from '../core/feed';
 import { epicArchitect, personRows, type Reachable } from '../core/people';
 import { render } from '../core/render';
-import { fromMessageRow, fromThreadRow, ThreadStore } from '../core/thread';
+import { fromMessageRow, ThreadStore } from '../core/thread';
 import { creds, signIn } from './auth';
 import { ChatViewProvider, CHAT_VIEW } from './chatView';
 import { cardOf, inScope as commitsInScope, storyCounts, unlinked as unlinkedOf, type Indexed } from '../core/commits';
@@ -66,6 +66,8 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
   private me: { id: string; handle: string } | null = null;
   private notice: string | null = null;
   private opening = 0;
+  private viewer = 0;
+  private pendingEvents?: { generation: number; events: FeedEvent[] };
   /** C5 change cards: the shared tree's commit index, the open epic's tickets (tasks, assignees), the cards */
   private changes: Changes;
   /** C11: the #-picker's workspace file/folder index, and the resolver behind path links */
@@ -79,6 +81,7 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
   /** C16: the open scope's linked docs, and the reader editor they open in */
   private docs: DocsHost;
   readonly reader: DocReader;
+  private docProvider?: DocProvider;
   /** C17: the open scope's decision records, with the owner/architect writes */
   private decisions: DecisionsHost;
   /** C20: the draft tray (quote + note from code, docs and messages) and its inline comment boxes */
@@ -100,7 +103,7 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
   private opened = 0;
 
   constructor(private ctx: vscode.ExtensionContext, private board: () => Board, private boardUrl: () => string,
-    private log: (line: string) => void) {
+    private log: (line: string) => void, private cancelViewer: () => void = () => {}, private resumeViewer: () => void = () => {}) {
     this.provider = new ChatViewProvider(ctx, this, log);
     this.attach = new Attachments(ctx, board, log);
     this.paths = new PathIndex(log);
@@ -126,7 +129,7 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
   register(): vscode.Disposable[] {
     return [
       vscode.window.registerWebviewViewProvider(CHAT_VIEW, this.provider, { webviewOptions: { retainContextWhenHidden: false } }),
-      this.provider, this, new DocProvider(this.board).register(), ...this.reader.register(), ...this.quotes.register(),
+      this.provider, this, (this.docProvider = new DocProvider(this.board)).register(), ...this.reader.register(), ...this.quotes.register(),
     ];
   }
 
@@ -273,9 +276,8 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
     this.feedStatus = s;
     if (s === 'live') { this.readyDone = true; this.readyResolve?.(); }
     else if (this.readyDone) this.armReady(); // the next open waits for the next `: ready`
-    if (s === 'signed-out') this.notice = 'Sign in to the board to read and send.';
+    if (s === 'signed-out') { this.clearViewer(); return; }
     this.post({ type: 'feed', v: 1, status: s });
-    if (s === 'signed-out') this.postState();
   }
 
   private armReady() {
@@ -286,42 +288,38 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
   private async boot(): Promise<void> {
     this.booted = true;
     void this.changes.start();
-    if (!(await creds(this.ctx))) {
-      this.feedStatus = 'signed-out';
-      this.notice = 'Sign in to the board to read and send.';
-      this.postState();
-      return;
-    }
-    this.startFeed();
-    const last = this.ctx.workspaceState.get<string>(LAST_PICK);
-    if (last) await this.open(last);
-    else this.postState();
+    await this.restart();
   }
 
   /** After a sign-in or sign-out: a fresh feed and a reload of the open thread, or, signed out, an
    *  empty view (nothing read under the old identity stays on screen). A no-op before the first resolve. */
+  clearViewer(): void {
+    ++this.viewer;
+    this.cancelViewer();
+    ++this.opening; this.opened = this.opening; this.pendingEvents = undefined;
+    const feed = this.feed; this.feed = undefined; feed?.dispose();
+    this.readyResolve?.(); this.readyDone = false;
+    this.refs.clear(); this.reader.reset(); this.docProvider?.clear();
+    this.store = undefined; this.ticket = null; this.epic = null; this.stories = [];
+    this.me = null; this.people = []; this.titles.clear(); this.tree = []; this.commits = []; this.unlinked = [];
+    this.unread.clear(); this.chips.clear(); this.attach.clear(); this.anchors.clear(); this.anchorsFor = null;
+    this.inbox.clear(); this.docs.clear(); this.decisions.clear(); this.pendingChip = undefined;
+    this.quotes.setIdentity(null);
+    this.feedStatus = 'signed-out'; this.notice = 'Sign in to the board to read and send.';
+    this.postState();
+  }
+
   async restart(): Promise<void> {
+    this.clearViewer();
+    const viewer = this.viewer;
+    const c = await creds(this.ctx);
+    if (viewer !== this.viewer || !c) return;
+    this.resumeViewer();
+    this.quotes.setIdentity({ origin: this.boardUrl(), participant: c.participant });
+    this.docProvider?.resume();
     if (!this.booted) return;
-    this.refs.clear();
-    this.feed?.dispose();
-    this.feed = undefined;
-    this.notice = null;
-    this.me = null;
-    this.people = [];
-    if (!(await creds(this.ctx))) {
-      ++this.opening;
-      this.store = undefined; this.ticket = null; this.epic = null; this.stories = []; this.unread.clear(); this.chips.clear(); this.attach.clear();
-      this.anchors.clear(); this.anchorsFor = null; this.inbox.clear(); this.docs.clear(); this.decisions.clear();
-      this.opened = this.opening; this.pendingChip = undefined;
-      this.feedStatus = 'signed-out';
-      this.notice = 'Sign in to the board to read and send.';
-      this.postState();
-      return;
-    }
-    this.reader.reset();
-    this.decisions.clear(); // C17: another identity reads its own list; the last viewer's rows and actions go
     this.startFeed();
-    const id = this.ticket?.id ?? this.ctx.workspaceState.get<string>(LAST_PICK);
+    const id = this.ctx.workspaceState.get<string>(LAST_PICK);
     if (id) await this.open(id); else this.postState();
   }
 
@@ -340,7 +338,8 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
   }
 
   private enqueue(job: () => Promise<void>, what: string): void {
-    this.chain = this.chain.then(job).catch(e => this.log(`chat: ${what} failed (${(e as Error)?.name ?? 'error'})`));
+    const viewer = this.viewer;
+    this.chain = this.chain.then(() => viewer === this.viewer ? job() : undefined).catch(e => this.log(`chat: ${what} failed (${(e as Error)?.name ?? 'error'})`));
   }
 
   dispose(): void {
@@ -371,6 +370,7 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
 
   private async open(id: string): Promise<void> {
     const n = ++this.opening;
+    this.pendingEvents = { generation: n, events: [] };
     const b = this.board();
     try {
       const t = await b.ticket(id);
@@ -414,26 +414,36 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
       const inbox = this.inbox.open(); // sets the new scope's (loading) list before the state goes out
       void this.docs.open();
       void this.decisions.openScope();
+      const buffered = this.pendingEvents?.generation === n ? this.pendingEvents.events : [];
+      this.pendingEvents = undefined;
+      for (const event of buffered) { if (n !== this.opening) return; await this.onEvent(event); }
+      if (n !== this.opening) return;
       this.postState();
       void inbox;
       this.settleOpen(n);
       void this.countUnread(n);
     } catch (e) {
       if (n !== this.opening) return;
+      this.pendingEvents = undefined;
       this.fail(e, `could not open ${id}`);
       this.settleOpen(n);
     }
   }
 
   private async loadPeople(b: Board): Promise<void> {
+    const viewer = this.viewer;
     try {
       if (!this.me) {
         const p = await b.me();
+        if (viewer !== this.viewer) return;
         this.me = p ? { id: p.id, handle: p.handle } : null;
       }
-      this.people = await b.people();
+      const people = await b.people();
+      if (viewer !== this.viewer) return;
+      this.people = people;
       const missing = [...new Set(this.people.map(p => p.seat_ticket).filter((x): x is string => !!x && !this.titles.has(x)))];
-      await Promise.all(missing.map(id => b.ticket(id).then(t => this.titles.set(id, t.title), () => {})));
+      await Promise.all(missing.map(id => b.ticket(id).then(t => { if (viewer === this.viewer) this.titles.set(id, t.title); }, () => {})));
+      if (viewer !== this.viewer) return;
       this.reader.pushMarks(); // the readers' note boxes list the same people (C20)
     } catch (e) {
       this.log(`chat: people unavailable (${(e as BoardError)?.code ?? 'error'})`);
@@ -489,8 +499,11 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
     const store = this.store;
     if (!store) return;
     try {
-      const fresh = store.merge((await this.board().thread(store.ticketId)).thread.map(r => fromThreadRow(store.ticketId, r)))
-        .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at) || a.seq - b.seq);
+      const page = await this.board().thread(store.ticketId);
+      if (store !== this.store) return;
+      // Start older-page traversal at the newest page again: a missed burst can exceed one page.
+      const fresh = store.loadPage(page);
+      this.postState();
       if (store === this.store && fresh.length) {
         this.post({ type: 'append', v: 1, ticketId: store.ticketId, items: fresh });
         this.provider.noteUnseen(fresh.length);
@@ -499,6 +512,8 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
   }
 
   private async onEvent(ev: FeedEvent): Promise<void> {
+    this.pendingEvents?.events.push(ev);
+    const viewer = this.viewer;
     const subject = ev.subject_id;
     if (subject && this.docs.has(subject)) this.docs.schedule(); // C16: a listed doc moved (a new version, approved)
     if (subject && this.decisions.has(subject)) this.decisions.schedule(); // C17: a listed decision's binding changed
@@ -532,6 +547,7 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
       try { m = await this.board().message(mid); } // the event carries a preview, never code_context
       catch (e) { this.log(`chat: message fetch failed (${(e as BoardError)?.code ?? 'error'}); reloading`); return this.reload(); }
       const fresh = store.merge([fromMessageRow(m, ev.seq, await this.attach.refs(m.artifacts))]);
+      if (viewer !== this.viewer || store !== this.store) return;
       if (this.addAnchors(fresh, store.ticketId)) this.refreshUncommitted();
       if (store === this.store && fresh.length) {
         this.post({ type: 'append', v: 1, ticketId: store.ticketId, items: fresh });
@@ -545,6 +561,7 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
     if (this.ticket && scopeTickets(this.ticket, this.tree).has(subject)) {
       try {
         const m = await this.board().message(mid);
+        if (viewer !== this.viewer) return;
         if (this.addAnchors([m], subject)) this.refreshUncommitted();
       } catch (e) { this.log(`chat: anchor fetch failed (${(e as BoardError)?.code ?? 'error'})`); }
     }
@@ -565,7 +582,12 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
       this.post({ type: 'prepend', v: 1, ticketId: store.ticketId, items, hasOlder: store.before != null });
     if (store.before == null) { answer([]); return; }
     try {
-      const fresh = store.loadOlder(await this.board().thread(store.ticketId, store.before));
+      const before = store.before;
+      const page = await this.board().thread(store.ticketId, before);
+      if (store !== this.store) return;
+      // A resync may have re-opened a newer history gap while this older read was in flight.
+      if (store.before !== before) { answer([]); return; }
+      const fresh = store.loadOlder(page);
       if (store === this.store && this.addAnchors(fresh, store.ticketId)) this.refreshUncommitted();
       if (store === this.store) answer(fresh);
     } catch (e) { if (store === this.store) answer([]); this.fail(e, 'could not load older messages'); }
@@ -602,11 +624,13 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
       this.onChips(ticketId, this.quotes.chips(ticketId), false);
       return;
     }
+    const viewer = this.viewer;
     const body = files.length ? attachText(text, files.map(f => f.name)) : text; // an attachments-only send names its files
     try {
       const m = await this.board().send({ ticket_id: store.ticketId, to, kind, reply_to: replyTo,
         ...(files.length ? { artifacts: files.map(f => f.id) } : {}), ...(q.quotes.length ? { quotes: q.quotes } : {}),
         ...(chip ? { text: render(chip.anchor, body, chip.truncated), code_context: chip.anchor } : { text: body }) });
+      if (viewer !== this.viewer) return;
       if (files.length) this.post({ type: 'pending', v: 1, ticketId, pending: this.attach.sent(ticketId, files.map(f => f.id)) });
       if (chip && this.chips.get(ticketId)?.id === chip.id) this.chips.delete(ticketId);
       if (q.keys.length) this.quotes.sent(ticketId, q.keys);
@@ -619,6 +643,8 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
       const un = m.unresolved_mentions ?? [];
       if (un.length) void vscode.window.showWarningMessage(`EDP: sent, but nobody is registered as ${un.map(h => '@' + h).join(', ')}`);
     } catch (e) {
+      if (viewer !== this.viewer) return;
+      this.fail(e, 'could not send');
       // the draft stays in the composer; a refused quote is marked on its chip
       if (q.keys.length) this.quotes.refused(ticketId, q.keys, (e as Error).message);
       this.post({ type: 'sendFailed', v: 1, ticketId, text: `Not sent: ${(e as Error).message}` });
@@ -951,10 +977,9 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
 
   private fail(e: unknown, what: string) {
     const err = e as BoardError;
+    if (err?.code === 'viewer_changed') return;
     if (err?.status === 401 || err?.status === 403 || err?.code === 'not_signed_in') {
-      this.feedStatus = 'signed-out';
-      this.notice = 'Sign in to the board to read and send.';
-      this.postState();
+      this.clearViewer();
       return;
     }
     this.post({ type: 'error', v: 1, text: `EDP: ${what}: ${err?.message ?? String(e)}` });

@@ -72,6 +72,7 @@ export class InboxHost implements vscode.Disposable {
       const keep = this.state?.scope === sc.id ? this.state.items : [];
       this.state = { scope: sc.id, items: keep, loading: false, error: `Could not read what waits on you: ${err?.message ?? String(e)}` };
       if (err?.status === 401 || err?.status === 403 || err?.code === 'not_signed_in') {
+        this.state = { ...this.state!, items: [] };
         // settle the tab first (never left "reading…"), then the sign-in path
         this.post({ type: 'inbox', v: 1, ticketId: sc.id, inbox: this.state });
         this.onAuthFail(e);
@@ -91,6 +92,7 @@ export class InboxHost implements vscode.Disposable {
 
   /** Run one write for a listed row; the row leaves the list on success, the refusal shows on it otherwise. */
   private async write(key: string, run: (i: InboxItem) => Promise<string>, want: InboxItem['type']): Promise<void> {
+    const gen = this.gen;
     const i = this.row(key);
     if (!i || i.type !== want) {
       this.done(key, false, 'This item is no longer waiting on you here.');
@@ -99,12 +101,14 @@ export class InboxHost implements vscode.Disposable {
     }
     try {
       const text = await run(i);
+      if (gen !== this.gen) return;
       // a read already in flight began before this write landed and would list the row again: drop it
       ++this.gen;
       this.opened.delete(key);
       if (this.state) this.state = { ...this.state, items: this.state.items.filter(x => x.key !== key) };
       this.done(key, true, text);
     } catch (e) {
+      if (gen !== this.gen) return;
       const err = e as BoardError;
       if (err?.status === 401 || err?.status === 403 || err?.code === 'not_signed_in') this.onAuthFail(e);
       this.done(key, false, err?.message ?? String(e));
@@ -150,17 +154,19 @@ export class InboxHost implements vscode.Disposable {
   /** A sign-off's evidence in an editor tab (a doc at the row's version, or the artifact); a design gate's
    *  review in the EDP reader (C16). */
   async openRow(key: string): Promise<void> {
+    const gen = this.gen;
+    const b = this.board();
     const i = this.row(key);
     if (!i) return;
     try {
       if (i.type === 'gate' && i.design) {
         // C16: the design under review opens in the reader at its current version, reviewed from this ticket
-        const ref = (await this.board().ticket(i.ticketId)).design_ref;
+        const ref = (await b.ticket(i.ticketId)).design_ref;
         if (!ref || !DOC_ID.test(ref)) {
           await vscode.env.openExternal(vscode.Uri.parse(boardTicketUrl(this.boardUrl(), i.ticketId)));
           return;
         }
-        const d = await this.board().latestDoc(ref);
+        const d = await b.latestDoc(ref);
         await this.openDoc(ref, d.version, i.ticketId);
         return;
       }
@@ -174,6 +180,7 @@ export class InboxHost implements vscode.Disposable {
       }
       void vscode.window.showWarningMessage(`EDP: the evidence ${ref} is not a doc or an artifact this panel can open.`);
     } catch (e) {
+      if (gen !== this.gen) return;
       const err = e as BoardError;
       if (err?.status === 401 || err?.status === 403) { this.onAuthFail(e); return; }
       this.log(`inbox: open failed (${err?.code ?? 'error'})`);

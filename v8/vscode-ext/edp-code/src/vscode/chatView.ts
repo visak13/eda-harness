@@ -68,7 +68,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 
   /** Post to the live view, or queue until it says `ready`. A full `state` supersedes the queue. */
   post(m: HostToView): void {
-    if (m.type === 'state') this.queue = [];
+    if (m.type === 'state') {
+      this.queue = [];
+      if (!m.me && !m.ticket) { this.unseen = 0; if (this.view) this.view.badge = undefined; }
+    }
     if (this.view && this.ready) void this.view.webview.postMessage(m);
     else if (this.view) this.queue.push(m);
     // no view: nothing to queue, the next resolve gets a fresh snapshot on `ready`

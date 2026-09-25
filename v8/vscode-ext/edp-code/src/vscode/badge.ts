@@ -67,6 +67,11 @@ export class Badge implements vscode.Disposable {
     return repo;
   }
 
+  clear(): void {
+    ++this.seq; clearTimeout(this.timer); this.seats = undefined; this.error = undefined;
+    this.item.text = ''; this.item.tooltip = ''; this.item.hide();
+  }
+
   async update(): Promise<void> {
     const my = ++this.seq;
     const repo = await this.sharedRepo();

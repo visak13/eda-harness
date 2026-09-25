@@ -2,8 +2,8 @@
 // decision records (`GET /v1/decisions?scope=`) with the viewer's token, and runs the two owner/architect writes
 // (Withdraw with a reason, Binding on/off) through the existing routes. Every write and every open is resolved
 // from this host's own last list by decision id; the view never names a scope, a source or a flag it did not get.
-// A refusal is the board's own message, shown on the row. A 403 on the list (not a participant of this epic) is
-// shown in the tab: it is a scope answer, not a sign-out.
+// A refusal is the board's own message. The shared viewer request boundary clears all surfaces on 401/403
+// under the C7 owner ruling; other failures are shown on the row.
 import * as vscode from 'vscode';
 import type { Board, BoardError } from '../core/api';
 import type { HostToView } from '../core/chatProtocol';

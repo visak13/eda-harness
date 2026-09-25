@@ -1,4 +1,4 @@
-// C7 bounded review probes. They record observations; these are not acceptance verdicts.
+// C7 owner-picked fix regressions and browser evidence.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -11,7 +11,7 @@ if (ff) test.use({ browserName: 'firefox', channel: 'moz-firefox', launchOptions
 test.use({ boardFile: 'c7-review', viewport: { width: 1600, height: 1000 } });
 test.describe.configure({ mode: 'serial', timeout: 180_000 });
 const out = path.resolve('e2e/evidence/c7-review', ff ? 'stockff' : 'chromium');
-const observed: Record<string, unknown> = {};
+const observed: Record<string, unknown> = { phase: 'fixed-0.13.1' };
 const save = () => { fs.mkdirSync(out, { recursive: true }); fs.writeFileSync(path.join(out, 'observations.json'), JSON.stringify(observed, null, 2)); };
 async function call(method: string, route: string, body?: unknown) {
   const response = await fetch(BASE() + route, { method, headers: { 'content-type': 'application/json', 'X-Participant': 'arch' }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -49,7 +49,7 @@ test('record actual chat and reader CSP, style application and sign-out state', 
   const git = (args: string[]) => execFileSync('git', ['-c', 'user.name=review', '-c', 'user.email=review@example.invalid', ...args], { cwd: repo });
   git(['init', '-q']); git(['add', 'sample.txt']); git(['commit', '-qm', 'fixture']);
   const token = 'c7-throwaway-owner-token';
-  fs.writeFileSync(path.join(process.env.EDP8_E2E_HOME!, 'tokens.json'), JSON.stringify({ owner: token, tokuser: token + '-b' }));
+  fs.writeFileSync(path.join(process.env.EDP8_E2E_HOME!, 'tokens.json'), JSON.stringify({ owner: token, arch: token + '-b' }));
   const cs = await startCodeServer(tmp, { 'edp.boardUrl': BASE() });
   const page = await browser.newPage();
   const csp: string[] = [];
@@ -92,14 +92,27 @@ test('record actual chat and reader CSP, style application and sign-out state', 
     await page.screenshot({ path: path.join(out, 'reader-before-signout.png') });
     await command('EDP: Sign out of board');
     await expect(page.locator('.notifications-toasts', { hasText: 'signed out' })).toBeVisible({ timeout: 10000 });
+    await expect(reader!.locator('#doc')).not.toContainText('A visible passage');
     observed.readerAfterSignout = await reader!.locator('#doc').textContent().catch(() => 'closed');
     await command('EDP: Sign in to board');
-    await answer('EDP: board participant id', 'tokuser'); await answer('EDP: token for tokuser', token + '-b');
-    await expect(page.locator('.notifications-toasts', { hasText: 'signed in as tokuser' })).toBeVisible({ timeout: 15000 });
+    await answer('EDP: board participant id', 'arch'); await answer('EDP: token for arch', token + '-b');
+    await expect(page.locator('.notifications-toasts', { hasText: 'signed in as arch' })).toBeVisible({ timeout: 15000 });
     await expect(chat.locator('#crumb-current')).toHaveText('C7 review fixture');
     await chat.locator('#tab-chat').click();
-    await expect(chat.locator('#quote-chips > li.qchip')).toHaveCount(1);
-    observed.otherIdentityDraft = await chat.locator('.qchip-note').inputValue();
+    await expect(chat.locator('#quote-chips > li.qchip')).toHaveCount(0);
+    observed.otherIdentityDraftCount = await chat.locator('#quote-chips > li.qchip').count();
+    await command('EDP: Sign in to board');
+    await answer('EDP: board participant id', 'owner'); await answer('EDP: token for owner', token);
+    await expect(chat.locator('#crumb-current')).toHaveText('C7 review fixture');
+    await chat.locator('#tab-chat').click();
+    await expect(chat.locator('.qchip-note')).toHaveValue('private draft from identity A');
+    await page.reload();
+    await expect(page.locator('div.monaco-workbench')).toBeVisible({ timeout: 60_000 });
+    await command('EDP: Open chat');
+    await expect(chat.locator('#crumb-current')).toHaveText('C7 review fixture', { timeout: 30000 });
+    await chat.locator('#tab-chat').click();
+    await expect(chat.locator('.qchip-note')).toHaveValue('private draft from identity A');
+    observed.ownerDraftAfterReload = await chat.locator('.qchip-note').inputValue();
     observed.cspConsole = csp;
     observed.browser = browser.version(); save();
   } finally {

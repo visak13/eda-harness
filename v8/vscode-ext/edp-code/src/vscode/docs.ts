@@ -8,17 +8,27 @@ import type { Board } from '../core/api';
 import { DOC_SCHEME, docPath, parseDocPath } from '../core/docUri';
 
 export class DocProvider implements vscode.TextDocumentContentProvider {
+  private changes = new vscode.EventEmitter<vscode.Uri>();
+  readonly onDidChange = this.changes.event;
+  private uris = new Map<string, vscode.Uri>();
+  private cleared = false;
+  private gen = 0;
   constructor(private board: () => Board) {}
+  clear(): void { ++this.gen; this.cleared = true; for (const uri of this.uris.values()) this.changes.fire(uri); }
+  resume(): void { this.cleared = false; for (const uri of this.uris.values()) this.changes.fire(uri); }
 
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
+    this.uris.set(uri.toString(), uri);
+    if (this.cleared) return 'Sign in to read this board doc.';
+    const gen = this.gen;
     const at = parseDocPath(uri.path);
     if (!at) throw new Error(`EDP: not a board doc: ${uri.path}`);
     const d = await this.board().doc(at.id, at.version);
-    return d.body_md ?? '';
+    return gen === this.gen ? d.body_md ?? '' : 'Sign in to read this board doc.';
   }
 
   register(): vscode.Disposable {
-    return vscode.workspace.registerTextDocumentContentProvider(DOC_SCHEME, this);
+    return vscode.Disposable.from(this.changes, vscode.workspace.registerTextDocumentContentProvider(DOC_SCHEME, this));
   }
 }
 

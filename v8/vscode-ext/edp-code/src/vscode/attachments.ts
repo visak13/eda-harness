@@ -11,6 +11,7 @@ import { ThumbWorker } from './thumbs';
 
 export class Attachments implements vscode.Disposable {
   /** per thread: staged uploads waiting in its composer */
+  private gen = 0;
   private pending = new Map<string, PendingAttachment[]>();
   private infos = new InfoCache();
   private inflight = new Map<string, Promise<ArtifactInfo>>();
@@ -31,13 +32,15 @@ export class Attachments implements vscode.Disposable {
     return out;
   }
 
-  clear(): void { this.pending.clear(); }
+  clear(): void { ++this.gen; this.pending.clear(); this.infos = new InfoCache(); this.inflight.clear(); }
 
   /** Upload one file for a thread's composer. Resolves to the new pending list, or throws the board's refusal. */
   async upload(ticketId: string, name: string, bytes: Uint8Array): Promise<PendingAttachment[]> {
+    const gen = this.gen;
     const held = this.pending.get(ticketId) ?? [];
     if (held.length >= ATTACH_MAX) throw new BoardError('too_many', `At most ${ATTACH_MAX} attachments per message.`, 0);
     const art = await this.board().upload(ticketId, name, bytes);
+    if (gen !== this.gen) throw new BoardError('viewer_changed', 'The board viewer changed.', 0);
     const p: PendingAttachment = { id: art.id, name: art.filename || name, size: bytes.byteLength, contentType: art.content_type };
     const next = [...(this.pending.get(ticketId) ?? []), p];
     this.pending.set(ticketId, next);
@@ -71,7 +74,8 @@ export class Attachments implements vscode.Disposable {
     if (hit) return Promise.resolve(hit);
     let p = this.inflight.get(ref.id);
     if (!p) {
-      p = this.fetchInfo(ref).then(i => { if (!i.retry) this.infos.set(i); return i; }).finally(() => this.inflight.delete(ref.id));
+      const gen = this.gen;
+      p = this.fetchInfo(ref).then(i => { if (gen === this.gen && !i.retry) this.infos.set(i); return i; }).finally(() => { if (gen === this.gen) this.inflight.delete(ref.id); });
       this.inflight.set(ref.id, p);
     }
     return p;

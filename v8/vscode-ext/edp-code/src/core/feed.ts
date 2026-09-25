@@ -23,6 +23,8 @@ export type FeedOptions = {
   onResync?: () => void;
   log?: (line: string) => void;
   readTimeoutMs?: number;
+  headerTimeoutMs?: number;
+  healthyAfterMs?: number;
   backoffMs?: number;
   maxBackoffMs?: number;
   pollEveryMs?: number;
@@ -106,17 +108,32 @@ export class FeedClient {
   private async connect(): Promise<'resync' | 'eof'> {
     const f = this.o.fetch ?? fetch;
     const ctrl = (this.ctrl = new AbortController());
-    const res = await f(this.url(`/v1/feed?since=${this.since}&watch=true`), {
-      headers: await this.headers(), signal: ctrl.signal, redirect: 'manual',
+    const headers = await this.headers();
+    if (this.stopped) return 'eof';
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      deadline = setTimeout(() => { ctrl.abort(); reject(new Error('feed headers timed out')); }, this.o.headerTimeoutMs ?? 10_000);
+      this.timers.add(deadline);
     });
+    let res: Response;
+    try {
+      res = await Promise.race([f(this.url(`/v1/feed?since=${this.since}&watch=true`), {
+        headers, signal: ctrl.signal, redirect: 'manual',
+      }), timeout]);
+    } finally { clearTimeout(deadline); this.timers.delete(deadline!); }
+    if (this.stopped) { ctrl.abort(); return 'eof'; }
     if (res.status === 401 || res.status === 403) throw new AuthStop(`feed ${res.status}`);
     if (!res.ok || !res.body) throw new Error(`feed ${res.status}`);
     const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
     let progressed = false;
     let outcome: 'resync' | undefined;
+    let healthy: ReturnType<typeof setTimeout> | undefined;
     const parse = sseParser(fr => {
       progressed = true;
-      this.failures = 0;
+      if (healthy === undefined) {
+        healthy = setTimeout(() => { this.failures = 0; }, this.o.healthyAfterMs ?? 30_000);
+        this.timers.add(healthy);
+      }
       if (fr.data === undefined) {
         const m = cursorMark(fr.comment);
         if (!m) return; // ping
@@ -128,29 +145,33 @@ export class FeedClient {
       try { this.deliver(JSON.parse(fr.data) as FeedEvent); } catch { this.log('feed: unparsable frame'); }
     });
     const readTimeout = this.o.readTimeoutMs ?? 45_000;
-    while (!this.stopped) {
-      let watchdog: ReturnType<typeof setTimeout> | undefined;
-      const silent = new Promise<never>((_, reject) => {
-        watchdog = setTimeout(() => reject(new Error(`no bytes for ${readTimeout / 1000}s`)), readTimeout);
-        this.timers.add(watchdog);
-      });
-      let chunk: ReadableStreamReadResult<string>;
-      try {
-        chunk = await Promise.race([reader.read(), silent]);
-      } catch (e) {
-        ctrl.abort();
-        throw e;
-      } finally {
-        clearTimeout(watchdog); this.timers.delete(watchdog!);
+    // A frame immediately followed by EOF is not a healthy connection. Only sustained streaming
+    // earns a fresh failure budget; the read watchdog still catches silent connections.
+    try {
+      while (!this.stopped) {
+        let watchdog: ReturnType<typeof setTimeout> | undefined;
+        const silent = new Promise<never>((_, reject) => {
+          watchdog = setTimeout(() => reject(new Error(`no bytes for ${readTimeout / 1000}s`)), readTimeout);
+          this.timers.add(watchdog);
+        });
+        let chunk: ReadableStreamReadResult<string>;
+        try {
+          chunk = await Promise.race([reader.read(), silent]);
+        } catch (e) {
+          ctrl.abort();
+          throw e;
+        } finally {
+          clearTimeout(watchdog); this.timers.delete(watchdog!);
+        }
+        if (chunk.done) {
+          if (!progressed) throw new Error('closed before any frame'); // premature EOF
+          return 'eof';
+        }
+        parse(chunk.value);
+        if (outcome === 'resync') { ctrl.abort(); return 'resync'; }
       }
-      if (chunk.done) {
-        if (!progressed) throw new Error('closed before any frame'); // premature EOF
-        return 'eof';
-      }
-      parse(chunk.value);
-      if (outcome === 'resync') { ctrl.abort(); return 'resync'; }
-    }
-    return 'eof';
+      return 'eof';
+    } finally { clearTimeout(healthy); this.timers.delete(healthy!); }
   }
 
   private async pollFor(ms: number): Promise<void> {
@@ -160,8 +181,9 @@ export class FeedClient {
     this.log('feed poll fallback');
     while (!this.stopped && Date.now() < until) {
       try {
+        const ctrl = (this.ctrl = new AbortController());
         const res = await f(this.url(`/v1/events?since=${Math.max(this.since, 0)}&limit=200&watch=true`), {
-          headers: await this.headers(), signal: AbortSignal.timeout(10_000), redirect: 'manual',
+          headers: await this.headers(), signal: AbortSignal.any([ctrl.signal, AbortSignal.timeout(10_000)]), redirect: 'manual',
         });
         if (res.status === 401 || res.status === 403) throw new AuthStop(`events ${res.status}`);
         if (res.ok) {

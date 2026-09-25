@@ -14,7 +14,9 @@ import { anchorFor } from './tag';
 import { mentionRows, noteToken, pathRows, refRows, type NoteCompletionRow } from '../core/noteCompletion';
 import { activeRef, type RefRow } from '../core/boardRefs';
 
-const TRAY_KEY = 'edp.quotes.tray';
+/** No token in this key. Legacy unowned trays cannot safely be assigned to a viewer. */
+export const trayKey = (origin: string, participant: string): string =>
+  'edp.quotes.tray.v2.' + JSON.stringify([new URL(origin).origin, participant]);
 export const QUOTE_CONTROLLER = 'edp.quotes';
 const DRAFT_CTX = 'edpDraft';
 
@@ -40,6 +42,8 @@ export interface QuoteChat {
 
 export class QuoteHost implements vscode.Disposable {
   private tray: Tray;
+  private identity: string | null = null;
+  private gen = 0;
   /** per thread: the draft the board refused on the last send */
   private invalid = new Map<string, string>();
   private ctl: vscode.CommentController;
@@ -47,18 +51,34 @@ export class QuoteHost implements vscode.Disposable {
   private status: vscode.StatusBarItem;
 
   constructor(private ctx: vscode.ExtensionContext, private chat: QuoteChat, private log: (line: string) => void) {
-    this.tray = new Tray(restoreTray(ctx.workspaceState.get(TRAY_KEY)));
-    this.ctl = vscode.comments.createCommentController(QUOTE_CONTROLLER, 'EDP chat');
-    // the gutter + on every file and board doc: select lines, + (or Ctrl+Alt+Q, or the context menu), type a note
-    this.ctl.commentingRangeProvider = {
-      provideCommentingRanges: doc => (doc.uri.scheme === 'file' || doc.uri.scheme === DOC_SCHEME) && doc.lineCount > 0
-        ? [new vscode.Range(0, 0, doc.lineCount - 1, 0)] : [],
-    };
-    this.ctl.options = { prompt: 'Comment for chat…', placeHolder: 'A note on these lines (optional), then Add to chat' };
+    this.tray = new Tray();
+    this.ctl = this.controller();
     this.status = vscode.window.createStatusBarItem('edp.quotes.draft', vscode.StatusBarAlignment.Left, 99);
     this.status.name = 'EDP draft';
     this.status.command = 'edp.chat.open';
     this.syncMarkers();
+  }
+
+  private controller(): vscode.CommentController {
+    const ctl = vscode.comments.createCommentController(QUOTE_CONTROLLER, 'EDP chat');
+    // the gutter + on every file and board doc: select lines, + (or Ctrl+Alt+Q, or the context menu), type a note
+    ctl.commentingRangeProvider = {
+      provideCommentingRanges: doc => (doc.uri.scheme === 'file' || doc.uri.scheme === DOC_SCHEME) && doc.lineCount > 0
+        ? [new vscode.Range(0, 0, doc.lineCount - 1, 0)] : [],
+    };
+    ctl.options = { prompt: 'Comment for chat…', placeHolder: 'A note on these lines (optional), then Add to chat' };
+    return ctl;
+  }
+
+  setIdentity(viewer: { origin: string; participant: string } | null): void {
+    const key = viewer ? trayKey(viewer.origin, viewer.participant) : null;
+    if (key === this.identity) return;
+    ++this.gen;
+    this.identity = key;
+    this.tray = new Tray(key ? restoreTray(this.ctx.workspaceState.get(key)) : undefined);
+    this.invalid.clear();
+    this.ctl.dispose(); this.markers.clear(); this.ctl = this.controller();
+    this.syncMarkers(); this.chat.onMarks(); this.updateStatus();
   }
 
   register(): vscode.Disposable[] {
@@ -122,6 +142,7 @@ export class QuoteHost implements vscode.Disposable {
 
   /** Add a draft to the open thread (the picker first when none is open). The thread it went to, or undefined. */
   async add(d: Draft): Promise<string | undefined> {
+    const gen = this.gen;
     let t = this.chat.target();
     if (!t) {
       await vscode.commands.executeCommand('edp.chat.open');
@@ -129,6 +150,7 @@ export class QuoteHost implements vscode.Disposable {
       t = id ? this.chat.target() : null;
       if (!t || t.id !== id) { void vscode.window.setStatusBarMessage('EDP: no thread was opened, so the quote was not added', 6_000); return; }
     }
+    if (!this.identity || gen !== this.gen) return;
     if (!this.tray.add(t.id, d)) {
       void vscode.window.showWarningMessage(`EDP: ${t.title} already holds 20 quotes, the most one message can carry. Send or remove some first.`);
       return;
@@ -170,7 +192,7 @@ export class QuoteHost implements vscode.Disposable {
   refresh(): void { this.updateStatus(); }
 
   private changed(ticketId: string, focus: boolean, text?: string, markers = true): void {
-    void this.ctx.workspaceState.update(TRAY_KEY, this.tray.data());
+    if (this.identity) void this.ctx.workspaceState.update(this.identity, this.tray.data());
     if (this.invalid.has(ticketId) && !this.tray.list(ticketId).some(d => d.key === this.invalid.get(ticketId))) this.invalid.delete(ticketId);
     this.post(ticketId, focus, text);
     if (markers) this.syncMarkers(); else this.syncNotes();
@@ -203,12 +225,14 @@ export class QuoteHost implements vscode.Disposable {
   }
 
   private async addFromReply(r: vscode.CommentReply): Promise<void> {
+    const gen = this.gen;
     const th = r?.thread;
     if (!th?.range) return;
     const note = r.text ?? '';
     try {
       const doc = await vscode.workspace.openTextDocument(th.uri);
       const d = await this.draftOf(doc, th.range, note);
+      if (gen !== this.gen) return;
       if ('error' in d) { void vscode.window.showWarningMessage(`EDP: ${d.error}`); return; }
       const went = await this.add(d);
       if (went) th.dispose(); // the tray's own marker replaces the box

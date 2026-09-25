@@ -111,7 +111,16 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
   }
 
   /** The viewer signed in as someone else: forget the role. */
-  reset(): void { this.role = null; for (const p of this.panels) void this.load(p); }
+  reset(): void {
+    this.role = null; this.sources.clear(); this.reveals.clear();
+    for (const p of this.panels) {
+      p.panel.title = `${p.id} v${p.version}`;
+      p.next(); p.source = null; p.reveal = null; p.selection = { from: 0, to: 0, text: '' };
+      this.set(p, { doc: null, gate: null, gateError: null, canResolve: false, diff: null, comments: null,
+        loading: false, error: 'Sign in or refresh to read this doc.' });
+      this.postMarks(p);
+    }
+  }
 
   openCustomDocument(uri: vscode.Uri): vscode.CustomDocument {
     return { uri, dispose: () => {} };
@@ -238,7 +247,7 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
       [at, latest] = await Promise.all([b.doc(p.id, p.version), b.latestDoc(p.id)]);
     } catch (e) {
       if (!p.current(n)) return;
-      if (this.authFailed(e)) return this.set(p, { loading: false, error: 'Sign in to the board to read this doc.' });
+      if (this.authFailed(e)) return this.set(p, { doc: null, gate: null, gateError: null, canResolve: false, diff: null, comments: null, loading: false, error: 'Sign in to the board to read this doc.' });
       return this.set(p, { loading: false, error: `Could not read ${p.id} v${p.version}: ${(e as Error)?.message ?? String(e)}` });
     }
     if (!p.current(n)) return;
@@ -289,8 +298,10 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
 
   /** Run one write, then read the panel again (the gate closes, the proposal retires). */
   private async write(p: ReaderPanel, what: ReaderWrite, run: () => Promise<string>): Promise<void> {
-    try { this.done(p, what, true, await run()); }
+    const state = p.state;
+    try { const text = await run(); if (p.state !== state) return; this.done(p, what, true, text); }
     catch (e) {
+      if (p.state !== state) return;
       const err = e as BoardError;
       if (err?.status === 401 || err?.status === 403) this.onAuthFail(e);
       this.done(p, what, false, err?.message ?? String(e));
@@ -320,10 +331,11 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
 
   /** The title-bar Request changes: the feedback in an input box. */
   private async requestChangesPrompt(p: ReaderPanel): Promise<void> {
+    const original = p.state.doc;
     const v = p.state.doc?.version ?? p.version;
     const feedback = await vscode.window.showInputBox({ title: `EDP: Request changes on ${p.id} v${v}`, prompt: 'Your feedback goes to the architect with this version',
       placeHolder: 'What to change…', ignoreFocusOut: true, validateInput: t => (t.trim() ? null : 'Request changes needs feedback.') });
-    if (feedback === undefined) return;
+    if (feedback === undefined || !original || p.state.doc !== original) return;
     await this.requestChanges(p, feedback);
   }
 
@@ -333,10 +345,11 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
       // re-read the proposal so a version its author published after this one was read is never ruled on unseen
       // (the load after the refusal shows the newer version's note); the ruling also carries the version read, so
       // a board with C17 refuses (409) a version published between this check and the write
-      const now = await this.board().latestDoc(p.id);
+      const board = this.board();
+      const now = await board.latestDoc(p.id);
       if (now.version !== p.version) throw new Error(`${p.id} is now v${now.version}; you are reading v${p.version}. Read v${now.version} before you rule.`);
       if (now.status !== 'proposed') throw new Error(`${p.id} is ${now.status}, no longer proposed.`);
-      const r = await this.board().docResolve(p.id, approve, p.version);
+      const r = await board.docResolve(p.id, approve, p.version);
       return !approve ? `Rejected ${p.id}; it is retired.` : r.target ? `Approved: ${r.target.id} is now v${r.target.version}.` : `Approved: ${p.id} is active.`;
     });
   }

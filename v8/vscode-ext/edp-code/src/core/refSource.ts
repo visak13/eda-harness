@@ -19,13 +19,14 @@ const TTL_MS = 60_000;
 const none = <T>(p: Promise<T[]>): Promise<T[]> => p.catch(() => [] as T[]);
 
 export class RefSource {
+  private gen = 0;
   private scope = new Map<string, { at: number; rows: Promise<RefRow[]> }>();
   private epicRows: { at: number; rows: Promise<RefRow[]> } | null = null;
 
   constructor(private board: () => RefBoard, private now: () => number = Date.now) {}
 
   /** Forget what was read (sign-in, sign-out, board change). */
-  clear(): void { this.scope.clear(); this.epicRows = null; }
+  clear(): void { ++this.gen; this.scope.clear(); this.epicRows = null; }
 
   private scopeRows(epic: string): Promise<RefRow[]> {
     const hit = this.scope.get(epic);
@@ -50,11 +51,13 @@ export class RefSource {
 
   /** The ranked rows for `q` with `epic` (the open scope's epic, or null) first. */
   async rows(epic: string | null, q: string): Promise<RefRow[]> {
+    const gen = this.gen;
     const [scope, epics, hits] = await Promise.all([
       epic ? this.scopeRows(epic) : Promise.resolve([] as RefRow[]),
       this.openEpics(),
       q.length >= 2 ? none(this.board().find(q, 'ticket,doc,decision')) : Promise.resolve([] as FindHit[]),
     ]);
+    if (gen !== this.gen) return [];
     return rankRefs(q, scope, [...epics, ...boardRows(hits)]);
   }
 }
