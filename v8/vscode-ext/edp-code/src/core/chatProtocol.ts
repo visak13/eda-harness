@@ -26,7 +26,27 @@ export type ChatMessage = {
 };
 
 export type TicketRef = { id: string; kind: string; title: string; status: string };
-export type StoryRow = TicketRef & { unread: number };
+export type StoryRow = TicketRef & { unread: number; /** C5: commits naming the story or its tasks */ commits?: number };
+
+// -- change cards (C5 s-ab8e69650e; design §4.2, strategyll-86c5b5068f §3) ---------------------------
+export const SHA = /^[0-9a-f]{40}$/;
+/** A git repo-relative path: `/`-separated, not absolute, no drive, no `..` segment, no NUL/backslash. */
+export const isRepoPath = (p: string) =>
+  p.length > 0 && p.length <= 4096 && !/[\\\0]/.test(p) && !p.startsWith('/') && !/^[A-Za-z]:/.test(p) && !p.split('/').includes('..');
+
+export type CardFile = { path: string; oldPath?: string; status: string; add: number | null; del: number | null };
+/** One commit as a timeline card. `seat` is the EDP-Seat trailer, or the ticket's assignee (`seatVia`). */
+export type CommitCard = {
+  type: 'commit'; sha: string; at: string; subject: string; tickets: string[];
+  attribution: 'trailer' | 'subject' | 'none'; seat: string | null; seatVia: 'trailer' | 'assignee' | null;
+  files: CardFile[];
+  /** files not listed on the card (the multi-diff still opens all of them) */
+  more: number;
+  /** false: the commit is not in this clone ("pull to see this change") */
+  local: boolean;
+};
+/** The pinned live card: the shared tree's working tree + index vs HEAD. Names no seat (dec-8dfe3d97af). */
+export type UncommittedCard = { files: CardFile[]; more: number; total: number; at: string };
 
 /** An @-list row, labelled in the host (strategyll-5e3ecdb625 §2): the view sets it with textContent. */
 export type PersonRow = {
@@ -60,6 +80,10 @@ export type ChatState = {
   /** the epic the open thread belongs to (the ticket itself when an epic is open) */
   epic: TicketRef | null;
   stories: StoryRow[];
+  /** C5: the open thread's change cards (newest first), the epic's collapsed unlinked commits, the live card */
+  commits: CommitCard[];
+  unlinked: CommitCard[];
+  uncommitted: UncommittedCard | null;
   architect: string | null;
   people: PersonRow[];
   items: ChatMessage[];
@@ -75,6 +99,9 @@ export type HostToView =
   | { type: 'append'; v: 1; ticketId: string; items: ChatMessage[] }
   | { type: 'prepend'; v: 1; ticketId: string; items: ChatMessage[]; hasOlder: boolean }
   | { type: 'stories'; v: 1; stories: StoryRow[] }
+  /** C5: new commits for the open thread (live on a HEAD move) */
+  | { type: 'commits'; v: 1; ticketId: string; items: CommitCard[]; unlinked: CommitCard[] }
+  | { type: 'uncommitted'; v: 1; card: UncommittedCard | null }
   | { type: 'feed'; v: 1; status: FeedStatus }
   | { type: 'sent'; v: 1; ticketId: string; id: string }
   | { type: 'sendFailed'; v: 1; ticketId: string; text: string }
@@ -92,10 +119,14 @@ export type ViewToHost =
   | { v: 1; type: 'dropCode'; ticketId: string; chipId: string }
   | { v: 1; type: 'openCode'; messageId: string }
   | { v: 1; type: 'openBoard'; ticketId: string; messageId?: string }
+  /** C5: a file row (`path`) opens vscode.diff, the card itself (no path) the multi-diff */
+  | { v: 1; type: 'openDiff'; sha: string; path?: string }
+  | { v: 1; type: 'openUncommitted'; path?: string }
   | { v: 1; type: 'signIn' };
 
 const TYPES = new Set(['ready', 'pickTicket', 'loadOlder', 'send', 'dropCode', 'openCode', 'openBoard', 'signIn']);
 const HANDLE = /^[A-Za-z0-9][A-Za-z0-9_.\-]{0,127}$/;
+const DIFF_TYPES = new Set(['openDiff', 'openUncommitted']);
 
 /** The inbound gate. `handles` are the ids/handles of the last `people` list sent to the view (a
  *  `to` must be one of them). Only the known keys of each type are copied out: extra keys are
@@ -103,7 +134,7 @@ const HANDLE = /^[A-Za-z0-9][A-Za-z0-9_.\-]{0,127}$/;
 export function parseInbound(raw: unknown, handles: ReadonlySet<string> = new Set()): ViewToHost | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
-  if (r.v !== PROTOCOL_V || typeof r.type !== 'string' || !TYPES.has(r.type)) return null;
+  if (r.v !== PROTOCOL_V || typeof r.type !== 'string' || !(TYPES.has(r.type) || DIFF_TYPES.has(r.type))) return null;
   const str = (k: string) => (typeof r[k] === 'string' ? (r[k] as string) : undefined);
   switch (r.type) {
     case 'ready': case 'loadOlder': case 'signIn':
@@ -139,6 +170,18 @@ export function parseInbound(raw: unknown, handles: ReadonlySet<string> = new Se
     case 'dropCode': {
       const ticketId = str('ticketId'), chipId = str('chipId');
       return ticketId && TICKET_ID.test(ticketId) && chipId && CHIP_ID.test(chipId) ? { v: 1, type: 'dropCode', ticketId, chipId } : null;
+    }
+    case 'openDiff': {
+      const sha = str('sha');
+      if (!sha || !SHA.test(sha)) return null;
+      if (r.path === undefined) return { v: 1, type: 'openDiff', sha };
+      const p = str('path');
+      return p && isRepoPath(p) ? { v: 1, type: 'openDiff', sha, path: p } : null;
+    }
+    case 'openUncommitted': {
+      if (r.path === undefined) return { v: 1, type: 'openUncommitted' };
+      const p = str('path');
+      return p && isRepoPath(p) ? { v: 1, type: 'openUncommitted', path: p } : null;
     }
     case 'openCode': {
       const id = str('messageId');

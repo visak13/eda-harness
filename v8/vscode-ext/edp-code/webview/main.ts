@@ -8,6 +8,7 @@ import { activeMention } from '../src/core/mentions';
 import { accessibleName, filterPeople } from '../src/core/people';
 import { at } from '../src/core/render';
 import { bodyFragment } from './render';
+import { appendCommits, appendUnlinked, commitCount, placeCards, renderCommits, renderUncommitted, renderUnlinked } from './cards';
 
 declare function acquireVsCodeApi(): { postMessage(m: unknown): void; getState(): unknown; setState(s: unknown): void };
 const vscode = acquireVsCodeApi();
@@ -106,7 +107,17 @@ chipBox.setAttribute('aria-label', 'Tagged lines, sent with this message');
 chipBox.hidden = true;
 composer.append(opts, peopleList, chipBox, ta, acStatus, sendErr, foot);
 
-app.append(header, crumbs, strip, notice, timeline, composer);
+// C5: the pinned live "Uncommitted changes — all seats" card and the epic's collapsed unlinked commits
+const pinned = el('div', 'pinned');
+pinned.id = 'pinned';
+const uncommittedBox = el('section', 'uncommitted');
+uncommittedBox.id = 'uncommitted';
+uncommittedBox.setAttribute('aria-label', 'Uncommitted changes — all seats');
+const unlinkedBox = el('div', 'unlinked-box');
+unlinkedBox.id = 'unlinked';
+pinned.append(uncommittedBox, unlinkedBox);
+
+app.append(header, crumbs, strip, notice, pinned, timeline, composer);
 
 // -- rendering ---------------------------------------------------------------------------------------
 const FEED_LABEL: Record<FeedStatus, string> = {
@@ -183,6 +194,7 @@ function storyEl(s: StoryRow, open: string | undefined): HTMLElement {
     u.setAttribute('aria-label', `${s.unread} new`);
     b.append(u);
   }
+  if (s.commits) b.append(commitCount(s.commits));
   b.addEventListener('click', () => post({ type: 'pickTicket', id: s.id }));
   return b;
 }
@@ -272,6 +284,9 @@ function renderAll() {
   olderBtn.disabled = false;
   sendBtn.disabled = pendingTicket !== null;
   renderItems(s.items);
+  renderCommits(s, list, post);
+  renderUncommitted(uncommittedBox, s.uncommitted, !!s.ticket, post);
+  renderUnlinked(unlinkedBox, s, post);
   composer.hidden = !s.ticket;
   renderChip();
   ta.value = s.ticket ? local.drafts[s.ticket.id] ?? '' : '';
@@ -420,9 +435,25 @@ window.addEventListener('message', (ev: MessageEvent) => {
       timeline.setAttribute('aria-live', 'off');
       const k = known();
       list.prepend(...fresh.map(i => messageEl(i, k)));
+      placeCards(list);
       timeline.scrollTop += timeline.scrollHeight - h0;
       break;
     }
+    case 'commits': {
+      if (!state || state.ticket?.id !== m.ticketId) return;
+      const stick = nearBottom();
+      timeline.setAttribute('aria-live', 'polite');
+      list.querySelector('.empty')?.remove();
+      appendCommits(state, m.items, list, post);
+      appendUnlinked(unlinkedBox, state, m.unlinked, post);
+      if (stick) toBottom();
+      break;
+    }
+    case 'uncommitted':
+      if (!state) return;
+      state.uncommitted = m.card;
+      renderUncommitted(uncommittedBox, m.card, !!state.ticket, post);
+      break;
     case 'stories':
       if (!state) return;
       state.stories = m.stories;

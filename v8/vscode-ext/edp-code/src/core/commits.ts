@@ -2,7 +2,7 @@
 // runs git (execFile, no shell) with LOG_ARGS and hands the raw bytes here. Trailers are parsed by git
 // (`%(trailers:…)`, interpret-trailers rules: last paragraph only); this file only splits on the
 // \x1e / \x1f / \x1d / \0 separators. Attribution is trailer > subject id > none (dec-16b44ab99c).
-import { TICKET_ID } from './chatProtocol';
+import { TICKET_ID, type CommitCard } from './chatProtocol';
 
 export const LOG_FORMAT =
   '%x1e%H%x1f%P%x1f%at%x1f%s%x1f%(trailers:key=EDP-Ticket,valueonly,separator=%x1d)%x1f%(trailers:key=EDP-Seat,valueonly,separator=%x1d)%x1f';
@@ -129,4 +129,24 @@ export function mergeNewer(newer: Indexed[], older: Indexed[], count: number): I
   const out: Indexed[] = [];
   for (const c of [...newer, ...older]) { if (!seen.has(c.sha)) { seen.add(c.sha); out.push(c); } }
   return out.slice(0, count);
+}
+
+/** Files listed on a card; the multi-diff still opens every file. */
+export const CARD_FILES = 100;
+
+/** A timeline card. The seat is the EDP-Seat trailer, else (subject attribution) the assignee of the
+ *  first named ticket, labelled so; `none` names no seat. */
+export function cardOf(c: Indexed, assignee: (ticket: string) => string | null | undefined, local = true): CommitCard {
+  let seat: string | null = null, seatVia: CommitCard['seatVia'] = null;
+  if (c.attribution === 'trailer' && c.trailerSeat) { seat = c.trailerSeat; seatVia = 'trailer'; }
+  else if (c.attribution !== 'none') {
+    const a = c.tickets.map(t => assignee(t)).find(Boolean);
+    if (a) { seat = a; seatVia = 'assignee'; }
+  }
+  return {
+    type: 'commit', sha: c.sha, at: new Date(c.at).toISOString(), subject: c.subject, tickets: c.tickets,
+    attribution: c.attribution, seat, seatVia, local,
+    files: c.files.slice(0, CARD_FILES).map(f => ({ path: f.path, ...(f.oldPath !== undefined ? { oldPath: f.oldPath } : {}), status: f.status, add: f.add, del: f.del })),
+    more: Math.max(0, c.files.length - CARD_FILES),
+  };
 }

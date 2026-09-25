@@ -116,6 +116,27 @@
           "scope": "machine",
           "description": "The EDP board. Credentials are sent only to a loopback or https URL."
         },
+        "edp.chat.commitWindow": {
+          "type": "object",
+          "scope": "machine",
+          "default": {
+            "count": 500,
+            "days": 30
+          },
+          "properties": {
+            "count": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 5000
+            },
+            "days": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 3650
+            }
+          },
+          "description": "How much of the shared tree's history the chat reads for change cards: the newest `count` commits of the last `days` days."
+        },
         "edp.sharedTreePaths": {
           "type": "array",
           "items": {

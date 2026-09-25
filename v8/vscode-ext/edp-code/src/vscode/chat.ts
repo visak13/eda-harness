@@ -7,6 +7,7 @@ import * as vscode from 'vscode';
 import type { Anchor } from '../core/anchor';
 import { BoardError, type Board, type Ticket } from '../core/api';
 import type { ChatState, FeedStatus, HostToView, StoryRow, TicketRef, ViewToHost } from '../core/chatProtocol';
+import type { CommitCard, UncommittedCard } from '../core/chatProtocol';
 import { chipForSend, chipView, newChip, type Chip } from '../core/chip';
 import { codeTarget } from '../core/codeTarget';
 import { FeedClient, type FeedEvent } from '../core/feed';
@@ -15,11 +16,14 @@ import { render } from '../core/render';
 import { fromMessageRow, fromThreadRow, ThreadStore } from '../core/thread';
 import { creds, signIn } from './auth';
 import { ChatViewProvider, CHAT_VIEW } from './chatView';
+import { cardOf, naming, storyCounts, unlinked as unlinkedOf, type Indexed } from '../core/commits';
+import { Changes } from './changes';
 import { gitApi } from './repo';
 import type { TagTarget } from './tag';
 
 const LAST_PICK = 'edp.chat.lastTicket';
 const LAST_SEEN = 'edp.chat.lastSeen'; // ticket id -> ISO time the thread was last open
+const UNLINKED_MAX = 100; // the epic's collapsed "Unlinked commits" section, newest first
 
 type Item = vscode.QuickPickItem & { id?: string };
 const ref = (t: Ticket): TicketRef => ({ id: t.id, kind: t.kind, title: t.title, status: t.status });
@@ -45,12 +49,22 @@ export class ChatController implements vscode.Disposable, TagTarget {
   private me: { id: string; handle: string } | null = null;
   private notice: string | null = null;
   private opening = 0;
+  /** C5 change cards: the shared tree's commit index, the open epic's tickets (tasks, assignees), the cards */
+  private changes: Changes;
+  private tree: Ticket[] = [];
+  private commits: CommitCard[] = [];
+  private unlinked: CommitCard[] = [];
   /** per thread: the code chip a Tag selection put in its composer (C4); the anchor never leaves the host */
   private chips = new Map<string, Chip>();
 
   constructor(private ctx: vscode.ExtensionContext, private board: () => Board, private boardUrl: () => string,
     private log: (line: string) => void) {
     this.provider = new ChatViewProvider(ctx, this, log);
+    this.changes = new Changes(ctx, {
+      onCommits: added => this.onCommits(added),
+      onReset: () => this.onCommitsReset(),
+      onUncommitted: card => this.onUncommitted(card),
+    }, log);
   }
 
   register(): vscode.Disposable[] {
@@ -64,6 +78,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
   snapshot(): ChatState {
     return {
       type: 'state', v: 1, me: this.me, ticket: this.ticket, epic: this.epic, stories: this.stories,
+      commits: this.ticket ? this.commits : [], unlinked: this.ticket ? this.unlinked : [], uncommitted: this.changes.uncommitted,
       architect: epicArchitect(this.people, this.epic?.id ?? null), people: this.rows(),
       items: this.store?.items ?? [], hasOlder: this.store?.before != null, chip: this.chipOf(this.ticket?.id), feed: this.feedStatus, notice: this.notice,
     };
@@ -86,6 +101,8 @@ export class ChatController implements vscode.Disposable, TagTarget {
         if (this.chips.get(m.ticketId)?.id === m.chipId) this.chips.delete(m.ticketId);
         return;
       }
+      case 'openDiff': return this.changes.openDiff(m.sha, m.path);
+      case 'openUncommitted': return this.changes.openUncommitted(m.path);
       case 'openCode': return this.openCode(m.messageId);
       case 'openBoard': {
         const base = this.boardUrl().replace(/\/+$/, '');
@@ -119,6 +136,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
 
   private async boot(): Promise<void> {
     this.booted = true;
+    void this.changes.start();
     if (!(await creds(this.ctx))) {
       this.feedStatus = 'signed-out';
       this.notice = 'Sign in to the board to read and send.';
@@ -172,6 +190,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
   }
 
   dispose(): void {
+    this.changes.dispose();
     this.feed?.dispose();
     this.feed = undefined;
   }
@@ -210,7 +229,9 @@ export class ChatController implements vscode.Disposable, TagTarget {
         clearTimeout(timer);
       }
       const store = new ThreadStore(t.id);
-      const [page] = await Promise.all([b.thread(t.id), this.loadPeople(b)]);
+      const [page, , tree] = await Promise.all([b.thread(t.id), this.loadPeople(b),
+        // the epic's tickets give story tasks and assignees for change cards; a lone story has only its tasks
+        b.tickets(epic ? { epic_id: epic.id } : { parent_id: t.id }).catch(() => [] as Ticket[]), this.changes.start()]);
       if (n !== this.opening) return;
       store.loadPage(page);
       // only now does the host switch: until the page is in, sends and events still belong to the old thread
@@ -220,6 +241,8 @@ export class ChatController implements vscode.Disposable, TagTarget {
       this.epic = epic ? ref(epic) : null;
       this.store = store;
       this.stories = storyTickets.map(s => ({ ...ref(s), unread: 0 }));
+      this.tree = [...tree.filter(x => x.id !== t.id && x.id !== epic?.id), t, ...(epic && epic.id !== t.id ? [epic] : [])];
+      this.recomputeCommits();
       this.markSeen(t.id);
       this.syncUnread();
       this.notice = null;
@@ -425,6 +448,55 @@ export class ChatController implements vscode.Disposable, TagTarget {
     if (!ticketId) return;
     this.chips.set(ticketId, chip);
     this.post({ type: 'insertCode', v: 1, ticketId, chip: chipView(chip), focus: true });
+  }
+
+  // -- change cards (C5 s-ab8e69650e) --------------------------------------------------------------
+  /** The open thread's ticket set: a story and its tasks; an epic (or a task) itself. An epic thread
+   *  never shows its stories' commits: those are the strip counts (architect ruling m-2e3b14065e). */
+  private commitIds(): Set<string> {
+    const t = this.ticket;
+    if (!t) return new Set();
+    if (t.kind !== 'story') return new Set([t.id]);
+    return new Set([t.id, ...this.tree.filter(x => x.parent_id === t.id).map(x => x.id)]);
+  }
+
+  /** A subject-attributed card names the ticket's assignee as its seat (labelled in the view). */
+  private assigneeOf = (id: string) => this.tree.find(x => x.id === id)?.assignee ?? null;
+  private card = (c: Indexed) => cardOf(c, this.assigneeOf);
+
+  private recomputeCommits(): void {
+    const all = this.changes.commits;
+    this.commits = naming(all, this.commitIds()).map(this.card);
+    this.unlinked = this.ticket?.kind === 'epic' ? unlinkedOf(all).slice(0, UNLINKED_MAX).map(this.card) : [];
+    const tasksOf = new Map<string, string[]>();
+    for (const x of this.tree) if (x.kind === 'task' && x.parent_id) tasksOf.set(x.parent_id, [...(tasksOf.get(x.parent_id) ?? []), x.id]);
+    const counts = storyCounts(all, this.stories.map(s => s.id), tasksOf);
+    for (const s of this.stories) s.commits = counts.get(s.id) ?? 0;
+  }
+
+  /** HEAD moved: new cards for the open thread, fresh strip counts. */
+  private onCommits(added: Indexed[]): void {
+    const t = this.ticket;
+    if (!t) return;
+    const items = naming(added, this.commitIds()).map(this.card);
+    const un = t.kind === 'epic' ? unlinkedOf(added).map(this.card) : [];
+    this.recomputeCommits();
+    if (items.length || un.length) {
+      this.post({ type: 'commits', v: 1, ticketId: t.id, items, unlinked: un });
+      this.provider.noteUnseen(items.length);
+    }
+    if (this.stories.length) this.post({ type: 'stories', v: 1, stories: this.stories });
+  }
+
+  /** The index was (re)read: the whole view follows. */
+  private onCommitsReset(): void {
+    if (!this.ticket) return;
+    this.recomputeCommits();
+    this.postState();
+  }
+
+  private onUncommitted(card: UncommittedCard | null): void {
+    this.post({ type: 'uncommitted', v: 1, card });
   }
 
   // -- picker --------------------------------------------------------------------------------------
