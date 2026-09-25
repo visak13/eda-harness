@@ -30,7 +30,19 @@ export async function headAndDirty(api: API | undefined, doc: vscode.TextDocumen
   await repo.status(); // state can lag an external edit
   const s = repo.state;
   const changed = [...s.workingTreeChanges, ...s.indexChanges, ...s.untrackedChanges, ...s.mergeChanges].some(c => same(c.uri, doc.uri));
-  return { repo, repoRoot: repo.rootUri.fsPath, commit: s.HEAD?.commit ?? null, dirty: doc.isDirty || changed };
+  const commit = s.HEAD?.commit ?? null;
+  let dirty = doc.isDirty || changed;
+  // Ignored files are absent from every status list. A clean anchor must have a blob at the
+  // captured HEAD and match that revision, even if status suppresses the selected path.
+  if (!dirty && commit) {
+    try {
+      const committed = await repo.show(commit, doc.uri.fsPath);
+      // Compare text, not status/diff shortcuts (which can omit ignored or assume-unchanged paths).
+      const lf = (text: string) => text.replace(/\r\n/g, '\n');
+      dirty = lf(committed) !== lf(doc.getText());
+    } catch { dirty = true; } // missing blob or unreadable comparison: never claim clean
+  }
+  return { repo, repoRoot: repo.rootUri.fsPath, commit, dirty: doc.isDirty || dirty };
 }
 
 /** The repository for the active editor, else the only/first open one. */

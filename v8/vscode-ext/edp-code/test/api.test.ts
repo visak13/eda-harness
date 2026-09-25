@@ -6,6 +6,12 @@ const creds = async (): Promise<Creds> => ({ participant: 'owner', token: TOKEN 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 describe('boardClient', () => {
+  it('refuses saved credentials for another origin before a request, including a stale client', async () => {
+    const f = vi.fn();
+    const c = boardClient('https://board-b.invalid', async () => ({ participant: 'owner', token: TOKEN, origin: 'https://board-a.invalid' }), f as unknown as typeof fetch);
+    await expect(c.participants()).rejects.toMatchObject({ code: 'not_signed_in' });
+    expect(f).not.toHaveBeenCalled();
+  });
   it('sends X-Participant / X-Token and returns value', async () => {
     const f = vi.fn(async (_u: unknown, _i?: RequestInit) => json(200, { ok: true, value: [{ id: 'owner' }] }));
     const c = boardClient('http://127.0.0.1:9400', creds, f as unknown as typeof fetch);

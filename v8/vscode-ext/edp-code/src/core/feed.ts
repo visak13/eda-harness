@@ -88,6 +88,7 @@ export class FeedClient {
     if (refused) throw new AuthStop(refused);
     const c = await this.o.creds();
     if (!c) throw new AuthStop('not signed in');
+    if (c.origin && c.origin !== new URL(this.o.baseUrl).origin) throw new AuthStop('board address changed; sign in again');
     return { 'X-Participant': c.participant, 'X-Token': c.token, Accept: 'text/event-stream' };
   }
 

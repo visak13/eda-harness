@@ -43,6 +43,15 @@ function client(f: typeof fetch, extra: Partial<ConstructorParameters<typeof Fee
 
 const flush = () => vi.advanceTimersByTimeAsync(0);
 
+it('never streams or polls with credentials belonging to another origin', async () => {
+  const f = vi.fn();
+  const { c } = client(f as unknown as typeof fetch, { creds: async () => ({ participant: 'owner', token: TOKEN, origin: 'https://other.invalid' }) });
+  c.start();
+  await flush();
+  expect(f).not.toHaveBeenCalled();
+  c.dispose();
+});
+
 beforeEach(() => { vi.useFakeTimers(); });
 afterEach(() => { vi.useRealTimers(); });
 
