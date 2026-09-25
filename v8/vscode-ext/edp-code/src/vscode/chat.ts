@@ -6,6 +6,7 @@
 import * as vscode from 'vscode';
 import type { Anchor } from '../core/anchor';
 import { BoardError, type Board, type Ticket } from '../core/api';
+import { authFailed } from '../core/viewer';
 import { boardTicketUrl } from '../core/boardLinks';
 import type { ChatState, FeedStatus, HostToView, StoryRow, TicketRef, ViewToHost } from '../core/chatProtocol';
 import type { CodeContext, CommitCard, UncommittedCard } from '../core/chatProtocol';
@@ -711,7 +712,7 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
       this.post({ type: 'pending', v: 1, ticketId, pending: await this.attach.upload(ticketId, name, bytes) });
     } catch (e) {
       const err = e as BoardError;
-      if (err?.status === 401 || err?.status === 403 || err?.code === 'not_signed_in') this.fail(e, `could not attach ${name}`);
+      if (authFailed(e)) this.fail(e, `could not attach ${name}`);
       this.post({ type: 'attachFailed', v: 1, ticketId, name, text: `Not attached: ${name}: ${err?.message ?? String(e)}` });
     }
   }
@@ -793,7 +794,7 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
   // -- Tag selection (C4 s-a34658f02f) -------------------------------------------------------------
   /** the view was resolved in this window and not disposed (a hidden view still counts) */
   get chatResolved(): boolean { return this.provider.isOpen; }
-  /** a thread is open and readable: after a 401/403 the store stays but a chip could not be sent */
+  /** a thread is open and readable: signed out, a chip could not be sent */
   get threadOpen(): boolean { return !!this.store && this.feedStatus !== 'signed-out'; }
 
   private chipOf(ticketId: string | undefined) {
@@ -1007,7 +1008,7 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
   private fail(e: unknown, what: string) {
     const err = e as BoardError;
     if (err?.code === 'viewer_changed') return;
-    if (err?.status === 401 || err?.status === 403 || err?.code === 'not_signed_in') {
+    if (authFailed(e)) {
       this.clearViewer();
       return;
     }

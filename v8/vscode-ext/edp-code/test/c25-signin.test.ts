@@ -92,7 +92,7 @@ it('C25 keeps C7: another identity, a sign-out and a 401 each still clear the vi
   h.stored = { participant: 'other', token: 't2', origin: URL0 };
   await c.restart();
   expect(cancel).toHaveBeenCalledTimes(2); // identity change: invalidated
-  c.clearViewer(); // what a 401/403 does (ViewerRequests.onAuth)
+  c.clearViewer(); // what a 401 does (ViewerRequests.onAuth)
   expect(c.viewerKey).toBeNull();
   await c.restart(); // the same creds after a 401 restart for real
   expect(cancel).toHaveBeenCalledTimes(4);

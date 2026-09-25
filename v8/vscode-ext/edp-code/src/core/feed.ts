@@ -3,7 +3,7 @@
 // X-Token (EventSource cannot send them), `: ready N` / `: resync N` adopt the cursor, a resync
 // reconnects at once and asks the caller to reload, a 45 s silent read is a failure, backoff 1 s
 // doubling to 30 s with ±20 % jitter, two failures in a row poll `/v1/events` every 5 s for 30 s, a
-// 401/403 stops (no retry loop on auth), and dispose() aborts the stream and clears every timer.
+// a 401 stops (no retry loop on auth; a 403 is a refusal, retried with backoff: C26), and dispose() aborts the stream and clears every timer.
 // No `vscode` import: fetch, creds and the log sink are injected. Logs never carry headers or text.
 import { unsafeBoardUrl, type Creds } from './api';
 import type { FeedStatus } from './chatProtocol';
@@ -122,7 +122,7 @@ export class FeedClient {
       }), timeout]);
     } finally { clearTimeout(deadline); this.timers.delete(deadline!); }
     if (this.stopped) { ctrl.abort(); return 'eof'; }
-    if (res.status === 401 || res.status === 403) throw new AuthStop(`feed ${res.status}`);
+    if (res.status === 401) throw new AuthStop(`feed ${res.status}`);
     if (!res.ok || !res.body) throw new Error(`feed ${res.status}`);
     const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
     let progressed = false;
@@ -185,7 +185,7 @@ export class FeedClient {
         const res = await f(this.url(`/v1/events?since=${Math.max(this.since, 0)}&limit=200&watch=true`), {
           headers: await this.headers(), signal: AbortSignal.any([ctrl.signal, AbortSignal.timeout(10_000)]), redirect: 'manual',
         });
-        if (res.status === 401 || res.status === 403) throw new AuthStop(`events ${res.status}`);
+        if (res.status === 401) throw new AuthStop(`events ${res.status}`);
         if (res.ok) {
           const body = (await res.json()) as { value?: FeedEvent[] };
           for (const ev of body.value ?? []) if (!this.stopped) this.deliver(ev);

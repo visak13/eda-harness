@@ -5,6 +5,7 @@
 // criterion. A refusal is the board's own message, shown on the row (a stale version included).
 import * as vscode from 'vscode';
 import { BoardError, type Board } from '../core/api';
+import { authFailed } from '../core/viewer';
 import { boardTicketUrl } from '../core/boardLinks';
 import type { AttachmentRef, HostToView } from '../core/chatProtocol';
 import { ARTIFACT_ID } from '../core/chatProtocol';
@@ -69,9 +70,10 @@ export class InboxHost implements vscode.Disposable {
     } catch (e) {
       if (n !== this.gen || this.scope()?.id !== sc.id) return;
       const err = e as BoardError;
-      const keep = this.state?.scope === sc.id ? this.state.items : [];
+      // a refusal (403) keeps the viewer (C26 rule 1) but nothing read earlier stays on screen
+      const keep = this.state?.scope === sc.id && err?.status !== 403 ? this.state.items : [];
       this.state = { scope: sc.id, items: keep, loading: false, error: `Could not read what waits on you: ${err?.message ?? String(e)}` };
-      if (err?.status === 401 || err?.status === 403 || err?.code === 'not_signed_in') {
+      if (authFailed(e)) {
         this.state = { ...this.state!, items: [] };
         // settle the tab first (never left "reading…"), then the sign-in path
         this.post({ type: 'inbox', v: 1, ticketId: sc.id, inbox: this.state });
@@ -110,7 +112,7 @@ export class InboxHost implements vscode.Disposable {
     } catch (e) {
       if (gen !== this.gen) return;
       const err = e as BoardError;
-      if (err?.status === 401 || err?.status === 403 || err?.code === 'not_signed_in') this.onAuthFail(e);
+      if (authFailed(e)) this.onAuthFail(e);
       this.done(key, false, err?.message ?? String(e));
     }
     this.schedule();
@@ -182,7 +184,7 @@ export class InboxHost implements vscode.Disposable {
     } catch (e) {
       if (gen !== this.gen) return;
       const err = e as BoardError;
-      if (err?.status === 401 || err?.status === 403) { this.onAuthFail(e); return; }
+      if (authFailed(e)) { this.onAuthFail(e); return; }
       this.log(`inbox: open failed (${err?.code ?? 'error'})`);
       void vscode.window.showErrorMessage(`EDP: could not open ${i.type === 'signoff' ? i.evidence.ref : i.ticketId}: ${err?.message ?? String(e)}`);
     }

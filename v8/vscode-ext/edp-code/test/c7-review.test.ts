@@ -149,10 +149,11 @@ it('C7: viewer invalidation aborts requests and rejects delayed bodies and old c
   expect(f).toHaveBeenCalledTimes(1);
 });
 
-it('C7: a 403 invalidates the whole viewer, even when a caller would swallow its error', async () => {
+// C26 rule 1 (s-7b8efb9b7a) narrowed this from 401/403 to 401: a 403 is a resource refusal (c26-guards.test.ts)
+it('C7: a 401 invalidates the whole viewer, even when a caller would swallow its error', async () => {
   const { ViewerRequests } = await import('../src/core/viewer');
   const cleared = vi.fn(() => requests.invalidate());
-  const f = vi.fn(async () => new Response('{}', { status: 403 }));
+  const f = vi.fn(async () => new Response('{}', { status: 401 }));
   const requests = new ViewerRequests(cleared, f as typeof fetch);
   const board = requests.board('http://127.0.0.1:1', creds, () => {});
   await board.docsOf('epic-0123456789').catch(() => []);

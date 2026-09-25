@@ -6,6 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import * as vscode from 'vscode';
 import { BoardError, type Board, type BoardDoc } from '../core/api';
+import { authFailed as identityFailed } from '../core/viewer';
 import { chatHtml } from '../core/chatHtml';
 import { canResolve } from '../core/docs';
 import { TICKET_ID } from '../core/chatProtocol';
@@ -287,7 +288,7 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
 
   private authFailed(e: unknown): boolean {
     const err = e as BoardError;
-    if (err?.status === 401 || err?.status === 403 || err?.code === 'not_signed_in') { this.onAuthFail(e); return true; }
+    if (identityFailed(e)) { this.onAuthFail(e); return true; }
     return false;
   }
 
@@ -303,7 +304,7 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
     catch (e) {
       if (p.state !== state) return;
       const err = e as BoardError;
-      if (err?.status === 401 || err?.status === 403) this.onAuthFail(e);
+      if (identityFailed(e)) this.onAuthFail(e);
       this.done(p, what, false, err?.message ?? String(e));
     }
     await this.load(p);

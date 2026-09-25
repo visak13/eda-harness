@@ -2,10 +2,11 @@
 // decision records (`GET /v1/decisions?scope=`) with the viewer's token, and runs the two owner/architect writes
 // (Withdraw with a reason, Binding on/off) through the existing routes. Every write and every open is resolved
 // from this host's own last list by decision id; the view never names a scope, a source or a flag it did not get.
-// A refusal is the board's own message. The shared viewer request boundary clears all surfaces on 401/403
-// under the C7 owner ruling; other failures are shown on the row.
+// A refusal is the board's own message. The shared viewer request boundary clears all surfaces on a 401 only
+// (C26 rule 1); a 403 (a non-participant may not read the list) is this tab's own "not permitted" state.
 import * as vscode from 'vscode';
 import type { Board, BoardError } from '../core/api';
+import { authFailed as isAuth } from '../core/viewer';
 import type { HostToView } from '../core/chatProtocol';
 import { decisionRows, reasonProblem, rowActions, REASON_MAX, type DecisionRow, type DecisionsState } from '../core/decisions';
 
@@ -15,11 +16,6 @@ const DEBOUNCE_MS = 1500;
 export type DecisionsScope = { id: string };
 /** Opens a decision's source: a message in the Chat tab, a doc in the EDP reader (the controller's). */
 export type SourceOpener = { message: (ticketId: string, messageId: string) => Promise<void>; doc: (id: string) => Promise<void> };
-
-const isAuth = (e: unknown) => {
-  const err = e as BoardError;
-  return err?.status === 401 || err?.code === 'not_signed_in';
-};
 
 export class DecisionsHost implements vscode.Disposable {
   private state: DecisionsState | null = null;

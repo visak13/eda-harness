@@ -1,5 +1,12 @@
 import { boardClient, BoardError, type Board, type Creds } from './api';
 
+/** C26 rule 1: only a failed identity resets the viewer (a 401, or no stored creds for this board). A 403 is a
+ *  resource refusal (`forbidden`, e.g. `/v1/decisions` for a non-participant): it stays an error in its own tab. */
+export function authFailed(e: unknown): boolean {
+  const err = e as BoardError | undefined;
+  return err?.status === 401 || err?.code === 'not_signed_in';
+}
+
 /** A board handle belongs to one viewer generation, including delayed bodies and chained writes. */
 export class ViewerRequests {
   private controller = new AbortController();
@@ -14,7 +21,7 @@ export class ViewerRequests {
       current();
       const res = await this.fetcher(input, { ...init, signal: AbortSignal.any([signal, ...(init?.signal ? [init.signal] : [])]) });
       current();
-      if (res.status === 401 || res.status === 403) {
+      if (res.status === 401) {
         this.onAuth();
         throw new BoardError('viewer_changed', 'Sign in to the board again.', 0);
       }

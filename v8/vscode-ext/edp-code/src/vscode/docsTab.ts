@@ -4,6 +4,7 @@
 // versions; both resolve the doc from this host's own list by id, never from a field the view sent.
 import * as vscode from 'vscode';
 import type { Board, BoardError, Ticket } from '../core/api';
+import { authFailed } from '../core/viewer';
 import type { HostToView } from '../core/chatProtocol';
 import { scopeDocIds, scopeDocs, type DocMeta, type DocsState, type TicketDocs } from '../core/docs';
 import { openDoc } from './docs';
@@ -88,8 +89,8 @@ export class DocsHost implements vscode.Disposable {
     } catch (e) {
       if (n !== this.gen || this.scope()?.id !== sc.id) return;
       const err = e as BoardError;
-      this.state = { scope: sc.id, docs: this.state?.scope === sc.id ? this.state.docs : [], loading: false, error: `Could not list the docs: ${err?.message ?? String(e)}` };
-      if (err?.status === 401 || err?.status === 403 || err?.code === 'not_signed_in') {
+      this.state = { scope: sc.id, docs: this.state?.scope === sc.id && err?.status !== 403 ? this.state.docs : [], loading: false, error: `Could not list the docs: ${err?.message ?? String(e)}` };
+      if (authFailed(e)) {
         this.state = { ...this.state!, docs: [] };
         this.post({ type: 'docs', v: 1, ticketId: sc.id, docs: this.state });
         this.onAuthFail(e);
@@ -138,7 +139,7 @@ export class DocsHost implements vscode.Disposable {
 
   private fail(e: unknown, id: string): void {
     const err = e as BoardError;
-    if (err?.status === 401 || err?.status === 403) { this.onAuthFail(e); return; }
+    if (authFailed(e)) { this.onAuthFail(e); return; }
     void vscode.window.showErrorMessage(`EDP: could not open ${id}: ${err?.message ?? String(e)}`);
   }
 
