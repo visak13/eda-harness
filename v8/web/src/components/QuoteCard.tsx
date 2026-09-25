@@ -3,6 +3,7 @@ import type { Quote } from "../api/types";
 import { getMessage } from "../api/endpoints";
 import { CodeCard } from "./CodeCard";
 import { Icon } from "./Icon";
+import { MentionInput } from "./MentionInput";
 import { displayPassage } from "./quoteMatch";
 import { quoteTray, useQuoteTray } from "./quoteTray";
 import styles from "./QuoteCard.module.css";
@@ -105,9 +106,9 @@ export function QuoteChips({ ticketId, disabled, invalid }: { ticketId: string; 
               data-testid="quote-chip-remove" onClick={() => quoteTray.remove(ticketId, r.key)}><Icon name="close" size={16} /></button>
           </div>
           <p className={styles.chipText} data-testid="quote-chip-text">{clip(displayPassage(r.quote.text), 160)}</p>
-          <input className={styles.chipNote} value={r.quote.note ?? ""} maxLength={2000} disabled={disabled}
-            placeholder="Note (optional)" aria-label={`Note on quote ${i + 1}`} data-testid="quote-chip-note"
-            onChange={(e) => quoteTray.setNote(ticketId, r.key, e.target.value)} />
+          <MentionInput className={styles.chipNote} value={r.quote.note ?? ""} maxLength={2000} disabled={disabled}
+            placeholder="Note (optional). @ to notify someone" aria-label={`Note on quote ${i + 1}`} data-testid="quote-chip-note"
+            onValue={(v) => quoteTray.setNote(ticketId, r.key, v)} />
         </li>
       ))}
     </ol>

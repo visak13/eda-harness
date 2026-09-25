@@ -5,6 +5,7 @@ import type { QuoteIn } from "../api/types";
 import { getDocSource, getQuotesSupported } from "../api/endpoints";
 import { contextOf, linesOf, locateInSource, utf8Bytes } from "./quoteMatch";
 import { activeQuoteTarget, MAX_TRAY, quoteTray } from "./quoteTray";
+import { MentionInput } from "./MentionInput";
 import styles from "./QuoteLayer.module.css";
 
 // C19 (design-10b21760d9 §14.5/§14.7): select text in a doc (DocView, any type, any version) or in a
@@ -165,6 +166,8 @@ export function QuoteLayer(): React.JSX.Element | null {
     if (!pick) return;
     const onEsc = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      // C23: Esc in the note's open @ picker closes the picker only, not the popover
+      if (e.target instanceof HTMLElement && e.target.dataset.mentionsOpen) return;
       e.stopPropagation(); e.preventDefault();
       close();
     };
@@ -236,8 +239,8 @@ export function QuoteLayer(): React.JSX.Element | null {
       onKeyDown={(e) => {
         if (e.key === "Enter") { e.preventDefault(); void add(); }
       }}>
-      <input ref={noteRef} className={styles.note} value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000}
-        placeholder="Note on this passage (optional)" aria-label="Note on this passage" data-testid="quote-note" />
+      <MentionInput inputRef={noteRef} wrapClassName={styles.noteWrap} className={styles.note} value={note} onValue={setNote} maxLength={2000}
+        placeholder="Note on this passage (optional). @ to notify someone" aria-label="Note on this passage" data-testid="quote-note" />
       <button type="button" className={styles.quote} onClick={() => void add()} disabled={busy} data-testid="quote-add"
         title="Quote (Enter). Ctrl+Alt+Q opens this on a selection">
         {busy ? "Quoting…" : "Quote"}

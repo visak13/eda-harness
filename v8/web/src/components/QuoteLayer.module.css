@@ -14,6 +14,7 @@
   box-shadow: 2px 2px 0 var(--line);
   color: var(--ink);
 }
+.noteWrap { flex: 1 1 180px; min-width: 0; }
 .note {
   flex: 1 1 180px;
   min-width: 0;

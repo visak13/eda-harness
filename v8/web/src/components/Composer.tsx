@@ -237,11 +237,14 @@ function ComposerInstance({
   // Wake preview — the board's delivery plan for this (to, kind). Reactive so it cannot drift from
   // delivery; nothing is sent (design §16.1). Enabled once there is a target to preview.
   // Round 2 #7: the draft's @mentions are part of the plan, so the preview carries the text (debounced).
+  // C23: the board resolves @mentions in the quotes' notes too, so the preview carries them.
+  const noteText = tray.map((r) => r.quote.note ?? "").filter(Boolean).join("\n\n");
+  const draftText = noteText ? `${text}\n\n${noteText}` : text;
   const [previewText, setPreviewText] = useState("");
   useEffect(() => {
-    const t = setTimeout(() => setPreviewText(text), 250);
+    const t = setTimeout(() => setPreviewText(draftText), 250);
     return () => clearTimeout(t);
-  }, [text]);
+  }, [draftText]);
   const preview = useQuery({
     queryKey: ["resolve", ticketId, to, kind, previewText],
     queryFn: () => resolveMessage({ ticket_id: ticketId, to, kind, text: previewText }),

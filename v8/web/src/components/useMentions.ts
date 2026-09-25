@@ -21,7 +21,7 @@ export interface Mentions {
   /** Recompute the menu from the textarea's current value + caret (call on input/click/keyup). */
   refresh: () => void;
   /** Keydown handler for the textarea; returns true when it consumed the event (menu nav/accept). */
-  onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => boolean;
+  onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>) => boolean;
   /** Accept a specific candidate (mouse click in the menu). */
   accept: (person: PersonRow) => void;
   close: () => void;
@@ -29,7 +29,7 @@ export interface Mentions {
 
 export function useMentions(
   people: PersonRow[],
-  textareaRef: React.RefObject<HTMLTextAreaElement | null>,
+  textareaRef: React.RefObject<HTMLTextAreaElement | HTMLInputElement | null>,
   setText: (next: string) => void,
 ): Mentions {
   const [menu, setMenu] = useState<MentionsMenu>({ open: false, items: [], index: 0 });
@@ -99,7 +99,7 @@ export function useMentions(
   );
 
   const onKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>): boolean => {
+    (e: React.KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>): boolean => {
       if (!menu.open || menu.items.length === 0) return false;
       if (e.key === "ArrowDown") {
         e.preventDefault();

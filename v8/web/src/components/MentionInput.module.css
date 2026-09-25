@@ -1,0 +1,24 @@
+/* C23: the note field's @ picker, the composer's .mentions menu anchored under a one-line input. */
+.wrap { position: relative; display: flex; min-width: 0; }
+.field { flex: 1 1 auto; min-width: 0; font: inherit; }
+.menu {
+  position: absolute;
+  z-index: 1001;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  max-width: min(320px, calc(100vw - 16px));
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: 0 6px 20px rgba(20, 16, 12, 0.16);
+  max-height: 220px;
+  overflow-y: auto;
+}
+.menu li { display: flex; gap: 8px; align-items: baseline; padding: 6px 8px; border-radius: 4px; cursor: pointer; }
+.active { background: var(--accentwash); }
+.handle { font-weight: 600; color: var(--ink); font-size: 13px; white-space: nowrap; }
+.label { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
