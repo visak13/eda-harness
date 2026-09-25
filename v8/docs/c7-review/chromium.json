@@ -1,0 +1,44 @@
+{
+  "drawerTab": {
+    "active": "<a class=\"_source_lusaf_14\" aria-label=\"Back to source: C7 review fixture\" title=\"C7 review fixture\" href=\"/ui/ticket/s-8bc384b2ca\" data-discover=\"true\">C7 review fixture</a>",
+    "insideDrawer": true,
+    "insidePopover": false
+  },
+  "chat": {
+    "csp": "default-src 'none'; script-src 'nonce-72i1UYgT5J7tfZf4iBgu6Q=='; style-src 'nonce-72i1UYgT5J7tfZf4iBgu6Q=='; img-src data:; form-action 'none'; base-uri 'none'",
+    "styles": [
+      {
+        "nonce": "",
+        "rules": 1,
+        "size": 2384
+      },
+      {
+        "nonce": "72i1UYgT5J7tfZf4iBgu6Q==",
+        "rules": 279,
+        "size": 26042
+      }
+    ],
+    "bodyDisplay": "block",
+    "tokenInHtml": false
+  },
+  "reader": {
+    "csp": "default-src 'none'; script-src 'nonce-klRkFr4/MDp6JJfXk1e+WA=='; style-src 'nonce-klRkFr4/MDp6JJfXk1e+WA=='; form-action 'none'; base-uri 'none'",
+    "styles": [
+      {
+        "nonce": "",
+        "rules": 1,
+        "size": 2384
+      },
+      {
+        "nonce": "klRkFr4/MDp6JJfXk1e+WA==",
+        "rules": 82,
+        "size": 8455
+      }
+    ],
+    "bodyDisplay": "block",
+    "tokenInHtml": false
+  },
+  "readerAfterSignout": "Review\nA visible passage for quoting.\n",
+  "cspConsole": [],
+  "browser": "151.0.7922.34"
+}
