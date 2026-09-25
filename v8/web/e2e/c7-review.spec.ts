@@ -54,6 +54,7 @@ test('record actual chat and reader CSP, style application and sign-out state', 
   const page = await browser.newPage();
   const csp: string[] = [];
   page.on('console', m => { if (/content.security|style-src|script-src/i.test(m.text())) csp.push(m.text()); });
+  page.on('pageerror', m => { if (/content.security|style-src|script-src/i.test(m.message)) csp.push(m.message); });
   try {
     await page.goto(`http://127.0.0.1:${cs.port}/?folder=${folderParam(repo)}`);
     await expect(page.locator('div.monaco-workbench')).toBeVisible({ timeout: 60_000 });
