@@ -211,7 +211,7 @@ def test_edp_status_lists_code_and_all_never_includes_it(tmp_path):
 def test_edp_restart_code_runs_its_scripts_and_touches_nothing_else(tmp_path):
     r = _edp(["restart", "code", "-WhatIf"], _edp_env(tmp_path))
     assert r.returncode == 0, r.stdout + r.stderr
-    assert "code       not running" in r.stdout
+    assert r"WHATIF: stop code (pid none listening): powershell -File v8\scripts\stop-code.ps1" in r.stdout
     assert "WHATIF: start code on :" in r.stdout and "scripts\\start-code.ps1" in r.stdout
     for other in ("board", "broker", "pool", "mcp", "bridge", "supervisor"):
         assert other not in r.stdout, (other, r.stdout)

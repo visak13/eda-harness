@@ -17,6 +17,19 @@ $v8 = Split-Path -Parent $PSScriptRoot
 function Fail($code, $msg) { [Console]::Error.WriteLine("stop-code: $msg"); exit $code }
 function EnvOr($n, $d) { $v = [Environment]::GetEnvironmentVariable($n, "Process"); if ($v) { $v } else { $d } }
 
+# the same v8\.env as edp.ps1 (the real environment wins), so a direct run agrees with edp.ps1 on the port
+function LoadDotEnv($file) {
+  if (-not (Test-Path $file)) { return }
+  $vals = [ordered]@{}
+  foreach ($line in Get-Content $file) {
+    $t = $line.Trim(); if (-not $t -or $t.StartsWith("#")) { continue }
+    $kv = $t -split "=", 2
+    if ($kv.Count -eq 2) { $vals[$kv[0].Trim()] = ($kv[1] -split "\s+#", 2)[0].Trim() }
+  }
+  foreach ($k in $vals.Keys) { if (-not [Environment]::GetEnvironmentVariable($k, "Process")) { [Environment]::SetEnvironmentVariable($k, $vals[$k], "Process") } }
+}
+LoadDotEnv (Join-Path $v8 ".env")
+
 $HOMEDIR = EnvOr "EDP8_HOME" $v8
 $RUN = EnvOr "EDP8_RUN_DIR" (Join-Path $HOMEDIR ".run")
 $PORT = [int](EnvOr "EDP_CODE_PORT" "9410")
@@ -74,42 +87,55 @@ if ($root) {
 }
 # the sweep: leftovers running an executable from the install dir (orphans of an earlier crash)
 $ids = @{}; foreach ($t in $tree) { $ids[[int]$t.ProcessId] = $t }
-# ...but never while another code-server from this install serves a DIFFERENT port (a second instance,
-# e.g. a test on a spare port): its processes are not orphans
-# (the server's own helpers listen on ephemeral ports too; those are in the tree and do not count)
-$others = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object {
-  $_.LocalPort -ne $PORT -and -not $ids.ContainsKey([int]$_.OwningProcess) -and (IsOurs $byId[[int]$_.OwningProcess]) })
+# ...but never while another code-server from this install is alive for a DIFFERENT port or runs its
+# extension CLI (a second instance, e.g. a test on a spare port, possibly still starting): its
+# processes are not orphans. It is recognised by its server root's --bind-addr, not by a listener
+# (helpers listen on ephemeral ports; a starting server listens on nothing yet).
+function OtherInstance($p) {
+  if (-not (IsOurs $p) -or $ids.ContainsKey([int]$p.ProcessId) -or -not $p.CommandLine) { return $false }
+  if ($p.CommandLine -match '--bind-addr\s+"?[^\s:"]+:(\d+)') { return ([int]$Matches[1] -ne $PORT) }
+  $p.CommandLine -match '--install-extension|--list-extensions|--uninstall-extension'
+}
+$others = @($all | Where-Object { OtherInstance $_ })
 if ($others.Count -gt 0) {
-  Write-Host ("sweep skipped: this install also serves port(s) {0}" -f (($others | ForEach-Object { $_.LocalPort } | Sort-Object -Unique) -join ","))
+  Write-Host ("sweep skipped: another instance of this install is alive (pid {0})" -f (($others | ForEach-Object { $_.ProcessId }) -join ","))
 } else {
   foreach ($p in $all) { if ((IsOurs $p) -and -not $ids.ContainsKey([int]$p.ProcessId)) { $ids[[int]$p.ProcessId] = $p } }
 }
 
+# each kill is bound to a handle checked against the discovered start time (a reused pid is skipped)
+function KillOne($p) {
+  $h = Get-Process -Id ([int]$p.ProcessId) -ErrorAction SilentlyContinue
+  if (-not $h) { return }
+  try { if ([math]::Abs(($h.StartTime - $p.CreationDate).TotalSeconds) -gt 1) { return } } catch { return }
+  try { $h.Kill() } catch { }
+}
 if ($ids.Count -eq 0) {
   Write-Host "code     not running"
 } else {
-  # leaves first (newest first), each kill bound to a handle checked against the discovered start time
-  foreach ($p in @($ids.Values | Sort-Object CreationDate -Descending)) {
-    $h = Get-Process -Id ([int]$p.ProcessId) -ErrorAction SilentlyContinue
-    if (-not $h) { continue }
-    try { if ([math]::Abs(($h.StartTime - $p.CreationDate).TotalSeconds) -gt 1) { continue } } catch { }
-    try { $h.Kill() } catch { }
-  }
   Write-Host ("code     stopping {0} process(es): {1}" -f $ids.Count, (($ids.Values | Sort-Object CreationDate | ForEach-Object { "$($_.ProcessId) $($_.Name)" }) -join ", "))
+  # oldest first: the server goes before its helpers, so it cannot respawn a pty host we just killed
+  foreach ($p in @($ids.Values | Sort-Object CreationDate)) { KillOne $p }
 }
 
-# -- verify: port closed, nothing references the install -------------------------------------------
+# -- verify: port closed, nothing references the install (late-spawned helpers are killed too) ------
 $deadline = (Get-Date).AddSeconds($TimeoutSec)
 do {
   $now = @(Get-CimInstance Win32_Process | Where-Object { [int]$_.ProcessId -ne $PID })
-  if ($others.Count -gt 0) { $left = @($now | Where-Object { $ids.ContainsKey([int]$_.ProcessId) -and $_.CreationDate -eq $ids[[int]$_.ProcessId].CreationDate }) }
-  else { $left = References $now }
+  if ($others.Count -gt 0) {
+    # only our tree: what is left of it, plus children it spawned after the snapshot
+    $live = @{}; foreach ($p in $now) { if ($ids.ContainsKey([int]$p.ProcessId) -and $p.CreationDate -eq $ids[[int]$p.ProcessId].CreationDate) { $live[[int]$p.ProcessId] = $p } }
+    foreach ($p in $now) { if ($ids.ContainsKey([int]$p.ParentProcessId) -and -not $ids.ContainsKey([int]$p.ProcessId) -and $p.CreationDate -ge $ids[[int]$p.ParentProcessId].CreationDate) { $ids[[int]$p.ProcessId] = $p; $live[[int]$p.ProcessId] = $p } }
+    $left = @($live.Values)
+  } else { $left = References $now }
   $lp = ListenerPid
   if ($left.Count -eq 0 -and -not $lp) { break }
+  foreach ($p in $left) { if ((IsOurs $p) -or $ids.ContainsKey([int]$p.ProcessId)) { KillOne $p } }
   Start-Sleep -Milliseconds 500
 } while ((Get-Date) -lt $deadline)
 if ($lp) { Fail 1 "port $PORT still has a listener (pid $lp) after the stop" }
 if ($left.Count -gt 0) { Fail 1 ("processes still reference the install dir: " + (($left | ForEach-Object { "$($_.ProcessId) $($_.Name)" }) -join ", ")) }
 if (Test-Path $stateFile) { Remove-Item -Force $stateFile }
-Write-Host "code     stopped (port $PORT closed, 0 processes reference $toolsNorm)"
+if ($others.Count -gt 0) { Write-Host "code     stopped (port $PORT closed, this instance's processes gone; the other instance was left running)" }
+else { Write-Host "code     stopped (port $PORT closed, 0 processes reference $toolsNorm)" }
 exit 0

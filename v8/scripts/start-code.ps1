@@ -24,6 +24,19 @@ function Fail($code, $msg) { [Console]::Error.WriteLine("start-code: $msg"); exi
 function EnvOr($n, $d) { $v = [Environment]::GetEnvironmentVariable($n, "Process"); if ($v) { $v } else { $d } }
 function WriteUtf8($path, $text) { [IO.File]::WriteAllText($path, $text, (New-Object Text.UTF8Encoding $false)) }
 
+# the same v8\.env as edp.ps1 (the real environment wins), so a direct run agrees with edp.ps1 on the port
+function LoadDotEnv($file) {
+  if (-not (Test-Path $file)) { return }
+  $vals = [ordered]@{}
+  foreach ($line in Get-Content $file) {
+    $t = $line.Trim(); if (-not $t -or $t.StartsWith("#")) { continue }
+    $kv = $t -split "=", 2
+    if ($kv.Count -eq 2) { $vals[$kv[0].Trim()] = ($kv[1] -split "\s+#", 2)[0].Trim() }
+  }
+  foreach ($k in $vals.Keys) { if (-not [Environment]::GetEnvironmentVariable($k, "Process")) { [Environment]::SetEnvironmentVariable($k, $vals[$k], "Process") } }
+}
+LoadDotEnv (Join-Path $v8 ".env")
+
 # -- configuration (read BEFORE the env strip) ------------------------------------------------------
 $HOMEDIR = EnvOr "EDP8_HOME" $v8
 $RUN = EnvOr "EDP8_RUN_DIR" (Join-Path $HOMEDIR ".run")
@@ -68,10 +81,27 @@ $lp = ListenerPid
 if ($lp) {
   $p = Proc $lp
   if (-not (IsOurs $p)) { Fail 3 "port $PORT is held by pid $lp ($($p.Name) $($p.ExecutablePath)), not this code-server; leaving it alone" }
-  if (-not (Test-Path $stateFile)) { WriteState $p }   # adopt a server started without a record
-  Write-Host "code     already running on 127.0.0.1:$PORT (pid $lp)"
+  # the listener is the server's child: the record names the outermost ancestor that is also ours
+  $root = $p
+  for ($i = 0; $i -lt 3; $i++) {
+    $pp = Proc $root.ParentProcessId
+    if ((IsOurs $pp) -and $pp.CreationDate -le $root.CreationDate) { $root = $pp } else { break }
+  }
+  # adopt it when the record is missing or names another process (a stale record from an earlier run)
+  $rec = $null; try { $rec = Get-Content $stateFile -Raw | ConvertFrom-Json } catch { }
+  if (-not $rec -or [int]$rec.pid -ne [int]$root.ProcessId) { WriteState $root }
+  $pinned = ([IO.Path]::GetFullPath($installDir)).TrimEnd("\") + "\"
+  if (-not $root.ExecutablePath.StartsWith($pinned, [StringComparison]::OrdinalIgnoreCase)) {
+    Write-Host "code     running on 127.0.0.1:$PORT from $($root.ExecutablePath), NOT the pinned $($lock.version): restart it (.\edp.ps1 restart code)"
+  } else { Write-Host "code     already running on 127.0.0.1:$PORT (pid $($root.ProcessId))" }
   exit 0
 }
+
+# -- one start at a time: a second start (a retry after an edp timeout) must not race the first's
+# download/extract/extension install. The lock is an exclusively opened file, released on exit.
+$startLock = $null
+try { $startLock = [IO.File]::Open((Join-Path $RUN "code.start.lock"), "OpenOrCreate", "ReadWrite", "None") }
+catch { Fail 7 "another start-code.ps1 is running (it holds $RUN\code.start.lock); wait for it" }
 
 # -- install (no-op when the pinned build is present and verified) -----------------------------------
 & (Join-Path $PSScriptRoot "install-code-server.ps1")
@@ -179,7 +209,7 @@ if ($SkipExtensions) {
     $id, $ver = $pin -split "@", 2
     $e = $extLock.$id
     if (-not $e -or $e.version -ne $ver) { Fail 5 "$pin has no matching entry in vscode-ext\extensions.lock.json" }
-    $present = @(Get-ChildItem $extDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "$id-$ver*" })
+    $present = @(Get-ChildItem $extDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match ('^' + [regex]::Escape("$id-$ver") + '(-[a-z0-9]+(-[a-z0-9]+)?)?$') })   # 1.2.3 is not 1.2.30
     if ($present.Count -gt 0) { Write-Host "extension $pin present"; continue }
     $file = Join-Path $vsixCache ([IO.Path]::GetFileName(([Uri]$e.url).AbsolutePath))
     if (-not (Test-Path $file)) { Invoke-WebRequest -Uri $e.url -OutFile "$file.part" -UseBasicParsing; Move-Item -Force "$file.part" $file }

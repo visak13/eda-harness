@@ -231,8 +231,10 @@ function Foreign-Path($pair) {
 }
 function Stop-Svc($name) {
   $pair = @(Discover $name)
-  if ($pair.Count -eq 0) { Say ("{0,-10} not running" -f $name); return }
-  $foreign = Foreign-Path $pair
+  # a service with its own stop script (code) runs it even with no listener: after a crash it sweeps
+  # the orphaned helpers and the stale run record
+  if ($pair.Count -eq 0 -and -not $SVC[$name].stop) { Say ("{0,-10} not running" -f $name); return }
+  $foreign = $null; if ($pair.Count -gt 0) { $foreign = Foreign-Path $pair }
   if ($foreign) {
     $ids0 = ($pair | ForEach-Object { $_.ProcessId }) -join ","
     if (-not $Force) { FailDown 4 "refusing to stop $name (pid $ids0): it was not started from this checkout ($RootNorm) but from $foreign; -Force stops it anyway" }
@@ -243,12 +245,14 @@ function Stop-Svc($name) {
     # code-server's extension host, pty host, watcher and terminal shells are children of the server:
     # its own stop script walks the recorded pid's verified descendant tree (never by image name)
     $stopScript = Join-Path $V8 $SVC[$name].stop
-    Step ("stop {0} (pid {1}): powershell -File v8\{2} (recorded pid + verified descendant tree)" -f $name, ($ids -join ","), $SVC[$name].stop) {
-      & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $stopScript | ForEach-Object { Say "   | $_" }
+    $shownIds = if ($ids.Count) { $ids -join "," } else { "none listening" }
+    Step ("stop {0} (pid {1}): powershell -File v8\{2} (recorded pid + verified descendant tree)" -f $name, $shownIds, $SVC[$name].stop) {
+      $ErrorActionPreference = "Continue"   # PS 5.1: the script's stderr line must be shown, not thrown
+      & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $stopScript 2>&1 | ForEach-Object { Say "   | $_" }
       if ($LASTEXITCODE -ne 0) { FailDown 1 "$($SVC[$name].stop) exited $LASTEXITCODE" }
       if (ListenerPid $SVC[$name].port) { FailDown 1 "$name port $($SVC[$name].port) still has a listener after the stop" }
       $script:Stopped += $name
-      Say ("{0,-10} stopped (pid {1})" -f $name, ($ids -join ","))
+      Say ("{0,-10} stopped (pid {1})" -f $name, $shownIds)
     }
     return
   }
@@ -331,6 +335,8 @@ function Start-Svc($name) {
   if ($name -eq "bridge" -and -not (Test-Path (Join-Path $V8 "slack_map.json"))) { Say "bridge     skipped (no v8\slack_map.json)"; return }
   if ($SVC[$name].start) {
     Step ("start {0} on :{1}: powershell -File v8\{2}" -f $name, $SVC[$name].port, $SVC[$name].start) {
+      # a first start downloads + extracts code-server and the extensions: allow 15 min, not 3
+      $script:TimeoutSec = [Math]::Max($TimeoutSec, 300)
       Invoke-StartPs1 $name @() (Join-Path $V8 $SVC[$name].start)
       Wait-Up $name
     }

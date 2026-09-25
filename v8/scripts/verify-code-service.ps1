@@ -11,7 +11,9 @@
 #                 hover and terminal-env checks in verify-code-service.mjs (Playwright, Chromium)
 # Leaves the service running at the end, as it found it when it was running.
 param([string]$OutDir = "")
-$ErrorActionPreference = "Stop"
+# Continue: under PS 5.1 "Stop" turns any stderr line of a child powershell (edp.ps1 notes) into a
+# terminating error, and the script would die before printing its FAIL lines
+$ErrorActionPreference = "Continue"
 $v8 = Split-Path -Parent $PSScriptRoot
 $edp = Join-Path (Split-Path -Parent $v8) "edp.ps1"
 if (-not $OutDir) { $OutDir = Join-Path $v8 ".data\code\s2-evidence" }
@@ -51,15 +53,11 @@ New-Item -ItemType Directory -Force $tmp | Out-Null
 $bad = Get-Content (Join-Path $v8 "vscode-ext\code-server.lock.json") -Raw | ConvertFrom-Json; $bad.sha256 = "0" * 64
 $bad | ConvertTo-Json | Set-Content (Join-Path $tmp "lock.json") -Encoding ascii
 $archive = Join-Path $v8 ".tools\code-server\_download\$($lock.asset)"
-$ErrorActionPreference = "Continue"
 $t = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "install-code-server.ps1") -Lock (Join-Path $tmp "lock.json") -ToolsDir (Join-Path $tmp "tools") -Archive $archive 2>&1 | Out-String
 $tcode = $LASTEXITCODE
-$ErrorActionPreference = "Stop"
 Check ($tcode -eq 2 -and -not (Test-Path (Join-Path $tmp "tools\$($lock.version)"))) "tampered checksum: exit $tcode, no install dir; $(($t -split "`n" | Select-String 'mismatch') -join '')"
 Remove-Item -Recurse -Force $tmp
-$ErrorActionPreference = "Continue"
 $listed = @(& (Join-Path $serverDir $lock.node) $serverDir --user-data-dir (Join-Path $v8 ".data\code\user") --extensions-dir (Join-Path $v8 ".data\code\extensions") --list-extensions --show-versions 2>&1 | ForEach-Object { "$_" } | Where-Object { $_ -match '^[\w.-]+@\S+$' })
-$ErrorActionPreference = "Stop"
 $listed | Set-Content (Join-Path $OutDir "list-extensions.txt")
 $pins = @(Get-Content (Join-Path $v8 "vscode-ext\extensions.txt") | Where-Object { $_.Trim() -and -not $_.StartsWith("#") } | ForEach-Object { $_.Trim() })
 $missing = @($pins | Where-Object { $listed -notcontains $_ })
@@ -70,11 +68,9 @@ $s = Get-Content (Join-Path $v8 ".data\code\user\User\settings.json") -Raw | Con
 $links = @($s."gitlens.autolinks" | ForEach-Object { "$($_.prefix)=$($_.url)" })
 $want = @("t-", "s-", "epic-", "m-" | ForEach-Object { "$_=http://127.0.0.1:9400/ui/ticket/$_<num>" })
 Check (@($want | Where-Object { $links -notcontains $_ }).Count -eq 0) "settings.json gitlens.autolinks: $($links -join '; ')"
-$ErrorActionPreference = "Continue"
 & node (Join-Path $PSScriptRoot "verify-code-service.mjs") $OutDir 2>&1 | ForEach-Object { "$_" } | Where-Object { $_ -match '^(PASS|FAIL) ' } | ForEach-Object {
   Check ($_.StartsWith("PASS")) ($_.Substring(5))
 }
-$ErrorActionPreference = "Stop"
 
 $failed = @($results | Where-Object { -not $_[0] }).Count
 Write-Host "$($results.Count - $failed)/$($results.Count) checks passed; logs + screenshots in $OutDir"
