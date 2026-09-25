@@ -152,3 +152,20 @@ export function findRendered(text: string, src: string, lineStart: number, lineE
 export function utf8Bytes(s: string): number {
   return new TextEncoder().encode(s).length;
 }
+
+/** A verified passage as a reader sees it: the markdown source a quote carries (so the board could
+ *  verify it) without its inline syntax: emphasis/code markers, link targets, line markers. Display
+ *  only; the stored quote keeps the source. */
+export function displayPassage(src: string): string {
+  return src.split("\n").map((line) => line
+    .replace(/^\s{0,3}(?:>\s?)*\s*(?:#{1,6}\s+|(?:\d{1,9}[.)]|[-*+])\s+(?:\[[ xX]\]\s+)?)?/, "")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    // an escaped char is literal text: park it in the private-use area until the syntax is gone
+    .replace(/\\([!-/:-@[-`{-~])/g, (_, c: string) => String.fromCharCode(0xe000 + c.charCodeAt(0)))
+    .replace(/(\*\*|__|~~|`+)/g, "")
+    .replace(/(^|[^\w*])[*_]([^*_\s][^*_]*?)[*_](?=[^\w*]|$)/g, "$1$2")
+    .replace(/[*_]+$|^[*_]+/g, "")
+    .replace(/[-]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xe000))
+    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&#39;/g, "'"))
+    .join("\n");
+}

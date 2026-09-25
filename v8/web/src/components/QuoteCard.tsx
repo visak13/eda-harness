@@ -3,6 +3,7 @@ import type { Quote } from "../api/types";
 import { getMessage } from "../api/endpoints";
 import { CodeCard } from "./CodeCard";
 import { Icon } from "./Icon";
+import { displayPassage } from "./quoteMatch";
 import { quoteTray, useQuoteTray } from "./quoteTray";
 import styles from "./QuoteCard.module.css";
 
@@ -79,7 +80,7 @@ export function QuoteCard({ q }: { q: Quote }): React.JSX.Element {
   }
   return (
     <figure className={styles.card} data-testid="quote-card" data-source={q.source}>
-      <blockquote className={styles.passage} data-testid="quote-passage">{q.text}</blockquote>
+      <blockquote className={styles.passage} data-testid="quote-passage" title={q.text}>{displayPassage(q.text)}</blockquote>
       <figcaption className={styles.foot}>{link}</figcaption>
       {note}
     </figure>
@@ -103,7 +104,7 @@ export function QuoteChips({ ticketId, disabled, invalid }: { ticketId: string; 
             <button type="button" aria-label={`Remove quote ${i + 1}`} disabled={disabled}
               data-testid="quote-chip-remove" onClick={() => quoteTray.remove(ticketId, r.key)}><Icon name="close" size={16} /></button>
           </div>
-          <p className={styles.chipText} data-testid="quote-chip-text">{r.quote.text.length > 160 ? `${r.quote.text.slice(0, 159)}…` : r.quote.text}</p>
+          <p className={styles.chipText} data-testid="quote-chip-text">{clip(displayPassage(r.quote.text), 160)}</p>
           <input className={styles.chipNote} value={r.quote.note ?? ""} maxLength={2000} disabled={disabled}
             placeholder="Note (optional)" aria-label={`Note on quote ${i + 1}`} data-testid="quote-chip-note"
             onChange={(e) => quoteTray.setNote(ticketId, r.key, e.target.value)} />
@@ -111,4 +112,8 @@ export function QuoteChips({ ticketId, disabled, invalid }: { ticketId: string; 
       ))}
     </ol>
   );
+}
+
+function clip(s: string, n: number): string {
+  return s.length > n ? `${s.slice(0, n - 1)}…` : s;
 }

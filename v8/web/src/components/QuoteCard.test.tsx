@@ -53,7 +53,8 @@ describe("QuoteCard", () => {
   it("renders a doc quote with its passage, section/line source link and note", () => {
     const q: Quote = { ...docQ, locator: { heading: "14.5 Quotes: one message", line_start: 4, line_end: 5 }, note: "this line", sha: "x" };
     wrap(<QuoteCard q={q} />);
-    expect(screen.getByTestId("quote-passage").textContent).toBe(docQ.text);
+    expect(screen.getByTestId("quote-passage").textContent).toBe("The board validates each quote");
+    expect(screen.getByTestId("quote-passage").getAttribute("title")).toBe(docQ.text); // the verified source
     const link = screen.getByTestId("quote-source");
     expect(link.textContent).toContain("design-1 v3 §14.5 L4-5");
     expect(link.getAttribute("href")).toBe("?doc=design-1&v=3&line=4-5");

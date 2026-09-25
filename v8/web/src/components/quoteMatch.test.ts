@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { contextOf, findRendered, linesOf, locateInSource, projectMarkdown } from "./quoteMatch";
+import { contextOf, displayPassage, findRendered, linesOf, locateInSource, projectMarkdown } from "./quoteMatch";
 
 // The board's own check (edp8/quotes.py): " ".join(s.split()) of the passage must occur in the same
 // normalisation of the cited source. Every located slice below must pass it.
@@ -94,5 +94,14 @@ describe("contextOf / findRendered", () => {
     const r = findRendered(rendered, DOC, 4, 4)!;
     expect(rendered.slice(r.start, r.end)).toBe("The board validates each quote: the text must occur in that source.");
     expect(findRendered(rendered, DOC, 15, 15)).toBeNull();
+  });
+});
+
+describe("displayPassage", () => {
+  it("shows a verified source slice without its markdown syntax", () => {
+    expect(displayPassage("The board **validates** each quote")).toBe("The board validates each quote");
+    expect(displayPassage("ready**: ship C19")).toBe("ready: ship C19");
+    expect(displayPassage("message` | `code`.\n- For `doc`: `id` and `version`.")).toBe("message | code.\nFor doc: id and version.");
+    expect(displayPassage("See [the plan](https://x.y/p) and \\*stars\\* &amp; _em_ snake_case")).toBe("See the plan and *stars* & em snake_case");
   });
 });

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import type { QuoteIn } from "../api/types";
 import { getDocSource, getQuotesSupported } from "../api/endpoints";
@@ -61,6 +62,9 @@ interface Picked {
   selected: string;
   before: string;
   rect: { left: number; top: number; bottom: number };
+  /** Where the popover renders: the modal dialog holding the region (a Drawer inerts everything
+   *  outside its panel), else the body. */
+  host: HTMLElement;
 }
 
 /** The live selection when it lies inside ONE quotable region, else null. */
@@ -77,7 +81,8 @@ function currentPick(): Picked | null {
   pre.selectNodeContents(a.el);
   pre.setEnd(range.startContainer, range.startOffset);
   const r = range.getBoundingClientRect();
-  return { region: a.region, selected, before: pre.toString(), rect: { left: r.left, top: r.top, bottom: r.bottom } };
+  const host = a.el.closest<HTMLElement>("[role=dialog][aria-modal=true]") ?? document.body;
+  return { region: a.region, selected, before: pre.toString(), rect: { left: r.left, top: r.top, bottom: r.bottom }, host };
 }
 
 /** Resolve a pick into the quote the board will verify, or a reason it cannot be quoted. */
@@ -169,10 +174,18 @@ export function QuoteLayer(): React.JSX.Element | null {
 
   if (!on) return null;
   if (!pick) return done ? <p className={styles.toast} role="status" data-testid="quote-added">{done}</p> : null;
-  const left = Math.max(8, Math.min(pick.rect.left, window.innerWidth - 340));
+  let left = Math.max(8, Math.min(pick.rect.left, window.innerWidth - 340));
   const below = pick.rect.bottom + 8;
-  const top = below + 120 > window.innerHeight ? Math.max(8, pick.rect.top - 128) : below;
-  return (
+  let top = below + 120 > window.innerHeight ? Math.max(8, pick.rect.top - 128) : below;
+  // position:fixed resolves against a transformed/filtered ancestor, not the viewport: offset by it.
+  if (pick.host !== document.body) {
+    const cs = getComputedStyle(pick.host);
+    if (cs.transform !== "none" || cs.filter !== "none" || cs.perspective !== "none" || cs.contain.includes("paint")) {
+      const hr = pick.host.getBoundingClientRect();
+      left -= hr.left; top -= hr.top;
+    }
+  }
+  return createPortal(
     <div ref={boxRef} className={styles.popover} style={{ left, top }} role="dialog" aria-label="Quote the selection"
       data-testid="quote-popover"
       onKeyDown={(e) => {
@@ -186,6 +199,7 @@ export function QuoteLayer(): React.JSX.Element | null {
         {busy ? "Quoting…" : "Quote"}
       </button>
       {error ? <p className={styles.error} role="alert" data-testid="quote-error">{error}</p> : null}
-    </div>
+    </div>,
+    pick.host,
   );
 }
