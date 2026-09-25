@@ -368,12 +368,9 @@ test("C14: the Changes tab follows the scope picker: epic → story → epic cha
     await expect(c.locator("#changes-all-toggle")).toContainText(`All seats${more} more`);
     await expect(c.locator("#changes-all-toggle")).toHaveAttribute("aria-expanded", "false");
   };
-  // a sibling story's live message event carries no code_context: its anchor is read when a thread of
-  // the epic is (re)opened, so start from Story Alpha, then epic → story → epic
-  await openStory(storyA);
-  await expect(c.locator("#crumb-current")).toHaveText("Story Alpha", { timeout: 15_000 });
-  // epic: the whole tree
-  await c.locator("#crumb-epic").click();
+  // epic: the whole tree, with Story Beta's anchor read live from the message event (the previous test
+  // leaves the epic open, so nothing reloads its threads)
+  await expect(c.locator("#crumb-current")).toHaveText("Spike epic");
   await expect(c.locator("#crumb-current")).toHaveText("Spike epic", { timeout: 15_000 });
   await tab("changes");
   if ((await c.locator("#changes-all-toggle").getAttribute("aria-expanded")) === "true") await c.locator("#changes-all-toggle").click();

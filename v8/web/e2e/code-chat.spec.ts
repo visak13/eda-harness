@@ -309,6 +309,7 @@ test("@-autocomplete shows role · ticket · title, ranks this epic first; two c
   await expect(ta).toHaveValue(`please check @${ARCH()} and @${ENG()} thanks`);
   // C14 (owner m-db09472a68): the board UI's chord. The hint names it; a plain Enter is a newline, never a send
   await expect(ta).toHaveAttribute("placeholder", /· Ctrl\+Enter to send$/);
+  await expect(c.locator("#send")).toHaveAttribute("title", "Send (Ctrl+Enter)");
   await page.keyboard.press("Enter");
   await expect(ta).toHaveValue(`please check @${ARCH()} and @${ENG()} thanks\n`);
   await ta.pressSequentially("second line");

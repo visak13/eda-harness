@@ -134,7 +134,7 @@ toolSlot.id = 'composer-tools';
 const sendBtn = el('button', 'send', 'Send');
 sendBtn.id = 'send';
 sendBtn.type = 'submit';
-sendBtn.title = 'Send (Enter)';
+sendBtn.title = `Send (${sendChord(navigator.platform || navigator.userAgent)})`;
 tools.append(toolSlot, kindSel, toSel, el('span', 'spacer'), sendBtn);
 const sendErr = el('div', 'send-error');
 sendErr.id = 'send-error';

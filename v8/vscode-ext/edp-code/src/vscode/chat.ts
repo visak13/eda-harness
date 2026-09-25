@@ -18,7 +18,7 @@ import { fromMessageRow, fromThreadRow, ThreadStore } from '../core/thread';
 import { creds, signIn } from './auth';
 import { ChatViewProvider, CHAT_VIEW } from './chatView';
 import { cardOf, inScope as commitsInScope, storyCounts, unlinked as unlinkedOf, type Indexed } from '../core/commits';
-import { anchorPath, inScope, openScope, sameRows, uncommittedCard, type Scope } from '../core/uncommitted';
+import { anchorPath, inScope, openScope, sameRows, scopeTickets, uncommittedCard, type Scope } from '../core/uncommitted';
 import { Changes } from './changes';
 import { Attachments } from './attachments';
 import { attachText, INLINE_IMAGES, pickStaged } from '../core/attachments';
@@ -256,6 +256,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
     if (this.epic) s.add(this.epic.id);
     if (this.ticket) s.add(this.ticket.id);
     for (const x of this.stories) s.add(x.id);
+    for (const x of this.tree) if (x.kind === 'task') s.add(x.id); // C14: a task's anchors scope its story
     return s;
   }
 
@@ -335,8 +336,9 @@ export class ChatController implements vscode.Disposable, TagTarget {
     const b = this.board();
     const epic = this.epic && this.epic.id !== this.ticket?.id ? this.epic.id : null;
     let anchored = false;
-    // C14: task threads too, only for their anchors (a story scope counts its tasks' anchored files)
-    const tasks = this.tree.filter(x => x.kind === 'task').map(x => x.id);
+    // C14: the picked scope's task threads too, only for their anchors (a story counts its tasks' anchored files)
+    const own = this.ticket ? scopeTickets(this.ticket, this.tree) : new Set<string>();
+    const tasks = this.tree.filter(x => x.kind === 'task' && own.has(x.id)).map(x => x.id);
     await Promise.all([...this.stories.map(s => s.id), ...(epic ? [epic] : []), ...tasks].map(async id => {
       if (id === this.ticket?.id) return;
       try {
@@ -416,6 +418,14 @@ export class ChatController implements vscode.Disposable, TagTarget {
       }
       if (this.provider.isVisible) this.markSeen(store.ticketId);
       return;
+    }
+    // C14: a message on another thread of the picked scope (a task of the open story, or any thread of the
+    // open epic) may carry an anchor; the event has only a preview, so read the message for it
+    if (this.ticket && scopeTickets(this.ticket, this.tree).has(subject)) {
+      try {
+        const m = await this.board().message(mid);
+        if (this.addAnchors([m], subject)) this.refreshUncommitted();
+      } catch (e) { this.log(`chat: anchor fetch failed (${(e as BoardError)?.code ?? 'error'})`); }
     }
     const s = this.stories.find(x => x.id === subject);
     const from = typeof ev.data?.from === 'string' ? ev.data.from : ev.created_by; // events carry the sender in data.from
