@@ -607,3 +607,42 @@ def test_start_ps1_status_report_is_never_fatal():
     call = body.index("& $py -m edp8.cli status")
     assert body.rindex('$ErrorActionPreference = "Continue"', 0, call) >= 0
     assert body.index('$ErrorActionPreference = "Stop"', call) > call
+
+
+# ---------------------------------------------------------------- tailnet verbs (C8 s-a4fd5df319)
+
+TAILNET_BLOCK = ("# >>> edp tailnet (written by .\\edp.ps1 tailnet apply; undo with .\\edp.ps1 tailnet remove)\r\n"
+                 "EDP8_HOST=127.0.0.1\r\nEDP8_PUBLIC_URL=https://h.example.ts.net\r\nEDP8_ADMIN_TOKEN=not-a-real-one\r\n"
+                 "# <<< edp tailnet\r\n")
+
+
+def _tailnet_repo(tmp_path: Path) -> Path:
+    repo = tmp_path / "repo"
+    (repo / "v8").mkdir(parents=True)
+    shutil.copy(SCRIPT, repo / "edp.ps1")
+    (repo / "v8" / ".env").write_bytes(("﻿# keep me\r\nEDP8_RSI=1\r\n" + TAILNET_BLOCK).encode("utf-8"))
+    return repo
+
+
+def test_tailnet_apply_refuses_when_the_block_is_already_there(tmp_path):
+    repo = _tailnet_repo(tmp_path)
+    before = (repo / "v8" / ".env").read_bytes()
+    r = _run(["tailnet", "apply"], _hermetic_env(tmp_path), script=repo / "edp.ps1", repo=repo)
+    assert r.returncode == 6 and "already carries the tailnet block" in r.stderr, r.stdout + r.stderr
+    assert (repo / "v8" / ".env").read_bytes() == before
+
+
+def test_tailnet_remove_whatif_names_the_keys_changes_nothing_and_hides_the_token(tmp_path):
+    repo = _tailnet_repo(tmp_path)
+    before = (repo / "v8" / ".env").read_bytes()
+    r = _run(["tailnet", "remove", "-WhatIf"], _hermetic_env(tmp_path), script=repo / "edp.ps1", repo=repo)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "WHATIF: tailscale serve reset" in r.stdout
+    assert "EDP8_HOST, EDP8_PUBLIC_URL, EDP8_ADMIN_TOKEN" in r.stdout
+    assert "not-a-real-one" not in r.stdout + r.stderr
+    assert (repo / "v8" / ".env").read_bytes() == before
+
+
+def test_tailnet_needs_a_subverb(tmp_path):
+    r = _run(["tailnet"], _hermetic_env(tmp_path))
+    assert r.returncode == 5 and "check|apply|remove" in r.stderr

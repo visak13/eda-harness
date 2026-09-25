@@ -5,6 +5,10 @@
 #   .\edp.ps1 stop    <svc|all>            safe stop: pid pair by command line, Stop-Process by id
 #   .\edp.ps1 restart <svc|all>            safe stop + start + bounded health wait, prints new pid + rev
 #   .\edp.ps1 update                       git pull --ff-only, uv sync, SPA rebuild, restart in order
+#   .\edp.ps1 tailnet check                read-only public-mode readiness (exit 1 while any BLOCKER)
+#   .\edp.ps1 tailnet apply                board on the tailnet: .env block + restart board/mcp/supervisor
+#                                          + 401 check + tailscale serve https:443 (-Force past blockers)
+#   .\edp.ps1 tailnet remove               ONE-LINE ROLLBACK: serve reset, drop the .env block, restart
 #   add -WhatIf to print the plan and change nothing; -Force where a step needs it (see below)
 #
 #   services: board (:9400)  mcp (:9402)  pool (:9301)  broker (:9300)  bridge  supervisor  all
@@ -478,6 +482,92 @@ function Do-Update {
   Start-Svc "supervisor"
 }
 
+# -- tailnet: the board across Tailscale in public mode (C8 s-a4fd5df319, v8\guides\tailnet-public-mode.md) --
+# The board stays on 127.0.0.1; `tailscale serve` terminates https on the tailnet only; EDP8_PUBLIC_URL turns
+# on public mode's fail-closed token rules. The three env keys live in ONE marked block of v8\.env, so
+# `tailnet remove` restores the exact prior .env. The generated admin token is written, never shown.
+$TailnetBegin = "# >>> edp tailnet (written by .\edp.ps1 tailnet apply; undo with .\edp.ps1 tailnet remove)"
+$TailnetEnd = "# <<< edp tailnet"
+function Tailnet-Check([switch]$Planned) {
+  $py = Join-Path $V8 ".venv\Scripts\python.exe"
+  $a = @((Join-Path $V8 "scripts\tailnet_readiness.py")); if ($Planned) { $a += "--planned" }
+  & $py @a | ForEach-Object { Say $_ }
+  $LASTEXITCODE
+}
+function Tailnet-Block {
+  # the block's lines (markers included) as currently in v8\.env; empty when absent
+  if (-not (Test-Path $envFile)) { return @() }
+  $lines = @(Get-Content $envFile); $in = $false
+  @(foreach ($l in $lines) { if ($l -eq $TailnetBegin) { $in = $true }; if ($in) { $l }; if ($l -eq $TailnetEnd) { $in = $false } })
+}
+function Env-Encoding { # keep v8\.env's BOM state as found
+  $bom = $false
+  if (Test-Path $envFile) { $b = [IO.File]::ReadAllBytes($envFile); $bom = ($b.Length -ge 3 -and $b[0] -eq 0xEF -and $b[1] -eq 0xBB -and $b[2] -eq 0xBF) }
+  New-Object Text.UTF8Encoding $bom
+}
+function New-AdminToken {
+  $bytes = New-Object byte[] 32
+  (New-Object Security.Cryptography.RNGCryptoServiceProvider).GetBytes($bytes)
+  ([Convert]::ToBase64String($bytes)).TrimEnd("=").Replace("+", "-").Replace("/", "_")
+}
+function Tailnet-Apply {
+  $port = $SVC.board.port
+  if (@(Tailnet-Block).Count -gt 0) { Fail 6 "v8\.env already carries the tailnet block; run .\edp.ps1 tailnet remove first" }
+  $rc = Tailnet-Check -Planned
+  if ($rc -ne 0 -and -not $Force) {
+    if (-not $WhatIf) { Fail 6 "the readiness check lists blockers (above); fix them, or add -Force to switch anyway (every seat listed will 401)" }
+    Say "WHATIF: apply would REFUSE here (blockers above; -Force overrides). The rest of the plan:"
+  }
+  $ts = (& tailscale status --json | Out-String | ConvertFrom-Json)
+  $name = ("" + $ts.Self.DNSName).TrimEnd(".")
+  if (-not $name) { Fail 6 "tailscale reports no DNS name for this machine (is it up?)" }
+  $url = "https://$name"
+  $lines = @($TailnetBegin, "EDP8_HOST=127.0.0.1", "EDP8_PUBLIC_URL=$url")
+  $admin = $null; $adminNote = ""
+  if ((EnvOr "EDP8_ADMIN_TOKEN" "dev") -eq "dev") { $admin = New-AdminToken; $lines += "EDP8_ADMIN_TOKEN=$admin"; $adminNote = ", EDP8_ADMIN_TOKEN=<generated, not shown>" }
+  $lines += $TailnetEnd
+  Step "append the tailnet block to v8\.env: EDP8_HOST=127.0.0.1, EDP8_PUBLIC_URL=$url$adminNote" {
+    $enc = Env-Encoding
+    $lead = ""; if ((Test-Path $envFile) -and -not ([IO.File]::ReadAllText($envFile).EndsWith("`n"))) { $lead = "`r`n" }
+    [IO.File]::AppendAllText($envFile, $lead + (($lines -join "`r`n") + "`r`n"), $enc)
+    $env:EDP8_HOST = "127.0.0.1"; $env:EDP8_PUBLIC_URL = $url
+    if ($admin) { $env:EDP8_ADMIN_TOKEN = $admin }
+  }
+  # board + mcp + supervisor read EDP8_ADMIN_TOKEN at start; the board also reads the public URL and bind
+  Restart-Set (WithSupervisorPaused @("board", "mcp"))
+  Step "verify on loopback: public mode refuses a header-only request (401)" {
+    $code = 0
+    try { Invoke-WebRequest "http://127.0.0.1:$port/v1/whoami" -Headers @{ "X-Participant" = "owner" } -UseBasicParsing -TimeoutSec 10 | Out-Null; $code = 200 }
+    catch { if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode } }
+    if ($code -ne 401) { Fail 7 "header-only whoami answered $code, not 401: the board is not in public mode; NOT opening the tailnet front (.\edp.ps1 tailnet remove rolls back)" }
+    Say "   header-only whoami -> 401"
+  }
+  Step "tailscale serve --bg --https=443 http://127.0.0.1:$port (tailnet only, TLS terminated by tailscale)" {
+    & tailscale serve --bg --https=443 "http://127.0.0.1:$port" | ForEach-Object { Say "   | $_" }
+    if ($LASTEXITCODE -ne 0) { Fail 7 "tailscale serve exited $LASTEXITCODE; the board is in public mode but not on the tailnet (.\edp.ps1 tailnet remove rolls back)" }
+  }
+  if (-not $WhatIf) { Say "tailnet: $url  (rollback: .\edp.ps1 tailnet remove)" }
+}
+function Tailnet-Remove {
+  Step "tailscale serve reset (close the tailnet front first)" {
+    & tailscale serve reset | ForEach-Object { Say "   | $_" }
+    if ($LASTEXITCODE -ne 0) { Fail 7 "tailscale serve reset exited $LASTEXITCODE; the board was NOT restarted" }
+  }
+  $block = @(Tailnet-Block)
+  if ($block.Count -gt 0) {
+    $keys = @($block | Where-Object { $_ -match "^\s*[A-Za-z_][A-Za-z0-9_]*\s*=" } | ForEach-Object { ($_ -split "=", 2)[0].Trim() })
+    Step ("delete the tailnet block from v8\.env ({0}) and clear those keys from this run's env" -f ($keys -join ", ")) {
+      $enc = Env-Encoding
+      $all = @(Get-Content $envFile); $in = $false
+      $keep = @(foreach ($l in $all) { if ($l -eq $TailnetBegin) { $in = $true; continue }; if ($l -eq $TailnetEnd) { $in = $false; continue }; if (-not $in) { $l } })
+      [IO.File]::WriteAllText($envFile, (($keep -join "`r`n") + "`r`n"), $enc)
+      foreach ($k in $keys) { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
+    }
+  } else { Say "v8\.env has no tailnet block (nothing to delete)" }
+  Restart-Set (WithSupervisorPaused @("board", "mcp"))
+  if (-not $WhatIf) { Say "tailnet: off (board back in trusted mode on 127.0.0.1)" }
+}
+
 # -- dispatch --------------------------------------------------------------------------------------
 # an unexpected exception (missing tool, I/O error, Start-Process failure) must not leave the fleet
 # with the supervisor this run paused still down: it goes through FailDown like a named failure
@@ -516,6 +606,14 @@ switch ($Command.ToLower()) {
     else { Restart-Set (WithSupervisorPaused $t) }
   }
   "update" { Do-Update }
+  "tailnet" {
+    switch ($Service.ToLower()) {
+      "check"  { exit (Tailnet-Check) }
+      "apply"  { Tailnet-Apply }
+      "remove" { Tailnet-Remove }
+      default  { Fail 5 "tailnet needs check|apply|remove (see .\edp.ps1 help)" }
+    }
+  }
   default {
     $lines = @(Get-Content $PSCommandPath); $end = [Array]::IndexOf($lines, "param(")
     $lines[1..($end - 1)] | ForEach-Object { $_ -replace '^# ?', '' } | Write-Host
