@@ -4,7 +4,8 @@
 //   2. opens an integrated terminal and runs a command that writes a marker file (read back here),
 //   3. opens a Markdown preview (the webview frame renders the README heading),
 //   4. signs the EDP extension in as this seat, tags README lines 1-2 to this seat on this story, and
-//      reads the message back from the board: its code_context carries a commit.
+//      reads the message back from the board: its code_context carries a commit,
+//   5. opens this story in EDP Chat: the extension's webview renders the thread with a live feed.
 // Fails on any error dialog, a password/login page, or a pageerror naming the guard. Signs the
 // extension out at the end, so no seat credential stays in the owner's editor.
 // Identity is the running seat (EDP_HANDLE + EDP8_TOKEN; the token goes in the URL once / typed
@@ -20,6 +21,7 @@ const BOARD = process.env.EDP8_BOARD_URL ?? "http://127.0.0.1:9400";
 const SEAT = process.env.EDP_HANDLE;
 const TOKEN = process.env.EDP8_TOKEN;
 const STORY = "s-03c7e9168b";
+const STORY_TITLE = "S7 Host-allowlist gatekeeper";
 const which = process.argv[2] ?? "chromium";
 const OUT = path.join(__dirname, "..", "e2e", "evidence", "s7-guard-live", which);
 fs.mkdirSync(OUT, { recursive: true });
@@ -130,6 +132,30 @@ const check = (ok, what) => { L(`${ok ? "PASS" : "FAIL"} ${what}`); if (!ok) fai
     const m = (await r.json()).value ?? {};
     const cc = m.code_context ?? {};
     check(!!mid && /^[0-9a-f]{7,40}$/.test(cc.commit ?? ""), `EDP tag ${mid} landed with code_context ${cc.path}:L${cc.line_start}-${cc.line_end} commit ${cc.commit}`);
+
+    // EDP Chat (the extension's webview) opens this story's thread and goes live (c-0ea9442d61); after the tag,
+    // since with a thread open the tag command fills the chat composer instead of asking
+    await cmd("EDP: Chat: open a ticket or epic thread");
+    await quick.locator(".quick-input-title", { hasText: "EDP chat: open a thread" }).waitFor({ timeout: 10000 });
+    await quick.locator("input").fill(STORY_TITLE);
+    await quick.locator(".monaco-list-row", { hasText: STORY_TITLE }).first().click({ timeout: 30000 });
+    // the chat is one of several webview frames (the Markdown preview is another): find it by its crumb
+    let crumb = "", live = "", rows = 0;
+    for (let i = 0; i < 30 && !(crumb.includes(STORY_TITLE) && /live/.test(live)); i++) {
+      await page.waitForTimeout(1000);
+      for (const fr of page.frames()) {
+        try {
+          if (!(await fr.locator("#crumb-current").count())) continue;
+          crumb = (await fr.locator("#crumb-current").textContent({ timeout: 500 })) ?? "";
+          live = (await fr.locator("#feed-status").textContent({ timeout: 500 })) ?? "";
+          rows = await fr.locator("#timeline > *").count();
+          break;
+        } catch { /* not this frame */ }
+      }
+    }
+    check(crumb.includes(STORY_TITLE) && /live/.test(live) && rows > 0,
+      `EDP Chat rendered this story's thread (crumb "${crumb.slice(0, 50)}", feed "${live.trim()}", ${rows} timeline rows)`);
+    await shot("5-chat");
 
     const dialogs = await f.locator(".monaco-dialog-box").count();
     check(dialogs === 0, `no error dialog (${dialogs} dialog boxes)`);
