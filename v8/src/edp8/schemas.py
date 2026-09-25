@@ -388,8 +388,10 @@ class CodeContext(BaseModel):
             raise ValueError("must use forward slashes")
         if v.startswith("/") or re.match(r"^[A-Za-z]:", v):
             raise ValueError("must be relative to repo_root")
-        if any(seg in ("", "..") for seg in v.split("/")):
-            raise ValueError("must not contain '..' or empty segments")
+        if any(seg in ("", ".", "..") for seg in v.split("/")):
+            raise ValueError("must be normalised: no '..', '.' or empty segments")
+        if any(ord(ch) < 32 or ord(ch) == 127 for ch in v):
+            raise ValueError("must not contain control characters")
         return v
 
     @field_validator("commit")
