@@ -18,8 +18,10 @@ safe to do there. It grows over time (design-449b628cdd §4).
   :9410 and "The board did not open a code session" in the tab. After `.\edp.ps1 restart code`,
   reload the tab to sign in again. A bare `http://127.0.0.1:9410/` bookmark answers 401 until the
   tab has signed that browser in.
-- **Chromium only** (Chrome, Edge). Firefox cannot load webviews (Markdown preview, extension panels)
-  from code-server: upstream bug coder/code-server#7913.
+- **Browsers:** Chromium (Chrome, Edge) and stock Firefox. In Firefox, webviews that load local
+  resources (VS Code's Markdown preview) stay blank: upstream bug coder/code-server#7913. The EDP Chat
+  panel and the EDP doc reader inline their bundles, so they work in both. Playwright's automation
+  Firefox build renders no webviews at all, so browser checks use stock Firefox.
 - **Deep links:** `/ui/code?folder=<abs>&file=<rel>&line=<n>` or `line=<n>-<m>` opens a folder and
   puts the cursor on line `n` (code-server reveals the start line; the range is shown in the header).
   The "Open in Code" button on a code card uses this.
@@ -74,7 +76,7 @@ PowerShell. Adding one is a commit to `extensions.txt` with its exact version.
 ## How tagging works
 
 Select code, then right-click **EDP: Tag selection on board…** (or `Ctrl+Alt+M`). Where the tag goes
-depends on the EDP Chat panel (edp-code 0.13.0):
+depends on the EDP Chat panel (edp-code 0.13 and later):
 
 - **The chat panel has been opened in this window and a thread is open:** the panel is revealed and the
   lines become a **code chip** above its composer (path, lines, commit). Type your text and press
