@@ -30,7 +30,7 @@ export const FOLDED: Fold = { scoped: true, allSeats: false, unlinked: false };
 export const TAB_ID = /^[a-z][a-z0-9-]{0,31}$/;
 /** at most this many scopes remember their seen marker (oldest dropped) */
 export const SEEN_MAX = 50;
-/** at most this many unsent Inbox drafts are kept */
+/** at most this many unsent Inbox drafts are kept (the most recently typed) */
 export const INBOX_DRAFTS_MAX = 50;
 
 export function restoreLocal(saved: unknown): ViewLocal {
@@ -52,9 +52,10 @@ export function restoreLocal(saved: unknown): ViewLocal {
   }
   const inbox: Record<string, string> = {};
   if (ok && s.inbox && typeof s.inbox === 'object') {
-    for (const [k, v] of Object.entries(s.inbox as Record<string, unknown>)) {
-      if (INBOX_KEY.test(k) && typeof v === 'string' && v && v.length <= INBOX_TEXT_MAX && Object.keys(inbox).length < INBOX_DRAFTS_MAX) inbox[k] = v;
-    }
+    // insertion order is last-typed last (the view re-inserts on each edit): keep the newest drafts
+    const kept = Object.entries(s.inbox as Record<string, unknown>)
+      .filter(([k, v]) => INBOX_KEY.test(k) && typeof v === 'string' && v && v.length <= INBOX_TEXT_MAX);
+    for (const [k, v] of kept.slice(-INBOX_DRAFTS_MAX)) inbox[k] = v as string;
   }
   return { v: 1, drafts, kind, fold: { scoped: flag('scoped'), allSeats: flag('allSeats'), unlinked: flag('unlinked') }, tab, seen: bound(seen), inbox };
 }

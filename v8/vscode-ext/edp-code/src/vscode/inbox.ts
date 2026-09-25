@@ -22,6 +22,10 @@ export class InboxHost implements vscode.Disposable {
   private state: InboxState | null = null;
   private gen = 0;
   private timer?: ReturnType<typeof setTimeout>;
+  private disposed = false;
+  /** the evidence version this viewer last opened, by sign-off row: a verdict rules on what was read, so a
+   *  doc edited since then (the row relabelled vN+1 in place) is refused by the board as stale */
+  private opened = new Map<string, number>();
   /** the evidence opener; C16 swaps it for its reader */
   openDoc = openDoc;
 
@@ -35,7 +39,7 @@ export class InboxHost implements vscode.Disposable {
   }
 
   /** Forget everything (signed out). */
-  clear(): void { ++this.gen; this.state = null; clearTimeout(this.timer); }
+  clear(): void { ++this.gen; this.state = null; this.opened.clear(); clearTimeout(this.timer); }
 
   /** A new scope is open: an empty, loading list now, then the board's. */
   async open(): Promise<void> {
@@ -48,13 +52,14 @@ export class InboxHost implements vscode.Disposable {
   /** Something in scope changed on the board: read again once the burst settles. */
   schedule(): void {
     clearTimeout(this.timer);
+    if (this.disposed) return;
     this.timer = setTimeout(() => void this.refresh(), DEBOUNCE_MS);
   }
 
   async refresh(): Promise<void> {
     clearTimeout(this.timer);
     const sc = this.scope();
-    if (!sc) return;
+    if (!sc || this.disposed) return;
     const n = ++this.gen;
     try {
       const home = await this.board().decisions();
@@ -64,9 +69,14 @@ export class InboxHost implements vscode.Disposable {
     } catch (e) {
       if (n !== this.gen || this.scope()?.id !== sc.id) return;
       const err = e as BoardError;
-      if (err?.status === 401 || err?.status === 403 || err?.code === 'not_signed_in') { this.onAuthFail(e); return; }
       const keep = this.state?.scope === sc.id ? this.state.items : [];
       this.state = { scope: sc.id, items: keep, loading: false, error: `Could not read what waits on you: ${err?.message ?? String(e)}` };
+      if (err?.status === 401 || err?.status === 403 || err?.code === 'not_signed_in') {
+        // settle the tab first (never left "reading…"), then the sign-in path
+        this.post({ type: 'inbox', v: 1, ticketId: sc.id, inbox: this.state });
+        this.onAuthFail(e);
+        return;
+      }
     }
     this.post({ type: 'inbox', v: 1, ticketId: sc.id, inbox: this.state });
   }
@@ -89,6 +99,9 @@ export class InboxHost implements vscode.Disposable {
     }
     try {
       const text = await run(i);
+      // a read already in flight began before this write landed and would list the row again: drop it
+      ++this.gen;
+      this.opened.delete(key);
       if (this.state) this.state = { ...this.state, items: this.state.items.filter(x => x.key !== key) };
       this.done(key, true, text);
     } catch (e) {
@@ -117,7 +130,9 @@ export class InboxHost implements vscode.Disposable {
       // the version the view showed must be the version this host listed: a row that moved under the
       // viewer is not ruled on a version they never saw
       if (version !== i.version) throw new Error(`This row now shows v${i.version}; you ruled on v${version}. Look again, then rule.`);
-      await this.board().verdict(verdictBody(i, verdict, note));
+      // opened an older version than the row lists now: send the one read, and the board's stale refusal says so
+      const read = Math.min(this.opened.get(key) ?? i.version, i.version);
+      await this.board().verdict(verdictBody({ ...i, version: read }, verdict, note));
       return `${verdict === 'pass' ? 'Passed' : 'Failed'} v${i.version}.`;
     }, 'signoff');
   }
@@ -144,7 +159,7 @@ export class InboxHost implements vscode.Disposable {
       }
       if (i.type !== 'signoff') return;
       const ref = i.evidence.ref;
-      if (i.evidence.doc && DOC_ID.test(ref)) { await this.openDoc(ref, i.version); return; }
+      if (i.evidence.doc && DOC_ID.test(ref)) { await this.openDoc(ref, i.version); this.opened.set(key, i.version); return; }
       if (ARTIFACT_ID.test(ref)) {
         const a = await this.board().artifact(ref);
         await this.openArtifact({ id: a.id, name: a.filename || ref, contentType: a.content_type ?? '', image: false });
@@ -159,5 +174,5 @@ export class InboxHost implements vscode.Disposable {
     }
   }
 
-  dispose(): void { this.clear(); }
+  dispose(): void { this.disposed = true; this.clear(); }
 }

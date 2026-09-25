@@ -194,11 +194,13 @@ test("a sign-off: the evidence opens in an editor tab at the version shown; Fail
   expect(cr).toMatchObject({ verdict: "pass", evidence_version: 1 });
 });
 
-test("a stale version: the doc moved after the list was read; the board's refusal shows on the row, then the fresh version rules", async () => {
+test("a stale version: the doc moved after the viewer read it; the board's refusal shows on the row (still, once the row says v2, until v2 is read), then the version read rules", async () => {
   // the last write's re-read (debounced) must land BEFORE the doc moves, or the row already shows v2
   await settled();
-  await call("PATCH", `/v1/docs/${docStale}`, { body_md: "# Perf\n\nv2 numbers, re-measured.\n" }, as(ENG()));
   const r = row(`c:${critStale}`);
+  await r.locator(".ib-evidence").click(); // the viewer reads v1
+  await expect(activeTab()).toContainText("v1", { timeout: 15_000 });
+  await call("PATCH", `/v1/docs/${docStale}`, { body_md: "# Perf\n\nv2 numbers, re-measured.\n" }, as(ENG()));
   await expect(r.locator(".ib-pass")).toHaveText("Pass v1"); // no event in scope moved the doc: the row still shows v1
   await r.locator(".ib-pass").click();
   await expect(r.locator(".ib-error")).toContainText("you are ruling version 1 but the doc is now v2", { timeout: 15_000 });
@@ -206,6 +208,12 @@ test("a stale version: the doc moved after the list was read; the board's refusa
   await expect(r.locator(".ib-fail")).toHaveText("Fail v2", { timeout: 15_000 }); // the host read the list again
   await expect(r.locator(".ib-error")).toContainText("the doc is now v2"); // the refusal stays until the next try
   await r.locator("textarea").fill("v2 numbers miss the p95 target.");
+  // the row now says v2, but this viewer read v1: the verdict carries v1 and the board refuses it again
+  await r.locator(".ib-fail").click();
+  await expect(r.locator(".ib-error")).toContainText("you are ruling version 1 but the doc is now v2", { timeout: 15_000 });
+  await expect(r).toHaveCount(1);
+  await r.locator(".ib-evidence").click(); // read v2, then rule on it
+  await expect(activeTab()).toContainText("v2", { timeout: 15_000 });
   await r.locator(".ib-fail").click();
   await expect(row(`c:${critStale}`)).toHaveCount(0, { timeout: 15_000 });
   const cr = (await call("GET", `/v1/criteria?ticket_id=${storyA}`, undefined, asOwner)).find((x: any) => x.id === critStale);

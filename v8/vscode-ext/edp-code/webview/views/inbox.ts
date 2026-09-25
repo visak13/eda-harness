@@ -53,7 +53,8 @@ function box(key: string, ctx: TabCtx, label: string, placeholder: string, onSen
   ta.placeholder = placeholder;
   ta.setAttribute('aria-label', label);
   ta.addEventListener('input', () => {
-    if (ta.value) ctx.local.inbox[key] = ta.value; else delete ctx.local.inbox[key];
+    delete ctx.local.inbox[key]; // re-inserted last: the draft cap keeps the most recently typed
+    if (ta.value) ctx.local.inbox[key] = ta.value;
     ctx.persist();
   });
   ta.addEventListener('keydown', e => {

@@ -10,7 +10,7 @@ import {
   answerBody, gateKey, gatePath, inboxBadge, questionKey, scopeInbox, signoffKey, verdictBody, writeProblem,
   type DecisionsHome, type InboxGate, type InboxQuestion, type InboxSignoff, type InboxState,
 } from '../src/core/inbox';
-import { restoreLocal } from '../src/core/viewState';
+import { INBOX_DRAFTS_MAX, restoreLocal } from '../src/core/viewState';
 import type { TabCtx } from '../webview/tabs';
 import { inboxDone, inboxTab, renderInbox } from '../webview/views/inbox';
 
@@ -141,6 +141,14 @@ describe('drafts survive a reload, by row key', () => {
     const l = restoreLocal({ v: 1, inbox: { [`q:${M1}`]: 'half an answer', 'x:1': 'no', [`c:${C1}`]: 5 } });
     expect(l.inbox).toEqual({ [`q:${M1}`]: 'half an answer' });
     expect(restoreLocal(undefined).inbox).toEqual({});
+  });
+  it('over the cap, the most recently typed drafts stay (review fix: stale drafts no longer crowd out a new one)', () => {
+    const inbox: Record<string, string> = {};
+    for (let n = 0; n < INBOX_DRAFTS_MAX + 5; n++) inbox[`q:m-${String(n).padStart(10, '0')}`] = `d${n}`;
+    const kept = Object.values(restoreLocal({ v: 1, inbox }).inbox);
+    expect(kept).toHaveLength(INBOX_DRAFTS_MAX);
+    expect(kept.at(-1)).toBe(`d${INBOX_DRAFTS_MAX + 4}`);
+    expect(kept).not.toContain('d0');
   });
 });
 
