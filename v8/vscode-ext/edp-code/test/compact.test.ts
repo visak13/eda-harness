@@ -73,13 +73,14 @@ describe('parseInbound: openUncommitted.scoped', () => {
 });
 
 describe('restoreLocal: the per-viewer fold state survives a reload', () => {
-  const base = { v: 1, drafts: {}, kind: 'note', fold: FOLDED, tab: 'chat', seen: {}, inbox: {}, replies: {} };
+  const base = { v: 1, drafts: {}, kind: 'note', fold: FOLDED, tab: 'chat', seen: {}, inbox: {}, replies: {}, who: null, others: {} };
   it('nothing saved: the scope open, the rest folded, kind note, the Chat tab', () =>
     expect(restoreLocal(undefined)).toEqual(base));
   it('round-trips what the view saved (JSON, as getState/setState do)', () => {
     const saved = { v: 1, drafts: { 'epic-0123456789': 'half a thought' }, kind: 'steer', fold: { scoped: false, unlinked: true, allSeats: true },
       tab: 'commits', seen: { 'epic-0123456789': '2026-09-25T07:00:00.000Z' }, inbox: { 'q:m-0123456789': 'half an answer' },
-      replies: { 's-0123456789': { id: 'm-0123456789', by: 'owner', excerpt: 'the parent', to: 'owner' } } };
+      replies: { 's-0123456789': { id: 'm-0123456789', by: 'owner', excerpt: 'the parent', to: 'owner' } },
+      who: '["http://127.0.0.1:9400","owner"]', others: { '["http://127.0.0.1:9400","qa"]': { drafts: { 's-0123456789': 'qa draft' }, inbox: {}, replies: {} } } };
     expect(restoreLocal(JSON.parse(JSON.stringify(saved)))).toEqual(saved);
   });
   it('a 0.4.0 state (no fold) keeps drafts and takes the defaults', () =>

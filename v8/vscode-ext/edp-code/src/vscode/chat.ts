@@ -44,6 +44,12 @@ const UNLINKED_MAX = 100; // the epic's collapsed "Unlinked commits" section, ne
 const SOURCE_PAGES_MAX = 20; // C17: older pages read to reach a decision's source message before giving up
 
 type Item = vscode.QuickPickItem & { id?: string };
+/** C26: the key the view files its drafts under, as the C7/F7 tray: the board origin and the participant, never the token. */
+export function viewerIdOf(boardUrl: string, participant: string): string {
+  let origin = boardUrl;
+  try { origin = new URL(boardUrl).origin; } catch { /* an unparsable URL is refused by the client; it still keys */ }
+  return JSON.stringify([origin, participant]);
+}
 const ref = (t: Ticket): TicketRef => ({ id: t.id, kind: t.kind, title: t.title, status: t.status });
 
 export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
@@ -70,6 +76,9 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
   private viewer = 0;
   /** C25: the (board, participant, token) the live viewer was started for; null once it is cleared */
   private viewerKey: string | null = null;
+  /** C26: the view's draft key for the live viewer, JSON of [board origin, participant] (no token); null until the
+   *  stored creds were read, or signed out */
+  private viewerId: string | null = null;
   /** C25: restarts run one at a time, so two sign-in signals never abort each other's requests */
   private restarting: Promise<unknown> = Promise.resolve();
   private pendingEvents?: { generation: number; events: FeedEvent[] };
@@ -142,7 +151,7 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
   snapshot(): ChatState {
     this.ucPosted = this.ucCard();
     return {
-      type: 'state', v: 1, me: this.me, ticket: this.ticket, epic: this.epic, stories: this.stories,
+      type: 'state', v: 1, me: this.me, viewer: this.viewerId, ticket: this.ticket, epic: this.epic, stories: this.stories,
       commits: this.ticket ? this.commits : [], unlinked: this.ticket ? this.unlinked : [], uncommitted: this.ucPosted,
       architect: epicArchitect(this.people, this.epic?.id ?? null), people: this.rows(),
       items: this.store?.items ?? [], hasOlder: this.store?.before != null, chip: this.chipOf(this.ticket?.id), feed: this.feedStatus, notice: this.notice,
@@ -296,10 +305,18 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
     await this.restart();
   }
 
-  /** After a sign-in or sign-out: a fresh feed and a reload of the open thread, or, signed out, an
-   *  empty view (nothing read under the old identity stays on screen). A no-op before the first resolve. */
+  /** Signed out (no stored creds, or a 401): an empty, signed-out view (nothing read under the old identity stays
+   *  on screen). A no-op before the first resolve. */
   clearViewer(): void {
-    ++this.viewer; this.viewerKey = null;
+    this.resetViewer();
+    this.feedStatus = 'signed-out'; this.notice = 'Sign in to the board to read and send.';
+    this.postState();
+  }
+
+  /** Forget everything read under the live viewer, without saying signed out (C26 rule 3: a restart or reload
+   *  with stored creds switches straight to the new viewer; only clearViewer posts the signed-out state). */
+  private resetViewer(): void {
+    ++this.viewer; this.viewerKey = null; this.viewerId = null;
     this.cancelViewer();
     ++this.opening; this.opened = this.opening; this.pendingEvents = undefined;
     const feed = this.feed; this.feed = undefined; feed?.dispose();
@@ -310,8 +327,6 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
     this.unread.clear(); this.chips.clear(); this.attach.clear(); this.anchors.clear(); this.anchorsFor = null;
     this.inbox.clear(); this.docs.clear(); this.decisions.clear(); this.pendingChip = undefined;
     this.quotes.setIdentity(null);
-    this.feedStatus = 'signed-out'; this.notice = 'Sign in to the board to read and send.';
-    this.postState();
   }
 
   /** Serialised (C25): sign-in fires both secrets.onDidChange and the command; the second is a no-op
@@ -328,17 +343,20 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
     const c = await creds(this.ctx);
     const key = c ? JSON.stringify([this.boardUrl(), c.participant, c.token]) : null;
     if (key !== null && key === this.viewerKey) return;
-    this.clearViewer();
-    if (!c) return;
+    if (!c) { this.clearViewer(); return; } // read and found absent: now, and only now, signed out
+    this.resetViewer();
     this.resumeViewer();
-    this.notice = null;
+    this.feedStatus = 'connecting'; this.notice = null;
+    this.viewerId = viewerIdOf(this.boardUrl(), c.participant);
     this.quotes.setIdentity({ origin: this.boardUrl(), participant: c.participant });
     this.docProvider?.resume();
     if (!this.booted) return;
     this.viewerKey = key;
     this.startFeed();
+    // the new viewer, empty, at once: nothing of the old one stays on screen while the thread reopens
+    this.postState();
     const id = this.ctx.workspaceState.get<string>(LAST_PICK);
-    if (!id) { this.postState(); return; }
+    if (!id) return;
     return { reopen: this.open(id) };
   }
 

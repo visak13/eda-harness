@@ -26,7 +26,15 @@ export type ViewLocal = {
   inbox: Record<string, string>;
   /** C22: the message each thread's composer replies to (unsent), by ticket id */
   replies: Record<string, ReplyRef>;
+  /** C26 rule 3: the board viewer (origin + participant, the host's `viewer`) that drafts, inbox and replies above
+   *  belong to; null before the host has read the stored creds, or signed out */
+  who: string | null;
+  /** C26: other viewers' unsent drafts, by viewer key, restored when that viewer is back; never shown to another */
+  others: Record<string, ViewerDrafts>;
 };
+
+/** What one viewer has typed and not sent: the composer drafts, the Inbox drafts, the reply targets. */
+export type ViewerDrafts = Pick<ViewLocal, 'drafts' | 'inbox' | 'replies'>;
 
 /** The scope's own files open; the other seats' files and the unlinked commits folded. */
 export const FOLDED: Fold = { scoped: true, allSeats: false, unlinked: false };
@@ -36,12 +44,61 @@ export const SEEN_MAX = 50;
 /** at most this many unsent Inbox drafts are kept (the most recently typed) */
 export const INBOX_DRAFTS_MAX = 50;
 
+/** at most this many other viewers keep their unsent drafts (the most recently left kept) */
+export const VIEWERS_MAX = 8;
+
+/** A viewer key as the host builds it: JSON of [board origin, participant]. */
+export function viewerKey(k: unknown): k is string {
+  if (typeof k !== 'string' || k.length > 512) return false;
+  try {
+    const a = JSON.parse(k) as unknown;
+    return Array.isArray(a) && a.length === 2 && a.every(x => typeof x === 'string' && x.length > 0);
+  } catch { return false; }
+}
+
+function restoreDrafts(s: Record<string, unknown>): ViewerDrafts {
+  const drafts: Record<string, string> = {};
+  if (s.drafts && typeof s.drafts === 'object') {
+    for (const [k, v] of Object.entries(s.drafts as Record<string, unknown>)) if (TICKET_ID.test(k) && typeof v === 'string') drafts[k] = v;
+  }
+  const inbox: Record<string, string> = {};
+  if (s.inbox && typeof s.inbox === 'object') {
+    // insertion order is last-typed last (the view re-inserts on each edit): keep the newest drafts
+    const kept = Object.entries(s.inbox as Record<string, unknown>)
+      .filter(([k, v]) => INBOX_KEY.test(k) && typeof v === 'string' && v && v.length <= INBOX_TEXT_MAX);
+    for (const [k, v] of kept.slice(-INBOX_DRAFTS_MAX)) inbox[k] = v as string;
+  }
+  return { drafts, inbox, replies: restoreReplies(s.replies) };
+}
+
+const empty = (d: ViewerDrafts) => !Object.keys(d.drafts).length && !Object.keys(d.inbox).length && !Object.keys(d.replies).length;
+
+/** C26 rule 3: a state post names its viewer. Another viewer (or none yet) never sees these drafts and never wipes
+ *  them: they are put aside under their own viewer and come back when that viewer does. True when it switched. */
+export function switchViewer(local: ViewLocal, who: string | null): boolean {
+  if (who === local.who) return false;
+  const mine: ViewerDrafts = { drafts: local.drafts, inbox: local.inbox, replies: local.replies };
+  // drafts with no known viewer (a pre-0.13.3 state) cannot safely be given to anyone: dropped
+  if (local.who !== null && !empty(mine)) { delete local.others[local.who]; local.others[local.who] = mine; }
+  const back = who !== null ? local.others[who] : undefined;
+  if (who !== null) delete local.others[who];
+  local.drafts = back?.drafts ?? {}; local.inbox = back?.inbox ?? {}; local.replies = back?.replies ?? {};
+  local.who = who;
+  const keys = Object.keys(local.others);
+  for (const k of keys.slice(0, Math.max(0, keys.length - VIEWERS_MAX))) delete local.others[k];
+  return true;
+}
+
 export function restoreLocal(saved: unknown): ViewLocal {
   const s = (saved && typeof saved === 'object' ? saved : {}) as Record<string, unknown>;
   const ok = s.v === 1;
-  const drafts: Record<string, string> = {};
-  if (ok && s.drafts && typeof s.drafts === 'object') {
-    for (const [k, v] of Object.entries(s.drafts as Record<string, unknown>)) if (TICKET_ID.test(k) && typeof v === 'string') drafts[k] = v;
+  const own = restoreDrafts(ok ? s : {});
+  const who = ok && viewerKey(s.who) ? s.who : null;
+  const others: Record<string, ViewerDrafts> = {};
+  if (ok && s.others && typeof s.others === 'object') {
+    for (const [k, v] of Object.entries(s.others as Record<string, unknown>).slice(-VIEWERS_MAX)) {
+      if (viewerKey(k) && k !== who && v && typeof v === 'object') { const d = restoreDrafts(v as Record<string, unknown>); if (!empty(d)) others[k] = d; }
+    }
   }
   const kind = typeof s.kind === 'string' && (SEND_KINDS as readonly string[]).includes(s.kind) ? (s.kind as SendKind) : 'note';
   const f = (ok && s.fold && typeof s.fold === 'object' ? s.fold : {}) as Record<string, unknown>;
@@ -53,15 +110,8 @@ export function restoreLocal(saved: unknown): ViewLocal {
       if (TICKET_ID.test(k) && typeof v === 'string' && !Number.isNaN(Date.parse(v))) seen[k] = v;
     }
   }
-  const inbox: Record<string, string> = {};
-  if (ok && s.inbox && typeof s.inbox === 'object') {
-    // insertion order is last-typed last (the view re-inserts on each edit): keep the newest drafts
-    const kept = Object.entries(s.inbox as Record<string, unknown>)
-      .filter(([k, v]) => INBOX_KEY.test(k) && typeof v === 'string' && v && v.length <= INBOX_TEXT_MAX);
-    for (const [k, v] of kept.slice(-INBOX_DRAFTS_MAX)) inbox[k] = v as string;
-  }
-  return { v: 1, drafts, kind, fold: { scoped: flag('scoped'), allSeats: flag('allSeats'), unlinked: flag('unlinked') }, tab, seen: bound(seen), inbox,
-    replies: ok ? restoreReplies(s.replies) : {} };
+  return { v: 1, drafts: own.drafts, kind, fold: { scoped: flag('scoped'), allSeats: flag('allSeats'), unlinked: flag('unlinked') }, tab, seen: bound(seen),
+    inbox: own.inbox, replies: own.replies, who, others };
 }
 
 /** Keep the SEEN_MAX most recent markers. */

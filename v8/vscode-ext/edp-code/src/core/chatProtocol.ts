@@ -142,6 +142,9 @@ export type FeedStatus = 'connecting' | 'live' | 'reconnecting' | 'polling' | 's
 export type ChatState = {
   type: 'state'; v: 1;
   me: { id: string; handle: string } | null;
+  /** C26: the viewer (JSON of [board origin, participant], never the token) the view's drafts are keyed by; null
+   *  before the stored creds are read, or signed out */
+  viewer?: string | null;
   /** the open thread; null = nothing picked yet */
   ticket: TicketRef | null;
   /** the epic the open thread belongs to (the ticket itself when an epic is open) */

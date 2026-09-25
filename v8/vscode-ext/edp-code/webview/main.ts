@@ -11,7 +11,7 @@ import { bodyFragment } from './render';
 import { applyKinds, forgetMisses, markPaths, onPathClick, PathPicker } from './pathTags';
 import { onRefClick, RefPicker } from './refPicker';
 import { commitCount, insertByTime, markerEl, mergeCommits, mergeUnlinked, placeMarkers, renderMarkers } from './cards';
-import { markSeen, restoreLocal } from '../src/core/viewState';
+import { markSeen, restoreLocal, switchViewer } from '../src/core/viewState';
 import { initAttach } from './attach';
 import { TabBar, type TabCtx } from './tabs';
 import { TABS } from './registry';
@@ -624,7 +624,9 @@ window.addEventListener('message', (ev: MessageEvent) => {
   if (!m || typeof m !== 'object' || m.v !== 1) return;
   switch (m.type) {
     case 'state':
-      if (!m.me && !m.ticket) { Object.assign(local, restoreLocal(null)); pendingTicket = null; pendingReply = null; persist(); }
+      // C26 rule 3: drafts, reply targets and Inbox drafts belong to the state's viewer; another viewer (or none yet,
+      // during a reload) puts them aside, never wipes them
+      if (switchViewer(local, m.viewer ?? null)) { pendingTicket = null; pendingReply = null; persist(); }
       forgetMisses(); // a path created since is asked about again
       state = m; // a send in flight stays in flight: its answer still comes
       renderAll();

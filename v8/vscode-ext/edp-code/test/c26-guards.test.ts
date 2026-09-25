@@ -3,7 +3,8 @@
 // Rule 2: identity and refresh are separate generations; a write checks identity only.
 import { expect, it, vi } from 'vitest';
 
-const h = vi.hoisted(() => ({ warnings: [] as string[], status: [] as string[] }));
+const h = vi.hoisted(() => ({ warnings: [] as string[], status: [] as string[], stored: undefined as undefined | { participant: string; token: string } }));
+vi.mock('../src/vscode/auth', () => ({ creds: async () => h.stored, signIn: async () => false }));
 vi.mock('vscode', () => ({
   window: {
     showWarningMessage: (t: string) => { h.warnings.push(t); }, showErrorMessage: (t: string) => { h.warnings.push(t); },
@@ -21,6 +22,8 @@ import { DocReader } from '../src/vscode/reader';
 import { QuoteHost } from '../src/vscode/quotes';
 import { messageDraft, Tray } from '../src/core/quotes';
 import type { ReaderDoc, ReaderGate } from '../src/core/reader';
+import { restoreLocal, switchViewer } from '../src/core/viewState';
+import { viewerIdOf } from '../src/vscode/chat';
 
 /** A promise the test settles by hand: the write that is in flight while a refresh lands. */
 function deferred<T>() {
@@ -64,12 +67,12 @@ it('C26 Q1: an Inbox 403 shows in its tab without signing out', async () => {
   const onAuthFail = vi.fn(), post = vi.fn();
   const board = { decisions: async () => { throw new BoardError('forbidden', 'not permitted', 403); } } as unknown as Board;
   const sc = { id: 's-0123456789', ids: new Set(['s-0123456789']), titles: new Map() };
-  const h = new InboxHost(() => board, () => 'http://127.0.0.1:1', () => sc, post, async () => {}, onAuthFail, () => {});
+  const host = new InboxHost(() => board, () => 'http://127.0.0.1:1', () => sc, post, async () => {}, onAuthFail, () => {});
   try {
-    await h.open();
+    await host.open();
     expect(onAuthFail).not.toHaveBeenCalled();
-    expect(h.snapshot(sc.id)).toMatchObject({ loading: false, items: [], error: expect.stringContaining('not permitted') });
-  } finally { h.dispose(); }
+    expect(host.snapshot(sc.id)).toMatchObject({ loading: false, items: [], error: expect.stringContaining('not permitted') });
+  } finally { host.dispose(); }
 });
 
 it('C26 Q1: a feed 403 is retried, not a sign-out; a 401 still signs out', async () => {
@@ -228,4 +231,80 @@ it('C26 Q5 keeps C7: an identity switch during the pick drops the quote, said on
   q.setIdentity(A);
   expect(q.chips(STORY)).toHaveLength(0); // nothing landed in A's tray either
   expect(h.status).toEqual(['EDP: the board sign-in changed, so the quote was not added']);
+});
+
+// -- rule 3: no transient signed-out state on restart or reload; drafts keyed by viewer (Q2) ----------------------
+
+const URL0 = 'http://127.0.0.1:9400';
+const OWNER = viewerIdOf(URL0 + '/', 'owner'), OTHER = viewerIdOf(URL0, 'other');
+
+/** A controller with the real restart/resetViewer/clearViewer; each posted state is recorded as the view would see it. */
+function restartable() {
+  const posted: { feed: string; notice: string | null; viewer: string | null; ticket: unknown }[] = [];
+  const stub = { clear() {} };
+  const c: any = Object.assign(Object.create(ChatController.prototype), {
+    ctx: { workspaceState: { get: () => 's-0123456789' } }, boardUrl: () => URL0, log() {},
+    cancelViewer() {}, resumeViewer() {}, booted: true, viewer: 0, viewerKey: null, viewerId: null,
+    restarting: Promise.resolve(), chain: Promise.resolve(), opening: 0, opened: 0, feedStatus: 'connecting', notice: null,
+    refs: stub, reader: { reset() {} }, docProvider: { clear() {}, resume() {} }, inbox: stub, docs: stub, decisions: stub, attach: stub,
+    quotes: { setIdentity() {} }, unread: new Map(), chips: new Map(), anchors: new Map(), titles: new Map(), startFeed() {},
+    postState: () => posted.push({ feed: c.feedStatus, notice: c.notice, viewer: c.viewerId, ticket: c.ticket }),
+  });
+  c.open = vi.fn(async () => {});
+  return { c, posted };
+}
+
+it('C26 Q2: a restart or reload with stored creds never posts a signed-out state; the first post names the viewer', async () => {
+  h.stored = { participant: 'owner', token: 't1' };
+  const { c, posted } = restartable();
+  await c.restart(); // the first boot after a window reload
+  expect(posted).toEqual([{ feed: 'connecting', notice: null, viewer: OWNER, ticket: null }]);
+  expect(c.open).toHaveBeenCalledWith('s-0123456789');
+  h.stored = { participant: 'other', token: 't2' };
+  await c.restart(); // another identity: straight to it, still no signed-out flash
+  expect(posted.map(p => p.feed)).toEqual(['connecting', 'connecting']);
+  expect(posted[1].viewer).toBe(OTHER);
+});
+
+it('C26 Q2 keeps C7: creds read and found absent (or a 401) post the signed-out state', async () => {
+  h.stored = undefined;
+  const { c, posted } = restartable();
+  await c.restart();
+  expect(posted).toEqual([{ feed: 'signed-out', notice: 'Sign in to the board to read and send.', viewer: null, ticket: null }]);
+  h.stored = { participant: 'owner', token: 't1' };
+  await c.restart();
+  c.clearViewer(); // what a 401 does
+  expect(posted.at(-1)).toMatchObject({ feed: 'signed-out', viewer: null });
+});
+
+it('C26 Q2: a window reload restores the composer draft, reply target and Inbox draft for the same viewer only', () => {
+  const reply = { id: 'm-0123456789', by: 'arch', excerpt: 'the parent', to: 'arch' };
+  const local = restoreLocal(undefined);
+  switchViewer(local, OWNER);
+  local.drafts['s-0123456789'] = 'half a thought';
+  local.replies['s-0123456789'] = reply;
+  local.inbox['q:m-0123456789'] = 'half an answer';
+  // the reload: setState's JSON comes back; the host's first snapshot (creds not read yet) names no viewer
+  const back = restoreLocal(JSON.parse(JSON.stringify(local)));
+  expect(switchViewer(back, null)).toBe(true);
+  expect(back).toMatchObject({ drafts: {}, replies: {}, inbox: {} }); // not shown, and not lost:
+  expect(switchViewer(back, OWNER)).toBe(true);
+  expect(back).toMatchObject({ drafts: { 's-0123456789': 'half a thought' }, replies: { 's-0123456789': reply }, inbox: { 'q:m-0123456789': 'half an answer' } });
+  // another identity on the same window sees none of them; the owner gets them back
+  switchViewer(back, OTHER);
+  expect(back).toMatchObject({ drafts: {}, replies: {}, inbox: {} });
+  expect(JSON.stringify(back.others)).toContain('half a thought'); // kept aside under the owner's key only
+  const again = restoreLocal(JSON.parse(JSON.stringify(back)));
+  switchViewer(again, OWNER);
+  expect(again.drafts).toEqual({ 's-0123456789': 'half a thought' });
+  expect(Object.keys(again.others)).toEqual([]);
+});
+
+it('C26 Q2: drafts saved without a viewer (0.13.2) are given to no one; viewer keys carry no token', () => {
+  const legacy = restoreLocal({ v: 1, drafts: { 's-0123456789': 'whose?' }, inbox: {}, replies: {} });
+  expect(legacy.who).toBeNull();
+  switchViewer(legacy, OWNER);
+  expect(legacy.drafts).toEqual({});
+  expect(JSON.parse(OWNER)).toEqual([URL0, 'owner']);
+  expect(restoreLocal({ v: 1, who: 'not a key', others: { junk: { drafts: { 's-0123456789': 'x' } } } })).toMatchObject({ who: null, others: {} });
 });
