@@ -49,8 +49,40 @@ def test_ws_hostile_origin_refused_403(origin):
 
 
 def test_forwarded_headers_dropped():
-    fwd, _ = check_head(head("Host: 127.0.0.1:9410", "X-Forwarded-Host: evil.invalid:9410", "Forwarded: host=evil"), 9410, ORIGINS)
+    fwd, _ = check_head(head("Host: 127.0.0.1:9410", "X-Forwarded-Host: evil.invalid:9410", "Forwarded: host=evil",
+                             "X-Forwarded-Prefix: /evil"), 9410, ORIGINS)
     assert b"evil" not in fwd
+
+
+# second opinion 20260925T174116Z-b3066925: anything node could read differently is refused
+@pytest.mark.parametrize("lines", [
+    ("Upgrade: websocket", "Connection: xupgrade"),         # guard saw an upgrade, node plain HTTP
+    ("Upgrade: websocket",),                                # Upgrade without the Connection token
+    ("Connection: Upgrade",),                               # the token without Upgrade
+    ("Upgrade: websocket", "Upgrade: h2c", "Connection: Upgrade"),
+    ("Upgrade: h2c", "Connection: Upgrade"),
+    ("Content-Length: 1", "Content-Length: 2"),
+    ("Content-Length: 5", "Transfer-Encoding: chunked"),
+    ("Transfer-Encoding: gzip, chunked",),
+    ("Content-Length: +5",),
+    ("Host : evil.invalid:9410",),                          # whitespace before the colon
+    ("X-A: 1\nHost: evil.invalid:9410",),                  # a bare LF
+    ("Upgrade: websocket", "Connection: Upgrade", "Content-Length: 3"),
+])
+def test_ambiguous_heads_refused_400(lines):
+    with pytest.raises(Refused) as e:
+        check_head(head("Host: 127.0.0.1:9410", *lines), 9410, ORIGINS)
+    assert e.value.status == 400
+
+
+def test_connection_tokens_read_across_headers():
+    # "Connection: Upgrade" then "Connection: keep-alive" is still an upgrade: the Origin is checked
+    with pytest.raises(Refused) as e:
+        check_head(head("Host: 127.0.0.1:9410", "Origin: http://evil.invalid:1", "Upgrade: websocket",
+                        "Connection: Upgrade", "Connection: keep-alive"), 9410, ORIGINS)
+    assert e.value.status == 403
+    _, facts = check_head(head("Host: 127.0.0.1:9410", "Upgrade: websocket", "Connection: keep-alive, Upgrade"), 9410, ORIGINS)
+    assert facts["ws"]
 
 
 def test_chunked_body_forces_close():
@@ -91,6 +123,10 @@ async def _fake_upstream(seen):
             for line in h.split(b"\r\n"):
                 if line.lower().startswith(b"content-length:"):
                     await r.readexactly(int(line.split(b":")[1]))
+            if h.startswith(b"GET /deny"):  # code-server refusing an upgrade, connection left open
+                w.write(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")
+                await w.drain()
+                continue
             if b"Upgrade: websocket" in h:
                 w.write(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n")
                 await w.drain()
@@ -175,6 +211,39 @@ def test_e2e_body_is_delimited_by_content_length():
             r, w, out = await _roundtrip(port, raw)
             assert out.startswith(b"HTTP/1.1 200")
             assert len(seen) == 1  # the body was relayed as a body, not parsed as a second head
+        finally:
+            task.cancel(); up.close()
+    asyncio.run(run())
+
+
+def test_e2e_refused_upgrade_is_not_tunnelled():
+    async def run():
+        seen = []
+        up, task, port = await _guarded(seen)
+        try:
+            r, w, out = await _roundtrip(port, head(f"Host: 127.0.0.1:{port}", *WS, target="/deny"))
+            assert out.startswith(b"HTTP/1.1 403")
+            w.write(head("Host: evil.invalid:1"))  # would reach code-server if the guard tunnelled
+            await w.drain()
+            await asyncio.sleep(0.5)
+            assert len(seen) == 1
+            w.close()
+        finally:
+            task.cancel(); up.close()
+    asyncio.run(run())
+
+
+def test_e2e_upgrade_mid_connection_cut_off():
+    async def run():
+        seen = []
+        up, task, port = await _guarded(seen)
+        try:
+            r, w, out = await _roundtrip(port, head(f"Host: 127.0.0.1:{port}"))
+            assert out.endswith(b"ok")
+            w.write(head(f"Host: 127.0.0.1:{port}", *WS))
+            await w.drain()
+            assert await asyncio.wait_for(r.read(4096), 5) == b""
+            assert len(seen) == 1
         finally:
             task.cancel(); up.close()
     asyncio.run(run())

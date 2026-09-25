@@ -87,6 +87,10 @@ def test_start_flags_bind_loopback_and_disable_update_telemetry_proxy():
     assert '"--bind-addr", "${BINDHOST}:$INNER", "--auth", "password"' in src and '"--auth", "none"' not in src
     assert '"edp8.code_guard", "--port", "$PORT", "--upstream", "tcp:${BINDHOST}:$INNER"' in src
     assert "$env:HASHED_PASSWORD = $s" in src and "CODE_GUARD_SESSION" in src and "$SECRET" not in src.split("$flags = @(")[1].split(")")[0]
+    # second opinion 20260925T174116Z-b3066925: trace logging would write the password out (--log info
+    # outranks LOG_LEVEL) and an inherited cookie suffix would rename the cookie the guard injects
+    assert '"--log", "info"' in src and '"LOG_LEVEL", "PASSWORD", "CODE_SERVER_COOKIE_SUFFIX", "VSCODE_OPTIONS"' in src
+    assert "--verbose" not in src.split("$flags = @(")[1].split(")")[0]
     # the env strip is by prefix (dec-ea925a2d30), scoped to the launch and the CLI installs
     assert "'^EDP8?_'" in src and "WithoutFleetEnv {" in src
 

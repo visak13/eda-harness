@@ -14,10 +14,12 @@ Windows node cannot do for a pipe, ENOTSUP, m-9ef1667f16.) Each request is check
 - a WebSocket upgrade's ``Origin`` (when sent) is one of the allowed origins (the guard's own two
   plus the board origins passed with ``--allow-origin``), else 403.
 
-Client-sent ``X-Forwarded-*`` / ``Forwarded`` headers are dropped: code-server's origin check
+Client-sent ``X-Forwarded-*`` (any) / ``Forwarded`` headers are dropped: code-server's origin check
 prefers ``X-Forwarded-Host`` over ``Host``. Every request on a keep-alive connection is checked; a
 body is delimited by ``Content-Length``, a chunked body turns the connection into ``Connection:
-close`` (forwarded raw, nothing parsed after it). After an upgrade the bytes are relayed raw.
+close`` (forwarded raw, nothing parsed after it). An upgrade is relayed only as a connection's
+first request, and the bytes flow raw only after code-server answers ``101``; any other answer
+ends the connection.
 
     CODE_GUARD_SESSION=<secret> python -m edp8.code_guard --port 9410 --upstream tcp:127.0.0.1:<inner> \\
         --allow-origin http://127.0.0.1:9400 [--tag <install dir>]
@@ -33,12 +35,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import re
 import sys
 
 MAX_HEAD = 64 * 1024
 SESSION_COOKIE = "code-server-session"
 SESSION_ENV = "CODE_GUARD_SESSION"
-_DROP = {"x-forwarded-host", "x-forwarded-for", "x-forwarded-proto", "x-forwarded-port", "forwarded"}
+_TOKEN = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")  # RFC 9110 field-name
 
 
 class Refused(Exception):
@@ -60,49 +63,47 @@ def check_head(head: bytes, port: int, origins: set[str], session: str | None = 
 
     With ``session``, the forwarded head carries ``code-server-session=<session>`` in place of any
     session cookie the client sent (code-server's password login, supplied by the guard).
-    Raises Refused for a request the guard must not relay.
+    Raises Refused for a request the guard must not relay. Anything a parser downstream could read
+    differently from this one (a non-token header name, a bare CR/LF, a repeated Content-Length or
+    Upgrade, Content-Length with Transfer-Encoding, an Upgrade without the ``upgrade`` Connection
+    token or the reverse) is refused rather than relayed.
     """
     try:
         text = head.decode("latin-1")
     except Exception:  # pragma: no cover - latin-1 decodes any byte
         raise Refused(400, "Bad Request", "undecodable head")
-    lines = text.split("\r\n")
+    lines = text[:-4].split("\r\n") if text.endswith("\r\n\r\n") else text.split("\r\n")
+    if any("\r" in ln or "\n" in ln for ln in lines):
+        raise Refused(400, "Bad Request", "bare CR or LF in the head")
     parts = lines[0].split(" ")
-    if len(parts) != 3 or not parts[2].startswith("HTTP/1."):
+    if len(parts) != 3 or parts[2] not in ("HTTP/1.1", "HTTP/1.0"):
         raise Refused(400, "Bad Request", "malformed request line")
     target = parts[1]
     if not target.startswith("/"):
         raise Refused(400, "Bad Request", "only origin-form request targets are relayed")
     kept = [lines[0]]
-    hosts, origin, upgrade, conn, length, chunked, cookies = [], None, False, "", 0, False, []
+    hosts, origins_seen, upgrades, conn, lengths, te, cookies = [], [], [], set(), [], [], []
     for line in lines[1:]:
         if not line:
-            continue
-        if ":" not in line or line[0] in " \t":
+            raise Refused(400, "Bad Request", "empty header line")
+        name, sep, value = line.partition(":")
+        if not sep or not _TOKEN.fullmatch(name):
             raise Refused(400, "Bad Request", "malformed header line")
-        name, value = line.split(":", 1)
-        key, value = name.strip().lower(), value.strip()
-        if key in _DROP:
+        key, value = name.lower(), value.strip(" \t")
+        if key.startswith("x-forwarded-") or key == "forwarded":
             continue
         if key == "host":
             hosts.append(value.lower())
         elif key == "origin":
-            if origin is not None:
-                raise Refused(403, "Forbidden", "more than one Origin")
-            origin = value.lower()
+            origins_seen.append(value.lower())
         elif key == "upgrade":
-            upgrade = value.lower() == "websocket" or upgrade
+            upgrades.append(value.lower())
         elif key == "connection":
-            conn = value.lower()
+            conn |= {t.strip().lower() for t in value.split(",") if t.strip()}
         elif key == "content-length":
-            try:
-                length = int(value)
-            except ValueError:
-                raise Refused(400, "Bad Request", "bad Content-Length")
-            if length < 0:
-                raise Refused(400, "Bad Request", "bad Content-Length")
+            lengths.append(value)
         elif key == "transfer-encoding":
-            chunked = True
+            te.append(value.lower())
         elif key == "cookie" and session is not None:
             cookies += [c.strip() for c in value.split(";")
                         if c.strip() and not c.strip().lower().startswith(SESSION_COOKIE)]
@@ -112,10 +113,29 @@ def check_head(head: bytes, port: int, origins: set[str], session: str | None = 
         kept.append("Cookie: " + "; ".join(cookies + [f"{SESSION_COOKIE}={session}"]))
     if len(hosts) != 1 or hosts[0] not in allowed_hosts(port):
         raise Refused(421, "Misdirected Request", f"Host {hosts!r} is not 127.0.0.1:{port} or localhost:{port}")
-    is_ws = upgrade and "upgrade" in conn
+    if len(origins_seen) > 1:
+        raise Refused(403, "Forbidden", "more than one Origin")
+    origin = origins_seen[0] if origins_seen else None
+    length = 0
+    if len(lengths) > 1 or (lengths and te):
+        raise Refused(400, "Bad Request", "ambiguous body length (repeated Content-Length or with Transfer-Encoding)")
+    if lengths:
+        if not lengths[0].isdigit():
+            raise Refused(400, "Bad Request", "bad Content-Length")
+        length = int(lengths[0])
+    if te and te != ["chunked"]:
+        raise Refused(400, "Bad Request", "only a single Transfer-Encoding: chunked is relayed")
+    chunked = bool(te)
+    if len(upgrades) > 1 or bool(upgrades) != ("upgrade" in conn):
+        raise Refused(400, "Bad Request", "ambiguous upgrade (Upgrade and Connection: upgrade must come together, once)")
+    is_ws = bool(upgrades)
+    if is_ws and upgrades != ["websocket"]:
+        raise Refused(400, "Bad Request", f"only WebSocket upgrades are relayed, not {upgrades[0]!r}")
+    if is_ws and (length or chunked):
+        raise Refused(400, "Bad Request", "an upgrade request carries no body")
     if is_ws and origin is not None and origin not in origins:
         raise Refused(403, "Forbidden", f"WebSocket Origin {origin!r} is not allowed")
-    if chunked and not is_ws:
+    if chunked:
         kept = [k for k in kept if not k.lower().startswith("connection:")] + ["Connection: close"]
     out = ("\r\n".join(kept) + "\r\n\r\n").encode("latin-1")
     return out, {"ws": is_ws, "length": length, "chunked": chunked}
@@ -155,6 +175,14 @@ async def _pump(src: asyncio.StreamReader, dst: asyncio.StreamWriter) -> None:
             pass
 
 
+async def _drain_until_eof(reader: asyncio.StreamReader) -> None:
+    try:
+        while await reader.read(65536):
+            pass
+    except (ConnectionError, OSError):
+        pass
+
+
 async def _read_head(reader: asyncio.StreamReader) -> bytes | None:
     try:
         return await reader.readuntil(b"\r\n\r\n")
@@ -180,12 +208,15 @@ class Guard:
                 return
             fwd, facts = check_head(head, self.port, self.origins, self.session)
             ureader, uwriter = await open_upstream(self.upstream)
+            if facts["ws"]:
+                await self._upgrade(fwd, creader, cwriter, ureader, uwriter)
+                return
             # responses flow back raw; requests are checked one head at a time
             tasks.append(asyncio.create_task(_pump(ureader, cwriter)))
             while True:
                 uwriter.write(fwd)
                 await uwriter.drain()
-                if facts["ws"] or facts["chunked"]:
+                if facts["chunked"]:
                     await _pump(creader, uwriter)
                     break
                 left = facts["length"]
@@ -201,6 +232,9 @@ class Guard:
                     break
                 try:
                     fwd, facts = check_head(head, self.port, self.origins, self.session)
+                    if facts["ws"]:
+                        # browsers open every WebSocket on its own connection
+                        raise Refused(400, "Bad Request", "an upgrade is only relayed as a connection's first request")
                 except Refused as r:
                     # a browser never changes Host on a pooled connection; anything that does is
                     # cut off: the refused request is never relayed and the connection closes
@@ -232,6 +266,27 @@ class Guard:
                         w.close()
                     except (OSError, RuntimeError):
                         pass
+
+    async def _upgrade(self, fwd, creader, cwriter, ureader, uwriter) -> None:
+        """Relay an upgrade request; tunnel raw only once code-server answers 101. Any other answer
+        is relayed and the connection ends: nothing the client sends after it reaches code-server."""
+        uwriter.write(fwd)
+        await uwriter.drain()
+        try:
+            rhead = await ureader.readuntil(b"\r\n\r\n")
+        except (asyncio.IncompleteReadError, asyncio.LimitOverrunError):
+            return
+        cwriter.write(rhead)
+        await cwriter.drain()
+        status = rhead.split(b"\r\n", 1)[0].split(b" ")
+        if len(status) > 1 and status[1] == b"101":
+            await asyncio.gather(_pump(ureader, cwriter), _pump(creader, uwriter))
+            return
+        down = asyncio.create_task(_pump(ureader, cwriter))
+        eof = asyncio.create_task(_drain_until_eof(creader))
+        await asyncio.wait({down, eof}, return_when=asyncio.FIRST_COMPLETED)
+        for t in (down, eof):
+            t.cancel()
 
     async def serve(self, host: str = "127.0.0.1", ready=None) -> None:
         server = await asyncio.start_server(self.handle, host, self.port, limit=MAX_HEAD)

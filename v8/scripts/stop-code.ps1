@@ -43,6 +43,14 @@ function IsGuard($p) {
   $p -and $p.CommandLine -and $p.CommandLine -match 'edp8\.code_guard' -and $p.CommandLine -match ('--port\s+' + $PORT + '(\s|$)') -and
     $p.CommandLine.IndexOf($toolsNorm, [StringComparison]::OrdinalIgnoreCase) -ge 0
 }
+# a code-server of THIS service: a server process (--bind-addr) whose parsed --user-data-dir is exactly
+# ours (a substring test took C:\data\user2 for C:\data\user); behind the guard its port is random
+function DataDirOf($p) {
+  if (-not $p -or -not $p.CommandLine -or $p.CommandLine -notmatch '--user-data-dir[\s=]+(?:"([^"]+)"|(\S+))') { return $null }
+  $d = if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
+  try { [IO.Path]::GetFullPath($d).TrimEnd("\") } catch { $null }
+}
+function IsOurServer($p) { (IsOurs $p) -and $p.CommandLine -match '--bind-addr\s' -and ((DataDirOf $p) -eq $userDir.TrimEnd("\")) }
 function SameStart($p, $recorded) { $p -and $recorded -and ([math]::Abs(($p.CreationDate - [datetime]$recorded).TotalSeconds) -le 1) }
 function Climb($p, [scriptblock]$same) {
   # the outermost ancestor of the same kind (a listener may be the child of a launcher)
@@ -68,9 +76,12 @@ $byId = @{}; foreach ($p in $all) { $byId[[int]$p.ProcessId] = $p }
 $root = $null; $groot = $null
 if (Test-Path $stateFile) {
   try { $rec = Get-Content $stateFile -Raw | ConvertFrom-Json } catch { $rec = $null }
+  if ($rec -and $rec.port -and [int]$rec.port -ne $PORT) {
+    Write-Host "the record in $stateFile is for port $($rec.port), not $PORT; not trusting its pids"; $rec = $null
+  }
   if ($rec -and $rec.pid) {
     $p = $byId[[int]$rec.pid]
-    if ((IsOurs $p) -and (SameStart $p $rec.creation_date)) { $root = $p }
+    if ((IsOurServer $p) -and (SameStart $p $rec.creation_date)) { $root = $p }
     elseif ($p) { Write-Host "recorded pid $($rec.pid) is now $($p.Name) (not this code-server or a reused pid); not killing it" }
   }
   if ($rec -and $rec.guard_pid) {
@@ -86,10 +97,19 @@ if ($lp -and -not ($root -and $groot)) {
   elseif (IsOurs $p) { if (-not $root) { $root = Climb $p { param($x) IsOurs $x } } }   # a pre-guard start bound to the port
   elseif (-not $root -and -not $groot) { Fail 3 "port $PORT is held by pid $lp ($($p.Name)), not this code-server; leaving it alone" }
 }
+# every server on this service's user-data dir is ours to stop, recorded or not (a start that failed
+# between launching code-server and recording it leaves one on an inner port no listener check sees)
+$roots = @($root, $groot) | Where-Object { $_ }
+foreach ($p in $all) {
+  if (IsOurServer $p) {
+    $r = Climb $p { param($x) IsOurServer $x }
+    if (-not ($roots | Where-Object { [int]$_.ProcessId -eq [int]$r.ProcessId })) { $roots += @($r) }
+  }
+}
 
 # -- the tree: descendants created at or after their parent ---------------------------------------
 $tree = @()
-foreach ($r in @($root, $groot)) {
+foreach ($r in $roots) {
   if (-not $r) { continue }
   $tree += @($r); $frontier = @($r)
   while ($frontier.Count -gt 0) {
@@ -110,7 +130,7 @@ function OtherInstance($p) {
   if (-not (IsOurs $p) -or $ids.ContainsKey([int]$p.ProcessId) -or -not $p.CommandLine) { return $false }
   # a server is this service's when it runs on this service's user-data dir: behind the guard it binds a
   # random inner port, so the port no longer tells instances apart (a spare-port test uses its own dir)
-  if ($p.CommandLine -match '--bind-addr\s') { return ($p.CommandLine.IndexOf($userDir, [StringComparison]::OrdinalIgnoreCase) -lt 0) }
+  if ($p.CommandLine -match '--bind-addr\s') { return -not (IsOurServer $p) }
   $p.CommandLine -match '--install-extension|--list-extensions|--uninstall-extension'
 }
 $others = @($all | Where-Object { OtherInstance $_ })

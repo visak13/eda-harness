@@ -2,7 +2,7 @@
 
     .venv\\Scripts\\python.exe scripts\\probe-code-guard.py [--port 9410] [--out <file.json>]
 
-Sends, to 127.0.0.1:<port>, each of GET /, GET /vscode-remote-resource?path=<v8 FAQ> and a WebSocket
+Sends, to 127.0.0.1:<port>, heads the guard must refuse as ambiguous (400), and each of GET /, GET /vscode-remote-resource?path=<v8 FAQ> and a WebSocket
 upgrade, once with a rebinding Host (evil.invalid:<port>, matching Origin) and once with the loopback
 Host (and the port's own Origin for the WS). Also sends a board-Origin (:9400) WS upgrade, which the
 guard allows and code-server itself refuses (ruling m-fc4a1fb6f8), and hits code-server's inner port
@@ -86,6 +86,10 @@ def main() -> int:
         "hostile GET resource": send(p, evil, res, []),
         "hostile WS": send(p, evil, WS_TARGET, ws_headers(f"http://{evil}")),
         "hostile Origin WS (loopback Host)": send(p, good, WS_TARGET, ws_headers("http://evil.invalid:1")),
+        # second opinion 20260925T174116Z-b3066925: heads node could read differently from the guard
+        "hostile ambiguous upgrade (Connection: xupgrade)": send(p, good, WS_TARGET, ["Upgrade: websocket", "Connection: xupgrade"]),
+        "hostile Origin WS, Connection split": send(p, good, WS_TARGET, ws_headers("http://evil.invalid:1") + ["Connection: keep-alive"]),
+        "hostile duplicate Content-Length": send(p, good, "/", ["Content-Length: 0", "Content-Length: 5"]),
         "loopback GET /": send(p, good, "/", []),
         "loopback GET resource": send(p, good, res, []),
         "loopback WS (own Origin)": send(p, good, WS_TARGET, ws_headers(f"http://{good}")),
@@ -99,7 +103,7 @@ def main() -> int:
     lst = listeners()
     lines = lst.splitlines()
     checks = {
-        "hostile refused by the guard": all(rows[k]["by_guard"] and rows[k]["code"] in (421, 403) for k in rows if k.startswith("hostile")),
+        "hostile refused by the guard": all(rows[k]["by_guard"] and rows[k]["code"] in (400, 421, 403) for k in rows if k.startswith("hostile")),
         # / answers 302 to the last opened folder once one was opened, 200 before
         "loopback succeeds": rows["loopback GET /"]["code"] in (200, 302) and "login" not in rows["loopback GET /"]["location"]
                              and rows["loopback GET resource"]["code"] == 200 and rows["loopback WS (own Origin)"]["code"] == 101,

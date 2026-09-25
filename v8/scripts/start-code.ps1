@@ -101,16 +101,42 @@ function IsGuard($p) {
   $p -and $p.CommandLine -and $p.CommandLine -match 'edp8\.code_guard' -and $p.CommandLine -match ('--port\s+' + $PORT + '(\s|$)') -and
     $p.CommandLine.IndexOf($toolsNorm, [StringComparison]::OrdinalIgnoreCase) -ge 0
 }
+# a code-server of THIS service: a server (--bind-addr) whose parsed --user-data-dir is exactly ours
+function DataDirOf($p) {
+  if (-not $p -or -not $p.CommandLine -or $p.CommandLine -notmatch '--user-data-dir[\s=]+(?:"([^"]+)"|(\S+))') { return $null }
+  $d = if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
+  try { [IO.Path]::GetFullPath($d).TrimEnd("\") } catch { $null }
+}
+function IsOurServer($p) { (IsOurs $p) -and $p.CommandLine -match '--bind-addr\s' -and ((DataDirOf $p) -eq ([IO.Path]::GetFullPath($userDir)).TrimEnd("\")) }
+function SameStart($p, $recorded) { $p -and $recorded -and ([math]::Abs(($p.CreationDate - [datetime]$recorded).TotalSeconds) -le 1) }
+# the workbench answers through the guard without a login: proves the guard's session cookie is the
+# one code-server expects (/healthz alone answers without auth)
+function Workbench {
+  try {
+    $r = [Net.HttpWebRequest]::Create("http://127.0.0.1:$PORT/"); $r.AllowAutoRedirect = $false; $r.Timeout = 5000
+    $resp = $r.GetResponse()
+    try { $code = [int]$resp.StatusCode; $loc = "" + $resp.Headers["Location"] } finally { $resp.Close() }
+    ($code -eq 200) -or ($code -eq 302 -and $loc -notmatch 'login')
+  } catch { $false }
+}
 function WriteState($p, $g, $inner) {
   $state = [ordered]@{
     service = "code"; pid = [int]$p.ProcessId; port = $PORT; version = $lock.version; sha256 = $lock.sha256
     git_rev = (GitRev); started_at = (Get-Date).ToString("yyyy-MM-ddTHH:mm:sszzz")
     creation_date = $p.CreationDate.ToString("o"); install_dir = $installDir
-    inner_port = $inner; guard_pid = [int]$g.ProcessId; guard_creation_date = $g.CreationDate.ToString("o")
+    inner_port = $inner; guard_pid = $(if ($g) { [int]$g.ProcessId } else { $null })
+    guard_creation_date = $(if ($g) { $g.CreationDate.ToString("o") } else { $null })
     last_probe = $null; last_ok = $null; last_restart_reason = $null; restarts = 0
   }
   WriteUtf8 $stateFile ($state | ConvertTo-Json)
 }
+
+# -- one start at a time: a second start (a retry after an edp timeout) must not race the first's
+# download/extract/extension install, or its listener check. The lock is an exclusively opened file,
+# released on exit.
+$startLock = $null
+try { $startLock = [IO.File]::Open((Join-Path $RUN "code.start.lock"), "OpenOrCreate", "ReadWrite", "None") }
+catch { Fail 7 "another start-code.ps1 is running (it holds $RUN\code.start.lock); wait for it" }
 
 # -- already running? -----------------------------------------------------------------------------
 $lp = ListenerPid
@@ -118,8 +144,12 @@ if ($lp) {
   $p = Proc $lp
   if (IsGuard $p) {
     $rec = $null; try { $rec = Get-Content $stateFile -Raw | ConvertFrom-Json } catch { }
-    $srv = $null; if ($rec -and $rec.pid) { $srv = Proc ([int]$rec.pid) }
-    if (-not ((IsOurs $srv) -and (Healthy))) { Fail 3 "port $PORT is held by this service's guard (pid $lp) but no healthy code-server is recorded behind it: restart it (.\edp.ps1 restart code)" }
+    $srv = $null; $grd = $null
+    if ($rec -and $rec.pid -and [int]$rec.port -eq $PORT) { $srv = Proc ([int]$rec.pid); $grd = Proc ([int]$rec.guard_pid) }
+    # the recorded pair, authenticated by start time, and the listener is that guard (or its child)
+    $pairOk = (IsOurServer $srv) -and (SameStart $srv $rec.creation_date) -and (IsGuard $grd) -and (SameStart $grd $rec.guard_creation_date) -and
+      (([int]$grd.ProcessId -eq $lp) -or ([int]$p.ParentProcessId -eq [int]$grd.ProcessId))
+    if (-not ($pairOk -and (Healthy) -and (Workbench))) { Fail 3 "port $PORT is held by this service's guard (pid $lp) but the recorded code-server behind it is missing, unverified or not serving the workbench: restart it (.\edp.ps1 restart code)" }
     $pinned = ([IO.Path]::GetFullPath($installDir)).TrimEnd("\") + "\"
     if (-not $srv.ExecutablePath.StartsWith($pinned, [StringComparison]::OrdinalIgnoreCase)) {
       Write-Host "code     running on 127.0.0.1:$PORT from $($srv.ExecutablePath), NOT the pinned $($lock.version): restart it (.\edp.ps1 restart code)"
@@ -127,16 +157,9 @@ if ($lp) {
     exit 0
   }
   if (-not (IsOurs $p)) { Fail 3 "port $PORT is held by pid $lp ($($p.Name) $($p.ExecutablePath)), not this code-server; leaving it alone" }
-  # code-server bound to the port itself: a start from before the guard (s-03c7e9168b)
-  Write-Host "code     running on 127.0.0.1:$PORT WITHOUT the host guard (pid $lp, a pre-guard start): restart it (.\edp.ps1 restart code)"
-  exit 0
+  # code-server bound to the port itself: a start from before the guard (s-03c7e9168b); not a success
+  Fail 3 "code-server is on 127.0.0.1:$PORT WITHOUT the host guard (pid $lp, a pre-guard start): restart it (.\edp.ps1 restart code)"
 }
-
-# -- one start at a time: a second start (a retry after an edp timeout) must not race the first's
-# download/extract/extension install. The lock is an exclusively opened file, released on exit.
-$startLock = $null
-try { $startLock = [IO.File]::Open((Join-Path $RUN "code.start.lock"), "OpenOrCreate", "ReadWrite", "None") }
-catch { Fail 7 "another start-code.ps1 is running (it holds $RUN\code.start.lock); wait for it" }
 
 # -- install (no-op when the pinned build is present and verified) -----------------------------------
 & (Join-Path $PSScriptRoot "install-code-server.ps1")
@@ -275,7 +298,8 @@ if ($SkipExtensions) {
 # -- launch ---------------------------------------------------------------------------------------
 if (-not (Test-Path $PY)) { Fail 4 "the host guard needs the edp8 venv python ($PY); run uv sync in v8" }
 $flags = @(
-  "`"$serverDir`"", "--bind-addr", "${BINDHOST}:$INNER", "--auth", "password",
+  # --log info outranks an inherited LOG_LEVEL: at trace VS Code logs its arguments, the password among them
+  "`"$serverDir`"", "--bind-addr", "${BINDHOST}:$INNER", "--auth", "password", "--log", "info",
   "--disable-telemetry", "--disable-update-check", "--disable-proxy",
   "--config", "`"$config`"", "--user-data-dir", "`"$userDir`"", "--extensions-dir", "`"$extDir`""
 )
@@ -297,16 +321,21 @@ $body = @(
   # the per-start secret: to code-server as $HASHED_PASSWORD (it deletes the variable after reading, so
   # terminals never inherit it), then to the guard as CODE_GUARD_SESSION; never on a command line
   '$s = $env:CODE_GUARD_HANDOFF; Remove-Item Env:CODE_GUARD_HANDOFF',
+  # inherited settings that would change how code-server reads or logs the password: a cookie suffix
+  # renames the cookie the guard injects, trace logging (LOG_LEVEL, VSCODE_OPTIONS) writes it out
+  'foreach ($k in "LOG_LEVEL", "PASSWORD", "CODE_SERVER_COOKIE_SUFFIX", "VSCODE_OPTIONS", "CODE_SERVER_CONFIG") { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }',
   '$env:HASHED_PASSWORD = $s',
   # Keep the original app port in a URL-parseable path. The board sends the browser a loopback-only
   # redirect; it never proxies app traffic. {{port}} in a URL port is invalid before substitution.
   ('$env:VSCODE_PROXY_URI = {0}' -f (& $q "$BOARD/v1/code/external/{{port}}/")),
   ('$p =Start-Process -FilePath {0} -ArgumentList @({1}) -WorkingDirectory {2} -WindowStyle Hidden -PassThru -RedirectStandardOutput {3} -RedirectStandardError {4}' -f
     (& $q $node), (($flags | ForEach-Object { & $q $_ }) -join ", "), (& $q $v8), (& $q $log), (& $q $err)),
+  # the server pid is recorded at once, so a failing guard launch never leaves an unrecorded server
+  ('Set-Content -Path {0} -Value $p.Id -Encoding ascii' -f (& $q $pidFile)),
   'Remove-Item Env:HASHED_PASSWORD; $env:CODE_GUARD_SESSION = $s',
-  ('$g =Start-Process -FilePath {0} -ArgumentList @({1}) -WorkingDirectory {2} -WindowStyle Hidden -PassThru -RedirectStandardOutput {3} -RedirectStandardError {4}' -f
+  ('try {{ $g =Start-Process -FilePath {0} -ArgumentList @({1}) -WorkingDirectory {2} -WindowStyle Hidden -PassThru -RedirectStandardOutput {3} -RedirectStandardError {4} }} catch {{ Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; throw }}' -f
     (& $q $PY), (($guardFlags | ForEach-Object { & $q $_ }) -join ", "), (& $q $v8), (& $q $glog), (& $q $gerr)),
-  ('Set-Content -Path {0} -Value @($p.Id, $g.Id) -Encoding ascii' -f (& $q $pidFile))
+  ('Add-Content -Path {0} -Value $g.Id -Encoding ascii' -f (& $q $pidFile))
 ) -join "`r`n"
 WriteUtf8 $wrap $body
 WithoutFleetEnv {
@@ -318,23 +347,38 @@ WithoutFleetEnv {
   if (-not $w.WaitForExit(30000)) { Fail 6 "the launch wrapper did not exit within 30 s ($wrap)" }
 }
 Remove-Item $wrap -Force -ErrorAction SilentlyContinue
-if (-not (Test-Path $pidFile)) { Fail 6 "the launch wrapper recorded no server pid (see $err)" }
+# a failed start rolls back what it launched: stop-code.ps1 finds the server by this service's
+# user-data dir and the guard by its record or listener, and kills only those trees
+function FailRollback($code, $msg) {
+  & (Join-Path $PSScriptRoot "stop-code.ps1") *>&1 | ForEach-Object { Write-Host "   rollback | $_" }
+  Fail $code "$msg (rolled back)"
+}
+if (-not (Test-Path $pidFile)) { FailRollback 6 "the launch wrapper recorded no server pid (see $err)" }
 $pids = @(Get-Content $pidFile | ForEach-Object { ("" + $_).Trim() } | Where-Object { $_ }); Remove-Item $pidFile -Force
-if ($pids.Count -lt 2) { Fail 6 "the launch wrapper recorded no guard pid (see $err / $gerr; stop with scripts\stop-code.ps1)" }
-$serverPid = [int]$pids[0]; $guardPid = [int]$pids[1]
+$serverPid = [int]$pids[0]
+$root = Proc $serverPid
+$guardPid = if ($pids.Count -ge 2) { [int]$pids[1] } else { 0 }
+$groot = if ($guardPid) { Proc $guardPid } else { $null }
+# the records are taken now, while they are alive: stop-code.ps1 finds either by them after a failure
+if ($root) { WriteState $root $groot $INNER }
+if ($pids.Count -lt 2) { FailRollback 6 "the launch wrapper recorded no guard pid (see $err / $gerr)" }
 $script:proc = Get-Process -Id $serverPid -ErrorAction SilentlyContinue
 $script:gproc = Get-Process -Id $guardPid -ErrorAction SilentlyContinue
-# the records are taken now, while both are alive: stop-code.ps1 finds either by them after a failure
-$root = Proc $serverPid; $groot = Proc $guardPid
-if ($root -and $groot) { WriteState $root $groot $INNER }
-if (-not $script:proc) { Fail 6 "code-server pid $serverPid exited at once; see $err" }
-if (-not $script:gproc) { Fail 6 "the guard pid $guardPid exited at once; see $gerr (stop with scripts\stop-code.ps1)" }
+if (-not $script:proc) { FailRollback 6 "code-server pid $serverPid exited at once; see $err" }
+if (-not $script:gproc) { FailRollback 6 "the guard pid $guardPid exited at once; see $gerr" }
 $deadline = (Get-Date).AddSeconds($TimeoutSec)
 while ((Get-Date) -lt $deadline -and -not (Healthy)) {
-  if ($script:proc.HasExited) { Fail 6 "code-server exited ($($script:proc.ExitCode)) before /healthz answered; see $err" }
-  if ($script:gproc.HasExited) { Fail 6 "the guard exited ($($script:gproc.ExitCode)) before /healthz answered; see $gerr (stop with scripts\stop-code.ps1)" }
+  if ($script:proc.HasExited) { FailRollback 6 "code-server exited ($($script:proc.ExitCode)) before /healthz answered; see $err" }
+  if ($script:gproc.HasExited) { FailRollback 6 "the guard exited ($($script:gproc.ExitCode)) before /healthz answered; see $gerr" }
   Start-Sleep -Milliseconds 500
 }
-if (-not (Healthy)) { Fail 6 "code-server pid $serverPid behind guard pid $guardPid did not answer /healthz within $TimeoutSec s; see $log / $err / $gerr (stop it with scripts\stop-code.ps1)" }
+if (-not (Healthy)) { FailRollback 6 "code-server pid $serverPid behind guard pid $guardPid did not answer /healthz within $TimeoutSec s; see $log / $err / $gerr" }
+# the inner port was free when chosen, but anything could have taken it before code-server bound it:
+# the guard hands its secret to whatever listens there, so that must be this service's code-server
+$ic = Get-NetTCPConnection -LocalPort $INNER -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+$ip = if ($ic) { Proc ([int]$ic.OwningProcess) } else { $null }
+# (the listener is code-server's forked child: node ...\out\node\entry, parent = the server we started)
+if (-not ((IsOurs $ip) -and [int]$ip.ParentProcessId -eq $serverPid -and $ip.CreationDate -ge $root.CreationDate)) { FailRollback 6 "the inner port $INNER is held by pid $($ic.OwningProcess) ($($ip.Name)), not this code-server" }
+if (-not (Workbench)) { FailRollback 6 "the workbench did not answer through the guard without a login (the session cookie was not accepted); see $log / $gerr" }
 Write-Host "code     up   guard pid $guardPid http://127.0.0.1:$PORT -> code-server pid $serverPid on 127.0.0.1:$INNER (auth password, guard-held)  (code-server $($lock.version))"
 exit 0
