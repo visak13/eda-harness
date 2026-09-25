@@ -12,6 +12,12 @@ safe to do there. It grows over time (design-449b628cdd §4).
 - **Board host only.** code-server listens on loopback with no password (a terminal is a shell on the
   host), so the tab works only in a browser on the board host. A browser on another machine sees
   "Code runs on the board host only" and nothing is exposed.
+- **The owner only.** A guard on :9410 relays only for a browser holding its sign-in cookie. The tab
+  gets that cookie through a one-time, 60-second sign-in the board issues to its human owner alone,
+  and the cookie lasts until the code service restarts or the browser closes. Agent seats and other callers get 401 from
+  :9410 and "The board did not open a code session" in the tab. After `.\edp.ps1 restart code`,
+  reload the tab to sign in again. A bare `http://127.0.0.1:9410/` bookmark answers 401 until the
+  tab has signed that browser in.
 - **Chromium only** (Chrome, Edge). Firefox cannot load webviews (Markdown preview, extension panels)
   from code-server: upstream bug coder/code-server#7913.
 - **Deep links:** `/ui/code?folder=<abs>&file=<rel>&line=<n>` or `line=<n>-<m>` opens a folder and
