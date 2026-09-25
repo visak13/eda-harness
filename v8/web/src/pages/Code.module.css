@@ -1,0 +1,33 @@
+/* epic-91fcd3b370 S3: the Code tab fills the shell's main area (AppShell bleed: no padding, no page
+   scroll). A thin strip on top; the iframe takes every remaining pixel. The strip's right edge leaves
+   the floating help button's lane free. */
+.page { display: flex; flex-direction: column; flex: 1; min-height: 0; height: 100%; }
+.strip {
+  flex: none; display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 72px 0 14px;
+  border-bottom: 1.5px solid var(--strongline); background: var(--panel); font-size: 13px; min-width: 0;
+}
+.title { margin: 0; font-size: 15px; font-weight: 750; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); white-space: nowrap; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.chip[data-running="true"] { color: var(--ink); background: var(--successwash); }
+.chip[data-running="true"] .dot { background: var(--success); }
+.where { font-family: Consolas, "Cascadia Mono", monospace; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.invalid { color: var(--accentink); white-space: nowrap; }
+.spacer { flex: 1; }
+.action {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 10px; border: 1.5px solid var(--strongline);
+  border-radius: 8px; color: var(--ink); background: var(--panel); text-decoration: none; white-space: nowrap;
+}
+.action:hover { background: var(--secondary); }
+.action:focus-visible, .retry:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
+.body { flex: 1; min-height: 0; display: flex; }
+.frame { flex: 1; width: 100%; height: 100%; border: 0; display: block; background: var(--bg); }
+.state { margin: 48px auto; max-width: 560px; padding: 24px 28px; border: 1.5px solid var(--strongline); border-radius: 10px; background: var(--panel); box-shadow: 3px 3px 0 var(--line); align-self: flex-start; }
+.stateTitle { margin: 0 0 10px; font-size: 20px; }
+.command { margin: 12px 0 16px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font: 14px Consolas, "Cascadia Mono", monospace; }
+.retry { min-height: 36px; padding: 0 16px; border: 1.5px solid var(--strongline); border-radius: 8px; background: var(--accentwash); color: var(--ink); font: inherit; font-weight: 650; cursor: pointer; }
+.back { margin: 0 0 12px; }
+@media (max-width: 767px) {
+  .strip { padding-right: 60px; gap: 8px; }
+  .where, .invalid { display: none; }
+}

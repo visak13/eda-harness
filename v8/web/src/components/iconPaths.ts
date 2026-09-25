@@ -5,6 +5,8 @@ export const ICON_PATHS = {
   "epics": "M6 7h15v14H6ZM17 7V3H3v14h3M10 12h7m-7 4h5",
   "seats": "M8 4a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM17 4a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM3 20v-4a5 5 0 0 1 10 0v4ZM14 12a5 5 0 0 1 8 4v4h-6",
   "library": "M3 4h18v4H3ZM5 8v12h14V8M10 12h4",
+  // epic-91fcd3b370 S3: the Code tab rail entry (angle brackets and a slash)
+  "code": "m8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16",
   "find": "M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM15 15l6 6",
   "add": "M12 4v16M4 12h16",
   "close": "M5 5l14 14M19 5 5 19",

@@ -7,9 +7,11 @@ import styles from "./Conversation.module.css";
 // it as a card (path, lines, short sha, snippet) with an "Open in Code" deep link. The snippet is a
 // React text node inside <pre><code> — never HTML — so `<script>` in code stays literal text.
 
-/** The Code tab deep link (design-449b628cdd §4): /code?folder=<abs>&file=<rel>&line=<n>. */
+/** The Code tab deep link (design-449b628cdd §4): /code?folder=<abs>&file=<rel>&line=<n>[-<m>]; a
+ *  multi-line anchor carries its range (S3 parses it in pages/codeLink.ts). */
 export function codeHref(c: CodeContext): string {
-  const q = new URLSearchParams({ folder: c.repo_root, file: c.path, line: String(c.line_start) });
+  const line = c.line_end > c.line_start ? `${c.line_start}-${c.line_end}` : String(c.line_start);
+  const q = new URLSearchParams({ folder: c.repo_root, file: c.path, line });
   return `/code?${q.toString()}`;
 }
 

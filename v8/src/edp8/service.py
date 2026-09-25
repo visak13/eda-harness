@@ -644,6 +644,10 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     app.include_router(topics_router(board, actor, topic_actor, _mint_human_token, _revoke_human_token))
 
     app.include_router(usage_router(actor))
+    # epic-91fcd3b370 S3: where code-server is (port from EDP_CODE_PORT) and whether it is up; the FAQ
+    from .api_code import code_router
+    from .views import render_markdown
+    app.include_router(code_router(actor, render_markdown))
 
     # identity -----------------------------------------------------------------
     @app.get("/v1/whoami")

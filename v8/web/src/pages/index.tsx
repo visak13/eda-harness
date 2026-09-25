@@ -17,6 +17,9 @@ export { DecisionsPage } from "./Decisions";
 // SeatsPage is G3b's, now landed (pages/Seats.tsx).
 export { SeatsPage } from "./Seats";
 
+// epic-91fcd3b370 S3: the Code tab and its FAQ.
+export { CodePage, CodeFaqPage } from "./Code";
+
 export function NotFoundPage(): React.JSX.Element {
   return (
     <>

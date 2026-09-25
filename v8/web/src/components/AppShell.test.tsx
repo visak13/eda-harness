@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { http, HttpResponse } from "msw";
 import { server } from "../test/setup";
 import { ThemeProvider } from "../theme/ThemeProvider";
-import { AppShell } from "./AppShell";
+import { AppShell, isBleedRoute, navFamily } from "./AppShell";
 import { EpicsPage } from "../pages/Epics";
 
 function renderShell(initial = "/me", epicsBody: React.ReactNode = <div>epics body</div>) {
@@ -18,6 +18,7 @@ function renderShell(initial = "/me", epicsBody: React.ReactNode = <div>epics bo
             <Route element={<AppShell />}>
               <Route path="me" element={<div>decisions body</div>} />
               <Route path="epics" element={epicsBody} />
+              <Route path="code" element={<div>code body</div>} />
             </Route>
           </Routes>
         </MemoryRouter>
@@ -34,13 +35,14 @@ beforeEach(() => {
 });
 
 describe("AppShell", () => {
-  it("renders Epics, Seats, Library and Needs you (one Library destination)", async () => {
+  it("renders Epics, Seats, Library, Code and Needs you (one Library destination)", async () => {
     renderShell("/me");
     const links = screen.getAllByRole("link");
     expect(links.map((l) => l.textContent?.replace(/\d+$/, "").trim())).toEqual([
       "Epics",
       "Seats",
       "Library",
+      "Code",
       "Needs you",
     ]);
     // NavLink marks the active route with aria-current=page.
@@ -218,5 +220,38 @@ describe("rail collapse (S17)", () => {
     view.unmount();
     renderShell("/me");
     expect(screen.getByRole("button", { name: "Expand menu" })).toBeInTheDocument();
+  });
+});
+
+// epic-91fcd3b370 S3: the Code tab is full-bleed; the rail collapses there without rewriting the
+// viewer's remembered preference, and the toggle expands it for that visit only.
+describe("Code tab route (S3)", () => {
+  it("navFamily and isBleedRoute know /code; its FAQ is an ordinary page", () => {
+    expect(navFamily("/code")).toBe("/code");
+    expect(navFamily("/code/faq")).toBe("/code");
+    expect(navFamily("/codex")).toBeNull();
+    expect(isBleedRoute("/code")).toBe(true);
+    expect(isBleedRoute("/code/faq")).toBe(false);
+    expect(isBleedRoute("/me")).toBe(false);
+  });
+
+  it("collapses the rail on /code, marks the shell full-bleed, and leaves the saved preference alone", async () => {
+    localStorage.clear();
+    renderShell("/code");
+    const shell = document.querySelector("[data-rail]")!;
+    expect(shell).toHaveAttribute("data-rail", "collapsed");
+    expect(shell).toHaveAttribute("data-bleed", "true");
+    expect(screen.getByRole("link", { name: /Code/ })).toHaveAttribute("aria-current", "page");
+    fireEvent.click(screen.getByRole("button", { name: "Expand menu" }));
+    expect(shell).toHaveAttribute("data-rail", "full");
+    expect(Object.keys(localStorage).some((k) => k.endsWith(".rail-collapsed"))).toBe(false);
+  });
+
+  it("an ordinary route keeps the full rail and no bleed", () => {
+    localStorage.clear();
+    renderShell("/me");
+    const shell = document.querySelector("[data-rail]")!;
+    expect(shell).toHaveAttribute("data-rail", "full");
+    expect(shell).not.toHaveAttribute("data-bleed");
   });
 });

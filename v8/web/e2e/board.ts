@@ -77,8 +77,10 @@ function hermeticEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return out;
 }
 
-/** Spawn a board, wait healthy, seed owner + one epic. Returns base URL + seeded ids. */
-export async function startBoard(): Promise<Seeded> {
+/** Spawn a board, wait healthy, seed owner + one epic. Returns base URL + seeded ids. `extraEnv`
+ *  (a spec's `boardEnv` option) is applied last — e.g. code-tab.spec.ts points EDP_CODE_PORT at a
+ *  dead port for its down-state board. */
+export async function startBoard(extraEnv: Record<string, string> = {}): Promise<Seeded> {
   const port = await freePort();
   const base = `http://127.0.0.1:${port}`;
   tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "edp8-e2e-"));
@@ -105,6 +107,7 @@ export async function startBoard(): Promise<Seeded> {
       // pinned here so a stray EDP8_UI=legacy in the launching shell can't flip the board to serve
       // the SPA at /app and 404 every spec's /ui/* navigation.
       EDP8_UI: "folio",
+      ...extraEnv,
     },
   });
 

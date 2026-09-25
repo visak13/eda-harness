@@ -97,3 +97,13 @@
   .lower { margin: 0; }
   .main { margin: 0; padding: 12px 12px 40px; min-height: 0; }
 }
+
+/* epic-91fcd3b370 S3: a full-bleed route (the Code tab) fills the viewport: the shell is exactly one
+   viewport tall with no page scroll, main loses its padding and hands its whole box to the page, and
+   the help button moves up into the page's 44px strip. */
+.shell[data-bleed="true"] { height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; }
+.shell[data-bleed="true"] .main { padding: 0; min-height: 0; height: 100%; overflow: hidden; }
+.shell[data-bleed="true"] .helpFab { top: 2px; }
+@media (max-width: 767px) {
+  .shell[data-bleed="true"] .main { flex: 1; height: auto; }
+}

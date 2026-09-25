@@ -51,7 +51,7 @@ describe("CodeCard (S4)", () => {
     expect(url.pathname).toBe("/code");
     expect(url.searchParams.get("folder")).toBe("C:/Projects/Learning/eda-base3/v8");
     expect(url.searchParams.get("file")).toBe("src/edp8/board.py");
-    expect(url.searchParams.get("line")).toBe("10");
+    expect(url.searchParams.get("line")).toBe("10-20"); // S3: a range anchor carries its range
   });
 
   it("encodes awkward folder/file names so they survive the round-trip", () => {
@@ -59,7 +59,7 @@ describe("CodeCard (S4)", () => {
     const url = new URL(href, "http://x");
     expect(url.searchParams.get("folder")).toBe("C:/My Repo & co");
     expect(url.searchParams.get("file")).toBe("a b/c#d?.py");
-    expect(url.searchParams.get("line")).toBe("3");
+    expect(url.searchParams.get("line")).toBe("3-20");
   });
 
   it("renders a <script> / <img onerror> snippet as literal text — no DOM injection", () => {

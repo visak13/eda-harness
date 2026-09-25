@@ -34,6 +34,8 @@ import type {
   TopicPage,
   TopicRow,
   TopicSeat,
+  CodeStatus,
+  CodeFaq,
 } from "./types";
 
 function qs(params: Record<string, string | number | null | undefined>): string {
@@ -334,3 +336,7 @@ export const addTopicExpert = (id: string, b: { handle: string; name?: string })
 export const removeTopicExpert = (id: string, expertId: string) =>
   apiEnvelope<{ removed: string }>(`${topicPath(id)}/experts/${encodeURIComponent(expertId)}`, { method: "DELETE" });
 export const closeTopic = (id: string) => postJson<TicketRecord>(`${topicPath(id)}/close`, {});
+
+// epic-91fcd3b370 S3: the Code tab reads the service port/state from the board, never the bundle.
+export const getCodeStatus = (): Promise<CodeStatus> => api<CodeStatus>("/v1/code");
+export const getCodeFaq = (): Promise<CodeFaq> => api<CodeFaq>("/v1/code/faq");

@@ -15,11 +15,13 @@ export type { Locator, Page } from "@playwright/test";
  * board is torn down when that worker ends. The base URL reaches the specs through
  * process.env.EDP8_E2E_BASE (set by startBoard in this worker) — read it LAZILY, at test time.
  */
-export const test = base.extend<{}, { boardFile: string; board: { base: string; epic: string } }>({
+export const test = base.extend<{}, { boardFile: string; boardEnv: Record<string, string>; board: { base: string; epic: string } }>({
   boardFile: ["shared", { scope: "worker", option: true }],
+  // Extra env for this file's board (applied last); a different value is a different worker + board.
+  boardEnv: [{}, { scope: "worker", option: true }],
   board: [
-    async ({ boardFile: _boardFile }, use) => {
-      const seeded = await startBoard();
+    async ({ boardFile: _boardFile, boardEnv }, use) => {
+      const seeded = await startBoard(boardEnv);
       await use(seeded);
       stopBoard();
     },

@@ -14,6 +14,8 @@ import {
   NotFoundPage,
   SeatsPage,
   TicketPage,
+  CodePage,
+  CodeFaqPage,
 } from "./pages";
 
 // Redirects preserve the query string so ?as= survives (parity with the legacy `_qs`).
@@ -39,6 +41,9 @@ export const appRoutes: RouteObject[] = [
       { path: "artifact/:id", element: <ArtifactPage /> },
       { path: "seats", element: <SeatsPage /> },
       { path: "settings", element: <SettingsPage /> },
+      // epic-91fcd3b370 S3: the Code tab (full-bleed; AppShell collapses the rail) and its FAQ
+      { path: "code", element: <CodePage /> },
+      { path: "code/faq", element: <CodeFaqPage /> },
       { path: "library", element: <RedirectTo to="/library/knowledge" /> },
       { path: "library/:section", element: <LibraryPage /> },
       { path: "library/topics/:id", element: <TopicPage /> },

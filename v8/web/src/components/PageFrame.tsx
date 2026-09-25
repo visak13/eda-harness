@@ -58,6 +58,7 @@ export function defaultFraming(pathname: string): string {
   if (pathname.startsWith("/epic/")) return "One epic: its goal, its work, and what needs a decision.";
   if (pathname.startsWith("/epics")) return "Every project on the board and how far each has got.";
   if (pathname.startsWith("/settings")) return "Your profile, notification and Slack settings on this board.";
+  if (pathname === "/code" || pathname.startsWith("/code/")) return "A full VS Code on the board host, with its FAQ.";
   if (pathname.startsWith("/seats")) return "See who is available, read their latest status, and message or resume a seat.";
   if (pathname.startsWith("/ticket/")) return "One story: review its criteria, read its evidence, and move it forward.";
   if (pathname.startsWith("/doc/")) return "Read a document and record your sign-off on its criteria.";

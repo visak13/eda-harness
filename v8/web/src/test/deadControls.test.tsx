@@ -288,6 +288,9 @@ function installBoard(): void {
     http.get("/v1/docs/:id/diff", () => ok(KNOWLEDGE_DIFF)),
     http.get("/v1/activity", () => ok(ACTIVITY)),
     http.get("/v1/seats", () => ok(SEATS)),
+    http.get("/v1/code", () => ok({ port: 9410, url: "http://127.0.0.1:9410/", running: false, version: null,
+      default_folder: "/c:/v8", start_command: "edp start code" })),
+    http.get("/v1/code/faq", () => ok({ name: "code-tab-faq", path: "guides/code-tab-faq.md", html: "<h2>Shared tree</h2>" })),
     http.get("/v1/pool/capabilities", () => ok(CAPS)),
     http.get("/v1/models", () => ok(MODEL_CATALOG)),
     http.get("/v1/messages", () => ok([])),
@@ -420,6 +423,21 @@ describe("dead-control lint over the real route table (human #26)", () => {
   it("/artifact/art-1", async () => {
     await walk("/artifact/art-1");
     await screen.findByTestId("artifact-download");
+    await settle();
+    expectNoDead();
+  });
+
+  // epic-91fcd3b370 S3: the Code tab (down-state: FAQ link + Retry) and its FAQ page
+  it("/code", async () => {
+    await walk("/code");
+    await screen.findByTestId("code-down");
+    await settle();
+    expectNoDead();
+  });
+
+  it("/code/faq", async () => {
+    await walk("/code/faq");
+    await screen.findByText("Shared tree");
     await settle();
     expectNoDead();
   });

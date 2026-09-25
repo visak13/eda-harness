@@ -46,10 +46,12 @@ const NAV = [
   { to: "/seats", label: "Seats", icon: "seats", count: "seats" as const, copy: "seats" },
   // S-LIBRARY (owner m-5b3db5cb0d "sme tab? sure"): knowledge first; the records tabs sit beside it
   { to: "/library/knowledge", label: "Library", icon: "library", count: null, copy: "library" },
+  // epic-91fcd3b370 S3: the Code tab (code-server embedded full-bleed)
+  { to: "/code", label: "Code", icon: "code", count: null, copy: "code" },
 ] as const;
 
 // Human #38 (m-4e303d7b27, 2026-09-11): the sidebar highlight is by ROUTE FAMILY, not by exact path.
-export function navFamily(pathname: string, search = ""): "/me" | "/epics" | "/seats" | "/library/knowledge" | "/settings" | null {
+export function navFamily(pathname: string, search = ""): "/me" | "/epics" | "/seats" | "/library/knowledge" | "/settings" | "/code" | null {
   if (pathname === "/me" || pathname.startsWith("/me/")) return "/me";
   if (/^\/(epics|epic|ticket|records)(\/|$)/.test(pathname)) return "/epics";
   if (/^\/seats(\/|$)/.test(pathname)) return "/seats";
@@ -57,7 +59,14 @@ export function navFamily(pathname: string, search = ""): "/me" | "/epics" | "/s
   if (/^\/doc\//.test(pathname) && new URLSearchParams(search).has("source")) return "/epics";
   if (/^\/(library|doc|artifact)(\/|$)/.test(pathname)) return "/library/knowledge";
   if (/^\/settings(\/|$)/.test(pathname)) return "/settings";
+  if (/^\/code(\/|$)/.test(pathname)) return "/code";
   return null;
+}
+
+/** Routes that fill the viewport edge to edge (no main padding, no page scroll): the Code tab only;
+ *  its FAQ at /code/faq is an ordinary page. */
+export function isBleedRoute(pathname: string): boolean {
+  return pathname === "/code";
 }
 
 export function AppShell(): React.JSX.Element {
@@ -90,7 +99,14 @@ function AppShellChrome(): React.JSX.Element {
   const [menuOpen, setMenuOpen] = useState(false);
   // S17 c-33ffd96baf: the rail collapses to a 64px icon rail and the message list takes the width;
   // remembered per viewer (localStorage in try/catch). Desktop only — below 768 the rail is the Menu.
-  const [railCollapsed, setRailCollapsed] = useViewerFlag(as, "rail-collapsed");
+  const [railPref, setRailCollapsed] = useViewerFlag(as, "rail-collapsed");
+  // epic-91fcd3b370 S3: the Code tab is full-bleed — the rail collapses on /code without touching
+  // the viewer's remembered preference; the toggle there expands it for this visit only.
+  const bleed = isBleedRoute(location.pathname);
+  const [codeRailOpen, setCodeRailOpen] = useState(false);
+  useEffect(() => { if (!bleed) setCodeRailOpen(false); }, [bleed]);
+  const railCollapsed = bleed ? !codeRailOpen : railPref;
+  const toggleRail = () => (bleed ? setCodeRailOpen((o) => !o) : setRailCollapsed(!railPref));
   const [accountOpen, setAccountOpen] = useState(false);
   const menuRef = useRef<HTMLButtonElement>(null);
   useEffect(() => { setMenuOpen(false); setAccountOpen(false); }, [location.pathname]);
@@ -151,7 +167,7 @@ function AppShellChrome(): React.JSX.Element {
   }
 
   const shell = (
-    <div className={styles.shell} data-rail={railCollapsed ? "collapsed" : "full"}>
+    <div className={styles.shell} data-rail={railCollapsed ? "collapsed" : "full"} data-bleed={bleed ? "true" : undefined}>
       <div className={styles.mobileBar} data-testid="app-header">
         <button ref={menuRef} type="button" className={styles.menuToggle} aria-label="Workspace navigation"
           aria-expanded={menuOpen} aria-controls="workspace-navigation" onClick={() => setMenuOpen((open) => !open)}>
@@ -172,7 +188,7 @@ function AppShellChrome(): React.JSX.Element {
           <button type="button" className={styles.railToggle} data-testid="rail-toggle"
             aria-controls="workspace-navigation" aria-expanded={!railCollapsed}
             aria-label={railCollapsed ? "Expand menu" : "Collapse menu"} title={railCollapsed ? "Expand menu" : "Collapse menu"}
-            onClick={() => setRailCollapsed(!railCollapsed)}>
+            onClick={toggleRail}>
             <Icon name={railCollapsed ? "forward" : "back"} size={18} />
           </button>
         </div>

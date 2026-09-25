@@ -667,3 +667,20 @@ export interface ExpertAdded {
   token: string;
   link: string;
 }
+
+/** GET /v1/code (epic-91fcd3b370 S3): where the code service is and whether it answers. */
+export interface CodeStatus {
+  port: number;
+  url: string;
+  running: boolean;
+  version: string | null;
+  default_folder: string;
+  start_command: string;
+}
+
+/** GET /v1/code/faq: guides/code-tab-faq.md rendered by the board's sanitised markdown path. */
+export interface CodeFaq {
+  name: string;
+  path: string;
+  html: string;
+}

@@ -29,6 +29,7 @@ export const SIDEBAR: PageCopy = {
     { key: "epics", label: "Epics", text: "every epic in the fleet with its progress. Source: /v1/epics/summary.", control: true },
     { key: "seats", label: "Seats", text: "every agent shell, alive or closed, and what it last said. Source: pool sessions mirrored into the board.", control: true },
     { key: "library", label: "Library", text: "knowledge first — strategies, domains and lessons every epic can link (approve proposals, import from skills.sh) — then every document, artifact and ticket. Source: /v1/knowledge and the board's records.", control: true },
+    { key: "code", label: "Code", text: "a full VS Code (code-server) on the board host, embedded full-bleed; tag a code selection to anyone from inside it. Source: /v1/code.", control: true },
     { key: "find", label: "Find (Ctrl K)", text: "full-text search across tickets, documents, messages and seats; Enter opens the hit.", control: true },
     { key: "identity", label: "Account (bottom)", text: "who you are on this board; opens the account menu: Settings, What am I looking at?, theme, avatar. Source: /v1/whoami.", control: true },
     { key: "new-epic", label: "New epic", text: "on the Epics page: records your words verbatim as a new epic and offers to spawn its architect; the preview lists who is woken before you confirm.", control: true },
@@ -128,6 +129,18 @@ export const PAGES: Record<string, PageCopy> = {
       { key: "save", label: "Save", text: "writes your settings to the board (PUT /v1/me/settings); the Slack bridge picks the change up within a minute. Wakes nobody.", control: true },
     ],
   },
+  code: {
+    key: "code",
+    title: "Code",
+    framing: "A full VS Code on the board host (code-server), embedded in the board; its FAQ explains the shared tree and git.",
+    items: [
+      { key: "editor", label: "Editor", text: "code-server on the board host's loopback port (GET /v1/code); a deep link /code?folder=&file=&line=n-m opens a folder and puts the cursor on line n." },
+      { key: "faq", label: "FAQ", text: "opens guides/code-tab-faq.md in a new tab: the shared tree and live seats, worktrees, the extension set, tagging, and the unguarded git UI.", control: true },
+      { key: "new-window", label: "Open in new window", text: "the same editor in its own browser tab, with more room and the browser's shortcuts. Wakes nobody.", control: true },
+      { key: "retry", label: "Retry", text: "asks the board again whether code-server answers; start it first with .\\edp.ps1 start code on the board host.", control: true },
+      { key: "open", label: "Open the Code tab", text: "back from the FAQ to the editor.", control: true },
+    ],
+  },
   seats: {
     key: "seats",
     title: "Seats",
@@ -148,6 +161,7 @@ export function pageKeyFor(pathname: string): string {
   if (pathname.startsWith("/doc/")) return "doc";
   if (pathname.startsWith("/seats")) return "seats";
   if (pathname.startsWith("/settings")) return "settings";
+  if (pathname === "/code" || pathname.startsWith("/code/")) return "code";
   if (pathname.startsWith("/records/")) return "epic";
   if (pathname.startsWith("/library") || pathname.startsWith("/tickets") || pathname.startsWith("/activity")) return "library";
   return "decisions";
