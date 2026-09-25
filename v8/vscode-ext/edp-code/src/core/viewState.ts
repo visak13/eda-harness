@@ -5,6 +5,7 @@
 // checked and falls back to its default.
 import { SEND_KINDS, TICKET_ID, type SendKind } from './chatProtocol';
 import { INBOX_KEY, INBOX_TEXT_MAX } from './inbox';
+import { restoreReplies, type ReplyRef } from './reply';
 
 export type Fold = {
   /** Changes tab: the group of files the open scope touched is expanded */
@@ -23,6 +24,8 @@ export type ViewLocal = {
   seen: Record<string, string>;
   /** C15: unsent Inbox answers, rulings and sign-off notes, by row key */
   inbox: Record<string, string>;
+  /** C22: the message each thread's composer replies to (unsent), by ticket id */
+  replies: Record<string, ReplyRef>;
 };
 
 /** The scope's own files open; the other seats' files and the unlinked commits folded. */
@@ -57,7 +60,8 @@ export function restoreLocal(saved: unknown): ViewLocal {
       .filter(([k, v]) => INBOX_KEY.test(k) && typeof v === 'string' && v && v.length <= INBOX_TEXT_MAX);
     for (const [k, v] of kept.slice(-INBOX_DRAFTS_MAX)) inbox[k] = v as string;
   }
-  return { v: 1, drafts, kind, fold: { scoped: flag('scoped'), allSeats: flag('allSeats'), unlinked: flag('unlinked') }, tab, seen: bound(seen), inbox };
+  return { v: 1, drafts, kind, fold: { scoped: flag('scoped'), allSeats: flag('allSeats'), unlinked: flag('unlinked') }, tab, seen: bound(seen), inbox,
+    replies: ok ? restoreReplies(s.replies) : {} };
 }
 
 /** Keep the SEEN_MAX most recent markers. */

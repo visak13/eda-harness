@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 import { BoardError, type Board, type BoardDoc } from '../core/api';
 import { chatHtml } from '../core/chatHtml';
 import { canResolve } from '../core/docs';
+import { TICKET_ID } from '../core/chatProtocol';
 import { DOC_ID, parseDocPath } from '../core/docUri';
 import { compareChoices, decideBody, decideProblem, diffPair, parseReaderInbound, readerComments, READER_VIEW,
   type HostToReader, type ReaderDoc, type ReaderGate, type ReaderState, type ReaderToHost, type ReaderWrite } from '../core/reader';
@@ -190,7 +191,7 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
       version: p.version, versions, current: latest.version, body: at.body_md ?? '', proposes: latest.proposes ?? null, resolution: latest.resolution ?? null };
     p.panel.title = `${doc.title} · v${p.version}`;
     const [gate, role, diff, comments] = await Promise.all([
-      this.gateOf(p, doc), this.viewerRole(),
+      this.gateOf(p, doc, latest.scope ?? null), this.viewerRole(),
       doc.status === 'proposed' ? b.docDiff(p.id).then(d => ({ baseId: d.base_id, baseVersion: d.base_version, text: d.diff }), () => null) : Promise.resolve(null),
       b.docComments(p.id, p.version).then(r => ({ rows: readerComments(r), error: null }),
         (e: BoardError) => ({ rows: [], error: e?.status === 404 || e?.status === 405 ? 'Comments are not available on this board yet.' : `Could not read the comments: ${e?.message ?? String(e)}` })),
@@ -199,11 +200,13 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
     this.set(p, { doc, gate, diff, comments, canResolve: canResolve(doc, role) && p.version === doc.current, loading: false, error: null });
   }
 
-  /** The design review this viewer may do on this version, from the ticket the doc was opened from. */
-  private async gateOf(p: ReaderPanel, doc: ReaderDoc): Promise<ReaderGate | null> {
-    if (doc.docType !== 'design' || !p.source) return null;
+  /** The design review this viewer may do on this version, from the ticket the doc was opened from; a design opened
+   *  from nowhere (a decision's source, a link) is reviewed from its own scope ticket, so its header can say why (C22). */
+  private async gateOf(p: ReaderPanel, doc: ReaderDoc, scope: string | null): Promise<ReaderGate | null> {
+    const source = p.source ?? (scope && TICKET_ID.test(scope) ? scope : null);
+    if (doc.docType !== 'design' || !source) return null;
     try {
-      const c = await this.board().docContext(p.id, p.source, p.version);
+      const c = await this.board().docContext(p.id, source, p.version);
       return { ticketId: c.ticket_id, ticketTitle: c.source_title, gateEventId: c.gate_event_id, canApprove: !!c.can_approve, canReview: !!c.can_review, currentVersion: c.current_version };
     } catch (e) {
       this.log(`reader: no review context (${(e as BoardError)?.code ?? 'error'})`);

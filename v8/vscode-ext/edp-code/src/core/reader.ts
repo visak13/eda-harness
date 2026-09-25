@@ -115,6 +115,26 @@ export function decideProblem(doc: ReaderDoc | null, gate: ReaderGate | null, de
   return null;
 }
 
+/** The header tooltip on a design: when the actions show, and that a design has no Reject (the board has none). */
+export const SIGNOFF_TIP = 'Approve and Request changes show in the title bar while a design sign-off is open on this version for the epic\'s owner. '
+  + 'A design has no Reject: Request changes sends it back to the architect with your feedback.';
+
+/** Why a design shows no Approve (C22 s-3b86872bf0), in one header line; null when it is not a design or the actions
+ *  show. `openVersion`: the version the open sign-off is on, when it is not the one shown ("open it"). */
+export type ApproveReason = { text: string; openVersion: number | null; ticketId: string | null };
+
+export function approveReason(doc: ReaderDoc | null, gate: ReaderGate | null): ApproveReason | null {
+  if (!doc || doc.docType !== 'design') return null;
+  if (gate?.canApprove && gate.gateEventId) return null;
+  const on = gate ? ` (${gate.ticketId})` : '';
+  const ticketId = gate?.ticketId ?? null;
+  if (!gate?.gateEventId) return { text: `No sign-off open on v${doc.version}${on}`, openVersion: null, ticketId };
+  // a sign-off is open on the ticket: the board lets the owner approve only the current version
+  if (doc.version !== gate.currentVersion) return { text: `Sign-off is open on v${gate.currentVersion}${on}`, openVersion: gate.currentVersion, ticketId };
+  if (!gate.canReview) return { text: `Sign-off is open on v${doc.version}${on}; only the epic's owner approves it`, openVersion: null, ticketId };
+  return { text: `Sign-off open${on} is not for this design`, openVersion: null, ticketId };
+}
+
 /** The other versions a Compare can pair with `shown`, newest first; the older of a pair goes on the left. */
 export function compareChoices(versions: readonly number[], shown: number): number[] {
   return [...versions].filter(v => v !== shown).sort((a, b) => b - a);

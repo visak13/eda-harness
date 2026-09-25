@@ -331,3 +331,28 @@ body.vscode-high-contrast .att, body.vscode-high-contrast .pend { border: 1px so
 .de-note { color: var(--vscode-descriptionForeground); margin-top: 4px; }
 .msg.focus-source { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; background: var(--vscode-editor-findMatchHighlightBackground, transparent); }
 body.vscode-high-contrast .de-row { border: 1px solid var(--vscode-contrastBorder); }
+
+/* C22: Reply on every message (hover or focus shows it; it stays in the tab order), the parent line on a reply,
+   and the "Replying to" bar in the composer */
+.mh .reply { padding: 0 4px; color: var(--vscode-textLink-foreground); opacity: 0; }
+.msg:hover .mh .reply, .msg:focus-within .mh .reply, .mh .reply:focus-visible { opacity: 1; }
+.mh .reply + .board-link { margin-left: 0; }
+.mh .at + .reply { margin-left: auto; }
+.reply-quote {
+  display: flex; gap: 4px; width: 100%; margin: 2px 0; padding: 1px 6px; text-align: left; font-size: 0.9em;
+  color: var(--vscode-descriptionForeground); border-left: 2px solid var(--vscode-textBlockQuote-border, var(--vscode-focusBorder));
+}
+.reply-quote:hover { background: var(--vscode-toolbar-hoverBackground); }
+.reply-quote .rq-who { white-space: nowrap; }
+.reply-quote .rq-text, .reply-bar .rb-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.reply-quote.unloaded .rq-text { color: var(--vscode-textLink-foreground); }
+.reply-bar {
+  display: flex; align-items: center; gap: 4px; padding: 2px 6px; font-size: 0.9em;
+  border-bottom: 1px solid var(--vscode-widget-border, transparent); background: var(--vscode-textBlockQuote-background, transparent);
+}
+.reply-bar[hidden] { display: none; }
+.reply-target { display: flex; gap: 4px; flex: 1 1 auto; min-width: 0; padding: 0; text-align: left; }
+.reply-target .rb-who { font-weight: 600; white-space: nowrap; }
+.reply-cancel { padding: 0 6px; color: var(--vscode-icon-foreground, var(--vscode-foreground)); }
+.reply-cancel:hover { background: var(--vscode-toolbar-hoverBackground); }
+body.vscode-high-contrast .reply-bar { border: 1px solid var(--vscode-contrastBorder); }

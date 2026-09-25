@@ -10,7 +10,9 @@ export const DOC_RELATIONS = ['designed_by', 'uses_strategy', 'uses_domain', 'ev
 export type DocRelation = (typeof DOC_RELATIONS)[number];
 
 /** The board's doc summary (`GET /v1/docs` rows, or a full `GET /v1/docs/{id}`), only the fields read here. */
-export type DocMeta = { id: string; doc_type: string; title: string; version: number; status: string; proposes?: string | null };
+export type DocMeta = { id: string; doc_type: string; title: string; version: number; status: string; proposes?: string | null;
+  /** the ticket the doc belongs to (a design: its epic) */
+  scope?: string | null };
 
 /** What one scope ticket says about docs. */
 export type TicketDocs = {

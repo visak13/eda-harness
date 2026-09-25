@@ -134,7 +134,9 @@ export class ChatController implements vscode.Disposable, TagTarget {
   }
 
   handles(): ReadonlySet<string> {
-    return new Set(this.people.flatMap(p => [p.id, p.handle]));
+    // C22: a reply goes to its parent's author, who may not be in the people list (a closed seat): anyone who wrote
+    // in the open thread is a valid `to` too
+    return new Set([...this.people.flatMap(p => [p.id, p.handle]), ...(this.store?.items ?? []).map(i => i.created_by)]);
   }
 
   onFirstResolve(): void {
@@ -168,6 +170,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
         return this.changes.openUncommitted(m.path, f => inScope(f, sc.paths), `Uncommitted changes — this ${sc.kind}`);
       }
       case 'openCode': return this.openCode(m.messageId);
+      case 'showMessage': return this.openMessage(m.ticketId, m.messageId);
       case 'openBoard': {
         void vscode.env.openExternal(vscode.Uri.parse(boardTicketUrl(this.boardUrl(), m.ticketId, m.messageId)));
         return;

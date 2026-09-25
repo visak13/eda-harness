@@ -199,6 +199,8 @@ export type ViewToHost =
   /** the user removed the composer's code chip */
   | { v: 1; type: 'dropCode'; ticketId: string; chipId: string }
   | { v: 1; type: 'openCode'; messageId: string }
+  /** C22: a reply's parent is not among the loaded messages: load older pages of `ticketId` until it is, then focus it */
+  | { v: 1; type: 'showMessage'; ticketId: string; messageId: string }
   | { v: 1; type: 'openBoard'; ticketId: string; messageId?: string }
   /** C5: a file row (`path`) opens vscode.diff, the card itself (no path) the multi-diff */
   | { v: 1; type: 'openDiff'; sha: string; path?: string }
@@ -240,7 +242,7 @@ export type ViewToHost =
   | { v: 1; type: 'decisionBinding'; id: string; binding: boolean }
   | { v: 1; type: 'decisionsRefresh' };
 
-const TYPES = new Set(['ready', 'pickTicket', 'loadOlder', 'send', 'dropCode', 'openCode', 'openBoard', 'signIn']);
+const TYPES = new Set(['ready', 'pickTicket', 'loadOlder', 'send', 'dropCode', 'openCode', 'openBoard', 'signIn', 'showMessage']);
 const PATH_TYPES = new Set(['findPaths', 'checkPaths', 'openPath']);
 const HANDLE = /^[A-Za-z0-9][A-Za-z0-9_.\-]{0,127}$/;
 const DIFF_TYPES = new Set(['openDiff', 'openUncommitted']);
@@ -363,6 +365,10 @@ export function parseInbound(raw: unknown, handles: ReadonlySet<string> = new Se
     case 'openCode': {
       const id = str('messageId');
       return id && MESSAGE_ID.test(id) ? { v: 1, type: 'openCode', messageId: id } : null;
+    }
+    case 'showMessage': {
+      const t = str('ticketId'), id = str('messageId');
+      return t && TICKET_ID.test(t) && id && MESSAGE_ID.test(id) ? { v: 1, type: 'showMessage', ticketId: t, messageId: id } : null;
     }
     case 'openBoard': {
       const t = str('ticketId');

@@ -1,7 +1,8 @@
 // A throwaway code-server for extension smokes (strategyll-5ec6802121 §2): the pinned build from
 // vscode-ext/code-server.lock.json on a spare loopback port, temp user-data and extensions dirs (never
 // :9410 or v8/.data/code), the freshly built edp-code vsix installed into its OWN extensions dir, no
-// EDP_/EDP8_ variable in its env. stop() kills only the pid this module spawned (and its tree).
+// EDP_/EDP8_, PORT or CODE_SERVER_* variable in its env and its own --config in the temp dir, so it can never bind
+// :9410 or read the live service's config.yaml (C21 m-9fc373ac00). stop() kills only the pid this module spawned (and its tree).
 // Used by code-chat.spec.ts; code-tag.spec.ts keeps its own copy (S5, unchanged).
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
@@ -30,7 +31,7 @@ export function freePort(): Promise<number> {
 
 function csEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
-  for (const [k, v] of Object.entries(process.env)) if (!/^EDP8?_/i.test(k)) env[k] = v;
+  for (const [k, v] of Object.entries(process.env)) if (!/^(EDP8?_|PORT$|CODE_SERVER_|VSCODE_PROXY_URI$)/i.test(k)) env[k] = v;
   env.EXTENSIONS_GALLERY = "{}";
   return env;
 }
@@ -51,11 +52,14 @@ export async function startCodeServer(tmp: string, settings: Record<string, unkn
   // edp.* settings are machine-scoped: a remote (code-server) window reads them from Machine/settings.json
   fs.writeFileSync(path.join(userDir, "User", "settings.json"), all);
   fs.writeFileSync(path.join(userDir, "Machine", "settings.json"), all);
-  const inst = spawnSync(NODE, [SERVER_DIR, "--user-data-dir", userDir, "--extensions-dir", extDir, "--install-extension", VSIX, "--force"],
+  // its own config file: the live service's config.yaml never applies here
+  const config = path.join(tmp, "config.yaml");
+  fs.writeFileSync(config, "auth: none\ncert: false\n");
+  const inst = spawnSync(NODE, [SERVER_DIR, "--config", config, "--user-data-dir", userDir, "--extensions-dir", extDir, "--install-extension", VSIX, "--force"],
     { env: csEnv(), encoding: "utf8", timeout: 120_000 });
   if (inst.status !== 0) throw new Error(`vsix install failed (${inst.status}): ${inst.stdout}\n${inst.stderr}`);
   const port = await freePort();
-  let cs: ChildProcess | null = spawn(NODE, [SERVER_DIR, "--bind-addr", `127.0.0.1:${port}`, "--auth", "none", "--disable-telemetry",
+  let cs: ChildProcess | null = spawn(NODE, [SERVER_DIR, "--config", config, "--bind-addr", `127.0.0.1:${port}`, "--auth", "none", "--disable-telemetry",
     "--disable-update-check", "--disable-proxy", "--disable-workspace-trust", "--user-data-dir", userDir, "--extensions-dir", extDir],
     { env: csEnv(), stdio: "ignore", windowsHide: true });
   const stop = () => {

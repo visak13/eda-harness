@@ -1,6 +1,6 @@
 // C16 s-579fa02cca: the reader's inbound gate and the writes it builds from the host's panel state.
 import { describe, expect, it } from 'vitest';
-import { compareChoices, decideBody, decideProblem, diffPair, parseReaderInbound, readerComments, SELECTION_MAX, type ReaderDoc, type ReaderGate } from '../src/core/reader';
+import { approveReason, compareChoices, decideBody, decideProblem, diffPair, parseReaderInbound, readerComments, SELECTION_MAX, SIGNOFF_TIP, type ReaderDoc, type ReaderGate } from '../src/core/reader';
 
 const doc: ReaderDoc = { id: 'design-aaaaaaaaaa', title: 'D', docType: 'design', status: 'proposed', version: 12, versions: [1, 11, 12], current: 12, body: '# D', proposes: null, resolution: null };
 const gate: ReaderGate = { ticketId: 'epic-0000000001', ticketTitle: 'E', gateEventId: 'ev-1', canApprove: true, canReview: true, currentVersion: 12 };
@@ -70,4 +70,29 @@ describe('compare and comments', () => {
     ]);
     expect(readerComments({})).toEqual([]);
   });
+});
+
+// C22 s-3b86872bf0: a design with no Approve says why in its header
+describe('approveReason', () => {
+  const at = (v: number): ReaderDoc => ({ ...doc, version: v });
+  it('no reason when it is not a design, or when the owner can approve (the actions show as before)', () => {
+    expect(approveReason({ ...doc, docType: 'strategy_ll' }, null)).toBeNull();
+    expect(approveReason(null, gate)).toBeNull();
+    expect(approveReason(doc, gate)).toBeNull();
+  });
+  it('(a) no sign-off open: says so for the version shown, with the ticket when known', () => {
+    expect(approveReason(doc, null)).toEqual({ text: 'No sign-off open on v12', openVersion: null, ticketId: null });
+    expect(approveReason(doc, { ...gate, gateEventId: null, canApprove: false }))
+      .toEqual({ text: 'No sign-off open on v12 (epic-0000000001)', openVersion: null, ticketId: 'epic-0000000001' });
+    expect(approveReason(at(11), { ...gate, gateEventId: null, canApprove: false })?.text).toBe('No sign-off open on v11 (epic-0000000001)');
+  });
+  it('(b) sign-off open on a newer version: names it and offers to open it', () =>
+    expect(approveReason(at(11), { ...gate, canApprove: false }))
+      .toEqual({ text: 'Sign-off is open on v12 (epic-0000000001)', openVersion: 12, ticketId: 'epic-0000000001' }));
+  it('open on this version but the viewer is not the owner', () =>
+    expect(approveReason(doc, { ...gate, canApprove: false, canReview: false })?.text)
+      .toBe("Sign-off is open on v12 (epic-0000000001); only the epic's owner approves it"));
+  it('open on this version for the owner, yet not approvable (the ticket designs another doc)', () =>
+    expect(approveReason(doc, { ...gate, canApprove: false })?.text).toBe('Sign-off open (epic-0000000001) is not for this design'));
+  it('the tooltip says a design has no Reject', () => expect(SIGNOFF_TIP).toMatch(/no Reject: Request changes/));
 });

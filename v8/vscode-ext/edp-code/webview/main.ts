@@ -16,6 +16,7 @@ import { TabBar, type TabCtx } from './tabs';
 import { TABS } from './registry';
 import { inboxDone } from './views/inbox';
 import { isSendKey, sendChord } from '../src/core/composerKeys';
+import { excerpt, replyRef, type ReplyRef } from '../src/core/reply';
 
 declare function acquireVsCodeApi(): { postMessage(m: unknown): void; getState(): unknown; setState(s: unknown): void };
 const vscode = acquireVsCodeApi();
@@ -146,7 +147,13 @@ chipBox.id = 'code-chip';
 chipBox.setAttribute('role', 'group');
 chipBox.setAttribute('aria-label', 'Tagged lines, sent with this message');
 chipBox.hidden = true;
-cbox.append(chipBox, ta, tools);
+// C22: "Replying to @author: excerpt ×" above the text; × or Escape stops replying
+const replyBar = el('div', 'reply-bar');
+replyBar.id = 'reply-bar';
+replyBar.setAttribute('role', 'group');
+replyBar.setAttribute('aria-label', 'Replying to');
+replyBar.hidden = true;
+cbox.append(replyBar, chipBox, ta, tools);
 composer.append(peopleList, cbox, acStatus, sendErr);
 
 // C11: the # picker (files and folders) beside the @ list, and its button in C9's tool slot
@@ -204,15 +211,23 @@ function messageEl(m: ChatMessage, k: ReadonlySet<string>): HTMLElement {
   if (m.to) h.append(el('span', 'to', `→ ${m.to}`));
   const t = el('time', 'at', fmtTime(m.created_at));
   t.dateTime = m.created_at;
+  // C22: Reply on every message (shown on hover or focus; always in the tab order)
+  const reply = el('button', 'reply', '↩ Reply');
+  reply.type = 'button';
+  reply.title = `Reply to ${m.created_by}`;
+  reply.setAttribute('aria-label', `Reply to ${m.created_by}`);
+  reply.addEventListener('click', () => startReply(m));
   const open = el('button', 'board-link', '↗');
   open.title = 'Open on the board';
   open.setAttribute('aria-label', 'Open on the board');
   open.addEventListener('click', () => post({ type: 'openBoard', ticketId: m.ticket_id, messageId: m.id }));
-  h.append(t, open);
+  h.append(t, reply, open);
   const body = el('div', 'body');
   body.append(bodyFragment(document, m.text, k));
   markPaths(body, post); // C11: backticked paths that exist here become links
-  a.append(h, body);
+  a.append(h);
+  if (m.reply_to) a.append(parentLine(m));
+  a.append(body);
   if (m.code_context) a.append(codeCard(m));
   const atts = attach.render(m); // C12
   if (atts) a.append(atts);
@@ -230,6 +245,86 @@ function codeCard(m: ChatMessage): HTMLElement {
   b.append(head, pre);
   b.addEventListener('click', () => post({ type: 'openCode', messageId: m.id }));
   return b;
+}
+
+// -- replies (C22 s-3b86872bf0) -----------------------------------------------------------------------
+/** A reply's parent line: "replying to @author: excerpt". Clicking it shows the parent: scrolled to here when it is
+ *  loaded, else the host loads older pages until it is (then answers `focusMessage`). */
+function parentLine(m: ChatMessage): HTMLElement {
+  const b = el('button', 'reply-quote');
+  b.type = 'button';
+  b.dataset.parent = m.reply_to!;
+  fillParent(b);
+  b.addEventListener('click', () => {
+    if (!focusMsg(m.reply_to!) && state?.ticket) post({ type: 'showMessage', ticketId: state.ticket.id, messageId: m.reply_to! });
+  });
+  return b;
+}
+
+function fillParent(b: HTMLElement): void {
+  const id = b.dataset.parent!;
+  const p = state?.items.find(i => i.id === id);
+  const who = p ? (p.created_by === state?.me?.id || p.created_by === state?.me?.handle ? 'you' : `@${p.created_by}`) : null;
+  b.replaceChildren(el('span', 'rq-who', who ? `↳ replying to ${who}:` : '↳ replying to an earlier message'), el('span', 'rq-text', p ? excerpt(p.text) : 'load it'));
+  b.title = p ? `Show the message it replies to (${id})` : `Load older messages until ${id} shows`;
+  b.classList.toggle('unloaded', !p);
+}
+
+/** Scroll a loaded message into view, mark and focus it; false when it is not in the list. */
+function focusMsg(id: string): boolean {
+  const node = list.querySelector<HTMLElement>(`.msg[data-id="${CSS.escape(id)}"]`);
+  if (!node) return false;
+  list.querySelector('.msg.focus-source')?.classList.remove('focus-source');
+  node.classList.add('focus-source');
+  node.tabIndex = -1;
+  node.scrollIntoView({ block: 'center' });
+  node.focus({ preventScroll: true });
+  return true;
+}
+
+const replyOf = () => (state?.ticket ? local.replies[state.ticket.id] ?? null : null);
+
+function startReply(m: ChatMessage): void {
+  if (!state?.ticket || m.ticket_id !== state.ticket.id) return;
+  delete local.replies[state.ticket.id]; // re-inserted last: the newest targets are the ones kept
+  local.replies[state.ticket.id] = replyRef(m);
+  persist();
+  renderTo();
+  renderReply();
+  select('chat');
+  ta.focus();
+  acStatus.textContent = `Replying to ${m.created_by}`;
+}
+
+function cancelReply(): void {
+  const t = state?.ticket?.id;
+  if (!t || !local.replies[t]) return;
+  delete local.replies[t];
+  persist();
+  renderReply();
+  toSel.value = '';
+  acStatus.textContent = 'Stopped replying';
+  ta.focus();
+}
+
+function renderReply(): void {
+  const r = replyOf();
+  replyBar.replaceChildren();
+  replyBar.hidden = !r;
+  if (!r) return;
+  const x = el('button', 'reply-cancel', '×');
+  x.type = 'button';
+  x.id = 'reply-cancel';
+  x.title = 'Stop replying (Escape)';
+  x.setAttribute('aria-label', 'Stop replying');
+  x.addEventListener('click', () => cancelReply());
+  const go = el('button', 'reply-target');
+  go.type = 'button';
+  go.title = `Show the message (${r.id})`;
+  go.append(el('span', 'rb-who', `Replying to @${r.by}:`), el('span', 'rb-text', r.excerpt));
+  go.addEventListener('click', () => { if (!focusMsg(r.id) && state?.ticket) post({ type: 'showMessage', ticketId: state.ticket.id, messageId: r.id }); });
+  replyBar.append(go, x);
+  if ([...toSel.options].some(o => o.value === r.to)) toSel.value = r.to;
 }
 
 function nearBottom() { return timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight < 40; }
@@ -361,7 +456,12 @@ function renderTo() {
   const cur = toSel.value;
   toSel.replaceChildren(new Option('to: thread', ''));
   for (const p of state?.people ?? []) toSel.append(new Option(`to: ${p.handle} (${p.type === 'human' ? 'human' : p.role})`, p.id));
-  toSel.value = [...toSel.options].some(o => o.value === cur) ? cur : '';
+  // C22: the author of the message being replied to, when the people list does not name them (a closed seat)
+  const r = replyOf();
+  const have = (v: string) => [...toSel.options].some(o => o.value === v);
+  if (r && !have(r.by)) toSel.append(new Option(`to: ${r.by}`, r.by));
+  if (r && r.to && !have(r.to)) toSel.append(new Option(`to: ${r.to}`, r.to));
+  toSel.value = r ? (have(r.to) ? r.to : '') : have(cur) ? cur : '';
 }
 
 const PLACEHOLDER = ta.placeholder;
@@ -422,6 +522,7 @@ function renderAll() {
   composer.hidden = !s.ticket;
   attach.reset(s.ticket?.id ?? null, s.pending ?? [], s.artifacts ?? []);
   renderChip();
+  renderReply();
   ta.value = s.ticket ? local.drafts[s.ticket.id] ?? '' : '';
   kindSel.value = local.kind;
   grow();
@@ -525,12 +626,20 @@ function send() {
   pendingTicket = state.ticket.id;
   sendBtn.disabled = true;
   sendErr.textContent = '';
+  const reply = replyOf();
   post({ type: 'send', ticketId: pendingTicket, text, kind: kindSel.value as SendKind, ...(toSel.value ? { to: toSel.value } : {}),
+    ...(reply ? { replyTo: reply.id } : {}),
     ...(state.chip ? { chipId: state.chip.id } : {}), ...(files.length ? { attachmentIds: files } : {}) });
 }
 
 composer.addEventListener('submit', e => { e.preventDefault(); send(); });
+// Escape anywhere in the composer stops replying, once the @ and # lists have had it (they preventDefault)
+composer.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing || !replyOf()) return;
+  e.preventDefault(); e.stopPropagation(); cancelReply();
+});
 kindSel.addEventListener('change', () => { local.kind = kindSel.value as SendKind; persist(); });
+toSel.addEventListener('change', () => { const r = replyOf(); if (r) { r.to = toSel.value; persist(); } });
 pickBtn.addEventListener('click', () => post({ type: 'pickTicket' }));
 back.addEventListener('click', () => { if (state?.epic) post({ type: 'pickTicket', id: state.epic.id }); });
 storiesBtn.addEventListener('click', e => { e.stopPropagation(); setStoriesOpen(strip.hidden === true, e.detail === 0); });
@@ -593,6 +702,8 @@ window.addEventListener('message', (ev: MessageEvent) => {
       timeline.setAttribute('aria-live', 'off');
       const k = known();
       list.prepend(...fresh.map(i => messageEl(i, k)));
+      // C22: replies whose parent just loaded show its excerpt now
+      for (const b of list.querySelectorAll<HTMLElement>('.reply-quote.unloaded')) fillParent(b);
       placeMarkers(list);
       timeline.scrollTop += timeline.scrollHeight - h0;
       break;
@@ -634,8 +745,13 @@ window.addEventListener('message', (ev: MessageEvent) => {
       pendingTicket = null;
       sendBtn.disabled = false;
       delete local.drafts[m.ticketId];
+      const replied = !!local.replies[m.ticketId];
+      delete local.replies[m.ticketId]; // C22: the reply went; a failed send keeps it
       persist();
-      if (state?.ticket?.id === m.ticketId) { ta.value = ''; grow(); }
+      if (state?.ticket?.id === m.ticketId) {
+        ta.value = ''; grow();
+        if (replied) { renderReply(); renderTo(); toSel.value = ''; }
+      }
       break;
     case 'sendFailed':
       if (pendingTicket && m.ticketId !== pendingTicket) return;
@@ -699,13 +815,7 @@ window.addEventListener('message', (ev: MessageEvent) => {
     case 'focusMessage': { // C17: a decision's source message, now in the open thread
       if (!state || state.ticket?.id !== m.ticketId) return;
       select('chat');
-      const node = list.querySelector<HTMLElement>(`.msg[data-id="${CSS.escape(m.id)}"]`);
-      if (!node) return;
-      list.querySelector('.msg.focus-source')?.classList.remove('focus-source');
-      node.classList.add('focus-source');
-      node.tabIndex = -1;
-      node.scrollIntoView({ block: 'center' });
-      node.focus({ preventScroll: true });
+      focusMsg(m.id);
       break;
     }
     case 'inboxDone':

@@ -4,7 +4,7 @@
 // strategy doc's Approve / Reject with its diff against the active doc, and the version's comments. Enter is a
 // newline and Ctrl+Enter sends in the feedback box (C14). The selection is posted as a source line range for C20.
 import type { HostToReader, ReaderComment, ReaderState, ReaderToHost, ReaderWrite } from '../src/core/reader';
-import { FEEDBACK_MAX } from '../src/core/reader'; // a value import: core/reader has no vscode or node import
+import { approveReason, FEEDBACK_MAX, SIGNOFF_TIP } from '../src/core/reader'; // value imports: core/reader has no vscode or node import
 import { isSendKey, sendChord } from '../src/core/composerKeys';
 import { diffLines, lineRange, renderDoc } from './readerRender';
 
@@ -86,6 +86,21 @@ function renderBar(): void {
     }
     pick.addEventListener('change', () => post({ type: 'pickVersion', version: Number(pick.value) }));
     out.push(pick);
+    // C22: a design says why it shows no Approve, in one line; the tooltip says a design has no Reject
+    if (d.docType === 'design') meta.title = SIGNOFF_TIP;
+    const why = approveReason(d, s?.gate ?? null);
+    if (why) {
+      const line = el('span', 'rd-signoff');
+      line.id = 'rd-signoff';
+      line.title = SIGNOFF_TIP;
+      line.setAttribute('role', 'note');
+      line.append(el('span', 'rd-signoff-text', why.text));
+      if (why.openVersion !== null) {
+        const v = why.openVersion;
+        line.append(btn('rd-signoff-open', 'open it', `Open v${v}, the version the sign-off is on`, () => post({ type: 'pickVersion', version: v }), 'rd-link'));
+      }
+      out.push(line);
+    }
     const tools = el('span', 'rd-tools');
     if (d.versions.length > 1) tools.append(btn('rd-compare', 'Compare', 'Compare this version with another (diff of the markdown source)', () => post({ type: 'compare' })));
     tools.append(btn('rd-source', 'Source', 'Open the markdown source of this version', () => post({ type: 'source' })));

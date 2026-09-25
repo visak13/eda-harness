@@ -83,3 +83,9 @@ button:disabled { opacity: 0.6; cursor: default; }
 
 body.vscode-high-contrast .rd-review, body.vscode-high-contrast .rd-proposal, body.vscode-high-contrast .rd-comments { border-color: var(--vscode-contrastBorder); }
 @media (max-width: 640px) { .rd-layout { grid-template-columns: minmax(0, 1fr); } .rd-outline { display: none; } }
+
+/* C22: a design with no Approve says why, in one header line ("open it" goes to the version the sign-off is on) */
+.rd-signoff { display: inline-flex; gap: 6px; align-items: baseline; font-size: 0.9em; color: var(--vscode-descriptionForeground); min-width: 0; }
+.rd-signoff-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-link { border: none; padding: 0; color: var(--vscode-textLink-foreground); text-decoration: underline; }
+.rd-link:hover { background: none; color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground)); }
