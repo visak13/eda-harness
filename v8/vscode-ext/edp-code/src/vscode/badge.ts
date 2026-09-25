@@ -66,7 +66,7 @@ export class Badge implements vscode.Disposable {
     return repo;
   }
 
-  private async update(): Promise<void> {
+  async update(): Promise<void> {
     const my = ++this.seq;
     const repo = await this.sharedRepo();
     if (my !== this.seq) return;
@@ -100,7 +100,7 @@ export class Badge implements vscode.Disposable {
 
 /** Badge click: the live seats and their tickets; picking one opens its ticket page. */
 export async function showSeats(badge: Badge, boardUrl: () => string): Promise<void> {
-  badge.refresh(0);
+  await badge.update(); // this click's poll, not the previous one
   const seats = badge.seats;
   if (!seats) { void vscode.window.showWarningMessage(`EDP: live seats unknown (${badge.error ?? 'not loaded yet'})`); return; }
   if (!seats.length) { void vscode.window.showInformationMessage('EDP: no live agent seats on this board.'); return; }

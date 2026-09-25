@@ -44,7 +44,8 @@ export function boardClient(baseUrl: string, creds: () => Promise<Creds | undefi
     let res: Response;
     try {
       res = await f(new URL(path, baseUrl), {
-        method, signal: AbortSignal.timeout(timeoutMs),
+        // manual: a redirect must never carry X-Token to another origin (fetch strips only Authorization)
+        method, signal: AbortSignal.timeout(timeoutMs), redirect: 'manual',
         headers: { 'X-Participant': c.participant, 'X-Token': c.token, ...(body ? { 'Content-Type': 'application/json' } : {}) },
         body: body ? JSON.stringify(body) : undefined,
       });

@@ -23,7 +23,8 @@ export function guardedArgs(op: GuardedOp, target?: string): string[] {
   if (op === 'pull') return ['pull'];
   if (!target) throw new Error(`git ${op} needs a ref`);
   if (target.startsWith('-')) throw new Error('refusing a ref that looks like an option');
-  return op === 'checkout' ? ['checkout', target] : ['merge', '--no-edit', target];
+  // checkout `<ref> --`: a typed path (`.`) is then an unknown ref, never a restore of working-tree files
+  return op === 'checkout' ? ['checkout', target, '--'] : ['merge', '--no-edit', target];
 }
 
 /** The confirm's detail: live seats (or "unknown"), dirty paths, and the honest limit. */

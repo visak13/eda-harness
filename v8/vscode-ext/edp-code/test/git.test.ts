@@ -13,7 +13,7 @@ describe('parsePorcelainZ', () => {
 
 describe('guardedArgs', () => {
   it('checkout / merge / pull argv', () => {
-    expect(guardedArgs('checkout', 'main')).toEqual(['checkout', 'main']);
+    expect(guardedArgs('checkout', 'main')).toEqual(['checkout', 'main', '--']);
     expect(guardedArgs('merge', 'feature/x')).toEqual(['merge', '--no-edit', 'feature/x']);
     expect(guardedArgs('pull')).toEqual(['pull']);
   });

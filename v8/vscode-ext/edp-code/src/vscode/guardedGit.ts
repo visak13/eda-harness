@@ -7,11 +7,13 @@ import { confirmDetail, guardedArgs, parsePorcelainZ, type GuardedOp } from '../
 import { liveSeats } from '../core/seats';
 import { creds } from './auth';
 import type { Repository } from './git.d';
-import { currentRepo } from './repo';
+import { currentRepo, gitApi } from './repo';
 
-/** System git, no shell: a branch name cannot inject a command. stderr is the actionable text. */
-export const git = (cwd: string, args: string[]) => new Promise<string>((res, rej) =>
-  execFile('git', args, { cwd, windowsHide: true, maxBuffer: 8 << 20 }, (e, out, err) => (e ? rej(new Error((err || e.message).trim())) : res(out))));
+/** The git extension's resolved git by absolute path, no shell: a branch name cannot inject a command, and
+ *  a `git.exe` planted in the repo is not run (Windows searches the cwd before PATH for a bare name).
+ *  stderr is the actionable text. */
+export const git = (exe: string, cwd: string, args: string[]) => new Promise<string>((res, rej) =>
+  execFile(exe, args, { cwd, windowsHide: true, maxBuffer: 8 << 20 }, (e, out, err) => (e ? rej(new Error((err || e.message).trim())) : res(out))));
 
 async function pickRef(repo: Repository, op: GuardedOp): Promise<string | undefined> {
   const refs = repo.state.refs.length ? repo.state.refs : await repo.getRefs({});
@@ -31,7 +33,8 @@ async function pickRef(repo: Repository, op: GuardedOp): Promise<string | undefi
 
 export async function guarded(op: GuardedOp, ctx: vscode.ExtensionContext, board: () => Board): Promise<void> {
   const repo = await currentRepo();
-  if (!repo) { void vscode.window.showWarningMessage('EDP: no git repository is open.'); return; }
+  const exe = (await gitApi())?.git.path;
+  if (!repo || !exe) { void vscode.window.showWarningMessage('EDP: no git repository is open.'); return; }
   const root = repo.rootUri.fsPath;
   try {
     const target = op === 'pull' ? undefined : await pickRef(repo, op);
@@ -44,13 +47,13 @@ export async function guarded(op: GuardedOp, ctx: vscode.ExtensionContext, board
       return liveSeats(ss, ps);
     })();
     const [porcelain, seats] = await Promise.all([
-      git(root, ['status', '--porcelain=v1', '-z']),
+      git(exe, root, ['status', '--porcelain=v1', '-z']),
       seatsP.then(s => ({ s }), (e: Error) => ({ e: e.message })),
     ]);
     const detail = confirmDetail('s' in seats ? seats.s : undefined, parsePorcelainZ(porcelain), 'e' in seats ? seats.e : undefined);
     const go = await vscode.window.showWarningMessage(`git ${args.join(' ')} on ${root}?`, { modal: true, detail }, 'Proceed');
     if (go !== 'Proceed') return;
-    await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `git ${args.join(' ')}` }, () => git(root, args));
+    await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `git ${args.join(' ')}` }, () => git(exe, root, args));
     await repo.status();
     void vscode.window.showInformationMessage(`EDP: git ${args.join(' ')} done`);
   } catch (e) {

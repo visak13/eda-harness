@@ -308,7 +308,7 @@ test("`EDP: Open external terminal here` launches the configured shell detached 
   }, { timeout: 15_000 }).toBe(true);
   expect(["cmd.exe", ""]).toContain(launched!.parent); // started by `cmd /c start` (which exits at once)
   await new Promise(r => setTimeout(r, 2000));
-  fs.writeFileSync(shot("external-terminal-process.json"), JSON.stringify({ ...launched, folder: repo, alive_after_ms: 2000 }, null, 1));
+  fs.writeFileSync(shot("external-terminal-process.json"), JSON.stringify({ ...launched, requested_folder: repo, cwd_checked: false, alive_after_ms: 2000 }, null, 1));
   // it outlived the command (a shell with NUL stdin would already be gone), then close only the shell we opened
   expect(psList().some(p => p.pid === launched!.pid)).toBe(true);
   spawnSync("taskkill", ["/PID", String(launched!.pid), "/T", "/F"], { stdio: "ignore" });

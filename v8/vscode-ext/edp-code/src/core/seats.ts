@@ -1,7 +1,7 @@
 // Who is live, and what they are on (strategyll-ab18531441 §4, architect ruling m-fbc05fb321 option a).
 // The count rule lives ONLY in liveSeats, so a later per-repo session field is a one-line swap.
 import type { Participant, Session, Ticket } from './api';
-import { normDrive, samePath } from './anchor';
+import { normDrive, relPath, samePath } from './anchor';
 
 export type Seat = { participant_id: string; handle: string; role: string; ticket_id: string | null; stale: boolean };
 
@@ -48,9 +48,14 @@ export function ticketChoices(all: Ticket[], personId: string, seats: Seat[] = [
   return { theirs: open.filter(mine).sort(recent), others: open.filter(t => !mine(t)).sort(recent) };
 }
 
-/** Is `folder` one of the shared-tree paths? */
-export function inSharedTree(folder: string, sharedTreePaths: string[]): boolean {
-  return sharedTreePaths.some(p => samePath(normDrive(p), normDrive(folder)));
+/** Is the repo at `repoRoot` the shared tree? Yes when a shared path is the root or lies inside it:
+ *  v8 is a folder of the eda-base3 repo, so git reports the parent as the root. */
+export function inSharedTree(repoRoot: string, sharedTreePaths: string[]): boolean {
+  const root = normDrive(repoRoot);
+  return sharedTreePaths.some(p => {
+    if (samePath(normDrive(p), root)) return true;
+    try { relPath(root, normDrive(p)); return true; } catch { return false; }
+  });
 }
 
 /** The default shared tree when `edp.sharedTreePaths` is empty: the v8 root the service was started

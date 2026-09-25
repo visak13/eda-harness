@@ -6,7 +6,7 @@ The EDP extension for the Code tab's code-server (design-449b628cdd §4, epic-91
 |---|---|
 | `EDP: Sign in to board` / `Sign out of board` | Participant id + token, checked against the board, kept in VS Code secret storage only (per browser profile on code-server). |
 | `EDP: Tag selection on board…` (`Ctrl+Alt+M`, editor context menu) | Person (humans + live agent seats) → ticket (theirs first, then any open) → note → kind → a board message with `code_context` (path, lines, HEAD, dirty, snippet). |
-| Status bar `⎇ <branch> · N seats live` | Shown on the fleet's shared tree (`edp.sharedTreePaths`, default the v8 root the service runs for); alive agent sessions on this board; click for the list. |
+| Status bar `⎇ <branch> · N seats live` | Shown on the fleet's shared tree: the repo whose root is, or contains, a path in `edp.sharedTreePaths` (default the v8 root the service runs for, so the eda-base3 repo); alive agent sessions on this board; click for the list. |
 | `EDP: Checkout… / Merge… / Pull (guarded)` | A modal listing live seats and `git status --porcelain` paths, then system git. The built-in Source Control view is NOT guarded and cannot be vetoed. |
 | `EDP: Open external terminal here` | Launches `edp.externalTerminal` (pwsh / cmd / git-bash, a real `.exe`) detached in the folder. |
 

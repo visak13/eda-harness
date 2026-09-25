@@ -15,6 +15,12 @@ describe('boardClient', () => {
     expect((init!.headers as Record<string, string>)['X-Participant']).toBe('owner');
     expect((init!.headers as Record<string, string>)['X-Token']).toBe(TOKEN);
     expect(init!.signal).toBeInstanceOf(AbortSignal);
+    expect(init!.redirect).toBe('manual'); // the token never follows a redirect
+  });
+  it('a redirect answer is bad_response, not followed', async () => {
+    const f = async () => new Response(null, { status: 302, headers: { location: 'http://evil.example/' } });
+    const c = boardClient('http://127.0.0.1:9400', creds, f as unknown as typeof fetch);
+    await expect(c.participants()).rejects.toMatchObject({ code: 'bad_response', status: 302 });
   });
   it('POSTs the message body as JSON', async () => {
     const f = vi.fn(async () => json(200, { ok: true, value: { id: 'm-1' } }));

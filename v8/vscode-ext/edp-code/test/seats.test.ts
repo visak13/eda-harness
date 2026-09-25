@@ -56,7 +56,13 @@ describe('badgeView', () => {
 describe('shared tree', () => {
   it('matches case-insensitively with normalised drives', () =>
     expect(inSharedTree('c:\\Projects\\Learning\\eda-base3\\v8', ['C:\\projects\\learning\\eda-base3\\v8\\'])).toBe(true));
-  it('a sub-folder is not the shared tree', () => expect(inSharedTree('C:\\v8\\web', ['C:\\v8'])).toBe(false));
+  it('a repo nested below the shared tree is not it', () => expect(inSharedTree('C:\\v8\\web', ['C:\\v8'])).toBe(false));
+  it('the repo that contains the shared tree is it (v8 inside the eda-base3 repo)', () =>
+    expect(inSharedTree('c:\\Projects\\Learning\\eda-base3', ['C:\\Projects\\Learning\\eda-base3\\v8'])).toBe(true));
+  it('an unrelated or sibling repo is not it', () => {
+    expect(inSharedTree('C:\\Projects\\other', ['C:\\Projects\\Learning\\eda-base3\\v8'])).toBe(false);
+    expect(inSharedTree('C:\\Projects\\Learning\\eda-base', ['C:\\Projects\\Learning\\eda-base3\\v8'])).toBe(false);
+  });
   it('default = the v8 root the service keeps its user-data under', () =>
     expect(defaultSharedTree('c:\\Projects\\Learning\\eda-base3\\v8\\.data\\code\\user\\User\\globalStorage\\edp.edp-code')).toBe('C:\\Projects\\Learning\\eda-base3\\v8'));
   it('no default outside the code service (e2e temp dirs)', () => expect(defaultSharedTree('C:\\Temp\\ud\\User\\globalStorage\\edp.edp-code')).toBeUndefined());
