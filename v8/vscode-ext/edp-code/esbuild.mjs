@@ -17,7 +17,8 @@ await esbuild.build({
   outfile: 'dist/thumbWorker.js', sourcemap: false, minify: production, logLevel: 'warning',
 });
 await esbuild.build({
-  entryPoints: { webview: 'webview/main.ts', 'webview-css': 'webview/chat.css' }, bundle: true,
+  // C16: the reader editor tab is a second inlined pair (reader.js + reader-css.css)
+  entryPoints: { webview: 'webview/main.ts', 'webview-css': 'webview/chat.css', reader: 'webview/reader.ts', 'reader-css': 'webview/reader.css' }, bundle: true,
   format: 'iife', platform: 'browser', target: ['es2022'], outdir: 'dist', splitting: false,
   minify: production, sourcemap: false, legalComments: 'none', logLevel: 'warning',
 });

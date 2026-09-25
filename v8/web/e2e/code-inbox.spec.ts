@@ -133,7 +133,7 @@ test("the epic scope: Inbox is the fourth tab, badged; sign-offs, gates and ques
   await quickRow(page, "Spike epic").click();
   const c = chat();
   await expect(c.locator("#crumb-current")).toHaveText("Spike epic", { timeout: 20_000 });
-  await expect(c.locator("[role=tablist] [role=tab]")).toHaveText([/^Chat/, /^Changes/, /^Commits/, /^Inbox/]);
+  await expect(c.locator("[role=tablist] [role=tab]")).toHaveText([/^Chat/, /^Changes/, /^Commits/, /^Inbox/, /^Docs/]);
   await expect(c.locator("#tab-inbox .tab-badge")).toHaveText("7", { timeout: 15_000 });
   await expect(c.locator("#tab-inbox")).toHaveAttribute("aria-label", "Inbox, 7 items waiting on you");
   await tab("inbox");
@@ -237,7 +237,8 @@ test("a scope gate: a text ruling answers it; the design review links out; the b
   expect(thread.thread.some((m: any) => /\[scope\] Approved: the cap goes to 9/.test(m.text ?? m.preview ?? ""))).toBe(true);
   await expect(c.locator("#tab-inbox .tab-badge")).toHaveText("3");
   await page.screenshot({ path: shot("inbox-after-writes.png") });
-  // the design review links out to the board's epic page (C16 brings the editor reader)
+  // the epic has no design_ref here, so the design review still links out to the board's epic page (C16: with a
+  // design_ref it opens the EDP reader, covered by code-docs.spec.ts)
   const popup = page.context().waitForEvent("page", { timeout: 15_000 });
   await row(`g:${EPIC()}:design_signoff`).locator("button", { hasText: "Review design" }).click();
   const confirm = page.locator(".monaco-dialog-box .monaco-button", { hasText: /^Open$/ });

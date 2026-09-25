@@ -5,6 +5,8 @@ import type { Anchor } from './anchor';
 import type { BoardArtifact } from './attachments';
 import { gatePath, type DecisionsHome, type InboxGate, type verdictBody } from './inbox';
 import type { Reachable } from './people';
+import type { DocMeta } from './docs';
+import type { decideBody } from './reader';
 import type { MessageRow, ThreadPage } from './thread';
 
 export type Creds = { participant: string; token: string };
@@ -15,7 +17,7 @@ export type Session = {
   id: string; participant_id: string; ticket_id: string | null; state: 'alive' | 'stalled' | 'dead' | 'parked';
   created_at?: string; last_output_at?: string | null; presence_stale_since?: string | null;
 };
-export type Ticket = { id: string; kind: string; title: string; status: string; assignee: string | null; epic_id?: string | null; parent_id?: string | null };
+export type Ticket = { id: string; kind: string; title: string; status: string; assignee: string | null; epic_id?: string | null; parent_id?: string | null; design_ref?: string | null };
 export type MessageKind = 'question' | 'steer' | 'finding' | 'note';
 export type MessageIn = { ticket_id: string; to: string; kind: MessageKind; text: string; code_context: Anchor };
 export type Message = { id: string; ticket_id: string; to: string | null; kind: string; text: string };
@@ -28,6 +30,12 @@ export type ChatSend = { ticket_id: string; to: string | null; kind: string; tex
 export type Staged = BoardArtifact & { staged: true; content_type: string };
 /** C12: an artifact's bytes (`GET /v1/artifacts/{id}/content`); `bytes` is null for a size-only probe. */
 export type Content = { bytes: Uint8Array | null; type: string; size: number | null };
+
+/** A board doc (`GET /v1/docs/{id}[?version=N]`): the body at that version, the doc's current fields, every version. */
+export type BoardDoc = DocMeta & { body_md: string; resolution?: string | null; versions?: number[] };
+/** `GET /v1/docs/{id}/context`: the design review this viewer may do from `source` on that version. */
+export type DocContext = { ticket_id: string; source_title: string; design_ref: string; reviewed_version: number; current_version: number;
+  gate_event_id: string | null; can_approve: boolean; can_review: boolean };
 
 export class BoardError extends Error {
   constructor(public code: string, msg: string, public status: number) { super(msg); }
@@ -127,6 +135,18 @@ export function boardClient(baseUrl: string, creds: () => Promise<Creds | undefi
     verdict: (b: ReturnType<typeof verdictBody>) => call<{ criterion: unknown; message: string | null }>('POST', '/v1/me/verdict', b),
     gateAnswer: (g: InboxGate, answer: string) => call<unknown>('POST', gatePath(g), { answer }),
     doc: (id: string, version: number) =>
-      call<{ id: string; title: string; version: number; body_md: string }>('GET', `/v1/docs/${encodeURIComponent(id)}?version=${version}`),
+      call<BoardDoc>('GET', `/v1/docs/${encodeURIComponent(id)}?version=${version}`),
+    // the Docs tab and the reader (C16): what a scope links, the doc's review context and its writes
+    latestDoc: (id: string) => call<BoardDoc>('GET', `/v1/docs/${encodeURIComponent(id)}`),
+    docsOf: (scope: string) => call<DocMeta[]>('GET', `/v1/docs?scope=${encodeURIComponent(scope)}`),
+    links: (fromId: string) => call<{ to_id: string; relation: string }[]>('GET', `/v1/links?from_id=${encodeURIComponent(fromId)}`),
+    criteria: (ticketId: string) => call<{ id: string; evidence_ref?: string | null }[]>('GET', `/v1/criteria?ticket_id=${encodeURIComponent(ticketId)}`),
+    docContext: (id: string, source: string, version: number) =>
+      call<DocContext>('GET', `/v1/docs/${encodeURIComponent(id)}/context?${new URLSearchParams({ source, version: String(version) })}`),
+    decide: (b: ReturnType<typeof decideBody>) => call<{ decision: string; event_id?: string; message_id?: string }>('POST', '/v1/gates/decide', b),
+    docResolve: (id: string, approve: boolean) =>
+      call<{ doc: BoardDoc; target: BoardDoc | null }>('POST', `/v1/docs/${encodeURIComponent(id)}/${approve ? 'approve' : 'reject'}`),
+    docDiff: (id: string) => call<{ base_id: string | null; base_version: number | null; diff: string }>('GET', `/v1/docs/${encodeURIComponent(id)}/diff`),
+    docComments: (id: string, version: number) => call<unknown[]>('GET', `/v1/docs/${encodeURIComponent(id)}/comments?version=${version}`),
   };
 }

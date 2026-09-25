@@ -24,10 +24,16 @@ export class DocProvider implements vscode.TextDocumentContentProvider {
 
 export const docUri = (id: string, version: number) => vscode.Uri.from({ scheme: DOC_SCHEME, path: docPath(id, version) });
 
-/** Open a doc version in an editor tab: VS Code's Markdown preview, or the text itself when the preview is
- *  unavailable. C16 replaces this opener with its reader editor. */
-export async function openDoc(id: string, version: number): Promise<void> {
+/** C16: the reader editor, once registered; the opener goes through it. */
+let reader: { open(id: string, version: number, source?: string | null): Promise<void> } | null = null;
+export const setReader = (r: typeof reader) => { reader = r; };
+
+/** Open a doc version in an editor tab: the EDP reader (C16), or, before it is registered, VS Code's Markdown
+ *  preview (the text itself when the preview is unavailable). `source`: the ticket it was opened from. */
+export async function openDoc(id: string, version: number, source?: string | null): Promise<void> {
   const uri = docUri(id, version);
+  // fetches now: a refusal surfaces here, not in a blank tab
+  if (reader) { await vscode.workspace.openTextDocument(uri); await reader.open(id, version, source); return; }
   // fetches now: a refusal surfaces here, not in a blank preview (the .md path makes it markdown)
   const doc = await vscode.workspace.openTextDocument(uri);
   try { await vscode.commands.executeCommand('markdown.showPreview', uri); }

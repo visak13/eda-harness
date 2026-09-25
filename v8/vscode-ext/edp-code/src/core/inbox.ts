@@ -45,7 +45,7 @@ export type InboxSignoff = {
 };
 export type InboxGate = {
   type: 'gate'; key: string; ticketId: string; ticketTitle: string | null; gate: string; by: string | null; note: string | null; at: string | null;
-  /** design_signoff: reviewed in the board UI for now (C16 brings the editor reader); no ruling box here */
+  /** design_signoff: reviewed in the EDP reader (C16: Approve / Request changes there); no ruling box here */
   design: boolean;
 };
 export type InboxItem = InboxQuestion | InboxSignoff | InboxGate;

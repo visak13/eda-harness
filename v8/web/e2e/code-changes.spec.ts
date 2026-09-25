@@ -80,12 +80,13 @@ const quick = (p: Page) => p.locator(".quick-input-widget");
 const quickRow = (p: Page, text: string | RegExp) => quick(p).locator(".monaco-list-row", { hasText: text }).first();
 async function runCommand(title: string): Promise<void> {
   // F1 is lost while key focus sits in a webview frame (or moves to an editor just opened): retry it
+  // an editor that finishes opening (the multi-diff focuses its first diff) closes the palette under the fill: retry it all
   await expect(async () => {
     if (!(await quick(page).isVisible())) await page.keyboard.press("F1");
     await expect(quick(page)).toBeVisible({ timeout: 1_500 });
-  }).toPass({ timeout: 15_000 });
-  await quick(page).locator("input").fill(`>${title}`);
-  await quickRow(page, title).click();
+    await quick(page).locator("input").fill(`>${title}`, { timeout: 2_000 });
+    await quickRow(page, title).click({ timeout: 3_000 });
+  }).toPass({ timeout: 30_000 });
 }
 async function typeInput(value: string, title: string): Promise<void> {
   await expect(quick(page).locator(".quick-input-title")).toContainText(title);
@@ -157,7 +158,7 @@ test("the epic: Chat shows only epic-named commits as markers; Commits aggregate
   const c = chat();
   await expect(c.locator("#crumb-current")).toHaveText("Spike epic", { timeout: 20_000 });
   // one header row, then the tab bar; Chat is the default
-  await expect(c.locator("[role=tablist] [role=tab]")).toHaveText([/^Chat/, /^Changes/, /^Commits/]);
+  await expect(c.locator("[role=tablist] [role=tab]")).toHaveText([/^Chat/, /^Changes/, /^Commits/, /^Inbox/, /^Docs/]);
   await expect(c.locator("#tab-chat")).toHaveAttribute("aria-selected", "true");
   const hb = await c.locator("header.hdr").boundingBox(), tb = await c.locator(".tabbar").boundingBox();
   expect(tb!.y).toBeGreaterThanOrEqual(hb!.y + hb!.height - 1);

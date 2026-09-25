@@ -1,7 +1,7 @@
 // The Inbox tab (C15 s-e14d316891; design-10b21760d9 §14.2, §14.4): what waits on the viewer in the picked
 // scope only (owner m-db09472a68), answered in place. Sign-offs: the evidence opens in an editor tab, Pass or
 // Fail (a Fail needs a note) for the version the row shows. Gates: a ruling box; the design gate links to the
-// board's review until C16. Questions: a reply box (an answer to the asker, threaded). Rows come from the host
+// EDP reader (C16). Questions: a reply box (an answer to the asker, threaded). Rows come from the host
 // and are rows the board says the viewer may act on, so every row has its controls. Enter is a newline and
 // Ctrl+Enter sends (C14), for the reply and ruling boxes; a verdict is its own button, never a chord.
 // Unsent text is kept per row in webview state; a refusal (the board's words) shows on its row.
@@ -122,7 +122,7 @@ function gateRow(g: InboxGate, ctx: TabCtx, rerender: () => void): HTMLElement {
   row.append(meta);
   if (g.note) row.append(el('p', 'ib-note', g.note));
   if (g.design) {
-    const b = action(`ib-review-${domKey(g.key)}`, 'Review design', 'Open the design review on the board (the editor reader comes with C16)',
+    const b = action(`ib-review-${domKey(g.key)}`, 'Review design', 'Open the design in the EDP reader to approve or request changes',
       () => ctx.post({ type: 'inboxOpen', key: g.key }));
     const bar = el('div', 'ib-actions');
     bar.append(b);

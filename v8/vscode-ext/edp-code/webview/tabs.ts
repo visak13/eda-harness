@@ -83,7 +83,9 @@ export class TabBar {
     if (!this.has(id)) return;
     this.active = id;
     this.paint();
-    if (focus) this.buttons.get(id)!.focus();
+    const b = this.buttons.get(id)!;
+    if (focus) b.focus();
+    b.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }); // C16: a bar wider than the panel scrolls to the shown tab
   }
 
   /** Labels and count badges, from the current state. */

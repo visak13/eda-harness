@@ -139,7 +139,7 @@ export class InboxHost implements vscode.Disposable {
 
   gate(key: string, text: string): Promise<void> {
     return this.write(key, async i => {
-      if (i.type !== 'gate' || i.design) throw new Error('the design review is answered on the board');
+      if (i.type !== 'gate' || i.design) throw new Error('the design review is answered in the EDP reader');
       const bad = writeProblem('gate', text);
       if (bad) throw new Error(bad);
       await this.board().gateAnswer(i, text.trim());
@@ -148,13 +148,20 @@ export class InboxHost implements vscode.Disposable {
   }
 
   /** A sign-off's evidence in an editor tab (a doc at the row's version, or the artifact); a design gate's
-   *  review on the board UI until C16. */
+   *  review in the EDP reader (C16). */
   async openRow(key: string): Promise<void> {
     const i = this.row(key);
     if (!i) return;
     try {
       if (i.type === 'gate' && i.design) {
-        await vscode.env.openExternal(vscode.Uri.parse(boardTicketUrl(this.boardUrl(), i.ticketId)));
+        // C16: the design under review opens in the reader at its current version, reviewed from this ticket
+        const ref = (await this.board().ticket(i.ticketId)).design_ref;
+        if (!ref || !DOC_ID.test(ref)) {
+          await vscode.env.openExternal(vscode.Uri.parse(boardTicketUrl(this.boardUrl(), i.ticketId)));
+          return;
+        }
+        const d = await this.board().latestDoc(ref);
+        await this.openDoc(ref, d.version, i.ticketId);
         return;
       }
       if (i.type !== 'signoff') return;

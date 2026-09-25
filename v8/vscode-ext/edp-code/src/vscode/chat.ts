@@ -26,7 +26,9 @@ import type { AttachmentRef } from '../core/chatProtocol';
 import { PathIndex } from './pathIndex';
 import { gitApi } from './repo';
 import { InboxHost, type InboxScope } from './inbox';
-import { DocProvider } from './docs';
+import { DocProvider, setReader } from './docs';
+import { DocsHost, type DocsScope } from './docsTab';
+import { DocReader } from './reader';
 import type { TagTarget } from './tag';
 
 const LAST_PICK = 'edp.chat.lastTicket';
@@ -65,6 +67,9 @@ export class ChatController implements vscode.Disposable, TagTarget {
   private attach: Attachments;
   /** C15: the open scope's Inbox (questions, sign-offs, gates waiting on the viewer) */
   private inbox: InboxHost;
+  /** C16: the open scope's linked docs, and the reader editor they open in */
+  private docs: DocsHost;
+  readonly reader: DocReader;
   private tree: Ticket[] = [];
   private commits: CommitCard[] = [];
   private unlinked: CommitCard[] = [];
@@ -88,6 +93,9 @@ export class ChatController implements vscode.Disposable, TagTarget {
     this.paths = new PathIndex(log);
     this.inbox = new InboxHost(board, boardUrl, () => this.inboxScope(), m => this.post(m), ref => this.attach.open(ref),
       e => this.fail(e, 'could not use the Inbox'), log);
+    this.docs = new DocsHost(board, () => this.docsScope(), m => this.post(m), e => this.fail(e, 'could not list the docs'), log);
+    this.reader = new DocReader(ctx, board, log, e => this.fail(e, 'could not use the reader'));
+    setReader(this.reader);
     this.changes = new Changes(ctx, {
       onCommits: added => this.onCommits(added),
       onReset: () => this.onCommitsReset(),
@@ -98,7 +106,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
   register(): vscode.Disposable[] {
     return [
       vscode.window.registerWebviewViewProvider(CHAT_VIEW, this.provider, { webviewOptions: { retainContextWhenHidden: false } }),
-      this.provider, this, new DocProvider(this.board).register(),
+      this.provider, this, new DocProvider(this.board).register(), ...this.reader.register(),
     ];
   }
 
@@ -113,6 +121,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
       pending: this.attach.pendingOf(this.ticket?.id),
       artifacts: this.attach.known((this.store?.items ?? []).flatMap(i => (i.attachments ?? []).map(a => a.id))),
       inbox: this.inbox.snapshot(this.ticket?.id),
+      docs: this.docs.snapshot(this.ticket?.id),
     };
   }
 
@@ -171,6 +180,9 @@ export class ChatController implements vscode.Disposable, TagTarget {
       case 'inboxGate': return this.inbox.gate(m.key, m.text);
       case 'inboxOpen': return this.inbox.openRow(m.key);
       case 'inboxRefresh': return this.inbox.refresh();
+      case 'docsOpen': return this.docs.openRow(m.id);
+      case 'docsCompare': return this.docs.compareRow(m.id);
+      case 'docsRefresh': return this.docs.refresh();
       case 'signIn': {
         if (await signIn(this.ctx, this.board)) await this.restart();
         return;
@@ -223,13 +235,14 @@ export class ChatController implements vscode.Disposable, TagTarget {
     if (!(await creds(this.ctx))) {
       ++this.opening;
       this.store = undefined; this.ticket = null; this.epic = null; this.stories = []; this.unread.clear(); this.chips.clear(); this.attach.clear();
-      this.anchors.clear(); this.anchorsFor = null; this.inbox.clear();
+      this.anchors.clear(); this.anchorsFor = null; this.inbox.clear(); this.docs.clear();
       this.opened = this.opening; this.pendingChip = undefined;
       this.feedStatus = 'signed-out';
       this.notice = 'Sign in to the board to read and send.';
       this.postState();
       return;
     }
+    this.reader.reset();
     this.startFeed();
     const id = this.ticket?.id ?? this.ctx.workspaceState.get<string>(LAST_PICK);
     if (id) await this.open(id); else this.postState();
@@ -257,6 +270,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
     this.changes.dispose();
     this.attach.dispose();
     this.inbox.dispose();
+    this.docs.dispose();
     this.paths.dispose();
     this.feed?.dispose();
     this.feed = undefined;
@@ -320,6 +334,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
       this.notice = null;
       void this.ctx.workspaceState.update(LAST_PICK, t.id);
       const inbox = this.inbox.open(); // sets the new scope's (loading) list before the state goes out
+      void this.docs.open();
       this.postState();
       void inbox;
       this.settleOpen(n);
@@ -405,9 +420,14 @@ export class ChatController implements vscode.Disposable, TagTarget {
 
   private async onEvent(ev: FeedEvent): Promise<void> {
     const subject = ev.subject_id;
+    if (subject && this.docs.has(subject)) this.docs.schedule(); // C16: a listed doc moved (a new version, approved)
     if (!subject || !this.threadSet().has(subject)) return;
     // C15: a question, a gate or a verdict in scope changes what waits on the viewer
-    if (this.ticket && scopeTickets(this.ticket, this.tree).has(subject)) this.inbox.schedule();
+    if (this.ticket && scopeTickets(this.ticket, this.tree).has(subject)) {
+      this.inbox.schedule();
+      // C16: a link, a criterion's evidence or a design_ref in scope changes the Docs list
+      if (ev.kind !== 'message_sent') this.docs.schedule();
+    }
     if (ev.kind === 'status_changed') {
       const to = typeof ev.data?.to === 'string' ? ev.data.to : undefined;
       if (!to) return;
@@ -729,6 +749,14 @@ export class ChatController implements vscode.Disposable, TagTarget {
     const titles = new Map<string, string>();
     for (const x of [...this.tree, ...this.stories, ...(this.epic ? [this.epic] : []), t]) titles.set(x.id, x.title);
     return { id: t.id, ids: scopeTickets(t, this.tree), titles };
+  }
+
+  /** The Docs tab's scope (C16): the picked scope's own tickets (the C14 set), and its epic for the doc list. */
+  private docsScope(): DocsScope | null {
+    const t = this.ticket;
+    if (!t || !this.store) return null;
+    const ids = scopeTickets(t, this.tree);
+    return { id: t.id, epicId: this.epic?.id ?? null, tickets: this.tree.filter(x => ids.has(x.id)) };
   }
 
   // -- picker --------------------------------------------------------------------------------------

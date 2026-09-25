@@ -678,6 +678,15 @@ window.addEventListener('message', (ev: MessageEvent) => {
       if (tabs.current === 'inbox') renderTab(); else badges();
       break;
     }
+    case 'docs': { // C16: the open scope's linked docs, re-read
+      if (!state || state.ticket?.id !== m.ticketId) return;
+      const panel = tabs.panelOf('docs');
+      panel.dataset.reads = String(Number(panel.dataset.reads ?? 0) + 1);
+      if (JSON.stringify(state.docs) === JSON.stringify(m.docs)) return;
+      state.docs = m.docs;
+      if (tabs.current === 'docs') renderTab(); else badges();
+      break;
+    }
     case 'inboxDone':
       inboxDone(state, local, m);
       persist();

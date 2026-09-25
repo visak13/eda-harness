@@ -62,9 +62,13 @@ button:disabled { opacity: 0.6; cursor: default; }
 
 /* C13: the tab bar under the header, and the panels that fill the rest. Each panel is the ONLY flexible
    box below the bar, so nothing competes with it for height (C9's chips lost that contest to the thread). */
-.tabbar { display: flex; gap: 2px; padding: 0 6px; flex: 0 0 auto; border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, transparent)); }
+.tabbar { display: flex; gap: 2px; padding: 0 6px; flex: 0 0 auto; border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, transparent));
+  /* C16: five tabs (six with C17) outgrow a narrow side bar: the bar scrolls itself, never the whole view */
+  min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.tabbar::-webkit-scrollbar { display: none; }
+#app { overflow-x: hidden; }
 .tab {
-  display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px 2px; border: none; border-radius: 0;
+  display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; padding: 3px 6px 2px; border: none; border-radius: 0;
   border-bottom: 2px solid transparent; color: var(--vscode-descriptionForeground); white-space: nowrap;
 }
 .tab:hover { background: none; color: var(--vscode-foreground); }
@@ -72,7 +76,7 @@ button:disabled { opacity: 0.6; cursor: default; }
 .tab-badge { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); border-radius: 8px; padding: 0 5px; font-size: 0.8em; }
 .panels { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .panel { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-.panel-changes, .panel-commits { overflow-y: auto; padding: 0 6px 6px; }
+.panel-changes, .panel-commits, .panel-docs { overflow-y: auto; padding: 0 6px 6px; }
 .tab-top { display: flex; align-items: baseline; gap: 6px; padding: 6px 2px 4px; }
 .tab-sum { flex: 1 1 auto; min-width: 0; color: var(--vscode-descriptionForeground); }
 .act {
@@ -292,3 +296,15 @@ body.vscode-high-contrast .att, body.vscode-high-contrast .pend { border: 1px so
 .ib-fail { color: var(--vscode-errorForeground); }
 .ib-error { color: var(--vscode-errorForeground); margin-top: 4px; overflow-wrap: anywhere; }
 .ib-error:empty { display: none; }
+
+/* C16: the Docs tab */
+.dc-list { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.dc-row { padding: 4px 6px; border: 1px solid var(--vscode-widget-border, var(--vscode-input-border, transparent)); border-radius: 2px; }
+.dc-open { display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 2px; }
+.dc-head { display: flex; min-width: 0; }
+.dc-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--vscode-textLink-foreground); font-weight: 600; }
+.dc-meta { display: flex; gap: 6px; font-size: 0.85em; color: var(--vscode-descriptionForeground); }
+.dc-status-proposed { color: var(--vscode-editorWarning-foreground, var(--vscode-foreground)); font-weight: 600; }
+.dc-why { font-size: 0.85em; color: var(--vscode-descriptionForeground); padding: 0 2px; overflow-wrap: anywhere; }
+.dc-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.dc-actions:empty { display: none; }

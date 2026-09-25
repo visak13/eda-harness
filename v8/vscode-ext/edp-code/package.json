@@ -3,7 +3,7 @@
   "displayName": "EDP",
   "description": "Chat on EDP tickets and epics beside the editor, tag a code selection to anyone on the board; live-seats badge, guarded git and an external terminal for the fleet's shared tree.",
   "publisher": "edp",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "license": "UNLICENSED",
   "engines": {
@@ -89,6 +89,62 @@
         "command": "edp.chat.pick",
         "title": "Chat: open a ticket or epic thread…",
         "category": "EDP"
+      },
+      {
+        "command": "edp.doc.approve",
+        "title": "Approve design (the version shown)",
+        "category": "EDP",
+        "icon": "$(check)",
+        "enablement": "activeCustomEditorId == edp.docReader"
+      },
+      {
+        "command": "edp.doc.requestChanges",
+        "title": "Request changes on the design…",
+        "category": "EDP",
+        "icon": "$(request-changes)",
+        "enablement": "activeCustomEditorId == edp.docReader"
+      },
+      {
+        "command": "edp.doc.resolveApprove",
+        "title": "Approve proposed doc",
+        "category": "EDP",
+        "icon": "$(pass)",
+        "enablement": "activeCustomEditorId == edp.docReader"
+      },
+      {
+        "command": "edp.doc.resolveReject",
+        "title": "Reject proposed doc",
+        "category": "EDP",
+        "icon": "$(close)",
+        "enablement": "activeCustomEditorId == edp.docReader"
+      },
+      {
+        "command": "edp.doc.compare",
+        "title": "Compare with another version…",
+        "category": "EDP",
+        "icon": "$(diff)",
+        "enablement": "activeCustomEditorId == edp.docReader"
+      },
+      {
+        "command": "edp.doc.source",
+        "title": "Open markdown source",
+        "category": "EDP",
+        "icon": "$(go-to-file)",
+        "enablement": "activeCustomEditorId == edp.docReader"
+      },
+      {
+        "command": "edp.doc.fullScreen",
+        "title": "Full screen (maximise the reader)",
+        "category": "EDP",
+        "icon": "$(screen-full)",
+        "enablement": "activeCustomEditorId == edp.docReader"
+      },
+      {
+        "command": "edp.doc.refresh",
+        "title": "Refresh doc",
+        "category": "EDP",
+        "icon": "$(refresh)",
+        "enablement": "activeCustomEditorId == edp.docReader"
       }
     ],
     "menus": {
@@ -97,6 +153,82 @@
           "command": "edp.tagSelection",
           "when": "editorTextFocus",
           "group": "9_cutcopypaste@99"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "edp.doc.approve",
+          "when": "activeCustomEditorId == edp.docReader && edp.doc.canApprove",
+          "group": "navigation@1"
+        },
+        {
+          "command": "edp.doc.requestChanges",
+          "when": "activeCustomEditorId == edp.docReader && edp.doc.canApprove",
+          "group": "navigation@2"
+        },
+        {
+          "command": "edp.doc.resolveApprove",
+          "when": "activeCustomEditorId == edp.docReader && edp.doc.canResolve",
+          "group": "navigation@3"
+        },
+        {
+          "command": "edp.doc.resolveReject",
+          "when": "activeCustomEditorId == edp.docReader && edp.doc.canResolve",
+          "group": "navigation@4"
+        },
+        {
+          "command": "edp.doc.compare",
+          "when": "activeCustomEditorId == edp.docReader && edp.doc.hasVersions",
+          "group": "navigation@5"
+        },
+        {
+          "command": "edp.doc.source",
+          "when": "activeCustomEditorId == edp.docReader",
+          "group": "navigation@6"
+        },
+        {
+          "command": "edp.doc.fullScreen",
+          "when": "activeCustomEditorId == edp.docReader",
+          "group": "navigation@7"
+        },
+        {
+          "command": "edp.doc.refresh",
+          "when": "activeCustomEditorId == edp.docReader",
+          "group": "navigation@8"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "edp.doc.approve",
+          "when": "activeCustomEditorId == edp.docReader && edp.doc.canApprove"
+        },
+        {
+          "command": "edp.doc.requestChanges",
+          "when": "activeCustomEditorId == edp.docReader && edp.doc.canApprove"
+        },
+        {
+          "command": "edp.doc.resolveApprove",
+          "when": "activeCustomEditorId == edp.docReader && edp.doc.canResolve"
+        },
+        {
+          "command": "edp.doc.resolveReject",
+          "when": "activeCustomEditorId == edp.docReader && edp.doc.canResolve"
+        },
+        {
+          "command": "edp.doc.compare",
+          "when": "activeCustomEditorId == edp.docReader && edp.doc.hasVersions"
+        },
+        {
+          "command": "edp.doc.source",
+          "when": "activeCustomEditorId == edp.docReader"
+        },
+        {
+          "command": "edp.doc.fullScreen",
+          "when": "activeCustomEditorId == edp.docReader"
+        },
+        {
+          "command": "edp.doc.refresh",
+          "when": "activeCustomEditorId == edp.docReader"
         }
       ]
     },
@@ -169,7 +301,19 @@
           "description": "The shell `EDP: Open external terminal here` launches: kind and a real .exe path (git-bash: Git\\git-bash.exe)."
         }
       }
-    }
+    },
+    "customEditors": [
+      {
+        "viewType": "edp.docReader",
+        "displayName": "EDP reader",
+        "selector": [
+          {
+            "filenamePattern": "*.md"
+          }
+        ],
+        "priority": "option"
+      }
+    ]
   },
   "scripts": {
     "check-types": "tsc --noEmit",
