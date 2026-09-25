@@ -25,7 +25,7 @@ const check = (ok, what) => { L(`${ok ? 'ok  ' : 'FAIL'} ${what}`); if (!ok) fai
 const lock = JSON.parse(fs.readFileSync(path.join(V8, 'vscode-ext/code-server.lock.json'), 'utf8'));
 const SERVER_DIR = path.join(V8, '.tools/code-server', lock.version, lock.server_dir);
 const NODE = path.join(SERVER_DIR, lock.node);
-const csEnv = () => { const e = {}; for (const [k, v] of Object.entries(process.env)) if (!/^EDP8?_/i.test(k)) e[k] = v; e.EXTENSIONS_GALLERY = '{}'; return e; };
+const csEnv = () => { const e = {}; for (const [k, v] of Object.entries(process.env)) if (!/^(EDP8?_|PORT$|CODE_SERVER_|VSCODE_PROXY_URI$)/i.test(k)) e[k] = v; e.EXTENSIONS_GALLERY = '{}'; return e; };
 const freePort = () => new Promise((res, rej) => { const s = net.createServer(); s.on('error', rej); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); }); });
 
 async function startCodeServer() {
@@ -37,12 +37,15 @@ async function startCodeServer() {
     'telemetry.telemetryLevel': 'off', 'extensions.autoUpdate': false, 'git.openRepositoryInParentFolders': 'never', 'edp.boardUrl': BOARD }, null, 1);
   fs.writeFileSync(path.join(userDir, 'User/settings.json'), settings);
   fs.writeFileSync(path.join(userDir, 'Machine/settings.json'), settings);
-  const inst = spawnSync(NODE, [SERVER_DIR, '--user-data-dir', userDir, '--extensions-dir', extDir, '--install-extension', vsix, '--force'], { env: csEnv(), encoding: 'utf8', timeout: 120000 });
+  // its own config file: the live service's config.yaml (and PORT/CODE_SERVER_* in env, stripped above) never apply here
+  const config = path.join(tmp, 'config.yaml');
+  fs.writeFileSync(config, 'auth: none\ncert: false\n');
+  const inst = spawnSync(NODE, [SERVER_DIR, '--config', config, '--user-data-dir', userDir, '--extensions-dir', extDir, '--install-extension', vsix, '--force'], { env: csEnv(), encoding: 'utf8', timeout: 120000 });
   if (inst.status !== 0) throw new Error(`vsix install failed: ${inst.stdout} ${inst.stderr}`);
-  const list = spawnSync(NODE, [SERVER_DIR, '--user-data-dir', userDir, '--extensions-dir', extDir, '--list-extensions', '--show-versions'], { env: csEnv(), encoding: 'utf8', timeout: 60000 });
+  const list = spawnSync(NODE, [SERVER_DIR, '--config', config, '--user-data-dir', userDir, '--extensions-dir', extDir, '--list-extensions', '--show-versions'], { env: csEnv(), encoding: 'utf8', timeout: 60000 });
   L(`throwaway code-server extensions: ${list.stdout.trim().replace(/\s+/g, ' ')}`);
   const port = await freePort();
-  const cs = spawn(NODE, [SERVER_DIR, '--bind-addr', `127.0.0.1:${port}`, '--auth', 'none', '--disable-telemetry', '--disable-update-check', '--disable-proxy',
+  const cs = spawn(NODE, [SERVER_DIR, '--config', config, '--bind-addr', `127.0.0.1:${port}`, '--auth', 'none', '--disable-telemetry', '--disable-update-check', '--disable-proxy',
     '--disable-workspace-trust', '--user-data-dir', userDir, '--extensions-dir', extDir], { env: csEnv(), stdio: 'ignore', windowsHide: true });
   const stop = () => { if (cs.pid && cs.exitCode === null) spawnSync('taskkill', ['/PID', String(cs.pid), '/T', '/F'], { stdio: 'ignore' }); };
   for (const end = Date.now() + 60000; Date.now() < end;) {
@@ -61,17 +64,19 @@ const measure = rd => rd.evaluate(() => {
   const doc = r(document.querySelector('.rd-doc')), extras = r(document.querySelector('.rd-extras')), outline = document.querySelector('.rd-outline');
   const tables = [...document.querySelectorAll('.rd-doc table')].map(t => Math.round(t.getBoundingClientRect().width));
   return { frame: innerWidth, main: main.clientWidth, content: Math.round(content), doc: Math.round(doc.width), docRight: Math.round(doc.right),
-    mainRight: Math.round(r(main).right - parseFloat(cs.paddingRight)), extras: Math.round(extras.width), tables: tables.length, widestTable: Math.max(0, ...tables),
+    mainRight: Math.round(r(main).left + main.clientLeft + main.clientWidth - parseFloat(cs.paddingRight)),
+    scrollW: main.scrollWidth, clientW: main.clientWidth, extras: Math.round(extras.width), tables: tables.length, widestTable: Math.max(0, ...tables),
     outline: outline && getComputedStyle(outline).display !== 'none' ? Math.round(r(outline).width) : 0,
     docMaxWidth: getComputedStyle(document.querySelector('.rd-doc')).maxWidth, extrasMaxWidth: getComputedStyle(document.querySelector('.rd-extras')).maxWidth };
 });
 
 (async () => {
   const cs = await startCodeServer();
-  const browser = which === 'stockff'
-    ? await pw.firefox.launch({ channel: 'moz-firefox', executablePath: 'C:/Program Files/Mozilla Firefox/firefox.exe', headless: true })
-    : await pw.chromium.launch({ headless: true, executablePath: path.join(process.env.LOCALAPPDATA, 'ms-playwright', 'chromium-1234', 'chrome-win64', 'chrome.exe') });
+  let browser;
   try {
+    browser = which === 'stockff'
+      ? await pw.firefox.launch({ channel: 'moz-firefox', executablePath: 'C:/Program Files/Mozilla Firefox/firefox.exe', headless: true })
+      : await pw.chromium.launch({ headless: true, executablePath: path.join(process.env.LOCALAPPDATA, 'ms-playwright', 'chromium-1234', 'chrome-win64', 'chrome.exe') });
     const page = await (await browser.newContext({ viewport: { width: 1920, height: 1080 } })).newPage();
     page.on('pageerror', e => L(`pageerror ${e.message.slice(0, 200)}`));
     L(`browser ${which} ${browser.version()} viewport 1920x1080`);
@@ -118,7 +123,8 @@ const measure = rd => rd.evaluate(() => {
       check(m.docMaxWidth === 'none' && m.extrasMaxWidth === 'none', `${label}: computed max-width none on .rd-doc and .rd-extras`);
       check(Math.abs(m.doc - m.content) <= 2 && Math.abs(m.docRight - m.mainRight) <= 2, `${label}: doc column ${m.doc}px spans .rd-main's content box ${m.content}px (no empty right band)`);
       check(Math.abs(m.extras - m.content) <= 2, `${label}: extras ${m.extras}px span the same width`);
-      check(m.widestTable <= m.doc + 1, `${label}: ${m.tables} tables, widest ${m.widestTable}px fits the ${m.doc}px column`);
+      check(m.scrollW <= m.clientW, `${label}: .rd-main does not scroll sideways (scrollWidth ${m.scrollW} <= clientWidth ${m.clientW})`);
+      check(m.tables > 0 && m.widestTable <= m.doc + 1, `${label}: ${m.tables} tables, widest ${m.widestTable}px fits the ${m.doc}px column`);
       check(m.outline >= 160 && m.outline <= 240, `${label}: outline shows at ${m.outline}px (160-240)`);
     };
     const firstTable = async name => { if (await rd.locator('.rd-doc table').count()) { await rd.locator('.rd-doc table').first().scrollIntoViewIfNeeded(); await page.waitForTimeout(400); await shot(name); await rd.locator('.rd-doc').evaluate(e => e.closest('.rd-main').scrollTo(0, 0)); } };
@@ -144,7 +150,7 @@ const measure = rd => rd.evaluate(() => {
     await firstTable('4-normal-1000-table');
   } finally {
     L(fails ? `${fails} check(s) FAILED` : 'all checks ok');
-    await browser.close().catch(() => {});
+    await browser?.close().catch(() => {});
     cs.stop();
   }
   process.exit(fails ? 1 : 0);
