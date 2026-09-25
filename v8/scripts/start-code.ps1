@@ -253,7 +253,10 @@ $pidFile = Join-Path $RUN "code.launch.pid"; $wrap = Join-Path $RUN "code.launch
 Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
 $body = @(
   '$ErrorActionPreference = "Stop"',
-  ('$p = Start-Process -FilePath {0} -ArgumentList @({1}) -WorkingDirectory {2} -WindowStyle Hidden -PassThru -RedirectStandardOutput {3} -RedirectStandardError {4}' -f
+  # openExternal rewrites a loopback URL through this template (default <base>/proxy/{{port}}/, which
+  # --disable-proxy turns into a dead link on :9410): map it to itself so board links open the board
+  '$env:VSCODE_PROXY_URI = "http://127.0.0.1:{{port}}/"',
+  ('$p =Start-Process -FilePath {0} -ArgumentList @({1}) -WorkingDirectory {2} -WindowStyle Hidden -PassThru -RedirectStandardOutput {3} -RedirectStandardError {4}' -f
     (& $q $node), (($flags | ForEach-Object { & $q $_ }) -join ", "), (& $q $v8), (& $q $log), (& $q $err)),
   ('Set-Content -Path {0} -Value $p.Id -Encoding ascii' -f (& $q $pidFile))
 ) -join "`r`n"
