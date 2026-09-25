@@ -114,7 +114,8 @@ def views_router(board: Board, actor: Callable[..., Participant]) -> APIRouter:
         out = views.record_verdict(board, a, criterion_id=b.criterion_id, verdict=b.verdict,
                                    note=b.note, ticket_id=b.ticket_id,
                                    evidence_version=b.evidence_version, stale_ok=b.stale_ok)
-        return ok(out, "verdict recorded" + (" and the assignee was told" if out["message"] else ""))
+        return ok(out, "verdict recorded" + (f"; {out['note_error']}" if out.get("note_error")
+                                             else " and the assignee was told" if out["message"] else ""))
 
     # -------------------------------------------------------------- avatars
     @r.get("/v1/me/avatar")

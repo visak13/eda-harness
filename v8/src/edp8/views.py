@@ -225,21 +225,30 @@ def record_verdict(board: Board, actor: Participant, *, criterion_id: str, verdi
     """One-click ruling shared by /ui/me/verdict and POST /v1/me/verdict (design §14): record
     the verdict (with the doc version it names) and, when a note is given, post a
     '[sign-off pass|fail] note' message to the ticket's assignee and deliver it. Returns the
-    criterion and the message id (or None)."""
+    criterion and the message id (or None). The verdict is recorded first: a note that then fails to
+    post or deliver never turns the call into an error (C17, m-be0eda7d7b) — the result carries
+    `note_error` (the reason) and the verdict stands."""
     from . import delivery
 
     v = Verdict(verdict)
     c = board.criterion_update(actor, criterion_id.strip(), verdict=v,
                                evidence_version=evidence_version, stale_ok=stale_ok, note=note)
-    msg_id = None
+    msg_id, note_error = None, None
     if note.strip() and ticket_id and ticket_id.strip():
-        tk = board.store.get("ticket", ticket_id.strip())
-        m = board.message_send(actor, ticket_id=ticket_id.strip(), to=getattr(tk, "assignee", None),
-                               kind=MessageKind.answer if v == Verdict.passed else MessageKind.finding,
-                               text=f"[sign-off {v.value}] {note.strip()}")
-        delivery.after_message(board, actor.id, m)
-        msg_id = m.id
-    return {"criterion": c.model_dump(mode="json"), "message": msg_id}
+        try:
+            tk = board.store.get("ticket", ticket_id.strip())
+            m = board.message_send(actor, ticket_id=ticket_id.strip(), to=getattr(tk, "assignee", None),
+                                   kind=MessageKind.answer if v == Verdict.passed else MessageKind.finding,
+                                   text=f"[sign-off {v.value}] {note.strip()}")
+            msg_id = m.id
+            delivery.after_message(board, actor.id, m)
+        except Exception as e:  # the verdict above is committed; report the note's failure, never raise
+            note_error = (f"verdict recorded, but the note {'was posted and not delivered' if msg_id else 'was not posted'}: "
+                          f"{getattr(e, 'message', None) or e}")
+    out: dict[str, Any] = {"criterion": c.model_dump(mode="json"), "message": msg_id}
+    if note_error:
+        out["note_error"] = note_error
+    return out
 
 
 # ------------------------------------------------------------------ people / conversations

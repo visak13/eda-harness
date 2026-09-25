@@ -25,6 +25,8 @@ from . import knowledge, records, seat_choice
 from .schemas import (
     CRITERION_AUTHORS,
     CRITERION_CHECKERS,
+    DECISION_DETAIL_MAX,
+    DECISION_TEXT_MAX,
     DOC_AUTHORS,
     TICKET_CREATORS,
     TRANSITIONS,
@@ -1175,14 +1177,21 @@ class Board:
             docs = [d for d in docs if want in d.tags]
         return docs[:limit]
 
-    def doc_resolve(self, actor: Participant, id_: str, *, approve: bool) -> dict[str, Any]:
+    def doc_resolve(self, actor: Participant, id_: str, *, approve: bool,
+                    expected_version: int | None = None) -> dict[str, Any]:
         """The owner rules on a proposed doc. Approve: a proposal for an active doc becomes that doc's
         next version (links keep pointing at it, so the next brief carries it) and the proposal retires;
-        a free-standing proposal becomes active. Reject: the proposal retires."""
+        a free-standing proposal becomes active. Reject: the proposal retires. `expected_version` (C17):
+        the version the owner read; when given and the proposal has moved on, the ruling is refused
+        (409) so it never lands on a version nobody read."""
         if actor.role != Role.owner:
             raise BoardError("scope", "only the owner approves or rejects a proposed doc")
         with self._lock, self.store._lock:
             d: Doc = self._get("doc", id_, "doc")
+            if expected_version is not None and d.version != expected_version:
+                raise BoardError("version_mismatch",
+                                 f"you read {id_} v{expected_version}; it is now v{d.version}",
+                                 f"read v{d.version}, then {'approve' if approve else 'reject'} it with expected_version={d.version}")
             if d.status != DocStatus.proposed:
                 raise BoardError("invalid", f"{id_} is {d.status}, not proposed")
             target: Doc | None = None
@@ -2079,6 +2088,13 @@ class Board:
         `came_from` kglink to the source are written alongside. Raises if a replaced id is unknown.
         `binding=None` (the default) inherits: a successor of a binding decision stays binding, so a
         re-curation cannot silently demote a must-follow rule (m-db71577ddc); pass False to demote."""
+        # C17: an over-long text/detail is a typed 422 naming the limit, checked before anything is read or
+        # written (Decision(...) raised a pydantic ValidationError inside the transaction: a 500)
+        for field, value, cap in (("text", text, DECISION_TEXT_MAX), ("detail", detail or "", DECISION_DETAIL_MAX)):
+            if len(value) > cap:
+                raise BoardError("too_long", f"decision {field} is {len(value)} characters; the limit is {cap}",
+                                 "put one sentence in text and the why in detail" if field == "text"
+                                 else f"shorten detail to at most {cap} characters")
         replaces = list(dict.fromkeys(replaces or []))  # O1: replaces=[x, x] is one successor, one edge
         if binding is not None:
             binding = bool(binding)  # F2: a truthy non-bool (binding=1) must meet the gate as True
@@ -2221,6 +2237,63 @@ class Board:
                        {"decision": d.id, "from": was, "to": d.binding,
                         "reason": (reason or "").strip()[:240], "by": actor.id})
         return d
+
+    def epic_participant(self, p: Participant, epic: Ticket) -> bool:
+        """Is p one of this epic's participants (C17: who may read its decision list)? An owner, unless the
+        epic has another human owner (None = an agent/coordinator epic, which every owner may read); the
+        coordinator; a seat named for, assigned to, or the creator of a ticket of the epic."""
+        if p.role == Role.owner:
+            oid = self.epic_owner(epic.id)
+            return oid is None or oid == p.id
+        if p.role == Role.coordinator:
+            return True
+        tickets = [epic, *self._descendants(epic.id)]
+        named = p.id.split(".", 1)[1] if "." in p.id else None
+        return any(t.id == named or t.assignee == p.id or t.created_by == p.id for t in tickets)
+
+    def scope_decisions(self, actor: Participant, scope: str) -> dict[str, Any]:
+        """The decision list of one scope (C17, design-10b21760d9 §14.2): the live and withdrawn decisions
+        recorded on the ticket or any ticket under it (an epic: its stories and their tasks). Replaced ones
+        are history, reached through a successor's `replaces`. Live binding decisions first, then newest.
+        Readable by the epic's participants only."""
+        t = self.ticket(scope)  # 404 on an unknown ticket
+        epic = self.epic_of(t)
+        if not self.epic_participant(actor, epic):
+            raise BoardError("forbidden", f"{actor.id} is not a participant of {epic.id}",
+                             "only the epic's owner, architect and seats read its decisions")
+        ids = {t.id, *(x.id for x in self._descendants(t.id))}
+        rows = self.store.query("decision", {"scope": sorted(ids),
+                                             "status": [DecisionStatus.live.value, DecisionStatus.withdrawn.value]},
+                                limit=100000)
+
+        def when(d: Decision) -> datetime:
+            return d.decided_at or d.created_at
+
+        rows.sort(key=lambda d: when(d), reverse=True)  # newest first, then binding live ones lifted (stable)
+        rows.sort(key=lambda d: not (d.binding and d.status == DecisionStatus.live))
+
+        def row(d: Decision) -> dict[str, Any]:
+            src = d.source or None
+            kind, src_ticket = None, None
+            if src:
+                m = self.store.get("message", src)
+                if m is not None:
+                    kind, src_ticket = "message", m.ticket_id  # type: ignore[union-attr]
+                elif self.store.get("doc", src) is not None:
+                    kind = "doc"
+                else:
+                    kind = "other"
+            return {"id": d.id, "scope": d.scope, "text": d.text, "detail": d.detail, "source": src,
+                    "source_kind": kind, "source_ticket": src_ticket, "decided_by": d.decided_by,
+                    "decided_at": when(d).isoformat(), "created_at": d.created_at.isoformat(),
+                    "binding": bool(d.binding), "status": d.status.value if hasattr(d.status, "value") else str(d.status),
+                    "replaces": list(d.replaces), "withdrawn_reason": d.withdrawn_reason}
+
+        out = [row(d) for d in rows]  # type: ignore[arg-type]
+        live = sum(1 for r in out if r["status"] == "live")
+        return {"scope": t.id, "epic": epic.id, "tickets": sorted(ids), "decisions": out,
+                "counts": {"live": live, "withdrawn": len(out) - live},
+                "can_manage": actor.role in (Role.architect, Role.owner)}
 
     def dense_diagnostic(self, actor: Participant, *, scope: str, question: str,
                          k: int = 10) -> dict[str, Any]:

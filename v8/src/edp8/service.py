@@ -20,7 +20,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from . import pool_adapter, seat_choice
 from . import rsi  # S18: imported at boot so rsi.LOADED hashes the retrieval code this process runs
@@ -222,6 +222,11 @@ class WithdrawIn(BaseModel):
 class SetBindingIn(BaseModel):
     binding: bool
     reason: str = ""
+
+
+class DocResolveIn(BaseModel):
+    """C17: the version the owner read; a proposal that moved on since is refused with a 409."""
+    expected_version: int | None = Field(default=None, ge=1)
 
 
 class ResolveIn(BaseModel):
@@ -612,8 +617,8 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     @app.exception_handler(BoardError)
     async def _board_error(_: Request, e: BoardError):
-        status = (409 if e.code in ("transition", "conflict") else 403 if e.code == "forbidden"
-                  else 422 if e.code in ("quote_mismatch", "quote_source_missing") else 400)
+        status = (409 if e.code in ("transition", "conflict", "version_mismatch") else 403 if e.code == "forbidden"
+                  else 422 if e.code in ("quote_mismatch", "quote_source_missing", "too_long") else 400)
         return JSONResponse(status_code=status, content=e.to_dict())
 
     @app.exception_handler(HTTPException)
@@ -821,15 +826,16 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
                                                                    owner_role=owner_role, tag=tag, status=status)])
 
     @app.post("/v1/docs/{id_}/approve")
-    def doc_approve(id_: str, a: Participant = Depends(actor)):
-        r = board.doc_resolve(a, id_, approve=True)
+    def doc_approve(id_: str, b: DocResolveIn | None = None, a: Participant = Depends(actor)):
+        r = board.doc_resolve(a, id_, approve=True, expected_version=b.expected_version if b else None)
         t = r["target"]
         return ok({"doc": _dump(r["doc"]), "target": _dump(t) if t else None},
                   f"{t.id} is now v{t.version}; briefs linking it carry the new text" if t else f"{id_} is active")
 
     @app.post("/v1/docs/{id_}/reject")
-    def doc_reject(id_: str, a: Participant = Depends(actor)):
-        return ok({"doc": _dump(board.doc_resolve(a, id_, approve=False)["doc"]), "target": None}, f"{id_} retired")
+    def doc_reject(id_: str, b: DocResolveIn | None = None, a: Participant = Depends(actor)):
+        r = board.doc_resolve(a, id_, approve=False, expected_version=b.expected_version if b else None)
+        return ok({"doc": _dump(r["doc"]), "target": None}, f"{id_} retired")
 
     @app.get("/v1/docs/{id_}/diff")
     def doc_diff(id_: str, a: Participant = Depends(actor)):
@@ -1024,6 +1030,14 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     def withdraw_decision(id_: str, b: WithdrawIn, a: Participant = Depends(actor)):
         d = board.withdraw_decision(a, decision_id=id_, reason=b.reason)
         return ok(_dump(d), "decision withdrawn; lookup and search no longer return it")
+
+    @app.get("/v1/decisions")
+    def scope_decisions(scope: str, a: Participant = Depends(actor)):
+        """C17 (design-10b21760d9 §14.2): the scope's live and withdrawn decisions (a ticket and every ticket
+        under it), live binding first, then newest; the epic's participants only."""
+        return ok(board.scope_decisions(a, scope),
+                  "live binding first, then newest; withdraw: POST /v1/decisions/{id}/withdraw, "
+                  "binding: POST /v1/decisions/{id}/binding (architect or owner)")
 
     @app.post("/v1/claims/{id_}/withdraw")
     def withdraw_claim(id_: str, b: WithdrawIn, a: Participant = Depends(actor)):

@@ -574,13 +574,17 @@ class Session(Obj):
     presence_stale_since: datetime | None = None
 
 
+DECISION_TEXT_MAX = 240  # one sentence (design-d2c4f39fc6 §3)
+DECISION_DETAIL_MAX = 1000
+
+
 class Decision(Obj):
     """What is in force (design-d2c4f39fc6 §3). Written at the moment a ruling is made,
     never guessed after. A new decision that names an older one in replaces[] flips that
     older one to `replaced` in the same transaction, across any ticket or thread."""
     scope: str  # epic id | ticket id — the isolation boundary
-    text: str = Field(max_length=240)  # one sentence
-    detail: str = Field(default="", max_length=1000)  # WHY the choice was made, in detail
+    text: str = Field(max_length=DECISION_TEXT_MAX)  # one sentence
+    detail: str = Field(default="", max_length=DECISION_DETAIL_MAX)  # WHY the choice was made, in detail
     status: DecisionStatus = DecisionStatus.live
     replaces: list[str] = Field(default_factory=list)  # decision ids this supersedes
     binding: bool = False  # true = always handed to agents in scope, never cut by lookup
