@@ -184,6 +184,23 @@ def test_unverifiable_message_quotes_are_typed_422s(client, env):
     assert r.status_code == 422 and r.json()["error"]["code"] == "quote_mismatch"
 
 
+def test_message_quote_context_is_checked_at_its_locator_not_the_first_occurrence(client, env):
+    """C26 Q6 (s-7b8efb9b7a): a passage said twice is validated next to the occurrence char_start/char_end name."""
+    text = "Alpha said: ship it.\nThen Beta said:   ship it.\nDone."
+    mid = client.post("/v1/messages", headers=ARCH, json={"ticket_id": env["story"], "kind": "note", "text": text}).json()["value"]["id"]
+    second = text.index("ship it.", text.index("ship it.") + 1)
+    q = {"source": "message", "id": mid, "text": "ship it.", "locator": {"char_start": second, "char_end": second + 8}}
+    right = send(client, env, [{**q, "context": {"before": "Then Beta said:", "after": "Done."}}])
+    assert right.status_code == 200, right.text
+    wrong = send(client, env, [{**q, "context": {"before": "Alpha said:", "after": "Then Beta said:"}}])
+    assert wrong.status_code == 422 and wrong.json()["error"]["code"] == "quote_mismatch"
+    assert "context.after" in wrong.json()["error"]["message"]
+    # located at the first occurrence, the same contexts swap verdicts
+    first = {**q, "locator": {"char_start": text.index("ship it."), "char_end": text.index("ship it.") + 8}}
+    assert send(client, env, [{**first, "context": {"before": "Alpha said:", "after": "Then Beta said:"}}]).status_code == 200
+    assert send(client, env, [{**first, "context": {"before": "Then Beta said:", "after": "Done."}}]).status_code == 422
+
+
 def test_a_refused_quote_leaves_nothing_behind(client, env):
     before = len(client.get("/v1/messages", params={"ticket_id": env["story"]}, headers=ENG).json()["value"])
     assert send(client, env, [doc_q(env), doc_q(env, text="fabricated")]).status_code == 422

@@ -67,6 +67,13 @@ def _norm(s: str) -> str:
     return " ".join(s.split())
 
 
+def _span_in(text: str, base: int, region: str, needle: str) -> tuple[int, int]:
+    """The raw [start, end) in `text` of the first whitespace-insensitive match of `needle` inside `region`
+    (which starts at `base`); the caller has checked that it occurs."""
+    m = re.search(r"\s+".join(map(re.escape, needle.split(" "))), region)
+    return (base + m.start(), base + m.end()) if m else (base, base + len(region))
+
+
 def _sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -186,9 +193,9 @@ def _one(board: Any, actor: Participant, q: QuoteIn, i: int) -> QuoteStored:
             region = src.text[cs:ce] if cs is not None else src.text
             if needle not in _norm(region):
                 raise _err(MISMATCH, i, f"text does not occur in message {q.id}", "re-copy the passage from it")
-            whole = _norm(src.text)
-            at = whole.find(needle)
-            ctx = _check_context(q, i, whole[:at + len(needle)], whole[at:])
+            # C26 Q6: the context sits next to the occurrence the locator verified, not the message's first one
+            at, end = _span_in(src.text, cs or 0, region, needle)
+            ctx = _check_context(q, i, _norm(src.text[:end]), _norm(src.text[at:]))
             loc = QuoteLocator(char_start=cs, char_end=ce)
             extra = {"id": q.id, "author": src.created_by}
     sha = _sha(text)
