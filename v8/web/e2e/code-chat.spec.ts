@@ -178,7 +178,7 @@ test("sign in, open the chat in the right column, pick the epic: its own thread,
   await expect(c.locator("#stories")).toBeHidden();
   await expect(c.locator("#stories-toggle .st-unread")).toHaveText("1");
   // C13: the chips gave way to a tab bar under the header; Chat is the default tab
-  await expect(c.locator("[role=tablist] [role=tab]")).toHaveText([/^Chat/, /^Changes/, /^Commits/, /^Inbox/, /^Docs/]);
+  await expect(c.locator("[role=tablist] [role=tab]")).toHaveText([/^Chat/, /^Changes/, /^Commits/, /^Inbox/, /^Docs/, /^Decisions/]); // C17: six tabs
   await expect(c.locator("#tab-chat")).toHaveAttribute("aria-selected", "true");
   await expect(c.locator("#uncommitted-toggle")).toHaveCount(0);
   await c.locator("#stories-toggle").click();

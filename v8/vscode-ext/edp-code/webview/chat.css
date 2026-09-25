@@ -308,3 +308,26 @@ body.vscode-high-contrast .att, body.vscode-high-contrast .pend { border: 1px so
 .dc-why { font-size: 0.85em; color: var(--vscode-descriptionForeground); padding: 0 2px; overflow-wrap: anywhere; }
 .dc-actions { display: flex; justify-content: flex-end; gap: 6px; }
 .dc-actions:empty { display: none; }
+
+/* C17: the Decisions tab */
+.de-list { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.de-row { padding: 4px 6px; border: 1px solid var(--vscode-widget-border, var(--vscode-input-border, transparent)); border-radius: 2px; }
+.de-row.de-binding { border-left: 3px solid var(--vscode-textLink-foreground); }
+.de-row.de-withdrawn { opacity: 0.7; }
+.de-row.de-withdrawn .de-text { text-decoration: line-through; }
+.de-head { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
+.de-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+.de-flag { flex: 0 0 auto; font-size: 0.8em; padding: 0 4px; border-radius: 2px; border: 1px solid currentColor; }
+.de-flag-binding { color: var(--vscode-textLink-foreground); }
+.de-flag-withdrawn { color: var(--vscode-descriptionForeground); }
+.de-detail, .de-reason { font-size: 0.9em; margin-top: 2px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.de-reason { color: var(--vscode-descriptionForeground); font-style: italic; }
+.de-meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: baseline; font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-top: 2px; }
+.de-meta .de-by { color: var(--vscode-foreground); }
+.de-meta > span { overflow-wrap: anywhere; }
+.de-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.de-actions:empty { display: none; }
+.de-withdraw { color: var(--vscode-errorForeground); }
+.de-note { color: var(--vscode-descriptionForeground); margin-top: 4px; }
+.msg.focus-source { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; background: var(--vscode-editor-findMatchHighlightBackground, transparent); }
+body.vscode-high-contrast .de-row { border: 1px solid var(--vscode-contrastBorder); }

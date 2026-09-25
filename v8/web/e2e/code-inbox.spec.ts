@@ -133,7 +133,7 @@ test("the epic scope: Inbox is the fourth tab, badged; sign-offs, gates and ques
   await quickRow(page, "Spike epic").click();
   const c = chat();
   await expect(c.locator("#crumb-current")).toHaveText("Spike epic", { timeout: 20_000 });
-  await expect(c.locator("[role=tablist] [role=tab]")).toHaveText([/^Chat/, /^Changes/, /^Commits/, /^Inbox/, /^Docs/]);
+  await expect(c.locator("[role=tablist] [role=tab]")).toHaveText([/^Chat/, /^Changes/, /^Commits/, /^Inbox/, /^Docs/, /^Decisions/]); // C17: six tabs
   await expect(c.locator("#tab-inbox .tab-badge")).toHaveText("7", { timeout: 15_000 });
   await expect(c.locator("#tab-inbox")).toHaveAttribute("aria-label", "Inbox, 7 items waiting on you");
   await tab("inbox");

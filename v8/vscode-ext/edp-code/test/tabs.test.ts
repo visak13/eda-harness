@@ -34,16 +34,16 @@ function ctx(s: ChatState, local: ViewLocal = restoreLocal(undefined)) {
 const click = (root: ParentNode, sel: string) => root.querySelector<HTMLButtonElement>(sel)!.click();
 
 describe('the registry', () => {
-  it('Chat | Changes | Commits | Inbox | Docs (C16), unique ids, Chat first (the default)', () => {
-    expect(TABS.map(t => t.id)).toEqual(['chat', 'changes', 'commits', 'inbox', 'docs']);
-    expect(TABS.map(t => t.label)).toEqual(['Chat', 'Changes', 'Commits', 'Inbox', 'Docs']);
+  it('Chat | Changes | Commits | Inbox | Docs | Decisions (C17: six tabs), unique ids, Chat first (the default)', () => {
+    expect(TABS.map(t => t.id)).toEqual(['chat', 'changes', 'commits', 'inbox', 'docs', 'decisions']);
+    expect(TABS.map(t => t.label)).toEqual(['Chat', 'Changes', 'Commits', 'Inbox', 'Docs', 'Decisions']);
   });
   it('adding a tab is one entry: the bar builds its button and panel from the entry alone', () => {
-    const extra = { id: 'decisions', label: 'Decisions', badge: () => ({ text: '2', aria: '2 decisions' }), render: (p: HTMLElement) => { p.textContent = 'decisions'; } };
-    const bar = new TabBar([...TABS, extra], 'decisions', () => {});
-    expect([...bar.bar.querySelectorAll('[role=tab]')].map(b => b.id)).toEqual(['tab-chat', 'tab-changes', 'tab-commits', 'tab-inbox', 'tab-docs', 'tab-decisions']);
-    expect(bar.current).toBe('decisions');
-    expect(bar.panelOf('decisions').hidden).toBe(false);
+    const extra = { id: 'later', label: 'Later', badge: () => ({ text: '2', aria: '2 later' }), render: (p: HTMLElement) => { p.textContent = 'later'; } };
+    const bar = new TabBar([...TABS, extra], 'later', () => {});
+    expect([...bar.bar.querySelectorAll('[role=tab]')].map(b => b.id)).toEqual(['tab-chat', 'tab-changes', 'tab-commits', 'tab-inbox', 'tab-docs', 'tab-decisions', 'tab-later']);
+    expect(bar.current).toBe('later');
+    expect(bar.panelOf('later').hidden).toBe(false);
     expect(bar.panelOf('chat').hidden).toBe(true);
   });
 });
@@ -54,11 +54,11 @@ describe('the tab bar (ARIA tabs, jsdom)', () => {
     expect(bar.current).toBe('chat');
     expect(bar.bar.getAttribute('role')).toBe('tablist');
     const tabs = [...bar.bar.querySelectorAll<HTMLButtonElement>('[role=tab]')];
-    expect(tabs.map(t => [t.getAttribute('aria-selected'), t.tabIndex])).toEqual([['true', 0], ['false', -1], ['false', -1], ['false', -1], ['false', -1]]);
+    expect(tabs.map(t => [t.getAttribute('aria-selected'), t.tabIndex])).toEqual([['true', 0], ['false', -1], ['false', -1], ['false', -1], ['false', -1], ['false', -1]]);
     expect(bar.panelOf('changes').getAttribute('role')).toBe('tabpanel');
     expect(bar.panelOf('changes').getAttribute('aria-labelledby')).toBe('tab-changes');
     bar.show('commits');
-    expect(tabs.map(t => t.getAttribute('aria-selected'))).toEqual(['false', 'false', 'true', 'false', 'false']);
+    expect(tabs.map(t => t.getAttribute('aria-selected'))).toEqual(['false', 'false', 'true', 'false', 'false', 'false']);
     expect([bar.panelOf('chat').hidden, bar.panelOf('changes').hidden, bar.panelOf('commits').hidden]).toEqual([true, true, false]);
   });
   it('click and Arrow/Home/End select through the callback', () => {
@@ -69,7 +69,7 @@ describe('the tab bar (ARIA tabs, jsdom)', () => {
     const key = (k: string) => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
     bar.bar.querySelector<HTMLButtonElement>('#tab-changes')!.focus();
     key('ArrowRight'); key('ArrowRight'); key('ArrowLeft'); key('Home'); key('End');
-    expect(picked).toEqual(['changes', 'commits', 'inbox', 'commits', 'chat', 'docs']);
+    expect(picked).toEqual(['changes', 'commits', 'inbox', 'commits', 'chat', 'decisions']);
     bar.bar.remove();
   });
   it('badges: text hidden from the reader, the count spoken in the tab name', () => {

@@ -5,6 +5,7 @@ import type { Anchor } from './anchor';
 import type { BoardArtifact } from './attachments';
 import { gatePath, type DecisionsHome, type InboxGate, type verdictBody } from './inbox';
 import type { Reachable } from './people';
+import type { BoardDecision, BoardDecisionList } from './decisions';
 import type { DocMeta } from './docs';
 import type { decideBody } from './reader';
 import type { MessageRow, ThreadPage } from './thread';
@@ -147,9 +148,16 @@ export function boardClient(baseUrl: string, creds: () => Promise<Creds | undefi
     docContext: (id: string, source: string, version: number) =>
       call<DocContext>('GET', `/v1/docs/${encodeURIComponent(id)}/context?${new URLSearchParams({ source, version: String(version) })}`),
     decide: (b: ReturnType<typeof decideBody>) => call<{ decision: string; event_id?: string; message_id?: string }>('POST', '/v1/gates/decide', b),
-    docResolve: (id: string, approve: boolean) =>
-      call<{ doc: BoardDoc; target: BoardDoc | null }>('POST', `/v1/docs/${encodeURIComponent(id)}/${approve ? 'approve' : 'reject'}`),
+    /** C17: `expectedVersion` is the version the owner read; a proposal that moved on since is refused (409) */
+    docResolve: (id: string, approve: boolean, expectedVersion: number) =>
+      call<{ doc: BoardDoc; target: BoardDoc | null }>('POST', `/v1/docs/${encodeURIComponent(id)}/${approve ? 'approve' : 'reject'}`,
+        { expected_version: expectedVersion }),
     docDiff: (id: string) => call<{ base_id: string | null; base_version: number | null; diff: string }>('GET', `/v1/docs/${encodeURIComponent(id)}/diff`),
     docComments: (id: string, version: number) => call<unknown[]>('GET', `/v1/docs/${encodeURIComponent(id)}/comments?version=${version}`),
+    // the Decisions tab (C17): the scope's decision records and the two owner/architect writes
+    scopeDecisions: (scope: string) => call<BoardDecisionList>('GET', `/v1/decisions?scope=${encodeURIComponent(scope)}`),
+    withdrawDecision: (id: string, reason: string) => call<BoardDecision>('POST', `/v1/decisions/${encodeURIComponent(id)}/withdraw`, { reason }),
+    setBinding: (id: string, binding: boolean, reason: string) =>
+      call<BoardDecision>('POST', `/v1/decisions/${encodeURIComponent(id)}/binding`, { binding, reason }),
   };
 }

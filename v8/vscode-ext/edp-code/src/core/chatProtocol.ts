@@ -3,6 +3,7 @@
 // `me` is {id, handle} only. The host validates every inbound message with `parseInbound` before
 // acting; anything else is dropped and logged by type only.
 
+import { DECISION_ID, type DecisionsState } from './decisions';
 import type { DocsState } from './docs';
 import { DOC_ID } from './docUri';
 import { INBOX_KEY, INBOX_TEXT_MAX, VERDICTS, type InboxState, type InboxVerdict } from './inbox';
@@ -147,6 +148,8 @@ export type ChatState = {
   inbox?: InboxState | null;
   /** C16: the open scope's linked docs (null: signed out, or nothing picked) */
   docs?: DocsState | null;
+  /** C17: the open scope's decision records (null: signed out, or nothing picked) */
+  decisions?: DecisionsState | null;
 };
 
 export type HostToView =
@@ -179,7 +182,11 @@ export type HostToView =
   /** C15: a row's write settled: ok, the row left the list; not ok, `text` is why (the board's own words) */
   | { type: 'inboxDone'; v: 1; key: string; ok: boolean; text: string }
   /** C16: the open scope's Docs list (the whole list; `ticketId` is the scope it was read for) */
-  | { type: 'docs'; v: 1; ticketId: string; docs: DocsState };
+  | { type: 'docs'; v: 1; ticketId: string; docs: DocsState }
+  /** C17: the open scope's Decisions list (the whole list; `ticketId` is the scope it was read for) */
+  | { type: 'decisions'; v: 1; ticketId: string; decisions: DecisionsState }
+  /** C17: a decision's source message is now in the open thread: show the Chat tab and scroll it into view */
+  | { type: 'focusMessage'; v: 1; ticketId: string; id: string };
 
 export type ViewToHost =
   | { v: 1; type: 'ready' }
@@ -224,14 +231,22 @@ export type ViewToHost =
   | { v: 1; type: 'docsOpen'; id: string }
   /** C16: compare two versions of a listed doc (the host asks which) */
   | { v: 1; type: 'docsCompare'; id: string }
-  | { v: 1; type: 'docsRefresh' };
+  | { v: 1; type: 'docsRefresh' }
+  /** C17: open a listed decision's source (a message in Chat, a doc in the reader) */
+  | { v: 1; type: 'decisionOpen'; id: string }
+  /** C17: withdraw a listed decision; the host asks the reason */
+  | { v: 1; type: 'decisionWithdraw'; id: string }
+  /** C17: turn a listed decision's binding flag on or off; the host asks an optional reason */
+  | { v: 1; type: 'decisionBinding'; id: string; binding: boolean }
+  | { v: 1; type: 'decisionsRefresh' };
 
 const TYPES = new Set(['ready', 'pickTicket', 'loadOlder', 'send', 'dropCode', 'openCode', 'openBoard', 'signIn']);
 const PATH_TYPES = new Set(['findPaths', 'checkPaths', 'openPath']);
 const HANDLE = /^[A-Za-z0-9][A-Za-z0-9_.\-]{0,127}$/;
 const DIFF_TYPES = new Set(['openDiff', 'openUncommitted']);
 const ATTACH_TYPES = new Set(['attach', 'dropAttachment', 'resolveArtifacts', 'openArtifact']);
-const INBOX_TYPES = new Set(['inboxAnswer', 'inboxVerdict', 'inboxGate', 'inboxOpen', 'inboxRefresh', 'docsOpen', 'docsCompare', 'docsRefresh']);
+const INBOX_TYPES = new Set(['inboxAnswer', 'inboxVerdict', 'inboxGate', 'inboxOpen', 'inboxRefresh', 'docsOpen', 'docsCompare', 'docsRefresh',
+  'decisionOpen', 'decisionWithdraw', 'decisionBinding', 'decisionsRefresh']);
 /** The webview refuses a file over this before posting it: a transport guard for postMessage memory,
  *  NOT the upload rule (the board's cap and type allowlist decide, and their refusal is shown). */
 export const ATTACH_TRANSPORT_MAX = 64 * 1024 * 1024;
@@ -245,8 +260,16 @@ export function parseInbound(raw: unknown, handles: ReadonlySet<string> = new Se
   if (r.v !== PROTOCOL_V || typeof r.type !== 'string' || !(TYPES.has(r.type) || DIFF_TYPES.has(r.type) || PATH_TYPES.has(r.type) || ATTACH_TYPES.has(r.type) || INBOX_TYPES.has(r.type))) return null;
   const str = (k: string) => (typeof r[k] === 'string' ? (r[k] as string) : undefined);
   switch (r.type) {
-    case 'ready': case 'loadOlder': case 'signIn': case 'inboxRefresh': case 'docsRefresh':
+    case 'ready': case 'loadOlder': case 'signIn': case 'inboxRefresh': case 'docsRefresh': case 'decisionsRefresh':
       return { v: 1, type: r.type };
+    case 'decisionOpen': case 'decisionWithdraw': {
+      const id = str('id');
+      return id && DECISION_ID.test(id) ? { v: 1, type: r.type, id } : null;
+    }
+    case 'decisionBinding': {
+      const id = str('id');
+      return id && DECISION_ID.test(id) && typeof r.binding === 'boolean' ? { v: 1, type: 'decisionBinding', id, binding: r.binding } : null;
+    }
     case 'docsOpen': case 'docsCompare': {
       const id = str('id');
       return id && DOC_ID.test(id) ? { v: 1, type: r.type, id } : null;

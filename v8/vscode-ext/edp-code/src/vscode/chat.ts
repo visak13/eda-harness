@@ -29,11 +29,13 @@ import { InboxHost, type InboxScope } from './inbox';
 import { DocProvider, setReader } from './docs';
 import { DocsHost, type DocsScope } from './docsTab';
 import { DocReader } from './reader';
+import { DecisionsHost } from './decisionsTab';
 import type { TagTarget } from './tag';
 
 const LAST_PICK = 'edp.chat.lastTicket';
 const LAST_SEEN = 'edp.chat.lastSeen'; // ticket id -> ISO time the thread was last open
 const UNLINKED_MAX = 100; // the epic's collapsed "Unlinked commits" section, newest first
+const SOURCE_PAGES_MAX = 20; // C17: older pages read to reach a decision's source message before giving up
 
 type Item = vscode.QuickPickItem & { id?: string };
 const ref = (t: Ticket): TicketRef => ({ id: t.id, kind: t.kind, title: t.title, status: t.status });
@@ -70,6 +72,8 @@ export class ChatController implements vscode.Disposable, TagTarget {
   /** C16: the open scope's linked docs, and the reader editor they open in */
   private docs: DocsHost;
   readonly reader: DocReader;
+  /** C17: the open scope's decision records, with the owner/architect writes */
+  private decisions: DecisionsHost;
   private tree: Ticket[] = [];
   private commits: CommitCard[] = [];
   private unlinked: CommitCard[] = [];
@@ -95,6 +99,9 @@ export class ChatController implements vscode.Disposable, TagTarget {
       e => this.fail(e, 'could not use the Inbox'), log);
     this.docs = new DocsHost(board, () => this.docsScope(), m => this.post(m), e => this.fail(e, 'could not list the docs'), log);
     this.reader = new DocReader(ctx, board, log, e => this.fail(e, 'could not use the reader'));
+    this.decisions = new DecisionsHost(board, () => (this.ticket && this.store ? { id: this.ticket.id } : null), m => this.post(m),
+      { message: (t, id) => this.openMessage(t, id), doc: async id => { const d = await this.board().latestDoc(id); await this.reader.open(id, d.version, null); } },
+      e => this.fail(e, 'could not use the Decisions tab'), log);
     setReader(this.reader);
     this.changes = new Changes(ctx, {
       onCommits: added => this.onCommits(added),
@@ -122,6 +129,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
       artifacts: this.attach.known((this.store?.items ?? []).flatMap(i => (i.attachments ?? []).map(a => a.id))),
       inbox: this.inbox.snapshot(this.ticket?.id),
       docs: this.docs.snapshot(this.ticket?.id),
+      decisions: this.decisions.snapshot(this.ticket?.id),
     };
   }
 
@@ -183,6 +191,10 @@ export class ChatController implements vscode.Disposable, TagTarget {
       case 'docsOpen': return this.docs.openRow(m.id);
       case 'docsCompare': return this.docs.compareRow(m.id);
       case 'docsRefresh': return this.docs.refresh();
+      case 'decisionOpen': return this.decisions.openRow(m.id);
+      case 'decisionWithdraw': return this.decisions.withdraw(m.id);
+      case 'decisionBinding': return this.decisions.binding(m.id, m.binding);
+      case 'decisionsRefresh': return this.decisions.refresh();
       case 'signIn': {
         if (await signIn(this.ctx, this.board)) await this.restart();
         return;
@@ -235,7 +247,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
     if (!(await creds(this.ctx))) {
       ++this.opening;
       this.store = undefined; this.ticket = null; this.epic = null; this.stories = []; this.unread.clear(); this.chips.clear(); this.attach.clear();
-      this.anchors.clear(); this.anchorsFor = null; this.inbox.clear(); this.docs.clear();
+      this.anchors.clear(); this.anchorsFor = null; this.inbox.clear(); this.docs.clear(); this.decisions.clear();
       this.opened = this.opening; this.pendingChip = undefined;
       this.feedStatus = 'signed-out';
       this.notice = 'Sign in to the board to read and send.';
@@ -243,6 +255,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
       return;
     }
     this.reader.reset();
+    this.decisions.clear(); // C17: another identity reads its own list; the last viewer's rows and actions go
     this.startFeed();
     const id = this.ticket?.id ?? this.ctx.workspaceState.get<string>(LAST_PICK);
     if (id) await this.open(id); else this.postState();
@@ -271,6 +284,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
     this.attach.dispose();
     this.inbox.dispose();
     this.docs.dispose();
+    this.decisions.dispose();
     this.paths.dispose();
     this.feed?.dispose();
     this.feed = undefined;
@@ -335,6 +349,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
       void this.ctx.workspaceState.update(LAST_PICK, t.id);
       const inbox = this.inbox.open(); // sets the new scope's (loading) list before the state goes out
       void this.docs.open();
+      void this.decisions.openScope();
       this.postState();
       void inbox;
       this.settleOpen(n);
@@ -421,12 +436,16 @@ export class ChatController implements vscode.Disposable, TagTarget {
   private async onEvent(ev: FeedEvent): Promise<void> {
     const subject = ev.subject_id;
     if (subject && this.docs.has(subject)) this.docs.schedule(); // C16: a listed doc moved (a new version, approved)
+    if (subject && this.decisions.has(subject)) this.decisions.schedule(); // C17: a listed decision's binding changed
     if (!subject || !this.threadSet().has(subject)) return;
     // C15: a question, a gate or a verdict in scope changes what waits on the viewer
     if (this.ticket && scopeTickets(this.ticket, this.tree).has(subject)) {
       this.inbox.schedule();
       // C16: a link, a criterion's evidence or a design_ref in scope changes the Docs list
       if (ev.kind !== 'message_sent') this.docs.schedule();
+      // C17: decisions are recorded as the thread moves (an answer, a ruling); no event names a new one, so any
+      // event in scope re-reads the list once the burst settles
+      this.decisions.schedule();
     }
     if (ev.kind === 'status_changed') {
       const to = typeof ev.data?.to === 'string' ? ev.data.to : undefined;
@@ -591,6 +610,29 @@ export class ChatController implements vscode.Disposable, TagTarget {
       const head = api?.getRepository(uri)?.state.HEAD?.commit;
       if (head && head !== t.commit) void vscode.window.setStatusBarMessage(`EDP: anchored at ${t.commit.slice(0, 7)}; HEAD is ${head.slice(0, 7)}, lines may have moved`, 8_000);
     }
+  }
+
+  // -- a decision's source (C17 s-5e83f9d0af) -------------------------------------------------------
+  /** Show a message in the Chat tab: its thread opens (a story's message opens that story's thread), older pages
+   *  load until the thread holds it, then the view scrolls to it and marks it. */
+  async openMessage(ticketId: string, messageId: string): Promise<void> {
+    await ChatViewProvider.reveal();
+    if (this.store?.ticketId !== ticketId) {
+      await this.open(ticketId);
+      if (this.store?.ticketId !== ticketId) return; // the open failed (already said) or another pick won
+    }
+    const store = this.store;
+    for (let i = 0; i < SOURCE_PAGES_MAX && !store.has(messageId) && store.before != null; i++) {
+      const fresh = store.loadOlder(await this.board().thread(store.ticketId, store.before));
+      if (store !== this.store) return;
+      if (this.addAnchors(fresh, store.ticketId)) this.refreshUncommitted();
+      this.post({ type: 'prepend', v: 1, ticketId: store.ticketId, items: fresh, hasOlder: store.before != null });
+    }
+    if (!store.has(messageId)) {
+      void vscode.window.showWarningMessage(`EDP: ${messageId} is not in the thread of ${ticketId} as far back as this panel reads.`);
+      return;
+    }
+    this.post({ type: 'focusMessage', v: 1, ticketId, id: messageId });
   }
 
   // -- Tag selection (C4 s-a34658f02f) -------------------------------------------------------------

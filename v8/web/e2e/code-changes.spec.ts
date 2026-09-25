@@ -158,7 +158,7 @@ test("the epic: Chat shows only epic-named commits as markers; Commits aggregate
   const c = chat();
   await expect(c.locator("#crumb-current")).toHaveText("Spike epic", { timeout: 20_000 });
   // one header row, then the tab bar; Chat is the default
-  await expect(c.locator("[role=tablist] [role=tab]")).toHaveText([/^Chat/, /^Changes/, /^Commits/, /^Inbox/, /^Docs/]);
+  await expect(c.locator("[role=tablist] [role=tab]")).toHaveText([/^Chat/, /^Changes/, /^Commits/, /^Inbox/, /^Docs/, /^Decisions/]); // C17: six tabs
   await expect(c.locator("#tab-chat")).toHaveAttribute("aria-selected", "true");
   const hb = await c.locator("header.hdr").boundingBox(), tb = await c.locator(".tabbar").boundingBox();
   expect(tb!.y).toBeGreaterThanOrEqual(hb!.y + hb!.height - 1);

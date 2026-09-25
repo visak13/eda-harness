@@ -127,7 +127,7 @@ test("the Docs tab: the fifth tab lists the epic's design, strategy and proposal
   await quickRow(page, "Spike epic").click();
   const c = chat();
   await expect(c.locator("#crumb-current")).toHaveText("Spike epic", { timeout: 20_000 });
-  await expect(c.locator("[role=tablist] [role=tab]")).toHaveText([/^Chat/, /^Changes/, /^Commits/, /^Inbox/, /^Docs/]);
+  await expect(c.locator("[role=tablist] [role=tab]")).toHaveText([/^Chat/, /^Changes/, /^Commits/, /^Inbox/, /^Docs/, /^Decisions/]); // C17: six tabs
   await tab("docs");
   // the epic scope covers its stories too: the story's evidence report is listed
   await expect.poll(async () => (await docRows()).slice().sort(), { timeout: 20_000 }).toEqual([design, activeLl, proposal, report].sort());

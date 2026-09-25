@@ -687,6 +687,27 @@ window.addEventListener('message', (ev: MessageEvent) => {
       if (tabs.current === 'docs') renderTab(); else badges();
       break;
     }
+    case 'decisions': { // C17: the open scope's decision records, re-read
+      if (!state || state.ticket?.id !== m.ticketId) return;
+      const panel = tabs.panelOf('decisions');
+      panel.dataset.reads = String(Number(panel.dataset.reads ?? 0) + 1);
+      if (JSON.stringify(state.decisions) === JSON.stringify(m.decisions)) return;
+      state.decisions = m.decisions;
+      if (tabs.current === 'decisions') renderTab(); else badges();
+      break;
+    }
+    case 'focusMessage': { // C17: a decision's source message, now in the open thread
+      if (!state || state.ticket?.id !== m.ticketId) return;
+      select('chat');
+      const node = list.querySelector<HTMLElement>(`.msg[data-id="${CSS.escape(m.id)}"]`);
+      if (!node) return;
+      list.querySelector('.msg.focus-source')?.classList.remove('focus-source');
+      node.classList.add('focus-source');
+      node.tabIndex = -1;
+      node.scrollIntoView({ block: 'center' });
+      node.focus({ preventScroll: true });
+      break;
+    }
     case 'inboxDone':
       inboxDone(state, local, m);
       persist();

@@ -265,12 +265,13 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
   async resolve(p: ReaderPanel, approve: boolean): Promise<void> {
     return this.write(p, approve ? 'resolveApprove' : 'resolveReject', async () => {
       if (!p.state.canResolve || !p.state.doc) throw new Error('This doc is not a proposal you can rule on here.');
-      // the board's approve/reject takes no version: re-read the proposal so a version its author published after
-      // this one was read is never ruled on unseen (the load after the refusal shows the newer version's note)
+      // re-read the proposal so a version its author published after this one was read is never ruled on unseen
+      // (the load after the refusal shows the newer version's note); the ruling also carries the version read, so
+      // a board with C17 refuses (409) a version published between this check and the write
       const now = await this.board().latestDoc(p.id);
       if (now.version !== p.version) throw new Error(`${p.id} is now v${now.version}; you are reading v${p.version}. Read v${now.version} before you rule.`);
       if (now.status !== 'proposed') throw new Error(`${p.id} is ${now.status}, no longer proposed.`);
-      const r = await this.board().docResolve(p.id, approve);
+      const r = await this.board().docResolve(p.id, approve, p.version);
       return !approve ? `Rejected ${p.id}; it is retired.` : r.target ? `Approved: ${r.target.id} is now v${r.target.version}.` : `Approved: ${p.id} is active.`;
     });
   }

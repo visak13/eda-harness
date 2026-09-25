@@ -4,6 +4,7 @@
 import type { Tab } from './tabs';
 import { changesTab } from './views/changes';
 import { commitsTab } from './views/commits';
+import { decisionsTab } from './views/decisions';
 import { docsTab } from './views/docs';
 import { inboxTab } from './views/inbox';
 
@@ -16,4 +17,5 @@ export const chatTab: Tab = {
   render: () => {},
 };
 
-export const TABS: readonly Tab[] = [chatTab, changesTab, commitsTab, inboxTab, docsTab];
+// C17: six tabs, Decisions last (owner m-db09472a68, design §14.4 item 1)
+export const TABS: readonly Tab[] = [chatTab, changesTab, commitsTab, inboxTab, docsTab, decisionsTab];
