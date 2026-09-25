@@ -3,7 +3,7 @@
   "displayName": "EDP",
   "description": "Chat on EDP tickets and epics beside the editor, tag a code selection to anyone on the board; live-seats badge, guarded git and an external terminal for the fleet's shared tree.",
   "publisher": "edp",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "private": true,
   "license": "UNLICENSED",
   "engines": {

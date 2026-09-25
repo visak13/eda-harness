@@ -88,7 +88,7 @@ function renderBar(): void {
     out.push(pick);
     // C22: a design says why it shows no Approve, in one line; the tooltip says a design has no Reject
     if (d.docType === 'design') meta.title = SIGNOFF_TIP;
-    const why = approveReason(d, s?.gate ?? null);
+    const why = approveReason(d, s?.gate ?? null, s?.gateError ?? null);
     if (why) {
       const line = el('span', 'rd-signoff');
       line.id = 'rd-signoff';

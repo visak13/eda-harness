@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { approveReason, compareChoices, decideBody, decideProblem, diffPair, parseReaderInbound, readerComments, SELECTION_MAX, SIGNOFF_TIP, type ReaderDoc, type ReaderGate } from '../src/core/reader';
 
 const doc: ReaderDoc = { id: 'design-aaaaaaaaaa', title: 'D', docType: 'design', status: 'proposed', version: 12, versions: [1, 11, 12], current: 12, body: '# D', proposes: null, resolution: null };
-const gate: ReaderGate = { ticketId: 'epic-0000000001', ticketTitle: 'E', gateEventId: 'ev-1', canApprove: true, canReview: true, currentVersion: 12 };
+const gate: ReaderGate = { ticketId: 'epic-0000000001', ticketTitle: 'E', gateEventId: 'ev-1', canApprove: true, canReview: true, currentVersion: 12, designRef: 'design-aaaaaaaaaa' };
 
 describe('parseReaderInbound', () => {
   it('known types only, v:1 only', () => {
@@ -92,7 +92,20 @@ describe('approveReason', () => {
   it('open on this version but the viewer is not the owner', () =>
     expect(approveReason(doc, { ...gate, canApprove: false, canReview: false })?.text)
       .toBe("Sign-off is open on v12 (epic-0000000001); only the epic's owner approves it"));
-  it('open on this version for the owner, yet not approvable (the ticket designs another doc)', () =>
-    expect(approveReason(doc, { ...gate, canApprove: false })?.text).toBe('Sign-off open (epic-0000000001) is not for this design'));
+  it('open on this version for the owner, yet not approvable (design_ref unread)', () =>
+    expect(approveReason(doc, { ...gate, canApprove: false, designRef: undefined })?.text).toBe('Sign-off open (epic-0000000001) is not for this design'));
+  it("(b) with the ticket's design unknown: names the version but offers no link", () =>
+    expect(approveReason(at(11), { ...gate, canApprove: false, designRef: undefined }))
+      .toEqual({ text: 'Sign-off is open on v12 (epic-0000000001)', openVersion: null, ticketId: 'epic-0000000001' }));
+  it("the ticket's sign-off is for another design: says so at any version and viewer, never links a version of this one", () => {
+    for (const g of [{ ...gate, canApprove: false }, { ...gate, canApprove: false, canReview: false }])
+      for (const d of [doc, at(11)])
+        expect(approveReason(d, { ...g, designRef: 'design-bbbbbbbbbb' }))
+          .toEqual({ text: 'Sign-off open (epic-0000000001) is for design-bbbbbbbbbb, not this design', openVersion: null, ticketId: 'epic-0000000001' });
+  });
+  it('a failed context read says it could not tell, never "no sign-off"', () => {
+    expect(approveReason(doc, null, 'board unreachable')).toEqual({ text: 'Could not read the sign-off status of v12', openVersion: null, ticketId: null });
+    expect(approveReason(doc, null, null)?.text).toBe('No sign-off open on v12');
+  });
   it('the tooltip says a design has no Reject', () => expect(SIGNOFF_TIP).toMatch(/no Reject: Request changes/));
 });

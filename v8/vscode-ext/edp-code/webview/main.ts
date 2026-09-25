@@ -29,6 +29,8 @@ const persist = () => vscode.setState(local);
 let state: ChatState | null = null;
 /** the thread a send is in flight for: its answer (sent / sendFailed) names the same ticket */
 let pendingTicket: string | null = null;
+/** C22: the reply target that send carried; its `sent` clears only that target, never one set while it was in flight */
+let pendingReply: ReplyRef | null = null;
 type Intent = ViewToHost extends infer T ? (T extends unknown ? Omit<T, 'v'> : never) : never;
 const post = (m: Intent) => vscode.postMessage({ v: 1, ...m });
 
@@ -452,15 +454,20 @@ function grow() {
   ta.style.overflowY = ta.scrollHeight > max + 1 ? 'auto' : 'hidden';
 }
 
+/** the thread the To select was last rendered for: a To chosen in one thread never carries into another */
+let toThread: string | null = null;
 function renderTo() {
-  const cur = toSel.value;
+  const t = state?.ticket?.id ?? null;
+  const cur = toThread === t ? toSel.value : '';
+  toThread = t;
   toSel.replaceChildren(new Option('to: thread', ''));
   for (const p of state?.people ?? []) toSel.append(new Option(`to: ${p.handle} (${p.type === 'human' ? 'human' : p.role})`, p.id));
-  // C22: the author of the message being replied to, when the people list does not name them (a closed seat)
+  // C22: the reply's author (and the To chosen for it) when the people list does not name them (a closed seat),
+  // but only while they wrote a loaded message: exactly what the host accepts as `to` (ChatController.handles)
   const r = replyOf();
   const have = (v: string) => [...toSel.options].some(o => o.value === v);
-  if (r && !have(r.by)) toSel.append(new Option(`to: ${r.by}`, r.by));
-  if (r && r.to && !have(r.to)) toSel.append(new Option(`to: ${r.to}`, r.to));
+  const loaded = new Set((state?.items ?? []).map(i => i.created_by));
+  for (const v of r ? [r.by, r.to] : []) if (v && !have(v) && loaded.has(v)) toSel.append(new Option(`to: ${v}`, v));
   toSel.value = r ? (have(r.to) ? r.to : '') : have(cur) ? cur : '';
 }
 
@@ -627,6 +634,7 @@ function send() {
   sendBtn.disabled = true;
   sendErr.textContent = '';
   const reply = replyOf();
+  pendingReply = reply;
   post({ type: 'send', ticketId: pendingTicket, text, kind: kindSel.value as SendKind, ...(toSel.value ? { to: toSel.value } : {}),
     ...(reply ? { replyTo: reply.id } : {}),
     ...(state.chip ? { chipId: state.chip.id } : {}), ...(files.length ? { attachmentIds: files } : {}) });
@@ -704,6 +712,7 @@ window.addEventListener('message', (ev: MessageEvent) => {
       list.prepend(...fresh.map(i => messageEl(i, k)));
       // C22: replies whose parent just loaded show its excerpt now
       for (const b of list.querySelectorAll<HTMLElement>('.reply-quote.unloaded')) fillParent(b);
+      if (replyOf()) renderTo(); // a restored reply's author may be reachable now
       placeMarkers(list);
       timeline.scrollTop += timeline.scrollHeight - h0;
       break;
@@ -745,8 +754,10 @@ window.addEventListener('message', (ev: MessageEvent) => {
       pendingTicket = null;
       sendBtn.disabled = false;
       delete local.drafts[m.ticketId];
-      const replied = !!local.replies[m.ticketId];
-      delete local.replies[m.ticketId]; // C22: the reply went; a failed send keeps it
+      // C22: the reply went (a failed send keeps it); a Reply picked while it was in flight stays
+      const replied = !!pendingReply && local.replies[m.ticketId] === pendingReply;
+      if (replied) delete local.replies[m.ticketId];
+      pendingReply = null;
       persist();
       if (state?.ticket?.id === m.ticketId) {
         ta.value = ''; grow();
@@ -756,6 +767,7 @@ window.addEventListener('message', (ev: MessageEvent) => {
     case 'sendFailed':
       if (pendingTicket && m.ticketId !== pendingTicket) return;
       pendingTicket = null;
+      pendingReply = null;
       sendBtn.disabled = false;
       if (state?.ticket?.id === m.ticketId) sendErr.textContent = m.text; // the draft stays in the composer
       break;

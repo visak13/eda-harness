@@ -19,7 +19,9 @@ export type ReaderDoc = {
   resolution: string | null;
 };
 /** The design gate on this doc, from `GET /v1/docs/{id}/context` (null: not a design, or no source ticket) */
-export type ReaderGate = { ticketId: string; ticketTitle: string; gateEventId: string | null; canApprove: boolean; canReview: boolean; currentVersion: number };
+export type ReaderGate = { ticketId: string; ticketTitle: string; gateEventId: string | null; canApprove: boolean; canReview: boolean; currentVersion: number;
+  /** C22: the design the ticket's sign-off is for (its design_ref); undefined when it could not be read */
+  designRef?: string | null };
 /** A proposed strategy doc against the active doc it revises (`GET /v1/docs/{id}/diff`) */
 export type ReaderDiff = { baseId: string | null; baseVersion: number | null; text: string };
 
@@ -27,6 +29,8 @@ export type ReaderState = {
   type: 'doc'; v: 1;
   doc: ReaderDoc | null;
   gate: ReaderGate | null;
+  /** C22: the review context of a design could not be read (the board's words); the header says so instead of guessing */
+  gateError?: string | null;
   /** strategy_hl/ll proposed and the viewer is the owner: Approve / Reject */
   canResolve: boolean;
   diff: ReaderDiff | null;
@@ -123,14 +127,19 @@ export const SIGNOFF_TIP = 'Approve and Request changes show in the title bar wh
  *  show. `openVersion`: the version the open sign-off is on, when it is not the one shown ("open it"). */
 export type ApproveReason = { text: string; openVersion: number | null; ticketId: string | null };
 
-export function approveReason(doc: ReaderDoc | null, gate: ReaderGate | null): ApproveReason | null {
+export function approveReason(doc: ReaderDoc | null, gate: ReaderGate | null, gateError: string | null = null): ApproveReason | null {
   if (!doc || doc.docType !== 'design') return null;
   if (gate?.canApprove && gate.gateEventId) return null;
+  // a failed read is not "no sign-off": say it could not be told
+  if (!gate && gateError) return { text: `Could not read the sign-off status of v${doc.version}`, openVersion: null, ticketId: null };
   const on = gate ? ` (${gate.ticketId})` : '';
   const ticketId = gate?.ticketId ?? null;
   if (!gate?.gateEventId) return { text: `No sign-off open on v${doc.version}${on}`, openVersion: null, ticketId };
+  // the ticket's sign-off is for another design: never point at a version of this one
+  if (gate.designRef && gate.designRef !== doc.id) return { text: `Sign-off open${on} is for ${gate.designRef}, not this design`, openVersion: null, ticketId };
   // a sign-off is open on the ticket: the board lets the owner approve only the current version
-  if (doc.version !== gate.currentVersion) return { text: `Sign-off is open on v${gate.currentVersion}${on}`, openVersion: gate.currentVersion, ticketId };
+  // "open it" only when the sign-off is known to be on this design (design_ref read), never on a guess
+  if (doc.version !== gate.currentVersion) return { text: `Sign-off is open on v${gate.currentVersion}${on}`, openVersion: gate.designRef === doc.id ? gate.currentVersion : null, ticketId };
   if (!gate.canReview) return { text: `Sign-off is open on v${doc.version}${on}; only the epic's owner approves it`, openVersion: null, ticketId };
   return { text: `Sign-off open${on} is not for this design`, openVersion: null, ticketId };
 }

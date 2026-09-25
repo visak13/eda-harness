@@ -250,6 +250,24 @@ test("a reply whose parent is more than a page back: the excerpt loads older mes
   await page.screenshot({ path: shot("4-older-parent-loaded.png") });
 });
 
+test("a reply target stays in its thread: the epic thread starts with To=thread, the story gets its bar and To back", async () => {
+  const c = chat();
+  await msgEl(ask).locator(".reply").click();
+  await expect(c.locator("#reply-bar")).toBeVisible();
+  await expect(c.locator("#to")).toHaveValue("arch");
+  await c.locator("#crumb-epic").click();
+  await expect(c.locator("#crumb-current")).toHaveText("Spike epic", { timeout: 20_000 });
+  await expect(c.locator("#reply-bar")).toBeHidden();
+  await expect(c.locator("#to")).toHaveValue(""); // never carried over from the story's reply
+  await c.locator("#stories-toggle").click();
+  await c.locator("#stories .story", { hasText: "Reply story" }).click();
+  await expect(c.locator("#crumb-current")).toHaveText("Reply story", { timeout: 20_000 });
+  await expect(c.locator("#reply-bar")).toBeVisible();
+  await expect(c.locator("#to")).toHaveValue("arch");
+  await c.locator("#reply-cancel").click();
+  await expect(c.locator("#reply-bar")).toBeHidden();
+});
+
 test("reader (a): no sign-off open: the header says why, no Approve", async () => {
   const c = chat();
   await c.locator("#crumb-epic").click();

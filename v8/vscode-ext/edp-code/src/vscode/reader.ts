@@ -20,7 +20,7 @@ const CTX_VERSIONS = 'edp.doc.hasVersions';
 
 /** One open reader tab. */
 class ReaderPanel {
-  state: ReaderState = { type: 'doc', v: 1, doc: null, gate: null, canResolve: false, diff: null, comments: null, loading: true, error: null };
+  state: ReaderState = { type: 'doc', v: 1, doc: null, gate: null, gateError: null, canResolve: false, diff: null, comments: null, loading: true, error: null };
   ready = false;
   /** C20: the reader's last selection as source lines of this version (from 0: none) */
   selection: { from: number; to: number; text: string } = { from: 0, to: 0, text: '' };
@@ -190,27 +190,32 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
     const doc: ReaderDoc = { id: p.id, title: latest.title || at.title || p.id, docType: String(latest.doc_type ?? ''), status: String(latest.status ?? ''),
       version: p.version, versions, current: latest.version, body: at.body_md ?? '', proposes: latest.proposes ?? null, resolution: latest.resolution ?? null };
     p.panel.title = `${doc.title} · v${p.version}`;
-    const [gate, role, diff, comments] = await Promise.all([
+    const [ctx, role, diff, comments] = await Promise.all([
       this.gateOf(p, doc, latest.scope ?? null), this.viewerRole(),
       doc.status === 'proposed' ? b.docDiff(p.id).then(d => ({ baseId: d.base_id, baseVersion: d.base_version, text: d.diff }), () => null) : Promise.resolve(null),
       b.docComments(p.id, p.version).then(r => ({ rows: readerComments(r), error: null }),
         (e: BoardError) => ({ rows: [], error: e?.status === 404 || e?.status === 405 ? 'Comments are not available on this board yet.' : `Could not read the comments: ${e?.message ?? String(e)}` })),
     ]);
     if (!p.current(n)) return;
-    this.set(p, { doc, gate, diff, comments, canResolve: canResolve(doc, role) && p.version === doc.current, loading: false, error: null });
+    this.set(p, { doc, gate: ctx.gate, gateError: ctx.error, diff, comments, canResolve: canResolve(doc, role) && p.version === doc.current, loading: false, error: null });
   }
 
   /** The design review this viewer may do on this version, from the ticket the doc was opened from; a design opened
    *  from nowhere (a decision's source, a link) is reviewed from its own scope ticket, so its header can say why (C22). */
-  private async gateOf(p: ReaderPanel, doc: ReaderDoc, scope: string | null): Promise<ReaderGate | null> {
+  private async gateOf(p: ReaderPanel, doc: ReaderDoc, scope: string | null): Promise<{ gate: ReaderGate | null; error: string | null }> {
     const source = p.source ?? (scope && TICKET_ID.test(scope) ? scope : null);
-    if (doc.docType !== 'design' || !source) return null;
+    if (doc.docType !== 'design' || !source) return { gate: null, error: null };
     try {
-      const c = await this.board().docContext(p.id, source, p.version);
-      return { ticketId: c.ticket_id, ticketTitle: c.source_title, gateEventId: c.gate_event_id, canApprove: !!c.can_approve, canReview: !!c.can_review, currentVersion: c.current_version };
+      // C22: the ticket's design_ref names the design its sign-off is for (unknown when the read fails)
+      const [c, designRef] = await Promise.all([this.board().docContext(p.id, source, p.version),
+        this.board().ticket(source).then(t => t.design_ref ?? null, () => undefined)]);
+      return { gate: { ticketId: c.ticket_id, ticketTitle: c.source_title, gateEventId: c.gate_event_id, canApprove: !!c.can_approve,
+        canReview: !!c.can_review, currentVersion: c.current_version, designRef }, error: null };
     } catch (e) {
-      this.log(`reader: no review context (${(e as BoardError)?.code ?? 'error'})`);
-      return null;
+      const err = e as BoardError;
+      this.log(`reader: no review context (${err?.code ?? 'error'})`);
+      // not linked to the ticket: the board says so (scope); anything else is a read that failed
+      return { gate: null, error: err?.code === 'scope' ? null : (err?.message ?? String(e)) };
     }
   }
 
