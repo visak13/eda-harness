@@ -3,6 +3,7 @@ import { expect, it, vi } from 'vitest';
 import { FeedClient } from '../src/core/feed';
 import { InboxHost } from '../src/vscode/inbox';
 import type { Board } from '../src/core/api';
+import { ChatController } from '../src/vscode/chat';
 
 const creds = async () => ({ participant: 'review', token: 'throwaway' });
 
@@ -55,4 +56,36 @@ it('C7: same-scope Inbox keeps the previous identity question after a 403', asyn
     expect(h.snapshot(sc.id)?.error).toContain('forbidden');
     expect(h.snapshot(sc.id)?.items).toHaveLength(1);
   } finally { h.dispose(); }
+});
+
+it('C7: message after thread snapshot but before open completes is discarded', async () => {
+  const id = 's-0123456789';
+  let peopleDone!: () => void;
+  const people = new Promise<void>(r => { peopleDone = r; });
+  let snapshotTaken!: () => void;
+  const snapshot = new Promise<void>(r => { snapshotTaken = r; });
+  const board = {
+    ticket: async () => ({ id, title: 'Story', kind: 'story', status: 'in_progress' }),
+    tickets: async () => [],
+    thread: async () => { snapshotTaken(); return { thread: [], thread_total: 0, thread_before: null }; },
+    message: vi.fn(),
+  };
+  // Call the actual open/onEvent methods; isolate only UI and unrelated indexes.
+  const c = Object.assign(Object.create(ChatController.prototype), {
+    opening: 0, ticket: null, epic: null, stories: [], tree: [], unread: new Map(), anchors: new Map(),
+    feedStatus: 'live', readyDone: true, board: () => board,
+    loadPeople: () => people, markSeen() {}, addAnchors() {}, recomputeCommits() {}, syncUnread() {},
+    ctx: { workspaceState: { update: async () => {} } },
+    inbox: { open: async () => {} }, docs: { open: async () => {}, has: () => false },
+    decisions: { openScope: async () => {}, has: () => false },
+    postState() {}, settleOpen() {}, countUnread: async () => {}, fail: vi.fn(),
+  });
+  const opening = c.open(id);
+  await snapshot;
+  await c.onEvent({ seq: 101, kind: 'message_sent', subject_id: id, data: { message: 'm-1111111111' } });
+  peopleDone(); await opening;
+  expect(c.fail).not.toHaveBeenCalled();
+  expect(c.ticket.id).toBe(id);
+  expect(board.message).not.toHaveBeenCalled();
+  expect(c.store.items).toHaveLength(0);
 });
