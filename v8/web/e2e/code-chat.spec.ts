@@ -187,6 +187,14 @@ test("sign in, open the chat in the right column, pick the epic: its own thread,
   await page.screenshot({ path: shot("stories-dropdown.png") });
   await page.keyboard.press("Escape");
   await expect(c.locator("#stories")).toBeHidden();
+  // keyboard: Enter on the toggle opens it on the first story, arrows move, Tab out closes it
+  await c.locator("#stories-toggle").focus();
+  await page.keyboard.press("Enter");
+  await expect(c.locator("#stories .story").nth(0)).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(c.locator("#stories .story").nth(1)).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(c.locator("#stories")).toBeHidden();
   // right-hand column: the auxiliary bar sits right of the editor
   const aux = await page.locator(".part.auxiliarybar").boundingBox();
   const ed = await page.locator(".part.editor").boundingBox();

@@ -513,6 +513,8 @@ strip.addEventListener('keydown', e => {
   else if (e.key === 'ArrowDown' && rows.length) { e.preventDefault(); rows[(i + 1) % rows.length].focus(); }
   else if (e.key === 'ArrowUp' && rows.length) { e.preventDefault(); rows[(i - 1 + rows.length) % rows.length].focus(); }
 });
+// focus leaving the dropdown (Tab / Shift+Tab) closes it, unless it went back to its own toggle
+strip.addEventListener('focusout', e => { const to = e.relatedTarget as Node | null; if (to && !strip.contains(to) && to !== storiesBtn) setStoriesOpen(false); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !strip.hidden) { e.preventDefault(); setStoriesOpen(false); storiesBtn.focus(); } });
 document.addEventListener('click', e => { if (!strip.hidden && !strip.contains(e.target as Node)) setStoriesOpen(false); });
 ucChip.addEventListener('click', () => { local.fold.uncommitted = !local.fold.uncommitted; persist(); if (state) renderBands(); });
