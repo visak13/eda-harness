@@ -104,6 +104,23 @@ export function embedUrl(base: string, link: CodeLink, fallbackFolder: string | 
   return `${url.origin}/${params.length ? `?${params.join("&")}` : ""}`;
 }
 
+/** The guard's base URL on the page's own loopback name (s-17c13096e5): the guard cookie is
+ *  SameSite=Strict, so a board opened as localhost must frame localhost, not 127.0.0.1 (another
+ *  site). The guard answers only these two host names; any other page host keeps the board's. */
+export function guardBase(base: string, pageHostname: string): string {
+  const url = new URL(base);
+  const h = pageHostname.toLowerCase();
+  if (h === "localhost" || h === "127.0.0.1") url.hostname = h;
+  return url.toString();
+}
+
+/** The guard's login URL for an embed URL (s-17c13096e5): the guard spends the one-time token,
+ *  sets its cookie and redirects to the embed's own path and query (a bare `/` stays `/`). */
+export function loginUrl(src: string, token: string): string {
+  const u = new URL(src);
+  return `${u.origin}/__edp/login?t=${encodeURIComponent(token)}&next=${encodeURIComponent(u.pathname + u.search)}`;
+}
+
 /** Is the board page itself served from loopback? The iframe points at the board HOST's loopback,
  *  so from any other machine it would load that machine's port instead (strategyhl-e69dbbae06 §3). */
 export function isLoopbackHost(hostname: string): boolean {

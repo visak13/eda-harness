@@ -3,6 +3,11 @@
 The SPA embeds code-server with a direct iframe (shape A, dec-ea925a2d30), so the board only tells
 it WHERE the service is and WHETHER it is up: the port is never baked into the bundle. The FAQ the
 tab links to is a guide file rendered through the same sanitised markdown path docs use.
+
+S8 (s-17c13096e5): the guard in front of code-server relays only for a browser holding its cookie,
+set by a one-time login token that only this board mints, and only for its human owner on the
+board host (``POST /v1/code/session``). The mint key is the guard's per-start key from
+``.run/code.json``, read on every mint so a code restart rotates it without a board restart.
 """
 from __future__ import annotations
 
@@ -19,7 +24,8 @@ from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from . import run_state
-from .schemas import Participant
+from .code_guard import mint_token
+from .schemas import Participant, Role
 
 _PROBE_TIMEOUT_S = 1.5
 
@@ -53,14 +59,27 @@ def probe(port: int, timeout: float = _PROBE_TIMEOUT_S) -> bool:
         return False
 
 
-def _recorded_version() -> str | None:
-    """The version start-code.ps1 wrote to .run/code.json; None when absent or unreadable."""
+def _record_field(name: str) -> str | None:
+    """A string field start-code.ps1 wrote to .run/code.json; None when absent or unreadable."""
     try:
         data = json.loads((run_state.run_dir() / "code.json").read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
         return None
-    v = data.get("version") if isinstance(data, dict) else None
+    v = data.get(name) if isinstance(data, dict) else None
     return v if isinstance(v, str) and v else None
+
+
+def _recorded_version() -> str | None:
+    return _record_field("version")
+
+
+def _local(host: str | None) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host or "").is_loopback
+    except ValueError:
+        return False
 
 
 def code_status() -> dict[str, Any]:
@@ -87,15 +106,7 @@ def code_router(actor: Callable[..., Participant], render_markdown: Callable[[st
         Both peer and requested hostname must be local, including when the board is public.
         No credentials are required or forwarded: an ordinary browser navigation has none.
         """
-        def local(host: str | None) -> bool:
-            if host == "localhost":
-                return True
-            try:
-                return ipaddress.ip_address(host or "").is_loopback
-            except ValueError:
-                return False
-
-        if not request.client or not local(request.client.host) or not local(request.url.hostname):
+        if not request.client or not _local(request.client.host) or not _local(request.url.hostname):
             return JSONResponse(status_code=403, content={"detail": "Code links are available on the board host only"})
         if not 1 <= port <= 65535:
             return JSONResponse(status_code=400, content={"detail": "Invalid localhost port"})
@@ -109,6 +120,27 @@ def code_router(actor: Callable[..., Participant], render_markdown: Callable[[st
     def code(response: Response, _: Participant = Depends(actor)):
         response.headers["Cache-Control"] = "no-store"
         return {"ok": True, "value": code_status(), "hint": ""}
+
+    @router.post("/v1/code/session")
+    def session(request: Request, response: Response, who: Participant = Depends(actor)):
+        """A one-time, 60 s login token for the guard (``<guard>/__edp/login?t=<token>&next=<path>``).
+        Only the board's human owner, on the board host: every agent token or seat gets 403."""
+        if who.type != "human" or who.role != Role.owner:
+            return JSONResponse(status_code=403, content={
+                "ok": False, "error": {"code": "forbidden", "message": "only the board's human owner opens the Code tab"},
+                "hint": "the code session is minted for the owner's browser; agents never get one"})
+        if not request.client or not _local(request.client.host) or not _local(request.url.hostname):
+            return JSONResponse(status_code=403, content={
+                "ok": False, "error": {"code": "forbidden", "message": "Code sessions are minted on the board host only"},
+                "hint": "open the board on its own machine (127.0.0.1)"})
+        key = _record_field("mint_key")
+        if not key:
+            return JSONResponse(status_code=503, content={
+                "ok": False, "error": {"code": "unavailable", "message": "the code service record has no mint key"},
+                "hint": "restart the code service (.\\edp.ps1 restart code)"}, headers={"Cache-Control": "no-store"})
+        token, exp = mint_token(key)
+        response.headers["Cache-Control"] = "no-store"
+        return {"ok": True, "value": {"token": token, "expires_at": exp}, "hint": ""}
 
     @router.get("/v1/code/faq")
     def faq(_: Participant = Depends(actor)):

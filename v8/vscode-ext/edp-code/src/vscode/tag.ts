@@ -49,7 +49,8 @@ async function captureAnchor(): Promise<{ anchor: Anchor; truncated: boolean } |
 export async function anchorFor(doc: vscode.TextDocument, sel: vscode.Range): Promise<{ anchor: Anchor; truncated: boolean } | { error: string }> {
   const s: Sel = { startLine: sel.start.line, startChar: sel.start.character, endLine: sel.end.line, endChar: sel.end.character, isEmpty: sel.isEmpty };
   const lines = Array.from({ length: doc.lineCount }, (_, n) => doc.lineAt(n).text);
-  const git = await headAndDirty(await gitApi(), doc);
+  // dirty is judged on these captured lines (and isDirty at capture), not on the buffer after the git awaits
+  const git = await headAndDirty(await gitApi(), doc, { lines, isDirty: doc.isDirty });
   const repoRoot = git.repoRoot ?? vscode.workspace.getWorkspaceFolder(doc.uri)?.uri.fsPath;
   if (!repoRoot) return { error: 'this file is outside every git repo and workspace folder; it cannot be tagged.' };
   try {

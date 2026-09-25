@@ -162,3 +162,69 @@ def test_repo_faq_covers_the_five_story_topics():
     body = (Path(__file__).resolve().parents[1] / "guides" / "code-tab-faq.md").read_text(encoding="utf-8").lower()
     for topic in ("shared tree", "worktree", "pylance", "tag", "not guarded"):
         assert topic in body, topic
+
+
+# -- s-17c13096e5: POST /v1/code/session mints a guard login token for the human owner only ---------
+
+from edp8.code_guard import verify_token  # noqa: E402
+
+MINT_KEY = "m" * 64
+
+
+@pytest.fixture
+def mint_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("EDP8_HOME", str(tmp_path))
+    monkeypatch.setenv("EDP8_RUN_DIR", str(tmp_path / ".run"))
+    monkeypatch.setenv("EDP8_PUBLIC", "0")
+    monkeypatch.setenv("EDP8_TOKENS", str(tmp_path / "tokens.json"))
+    (tmp_path / "tokens.json").write_text(json.dumps({"alice": "a", "bob": "b", "agents": {"engineer.x": "e"}}))
+    (tmp_path / ".run").mkdir()
+    (tmp_path / ".run" / "code.json").write_text(json.dumps({"service": "code", "mint_key": MINT_KEY}), encoding="utf-8-sig")
+    app = create_app(Board(Store(":memory:")), admin_token="t")
+    with TestClient(app, base_url="http://127.0.0.1:9400", client=("127.0.0.1", 1234)) as client:
+        for p in ({"id": "alice", "handle": "alice", "role": "owner", "type": "human"},
+                  {"id": "bob", "handle": "bob", "role": "architect", "type": "human"},
+                  {"id": "engineer.x", "handle": "engineer.x", "role": "engineer", "type": "agent"},
+                  {"id": "owner.agent", "handle": "owner.agent", "role": "owner", "type": "agent"}):
+            assert client.post("/v1/participants", json=p, headers={"X-Admin": "t"}).status_code == 200
+        yield client, tmp_path
+
+
+def test_session_minted_for_the_human_owner(mint_env):
+    client, _ = mint_env
+    r = client.post("/v1/code/session", headers=AUTH)
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
+    v = r.json()["value"]
+    seen = {}
+    assert verify_token(MINT_KEY, v["token"], seen) is None      # the guard accepts it once
+    assert verify_token(MINT_KEY, v["token"], seen) == "token already used"
+    assert client.post("/v1/code/session", headers=AUTH).json()["value"]["token"] != v["token"]
+
+
+@pytest.mark.parametrize("headers,status", [
+    ({}, 401),                                                   # no credential
+    ({"X-Participant": "alice", "X-Token": "wrong"}, 401),       # a forged owner header
+    ({"X-Participant": "engineer.x", "X-Token": "e"}, 403),      # an agent seat's token
+    ({"X-Participant": "owner.agent"}, 403),                     # an agent in the owner role
+    ({"X-Participant": "bob", "X-Token": "b"}, 403),             # a human who is not the owner
+])
+def test_session_refused_for_everyone_else(mint_env, headers, status):
+    client, _ = mint_env
+    r = client.post("/v1/code/session", headers=headers)
+    assert r.status_code == status and "token" not in r.text
+
+
+def test_session_refused_off_the_board_host(tmp_path, monkeypatch, mint_env):
+    client, _ = mint_env
+    app = client.app
+    for base, peer in [("http://127.0.0.1:9400", "100.64.0.2"), ("https://board.example.ts.net", "127.0.0.1")]:
+        with TestClient(app, base_url=base, client=(peer, 1234)) as c:
+            r = c.post("/v1/code/session", headers={**AUTH, "X-Forwarded-For": "127.0.0.1"})
+            assert r.status_code == 403 and "token" not in r.text
+
+
+def test_session_503_without_a_mint_key(mint_env):
+    client, tmp = mint_env
+    (tmp / ".run" / "code.json").write_text(json.dumps({"service": "code"}))
+    r = client.post("/v1/code/session", headers=AUTH)
+    assert r.status_code == 503 and "token" not in r.json().get("value", {})

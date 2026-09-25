@@ -1,19 +1,22 @@
 import { useMemo } from "react";
 import { Link, useLocation } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { getCodeFaq, getCodeStatus } from "../api/endpoints";
+import { getCodeFaq, getCodeStatus, mintCodeSession } from "../api/endpoints";
 import { PageHeader } from "../components/PageHeader";
 import { Markdown } from "../components/Markdown";
 import { Icon } from "../components/Icon";
 import { usePageFrame } from "../components/PageFrame";
 import { copyProps } from "../copy/pages";
-import { embedUrl, isLoopbackHost, lineLabel, parseCodeLink } from "./codeLink";
+import { embedUrl, guardBase, isLoopbackHost, lineLabel, loginUrl, parseCodeLink } from "./codeLink";
 import styles from "./Code.module.css";
 
 // epic-91fcd3b370 S3 (design-449b628cdd §4): the Code tab. A direct iframe to code-server on the
 // board host's loopback (shape A, dec-ea925a2d30); the port and liveness come from GET /v1/code.
 // The shell renders this route full-bleed with the rail collapsed (AppShell `bleed`). Never a blank
 // frame: a stopped service, a remote browser and an unreachable board each get a named state.
+// S8 (s-17c13096e5): the guard relays only for a browser holding its cookie. The frame first loads
+// the guard's login URL with a one-time token the board mints for its human owner only; "Open in new
+// window" mints its own. Anyone else gets a named state, never an iframe that answers 401.
 
 const FRAMING = "A full VS Code on the board host. Open a folder, edit, search, run a terminal, and tag a selection to anyone on the board.";
 
@@ -34,7 +37,22 @@ export function CodePage({ hostname = window.location.hostname }: { hostname?: s
   const status = useQuery({ queryKey: ["code", "status"], queryFn: getCodeStatus, retry: false, refetchOnWindowFocus: false });
   const local = isLoopbackHost(hostname);
   const s = status.data;
-  const src = s ? embedUrl(s.url, link, s.default_folder) : null;
+  const src = s ? embedUrl(guardBase(s.url, hostname), link, s.default_folder) : null;
+  // one token per frame URL, spent by the guard on load: never refetched while the frame lives
+  const session = useQuery({
+    queryKey: ["code", "session", src], queryFn: mintCodeSession, enabled: !!(src && s?.running && local),
+    staleTime: Infinity, gcTime: 0, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false,
+  });
+  const frameSrc = src && session.data !== undefined ? (session.data ? loginUrl(src, session.data.token) : src) : null;
+  const openNewWindow = (e: React.MouseEvent<HTMLAnchorElement>): void => {
+    if (!src) return;
+    e.preventDefault();
+    // opened now, inside the click (popup blockers), then pointed at a freshly minted login URL
+    const w = window.open("about:blank", "_blank");
+    if (!w) return;
+    w.opener = null;
+    mintCodeSession().then((m) => { w.location.href = m ? loginUrl(src, m.token) : src; }, () => { w.location.href = src; });
+  };
   const where = link.file ? `${link.file}${link.line ? ` ${lineLabel(link.line)}` : ""}` : "";
 
   let body: React.JSX.Element;
@@ -63,12 +81,22 @@ export function CodePage({ hostname = window.location.hostname }: { hostname?: s
         </button>
       </State>
     );
+  } else if (session.isError) {
+    body = (
+      <State testid="code-no-session" title="The board did not open a code session">
+        <p>{session.error instanceof Error ? session.error.message : "POST /v1/code/session failed."}</p>
+        <p>The editor opens only for the board's owner, signed in on the board host.</p>
+        <button type="button" className={styles.retry} onClick={() => void session.refetch()} {...copyProps("code", "retry")}>Retry</button>
+      </State>
+    );
+  } else if (!frameSrc) {
+    body = <State testid="code-loading" title="Opening a code session…"><p>Asking the board for a one-time sign-in to the editor.</p></State>;
   } else {
     body = (
       <iframe
-        key={src}
+        key={frameSrc}
         className={styles.frame}
-        src={src ?? undefined}
+        src={frameSrc}
         title="Code editor (code-server)"
         data-testid="code-frame"
         allow="clipboard-read; clipboard-write"
@@ -91,7 +119,7 @@ export function CodePage({ hostname = window.location.hostname }: { hostname?: s
           <Icon name="help" size={16} /> FAQ
         </Link>
         {src && s?.running && local ? (
-          <a href={src} target="_blank" rel="noopener noreferrer" className={styles.action} data-testid="code-newwindow" {...copyProps("code", "new-window")}>
+          <a href={src} target="_blank" rel="noopener noreferrer" onClick={openNewWindow} className={styles.action} data-testid="code-newwindow" {...copyProps("code", "new-window")}>
             <Icon name="external" size={16} /> Open in new window
           </a>
         ) : null}

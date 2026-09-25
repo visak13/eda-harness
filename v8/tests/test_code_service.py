@@ -93,6 +93,13 @@ def test_start_flags_bind_loopback_and_disable_update_telemetry_proxy():
     assert "--verbose" not in src.split("$flags = @(")[1].split(")")[0]
     # the env strip is by prefix (dec-ea925a2d30), scoped to the launch and the CLI installs
     assert "'^EDP8?_'" in src and "WithoutFleetEnv {" in src
+    # s-17c13096e5: the guard-session mint key reaches the guard only after code-server started (its
+    # terminals never inherit it), never on a command line; the board reads it from code.json
+    wrapper = src.split("$body = @(")[1].split("WriteUtf8 $wrap $body")[0]
+    assert "Remove-Item Env:CODE_GUARD_MINT_HANDOFF" in wrapper.split("$p =Start-Process")[0]
+    assert "$env:CODE_GUARD_MINT_KEY = $mk" in wrapper.split("$p =Start-Process")[1]
+    assert "$MINTKEY" not in src.split("$flags = @(")[1].split(")")[0] and "$MINTKEY" not in src.split("$guardFlags = @(")[1].split(")")[0]
+    assert "mint_key = $MINTKEY" in src
 
 
 def test_extension_pins_are_exact_and_locked():
@@ -176,16 +183,33 @@ def test_a_spare_port_instance_starts_healthy_and_stops_only_itself(tmp_path):
         state = json.loads((tmp_path / "run" / "code.json").read_text(encoding="utf-8"))
         assert state["service"] == "code" and state["port"] == port and state["version"] == LOCK["version"]
         assert state["sha256"] == LOCK["sha256"] and state["pid"] and state["started_at"]
-        # s-03c7e9168b: the guard holds the port and refuses a rebinding Host; the loopback Host gets the
-        # workbench with no login; code-server's own inner port answers a cookie-less hit with its login
+        # s-03c7e9168b: the guard holds the port and refuses a rebinding Host; code-server's own inner
+        # port answers a cookie-less hit with its login.
+        # s-17c13096e5: without the guard cookie the loopback Host gets 401 too; a one-time token minted
+        # with the recorded mint key signs in once (302 + the cookie), and with the cookie the workbench
+        # answers with no code-server login; the same token again is refused
         inner = state["inner_port"]
-        assert state["guard_pid"] and inner and inner != port
+        assert state["guard_pid"] and inner and inner != port and len(state["mint_key"]) == 64
         req = urllib.request.Request(f"http://127.0.0.1:{port}/", headers={"Host": f"evil.invalid:{port}"})
         with pytest.raises(urllib.error.HTTPError) as refused:
             urllib.request.urlopen(req, timeout=5)
         assert refused.value.code == 421
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=10) as r:
+        with pytest.raises(urllib.error.HTTPError) as refused:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=10)
+        assert refused.value.code == 401
+        from edp8.code_guard import mint_token
+        token, _ = mint_token(state["mint_key"])
+        no_redirect = urllib.request.build_opener(type("NoRedirect", (urllib.request.HTTPRedirectHandler,), {"redirect_request": lambda *a, **k: None}))
+        with pytest.raises(urllib.error.HTTPError) as login:
+            no_redirect.open(f"http://127.0.0.1:{port}/__edp/login?t={token}&next=%2F", timeout=10)
+        assert login.value.code == 302 and login.value.headers["Location"] == "/"
+        cookie = login.value.headers["Set-Cookie"].split(";")[0]
+        assert cookie.startswith("edp-code-guard=") and "HttpOnly" in login.value.headers["Set-Cookie"]
+        with urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{port}/", headers={"Cookie": cookie}), timeout=10) as r:
             assert r.status == 200 and "/login" not in r.url and b"workbench.js" in r.read()
+        with pytest.raises(urllib.error.HTTPError) as replay:
+            no_redirect.open(f"http://127.0.0.1:{port}/__edp/login?t={token}&next=%2F", timeout=10)
+        assert replay.value.code == 401
         with urllib.request.urlopen(f"http://127.0.0.1:{inner}/", timeout=10) as r:
             assert r.url.split("?")[0].endswith("/login") and b'type="password"' in r.read()
         owner = subprocess.run([PS, "-NoProfile", "-Command", f"(Get-CimInstance Win32_Process -Filter 'ProcessId={_listener(port)}').CommandLine"],
@@ -195,6 +219,7 @@ def test_a_spare_port_instance_starts_healthy_and_stops_only_itself(tmp_path):
         assert f"bind-addr: 127.0.0.1:{inner}" in cfg and "auth: password" in cfg and "hashed-password" not in cfg
         settings = json.loads((tmp_path / "data" / "user" / "User" / "settings.json").read_text(encoding="utf-8"))
         assert settings["extensions.autoUpdate"] is False
+        assert settings["files.refactoring.autoSave"] is False  # qa m-7beeffa077: a rename never saves on its own
         assert {a["prefix"] for a in settings["gitlens.autolinks"]} == {"t-", "s-", "epic-", "m-"}
         assert all(a["url"].endswith(f"/ui/ticket/{a['prefix']}<num>") for a in settings["gitlens.autolinks"])
         for glob in ("**/.venv/**", "**/node_modules/**", "**/.data/**", "**/.run/**", "**/.tools/**", "**/web/dist/**"):

@@ -1,6 +1,7 @@
 // The built-in git extension's API (strategyll-ab18531441 §2). Types are vendored (git.d.ts, 1.138).
 import * as vscode from 'vscode';
 import type { API, GitExtension, Repository } from './git.d';
+import { dirtyAgainstHead, type Snapshot } from '../core/headMatch';
 
 let cached: Promise<API | undefined> | undefined;
 
@@ -22,27 +23,22 @@ const same = (a: vscode.Uri, b: vscode.Uri) => process.platform === 'win32'
   ? a.fsPath.toLowerCase() === b.fsPath.toLowerCase() : a.fsPath === b.fsPath;
 
 /** HEAD and dirty for a document: dirty = unsaved buffer OR the file differs from HEAD (working
- *  tree, index or untracked). No repo (or an unborn branch) gives commit null. */
-export async function headAndDirty(api: API | undefined, doc: vscode.TextDocument):
+ *  tree, index or untracked) OR the captured lines differ from the HEAD blob (core/headMatch).
+ *  `snap` is the buffer as the anchor took it; the default takes it now. No repo (or an unborn
+ *  branch) gives commit null. */
+export async function headAndDirty(api: API | undefined, doc: vscode.TextDocument,
+  snap: Snapshot = { lines: Array.from({ length: doc.lineCount }, (_, n) => doc.lineAt(n).text), isDirty: doc.isDirty }):
   Promise<{ repo: Repository | undefined; repoRoot: string | undefined; commit: string | null; dirty: boolean }> {
   const repo = api?.getRepository(doc.uri) ?? undefined;
-  if (!repo) return { repo: undefined, repoRoot: undefined, commit: null, dirty: doc.isDirty };
+  if (!repo) return { repo: undefined, repoRoot: undefined, commit: null, dirty: snap.isDirty };
   await repo.status(); // state can lag an external edit
   const s = repo.state;
   const changed = [...s.workingTreeChanges, ...s.indexChanges, ...s.untrackedChanges, ...s.mergeChanges].some(c => same(c.uri, doc.uri));
   const commit = s.HEAD?.commit ?? null;
-  let dirty = doc.isDirty || changed;
-  // Ignored files are absent from every status list. A clean anchor must have a blob at the
-  // captured HEAD and match that revision, even if status suppresses the selected path.
-  if (!dirty && commit) {
-    try {
-      const committed = await repo.show(commit, doc.uri.fsPath);
-      // Compare text, not status/diff shortcuts (which can omit ignored or assume-unchanged paths).
-      const lf = (text: string) => text.replace(/\r\n/g, '\n');
-      dirty = lf(committed) !== lf(doc.getText());
-    } catch { dirty = true; } // missing blob or unreadable comparison: never claim clean
-  }
-  return { repo, repoRoot: repo.rootUri.fsPath, commit, dirty: doc.isDirty || dirty };
+  // Ignored files are absent from every status list, so a clean status still compares the captured
+  // text to the blob (never a later getText(): an edit during the awaits must not decide)
+  const dirty = await dirtyAgainstHead(snap, changed, commit, c => repo.show(c, doc.uri.fsPath));
+  return { repo, repoRoot: repo.rootUri.fsPath, commit, dirty };
 }
 
 /** The repository for the active editor, else the only/first open one. */

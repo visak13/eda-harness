@@ -261,3 +261,152 @@ def test_e2e_upstream_down_answers_502():
         finally:
             task.cancel()
     asyncio.run(run())
+
+
+# -- s-17c13096e5: the guard cookie, minted only through the board ---------------------------------
+
+from edp8.code_guard import GUARD_COOKIE, mint_token, refusal, safe_next, verify_token  # noqa: E402
+
+KEY = "k" * 64
+GATE = "g" * 43
+
+
+def test_token_single_use_expiry_and_signature():
+    seen = {}
+    tok, exp = mint_token(KEY, now=1000)
+    assert exp == 1060
+    assert verify_token(KEY, tok, seen, now=1001) is None
+    assert verify_token(KEY, tok, seen, now=1002) == "token already used"
+    tok2, _ = mint_token(KEY, now=1000)
+    assert verify_token(KEY, tok2, seen, now=1061) == "expired token"
+    assert verify_token("other" * 8, mint_token(KEY, now=1000)[0], seen, now=1001) == "bad token signature"
+    long_lived, _ = mint_token(KEY, now=1000, ttl=3600)
+    assert verify_token(KEY, long_lived, seen, now=1001) == "token lifetime too long"
+    for bad in ["", "x", "1060.abc.def", tok.upper()]:
+        assert verify_token(KEY, bad, seen, now=1001) == "malformed token"
+
+
+@pytest.mark.parametrize("raw,ok", [(None, "/"), ("/", "/"), ("/?folder=/c:/x&payload=%5B%5D", "/?folder=/c:/x&payload=%5B%5D"),
+                                    ("//evil.invalid/", None), ("/\\evil.invalid", None), ("http://evil.invalid/", None),
+                                    ("/a b", None), ("/a\r\nSet-Cookie: x=1", None), ("evil", None)])
+def test_safe_next(raw, ok):
+    assert safe_next(raw) == ok
+
+
+@pytest.mark.parametrize("extra", [(), ("Cookie: edp-code-guard=wrong",), ("Cookie: other=1",)])
+def test_gate_refuses_without_the_cookie_even_with_forged_host_and_origin(extra):
+    for lines in [("Host: 127.0.0.1:9410", "Origin: http://127.0.0.1:9410", *extra),
+                  ("Host: 127.0.0.1:9410", "Origin: http://127.0.0.1:9410", *extra, *WS)]:
+        with pytest.raises(Refused) as e:
+            check_head(head(*lines), 9410, ORIGINS, "s3cret", GATE)
+        assert e.value.status == 401 and b"s3cret" not in refusal(e.value)
+
+
+def test_gate_passes_with_the_cookie_and_strips_it():
+    fwd, facts = check_head(head("Host: 127.0.0.1:9410", f"Cookie: a=1; {GUARD_COOKIE}={GATE}; b=2"), 9410, ORIGINS, "s3cret", GATE)
+    text = fwd.decode()
+    assert "Cookie: a=1; b=2; code-server-session=s3cret" in text and GATE not in text and GUARD_COOKIE not in text
+    _, facts = check_head(head("Host: 127.0.0.1:9410", f"Cookie: {GUARD_COOKIE}={GATE}", "Origin: http://127.0.0.1:9400", *WS),
+                          9410, ORIGINS, "s3cret", GATE)
+    assert facts["ws"]
+
+
+def test_gate_healthz_passes_without_session():
+    fwd, _ = check_head(head("Host: 127.0.0.1:9410", target="/healthz"), 9410, ORIGINS, "s3cret", GATE)
+    assert b"s3cret" not in fwd
+    for target in ["/healthz?x=1", "/healthz/../", "/healthzz"]:
+        with pytest.raises(Refused) as e:
+            check_head(head("Host: 127.0.0.1:9410", target=target), 9410, ORIGINS, "s3cret", GATE)
+        assert e.value.status == 401
+
+
+def test_gate_login_route_host_checked_and_plain_get():
+    _, facts = check_head(head("Host: 127.0.0.1:9410", target="/__edp/login?t=x&next=/"), 9410, ORIGINS, "s3cret", GATE)
+    assert facts["login"] == "t=x&next=/"
+    with pytest.raises(Refused) as e:
+        check_head(head("Host: evil.invalid:9410", target="/__edp/login?t=x"), 9410, ORIGINS, "s3cret", GATE)
+    assert e.value.status == 421
+    with pytest.raises(Refused) as e:
+        check_head(head("Host: 127.0.0.1:9410", *WS, target="/__edp/login?t=x"), 9410, ORIGINS, "s3cret", GATE)
+    assert e.value.status == 400
+
+
+async def _gated(seen):
+    up = await _fake_upstream(seen)
+    uport = up.sockets[0].getsockname()[1]
+    g = Guard(0, f"tcp:127.0.0.1:{uport}", ["http://127.0.0.1:9400"], "s3cret", KEY)
+    ready = asyncio.Event()
+    task = asyncio.create_task(g.serve(ready=ready))
+    await ready.wait()
+    return up, task, g
+
+
+def _set_cookie(resp: bytes) -> str:
+    line = next(l for l in resp.split(b"\r\n") if l.lower().startswith(b"set-cookie:"))
+    return line.split(b":", 1)[1].strip().decode()
+
+
+def test_e2e_gate_login_sets_cookie_then_relays_and_refuses_replay():
+    async def run():
+        seen = []
+        up, task, g = await _gated(seen)
+        port = g.port
+        try:
+            # no cookie: HTTP and WS refused 401 even with the guard's own Host/Origin; nothing relayed
+            _, w, out = await _roundtrip(port, head(f"Host: 127.0.0.1:{port}", f"Origin: http://127.0.0.1:{port}"))
+            assert out.startswith(b"HTTP/1.1 401"); w.close()
+            _, w, out = await _roundtrip(port, head(f"Host: 127.0.0.1:{port}", f"Origin: http://127.0.0.1:{port}", *WS))
+            assert out.startswith(b"HTTP/1.1 401"); w.close()
+            assert seen == []
+            # /healthz passes, without the session
+            _, w, out = await _roundtrip(port, head(f"Host: 127.0.0.1:{port}", target="/healthz"))
+            assert out.startswith(b"HTTP/1.1 200") and b"s3cret" not in seen[-1]; w.close()
+            # login with a board-minted token: 302 to next + the cookie
+            tok, _ = mint_token(KEY)
+            _, w, out = await _roundtrip(port, head(f"Host: 127.0.0.1:{port}", target=f"/__edp/login?t={tok}&next=%2F%3Ffolder%3D%2Fc%3A%2Fx"))
+            assert out.startswith(b"HTTP/1.1 302") and b"Location: /?folder=/c:/x\r\n" in out
+            assert _set_cookie(out) == f"{GUARD_COOKIE}={g.gate}; Path=/; HttpOnly; SameSite=Strict"
+            w.close()
+            # replayed: 401, no cookie
+            _, w, out = await _roundtrip(port, head(f"Host: 127.0.0.1:{port}", target=f"/__edp/login?t={tok}&next=/"))
+            assert out.startswith(b"HTTP/1.1 401") and b"Set-Cookie" not in out; w.close()
+            # with the cookie: relayed, session injected, guard cookie stripped
+            n = len(seen)
+            _, w, out = await _roundtrip(port, head(f"Host: 127.0.0.1:{port}", f"Cookie: {GUARD_COOKIE}={g.gate}"))
+            assert out.startswith(b"HTTP/1.1 200") and len(seen) == n + 1
+            assert b"code-server-session=s3cret" in seen[-1] and g.gate.encode() not in seen[-1]; w.close()
+            _, w, out = await _roundtrip(port, head(f"Host: 127.0.0.1:{port}", f"Cookie: {GUARD_COOKIE}={g.gate}",
+                                                    f"Origin: http://127.0.0.1:{port}", *WS))
+            assert out.startswith(b"HTTP/1.1 101"); w.close()
+        finally:
+            task.cancel(); up.close()
+    asyncio.run(run())
+
+
+def test_e2e_gate_mid_connection_no_cookie_401_and_login_answered():
+    async def run():
+        seen = []
+        up, task, g = await _gated(seen)
+        port = g.port
+        try:
+            r, w, out = await _roundtrip(port, head(f"Host: 127.0.0.1:{port}", f"Cookie: {GUARD_COOKIE}={g.gate}"))
+            assert out.endswith(b"ok")
+            w.write(head(f"Host: 127.0.0.1:{port}"))  # the cookie dropped on a pooled connection
+            await w.drain()
+            assert (await asyncio.wait_for(r.read(4096), 5)).startswith(b"HTTP/1.1 401")
+            assert len(seen) == 1
+            r, w, out = await _roundtrip(port, head(f"Host: 127.0.0.1:{port}", f"Cookie: {GUARD_COOKIE}={g.gate}"))
+            tok, _ = mint_token(KEY)
+            w.write(head(f"Host: 127.0.0.1:{port}", target=f"/__edp/login?t={tok}"))
+            await w.drain()
+            out = await asyncio.wait_for(r.read(4096), 5)
+            assert out.startswith(b"HTTP/1.1 302") and b"Location: /\r\n" in out
+        finally:
+            task.cancel(); up.close()
+    asyncio.run(run())
+
+
+def test_main_refuses_without_mint_key(monkeypatch):  # fail closed: no key, no guard
+    from edp8 import code_guard
+    monkeypatch.delenv("CODE_GUARD_MINT_KEY", raising=False)
+    assert code_guard.main(["--port", "0", "--upstream", "tcp:127.0.0.1:1"]) == 2

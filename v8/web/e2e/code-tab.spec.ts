@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { expect, test } from "./fixtures";
-import { REPO_DIR } from "./board";
+import { BASE, expect, test } from "./fixtures";
+import { ADMIN, REPO_DIR } from "./board";
 
 // epic-91fcd3b370 S3 (c-8c3e157cc2, c-15095a23a0): the Code tab against the REAL code service.
 //  - up: /ui/code embeds code-server full-bleed (rail collapsed, no page scrollbar) and the VS Code
@@ -10,6 +10,10 @@ import { REPO_DIR } from "./board";
 // The down-state (a board whose EDP_CODE_PORT answers nothing) is code-tab-down.spec.ts: a worker
 // option such as boardEnv is per FILE, so it needs its own board.
 // Needs the code service up: `.\edp.ps1 start code` (it is by-name only).
+// S8 (s-17c13096e5): the guard relays only for a browser holding its cookie. The spec board mints the
+// frame's one-time login with the live service's mint key (its .run/code.json is copied into the
+// spec board's run dir), so the frame first loads /__edp/login and the workbench after the redirect;
+// "Open in new window" mints its own; an agent seat gets the no-session state, never a frame.
 
 const CODE_PORT = process.env.EDP_CODE_PORT ?? "9410";
 const SHOTS = path.join(REPO_DIR, "web", "e2e", "evidence", "code-tab");
@@ -34,6 +38,13 @@ test.describe("code service up", () => {
     const home = process.env.EDP8_E2E_HOME!;
     fs.mkdirSync(path.join(home, "guides"), { recursive: true });
     fs.copyFileSync(path.join(REPO_DIR, "guides", "code-tab-faq.md"), path.join(home, "guides", "code-tab-faq.md"));
+    // the live code service's record (mint key): the spec board mints its owner's guard login with it
+    fs.mkdirSync(path.join(home, ".run"), { recursive: true });
+    fs.copyFileSync(path.join(REPO_DIR, ".run", "code.json"), path.join(home, ".run", "code.json"));
+    await fetch(`${BASE()}/v1/participants`, {
+      method: "POST", headers: { "content-type": "application/json", "X-Admin": ADMIN },
+      body: JSON.stringify({ type: "agent", role: "engineer", handle: "engineer.e2e", id: "engineer.e2e" }),
+    });
     expect(await codeServiceUp(), `code-server is not answering on :${CODE_PORT} — run .\\edp.ps1 start code`).toBe(true);
   });
 
@@ -41,7 +52,10 @@ test.describe("code service up", () => {
     await page.goto(`/ui/code?${as}&folder=${encodeURIComponent(REPO_DIR)}`, { waitUntil: "load" });
     const frameEl = page.getByTestId("code-frame");
     await expect(frameEl).toBeVisible();
-    expect(await frameEl.getAttribute("src")).toMatch(new RegExp(`^http://127\\.0\\.0\\.1:${CODE_PORT}/\\?folder=/[a-z]:/`));
+    const login = new URL((await frameEl.getAttribute("src"))!);
+    expect(`${login.origin}${login.pathname}`).toBe(`http://127.0.0.1:${CODE_PORT}/__edp/login`);
+    expect(login.searchParams.get("t")).toMatch(/^\d+\.[0-9a-f]{32}\.[0-9a-f]{64}$/);
+    expect(login.searchParams.get("next")).toMatch(/^\/\?folder=\/[a-z]:\//);
     await expect(page.locator("[data-rail]")).toHaveAttribute("data-rail", "collapsed");
     await expect(page.getByTestId("code-state")).toContainText("running");
 
@@ -81,6 +95,24 @@ test.describe("code service up", () => {
     const numbers = (await wb.locator(".monaco-editor .line-numbers").allTextContents()).map((n) => Number(n.trim()));
     for (let n = 10; n <= 20; n++) expect(numbers, `line ${n} is on screen`).toContain(n);
     await page.screenshot({ path: path.join(SHOTS, "code-tab-deeplink.png") });
+  });
+
+  test("Open in new window mints its own login and opens the workbench (s-17c13096e5)", async ({ page, context }) => {
+    await page.goto(`/ui/code?${as}`, { waitUntil: "load" });
+    await expect(page.frameLocator('[data-testid="code-frame"]').locator(".monaco-workbench")).toBeVisible({ timeout: 60_000 });
+    const [win] = await Promise.all([context.waitForEvent("page"), page.getByTestId("code-newwindow").click()]);
+    await expect(win.locator(".monaco-workbench")).toBeVisible({ timeout: 60_000 });
+    expect(new URL(win.url()).pathname).not.toBe("/__edp/login"); // redirected past the login
+    await win.screenshot({ path: path.join(SHOTS, "code-tab-newwindow.png") });
+  });
+
+  test("an agent seat gets no code session: a named state, never a frame (s-17c13096e5)", async ({ page }) => {
+    await page.goto("/ui/code?as=engineer.e2e", { waitUntil: "load" });
+    await expect(page.getByTestId("code-no-session")).toContainText("only the board's human owner opens the Code tab");
+    await expect(page.getByTestId("code-frame")).toHaveCount(0);
+    // and the guard itself refuses a caller with no cookie, whatever Origin it claims
+    const r = await fetch(`http://127.0.0.1:${CODE_PORT}/`, { headers: { Origin: `http://127.0.0.1:${CODE_PORT}` }, redirect: "manual" });
+    expect(r.status).toBe(401);
   });
 
   test("the header strip links the FAQ, which opens in its own tab", async ({ page, context }) => {

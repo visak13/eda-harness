@@ -3,7 +3,7 @@
 // `api<T>()`; writes go through `postJson` so the Composer/verdict paths can read the board's
 // resolution `hint`. Query strings are built here (never string-concatenated in the page) so a
 // filter change is one place, and an absent filter is omitted rather than sent as "".
-import { api, apiEnvelope, postJson } from "./client";
+import { api, apiEnvelope, BoardApiError, postJson } from "./client";
 import type {
   QuoteIn,
   ActivityDay,
@@ -37,6 +37,7 @@ import type {
   TopicSeat,
   CodeStatus,
   CodeFaq,
+  CodeSession,
 } from "./types";
 
 function qs(params: Record<string, string | number | null | undefined>): string {
@@ -343,6 +344,17 @@ export const closeTopic = (id: string) => postJson<TicketRecord>(`${topicPath(id
 // epic-91fcd3b370 S3: the Code tab reads the service port/state from the board, never the bundle.
 export const getCodeStatus = (): Promise<CodeStatus> => api<CodeStatus>("/v1/code");
 export const getCodeFaq = (): Promise<CodeFaq> => api<CodeFaq>("/v1/code/faq");
+/** s-17c13096e5: a one-time login token for the code guard (the board's human owner only; 403 otherwise).
+ *  null from a board that predates the route (404/501) or a code service started without a mint key (503):
+ *  the frame then loads the guard directly, as before S8. The guard enforces its cookie, not the SPA. */
+export const mintCodeSession = async (): Promise<CodeSession | null> => {
+  try {
+    return (await postJson<CodeSession>("/v1/code/session", {})).value;
+  } catch (e) {
+    if (e instanceof BoardApiError && [404, 501, 503].includes(e.status)) return null;
+    throw e;
+  }
+};
 
 // ------------------------------------------------------------------ C19 quotes
 /** One doc version's markdown source (immutable per version): what a doc quote is verified against. */

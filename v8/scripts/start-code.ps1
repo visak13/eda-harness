@@ -12,6 +12,9 @@
 # --auth password with that secret as $HASHED_PASSWORD, so a page that reaches the inner port directly
 # meets the login wall, and the owner never sees a login. The secret travels only by environment.
 # .run\code.json records both pids and the inner port; stop-code.ps1 stops both by recorded pid.
+# Guard session (s-17c13096e5): the guard relays only for a browser holding its own cookie, set by
+# /__edp/login with a one-time token the board mints for its human owner. Both share a per-start
+# mint key: the guard gets it by environment, the board reads it from .run\code.json (mint_key).
 #
 # Idempotent: our own service already on the port is left running. A foreign listener on the
 # port fails loudly and is never killed. Every bind is loopback only (anyone who reaches code-server
@@ -88,6 +91,9 @@ while ($INNER -eq $PORT) { $INNER = FreePort }
 # cookie verbatim); it travels only by environment and is never written to disk or a command line
 $rng = [Security.Cryptography.RandomNumberGenerator]::Create(); $sb = New-Object byte[] 32; $rng.GetBytes($sb)
 $SECRET = -join ($sb | ForEach-Object { $_.ToString("x2") })
+# the guard-session mint key (s-17c13096e5): to the guard by environment, to the board by code.json
+$mb = New-Object byte[] 32; $rng.GetBytes($mb)
+$MINTKEY = -join ($mb | ForEach-Object { $_.ToString("x2") })
 New-Item -ItemType Directory -Force $RUN, $DATA, $userDir, $extDir, (Join-Path $userDir "User") | Out-Null
 
 function Proc($procId) { Get-CimInstance Win32_Process -Filter "ProcessId=$procId" -ErrorAction SilentlyContinue }
@@ -109,14 +115,32 @@ function DataDirOf($p) {
 }
 function IsOurServer($p) { (IsOurs $p) -and $p.CommandLine -match '--bind-addr\s' -and ((DataDirOf $p) -eq ([IO.Path]::GetFullPath($userDir)).TrimEnd("\")) }
 function SameStart($p, $recorded) { $p -and $recorded -and ([math]::Abs(($p.CreationDate - [datetime]$recorded).TotalSeconds) -le 1) }
-# the workbench answers through the guard without a login: proves the guard's session cookie is the
-# one code-server expects (/healthz alone answers without auth)
-function Workbench {
+# A one-time guard login token, the same HMAC the board mints (edp8.code_guard.mint_token).
+function MintToken($key) {
+  $exp = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + 60
+  $nb = New-Object byte[] 16; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($nb)
+  $nonce = -join ($nb | ForEach-Object { $_.ToString("x2") })
+  $h = New-Object Security.Cryptography.HMACSHA256 (,[Text.Encoding]::UTF8.GetBytes($key))
+  $sig = -join ($h.ComputeHash([Text.Encoding]::ASCII.GetBytes("$exp.$nonce")) | ForEach-Object { $_.ToString("x2") })
+  "$exp.$nonce.$sig"
+}
+function GetNoRedirect($url, $cookie) {
+  $r = [Net.HttpWebRequest]::Create($url); $r.AllowAutoRedirect = $false; $r.Timeout = 5000
+  if ($cookie) { $r.Headers.Add("Cookie", $cookie) }
+  try { $resp = $r.GetResponse() } catch [Net.WebException] { $resp = $_.Exception.Response; if (-not $resp) { throw } }
+  try { @{ code = [int]$resp.StatusCode; location = "" + $resp.Headers["Location"]; cookie = "" + $resp.Headers["Set-Cookie"] } } finally { $resp.Close() }
+}
+# The guard is gated and the workbench answers through it once signed in: without the guard cookie /
+# is 401; a login with a fresh token sets the cookie; with it, / is the workbench with no code-server
+# login (proves the guard's session cookie is the one code-server expects; /healthz answers without auth).
+function Workbench($key) {
+  if (-not $key) { return $false }
   try {
-    $r = [Net.HttpWebRequest]::Create("http://127.0.0.1:$PORT/"); $r.AllowAutoRedirect = $false; $r.Timeout = 5000
-    $resp = $r.GetResponse()
-    try { $code = [int]$resp.StatusCode; $loc = "" + $resp.Headers["Location"] } finally { $resp.Close() }
-    ($code -eq 200) -or ($code -eq 302 -and $loc -notmatch 'login')
+    if ((GetNoRedirect "http://127.0.0.1:$PORT/" $null).code -ne 401) { return $false }
+    $login = GetNoRedirect ("http://127.0.0.1:$PORT/__edp/login?t=" + (MintToken $key) + "&next=%2F") $null
+    if ($login.code -ne 302 -or $login.location -ne "/" -or -not ($login.cookie -match '^(edp-code-guard=[^;]+)')) { return $false }
+    $r = GetNoRedirect "http://127.0.0.1:$PORT/" $Matches[1]
+    ($r.code -eq 200) -or ($r.code -eq 302 -and $r.location -notmatch 'login')
   } catch { $false }
 }
 function WriteState($p, $g, $inner) {
@@ -127,6 +151,8 @@ function WriteState($p, $g, $inner) {
     inner_port = $inner; guard_pid = $(if ($g) { [int]$g.ProcessId } else { $null })
     guard_creation_date = $(if ($g) { $g.CreationDate.ToString("o") } else { $null })
     last_probe = $null; last_ok = $null; last_restart_reason = $null; restarts = 0
+    # the board reads it to mint the owner's guard login (POST /v1/code/session)
+    mint_key = $MINTKEY
   }
   WriteUtf8 $stateFile ($state | ConvertTo-Json)
 }
@@ -149,7 +175,7 @@ if ($lp) {
     # the recorded pair, authenticated by start time, and the listener is that guard (or its child)
     $pairOk = (IsOurServer $srv) -and (SameStart $srv $rec.creation_date) -and (IsGuard $grd) -and (SameStart $grd $rec.guard_creation_date) -and
       (([int]$grd.ProcessId -eq $lp) -or ([int]$p.ParentProcessId -eq [int]$grd.ProcessId))
-    if (-not ($pairOk -and (Healthy) -and (Workbench))) { Fail 3 "port $PORT is held by this service's guard (pid $lp) but the recorded code-server behind it is missing, unverified or not serving the workbench: restart it (.\edp.ps1 restart code)" }
+    if (-not ($pairOk -and (Healthy) -and (Workbench $rec.mint_key))) { Fail 3 "port $PORT is held by this service's guard (pid $lp) but the recorded code-server behind it is missing, unverified or not serving the workbench: restart it (.\edp.ps1 restart code)" }
     $pinned = ([IO.Path]::GetFullPath($installDir)).TrimEnd("\") + "\"
     if (-not $srv.ExecutablePath.StartsWith($pinned, [StringComparison]::OrdinalIgnoreCase)) {
       Write-Host "code     running on 127.0.0.1:$PORT from $($srv.ExecutablePath), NOT the pinned $($lock.version): restart it (.\edp.ps1 restart code)"
@@ -257,6 +283,8 @@ $settings["gitlens.autolinks"] = $autolinks
 $settings["gitlens.hovers.currentLine.over"] = "line"
 $settings["telemetry.telemetryLevel"] = "off"
 $settings["update.mode"] = "none"
+# a rename/refactor must not save files to the shared tree on its own (qa m-7beeffa077)
+$settings["files.refactoring.autoSave"] = $false
 # PS 5.1 escapes < > as < >: same JSON, but the autolink <num> placeholder should read as written
 WriteUtf8 $settingsPath (($settings | ConvertTo-Json -Depth 10) -replace '\\u003c', '<' -replace '\\u003e', '>')
 
@@ -342,6 +370,8 @@ $body = @(
   # the per-start secret: to code-server as $HASHED_PASSWORD (it deletes the variable after reading, so
   # terminals never inherit it), then to the guard as CODE_GUARD_SESSION; never on a command line
   '$s = $env:CODE_GUARD_HANDOFF; Remove-Item Env:CODE_GUARD_HANDOFF',
+  # the mint key reaches only the guard: taken out before code-server starts (its terminals inherit)
+  '$mk = $env:CODE_GUARD_MINT_HANDOFF; Remove-Item Env:CODE_GUARD_MINT_HANDOFF',
   # inherited settings that would change how code-server reads or logs the password: a cookie suffix
   # renames the cookie the guard injects, trace logging (LOG_LEVEL, VSCODE_OPTIONS) writes it out
   'foreach ($k in "LOG_LEVEL", "PASSWORD", "CODE_SERVER_COOKIE_SUFFIX", "VSCODE_OPTIONS", "CODE_SERVER_CONFIG") { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }',
@@ -353,18 +383,18 @@ $body = @(
     (& $q $node), (($flags | ForEach-Object { & $q $_ }) -join ", "), (& $q $v8), (& $q $log), (& $q $err)),
   # the server pid is recorded at once, so a failing guard launch never leaves an unrecorded server
   ('Set-Content -Path {0} -Value $p.Id -Encoding ascii' -f (& $q $pidFile)),
-  'Remove-Item Env:HASHED_PASSWORD; $env:CODE_GUARD_SESSION = $s',
+  'Remove-Item Env:HASHED_PASSWORD; $env:CODE_GUARD_SESSION = $s; $env:CODE_GUARD_MINT_KEY = $mk',
   ('try {{ $g =Start-Process -FilePath {0} -ArgumentList @({1}) -WorkingDirectory {2} -WindowStyle Hidden -PassThru -RedirectStandardOutput {3} -RedirectStandardError {4} }} catch {{ Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; throw }}' -f
     (& $q $PY), (($guardFlags | ForEach-Object { & $q $_ }) -join ", "), (& $q $v8), (& $q $glog), (& $q $gerr)),
   ('Add-Content -Path {0} -Value $g.Id -Encoding ascii' -f (& $q $pidFile))
 ) -join "`r`n"
 WriteUtf8 $wrap $body
 WithoutFleetEnv {
-  $env:CODE_GUARD_HANDOFF = $SECRET
+  $env:CODE_GUARD_HANDOFF = $SECRET; $env:CODE_GUARD_MINT_HANDOFF = $MINTKEY
   try {
     $w = Start-Process -FilePath "powershell.exe" -WindowStyle Hidden -PassThru `
       -ArgumentList @("-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "`"$wrap`"")
-  } finally { Remove-Item Env:CODE_GUARD_HANDOFF -ErrorAction SilentlyContinue }
+  } finally { Remove-Item Env:CODE_GUARD_HANDOFF, Env:CODE_GUARD_MINT_HANDOFF -ErrorAction SilentlyContinue }
   if (-not $w.WaitForExit(30000)) { Fail 6 "the launch wrapper did not exit within 30 s ($wrap)" }
 }
 Remove-Item $wrap -Force -ErrorAction SilentlyContinue
@@ -400,6 +430,6 @@ $ic = Get-NetTCPConnection -LocalPort $INNER -State Listen -ErrorAction Silently
 $ip = if ($ic) { Proc ([int]$ic.OwningProcess) } else { $null }
 # (the listener is code-server's forked child: node ...\out\node\entry, parent = the server we started)
 if (-not ((IsOurs $ip) -and [int]$ip.ParentProcessId -eq $serverPid -and $ip.CreationDate -ge $root.CreationDate)) { FailRollback 6 "the inner port $INNER is held by pid $($ic.OwningProcess) ($($ip.Name)), not this code-server" }
-if (-not (Workbench)) { FailRollback 6 "the workbench did not answer through the guard without a login (the session cookie was not accepted); see $log / $gerr" }
+if (-not (Workbench $MINTKEY)) { FailRollback 6 "the guard did not refuse a cookie-less request with 401, or the workbench did not answer through it after a guard login (the session cookie was not accepted); see $log / $gerr" }
 Write-Host "code     up   guard pid $guardPid http://127.0.0.1:$PORT -> code-server pid $serverPid on 127.0.0.1:$INNER (auth password, guard-held)  (code-server $($lock.version))"
 exit 0

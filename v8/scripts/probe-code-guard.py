@@ -10,6 +10,12 @@ guard allows and code-server itself refuses (ruling m-fc4a1fb6f8), and hits code
 lists every TCP listener owned by a process running from the code-server install or by the guard.
 Exit 0 when every hostile request is refused by the guard, every loopback one succeeds, only the
 guard listens on the service port, and the inner port is behind code-server's login.
+
+S8 (s-17c13096e5, criterion c-b939187cb2): without the guard cookie every loopback request, the
+guard's own Host and Origin included, gets 401 from the guard (only /healthz answers). The loopback
+rows above are then sent WITH the cookie, obtained by a login with a one-time token minted from the
+record's mint_key, exactly as the board mints it. The same token replayed, an expired token and a
+token signed with another key are refused 401 and set no cookie.
 """
 from __future__ import annotations
 
@@ -20,8 +26,12 @@ import os
 import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 from urllib.parse import quote
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from edp8.code_guard import mint_token  # noqa: E402
 
 V8 = Path(__file__).resolve().parents[1]
 FAQ = V8 / "guides" / "code-tab-faq.md"
@@ -47,8 +57,10 @@ def send(port: int, host: str, target: str, extra: list[str]) -> dict:
     lines = head.split(b"\r\n")
     status = lines[0].decode("latin-1")
     loc = next((l.split(b":", 1)[1].strip().decode("latin-1") for l in lines if l.lower().startswith(b"location:")), "")
+    cookie = next((l.split(b":", 1)[1].strip().decode("latin-1").split(";")[0] for l in lines if l.lower().startswith(b"set-cookie:")), "")
     return {"port": port, "host": host, "target": target[:80], "origin": next((h for h in extra if h.startswith("Origin")), ""),
             "status": status, "code": int(status.split(" ")[1]) if status.startswith("HTTP/") else 0, "location": loc,
+            "set_cookie": cookie.split("=")[0] if cookie else "", "_cookie": cookie,
             "by_guard": body.startswith(b"code guard:"), "body": body[:120].decode("utf-8", "replace")}
 
 
@@ -81,7 +93,24 @@ def main() -> int:
     p = a.port
     res = "/vscode-remote-resource?path=" + quote(FAQ.as_posix(), safe="/:")
     evil, good = f"evil.invalid:{p}", f"127.0.0.1:{p}"
+    rec = json.loads((Path(a.run_dir) / "code.json").read_text(encoding="utf-8-sig"))
+    key = rec.get("mint_key") or ""
+    login = lambda tok: send(p, good, f"/__edp/login?t={tok}&next=%2F", [])  # noqa: E731
+    token, _ = mint_token(key)
+    signed_in = login(token)
+    jar = [f"Cookie: {signed_in.pop('_cookie')}"] if signed_in["_cookie"] else []
     rows = {
+        # S8: no guard cookie, the guard's own Host and Origin (what any local caller can forge)
+        "no-cookie GET / (own Origin)": send(p, good, "/", [f"Origin: http://{good}"]),
+        "no-cookie GET resource": send(p, good, res, []),
+        "no-cookie WS (own Origin)": send(p, good, WS_TARGET, ws_headers(f"http://{good}")),
+        "no-cookie WS (board Origin)": send(p, good, WS_TARGET, ws_headers(f"http://127.0.0.1:{a.board_port}")),
+        "forged-cookie GET /": send(p, good, "/", ["Cookie: edp-code-guard=forged"]),
+        "no-cookie GET /healthz": send(p, good, "/healthz", []),
+        "login (fresh token)": signed_in,
+        "login replayed": login(token),
+        "login expired": login(mint_token(key, now=time.time() - 3600)[0]),
+        "login other key": login(mint_token("0" * 64)[0]),
         "hostile GET /": send(p, evil, "/", []),
         "hostile GET resource": send(p, evil, res, []),
         "hostile WS": send(p, evil, WS_TARGET, ws_headers(f"http://{evil}")),
@@ -90,19 +119,28 @@ def main() -> int:
         "hostile ambiguous upgrade (Connection: xupgrade)": send(p, good, WS_TARGET, ["Upgrade: websocket", "Connection: xupgrade"]),
         "hostile Origin WS, Connection split": send(p, good, WS_TARGET, ws_headers("http://evil.invalid:1") + ["Connection: keep-alive"]),
         "hostile duplicate Content-Length": send(p, good, "/", ["Content-Length: 0", "Content-Length: 5"]),
-        "loopback GET /": send(p, good, "/", []),
-        "loopback GET resource": send(p, good, res, []),
-        "loopback WS (own Origin)": send(p, good, WS_TARGET, ws_headers(f"http://{good}")),
-        "board-Origin WS": send(p, good, WS_TARGET, ws_headers(f"http://127.0.0.1:{a.board_port}")),
+        "loopback GET /": send(p, good, "/", jar),
+        "loopback GET resource": send(p, good, res, jar),
+        "loopback WS (own Origin)": send(p, good, WS_TARGET, ws_headers(f"http://{good}") + jar),
+        "board-Origin WS": send(p, good, WS_TARGET, ws_headers(f"http://127.0.0.1:{a.board_port}") + jar),
     }
-    inner = json.loads((Path(a.run_dir) / "code.json").read_text(encoding="utf-8")).get("inner_port")
+    for r in rows.values():
+        r.pop("_cookie", None)
+    inner = rec.get("inner_port")
     if inner:
         rows["direct inner GET / (no cookie)"] = send(inner, f"127.0.0.1:{inner}", "/", [])
         rows["direct inner GET resource (no cookie)"] = send(inner, f"127.0.0.1:{inner}", res, [])
         rows["direct inner WS (no cookie)"] = send(inner, f"127.0.0.1:{inner}", WS_TARGET, ws_headers(f"http://127.0.0.1:{inner}"))
     lst = listeners()
     lines = lst.splitlines()
+    no_cookie = [k for k in rows if k.startswith(("no-cookie GET /", "no-cookie GET resource", "no-cookie WS", "forged-cookie")) and "healthz" not in k]
     checks = {
+        "no guard cookie: 401 from the guard, never relayed": all(rows[k]["by_guard"] and rows[k]["code"] == 401 for k in no_cookie),
+        "/healthz answers without the cookie": rows["no-cookie GET /healthz"]["code"] == 200,
+        "a fresh token signs in once (302 / + the cookie)": rows["login (fresh token)"]["code"] == 302 and rows["login (fresh token)"]["location"] == "/"
+                                                              and rows["login (fresh token)"]["set_cookie"] == "edp-code-guard",
+        "replayed, expired or foreign tokens: 401, no cookie": all(rows[k]["code"] == 401 and not rows[k]["set_cookie"]
+                                                                  for k in ("login replayed", "login expired", "login other key")),
         "hostile refused by the guard": all(rows[k]["by_guard"] and rows[k]["code"] in (400, 421, 403) for k in rows if k.startswith("hostile")),
         # / answers 302 to the last opened folder once one was opened, 200 before
         "loopback succeeds": rows["loopback GET /"]["code"] in (200, 302) and "login" not in rows["loopback GET /"]["location"]

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { embedUrl, isLoopbackHost, lineLabel, normalizeFile, normalizeFolder, parseCodeLink, parseLine } from "./codeLink";
+import { embedUrl, guardBase, isLoopbackHost, lineLabel, loginUrl, normalizeFile, normalizeFolder, parseCodeLink, parseLine } from "./codeLink";
 
 // epic-91fcd3b370 S3: deep-link parsing and the code-server URL. The folder form is the binding S1
 // ruling (dec-ea925a2d30): `/c:/…` — leading slash, lowercase drive, forward slashes.
@@ -104,4 +104,31 @@ describe("embedUrl", () => {
 describe("isLoopbackHost", () => {
   it.each(["127.0.0.1", "localhost", "::1", "[::1]", "127.1.2.3"])("%s is the board host", (h) => expect(isLoopbackHost(h)).toBe(true));
   it.each(["192.168.1.5", "board.example", "100.64.0.1", "127.0.0.1.nip.io"])("%s is remote", (h) => expect(isLoopbackHost(h)).toBe(false));
+});
+
+// s-17c13096e5: the guard login URL and the page-host guard base
+describe("loginUrl", () => {
+  it("keeps a bare / as the redirect target (code-server reopens its last folder)", () => {
+    const u = new URL(loginUrl("http://127.0.0.1:9410/", "1.ab.cd"));
+    expect(u.pathname).toBe("/__edp/login");
+    expect(u.searchParams.get("t")).toBe("1.ab.cd");
+    expect(u.searchParams.get("next")).toBe("/");
+  });
+  it("carries a deep link's path and query, encoded once, as next", () => {
+    const src = embedUrl("http://127.0.0.1:9410/", parseCodeLink("?folder=C:/My Projects/v8&file=a b.py&line=3"), null);
+    const u = new URL(loginUrl(src, "t"));
+    expect(u.origin).toBe("http://127.0.0.1:9410");
+    const next = u.searchParams.get("next")!;
+    expect(next.startsWith("/?folder=")).toBe(true);
+    expect(next).not.toContain(" ");
+    expect(new URL(next, "http://127.0.0.1:9410").toString()).toBe(src);
+  });
+});
+
+describe("guardBase", () => {
+  it("frames the guard under the page's own loopback name, so the SameSite=Strict cookie is same-site", () => {
+    expect(guardBase("http://127.0.0.1:9410/", "localhost")).toBe("http://localhost:9410/");
+    expect(guardBase("http://127.0.0.1:9410/", "127.0.0.1")).toBe("http://127.0.0.1:9410/");
+    expect(guardBase("http://127.0.0.1:9410/", "127.0.0.2")).toBe("http://127.0.0.1:9410/");
+  });
 });

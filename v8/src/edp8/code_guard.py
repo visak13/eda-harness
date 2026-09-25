@@ -14,6 +14,15 @@ Windows node cannot do for a pipe, ENOTSUP, m-9ef1667f16.) Each request is check
 - a WebSocket upgrade's ``Origin`` (when sent) is one of the allowed origins (the guard's own two
   plus the board origins passed with ``--allow-origin``), else 403.
 
+Then the guard's own gate (s-17c13096e5): code-server's session is added only for a caller that
+holds the guard's cookie (``edp-code-guard``, a per-start random value in this process's memory
+only; HttpOnly, SameSite=Strict, Path=/). Without it every request and WebSocket upgrade gets 401,
+so a local non-browser caller that forges Host/Origin (a sandboxed agent) no longer rides the
+owner's session. The cookie is set by ``GET /__edp/login?t=<token>&next=<path>``, where the token
+is a one-time, short-lived HMAC the board mints for its human owner (``POST /v1/code/session``)
+with the per-start mint key both share (env here, ``.run/code.json`` for the board). Only
+``GET /healthz`` passes without it, relayed without the session.
+
 Client-sent ``X-Forwarded-*`` (any) / ``Forwarded`` headers are dropped: code-server's origin check
 prefers ``X-Forwarded-Host`` over ``Host``. Every request on a keep-alive connection is checked; a
 body is delimited by ``Content-Length``, a chunked body turns the connection into ``Connection:
@@ -21,11 +30,11 @@ close`` (forwarded raw, nothing parsed after it). An upgrade is relayed only as 
 first request, and the bytes flow raw only after code-server answers ``101``; any other answer
 ends the connection.
 
-    CODE_GUARD_SESSION=<secret> python -m edp8.code_guard --port 9410 --upstream tcp:127.0.0.1:<inner> \\
+    CODE_GUARD_SESSION=<secret> CODE_GUARD_MINT_KEY=<key> python -m edp8.code_guard --port 9410 --upstream tcp:127.0.0.1:<inner> \\
         --allow-origin http://127.0.0.1:9400 [--tag <install dir>]
 
-The secret comes only by environment and is removed from it at start; client-sent session cookies
-are replaced, never forwarded.
+The secret and the mint key come only by environment and are removed from it at start; client-sent
+session cookies are replaced and the guard cookie is stripped, never forwarded.
 
 ``--tag`` is ignored; it puts the code-server install path in this process's command line, the
 needle edp.ps1 uses to recognise the ``code`` service.
@@ -34,13 +43,24 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
+import hmac
 import os
 import re
+import secrets
 import sys
+import time
+from urllib.parse import parse_qs
 
 MAX_HEAD = 64 * 1024
 SESSION_COOKIE = "code-server-session"
 SESSION_ENV = "CODE_GUARD_SESSION"
+GUARD_COOKIE = "edp-code-guard"
+MINT_KEY_ENV = "CODE_GUARD_MINT_KEY"
+LOGIN_PATH = "/__edp/login"
+TOKEN_TTL_S = 60
+TOKEN_MAX_TTL_S = 120  # a token that claims to live longer than this was not minted by the board
+_TOKEN_RE = re.compile(r"(\d{1,12})\.([0-9a-f]{32})\.([0-9a-f]{64})")
 _TOKEN = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")  # RFC 9110 field-name
 
 
@@ -58,11 +78,57 @@ def allowed_origins(port: int, extra: list[str]) -> set[str]:
     return {f"http://{h}" for h in allowed_hosts(port)} | {o.rstrip("/").lower() for o in extra if o}
 
 
-def check_head(head: bytes, port: int, origins: set[str], session: str | None = None) -> tuple[bytes, dict]:
+def _sign(key: str, exp: int, nonce: str) -> str:
+    return hmac.new(key.encode("utf-8"), f"{exp}.{nonce}".encode("ascii"), hashlib.sha256).hexdigest()
+
+
+def mint_token(key: str, now: float | None = None, ttl: int = TOKEN_TTL_S) -> tuple[str, int]:
+    """A one-time login token ``<exp>.<nonce>.<hmac>`` for the guard holding ``key``; returns (token, exp)."""
+    exp = int(time.time() if now is None else now) + ttl
+    nonce = secrets.token_hex(16)
+    return f"{exp}.{nonce}.{_sign(key, exp, nonce)}", exp
+
+
+def verify_token(key: str, token: str, seen: dict[str, int], now: float | None = None) -> str | None:
+    """None when ``token`` is a valid, unexpired, unused token for ``key`` (and marks it used); else why not.
+    ``seen`` maps each used nonce to its expiry and is pruned here."""
+    t = time.time() if now is None else now
+    for n in [n for n, e in seen.items() if e < t]:
+        del seen[n]
+    m = _TOKEN_RE.fullmatch(token or "")
+    if not m:
+        return "malformed token"
+    exp, nonce, sig = int(m.group(1)), m.group(2), m.group(3)
+    if not hmac.compare_digest(sig, _sign(key, exp, nonce)):
+        return "bad token signature"
+    if exp < t:
+        return "expired token"
+    if exp - t > TOKEN_MAX_TTL_S:
+        return "token lifetime too long"
+    if nonce in seen:
+        return "token already used"
+    seen[nonce] = exp
+    return None
+
+
+def safe_next(raw: str | None) -> str | None:
+    """The login redirect target: origin-form on this guard only (``/...``, never ``//`` or ``/\\``),
+    printable ASCII without spaces (a deep link arrives percent-encoded)."""
+    n = raw or "/"
+    if not n.startswith("/") or n[1:2] in ("/", "\\") or any(not 0x21 <= ord(c) <= 0x7E for c in n):
+        return None
+    return n
+
+
+def check_head(head: bytes, port: int, origins: set[str], session: str | None = None,
+               gate: str | None = None) -> tuple[bytes, dict]:
     """Validate one request head; return the head to forward and facts about it.
 
     With ``session``, the forwarded head carries ``code-server-session=<session>`` in place of any
     session cookie the client sent (code-server's password login, supplied by the guard).
+    With ``gate`` (the guard cookie's value), a request without that cookie is refused 401, except
+    ``GET /healthz`` (relayed without the session) and the login route (``facts["login"]`` holds its
+    query; the guard answers it, nothing is relayed). The guard cookie is never forwarded.
     Raises Refused for a request the guard must not relay. Anything a parser downstream could read
     differently from this one (a non-token header name, a bare CR/LF, a repeated Content-Length or
     Upgrade, Content-Length with Transfer-Encoding, an Upgrade without the ``upgrade`` Connection
@@ -82,7 +148,7 @@ def check_head(head: bytes, port: int, origins: set[str], session: str | None = 
     if not target.startswith("/"):
         raise Refused(400, "Bad Request", "only origin-form request targets are relayed")
     kept = [lines[0]]
-    hosts, origins_seen, upgrades, conn, lengths, te, cookies = [], [], [], set(), [], [], []
+    hosts, origins_seen, upgrades, conn, lengths, te, cookies, presented = [], [], [], set(), [], [], [], []
     for line in lines[1:]:
         if not line:
             raise Refused(400, "Bad Request", "empty header line")
@@ -104,13 +170,15 @@ def check_head(head: bytes, port: int, origins: set[str], session: str | None = 
             lengths.append(value)
         elif key == "transfer-encoding":
             te.append(value.lower())
-        elif key == "cookie" and session is not None:
-            cookies += [c.strip() for c in value.split(";")
-                        if c.strip() and not c.strip().lower().startswith(SESSION_COOKIE)]
+        elif key == "cookie" and (session is not None or gate is not None):
+            for c in (c.strip() for c in value.split(";")):
+                cname, _, cval = c.partition("=")
+                if cname.strip() == GUARD_COOKIE:
+                    presented.append(cval.strip())
+                elif c and not (session is not None and c.lower().startswith(SESSION_COOKIE)):
+                    cookies.append(c)
             continue
         kept.append(line)
-    if session is not None:
-        kept.append("Cookie: " + "; ".join(cookies + [f"{SESSION_COOKIE}={session}"]))
     if len(hosts) != 1 or hosts[0] not in allowed_hosts(port):
         raise Refused(421, "Misdirected Request", f"Host {hosts!r} is not 127.0.0.1:{port} or localhost:{port}")
     if len(origins_seen) > 1:
@@ -135,10 +203,23 @@ def check_head(head: bytes, port: int, origins: set[str], session: str | None = 
         raise Refused(400, "Bad Request", "an upgrade request carries no body")
     if is_ws and origin is not None and origin not in origins:
         raise Refused(403, "Forbidden", f"WebSocket Origin {origin!r} is not allowed")
+    path, _, query = target.partition("?")
+    login = health = False
+    if gate is not None:
+        login = path == LOGIN_PATH
+        if login and (parts[0] != "GET" or is_ws or length or chunked):
+            raise Refused(400, "Bad Request", "the login route is a plain GET")
+        health = target == "/healthz" and parts[0] == "GET" and not is_ws
+        if not (login or health or any(hmac.compare_digest(p.encode(), gate.encode()) for p in presented)):
+            raise Refused(401, "Unauthorized", "no guard session: open the Code tab on the board (/ui/code) to sign in")
+    if session is not None and not health:
+        cookies.append(f"{SESSION_COOKIE}={session}")
+    if cookies:
+        kept.append("Cookie: " + "; ".join(cookies))
     if chunked:
         kept = [k for k in kept if not k.lower().startswith("connection:")] + ["Connection: close"]
     out = ("\r\n".join(kept) + "\r\n\r\n").encode("latin-1")
-    return out, {"ws": is_ws, "length": length, "chunked": chunked}
+    return out, {"ws": is_ws, "length": length, "chunked": chunked, "login": query if login else None}
 
 
 def refusal(r: Refused) -> bytes:
@@ -194,10 +275,44 @@ async def _read_head(reader: asyncio.StreamReader) -> bytes | None:
         raise Refused(431, "Request Header Fields Too Large", "request head over 64 KiB")
 
 
+def login_response(status: str, headers: list[str], body: str) -> bytes:
+    b = body.encode()
+    head = [f"HTTP/1.1 {status}", "Content-Type: text/plain; charset=utf-8", f"Content-Length: {len(b)}",
+            "Cache-Control: no-store", "Referrer-Policy: no-referrer", "Connection: close", *headers]
+    return ("\r\n".join(head) + "\r\n\r\n").encode("latin-1") + b
+
+
 class Guard:
-    def __init__(self, port: int, upstream: str, extra_origins: list[str], session: str | None = None):
+    """``mint_key`` turns the guard-cookie gate on (the service always runs with it; ``None`` only in
+    the S7 unit tests of the host checks)."""
+
+    def __init__(self, port: int, upstream: str, extra_origins: list[str], session: str | None = None,
+                 mint_key: str | None = None):
         self.port, self.upstream, self.extra, self.session = port, upstream, extra_origins, session
         self.origins = allowed_origins(port, extra_origins)
+        self.mint_key = mint_key
+        # the guard cookie's value: per start, in this process's memory only
+        self.gate = secrets.token_urlsafe(32) if mint_key is not None else None
+        self.seen: dict[str, int] = {}
+
+    def check(self, head: bytes) -> tuple[bytes, dict]:
+        return check_head(head, self.port, self.origins, self.session, self.gate)
+
+    def login(self, query: str) -> bytes:
+        """Answer ``/__edp/login``: a valid one-time token sets the guard cookie and redirects to ``next``."""
+        q = parse_qs(query, keep_blank_values=True)
+        tokens, nexts = q.get("t", []), q.get("next", [])
+        nxt = safe_next(nexts[0] if len(nexts) == 1 else ("/" if not nexts else None))
+        if nxt is None:
+            return login_response("400 Bad Request", [], "code guard: next must be one path on this server\n")
+        why = verify_token(self.mint_key or "", tokens[0], self.seen) if len(tokens) == 1 else "one token expected"
+        if why:
+            _log(f"login refused: {why}")
+            return login_response("401 Unauthorized", [], f"code guard: {why}; open the Code tab on the board (/ui/code) again\n")
+        return login_response("302 Found", [
+            f"Location: {nxt}",
+            f"Set-Cookie: {GUARD_COOKIE}={self.gate}; Path=/; HttpOnly; SameSite=Strict",
+        ], "")
 
     async def handle(self, creader: asyncio.StreamReader, cwriter: asyncio.StreamWriter) -> None:
         uwriter = None
@@ -206,7 +321,11 @@ class Guard:
             head = await _read_head(creader)
             if head is None:
                 return
-            fwd, facts = check_head(head, self.port, self.origins, self.session)
+            fwd, facts = self.check(head)
+            if facts["login"] is not None:
+                cwriter.write(self.login(facts["login"]))
+                await cwriter.drain()
+                return
             ureader, uwriter = await open_upstream(self.upstream)
             if facts["ws"]:
                 await self._upgrade(fwd, creader, cwriter, ureader, uwriter)
@@ -231,14 +350,25 @@ class Guard:
                 if head is None:
                     break
                 try:
-                    fwd, facts = check_head(head, self.port, self.origins, self.session)
+                    fwd, facts = self.check(head)
                     if facts["ws"]:
                         # browsers open every WebSocket on its own connection
                         raise Refused(400, "Bad Request", "an upgrade is only relayed as a connection's first request")
                 except Refused as r:
                     # a browser never changes Host on a pooled connection; anything that does is
-                    # cut off: the refused request is never relayed and the connection closes
+                    # cut off: the refused request is never relayed and the connection closes. A
+                    # missing guard cookie is answered (a browser does not pipeline, so the previous
+                    # response is complete), then the connection closes
                     _log(f"refused {r.status} mid-connection: {r.detail}")
+                    if r.status == 401:
+                        cwriter.write(refusal(r))
+                        await cwriter.drain()
+                    return
+                if facts["login"] is not None:
+                    # the iframe's login navigation may reuse a pooled connection: answered here, the
+                    # previous response being complete (no pipelining), then the connection closes
+                    cwriter.write(self.login(facts["login"]))
+                    await cwriter.drain()
                     return
             await asyncio.wait(tasks)
         except Refused as r:
@@ -311,11 +441,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--allow-origin", action="append", default=[])
     ap.add_argument("--tag", default="")
     a = ap.parse_args(argv)
-    # the session secret comes by environment (never argv, which any local process can list) and
-    # leaves it at once
+    # the secret and the mint key come by environment (never argv, which any local process can
+    # list) and leave it at once
     session = os.environ.pop(SESSION_ENV, None) or None
+    mint_key = os.environ.pop(MINT_KEY_ENV, None) or None
+    if not mint_key:
+        _log(f"refusing to start: {MINT_KEY_ENV} is not set (without it no caller could sign in)")
+        return 2
     try:
-        asyncio.run(Guard(a.port, a.upstream, a.allow_origin, session).serve())
+        asyncio.run(Guard(a.port, a.upstream, a.allow_origin, session, mint_key).serve())
     except KeyboardInterrupt:
         pass
     return 0

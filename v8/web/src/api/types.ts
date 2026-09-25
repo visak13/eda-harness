@@ -706,6 +706,13 @@ export interface CodeStatus {
   start_command: string;
 }
 
+/** POST /v1/code/session (s-17c13096e5): a one-time, short-lived login token for the code guard,
+ *  minted only for the board's human owner on the board host. */
+export interface CodeSession {
+  token: string;
+  expires_at: number;
+}
+
 /** GET /v1/code/faq: guides/code-tab-faq.md rendered by the board's sanitised markdown path. */
 export interface CodeFaq {
   name: string;
