@@ -88,13 +88,13 @@ export function QuoteCard({ q }: { q: Quote }): React.JSX.Element {
 }
 
 /** The composer's quote chips for one thread: in send order, each with ↑ ↓ ✕ and its note. */
-export function QuoteChips({ ticketId, disabled, invalid }: { ticketId: string; disabled?: boolean; invalid?: number | null }): React.JSX.Element | null {
+export function QuoteChips({ ticketId, disabled, invalid }: { ticketId: string; disabled?: boolean; invalid?: string | null }): React.JSX.Element | null {
   const rows = useQuoteTray(ticketId);
   if (!rows.length) return null;
   return (
     <ol className={styles.chips} data-testid="quote-chips" aria-label="Quotes in this message">
       {rows.map((r, i) => (
-        <li key={r.key} className={styles.chip} data-testid="quote-chip" data-invalid={invalid === i || undefined}>
+        <li key={r.key} className={styles.chip} data-testid="quote-chip" data-invalid={invalid === r.key || undefined}>
           <div className={styles.chipHead}>
             <span className={styles.chipLabel} data-testid="quote-chip-label">{r.label}</span>
             <button type="button" aria-label={`Move quote ${i + 1} up`} disabled={disabled || i === 0}

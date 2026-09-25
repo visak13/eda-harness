@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { MessageSent, PersonRow, UploadedArtifact } from "../api/types";
 import type { MessageKind } from "../api/types";
-import { getPeople, resolveMessage, sendMessage, type SendMessage } from "../api/endpoints";
+import { getPeople, getQuotesSupported, resolveMessage, sendMessage, type SendMessage } from "../api/endpoints";
 import { useDirtyGuard } from "../live/useDraftGuard";
 import { useDropUpload } from "./useDropUpload";
 import { useMentions } from "./useMentions";
@@ -162,7 +162,7 @@ function ComposerInstance({
   variant = "card",
   sendLabel = "Send",
   onCancel,
-  quotes: takesQuotes = false,
+  quotes: wantsQuotes = false,
 }: ComposerProps): React.JSX.Element {
   const qc = useQueryClient();
   if (!draftStores.has(qc)) draftStores.set(qc, new Map());
@@ -204,9 +204,13 @@ function ComposerInstance({
   useEffect(() => { if (firstKind.current !== kinds[0]) { setKind(kinds[0]); firstKind.current = kinds[0]; } }, [kinds[0]]);
   const idRef = useRef(`composer-${Math.random().toString(36).slice(2)}`);
   // C19: this thread's quote tray (the chips), and "a Quote goes to this composer" while it is mounted.
+  // Only on a board that takes quotes[] (C18): a pre-C18 board would drop them, so restored chips
+  // stay stored but are neither shown nor sent there (the layer offers no Quote either).
+  const quotesOk = useQuery({ queryKey: ["board", "quotes-supported"], queryFn: getQuotesSupported, retry: false, staleTime: 5 * 60_000, enabled: wantsQuotes });
+  const takesQuotes = wantsQuotes && quotesOk.data === true;
   const tray = useQuoteTray(takesQuotes ? ticketId : null);
   useEffect(() => (takesQuotes ? registerQuoteTarget(ticketId) : undefined), [takesQuotes, ticketId]);
-  const [badQuote, setBadQuote] = useState<number | null>(null);
+  const [badQuote, setBadQuote] = useState<string | null>(null); // the refused chip, by key
   const dirty = text.trim().length > 0 || artifacts.length > 0 || tray.length > 0;
 
   const previousTo = useRef(toProp);
@@ -291,10 +295,11 @@ function ComposerInstance({
         void qc.invalidateQueries({ queryKey });
       }
     },
-    onError: (e) => {
-      // A 422 names the quote the board could not verify ("quotes[1]: …"): that chip is marked.
+    onError: (e, draft) => {
+      // A 422 names the quote the board could not verify ("quotes[1]: …"): the chip SENT at that
+      // index is marked, by key, so the mark stays on it when the chips are reordered afterwards.
       const m = /quotes\[(\d+)\]/.exec(e instanceof Error ? e.message : "");
-      setBadQuote(m ? Number(m[1]) : null);
+      setBadQuote(m ? draft.quotes[Number(m[1])]?.key ?? null : null);
     },
   });
 

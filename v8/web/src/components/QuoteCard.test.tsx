@@ -23,6 +23,7 @@ beforeEach(() => {
   server.use(
     http.get("/v1/me/people", () => HttpResponse.json({ ok: true, value: [] })),
     http.post("/v1/messages/resolve", () => HttpResponse.json({ ok: true, value: { to: null, wakes: [], plan: [], note: "" } })),
+    http.get("/v1/describe/message", () => HttpResponse.json({ ok: true, value: { contract: "text, quotes[] (source, id, …)" } })),
   );
 });
 
@@ -91,7 +92,7 @@ describe("Composer with quotes", () => {
     quoteTray.add("s-q", msgQ, "m-1 (arch)");
     quoteTray.add("s-q", { ...docQ, locator: { line_start: 9, line_end: 9 }, text: "third" }, "design-1 v3 L9");
     wrap(<Composer ticketId="s-q" quotes />);
-    expect(screen.getAllByTestId("quote-chip")).toHaveLength(3);
+    expect(await screen.findAllByTestId("quote-chip")).toHaveLength(3);
     fireEvent.click(screen.getAllByTestId("quote-chip-down")[0]); // doc ↓ → msg, doc, third
     fireEvent.click(screen.getAllByTestId("quote-chip-remove")[2]); // drop "third"
     fireEvent.change(screen.getAllByTestId("quote-chip-note")[1], { target: { value: "see here" } });
@@ -111,12 +112,34 @@ describe("Composer with quotes", () => {
     quoteTray.add("s-q", msgQ, "m-1");
     quoteTray.add("s-q", docQ, "design-1");
     wrap(<Composer ticketId="s-q" quotes />);
+    await screen.findAllByTestId("quote-chip");
     fireEvent.click(screen.getByTestId("composer-send")); // quotes alone may be sent
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("quotes[1]: text does not occur"));
     const chips = screen.getAllByTestId("quote-chip");
     expect(chips).toHaveLength(2);
     expect(chips[1].getAttribute("data-invalid")).toBe("true");
     expect(chips[0].getAttribute("data-invalid")).toBeNull();
+    // the mark follows the refused quote, not its index, when the chips are reordered
+    fireEvent.click(screen.getAllByTestId("quote-chip-up")[1]);
+    expect(screen.getAllByTestId("quote-chip")[0].getAttribute("data-invalid")).toBe("true");
+    expect(screen.getAllByTestId("quote-chip")[1].getAttribute("data-invalid")).toBeNull();
+  });
+
+  it("a board without quotes[] (pre-C18) shows no restored chips and sends none", async () => {
+    server.use(http.get("/v1/describe/message", () => HttpResponse.json({ ok: true, value: { contract: "text only" } })));
+    let sent: any = null;
+    server.use(http.post("/v1/messages", async ({ request }) => {
+      sent = await request.json();
+      return HttpResponse.json({ ok: true, value: { id: "m-new", unresolved_mentions: [] }, hint: "sent" });
+    }));
+    quoteTray.add("s-q", docQ, "design-1");
+    wrap(<Composer ticketId="s-q" quotes />);
+    fireEvent.change(screen.getByTestId("composer-text"), { target: { value: "plain" } });
+    fireEvent.click(screen.getByTestId("composer-send"));
+    await waitFor(() => expect(sent).not.toBeNull());
+    expect(sent.quotes).toBeUndefined();
+    expect(screen.queryByTestId("quote-chips")).toBeNull();
+    expect(quoteTray.get("s-q")).toHaveLength(1); // kept for a board that takes them
   });
 
   it("a composer without `quotes` shows no chips and sends none", () => {

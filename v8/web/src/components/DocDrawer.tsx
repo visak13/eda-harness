@@ -43,6 +43,10 @@ export function DocDrawerProvider({ children }: { children: React.ReactNode }): 
   const menuRef = useRef<HTMLDetailsElement>(null);
 
   const urlDoc = params.get("doc");
+  const urlV = params.get("v");
+  // The address is authoritative: a new ?doc/?v (a quote card's link to D v1 after D v2 was read)
+  // drops the retained pick, which would otherwise win and show v2 at v1's quoted lines (C19).
+  useEffect(() => setPicked(null), [urlDoc, urlV]);
 
   // Keep the stack in sync with the URL: a deep link or a browser back that changes ?doc resets
   // the stack to that doc (unless it already matches the top — our own writes).

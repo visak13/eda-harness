@@ -105,3 +105,31 @@ describe("displayPassage", () => {
     expect(displayPassage("See [the plan](https://x.y/p) and \\*stars\\* &amp; _em_ snake_case")).toBe("See the plan and *stars* & em snake_case");
   });
 });
+
+describe("second-opinion cases (consult 20260925T165214Z-20898b7d)", () => {
+  it("never cites hidden source: image alt text and reference definitions are not rendered", () => {
+    const img = "![repeat](https://example.com/x.png)\n\nrepeat";
+    expect(linesOf(img, locateInSource(img, "repeat")!)).toEqual({ line_start: 3, line_end: 3 });
+    const ref = "[id]: /repeat\n\nrepeat";
+    expect(linesOf(ref, locateInSource(ref, "repeat")!)).toEqual({ line_start: 3, line_end: 3 });
+  });
+
+  it("maps numeric and named entities to what they render, keeping the slice verbatim", () => {
+    const src = "Fish &#38; chips &mdash; and &#x26; peas";
+    const span = locateInSource(src, "Fish & chips — and & peas")!;
+    expect(span.text).toBe(src);
+    expect(verifies(src, span.text)).toBe(true);
+  });
+
+  it("focuses the quoted occurrence of a repeated passage, not the first", () => {
+    const src = "repeat\n\nrepeat";
+    const rendered = "repeat\nrepeat";
+    expect(findRendered(rendered, src, 3, 3)).toEqual({ start: 7, end: 13 });
+    expect(findRendered(rendered, src, 1, 1)).toEqual({ start: 0, end: 6 });
+  });
+
+  it("shows code spans literally in a card", () => {
+    expect(displayPassage("`a ** b` is **power**")).toBe("a ** b is power");
+    expect(displayPassage("Fish &#38; chips")).toBe("Fish & chips");
+  });
+});

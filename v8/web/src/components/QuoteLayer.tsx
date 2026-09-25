@@ -102,8 +102,12 @@ export async function resolvePick(p: Pick<Picked, "region" | "selected" | "befor
       label: `${region.id} v${region.version} L${lines.line_start}${lines.line_end > lines.line_start ? `-${lines.line_end}` : ""}`,
     };
   }
+  // The board slices a message by Python str index (code points); JS offsets are UTF-16 units, which
+  // differ past any astral character (an emoji): count code points for the locator.
+  const cp = (s: string) => Array.from(s).length;
+  const charStart = cp(src.slice(0, span.start));
   return {
-    quote: { source: "message", id: region.id, locator: { char_start: span.start, char_end: span.end }, text: span.text, ...n },
+    quote: { source: "message", id: region.id, locator: { char_start: charStart, char_end: charStart + cp(span.text) }, text: span.text, ...n },
     label: `${region.id}${region.author ? ` (${region.author})` : ""}`,
   };
 }
@@ -118,15 +122,43 @@ export function QuoteLayer(): React.JSX.Element | null {
   const boxRef = useRef<HTMLDivElement>(null);
   const noteRef = useRef<HTMLInputElement>(null);
   const on = supported.data === true;
+  // Each open/close is a new generation: a Quote still resolving its source when the popover is
+  // dismissed or reopened is dropped on completion, never added late or twice.
+  const gen = useRef(0);
+  const pending = useRef(false);
+  const returnFocus = useRef<HTMLElement | null>(null);
 
-  const close = useCallback(() => { setPick(null); setNote(""); setError(null); setBusy(false); }, []);
+  const close = useCallback(() => {
+    gen.current++; pending.current = false;
+    setPick(null); setNote(""); setError(null); setBusy(false);
+    const back = returnFocus.current;
+    returnFocus.current = null;
+    if (back && boxRef.current?.contains(document.activeElement)) back.focus();
+  }, []);
   const open = useCallback((focusNote: boolean) => {
     const p = currentPick();
     if (!p) return false;
-    setPick(p); setNote(""); setError(null); setDone(null);
-    if (focusNote) requestAnimationFrame(() => noteRef.current?.focus());
+    gen.current++; pending.current = false;
+    setPick(p); setNote(""); setError(null); setDone(null); setBusy(false);
+    if (focusNote) {
+      returnFocus.current = (document.activeElement as HTMLElement | null) ?? null;
+      requestAnimationFrame(() => noteRef.current?.focus());
+    }
     return true;
   }, []);
+
+  // Escape dismisses an open popover wherever focus is (the selection, not the popover, may hold it)
+  // and is consumed before a drawer or modal around it closes too.
+  useEffect(() => {
+    if (!pick) return;
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation(); e.preventDefault();
+      close();
+    };
+    document.addEventListener("keydown", onEsc, true);
+    return () => document.removeEventListener("keydown", onEsc, true);
+  }, [pick, close]);
 
   useEffect(() => {
     if (!on) return;
@@ -153,12 +185,15 @@ export function QuoteLayer(): React.JSX.Element | null {
   }, [on, open, close]);
 
   async function add() {
-    if (!pick || busy) return;
+    if (!pick || pending.current) return;
     const target = pick.region.kind === "message" ? pick.region.ticketId : activeQuoteTarget() ?? pick.region.ticketId;
     if (!target) { setError("Open a ticket or epic conversation first; the quote goes to its message box."); return; }
+    const mine = gen.current;
+    pending.current = true;
     setBusy(true); setError(null);
     try {
       const r = await resolvePick(pick, note);
+      if (mine !== gen.current) return; // dismissed or reopened meanwhile: a stale completion
       if ("error" in r) { setError(r.error); return; }
       if (!quoteTray.add(target, r.quote, r.label)) { setError(`A message carries at most ${MAX_TRAY} quotes. Send these first.`); return; }
       const n = quoteTray.get(target).length;
@@ -166,9 +201,9 @@ export function QuoteLayer(): React.JSX.Element | null {
       close();
       setDone(`Quoted into the ${target} message box (${n} ${n === 1 ? "quote" : "quotes"}).`);
     } catch (e) {
-      setError(`Could not read the source: ${e instanceof Error ? e.message : String(e)}`);
+      if (mine === gen.current) setError(`Could not read the source: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
-      setBusy(false);
+      if (mine === gen.current) { pending.current = false; setBusy(false); }
     }
   }
 
@@ -189,7 +224,6 @@ export function QuoteLayer(): React.JSX.Element | null {
     <div ref={boxRef} className={styles.popover} style={{ left, top }} role="dialog" aria-label="Quote the selection"
       data-testid="quote-popover"
       onKeyDown={(e) => {
-        if (e.key === "Escape") { e.stopPropagation(); close(); }
         if (e.key === "Enter" || (e.ctrlKey && e.shiftKey && (e.key === "Q" || e.key === "q"))) { e.preventDefault(); void add(); }
       }}>
       <input ref={noteRef} className={styles.note} value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000}

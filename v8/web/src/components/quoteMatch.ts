@@ -35,11 +35,25 @@ const LINE_MARKER = /^(\s{0,3}(?:>\s?)*)\s*(?:#{1,6}\s+|(?:\d{1,9}[.)]|[-*+])\s+
 const FENCE = /^\s{0,3}(```|~~~)/;
 const RULE = /^\s{0,3}(?:(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,})$/;
 const TABLE_SEP = /^\s*\|?\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)*\|?\s*$/;
-const HTML_ENTITY: Record<string, string> = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": "\"", "&#39;": "'", "&nbsp;": " " };
+// A reference-style link definition renders nothing: `[id]: /target "title"`.
+const REF_DEF = /^\s{0,3}\[[^\]]+\]:\s*\S/;
+const NAMED_ENTITY: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: "\"", apos: "'", nbsp: " ", copy: "©", reg: "®", mdash: "—", ndash: "–", hellip: "…", rsquo: "’", lsquo: "‘", rdquo: "”", ldquo: "“", times: "×", middot: "·", sect: "§" };
+const ENTITY = /^&(?:#\d{1,7}|#[xX][0-9a-fA-F]{1,6}|[a-zA-Z]+\d?);/;
 
-/** Project markdown source: drops fence lines, rules, table separator rows, line markers (heading
- *  #s, quote >, list bullets/numbers, task boxes), link/image targets `](…)`, backslash escapes and
- *  inline syntax. An HTML entity projects as the character it renders. */
+/** The text an HTML entity renders (numeric, or a common named one), or null. */
+export function entityText(e: string): string | null {
+  const num = /^&#(?:([xX])([0-9a-fA-F]+)|(\d+));$/.exec(e);
+  if (num) {
+    const cp = num[1] ? parseInt(num[2], 16) : parseInt(num[3], 10);
+    return cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : null;
+  }
+  return NAMED_ENTITY[e.slice(1, -1)] ?? null;
+}
+
+/** Project markdown source: drops fence lines, rules, table separator rows, reference definitions,
+ *  line markers (heading #s, quote >, list bullets/numbers, task boxes), image alt text and link/image
+ *  targets `](…)` (neither is rendered text), backslash escapes and inline syntax. An HTML entity
+ *  projects as the character it renders. */
 export function projectMarkdown(src: string): Projection {
   const chars: string[] = [];
   const at: number[] = [];
@@ -48,11 +62,15 @@ export function projectMarkdown(src: string): Projection {
     let lineEnd = src.indexOf("\n", lineStart);
     if (lineEnd === -1) lineEnd = src.length;
     const line = src.slice(lineStart, lineEnd);
-    if (!(FENCE.test(line) || RULE.test(line) || TABLE_SEP.test(line))) {
+    if (!(FENCE.test(line) || RULE.test(line) || TABLE_SEP.test(line) || REF_DEF.test(line))) {
       const marker = LINE_MARKER.exec(line)?.[0].length ?? 0;
       let i = marker;
       while (i < line.length) {
         const ch = line[i];
+        if (ch === "!" && line[i + 1] === "[") { // an image: its alt text is an attribute, not text
+          const m = /^!\[[^\]]*\]\([^)]*\)/.exec(line.slice(i));
+          if (m) { i += m[0].length; continue; }
+        }
         if (ch === "]" && line[i + 1] === "(") { // a link/image target is not rendered text
           const close = line.indexOf(")", i + 2);
           if (close !== -1) { i = close + 1; continue; }
@@ -63,10 +81,10 @@ export function projectMarkdown(src: string): Projection {
           i += 2; continue;
         }
         if (ch === "&") {
-          const m = /^&(?:amp|lt|gt|quot|#39|nbsp);/.exec(line.slice(i));
-          if (m) {
-            const out = HTML_ENTITY[m[0]];
-            if (significant(out)) { chars.push(out); at.push(lineStart + i); }
+          const m = ENTITY.exec(line.slice(i));
+          const out = m ? entityText(m[0]) : null;
+          if (m && out !== null) {
+            for (const c of out) if (significant(c)) { chars.push(c); at.push(lineStart + i); }
             i += m[0].length; continue;
           }
         }
@@ -109,7 +127,7 @@ export function locateInSource(src: string, selected: string, before = ""): Sour
   const start = proj.at[hit];
   const last = proj.at[hit + needle.length - 1];
   // An entity maps to its "&"; extend the end over the whole entity so the slice stays verbatim.
-  const ent = /^&(?:amp|lt|gt|quot|#39|nbsp);/.exec(src.slice(last));
+  const ent = src[last] === "&" ? ENTITY.exec(src.slice(last)) : null;
   const end = last + (ent ? ent[0].length : 1);
   return { start, end, text: src.slice(start, end) };
 }
@@ -139,12 +157,18 @@ export function contextOf(src: string, lineStart: number, lineEnd: number): { be
 /** The rendered passage of lines a..b of `src`, found in rendered `text`: a [start, end) range of
  *  `text` (the reader scrolls to it), or null. */
 export function findRendered(text: string, src: string, lineStart: number, lineEnd: number): { start: number; end: number } | null {
-  const lines = src.split("\n").slice(lineStart - 1, lineEnd).join("\n");
-  const needle = projectMarkdown(lines).chars;
+  const all = src.split("\n");
+  const needle = projectMarkdown(all.slice(lineStart - 1, lineEnd).join("\n")).chars;
   if (!needle) return null;
+  // The passage may repeat: the n-th occurrence in the source (counting those that start above the
+  // quoted lines) is the n-th in the render.
+  const from = all.slice(0, lineStart - 1).reduce((n, l) => n + l.length + 1, 0);
+  const srcProj = projectMarkdown(src);
+  const nth = allStarts(srcProj.chars, needle).filter((h) => srcProj.at[h] < from).length;
   const proj = projectPlain(text);
-  const hit = proj.chars.indexOf(needle);
-  if (hit === -1) return null;
+  const hits = allStarts(proj.chars, needle);
+  if (!hits.length) return null;
+  const hit = hits[Math.min(nth, hits.length - 1)];
   return { start: proj.at[hit], end: proj.at[hit + needle.length - 1] + 1 };
 }
 
@@ -157,15 +181,22 @@ export function utf8Bytes(s: string): number {
  *  verify it) without its inline syntax: emphasis/code markers, link targets, line markers. Display
  *  only; the stored quote keeps the source. */
 export function displayPassage(src: string): string {
-  return src.split("\n").map((line) => line
-    .replace(/^\s{0,3}(?:>\s?)*\s*(?:#{1,6}\s+|(?:\d{1,9}[.)]|[-*+])\s+(?:\[[ xX]\]\s+)?)?/, "")
+  return src.split("\n").map((line) => {
+    const body = line.replace(/^\s{0,3}(?:>\s?)*\s*(?:#{1,6}\s+|(?:\d{1,9}[.)]|[-*+])\s+(?:\[[ xX]\]\s+)?)?/, "");
+    // Split on backtick runs: odd pieces sit inside a code span and are shown literally (`a ** b`
+    // keeps its operator); only the prose between them loses its syntax.
+    return body.split(/`+/).map((piece, i) => (i % 2 === 1 ? piece : proseOf(piece))).join("");
+  }).join("\n");
+}
+
+function proseOf(s: string): string {
+  return s
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
     // an escaped char is literal text: park it in the private-use area until the syntax is gone
     .replace(/\\([!-/:-@[-`{-~])/g, (_, c: string) => String.fromCharCode(0xe000 + c.charCodeAt(0)))
-    .replace(/(\*\*|__|~~|`+)/g, "")
+    .replace(/(\*\*|__|~~)/g, "")
     .replace(/(^|[^\w*])[*_]([^*_\s][^*_]*?)[*_](?=[^\w*]|$)/g, "$1$2")
     .replace(/[*_]+$|^[*_]+/g, "")
-    .replace(/[-]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xe000))
-    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&#39;/g, "'"))
-    .join("\n");
+    .replace(/[\uE000-\uE07F]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xe000))
+    .replace(/&(?:#\d{1,7}|#[xX][0-9a-fA-F]{1,6}|[a-z]+\d?);/g, (e) => entityText(e) ?? e);
 }
