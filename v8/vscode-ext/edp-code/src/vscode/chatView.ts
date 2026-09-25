@@ -45,7 +45,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     const d: vscode.Disposable[] = [];
     view.webview.options = { enableScripts: true, localResourceRoots: [] }; // enableCommandUris stays off
     d.push(view.webview.onDidReceiveMessage(raw => this.onMessage(raw)));
-    d.push(view.onDidChangeVisibility(() => { if (view.visible) { this.unseen = 0; view.badge = undefined; } }));
+    // hidden = the webview document is gone (retainContextWhenHidden is false): queue until the reloaded one
+    // says `ready`, or a post made in between (a tag's insertCode + focus) is lost (C4 review #3)
+    d.push(view.onDidChangeVisibility(() => { if (view.visible) { this.unseen = 0; view.badge = undefined; } else this.ready = false; }));
     view.onDidDispose(() => {
       d.forEach(x => x.dispose());
       if (this.view === view) { this.view = undefined; this.ready = false; }

@@ -237,6 +237,8 @@ function renderChip() {
   chipBox.replaceChildren();
   chipBox.hidden = !c;
   ta.placeholder = c ? 'Add a note about the tagged lines… @ to mention' : PLACEHOLDER;
+  // a screen reader hears the chip whenever it lands in the composer (C4 review #4)
+  ta.setAttribute('aria-describedby', c ? 'ac-status code-chip-label' : 'ac-status');
   if (!c) return;
   const head = el('div', 'chip-head');
   const label = el('code', 'chip-label', c.label);
@@ -255,9 +257,11 @@ function renderChip() {
 function dropChip() {
   const s = state;
   if (!s?.ticket || !s.chip) return;
+  const label = s.chip.label;
   post({ type: 'dropCode', ticketId: s.ticket.id, chipId: s.chip.id });
   s.chip = null;
   renderChip();
+  acStatus.textContent = `Removed the tagged lines ${label}`;
   ta.focus();
 }
 
@@ -370,8 +374,6 @@ ta.addEventListener('keydown', e => {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); acClose(); return; }
   }
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
-  // Backspace at the very start of the message removes the chip, like a token in a field
-  if (e.key === 'Backspace' && state?.chip && ta.selectionStart === 0 && ta.selectionEnd === 0) { e.preventDefault(); dropChip(); }
 });
 ta.addEventListener('keyup', e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) acUpdate(); });
 
@@ -481,7 +483,10 @@ window.addEventListener('message', (ev: MessageEvent) => {
       if (!state || state.ticket?.id !== m.ticketId) return; // the host re-sends it in the next state
       state.chip = m.chip;
       renderChip();
-      if (m.chip && m.focus) { ta.focus(); const c = ta.value.length; ta.setSelectionRange(c, c); }
+      if (m.chip && m.focus) {
+        acStatus.textContent = `Tagged lines ${m.chip.label} will be sent with this message`;
+        ta.focus(); const c = ta.value.length; ta.setSelectionRange(c, c);
+      }
       break;
     case 'error':
       olderBtn.disabled = false;

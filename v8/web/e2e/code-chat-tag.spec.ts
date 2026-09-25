@@ -146,6 +146,16 @@ test("chat view open, no thread yet: the tag opens the thread picker, then the c
   await expect(c.locator("#pick")).toBeVisible({ timeout: 20_000 });
   await openFile("sample.py");
   await selectLines(3, 5);
+  // a cancelled thread picker inserts nothing and sends nothing
+  await page.keyboard.press("Control+Alt+M");
+  await expect(quickRow(page, "Chip story")).toBeVisible({ timeout: 15_000 });
+  await page.keyboard.press("Escape");
+  await expect(quick(page)).toBeHidden();
+  await page.waitForTimeout(1000);
+  await expect(c.locator("#code-chip")).toBeHidden();
+  await expect(c.locator("#crumb-current")).toBeHidden();
+  await openFile("sample.py");
+  await selectLines(3, 5);
   await page.keyboard.press("Control+Alt+M");
   await expect(quickRow(page, "Chip story")).toBeVisible({ timeout: 15_000 });
   await expect(quick(page).locator(".quick-input-title")).toContainText("EDP chat: open a thread");
@@ -213,6 +223,25 @@ test("right-click → Tag selection: chip; a second tag replaces it; removing it
   const m = await sentMessage("plain note after removing the chip");
   expect(m.code_context ?? null).toBeNull();
   expect(m.text).toBe("plain note after removing the chip");
+});
+
+test("with the chat side bar hidden, a tag reveals it and the chip and composer focus arrive", async () => {
+  const c = chat();
+  await runCommand("View: Toggle Secondary Side Bar Visibility");
+  await expect(page.locator(".part.auxiliarybar")).toBeHidden({ timeout: 10_000 });
+  await openFile("sample.py");
+  await selectLines(8, 9);
+  await page.keyboard.press("Control+Alt+M");
+  await expect(page.locator(".part.auxiliarybar")).toBeVisible({ timeout: 10_000 });
+  await expect(c.locator("#code-chip-label")).toHaveText(`src/sample.py:L8-9 @${head.slice(0, 7)}`, { timeout: 15_000 });
+  await expect(c.locator("#composer")).toBeFocused();
+  await expectNoPalette();
+  await expect(c.locator("#composer")).toHaveAttribute("aria-describedby", "ac-status code-chip-label");
+  // the reloaded view is live again: a board message still arrives
+  await call("POST", "/v1/messages", { ticket_id: story, kind: "note", text: "after the side bar came back" }, asOwner);
+  await expect(c.locator(".msg .body", { hasText: "after the side bar came back" })).toBeVisible({ timeout: 10_000 });
+  await c.locator("#code-chip-remove").click();
+  await expect(c.locator("#code-chip")).toBeHidden();
 });
 
 test("a dirty buffer marks the chip and the sent anchor dirty", async () => {

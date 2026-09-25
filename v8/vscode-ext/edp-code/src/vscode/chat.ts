@@ -56,6 +56,10 @@ export class ChatController implements vscode.Disposable, TagTarget {
   private unlinked: CommitCard[] = [];
   /** per thread: the code chip a Tag selection put in its composer (C4); the anchor never leaves the host */
   private chips = new Map<string, Chip>();
+  /** a tag made while an open() was in flight: the thread that open lands on gets it (C4 review #2) */
+  private pendingChip?: Chip;
+  /** the last open() that settled (switched, or failed as the newest); `opening !== opened` = one in flight */
+  private opened = 0;
 
   constructor(private ctx: vscode.ExtensionContext, private board: () => Board, private boardUrl: () => string,
     private log: (line: string) => void) {
@@ -94,7 +98,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
 
   async onIntent(m: ViewToHost): Promise<void> {
     switch (m.type) {
-      case 'pickTicket': return m.id ? this.open(m.id) : this.pick();
+      case 'pickTicket': if (m.id) return this.open(m.id); await this.pick(); return;
       case 'loadOlder': return this.loadOlder();
       case 'send': return this.send(m.ticketId, m.text, m.kind, m.to ?? null, m.replyTo ?? null, m.chipId);
       case 'dropCode': {
@@ -161,6 +165,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
     if (!(await creds(this.ctx))) {
       ++this.opening;
       this.store = undefined; this.ticket = null; this.epic = null; this.stories = []; this.unread.clear(); this.chips.clear();
+      this.opened = this.opening; this.pendingChip = undefined;
       this.feedStatus = 'signed-out';
       this.notice = 'Sign in to the board to read and send.';
       this.postState();
@@ -248,10 +253,12 @@ export class ChatController implements vscode.Disposable, TagTarget {
       this.notice = null;
       void this.ctx.workspaceState.update(LAST_PICK, t.id);
       this.postState();
+      this.settleOpen(n);
       void this.countUnread(n);
     } catch (e) {
       if (n !== this.opening) return;
       this.fail(e, `could not open ${id}`);
+      this.settleOpen(n);
     }
   }
 
@@ -431,7 +438,8 @@ export class ChatController implements vscode.Disposable, TagTarget {
   // -- Tag selection (C4 s-a34658f02f) -------------------------------------------------------------
   /** the view was resolved in this window and not disposed (a hidden view still counts) */
   get chatResolved(): boolean { return this.provider.isOpen; }
-  get threadOpen(): boolean { return !!this.store; }
+  /** a thread is open and readable: after a 401/403 the store stays but a chip could not be sent */
+  get threadOpen(): boolean { return !!this.store && this.feedStatus !== 'signed-out'; }
 
   private chipOf(ticketId: string | undefined) {
     const c = ticketId ? this.chips.get(ticketId) : undefined;
@@ -443,11 +451,30 @@ export class ChatController implements vscode.Disposable, TagTarget {
   async insertChip(anchor: Anchor, truncated: boolean, pickFirst: boolean): Promise<void> {
     const chip = newChip(anchor, truncated);
     await ChatViewProvider.reveal();
-    if (pickFirst || !this.store) await this.pick();
-    const ticketId = this.store?.ticketId;
-    if (!ticketId) return;
+    if (pickFirst || !this.store) {
+      // only the thread the user picked AND that opened gets the chip: a cancelled pick, or an open that
+      // another one superseded, inserts nothing (C4 review #1)
+      const picked = await this.pick();
+      if (picked) this.placeChip(picked, chip);
+      else void vscode.window.setStatusBarMessage('EDP: no thread was opened, so the tagged lines were not added', 6_000);
+      return;
+    }
+    // a thread switch is in flight: the chip follows the user to the thread that opens (C4 review #2)
+    if (this.opening !== this.opened) { this.pendingChip = chip; return; }
+    this.placeChip(this.store.ticketId, chip);
+  }
+
+  private placeChip(ticketId: string, chip: Chip): void {
     this.chips.set(ticketId, chip);
     this.post({ type: 'insertCode', v: 1, ticketId, chip: chipView(chip), focus: true });
+  }
+
+  /** The newest open() settled: a chip tagged meanwhile lands on the thread now open. */
+  private settleOpen(n: number): void {
+    this.opened = n;
+    const chip = this.pendingChip;
+    this.pendingChip = undefined;
+    if (chip && this.store) this.placeChip(this.store.ticketId, chip);
   }
 
   // -- change cards (C5 s-ab8e69650e) --------------------------------------------------------------
@@ -500,7 +527,8 @@ export class ChatController implements vscode.Disposable, TagTarget {
   }
 
   // -- picker --------------------------------------------------------------------------------------
-  async pick(): Promise<void> {
+  /** The thread picker; resolves to the id it opened, or undefined (cancelled, failed, or another open won). */
+  async pick(): Promise<string | undefined> {
     if (!(await creds(this.ctx))) { if (!(await signIn(this.ctx, this.board))) return; await this.restart(); }
     const qp = vscode.window.createQuickPick<Item>();
     Object.assign(qp, { title: 'EDP chat: open a thread', placeholder: 'An epic opens its own thread with a Stories strip', busy: true,
@@ -529,7 +557,9 @@ export class ChatController implements vscode.Disposable, TagTarget {
       return;
     }
     const id = await chosen;
-    if (id) await this.open(id);
+    if (!id) return undefined;
+    await this.open(id);
+    return this.store?.ticketId === id ? id : undefined;
   }
 
   private fail(e: unknown, what: string) {
