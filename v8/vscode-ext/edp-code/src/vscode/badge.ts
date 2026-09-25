@@ -1,6 +1,7 @@
 // Status bar badge `⎇ <branch> · N seats live` on the shared tree (strategyll-ab18531441 §4).
 import * as vscode from 'vscode';
 import type { Board } from '../core/api';
+import { boardTicketUrl } from '../core/boardLinks';
 import { badgeView, branchLabel, defaultSharedTree, inSharedTree, liveSeats, type Seat } from '../core/seats';
 import { creds } from './auth';
 import type { Repository } from './git.d';
@@ -107,5 +108,5 @@ export async function showSeats(badge: Badge, boardUrl: () => string): Promise<v
   const chosen = await vscode.window.showQuickPick(
     seats.map(s => ({ label: `$(hubot) ${s.handle}`, description: s.role, detail: `${s.ticket_id ?? 'no ticket'}${s.stale ? ' · presence not refreshed' : ''}`, ticket: s.ticket_id })),
     { title: `EDP: ${seats.length} live seats on this board` });
-  if (chosen?.ticket) void vscode.env.openExternal(vscode.Uri.parse(`${boardUrl().replace(/\/+$/, '')}/ui/ticket/${encodeURIComponent(chosen.ticket)}`));
+  if (chosen?.ticket) void vscode.env.openExternal(vscode.Uri.parse(boardTicketUrl(boardUrl(), chosen.ticket)));
 }

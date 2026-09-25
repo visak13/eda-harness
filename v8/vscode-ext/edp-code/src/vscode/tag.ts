@@ -5,6 +5,7 @@
 import * as vscode from 'vscode';
 import { buildAnchor, type Anchor, type Sel } from '../core/anchor';
 import type { Board, MessageKind } from '../core/api';
+import { boardTicketUrl } from '../core/boardLinks';
 import { render } from '../core/render';
 import { liveSeats, people, ticketChoices } from '../core/seats';
 import { tagRoute } from '../core/tagRoute';
@@ -95,7 +96,7 @@ async function paletteChain(ctx: vscode.ExtensionContext, board: () => Board, bo
   try {
     const m = await client.sendMessage({ ticket_id: ticket.id, to: personId, kind: kind as MessageKind, text: render(anchor, note, truncated), code_context: anchor });
     const open = await vscode.window.showInformationMessage(`EDP: tagged ${person.label.replace(/^\$\([^)]*\)\s*/, '')} on ${ticket.id} (${m.id})`, 'Open ticket');
-    if (open) void vscode.env.openExternal(vscode.Uri.parse(`${boardUrl().replace(/\/+$/, '')}/ui/ticket/${encodeURIComponent(ticket.id)}`));
+    if (open) void vscode.env.openExternal(vscode.Uri.parse(boardTicketUrl(boardUrl(), ticket.id)));
   } catch (e) {
     void vscode.window.showErrorMessage(`EDP: ${(e as Error).message}`);
   }

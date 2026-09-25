@@ -6,6 +6,7 @@
 import * as vscode from 'vscode';
 import type { Anchor } from '../core/anchor';
 import { BoardError, type Board, type Ticket } from '../core/api';
+import { boardTicketUrl } from '../core/boardLinks';
 import type { ChatState, FeedStatus, HostToView, StoryRow, TicketRef, ViewToHost } from '../core/chatProtocol';
 import type { CommitCard, UncommittedCard } from '../core/chatProtocol';
 import { chipForSend, chipView, newChip, type Chip } from '../core/chip';
@@ -109,8 +110,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
       case 'openUncommitted': return this.changes.openUncommitted(m.path);
       case 'openCode': return this.openCode(m.messageId);
       case 'openBoard': {
-        const base = this.boardUrl().replace(/\/+$/, '');
-        void vscode.env.openExternal(vscode.Uri.parse(`${base}/ui/ticket/${encodeURIComponent(m.ticketId)}${m.messageId ? `#${encodeURIComponent(m.messageId)}` : ''}`));
+        void vscode.env.openExternal(vscode.Uri.parse(boardTicketUrl(this.boardUrl(), m.ticketId, m.messageId)));
         return;
       }
       case 'signIn': {
