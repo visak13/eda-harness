@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import DOMPurify from "dompurify";
 import { useNavigate } from "react-router";
 import styles from "./Markdown.module.css";
+import { kindLabel, refHref, splitRefs, type RefPart } from "./boardRefs";
 
 // Server-rendered doc HTML (views.render_markdown) is sanitised AGAIN in the browser before it
 // is injected — defence in depth, and the criterion (c-d2dbb34b06) requires the client to strip
@@ -51,6 +52,26 @@ function stripToken(raw: string): string {
   return raw;
 }
 
+/** The in-app path of the current page (without the SPA base) — where a doc/decision chip opens its drawer. */
+export function currentAppPath(base: string): string {
+  if (typeof window === "undefined") return "/";
+  const p = window.location.pathname;
+  return base && p.startsWith(base) ? p.slice(base.length) || "/" : p;
+}
+
+/** C24: one `$<id>` reference as a link chip: its label (or the id), kind in data-kind, the id as the tooltip. */
+function refChip(doc: Document, r: Exclude<RefPart, string>, base: string): HTMLAnchorElement {
+  const a = doc.createElement("a");
+  a.setAttribute("href", `${base}${refHref(r.id, r.kind, currentAppPath(base))}`);
+  a.setAttribute("class", "ref-chip");
+  a.setAttribute("data-ref", r.id);
+  a.setAttribute("data-kind", r.kind);
+  a.setAttribute("data-testid", "ref-chip");
+  a.setAttribute("title", `${kindLabel(r.kind)} $${r.id}`);
+  a.textContent = r.label ? `${kindLabel(r.kind)} · ${r.label}` : `$${r.id}`;
+  return a;
+}
+
 /** Post-process a sanitised message body (S17 c-b1f32f8b33): drop the artifact tokens the attachment
  *  cards already render, and turn bare URLs / `art-…` tokens in TEXT nodes (never inside a link or
  *  code) into links — the plain-text thread linked them, Markdown alone would not. Only builds
@@ -67,17 +88,21 @@ export function linkifyMessageHtml(html: string, strip: string[] = []): string {
     for (const id of strip) if (id) text = text.split(id).join("");
     if (text !== node.data) node.data = text;
     if (node.parentElement?.closest("a, code, pre")) continue;
-    const parts = text.split(LINKABLE);
-    if (parts.length === 1) continue;
+    // C24: `$<id> (label)` references become link chips; the rest of the text is linkified as before
+    const refs = splitRefs(text);
+    if (refs.length === 1 && typeof refs[0] === "string" && text.split(LINKABLE).length === 1) continue;
     const frag = doc.createDocumentFragment();
-    parts.forEach((p, i) => {
-      if (i % 2 === 0) { if (p) frag.appendChild(doc.createTextNode(p)); return; }
-      const a = doc.createElement("a");
-      if (p.startsWith("art-")) { a.setAttribute("href", `${base}/artifact/${encodeURIComponent(p)}`); a.setAttribute("data-testid", "artifact-link"); }
-      else { a.setAttribute("href", stripToken(p)); a.setAttribute("rel", "noopener noreferrer"); }
-      a.textContent = p;
-      frag.appendChild(a);
-    });
+    for (const r of refs) {
+      if (typeof r !== "string") { frag.appendChild(refChip(doc, r, base)); continue; }
+      r.split(LINKABLE).forEach((p, i) => {
+        if (i % 2 === 0) { if (p) frag.appendChild(doc.createTextNode(p)); return; }
+        const a = doc.createElement("a");
+        if (p.startsWith("art-")) { a.setAttribute("href", `${base}/artifact/${encodeURIComponent(p)}`); a.setAttribute("data-testid", "artifact-link"); }
+        else { a.setAttribute("href", stripToken(p)); a.setAttribute("rel", "noopener noreferrer"); }
+        a.textContent = p;
+        frag.appendChild(a);
+      });
+    }
     node.replaceWith(frag);
   }
   return doc.body.innerHTML;
@@ -96,7 +121,7 @@ export function MessageMarkdown({ html, strip, className }: { html: string; stri
     let url: URL;
     try { url = new URL(a.getAttribute("href") ?? "", window.location.href); } catch { return; }
     const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-    if (url.origin === window.location.origin && url.pathname.startsWith(`${base}/`) && /\/(artifact|doc|epic|ticket)\//.test(url.pathname)) {
+    if (url.origin === window.location.origin && url.pathname.startsWith(`${base}/`) && (a.hasAttribute("data-ref") || /\/(artifact|doc|epic|ticket)\//.test(url.pathname))) {
       e.preventDefault();
       url.searchParams.delete("token");
       navigate(`${url.pathname.slice(base.length)}${url.search}${url.hash}`);

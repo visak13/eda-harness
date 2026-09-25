@@ -98,3 +98,6 @@
 .chatMd :global(h2), .chatMd :global(h3), .chatMd :global(h4), .chatMd :global(h5), .chatMd :global(h6) { font-size: 18px; line-height: 24px; margin: 12px 0 6px; }
 .chatMd :global(code), .chatMd :global(pre) { font-size: 13px; line-height: 19px; }
 .chatMd :global(table) { width: auto; max-width: 100%; font-size: 14px; }
+/* C24: $-reference chips built by linkifyMessageHtml (same look as RefText.module.css .chip). */
+.chatMd :global(a.ref-chip) { display: inline-block; padding: 0 6px; border-radius: 4px; background: var(--accentwash); color: var(--ink); font-size: 0.92em; text-decoration: none; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+.chatMd :global(a.ref-chip:hover) { text-decoration: underline; }

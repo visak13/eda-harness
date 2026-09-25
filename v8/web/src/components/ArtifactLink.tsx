@@ -4,6 +4,7 @@ import { getArtifact } from "../api/endpoints";
 import { Link, useInRouterContext } from "react-router";
 import { authHeaders } from "../auth/identity";
 import styles from "./ArtifactLink.module.css";
+import { RefText } from "./RefText";
 
 // An uploaded artifact opens through an AUTHENTICATED fetch → Blob. A plain
 // <a href="/v1/artifacts/:id/content"> carries no X-Participant/X-Token header and 401s
@@ -140,7 +141,7 @@ export function MessageText({ text, className }: { text: string; className?: str
               {p}
             </a>
           );
-        return <span key={i}>{p}</span>;
+        return <span key={i}><RefText text={p} /></span>;
       })}
     </div>
   );

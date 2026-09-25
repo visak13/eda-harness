@@ -1,0 +1,31 @@
+{
+  "_doc": "C24 (s-5d1b171d57): the $-reference contract shared by web/src/components/boardRefs.ts and vscode-ext/edp-code/src/core/boardRefs.ts. trigger: text with the caret at '|' -> the query the picker opens on, or null. split: text -> the ids rendered as chips (with their label, or null).",
+  "trigger": [
+    { "text": "$C2|", "expect": "C2" },
+    { "text": "see $s|", "expect": "s" },
+    { "text": "($design-a|", "expect": "design-a" },
+    { "text": "\"$epic|", "expect": "epic" },
+    { "text": "$|", "expect": null },
+    { "text": "costs $5|", "expect": null },
+    { "text": "$5abc|", "expect": null },
+    { "text": "$env:X|", "expect": null },
+    { "text": "$env|:X", "expect": null },
+    { "text": "$env:|", "expect": null },
+    { "text": "a$b|", "expect": null },
+    { "text": "$$x|", "expect": null },
+    { "text": "`$code|`", "expect": null },
+    { "text": "```\n$fenced|\n```", "expect": null },
+    { "text": "two $a $b|", "expect": "b" },
+    { "text": "$abc |", "expect": null },
+    { "text": "line one\n$Next|", "expect": "Next" },
+    { "text": "$s-5d1b171d57 (C24 title) and $de|", "expect": "de" }
+  ],
+  "split": [
+    { "text": "see $s-5d1b171d57 (C24 refs) now", "expect": [["s-5d1b171d57", "C24 refs"]] },
+    { "text": "$epic-52edacd059 and $dec-bf6aab8b73", "expect": [["epic-52edacd059", null], ["dec-bf6aab8b73", null]] },
+    { "text": "doc $design-10b21760d9, ll $strategyll-5e3ecdb625.", "expect": [["design-10b21760d9", null], ["strategyll-5e3ecdb625", null]] },
+    { "text": "$t-0123456789 $report-abcdef0123 $strategyhl-e69dbbae06", "expect": [["t-0123456789", null], ["report-abcdef0123", null], ["strategyhl-e69dbbae06", null]] },
+    { "text": "not $m-0f44bb36dd, not $s-5d1b171d5, not $s-5d1b171d57x, not a$s-5d1b171d57", "expect": [] },
+    { "text": "costs $5 and $env:X", "expect": [] }
+  ]
+}

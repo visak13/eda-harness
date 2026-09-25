@@ -6,6 +6,8 @@ import { getPeople, getQuotesSupported, resolveMessage, sendMessage, type SendMe
 import { useDirtyGuard } from "../live/useDraftGuard";
 import { useDropUpload } from "./useDropUpload";
 import { useMentions } from "./useMentions";
+import { useBoardRefs } from "./useBoardRefs";
+import { RefMenu } from "./RefMenu";
 import { mentionedHandles, previewMentionText } from "./mentions";
 import styles from "./Composer.module.css";
 import { Icon } from "./Icon";
@@ -227,6 +229,9 @@ function ComposerInstance({
 
   const people = useQuery({ queryKey: ["me", "people"], queryFn: getPeople, retry: false });
   const mentions = useMentions(people.data ?? [], taRef, setText);
+  // C24 (s-5d1b171d57): `$` picks a board object (this epic's tree first), the @ menu's twin
+  const refs = useBoardRefs(ticketId, taRef, setText);
+  const refreshPickers = () => { mentions.refresh(); refs.refresh(); };
 
   const mentioned = firstMentionedHandle(text, people.data ?? []);
   useEffect(() => {
@@ -318,7 +323,9 @@ function ComposerInstance({
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.nativeEvent.isComposing) return;
     if (mentions.onKeyDown(e)) return; // menu nav / accept consumes the key first
+    if (!mentions.menu.open && refs.onKeyDown(e)) return;
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
       e.preventDefault();
       trySend();
@@ -456,8 +463,9 @@ function ComposerInstance({
           selection.current = { start: e.currentTarget.selectionStart, end: e.currentTarget.selectionEnd, scroll: e.currentTarget.scrollTop };
           if (draftKey) { const value = { text, artifacts, kind, to, toPicked, selection: selection.current }; conversationDrafts.set(draftKey, value); writeDraft(draftKey, value); }
         }}
-        onKeyUp={mentions.refresh}
-        onClick={mentions.refresh}
+        onKeyUp={refreshPickers}
+        onClick={refreshPickers}
+        onBlur={refs.close}
         aria-label="Message"
         data-testid="composer-text"
       />
@@ -481,6 +489,8 @@ function ComposerInstance({
           ))}
         </ul>
       ) : null}
+      {!mentions.menu.open ? <RefMenu refs={refs} listId={`${idRef.current}-refs`} className={styles.mentions} activeClass={styles.mentionActive}
+        handleClass={styles.mentionHandle} labelClass={styles.mentionLabel} /> : null}
 
       {artifacts.length > 0 ? (
         <ul className={styles.chips} data-testid="attachment-chips" aria-label="Attachments">

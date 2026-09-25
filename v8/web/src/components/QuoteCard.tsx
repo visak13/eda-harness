@@ -4,6 +4,7 @@ import { getMessage } from "../api/endpoints";
 import { CodeCard } from "./CodeCard";
 import { Icon } from "./Icon";
 import { MentionInput } from "./MentionInput";
+import { RefText } from "./RefText";
 import { displayPassage } from "./quoteMatch";
 import { quoteTray, useQuoteTray } from "./quoteTray";
 import styles from "./QuoteCard.module.css";
@@ -43,7 +44,7 @@ export function scrollToMessage(id: string): boolean {
 
 export function QuoteCard({ q }: { q: Quote }): React.JSX.Element {
   const navigate = useNavigate();
-  const note = q.note ? <p className={styles.note} data-testid="quote-note-text"><span>Note</span> {q.note}</p> : null;
+  const note = q.note ? <p className={styles.note} data-testid="quote-note-text"><span>Note</span> <RefText text={q.note} /></p> : null;
   if (q.source === "code" && q.code) {
     return <div className={styles.card} data-testid="quote-card" data-source="code"><CodeCard c={q.code} />{note}</div>;
   }

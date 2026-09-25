@@ -370,3 +370,15 @@ export const getQuotesSupported = async (): Promise<boolean> => {
   const body = await r.json().catch(() => null);
   return typeof body?.value?.contract === "string" && body.value.contract.includes("quotes[]");
 };
+
+// C24 $-references (s-5d1b171d57): the picker reads existing list/search routes only (no server change).
+/** GET /v1/tickets?epic_id= — every ticket of an epic's tree (the epic itself is read with getTicket). */
+export const getEpicTickets = (epicId: string) => api<TicketRecord[]>(`/v1/tickets${qs({ epic_id: epicId })}`);
+/** GET /v1/docs?scope= — the docs scoped to an epic (summaries: id, doc_type, title). */
+export const getScopeDocs = (scope: string) => api<{ id: string; doc_type: string; title: string }[]>(`/v1/docs${qs({ scope })}`);
+/** GET /v1/decisions?scope= — the scope's live and withdrawn decisions (the epic's participants only). */
+export const getScopeDecisions = (scope: string) =>
+  api<{ decisions: { id: string; text: string; status: string }[] }>(`/v1/decisions${qs({ scope })}`);
+/** GET /v1/find — exact words ∪ semantic hits; ticket hits carry title+status, doc hits their title. */
+export const findBoard = (q: string, types: string, k = 20) =>
+  api<{ type: string; id: string; title?: string; status?: string; snippet?: string }[]>(`/v1/find${qs({ q, types, k })}`);
