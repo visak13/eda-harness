@@ -3,7 +3,8 @@
 // signs in the way start-code.ps1's own check does: a one-time token minted from .run/code.json's
 // mint_key (the documented residual: a same-user file reader can mint). The owner's /ui/code path
 // itself is web/e2e/code-tab.spec.ts (playwright.config.ts + playwright.s8-firefox.config.ts).
-// Top level on the guard (no board frame), in Chromium or the automation Firefox. It:
+// Top level on the guard (no board frame), in Chromium or a stock Firefox (as S7: the automation
+// Firefox build renders no VS Code webview, so the Markdown preview and EDP Chat need the stock one). It:
 //   0. checks a cookie-less GET / is 401 and the login lands on the workbench (never /__edp/login),
 //   1. opens a file (Quick Open v8/README.md),
 //   2. opens an integrated terminal and runs a command that writes a marker file (read back here),
@@ -17,7 +18,7 @@
 // extension out at the end, so no seat credential stays in the owner's editor.
 // Identity is the running seat (EDP_HANDLE + EDP8_TOKEN; the token goes in the URL once / typed
 // into the input box, never logged).
-//   node measure/s8-guard-live.cjs chromium|firefox
+//   node measure/s8-guard-live.cjs chromium|stockff   (EDP8_FIREFOX overrides the stock Firefox path)
 // Screenshots: e2e/evidence/s8-guard-live/<browser>/ (gitignored; uploaded as board artifacts).
 const crypto = require("node:crypto");
 const fs = require("node:fs");
@@ -50,8 +51,8 @@ const check = (ok, what) => { L(`${ok ? "PASS" : "FAIL"} ${what}`); if (!ok) fai
 
 (async () => {
   if (!SEAT || !TOKEN) throw new Error("EDP_HANDLE and EDP8_TOKEN must be set (the running seat)");
-  const browser = which === "firefox"
-    ? await firefox.launch({ executablePath: path.join(process.env.LOCALAPPDATA ?? "", "ms-playwright", "firefox-1538", "firefox", "firefox.exe") })
+  const browser = which === "stockff"
+    ? await firefox.launch({ channel: "moz-firefox", executablePath: process.env.EDP8_FIREFOX ?? "C:/Program Files/Mozilla Firefox/firefox.exe" })
     : await chromium.launch();
   const page = await (await browser.newContext({ viewport: { width: 1600, height: 1000 } })).newPage();
   const errors = [];
