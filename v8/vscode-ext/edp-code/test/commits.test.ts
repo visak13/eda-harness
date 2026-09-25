@@ -63,11 +63,13 @@ beforeAll(() => {
   git(['mv', 'a.txt', 'c.txt']); commit('chore: rename a to c');
   git(['rm', '-q', 'b.bin']); commit('chore: delete the binary', 'EDP-Ticket: s-0123456789\nEDP-Ticket: t-9999999999\nEDP-Seat: engineer.s-0123456789');
   writeFileSync(join(dir, 'm.txt'), 'm\n');
-  git(['add', '.']); commit('bad trailer s-5555555555', 'EDP-Ticket: not-a-ticket');
+  git(['add', '.']); commit('bad trailer s-5555555555', 'EDP-Ticket: not-a-ticket\nEDP-Seat: engineer.s-5555555555');
   git(['checkout', '-q', '-b', 'side']);
   writeFileSync(join(dir, 'd.txt'), 'side\n'); git(['add', '.']); commit('side work s-3333333333');
   git(['checkout', '-q', 'main']);
-  writeFileSync(join(dir, 'e.txt'), 'main\n'); git(['add', '.']); commit('main work');
+  // an amended/cherry-picked commit keeps its old author date: cards are placed by commit time
+  writeFileSync(join(dir, 'e.txt'), 'main\n'); git(['add', '.']);
+  git(['commit', '-q', '-m', 'main work'], { ...when(), GIT_AUTHOR_DATE: `${tick - 3 * 86400} +0000` });
   git(['merge', '-q', '--no-ff', 'side', '-m', 'Merge branch side', '-m', 'EDP-Ticket: epic-4444444444'], when());
   log = parseLog(git(logArgs({ count: 100, days: 30 })));
 });
@@ -96,7 +98,7 @@ describe('parseLog + attribute on a real repo', () => {
     expect(attribute(c)).toEqual({ tickets: [], attribution: 'none', trailerSeat: null });
   });
   it('a malformed trailer value falls through to the subject id', () =>
-    expect(attribute(bySubject('bad trailer s-5555555555'))).toEqual({ tickets: ['s-5555555555'], attribution: 'subject', trailerSeat: null }));
+    expect(attribute(bySubject('bad trailer s-5555555555'))).toEqual({ tickets: ['s-5555555555'], attribution: 'subject', trailerSeat: 'engineer.s-5555555555' }));
   it('a merge commit: two parents, files diffed against the first parent, trailer on the merge message', () => {
     const c = bySubject('Merge branch side');
     expect(c.parents).toHaveLength(2);
@@ -115,7 +117,12 @@ describe('parseLog + attribute on a real repo', () => {
     expect(c.parents).toEqual([]);
     expect(c.files.map(f => [f.path, f.status])).toEqual([['a.txt', 'A'], ['b.bin', 'A']]);
   });
-  it('author time is ms since the epoch', () => expect(Math.abs(bySubject('main work').at - Date.now())).toBeLessThan(2 * 3600_000));
+  it('time is the commit time (ms), not the author time', () => {
+    const c = bySubject('main work');
+    const [ct, at] = git(['log', '-1', '--format=%ct %at', c.sha]).trim().split(' ').map(Number);
+    expect(ct - at).toBeGreaterThan(2 * 86400);
+    expect(c.at).toBe(ct * 1000);
+  });
   it('an incremental read <old>..HEAD returns only the newer commits', () => {
     const old = bySubject('main work').sha;
     expect(parseLog(git(logArgs({ count: 100, days: 30 }, `${old}..HEAD`))).map(c => c.subject)).toEqual(['Merge branch side', 'side work s-3333333333']);

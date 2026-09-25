@@ -50,6 +50,12 @@ describe('cardOf', () => {
     expect(seatLabel(cardOf(ix({ attribution: 'subject', tickets: ['s-0123456789'] }), assignee))).toBe('engineer.s-0123456789 (assignee)');
     expect(seatLabel(cardOf(ix({ attribution: 'subject', tickets: ['s-9999999999'] }), assignee))).toBe('no seat');
   });
+  it('a subject id with an EDP-Seat trailer shows that seat', () => {
+    const c = cardOf(ix({ attribution: 'subject', tickets: ['s-9999999999'], trailerSeat: 'engineer.x' }), assignee);
+    expect([c.seat, c.seatVia]).toEqual(['engineer.x', 'trailer']);
+  });
+  it("the fallback is the FIRST ticket's assignee, never a later ticket's", () =>
+    expect(seatLabel(cardOf(ix({ attribution: 'subject', tickets: ['s-9999999999', 's-0123456789'] }), assignee))).toBe('no seat'));
   it('none names no seat', () => expect(seatLabel(cardOf(ix({}), assignee))).toBe('unlinked'));
   it('lists at most CARD_FILES files and counts the rest; time is ISO', () => {
     const files = Array.from({ length: CARD_FILES + 7 }, (_, i) => ({ path: `f${i}`, status: 'M' as const, add: 1, del: 0 }));
@@ -71,6 +77,12 @@ describe('workFiles (uncommitted vs HEAD)', () => {
   });
   it('added in the index then deleted in the tree is nothing vs HEAD; ignored files never show', () =>
     expect(workFiles([{ path: 'x', status: S.INDEX_ADDED }], [{ path: 'x', status: S.DELETED }, { path: 'i', status: S.IGNORED }], [])).toEqual([]));
+  it('renamed in the index then deleted in the tree: the old path is deleted vs HEAD', () =>
+    expect(workFiles([{ path: 'new', oldPath: 'old', status: S.INDEX_RENAMED }], [{ path: 'new', status: S.DELETED }], [])).toEqual([{ path: 'old', status: 'D' }]));
+  it('git rm --cached (still on disk) is the tracked file vs HEAD, not a deletion', () => {
+    expect(workFiles([{ path: 'f', status: S.INDEX_DELETED }], [], [{ path: 'f', status: S.UNTRACKED }])).toEqual([{ path: 'f', status: 'M' }]);
+    expect(workFiles([{ path: 'f', status: S.INDEX_DELETED }], [{ path: 'f', status: S.UNTRACKED }], [])).toEqual([{ path: 'f', status: 'M' }]);
+  });
   it('the card carries no seat and caps its rows', () => {
     const files = Array.from({ length: 205 }, (_, i) => ({ path: `f${String(i).padStart(3, '0')}`, status: 'M' as const }));
     const card = uncommittedCard(files, new Date('2026-09-25T07:00:00Z'));

@@ -28,16 +28,27 @@ export function workFiles(index: RawChange[], work: RawChange[], untracked: RawC
     const had = out.get(c.path);
     if (c.status === S.DELETED) {
       // added in the index then deleted in the tree: nothing vs HEAD
-      if (had?.status === 'A') out.delete(c.path); else out.set(c.path, { path: c.path, status: 'D' });
+      if (had?.status === 'A') out.delete(c.path);
+      // renamed in the index then deleted in the tree: vs HEAD the old path is simply deleted
+      else if (had?.status === 'R' && had.oldPath) { out.delete(c.path); out.set(had.oldPath, { path: had.oldPath, status: 'D' }); }
+      else out.set(c.path, { path: c.path, status: 'D' });
       continue;
     }
     if (c.status === S.INTENT_TO_ADD) { out.set(c.path, { path: c.path, status: 'A' }); continue; }
     // git.untrackedChanges=mixed (the default) lists untracked files among the working-tree changes
-    if (c.status === S.UNTRACKED) { if (!had) out.set(c.path, { path: c.path, status: 'U' }); continue; }
+    if (c.status === S.UNTRACKED) { untrackedRow(out, c.path); continue; }
     if (!had) out.set(c.path, { path: c.path, ...(c.status === S.INTENT_TO_RENAME && c.oldPath ? { oldPath: c.oldPath, status: 'R' as const } : { status: 'M' as const }) });
   }
-  for (const c of untracked) if (!out.has(c.path)) out.set(c.path, { path: c.path, status: 'U' });
+  for (const c of untracked) untrackedRow(out, c.path);
   return [...out.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
+/** An untracked file: new vs HEAD, unless the index deletes it (`git rm --cached`): it is still on disk,
+ *  so vs HEAD it is the tracked file, perhaps edited. */
+function untrackedRow(out: Map<string, WorkFile>, path: string) {
+  const had = out.get(path);
+  if (!had) out.set(path, { path, status: 'U' });
+  else if (had.status === 'D') out.set(path, { path, status: 'M' });
 }
 
 export const CARD_ROWS = 200;

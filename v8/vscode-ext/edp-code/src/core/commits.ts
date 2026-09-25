@@ -1,11 +1,11 @@
 // Commit history for change cards (design-10b21760d9 §4.2; strategyll-86c5b5068f §3). Pure: the host
-// runs git (execFile, no shell) with LOG_ARGS and hands the raw bytes here. Trailers are parsed by git
+// runs git (execFile, no shell) with logArgs() and hands the raw bytes here. Trailers are parsed by git
 // (`%(trailers:…)`, interpret-trailers rules: last paragraph only); this file only splits on the
 // \x1e / \x1f / \x1d / \0 separators. Attribution is trailer > subject id > none (dec-16b44ab99c).
 import { TICKET_ID, type CommitCard } from './chatProtocol';
 
 export const LOG_FORMAT =
-  '%x1e%H%x1f%P%x1f%at%x1f%s%x1f%(trailers:key=EDP-Ticket,valueonly,separator=%x1d)%x1f%(trailers:key=EDP-Seat,valueonly,separator=%x1d)%x1f';
+  '%x1e%H%x1f%P%x1f%ct%x1f%s%x1f%(trailers:key=EDP-Ticket,valueonly,separator=%x1d)%x1f%(trailers:key=EDP-Seat,valueonly,separator=%x1d)%x1f';
 
 export type CommitWindow = { count: number; days: number };
 export const DEFAULT_WINDOW: CommitWindow = { count: 500, days: 30 };
@@ -20,7 +20,7 @@ export function commitWindow(raw: unknown): CommitWindow {
 /** `git log` argv: `range` is `<old>..HEAD` for an incremental read, else HEAD over the window. */
 export function logArgs(w: CommitWindow, range?: string): string[] {
   if (range !== undefined && !/^[0-9a-f]{40}(\.\.HEAD)?$/.test(range)) throw new Error('bad log range');
-  return ['-c', 'core.quotepath=false', 'log', '-z', '--no-color', '--raw', '--numstat', '-M', '--diff-merges=first-parent',
+  return ['-c', 'core.quotepath=false', '-c', 'log.showSignature=false', 'log', '-z', '--no-color', '--raw', '--numstat', '-M', '--diff-merges=first-parent', '--root',
     `--format=${LOG_FORMAT}`, '-n', String(w.count), `--since=${w.days}.days`, range ?? 'HEAD', '--'];
 }
 
@@ -105,7 +105,7 @@ export function attribute(c: Pick<Commit, 'subject' | 'trailerTickets' | 'traile
   const fromTrailer = [...new Set(c.trailerTickets.filter(t => TICKET_ID.test(t)))];
   if (fromTrailer.length) return { tickets: fromTrailer, attribution: 'trailer', trailerSeat: c.trailerSeats[0] ?? null };
   const fromSubject = [...new Set(c.subject.match(SUBJECT_ID) ?? [])];
-  if (fromSubject.length) return { tickets: fromSubject, attribution: 'subject', trailerSeat: null };
+  if (fromSubject.length) return { tickets: fromSubject, attribution: 'subject', trailerSeat: c.trailerSeats[0] ?? null };
   return { tickets: [], attribution: 'none', trailerSeat: null };
 }
 
@@ -134,13 +134,13 @@ export function mergeNewer(newer: Indexed[], older: Indexed[], count: number): I
 /** Files listed on a card; the multi-diff still opens every file. */
 export const CARD_FILES = 100;
 
-/** A timeline card. The seat is the EDP-Seat trailer, else (subject attribution) the assignee of the
- *  first named ticket, labelled so; `none` names no seat. */
+/** A timeline card. The seat is the EDP-Seat trailer, else the assignee of the first named ticket,
+ *  labelled so; `none` names no seat. */
 export function cardOf(c: Indexed, assignee: (ticket: string) => string | null | undefined, local = true): CommitCard {
   let seat: string | null = null, seatVia: CommitCard['seatVia'] = null;
-  if (c.attribution === 'trailer' && c.trailerSeat) { seat = c.trailerSeat; seatVia = 'trailer'; }
+  if (c.attribution !== 'none' && c.trailerSeat) { seat = c.trailerSeat; seatVia = 'trailer'; }
   else if (c.attribution !== 'none') {
-    const a = c.tickets.map(t => assignee(t)).find(Boolean);
+    const a = c.tickets.length ? assignee(c.tickets[0]) : null;
     if (a) { seat = a; seatVia = 'assignee'; }
   }
   return {

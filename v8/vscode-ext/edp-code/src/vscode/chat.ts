@@ -236,7 +236,8 @@ export class ChatController implements vscode.Disposable, TagTarget {
       const store = new ThreadStore(t.id);
       const [page, , tree] = await Promise.all([b.thread(t.id), this.loadPeople(b),
         // the epic's tickets give story tasks and assignees for change cards; a lone story has only its tasks
-        b.tickets(epic ? { epic_id: epic.id } : { parent_id: t.id }).catch(() => [] as Ticket[]), this.changes.start()]);
+        b.tickets(epic ? { epic_id: epic.id } : { parent_id: t.id }).catch(e => { this.log(`tickets for change cards: ${(e as Error).message}`); return [] as Ticket[]; })]);
+      // change cards never hold a thread open: boot started the git read, and its onReset re-posts the view
       if (n !== this.opening) return;
       store.loadPage(page);
       // only now does the host switch: until the page is in, sends and events still belong to the old thread

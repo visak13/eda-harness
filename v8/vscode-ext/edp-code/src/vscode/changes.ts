@@ -59,7 +59,9 @@ export class Changes implements vscode.Disposable {
   start(): Promise<void> {
     return (this.started ??= (async () => {
       const api = await gitApi();
-      if (!api || this.disposed) return;
+      if (this.disposed) return;
+      // no git (disabled, failed to activate): let a later open() try again
+      if (!api) { this.started = undefined; return; }
       this.api = api;
       this.subs.push(
         api.onDidOpenRepository(() => void this.pickRepo()),
@@ -81,6 +83,7 @@ export class Changes implements vscode.Disposable {
     if (repo === this.repo) return;
     this.repoSubs.forEach(d => d.dispose());
     this.repoSubs = [];
+    clearTimeout(this.headTimer);
     this.repo = repo;
     this.empty = undefined;
     this.log(`changes: repo ${repo ? repo.rootUri.fsPath : 'none'}`);
@@ -124,11 +127,13 @@ export class Changes implements vscode.Disposable {
     const repo = this.repo;
     if (!repo) return;
     const w = commitWindow(vscode.workspace.getConfiguration('edp.chat').get('commitWindow'));
-    const head = repo.state.HEAD?.commit;
-    const out = head ? await run(this.exe, repo.rootUri.fsPath, logArgs(w)) : '';
-    if (repo !== this.repo) return;
+    // the log and the recorded head come from one resolved sha (repo.state can lag the real HEAD)
+    const root = repo.rootUri.fsPath;
+    const head = (await run(this.exe, root, ['rev-parse', '--verify', '-q', 'HEAD']).catch(() => '')).trim();
+    const out = /^[0-9a-f]{40}$/.test(head) ? await run(this.exe, root, logArgs(w, head)) : '';
+    if (repo !== this.repo || this.disposed) return;
     this.set(index(parseLog(out)));
-    this.head = head;
+    this.head = head || undefined;
     this.log(`changes: ${this.all.length} commits in the window (${w.count} / ${w.days} days)`);
     if (notify) this.ev.onReset();
   }
@@ -142,13 +147,16 @@ export class Changes implements vscode.Disposable {
     if (!old) return this.readAll(true);
     const root = repo.rootUri.fsPath;
     const ancestor = await run(this.exe, root, ['merge-base', '--is-ancestor', old, head]).then(() => true, () => false);
+    if (this.disposed) return;
     if (!ancestor) { this.log('changes: history rewritten, rebuilding'); return this.readAll(true); }
     const w = commitWindow(vscode.workspace.getConfiguration('edp.chat').get('commitWindow'));
     const added = index(parseLog(await run(this.exe, root, logArgs(w, `${old}..HEAD`))));
-    if (repo !== this.repo) return;
+    if (repo !== this.repo || this.disposed) return;
+    const known = new Set(this.bySha.keys());
     this.set(mergeNewer(added, this.all, w.count));
     this.head = head;
-    const fresh = added.filter(c => this.bySha.has(c.sha));
+    // only commits new to the index (an overlap re-read is not news), and still inside the window
+    const fresh = added.filter(c => !known.has(c.sha) && this.bySha.has(c.sha));
     if (fresh.length) this.ev.onCommits(fresh);
   }
 
