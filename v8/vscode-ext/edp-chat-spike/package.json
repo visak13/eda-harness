@@ -1,0 +1,46 @@
+{
+  "name": "edp-chat-spike",
+  "displayName": "EDP chat spike (C1, throwaway)",
+  "description": "C1 spike s-a8f1b90d2f: measures secondary-side-bar placement, webview CSP/postMessage in Firefox+Chromium, the board feed stream from the host, and vscode.diff/vscode.changes on git: URIs. Not the chat.",
+  "publisher": "edp",
+  "version": "0.0.3",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": { "vscode": "^1.138.0" },
+  "extensionKind": ["workspace"],
+  "main": "./dist/extension.js",
+  "extensionDependencies": ["vscode.git"],
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "viewsContainers": {
+      "secondarySidebar": [{ "id": "edpChatSpike", "title": "EDP Chat (spike)", "icon": "$(comment-discussion)" }]
+    },
+    "views": {
+      "edpChatSpike": [{ "type": "webview", "id": "edpChatSpike.view", "name": "Thread (spike)" }]
+    },
+    "commands": [
+      { "command": "edpSpike.useInline", "title": "Spike: assets inline", "category": "EDP" },
+      { "command": "edpSpike.inlinePad", "title": "Spike: assets inline, padded", "category": "EDP" },
+      { "command": "edpSpike.useExternal", "title": "Spike: assets via asWebviewUri", "category": "EDP" },
+      { "command": "edpSpike.panelBeside", "title": "Spike: open WebviewPanel beside", "category": "EDP" },
+      { "command": "edpSpike.feedProbe", "title": "Spike: feed probe", "category": "EDP" },
+      { "command": "edpSpike.feedStop", "title": "Spike: stop feed probe", "category": "EDP" },
+      { "command": "edpSpike.diffProbe", "title": "Spike: diff probe (one file)", "category": "EDP" },
+      { "command": "edpSpike.changesProbe", "title": "Spike: changes probe (multi-diff)", "category": "EDP" }
+    ],
+    "configuration": {
+      "title": "EDP chat spike",
+      "properties": {
+        "edpSpike.boardUrl": { "type": "string", "default": "http://127.0.0.1:9400", "scope": "machine" },
+        "edpSpike.ticket": { "type": "string", "default": "s-a8f1b90d2f", "scope": "machine" },
+        "edpSpike.commit": { "type": "string", "default": "5548cde", "scope": "machine" },
+        "edpSpike.logFile": { "type": "string", "default": "", "scope": "machine", "description": "Append probe results here (empty: output channel only)." }
+      }
+    }
+  },
+  "scripts": {
+    "check-types": "../edp-code/node_modules/.bin/tsc --noEmit",
+    "build": "node esbuild.mjs",
+    "package": "node esbuild.mjs && ../edp-code/node_modules/.bin/vsce package --no-dependencies --allow-missing-repository --skip-license -o edp-chat-spike.vsix"
+  }
+}

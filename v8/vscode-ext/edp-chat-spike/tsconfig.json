@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "target": "es2023", "lib": ["es2023", "dom"], "module": "preserve", "moduleResolution": "bundler",
+    "strict": true, "noEmit": true, "skipLibCheck": true, "isolatedModules": true,
+    "typeRoots": ["../edp-code/node_modules/@types"], "types": ["node", "vscode"]
+  },
+  "include": ["src/**/*.ts"]
+}
