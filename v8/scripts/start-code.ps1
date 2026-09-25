@@ -160,6 +160,8 @@ foreach ($pin in $pins) {
   if ($tp -and $tp -ne "universal") { $ver = "$ver@$tp" }
   $allowed[$id] = @($ver)
 }
+# our own extension, installed from the local vsix below (not a pin): any version it is built at
+$allowed["edp.edp-code"] = $true
 $settings["extensions.autoUpdate"] = $false
 $settings["extensions.autoCheckUpdates"] = $true
 $settings["extensions.allowed"] = $allowed
