@@ -40,15 +40,18 @@ A missing `uv` or `node` makes the launcher exit non-zero with a one-line messag
 
 ## Reach from another machine (public mode)
 
-Set `EDP8_PUBLIC_URL` in `.env` (e.g. your Tailscale hostname). Then:
+On this host the switch is scripted: `.\edp.ps1 tailnet check|apply|remove` (runbook:
+`guides/tailnet-public-mode.md` — Tailscale https front, board kept on 127.0.0.1, one-line rollback).
+By hand: set `EDP8_PUBLIC_URL` in `.env` (e.g. your Tailscale hostname). Then:
 
 - the board binds `0.0.0.0` by default (`EDP8_HOST` still overrides), and
 - Slack deep links are built from `EDP8_PUBLIC_URL`, so a tagged person on another machine lands on
   the web app with their identity.
 
 **Public mode fails closed.** The board refuses to start unless `EDP8_ADMIN_TOKEN` is non-default
-**and** `tokens.json` holds a credential for every human and at least one agent (the pool mints agent
-tokens at spawn). A request from another host that carries only `X-Participant` (no valid `X-Token`)
+**and** `tokens.json` holds a credential for every human and at least one agent (the board mints a
+seat's token at spawn — REST `/v1/sessions/spawn`, auto-pairing, and since C8 the MCP `spawn` tool;
+seats spawned by the tool before C8 are header-only and must be respawned). A request from another host that carries only `X-Participant` (no valid `X-Token`)
 is refused with `401`, for agents and humans alike. **TLS terminates at a reverse proxy** (nginx,
 Caddy, a Tailscale HTTPS front, …): the board speaks plain HTTP on its bind address, so put it behind
 the proxy and point `EDP8_PUBLIC_URL` at the proxy's `https://` URL. `tokens.json` (next to `.env`, or
