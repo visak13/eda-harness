@@ -389,7 +389,7 @@ class CodeAnchor(BaseModel):
 
     def at(self) -> str:
         """`path:L10-20 @abc1234[dirty]` (or `@no-git`), the compact anchor agents read."""
-        at = f"@{self.commit[:7]}{'[dirty]' if self.dirty else ''}" if self.commit else "@no-git"
+        at = (f"@{self.commit[:7]}" if self.commit else "@no-git") + ("[dirty]" if self.dirty else "")
         return f"{self.path}:L{self.line_start}-{self.line_end} {at}"
 
     def anchor(self, snippet_cap: int | None = None) -> str:

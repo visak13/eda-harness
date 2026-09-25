@@ -6,15 +6,17 @@ tab links to is a guide file rendered through the same sanitised markdown path d
 """
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Response
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, Request, Response
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from . import run_state
 from .schemas import Participant
@@ -76,6 +78,32 @@ def code_status() -> dict[str, Any]:
 
 def code_router(actor: Callable[..., Participant], render_markdown: Callable[[str], str]) -> APIRouter:
     router = APIRouter()
+
+    @router.get("/v1/code/external/{port}/{target_path:path}")
+    def external(port: int, target_path: str, request: Request):
+        """Browser-only redirect for code-server's external-URI template; never a server proxy.
+
+        The template keeps {{port}} in the path so new URL() can parse it before substitution.
+        Both peer and requested hostname must be local, including when the board is public.
+        No credentials are required or forwarded: an ordinary browser navigation has none.
+        """
+        def local(host: str | None) -> bool:
+            if host == "localhost":
+                return True
+            try:
+                return ipaddress.ip_address(host or "").is_loopback
+            except ValueError:
+                return False
+
+        if not request.client or not local(request.client.host) or not local(request.url.hostname):
+            return JSONResponse(status_code=403, content={"detail": "Code links are available on the board host only"})
+        if not 1 <= port <= 65535:
+            return JSONResponse(status_code=400, content={"detail": "Invalid localhost port"})
+        target = f"http://127.0.0.1:{port}/" + quote(target_path, safe="/:@-._~!$&'()*+,;=")
+        query = request.scope.get("query_string", b"").decode("ascii")
+        if query:
+            target += "?" + query
+        return RedirectResponse(target, status_code=307, headers={"Cache-Control": "no-store"})
 
     @router.get("/v1/code")
     def code(response: Response, _: Participant = Depends(actor)):

@@ -60,6 +60,14 @@ describe("embedUrl", () => {
     expect(u).toBe("http://127.0.0.1:9410/?folder=/c:/Projects/Learning/eda-base3/v8");
   });
 
+  it.each(["//server/share/repo", "relative", "C:/a/../b"])("never opens a fallback file for rejected root %s", folder => {
+    const link = parseCodeLink(`?${new URLSearchParams({ folder, file: "a.py", line: "10" })}`);
+    const url = new URL(embedUrl(BASE, link, "C:/board/v8"));
+    expect(link.invalid).toContain("folder");
+    expect(url.searchParams.has("folder")).toBe(false);
+    expect(url.searchParams.has("payload")).toBe(false);
+  });
+
   it("opens the file at the range's start line through the workbench payload", () => {
     const u = embedUrl(BASE, parseCodeLink("?folder=C:/Projects/v8&file=src/edp8/board.py&line=10-20"), null);
     expect(new URL(u).searchParams.get("folder")).toBe("/c:/Projects/v8");

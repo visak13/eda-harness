@@ -52,6 +52,7 @@ describe("CodeCard (S4)", () => {
     expect(url.searchParams.get("folder")).toBe("C:/Projects/Learning/eda-base3/v8");
     expect(url.searchParams.get("file")).toBe("src/edp8/board.py");
     expect(url.searchParams.get("line")).toBe("10-20"); // S3: a range anchor carries its range
+    expect(screen.getByText("opens your current working copy")).toBeVisible();
   });
 
   it("encodes awkward folder/file names so they survive the round-trip", () => {
@@ -72,10 +73,10 @@ describe("CodeCard (S4)", () => {
     expect((window as { __pwned?: number }).__pwned).toBeUndefined();
   });
 
-  it("shows 'no git' for a non-git folder and a dirty flag only with a commit", () => {
+  it("shows unsaved changes even without a git commit", () => {
     mount(cc({ commit: null, dirty: true }));
     expect(screen.getByTestId("code-sha")).toHaveTextContent("no git");
-    expect(screen.queryByText("dirty")).toBeNull();
+    expect(screen.getByText("dirty")).toBeVisible();
   });
 
   it("renders no card for a message without code_context", () => {

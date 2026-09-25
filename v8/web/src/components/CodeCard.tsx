@@ -25,10 +25,11 @@ export function CodeCard({ c }: { c: CodeContext }): React.JSX.Element {
         {c.commit
           ? <span className={styles.codeSha} data-testid="code-sha" title={c.commit}>{c.commit.slice(0, 7)}</span>
           : <span className={styles.codeSha} data-testid="code-sha">no git</span>}
-        {c.commit && c.dirty ? <span className={styles.codeDirty} title="uncommitted changes when tagged">dirty</span> : null}
+        {c.dirty ? <span className={styles.codeDirty} title="uncommitted changes when tagged">dirty</span> : null}
         <Link to={codeHref(c)} className={styles.codeOpen} data-testid="code-open">
           <Icon name="external" size={16} /> Open in Code
         </Link>
+        <span>opens your current working copy</span>
       </figcaption>
       <pre className={styles.codeSnippet} data-testid="code-snippet"><code>{c.snippet}</code></pre>
     </figure>

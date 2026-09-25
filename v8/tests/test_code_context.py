@@ -87,6 +87,13 @@ def test_commit_null_is_a_non_git_folder(client, story):
     assert got["code_anchor"].startswith("`todo.md:L10-12 @no-git`")
 
 
+def test_dirty_without_commit_survives_agent_summary(client, story):
+    r = send(client, story, anchor(commit=None, dirty=True))
+    assert r.status_code == 200
+    got = client.get(f"/v1/messages/{r.json()['value']['id']}", headers=ENG).json()["value"]
+    assert "@no-git[dirty]" in got["code_anchor"]
+
+
 def test_message_without_code_context_is_unchanged(client, story):
     r = client.post("/v1/messages", headers=OWNER, json={"ticket_id": story, "kind": "note", "text": "plain"})
     got = client.get(f"/v1/messages/{r.json()['value']['id']}", headers=ENG).json()["value"]

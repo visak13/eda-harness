@@ -7,13 +7,45 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from edp8.api_code import code_router
 from edp8.board import Board
 from edp8.service import create_app
 from edp8.store import Store
 
 AUTH = {"X-Participant": "alice", "X-Token": "a"}
+
+
+@pytest.mark.parametrize("port", [9400, 43123])
+def test_external_link_preserves_app_port_path_and_query(port):
+    app = FastAPI()
+    app.include_router(code_router(lambda: None, lambda s: s))
+    with TestClient(app, base_url="http://127.0.0.1:9400", client=("127.0.0.1", 1234)) as client:
+        r = client.get(f"/v1/code/external/{port}/a%20b/c%23d?x=a%26b", follow_redirects=False)
+        assert r.status_code == 307
+        assert r.headers["location"] == f"http://127.0.0.1:{port}/a%20b/c%23d?x=a%26b"
+        assert r.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.parametrize("peer,origin", [("100.64.0.2", "http://127.0.0.1:9400"),
+                                         ("127.0.0.1", "https://board.example.ts.net")])
+def test_external_link_refuses_remote_peers_and_public_hostnames(peer, origin):
+    app = FastAPI()
+    app.include_router(code_router(lambda: None, lambda s: s))
+    with TestClient(app, base_url=origin, client=(peer, 1234)) as client:
+        r = client.get("/v1/code/external/3000/", headers={"X-Forwarded-For": "127.0.0.1"}, follow_redirects=False)
+        assert r.status_code == 403 and "location" not in r.headers
+
+
+@pytest.mark.parametrize("port", ["0", "65536", "-1", "evil.example"])
+def test_external_link_refuses_invalid_ports(port):
+    app = FastAPI()
+    app.include_router(code_router(lambda: None, lambda s: s))
+    with TestClient(app, base_url="http://localhost:9400", client=("127.0.0.1", 1234)) as client:
+        r = client.get(f"/v1/code/external/{port}/", follow_redirects=False)
+        assert r.status_code in (400, 422) and "location" not in r.headers
 
 
 class _Healthz(BaseHTTPRequestHandler):

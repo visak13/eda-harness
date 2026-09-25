@@ -96,5 +96,6 @@ your own risk (owner ruling m-558038e702).
 
 The integrated terminal is Windows PowerShell 5.1 by default (cmd and Git Bash are in the profile
 list). It is a shell on the board host, started without the fleet's `EDP_*`/`EDP8_*` variables, so a
-test run in it cannot touch the fleet's tokens. **EDP: Open external terminal here** opens a normal
+test run does not inherit the fleet's configuration or tokens through those variables. It still runs
+as your OS user and can access files that user can read. **EDP: Open external terminal here** opens a normal
 console window in the folder instead.

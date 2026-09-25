@@ -253,11 +253,9 @@ $pidFile = Join-Path $RUN "code.launch.pid"; $wrap = Join-Path $RUN "code.launch
 Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
 $body = @(
   '$ErrorActionPreference = "Stop"',
-  # openExternal rewrites a loopback URL through this template (default <base>/proxy/{{port}}/, which
-  # --disable-proxy turns into a dead link on :9410). The workbench also parses it with new URL(), so
-  # {{port}} cannot sit in the port slot ("127.0.0.1:{{port}}" broke the connection): point it at the
-  # board, the only loopback origin the extension opens
-  ('$env:VSCODE_PROXY_URI = {0}' -f (& $q "$BOARD/")),
+  # Keep the original app port in a URL-parseable path. The board sends the browser a loopback-only
+  # redirect; it never proxies app traffic. {{port}} in a URL port is invalid before substitution.
+  ('$env:VSCODE_PROXY_URI = {0}' -f (& $q "$BOARD/v1/code/external/{{port}}/")),
   ('$p =Start-Process -FilePath {0} -ArgumentList @({1}) -WorkingDirectory {2} -WindowStyle Hidden -PassThru -RedirectStandardOutput {3} -RedirectStandardError {4}' -f
     (& $q $node), (($flags | ForEach-Object { & $q $_ }) -join ", "), (& $q $v8), (& $q $log), (& $q $err)),
   ('Set-Content -Path {0} -Value $p.Id -Encoding ascii' -f (& $q $pidFile))
