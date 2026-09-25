@@ -2,6 +2,7 @@
 // sink are injected, so tests stub them. The log sink receives `method path -> status (ms)` only:
 // never headers, bodies or the Creds object (design §9, a token in the extension leaks).
 import type { Anchor } from './anchor';
+import type { QuoteIn } from './quotes';
 import type { BoardArtifact } from './attachments';
 import { gatePath, type DecisionsHome, type InboxGate, type verdictBody } from './inbox';
 import type { Reachable } from './people';
@@ -26,7 +27,9 @@ export type Message = { id: string; ticket_id: string; to: string | null; kind: 
  *  `code_context` (C4), always the host's own anchor. */
 export type ChatSend = { ticket_id: string; to: string | null; kind: string; text: string; reply_to: string | null; code_context?: Anchor;
   /** C12: staged upload ids; the board finalises them with the message, all-or-nothing */
-  artifacts?: string[] };
+  artifacts?: string[];
+  /** C20: ordered quotes (C18), each built by the host; the board verifies every one */
+  quotes?: QuoteIn[] };
 /** C12: `POST /v1/artifacts/upload` answers the staged artifact. */
 export type Staged = BoardArtifact & { staged: true; content_type: string };
 /** C12: an artifact's bytes (`GET /v1/artifacts/{id}/content`); `bytes` is null for a size-only probe. */

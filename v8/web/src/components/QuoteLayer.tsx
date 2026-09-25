@@ -8,7 +8,7 @@ import { activeQuoteTarget, MAX_TRAY, quoteTray } from "./quoteTray";
 import styles from "./QuoteLayer.module.css";
 
 // C19 (design-10b21760d9 §14.5/§14.7): select text in a doc (DocView, any type, any version) or in a
-// chat message, and a small popover offers Quote with an optional note (also Ctrl+Shift+Q). Quote
+// chat message, and a small popover offers Quote with an optional note (also Ctrl+Alt+Q). Quote
 // maps the rendered selection back to the markdown source (quoteMatch) and adds a chip to the current
 // thread's composer (quoteTray). One layer for the whole app; a region opts in with quoteRegionRef.
 // A board without quotes (pre-C18) gets no popover at all (steer m-5a2ea5c4e5 §3).
@@ -112,6 +112,18 @@ export async function resolvePick(p: Pick<Picked, "region" | "selected" | "befor
   };
 }
 
+/** Ctrl+Alt+Q opens the quote popover (C20 ruling m-db0d013529: the same chord as the VS Code extension; never
+ *  Ctrl+Shift+Q, which quits Firefox). AltGr sends Ctrl+Alt, so an AltGr layout types a character with this chord:
+ *  it is taken only with a quotable selection and never while focus is in a text field. */
+export function isQuoteKey(e: Pick<KeyboardEvent, "ctrlKey" | "altKey" | "shiftKey" | "metaKey" | "key" | "code">): boolean {
+  return e.ctrlKey && e.altKey && !e.shiftKey && !e.metaKey && (e.code === "KeyQ" || e.key === "q" || e.key === "Q");
+}
+
+/** A text field (the composer, the note box, any input): the quote chord there is typing, not a command. */
+export function isTyping(t: EventTarget | null): boolean {
+  return t instanceof HTMLElement && (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement || t.isContentEditable === true);
+}
+
 export function QuoteLayer(): React.JSX.Element | null {
   const supported = useQuery({ queryKey: ["board", "quotes-supported"], queryFn: getQuotesSupported, retry: false, staleTime: 5 * 60_000 });
   const [pick, setPick] = useState<Picked | null>(null);
@@ -167,10 +179,8 @@ export function QuoteLayer(): React.JSX.Element | null {
     const onKeyUp = (e: KeyboardEvent) => { if (e.shiftKey && !inBox(e.target) && e.key.startsWith("Arrow")) open(false); };
     const onDown = (e: MouseEvent) => { if (!inBox(e.target)) setDone(null); };
     const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && (e.key === "Q" || e.key === "q")) {
-        if (inBox(e.target)) return; // the note field handles its own
-        if (open(true)) e.preventDefault();
-      }
+      if (!isQuoteKey(e) || inBox(e.target) || isTyping(e.target)) return;
+      if (open(true)) e.preventDefault();
     };
     document.addEventListener("mouseup", onUp);
     document.addEventListener("keyup", onKeyUp);
@@ -224,12 +234,12 @@ export function QuoteLayer(): React.JSX.Element | null {
     <div ref={boxRef} className={styles.popover} style={{ left, top }} role="dialog" aria-label="Quote the selection"
       data-testid="quote-popover"
       onKeyDown={(e) => {
-        if (e.key === "Enter" || (e.ctrlKey && e.shiftKey && (e.key === "Q" || e.key === "q"))) { e.preventDefault(); void add(); }
+        if (e.key === "Enter") { e.preventDefault(); void add(); }
       }}>
       <input ref={noteRef} className={styles.note} value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000}
         placeholder="Note on this passage (optional)" aria-label="Note on this passage" data-testid="quote-note" />
       <button type="button" className={styles.quote} onClick={() => void add()} disabled={busy} data-testid="quote-add"
-        title="Quote (Ctrl+Shift+Q)">
+        title="Quote (Enter). Ctrl+Alt+Q opens this on a selection">
         {busy ? "Quoting…" : "Quote"}
       </button>
       {error ? <p className={styles.error} role="alert" data-testid="quote-error">{error}</p> : null}

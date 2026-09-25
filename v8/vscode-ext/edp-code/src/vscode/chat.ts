@@ -31,6 +31,9 @@ import { DocsHost, type DocsScope } from './docsTab';
 import { DocReader } from './reader';
 import { DecisionsHost } from './decisionsTab';
 import type { TagTarget } from './tag';
+import { QuoteHost, type QuoteChat } from './quotes';
+import { messageDraft } from '../core/quotes';
+import type { QuoteChip, QuoteView } from '../core/chatProtocol';
 
 const LAST_PICK = 'edp.chat.lastTicket';
 const LAST_SEEN = 'edp.chat.lastSeen'; // ticket id -> ISO time the thread was last open
@@ -40,7 +43,7 @@ const SOURCE_PAGES_MAX = 20; // C17: older pages read to reach a decision's sour
 type Item = vscode.QuickPickItem & { id?: string };
 const ref = (t: Ticket): TicketRef => ({ id: t.id, kind: t.kind, title: t.title, status: t.status });
 
-export class ChatController implements vscode.Disposable, TagTarget {
+export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
   readonly provider: ChatViewProvider;
   private feed?: FeedClient;
   private feedStatus: FeedStatus = 'connecting';
@@ -74,6 +77,8 @@ export class ChatController implements vscode.Disposable, TagTarget {
   readonly reader: DocReader;
   /** C17: the open scope's decision records, with the owner/architect writes */
   private decisions: DecisionsHost;
+  /** C20: the draft tray (quote + note from code, docs and messages) and its inline comment boxes */
+  readonly quotes: QuoteHost;
   private tree: Ticket[] = [];
   private commits: CommitCard[] = [];
   private unlinked: CommitCard[] = [];
@@ -103,6 +108,9 @@ export class ChatController implements vscode.Disposable, TagTarget {
       { message: (t, id) => this.openMessage(t, id), doc: async id => { const d = await this.board().latestDoc(id); await this.reader.open(id, d.version, null); } },
       e => this.fail(e, 'could not use the Decisions tab'), log);
     setReader(this.reader);
+    this.quotes = new QuoteHost(ctx, this, log);
+    this.reader.setQuotes(this.quotes);
+    this.provider.onVisibility = () => this.quotes.refresh();
     this.changes = new Changes(ctx, {
       onCommits: added => this.onCommits(added),
       onReset: () => this.onCommitsReset(),
@@ -113,7 +121,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
   register(): vscode.Disposable[] {
     return [
       vscode.window.registerWebviewViewProvider(CHAT_VIEW, this.provider, { webviewOptions: { retainContextWhenHidden: false } }),
-      this.provider, this, new DocProvider(this.board).register(), ...this.reader.register(),
+      this.provider, this, new DocProvider(this.board).register(), ...this.reader.register(), ...this.quotes.register(),
     ];
   }
 
@@ -130,8 +138,19 @@ export class ChatController implements vscode.Disposable, TagTarget {
       inbox: this.inbox.snapshot(this.ticket?.id),
       docs: this.docs.snapshot(this.ticket?.id),
       decisions: this.decisions.snapshot(this.ticket?.id),
+      quotes: this.quotes.chips(this.ticket?.id),
     };
   }
+
+  // -- QuoteChat (C20) -------------------------------------------------------------------------------
+  target(): { id: string; title: string } | null {
+    return this.ticket && this.store && this.opening === this.opened ? { id: this.ticket.id, title: this.ticket.title } : null;
+  }
+  get chatVisible(): boolean { return this.provider.isVisible; }
+  onChips(ticketId: string, quotes: QuoteChip[], focus: boolean, text?: string): void {
+    this.post({ type: 'quotes', v: 1, ticketId, quotes, focus, ...(text ? { text } : {}) });
+  }
+  onMarks(): void { this.reader.pushMarks(); }
 
   handles(): ReadonlySet<string> {
     // C22: a reply goes to its parent's author, who may not be in the people list (a closed seat): anyone who wrote
@@ -147,7 +166,12 @@ export class ChatController implements vscode.Disposable, TagTarget {
     switch (m.type) {
       case 'pickTicket': if (m.id) return this.open(m.id); await this.pick(); return;
       case 'loadOlder': return this.loadOlder();
-      case 'send': return this.send(m.ticketId, m.text, m.kind, m.to ?? null, m.replyTo ?? null, m.chipId, m.attachmentIds ?? []);
+      case 'send': return this.send(m.ticketId, m.text, m.kind, m.to ?? null, m.replyTo ?? null, m.chipId, m.attachmentIds ?? [], m.quoteKeys ?? []);
+      case 'quoteMessage': return this.quoteMessage(m.ticketId, m.messageId, m.text, m.before, m.note);
+      case 'quoteNote': return this.quotes.note(m.ticketId, m.key, m.note);
+      case 'quoteMove': return this.quotes.move(m.ticketId, m.key, m.by);
+      case 'quoteDrop': return this.quotes.drop(m.ticketId, m.key);
+      case 'openQuote': return this.openQuote(m.messageId, m.index);
       case 'attach': return this.upload(m.ticketId, m.name, m.bytes);
       case 'dropAttachment': {
         this.post({ type: 'pending', v: 1, ticketId: m.ticketId, pending: this.attach.drop(m.ticketId, m.id) });
@@ -509,7 +533,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
     } catch (e) { if (store === this.store) answer([]); this.fail(e, 'could not load older messages'); }
   }
 
-  private async send(ticketId: string, text: string, kind: string, to: string | null, replyTo: string | null, chipId?: string, attachmentIds: string[] = []): Promise<void> {
+  private async send(ticketId: string, text: string, kind: string, to: string | null, replyTo: string | null, chipId?: string, attachmentIds: string[] = [], quoteKeys: string[] = []): Promise<void> {
     const store = this.store;
     // the view names the thread it shows; a send for any other thread is refused, never re-targeted
     if (!store || store.ticketId !== ticketId) {
@@ -533,13 +557,21 @@ export class ChatController implements vscode.Disposable, TagTarget {
       return;
     }
     const files = staged.ok;
+    // C20: only drafts this host built for this thread, in the order the composer shows them
+    const q = this.quotes.forSend(ticketId, quoteKeys);
+    if ('error' in q) {
+      this.post({ type: 'sendFailed', v: 1, ticketId, text: q.error });
+      this.onChips(ticketId, this.quotes.chips(ticketId), false);
+      return;
+    }
     const body = files.length ? attachText(text, files.map(f => f.name)) : text; // an attachments-only send names its files
     try {
       const m = await this.board().send({ ticket_id: store.ticketId, to, kind, reply_to: replyTo,
-        ...(files.length ? { artifacts: files.map(f => f.id) } : {}),
+        ...(files.length ? { artifacts: files.map(f => f.id) } : {}), ...(q.quotes.length ? { quotes: q.quotes } : {}),
         ...(chip ? { text: render(chip.anchor, body, chip.truncated), code_context: chip.anchor } : { text: body }) });
       if (files.length) this.post({ type: 'pending', v: 1, ticketId, pending: this.attach.sent(ticketId, files.map(f => f.id)) });
       if (chip && this.chips.get(ticketId)?.id === chip.id) this.chips.delete(ticketId);
+      if (q.keys.length) this.quotes.sent(ticketId, q.keys);
       const refs: AttachmentRef[] = files.map(f => ({ id: f.id, name: f.name, contentType: f.contentType, image: INLINE_IMAGES.has(f.contentType) }));
       const fresh = store.merge([fromMessageRow(m, 0, refs)]);
       if (this.addAnchors(fresh, store.ticketId)) this.refreshUncommitted();
@@ -549,8 +581,40 @@ export class ChatController implements vscode.Disposable, TagTarget {
       const un = m.unresolved_mentions ?? [];
       if (un.length) void vscode.window.showWarningMessage(`EDP: sent, but nobody is registered as ${un.map(h => '@' + h).join(', ')}`);
     } catch (e) {
-      // the draft stays in the composer
+      // the draft stays in the composer; a refused quote is marked on its chip
+      if (q.keys.length) this.quotes.refused(ticketId, q.keys, (e as Error).message);
       this.post({ type: 'sendFailed', v: 1, ticketId, text: `Not sent: ${(e as Error).message}` });
+    }
+  }
+
+  // -- quotes (C20 s-29f052c40e) -------------------------------------------------------------------
+  /** A selection of a message in the open thread: mapped to the message's own source, which the host holds. */
+  private async quoteMessage(ticketId: string, messageId: string, text: string, before: string, note: string): Promise<void> {
+    const m = this.store?.ticketId === ticketId ? this.store.get(messageId) : undefined;
+    const say = (why: string) => this.onChips(ticketId, this.quotes.chips(ticketId), false, `Not quoted: ${why}`);
+    if (!m) return say('that message is not in the open thread.');
+    const d = messageDraft({ id: m.id, text: m.text, created_by: m.created_by }, text, before, note);
+    if ('error' in d) return say(d.error);
+    await this.quotes.add(d);
+  }
+
+  /** A quote card's source link: the doc at that version and lines in the reader, the code at the lines, or the
+   *  quoted message in its thread. Only quotes of a message in the open thread are followed. */
+  private async openQuote(messageId: string, index: number): Promise<void> {
+    const q: QuoteView | undefined = this.store?.get(messageId)?.quotes?.[index];
+    if (!q) return;
+    if (q.source === 'doc' && q.id && q.version) {
+      const lo = q.locator;
+      await this.reader.open(q.id, q.version, null, lo?.line_start ? { from: lo.line_start, to: lo.line_end ?? lo.line_start } : undefined);
+      return;
+    }
+    if (q.source === 'code' && q.code) return this.openCodeAt(q.code);
+    if (q.source === 'message' && q.id) {
+      if (this.store?.has(q.id) && this.ticket) { this.post({ type: 'focusMessage', v: 1, ticketId: this.ticket.id, id: q.id }); return; }
+      try {
+        const src = await this.board().message(q.id);
+        await this.openMessage(src.ticket_id, q.id);
+      } catch (e) { this.fail(e, `could not open ${q.id}`); }
     }
   }
 
@@ -585,7 +649,10 @@ export class ChatController implements vscode.Disposable, TagTarget {
 
   private async openCode(messageId: string): Promise<void> {
     const cc = this.store?.get(messageId)?.code_context;
-    if (!cc) return;
+    if (cc) await this.openCodeAt(cc);
+  }
+
+  private async openCodeAt(cc: CodeContext): Promise<void> {
     const api = await gitApi();
     const roots = api?.repositories.map(r => r.rootUri.fsPath) ?? []; // repo-relative paths resolve against git roots only
     const exists = new Map<string, boolean>();
@@ -678,6 +745,7 @@ export class ChatController implements vscode.Disposable, TagTarget {
   /** The newest open() settled: a chip tagged meanwhile lands on the thread now open. */
   private settleOpen(n: number): void {
     this.opened = n;
+    this.quotes.refresh(); // the status-bar draft count follows the open thread
     const chip = this.pendingChip;
     this.pendingChip = undefined;
     if (chip && this.store) this.placeChip(this.store.ticketId, chip);

@@ -8,6 +8,9 @@ export const READER_VIEW = 'edp.docReader';
 export const FEEDBACK_MAX = 16_384;
 /** a C20 quote is at most this much selected text; longer selections are cut (the line range stays exact) */
 export const SELECTION_MAX = 4096;
+/** C20: an Add to chat posts at most this much selected (and preceding) text; the host caps the passage at 4096 B */
+export const QUOTE_TEXT_MAX = 65_536;
+export const NOTE_MAX = 2000;
 
 export type ReaderComment = { id: string; by: string; at: string | null; kind: string; text: string; via: string; version: number | null };
 export type ReaderDoc = {
@@ -39,10 +42,21 @@ export type ReaderState = {
   error: string | null;
 };
 
+/** C20: a draft quote of this doc version, marked inline until it is sent or removed */
+export type ReaderMark = { key: string; from: number; to: number; note: string; label: string };
+
 export type HostToReader =
   | ReaderState
   /** a write settled: `text` is the outcome or the board's refusal, verbatim */
-  | { type: 'done'; v: 1; what: ReaderWrite; ok: boolean; text: string };
+  | { type: 'done'; v: 1; what: ReaderWrite; ok: boolean; text: string }
+  /** C20: this version's draft quotes (the whole list); `thread`: the chat thread a new quote goes to (null: none open) */
+  | { type: 'marks'; v: 1; marks: ReaderMark[]; thread: string | null }
+  /** C20: Ctrl+Alt+Q / the context menu: open the quote box on the current selection */
+  | { type: 'startQuote'; v: 1 }
+  /** C20: a quote card's link: scroll to these source lines and mark them */
+  | { type: 'reveal'; v: 1; from: number; to: number }
+  /** C20: an Add to chat settled */
+  | { type: 'quoted'; v: 1; ok: boolean; text: string };
 
 export type ReaderWrite = 'approve' | 'requestChanges' | 'resolveApprove' | 'resolveReject';
 
@@ -60,7 +74,10 @@ export type ReaderToHost =
   /** http(s) links in the doc open outside the editor */
   | { v: 1; type: 'openLink'; href: string }
   /** C20's hook: the reader's selection as a 1-based inclusive source line range of the markdown (from = 0: none) */
-  | { v: 1; type: 'selection'; from: number; to: number; text: string };
+  | { v: 1; type: 'selection'; from: number; to: number; text: string }
+  /** C20: Add to chat: the selection (rendered text, the source lines of the blocks it touches, the rendered text of
+   *  those blocks before it) and the note */
+  | { v: 1; type: 'addQuote'; from: number; to: number; text: string; before: string; note: string };
 
 const LINE_MAX = 10_000_000;
 const int = (x: unknown, min: number) => (typeof x === 'number' && Number.isSafeInteger(x) && x >= min && x <= LINE_MAX ? x : null);
@@ -95,6 +112,12 @@ export function parseReaderInbound(raw: unknown): ReaderToHost | null {
       if (from === 0) return { v: 1, type: 'selection', from: 0, to: 0, text: '' };
       if (to < from) return null;
       return { v: 1, type: 'selection', from, to, text: text.slice(0, SELECTION_MAX) };
+    }
+    case 'addQuote': {
+      const from = int(r.from, 1), to = int(r.to, 1), text = r.text, before = r.before ?? '', note = r.note ?? '';
+      if (from === null || to === null || to < from || typeof text !== 'string' || !text.trim() || text.length > QUOTE_TEXT_MAX) return null;
+      if (typeof before !== 'string' || before.length > QUOTE_TEXT_MAX || typeof note !== 'string' || note.length > NOTE_MAX) return null;
+      return { v: 1, type: 'addQuote', from, to, text, before, note };
     }
   }
   return null;

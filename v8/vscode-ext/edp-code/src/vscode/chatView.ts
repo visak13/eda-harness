@@ -25,6 +25,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   private bundle?: Promise<{ js: string; css: string }>;
   private resolved = false;
   private unseen = 0;
+  /** C20: the view was shown, hidden or disposed (the draft status-bar item follows it) */
+  onVisibility?: () => void;
 
   constructor(private ctx: vscode.ExtensionContext, private host: ChatHost, private log: (line: string) => void) {}
 
@@ -47,10 +49,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     d.push(view.webview.onDidReceiveMessage(raw => this.onMessage(raw)));
     // hidden = the webview document is gone (retainContextWhenHidden is false): queue until the reloaded one
     // says `ready`, or a post made in between (a tag's insertCode + focus) is lost (C4 review #3)
-    d.push(view.onDidChangeVisibility(() => { if (view.visible) { this.unseen = 0; view.badge = undefined; } else this.ready = false; }));
+    d.push(view.onDidChangeVisibility(() => { if (view.visible) { this.unseen = 0; view.badge = undefined; } else this.ready = false; this.onVisibility?.(); }));
     view.onDidDispose(() => {
       d.forEach(x => x.dispose());
       if (this.view === view) { this.view = undefined; this.ready = false; }
+      this.onVisibility?.();
     });
     try {
       const { js, css } = await this.loadBundle();
@@ -60,6 +63,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       view.webview.html = '<!DOCTYPE html><html><body><p>EDP chat: the webview bundle is missing; rebuild the extension.</p></body></html>';
     }
     if (!this.resolved) { this.resolved = true; this.host.onFirstResolve(); }
+    this.onVisibility?.();
   }
 
   /** Post to the live view, or queue until it says `ready`. A full `state` supersedes the queue. */

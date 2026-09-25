@@ -3,8 +3,8 @@
 // Full screen, the design review (Approve / Request changes, only when the board says can_approve), a proposed
 // strategy doc's Approve / Reject with its diff against the active doc, and the version's comments. Enter is a
 // newline and Ctrl+Enter sends in the feedback box (C14). The selection is posted as a source line range for C20.
-import type { HostToReader, ReaderComment, ReaderState, ReaderToHost, ReaderWrite } from '../src/core/reader';
-import { approveReason, FEEDBACK_MAX, SIGNOFF_TIP } from '../src/core/reader'; // value imports: core/reader has no vscode or node import
+import type { HostToReader, ReaderComment, ReaderMark, ReaderState, ReaderToHost, ReaderWrite } from '../src/core/reader';
+import { approveReason, FEEDBACK_MAX, NOTE_MAX, SIGNOFF_TIP } from '../src/core/reader'; // value imports: core/reader has no vscode or node import
 import { isSendKey, sendChord } from '../src/core/composerKeys';
 import { diffLines, lineRange, renderDoc } from './readerRender';
 
@@ -41,6 +41,8 @@ let state: ReaderState | null = null;
 let busy: ReaderWrite | null = null;
 let outcome: { ok: boolean; text: string } | null = null;
 let renderedBody: string | null = null;
+/** C20: this version's draft quotes, marked on their blocks until sent or removed */
+let marks: ReaderMark[] = [];
 
 const app = document.getElementById('app')!;
 const bar = el('header', 'rd-bar');
@@ -140,7 +142,123 @@ function renderDocBody(): void {
   }
   nav.replaceChildren(...(outline.length ? [el('div', 'rd-toc-title', 'Outline'), list] : []));
   layoutOutline();
+  paintMarks();
 }
+
+// -- C20: quote + note from the reader --------------------------------------------------------------------------
+/** The innermost blocks whose source lines overlap from..to (a paragraph in a list item, not the whole list). */
+function blocksIn(from: number, to: number): HTMLElement[] {
+  const all = [...article.querySelectorAll<HTMLElement>('[data-ls]')].filter(b => Number(b.dataset.ls) <= to && Number(b.dataset.le) >= from);
+  return all.filter(b => !all.some(o => o !== b && b.contains(o)));
+}
+
+/** Draft quotes of this version: their blocks carry a marker (a CSS class and a tooltip, never text, so a selection
+ *  and its line mapping are unchanged). */
+function paintMarks(): void {
+  for (const b of article.querySelectorAll<HTMLElement>('.rd-drafted')) { b.classList.remove('rd-drafted'); b.removeAttribute('title'); }
+  for (const m of marks) {
+    for (const b of blocksIn(m.from, m.to)) {
+      b.classList.add('rd-drafted');
+      b.title = `Draft for chat: ${m.label}${m.note ? ` · ${m.note}` : ''} (remove it from the chat composer)`;
+    }
+  }
+  article.dataset.marks = String(marks.length);
+}
+
+/** A quote card's link: scroll to the quoted lines and mark them. */
+function reveal(from: number, to: number): void {
+  for (const b of article.querySelectorAll('.rd-revealed')) b.classList.remove('rd-revealed');
+  const bs = blocksIn(from, to);
+  bs.forEach(b => b.classList.add('rd-revealed'));
+  bs[0]?.scrollIntoView({ block: 'center' });
+  article.dataset.revealed = `${from}-${to}`;
+}
+
+const isQuoteKey = (e: KeyboardEvent) => e.ctrlKey && e.altKey && !e.shiftKey && !e.metaKey && (e.key === 'q' || e.key === 'Q' || e.code === 'KeyQ');
+
+type Picked = { from: number; to: number; text: string; before: string; rect: DOMRect };
+/** The selection inside the doc: the source lines of the blocks it touches, its text, and the text of those blocks
+ *  before it (to tell a repeated passage apart). */
+function picked(): Picked | null {
+  const s = document.getSelection();
+  if (!s || !s.rangeCount || s.isCollapsed) return null;
+  const r = s.getRangeAt(0);
+  const lr = lineRange(r.startContainer, r.endContainer, article);
+  const text = s.toString();
+  if (!lr || !text.trim()) return null;
+  const first = blocksIn(lr.from, lr.from)[0];
+  let before = '';
+  if (first) { const pre = document.createRange(); pre.setStart(first, 0); pre.setEnd(r.startContainer, r.startOffset); before = pre.toString(); }
+  return { ...lr, text, before, rect: r.getBoundingClientRect() };
+}
+
+const qBtn = btn('rd-quote-sel', '❝ Quote in chat', 'Quote this passage in the chat composer, with a note (Ctrl+Alt+Q)', () => openQuote(), 'rd-quote-sel');
+qBtn.hidden = true;
+qBtn.addEventListener('mousedown', e => e.preventDefault()); // keep the selection
+const qPop = el('div', 'rd-quote-pop');
+qPop.id = 'rd-quote-pop';
+qPop.hidden = true;
+qPop.setAttribute('role', 'dialog');
+qPop.setAttribute('aria-label', 'Quote in chat with a note');
+const qText = el('div', 'rd-quote-text');
+const qNote = el('textarea', 'rd-quote-note');
+qNote.id = 'rd-quote-note';
+qNote.rows = 3;
+qNote.maxLength = NOTE_MAX;
+qNote.setAttribute('aria-label', 'Note on the quoted passage');
+const qAdd = btn('rd-quote-add', 'Add to chat', 'Add the passage and note to the chat composer', () => addQuote(), 'rd-btn rd-primary');
+const qCancel = btn('rd-quote-cancel', 'Cancel', 'Cancel (Escape)', () => closeQuote());
+const qActs = el('div', 'rd-actions');
+qActs.append(qAdd, qCancel);
+qPop.append(qText, qNote, qActs);
+document.body.append(qBtn, qPop);
+let qSel: Picked | null = null;
+
+function trackSelection(): void {
+  if (!qPop.hidden) return;
+  const p = picked();
+  qBtn.hidden = !p;
+  if (!p) return;
+  qBtn.style.top = `${Math.max(0, Math.min(window.innerHeight - 30, p.rect.bottom + 4))}px`;
+  qBtn.style.left = `${Math.max(0, Math.min(window.innerWidth - 160, p.rect.left))}px`;
+}
+
+/** Open the note box on the selection (captured now: focusing the box clears it). */
+function openQuote(): void {
+  const p = picked();
+  if (!p) { outcome = { ok: false, text: 'Select a passage of the doc to quote it.' }; renderStatus(); return; }
+  qSel = p;
+  qBtn.hidden = true;
+  qText.textContent = `“${p.text.replace(/\s+/g, ' ').trim().slice(0, 200)}” · lines ${p.from}-${p.to}`;
+  qNote.value = '';
+  qNote.placeholder = `Note on this passage (optional) · ${chord()} adds`;
+  qPop.style.top = `${Math.max(0, Math.min(window.innerHeight - 170, p.rect.bottom + 6))}px`;
+  qPop.hidden = false;
+  qNote.focus();
+}
+
+function addQuote(): void {
+  if (!qSel) return closeQuote();
+  post({ type: 'addQuote', from: qSel.from, to: qSel.to, text: qSel.text, before: qSel.before, note: qNote.value });
+  closeQuote();
+}
+
+function closeQuote(): void { qPop.hidden = true; qSel = null; qBtn.hidden = true; }
+
+qNote.addEventListener('keydown', e => {
+  if (e.isComposing || e.keyCode === 229) return;
+  if (isSendKey(e)) { e.preventDefault(); addQuote(); }
+  else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeQuote(); }
+});
+// Ctrl+Alt+Q: only with a selection in the doc and never while typing (an AltGr layout types @ with it)
+document.addEventListener('keydown', e => {
+  if (!isQuoteKey(e)) return;
+  const a = document.activeElement;
+  if (a instanceof HTMLTextAreaElement || a instanceof HTMLInputElement || a instanceof HTMLSelectElement) return;
+  if (!picked()) return;
+  e.preventDefault();
+  openQuote();
+});
 
 function reviewBox(): HTMLElement | null {
   const s = state, d = s?.doc, g = s?.gate;
@@ -306,6 +424,7 @@ document.addEventListener('selectionchange', () => {
     article.dataset.selTo = String(msg.to);
     post({ type: 'selection', ...msg });
   }, 150);
+  setTimeout(trackSelection, 120);
 });
 
 window.addEventListener('message', (ev: MessageEvent) => {
@@ -319,6 +438,10 @@ window.addEventListener('message', (ev: MessageEvent) => {
     document.body.dataset.loaded = m.loading ? 'no' : 'yes';
     return;
   }
+  if (m.type === 'marks') { marks = m.marks; paintMarks(); return; }
+  if (m.type === 'startQuote') { openQuote(); return; }
+  if (m.type === 'reveal') { reveal(m.from, m.to); return; }
+  if (m.type === 'quoted') { outcome = { ok: m.ok, text: m.text }; renderStatus(); return; }
   if (m.type === 'done') {
     busy = null;
     outcome = { ok: m.ok, text: m.text };

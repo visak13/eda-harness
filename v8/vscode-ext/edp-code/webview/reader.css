@@ -89,3 +89,23 @@ body.vscode-high-contrast .rd-review, body.vscode-high-contrast .rd-proposal, bo
 .rd-signoff-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rd-link { border: none; padding: 0; color: var(--vscode-textLink-foreground); text-decoration: underline; }
 .rd-link:hover { background: none; color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground)); }
+
+/* -- C20: quote + note from the reader, draft markers, a quote card's reveal --------------------------------- */
+.rd-drafted { box-shadow: inset 3px 0 0 var(--vscode-editorGutter-commentRangeForeground, var(--vscode-focusBorder)); padding-left: 6px; }
+.rd-revealed { background: var(--vscode-editor-findMatchHighlightBackground, transparent); outline: 1px solid var(--vscode-focusBorder); }
+.rd-quote-sel {
+  position: fixed; z-index: 20; padding: 1px 8px;
+  color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 1px solid var(--vscode-contrastBorder, transparent);
+}
+.rd-quote-sel:hover { background: var(--vscode-button-hoverBackground); }
+.rd-quote-sel[hidden], .rd-quote-pop[hidden] { display: none; }
+.rd-quote-pop {
+  position: fixed; z-index: 21; left: 12px; right: 12px; max-width: 640px; padding: 8px; display: flex; flex-direction: column; gap: 6px;
+  color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); background: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-focusBorder)); box-shadow: 0 2px 8px var(--vscode-widget-shadow, transparent);
+}
+.rd-quote-text { color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; max-height: 4.5em; overflow: hidden; }
+.rd-quote-note {
+  resize: vertical; font: inherit; padding: 4px;
+  color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent);
+}

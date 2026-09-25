@@ -13,6 +13,8 @@ import { DOC_ID, parseDocPath } from '../core/docUri';
 import { compareChoices, decideBody, decideProblem, diffPair, parseReaderInbound, readerComments, READER_VIEW,
   type HostToReader, type ReaderDoc, type ReaderGate, type ReaderState, type ReaderToHost, type ReaderWrite } from '../core/reader';
 import { docUri } from './docs';
+import { docReaderDraft } from '../core/quotes';
+import type { QuoteHost } from './quotes';
 
 const CTX_APPROVE = 'edp.doc.canApprove';
 const CTX_RESOLVE = 'edp.doc.canResolve';
@@ -24,6 +26,8 @@ class ReaderPanel {
   ready = false;
   /** C20: the reader's last selection as source lines of this version (from 0: none) */
   selection: { from: number; to: number; text: string } = { from: 0, to: 0, text: '' };
+  /** C20: lines to scroll to once the doc is shown (a quote card's link) */
+  reveal: { from: number; to: number } | null = null;
   private gen = 0;
   constructor(readonly id: string, readonly version: number, readonly panel: vscode.WebviewPanel, public source: string | null) {}
   next(): number { return ++this.gen; }
@@ -38,6 +42,10 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
   /** the ticket a doc was opened from (the design review's source), by doc id; set by the opener */
   private sources = new Map<string, string>();
   private role: Promise<string | null> | null = null;
+  /** C20: the draft tray (set by the chat controller) */
+  private quotes: QuoteHost | null = null;
+  /** C20: a reveal asked for a doc version whose panel is not open yet, by `id@version` */
+  private reveals = new Map<string, { from: number; to: number }>();
 
   constructor(private ctx: vscode.ExtensionContext, private board: () => Board, private log: (line: string) => void,
     private onAuthFail: (e: unknown) => void = () => {}) {}
@@ -56,12 +64,31 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
       cmd('edp.doc.source', p => this.source(p)),
       cmd('edp.doc.fullScreen', () => this.fullScreen()),
       cmd('edp.doc.refresh', p => this.load(p)),
+      vscode.commands.registerCommand('edp.quote.reader', () => this.startQuote()),
       this,
     ];
   }
 
-  /** Open a doc version in the reader; `source` is the ticket it was opened from (a design review's source). */
-  async open(id: string, version: number, source?: string | null): Promise<void> {
+  setQuotes(q: QuoteHost): void { this.quotes = q; }
+
+  /** C20: every open reader's draft markers (the tray changed, or the chat opened another thread). */
+  pushMarks(): void { for (const p of this.panels) this.postMarks(p); }
+
+  private postMarks(p: ReaderPanel): void {
+    p.post({ type: 'marks', v: 1, marks: this.quotes?.docMarks(p.id, p.version) ?? [], thread: null });
+  }
+
+  /** C20: Ctrl+Alt+Q or the reader's context menu: open the quote box on the active reader's selection. */
+  startQuote(): void { this.active?.post({ type: 'startQuote', v: 1 }); }
+
+  /** Open a doc version in the reader; `source` is the ticket it was opened from (a design review's source);
+   *  `reveal`: source lines to scroll to and mark (a C20 quote card's link). */
+  async open(id: string, version: number, source?: string | null, reveal?: { from: number; to: number }): Promise<void> {
+    if (reveal) {
+      const on = [...this.panels].filter(p => p.id === id && p.version === version);
+      if (on.length) for (const p of on) { p.reveal = reveal; this.postReveal(p); }
+      else this.reveals.set(`${id}@${version}`, reveal);
+    }
     if (source) {
       this.sources.set(id, source);
       // an open reader on this doc was opened from another ticket: review from the new one (its gate, its actions)
@@ -106,6 +133,8 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
       return;
     }
     const p = new ReaderPanel(at.id, at.version, panel, this.sources.get(at.id) ?? null);
+    p.reveal = this.reveals.get(`${at.id}@${at.version}`) ?? null;
+    this.reveals.delete(`${at.id}@${at.version}`);
     this.panels.add(p);
     panel.title = `${at.id} v${at.version}`;
     const d: vscode.Disposable[] = [];
@@ -153,7 +182,7 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
 
   private async intent(p: ReaderPanel, m: ReaderToHost): Promise<void> {
     switch (m.type) {
-      case 'ready': p.ready = true; p.post(p.state); return;
+      case 'ready': p.ready = true; p.post(p.state); this.postMarks(p); this.postReveal(p); return;
       case 'refresh': return this.load(p);
       case 'pickVersion': if (m.version !== p.version && p.state.doc?.versions.includes(m.version)) await this.open(p.id, m.version, p.source); return;
       case 'compare': return this.compare(p);
@@ -165,7 +194,24 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
       case 'openProposalDiff': return this.openProposalDiff(p);
       case 'openLink': await vscode.env.openExternal(vscode.Uri.parse(m.href)); return;
       case 'selection': p.selection = { from: m.from, to: m.to, text: m.text }; return;
+      case 'addQuote': return this.addQuote(p, m.from, m.to, m.text, m.before, m.note);
     }
+  }
+
+  /** C20: Add to chat from the reader: the selection is mapped to this version's own markdown, which the host read. */
+  private async addQuote(p: ReaderPanel, from: number, to: number, text: string, before: string, note: string): Promise<void> {
+    const doc = p.state.doc;
+    const say = (ok: boolean, t: string) => p.post({ type: 'quoted', v: 1, ok, text: t });
+    if (!doc || doc.version !== p.version || !this.quotes) return say(false, 'Not added: the doc is still loading.');
+    const d = docReaderDraft({ id: p.id, version: p.version, body: doc.body, from, to, selected: text, before, note });
+    if ('error' in d) return say(false, `Not added: ${d.error}`);
+    const went = await this.quotes.add(d);
+    say(!!went, went ? `Added ${d.label} to the chat draft (${went}). Ctrl+Enter in the chat sends it.` : 'Not added: no chat thread is open.');
+  }
+
+  /** C20: scroll to the pending reveal once the doc is in (a load posts the doc first). */
+  private postReveal(p: ReaderPanel): void {
+    if (p.reveal && p.ready && p.state.doc) { p.post({ type: 'reveal', v: 1, ...p.reveal }); p.reveal = null; }
   }
 
   private viewerRole(): Promise<string | null> {
@@ -198,6 +244,7 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
     ]);
     if (!p.current(n)) return;
     this.set(p, { doc, gate: ctx.gate, gateError: ctx.error, diff, comments, canResolve: canResolve(doc, role) && p.version === doc.current, loading: false, error: null });
+    this.postReveal(p);
   }
 
   /** The design review this viewer may do on this version, from the ticket the doc was opened from; a design opened

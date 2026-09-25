@@ -356,3 +356,62 @@ body.vscode-high-contrast .de-row { border: 1px solid var(--vscode-contrastBorde
 .reply-cancel { padding: 0 6px; color: var(--vscode-icon-foreground, var(--vscode-foreground)); }
 .reply-cancel:hover { background: var(--vscode-toolbar-hoverBackground); }
 body.vscode-high-contrast .reply-bar { border: 1px solid var(--vscode-contrastBorder); }
+
+/* -- C20 quotes: cards above a message's text, chips in the composer, Quote + note on a selection ----------- */
+.quote-cards { display: flex; flex-direction: column; gap: 4px; margin: 4px 0; }
+.quote-card {
+  margin: 0; padding: 4px 6px; border-left: 3px solid var(--vscode-textBlockQuote-border, var(--vscode-focusBorder));
+  background: var(--vscode-textBlockQuote-background, var(--vscode-textCodeBlock-background));
+}
+.qc-passage { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 12em; overflow-y: auto; }
+.qc-code {
+  margin: 0; white-space: pre; overflow-x: auto; max-height: 14em;
+  font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size);
+}
+.qc-foot { margin-top: 2px; }
+.qc-source {
+  padding: 0; background: none; border: none; cursor: pointer; text-align: left;
+  color: var(--vscode-textLink-foreground); font-family: var(--vscode-editor-font-family); font-size: 0.9em; overflow-wrap: anywhere;
+}
+.qc-source:hover { text-decoration: underline; }
+.qc-note { margin: 2px 0 0; overflow-wrap: anywhere; }
+.qc-note-label { color: var(--vscode-descriptionForeground); font-size: 0.85em; text-transform: uppercase; }
+.quote-chips { list-style: none; margin: 4px 4px 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 40vh; overflow-y: auto; }
+.quote-chips[hidden] { display: none; }
+.qchip {
+  padding: 2px 4px 4px 6px; background: var(--vscode-textCodeBlock-background);
+  border: 1px solid var(--vscode-focusBorder); border-left-width: 3px; border-radius: 2px;
+}
+.qchip.invalid { border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground)); }
+.qchip-head { display: flex; align-items: center; gap: 4px; }
+.qchip-src { color: var(--vscode-descriptionForeground); font-size: 0.8em; text-transform: uppercase; }
+.qchip-label { flex: 1; min-width: 0; color: var(--vscode-textLink-foreground); font-family: var(--vscode-editor-font-family); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qchip-head button { padding: 0 5px; color: var(--vscode-icon-foreground, var(--vscode-foreground)); }
+.qchip-head button:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground); }
+.qchip-head button:disabled { opacity: 0.4; }
+.qchip-text { margin: 2px 0; color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; }
+.qchip-note {
+  width: 100%; box-sizing: border-box; padding: 2px 4px; font: inherit;
+  color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent);
+}
+.qchip-bad { margin: 2px 0 0; color: var(--vscode-errorForeground); }
+.quote-sel {
+  position: fixed; z-index: 20; padding: 1px 8px;
+  color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 1px solid var(--vscode-contrastBorder, transparent);
+}
+.quote-sel:hover { background: var(--vscode-button-hoverBackground); }
+.quote-sel[hidden], .quote-pop[hidden] { display: none; }
+.quote-pop {
+  position: fixed; z-index: 21; left: 8px; right: 8px; padding: 6px; display: flex; flex-direction: column; gap: 4px;
+  color: var(--vscode-editorWidget-foreground, var(--vscode-foreground)); background: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-focusBorder)); box-shadow: 0 2px 8px var(--vscode-widget-shadow, transparent);
+}
+.quote-pop-text { color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; max-height: 4.5em; overflow: hidden; }
+.quote-pop-note {
+  resize: vertical; font: inherit; padding: 2px 4px;
+  color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent);
+}
+.quote-pop-acts { display: flex; gap: 6px; }
+.quote-pop-add { color: var(--vscode-button-foreground); background: var(--vscode-button-background); padding: 2px 10px; }
+.quote-pop-add:hover { background: var(--vscode-button-hoverBackground); }
+.quote-pop-cancel { padding: 2px 10px; color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); background: var(--vscode-button-secondaryBackground, transparent); }

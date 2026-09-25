@@ -2,7 +2,7 @@
 // webview never assumes an earlier message arrived). Pure: page rows and live rows merge by message
 // id, order is the board's storage seq, older pages prepend. One store per open ticket: threads are
 // never merged (dec-8dfe3d97af).
-import type { AttachmentRef, ChatMessage, CodeContext } from './chatProtocol';
+import type { AttachmentRef, ChatMessage, CodeContext, QuoteView } from './chatProtocol';
 import { attachmentRefs, type BoardAttachment } from './attachments';
 
 /** A `GET /v1/tickets/{id}/thread` row. */
@@ -11,6 +11,8 @@ export type ThreadRow = {
   at: string; reply_to: string | null; code_context: CodeContext | null;
   /** C12: attachment cards (id, form, filename, content type), never bytes */
   attachments?: BoardAttachment[];
+  /** C18/C20: verified quotes, in order (absent on a pre-C18 board) */
+  quotes?: unknown;
 };
 /** A `GET /v1/messages/{id}` row (the live path; no seq, no html). */
 export type MessageRow = {
@@ -18,23 +20,46 @@ export type MessageRow = {
   kind: string; text: string; reply_to: string | null; code_context?: CodeContext | null;
   /** C12: artifact ids only; the host resolves names before the row reaches the view */
   artifacts?: string[];
+  quotes?: unknown;
 };
 export type ThreadPage = { thread: ThreadRow[]; thread_total: number; thread_before: number | null };
 
 export const fromThreadRow = (ticketId: string, r: ThreadRow): ChatMessage => ({
   type: 'message', seq: r.seq, id: r.id, ticket_id: ticketId, created_at: r.at, created_by: r.by,
   to: r.to ?? null, kind: r.kind, text: r.text, reply_to: r.reply_to ?? null, code_context: r.code_context ?? null,
-  ...withAttachments(attachmentRefs(r.attachments)),
+  ...withAttachments(attachmentRefs(r.attachments)), ...withQuotes(r.quotes),
 });
 
 const withAttachments = (a: AttachmentRef[]) => (a.length ? { attachments: a } : {});
+
+const s = (x: unknown) => (typeof x === 'string' ? x : null);
+const n = (x: unknown) => (typeof x === 'number' && Number.isSafeInteger(x) ? x : null);
+
+/** C20: the board's stored quotes, shaped for the view (known fields only; a malformed row is skipped). */
+export function quoteViews(raw: unknown): QuoteView[] {
+  if (!Array.isArray(raw)) return [];
+  const out: QuoteView[] = [];
+  for (const q of raw as Record<string, unknown>[]) {
+    if (!q || typeof q !== 'object' || typeof q.text !== 'string' || !['doc', 'message', 'code'].includes(q.source as string)) continue;
+    const lo = (q.locator && typeof q.locator === 'object' ? q.locator : {}) as Record<string, unknown>;
+    const c = q.code as Record<string, unknown> | null | undefined;
+    const code = c && typeof c.path === 'string' && typeof c.repo_root === 'string' && n(c.line_start) && n(c.line_end)
+      ? { repo_root: c.repo_root, path: c.path, line_start: n(c.line_start)!, line_end: n(c.line_end)!, commit: s(c.commit), dirty: c.dirty === true,
+        snippet: typeof c.snippet === 'string' ? c.snippet : q.text, snippet_sha: s(c.snippet_sha) ?? '' } : null;
+    out.push({ source: q.source as QuoteView['source'], id: s(q.id), version: n(q.version), author: s(q.author), text: q.text, note: s(q.note), code,
+      locator: { heading: s(lo.heading), line_start: n(lo.line_start), line_end: n(lo.line_end), char_start: n(lo.char_start), char_end: n(lo.char_end) } });
+  }
+  return out;
+}
+
+const withQuotes = (raw: unknown) => { const q = quoteViews(raw); return q.length ? { quotes: q } : {}; };
 
 /** `seq` comes from the feed event that announced the message. */
 /** `refs`: the message's artifacts, resolved by the host (C12). */
 export const fromMessageRow = (m: MessageRow, seq: number, refs: AttachmentRef[] = []): ChatMessage => ({
   type: 'message', seq, id: m.id, ticket_id: m.ticket_id, created_at: m.created_at, created_by: m.created_by,
   to: m.to ?? null, kind: m.kind, text: m.text, reply_to: m.reply_to ?? null, code_context: m.code_context ?? null,
-  ...withAttachments(refs),
+  ...withAttachments(refs), ...withQuotes(m.quotes),
 });
 
 export class ThreadStore {

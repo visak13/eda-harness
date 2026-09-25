@@ -67,18 +67,57 @@ PowerShell. Adding one is a commit to `extensions.txt` with its exact version.
 
 ## How tagging works
 
-Select code, then right-click **EDP: Tag selection on board…** (or `Ctrl+Alt+M`):
+Select code, then right-click **EDP: Tag selection on board…** (or `Ctrl+Alt+M`). Where the tag goes
+depends on the EDP Chat panel (edp-code 0.12.0):
 
-1. The first use asks for your board participant id and token. They are kept in the browser's
-   secret storage, not in settings; sign in once per browser profile.
-2. Pick the **person**: any human or a live agent seat.
-3. Pick the **ticket**: that person's open tickets first, or any open ticket.
-4. Type the **note** and pick the kind: question (default), steer, finding or note.
+- **The chat panel has been opened in this window and a thread is open:** the panel is revealed and the
+  lines become a **code chip** above its composer (path, lines, commit). Type your text and press
+  `Ctrl+Enter`: one message with the code anchor. The chip and a Reply target can go in the same message.
+- **The chat panel is open but no thread is picked:** the thread picker opens first, then the chip lands.
+- **The chat panel has never been opened in this window:** the palette chain:
+  1. The first use asks for your board participant id and token. They are kept in the browser's
+     secret storage, not in settings; sign in once per browser profile.
+  2. Pick the **person**: any human or a live agent seat.
+  3. Pick the **ticket**: that person's open tickets first, or any open ticket.
+  4. Type the **note** and pick the kind: question (default), steer, finding or note.
 
 The board message carries a code anchor: repo, path, lines, commit (or none outside git), whether the
 file was dirty, and the snippet. The recipient is woken like any board message; an agent reads the
 anchor in its context. On the ticket page the message shows as a code card with **Open in Code**,
 which reopens those lines here. Tagging never creates tickets.
+
+## Quote + note: collect passages, send one message
+
+A message can carry several **quotes**, each with its own note: lines of code, a passage of a board
+doc (the EDP reader, its markdown source or a version diff) and a passage of a chat message. They go
+to the thread open in the EDP Chat panel, in the order you arrange, and the board checks each one
+against its source when you send.
+
+- **Code, a doc's markdown source or a diff side: the inline comment box.** Select lines and press
+  `Ctrl+Alt+Q` (or right-click **EDP: Comment for chat (quote + note)**). A comment box opens under
+  the lines: type a note (optional) and click **Add to chat** (**Cancel** drops it). The lines keep a
+  small **EDP draft** comment marker until the message is sent; its **×** removes the draft.
+- **The EDP reader:** select a passage and click **❝ Quote in chat** by the selection (or
+  `Ctrl+Alt+Q`, or right-click **EDP: Quote in chat**). Type a note and click **Add to chat** (or
+  `Ctrl+Enter`); `Escape` cancels. The quoted blocks stay marked in the reader until the send.
+- **A chat message:** select part of a message and click **❝ Quote** (or `Ctrl+Alt+Q`), add a note,
+  then **Add to chat** or `Ctrl+Enter`.
+- **The draft tray:** the quotes wait as chips above the chat composer, one per quote, showing the
+  source, the passage and an editable note. **↑**/**↓** reorder them and **×** removes one. While the
+  chat panel is hidden the status bar shows **EDP draft: N → <thread>**; click it to show the chat.
+  The drafts survive a reload of the window.
+- **Send:** press `Ctrl+Enter` in the composer (the text is optional when quotes are attached). The
+  message carries every chip in order, together with any code chip, attachments or Reply target.
+  If the board refuses one quote (its source changed), that chip is marked and nothing is sent;
+  remove it or quote again.
+- **Reading:** each quote shows as a card above the message text, here and on the board's ticket
+  page. The card's source link opens the doc version on those lines, the code range, or the quoted
+  message.
+
+`Ctrl+Alt+Q` acts only while a passage is selected in a code editor, the reader or a chat message,
+never while you are typing in a text field, so on keyboards where `AltGr` types a character with `Q`
+(for example `@` on German layouts) typing is unaffected. The board UI uses the same `Ctrl+Alt+Q`
+to open its Quote popover. `Ctrl+Shift+Q` is not used: it quits Firefox.
 
 ## The built-in git UI is not guarded
 

@@ -1,6 +1,6 @@
 // C19 board-UI quotes (s-35ca5ca2ac; design-10b21760d9 §14.5/§14.7; C18 board half 9d1e531/466d65a).
 // On a throwaway board from THIS tree (never :9400): select text in the doc drawer (a design, at an
-// older version) and in a chat message, Quote it with a note (the popover's button and Ctrl+Shift+Q),
+// older version) and in a chat message, Quote it with a note (the popover's button and Ctrl+Alt+Q, C20 ruling m-db0d013529),
 // build three quotes from two sources plus one to remove, reorder them, send with Ctrl+Enter, and
 // assert on the BOARD that the message carries quotes[] in chip order with notes, verified by C18.
 // The message then renders three quote cards; the doc card opens that version at the quoted lines,
@@ -127,9 +127,9 @@ test("quote two doc passages and a message, reorder and remove, send, and see th
   await pop.getByTestId("quote-add").click();
   await expect(page.getByTestId("quote-added")).toContainText(story);
 
-  // 2. a passage across two list items via Ctrl+Shift+Q, note typed, Enter adds.
+  // 2. a passage across two list items via Ctrl+Alt+Q, note typed, Enter adds.
   await selectText(page, "[data-testid=doc-body]", "message | code.", "For doc: id");
-  await page.keyboard.press("Control+Shift+KeyQ");
+  await page.keyboard.press("Control+Alt+KeyQ");
   await expect(pop).toBeVisible();
   await expect(pop.getByTestId("quote-note")).toBeFocused();
   await page.keyboard.type("List item quote");
@@ -208,7 +208,7 @@ test("a board without quotes[] in its message contract offers no Quote", async (
   await expect(page.getByTestId("thread")).toBeVisible();
   await selectText(page, `li[id="${archMsg}"]`, "ready: ship C19");
   await releaseMouse(page);
-  await page.keyboard.press("Control+Shift+KeyQ");
+  await page.keyboard.press("Control+Alt+KeyQ");
   await page.waitForTimeout(300); // nothing may appear; a short settle before asserting absence
   await expect(page.getByTestId("quote-popover")).toHaveCount(0);
   await expect(page.getByTestId("quote-chips")).toHaveCount(0);

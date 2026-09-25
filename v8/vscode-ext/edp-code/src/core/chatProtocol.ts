@@ -30,7 +30,25 @@ export type ChatMessage = {
   to: string | null; kind: string; text: string; reply_to: string | null; code_context: CodeContext | null;
   /** C12: the message's attached artifacts (names and types only; bytes stay in the host) */
   attachments?: AttachmentRef[];
+  /** C20: the quotes the board verified on this message (C18), in order; rendered as cards above the text */
+  quotes?: QuoteView[];
 };
+
+// -- quotes (C20 s-29f052c40e; design §14.5, §14.7) ----------------------------------------------------
+export const QUOTE_KEY = /^q-[0-9a-f]{12}$/;
+/** the board's cap on a quote's note (edp8/quotes.py NOTE_MAX) */
+export const QUOTE_NOTE_MAX = 2000;
+/** at most this much selected text is posted for a quote (the host maps it to the source and caps the passage) */
+export const QUOTE_SELECTION_MAX = 65_536;
+/** One stored quote of a message, as the board serves it (C18 QuoteStored). */
+export type QuoteView = {
+  source: 'doc' | 'message' | 'code'; id?: string | null; version?: number | null; author?: string | null;
+  locator?: { heading?: string | null; line_start?: number | null; line_end?: number | null; char_start?: number | null; char_end?: number | null } | null;
+  text: string; note?: string | null; code?: CodeContext | null;
+};
+/** A draft quote in the open thread's composer, as the view shows it. The quote itself stays in the host: a send
+ *  names drafts by `key`, in the order the view shows them. `invalid`: the board refused it on the last send. */
+export type QuoteChip = { key: string; source: 'doc' | 'message' | 'code'; label: string; passage: string; note: string; invalid?: true };
 
 // -- attachments (C12 s-85dd35a166; design §13 row C12) ----------------------------------------------
 export const ARTIFACT_ID = /^art-[0-9a-f]{10}$/;
@@ -150,6 +168,8 @@ export type ChatState = {
   docs?: DocsState | null;
   /** C17: the open scope's decision records (null: signed out, or nothing picked) */
   decisions?: DecisionsState | null;
+  /** C20: the open thread's draft quotes (the tray), in send order */
+  quotes?: QuoteChip[];
 };
 
 export type HostToView =
@@ -186,7 +206,9 @@ export type HostToView =
   /** C17: the open scope's Decisions list (the whole list; `ticketId` is the scope it was read for) */
   | { type: 'decisions'; v: 1; ticketId: string; decisions: DecisionsState }
   /** C17: a decision's source message is now in the open thread: show the Chat tab and scroll it into view */
-  | { type: 'focusMessage'; v: 1; ticketId: string; id: string };
+  | { type: 'focusMessage'; v: 1; ticketId: string; id: string }
+  /** C20: `ticketId`'s draft quotes changed (the whole list); `focus`: one was just added, show the Chat tab */
+  | { type: 'quotes'; v: 1; ticketId: string; quotes: QuoteChip[]; focus: boolean; text?: string };
 
 export type ViewToHost =
   | { v: 1; type: 'ready' }
@@ -195,7 +217,9 @@ export type ViewToHost =
   /** `ticketId` is the thread the user sees: the host refuses a send whose ticket is not the open one */
   | { v: 1; type: 'send'; ticketId: string; text: string; kind: SendKind; to?: string; replyTo?: string; chipId?: string;
       /** C12: staged uploads the host holds for this thread; with some, `text` may be empty */
-      attachmentIds?: string[] }
+      attachmentIds?: string[];
+      /** C20: the thread's draft quotes to send, in this order; with some, `text` may be empty */
+      quoteKeys?: string[] }
   /** the user removed the composer's code chip */
   | { v: 1; type: 'dropCode'; ticketId: string; chipId: string }
   | { v: 1; type: 'openCode'; messageId: string }
@@ -240,13 +264,22 @@ export type ViewToHost =
   | { v: 1; type: 'decisionWithdraw'; id: string }
   /** C17: turn a listed decision's binding flag on or off; the host asks an optional reason */
   | { v: 1; type: 'decisionBinding'; id: string; binding: boolean }
-  | { v: 1; type: 'decisionsRefresh' };
+  | { v: 1; type: 'decisionsRefresh' }
+  /** C20: quote a selection of a message in the open thread (`text`: the rendered selection; `before`: the rendered
+   *  text of the same message before it, to tell a repeated passage apart) */
+  | { v: 1; type: 'quoteMessage'; ticketId: string; messageId: string; text: string; before: string; note: string }
+  | { v: 1; type: 'quoteNote'; ticketId: string; key: string; note: string }
+  | { v: 1; type: 'quoteMove'; ticketId: string; key: string; by: -1 | 1 }
+  | { v: 1; type: 'quoteDrop'; ticketId: string; key: string }
+  /** C20: a quote card's source link: quote `index` of a message in the open thread */
+  | { v: 1; type: 'openQuote'; messageId: string; index: number };
 
 const TYPES = new Set(['ready', 'pickTicket', 'loadOlder', 'send', 'dropCode', 'openCode', 'openBoard', 'signIn', 'showMessage']);
 const PATH_TYPES = new Set(['findPaths', 'checkPaths', 'openPath']);
 const HANDLE = /^[A-Za-z0-9][A-Za-z0-9_.\-]{0,127}$/;
 const DIFF_TYPES = new Set(['openDiff', 'openUncommitted']);
 const ATTACH_TYPES = new Set(['attach', 'dropAttachment', 'resolveArtifacts', 'openArtifact']);
+const QUOTE_TYPES = new Set(['quoteMessage', 'quoteNote', 'quoteMove', 'quoteDrop', 'openQuote']);
 const INBOX_TYPES = new Set(['inboxAnswer', 'inboxVerdict', 'inboxGate', 'inboxOpen', 'inboxRefresh', 'docsOpen', 'docsCompare', 'docsRefresh',
   'decisionOpen', 'decisionWithdraw', 'decisionBinding', 'decisionsRefresh']);
 /** The webview refuses a file over this before posting it: a transport guard for postMessage memory,
@@ -259,7 +292,7 @@ export const ATTACH_TRANSPORT_MAX = 64 * 1024 * 1024;
 export function parseInbound(raw: unknown, handles: ReadonlySet<string> = new Set()): ViewToHost | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
-  if (r.v !== PROTOCOL_V || typeof r.type !== 'string' || !(TYPES.has(r.type) || DIFF_TYPES.has(r.type) || PATH_TYPES.has(r.type) || ATTACH_TYPES.has(r.type) || INBOX_TYPES.has(r.type))) return null;
+  if (r.v !== PROTOCOL_V || typeof r.type !== 'string' || !(TYPES.has(r.type) || DIFF_TYPES.has(r.type) || PATH_TYPES.has(r.type) || ATTACH_TYPES.has(r.type) || INBOX_TYPES.has(r.type) || QUOTE_TYPES.has(r.type))) return null;
   const str = (k: string) => (typeof r[k] === 'string' ? (r[k] as string) : undefined);
   switch (r.type) {
     case 'ready': case 'loadOlder': case 'signIn': case 'inboxRefresh': case 'docsRefresh': case 'decisionsRefresh':
@@ -303,7 +336,9 @@ export function parseInbound(raw: unknown, handles: ReadonlySet<string> = new Se
       if (!ticketId || !TICKET_ID.test(ticketId)) return null;
       const att = r.attachmentIds === undefined ? [] : artifactIds(r.attachmentIds);
       if (!att) return null;
-      if (text === undefined || (!text.trim() && !att.length) || text.length > TEXT_MAX) return null;
+      const qk = r.quoteKeys === undefined ? [] : quoteKeys(r.quoteKeys);
+      if (!qk) return null;
+      if (text === undefined || (!text.trim() && !att.length && !qk.length) || text.length > TEXT_MAX) return null;
       if (!kind || !(SEND_KINDS as readonly string[]).includes(kind)) return null;
       const out: ViewToHost = { v: 1, type: 'send', ticketId, text, kind: kind as SendKind };
       if (r.to !== undefined && r.to !== '') {
@@ -322,7 +357,31 @@ export function parseInbound(raw: unknown, handles: ReadonlySet<string> = new Se
         out.chipId = c;
       }
       if (att.length) out.attachmentIds = att;
+      if (qk.length) out.quoteKeys = qk;
       return out;
+    }
+    case 'quoteMessage': {
+      const t = str('ticketId'), m = str('messageId'), text = str('text'), before = str('before') ?? '', note = str('note') ?? '';
+      if (!t || !TICKET_ID.test(t) || !m || !MESSAGE_ID.test(m) || text === undefined || !text.trim()) return null;
+      if (text.length > QUOTE_SELECTION_MAX || before.length > TEXT_MAX * 4 || note.length > QUOTE_NOTE_MAX) return null;
+      return { v: 1, type: 'quoteMessage', ticketId: t, messageId: m, text, before, note };
+    }
+    case 'quoteNote': {
+      const t = str('ticketId'), key = str('key'), note = str('note');
+      return t && TICKET_ID.test(t) && key && QUOTE_KEY.test(key) && note !== undefined && note.length <= QUOTE_NOTE_MAX
+        ? { v: 1, type: 'quoteNote', ticketId: t, key, note } : null;
+    }
+    case 'quoteMove': {
+      const t = str('ticketId'), key = str('key');
+      return t && TICKET_ID.test(t) && key && QUOTE_KEY.test(key) && (r.by === 1 || r.by === -1) ? { v: 1, type: 'quoteMove', ticketId: t, key, by: r.by } : null;
+    }
+    case 'quoteDrop': {
+      const t = str('ticketId'), key = str('key');
+      return t && TICKET_ID.test(t) && key && QUOTE_KEY.test(key) ? { v: 1, type: 'quoteDrop', ticketId: t, key } : null;
+    }
+    case 'openQuote': {
+      const m = str('messageId'), i = r.index;
+      return m && MESSAGE_ID.test(m) && typeof i === 'number' && Number.isSafeInteger(i) && i >= 0 && i < 100 ? { v: 1, type: 'openQuote', messageId: m, index: i } : null;
     }
     case 'attach': {
       const ticketId = str('ticketId'), name = str('name');
@@ -401,6 +460,13 @@ function artifactIds(raw: unknown): string[] | null {
   if (!Array.isArray(raw) || raw.length > ATTACH_MAX) return null;
   if (!raw.every(x => typeof x === 'string' && ARTIFACT_ID.test(x))) return null;
   return [...new Set(raw as string[])];
+}
+
+/** 1..20 distinct well-formed draft keys, or null (the board's cap per message). */
+function quoteKeys(raw: unknown): string[] | null {
+  if (!Array.isArray(raw) || raw.length > 20) return null;
+  if (!raw.every(x => typeof x === 'string' && QUOTE_KEY.test(x))) return null;
+  return new Set(raw).size === raw.length ? (raw as string[]) : null;
 }
 
 /** A refused `send` still gets an answer, so the composer never stays stuck: its ticket id when it

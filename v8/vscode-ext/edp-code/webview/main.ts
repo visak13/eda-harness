@@ -17,6 +17,7 @@ import { TABS } from './registry';
 import { inboxDone } from './views/inbox';
 import { isSendKey, sendChord } from '../src/core/composerKeys';
 import { excerpt, replyRef, type ReplyRef } from '../src/core/reply';
+import { MessageQuoter, QuoteChips, quoteCards } from './quotes';
 
 declare function acquireVsCodeApi(): { postMessage(m: unknown): void; getState(): unknown; setState(s: unknown): void };
 const vscode = acquireVsCodeApi();
@@ -155,7 +156,9 @@ replyBar.id = 'reply-bar';
 replyBar.setAttribute('role', 'group');
 replyBar.setAttribute('aria-label', 'Replying to');
 replyBar.hidden = true;
-cbox.append(replyBar, chipBox, ta, tools);
+// C20: the draft quotes (quote + note from code, docs and messages) above the text, in send order
+const quoteChips = new QuoteChips(m => post(m), acStatus);
+cbox.append(replyBar, quoteChips.box, chipBox, ta, tools);
 composer.append(peopleList, cbox, acStatus, sendErr);
 
 // C11: the # picker (files and folders) beside the @ list, and its button in C9's tool slot
@@ -176,6 +179,8 @@ const attach = initAttach({ box: cbox, slot: toolSlot, ta, err: sendErr, status:
 
 // C13: the tab bar under the header; every tab's panel fills the rest of the height, so no band competes
 // with the thread for it (C9's chips were squeezed to nothing by a long thread: flex-shrink by basis)
+// C20: Quote + note on a selection inside a message (a button by the selection, or Ctrl+Alt+Q)
+const quoter = new MessageQuoter(list, () => state?.ticket?.id ?? null, m => post(m), acStatus);
 let chatUnread = 0;
 /** the Chat timeline's scroll when the user left it away from the bottom (null: it follows the bottom) */
 let chatScroll: number | null = null;
@@ -229,6 +234,8 @@ function messageEl(m: ChatMessage, k: ReadonlySet<string>): HTMLElement {
   markPaths(body, post); // C11: backticked paths that exist here become links
   a.append(h);
   if (m.reply_to) a.append(parentLine(m));
+  const qc = quoteCards(m, post); // C20: the quoted passages sit above the text
+  if (qc) a.append(qc);
   a.append(body);
   if (m.code_context) a.append(codeCard(m));
   const atts = attach.render(m); // C12
@@ -530,6 +537,8 @@ function renderAll() {
   attach.reset(s.ticket?.id ?? null, s.pending ?? [], s.artifacts ?? []);
   renderChip();
   renderReply();
+  quoteChips.render(s.ticket?.id ?? null, s.ticket ? s.quotes ?? [] : []);
+  quoter.close();
   ta.value = s.ticket ? local.drafts[s.ticket.id] ?? '' : '';
   kindSel.value = local.kind;
   grow();
@@ -626,8 +635,10 @@ function send() {
   if (pendingTicket || !state?.ticket) return;
   const text = ta.value;
   const files = attach.ids();
+  quoteChips.flush(); // a note still being typed goes before the send that carries it
+  const quotes = quoteChips.keys;
   if (attach.busy()) { sendErr.textContent = 'Wait for the attachments to finish uploading.'; return; }
-  if (!text.trim() && !files.length) { if (state.chip) sendErr.textContent = 'Add a note about the tagged lines.'; return; }
+  if (!text.trim() && !files.length && !quotes.length) { if (state.chip) sendErr.textContent = 'Add a note about the tagged lines.'; return; }
   if (!text.trim() && state.chip) { sendErr.textContent = 'Add a note about the tagged lines.'; return; }
   if (text.length > TEXT_MAX) { sendErr.textContent = `Too long: ${text.length} of ${TEXT_MAX} characters.`; return; }
   pendingTicket = state.ticket.id;
@@ -637,7 +648,7 @@ function send() {
   pendingReply = reply;
   post({ type: 'send', ticketId: pendingTicket, text, kind: kindSel.value as SendKind, ...(toSel.value ? { to: toSel.value } : {}),
     ...(reply ? { replyTo: reply.id } : {}),
-    ...(state.chip ? { chipId: state.chip.id } : {}), ...(files.length ? { attachmentIds: files } : {}) });
+    ...(state.chip ? { chipId: state.chip.id } : {}), ...(files.length ? { attachmentIds: files } : {}), ...(quotes.length ? { quoteKeys: quotes } : {}) });
 }
 
 composer.addEventListener('submit', e => { e.preventDefault(); send(); });
@@ -828,6 +839,14 @@ window.addEventListener('message', (ev: MessageEvent) => {
       if (!state || state.ticket?.id !== m.ticketId) return;
       select('chat');
       focusMsg(m.id);
+      break;
+    }
+    case 'quotes': { // C20: the thread's draft quotes changed (added from an editor, the reader or a message)
+      if (m.text) { acStatus.textContent = m.text; if (m.text.startsWith('Not ')) sendErr.textContent = m.text; }
+      if (!state || state.ticket?.id !== m.ticketId) return;
+      state.quotes = m.quotes;
+      quoteChips.render(m.ticketId, m.quotes);
+      if (m.focus) { select('chat'); sendErr.textContent = ''; }
       break;
     }
     case 'inboxDone':

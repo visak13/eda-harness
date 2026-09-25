@@ -40,16 +40,22 @@ async function captureAnchor(): Promise<{ anchor: Anchor; truncated: boolean } |
   if (doc.uri.scheme !== 'file') { void vscode.window.showWarningMessage('EDP: only files on disk can be tagged.'); return; }
 
   // 1. capture the anchor before any picker takes focus
-  const sel = editor.selection;
+  const a = await anchorFor(doc, editor.selection);
+  if ('error' in a) { void vscode.window.showWarningMessage(`EDP: ${a.error}`); return; }
+  return a;
+}
+
+/** The S5 anchor of a range of a file on disk (the Tag selection, and C20's code quote from a comment box). */
+export async function anchorFor(doc: vscode.TextDocument, sel: vscode.Range): Promise<{ anchor: Anchor; truncated: boolean } | { error: string }> {
   const s: Sel = { startLine: sel.start.line, startChar: sel.start.character, endLine: sel.end.line, endChar: sel.end.character, isEmpty: sel.isEmpty };
   const lines = Array.from({ length: doc.lineCount }, (_, n) => doc.lineAt(n).text);
   const git = await headAndDirty(await gitApi(), doc);
   const repoRoot = git.repoRoot ?? vscode.workspace.getWorkspaceFolder(doc.uri)?.uri.fsPath;
-  if (!repoRoot) { void vscode.window.showWarningMessage('EDP: this file is outside every git repo and workspace folder; it cannot be tagged.'); return; }
+  if (!repoRoot) return { error: 'this file is outside every git repo and workspace folder; it cannot be tagged.' };
   try {
     return buildAnchor({ repoRoot, fsPath: doc.uri.fsPath, lines, sel: s, commit: git.commit, dirty: git.dirty });
   } catch (e) {
-    void vscode.window.showWarningMessage(`EDP: ${(e as Error).message}`); return;
+    return { error: (e as Error).message };
   }
 }
 
