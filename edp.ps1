@@ -8,6 +8,9 @@
 #   add -WhatIf to print the plan and change nothing; -Force where a step needs it (see below)
 #
 #   services: board (:9400)  mcp (:9402)  pool (:9301)  broker (:9300)  bridge  supervisor  all
+#             code (:9410, code-server for the Code tab) - by name only: `all` never starts or stops it,
+#             and a code start/stop/restart runs v8\scripts\start-code.ps1 / stop-code.ps1 and touches
+#             no other service (the supervisor does not watch it). Seats may start/stop `code` only.
 #
 # SAFE RESTART CONTRACT (memories never-taskkill-board-by-image, pool-restart-tree-kill-takes-seats,
 # start-ps1-restart-noop-kill-both-pids):
@@ -64,10 +67,16 @@ $SVC = [ordered]@{
   mcp        = @{ port = [int](EnvOr "EDP8_MCP_PORT" "9402");   health = "/healthz";   needle = "edp8.mcp_server" }
   bridge     = @{ port = 0; health = ""; needle = "edp8.slack_bridge" }
   supervisor = @{ port = 0; health = ""; needle = "edp8.supervisor" }
+  # code-server: a node.exe pair (wrapper + the listening server) running from the pinned install; the
+  # needle is the install path, never node.exe (other seats run node)
+  code       = @{ port = [int](EnvOr "EDP_CODE_PORT" "9410"); health = "/healthz"; needle = ".tools\code-server\"; images = @("node.exe")
+                  start = "scripts\start-code.ps1"; stop = "scripts\stop-code.ps1" }
 }
 $ChainImages = @("python.exe", "pythonw.exe", "uv.exe", "edp8-board.exe")
 $START_ORDER = @("board", "broker", "pool", "mcp", "bridge", "supervisor")
 $STOP_ORDER  = @("supervisor", "bridge", "mcp", "pool", "broker", "board")
+$STATUS_ORDER = $START_ORDER + @("code")   # `code` is by name only: never in the `all` orders
+function ImagesOf($name) { if ($SVC[$name].images) { $SVC[$name].images } else { $ChainImages } }
 
 function Say($s) { Write-Host $s }
 function Fail($code, $msg) { [Console]::Error.WriteLine("edp: $msg"); exit $code }
@@ -102,7 +111,7 @@ function RunStateRev($name) {
 # shims above them). An ancestor must carry the service's needle AND be created no later than its
 # child: Windows reuses pids, so a stale ParentProcessId can name an unrelated process (memory
 # windows-stale-ppid-tree-walk). Children are only same-command-line copies, never seat shells.
-function PidPair($a, $needle) {
+function PidPair($a, $needle, $images = $ChainImages) {
   # $a is the ANCHOR PROCESS RECORD that Discover authenticated - never re-queried by pid, so a pid
   # reused between authentication and the chain walk can not swap in an unrelated process
   if (-not $a) { return @() }
@@ -113,7 +122,7 @@ function PidPair($a, $needle) {
     if (-not $p -or -not $p.CommandLine -or -not $p.CommandLine.Contains($needle) -or $p.CreationDate -gt $cur.CreationDate) { break }
     # only launcher images join the chain: a shell (powershell/bash/cmd/claude) whose command line
     # merely mentions the service must never be stopped
-    if ($ChainImages -notcontains $p.Name.ToLower()) { break }
+    if ($images -notcontains $p.Name.ToLower()) { break }
     $pair = @($p) + $pair
     $cur = $p
   }
@@ -134,11 +143,11 @@ function Discover($name) {
   # authenticate the ANCHOR before walking: a foreign listener (or a process that merely names the
   # service in an argument but is not a launcher image) is never acted on, nor are its ancestors
   $a = Proc $anchor
-  if (-not $a -or -not $a.CommandLine -or -not $a.CommandLine.Contains($s.needle) -or ($ChainImages -notcontains $a.Name.ToLower())) {
+  if (-not $a -or -not $a.CommandLine -or -not $a.CommandLine.Contains($s.needle) -or ((ImagesOf $name) -notcontains $a.Name.ToLower())) {
     [Console]::Error.WriteLine("edp: $name port $($s.port) is held by pid $anchor, which is not a '$($s.needle)' launcher process; leaving it alone")
     return @()
   }
-  @(PidPair $a $s.needle)
+  @(PidPair $a $s.needle (ImagesOf $name))
 }
 function Health($name) {
   $s = $SVC[$name]
@@ -148,6 +157,9 @@ function Health($name) {
 function RevOf($name, $h) {
   if ($h -and $h.git_rev) { return "" + $h.git_rev }
   if ($name -eq "mcp" -and $h -and $h.version) { return "" + $h.version }
+  if ($name -eq "code") {
+    try { $v = (Get-Content (Join-Path $RunDir "code.json") -Raw | ConvertFrom-Json).version; if ($v) { return "code-server $v" } } catch { }
+  }
   $r = RunStateRev $name
   if ($r) { return "$r (run_state)" }
   "-"
@@ -227,6 +239,19 @@ function Stop-Svc($name) {
     Say "   -Force: stopping $name, which runs from another checkout ($foreign)"
   }
   $ids = @($pair | ForEach-Object { [int]$_.ProcessId })
+  if ($SVC[$name].stop) {
+    # code-server's extension host, pty host, watcher and terminal shells are children of the server:
+    # its own stop script walks the recorded pid's verified descendant tree (never by image name)
+    $stopScript = Join-Path $V8 $SVC[$name].stop
+    Step ("stop {0} (pid {1}): powershell -File v8\{2} (recorded pid + verified descendant tree)" -f $name, ($ids -join ","), $SVC[$name].stop) {
+      & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $stopScript | ForEach-Object { Say "   | $_" }
+      if ($LASTEXITCODE -ne 0) { FailDown 1 "$($SVC[$name].stop) exited $LASTEXITCODE" }
+      if (ListenerPid $SVC[$name].port) { FailDown 1 "$name port $($SVC[$name].port) still has a listener after the stop" }
+      $script:Stopped += $name
+      Say ("{0,-10} stopped (pid {1})" -f $name, ($ids -join ","))
+    }
+    return
+  }
   Step ("stop {0}: Stop-Process -Id {1} -Force (service process chain by command line, no tree kill)" -f $name, ($ids -join ",")) {
     # Kill through a HANDLE opened now and checked against the discovered process's creation time:
     # a pid that exited and was reused since discovery is skipped, never killed (pid-reuse race).
@@ -253,7 +278,7 @@ function Stop-Svc($name) {
     Say ("{0,-10} stopped (pid {1})" -f $name, ($ids -join ","))
   }
 }
-function Invoke-StartPs1($label, $extra) {
+function Invoke-StartPs1($label, $extra, $ScriptPath = $StartPs1) {
   # start.ps1 Start-Process'es long-lived services that inherit its handles. Whatever pipe start.ps1
   # holds, the service then holds for its whole life: piping start.ps1 (or launching it with
   # redirection = CreateProcess with inherited handles) handed the CALLER's stdout pipe to the board,
@@ -270,7 +295,7 @@ function Invoke-StartPs1($label, $extra) {
   $body = @(
     '$ErrorActionPreference = "Continue"',
     ('$w = New-Object IO.StreamWriter({0}, $true); $w.AutoFlush = $true; [Console]::SetError($w)' -f (& $q $err)),
-    ('try {{ & {0} {1} *> {2}; $code = $LASTEXITCODE }} catch {{ [Console]::Error.WriteLine(("" + $_)); $code = 1 }}' -f (& $q $StartPs1), $argText, (& $q $log)),
+    ('try {{ & {0} {1} *> {2}; $code = $LASTEXITCODE }} catch {{ [Console]::Error.WriteLine(("" + $_)); $code = 1 }}' -f (& $q $ScriptPath), $argText, (& $q $log)),
     'if ($null -eq $code) { $code = 0 }',
     '$w.Close()',
     ('Set-Content -Path {0} -Value $code' -f (& $q $rc))
@@ -280,10 +305,11 @@ function Invoke-StartPs1($label, $extra) {
     -ArgumentList @("-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "`"$wrap`"")
   $done = $p.WaitForExit($TimeoutSec * 3000)
   foreach ($f in @($log, $err)) { if (Test-Path $f) { Get-Content $f | ForEach-Object { Say "   | $_" } } }
-  if (-not $done) { FailDown 4 "start.ps1 $($extra -join ' ') did not exit within $($TimeoutSec * 3) s (logs kept: $log, $err)" }
+  $shown = ("{0} {1}" -f [IO.Path]::GetFileName($ScriptPath), ($extra -join ' ')).Trim()
+  if (-not $done) { FailDown 4 "$shown did not exit within $($TimeoutSec * 3) s (logs kept: $log, $err)" }
   $code = 1; if (Test-Path $rc) { $code = [int]("" + (Get-Content $rc -Raw)).Trim() }
   Remove-Item $wrap, $rc -Force -ErrorAction SilentlyContinue
-  if ($code -ne 0) { FailDown 4 "start.ps1 $($extra -join ' ') exited $code (logs kept: $log, $err)" }
+  if ($code -ne 0) { FailDown 4 "$shown exited $code (logs kept: $log, $err)" }
   Remove-Item $log, $err -Force -ErrorAction SilentlyContinue
 }
 function Wait-Up($name) {
@@ -296,12 +322,20 @@ function Wait-Up($name) {
     if ($ok -or (Get-Date) -gt $deadline) { break }
     Start-Sleep -Milliseconds 500
   }
-  if (-not $ok) { FailDown 4 "$name is not up after $TimeoutSec s (health $($SVC[$name].health); see v8\.data\$name.err)" }
+  $logHint = "v8\.data\$name.err"; if ($SVC[$name].start) { $logHint = "$RunDir\$name.log / $name.err.log" }
+  if (-not $ok) { FailDown 4 "$name is not up after $TimeoutSec s (health $($SVC[$name].health); see $logHint)" }
   $script:Stopped = @($script:Stopped | Where-Object { $_ -ne $name })
   Say ("{0,-10} up   pid {1}  rev {2}  started_at {3}" -f $name, (ChainText $name $pair), (RevOf $name $h), (StartedOf $h $pair))
 }
 function Start-Svc($name) {
   if ($name -eq "bridge" -and -not (Test-Path (Join-Path $V8 "slack_map.json"))) { Say "bridge     skipped (no v8\slack_map.json)"; return }
+  if ($SVC[$name].start) {
+    Step ("start {0} on :{1}: powershell -File v8\{2}" -f $name, $SVC[$name].port, $SVC[$name].start) {
+      Invoke-StartPs1 $name @() (Join-Path $V8 $SVC[$name].start)
+      Wait-Up $name
+    }
+    return
+  }
   # start.ps1 has no -Only for the supervisor; its plain run is idempotent and starts only what is down.
   $extra = @(); if ($name -ne "supervisor") { $extra = @("-Only", $name) }
   $on = ""; if ($SVC[$name].port) { $on = " on :$($SVC[$name].port)" }   # the plan names the port the .env resolved
@@ -322,7 +356,7 @@ function Report-PoolLiveness {
 }
 function Targets($svc, $order) {
   if ($svc -eq "all") { return $order }
-  if (-not $SVC.Contains($svc)) { Fail 5 "unknown service '$svc' (board|mcp|pool|broker|bridge|supervisor|all)" }
+  if (-not $SVC.Contains($svc)) { Fail 5 "unknown service '$svc' (board|mcp|pool|broker|bridge|supervisor|code|all)" }
   @($svc)
 }
 function WithSupervisorPaused($t) {
@@ -342,7 +376,7 @@ function Restart-Set($t) {
 
 # -- status -----------------------------------------------------------------------------------
 function Show-Status {
-  $rows = foreach ($name in $START_ORDER) {
+  $rows = foreach ($name in $STATUS_ORDER) {
     $pair = @(Discover $name)
     $h = Health $name
     $state = "down"
@@ -462,7 +496,7 @@ switch ($Command.ToLower()) {
   "stop" {
     $t = @(Targets $Service $STOP_ORDER)
     if ($t -contains "pool") { GuardPool "stop" }
-    if ($Service -ne "all" -and $Service -ne "supervisor" -and @(Discover "supervisor").Count -gt 0) {
+    if ($Service -ne "all" -and $Service -ne "supervisor" -and $Service -ne "code" -and @(Discover "supervisor").Count -gt 0) {
       Say "NOTE: the supervisor is running and restarts a service after ~45 s of failed probes; stop it too (.\edp.ps1 stop supervisor) to keep $Service down."
     }
     foreach ($n in $t) { Stop-Svc $n }
@@ -471,7 +505,9 @@ switch ($Command.ToLower()) {
     $t = @(Targets $Service $STOP_ORDER)
     if ($t -contains "pool") { GuardPool "restart" }
     if ($t -contains "mcp") { Say "NOTE: mcp restart: every running seat keeps the old MCP code until it respawns (shared-host rules)." }
-    Restart-Set (WithSupervisorPaused $t)
+    # code is outside the fleet orders and unwatched by the supervisor: its restart touches nothing else
+    if ($Service -eq "code") { Stop-Svc "code"; Start-Svc "code" }
+    else { Restart-Set (WithSupervisorPaused $t) }
   }
   "update" { Do-Update }
   default {

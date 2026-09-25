@@ -1,0 +1,59 @@
+{
+  "_comment": "sha256 of each pinned .vsix as published by Open VSX (files.sha256), queried 2026-09-25 for s-3c8c2512d6. start-code.ps1 downloads each vsix, checks this hash, then installs from the file. Bump = edit extensions.txt AND this file in one commit (owner action, like any host upgrade).",
+  "extensions": {
+    "ms-python.vscode-python-envs": {
+      "version": "1.36.0",
+      "target_platform": "universal",
+      "url": "https://open-vsx.org/api/ms-python/vscode-python-envs/1.36.0/file/ms-python.vscode-python-envs-1.36.0.vsix",
+      "sha256": "d9d96596a096d22c2ba0022c402165e0252af59cab46b78e443588e2cbed98dc"
+    },
+    "ms-python.debugpy": {
+      "version": "2026.6.0",
+      "target_platform": "win32-x64",
+      "url": "https://open-vsx.org/api/ms-python/debugpy/win32-x64/2026.6.0/file/ms-python.debugpy-2026.6.0@win32-x64.vsix",
+      "sha256": "f4a8ba033acc9a1e14bf53f124d8d0848318702bbb161f2a5e47ae3d3d756a67"
+    },
+    "ms-python.python": {
+      "version": "2026.4.0",
+      "target_platform": "universal",
+      "url": "https://open-vsx.org/api/ms-python/python/2026.4.0/file/ms-python.python-2026.4.0.vsix",
+      "sha256": "232aeafb01f069824fdd92d3e628c1c442bbcfa1d3cc945ff97076340bb2b4a6"
+    },
+    "detachhead.basedpyright": {
+      "version": "1.40.1",
+      "target_platform": "universal",
+      "url": "https://open-vsx.org/api/detachhead/basedpyright/1.40.1/file/detachhead.basedpyright-1.40.1.vsix",
+      "sha256": "d6fb62728d1eda5549e3764461c4295edf27943e7ef0a5b17b6a35abc7f4c995"
+    },
+    "dbaeumer.vscode-eslint": {
+      "version": "3.0.34",
+      "target_platform": "universal",
+      "url": "https://open-vsx.org/api/dbaeumer/vscode-eslint/3.0.34/file/dbaeumer.vscode-eslint-3.0.34.vsix",
+      "sha256": "ca5334d46f6a39079e751ef4601bfc9f86bc3a46483e87291ec609239d161308"
+    },
+    "eamodio.gitlens": {
+      "version": "19.2.0",
+      "target_platform": "universal",
+      "url": "https://open-vsx.org/api/eamodio/gitlens/19.2.0/file/eamodio.gitlens-19.2.0.vsix",
+      "sha256": "b6f0ecb66e2d15631c63f35727ed90476c5b4efecc5facfe5e404eb6e5a78ea1"
+    },
+    "ms-playwright.playwright": {
+      "version": "1.1.19",
+      "target_platform": "universal",
+      "url": "https://open-vsx.org/api/ms-playwright/playwright/1.1.19/file/ms-playwright.playwright-1.1.19.vsix",
+      "sha256": "23fa3d9a97596935a13ebc546172a262cfa16eb95f4c3ce0d81a4153ce7a50ce"
+    },
+    "ms-vscode.powershell": {
+      "version": "2025.4.0",
+      "target_platform": "universal",
+      "url": "https://open-vsx.org/api/ms-vscode/powershell/2025.4.0/file/ms-vscode.powershell-2025.4.0.vsix",
+      "sha256": "458eef45b6110e3d9867d23943b843ca4a9d0d96d1672db5ad156bc178f6b283"
+    },
+    "llvm-vs-code-extensions.vscode-clangd": {
+      "version": "0.6.0",
+      "target_platform": "universal",
+      "url": "https://open-vsx.org/api/llvm-vs-code-extensions/vscode-clangd/0.6.0/file/llvm-vs-code-extensions.vscode-clangd-0.6.0.vsix",
+      "sha256": "32030694fa6c0ef438f4e4219f84677cd32f603c7faa4c71a283efc1f5b51751"
+    }
+  }
+}

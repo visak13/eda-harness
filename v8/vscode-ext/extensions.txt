@@ -1,0 +1,15 @@
+# Pinned Open VSX extensions for the code service (s-3c8c2512d6; strategyhl-f300df15cb).
+# One publisher.name@x.y.z per line, installed in this order (dependencies before dependents).
+# Every transitive extensionPack/extensionDependencies id is pinned here too (dec-ea925a2d30).
+# ms-python.python's pack also names ms-python.vscode-pylance: it is not on Open VSX (404) and is skipped.
+# eamodio.gitlens: 19.2.0 is the newest non-pre-release; the 2026.9.x builds are pre-releases.
+# The sha256 of each .vsix lives in extensions.lock.json.
+ms-python.vscode-python-envs@1.36.0
+ms-python.debugpy@2026.6.0
+ms-python.python@2026.4.0
+detachhead.basedpyright@1.40.1
+dbaeumer.vscode-eslint@3.0.34
+eamodio.gitlens@19.2.0
+ms-playwright.playwright@1.1.19
+ms-vscode.powershell@2025.4.0
+llvm-vs-code-extensions.vscode-clangd@0.6.0

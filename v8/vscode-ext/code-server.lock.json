@@ -1,0 +1,10 @@
+{
+  "_comment": "Pinned code-server build for the code service (s-3c8c2512d6). sha256 = GitHub release asset digest, matched locally in S1 (report-b90f1f63df). install-code-server.ps1 never looks up 'latest'; an upgrade is a lock edit (owner action).",
+  "version": "4.138.0",
+  "asset": "code-server-4.138.0-windows-amd64.tar.gz",
+  "url": "https://github.com/coder/code-server/releases/download/v4.138.0/code-server-4.138.0-windows-amd64.tar.gz",
+  "size": 217074238,
+  "sha256": "82a0c252acb0075c077ad36c10f7dd0be5e8a9579200cadecfa2e1bab8d239d3",
+  "server_dir": "code-server-4.138.0-windows-amd64",
+  "node": "lib/node.exe"
+}

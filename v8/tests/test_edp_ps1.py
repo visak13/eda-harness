@@ -48,7 +48,7 @@ def _free_port() -> int:
 def _hermetic_env(tmp_path: Path, **ports: int) -> dict[str, str]:
     env = dict(os.environ)
     env["EDP8_RUN_DIR"] = str(tmp_path / "run")  # never read the fleet's .run
-    for var in ("EDP8_PORT", "EDP_BROKER_PORT", "EDP_POOL_PORT", "EDP8_MCP_PORT"):
+    for var in ("EDP8_PORT", "EDP_BROKER_PORT", "EDP_POOL_PORT", "EDP8_MCP_PORT", "EDP_CODE_PORT"):
         env[var] = str(ports.get(var) or _free_port())  # nothing listens unless a fake does
     return env
 

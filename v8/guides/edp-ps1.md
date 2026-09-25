@@ -8,6 +8,16 @@ the human/owner runs the procedure.
 `-WhatIf` prints the plan and changes nothing. It is run by the human/owner; a seat runs only
 `status` and `-WhatIf` against the fleet.
 
+**The `code` service** (code-server for the Code tab, epic-91fcd3b370 S2) is the exception a seat
+may start/stop: `.\edp.ps1 start|stop|restart|status code` on 127.0.0.1:`EDP_CODE_PORT` (9410),
+health `GET /healthz`. It is by name only: `all` and `update` never start, stop or restart it, the
+supervisor does not watch it, and its restart pauses nothing. Start/stop run
+`v8\scripts\start-code.ps1` / `stop-code.ps1`: pinned install (`vscode-ext\code-server.lock.json`,
+sha256 before extraction, `install-code-server.ps1`), sha-checked Open VSX extensions
+(`vscode-ext\extensions.txt` + `extensions.lock.json`), loopback + `--auth none`, every `EDP_*`/`EDP8_*`
+stripped from its env, `.run\code.json`; the stop kills the recorded pid's verified descendant tree
+(extension host, pty host, terminal shells). Re-runnable evidence: `v8\scriptserify-code-service.ps1`.
+
 **How to restart safely** (what the script does, so nobody improvises it): every service is two or
 more processes with one command line (uv / shim → venv launcher → interpreter owning the port).
 `edp.ps1` finds that chain from the port's LISTEN owner and its same-service ancestors (never by
