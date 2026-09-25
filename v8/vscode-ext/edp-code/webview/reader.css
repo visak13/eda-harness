@@ -50,7 +50,7 @@ button:disabled { opacity: 0.6; cursor: default; }
 .rd-toc-l4 a { padding-left: 32px; color: var(--vscode-descriptionForeground); }
 
 .rd-main { overflow: auto; padding: 12px 24px 40px; }
-.rd-doc { max-width: 980px; line-height: 1.55; overflow-wrap: anywhere; }
+.rd-doc { line-height: 1.55; overflow-wrap: anywhere; }
 .rd-doc h1, .rd-doc h2, .rd-doc h3 { border-bottom: 1px solid var(--vscode-widget-border, transparent); padding-bottom: 2px; }
 .rd-doc a { color: var(--vscode-textLink-foreground); }
 .rd-doc code { font-family: var(--vscode-editor-font-family); background: var(--vscode-textCodeBlock-background); padding: 0 3px; border-radius: 2px; }
@@ -62,7 +62,6 @@ button:disabled { opacity: 0.6; cursor: default; }
 .rd-doc :target, .rd-doc h1:focus, .rd-doc h2:focus, .rd-doc h3:focus, .rd-doc h4:focus { outline: 1px dashed var(--vscode-focusBorder); }
 .rd-empty { color: var(--vscode-descriptionForeground); }
 
-.rd-extras { max-width: 980px; }
 .rd-review, .rd-proposal, .rd-comments { margin-top: 24px; padding: 8px 12px; border: 1px solid var(--vscode-widget-border, var(--vscode-input-border, transparent)); border-radius: 2px; }
 .rd-h { font-size: 1em; margin: 2px 0 6px; }
 .rd-note { color: var(--vscode-descriptionForeground); margin: 4px 0; }
