@@ -16,7 +16,7 @@ supervisor does not watch it, and its restart pauses nothing. Start/stop run
 sha256 before extraction, `install-code-server.ps1`), sha-checked Open VSX extensions
 (`vscode-ext\extensions.txt` + `extensions.lock.json`), loopback + `--auth none`, every `EDP_*`/`EDP8_*`
 stripped from its env, `.run\code.json`; the stop kills the recorded pid's verified descendant tree
-(extension host, pty host, terminal shells). Re-runnable evidence: `v8\scriptserify-code-service.ps1`.
+(extension host, pty host, terminal shells). Re-runnable evidence: `v8\scripts\verify-code-service.ps1`.
 
 **How to restart safely** (what the script does, so nobody improvises it): every service is two or
 more processes with one command line (uv / shim → venv launcher → interpreter owning the port).
