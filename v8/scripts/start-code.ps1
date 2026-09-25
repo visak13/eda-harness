@@ -162,6 +162,9 @@ foreach ($pin in $pins) {
 }
 # our own extension, installed from the local vsix below (not a pin): any version it is built at
 $allowed["edp.edp-code"] = $true
+# v8 is a subfolder of the eda-base3 repo: the default ("prompt") left it with no repository, so
+# source control was empty and tags carried commit null (@no-git)
+$settings["git.openRepositoryInParentFolders"] = "always"
 $settings["extensions.autoUpdate"] = $false
 $settings["extensions.autoCheckUpdates"] = $true
 $settings["extensions.allowed"] = $allowed
