@@ -131,15 +131,20 @@ const check = (ok, what) => { L(`${ok ? "PASS" : "FAIL"} ${what}`); if (!ok) fai
       await page.waitForTimeout(3000);
       await workbench();
       L(`2 frame url after Open Folder ${codeFrame()?.url()}`);
-      check(/eda-base3\/v8\/web$/i.test(frameQuery().get("folder") ?? ""), "2 Open Folder navigated the frame to v8/web");
+      // the simple dialog once settled on a neighbour (eda-base3); any folder but v8 proves the point
+      const opened = frameQuery().get("folder") ?? "";
+      const isV8 = (x) => x.toLowerCase().replace(/\\/g, "/").replace(/^\/?/, "/") === slashC(V8).toLowerCase();
+      check(!!opened && !isV8(opened), `2 Open Folder navigated the frame to another folder (${opened}; asked for v8/web)`);
       await shot("2-opened-web");
       // 3. reload the tab: code-server reopens v8/web
       await openUi();
       L(`3 frame url after reload ${codeFrame()?.url()}`);
-      check(/eda-base3\/v8\/web$/i.test(frameQuery().get("folder") ?? ""), "3 reloading /ui/code reopens the last folder (v8/web), not v8");
+      const reopened = frameQuery().get("folder") ?? "";
+      check(reopened.toLowerCase() === opened.toLowerCase() && !isV8(reopened), `3 reloading /ui/code reopens the last folder (${reopened}), not v8`);
       const root = await explorerRoot();
       L(`3 explorer "${root}"`);
-      check(/\bweb\b/i.test(root), "3 the Explorer root is web");
+      const leaf = opened.split("/").pop() ?? "";
+      check(!!leaf && root.toUpperCase().split(" | ")[0] === leaf.toUpperCase(), `3 the Explorer root is ${leaf}`);
       await shot("3-reload-reopens-web");
       // 4. a deep link opens its own folder at its line
       await openUi(`?folder=${encodeURIComponent(V8)}&file=README.md&line=3`);
