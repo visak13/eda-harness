@@ -11,7 +11,8 @@ import type { PathHit, PersonRow, QuoteChip } from '../core/chatProtocol';
 import { DOC_SCHEME, parseDocPath } from '../core/docUri';
 import { lineSpan } from '../core/anchor';
 import { anchorFor } from './tag';
-import { mentionRows, noteToken, pathRows, type NoteCompletionRow } from '../core/noteCompletion';
+import { mentionRows, noteToken, pathRows, refRows, type NoteCompletionRow } from '../core/noteCompletion';
+import type { RefRow } from '../core/boardRefs';
 
 const TRAY_KEY = 'edp.quotes.tray';
 export const QUOTE_CONTROLLER = 'edp.quotes';
@@ -31,6 +32,10 @@ export interface QuoteChat {
   /** C20 (owner m-5a9111ce12): the @ list's labelled people and the # picker's rows, for note boxes outside the chat */
   peopleRows(): PersonRow[];
   findPaths(q: string): Promise<{ rows: PathHit[]; up: string | null }>;
+  /** C24: the $ picker's rows (the open epic's tree first, then the board's open items) */
+  findRefs(q: string): Promise<RefRow[]>;
+  /** C24: open a `$<id>` chip's target */
+  openRef(id: string): Promise<void>;
 }
 
 export class QuoteHost implements vscode.Disposable {
@@ -63,7 +68,8 @@ export class QuoteHost implements vscode.Disposable {
       vscode.commands.registerCommand('edp.quote.cancel', (r: vscode.CommentReply | vscode.CommentThread) => ('thread' in r ? r.thread : r).dispose()),
       vscode.commands.registerCommand('edp.quote.remove', (t: vscode.CommentThread | vscode.Comment) => this.removeMarker(t)),
       // C20 (owner m-5a9111ce12): @ people and # paths in the comment boxes, as in the composer
-      vscode.languages.registerCompletionItemProvider({ scheme: 'comment' }, { provideCompletionItems: (doc, pos) => this.complete(doc, pos) }, '@', '#', '/'),
+      // C24: $ board objects too
+      vscode.languages.registerCompletionItemProvider({ scheme: 'comment' }, { provideCompletionItems: (doc, pos) => this.complete(doc, pos) }, '@', '#', '/', '$'),
       this,
     ];
   }
@@ -73,12 +79,13 @@ export class QuoteHost implements vscode.Disposable {
     const line = doc.lineAt(pos.line).text.slice(0, pos.character);
     const t = noteToken(line, pos.character);
     if (!t) return null;
-    const rows = t.kind === '@' ? mentionRows(this.chat.peopleRows(), t.query) : pathRows((await this.chat.findPaths(t.query)).rows);
+    const rows = t.kind === '@' ? mentionRows(this.chat.peopleRows(), t.query)
+      : t.kind === '$' ? refRows(await this.chat.findRefs(t.query)) : pathRows((await this.chat.findPaths(t.query)).rows);
     const range = new vscode.Range(pos.line, t.start, pos.line, pos.character);
     const typed = line.slice(t.start);
     const kinds: Record<NoteCompletionRow['kind'], vscode.CompletionItemKind> = {
       person: vscode.CompletionItemKind.User, file: vscode.CompletionItemKind.File,
-      folder: vscode.CompletionItemKind.Folder, descend: vscode.CompletionItemKind.Folder,
+      folder: vscode.CompletionItemKind.Folder, descend: vscode.CompletionItemKind.Folder, ref: vscode.CompletionItemKind.Reference,
     };
     const items = rows.map((r, i) => {
       const it = new vscode.CompletionItem(r.label, kinds[r.kind]);
@@ -103,6 +110,8 @@ export class QuoteHost implements vscode.Disposable {
   /** the chat's @ people rows and # path rows, for the reader's note box (C20, owner m-5a9111ce12) */
   people(): PersonRow[] { return this.chat.peopleRows(); }
   findPaths(q: string): Promise<{ rows: PathHit[]; up: string | null }> { return this.chat.findPaths(q); }
+  findRefs(q: string): Promise<RefRow[]> { return this.chat.findRefs(q); }
+  openRef(id: string): Promise<void> { return this.chat.openRef(id); }
 
   docMarks(id: string, version: number): { key: string; from: number; to: number; note: string; label: string }[] {
     return this.tray.all().filter(d => d.quote.source === 'doc' && d.quote.id === id && d.quote.version === version)

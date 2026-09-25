@@ -34,6 +34,8 @@ import type { TagTarget } from './tag';
 import { QuoteHost, type QuoteChat } from './quotes';
 import { messageDraft } from '../core/quotes';
 import type { PathHit, PersonRow, QuoteChip, QuoteView } from '../core/chatProtocol';
+import { refKind, type RefRow } from '../core/boardRefs';
+import { RefSource } from '../core/refSource';
 
 const LAST_PICK = 'edp.chat.lastTicket';
 const LAST_SEEN = 'edp.chat.lastSeen'; // ticket id -> ISO time the thread was last open
@@ -68,6 +70,8 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
   private changes: Changes;
   /** C11: the #-picker's workspace file/folder index, and the resolver behind path links */
   private paths: PathIndex;
+  /** C24: the $ picker's rows (the open epic's tree first, then the board's open items), read from existing routes */
+  private refs: RefSource;
   /** C12: uploads staged per thread, artifact sizes/thumbnails, full-size opens */
   private attach: Attachments;
   /** C15: the open scope's Inbox (questions, sign-offs, gates waiting on the viewer) */
@@ -100,6 +104,7 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
     this.provider = new ChatViewProvider(ctx, this, log);
     this.attach = new Attachments(ctx, board, log);
     this.paths = new PathIndex(log);
+    this.refs = new RefSource(() => this.board());
     this.inbox = new InboxHost(board, boardUrl, () => this.inboxScope(), m => this.post(m), ref => this.attach.open(ref),
       e => this.fail(e, 'could not use the Inbox'), log);
     this.docs = new DocsHost(board, () => this.docsScope(), m => this.post(m), e => this.fail(e, 'could not list the docs'), log);
@@ -154,6 +159,28 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
   peopleRows(): PersonRow[] { return this.rows(); }
   findPaths(q: string): Promise<{ rows: PathHit[]; up: string | null }> {
     return this.paths.find(q).then(l => ({ rows: l.rows, up: l.up ?? null }), () => ({ rows: [], up: null }));
+  }
+  findRefs(q: string): Promise<RefRow[]> {
+    const epic = this.epic?.id ?? (this.ticket?.kind === 'epic' ? this.ticket.id : null);
+    return this.refs.rows(epic, q).catch(e => { this.log(`$ picker: ${(e as Error).message}`); return []; });
+  }
+
+  /** C24: a `$<id>` chip: a ticket or epic opens its board page, a doc the EDP reader at its current version, a decision
+   *  its row in the Decisions tab (the open scope's; one outside it is named, not guessed at). */
+  async openRef(id: string): Promise<void> {
+    const kind = refKind(id);
+    if (!kind) return;
+    try {
+      if (kind === 'epic' || kind === 'story' || kind === 'task') {
+        await vscode.env.openExternal(vscode.Uri.parse(boardTicketUrl(this.boardUrl(), id, null, kind === 'epic' ? 'epic' : null)));
+      } else if (kind === 'decision') {
+        if (this.ticket && this.decisions.has(id)) this.post({ type: 'focusDecision', v: 1, ticketId: this.ticket.id, id });
+        else void vscode.window.showInformationMessage(`${id} is not among this thread's decisions (Decisions tab); open its epic or story to see it.`);
+      } else {
+        const d = await this.board().latestDoc(id);
+        await this.reader.open(id, d.version, this.ticket?.id ?? null);
+      }
+    } catch (e) { this.fail(e, `could not open ${id}`); }
   }
 
   handles(): ReadonlySet<string> {
@@ -214,6 +241,11 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
         return;
       }
       case 'openPath': return this.paths.open(m.path);
+      case 'findRefs': { // always answer: the picker waits for this seq's rows
+        this.post({ type: 'refs', v: 1, seq: m.seq, items: await this.findRefs(m.q) });
+        return;
+      }
+      case 'openRef': return this.openRef(m.id);
       case 'inboxAnswer': return this.inbox.answer(m.key, m.text);
       case 'inboxVerdict': return this.inbox.verdict(m.key, m.verdict, m.note, m.version);
       case 'inboxGate': return this.inbox.gate(m.key, m.text);
@@ -270,6 +302,7 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
    *  empty view (nothing read under the old identity stays on screen). A no-op before the first resolve. */
   async restart(): Promise<void> {
     if (!this.booted) return;
+    this.refs.clear();
     this.feed?.dispose();
     this.feed = undefined;
     this.notice = null;

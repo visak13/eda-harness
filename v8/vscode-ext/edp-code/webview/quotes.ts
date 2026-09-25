@@ -9,6 +9,7 @@ import { quoteSourceLabel } from '../src/core/quoteLabel';
 import { displayPassage } from '../src/core/quoteMatch';
 import { at } from '../src/core/render';
 import type { NoteCompletion } from './noteComplete';
+import { refFragment } from './render';
 
 type Intent = ViewToHost extends infer T ? (T extends unknown ? Omit<T, 'v'> : never) : never;
 type Post = (m: Intent) => void;
@@ -62,7 +63,7 @@ function card(m: ChatMessage, q: QuoteView, i: number, post: Post): HTMLElement 
   f.append(cap);
   if (q.note) {
     const n = el('p', 'qc-note');
-    n.append(el('span', 'qc-note-label', 'Note'), document.createTextNode(` ${q.note}`));
+    n.append(el('span', 'qc-note-label', 'Note'), document.createTextNode(' '), refFragment(document, q.note));
     f.append(n);
   }
   return f;

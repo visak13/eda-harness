@@ -450,6 +450,7 @@ window.addEventListener('message', (ev: MessageEvent) => {
   }
   if (m.type === 'marks') { marks = m.marks; people = m.people ?? []; paintMarks(); return; }
   if (m.type === 'paths') { noteComplete.onPaths(m); return; }
+  if (m.type === 'refs') { noteComplete.onRefs(m); return; } // C24
   if (m.type === 'startQuote') { openQuote(); return; }
   if (m.type === 'reveal') { reveal(m.from, m.to); return; }
   if (m.type === 'quoted') { outcome = { ok: m.ok, text: m.text }; renderStatus(); return; }

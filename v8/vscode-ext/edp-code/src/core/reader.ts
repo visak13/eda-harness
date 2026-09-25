@@ -5,6 +5,7 @@
 // field the view sent. Pure: no vscode import.
 
 import type { PathHit, PersonRow } from './chatProtocol';
+import { REF_ID, type RefRow } from './boardRefs';
 
 export const READER_VIEW = 'edp.docReader';
 export const FEEDBACK_MAX = 16_384;
@@ -55,6 +56,8 @@ export type HostToReader =
   | { type: 'marks'; v: 1; marks: ReaderMark[]; thread: string | null; people: PersonRow[] }
   /** C20 (owner m-5a9111ce12): the # picker's rows for the note box's `findPaths` with this `seq` */
   | { type: 'paths'; v: 1; seq: number; items: PathHit[]; up?: string | null }
+  /** C24: the $ picker's rows for the note box's `findRefs` with this `seq` */
+  | { type: 'refs'; v: 1; seq: number; items: RefRow[] }
   /** C20: Ctrl+Alt+Q / the context menu: open the quote box on the current selection */
   | { type: 'startQuote'; v: 1 }
   /** C20: a quote card's link: scroll to these source lines and mark them */
@@ -83,7 +86,11 @@ export type ReaderToHost =
    *  those blocks before it) and the note */
   | { v: 1; type: 'addQuote'; from: number; to: number; text: string; before: string; note: string }
   /** C20: the note box's # picker asks for the workspace paths matching `q` (the chat's C11 rule) */
-  | { v: 1; type: 'findPaths'; q: string; seq: number };
+  | { v: 1; type: 'findPaths'; q: string; seq: number }
+  /** C24: the note box's $ picker asks for the board objects matching `q` */
+  | { v: 1; type: 'findRefs'; q: string; seq: number }
+  /** C24: a $-reference chip in the reader (a draft note) */
+  | { v: 1; type: 'openRef'; id: string };
 
 const LINE_MAX = 10_000_000;
 const int = (x: unknown, min: number) => (typeof x === 'number' && Number.isSafeInteger(x) && x >= min && x <= LINE_MAX ? x : null);
@@ -96,6 +103,15 @@ export function parseReaderInbound(raw: unknown): ReaderToHost | null {
   switch (r.type) {
     case 'ready': case 'compare': case 'source': case 'fullScreen': case 'refresh': case 'approve': case 'openProposalDiff':
       return { v: 1, type: r.type };
+    case 'findRefs': {
+      const q = r.q, seq = r.seq;
+      if (typeof q !== 'string' || !/^[A-Za-z][\w-]{0,127}$/.test(q)) return null;
+      return typeof seq === 'number' && Number.isSafeInteger(seq) && seq >= 0 ? { v: 1, type: 'findRefs', q, seq } : null;
+    }
+    case 'openRef': {
+      const id = r.id;
+      return typeof id === 'string' && REF_ID.test(id) ? { v: 1, type: 'openRef', id } : null;
+    }
     case 'findPaths': {
       const q = r.q, seq = r.seq;
       if (typeof q !== 'string' || q.length > 1024 || /[`\r\n]/.test(q)) return null;

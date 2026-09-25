@@ -195,6 +195,11 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
       case 'openLink': await vscode.env.openExternal(vscode.Uri.parse(m.href)); return;
       case 'selection': p.selection = { from: m.from, to: m.to, text: m.text }; return;
       case 'addQuote': return this.addQuote(p, m.from, m.to, m.text, m.before, m.note);
+      case 'findRefs': { // C24: always answer, as findPaths
+        p.post({ type: 'refs', v: 1, seq: m.seq, items: await (this.quotes?.findRefs(m.q) ?? Promise.resolve([])) });
+        return;
+      }
+      case 'openRef': await this.quotes?.openRef(m.id); return;
       case 'findPaths': { // always answer: the picker holds its navigation keys until this seq's rows arrive
         const lv = await (this.quotes?.findPaths(m.q) ?? Promise.resolve({ rows: [], up: null }));
         p.post({ type: 'paths', v: 1, seq: m.seq, items: lv.rows, up: lv.up });

@@ -74,7 +74,7 @@ PowerShell. Adding one is a commit to `extensions.txt` with its exact version.
 ## How tagging works
 
 Select code, then right-click **EDP: Tag selection on board…** (or `Ctrl+Alt+M`). Where the tag goes
-depends on the EDP Chat panel (edp-code 0.12.0):
+depends on the EDP Chat panel (edp-code 0.13.0):
 
 - **The chat panel has been opened in this window and a thread is open:** the panel is revealed and the
   lines become a **code chip** above its composer (path, lines, commit). Type your text and press
@@ -112,9 +112,8 @@ against its source when you send.
   source, the passage and an editable note. **↑**/**↓** reorder them and **×** removes one. While the
   chat panel is hidden the status bar shows **EDP draft: N → <thread>**; click it to show the chat.
   The drafts survive a reload of the window.
-- **Mentions and paths in notes:** every note box (the comment box, the reader and message popovers, the
-  chip notes) completes `@` (board people and live seats) and `#` (files and folders of the workspace)
-  as the composer does.
+- **Mentions, paths and board objects in notes:** every note box (the comment box, the reader and message
+  popovers, the chip notes) completes `@`, `#` and `$` as the composer does (next section).
 - **Send:** press `Ctrl+Enter` in the composer (the text is optional when quotes are attached). The
   message carries every chip in order, together with any code chip, attachments or Reply target.
   If the board refuses one quote (its source changed), that chip is marked and nothing is sent;
@@ -127,6 +126,25 @@ against its source when you send.
 never while you are typing in a text field, so on keyboards where `AltGr` types a character with `Q`
 (for example `@` on German layouts) typing is unaffected. The board UI uses the same `Ctrl+Alt+Q`
 to open its Quote popover. `Ctrl+Shift+Q` is not used: it quits Firefox.
+
+## @, # and $ in the composer and in notes
+
+Three pickers, in the chat composer and in every quote note box. **↑**/**↓** move, **Enter** or **Tab**
+picks, **Escape** closes the list and keeps what you typed.
+
+- **`@` people:** board people and live agent seats (each seat shows its role, ticket and title). A picked
+  `@handle` wakes that person or seat when the message is sent. Board UI and VS Code.
+- **`#` files and folders (VS Code only):** paths of the open workspace, honouring `.gitignore`. A picked
+  path goes into the text as a repo-relative path; in messages it becomes a link that opens the file or
+  reveals the folder. The board UI keeps `#` as plain text.
+- **`$` board objects:** tickets (epics, stories, tasks), docs (design, hl and ll strategies, reports) and
+  decisions. `$` at the start of a word followed by a letter opens the list: this epic's tickets, docs and
+  live decisions first, then the board's other open items; each row shows kind, id and title. A pick
+  inserts `$<id> (<title>)`, so agents read the id they act on. In messages and notes a `$<id>` shows as a
+  chip: a ticket or epic opens its board page; a doc opens the EDP reader (VS Code) or the doc drawer
+  (board UI); a decision opens its row in the Decisions tab (VS Code) or the History drawer on
+  Decisions (board UI, which has no decision page). `$5`, `$env:X` and `$` inside code never open the
+  list. Board UI and VS Code.
 
 ## The built-in git UI is not guarded
 

@@ -19,6 +19,7 @@ export type Session = {
   id: string; participant_id: string; ticket_id: string | null; state: 'alive' | 'stalled' | 'dead' | 'parked';
   created_at?: string; last_output_at?: string | null; presence_stale_since?: string | null;
 };
+export type FindHit = { type: string; id: string; title?: string; status?: string; snippet?: string };
 export type Ticket = { id: string; kind: string; title: string; status: string; assignee: string | null; epic_id?: string | null; parent_id?: string | null; design_ref?: string | null };
 export type MessageKind = 'question' | 'steer' | 'finding' | 'note';
 export type MessageIn = { ticket_id: string; to: string; kind: MessageKind; text: string; code_context: Anchor };
@@ -162,5 +163,9 @@ export function boardClient(baseUrl: string, creds: () => Promise<Creds | undefi
     withdrawDecision: (id: string, reason: string) => call<BoardDecision>('POST', `/v1/decisions/${encodeURIComponent(id)}/withdraw`, { reason }),
     setBinding: (id: string, binding: boolean, reason: string) =>
       call<BoardDecision>('POST', `/v1/decisions/${encodeURIComponent(id)}/binding`, { binding, reason }),
+    // the $ picker (C24): the board's own search, and the epics list (existing routes, no server change)
+    find: (q: string, types: string, k = 20) =>
+      call<FindHit[]>('GET', `/v1/find?${new URLSearchParams({ q, types, k: String(k) })}`),
+    epics: () => call<{ id: string; title: string; status: string }[]>('GET', '/v1/epics/summary'),
   };
 }

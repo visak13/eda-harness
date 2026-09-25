@@ -7,20 +7,28 @@ import type { PathHit, PersonRow } from './chatProtocol';
 import { activeMention } from './mentions';
 import { activeHashTag, pathToken } from './paths';
 import { filterPeople } from './people';
+import { activeRef, kindLabel, refToken, type RefRow } from './boardRefs';
 
 /** The @ or # token the caret is completing on this line: where it starts and what was typed after it. */
-export type NoteToken = { kind: '@' | '#'; start: number; query: string };
+export type NoteToken = { kind: '@' | '#' | '$'; start: number; query: string };
 
 export function noteToken(line: string, caret: number): NoteToken | null {
   const m = activeMention(line, caret);
   if (m) return { kind: '@', start: m.start, query: m.query };
   const h = activeHashTag(line, caret);
-  return h ? { kind: '#', start: h.start, query: h.query } : null;
+  if (h) return { kind: '#', start: h.start, query: h.query };
+  const r = activeRef(line, caret); // C24: $ board objects
+  return r ? { kind: '$', start: r.start, query: r.query } : null;
 }
 
 /** One completion row: what the list shows, what replaces the token, the detail line. `kind`: a person, a file, a
  *  folder's token, or `descend` (inside a folder: the provider opens the list again). */
-export type NoteCompletionRow = { label: string; insert: string; detail: string; kind: 'person' | 'file' | 'folder' | 'descend' };
+export type NoteCompletionRow = { label: string; insert: string; detail: string; kind: 'person' | 'file' | 'folder' | 'descend' | 'ref' };
+
+/** C24: a board object inserts `$<id> (<title>) `; the detail names its kind and title. */
+export function refRows(rows: RefRow[]): NoteCompletionRow[] {
+  return rows.map(r => ({ label: `$${r.id}`, insert: refToken(r), detail: `${kindLabel(r.kind)} · ${r.title}${r.group === 'board' ? ' (other work)' : ''}`, kind: 'ref' as const }));
+}
 
 export function mentionRows(people: PersonRow[], query: string): NoteCompletionRow[] {
   return filterPeople(people, query).map(p => ({ label: `@${p.handle}`, insert: `@${p.handle} `, detail: p.detail, kind: 'person' as const }));

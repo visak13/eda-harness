@@ -6,6 +6,7 @@
 import { DECISION_ID, type DecisionsState } from './decisions';
 import type { DocsState } from './docs';
 import { DOC_ID } from './docUri';
+import { REF_ID, type RefRow } from './boardRefs';
 import { INBOX_KEY, INBOX_TEXT_MAX, VERDICTS, type InboxState, type InboxVerdict } from './inbox';
 
 export const PROTOCOL_V = 1 as const;
@@ -208,7 +209,11 @@ export type HostToView =
   /** C17: a decision's source message is now in the open thread: show the Chat tab and scroll it into view */
   | { type: 'focusMessage'; v: 1; ticketId: string; id: string }
   /** C20: `ticketId`'s draft quotes changed (the whole list); `focus`: one was just added, show the Chat tab */
-  | { type: 'quotes'; v: 1; ticketId: string; quotes: QuoteChip[]; focus: boolean; text?: string };
+  | { type: 'quotes'; v: 1; ticketId: string; quotes: QuoteChip[]; focus: boolean; text?: string }
+  /** C24: the $-picker rows for the `findRefs` with this `seq` (this epic's tree first, then the board's open items) */
+  | { type: 'refs'; v: 1; seq: number; items: RefRow[] }
+  /** C24: a decision chip: show the Decisions tab with this row focused */
+  | { type: 'focusDecision'; v: 1; ticketId: string; id: string };
 
 export type ViewToHost =
   | { v: 1; type: 'ready' }
@@ -272,13 +277,18 @@ export type ViewToHost =
   | { v: 1; type: 'quoteMove'; ticketId: string; key: string; by: -1 | 1 }
   | { v: 1; type: 'quoteDrop'; ticketId: string; key: string }
   /** C20: a quote card's source link: quote `index` of a message in the open thread */
-  | { v: 1; type: 'openQuote'; messageId: string; index: number };
+  | { v: 1; type: 'openQuote'; messageId: string; index: number }
+  /** C24: the $-picker's query (the word after `$`); `seq` pairs the answer */
+  | { v: 1; type: 'findRefs'; q: string; seq: number }
+  /** C24: a $-reference chip: a ticket/epic opens on the board, a doc in the EDP reader, a decision in the Decisions tab */
+  | { v: 1; type: 'openRef'; id: string };
 
 const TYPES = new Set(['ready', 'pickTicket', 'loadOlder', 'send', 'dropCode', 'openCode', 'openBoard', 'signIn', 'showMessage']);
 const PATH_TYPES = new Set(['findPaths', 'checkPaths', 'openPath']);
 const HANDLE = /^[A-Za-z0-9][A-Za-z0-9_.\-]{0,127}$/;
 const DIFF_TYPES = new Set(['openDiff', 'openUncommitted']);
 const ATTACH_TYPES = new Set(['attach', 'dropAttachment', 'resolveArtifacts', 'openArtifact']);
+const REF_TYPES = new Set(['findRefs', 'openRef']);
 const QUOTE_TYPES = new Set(['quoteMessage', 'quoteNote', 'quoteMove', 'quoteDrop', 'openQuote']);
 const INBOX_TYPES = new Set(['inboxAnswer', 'inboxVerdict', 'inboxGate', 'inboxOpen', 'inboxRefresh', 'docsOpen', 'docsCompare', 'docsRefresh',
   'decisionOpen', 'decisionWithdraw', 'decisionBinding', 'decisionsRefresh']);
@@ -292,7 +302,7 @@ export const ATTACH_TRANSPORT_MAX = 64 * 1024 * 1024;
 export function parseInbound(raw: unknown, handles: ReadonlySet<string> = new Set()): ViewToHost | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
-  if (r.v !== PROTOCOL_V || typeof r.type !== 'string' || !(TYPES.has(r.type) || DIFF_TYPES.has(r.type) || PATH_TYPES.has(r.type) || ATTACH_TYPES.has(r.type) || INBOX_TYPES.has(r.type) || QUOTE_TYPES.has(r.type))) return null;
+  if (r.v !== PROTOCOL_V || typeof r.type !== 'string' || !(TYPES.has(r.type) || DIFF_TYPES.has(r.type) || PATH_TYPES.has(r.type) || ATTACH_TYPES.has(r.type) || INBOX_TYPES.has(r.type) || QUOTE_TYPES.has(r.type) || REF_TYPES.has(r.type))) return null;
   const str = (k: string) => (typeof r[k] === 'string' ? (r[k] as string) : undefined);
   switch (r.type) {
     case 'ready': case 'loadOlder': case 'signIn': case 'inboxRefresh': case 'docsRefresh': case 'decisionsRefresh':
@@ -440,6 +450,15 @@ export function parseInbound(raw: unknown, handles: ReadonlySet<string> = new Se
       const q = str('q'), seq = r.seq;
       if (q === undefined || q.length > 1024 || /[`\r\n]/.test(q)) return null;
       return typeof seq === 'number' && Number.isSafeInteger(seq) && seq >= 0 ? { v: 1, type: 'findPaths', q, seq } : null;
+    }
+    case 'findRefs': {
+      const q = str('q'), seq = r.seq;
+      if (q === undefined || !/^[A-Za-z][\w-]{0,127}$/.test(q)) return null;
+      return typeof seq === 'number' && Number.isSafeInteger(seq) && seq >= 0 ? { v: 1, type: 'findRefs', q, seq } : null;
+    }
+    case 'openRef': {
+      const id = str('id');
+      return id && REF_ID.test(id) ? { v: 1, type: 'openRef', id } : null;
     }
     case 'checkPaths': {
       const ps = r.paths;

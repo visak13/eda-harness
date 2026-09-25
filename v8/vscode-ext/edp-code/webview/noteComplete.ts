@@ -6,15 +6,20 @@
 import type { PathHit, PersonRow } from '../src/core/chatProtocol';
 import { PathPicker, type FindPaths } from './pathTags';
 import { PeoplePicker, type TextField } from './peoplePicker';
+import { RefPicker, type FindRefs } from './refPicker';
+import type { RefRow } from '../src/core/boardRefs';
 
 export class NoteCompletion {
   readonly people: PeoplePicker;
   readonly paths: PathPicker;
+  /** C24: the $ board-object picker */
+  readonly refs: RefPicker;
 
   /** `prefix` keeps the listbox and option ids apart from the composer's (`people`/`paths`). */
-  constructor(rows: () => PersonRow[], find: FindPaths, status: HTMLElement, prefix: string) {
+  constructor(rows: () => PersonRow[], find: FindPaths & FindRefs, status: HTMLElement, prefix: string) {
     const dummy = document.createElement('textarea');
     const ids = { people: `${prefix}-people`, paths: `${prefix}-paths` };
+    this.refs = new RefPicker(dummy, find, status, () => this.changed(), { list: `${prefix}-refs`, opt: `${prefix}-ref` });
     this.people = new PeoplePicker(dummy, rows, status, () => this.changed(), { list: ids.people, opt: `${prefix}-p` });
     this.paths = new PathPicker(dummy, find, status, () => this.changed(), { list: ids.paths, opt: `${prefix}-path`, people: ids.people });
   }
@@ -35,7 +40,8 @@ export class NoteCompletion {
       this.onChange = changed ?? null;
       this.people.field = field;
       this.paths.ta = field;
-      host.prepend(this.people.list, this.paths.list);
+      this.refs.field = field;
+      host.prepend(this.people.list, this.paths.list, this.refs.list);
     };
     field.addEventListener('focus', point);
     field.addEventListener('input', () => { point(); this.update(); });
@@ -45,18 +51,21 @@ export class NoteCompletion {
     field.addEventListener('blur', () => setTimeout(() => { if (this.field === field && document.activeElement !== field) this.close(); }, 0));
     f.addEventListener('keydown', e => {
       if (e.isComposing || e.keyCode === 229 || this.field !== field) return;
-      if (this.paths.onKey(e) || this.people.onKey(e)) e.stopImmediatePropagation();
+      if (this.paths.onKey(e) || this.people.onKey(e) || this.refs.onKey(e)) e.stopImmediatePropagation();
     });
   }
 
   /** The host's rows for a findPaths (an answer to another picker's seq is dropped by the picker). */
   onPaths(m: { type: 'paths'; v: 1; seq: number; items: PathHit[]; up?: string | null }): void { this.paths.onPaths(m); }
 
-  get isOpen(): boolean { return this.people.isOpen || this.paths.isOpen; }
+  /** C24: the host's rows for a findRefs (an answer to another picker's seq is dropped by the picker). */
+  onRefs(m: { type: 'refs'; v: 1; seq: number; items: RefRow[] }): void { this.refs.onRefs(m); }
 
-  close(): void { this.people.close(); this.paths.close(); }
+  get isOpen(): boolean { return this.people.isOpen || this.paths.isOpen || this.refs.isOpen; }
 
-  private update(): void { this.people.update(); this.paths.update(); }
+  close(): void { this.people.close(); this.paths.close(); this.refs.close(); }
+
+  private update(): void { this.people.update(); this.paths.update(); this.refs.update(); }
 
   private changed(): void { this.onChange?.(); }
 }

@@ -9,6 +9,7 @@ import { PeoplePicker } from './peoplePicker';
 import { at } from '../src/core/render';
 import { bodyFragment } from './render';
 import { applyKinds, forgetMisses, markPaths, onPathClick, PathPicker } from './pathTags';
+import { onRefClick, RefPicker } from './refPicker';
 import { commitCount, insertByTime, markerEl, mergeCommits, mergeUnlinked, placeMarkers, renderMarkers } from './cards';
 import { markSeen, restoreLocal } from '../src/core/viewState';
 import { initAttach } from './attach';
@@ -171,6 +172,9 @@ hashBtn.setAttribute('aria-label', 'Tag a file or folder');
 hashBtn.addEventListener('mousedown', e => e.preventDefault()); // keep the caret where it is
 hashBtn.addEventListener('click', () => pathPicker.insertHash());
 toolSlot.append(hashBtn);
+// C24: the $ picker (board objects: tickets, epics, docs, decisions) beside the @ and # lists
+const refPicker = new RefPicker(ta, m => post(m), acStatus, () => { saveDraft(); grow(); });
+composer.prepend(refPicker.list);
 
 // C12: attachments: the clip button in the tool slot, drop onto the box, paste into the text, and the staged list
 const attach = initAttach({ box: cbox, slot: toolSlot, ta, err: sendErr, status: acStatus, ticket: () => state?.ticket?.id ?? null,
@@ -555,17 +559,19 @@ function saveDraft() {
   persist();
 }
 
-ta.addEventListener('input', () => { saveDraft(); grow(); people.update(); pathPicker.update(); sendErr.textContent = ''; });
-ta.addEventListener('click', () => { people.update(); pathPicker.update(); });
-ta.addEventListener('blur', () => setTimeout(() => { people.close(); pathPicker.close(); }, 0));
+ta.addEventListener('input', () => { saveDraft(); grow(); people.update(); pathPicker.update(); refPicker.update(); sendErr.textContent = ''; });
+ta.addEventListener('click', () => { people.update(); pathPicker.update(); refPicker.update(); });
+ta.addEventListener('blur', () => setTimeout(() => { people.close(); pathPicker.close(); refPicker.close(); }, 0));
 ta.addEventListener('keydown', e => {
   if (e.isComposing || e.keyCode === 229) return; // IME: never send or pick mid-composition
   if (pathPicker.onKey(e)) return; // the # list takes the keys while it is open, as the @ list does
   if (people.onKey(e)) return;
+  if (refPicker.onKey(e)) return; // C24: the $ list, the same keys
   if (isSendKey(e)) { e.preventDefault(); send(); } // a plain Enter inserts a newline (the textarea's default)
 });
-ta.addEventListener('keyup', e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { people.update(); pathPicker.update(); } });
+ta.addEventListener('keyup', e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { people.update(); pathPicker.update(); refPicker.update(); } });
 onPathClick(list, post);
+onRefClick(app, post); // C24: a $<id> chip in a message or a quote's note
 
 function send() {
   if (pendingTicket || !state?.ticket) return;
@@ -727,6 +733,23 @@ window.addEventListener('message', (ev: MessageEvent) => {
         ta.focus(); const c = ta.value.length; ta.setSelectionRange(c, c);
       }
       break;
+    case 'refs': // C24
+      refPicker.onRefs(m);
+      noteComplete.onRefs(m);
+      break;
+    case 'focusDecision': { // C24: a decision chip: its row in the Decisions tab
+      if (!state || state.ticket?.id !== m.ticketId) return;
+      select('decisions');
+      const row = tabs.panelOf('decisions').querySelector<HTMLElement>(`[data-id="${CSS.escape(m.id)}"]`);
+      if (row) {
+        if (!row.hasAttribute('tabindex')) row.tabIndex = -1;
+        row.scrollIntoView({ block: 'nearest' });
+        row.focus();
+        row.classList.add('flash');
+        setTimeout(() => row.classList.remove('flash'), 2000);
+      }
+      break;
+    }
     case 'paths':
       pathPicker.onPaths(m);
       noteComplete.onPaths(m);

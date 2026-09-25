@@ -183,6 +183,16 @@ textarea {
 .path-link { display: inline; padding: 0; margin: 0; border: 0; background: none; font: inherit; color: var(--vscode-textLink-foreground); cursor: pointer; }
 .path-link code { color: inherit; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
 .path-link:hover code { color: var(--vscode-textLink-activeForeground); text-decoration-style: solid; }
+/* $-references (C24): the $ list reuses the @ list (other work dimmed); a $<id> in a message or note is a chip
+   button that opens its target; a decision chip flashes its row in the Decisions tab */
+.opt.other .h { font-weight: 400; }
+.ref-chip {
+  display: inline; margin: 0; padding: 0 5px; border: 0; border-radius: 3px; font: inherit; font-size: 0.95em; cursor: pointer;
+  background: var(--vscode-badge-background); color: var(--vscode-badge-foreground);
+}
+.ref-chip:hover { text-decoration: underline; }
+[data-id].flash { outline: 1px solid var(--vscode-focusBorder); background: var(--vscode-list-hoverBackground); }
+body.vscode-high-contrast .ref-chip { border: 1px solid var(--vscode-contrastBorder); }
 .tool.hash { padding: 0 6px; font-weight: 600; color: var(--vscode-icon-foreground, var(--vscode-foreground)); }
 .tool.hash:hover { background: var(--vscode-toolbar-hoverBackground); }
 
