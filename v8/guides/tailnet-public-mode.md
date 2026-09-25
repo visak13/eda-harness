@@ -42,7 +42,7 @@ The check never prints a token value. Rows: BLOCKER (must fix), WARN, OK, INFO.
 | serve | serve config other than `https:443 → http://127.0.0.1:9400`, any Funnel, any :9410, any raw TCP forward | `tailscale serve reset` |
 | listen | a fleet port (board, mcp, pool, broker, code-server) not on loopback | rebind it to 127.0.0.1 |
 
-**Why seats matter:** until 2ffb89d the MCP `spawn` tool called the pool directly and never minted a token,
+**Why seats matter:** until 2ffb89d the architect's (and owner's) MCP spawn tool called the pool directly and never minted a token,
 so seats it started are header-only. 2ffb89d makes it get-or-mint the seat's token
 (`POST /v1/sessions/seat-token`) and inject `EDP8_TOKEN`. It reaches seats only after the **board and the
 MCP proxy restart** (the proxy loads code at boot); seats spawned before that must close or be respawned.
@@ -67,7 +67,7 @@ MCP proxy restart** (the proxy loads code at boot); seats spawned before that mu
 
 The pool and broker are not restarted: neither calls the board with the admin token. Re-arm your feed
 after the board restart. MCP single-host HTTP upload switches itself off while `EDP8_PUBLIC_URL` is set
-(http_upload.py); `artifact_upload` by path still works.
+(http_upload.py); the MCP upload of a workspace file by path still works.
 
 ## 3. Verify
 
