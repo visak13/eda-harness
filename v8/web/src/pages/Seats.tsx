@@ -298,6 +298,8 @@ export function SeatTableRow({ seat, caps }: { seat: SeatRow; caps: PoolCapabili
                 Closed; the owner shell can spawn a fresh seat.
               </span>
             ) : null}
+            {resume.data?.hint ? <span className={styles.resumeNote} role="status" data-testid="resume-result">{resume.data.hint}</span> : null}
+            {resume.error ? <span className={styles.resumeNote} role="alert">{String(resume.error)}</span> : null}
           </div>
         </td>
       </tr>

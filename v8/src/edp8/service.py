@@ -1451,15 +1451,15 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         cached = _idem_get(a, idempotency_key)
         if cached is not None:
             return {**cached, "hint": "idempotent replay"}
-        # accept CLOSED participants: a done pool row resumes from its stored session id (§18.3)
-        got = pool_adapter.sessions()
-        closed = False
-        if got.get("ok"):
-            rows = got["value"] if isinstance(got["value"], list) else (got.get("value") or {}).get("sessions", [])
-            closed = any(s.get("handle") == b.participant_id and s.get("state") == "done" for s in rows)
-        out = (pool_adapter.resume_closed(b.participant_id) if closed
-               else pool_adapter.resume(b.participant_id))
+        # The pool owns state and session continuity. A board-side guess based on
+        # any old done row can select the wrong branch for a newer live seat.
+        out = pool_adapter.resume(b.participant_id)
         if out.get("ok"):
+            value = out.get("value") or {}
+            if not value.get("resumed") and not value.get("no_op"):
+                return _pool_result({"ok": False, "error": {"code": "pool", "message":
+                                     value.get("reason", "resume refused")}})
+            out["hint"] = value.get("message") or value.get("reason", "resume accepted")
             _idem_put(a, idempotency_key, out)
             return out
         return _pool_result(out)

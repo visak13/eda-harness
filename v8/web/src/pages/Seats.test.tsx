@@ -130,6 +130,23 @@ describe("Seats presence rules (RTL)", () => {
 });
 
 describe("Seats Resume gating (both pool answers)", () => {
+  it("parked and closed Resume both call the shared sessions/resume API", async () => {
+    const resumed: string[] = [];
+    mockBoard(CAPS_YES);
+    server.use(http.post("/v1/sessions/resume", async ({ request }) => {
+      const body = await request.json() as { participant_id: string };
+      resumed.push(body.participant_id);
+      return HttpResponse.json({ ok: true, value: { resumed: true }, hint: "continued saved-session" });
+    }));
+    mount();
+    await screen.findByText("engineer.s-eng");
+    fireEvent.click(await within(rowFor("reviewer.s-rev")).findByTestId("seat-resume"));
+    await waitFor(() => expect(resumed).toEqual(["reviewer.s-rev"]));
+    expect(within(rowFor("reviewer.s-rev")).getByTestId("resume-result")).toHaveTextContent("continued saved-session");
+    fireEvent.click(await within(rowFor("qa.s-qa")).findByTestId("seat-resume"));
+    await waitFor(() => expect(resumed).toEqual(["reviewer.s-rev", "qa.s-qa"]));
+  });
+
   it("resume_closed=false: the closed seat offers no Resume, explaining a fresh seat instead", async () => {
     mockBoard(CAPS_NO);
     mount();

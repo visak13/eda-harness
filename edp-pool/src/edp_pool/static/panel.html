@@ -434,7 +434,8 @@ async function decide(aid, decision) {
 
 async function forkResume(h) {
   try { const r = await api(`/v1/resume/${h}`, {method: "POST"});
-        if (r.refused) alert(`refused: ${r.refused}`); }
+        if (r.refused) alert(`refused: ${r.refused}`);
+        else alert(r.message || r.reason || "resume requested"); }
   catch (e) { alert(e.message); }
   refreshShells();
 }

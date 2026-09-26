@@ -132,7 +132,7 @@ def spawn(role: str, participant_id: str, *, parent_session: str | None = None, 
 
 
 def resume(participant_id: str) -> dict[str, Any]:
-    """Fork-resume the parked shell of a participant (same session, same context)."""
+    """Resume any saved seat; the pool selects live, crashed, or closed state."""
     return _post(f"/v1/resume/{participant_id}")
 
 

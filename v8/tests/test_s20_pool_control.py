@@ -296,26 +296,23 @@ def test_spawn_mints_token_injects_and_it_authenticates(tmp_path, monkeypatch):
 
 # ---------------------------------------------------------------- resume-from-closed routing (c-441256a773)
 
-def test_resume_routes_to_resume_closed_when_row_done(client, rig, monkeypatch):
+def test_resume_always_uses_pool_resume_even_with_historical_done_row(client, rig, monkeypatch):
     seat = f"engineer.{rig['story']}"
     monkeypatch.setattr(pool_adapter, "sessions", lambda: {
         "ok": True, "value": [{"handle": seat, "state": "done", "session_id": "old"}]})
     hit = {}
 
-    def _closed(pid):
-        hit["closed"] = pid
-        return {"ok": True, "value": {"session_id": "new"}}
+    def _resume(pid):
+        hit["resume"] = pid
+        return {"ok": True, "value": {"resumed": True, "session_id": "new",
+                                       "message": "continued old"}}
 
-    def _parked(pid):
-        hit["parked"] = pid
-        return {"ok": True, "value": {}}
-
-    monkeypatch.setattr(pool_adapter, "resume_closed", _closed)
-    monkeypatch.setattr(pool_adapter, "resume", _parked)
+    monkeypatch.setattr(pool_adapter, "resume", _resume)
     r = client.post("/v1/sessions/resume", json={"participant_id": seat, "ticket_id": rig["story"]},
                     headers={"X-Participant": "owner"})
     assert r.status_code == 200, r.text
-    assert hit.get("closed") == seat and "parked" not in hit  # routed to resume_closed
+    assert hit == {"resume": seat}
+    assert r.json()["hint"] == "continued old"
 
 
 def test_resume_uses_normal_resume_when_parked(client, rig, monkeypatch):
@@ -324,17 +321,25 @@ def test_resume_uses_normal_resume_when_parked(client, rig, monkeypatch):
         "ok": True, "value": [{"handle": seat, "state": "parked", "session_id": "p"}]})
     hit = {}
 
-    def _closed(pid):
-        hit["closed"] = pid
-        return {"ok": True, "value": {}}
-
     def _parked(pid):
         hit["parked"] = pid
-        return {"ok": True, "value": {"session_id": "r"}}
+        return {"ok": True, "value": {"resumed": True, "session_id": "r",
+                                       "message": "continued p"}}
 
     monkeypatch.setattr(pool_adapter, "resume", _parked)
-    monkeypatch.setattr(pool_adapter, "resume_closed", _closed)
     r = client.post("/v1/sessions/resume", json={"participant_id": seat, "ticket_id": rig["story"]},
                     headers={"X-Participant": "owner"})
     assert r.status_code == 200, r.text
-    assert hit.get("parked") == seat and "closed" not in hit
+    assert hit == {"parked": seat}
+
+
+def test_resume_result_names_explicit_fresh_start(client, rig, monkeypatch):
+    seat = f"engineer.{rig['story']}"
+    monkeypatch.setattr(pool_adapter, "resume", lambda _pid: {
+        "ok": True, "value": {"resumed": True, "message":
+                             "started fresh: no stored session"}})
+    r = client.post("/v1/sessions/resume", json={"participant_id": seat,
+                                                   "ticket_id": rig["story"]},
+                    headers={"X-Participant": "owner"})
+    assert r.status_code == 200, r.text
+    assert r.json()["hint"] == "started fresh: no stored session"

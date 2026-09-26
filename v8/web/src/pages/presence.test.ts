@@ -54,6 +54,12 @@ describe("presenceOf", () => {
     expect(p.showResume).toBe(true);
   });
 
+  it("a stalled seat offers the same Resume when the pool supports it", () => {
+    const stalled: SeatRow = { ...base, state: "stalled", reason: "process unresponsive" };
+    expect(presenceOf(stalled, CAPS_YES, NOW).showResume).toBe(true);
+    expect(presenceOf(stalled, { ...CAPS_YES, resume_parked: false }, NOW).showResume).toBe(false);
+  });
+
   it("a seat with no mirrored session reads 'Availability unknown', never a death", () => {
     const p = presenceOf({ ...base, state: null }, CAPS_YES, NOW);
     expect(p.word).toBe("Availability unknown");

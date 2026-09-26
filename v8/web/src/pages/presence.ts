@@ -66,7 +66,8 @@ export function presenceOf(
   }
 
   if (seat.state === "stalled") {
-    return { kind: "stalled", word: "Stalled", dot: "muted", detail: seat.reason || undefined, showResume: false };
+    return { kind: "stalled", word: "Stalled", dot: "muted", detail: seat.reason || undefined,
+      showResume: canResumeParked };
   }
 
   // Alive: fresh within 60s → Working; else Presence not refreshed with the last-known state.

@@ -373,9 +373,8 @@ def test_resume_of_unparked_or_unknown_handle_is_refused(svc):
     assert out["resumed"] is False and out.get("no_op") is True
 
 
-def test_resume_fail_open_falls_back_to_fresh_spawn(svc, monkeypatch):
-    """A failed fork-resume must not strand the handle: fresh spawn on the
-    SAME handle, default role activation (cold reground path)."""
+def test_resume_failure_keeps_stored_session_for_retry(svc, monkeypatch):
+    """A failed continuation must never silently start a fresh conversation."""
     sid = _parked_planner(svc, monkeypatch, crash=True,
                           claude_session="base-uuid-1")
     real_launch = svc.spawner.launch
@@ -387,15 +386,10 @@ def test_resume_fail_open_falls_back_to_fresh_spawn(svc, monkeypatch):
 
     monkeypatch.setattr(svc.spawner, "launch", _fork_fails)
     out = svc.resume("rec-x:s1")
-    assert out["resumed"] is True and out["via"] == "fresh-fallback"
-    rec = svc.spawner.launched[-1]
-    assert rec["resume_session"] is None
-    assert "replay=true" in (rec["activation"] or ""), (
-        "cold fallback must tell the fresh shell to check_inbox with "
-        "replay - the dead predecessor may have consumed its dispatch "
-        "mail (the missing-launch-context incident)")
-    assert svc.sessions[sid]["state"] == "active"
-    assert svc.sessions[sid]["claude_session_id"] == rec["claude_session"]
+    assert out["resumed"] is False
+    assert len(svc.spawner.launched) == 1
+    assert svc.sessions[sid]["state"] == "parked"
+    assert svc.sessions[sid]["claude_session_id"] == "base-uuid-1"
 
 
 def test_resume_total_failure_leaves_the_row_parked(svc, monkeypatch):
@@ -456,11 +450,9 @@ def test_resume_relaunches_with_recorded_env_and_model(svc, monkeypatch):
     assert rec["model"] == "opus", "resume dropped the recorded model tier"
 
 
-def test_resume_without_session_id_reports_resync_not_fresh_spawn(
+def test_resume_without_session_id_explicitly_starts_fresh(
         svc, monkeypatch):
-    """S9: a parked row with NO claude_session_id (and no recoverable session
-    file) must report resync — never a silent fresh spawn that discards the
-    parked transcript the resume exists to preserve."""
+    """A legacy row without any stored ID may start fresh only with a clear result."""
     monkeypatch.setattr(svc, "_inbox_depth", lambda h: 0)
     sid = svc.spawn("planner", "rec-x:s1", None)
     svc.sessions[sid]["claude_session_id"] = None   # a legacy row from before spawn minted ids
@@ -469,10 +461,11 @@ def test_resume_without_session_id_reports_resync_not_fresh_spawn(
     launches_before = len(svc.spawner.launched)
 
     out = svc.resume("rec-x:s1")
-    assert out["resumed"] is False and out["resync_required"] is True
-    assert len(svc.spawner.launched) == launches_before, (
-        "no fresh spawn may be launched for a row that lacks a resume token")
-    assert svc.sessions[sid]["state"] == "parked"   # still resumable later
+    assert out["resumed"] is True
+    assert out["message"] == "started fresh: no stored session"
+    assert len(svc.spawner.launched) == launches_before + 1
+    assert svc.spawner.launched[-1]["resume_session"] is None
+    assert svc.sessions[sid]["state"] == "active"
     assert svc.locks["rec-x:s1"] == sid
 
 

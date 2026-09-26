@@ -25,8 +25,8 @@ export function modelLabel(id: string | null | undefined): string {
   return known[id] ?? id;
 }
 
-/** POST /v1/sessions/resume — resume a parked or (per capabilities) closed seat from its stored
- *  session (design §18.3). The board picks resume vs resume-from-closed by the pool row's state. */
+/** POST /v1/sessions/resume — one path for parked, stalled, dead and closed seats.
+ *  The pool chooses the stored harness session and reports explicit fresh starts. */
 export const resumeSeat = (participantId: string, ticketId?: string | null) =>
   postJson<Record<string, unknown>>("/v1/sessions/resume", {
     participant_id: participantId,
