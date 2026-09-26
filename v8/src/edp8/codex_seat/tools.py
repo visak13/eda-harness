@@ -22,9 +22,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import shutil
 import subprocess
-import sys
 import threading
 import time
 import uuid
@@ -35,6 +33,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from edp_contracts.proc import kill_popen
+from edp_contracts.toolpath import find_tool, git_bash
 
 from edp8 import settings
 
@@ -525,19 +524,12 @@ def humanise(cron: str) -> str:
 
 # ---------------------------------------------------------------------------- monitor shell
 def monitor_shell() -> str:
-    """Git's bash WRAPPER (puts /usr/bin on PATH), never WSL's System32 relay — edp8.ts monitorShell."""
+    """Git's bash WRAPPER (puts /usr/bin on PATH), never WSL's System32 relay — edp8.ts monitorShell.
+    EDP_MONITOR_SHELL, else edp_contracts.toolpath.git_bash (EDP_BASH_BIN, Git's bash beside the git on
+    PATH, or bash on PATH)."""
     if settings.get("EDP_MONITOR_SHELL"):
         return settings.get("EDP_MONITOR_SHELL")
-    if sys.platform != "win32":
-        return "/bin/bash"
-    roots = [settings.get("ProgramFiles"), settings.get("ProgramFiles(x86)"), settings.get("ProgramW6432"),
-             os.path.join(settings.get("LOCALAPPDATA"), "Programs") if settings.get("LOCALAPPDATA") else None]
-    for r in filter(None, roots):
-        for sub in ("Git\\bin\\bash.exe", "Git\\usr\\bin\\bash.exe"):
-            c = os.path.join(r, sub)
-            if os.path.exists(c):
-                return c
-    return "bash"
+    return git_bash() or "bash"
 
 
 # node's global WebSocket as the ws source (the v8 venv has no websocket client): one JSON-encoded
@@ -836,7 +828,7 @@ class SeatTools:
 
     def _start_ws(self, tool_call_id: str, url: str, protocols: list[str] | None, description: str, persistent: bool, timeout_ms: float) -> Mon:
         m = self._new_mon(tool_call_id, description, url, True)
-        node = shutil.which("node") or "node"
+        node = find_tool("node") or "node"
         try:
             m.proc = subprocess.Popen([node, "-e", _WS_NODE, url, json.dumps(protocols)], cwd=self.cwd, env=self.env,
                                       stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,

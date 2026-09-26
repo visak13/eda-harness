@@ -75,6 +75,8 @@ for _name, _doc in (
     ("ProgramFiles(x86)", "Windows Program Files (x86) dir."),
     ("ProgramW6432", "Windows 64-bit Program Files dir."),
     ("CLAUDE_CONFIG_DIR", "Claude Code config dir of this process."),
+    ("COMSPEC", "Windows command interpreter; runs .cmd/.bat shims without a shell string (edp_contracts.toolpath)."),
+    ("SystemRoot", "Windows system dir; a bash under it is WSL's relay, never Git bash."),
 ):
     declare(f"os.{_name.lower()}", _name, "str", None, "Platform", _doc, env_only=True)
 
@@ -111,6 +113,14 @@ declare("mcp.upload_root", "EDP8_UPLOAD_ROOT", "path", None, "Limits/tuning",
 declare("seats.skip_permissions", "EDP_SKIP_PERMISSIONS", "bool", False, "Seats & models",
         "Seats run without permission prompts (claude --dangerously-skip-permissions, codex "
         "danger-full-access).", restart_required="pool")
+# ---- external tools (edp_contracts.toolpath: the setting, else PATH; S2 s-b7ec13d748)
+declare("tools.node", "EDP_NODE_BIN", "path", None, "Seats & models",
+        "node executable (Pi's cli.js, the codex seat's WebSocket monitor); default `node` on PATH.")
+declare("tools.git", "EDP_GIT_BIN", "path", None, "Seats & models",
+        "git executable; default `git` on PATH. On Windows it also locates Git's bash.")
+declare("tools.bash", "EDP_BASH_BIN", "path", None, "Seats & models",
+        "bash for scripts and the codex Monitor tool; default Git's bash next to git (Windows) or `bash` "
+        "on PATH.")
 declare("seats.monitor_shell", "EDP_MONITOR_SHELL", "str", None, "Seats & models",
         "Shell the codex seat's Monitor tool runs under; default bash (Git Bash on Windows).")
 declare("seats.monitor_variant", "EDP_MONITOR_VARIANT", "str", "persistent", "Seats & models",

@@ -53,8 +53,8 @@ _pi_roles = set(settings.get("EDP_PI_ROLES"))
 # EDP_PI_BIN) the backend is ALWAYS armed, and a spawn whose requested model is a `harness: pi`
 # seat name ("astra") or an openai/… id lands on it — no role re-arming needed. Roles listed in
 # EDP_PI_ROLES route there unconditionally as before.
-from .pi_launcher import is_pi_model, pi_bin_argv  # noqa: E402
-_pi_available = pi_bin_argv()[0] != "pi" or settings.is_set("EDP_PI_BIN")
+from .pi_launcher import is_pi_model, pi_harness_cli  # noqa: E402
+_pi_available = pi_harness_cli() is not None or settings.is_set("EDP_PI_BIN")
 if _pi_roles or _pi_available:
     from .composite_spawner import CompositeSpawner
     from .pi_launcher import PiSpawner

@@ -27,6 +27,7 @@ from pathlib import Path
 
 from edp_contracts import settings
 from edp_contracts.proc import kill_popen
+from edp_contracts.toolpath import find_tool, tool_argv
 
 from .pty_launcher import build_env
 
@@ -49,20 +50,25 @@ def build_argv_pi(agent_home: str | None) -> list[str]:
     return [seat_python(agent_home), "-m", "edp8.pi_seat.run"]
 
 
-def pi_bin_argv() -> list[str]:
-    """argv prefix for Pi itself: EDP_PI_BIN (a cli.js → under node, or an exe), else `pi` on PATH."""
-    cand = (settings.env_raw("EDP_PI_BIN") or "").strip()
-    if cand.lower().endswith(".js"):
-        return ["node", cand]
-    if cand:
-        return [cand]
-    # durable default: <pool dir>/.pi-harness (dev: <repo>/edp-pool; package.json + lockfile committed,
-    # node_modules ignored)
+def pi_harness_cli() -> Path | None:
+    """The durable install's cli.js: <pool dir>/.pi-harness (dev: <repo>/edp-pool; package.json + lockfile
+    committed, node_modules ignored), or EDP_PI_HARNESS."""
     harness = settings.get("EDP_PI_HARNESS") or settings.get("EDP_POOL_DIR") / ".pi-harness"
     cli = harness / "node_modules" / "@earendil-works" / "pi-coding-agent" / "dist" / "cli.js"
-    if cli.is_file():
-        return ["node", str(cli)]
-    return ["pi"]
+    return cli if cli.is_file() else None
+
+
+def pi_bin_argv() -> list[str]:
+    """argv prefix for Pi itself: EDP_PI_BIN (a cli.js → under node, or an exe), the harness install, else
+    `pi` on PATH. Paths become argv through edp_contracts.toolpath (node from EDP_NODE_BIN or PATH)."""
+    cand = (settings.env_raw("EDP_PI_BIN") or "").strip()
+    if cand:
+        return tool_argv(cand)
+    cli = pi_harness_cli()
+    if cli is not None:
+        return tool_argv(str(cli))
+    found = find_tool("pi")
+    return tool_argv(found) if found else ["pi"]
 
 
 #: Pi thinking levels a spawn's `effort` may select (seat_choice: Claude is capped at medium upstream).

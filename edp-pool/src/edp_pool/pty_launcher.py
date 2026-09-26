@@ -24,6 +24,7 @@ from pathlib import Path
 
 from edp_contracts import settings
 from edp_contracts.proc import ProcId, assign_job, job_name, kill_tree
+from edp_contracts.toolpath import find_tool, tool_argv
 
 from .pty import PtyClosed, harness_env, inject, spawn_pty
 
@@ -77,15 +78,15 @@ _CLAUDE_POOL_CONFIG_DIR = settings.setting("EDP_CLAUDE_CONFIG_DIR").default_valu
 
 
 def resolve_claude_bin(override: str | None = None) -> str:
-    """override → EDP_CLAUDE_BIN → which → npm .cmd shim → bare 'claude'."""
+    """override → EDP_CLAUDE_BIN or PATH (edp_contracts.toolpath) → npm .cmd shim's claude.exe → bare
+    'claude'."""
     if override:
         return override
-    env_bin = settings.env_raw("EDP_CLAUDE_BIN")
-    if env_bin:
-        return env_bin
-    resolved = shutil.which("claude")
+    resolved = find_tool("claude")
     if not resolved:
         return "claude"
+    if settings.env_raw("EDP_CLAUDE_BIN"):
+        return resolved  # the operator's explicit choice, used as given
     if resolved.lower().endswith((".cmd", ".bat")):
         cand = (
             Path(resolved).parent
@@ -148,6 +149,10 @@ def claude_bin_needs_repair(claude_bin: str) -> bool:
     p = Path(claude_bin)
     try:
         if p.is_file():
+            if p.name.lower() != "claude.exe":
+                # a .cmd/.js/script entry point (or cmd.exe fronting one) is not the npm platform
+                # binary; there is nothing here to size-check (S2)
+                return False
             if p.stat().st_size < _MIN_HEALTHY_BIN_BYTES:
                 return True
         elif _anthropic_dir(claude_bin) is not None:
@@ -310,7 +315,8 @@ def build_argv(claude_bin: str, extra: list[str] | None,
     flag = ["--dangerously-skip-permissions"] if skip_permissions else []
     model = model or d.get("model")
     model_flag = ["--model", model] if model else []
-    return [claude_bin, *flag, *model_flag, *(extra or [])]
+    # tool_argv: a .cmd shim runs through COMSPEC and a .js under node, never through a shell (S2)
+    return [*tool_argv(claude_bin), *flag, *model_flag, *(extra or [])]
 
 
 def build_session_args(

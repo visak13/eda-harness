@@ -23,11 +23,12 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
+
+from edp_contracts.toolpath import require_tool
 
 from edp8 import settings
 
@@ -58,10 +59,7 @@ def find_codex(explicit: str | None = None) -> str:
     cand = explicit or settings.get("EDP_CODEX_BIN")
     if cand:
         return str(cand)
-    exe = shutil.which("codex")
-    if not exe:
-        raise FileNotFoundError("codex not found: set EDP_CODEX_BIN or put codex on PATH")
-    return exe
+    return require_tool("codex")
 
 
 def containment_args(codex: str, *, discover: Callable | None = None, env: dict[str, str] | None = None,

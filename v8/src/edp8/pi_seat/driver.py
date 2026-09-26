@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import threading
 import time
@@ -25,6 +24,7 @@ from pathlib import Path
 from queue import Empty, Queue
 
 from edp_contracts.proc import kill_popen
+from edp_contracts.toolpath import find_tool, tool_argv
 
 from edp8 import settings
 
@@ -36,18 +36,15 @@ def find_pi(explicit: str | None = None) -> list[str]:
     """argv prefix for Pi: EDP_PI_BIN (a cli.js path → run under node, or an exe), else `pi` on PATH."""
     cand = explicit or settings.get("EDP_PI_BIN")
     if cand:
-        p = Path(cand)
-        if p.suffix == ".js":
-            return ["node", str(p)]
-        return [str(p)]
+        return tool_argv(str(cand))
     for cli in default_pi_cli_candidates():
         if cli.is_file():
-            return ["node", str(cli)]
-    exe = shutil.which("pi")
+            return tool_argv(str(cli))
+    exe = find_tool("pi")
     if not exe:
         raise FileNotFoundError("pi not found: install it under edp-pool/.pi-harness (npm install --ignore-scripts), "
                                 "set EDP_PI_BIN to <pi-coding-agent>/dist/cli.js, or put pi on PATH")
-    return [exe]
+    return tool_argv(exe)
 
 
 PI_CLI_REL = Path("node_modules") / "@earendil-works" / "pi-coding-agent" / "dist" / "cli.js"

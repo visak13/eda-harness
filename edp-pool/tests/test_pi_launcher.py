@@ -54,6 +54,7 @@ def test_visible_mode_opens_pi_tui_with_role_card(monkeypatch, tmp_path):
     (tmp_path / ".claude" / "commands").mkdir(parents=True)
     (tmp_path / ".claude" / "commands" / "qa.md").write_text("# /qa card", encoding="utf-8")
     monkeypatch.setenv("EDP_PI_BIN", "C:/pi/dist/cli.js")
+    monkeypatch.setenv("EDP_NODE_BIN", "node")  # S2: node comes from its setting, else PATH
     monkeypatch.setenv("EDP8_TOKEN", "sekret-token")
     seen = {}
 
@@ -94,6 +95,7 @@ def test_fresh_spawn_rotates_a_closed_session_file(monkeypatch, tmp_path):
     (tmp_path / ".claude" / "commands").mkdir(parents=True)
     (tmp_path / ".claude" / "commands" / "engineer.md").write_text("# /engineer card", encoding="utf-8")
     monkeypatch.setenv("EDP_PI_BIN", "C:/pi/dist/cli.js")
+    monkeypatch.setenv("EDP_NODE_BIN", "node")  # S2: node comes from its setting, else PATH
     seen = {}
 
     class FakeProc:
@@ -214,6 +216,7 @@ def test_spawn_effort_selects_the_pi_thinking_level(monkeypatch, tmp_path):
     monkeypatch.delenv("EDP_PI_MODEL", raising=False)
     monkeypatch.delenv("EDP_PI_THINKING", raising=False)
     monkeypatch.setenv("EDP_PI_BIN", "C:/pi/dist/cli.js")
+    monkeypatch.setenv("EDP_NODE_BIN", "node")  # S2: node comes from its setting, else PATH
     monkeypatch.setattr(pl, "build_argv_pi", lambda _h: [sys.executable, "-c", "import time; time.sleep(30)"])
     seen = {}
 
