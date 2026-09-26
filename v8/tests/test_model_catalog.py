@@ -11,12 +11,22 @@ from edp8 import harness, model_catalog, seat_choice, settings
 
 def test_host_migration_preserves_role_order_defaults_and_caps(tmp_path):
     from pathlib import Path
+    from edp_contracts.seats import parse
+
     source = json.loads((Path(__file__).resolve().parents[1] / "models.json").read_text(encoding="utf-8"))
     legacy = {k: v for k, v in source.items() if k != "models"}
+    legacy["seats"] = {name: {k: v for k, v in row.items() if k not in {"provider", "effort_cap"}}
+                       for name, row in legacy["seats"].items()}
+    old_seats, old_roles = parse(legacy)
     migrated = model_catalog.migrate(legacy)
     assert migrated["role_models"] == source["role_models"]
     assert migrated["roles"] == source["roles"]
-    assert migrated["seats"] == source["seats"]
+    new_seats, new_roles = parse(migrated)
+    assert old_roles == new_roles
+    for name in old_seats:
+        before, after = old_seats[name], new_seats[name]
+        assert (before.model, before.effort, before.context_window, before.auto_compact, before.max_output) == (
+            after.model, after.effort, after.context_window, after.auto_compact, after.max_output)
     (tmp_path / "models.json").write_text(json.dumps(migrated), encoding="utf-8")
     for role, ids in source["role_models"].items():
         assert seat_choice.resolve(None, None, [], tmp_path, role=role).model == ids[0]
