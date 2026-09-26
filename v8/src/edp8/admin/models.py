@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 from typing import Any
 
+from edp_contracts.toolpath import find_tool
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -48,9 +48,10 @@ def _credential_present(provider: str) -> bool:
 
 
 def _warnings(models: dict[str, Any]) -> list[str]:
+    keys = {"claude": "EDP_CLAUDE_BIN", "codex": "EDP_CODEX_BIN", "pi": "EDP_PI_BIN"}
     return sorted({f"{mid}: {row['harness']} harness is not installed" for mid, row in models.items()
                    if row.get("harness") in harness.HARNESSES and
-                   shutil.which(row["harness"]) is None})
+                   find_tool(row["harness"], key=keys[row["harness"]]) is None})
 
 
 def _view(raw: dict[str, Any]) -> dict[str, Any]:
