@@ -1699,13 +1699,10 @@ class PoolService(Microservice):
         double-spawn: the second caller sees resuming/active and no-ops.
         The ~30s spawn itself runs OUTSIDE the lock.
 
-        Fail-open: a failed fork-resume falls back to a FRESH spawn on the
-        same handle (the shell regrounds from the durable plan — today's
-        cold path becomes the exception, not the rule)."""
+        A stored conversation is never silently replaced by a fresh one."""
         sid = self.locks.get(handle)
         if sid is None:
-            return {"resumed": False, "handle": handle,
-                    "reason": f"no lock held for {handle!r}"}
+            return self.resume_closed(handle)
         with self._transition_lock:
             s = self.sessions.get(sid)
             if s is None:
@@ -1748,8 +1745,9 @@ class PoolService(Microservice):
                     # the double-caller (watchdog + backstop) no-op, by design
                     return {"resumed": False, "handle": handle, "no_op": True,
                             "state": state,
+                            "message": f"continued {s.get('claude_session_id') or sid}",
                             "reason": f"session is already {state} — no-op"}
-            if not dead_active and state != "parked":
+            if not dead_active and state not in ("parked", "dead"):
                 return {"resumed": False, "handle": handle,
                         "reason": f"session is {state!r}, not parked"}
             # OPERATOR RULING 2026-07-25 — A PARKED SHELL IS NOW LEFT ALIVE
@@ -1767,6 +1765,13 @@ class PoolService(Microservice):
             if self._session_alive(sid) is True:
                 s["state"] = "active"
                 self._persist()
+                token = s.get("claude_session_id")
+                if not token:
+                    f = getattr(self.spawner, "closed_session_token", None)
+                    try:
+                        token = f(sid, handle) if f else None
+                    except Exception:
+                        token = None
                 _log.info("resume_noop_shell_alive", handle,
                           handle=handle, sid=sid,
                           note="parked shell still alive — restored to "
@@ -1774,6 +1779,7 @@ class PoolService(Microservice):
                                "and Monitor")
                 return {"resumed": False, "handle": handle, "no_op": True,
                         "state": "active", "shell_alive": True,
+                        "message": f"continued {token or sid}",
                         "reason": "parked shell is still alive and kept its "
                                   "own heartbeat and subscriptions — "
                                   "restored to active, no fork needed"}
@@ -1781,15 +1787,10 @@ class PoolService(Microservice):
             self._resuming_inflight.add(sid)  # finding 15: mark the in-flight fork (cleared at every exit)
             base = s.get("claude_session_id")
             settings = s.get("spawn_settings") or {}
-            file_resume = False
             if not base:
-                # S9 (owner follow-up): a parked row with no resume token must
-                # NOT silently fresh-spawn — that discards the parked
-                # transcript this resume exists to preserve. Recover the base
-                # from the backend's session file (Pi) exactly as
-                # resume_closed does; only then decide. A recovery that RAISES
-                # must not strand the row in `resuming` (a permanent no-op) —
-                # treat it as no-base and fall through to the resync return.
+                # Recover a non-Claude token from its session file first.
+                # Only when no token exists may this launch start fresh, and
+                # then both its activation and result must say so.
                 f = getattr(self.spawner, "closed_session_token", None)
                 try:
                     base = f(sid, handle) if f else None
@@ -1797,22 +1798,8 @@ class PoolService(Microservice):
                     _log.warning("resume_token_recovery_failed", handle,
                                  handle=handle, sid=sid, error=repr(exc))
                     base = None
-                file_resume = bool(base)
-            if not base:
-                s["state"] = "parked"   # still resumable once a token exists
-                self._resuming_inflight.discard(sid)  # finding 15: not in flight any more
-                self._persist()
-                _log.warning("resume_no_session_id", handle, handle=handle,
-                             sid=sid,
-                             note="parked row has no claude_session_id and no "
-                                  "recoverable session file — reporting resync "
-                                  "instead of a silent fresh spawn")
-                return {"resumed": False, "handle": handle,
-                        "resync_required": True,
-                        "reason": "parked row has no claude_session_id and no "
-                                  "recoverable session file to fork-resume; "
-                                  "reground via resync, not a silent fresh "
-                                  "spawn"}
+            # A legacy row with no stored conversation may start fresh, but the
+            # result and activation must say so explicitly.
         # S9: settings win over the bare row so a resumed seat keeps the shape
         # it was spawned with — role/mode/model/parent AND the per-seat env
         # (EDP8_TOKEN). Without the env the resumed shell's MCP client 401s on
@@ -1829,7 +1816,7 @@ class PoolService(Microservice):
         fork = str(uuid.uuid4())
         _log.info("resume_start", handle, handle=handle, sid=sid,
                   base=base, fork=fork)
-        resumed_via = "fork-resume"
+        resumed_via = "fork-resume" if base else "started-fresh"
         try:
             # PORT-OPENCODE M2: an opencode shell IGNORES caller-minted ids,
             # so the row's claude_session_id (the minted uuid) is not its
@@ -1842,7 +1829,9 @@ class PoolService(Microservice):
             self.spawner.launch(
                 sid, role, handle, mode,
                 claude_session=fork, resume_session=base,
-                activation=self.PARK_RESUME_ACTIVATION,
+                activation=(self.PARK_RESUME_ACTIVATION if base else
+                            "No stored session; started fresh. Call resume_self() "
+                            "and recover the task from its durable plan."),
                 parent=parent,            # F40#13: lineage survives resume
                 model=model,              # S9: recorded model tier
                 extra_env=extra_env,      # S9: per-seat EDP8_TOKEN et al
@@ -1853,62 +1842,31 @@ class PoolService(Microservice):
             # token the NEXT resume actually needs.
             new_claude_session = (getattr(self.spawner, "session_token",
                                           lambda _sid: None)(sid)
-                                  or (None if file_resume else fork))
-        except Exception as exc:  # noqa: BLE001 — resume-fail → cold fallback
-            _log.warning("resume_fork_failed",
-                         "falling back to a FRESH spawn on the same handle; "
-                         "the shell regrounds from the durable plan",
-                         handle=handle, sid=sid, base=base, error=repr(exc))
-            fresh = str(uuid.uuid4())
-            try:
-                # cold path: the parked transcript is lost AND the dead
-                # predecessor may have already READ its dispatch mail
-                # (advancing the shared inbox cursor), so a default
-                # check_inbox comes back EMPTY — observed live 2026-07-20
-                # as a worker "reporting missing launch context". The
-                # replay opt-in is the designed catch-up: say so.
-                self.spawner.launch(
-                    sid, role, handle, mode, claude_session=fresh,
-                    activation=(
-                        "You are a FRESH shell on a handle whose "
-                        "predecessor died mid-work. Recover your full "
-                        "task context FIRST: check_inbox(replay=true) "
-                        "re-delivers the retained inbox including "
-                        "anything your predecessor consumed. Then follow "
-                        "your role protocol file IN FULL from Step 1."),
-                    parent=parent,          # F40#13
-                    model=model,            # S9: keep the recorded model tier
-                    extra_env=extra_env)    # S9: keep the per-seat EDP8_TOKEN
-                new_claude_session = fresh
-                resumed_via = "fresh-fallback"
-            except Exception as exc2:  # noqa: BLE001
-                with self._transition_lock:
-                    self._resuming_inflight.discard(sid)   # consult#1: launch over
-                    # consult#2: a release() (close_self) that arrived mid-resume must be
-                    # honored on the failure path too, not stranded on the row for a later
-                    # resume to trip on. release() is idempotent-guarded on "active", so it
-                    # is a no-op against the parked failure row — terminate inline instead:
-                    # the caller asked the seat to be gone, so a doomed resume must not
-                    # leave it parked-and-locked. No release requested → parked (resumable).
-                    release_requested = bool(s.pop("_release_requested", False))
-                    if release_requested:
-                        s["state"] = "done"
-                        s["dead_reason"] = "released (close_self) during a failed resume"
-                        if self.locks.get(s.get("handle")) == sid:
-                            del self.locks[s["handle"]]
-                    else:
-                        s["state"] = "parked"   # still resumable later
-                    self._persist()
+                                  or (fork if getattr(self.spawner, "pins_session_id",
+                                                      lambda _sid: True)(sid) else None))
+        except Exception as exc:  # noqa: BLE001 — preserve the stored conversation for retry
+            with self._transition_lock:
+                self._resuming_inflight.discard(sid)   # launch over
+                # Honor close_self even when continuation fails. Otherwise keep
+                # the row parked with its stored token so a retry can continue.
+                release_requested = bool(s.pop("_release_requested", False))
                 if release_requested:
-                    _log.info("release_after_failed_resume", sid, sid=sid, handle=handle)
-                    self._kill_session(sid)
-                _log.error("resume_failed", handle, handle=handle, sid=sid,
-                           error=repr(exc2), released_after_resume=release_requested)
-                return {"resumed": False, "handle": handle,
-                        "reason": f"fork-resume AND fresh fallback failed: "
-                        f"{exc2!r}; session left "
-                        f"{'released' if release_requested else 'parked'}",
-                        "released_after_resume": release_requested}
+                    s["state"] = "done"
+                    s["dead_reason"] = "released (close_self) during a failed resume"
+                    if self.locks.get(s.get("handle")) == sid:
+                        del self.locks[s["handle"]]
+                else:
+                    s["state"] = "parked"   # still resumable later
+                self._persist()
+            if release_requested:
+                _log.info("release_after_failed_resume", sid, sid=sid, handle=handle)
+                self._kill_session(sid)
+            _log.error("resume_failed", handle, handle=handle, sid=sid,
+                       error=repr(exc), released_after_resume=release_requested)
+            return {"resumed": False, "handle": handle,
+                    "reason": f"session launch failed: {exc!r}; session left "
+                    f"{'released' if release_requested else 'parked'}",
+                    "released_after_resume": release_requested}
         with self._transition_lock:
             s["claude_session_id"] = new_claude_session
             s["state"] = "active"
@@ -1929,6 +1887,8 @@ class PoolService(Microservice):
             self.release(sid)
         return {"resumed": True, "handle": handle, "session_id": sid,
                 "via": resumed_via, "claude_session_id": new_claude_session,
+                "message": (f"continued {base}" if base else
+                            "started fresh: no stored session"),
                 "released_after_resume": release_requested}
 
     def resume_closed(self, handle: str) -> dict:
@@ -1956,14 +1916,9 @@ class PoolService(Microservice):
                         "reason": f"no closed (done) session for {handle!r} to resume"}
             s = max(done, key=lambda r: r.get("resumed_at") or r.get("spawned_at") or "")
             base = s.get("claude_session_id")
-            file_resume = False
             if not base:  # a file-resuming backend (Pi) has no session id; its session file is the base
                 f = getattr(self.spawner, "closed_session_token", None)
                 base = f(s["session_id"], handle) if f else None
-                file_resume = bool(base)
-            if not base:
-                return {"resumed": False, "handle": handle,
-                        "reason": "the closed row has no claude_session_id — nothing to fork-resume"}
             sid = s["session_id"]
             settings = s.get("spawn_settings") or {}
             s["state"] = "resuming"
@@ -1983,10 +1938,14 @@ class PoolService(Microservice):
             self.spawner.launch(
                 sid, role, handle, mode,
                 claude_session=fork, resume_session=base, model=model,
-                activation=(self.CLOSED_RESUME_ACTIVATION if file_resume else self.PARK_RESUME_ACTIVATION),
+                activation=(self.CLOSED_RESUME_ACTIVATION if base else
+                            "No stored session; started fresh. Call resume_self() "
+                            "and recover the task from its durable plan."),
                 parent=parent, extra_env=extra_env)
             new_claude_session = (getattr(self.spawner, "session_token",
-                                          lambda _sid: None)(sid) or (None if file_resume else fork))
+                                          lambda _sid: None)(sid) or
+                                  (fork if getattr(self.spawner, "pins_session_id",
+                                                   lambda _sid: True)(sid) else None))
         except Exception as exc:  # noqa: BLE001 — leave the row closed & the lock free for a retry
             with self._transition_lock:
                 s["state"] = "done"
@@ -2018,7 +1977,10 @@ class PoolService(Microservice):
             _log.info("release_after_resume_closed", sid, sid=sid, handle=handle)
             self.release(sid)
         return {"resumed": True, "handle": handle, "session_id": sid,
-                "via": "resume-from-closed", "claude_session_id": new_claude_session,
+                "via": "resume-from-closed" if base else "started-fresh",
+                "claude_session_id": new_claude_session,
+                "message": (f"continued {base}" if base else
+                            "started fresh: no stored session"),
                 "released_after_resume": release_requested}
 
     # ── close is a SELF-ASSERTION (owner ruling 2026-09-06) ──────────────
