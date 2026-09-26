@@ -13,6 +13,11 @@ fallback to a console beep if the toast pipeline errors. Rate-limited to
 one toast per WINDOW_S per (role, type) so a wake storm can't become a
 toast storm. Gated by EDP_TOASTS (default on; set 0 to silence).
 
+BOARD POST (pain p-73d192bf, owner m-705c0a47f6): a SEAT (EDP_HANDLE = <role>.<ticket>) that stops on
+an interactive prompt (permission / elicitation / needs-input — not the ordinary idle wait) also
+posts a `question` to the owner on its ticket, so the board shows the seat is blocked and the
+owner's Slack/feed fires. No one reads seat consoles. The prompt itself is never bypassed.
+
 FAIL-OPEN, ALWAYS: a notifier must never break a shell.
 """
 from __future__ import annotations
@@ -22,6 +27,7 @@ import os
 import subprocess
 import sys
 import time
+import urllib.request
 from pathlib import Path
 
 WINDOW_S = 30.0
@@ -64,14 +70,36 @@ def _rate_limited(key: str) -> bool:
     return False
 
 
+_BLOCKING = ("permission_prompt", "elicitation_dialog", "agent_needs_input")
+
+
+def _post_blocked(payload: dict, ntype: str) -> None:
+    """Best-effort: tell the owner on the seat's ticket that the shell sits on a prompt."""
+    handle = os.environ.get("EDP_HANDLE", "").strip()
+    if ntype not in _BLOCKING or "." not in handle or os.environ.get("EDP_BOARD_BLOCKED_POST", "1") == "0":
+        return
+    ticket = handle.split(".", 1)[1]
+    what = str(payload.get("message") or payload.get("title") or _TYPE_TITLES[ntype])[:300]
+    body = {"ticket_id": ticket, "to": "owner", "kind": "question", "reply_to": None, "artifacts": [],
+            "text": (f"[blocked] {handle} stopped on an interactive prompt ({ntype}): {what} — "
+                     "it waits until someone answers it in the seat's console.")}
+    headers = {"Content-Type": "application/json", "X-Participant": handle}
+    if os.environ.get("EDP8_TOKEN"):
+        headers["X-Token"] = os.environ["EDP8_TOKEN"]
+    base = (os.environ.get("EDP8_BOARD_URL") or "http://127.0.0.1:9400").rstrip("/")
+    try:
+        req = urllib.request.Request(f"{base}/v1/messages", data=json.dumps(body).encode(), headers=headers)
+        urllib.request.urlopen(req, timeout=3).read(0)
+    except Exception:  # noqa: BLE001 — fail-open
+        pass
+
+
 def _xml_escape(s: str) -> str:
     return (s.replace("&", "&amp;").replace("<", "&lt;")
              .replace(">", "&gt;").replace("'", "&apos;"))
 
 
 def main() -> int:
-    if os.environ.get("EDP_TOASTS", "1") == "0" or sys.platform != "win32":
-        return 0
     try:
         payload = json.loads((sys.stdin.read() or "{}").lstrip("﻿"))
     except ValueError:
@@ -81,7 +109,10 @@ def main() -> int:
         return 0
     role = os.environ.get("EDP_ROLE", "") or "neuron (foreground)"
     handle = os.environ.get("EDP_HANDLE", "")
-    if _rate_limited(f"{role}:{ntype}"):
+    if _rate_limited(f"{handle or role}:{ntype}"):
+        return 0
+    _post_blocked(payload, ntype)
+    if os.environ.get("EDP_TOASTS", "1") == "0" or sys.platform != "win32":
         return 0
     title = _xml_escape(f"{role} {_TYPE_TITLES[ntype]}")
     body = _xml_escape(handle or payload.get("cwd", ""))
