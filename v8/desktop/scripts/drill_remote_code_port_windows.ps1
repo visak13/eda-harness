@@ -112,7 +112,7 @@ try {
   } else {
     # public mode needs a human and an agent credential (service.public_startup_error); a fresh home that has
     # never spawned a seat has no agent secret yet: seed drill entries into THIS temp home's tokens.json only
-    $tokf = Join-Path $cfgA "secrets	okens.json"
+    $tokf = Join-Path (Join-Path $cfgA "secrets") "tokens.json"
     $tok = if (Test-Path $tokf) { Get-Content $tokf -Raw | ConvertFrom-Json } else { [pscustomobject]@{} }
     $humans = @($tok.PSObject.Properties | Where-Object { $_.Name -ne "agents" })
     if (-not $humans) { $tok | Add-Member -NotePropertyName "drill-owner" -NotePropertyValue ([guid]::NewGuid().ToString("N")) }
