@@ -232,8 +232,10 @@ def record_verdict(board: Board, actor: Participant, *, criterion_id: str, verdi
     from . import delivery
 
     v = Verdict(verdict)
+    warnings: list[str] = []
     c = board.criterion_update(actor, criterion_id.strip(), verdict=v,
-                               evidence_version=evidence_version, stale_ok=stale_ok, note=note)
+                               evidence_version=evidence_version, stale_ok=stale_ok, note=note,
+                               warnings=warnings)
     msg_id, note_error = None, None
     if note.strip() and ticket_id and ticket_id.strip():
         try:
@@ -247,6 +249,8 @@ def record_verdict(board: Board, actor: Participant, *, criterion_id: str, verdi
             note_error = (f"verdict recorded, but the note {'was posted and not delivered' if msg_id else 'was not posted'}: "
                           f"{getattr(e, 'message', None) or e}")
     out: dict[str, Any] = {"criterion": c.model_dump(mode="json"), "message": msg_id}
+    if warnings:  # Astra finding 5: a post-commit step that failed is reported, never swallowed
+        out["warnings"] = warnings
     if note_error:
         out["note_error"] = note_error
     return out
@@ -414,7 +418,12 @@ def _owner_gates(board: Board, viewer: Participant) -> list[tuple[str, Any]]:
     if viewer.role != Role.owner:
         return []
     out: list[tuple[str, Any]] = []
-    for t in board.store.query("ticket", {"kind": TicketKind.epic}, limit=200):
+    from .board import is_quick
+    roots = board.store.query("ticket", {"kind": TicketKind.epic}, limit=200)
+    # a quick task is its own root: its design_signoff gate is the owner's too (Astra finding 8)
+    roots += [t for t in board.store.query("ticket", {"kind": TicketKind.story}, limit=5000)
+              if t.parent_id is None and is_quick(t)]
+    for t in roots:
         if t.status in _TERMINAL or not board._owner_scope(viewer, t.id):
             continue
         for sub in (t, *board._descendants(t.id)):

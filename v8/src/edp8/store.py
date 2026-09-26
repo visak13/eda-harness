@@ -162,6 +162,15 @@ class Store:
         ids = [r[0] for r in rows]
         if ids:
             self._conn.executemany("DELETE FROM participant WHERE id=?", [(i,) for i in ids])
+        # Astra finding 1: a doc (and every version) a retired role owned must still load — it is
+        # re-owned by the architect (the planning role) and keeps the old role as `retired_owner_role`.
+        for old in ("coordinator", "consultant"):
+            self._conn.execute(
+                "UPDATE doc SET owner_role='architect', body=json_set(body, '$.owner_role', 'architect', "
+                "'$.retired_owner_role', ?) WHERE owner_role=?", (old, old))
+            self._conn.execute(
+                "UPDATE doc_versions SET body=json_set(body, '$.owner_role', 'architect', "
+                "'$.retired_owner_role', ?) WHERE json_extract(body, '$.owner_role')=?", (old, old))
         return ids
 
     def _migrate_columns(self, t: str, cols: list[str]) -> None:

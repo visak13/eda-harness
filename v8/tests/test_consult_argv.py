@@ -905,7 +905,7 @@ def test_fence_never_reverts_a_file_a_shell_command_only_read(tmp_path):
         "aggregated_output": "original"}})
     rep = fence_remediate(None, pre, before, repo, run_log=log)
     e = next(e for e in rep["escapes"] if _norm(tracked) == e["path"])
-    assert e["action"] == "unattributed_concurrent"
+    assert e["action"] == "shell_named_uncertain"   # reported as unknown (Astra 12), never reverted
     assert tracked.read_text(encoding="utf-8") == "SIBLING SEAT WIP\n"
     assert _real_escapes(rep) == []
 
@@ -933,3 +933,35 @@ def test_written_paths_are_full_paths_not_basenames(tmp_path):
                                                    "changes": [{"path": "sub/f.txt"}]}}),
                               cwd=str(tmp_path))
     assert _norm(tmp_path / "sub" / "f.txt") in rel
+
+
+# ------------------------------------------------ Astra adversarial findings 4 and 12 (s-ccdafcb229)
+
+def test_a_file_lane_acquire_error_releases_the_process_lane(_logs, monkeypatch):
+    from edp8 import admission
+    seen = {}
+
+    def boom(self, *a, **k):
+        raise PermissionError("lane dir not writable")
+
+    monkeypatch.setattr(admission.Lane, "acquire", boom)
+    with pytest.raises(PermissionError):
+        consult_mod.consult("second_opinion", "q", on_run_id=lambda rid: seen.setdefault("rid", rid))
+    assert not consult_mod._LANE.locked()
+    assert consult_mod._LANE_STATE["entered"] == 0 and consult_mod._LANE_STATE["queued"] == 0
+    assert consult_mod.consult_status(seen["rid"])["value"]["status"] == "aborted"
+
+
+def test_a_path_only_a_shell_command_names_is_reported_uncertain_not_concurrent(tmp_path):
+    repo = tmp_path / "ue"
+    tracked = _git_init(repo, body="original\n")
+    pre = git_status_map(repo)
+    before = _snapshot_mtimes([repo])
+    tracked.write_text("CHANGED\n", encoding="utf-8")
+    log = json.dumps({"type": "item.completed", "item": {
+        "type": "command_execution", "command": f"Set-Content {tracked} CHANGED"}})
+    rep = fence_remediate(None, pre, before, repo, run_log=log)
+    e = next(e for e in rep["escapes"] if _norm(tracked) == e["path"])
+    assert e["action"] == "shell_named_uncertain" and e["ok"] is False
+    assert tracked.read_text(encoding="utf-8") == "CHANGED\n"       # never reverted on shell text
+    assert _real_escapes(rep) == []

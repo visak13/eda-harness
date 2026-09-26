@@ -644,7 +644,7 @@ class Board:
             if open_blockers:
                 raise BoardError("transition", "blocked by unfinished tickets",
                                  "open blockers: " + ", ".join(f"{b.id}({b.status})" for b in open_blockers))
-        if (to == TicketStatus.in_progress and t.status == TicketStatus.ready and is_quick(t)
+        if (to == TicketStatus.in_progress and is_quick(t)
                 and t.parent_id is None and r != Role.owner and not self._design_signed(t.id)):
             # s-ccdafcb229 (owner m-b13c61ddea): on a quick task the owner reviews the design before any
             # edit — the engineer starts only after the owner answered its design_signoff gate.
@@ -660,7 +660,7 @@ class Board:
             if self._consult_inflight(t.id):
                 raise BoardError("transition", "review handoff held: consult in flight",
                                  "wait for the result, address findings, then ticket_update(status='in_review')")
-            epic_by_architect = r == Role.architect and t.kind == TicketKind.epic  # owner m-b0a7f9cda9
+            epic_by_architect = self._own_epic_architect(actor, t)  # owner m-b0a7f9cda9
             if t.assignee and actor.id != t.assignee and not epic_by_architect:
                 raise BoardError("scope", "only the assignee hands a ticket to review")
             if not crits:
@@ -674,7 +674,7 @@ class Board:
                                  f"criteria without evidence: {missing} — /verify, doc_create(report), criterion_update")
         if to == TicketStatus.done:
             # the architect completes its own EPIC's walk (owner m-b0a7f9cda9); the guards below still hold
-            if r not in CRITERION_CHECKERS and not (r == Role.architect and t.kind == TicketKind.epic):
+            if r not in CRITERION_CHECKERS and not self._own_epic_architect(actor, t):
                 raise BoardError("scope", "done is set by the checker (qa/owner), or by the architect on its epic")
             if not crits:
                 raise BoardError("transition", "done needs criteria", "a ticket with no criteria cannot be verified")
@@ -686,6 +686,13 @@ class Board:
                 by_qa = [c for c in crits if c.checked_by == "qa"]
                 if not by_qa:
                     raise BoardError("transition", "an epic needs criteria checked_by=qa", "qa acceptance is the last word")
+
+    @staticmethod
+    def _own_epic_architect(actor: Participant, t: Ticket) -> bool:
+        """The architect of THIS epic (its seat `architect.<epic>`, its assignee or its creator) — the
+        only architect that may walk the epic to in_review/done/partial (Astra finding 2, s-ccdafcb229)."""
+        return (actor.role == Role.architect and t.kind == TicketKind.epic
+                and actor.id in (f"architect.{t.id}", t.assignee, t.created_by))
 
     def legal_transitions(self, actor: Participant, id_: str) -> dict[str, Any]:
         """Every status edge from the ticket's current status, each marked allowed/blocked for THIS
@@ -756,6 +763,15 @@ class Board:
         # RELEASED — evidence-complete in_review, or done (design §24.1: done no longer gates).
         if self._released(t):
             self._release_successors(t)
+        if t.kind == TicketKind.epic and t.status == TicketStatus.in_progress:
+            # Astra finding 11: an explicitly blocked epic stays blocked while its last story is
+            # released; the moment it is unblocked, "every story released → in_review" applies.
+            kids = self.children(t.id)
+            if kids and all(k.status == TicketStatus.dropped or self._released(k) for k in kids):
+                self.gate_open(t.id, Gate.acceptance, by="board")
+                self._advance_epic_phase(self.ticket(t.id), TicketStatus.in_review,
+                                         trigger="every story released")
+                return
         if (t.status == TicketStatus.signed_off and t.kind != TicketKind.epic
                 and not [b for b in self.blockers(t.id) if not self._released(b)]
                 and not self._design_gate_open(t)):
@@ -1106,17 +1122,30 @@ class Board:
         self.store.put("criterion", c)
         # Everything below runs AFTER the criterion is committed: a failure here must not turn a
         # stored verdict into an error the caller retries (pain p-334391e9).
-        try:
-            self._criterion_after_commit(actor, t, c, verdict, note)
-        except Exception as e:  # noqa: BLE001
-            _log.exception("criterion %s stored; post-commit step failed", c.id)
-            if warnings is not None:
-                warnings.append(f"criterion stored, but a follow-on step failed ({type(e).__name__}: {e}); "
-                                "re-read the ticket before retrying")
+        self._criterion_after_commit(actor, t, c, verdict, note, warnings)
         return c
 
     def _criterion_after_commit(self, actor: Participant, t: Ticket, c: Criterion,
-                                verdict: Verdict | None, note: str) -> None:
+                                verdict: Verdict | None, note: str, warnings: list[str] | None) -> None:
+        """The steps after a stored criterion, each isolated: a failing event insert must not skip the
+        quick reopen or the auto-advance (Astra finding 5). Failures are logged and returned as
+        warnings, never raised — the verdict is committed and a retry would double-record it."""
+        def step(name: str, fn: Any) -> None:
+            try:
+                fn()
+            except Exception as e:  # noqa: BLE001
+                _log.exception("criterion %s stored; post-commit step %s failed", c.id, name)
+                if warnings is not None:
+                    warnings.append(f"criterion stored, but {name} failed ({type(e).__name__}: {e}); "
+                                    "re-read the ticket before retrying")
+
+        step("the event", lambda: self._criterion_event(actor, t, c, verdict))
+        if verdict is not None and note.strip():
+            step("the claim", lambda: records.safely(records.claim_from_verdict, self, actor, c, note))
+        step("the quick reopen", lambda: self._reopen_quick_on_fail(self.ticket(t.id), c, actor))
+        step("the auto-advance", lambda: self._auto_advance(self.ticket(t.id)))
+
+    def _criterion_event(self, actor: Participant, t: Ticket, c: Criterion, verdict: Verdict | None) -> None:
         pending = [x.id for x in self.criteria(t.id) if x.verdict != Verdict.passed]
         if verdict is not None:  # a verdict is a first-class WHO/WHAT event, not a doc edit
             self._emit(t.id, EventKind.criterion_checked,
@@ -1127,10 +1156,6 @@ class Board:
         else:
             self._emit(t.id, EventKind.doc_updated,
                        {"criterion": c.id, "verdict": c.verdict, "pending": pending, "by": actor.id})
-        if verdict is not None and note.strip():
-            records.safely(records.claim_from_verdict, self, actor, c, note)
-        self._reopen_quick_on_fail(self.ticket(t.id), c, actor)
-        self._auto_advance(self.ticket(t.id))
 
     def _reopen_quick_on_fail(self, t: Ticket, c: Criterion, actor: Participant) -> None:
         """S-QUICK: the owner's `fail` on a handed-off quick task sends it straight back to its engineer
@@ -1776,7 +1801,9 @@ class Board:
             # pain p-3fd57a36: a child story started before the owner answered carries the epic to
             # in_progress (_after_status); the open gate stays answerable there — the answer never
             # moves the epic backward (_advance_epic_phase is forward-only).
-            answerable = (TicketStatus.designed, TicketStatus.signed_off, TicketStatus.in_progress)
+            # Astra finding 6: nor does the board's own in_review carry strand an open gate.
+            answerable = (TicketStatus.designed, TicketStatus.signed_off, TicketStatus.in_progress,
+                          TicketStatus.in_review)
             if not (epic.design_ref and self.criteria(epic.id) and epic.status in answerable):
                 raise BoardError("transition",
                                  f"epic {epic.id} is {epic.status.value} with no signed-off-ready design — set "

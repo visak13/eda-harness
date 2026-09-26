@@ -23,6 +23,15 @@ from pathlib import Path
 from .driver import PiSeat
 
 
+def _card_name(agent_home: Path, card: str | None, role: str) -> str:
+    """The per-flow card when EDP_CARD names an existing card file, else the role's own card
+    (s-ccdafcb229; Astra finding 10: the headless runner honours EDP_CARD like the TUI launcher)."""
+    import re
+    if card and re.fullmatch(r"[a-z][a-z0-9-]{0,40}", card) and             (agent_home / ".claude" / "commands" / f"{card}.md").is_file():
+        return card
+    return role
+
+
 def role_card(agent_home: Path, role: str) -> str:
     p = agent_home / ".claude" / "commands" / f"{role}.md"
     if not p.is_file():
@@ -66,7 +75,8 @@ def main(argv: list[str] | None = None) -> int:
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
 
-    activation = env.get("EDP_ACTIVATION") or (None if resume else role_card(agent_home, role))
+    activation = env.get("EDP_ACTIVATION") or (None if resume else role_card(
+        agent_home, _card_name(agent_home, env.get("EDP_CARD"), role)))
     if activation:
         seat.prompt(activation)
     # resident: mirror events until Pi exits. `events()` returns at agent_settled — loop again; the

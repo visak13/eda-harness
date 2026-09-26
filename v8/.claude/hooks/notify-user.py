@@ -31,7 +31,8 @@ import urllib.request
 from pathlib import Path
 
 WINDOW_S = 30.0
-STATE = Path(__file__).resolve().parent.parent.parent / ".logs" / "notify-user-state.json"
+STATE = Path(os.environ.get("EDP_NOTIFY_STATE") or
+             Path(__file__).resolve().parent.parent.parent / ".logs" / "notify-user-state.json")
 
 _TOAST_PS = r"""
 $null = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]

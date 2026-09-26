@@ -167,6 +167,7 @@ def test_the_architect_may_finish_its_epic_but_not_a_story(b):
     from edp8.board import BoardError
     board, ps = b
     epic, story, c = _epic_with_evidenced_story(board, ps)
+    board.ticket_update(ps["owner"], epic.id, assignee="arch")  # arch is THIS epic's architect
     board.ticket_update(ps["eng"], story.id, status=TicketStatus.in_review)
     with pytest.raises(BoardError, match="done is set"):
         board.ticket_update(ps["arch"], story.id, status=TicketStatus.done)
@@ -318,7 +319,8 @@ def test_the_notify_hook_posts_a_blocked_question_for_a_seat_on_a_prompt(tmp_pat
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     hook = Path(__file__).resolve().parents[1] / ".claude" / "hooks" / "notify-user.py"
     env = {"SYSTEMROOT": __import__("os").environ.get("SYSTEMROOT", ""), "EDP_TOASTS": "0",
-           "EDP_HANDLE": "engineer.s-abc", "EDP8_BOARD_URL": f"http://127.0.0.1:{srv.server_port}"}
+           "EDP_HANDLE": "engineer.s-abc", "EDP8_BOARD_URL": f"http://127.0.0.1:{srv.server_port}",
+           "EDP_NOTIFY_STATE": str(tmp_path / "notify-state.json")}  # no rate-limit carry-over between runs
     for ntype in ("idle_prompt", "permission_prompt"):
         subprocess.run([sys.executable, str(hook)], input=_json.dumps(
             {"notification_type": ntype, "message": "Dangerous rm operation"}), text=True, env=env,
@@ -329,3 +331,128 @@ def test_the_notify_hook_posts_a_blocked_question_for_a_seat_on_a_prompt(tmp_pat
     assert b["path"] == "/v1/messages" and b["who"] == "engineer.s-abc"
     assert b["body"]["ticket_id"] == "s-abc" and b["body"]["to"] == "owner" and b["body"]["kind"] == "question"
     assert "[blocked]" in b["body"]["text"] and "Dangerous rm operation" in b["body"]["text"]
+
+
+# ------------------------------------------------------------------ Astra adversarial findings (s-ccdafcb229)
+
+def test_astra1_a_doc_owned_by_a_retired_role_still_loads():
+    import json
+    store = Store(":memory:")
+    body = {"id": "note-old", "doc_type": "note", "title": "t", "body_md": "b", "version": 1,
+            "owner_role": "coordinator", "scope": "global", "created_by": "coordinator"}
+    with store._lock, store._conn:
+        store._conn.execute("INSERT INTO doc(id, body, doc_type, scope, owner_role) VALUES (?,?,?,?,?)",
+                            ("note-old", json.dumps(body), "note", "global", "coordinator"))
+        store._conn.execute("INSERT INTO doc_versions(doc_id, version, body) VALUES (?,?,?)",
+                            ("note-old", 1, json.dumps(body)))
+        store._retire_roles_locked()
+    d = store.get("doc", "note-old")
+    assert d.owner_role == Role.architect
+    raw = json.loads(store._conn.execute("SELECT body FROM doc_versions WHERE doc_id='note-old'").fetchone()[0])
+    assert raw["owner_role"] == "architect" and raw["retired_owner_role"] == "coordinator"
+
+
+def test_astra2_another_architect_cannot_walk_someone_elses_epic(b):
+    from edp8.board import BoardError
+    board, ps = b
+    epic, story, c = _epic_with_evidenced_story(board, ps)
+    board.ticket_update(ps["owner"], epic.id, assignee="arch")
+    other = board.participant_create("agent", Role.architect, "arch2", id_="arch2")
+    board.ticket_update(ps["eng"], story.id, status=TicketStatus.in_review)
+    board.criterion_update(ps["qa"], c.id, verdict=Verdict.passed)
+    (ec,) = board.criteria(epic.id)
+    ec.verdict, ec.evidence_ref = Verdict.passed, "r"
+    board.store.put("criterion", ec)
+    with pytest.raises(BoardError, match="done is set"):
+        board.ticket_update(other, epic.id, status=TicketStatus.done)
+    board.ticket_update(ps["arch"], epic.id, status=TicketStatus.done)
+
+
+def test_astra3_a_quick_task_cannot_start_through_blocked_nor_after_a_reopened_gate(b):
+    from edp8.board import BoardError
+    from edp8.schemas import Gate
+    board, ps = b
+    t = board.ticket_create(ps["owner"], kind=TicketKind.story, work_type=WorkType.feature, title="Q",
+                            words="w", tags=["quick"], assignee="eng")
+    board.ticket_update(ps["eng"], t.id, status=TicketStatus.blocked)
+    with pytest.raises(BoardError, match="design sign-off"):
+        board.ticket_update(ps["eng"], t.id, status=TicketStatus.in_progress)
+    _sign_quick_design(board, ps, t)
+    board.gate_open(t.id, Gate.design_signoff, by="eng", note="changed the design")
+    with pytest.raises(BoardError, match="design sign-off"):
+        board.ticket_update(ps["eng"], t.id, status=TicketStatus.in_progress)
+
+
+def test_astra5_one_failed_post_commit_step_does_not_skip_the_quick_reopen(b, monkeypatch):
+    from edp8 import views
+    board, ps = b
+    t, c = _quick_worked(board, ps)
+
+    def boom(*a, **k):
+        raise OSError("event insert failed")
+    monkeypatch.setattr(board, "_criterion_event", boom)
+    out = views.record_verdict(board, ps["owner"], criterion_id=c.id, verdict="fail", note="", ticket_id=t.id,
+                               evidence_version=1)
+    assert board.ticket(t.id).status == TicketStatus.in_progress  # the reopen still ran
+    assert out["warnings"] and "event insert failed" in out["warnings"][0]
+
+
+def test_astra6_design_signoff_answerable_after_the_board_carried_the_epic_to_in_review(b):
+    from edp8.schemas import Gate
+    board, ps = b
+    epic, story = _designed_epic_with_story(board, ps)
+    board.ticket_update(ps["arch"], story.id, status=TicketStatus.ready)
+    board.ticket_update(ps["arch"], story.id, assignee="eng")
+    board.ticket_update(ps["eng"], story.id, status=TicketStatus.in_progress)
+    rep = board.doc_create(ps["eng"], doc_type=DocType.report, title="R", body_md="done", scope=story.id)
+    (c,) = board.criteria(story.id)
+    board.criterion_update(ps["eng"], c.id, evidence_ref=rep.id)
+    board.ticket_update(ps["eng"], story.id, status=TicketStatus.in_review)
+    assert board.ticket(epic.id).status == TicketStatus.in_review
+    board.gate_answer(ps["owner"], epic.id, Gate.design_signoff, "signed off")
+    assert not board.open_gates(epic.id, Gate.design_signoff)
+
+
+def test_astra7_and_8_quick_design_feedback_reaches_the_engineer_and_the_gate_is_a_decision(b):
+    from edp8 import design_review, views
+    from edp8.schemas import Gate
+    board, ps = b
+    t = board.ticket_create(ps["owner"], kind=TicketKind.story, work_type=WorkType.feature, title="Q",
+                            words="w", tags=["quick"], assignee="eng")
+    d = board.doc_create(ps["eng"], doc_type=DocType.note, title="Design", body_md="plan", scope=t.id)
+    board.ticket_update(ps["eng"], t.id, design_ref=d.id)
+    board.gate_open(t.id, Gate.design_signoff, by="eng", note="review please")
+    assert any(tid == t.id for tid, _ in views._owner_gates(board, ps["owner"]))
+
+    class Body:
+        ticket_id, design_ref, reviewed_version, artifacts = t.id, d.id, 1, []
+    m = design_review._feedback(board, ps["owner"], Body(), "tighten the plan", __import__(
+        "edp8.schemas", fromlist=["MessageKind"]).MessageKind.steer)
+    assert m.to == "eng"
+
+
+def test_astra9_the_service_index_is_board_picked_so_it_re_arms():
+    import inspect
+    from edp8 import service
+    src = inspect.getsource(service)
+    assert "Index(cache=cache)" in src and "Index(embedder=make_embedder()" not in src
+
+
+def test_astra10_the_headless_pi_seat_honours_the_quick_card():
+    from pathlib import Path
+    from edp8.pi_seat.run import _card_name
+    home = Path(__file__).resolve().parents[1]
+    assert _card_name(home, "engineer-quick", "engineer") == "engineer-quick"
+    assert _card_name(home, "../engineer-quick", "engineer") == "engineer"
+    assert _card_name(home, None, "engineer") == "engineer"
+
+
+def test_astra11_an_unblocked_epic_whose_stories_are_released_goes_to_in_review(b):
+    board, ps = b
+    epic, story, _ = _epic_with_evidenced_story(board, ps)
+    board.ticket_update(ps["owner"], epic.id, assignee="arch")
+    board.ticket_update(ps["arch"], epic.id, status=TicketStatus.blocked)
+    board.ticket_update(ps["eng"], story.id, status=TicketStatus.in_review)
+    assert board.ticket(epic.id).status == TicketStatus.blocked  # an explicit block wins while it lasts
+    board.ticket_update(ps["arch"], epic.id, status=TicketStatus.in_progress)
+    assert board.ticket(epic.id).status == TicketStatus.in_review

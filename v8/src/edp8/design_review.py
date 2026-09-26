@@ -78,7 +78,12 @@ def _feedback(board: Board, actor: Participant, body: ReviewDecision | DocumentC
         raise BoardError("schema", "feedback must not be blank")
     if body.artifacts:
         board.artifact_finalise(actor, artifact_ids=body.artifacts, ticket_id=body.ticket_id)
-    message = board.message_send(actor, ticket_id=body.ticket_id, to="architect", kind=kind,
+    # a quick task has no architect: its design is the engineer's, so feedback wakes the assignee
+    # (Astra finding 7, s-ccdafcb229)
+    from .board import is_quick
+    tk = board.ticket(body.ticket_id)
+    to = tk.assignee if (is_quick(tk) and tk.parent_id is None and tk.assignee) else "architect"
+    message = board.message_send(actor, ticket_id=body.ticket_id, to=to, kind=kind,
                                  text=f"[{body.design_ref} v{body.reviewed_version}] {text}")
     message.document_context = DocumentContext(design_ref=body.design_ref, reviewed_version=body.reviewed_version)
     board.store.put("message", message)

@@ -704,6 +704,29 @@ def codex_written_paths(run_log: str, cwd: str | None = None) -> set[str]:
     return out
 
 
+def _shell_command_text(run_log: str) -> str:
+    """Every `command_execution.command` of the run, lowercased with forward slashes — used only to
+    flag a dirty path as UNCERTAIN (Astra finding 12), never to revert it."""
+    parts: list[str] = []
+    for line in run_log.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            continue
+        item = ev.get("item") if isinstance(ev, dict) and isinstance(ev.get("item"), dict) else ev
+        if isinstance(item, dict) and isinstance(item.get("command"), str):
+            parts.append(item["command"])
+    return "\n".join(parts).lower().replace("\\", "/")
+
+
+def _shell_names(path: str, shell_text: str) -> bool:
+    """A shell command names this FULL path (slash-insensitive) — not a basename hit."""
+    return bool(shell_text) and os.path.normpath(path).lower().replace("\\", "/") in shell_text
+
+
 def _log_attributes(path: str, written: set[str]) -> bool:
     """True if this run's codex wrote `path`: an exact full-path match against its
     file_change records, never a basename hit. (c-fe4f824d82, p-d69ca7f8)"""
@@ -740,6 +763,7 @@ def fence_remediate(write_dir: str | None, pre_status: dict[str, str] | None,
     wd = _realpath(write_dir) if write_dir else None
     allow = _realpath(root.joinpath(*_UE_ALLOWLIST_SUBPATH))
     written = codex_written_paths(run_log, cwd=write_dir)
+    shell_text = _shell_command_text(run_log)
     report: list[dict[str, Any]] = []
 
     def _in_allowed_zone(p: Path) -> bool:
@@ -759,10 +783,15 @@ def fence_remediate(write_dir: str | None, pre_status: dict[str, str] | None,
                                "pre_dirty": True, "status": xy, "sha256": rogue_sha,
                                "ok": True})
             elif not _log_attributes(path, written):
-                report.append({"path": path, "action": "unattributed_concurrent",
-                               "attribution": "none", "tracked": tracked,
+                named = _shell_names(path, shell_text)
+                report.append({"path": path,
+                               "action": "shell_named_uncertain" if named else "unattributed_concurrent",
+                               "attribution": "shell_text" if named else "none", "tracked": tracked,
                                "pre_dirty": False, "status": xy, "sha256": rogue_sha,
-                               "ok": True})
+                               "ok": not named,
+                               **({"detail": "a shell command of this run names the path but no file_change "
+                                             "record proves a write; left untouched, reported as uncertain"}
+                                  if named else {})})
             elif not restore:
                 report.append({"path": path, "action": "reported_readonly",
                                "attribution": "log", "tracked": tracked,
@@ -1303,26 +1332,28 @@ def consult(purpose: Purpose, question: str, context: str = "",
         queued_behind = _LANE_STATE["entered"]
         _LANE_STATE["entered"] += 1
         _LANE_STATE["queued"] += 1
-    _LANE.acquire()
-    with _LANE_STATE_LOCK:
-        _LANE_STATE["queued"] -= 1
-    # S8 (epic-6a8a6020fd): the login is shared with resident non-Claude seats, which acquire the
-    # same FILE lane per provider request; the thread lock above keeps this process FIFO, the file
-    # lane makes it fleet-wide. Bounded wait; a full lane is an honest error, not a hang.
-    from edp8.admission import PRIO_HUMAN, Lane, lane_dir_from_env
-    lease = Lane(lane_dir_from_env(_log_dir())).acquire(f"consult:{purpose}", priority=PRIO_HUMAN,
-                                                       max_wait_s=float(os.environ.get("EDP8_LANE_WAIT_S", "900")),
-                                                       ttl_s=float(timeout_s) + 120)  # qa A4: never reclaimed under a live run
-    if lease is None:
-        with _LANE_STATE_LOCK:
-            _LANE_STATE["entered"] -= 1
-        _LANE.release()
-        _write_stub_manifest(run_id, "lane_busy", purpose=purpose, profile=profile_name,
-                             requested_model=requested_model)
-        return {"ok": False, "error": {"code": "lane_busy",
-                                       "message": "the inference lane is held by another seat/consult beyond EDP8_LANE_WAIT_S"},
-                "hint": "preflight() shows the holder; retry later"}
+    # Astra finding 4: every resource taken below is released on EVERY exit, including an
+    # exception from the file-lane acquire itself (an unwritable lane dir) — else _LANE stays
+    # held and every later consult hangs.
+    lane_held, lease = False, None
     try:
+        _LANE.acquire()
+        lane_held = True
+        with _LANE_STATE_LOCK:
+            _LANE_STATE["queued"] -= 1
+        # S8 (epic-6a8a6020fd): the login is shared with resident non-Claude seats, which acquire the
+        # same FILE lane per provider request; the thread lock above keeps this process FIFO, the file
+        # lane makes it fleet-wide. Bounded wait; a full lane is an honest error, not a hang.
+        from edp8.admission import PRIO_HUMAN, Lane, lane_dir_from_env
+        lease = Lane(lane_dir_from_env(_log_dir())).acquire(f"consult:{purpose}", priority=PRIO_HUMAN,
+                                                           max_wait_s=float(os.environ.get("EDP8_LANE_WAIT_S", "900")),
+                                                           ttl_s=float(timeout_s) + 120)  # qa A4: never reclaimed under a live run
+        if lease is None:
+            _write_stub_manifest(run_id, "lane_busy", purpose=purpose, profile=profile_name,
+                                 requested_model=requested_model)
+            return {"ok": False, "error": {"code": "lane_busy",
+                                           "message": "the inference lane is held by another seat/consult beyond EDP8_LANE_WAIT_S"},
+                    "hint": "preflight() shows the holder; retry later"}
         return _consult_locked(purpose, question, context=context, files=files, timeout_s=timeout_s,
                                write_dir=write_dir, images=images, thread_id=thread_id,
                                requested_model=requested_model, profile_name=profile_name, spec=spec,
@@ -1330,12 +1361,17 @@ def consult(purpose: Purpose, question: str, context: str = "",
                                run_id=run_id)
     finally:
         _close_stale_manifest(run_id)
-        lease.release()
+        if lease is not None:
+            lease.release()
         with _LANE_STATE_LOCK:
-            _LANE_STATE["in_flight"] = None
-            _LANE_STATE["started_at"] = None
+            if not lane_held:
+                _LANE_STATE["queued"] -= 1
+            if lane_held:
+                _LANE_STATE["in_flight"] = None
+                _LANE_STATE["started_at"] = None
             _LANE_STATE["entered"] -= 1
-        _LANE.release()
+        if lane_held:
+            _LANE.release()
 
 
 def _consult_locked(purpose: str, question: str, *, context: str, files: list[str] | None, timeout_s: int,
@@ -1467,6 +1503,8 @@ def _consult_locked(purpose: str, question: str, *, context: str, files: list[st
     manifest["fence"] = fence
     manifest["writes_outside_write_dir"] = [e["path"] for e in real]      # attributed escapes only
     manifest["concurrent_writes"] = [e["path"] for e in concurrent]
+    uncertain = [e["path"] for e in fence["escapes"] if e["action"] == "shell_named_uncertain"]
+    manifest["uncertain_writes"] = uncertain   # Astra finding 12: named by this run's shell, unproven
 
     if timed_out:
         manifest["status"] = "timeout"
@@ -1564,7 +1602,13 @@ def _consult_locked(purpose: str, question: str, *, context: str, files: list[st
         value["concurrent"] = [e["path"] for e in concurrent]
         value["escapes"] = fence["escapes"]
         value["fence"] = fence
-    manifest["status"] = "ok_concurrent_writes" if concurrent else "ok"
+    if uncertain:  # Astra finding 12: never asserted as another seat's write — surfaced as unknown
+        value["recovered"] = True
+        value["uncertain"] = uncertain
+        value["escapes"] = fence["escapes"]
+        value["fence"] = fence
+    manifest["status"] = ("ok_uncertain_writes" if uncertain else
+                          "ok_concurrent_writes" if concurrent else "ok")
     _save_manifest()
     hint = ("pass thread_id back on the next consult to STEER this same session"
             if out_thread else "")
@@ -1572,5 +1616,8 @@ def _consult_locked(purpose: str, question: str, *, context: str, files: list[st
         hint = (f"OK — {len(concurrent)} concurrent seat write(s) in the UE tree were "
                 "left untouched (attributed pre-dirty, not this run); see value.concurrent. "
                 + hint)
+    if uncertain:
+        hint = (f"CHECK — {len(uncertain)} path(s) changed that this run's shell commands name but no "
+                "file_change proves it wrote; left untouched, see value.uncertain. " + hint)
     hint = f"{hint} ({value['lane']})" if hint else value["lane"]
     return {"ok": True, "value": value, "hint": hint}

@@ -377,7 +377,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
                 cache = VectorCache(vec_path)
             except Exception:
                 cache = None
-            index = Index(embedder=make_embedder(), cache=cache)
+            index = Index(cache=cache)  # board-picked embedder: a low_ram fallback re-arms (Astra finding 9)
         except Exception:
             index = None
         store = Store(db)

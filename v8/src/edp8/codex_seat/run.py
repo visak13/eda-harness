@@ -20,6 +20,7 @@ is the thread's developer instructions when no AGENTS.md exists, so both harness
 from __future__ import annotations
 
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -32,7 +33,7 @@ from .seat import CodexSeat
 
 def _card_name(agent_home: Path, card: str | None, role: str) -> str:
     """The per-flow card when EDP_CARD names an existing card file, else the role's own card."""
-    if card and "/" not in card and "\\" not in card and (agent_home / ".claude" / "commands" / f"{card}.md").is_file():
+    if card and re.fullmatch(r"[a-z][a-z0-9-]{0,40}", card) and             (agent_home / ".claude" / "commands" / f"{card}.md").is_file():
         return card
     return role
 
