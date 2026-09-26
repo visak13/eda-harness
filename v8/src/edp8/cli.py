@@ -361,7 +361,7 @@ def version_cmd(_argv: list[str]) -> int:
     return 0
 
 
-def gui(_argv: list[str]) -> int:
+def gui(argv: list[str]) -> int:
     try:
         from . import desktop  # S8 s-6dcf78f803
     except ImportError:
@@ -369,7 +369,7 @@ def gui(_argv: list[str]) -> int:
         print(f"{DESKTOP_APP_NAME} is not part of this build yet. The board runs in your browser: "
               f"`heronry start`, then open the board URL from `heronry status` (/ui).", file=sys.stderr)
         return 2
-    return int(desktop.main() or 0)
+    return int(desktop.main(argv) or 0)
 
 
 def _lazy(module: str, fn: str = "main"):
@@ -396,7 +396,7 @@ def help_cmd(_argv: list[str]) -> int:
         ("doctor --bundle [PATH]", "write a redacted diagnostics zip to attach to a GitHub issue"),
         ("update", "check for a new release; --apply installs it (backup, stop, upgrade, start)"),
         ("import --from DIR", "copy an existing v8 install's state (dry run first; --apply to copy)"),
-        ("gui", "open the desktop app"),
+        ("gui", "open the desktop app (--capture <dir>: save its own window content as PNGs, then quit)"),
         ("version", "print the product name and version (also --version)"),
         ("help", "this text (also --help, -h)"),
     ):

@@ -235,3 +235,45 @@ def test_bundle_update_opens_the_release_page_instead_of_heronry_update(monkeypa
     app.update()
     assert cli_calls == [] and opened == ["https://github.com/o/r/releases/tag/v0.9.1"]
     assert "installer" in [c for c in app.window.calls if c[0] == "create_confirmation_dialog"][0][2]
+
+
+def test_gui_capture_options():
+    assert desktop.parse_args([]) == {"capture": None, "settle": 6.0}
+    opts = desktop.parse_args(["--capture", "shots", "--settle", "2"])
+    assert opts["capture"].name == "shots" and opts["settle"] == 2.0
+    with pytest.raises(SystemExit):
+        desktop.parse_args(["--grab"])
+
+
+def test_capture_run_shoots_its_own_page_then_quits(monkeypatch, tmp_path, cli_calls):
+    monkeypatch.setattr(desktop, "initialized", lambda: True)
+    monkeypatch.setattr(desktop, "services_up", lambda: True)
+    monkeypatch.setattr(desktop, "entry_url", lambda: "http://127.0.0.1:5555/ui/setup?code=X")
+    monkeypatch.setattr(desktop, "capture_png", lambda window: b"\x89PNG-fake")
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    app = desktop.Desktop("H")
+    app.window = FakeWindow()
+    app.capture_dir, app.settle_s = tmp_path, 0
+    app.boot()
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["01-splash.png", "02-window.png"]
+    assert ("load_url", "http://127.0.0.1:5555/ui/setup?code=X") in app.window.calls
+    assert app.quitting and ("destroy",) in app.window.calls
+    assert cli_calls == []  # Quit leaves the services running (the option is off)
+
+
+def test_capture_run_writes_messages_instead_of_a_dialog_and_still_quits(monkeypatch, tmp_path, cli_calls):
+    monkeypatch.setattr(desktop, "initialized", lambda: True)
+    monkeypatch.setattr(desktop, "services_up", lambda: True)
+    monkeypatch.setattr(desktop, "entry_url", lambda: "u")
+
+    def boom(window):
+        raise RuntimeError("no webview")
+    monkeypatch.setattr(desktop, "capture_png", boom)
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    app = desktop.Desktop("H")
+    app.window = FakeWindow()
+    app.capture_dir = tmp_path
+    app.boot()
+    assert "capture failed: no webview" in (tmp_path / "messages.txt").read_text(encoding="utf-8")
+    assert not [c for c in app.window.calls if c[0] == "create_confirmation_dialog"]
+    assert ("destroy",) in app.window.calls

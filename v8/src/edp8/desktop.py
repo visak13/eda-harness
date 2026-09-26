@@ -222,12 +222,18 @@ class Desktop:
         self.quitting = False
         self.prefs = load_prefs()
         self._notify = notify
+        self.capture_dir: Path | None = None  # `heronry gui --capture <dir>`: the app shoots its own page, then quits
+        self.settle_s = 6.0
 
     # ---- actions (tray menu, window menu) ------------------------------------------------------
     def show(self, message: str, title: str | None = None) -> None:
         title = title or self.product
         if self._notify:
             self._notify(title, message)
+        elif self.capture_dir is not None:  # unattended capture run: no modal dialog, the message is evidence
+            with open(self.capture_dir / "messages.txt", "a", encoding="utf-8") as f:
+                f.write(f"== {title}\n{message}\n")
+            print(f"{title}: {message}")
         elif self.window is not None:
             self.window.create_confirmation_dialog(title, message)
 
@@ -325,6 +331,33 @@ class Desktop:
 
     def boot(self) -> None:
         """Runs beside the GUI loop: bring the services up (showing progress on the splash), then the board."""
+        if self.capture_dir is None:
+            self._boot()
+            return
+        import time
+        try:
+            time.sleep(1.5)  # the splash's first paint
+            self.capture("01-splash.png")
+            self._boot()
+            time.sleep(self.settle_s)
+            self.capture("02-window.png")
+        except Exception as e:  # noqa: BLE001 — a capture run always ends
+            self.show(f"capture failed: {e}", f"{self.product}: capture")
+        finally:
+            self.quit()
+
+    def capture(self, name: str) -> Path:
+        """Write the window's own page as a PNG (the web content only; never the screen or another window)."""
+        assert self.capture_dir is not None
+        out = self.capture_dir / name
+        out.write_bytes(capture_png(self.window))
+        page = ""
+        with contextlib.suppress(Exception):
+            page = self.window.get_current_url() or ""
+        print(f"captured {out}  {page.split('?')[0]}")
+        return out
+
+    def _boot(self) -> None:
         def say(text: str) -> None:
             if self.window is not None:
                 self.window.evaluate_js(f"window.setStatus && window.setStatus({json.dumps(text)})")
@@ -387,9 +420,58 @@ class Desktop:
         return self.tray
 
 
+def capture_png(window: Any, timeout_s: float = 20.0) -> bytes:
+    """The window's web content as PNG bytes, taken by the webview itself: WebView2's CapturePreviewAsync on
+    Windows (pywebview's native form holds the control). No screen grab, no other process's window."""
+    if sys.platform != "win32":
+        raise RuntimeError("--capture is implemented for Windows (WebView2) only")
+    from threading import Semaphore
+
+    from Microsoft.Web.WebView2.Core import CoreWebView2CapturePreviewImageFormat  # type: ignore[import-not-found]
+    from System import Action, Func, Object  # type: ignore[import-not-found]
+    from System.IO import MemoryStream  # type: ignore[import-not-found]
+    from System.Threading.Tasks import Task  # type: ignore[import-not-found]
+    control = window.native.webview
+    stream = MemoryStream()
+    done = Semaphore(0)
+    failed: list[str] = []
+
+    def finished(task: Any) -> None:
+        if task.IsFaulted:
+            failed.append(str(task.Exception))
+        done.release()
+
+    control.Invoke(Func[Object](lambda: control.CoreWebView2.CapturePreviewAsync(
+        CoreWebView2CapturePreviewImageFormat.Png, stream).ContinueWith(Action[Task](finished))))
+    if not done.acquire(timeout=timeout_s):
+        raise RuntimeError(f"the webview did not return a capture within {timeout_s:.0f}s")
+    if failed:
+        raise RuntimeError(failed[0])
+    return bytes(stream.ToArray())
+
+
+def parse_args(argv: list[str]) -> dict[str, Any]:
+    """`heronry gui [--capture <dir>] [--settle <seconds>]`."""
+    opts: dict[str, Any] = {"capture": None, "settle": 6.0}
+    it = iter(argv)
+    for a in it:
+        if a == "--capture":
+            opts["capture"] = Path(next(it, "") or ".").resolve()
+        elif a == "--settle":
+            opts["settle"] = float(next(it, "6"))
+        else:
+            raise SystemExit(f"heronry gui: unknown option {a!r} (usage: heronry gui [--capture <dir>] [--settle <s>])")
+    return opts
+
+
 def main(argv: list[str] | None = None) -> int:
     from .brand import DESKTOP_APP_NAME
+    opts = parse_args(list(argv or []))
     app = Desktop(DESKTOP_APP_NAME)
+    if opts["capture"] is not None:
+        app.capture_dir = opts["capture"]
+        app.capture_dir.mkdir(parents=True, exist_ok=True)
+        app.settle_s = opts["settle"]
     if not ensure_webview2(DESKTOP_APP_NAME):
         # no window possible: the services still come up and the board opens in the browser
         if not initialized():
