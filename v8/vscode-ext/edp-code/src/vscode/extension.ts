@@ -11,6 +11,7 @@ import { Layout } from '../core/layout';
 import { registerLayout } from './layout';
 import { tagSelection } from './tag';
 import { openExternalTerminal } from './terminal';
+import { promptOnMismatch } from './version';
 
 export function activate(ctx: vscode.ExtensionContext): void {
   if (typeof process === 'undefined' || !process.versions?.node) {
@@ -43,6 +44,9 @@ export function activate(ctx: vscode.ExtensionContext): void {
     // S6: the invite's VS Code sign-in link, vscode://edp.edp-code/signin?board=&handle=&code=
     vscode.window.registerUriHandler({ handleUri: async (uri) => { if (await signInFromUri(ctx, board, uri)) { badge.refresh(0); void chat.restart(); } } }),
   );
+  // S8: the board and this extension ship from one release; a major.minor mismatch prompts the fix
+  const release = String(ctx.extension.packageJSON?.heronry?.release ?? '');
+  if (release) void promptOnMismatch(release, boardUrl(), line => out.info(line));
 }
 
 /** A cleared viewer drops its requests and hides its badge; a resumed one re-arms the badge (C25). */

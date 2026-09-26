@@ -221,3 +221,17 @@ def test_no_webview2_check_off_windows(monkeypatch):
     monkeypatch.setattr(sys, "platform", "linux")
     assert desktop.webview2_version() is None
     assert desktop.ensure_webview2("H") is True
+
+
+def test_bundle_update_opens_the_release_page_instead_of_heronry_update(monkeypatch, cli_calls):
+    from edp8 import launcher, updater
+    monkeypatch.setattr(updater, "check", lambda **kw: {"current": "0.9.0", "latest": "0.9.1", "newer": True,
+                                                         "url": "https://github.com/o/r/releases/tag/v0.9.1"})
+    monkeypatch.setattr(launcher, "bundled", lambda: True)
+    opened = []
+    monkeypatch.setattr("webbrowser.open", opened.append)
+    app = desktop.Desktop("H")
+    app.window = FakeWindow()
+    app.update()
+    assert cli_calls == [] and opened == ["https://github.com/o/r/releases/tag/v0.9.1"]
+    assert "installer" in [c for c in app.window.calls if c[0] == "create_confirmation_dialog"][0][2]

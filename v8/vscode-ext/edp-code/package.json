@@ -6,7 +6,10 @@
   "publisher": "edp",
   "version": "0.13.4",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
+  "heronry": {
+    "release": "0.8.0"
+  },
   "engines": {
     "vscode": "^1.138.0"
   },
@@ -437,7 +440,7 @@
     "check-types": "tsc --noEmit",
     "build": "npm run check-types && node esbuild.mjs --production",
     "test": "vitest run",
-    "package": "npm run build && vsce package --no-dependencies --allow-missing-repository --skip-license -o edp-code.vsix"
+    "package": "npm run build && vsce package --no-dependencies --allow-missing-repository -o edp-code.vsix"
   },
   "devDependencies": {
     "@types/markdown-it": "14.2.0",

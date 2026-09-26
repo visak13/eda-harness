@@ -272,6 +272,17 @@ class Desktop:
         if not got.get("newer"):
             self.show(f"{self.product} {got['current']} is up to date.", title)
             return
+        from . import launcher
+        if launcher.bundled():
+            # the bundle updates through its installer (updater.apply refuses here): open the release page;
+            # the new installer replaces the app, the board data and config in the profile stay
+            ask = (f"{self.product} {got['latest']} is available (you have {got['current']}).\n\n"
+                   "Open the release page to download the new installer? Your board data and settings stay.")
+            if self.window is not None and not self.window.create_confirmation_dialog(title, ask):
+                return
+            import webbrowser
+            webbrowser.open(got.get("url") or f"https://github.com/{settings.get('EDP_UPDATE_REPO')}/releases/latest")
+            return
         ask = (f"{self.product} {got['latest']} is available (you have {got['current']}).\n\n"
                "Install it now? Seats are drained and the services stop while it installs, then start again.")
         if self.window is not None and not self.window.create_confirmation_dialog(title, ask):

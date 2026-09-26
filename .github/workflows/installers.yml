@@ -12,7 +12,7 @@ on:
     tags: ["v*"]
     paths: ["v8/**", "edp-contracts/**", "edp-pool/**", "edp-broker/**", ".github/workflows/installers.yml"]
   pull_request:
-    paths: ["v8/desktop/**", "v8/src/edp8/desktop.py", "v8/src/edp8/launcher.py", ".github/workflows/installers.yml"]
+    paths: ["v8/desktop/**", "v8/src/edp8/desktop.py", "v8/src/edp8/launcher.py", "v8/vscode-ext/edp-code/**", ".github/workflows/installers.yml"]
   workflow_dispatch:
 
 jobs:
@@ -132,3 +132,25 @@ jobs:
         with:
           name: heronry-desktop-linux-deb
           path: v8/desktop/dist/*.deb
+
+  vscode:
+    # the extension ships beside the installers: its version prompt installs edp-code-<release>.vsix from the release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Test and package the VS Code extension (Apache-2.0)
+        working-directory: v8/vscode-ext/edp-code
+        run: |
+          npm ci
+          npm test
+          npm run package
+          REL=$(node -p "require('./package.json').heronry.release")
+          mv edp-code.vsix "edp-code-$REL.vsix"
+          unzip -l "edp-code-$REL.vsix" | grep -i license
+      - uses: actions/upload-artifact@v4
+        with:
+          name: edp-code-vsix
+          path: v8/vscode-ext/edp-code/edp-code-*.vsix
