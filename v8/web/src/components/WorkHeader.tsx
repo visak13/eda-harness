@@ -43,9 +43,21 @@ export interface WorkHeaderProps {
   workflow?: string | null;
 }
 
+/** t-994970028d: the purpose line stays plain text, so a markdown description's first line loses its
+ *  markers (`**bold**`, `` `code` ``, `# `, `- `, `> `, `[text](url)`) instead of showing them literally. */
+export function stripMarkdown(line: string): string {
+  return line
+    .replace(/^\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+|\d+[.)]\s+)/u, "")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/gu, "$1")
+    .replace(/(\*\*|__)(.+?)\1/gu, "$2")
+    .replace(/(^|[^\w*])[*_]([^*_\s][^*_]*?)[*_](?![\w*])/gu, "$1$2")
+    .replace(/`+([^`]*)`+/gu, "$1")
+    .replace(/~~(.+?)~~/gu, "$1");
+}
+
 function short(text: string | null | undefined): string | null {
   if (!text) return null;
-  const line = text.trim().split(/\n/)[0] ?? "";
+  const line = stripMarkdown(text.trim().split(/\n/)[0] ?? "");
   return line.length > 180 ? `${line.slice(0, 177)}…` : line;
 }
 

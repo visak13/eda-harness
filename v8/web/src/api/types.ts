@@ -471,6 +471,8 @@ export interface EpicPage extends ThreadPage {
   title?: string;
   /** The architect's brief — the epic description (human #33). */
   description?: string;
+  /** t-994970028d: the brief as sanitised HTML (the thread's escaping markdown renderer); absent on an older board. */
+  description_html?: string;
   open_gates: [string, string][];
   answerable_gates: GateRow[]; // the epic's own open gates, answerable from the page (§16)
   criteria: CriterionView[]; // the epic's own acceptance criteria, with add/verdict on the page (§16)
@@ -498,6 +500,8 @@ export interface TicketRecord extends Record<string, unknown> {
 export interface TicketPage extends ThreadPage {
   ticket: TicketRecord;
   epic_id: string;
+  /** t-994970028d: ticket.description as sanitised HTML (the thread's escaping markdown renderer); absent on an older board. */
+  description_html?: string;
   /** The epic's short title for the breadcrumb (design-a2e5369133: never a bare id). */
   epic_title?: string;
   criteria: CriterionView[];

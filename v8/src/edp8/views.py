@@ -725,6 +725,8 @@ def epic_page(board: Board, epic_id: str, include: str | None = None) -> dict[st
     # Ruling #32/#33: `words` are the owner's verbatim request, `title` the short human title, and
     # `description` the architect's brief (the SPA's "Architect's brief" card).
     return {"board": bd, "words": bd.get("words"), "title": epic.title, "description": epic.description,
+            # t-994970028d: the brief rendered by the thread's escaping markdown renderer + nh3
+            "description_html": render_message_markdown(epic.description or ""),
             "tags": list(epic.tags or []),
             "workflow": board.workflow_of(epic).ref,  # S13: the pin, from workflow_pins (never a tag)
             # owner m-2d7ef9243d: the seat choice every spawn on this epic inherits (read-only label)
@@ -763,6 +765,8 @@ def ticket_page(board: Board, ticket_id: str, include: str | None = None) -> dic
                    "note": ev.data.get("note"), "opened_at": ev.created_at.isoformat(), "epic": epic_id}
                   for ev in board.open_gates(ticket_id)]
     return {"ticket": t.model_dump(mode="json"), "epic_id": epic_id, "epic_title": epic.title,
+            # t-994970028d: the Work pop-up description, rendered like a thread message (raw HTML escaped)
+            "description_html": render_message_markdown(t.description or ""),
             "criteria": [{"id": c.id, "text": c.text, "check": c.check.value,
                           "checked_by": c.checked_by, "verdict": c.verdict.value,
                           "evidence_ref": c.evidence_ref,

@@ -4,6 +4,20 @@
   overflow: hidden;
   white-space: pre-wrap;
 }
+/* t-994970028d: rendered markdown clamps by height (max-height set inline as lines × 1lh). */
+.clampedHeight {
+  overflow: hidden;
+}
+/* Rendered markdown inherits the host's size/colour and drops the outer paragraph margins, so a
+   brief reads like the plain text it replaced; white-space resets the host's pre-wrap. */
+.rich {
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+  white-space: normal;
+}
+.rich > :first-child { margin-top: 0; }
+.rich > :last-child { margin-bottom: 0; }
 .toggle {
   background: none;
   border: 0;

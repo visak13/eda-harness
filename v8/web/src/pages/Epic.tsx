@@ -136,7 +136,7 @@ export function EpicPage(): React.JSX.Element {
     <div className={styles.work} data-testid="epic-work">
       {data.description?.trim() ? <section data-testid="architect-brief" {...copyProps("epic", "directive")}>
         <div className={ui.sectionLabel}>Architect&rsquo;s brief</div>
-        <Clamp className={styles.briefText} text={data.description} lines={6} />
+        <Clamp className={styles.briefText} text={data.description} html={data.description_html} lines={6} />
       </section> : null}
       {directive ? <section data-testid="directive">
         <div className={ui.sectionLabel}>Latest steer · {directive.by}</div>

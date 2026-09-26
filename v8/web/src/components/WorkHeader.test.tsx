@@ -116,3 +116,14 @@ describe("WorkHeader workflow pin (S13)", () => {
     expect(screen.queryByTestId("work-workflow")).toBeNull();
   });
 });
+
+describe("stripMarkdown (t-994970028d)", () => {
+  it("drops markdown markers from the plain-text purpose line", async () => {
+    const { stripMarkdown } = await import("./WorkHeader");
+    expect(stripMarkdown("**Cause:** `Ticket.tsx` renders _raw_ text")).toBe("Cause: Ticket.tsx renders raw text");
+    expect(stripMarkdown("- a [link](https://x.y) item")).toBe("a link item");
+    expect(stripMarkdown("## Heading")).toBe("Heading");
+    expect(stripMarkdown("snake_case_name stays")).toBe("snake_case_name stays");
+    expect(stripMarkdown("2 * 3 * 4")).toBe("2 * 3 * 4");
+  });
+});

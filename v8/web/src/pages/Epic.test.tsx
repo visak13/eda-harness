@@ -472,3 +472,20 @@ describe("S-UI: the unanswered-request badge is a control (c-7e59da92c3)", () =>
     expect(screen.queryByTestId("attention-asks-list")).toBeNull();
   });
 });
+
+// t-994970028d: the architect's brief renders the board's description_html as markdown inside Clamp.
+describe("EpicPage brief markdown", () => {
+  it("renders <strong> and <li> and shows no literal **", async () => {
+    mount(page({
+      description: "**Brief:** concepts first\n\n- design\n- stories",
+      description_html: "<p><strong>Brief:</strong> concepts first</p>\n<ul>\n<li>design</li>\n<li>stories</li>\n</ul>",
+    }));
+    await title();
+    expect(screen.getByTestId("work-purpose")).toHaveTextContent(/^Brief: concepts first$/);
+    const work = await openWork();
+    const brief = within(work).getByTestId("architect-brief");
+    expect(brief.querySelector("strong")).toHaveTextContent("Brief:");
+    expect(brief.querySelectorAll("li")).toHaveLength(2);
+    expect(brief.textContent).not.toContain("**");
+  });
+});

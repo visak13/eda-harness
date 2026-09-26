@@ -28,6 +28,7 @@ import { WorkHeader } from "../components/WorkHeader";
 import { ActionsMenu, type ActionItem } from "../components/ActionsMenu";
 import { ModelsControl } from "../components/ModelsControl";
 import { Conversation } from "../components/Conversation";
+import { Markdown } from "../components/Markdown";
 
 // Ticket page (design-a2e5369133): the SAME WorkHeader as the epic (owner defect: "placeholder
 // ticket page … even the universal theme isn't applied"), the conversation under it, controls
@@ -80,7 +81,7 @@ export function TicketPage(): React.JSX.Element {
       </p>
     );
 
-  const { ticket, epic_id, criteria, docs, assignee, waiting_reason } = page.data;
+  const { ticket, epic_id, criteria, docs, assignee, waiting_reason, description_html } = page.data;
   const seat = assignee.handle ?? ticket.assignee ?? null;
   const gloss = (k: string) => copyItem("ticket", k).text;
 
@@ -117,7 +118,11 @@ export function TicketPage(): React.JSX.Element {
     <div className={styles.work} data-testid="ticket-work">
       {ticket.description ? <section>
         <div className={ui.sectionLabel}>Description</div>
-        <p className={styles.desc} data-testid="description">{ticket.description}</p>
+        {/* t-994970028d (owner m-3fa1996dea): the board renders the description as escaped, sanitised
+            markdown; an older board without description_html keeps the plain text. */}
+        {description_html
+          ? <div data-testid="description"><Markdown html={description_html} className={styles.descMd} /></div>
+          : <p className={styles.desc} data-testid="description">{ticket.description}</p>}
         {ticket.tags.length > 0 ? <div className={styles.tags}>{ticket.tags.map((t) => <span key={t} className={ui.tag}>{t}</span>)}</div> : null}
       </section> : null}
       <section data-testid="assignee">

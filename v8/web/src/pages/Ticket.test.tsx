@@ -489,3 +489,27 @@ describe("TicketPage epic redirect (C10)", () => {
     expect(screen.queryByTestId("epic-probe")).not.toBeInTheDocument();
   });
 });
+
+// t-994970028d (owner m-3fa1996dea): the Work pop-up renders the board's description_html as markdown.
+describe("TicketPage description markdown", () => {
+  it("renders <strong> and <li> from description_html and shows no literal **", async () => {
+    mount(ticketPage({
+      ticket: { ...ticketPage().ticket, description: "**Cause:** raw\n\n- first\n- second" },
+      description_html: "<p><strong>Cause:</strong> raw</p>\n<ul>\n<li>first</li>\n<li>second</li>\n</ul>",
+    }));
+    await screen.findByText("Build the epic page", { selector: "h1" });
+    expect(screen.getByTestId("work-purpose")).toHaveTextContent(/^Cause: raw$/);
+    const work = await openWork();
+    const desc = within(work).getByTestId("description");
+    expect(desc.querySelector("strong")).toHaveTextContent("Cause:");
+    expect(desc.querySelectorAll("li")).toHaveLength(2);
+    expect(desc.textContent).not.toContain("**");
+  });
+
+  it("keeps the plain text on an older board without description_html", async () => {
+    mount(ticketPage());
+    await screen.findByText("Build the epic page", { selector: "h1" });
+    const work = await openWork();
+    expect(within(work).getByTestId("description")).toHaveTextContent("Render the epic destination.");
+  });
+});
