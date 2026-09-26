@@ -342,6 +342,30 @@ def build_argv(claude_bin: str, extra: list[str] | None,
     return [*tool_argv(claude_bin), *flag, *model_flag, *(extra or [])]
 
 
+#: claude flags whose value is variadic (`<x...>` in `claude --help`, 2.1.280). As two tokens they eat every
+#: following non-option argument, including a monitor seat's argv prompt (t-67dad8c6aa); pass them as one
+#: `--flag=value` token instead (commander ends a variadic option at its `=` form).
+CLAUDE_VARIADIC_FLAGS = frozenset({
+    "--add-dir", "--allowedTools", "--allowed-tools", "--betas", "--disallowedTools", "--disallowed-tools",
+    "--file", "--mcp-config", "--tools",
+})
+
+
+def variadic_safe(args: list[str]) -> list[str]:
+    """Rewrite each `<variadic flag> <value>` pair into `<flag>=<value>`, so nothing placed after these
+    args (the activation prompt) is parsed as the flag's next value."""
+    out: list[str] = []
+    it = iter(range(len(args)))
+    for i in it:
+        a = args[i]
+        if a in CLAUDE_VARIADIC_FLAGS and i + 1 < len(args) and not args[i + 1].startswith("-"):
+            out.append(f"{a}={args[i + 1]}")
+            next(it, None)
+        else:
+            out.append(a)
+    return out
+
+
 def build_session_args(
     claude_session: str | None, resume_session: str | None
 ) -> list[str]:

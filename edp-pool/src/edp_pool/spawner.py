@@ -212,6 +212,7 @@ class SubprocessSpawner(Spawner):
             mode = "headless"
         from .pty_launcher import (
             activation_text,
+            variadic_safe,
             build_argv,
             build_env,
             build_session_args,
@@ -251,7 +252,7 @@ class SubprocessSpawner(Spawner):
         sargs = build_session_args(claude_session, resume_session)
         # S19: a role the board declares tool-restricted (the read-only Help seat) spawns with claude's own
         # deny list, so its shell has no Bash/Edit/Write even under skip-permissions
-        sargs = [*sargs, *disallowed_tools_args(extra_env)]
+        sargs = variadic_safe([*sargs, *disallowed_tools_args(extra_env)])
 
         # 2026-05-31: VISIBLE shells (operator watches the agents).
         # `monitor` → a real console window; `headless` → drained ConPTY.
@@ -394,7 +395,9 @@ DISALLOWED_TOOLS_ENV = "EDP_SEAT_DISALLOWED_TOOLS"
 
 
 def disallowed_tools_args(extra_env: dict | None) -> list[str]:
-    """`--disallowedTools <names>` for a seat whose spawn env lists them, else nothing."""
+    """`--disallowedTools=<names>` (ONE token) for a seat whose spawn env lists them, else nothing.
+    t-67dad8c6aa: claude's `--disallowedTools <tools...>` is variadic, so the two-token form swallowed a
+    monitor seat's argv prompt (`/doctor`) as one more tool name and the seat idled on an empty prompt."""
     raw = str((extra_env or {}).get(DISALLOWED_TOOLS_ENV) or "")
     names = [n for n in raw.replace(",", " ").split() if n]
-    return ["--disallowedTools", " ".join(names)] if names else []
+    return [f"--disallowedTools={' '.join(names)}"] if names else []
