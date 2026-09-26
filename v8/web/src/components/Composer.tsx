@@ -467,9 +467,9 @@ function ComposerInstance({
         onClick={refreshPickers}
         onBlur={refs.close}
         aria-label="Message"
-        // the focused textarea names the open @ or $ list and its active row (second opinion 20260925T194748Z-c11490bb)
+        // the focused textarea names the open @ or $ list and its active row (second opinion 20260925T194748Z-c11490bb);
+        // no aria-expanded: a textarea is a textbox, where axe rules it not allowed (critical, t-ede9ce0717)
         aria-autocomplete="list"
-        aria-expanded={mentions.menu.open || refs.menu.open}
         aria-controls={mentions.menu.open ? `${idRef.current}-mentions` : refs.menu.open ? `${idRef.current}-refs` : undefined}
         aria-activedescendant={mentions.menu.open ? `${idRef.current}-mentions-${mentions.menu.index}`
           : refs.menu.open ? `${idRef.current}-refs-${refs.menu.index}` : undefined}
