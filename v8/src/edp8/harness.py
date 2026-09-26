@@ -1,7 +1,7 @@
 """Harness choice and the Fable adversary fallback (design-e963c656f5 §4.11, owner rulings R4 and R5).
 
-Claude, codex and Pi are the seat harnesses. models.json `harnesses` names the ones this install uses
-(absent = all three, today's behaviour); at least one of claude/codex must be selected, and the role
+Claude, codex and Pi are the seat harnesses. `seats.harnesses` in init configuration names the selected
+ones (absent = all three); at least one of claude/codex must be selected, and the role
 catalog (seat_choice.catalog) keeps only models whose harness is selected.
 
 The adversary runs on codex when codex is selected. When it is not, the adversary runs on Fable
@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 HARNESSES = ("claude", "codex", "pi")
-HARNESS_KEY = "harnesses"  # models.json: ["claude", "codex"], absent = every harness
+HARNESS_KEY = "harnesses"  # legacy catalog key; ignored in favour of init configuration
 FABLE = "claude-fable-5-1"
 ACK_FILE = "fable-risk-ack.json"
 
@@ -38,10 +38,7 @@ def harness_of(model: str | None, entries: dict[str, Any] | None = None) -> str 
 
 
 def selected(registry: dict[str, Any]) -> tuple[str, ...]:
-    """The selected harnesses from models.json (the registry dict), else the EDP_HARNESSES setting; absent
-    or malformed = all three. A list
-    that selects neither claude nor codex is invalid and also answers all three (fail open to today's
-    fleet; `validate` names the problem)."""
+    """The selected harnesses from init configuration; catalog content cannot override them."""
     raw = _configured()
     if not isinstance(raw, list):
         return HARNESSES

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ from . import settings
 
 HARNESSES = {"claude", "codex", "pi"}
 EFFORTS = {"low", "medium", "high"}
+MODEL_FIELDS = {"harness", "provider", "model", "context_window", "auto_compact", "effort_cap"}
 
 
 def path() -> Path:
@@ -21,7 +23,7 @@ def path() -> Path:
 
 def migrate(raw: dict[str, Any]) -> dict[str, Any]:
     """One-time conversion of the historic host catalog; preserve every binding and its order."""
-    result = dict(raw)
+    result = json.loads(json.dumps(raw))
     models = dict(result.get("models") or {})
     seats = result.get("seats") or {}
     for ids in (result.get("role_models") or {}).values():
@@ -91,7 +93,10 @@ def validate(models: dict[str, Any], role_models: dict[str, Any]) -> list[str]:
             continue
         if row.get("harness") not in HARNESSES:
             errors.append(f"{mid}: unknown harness {row.get('harness')!r}")
-        if not isinstance(row.get("provider"), str) or not row["provider"].strip():
+        extra = set(row) - MODEL_FIELDS
+        if extra:
+            errors.append(f"{mid}: unsupported fields {sorted(extra)}; credentials belong in secret settings")
+        if not isinstance(row.get("provider"), str) or not re.fullmatch(r"[A-Za-z0-9_-]+", row["provider"]):
             errors.append(f"{mid}: provider is required")
         cap = row.get("effort_cap")
         if cap not in EFFORTS or (row.get("harness") == "claude" and cap == "high"):

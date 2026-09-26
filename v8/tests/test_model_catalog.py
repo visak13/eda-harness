@@ -58,6 +58,10 @@ def test_admin_catalog_validation_and_stub_spawn(tmp_path, monkeypatch):
     body["models"]["my-model"]["harness"] = "pi"
     r = env.client.put("/v1/admin/models", json=body, headers=ADMIN_H)
     assert r.status_code == 422 and "credential missing" in r.text
+    body["models"]["my-model"]["api_key"] = "must-not-enter-catalog"
+    r = env.client.put("/v1/admin/models", json=body, headers=ADMIN_H)
+    assert r.status_code == 422 and "credentials belong in secret settings" in r.text
+    del body["models"]["my-model"]["api_key"]
     monkeypatch.setenv("EDP_PI_PROVIDER_CREDENTIALS", json.dumps({"openrouter": {"api_key": "test-only"}}))
     r = env.client.put("/v1/admin/models", json=body, headers=ADMIN_H)
     assert r.status_code == 200, r.text

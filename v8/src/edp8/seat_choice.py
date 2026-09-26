@@ -21,13 +21,9 @@ that is not an epic never carries these tags; the choice is resolved from its ep
 PER ROLE (S-ROLES, design-34bf11cc07 §4.1, owner m-bba708e10e): models.json `role_models` is the
 per-role catalog (role → [model ids], first = default). Resolution for a spawn of `role`: the
 spawn's own model wins, else the epic's `model:<role>=` tag, else the old `seat-model:` tag, else
-the role's first catalog entry. A GPT id (`gpt-…`) runs on the codex seat (dec-3dc3047782): the
-pool is handed `codex/<id>` (SeatChoice.pool_model), which its CompositeSpawner routes to codex
-app-server with EDP_CODEX_MODEL=<id>.
+the role's first catalog entry. The pool routes by the entry's `harness`, regardless of id spelling.
 
-CAP: Claude effort is capped fleet-wide at MEDIUM (user ruling 2026-08-04, enforced by the seat
-registry). "high" therefore applies only to a Pi/GPT seat; a Claude seat asked for high runs at
-medium, and the resolution says so in its `note`.
+CAP: Each catalog entry names its effort cap; Claude entries may not exceed medium.
 """
 
 from __future__ import annotations

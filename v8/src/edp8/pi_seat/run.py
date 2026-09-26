@@ -3,7 +3,7 @@
 Reads the pool's env contract (EDP_ROLE, EDP_HANDLE, EDP_SPAWN_SESSION_ID, EDP8_TOKEN, EDP_AGENT_HOME,
 EDP_LOG_DIR) plus:
   EDP_PI_BIN        <pi-coding-agent>/dist/cli.js (run under node) or a pi executable
-  EDP_PI_MODEL      default openai-codex/gpt-6-astra (Codex-subscription login; openai/gpt-6-astra with OPENAI_API_KEY)
+  EDP_PI_MODEL      exact provider/model from the selected catalog entry
   EDP_PI_THINKING   optional thinking level
   EDP_ACTIVATION    explicit first prompt (park/resume path); default = the role card `.claude/commands/<role>.md`
   EDP_PI_RESUME     "1" → resume the seat's session file instead of starting fresh
