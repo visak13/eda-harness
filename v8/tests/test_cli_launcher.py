@@ -13,6 +13,7 @@ import os
 import socket
 import subprocess
 import sys
+import tomllib
 import uuid
 from pathlib import Path
 
@@ -190,3 +191,21 @@ def test_import_dry_run_then_apply_keeps_counts_tokens_and_the_source(inst, tmp_
     finally:
         cli(inst, "stop")
     assert _tree_hash(src) == before
+
+
+def test_two_homes_init_each_pins_its_own_code_port(inst, tmp_path):
+    """S8 (m-baed3c1589): `heronry init` writes code_server.port per home (board + 10 while free), so a second
+    install never falls back to the 9410 default another instance's code-server holds."""
+    homes = []
+    for name in ("one", "two"):
+        board = _free_ports(1)[0]
+        env = {**inst["env"], "EDP_HOME": str(tmp_path / name), "EDP8_PORT": str(board)}
+        r = subprocess.run([sys.executable, "-m", "edp8.cli", "init", "--harness", "claude", "--agent-home-source", str(V8)],
+                           env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=240,
+                           stdin=subprocess.DEVNULL)
+        assert r.returncode == 0, r.stdout + r.stderr
+        cfg = tomllib.loads((tmp_path / name / "config.toml").read_text(encoding="utf-8"))
+        homes.append((board, cfg["code_server"]["port"]))
+    (b1, c1), (b2, c2) = homes
+    assert c1 != c2 and 9410 not in (c1, c2), homes
+    assert c1 >= b1 + 10 and c2 >= b2 + 10, homes

@@ -17,7 +17,6 @@ service's module and nothing else, before anything GUI-related is imported.
 
 from __future__ import annotations
 
-import os
 import sys
 
 #: frozen-bundle re-entry: service name -> module run as __main__
@@ -105,7 +104,7 @@ def _split(argv: list[str]) -> tuple[list[str], dict[str, str | bool]]:
 
 #: flags that take a value (everything else is a switch)
 _VALUED = {"harness", "owner", "admin-token", "from", "ports", "board-port", "mcp-port", "pool-port", "broker-port",
-           "version", "spec", "db", "by", "timeout", "release-url", "agent-home-source"}
+           "code-port", "version", "spec", "db", "by", "timeout", "release-url", "agent-home-source"}
 
 
 def _targets(pos: list[str]) -> list[str]:
@@ -205,9 +204,9 @@ def _may_open_browser(opts: dict) -> bool:
     and no HERONRY_NO_BROWSER; no seat identity in the environment; not a source checkout (dev mode, the
     fleet); stdin and stdout are a TTY."""
     from . import settings
-    if opts.get("no-browser") or os.environ.get("HERONRY_NO_BROWSER"):
+    if opts.get("no-browser") or settings.environ_copy().get("HERONRY_NO_BROWSER"):
         return False
-    if os.environ.get("EDP_HANDLE") or os.environ.get("EDP8_PARTICIPANT"):
+    if settings.env_raw("EDP_HANDLE") or settings.env_raw("EDP8_PARTICIPANT"):
         return False
     try:
         if settings.dev_mode():
@@ -387,7 +386,7 @@ def help_cmd(_argv: list[str]) -> int:
     print("commands:")
     for name, text in (
         ("init", "first-time setup: dirs, config, tokens, agent home, harnesses (--harness claude,codex), "
-                 "ports (--ports 10400 = board 10400, mcp 10402, pool 10301, broker 10300)"),
+                 "ports (--ports 10400 = board 10400, mcp 10402, pool 10301, broker 10300, code 10410)"),
         ("start [svc|all]", "start services (board, broker, pool, mcp, bridge) and the supervisor"),
         ("stop [svc|all]", "stop services and verify nothing is left (--force to take pool seats down)"),
         ("restart [svc|all]", "restart through the supervisor (records service_restarted)"),

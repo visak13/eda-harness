@@ -20,13 +20,14 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import quote
 
+from edp_contracts.identity import home_id_of
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from edp8 import settings
 
 from . import run_state
-from .code_guard import mint_token
+from .code_guard import HOME_PATH, mint_token
 from .schemas import Participant, Role
 
 _PROBE_TIMEOUT_S = 1.5
@@ -61,14 +62,44 @@ def probe(port: int, timeout: float = _PROBE_TIMEOUT_S) -> bool:
         return False
 
 
-def _record_field(name: str) -> str | None:
-    """A string field start-code.ps1 wrote to .run/code.json; None when absent or unreadable."""
+def _record() -> dict[str, Any]:
+    """.run/code.json as start-code.ps1 wrote it; {} when absent or unreadable."""
     try:
         data = json.loads((run_state.run_dir() / "code.json").read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
-        return None
-    v = data.get(name) if isinstance(data, dict) else None
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _record_field(name: str) -> str | None:
+    """A string field start-code.ps1 wrote to .run/code.json; None when absent or unreadable."""
+    v = _record().get(name)
     return v if isinstance(v, str) and v else None
+
+
+def listener_home_id(port: int, timeout: float = _PROBE_TIMEOUT_S) -> str | None:
+    """The home id the guard on `port` reports (``GET /__edp/home``); None when it reports none."""
+    try:
+        with _OPENER.open(f"http://127.0.0.1:{port}{HOME_PATH}", timeout=timeout) as r:
+            hid = json.loads(r.read(4096).decode("utf-8")).get("home_id") if r.status == 200 else None
+    except (urllib.error.URLError, OSError, ValueError, AttributeError):
+        return None
+    return hid if isinstance(hid, str) and hid else None
+
+
+def ours(port: int) -> bool:
+    """The code-server on `port` is this home's: its guard reports this home's id, or (a guard from before the
+    id route) it reports none and the listener is the guard pid this home's .run/code.json recorded for that
+    port. Another home's listener is never adopted (S8 m-baed3c1589, t-cd13d98674)."""
+    hid = listener_home_id(port)
+    if hid is not None:
+        return hid == home_id_of(settings.data_dir())
+    rec = _record()
+    try:
+        recorded = int(rec.get("port") or 0) == port and int(rec.get("guard_pid") or 0)
+    except (TypeError, ValueError):
+        return False
+    return bool(recorded) and run_state.listener_pid(port) == recorded
 
 
 def _recorded_version() -> str | None:
@@ -86,10 +117,14 @@ def _local(host: str | None) -> bool:
 
 def code_status() -> dict[str, Any]:
     port = code_port()
+    up = probe(port)
+    mine = up and ours(port)
     return {
         "port": port,
         "url": f"http://127.0.0.1:{port}/",
-        "running": probe(port),
+        "running": mine,
+        # something answers on the port but it is not this home's code-server: the tab says so, never embeds it
+        "foreign": up and not mine,
         "version": _recorded_version(),
         # the folder the tab opens when the link names none: this board's own tree (v8)
         "default_folder": str(_home()),

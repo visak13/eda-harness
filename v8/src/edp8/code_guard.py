@@ -21,7 +21,9 @@ so a local non-browser caller that forges Host/Origin (a sandboxed agent) no lon
 owner's session. The cookie is set by ``GET /__edp/login?t=<token>&next=<path>``, where the token
 is a one-time, short-lived HMAC the board mints for its human owner (``POST /v1/code/session``)
 with the per-start mint key both share (env here, ``.run/code.json`` for the board). Only
-``GET /healthz`` passes without it, relayed without the session.
+``GET /healthz`` passes without it, relayed without the session, and ``GET /__edp/home``, which the guard
+answers itself with ``{"home_id"}`` of the Heronry home it was started for: the board adopts a code-server
+only when that id is its own (S8 m-baed3c1589: an install's Code tab showed the fleet's code-server).
 
 Client-sent ``X-Forwarded-*`` (any) / ``Forwarded`` headers are dropped: code-server's origin check
 prefers ``X-Forwarded-Host`` over ``Host``. Every request on a keep-alive connection is checked; a
@@ -45,11 +47,14 @@ import argparse
 import asyncio
 import hashlib
 import hmac
+import json
 import re
 import secrets
 import sys
 import time
 from urllib.parse import parse_qs
+
+from edp_contracts.identity import home_identity
 
 from edp8 import settings
 
@@ -59,6 +64,7 @@ SESSION_ENV = "CODE_GUARD_SESSION"
 GUARD_COOKIE = "edp-code-guard"
 MINT_KEY_ENV = "CODE_GUARD_MINT_KEY"
 LOGIN_PATH = "/__edp/login"
+HOME_PATH = "/__edp/home"
 TOKEN_TTL_S = 60
 TOKEN_MAX_TTL_S = 120  # a token that claims to live longer than this was not minted by the board
 _TOKEN_RE = re.compile(r"(\d{1,12})\.([0-9a-f]{32})\.([0-9a-f]{64})")
@@ -206,7 +212,8 @@ def check_head(head: bytes, port: int, origins: set[str], session: str | None = 
         raise Refused(403, "Forbidden", f"WebSocket Origin {origin!r} is not allowed")
     path, _, query = target.partition("?")
     login = health = False
-    if gate is not None:
+    home = target == HOME_PATH and parts[0] == "GET" and not (is_ws or length or chunked)
+    if gate is not None and not home:
         login = path == LOGIN_PATH
         if login and (parts[0] != "GET" or is_ws or length or chunked):
             raise Refused(400, "Bad Request", "the login route is a plain GET")
@@ -220,7 +227,7 @@ def check_head(head: bytes, port: int, origins: set[str], session: str | None = 
     if chunked:
         kept = [k for k in kept if not k.lower().startswith("connection:")] + ["Connection: close"]
     out = ("\r\n".join(kept) + "\r\n\r\n").encode("latin-1")
-    return out, {"ws": is_ws, "length": length, "chunked": chunked, "login": query if login else None}
+    return out, {"ws": is_ws, "length": length, "chunked": chunked, "login": query if login else None, "home": home}
 
 
 def refusal(r: Refused) -> bytes:
@@ -295,6 +302,7 @@ class Guard:
         # the guard cookie's value: per start, in this process's memory only
         self.gate = secrets.token_urlsafe(32) if mint_key is not None else None
         self.seen: dict[str, int] = {}
+        self.home_id = home_identity().get("home_id")
 
     def check(self, head: bytes) -> tuple[bytes, dict]:
         return check_head(head, self.port, self.origins, self.session, self.gate)
@@ -315,6 +323,10 @@ class Guard:
             f"Set-Cookie: {GUARD_COOKIE}={self.gate}; Path=/; HttpOnly; SameSite=Strict",
         ], "")
 
+    def identity(self) -> bytes:
+        """Answer ``/__edp/home``: the id of the home this guard serves (never its path)."""
+        return login_response("200 OK", [], json.dumps({"home_id": self.home_id}))
+
     async def handle(self, creader: asyncio.StreamReader, cwriter: asyncio.StreamWriter) -> None:
         uwriter = None
         tasks: list[asyncio.Task] = []
@@ -323,8 +335,8 @@ class Guard:
             if head is None:
                 return
             fwd, facts = self.check(head)
-            if facts["login"] is not None:
-                cwriter.write(self.login(facts["login"]))
+            if facts["login"] is not None or facts["home"]:
+                cwriter.write(self.login(facts["login"]) if facts["login"] is not None else self.identity())
                 await cwriter.drain()
                 return
             ureader, uwriter = await open_upstream(self.upstream)

@@ -103,6 +103,45 @@ def test_apply_refuses_when_tailscale_is_down(env, monkeypatch):
     assert r.status_code == 409 and "tailscale is not running" in r.text
 
 
+def test_launched_board_env_leaves_the_host_to_remote_access(env, ts, monkeypatch):
+    """S8 (m-baed3c1589, art-4f838c4fba): the board the launcher starts must not carry EDP8_HOST, else the
+    wizard refuses with "EDP8_HOST is set by the environment" on every install. Run apply inside the exact
+    environment child_env gives the board."""
+    from edp8 import launcher
+    monkeypatch.delenv("EDP8_HOST", raising=False)
+    monkeypatch.delenv("EDP_BROKER_HOST", raising=False)
+    board_env = launcher.child_env("board")
+    assert "EDP8_HOST" not in board_env
+    assert launcher.child_env("broker")["EDP_BROKER_HOST"] == "127.0.0.1"  # the broker still gets its bind
+    for k in set(settings.environ_copy()) - set(board_env):
+        monkeypatch.delenv(k)
+    for k, v in board_env.items():
+        monkeypatch.setenv(k, v)
+    assert settings.source("EDP8_HOST") != "env"
+    r = env.client.post("/v1/admin/tailnet/apply", headers=ADMIN_H)
+    assert r.status_code == 200, r.text
+    assert tomllib.loads(settings.config_file().read_text(encoding="utf-8"))["board"]["host"] == "127.0.0.1"
+    from edp8.service import resolve_host
+    assert resolve_host() == "127.0.0.1"  # config.toml board.host, read by the board itself
+
+
+def test_board_bind_without_the_launcher_host(monkeypatch, tmp_path):
+    """Dropping the launcher's EDP8_HOST keeps the bind rule: loopback in trusted mode, 0.0.0.0 in public mode
+    unless board.host pins it, and a real EDP8_HOST still wins."""
+    from edp8.service import resolve_host
+    monkeypatch.setenv("EDP_CONFIG_DIR", str(tmp_path / "cfg"))
+    for k in ("EDP8_HOST", "EDP8_PUBLIC_URL"):
+        monkeypatch.delenv(k, raising=False)
+    assert resolve_host() == "127.0.0.1"
+    monkeypatch.setenv("EDP8_PUBLIC_URL", "https://x.example")
+    assert resolve_host() == "0.0.0.0"
+    (tmp_path / "cfg").mkdir()
+    (tmp_path / "cfg" / "config.toml").write_text('[board]\nhost = "127.0.0.1"\n', encoding="utf-8")
+    assert resolve_host() == "127.0.0.1"
+    monkeypatch.setenv("EDP8_HOST", "10.0.0.5")
+    assert resolve_host() == "10.0.0.5"
+
+
 def test_apply_refuses_env_set_public_url(env, ts, monkeypatch):
     monkeypatch.setenv("EDP8_PUBLIC_URL", "https://elsewhere")
     monkeypatch.setenv("EDP8_TOKENS", str(env.tokens))

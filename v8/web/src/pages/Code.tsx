@@ -102,7 +102,11 @@ export function CodePage({ hostname = window.location.hostname }: { hostname?: s
   } else if (!s.running) {
     body = (
       <State testid="code-down" title="Code service is not running">
-        <p>code-server is not answering on port {s.port}. Start it from the repo root on the board host:</p>
+        {s.foreign ? (
+          <p data-testid="code-foreign">Port {s.port} is used by another Heronry's code-server or another program, not this one's. Pick a free port under Admin → Settings → VS Code in the browser port, or start this one's from the repo root on the board host:</p>
+        ) : (
+          <p>code-server is not answering on port {s.port}. Start it from the repo root on the board host:</p>
+        )}
         <pre className={styles.command} data-testid="code-start-command"><code>{s.start_command}</code></pre>
         <button type="button" className={styles.retry} data-testid="code-retry" onClick={() => void status.refetch()} {...copyProps("code", "retry")}>
           {status.isFetching ? "Checking…" : "Retry"}

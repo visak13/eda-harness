@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 from typing import Any
@@ -45,7 +44,7 @@ def _credential_present(provider: str) -> bool:
     if isinstance(row, dict) and row.get("api_key"):
         return True
     env = f"{provider.upper().replace('-', '_')}_API_KEY"
-    return bool(os.environ.get(env))
+    return bool(settings.environ_copy().get(env))
 
 
 def _warnings(models: dict[str, Any]) -> list[str]:
@@ -113,7 +112,7 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
                   "print(json.dumps({'reply':'Stub seat received: '+p,"
                   "'model':os.environ['TEST_MODEL'],'harness':os.environ['TEST_HARNESS'],"
                   "'provider':os.environ['TEST_PROVIDER']}))")
-        env = {**os.environ, "TEST_MODEL": body.model, "TEST_HARNESS": row["harness"],
+        env = {**settings.environ_copy(), "TEST_MODEL": body.model, "TEST_HARNESS": row["harness"],
                "TEST_PROVIDER": row["provider"]}
         proc = subprocess.run([sys.executable, "-c", script], input=prompt, text=True,
                               capture_output=True, env=env, timeout=10, check=True)

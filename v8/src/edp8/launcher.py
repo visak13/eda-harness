@@ -185,9 +185,9 @@ def child_env(svc: str) -> dict[str, str]:
             env[name] = value
 
     data = settings.data_dir()
-    if svc == "board":
-        default("EDP8_HOST", _bind_host())
-    elif svc == "broker":
+    # no EDP8_HOST for the board: it resolves its bind itself (service.resolve_host, same rule), and a value
+    # put in its environment reads as "set by the environment", which locks Admin → Remote access (S8 m-baed3c1589)
+    if svc == "broker":
         default("EDP_BROKER_HOST", _bind_host())
     elif svc == "pool":
         default("EDP_POOL_LOG_DIR", str(data / "pool-logs"))

@@ -688,6 +688,8 @@ export interface CodeStatus {
   port: number;
   url: string;
   running: boolean;
+  /** something answers on the port, but not this home's code-server (another install's): never embedded */
+  foreign?: boolean;
   version: string | null;
   default_folder: string;
   start_command: string;

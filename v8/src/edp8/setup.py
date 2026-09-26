@@ -89,11 +89,15 @@ def write_config(updates: dict[str, Any], remove: tuple[str, ...] | list[str] = 
 
 # ------------------------------------------------------------------------------------------ ports
 
-#: A port block, keyed on the board port: the defaults 9400 / 9402 / 9301 / 9300 are the block at 9400.
-PORT_BLOCK = (("board.port", 0), ("mcp.port", 2), ("pool.port", -99), ("broker.port", -100))
-PORT_ENVS = {"board.port": "EDP8_PORT", "mcp.port": "EDP8_MCP_PORT", "pool.port": "EDP_POOL_PORT",
-             "broker.port": "EDP_BROKER_PORT"}
-#: The next block is 1000 higher, clear of the other defaults (code-server 9410 and friends).
+#: A port block, keyed on the board port: the defaults 9400 / 9402 / 9301 / 9300 / 9410 are the block at 9400.
+PORT_BLOCK = (("board.port", 0), ("mcp.port", 2), ("pool.port", -99), ("broker.port", -100),
+              ("code_server.port", 10))
+#: the services' own ports: the ones whose busy defaults move the whole block
+SERVICE_PORT_ENVS = {"board.port": "EDP8_PORT", "mcp.port": "EDP8_MCP_PORT", "pool.port": "EDP_POOL_PORT",
+                     "broker.port": "EDP_BROKER_PORT"}
+PORT_ENVS = {**SERVICE_PORT_ENVS, "code_server.port": "EDP_CODE_PORT"}
+CODE_KEY = "code_server.port"
+#: The next block is 1000 higher, clear of the other defaults.
 BLOCK_STEP = 1000
 
 
@@ -129,18 +133,39 @@ def next_free_block(start: int, *, step: int = BLOCK_STEP) -> dict[str, int] | N
 def choose_ports(opts: dict[str, Any]) -> tuple[dict[str, int], str | None]:
     """The port settings init writes, and a note when it moved off busy defaults (t-596660619c).
     `--ports N` asks for the block at N; `--board-port` etc. set one; neither, with this home's ports all
-    defaulted and any of them busy, picks the next free block (another Heronry most likely holds them)."""
+    defaulted and any of them busy, picks the next free block (another Heronry most likely holds them).
+    The code-server port is always pinned per home (S8 m-baed3c1589: an install left on the 9410 default
+    pointed its Code tab at another instance's code-server): the block's, else the next free port."""
+    out, note = _choose_block(opts)
+    if CODE_KEY not in out and not settings.is_set("EDP_CODE_PORT"):
+        board = out.get("board.port") or int(settings.get("EDP8_PORT"))
+        out[CODE_KEY] = free_code_port(board + dict(PORT_BLOCK)[CODE_KEY], avoid=set(out.values()))
+    return out, note
+
+
+def free_code_port(want: int, *, avoid: set[int] = frozenset()) -> int:
+    """`want` when it is free, else the next free port above it (never one of `avoid`, the other ports init
+    writes); `want` itself when nothing up to 65535 is free (doctor reports the busy port)."""
+    p = want
+    while p <= 65535:
+        if p not in avoid and _bindable(p):
+            return p
+        p += 1
+    return want
+
+
+def _choose_block(opts: dict[str, Any]) -> tuple[dict[str, int], str | None]:
     out: dict[str, int] = {}
     if opts.get("ports") not in (None, True):
         out.update(port_block(int(str(opts["ports"]))))
     for flag, key in (("board-port", "board.port"), ("mcp-port", "mcp.port"), ("pool-port", "pool.port"),
-                      ("broker-port", "broker.port")):
+                      ("broker-port", "broker.port"), ("code-port", CODE_KEY)):
         if opts.get(flag):
             out[key] = int(str(opts[flag]))
-    if out or any(settings.is_set(env) for env in PORT_ENVS.values()):
+    if out or any(settings.is_set(env) for env in SERVICE_PORT_ENVS.values()):
         return out, None
     from . import launcher
-    current = {key: int(settings.get(env)) for key, env in PORT_ENVS.items()}
+    current = {key: int(settings.get(env)) for key, env in SERVICE_PORT_ENVS.items()}
     # a port this home's own running service holds is not busy (init re-run next to a started home)
     busy = sorted(p for key, p in current.items()
                   if not _bindable(p) and launcher.owner(key.split(".")[0], port_=p)[0] != "ours")
@@ -151,7 +176,7 @@ def choose_ports(opts: dict[str, Any]) -> tuple[dict[str, int], str | None]:
         return out, f"ports {', '.join(map(str, busy))} are busy and no free block was found; pass --ports"
     return block, (f"ports {', '.join(map(str, busy))} are busy (another Heronry or program); using the free block "
                    f"board {block['board.port']}, mcp {block['mcp.port']}, pool {block['pool.port']}, "
-                   f"broker {block['broker.port']}")
+                   f"broker {block['broker.port']}, code {block[CODE_KEY]}")
 
 
 # ------------------------------------------------------------------------------------------ harnesses

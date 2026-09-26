@@ -93,14 +93,15 @@ def known_secrets() -> list[str]:
                 continue
             if v:
                 out.add(str(v))
-    for k, v in os.environ.items():
+    for k, v in settings.environ_copy().items():
         if _ENV_SECRET.search(k) and v:
             out.add(v)
     return sorted((s for s in out if s and len(s) >= MIN_SECRET and s.strip() == s), key=len, reverse=True)
 
 
 def _user_names() -> list[str]:
-    names = {os.environ.get("USERNAME", ""), os.environ.get("USER", "")}
+    env = settings.environ_copy()
+    names = {env.get("USERNAME", ""), env.get("USER", "")}
     try:
         names.add(getpass.getuser())
     except Exception:  # noqa: BLE001

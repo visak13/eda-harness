@@ -203,7 +203,36 @@ def test_init_picks_the_next_free_block_when_the_defaults_are_busy(monkeypatch, 
     assert f"port = {base + 1000}" in text and f"port = {base + 1000 - 100}" in text
     # an explicit --ports N is the block at N; one explicit port is kept as given
     assert setup.choose_ports({"ports": "30400"})[0] == setup.port_block(30400)
+    # (the config written above already pins this home's code port, so init leaves it as it is)
     assert setup.choose_ports({"board-port": "31111"}) == ({"board.port": 31111}, None)
+
+
+def test_init_pins_a_free_code_port_per_home(monkeypatch, tmp_path):
+    """S8 (m-baed3c1589, art-102dc3c695): an install left code_server.port on the 9410 default, another instance's
+    code-server. init always pins one: the block's (board + 10), else the next free port, never a port another
+    home's running code-server holds; an explicit --code-port or a configured one is kept."""
+    for k in ("EDP_HOME", "EDP8_HOME", "EDP8_PORT", "EDP8_MCP_PORT", "EDP_POOL_PORT", "EDP_BROKER_PORT",
+              "EDP_CODE_PORT", "EDP_CONFIG_DIR"):
+        monkeypatch.delenv(k, raising=False)
+    base = next(b for b in range(21400, 60000, 1000) if all(setup._bindable(p) for p in range(b + 10, b + 13)))
+    monkeypatch.setenv("EDP_HOME", str(tmp_path / "a"))
+    a, _ = setup.choose_ports({"board-port": str(base)})
+    assert a["code_server.port"] == base + 10
+    setup.write_config(a)
+    assert settings.get("EDP_CODE_PORT") == base + 10 and settings.source("EDP_CODE_PORT") == "config"
+    assert "code_server.port" not in setup.choose_ports({})[0]  # a re-run keeps the pinned one
+    held = socket.socket()
+    held.bind(("127.0.0.1", base + 10))
+    held.listen()  # home a's code-server runs
+    try:
+        monkeypatch.setenv("EDP_HOME", str(tmp_path / "b"))
+        b, _ = setup.choose_ports({"board-port": str(base)})
+    finally:
+        held.close()
+    assert b["code_server.port"] == base + 11 != a["code_server.port"]
+    assert setup.choose_ports({"code-port": "30999"})[0]["code_server.port"] == 30999
+    assert setup.choose_ports({"ports": str(base)})[0]["code_server.port"] == base + 10
+    assert setup.free_code_port(base + 10, avoid={base + 10}) == base + 11  # never another port init writes
 
 
 # ------------------------------------------------------------------------------------------ integration

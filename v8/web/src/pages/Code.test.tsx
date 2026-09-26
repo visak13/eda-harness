@@ -96,6 +96,13 @@ describe("CodePage", () => {
     await waitFor(() => expect(m.calls()).toBeGreaterThan(before));
   });
 
+  it("foreign: another home's code-server on the port is named, never framed (S8 m-baed3c1589)", async () => {
+    mount("/code", { running: false, foreign: true, version: null });
+    expect(await screen.findByTestId("code-down")).toBeInTheDocument();
+    expect(screen.getByTestId("code-foreign")).toHaveTextContent("used by another Heronry's code-server");
+    expect(screen.queryByTestId("code-frame")).toBeNull();
+  });
+
   it("a board opened as localhost frames the guard as localhost (the SameSite=Strict cookie stays same-site)", async () => {
     mount("/code", {}, "localhost");
     expect(framed((await screen.findByTestId("code-frame")).getAttribute("src")!).origin).toBe("http://localhost:9555");

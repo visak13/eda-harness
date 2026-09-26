@@ -1,6 +1,7 @@
 """epic-91fcd3b370 S3: GET /v1/code tells the SPA where code-server is and whether it is up; the FAQ
 route renders guides/code-tab-faq.md through the sanitised markdown path."""
 import json
+import os
 import socket
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -10,6 +11,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from edp_contracts.identity import home_id_of
+
+from edp8 import settings
 from edp8.api_code import code_router
 from edp8.board import Board
 from edp8.service import create_app
@@ -49,7 +53,15 @@ def test_external_link_refuses_invalid_ports(port):
 
 
 class _Healthz(BaseHTTPRequestHandler):
+    home_id: str | None = None  # what /__edp/home reports; None = a guard from before the id route (404)
+
     def do_GET(self):  # noqa: N802 — http.server API
+        if self.path == "/__edp/home" and self.home_id:
+            body = json.dumps({"home_id": self.home_id}).encode()
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(body)
+            return
         body = json.dumps({"status": "expired", "lastHeartbeat": 1}).encode()
         self.send_response(200 if self.path == "/healthz" else 404)
         self.send_header("Content-Type", "application/json")
@@ -100,9 +112,62 @@ def test_down_when_nothing_listens(board_env):
     assert Path(v["default_folder"]) == tmp.resolve()
 
 
+def _serving(home_id):
+    handler = type("H", (_Healthz,), {"home_id": home_id})
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+def test_another_homes_code_server_is_never_adopted(board_env):
+    """S8 (m-baed3c1589, art-102dc3c695): an install's Code tab embedded the fleet's code-server on 9410. A guard
+    that reports another home's id is `foreign`, not running."""
+    client, _, mp = board_env
+    srv = _serving(home_id_of(Path("C:/somewhere/else/.data")))
+    try:
+        mp.setenv("EDP_CODE_PORT", str(srv.server_address[1]))
+        v = client.get("/v1/code", headers=AUTH).json()["value"]
+        assert v["running"] is False and v["foreign"] is True
+    finally:
+        srv.shutdown()
+
+
+def test_this_homes_code_server_is_adopted_by_its_id(board_env):
+    client, _, mp = board_env
+    srv = _serving(home_id_of(settings.data_dir()))
+    try:
+        mp.setenv("EDP_CODE_PORT", str(srv.server_address[1]))
+        v = client.get("/v1/code", headers=AUTH).json()["value"]
+        assert v["running"] is True and v["foreign"] is False
+    finally:
+        srv.shutdown()
+
+
+def test_a_guard_without_the_id_route_counts_only_as_this_homes_recorded_guard(board_env):
+    """A guard started before /__edp/home existed reports no id: it is ours only when it is the guard pid
+    this home's .run/code.json recorded for that port (the fleet's own guard until its next restart)."""
+    client, tmp, mp = board_env
+    srv = _serving(None)
+    port = srv.server_address[1]
+    try:
+        mp.setenv("EDP_CODE_PORT", str(port))
+        (tmp / ".run").mkdir(exist_ok=True)
+        rec = tmp / ".run" / "code.json"
+        v = client.get("/v1/code", headers=AUTH).json()["value"]
+        assert v["running"] is False and v["foreign"] is True  # no record: not provably ours
+        rec.write_text(json.dumps({"port": port, "guard_pid": os.getpid() + 1}), encoding="utf-8")
+        assert client.get("/v1/code", headers=AUTH).json()["value"]["running"] is False  # another pid
+        rec.write_text(json.dumps({"port": port + 1, "guard_pid": os.getpid()}), encoding="utf-8")
+        assert client.get("/v1/code", headers=AUTH).json()["value"]["running"] is False  # another port
+        rec.write_text(json.dumps({"port": port, "guard_pid": os.getpid()}), encoding="utf-8")
+        assert client.get("/v1/code", headers=AUTH).json()["value"]["running"] is True
+    finally:
+        srv.shutdown()
+
+
 def test_up_with_version_from_run_file(board_env):
     client, tmp, mp = board_env
-    srv = ThreadingHTTPServer(("127.0.0.1", 0), _Healthz)
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), type("H", (_Healthz,), {"home_id": home_id_of(settings.data_dir())}))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
         mp.setenv("EDP_CODE_PORT", str(srv.server_address[1]))

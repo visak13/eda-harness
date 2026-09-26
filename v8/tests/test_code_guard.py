@@ -1,5 +1,6 @@
 """s-03c7e9168b: the host-allowlist guard in front of code-server (edp8.code_guard)."""
 import asyncio
+import json
 
 import pytest
 
@@ -441,3 +442,38 @@ def test_main_refuses_without_mint_key(monkeypatch):  # fail closed: no key, no 
     from edp8 import code_guard
     monkeypatch.delenv("CODE_GUARD_MINT_KEY", raising=False)
     assert code_guard.main(["--port", "0", "--upstream", "tcp:127.0.0.1:1"]) == 2
+
+
+def test_gate_home_route_passes_host_checked_plain_get_only():
+    """t-cd13d98674: `GET /__edp/home` is the guard's own answer (the board's ownership probe): no cookie
+    needed, Host still checked, and only the exact plain GET (anything else stays behind the gate)."""
+    _, facts = check_head(head("Host: 127.0.0.1:9410", target="/__edp/home"), 9410, ORIGINS, "s3cret", GATE)
+    assert facts["home"] is True and facts["login"] is None
+    with pytest.raises(Refused) as e:
+        check_head(head("Host: evil.invalid:9410", target="/__edp/home"), 9410, ORIGINS, "s3cret", GATE)
+    assert e.value.status == 421
+    for target in ["/__edp/home?x=1", "/__edp/homes", "/__edp/home/"]:
+        with pytest.raises(Refused) as e:
+            check_head(head("Host: 127.0.0.1:9410", target=target), 9410, ORIGINS, "s3cret", GATE)
+        assert e.value.status == 401
+    with pytest.raises(Refused) as e:
+        check_head(head("Host: 127.0.0.1:9410", *WS, target="/__edp/home"), 9410, ORIGINS, "s3cret", GATE)
+    assert e.value.status == 401
+
+
+def test_e2e_home_route_answers_this_homes_id_and_relays_nothing(monkeypatch, tmp_path):
+    from edp_contracts.identity import home_id_of
+    monkeypatch.setenv("EDP8_DATA", str(tmp_path / "data"))
+
+    async def run():
+        seen = []
+        up, task, g = await _gated(seen)
+        try:
+            _, w, out = await _roundtrip(g.port, head(f"Host: 127.0.0.1:{g.port}", target="/__edp/home"))
+            w.close()
+            assert out.startswith(b"HTTP/1.1 200") and seen == []
+            body = json.loads(out.split(b"\r\n\r\n", 1)[1])
+            assert body == {"home_id": home_id_of(tmp_path / "data")}  # the id only, never the path
+        finally:
+            task.cancel(); up.close()
+    asyncio.run(run())

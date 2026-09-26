@@ -222,6 +222,8 @@ def test_no_home_uses_heronry_platformdirs_with_role_subfolders(clean: Path) -> 
 
 
 def test_resolve_names_the_source(clean: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # a private home: without one the platform config.toml of an installed app on this host is read (19400, S8)
+    monkeypatch.setenv("EDP_HOME", str(clean))
     monkeypatch.setenv("EDP8_PORT", "9999")
     assert settings.resolve("EDP8_PORT") == (9999, "env")
     monkeypatch.delenv("EDP8_PORT")
