@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { BoardApiError } from "../../api/client";
 import { getHealthz, serviceAction } from "../../api/admin";
 import type { SettingRow, SettingValue } from "../../api/admin";
+import { Icon } from "../../components/Icon";
 import ui from "../../components/ui.module.css";
 import styles from "./Admin.module.css";
 
@@ -137,10 +138,29 @@ export function toPut(s: SettingRow, v: string | boolean): SettingValue {
   return t;
 }
 
-const SOURCE_WORD: Record<string, string> = { env: "environment", config: "config.toml", default: "default" };
+const SOURCE_WORD: Record<string, string> = { env: "set by the environment", config: "changed here", default: "default" };
 
-/** One registry setting: its key, doc line, where the value comes from and an input by type. A value the
- *  environment sets is read-only (env wins); a secret is write-only and shown masked. */
+/** How a choice reads: the registry's empty choice means "use the default". */
+const choiceText = (c: string) => (c === "" ? "default" : c);
+
+/** A toggle switch (a checkbox with role=switch), for bool settings. */
+export function Toggle({ id, checked, disabled, onChange, label, testid }: {
+  id?: string; checked: boolean; disabled?: boolean; onChange: (v: boolean) => void; label?: string; testid?: string;
+}): React.JSX.Element {
+  return (
+    <label className={styles.switch}>
+      <input id={id} type="checkbox" role="switch" checked={checked} disabled={disabled} aria-checked={checked}
+        onChange={(e) => onChange(e.target.checked)} data-testid={testid} />
+      <span className={styles.switchTrack} aria-hidden="true" />
+      {label ? <span>{label}</span> : null}
+    </label>
+  );
+}
+
+/** One registry setting in plain words (t-5dd0cc18ea, owner m-b9c54cb63b): its label and help line are the
+ *  visible text; the input follows the registry type (toggle for bool, radios for up to 4 choices, a dropdown
+ *  for more, a number with its unit). The key, env var and developer note sit in "Advanced details". A value
+ *  the environment sets is read-only (env wins); a secret is write-only and shown masked. */
 export function SettingField({ s, value, onChange, onReset }: {
   s: SettingRow;
   value: string | boolean;
@@ -149,41 +169,62 @@ export function SettingField({ s, value, onChange, onReset }: {
 }): React.JSX.Element {
   const id = `setting-${s.key}`;
   const ro = s.read_only;
+  const kind = s.type === "bool" ? "toggle" : s.choices.length ? (s.choices.length <= 4 ? "radio" : "select") : s.type === "int" || s.type === "float" ? "number" : "text";
   let input: React.JSX.Element;
-  if (s.type === "bool") {
-    input = <input id={id} type="checkbox" checked={Boolean(value)} disabled={ro} onChange={(e) => onChange(e.target.checked)} data-testid={`${id}-input`} />;
-  } else if (s.choices.length) {
+  if (kind === "toggle") {
+    input = <Toggle id={id} checked={Boolean(value)} disabled={ro} onChange={onChange} label={value ? "On" : "Off"} testid={`${id}-input`} />;
+  } else if (kind === "radio") {
+    const cur = String(value);
     input = (
-      <select id={id} className={ui.select} value={String(value)} disabled={ro} onChange={(e) => onChange(e.target.value)} data-testid={`${id}-input`}>
-        {String(value) === "" ? <option value="">(default)</option> : null}
-        {s.choices.map((c) => <option key={c} value={c}>{c}</option>)}
+      <fieldset className={styles.radios} role="radiogroup" aria-labelledby={`${id}-label`} disabled={ro} data-testid={`${id}-input`} data-control="radio">
+        {s.choices.map((c) => (
+          <label key={c}>
+            <input type="radio" name={id} value={c} checked={cur === c} onChange={() => onChange(c)} data-testid={`${id}-choice-${c || "default"}`} />
+            {choiceText(c)}
+          </label>
+        ))}
+      </fieldset>
+    );
+  } else if (kind === "select") {
+    input = (
+      <select id={id} className={ui.select} value={String(value)} disabled={ro} onChange={(e) => onChange(e.target.value)} data-testid={`${id}-input`} data-control="select">
+        {String(value) === "" && !s.choices.includes("") ? <option value="">default</option> : null}
+        {s.choices.map((c) => <option key={c} value={c}>{choiceText(c)}</option>)}
       </select>
     );
   } else {
     input = (
       <input id={id} className={ui.input} disabled={ro} value={String(value)} data-testid={`${id}-input`}
-        type={s.secret ? "password" : s.type === "int" || s.type === "float" ? "number" : "text"}
+        type={s.secret ? "password" : kind === "number" ? "number" : "text"}
         autoComplete={s.secret ? "new-password" : "off"}
         placeholder={s.secret ? (s.set ? "set (hidden): type to replace" : "not set") : s.default === null || s.default === undefined ? "" : `default: ${Array.isArray(s.default) ? s.default.join(", ") : String(s.default)}`}
         onChange={(e) => onChange(e.target.value)} />
     );
   }
   return (
-    <div className={styles.field} data-testid="setting-field" data-key={s.key} data-readonly={ro ? "true" : undefined} data-secret={s.secret ? "true" : undefined}>
-      <label htmlFor={id} className={styles.fieldHead}>
-        <span className={styles.fieldKey}>{s.key}</span>
-        <span className={ui.idMono}>{s.env}</span>
-        <span className={ui.chip}>{SOURCE_WORD[s.source] ?? s.source}</span>
+    <div className={styles.field} data-testid="setting-field" data-key={s.key} data-tier={s.tier} data-readonly={ro ? "true" : undefined} data-secret={s.secret ? "true" : undefined}>
+      <div className={styles.fieldHead}>
+        <label htmlFor={kind === "radio" ? undefined : id} id={`${id}-label`} className={styles.fieldLabel}>{s.label || s.key}</label>
+        {s.source !== "default" ? <span className={ui.chip}>{SOURCE_WORD[s.source] ?? s.source}</span> : null}
         {s.secret ? <span className={ui.chip} data-testid={`${id}-masked`}>{s.set ? "secret · set ********" : "secret · not set"}</span> : null}
-        {s.restart_required !== "none" ? <span className={ui.chip}>restart {s.restart_required}</span> : null}
-      </label>
+        {s.restart_required !== "none" ? <span className={ui.chip}>applies after a {s.restart_required === "all" ? "full" : s.restart_required} restart</span> : null}
+      </div>
+      <p className={styles.fieldDoc} data-testid={`${id}-help`}>{s.help || s.doc}</p>
       <div className={styles.fieldRow}>
         {input}
+        {kind === "number" && s.unit ? <span className={styles.unit} data-testid={`${id}-unit`}>{s.unit}</span> : null}
         {onReset && !ro && s.source === "config" ? <button type="button" className={ui.button} onClick={onReset} data-testid={`${id}-reset`}>Reset to default</button> : null}
       </div>
-      <p className={styles.fieldDoc}>{s.doc}</p>
       {ro ? <p className={styles.fieldNote} data-testid={`${id}-readonly`}>{s.read_only_reason}</p> : null}
       {s.error ? <p className={styles.fieldNote}>{s.error}</p> : null}
+      <details className={styles.details} data-testid={`${id}-advanced`}>
+        <summary><Icon name="chevron" size={16} />Advanced details</summary>
+        <div>
+          <span>Setting <code>{s.key}</code> · environment variable <code data-testid={`${id}-env`}>{s.env}</code></span>
+          {s.help ? <span>{s.doc}</span> : null}
+          {s.default_doc ? <span>Default: {s.default_doc}</span> : null}
+        </div>
+      </details>
     </div>
   );
 }

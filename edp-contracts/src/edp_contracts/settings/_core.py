@@ -47,6 +47,12 @@ class Setting:
     env_only: bool = False   # process/identity/OS value: never read from config.toml
     default_doc: str = ""    # how a callable default is derived, for docs/UI
     choices: tuple[str, ...] = field(default=())
+    # Admin → Settings presentation (t-5dd0cc18ea, owner m-b9c54cb63b): `basic` shows by default,
+    # `advanced` behind "Show advanced", `internal` never (identity/OS/install layout/brand).
+    tier: str = "internal"
+    label: str = ""          # a short plain title (visible tiers)
+    help: str = ""           # one plain sentence: what it changes and when you'd touch it (visible tiers)
+    unit: str = ""           # suffix the UI shows after a number (seconds, ms, MB, bytes, days)
 
     def default_value(self) -> Any:
         return self.default() if callable(self.default) else self.default
@@ -55,15 +61,32 @@ class Setting:
 REGISTRY: dict[str, Setting] = {}
 _BY_KEY: dict[str, Setting] = {}
 
+TIERS = ("basic", "advanced", "internal")
+#: key suffix → the unit the UI shows, unless a declaration names one
+_UNIT_SUFFIX = (("_secs", "seconds"), ("_s", "seconds"), ("_ms", "ms"), ("_mb", "MB"), ("_b", "bytes"),
+                ("_days", "days"))
+
 
 def declare(key: str, env: str, type: str, default: Default, group: str, doc: str, **kw: Any) -> Setting:
-    """Declare one knob. A second declaration of the same env name or key is an error."""
+    """Declare one knob. A second declaration of the same env name or key is an error. Every key names its
+    tier; a visible (basic/advanced) key also needs a plain label and help line."""
     if type not in TYPES:
         raise SettingsError(f"{env}: unknown type {type!r}")
     if not doc.strip():
         raise SettingsError(f"{env}: a doc line is required")
     if env in REGISTRY or key in _BY_KEY:
         raise SettingsError(f"{env} / {key}: declared twice")
+    tier = kw.get("tier")
+    if tier not in TIERS:
+        raise SettingsError(f"{env}: tier must be one of {', '.join(TIERS)} (got {tier!r})")
+    if tier != "internal" and not (str(kw.get("label", "")).strip() and str(kw.get("help", "")).strip()):
+        raise SettingsError(f"{env}: a {tier} setting needs a plain label and help line")
+    if tier != "internal" and kw.get("env_only"):
+        raise SettingsError(f"{env}: an environment-only setting is internal")
+    if "unit" not in kw and type in ("int", "float"):
+        kw["unit"] = next((u for sfx, u in _UNIT_SUFFIX if key.endswith(sfx)), "")
+    if "choices" in kw:
+        kw["choices"] = tuple(kw["choices"])
     s = Setting(key=key, env=env, type=type, default=default, group=group, doc=doc, **kw)
     REGISTRY[env] = s
     _BY_KEY[key] = s

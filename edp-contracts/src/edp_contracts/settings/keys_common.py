@@ -8,67 +8,93 @@ from ._core import agent_home, data_dir, declare, secrets_dir
 # ---- roots and directories (read by _core's dir functions; env-only: they locate config.toml)
 declare("paths.home", "EDP_HOME", "path", None, "Paths",
         "One root for config, data, run dir and agent home; a source checkout's v8/ is dev mode.",
-        aliases=("EDP8_HOME",), env_only=True, restart_required="all")
+        aliases=("EDP8_HOME",), env_only=True, restart_required="all",
+        tier="internal")
 declare("paths.dev", "EDP_DEV", "bool", False, "Paths",
         "Force dev mode (allows the 'dev' admin token) without EDP_HOME being a source checkout.",
-        env_only=True, restart_required="all")
+        env_only=True, restart_required="all",
+        tier="internal")
 declare("paths.config_dir", "EDP_CONFIG_DIR", "path", None, "Paths",
         "Config dir (config.toml; installed also secrets/); default EDP_HOME, else <OS config dir>/config.",
-        env_only=True, restart_required="all")
+        env_only=True, restart_required="all",
+        tier="internal")
 declare("paths.data_dir", "EDP8_DATA", "path", None, "Paths",
         "Data dir (db, uploads, agent home, backups); default EDP_HOME/.data, else <OS data dir>/data.",
-        env_only=True, restart_required="all")
+        env_only=True, restart_required="all",
+        tier="internal")
 declare("paths.run_dir", "EDP8_RUN_DIR", "path", None, "Paths",
         "Run dir (service pid/state files); default EDP_HOME/.run, else <OS state dir>/run.",
-        env_only=True, restart_required="all")
+        env_only=True, restart_required="all",
+        tier="internal")
 declare("paths.agent_home", "EDP_AGENT_HOME", "path", None, "Paths",
         "Seat home (role cards, skills, guides, .mcp.json, models.json); default EDP_HOME in dev mode, "
-        "else <data>/agent-home.", env_only=True, restart_required="pool")
+        "else <data>/agent-home.", env_only=True, restart_required="pool",
+        tier="internal")
 declare("paths.db", "EDP8_DB", "path", lambda: data_dir() / "edp8.db", "Paths",
-        "The board's SQLite database.", default_doc="<data>/edp8.db", restart_required="board")
+        "The board's SQLite database.", default_doc="<data>/edp8.db", restart_required="board",
+        tier="internal")
 declare("paths.tokens", "EDP8_TOKENS", "path", lambda: secrets_dir() / "tokens.json", "Identity",
         "The participant token file (never inside a package or repo path when installed).",
-        default_doc="<EDP_HOME>/tokens.json, installed <config>/secrets/tokens.json", restart_required="board")
+        default_doc="<EDP_HOME>/tokens.json, installed <config>/secrets/tokens.json", restart_required="board",
+        tier="internal")
 
 # ---- identity
 declare("identity.owner", "EDP8_OWNER", "str", "owner", "Identity",
         "Handle of the first human (the owner) that `heronry init` creates and `start` registers.",
-        restart_required="board")
+        restart_required="board",
+        tier="internal")
 declare("edp8.admin_token", "EDP8_ADMIN_TOKEN", "str", None, "Identity",
         "Board admin token (X-Admin). Required outside dev mode; 'dev' is refused there.",
-        secret=True, restart_required="board")
+        secret=True, restart_required="board",
+        tier="internal")
 declare("seat.handle", "EDP_HANDLE", "str", None, "Identity",
-        "This seat's handle (set by the pool on a spawned shell).", env_only=True)
+        "This seat's handle (set by the pool on a spawned shell).", env_only=True,
+        tier="internal")
 declare("seat.participant", "EDP8_PARTICIPANT", "str", None, "Identity",
-        "This process's participant id; falls back to EDP_HANDLE.", env_only=True, aliases=("EDP_HANDLE",))
+        "This process's participant id; falls back to EDP_HANDLE.", env_only=True, aliases=("EDP_HANDLE",),
+        tier="internal")
 declare("seat.token", "EDP8_TOKEN", "str", None, "Identity",
-        "This seat's board token (set by the pool on a spawned shell).", env_only=True, secret=True)
+        "This seat's board token (set by the pool on a spawned shell).", env_only=True, secret=True,
+        tier="internal")
 declare("seat.role", "EDP_ROLE", "str", None, "Identity",
-        "This seat's role (set by the pool on a spawned shell).", env_only=True)
+        "This seat's role (set by the pool on a spawned shell).", env_only=True,
+        tier="internal")
 declare("seat.spawn_session", "EDP_SPAWN_SESSION_ID", "str", None, "Identity",
-        "The pool spawn session this shell belongs to.", env_only=True)
+        "The pool spawn session this shell belongs to.", env_only=True,
+        tier="internal")
 
 # ---- service URLs
 declare("network.board_url", "EDP8_BOARD_URL", "url", "http://127.0.0.1:9400", "Network",
-        "Board base URL clients and services call.", restart_required="all")
+        "Board base URL clients and services call.", restart_required="all",
+        tier="internal")
 declare("network.mcp_url", "EDP8_MCP_URL", "url", "http://127.0.0.1:9402", "Network",
-        "MCP proxy base URL seats connect to.", restart_required="pool")
+        "MCP proxy base URL seats connect to.", restart_required="pool",
+        tier="internal")
 declare("network.broker_url", "EDP_BROKER_URL", "url", "http://127.0.0.1:9300", "Network",
-        "Message broker base URL.", restart_required="all")
+        "Message broker base URL.", restart_required="all",
+        tier="internal")
 declare("network.pool_url", "EDP_POOL_URL", "url", "http://127.0.0.1:9301", "Network",
-        "Seat pool base URL.", restart_required="board")
+        "Seat pool base URL.", restart_required="board",
+        tier="internal")
 declare("network.public_url", "EDP8_PUBLIC_URL", "url", None, "Network",
         "Public (tailnet) URL of the board; set turns on public mode's fail-closed token rules.",
-        restart_required="board")
+        restart_required="board",
+        tier="internal")
 
 # ---- logging (edp_contracts.logging)
 declare("logging.suffix", "EDP_LOG_SUFFIX", "str", None, "Limits/tuning",
-        "Log file name suffix; falls back to EDP_HANDLE.", env_only=True)
+        "Log file name suffix; falls back to EDP_HANDLE.", env_only=True,
+        tier="internal")
 declare("logging.dir", "EDP_LOG_DIR", "path", Path(".logs"), "Limits/tuning",
-        "Structured log directory (relative to the process cwd).")
+        "Structured log directory (relative to the process cwd).",
+        tier="internal")
 declare("logging.retention_days", "EDP_LOG_RETENTION_DAYS", "int", 14, "Limits/tuning",
-        "Days of structured logs kept.")
-declare("logging.level", "EDP_LOG_LEVEL", "str", "info", "Limits/tuning", "Structured log level.")
+        "Days of structured logs kept.",
+        tier="basic", label='Keep logs for',
+        help='How many days of log files are kept before old ones are deleted. Raise it if you need to look further back when something goes wrong.')
+declare("logging.level", "EDP_LOG_LEVEL", "str", "info", "Limits/tuning", "Structured log level.",
+        tier="basic", label='Log detail',
+        help='How much the services write to their logs. Use debug only while chasing a problem; it makes logs much bigger.', choices=("debug", "info", "warning", "error"))
 
 # ---- OS values (read, never configured)
 for _name, _doc in (
@@ -81,83 +107,137 @@ for _name, _doc in (
     ("COMSPEC", "Windows command interpreter; runs .cmd/.bat shims without a shell string (edp_contracts.toolpath)."),
     ("SystemRoot", "Windows system dir; a bash under it is WSL's relay, never Git bash."),
 ):
-    declare(f"os.{_name.lower()}", _name, "str", None, "Platform", _doc, env_only=True)
+    declare(f"os.{_name.lower()}", _name, "str", None, "Platform", _doc, env_only=True, tier="internal")
 
 # ---- brand (R8a, design §4.12; S7 interface m-4936b8a83d: edp8/brand.py re-exports these)
-declare("brand.product_name", "EDP_PRODUCT_NAME", "str", "Heronry", "brand", "The product name shown to users.")
-declare("brand.cli_name", "EDP_CLI_NAME", "str", "heronry", "brand", "The command-line tool's name.")
+declare("brand.product_name", "EDP_PRODUCT_NAME", "str", "Heronry", "brand", "The product name shown to users.",
+        tier="internal")
+declare("brand.cli_name", "EDP_CLI_NAME", "str", "heronry", "brand", "The command-line tool's name.",
+        tier="internal")
 declare("brand.desktop_app_name", "EDP_DESKTOP_APP_NAME", "str", "Heronry Desktop", "brand",
-        "The desktop app's name.")
+        "The desktop app's name.",
+        tier="internal")
 declare("brand.tagline", "EDP_TAGLINE", "str",
-        "your agent team, built on decisions, checked before delivery", "brand", "The product tagline.")
+        "your agent team, built on decisions, checked before delivery", "brand", "The product tagline.",
+        tier="internal")
 
 # ---- ports and hosts (one place for 9400/9402/9301/9300, design §4.2)
-declare("board.port", "EDP8_PORT", "int", 9400, "Network", "Board HTTP port.", restart_required="board")
+declare("board.port", "EDP8_PORT", "int", 9400, "Network", "Board HTTP port.", restart_required="board",
+        tier="advanced", label='Board port',
+        help='The port the board (the web app) listens on. Change it only if another program already uses it.')
 declare("board.host", "EDP8_HOST", "str", None, "Network",
-        "Board bind host; unset = loopback, or the public-mode default.", restart_required="board")
+        "Board bind host; unset = loopback, or the public-mode default.", restart_required="board",
+        tier="advanced", label='Board listens on',
+        help='Which network address the board accepts connections on. Leave empty to allow only this computer; Remote access sets it for you.')
 declare("mcp.host", "EDP8_MCP_HOST", "str", "127.0.0.1", "Network", "MCP proxy bind host.",
-        restart_required="mcp")
-declare("mcp.port", "EDP8_MCP_PORT", "int", 9402, "Network", "MCP proxy port.", restart_required="mcp")
+        restart_required="mcp",
+        tier="advanced", label='Agent tools address',
+        help='Network address of the service agents use to reach the board. Leave it on this computer (127.0.0.1).')
+declare("mcp.port", "EDP8_MCP_PORT", "int", 9402, "Network", "MCP proxy port.", restart_required="mcp",
+        tier="advanced", label='Agent tools port',
+        help='Port of the service agents use to reach the board. Change it only if another program already uses it.')
 declare("pool.host", "EDP_POOL_HOST", "str", "127.0.0.1", "Network", "Seat pool bind host.",
-        restart_required="pool")
-declare("pool.port", "EDP_POOL_PORT", "int", 9301, "Network", "Seat pool port.", restart_required="pool")
+        restart_required="pool",
+        tier="advanced", label='Seat pool address',
+        help='Network address of the seat pool that starts agents. Leave it on this computer (127.0.0.1).')
+declare("pool.port", "EDP_POOL_PORT", "int", 9301, "Network", "Seat pool port.", restart_required="pool",
+        tier="advanced", label='Seat pool port',
+        help='Port of the seat pool that starts agents. Change it only if another program already uses it.')
 declare("broker.host", "EDP_BROKER_HOST", "str", "127.0.0.1", "Network", "Broker bind host.",
-        restart_required="broker")
-declare("broker.port", "EDP_BROKER_PORT", "int", 9300, "Network", "Broker port.", restart_required="broker")
+        restart_required="broker",
+        tier="advanced", label='Message broker address',
+        help='Network address of the message broker that wakes agents. Leave it on this computer (127.0.0.1).')
+declare("broker.port", "EDP_BROKER_PORT", "int", 9300, "Network", "Broker port.", restart_required="broker",
+        tier="advanced", label='Message broker port',
+        help='Port of the message broker that wakes agents. Change it only if another program already uses it.')
 
 declare("supervisor.control_port", "EDP_CONTROL_PORT", "int", 0, "Network",
         "The supervisor's loopback control port (S5 service control); 0 = a free port, recorded in the run dir.",
-        restart_required="supervisor")
+        restart_required="supervisor",
+        tier="internal")
 
 # ---- shared between board-side seat runners and the pool that launches them
 declare("pool.agent_home", "EDP_POOL_AGENT_HOME", "path", lambda: agent_home(), "Seats & models",
         "The agent home the pool serves (spawned shells' cwd, skills); exported to every seat.",
-        default_doc="the agent home", restart_required="pool")
+        default_doc="the agent home", restart_required="pool",
+        tier="internal")
 declare("lanes.dir", "EDP8_LANE_DIR", "path", None, "Limits/tuning",
-        "Override dir for the host-wide admission lane files.")
+        "Override dir for the host-wide admission lane files.",
+        tier="internal")
 declare("mcp.upload_root", "EDP8_UPLOAD_ROOT", "path", None, "Limits/tuning",
-        "Workspace root local uploads are resolved against (MCP artifact_upload).", restart_required="mcp")
+        "Workspace root local uploads are resolved against (MCP artifact_upload).", restart_required="mcp",
+        tier="internal")
 declare("seats.skip_permissions", "EDP_SKIP_PERMISSIONS", "bool", False, "Seats & models",
         "Seats run without permission prompts (claude --dangerously-skip-permissions, codex "
-        "danger-full-access).", restart_required="pool")
+        "danger-full-access).", restart_required="pool",
+        tier="basic", label='Agents act without asking',
+        help='Agents run commands and edit files without stopping for a yes or no. Turn it off if you want to approve each action yourself.')
 # ---- the supervisor relaunches a dead service as `<python> -m <module>`, never through a shell (S2)
 for _svc, _dflt in (("board", "the supervisor's own python"), ("broker", "<repo>/edp-broker/.venv python"),
                     ("pool", "<pool dir>/.venv python"), ("mcp", "the supervisor's own python"),
                     ("bridge", "the supervisor's own python")):
     declare(f"services.{_svc}.python", f"EDP_{_svc.upper()}_PYTHON", "path", None, "Paths",
-            f"Python the supervisor restarts the {_svc} service with.", default_doc=_dflt)
+            f"Python the supervisor restarts the {_svc} service with.", default_doc=_dflt, tier="internal")
 
 # ---- external tools (edp_contracts.toolpath: the setting, else PATH; S2 s-b7ec13d748)
 declare("tools.node", "EDP_NODE_BIN", "path", None, "Seats & models",
-        "node executable (Pi's cli.js, the codex seat's WebSocket monitor); default `node` on PATH.")
+        "node executable (Pi's cli.js, the codex seat's WebSocket monitor); default `node` on PATH.",
+        tier="basic", label='Node.js program',
+        help='Where Node.js is installed. Set it only if Node.js is not found on your PATH.')
 declare("tools.git", "EDP_GIT_BIN", "path", None, "Seats & models",
-        "git executable; default `git` on PATH. On Windows it also locates Git's bash.")
+        "git executable; default `git` on PATH. On Windows it also locates Git's bash.",
+        tier="basic", label='Git program',
+        help='Where Git is installed. Set it only if Git is not found on your PATH.')
 declare("tools.bash", "EDP_BASH_BIN", "path", None, "Seats & models",
         "bash for scripts and the codex Monitor tool; default Git's bash next to git (Windows) or `bash` "
-        "on PATH.")
+        "on PATH.",
+        tier="advanced", label='Bash program',
+        help='Which bash runs scripts. Set it only if the default (Git Bash on Windows) is missing or wrong.')
 declare("seats.monitor_shell", "EDP_MONITOR_SHELL", "str", None, "Seats & models",
-        "Shell the codex seat's Monitor tool runs under; default bash (Git Bash on Windows).")
+        "Shell the codex seat's Monitor tool runs under; default bash (Git Bash on Windows).",
+        tier="advanced", label='Codex watch shell',
+        help='The shell a Codex agent uses to watch for events. Leave empty for bash.')
 declare("seats.monitor_variant", "EDP_MONITOR_VARIANT", "str", "persistent", "Seats & models",
-        "codex seat Monitor tool variant.")
+        "codex seat Monitor tool variant.",
+        tier="advanced", label='Codex watch style',
+        help="How a Codex agent's watch tool behaves: persistent keeps watching, expiry stops after a time limit.", choices=("persistent", "expiry"))
 declare("codex.bin", "EDP_CODEX_BIN", "path", None, "Seats & models",
-        "codex executable; default `codex` on PATH.", restart_required="pool")
+        "codex executable; default `codex` on PATH.", restart_required="pool",
+        tier="basic", label='Codex program',
+        help='Where the Codex CLI is installed. Set it only if Codex is not found on your PATH.')
 declare("codex.model", "EDP_CODEX_MODEL", "str", "gpt-6-astra", "Seats & models",
-        "Default model of a codex seat.", restart_required="pool")
+        "Default model of a codex seat.", restart_required="pool",
+        tier="basic", label='Codex model',
+        help='The model a Codex agent uses unless the models catalog picks another one.')
 declare("codex.effort", "EDP_CODEX_EFFORT", "str", None, "Seats & models",
-        "Reasoning effort of a codex seat (low|medium|high).", restart_required="pool")
+        "Reasoning effort of a codex seat (low|medium|high).", restart_required="pool",
+        tier="basic", label='Codex thinking effort',
+        help='How hard a Codex agent thinks before answering. Higher is slower and uses more of your quota.', choices=("low", "medium", "high"))
 declare("codex.sandbox", "EDP_CODEX_SANDBOX", "str", None, "Seats & models",
-        "Overrides the per-role codex sandbox.", restart_required="pool")
+        "Overrides the per-role codex sandbox.", restart_required="pool",
+        tier="advanced", label='Codex file access',
+        help="What a Codex agent may touch on disk. Leave empty to use each role's own setting.", choices=("read-only", "workspace-write", "danger-full-access"))
 declare("pi.bin", "EDP_PI_BIN", "path", None, "Seats & models",
-        "Pi executable or <pi-coding-agent>/dist/cli.js; default `pi` on PATH.", restart_required="pool")
+        "Pi executable or <pi-coding-agent>/dist/cli.js; default `pi` on PATH.", restart_required="pool",
+        tier="basic", label='Pi program',
+        help='Where the Pi agent program is installed. Set it only if Pi is not found on your PATH.')
 declare("pi.harness", "EDP_PI_HARNESS", "path", None, "Seats & models",
-        "Dir of the npm-installed Pi harness (node_modules inside).", restart_required="pool")
+        "Dir of the npm-installed Pi harness (node_modules inside).", restart_required="pool",
+        tier="advanced", label='Pi install folder',
+        help="The folder where Pi was installed with npm. Set it only if Pi's files are not found.")
 declare("pi.model", "EDP_PI_MODEL", "str", None, "Seats & models",
-        "Optional override; otherwise the catalog supplies the Pi provider/model.", restart_required="pool")
+        "Optional override; otherwise the catalog supplies the Pi provider/model.", restart_required="pool",
+        tier="advanced", label='Pi model',
+        help='The model a Pi agent uses. Leave empty to use the models catalog.')
 declare("pi.provider_credentials", "EDP_PI_PROVIDER_CREDENTIALS", "str", None, "Seats & models",
         "JSON map of Pi provider ids to API key and optional base URL; kept in secret settings.",
-        secret=True, restart_required="pool")
+        secret=True, restart_required="pool",
+        tier="advanced", label='Pi provider keys',
+        help='API keys for the model providers Pi agents use. Kept in a private file, never shown again.')
 declare("pi.thinking", "EDP_PI_THINKING", "str", None, "Seats & models", "Thinking level of a Pi seat.",
-        restart_required="pool")
+        restart_required="pool",
+        tier="basic", label='Pi thinking effort',
+        help='How hard a Pi agent thinks before answering. Higher is slower and costs more.', choices=("low", "medium", "high"))
 # set by the pool per spawn, read by the seat runner (never configured)
 for _name, _doc in (
     ("EDP_ACTIVATION", "Explicit first prompt of a spawned seat (park/resume path)."),
@@ -166,29 +246,41 @@ for _name, _doc in (
     ("EDP_CODEX_CONSOLE", "1: the codex seat is visible (native TUI joins its thread)."),
     ("EDP_PI_RESUME", "1: the Pi seat resumes its session file."),
 ):
-    declare(f"spawn.{_name.lower()}", _name, "str", None, "Seats & models", _doc, env_only=True)
+    declare(f"spawn.{_name.lower()}", _name, "str", None, "Seats & models", _doc, env_only=True, tier="internal")
 
 declare("seats.harnesses", "EDP_HARNESSES", "list", None, "Seats & models",
         "Selected seat harnesses (claude, codex, pi; at least one of claude/codex), set by `heronry init`.",
-        restart_required="board")
+        restart_required="board",
+        tier="basic", label='Agent programs in use',
+        help='Which agent programs this install uses: claude, codex and pi. At least one of claude or codex.')
 
 declare("seats.npm_registry", "EDP_NPM_REGISTRY", "url", "https://registry.npmjs.org", "Seats & models",
-        "npm registry Admin → Integrations asks for the latest claude/codex/pi versions.", restart_required="none")
+        "npm registry Admin → Integrations asks for the latest claude/codex/pi versions.", restart_required="none",
+        tier="advanced", label='npm registry',
+        help='Where the app checks for new versions of claude, codex and pi. Change it only if you use a private npm mirror.')
 
 # ---- models catalog (edp_contracts.seats)
 declare("models.config", "EDP_MODELS_CONFIG", "path", None, "Seats & models",
-        "Path of the models catalog; default <data dir>/models.json.", restart_required="none")
+        "Path of the models catalog; default <data dir>/models.json.", restart_required="none",
+        tier="internal")
 
 # ---- app updates (S3 `heronry update`, design §4.10 app row)
 declare("update.no_check", "HERONRY_NO_UPDATE_CHECK", "bool", False, "Updates",
-        "1: never ask GitHub for a newer release (the daily and on-start check).", restart_required="none")
+        "1: never ask GitHub for a newer release (the daily and on-start check).", restart_required="none",
+        tier="basic", label="Don't check for updates",
+        help='Stop asking GitHub once a day whether a newer Heronry release exists.')
 declare("update.repo", "EDP_UPDATE_REPO", "str", "visak13/eda-harness", "Updates",
-        "GitHub owner/repo whose latest release `heronry update` installs.", restart_required="none")
+        "GitHub owner/repo whose latest release `heronry update` installs.", restart_required="none",
+        tier="advanced", label='Update source',
+        help='The GitHub repository updates come from. Change it only if you run your own build.')
 declare("update.api_url", "EDP_UPDATE_API", "url", "https://api.github.com", "Updates",
-        "GitHub API base the release check asks (tests and mirrors point it elsewhere).", restart_required="none")
+        "GitHub API base the release check asks (tests and mirrors point it elsewhere).", restart_required="none",
+        tier="internal")
 declare("update.install_cmd", "EDP_UPDATE_INSTALL_CMD", "str", None, "Updates",
         "Packaging/test override: a JSON argv run instead of `uv tool install --force`; {wheel} is the edp8 "
-        "wheel, {with} expands to the sibling wheels.", env_only=True)
+        "wheel, {with} expands to the sibling wheels.", env_only=True,
+        tier="internal")
 declare("update.compat_cmd", "EDP_UPDATE_COMPAT_CMD", "str", None, "Updates",
         "Packaging/test override: a JSON argv run instead of the new release's `heronry workflows check`; "
-        "{db} is the live DB, {wheel} the new edp8 wheel.", env_only=True)
+        "{db} is the live DB, {wheel} the new edp8 wheel.", env_only=True,
+        tier="internal")

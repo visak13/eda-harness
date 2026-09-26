@@ -23,11 +23,21 @@ def _rows(client):
     return {row["key"]: row for g in r.json()["value"]["groups"] for row in g["settings"]}
 
 
-def test_get_lists_every_registry_key(env):
+def test_get_lists_every_visible_registry_key(env):
     rows = _rows(env.client)
-    assert set(rows) == {s.key for s in settings.all_settings()}
+    assert set(rows) == {s.key for s in settings.all_settings() if s.tier != "internal"}
     for row in rows.values():
-        assert {"restart_required", "source", "read_only", "secret", "doc", "group", "type"} <= set(row)
+        assert {"restart_required", "source", "read_only", "secret", "doc", "group", "type",
+                "tier", "label", "help", "unit", "choices"} <= set(row)
+        assert row["tier"] in ("basic", "advanced") and row["label"] and row["help"]
+    assert not any(k.startswith("brand.") for k in rows)
+    assert rows["codex.effort"]["choices"] == ["low", "medium", "high"]
+    assert rows["pool.turn_timeout_secs"]["unit"] == "seconds"
+
+
+def test_internal_key_is_refused(env):
+    r = env.client.put("/v1/admin/settings", headers=ADMIN_H, json={"values": {"brand.product_name": "X"}})
+    assert r.status_code == 409 and "internal" in r.text and not settings.config_file().exists()
 
 
 def test_secret_is_write_only_and_masked(env, monkeypatch):
@@ -71,7 +81,7 @@ def test_env_set_key_refuses_put_with_reason(env, monkeypatch):
 def test_put_is_all_or_nothing_and_validates(env, monkeypatch):
     monkeypatch.setenv("EDP_CODE_PORT", "9411")
     r = env.client.put("/v1/admin/settings", headers=ADMIN_H,
-                       json={"values": {"EDP8_SLACK_MAP": "x.json", "EDP_CODE_PORT": "1"}})
+                       json={"values": {"records.auto_cap": "5", "EDP_CODE_PORT": "1"}})
     assert r.status_code == 409 and not settings.config_file().exists()
     r = env.client.put("/v1/admin/settings", headers=ADMIN_H, json={"values": {"board.port": "not-a-number"}})
     assert r.status_code == 400

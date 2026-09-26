@@ -1,9 +1,11 @@
 """Admin → Settings (design-e963c656f5 §4.8): every registry key, with its value and where it came from.
 
-GET lists every declared setting (grouped) with type, doc, default, value, source (env | config |
+GET lists every visible declared setting (grouped) with type, doc, default, value, source (env | config |
 default), restart_required and whether it can be edited here. A value given by the environment is shown
 read-only (env wins, so editing the file would change nothing); an `env_only` key (process/OS/identity)
-is never written to a file. A secret is write-only: GET says only whether it is set.
+is never written to a file. A secret is write-only: GET says only whether it is set. Each row carries the
+registry's tier (basic | advanced), plain label and help line and number unit (t-5dd0cc18ea); an `internal`
+key (identity, OS, install layout, brand) is never listed and a PUT to it is refused.
 
 PUT `{"values": {<key or ENV name>: value | null}}` validates every entry first (all or nothing), then
 writes plain keys to config.toml and secret keys to the owner-only secrets settings file; null removes
@@ -58,6 +60,7 @@ def row(s: settings.Setting) -> dict[str, Any]:
     out: dict[str, Any] = {
         "key": s.key, "env": s.env, "type": s.type, "group": s.group, "doc": s.doc, "secret": s.secret,
         "restart_required": s.restart_required, "env_only": s.env_only, "choices": list(s.choices),
+        "tier": s.tier, "label": s.label, "help": s.help, "unit": s.unit,
         "source": src, "set": src != "default",
     }
     reason = read_only_reason(s)
@@ -84,6 +87,8 @@ def row(s: settings.Setting) -> dict[str, Any]:
 def listing() -> dict[str, Any]:
     groups: dict[str, list[dict[str, Any]]] = {}
     for s in settings.all_settings():
+        if s.tier == "internal":
+            continue
         groups.setdefault(s.group, []).append(row(s))
     return {"config_file": str(settings.config_file()),
             "groups": [{"group": g, "settings": rows} for g, rows in sorted(groups.items())]}
@@ -137,6 +142,8 @@ def apply(values: dict[str, Any]) -> dict[str, Any]:
         reason = read_only_reason(s)
         if reason:
             raise HTTPException(409, f"{s.key}: {reason}")
+        if s.tier == "internal":
+            raise HTTPException(409, f"{s.key}: an internal setting (the install layout owns it), not edited here")
         if raw is None:
             (secret_rm if s.secret else plain_rm).append(s.key)
         else:

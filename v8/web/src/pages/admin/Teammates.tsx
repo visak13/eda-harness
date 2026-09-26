@@ -23,7 +23,29 @@ function InviteLinks({ invite, who }: { invite: Invite; who: string }): React.JS
   );
 }
 
-function InviteForm(): React.JSX.Element {
+/** t-5dd0cc18ea (owner m-b9c54cb63b): how a colleague joins, in three steps, and what they cannot bring. */
+function HowInviting({ remoteOn }: { remoteOn: boolean }): React.JSX.Element {
+  return (
+    <section className={styles.card} data-testid="how-inviting">
+      <h2 className={styles.cardTitle}>How inviting works</h2>
+      <ol className={styles.steps} data-testid="how-inviting-steps">
+        <li><strong>Add their name</strong> below. You get a one-time link that signs them in; it works once, within 24 hours.</li>
+        <li><strong>Connect their machine</strong> to your tailnet: pick them under "Tailscale auth key" and press Mint key, then send them the key.</li>
+        <li><strong>Send them the link.</strong> It opens this board over your tailnet, so Remote access must be on{remoteOn ? " (it is)" : ""}.</li>
+      </ol>
+      <p className={styles.fieldDoc} data-testid="how-inviting-agents">
+        Agent teammates are seats this board starts on this computer. A colleague works with the same agents; they can't bring their own.
+      </p>
+      {!remoteOn ? (
+        <p className={ui.banner} data-testid="how-inviting-remote-off">
+          Remote access is off, so an invite link would not reach anyone. Turn it on in <Link to="/admin?tab=remote">Remote access</Link> first.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function InviteForm({ remoteOn }: { remoteOn: boolean }): React.JSX.Element {
   const qc = useQueryClient();
   const [handle, setHandle] = useState("");
   const [admin, setAdmin] = useState(false);
@@ -38,10 +60,12 @@ function InviteForm(): React.JSX.Element {
         <input className={ui.input} placeholder="handle, e.g. alex" value={handle} onChange={(e) => setHandle(e.target.value)}
           aria-label="Teammate handle" data-testid="invite-handle" />
         <label className={styles.row}><input type="checkbox" checked={admin} onChange={(e) => setAdmin(e.target.checked)} data-testid="invite-admin" /> admin</label>
-        <button type="submit" className={`${ui.button} ${ui.buttonPrimary}`} disabled={!handle.trim() || m.isPending} data-testid="invite-submit">
+        <button type="submit" className={`${ui.button} ${ui.buttonPrimary}`} disabled={!remoteOn || !handle.trim() || m.isPending} data-testid="invite-submit"
+          title={remoteOn ? undefined : "Turn on Remote access first: the invite link only works over your tailnet."} aria-describedby={remoteOn ? undefined : "invite-off-reason"}>
           {m.isPending ? "Inviting…" : "Invite"}
         </button>
       </form>
+      {!remoteOn ? <p className={styles.fieldNote} id="invite-off-reason" data-testid="invite-off-reason">Invite is off while Remote access is off: the link only works over your tailnet.</p> : null}
       <AdminError error={m.error} testid="invite-error" />
       {m.data ? <InviteLinks invite={m.data.value.invite} who={m.data.value.teammate.handle} /> : null}
     </section>
@@ -62,6 +86,7 @@ function TailscaleKeyPanel({ handles }: { handles: string[] }): React.JSX.Elemen
   return (
     <section className={styles.card} data-testid="tailscale-keys">
       <h2 className={styles.cardTitle}>Tailscale auth key for a teammate's machine</h2>
+      <p className={styles.fieldDoc}>Mint a key so a colleague's machine joins your tailnet and can reach this board.</p>
       {!configured ? (
         <p className={ui.banner} data-testid="tailscale-keys-off">
           Off until a Tailscale API credential is set: configure the Tailscale API (OAuth client id and secret, scope auth_keys) in{" "}
@@ -127,12 +152,15 @@ export function TeammatesTab(): React.JSX.Element {
   const rotate = useMutation({ mutationFn: rotateTeammate, onSuccess: ({ value }) => { setShown({ kind: "token", handle: value.handle, token: value.token }); refresh(); } });
   const reinvite = useMutation({ mutationFn: reinviteTeammate, onSuccess: ({ value }, handle) => { setShown({ kind: "invite", handle, invite: value }); refresh(); } });
   const flag = useMutation({ mutationFn: ({ handle, admin }: { handle: string; admin: boolean }) => setTeammateAdmin(handle, admin), onSuccess: refresh });
+  const tail = useQuery({ queryKey: ["admin", "tailnet"], queryFn: getTailnet, retry: false });
+  const remoteOn = Boolean(tail.data?.public_mode);
   const rows = q.data ?? [];
   const actionError = revoke.error ?? rotate.error ?? reinvite.error ?? flag.error;
   const hint = revoke.data?.hint ?? null;
   return (
     <div className={styles.panel} data-testid="admin-teammates">
-      <InviteForm />
+      <HowInviting remoteOn={remoteOn} />
+      <InviteForm remoteOn={remoteOn} />
       <section className={styles.card} data-testid="teammates">
         <h2 className={styles.cardTitle}>Teammates</h2>
         <AdminError error={q.error} testid="teammates-error" />

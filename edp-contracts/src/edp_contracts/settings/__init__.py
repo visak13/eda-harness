@@ -17,6 +17,7 @@ from ._core import (
     TYPES,
     Setting,
     SECRET_SETTINGS_FILE,
+    TIERS,
     SettingsError,
     admin_token,
     admin_token_file,
@@ -46,7 +47,7 @@ from ._core import (
 )
 
 __all__ = [
-    "APP_DIR_NAME", "REGISTRY", "TYPES", "Setting", "SettingsError",
+    "APP_DIR_NAME", "REGISTRY", "TIERS", "TYPES", "Setting", "SettingsError",
     "ADMIN_TOKEN_FILE", "admin_token", "admin_token_file", "agent_home", "all_settings", "config_dir", "config_file", "config_values",
     "data_dir", "declare", "dev_mode", "env_raw", "environ_copy", "get", "home", "is_set", "logs_dir", "pop_env", "resolve",
     "run_dir", "SECRET_SETTINGS_FILE", "secret_settings_file", "secret_values", "secrets_dir", "set_env", "setting", "source",

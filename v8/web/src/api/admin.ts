@@ -107,6 +107,11 @@ export interface SettingRow {
   restart_required: string;
   env_only: boolean;
   choices: string[];
+  /** t-5dd0cc18ea: basic shows by default, advanced behind "Show advanced" (internal keys are never listed) */
+  tier?: "basic" | "advanced" | string;
+  label?: string;
+  help?: string;
+  unit?: string;
   source: "env" | "config" | "default" | string;
   set: boolean;
   read_only: boolean;

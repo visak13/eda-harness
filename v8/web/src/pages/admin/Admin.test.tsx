@@ -11,7 +11,7 @@ import type { SettingsView } from "../../api/admin";
 import { AdminPage } from "./Admin";
 
 // S6 (s-e6b4fa59d5) Admin console. c-f27302e7e4: tabs for an admin, none for a non-admin; the Settings tab
-// renders EVERY key of a registry fixture (generated from edp8.admin.settings_api.listing(), 165 keys) —
+// renders EVERY visible key of a registry fixture (scripts/gen_admin_settings_fixture.py) —
 // env-set keys read-only, secrets masked. c-e834afcefc: every mutating action shows the board's refusal.
 
 const ok = (value: unknown, hint = "") => HttpResponse.json({ ok: true, value, hint });
@@ -95,6 +95,13 @@ function mount(tab = "services", extra: Parameters<typeof server.use> = [], who:
 }
 
 const TOTAL_KEYS = (SETTINGS as SettingsView).groups.reduce((n, g) => n + g.settings.length, 0);
+const ALL_ROWS = (SETTINGS as SettingsView).groups.flatMap((g) => g.settings);
+const BASIC_KEYS = ALL_ROWS.filter((s) => s.tier === "basic").map((s) => s.key);
+/** Turn on Settings → Show advanced (the page opens on basic keys only). */
+async function showAdvanced() {
+  fireEvent.click(await screen.findByTestId("settings-show-advanced"));
+}
+const REMOTE_ON = http.get("/v1/admin/tailnet", () => ok({ ...TAILNET, public_mode: true, public_url: "https://host.tail.ts.net" }));
 
 describe("Admin visibility (c-f27302e7e4)", () => {
   it("an admin sees the six tabs", async () => {
@@ -135,16 +142,17 @@ describe("Admin visibility (c-f27302e7e4)", () => {
 describe("Settings tab renders the registry (c-f27302e7e4)", () => {
   it("renders exactly one field per fixture key, in every group, with no hand-coded list", async () => {
     mount("settings");
+    await showAdvanced();
     await waitFor(() => expect(screen.getAllByTestId("setting-field")).toHaveLength(TOTAL_KEYS));
-    expect(TOTAL_KEYS).toBeGreaterThan(100);
+    expect(TOTAL_KEYS).toBeGreaterThan(80); // basic + advanced; internal keys never reach the SPA
     const keys = new Set(screen.getAllByTestId("setting-field").map((el) => el.getAttribute("data-key")));
     for (const g of (SETTINGS as SettingsView).groups) {
       expect(screen.getByTestId(`settings-group-${g.group}`)).toBeInTheDocument();
       for (const s of g.settings) expect(keys.has(s.key), s.key).toBe(true);
     }
-    // each field carries its doc line
+    // each field carries its plain help line
     const first = (SETTINGS as SettingsView).groups[0].settings[0];
-    expect(screen.getByText(first.doc)).toBeInTheDocument();
+    expect(screen.getByTestId(`setting-${first.key}-help`)).toHaveTextContent(first.help!);
   });
 
   it("env-set keys are read-only with the reason; secrets are masked and write-only", async () => {
@@ -155,6 +163,7 @@ describe("Settings tab renders the registry (c-f27302e7e4)", () => {
     const secret = rows.find((s) => s.secret && !s.read_only)!;
     Object.assign(secret, { source: "config", set: true, value: "********" });
     mount("settings", [http.get("/v1/admin/settings", () => ok(view))]);
+    await showAdvanced();
     const envField = await screen.findByTestId(`setting-${envRow.key}-input`);
     expect(envField).toBeDisabled();
     expect(screen.getByTestId(`setting-${envRow.key}-readonly`)).toHaveTextContent(`set by the environment variable ${envRow.env}`);
@@ -170,6 +179,7 @@ describe("Settings tab renders the registry (c-f27302e7e4)", () => {
     let body: unknown = null;
     const row = (SETTINGS as SettingsView).groups.flatMap((g) => g.settings).find((s) => !s.read_only && s.type === "int" && s.restart_required !== "none")!;
     mount("settings", [http.put("/v1/admin/settings", async ({ request }) => { body = await request.json(); return ok({ updated: [], restart_required: [row.restart_required] }); })]);
+    await showAdvanced();
     fireEvent.change(await screen.findByTestId(`setting-${row.key}-input`), { target: { value: "7" } });
     fireEvent.click(screen.getByTestId("admin-settings-save"));
     await waitFor(() => expect(body).toEqual({ values: { [row.key]: 7 } }));
@@ -180,7 +190,7 @@ describe("Settings tab renders the registry (c-f27302e7e4)", () => {
 
 // ------------------------------------------------------------------ c-e834afcefc: every refusal is shown
 
-type Case = { name: string; tab: string; method: "post" | "put" | "delete"; path: string; act: () => Promise<void> | void; testid: string };
+type Case = { name: string; tab: string; method: "post" | "put" | "delete"; path: string; act: () => Promise<void> | void; testid: string; extra?: Parameters<typeof server.use> };
 const click = (id: string) => async () => { fireEvent.click(await screen.findByTestId(id)); };
 
 const CASES: Case[] = [
@@ -191,11 +201,13 @@ const CASES: Case[] = [
   { name: "settings save", tab: "settings", method: "put", path: "/v1/admin/settings",
     act: async () => {
       const row = (SETTINGS as SettingsView).groups.flatMap((g) => g.settings).find((s) => !s.read_only && s.type === "int")!;
+      await showAdvanced();
       fireEvent.change(await screen.findByTestId(`setting-${row.key}-input`), { target: { value: "3" } });
       fireEvent.click(screen.getByTestId("admin-settings-save"));
     }, testid: "admin-settings-save-error" },
   { name: "invite", tab: "teammates", method: "post", path: "/v1/admin/teammates",
-    act: async () => { fireEvent.change(await screen.findByTestId("invite-handle"), { target: { value: "dan" } }); fireEvent.click(screen.getByTestId("invite-submit")); }, testid: "invite-error" },
+    act: async () => { fireEvent.change(await screen.findByTestId("invite-handle"), { target: { value: "dan" } });
+      await waitFor(() => expect(screen.getByTestId("invite-submit")).not.toBeDisabled()); fireEvent.click(screen.getByTestId("invite-submit")); }, testid: "invite-error", extra: [REMOTE_ON] },
   { name: "revoke", tab: "teammates", method: "post", path: "/v1/admin/teammates/carol/revoke", act: click("teammate-carol-revoke"), testid: "teammate-action-error" },
   { name: "rotate", tab: "teammates", method: "post", path: "/v1/admin/teammates/carol/rotate", act: click("teammate-carol-rotate"), testid: "teammate-action-error" },
   { name: "re-invite", tab: "teammates", method: "post", path: "/v1/admin/teammates/carol/invite", act: click("teammate-carol-invite"), testid: "teammate-action-error" },
@@ -223,7 +235,7 @@ const CASES: Case[] = [
 describe("every admin action shows the board's refusal (c-e834afcefc)", () => {
   it.each(CASES)("$name", async (c) => {
     const message = `refused: ${c.name} is not allowed right now (${c.path})`;
-    mount(c.tab, [http[c.method](c.path, () => refuse(409, message))]);
+    mount(c.tab, [http[c.method](c.path, () => refuse(409, message)), ...(c.extra ?? [])]);
     await c.act();
     expect(await screen.findByTestId(c.testid)).toHaveTextContent(message);
   });
@@ -306,9 +318,10 @@ describe("Capacity (c-002a8ba1b5)", () => {
 
 describe("Teammates", () => {
   it("an invite shows the one-time link and the VS Code deep link, each with a copy button", async () => {
-    mount("teammates", [http.post("/v1/admin/teammates", () => ok({ teammate: { ...TEAM[1], handle: "dan" },
+    mount("teammates", [REMOTE_ON, http.post("/v1/admin/teammates", () => ok({ teammate: { ...TEAM[1], handle: "dan" },
       invite: { link: "http://b/ui/join?code=abc", vscode_link: "vscode://edp.edp-code/signin?board=http%3A%2F%2Fb&handle=dan&code=abc", code: "abc", expires_at: "2026-09-28T00:00:00Z" } }))]);
     fireEvent.change(await screen.findByTestId("invite-handle"), { target: { value: "dan" } });
+    await waitFor(() => expect(screen.getByTestId("invite-submit")).not.toBeDisabled());
     fireEvent.click(screen.getByTestId("invite-submit"));
     expect(await screen.findByTestId("invite-link")).toHaveTextContent("http://b/ui/join?code=abc");
     expect(screen.getByTestId("invite-vscode-link")).toHaveTextContent("vscode://edp.edp-code/signin");
@@ -326,6 +339,132 @@ describe("Teammates", () => {
     mount("teammates", [http.post("/v1/admin/teammates/carol/rotate", () => ok({ handle: "carol", token: "new-secret" }))]);
     fireEvent.click(await screen.findByTestId("teammate-carol-rotate"));
     expect(await screen.findByTestId("rotated-token")).toHaveTextContent("new-secret");
+  });
+});
+
+// ------------------------------------------------------------------ t-5dd0cc18ea: owner walkthrough m-b9c54cb63b
+
+describe("Admin UX pass (t-5dd0cc18ea, owner m-b9c54cb63b)", () => {
+  it("Settings opens on basic keys only (about 20) and Show advanced adds the rest", async () => {
+    mount("settings");
+    expect(BASIC_KEYS.length).toBeGreaterThanOrEqual(15);
+    expect(BASIC_KEYS.length).toBeLessThanOrEqual(25);
+    await waitFor(() => expect(screen.getAllByTestId("setting-field")).toHaveLength(BASIC_KEYS.length));
+    for (const el of screen.getAllByTestId("setting-field")) expect(el).toHaveAttribute("data-tier", "basic");
+    expect(screen.getByTestId("settings-count")).toHaveTextContent(`The ${BASIC_KEYS.length} settings most people change`);
+    const sw = screen.getByTestId("settings-show-advanced");
+    expect(sw).toHaveAttribute("role", "switch");
+    expect(sw).not.toBeChecked();
+    await showAdvanced();
+    await waitFor(() => expect(screen.getAllByTestId("setting-field")).toHaveLength(TOTAL_KEYS));
+  });
+
+  it("every enum key is radios (4 or fewer choices) or a dropdown, every boolean a toggle, every number carries its unit", async () => {
+    mount("settings");
+    await showAdvanced();
+    await waitFor(() => expect(screen.getAllByTestId("setting-field")).toHaveLength(TOTAL_KEYS));
+    const enums = ALL_ROWS.filter((s) => s.choices.length);
+    expect(enums.length).toBeGreaterThanOrEqual(10);
+    for (const s of enums) {
+      const el = screen.getByTestId(`setting-${s.key}-input`);
+      expect(el, s.key).toHaveAttribute("data-control", s.choices.length <= 4 ? "radio" : "select");
+      if (s.choices.length <= 4) expect(within(el).getAllByRole("radio")).toHaveLength(s.choices.length);
+      else expect(el.tagName).toBe("SELECT");
+    }
+    const bools = ALL_ROWS.filter((s) => s.type === "bool");
+    expect(bools.length).toBeGreaterThan(5);
+    for (const s of bools) expect(screen.getByTestId(`setting-${s.key}-input`), s.key).toHaveAttribute("role", "switch");
+    for (const s of ALL_ROWS.filter((r) => (r.type === "int" || r.type === "float") && r.unit)) {
+      expect(screen.getByTestId(`setting-${s.key}-unit`), s.key).toHaveTextContent(s.unit!);
+    }
+    // a radio click is a change like any other
+    fireEvent.click(screen.getByTestId("setting-codex.effort-choice-high"));
+    expect(screen.getByTestId("admin-settings-save")).toHaveTextContent("Save 1 change");
+  });
+
+  it("every visible key has a plain one-line description; the env var sits only in Advanced details", async () => {
+    mount("settings");
+    await showAdvanced();
+    await waitFor(() => expect(screen.getAllByTestId("setting-field")).toHaveLength(TOTAL_KEYS));
+    for (const s of ALL_ROWS) {
+      expect(s.help, s.key).toBeTruthy();
+      expect(s.label, s.key).toBeTruthy();
+      const help = screen.getByTestId(`setting-${s.key}-help`);
+      expect(help).toHaveTextContent(s.help!);
+      expect(help.textContent).not.toContain(s.env);
+      const details = screen.getByTestId(`setting-${s.key}-advanced`) as HTMLDetailsElement;
+      expect(details.tagName).toBe("DETAILS");
+      expect(details.open).toBe(false);
+      expect(within(details).getByTestId(`setting-${s.key}-env`)).toHaveTextContent(s.env);
+    }
+  });
+
+  it("no brand.* or other internal key reaches the page", async () => {
+    expect(ALL_ROWS.some((s) => s.key.startsWith("brand.") || s.tier === "internal" || s.env_only)).toBe(false);
+    mount("settings");
+    await showAdvanced();
+    await waitFor(() => expect(screen.getAllByTestId("setting-field")).toHaveLength(TOTAL_KEYS));
+    expect(document.querySelector('[data-key^="brand."]')).toBeNull();
+    expect(screen.queryByText(/EDP_PRODUCT_NAME|EDP_TAGLINE/)).toBeNull();
+  });
+
+  it("the header shows no file path until Show where, then the path with a copy button", async () => {
+    const view = { ...(SETTINGS as SettingsView), config_file: "C:\\Users\\me\\AppData\\Local\\heronry\\config\\config.toml" };
+    mount("settings", [http.get("/v1/admin/settings", () => ok(view))]);
+    const header = await screen.findByTestId("settings-header");
+    await screen.findAllByTestId("setting-field");
+    expect(header).toHaveTextContent("Saved in your Heronry config file. A value set by the environment is locked here.");
+    expect(screen.getByTestId("admin-settings")).not.toHaveTextContent("config.toml");
+    expect(screen.queryByTestId("settings-config-path")).toBeNull();
+    fireEvent.click(screen.getByTestId("settings-show-where"));
+    expect(screen.getByTestId("settings-config-path")).toHaveTextContent(view.config_file);
+    expect(screen.getByTestId("settings-config-path-copy")).toBeInTheDocument();
+  });
+
+  it("group and detail expanders use the app's chevron icon", async () => {
+    mount("settings");
+    await screen.findAllByTestId("setting-field");
+    const groups = (SETTINGS as SettingsView).groups.filter((g) => g.settings.some((s) => s.tier === "basic"));
+    for (const g of groups) {
+      const summary = screen.getByTestId(`settings-group-${g.group}`).querySelector(":scope > summary")!;
+      expect(summary.querySelector('svg[data-icon="chevron"]'), g.group).not.toBeNull();
+      expect(summary.textContent).not.toMatch(/[▸▾▶▼›⌄]/);
+    }
+    for (const d of screen.getAllByText("Advanced details")) expect(d.querySelector('svg[data-icon="chevron"]')).not.toBeNull();
+  });
+
+  it("the Capacity card is on Services only", async () => {
+    const view = mount("settings");
+    await screen.findAllByTestId("setting-field");
+    expect(screen.queryByTestId("capacity")).toBeNull();
+    expect(screen.queryByTestId("settings-group-capacity")).toBeNull();
+    view.unmount();
+    mount("services");
+    expect(await screen.findByTestId("capacity")).toBeInTheDocument();
+  });
+
+  it("Teammates explains inviting in 3 steps and says colleagues can't bring their own agents", async () => {
+    mount("teammates", [REMOTE_ON]);
+    const steps = await screen.findByTestId("how-inviting-steps");
+    const items = within(steps).getAllByRole("listitem");
+    expect(items).toHaveLength(3);
+    expect(items[0]).toHaveTextContent(/Add their name.*one-time link/);
+    expect(items[1]).toHaveTextContent(/tailnet.*Mint key/);
+    expect(items[2]).toHaveTextContent(/Send them the link.*Remote access must be on/);
+    expect(screen.getByTestId("how-inviting-agents")).toHaveTextContent("seats this board starts on this computer");
+    expect(screen.getByTestId("how-inviting-agents")).toHaveTextContent("they can't bring their own");
+    fireEvent.change(screen.getByTestId("invite-handle"), { target: { value: "dan" } });
+    await waitFor(() => expect(screen.getByTestId("invite-submit")).not.toBeDisabled());
+    expect(screen.queryByTestId("invite-off-reason")).toBeNull();
+  });
+
+  it("the invite button is disabled with a reason while Remote access is off", async () => {
+    mount("teammates");
+    fireEvent.change(await screen.findByTestId("invite-handle"), { target: { value: "dan" } });
+    expect(await screen.findByTestId("invite-off-reason")).toHaveTextContent("Invite is off while Remote access is off");
+    expect(screen.getByTestId("invite-submit")).toBeDisabled();
+    expect(screen.getByTestId("invite-submit")).toHaveAttribute("aria-describedby", "invite-off-reason");
+    expect(screen.getByTestId("how-inviting-remote-off")).toHaveTextContent("Remote access is off");
   });
 });
 

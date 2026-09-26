@@ -126,6 +126,47 @@ def test_every_declaration_is_complete() -> None:
         assert hasattr(s, "default"), s
 
 
+#: settings with a closed set of values (owner m-b9c54cb63b: the UI renders them as a dropdown or radios)
+ENUM_KEYS = {"board.ui", "board.log_level", "logging.level", "search.embedder", "codex.effort", "codex.sandbox",
+             "pool.spawn_mode", "pi.thinking", "mcp.transport", "uploads.http_mode", "seats.monitor_variant"}
+
+
+def test_every_key_has_a_tier_and_every_visible_key_plain_words() -> None:
+    for s in settings.all_settings():
+        assert s.tier in settings.TIERS, s.key
+        if s.tier != "internal":
+            assert s.label.strip() and s.help.strip(), s.key
+            assert s.env not in s.help and s.key not in s.help, f"{s.key}: help names the env var or key"
+            assert not s.env_only, f"{s.key}: environment-only keys are internal"
+
+
+def test_every_enum_key_has_choices() -> None:
+    by_key = {s.key: s for s in settings.all_settings()}
+    for k in ENUM_KEYS:
+        assert by_key[k].choices, k
+    # a doc line that lists its values as (a|b|c) is an enum too, and must declare them
+    import re
+    for s in settings.all_settings():
+        if s.tier != "internal" and s.type == "str" and re.search(r"\(\w[\w-]*(\|\w[\w-]*)+\)", s.doc):
+            assert s.choices, f"{s.key}: doc lists values but no choices are declared"
+
+
+def test_internal_tier_covers_brand_env_only_and_basic_is_about_twenty() -> None:
+    rows = list(settings.all_settings())
+    assert all(s.tier == "internal" for s in rows if s.key.startswith("brand."))
+    assert all(s.tier == "internal" for s in rows if s.env_only)
+    basic = [s.key for s in rows if s.tier == "basic"]
+    assert 15 <= len(basic) <= 25, basic
+
+
+def test_declare_refuses_a_missing_tier_or_plain_words() -> None:
+    with pytest.raises(settings.SettingsError, match="tier"):
+        settings.declare("test.no_tier", "EDP_TEST_NO_TIER", "str", None, "Paths", "x")
+    with pytest.raises(settings.SettingsError, match="label and help"):
+        settings.declare("test.no_help", "EDP_TEST_NO_HELP", "str", None, "Paths", "x", tier="basic")
+    assert "EDP_TEST_NO_TIER" not in settings.REGISTRY and "EDP_TEST_NO_HELP" not in settings.REGISTRY
+
+
 def test_declaring_twice_is_refused() -> None:
     with pytest.raises(settings.SettingsError):
         settings.declare("paths.home", "EDP_HOME_DUP", "str", None, "Paths", "dup")
