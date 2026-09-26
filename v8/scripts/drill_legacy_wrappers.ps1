@@ -3,7 +3,7 @@
 # no listener behind. Safe on the shared host: it never touches the fleet's home or ports.
 #   powershell -NoProfile -ExecutionPolicy Bypass -File v8\scripts\drill_legacy_wrappers.ps1
 $ErrorActionPreference = "Continue"
-$root = "C:\Projects\Learning\eda-base3"
+$root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $t = Join-Path $env:TEMP ("s3-wrap-" + [guid]::NewGuid().ToString("N").Substring(0, 8))
 New-Item -ItemType Directory $t | Out-Null
 function FreePort { $l = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0); $l.Start(); $p = $l.LocalEndpoint.Port; $l.Stop(); $p }
