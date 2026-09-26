@@ -327,11 +327,11 @@ def _fake_codex(*, answer: str | None, thread: str | None = "tid-1",
         if writes_file:
             Path(writes_file).parent.mkdir(parents=True, exist_ok=True)
             Path(writes_file).write_text("rogue", encoding="utf-8")
-            # emit a shell event naming the write, so the fence can ATTRIBUTE it to
-            # this run's codex (the log is the primary attribution signal).
+            # emit codex's file_change record of the write, so the fence can ATTRIBUTE
+            # it to this run (the only attribution signal, p-d69ca7f8).
             lines.append(json.dumps({"type": "item.completed", "item": {
-                "type": "command_execution",
-                "command": f"Set-Content {Path(writes_file).name} rogue"}}))
+                "type": "file_change", "changes": [{"path": str(writes_file), "kind": "add"}],
+                "status": "completed"}}))
         if answer is not None:
             o = argv[argv.index("-o") + 1]
             Path(o).write_text(answer, encoding="utf-8")
@@ -622,11 +622,12 @@ def test_post_run_scan_ignores_allowlisted_concepts_writes(_ue, monkeypatch, tmp
 # is the pre-run `git status` map (None ⇒ non-git tree). Attribution is by the run's
 # codex jsonl (run_log): only a path the log NAMES is deleted/restored.
 
-def _log_naming(*names) -> str:
-    """A minimal codex `--json` stream whose shell events name each file — the
-    attribution signal the fence keys on."""
+def _log_naming(*paths) -> str:
+    """A minimal codex `--json` stream whose file_change events record each path as
+    written: the only attribution signal the fence keys on (p-d69ca7f8)."""
     return "\n".join(json.dumps({"type": "item.completed", "item": {
-        "type": "command_execution", "command": f"Set-Content {n} x"}}) for n in names)
+        "type": "file_change", "changes": [{"path": str(p), "kind": "add"}],
+        "status": "completed"}}) for p in paths)
 
 
 def test_fence_deletes_log_attributed_new_file(tmp_path):
@@ -637,7 +638,7 @@ def test_fence_deletes_log_attributed_new_file(tmp_path):
     rogue = repo / "tools" / "helper.py"
     rogue.parent.mkdir(parents=True)
     rogue.write_text("print('leak')\n", encoding="utf-8")
-    rep = fence_remediate(None, pre, before, repo, run_log=_log_naming("helper.py"))
+    rep = fence_remediate(None, pre, before, repo, run_log=_log_naming(rogue))
     assert rep["git"] is True
     e = next(e for e in rep["escapes"] if _norm(rogue) == e["path"])
     assert e["action"] == "deleted_new" and e["ok"] is True and e["attribution"] == "log"
@@ -653,7 +654,7 @@ def test_fence_restores_log_attributed_modified_tracked_file(tmp_path):
     pre = git_status_map(repo)               # clean
     before = _snapshot_mtimes([repo])
     tracked.write_text("ROGUE OVERWRITE\n", encoding="utf-8")   # codex mutates a tracked file
-    rep = fence_remediate(None, pre, before, repo, run_log=_log_naming("tracked.txt"))
+    rep = fence_remediate(None, pre, before, repo, run_log=_log_naming(tracked))
     e = rep["escapes"][0]
     assert e["action"] == "restored_tracked" and e["ok"] is True and e["attribution"] == "log"
     assert e["tracked"] is True and e["pre_dirty"] is False
@@ -672,7 +673,7 @@ def test_fence_unattributed_new_file_is_left_untouched(tmp_path):
     other = repo / "Source" / "seat11.cpp"
     other.parent.mkdir(parents=True)
     other.write_text("// another seat's new file\n", encoding="utf-8")
-    rep = fence_remediate(None, pre, before, repo, run_log=_log_naming("something_else.py"))
+    rep = fence_remediate(None, pre, before, repo, run_log=_log_naming(repo / "something_else.py"))
     e = next(e for e in rep["escapes"] if _norm(other) == e["path"])
     assert e["action"] == "unattributed_concurrent" and e["attribution"] == "none"
     assert other.exists()                    # NOT deleted — no data loss for the other seat
@@ -696,7 +697,7 @@ def test_fence_pre_dirty_wins_over_log_attribution(tmp_path):
     pre = git_status_map(repo)                                   # captures it as dirty
     before = _snapshot_mtimes([repo])
     tracked.write_text("ANOTHER SEAT WIP 2\n", encoding="utf-8")  # still churning during the run
-    rep = fence_remediate(None, pre, before, repo, run_log=_log_naming("tracked.txt"))
+    rep = fence_remediate(None, pre, before, repo, run_log=_log_naming(tracked))
     e = next(e for e in rep["escapes"] if _norm(tracked) == e["path"])
     assert e["action"] == "pre_dirty_concurrent" and e["pre_dirty"] is True
     assert tracked.read_text(encoding="utf-8") == "ANOTHER SEAT WIP 2\n"  # NOT reverted
@@ -718,7 +719,7 @@ def test_fence_gitignored_build_outputs_never_escape(tmp_path):
     before = _snapshot_mtimes([repo])
     (repo / "Binaries" / "Win64").mkdir(parents=True)
     (repo / "Binaries" / "Win64" / "UE.dll").write_bytes(b"\x00" * 16)
-    rep = fence_remediate(None, pre, before, repo, run_log=_log_naming("UE.dll"))
+    rep = fence_remediate(None, pre, before, repo, run_log=_log_naming(repo / "Binaries" / "Win64" / "UE.dll"))
     assert rep["escapes"] == [] and _real_escapes(rep) == []
     assert (repo / "Binaries" / "Win64" / "UE.dll").exists()     # build output untouched
 
@@ -739,7 +740,7 @@ def test_fence_non_git_root_falls_back_to_delete_new_only(tmp_path):
     # same-tick writes, and the non-git fallback has only the mtime signal
     st = pre.stat()
     os.utime(pre, ns=(st.st_atime_ns, st.st_mtime_ns + 5_000_000_000))
-    rep = fence_remediate(None, None, before, plain, run_log=_log_naming("leak.py", "pre.txt"))
+    rep = fence_remediate(None, None, before, plain, run_log=_log_naming(newf, pre))
     assert rep["git"] is False and "not a git repo" in rep["note"]
     by_path = {e["path"]: e for e in rep["escapes"]}
     assert by_path[_norm(newf)]["action"] == "deleted_new" and not newf.exists()
@@ -887,3 +888,48 @@ def test_crashed_run_is_marked_aborted(_logs, monkeypatch):
     with pytest.raises(RuntimeError):
         consult_mod.consult("second_opinion", "q", on_run_id=on_id)
     assert consult_mod.consult_status(seen["rid"])["value"]["status"] == "aborted"
+
+
+# ------------------------------- fence attributes real writes only (pain p-d69ca7f8)
+
+def test_fence_never_reverts_a_file_a_shell_command_only_read(tmp_path):
+    """A read-only run `cat`s package.json while a sibling seat edits it: shell text is
+    not write evidence, so the sibling's edit is reported unattributed and kept."""
+    repo = tmp_path / "ue"
+    tracked = _git_init(repo, body="original\n")
+    pre = git_status_map(repo)
+    before = _snapshot_mtimes([repo])
+    tracked.write_text("SIBLING SEAT WIP\n", encoding="utf-8")
+    log = json.dumps({"type": "item.completed", "item": {
+        "type": "command_execution", "command": f"cat {tracked}",
+        "aggregated_output": "original"}})
+    rep = fence_remediate(None, pre, before, repo, run_log=log)
+    e = next(e for e in rep["escapes"] if _norm(tracked) == e["path"])
+    assert e["action"] == "unattributed_concurrent"
+    assert tracked.read_text(encoding="utf-8") == "SIBLING SEAT WIP\n"
+    assert _real_escapes(rep) == []
+
+
+def test_fence_read_only_profile_reports_and_never_restores(tmp_path):
+    repo = tmp_path / "ue"
+    tracked = _git_init(repo, body="original\n")
+    pre = git_status_map(repo)
+    before = _snapshot_mtimes([repo])
+    tracked.write_text("WRITTEN\n", encoding="utf-8")
+    rep = fence_remediate(None, pre, before, repo, run_log=_log_naming(tracked), restore=False)
+    e = next(e for e in rep["escapes"] if _norm(tracked) == e["path"])
+    assert e["action"] == "reported_readonly" and e["attribution"] == "log"
+    assert tracked.read_text(encoding="utf-8") == "WRITTEN\n"      # never reverted
+    assert _real_escapes(rep) == [e]                              # still fails the run closed
+
+
+def test_written_paths_are_full_paths_not_basenames(tmp_path):
+    from edp8.consult import codex_written_paths
+    a = tmp_path / "x" / "package.json"
+    written = codex_written_paths(_log_naming(a))
+    assert _norm(a) in written
+    assert _norm(tmp_path / "y" / "package.json") not in written
+    rel = codex_written_paths(json.dumps({"item": {"type": "file_change",
+                                                   "changes": [{"path": "sub/f.txt"}]}}),
+                              cwd=str(tmp_path))
+    assert _norm(tmp_path / "sub" / "f.txt") in rel

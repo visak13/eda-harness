@@ -31,12 +31,12 @@ acts so a concurrent seat's file is never touched (the S10 false positive): (a)
 git-snapshot the UE root before launch (`git status --porcelain`, gitignored build
 output excluded); (b) after the run, a dirty path already dirty pre-run is a concurrent
 seat's edit (left), a path THIS run's codex jsonl NAMES in a write/shell/apply_patch
-event is the escape — new file deleted, modified tracked file `git checkout --`
+event (a `file_change` full path, never shell text) is the escape — new file deleted, modified tracked file `git checkout --`
 restored (sha256 + action recorded) — and a path no log names is unattributed
 (left); (c) an ATTRIBUTED escape fails the run closed (code=boundary) while a
 concurrent-only run succeeds, and EITHER way Astra's answer is returned flagged
 `recovered: true` with the escape report, never discarded. See fence_remediate /
-codex_log_corpus + criteria c-fe4f824d82 / c-16ae18056e / c-1457650970.
+codex_written_paths + criteria c-fe4f824d82 / c-16ae18056e / c-1457650970.
 
 CAPABILITY GATING IS ENFORCED (MCP allowlist, feature allowlist, sandbox root,
 approval=never, post-run boundary scan). SKILL visibility is best-effort only:
@@ -668,18 +668,22 @@ def git_status_map(root: Path) -> dict[str, str] | None:
     return out
 
 
-#: jsonl item types whose payload names files this run's codex actually wrote/ran.
-_LOG_WRITE_HINTS = ("command", "patch", "file", "write", "shell", "exec")
+def codex_written_paths(run_log: str, cwd: str | None = None) -> set[str]:
+    """The files this run's codex WROTE, from real write evidence only: the full paths
+    of every `file_change` item's `changes` (codex's apply_patch record) and any
+    `path` field of a patch item. Shell command TEXT is never evidence (pain p-d69ca7f8:
+    a read-only `cat package.json` named a sibling's file and the fence reverted that
+    seat's in-flight edit). Relative paths resolve against `cwd`. Normcased realpaths,
+    the key shape the fence compares."""
+    out: set[str] = set()
 
+    def _add(raw: Any) -> None:
+        if isinstance(raw, str) and raw.strip():
+            q = Path(raw.strip())
+            if not q.is_absolute():
+                q = Path(cwd or os.getcwd()) / q
+            out.add(os.path.normcase(str(_realpath(q))))
 
-def codex_log_corpus(run_log: str) -> str:
-    """The concatenated text of every write/apply_patch/shell event in a run's
-    codex `--json` stream — the primary ATTRIBUTION signal (c-fe4f824d82). We take
-    each `command_execution.command` string plus the raw payload of any apply_patch/
-    file/write item, so a path this run's codex named is discoverable; we DELIBERATELY
-    exclude `aggregated_output` (a shell's stdout could echo a concurrent seat's
-    filename and mis-attribute it). Lowercased for case-insensitive matching. PURE."""
-    parts: list[str] = []
     for line in run_log.splitlines():
         line = line.strip()
         if not line.startswith("{"):
@@ -691,34 +695,31 @@ def codex_log_corpus(run_log: str) -> str:
         if not isinstance(ev, dict):
             continue
         item = ev.get("item") if isinstance(ev.get("item"), dict) else ev
-        cmd = item.get("command")
-        if isinstance(cmd, str):
-            parts.append(cmd)
         itype = str(item.get("type") or "")
-        if any(h in itype for h in _LOG_WRITE_HINTS) and itype != "command_execution":
-            # a patch/file/write item — its whole payload carries the path(s)
-            try:
-                parts.append(json.dumps(item, ensure_ascii=False))
-            except (TypeError, ValueError):
-                pass
-    return "\n".join(parts).lower()
+        if itype == "file_change" or "patch" in itype:
+            for ch in item.get("changes") or []:
+                if isinstance(ch, dict):
+                    _add(ch.get("path"))
+            _add(item.get("path"))
+    return out
 
 
-def _log_attributes(path: str, corpus: str) -> bool:
-    """True if this run's codex log names `path` (by basename) in a write/shell/patch
-    event. Basename match: commands reference a file by name in whatever slash form
-    and cwd-relativity the shell used. (c-fe4f824d82)"""
-    base = os.path.basename(path)
-    return bool(base) and base.lower() in corpus
+def _log_attributes(path: str, written: set[str]) -> bool:
+    """True if this run's codex wrote `path`: an exact full-path match against its
+    file_change records, never a basename hit. (c-fe4f824d82, p-d69ca7f8)"""
+    return os.path.normcase(str(_realpath(Path(path)))) in written
 
 
 def fence_remediate(write_dir: str | None, pre_status: dict[str, str] | None,
                     before_mtimes: dict[str, int], ue_root: Path,
-                    run_log: str = "") -> dict[str, Any]:
+                    run_log: str = "", restore: bool = True) -> dict[str, Any]:
     """Attribute and revert writes into the protected UE tree after a run.
 
-    ATTRIBUTION (c-fe4f824d82): auto-delete/restore is allowed ONLY for a path THIS
-    run's codex jsonl names in a write/apply_patch/shell event (`run_log`). Every
+    ATTRIBUTION (c-fe4f824d82, p-d69ca7f8): auto-delete/restore is allowed ONLY for a
+    path THIS run's codex jsonl records as WRITTEN, a `file_change` full path, never
+    shell command text (`run_log`). `restore=False` (a read-only profile, whose sandbox
+    already refuses writes) reports an attributed path as `reported_readonly` and
+    never touches it. Every
     other dirty path — a pre-dirty file another seat was already editing
     (c-1457650970), or one nobody's log claims — is reported and LEFT UNTOUCHED. So a
     concurrent seat's own file is never deleted, which was the S10 false positive.
@@ -738,7 +739,7 @@ def fence_remediate(write_dir: str | None, pre_status: dict[str, str] | None,
     root = _realpath(ue_root) if ue_root.exists() else Path(os.path.normpath(str(ue_root)))
     wd = _realpath(write_dir) if write_dir else None
     allow = _realpath(root.joinpath(*_UE_ALLOWLIST_SUBPATH))
-    corpus = codex_log_corpus(run_log)
+    written = codex_written_paths(run_log, cwd=write_dir)
     report: list[dict[str, Any]] = []
 
     def _in_allowed_zone(p: Path) -> bool:
@@ -757,11 +758,16 @@ def fence_remediate(write_dir: str | None, pre_status: dict[str, str] | None,
                                "attribution": "pre_dirty", "tracked": tracked,
                                "pre_dirty": True, "status": xy, "sha256": rogue_sha,
                                "ok": True})
-            elif not _log_attributes(path, corpus):
+            elif not _log_attributes(path, written):
                 report.append({"path": path, "action": "unattributed_concurrent",
                                "attribution": "none", "tracked": tracked,
                                "pre_dirty": False, "status": xy, "sha256": rogue_sha,
                                "ok": True})
+            elif not restore:
+                report.append({"path": path, "action": "reported_readonly",
+                               "attribution": "log", "tracked": tracked,
+                               "pre_dirty": False, "status": xy, "sha256": rogue_sha,
+                               "ok": False, "detail": "read-only profile: reported, never reverted"})
             elif not tracked:
                 try:
                     if p.exists():
@@ -794,11 +800,15 @@ def fence_remediate(write_dir: str | None, pre_status: dict[str, str] | None,
         p = Path(path)
         rogue_sha = _sha256_file(p)
         pre_existing = before_mtimes.get(path) is not None
-        if not _log_attributes(path, corpus):
+        if not _log_attributes(path, written):
             report.append({"path": path, "action": "unattributed_concurrent",
                            "attribution": "none", "tracked": None,
                            "pre_dirty": pre_existing, "sha256": rogue_sha, "ok": True,
                            "detail": "not named in this run's codex log; left untouched"})
+        elif not restore:
+            report.append({"path": path, "action": "reported_readonly", "attribution": "log",
+                           "tracked": None, "pre_dirty": pre_existing, "sha256": rogue_sha,
+                           "ok": False, "detail": "read-only profile: reported, never reverted"})
         elif pre_existing:
             report.append({"path": path, "action": "left_modified_no_git",
                            "attribution": "log", "tracked": None, "pre_dirty": True,
@@ -827,7 +837,7 @@ def _real_escapes(fence: dict[str, Any]) -> list[dict[str, Any]]:
     (another seat) never count. (c-fe4f824d82, c-1457650970)"""
     return [e for e in fence["escapes"]
             if e["action"] in ("deleted_new", "restored_tracked", "delete_failed",
-                               "left_modified_no_git")]
+                               "left_modified_no_git", "reported_readonly")]
 
 
 # ---------------------------------------------------------------- evidence
@@ -1450,7 +1460,7 @@ def _consult_locked(purpose: str, question: str, *, context: str, files: list[st
     # but never touched; only THIS run's escapes (clean→dirty) are reverted, and even
     # then the answer is RECOVERED, never discarded. A concurrent-only run succeeds.
     fence = fence_remediate(write_dir, pre_status, boundary_before, fence_root,
-                            run_log=raw)
+                            run_log=raw, restore=spec.writes)
     real = _real_escapes(fence)
     concurrent = [e for e in fence["escapes"]
                   if e["action"] in ("pre_dirty_concurrent", "unattributed_concurrent")]
