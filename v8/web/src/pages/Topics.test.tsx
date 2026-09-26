@@ -71,9 +71,11 @@ describe("Library topics", () => {
         request: { method: "POST", path: "/v1/admin/services/broker/restart", body: { force: false, keep_seats: false } },
         status: "proposed", decided_by: null, decided_at: null, result: null, card: "" }]);
     }));
-    mountPage({ ...PAGE, topic: { ...PAGE.topic, tags: ["help"] }, seat: { ...PAGE.seat, participant: "doctor.topic-1" } });
+    mountPage({ ...PAGE, topic: { ...PAGE.topic, tags: ["help"] },
+      seat: { ...PAGE.seat, participant: "doctor.topic-1", state: "dead", phase: "failed", reason: "clean exit: other" } });
     await screen.findByTestId("topic-page");
-    expect(screen.getByTestId("topic-seat")).toHaveTextContent("Help seat doctor.topic-1");
+    // t-67dad8c6aa: the help thread says where the request is, with the failure reason
+    expect(screen.getByTestId("topic-seat")).toHaveTextContent("Help seat doctor.topic-1 · Failed: clean exit: other. Send a message to retry.");
     expect(await screen.findByTestId("fix-request")).toHaveTextContent("POST /v1/admin/services/broker/restart");
     expect(asked[0]).toContain("topic_id=topic-1");
   });

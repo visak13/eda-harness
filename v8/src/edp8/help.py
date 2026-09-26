@@ -78,6 +78,19 @@ def ask(board: Board, actor: Participant, text: str | None = None) -> dict[str, 
             "resumed": resumed, "message": msg, "url": f"/ui/library/topics/{t.id}"}
 
 
+def threads(board: Board, actor: Participant, *, include_closed: bool = False) -> list[dict[str, Any]]:
+    """t-67dad8c6aa: the Help requests list: the caller's help threads (admins see everyone's),
+    newest first, each with its seat's phase (topics.seat_view) so the person sees where their request is."""
+    if actor.type != "human" or actor.role == Role.expert:
+        raise BoardError("forbidden", "Help requests are for the people who run this board")
+    from .admin import is_admin  # local: admin imports the board stack
+    everyone = is_admin(actor)
+    rows = board.store.query("ticket", {"kind": TicketKind.topic.value, **({} if everyone else {"created_by": actor.id})},
+                             limit=-1, newest_first=True)
+    return [topics.row(board, t) for t in rows  # type: ignore[arg-type]
+            if is_help(t) and (include_closed or t.status not in _TERMINAL)]  # type: ignore[arg-type]
+
+
 # ----------------------------------------------------------------------------- `heronry doctor --agent`
 def _owner_credentials() -> tuple[str, str | None]:
     """The CLI speaks as the install's human (EDP8_OWNER), with its token from tokens.json when there is one

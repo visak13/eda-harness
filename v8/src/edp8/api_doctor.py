@@ -90,6 +90,10 @@ def doctor_router(board: Board, actor: Callable[..., Participant], admin_actor: 
             raise _raise(e) from None
         return _ok(out, "the Help seat answers on the thread; it is spawned within a few seconds")
 
+    @r.get("/v1/help")
+    def help_list(closed: bool = False, a: Participant = Depends(actor)):
+        return _call(lambda: help_threads.threads(board, a, include_closed=closed))
+
     # ---- read-only diagnostics
     @r.get("/v1/doctor/health")
     def d_health(a: Participant = Depends(reader)):

@@ -650,6 +650,10 @@ export interface TopicSeat {
   state: string;
   model?: string | null;
   effort?: string | null;
+  /** t-67dad8c6aa: queued | starting | answering | idle | failed (topics.seat_view) */
+  phase?: "queued" | "starting" | "answering" | "idle" | "failed";
+  /** why the seat's shell ended, when phase is failed */
+  reason?: string;
 }
 export interface TopicRow {
   id: string;

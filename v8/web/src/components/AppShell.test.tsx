@@ -283,25 +283,70 @@ describe("Ask for help (S19 c-190f5c6276)", () => {
     );
   }
 
-  it("opens the viewer's help thread with its Help seat and shows it", async () => {
+  const row = (id: string, seat: Record<string, unknown>) => ({ id, title: `Help: ${id}`, tags: ["help"], status: "open",
+    created_at: "2026-09-27T00:00:00Z", created_by: "owner", docs: 0, experts: 0, messages: 1,
+    seat: { participant: `doctor.${id}`, model: "claude-opus-5-5", effort: null, ...seat } });
+
+  it("t-67dad8c6aa: takes the person's words, posts them and opens the thread", async () => {
     const posts: unknown[] = [];
-    server.use(http.post("/v1/help", async ({ request }) => {
-      posts.push(await request.json());
-      return HttpResponse.json({ ok: true, value: {
-        topic: { id: "topic-h1", title: "Help: I need help" }, resumed: false, message: "m-1",
-        seat: { participant: "doctor.topic-h1", state: "queued" }, url: "/ui/library/topics/topic-h1" }, hint: "" });
-    }));
+    server.use(http.get("/v1/help", () => HttpResponse.json({ ok: true, value: [], hint: "" })),
+      http.post("/v1/help", async ({ request }) => {
+        posts.push(await request.json());
+        return HttpResponse.json({ ok: true, value: {
+          topic: { id: "topic-h1", title: "Help: my seats die" }, resumed: false, message: "m-1",
+          seat: { participant: "doctor.topic-h1", state: "queued", phase: "queued" }, url: "/ui/library/topics/topic-h1" }, hint: "" });
+      }));
     renderWithTopic();
     fireEvent.click(screen.getByTestId("ask-help"));
+    const panel = await screen.findByRole("dialog", { name: "Ask for help" });
+    expect(await within(panel).findByTestId("help-none")).toBeInTheDocument();
+    expect(within(panel).getByTestId("help-send")).toBeDisabled();          // nothing is sent without words
+    fireEvent.change(within(panel).getByTestId("help-words"), { target: { value: "  my seats die  " } });
+    fireEvent.click(within(panel).getByTestId("help-send"));
     expect(await screen.findByTestId("topic-route")).toBeInTheDocument();
-    expect(posts).toEqual([{ text: "" }]);
+    expect(posts).toEqual([{ text: "my seats die" }]);
+    expect(screen.queryByRole("dialog", { name: "Ask for help" })).toBeNull();
+  });
+
+  it("t-67dad8c6aa: lists the help requests with each seat's state and closes one", async () => {
+    let open = [row("topic-a", { state: "queued", phase: "queued" }), row("topic-b", { state: "spawned", phase: "starting" }),
+      row("topic-c", { state: "alive", phase: "answering" }), row("topic-d", { state: "dead", phase: "failed", reason: "clean exit: other" }),
+      row("topic-e", { state: "dead", phase: "idle" })];
+    const closed: string[] = [];
+    server.use(http.get("/v1/help", () => HttpResponse.json({ ok: true, value: open, hint: "" })),
+      http.post("/v1/topics/:id/close", ({ params }) => {
+        closed.push(String(params.id));
+        open = open.filter((r) => r.id !== params.id);
+        return HttpResponse.json({ ok: true, value: { id: params.id, status: "done" }, hint: "" });
+      }));
+    renderWithTopic();
+    fireEvent.click(screen.getByTestId("ask-help"));
+    const panel = await screen.findByRole("dialog", { name: "Ask for help" });
+    await waitFor(() => expect(within(panel).getAllByTestId("help-request")).toHaveLength(5));
+    const phases = within(panel).getAllByTestId("help-phase").map((e) => e.textContent);
+    expect(phases).toEqual(["Queued: the Help seat starts within a few seconds", "Starting", "Answering",
+      "Failed: clean exit: other. Send a message to retry.", "Idle: your next message wakes it"]);
+    expect(within(panel).getByRole("link", { name: "Help: topic-d" })).toHaveAttribute("href", "/library/topics/topic-d");
+    fireEvent.click(within(panel).getAllByTestId("help-close")[3]);
+    await waitFor(() => expect(within(panel).getAllByTestId("help-request")).toHaveLength(4));
+    expect(closed).toEqual(["topic-d"]);
+  });
+
+  it("t-67dad8c6aa: Ask for help has its own icon, not the glossary's question mark", () => {
+    renderWithTopic();
+    expect(screen.getByTestId("ask-help").querySelector("svg")).toHaveAttribute("data-icon", "lifebuoy");
+    expect(screen.getByTestId("glossary-open").querySelector("svg")).toHaveAttribute("data-icon", "help");
   });
 
   it("shows the board's refusal and stays put", async () => {
-    server.use(http.post("/v1/help", () =>
-      HttpResponse.json({ ok: false, error: { code: "http", message: "Ask for help is for the people who run this board" }, hint: "" }, { status: 403 })));
+    server.use(http.get("/v1/help", () => HttpResponse.json({ ok: true, value: [], hint: "" })),
+      http.post("/v1/help", () =>
+        HttpResponse.json({ ok: false, error: { code: "http", message: "Ask for help is for the people who run this board" }, hint: "" }, { status: 403 })));
     renderWithTopic();
     fireEvent.click(screen.getByTestId("ask-help"));
+    const panel = await screen.findByRole("dialog", { name: "Ask for help" });
+    fireEvent.change(within(panel).getByTestId("help-words"), { target: { value: "help" } });
+    fireEvent.click(within(panel).getByTestId("help-send"));
     expect(await screen.findByTestId("ask-help-error")).toHaveTextContent("Ask for help is for the people");
     expect(screen.queryByTestId("topic-route")).toBeNull();
   });

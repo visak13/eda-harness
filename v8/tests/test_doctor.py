@@ -444,3 +444,38 @@ def test_the_help_seat_spawns_on_its_catalog_model(tmp_path, monkeypatch):
     tid = env.client.post("/v1/help", json={"text": "hi"}, headers=BOB_H).json()["value"]["topic"]["id"]
     assert seat_choice.catalog(V8)["doctor"][0] == default
     assert env.board.seat_choice_for(tid, role="doctor").pool_model == default
+
+
+def test_help_requests_list_shows_each_seat_phase_and_the_failure_reason(tmp_path, monkeypatch):
+    """t-67dad8c6aa: GET /v1/help lists the caller's help threads (admins see everyone's) with the seat's phase:
+    queued → starting → answering → failed (with the pool's reason) or idle once answered."""
+    from edp8.schemas import Session, SessionState
+    env = make_env(tmp_path, monkeypatch)
+    b = env.board
+    tid = env.client.post("/v1/help", json={"text": "seats die"}, headers=BOB_H).json()["value"]["topic"]["id"]
+    pid = f"doctor.{tid}"
+
+    def seat() -> dict:
+        rows = env.client.get("/v1/help", headers=BOB_H).json()["value"]
+        assert [r["id"] for r in rows] == [tid]
+        return rows[0]["seat"]
+
+    assert seat()["phase"] == "queued"
+    b._pending_pairings.clear()
+    assert seat()["phase"] == "starting"            # the pool took it; no shell reported yet
+    b.store.put("session", Session(id="sess-a", participant_id=pid, pool_id="p-a", state=SessionState.alive))
+    assert seat()["phase"] == "answering"
+    b.store.put("session", Session(id="sess-a", participant_id=pid, pool_id="p-a", state=SessionState.dead,
+                                   reason="clean exit: other"))
+    s = seat()
+    assert (s["phase"], s["reason"]) == ("failed", "clean exit: other")
+    b.message_send(b.store.get("participant", pid), ticket_id=tid, to="bob", kind=MessageKind.answer, text="fixed")
+    assert seat()["phase"] == "idle"                 # answered: the next message wakes it
+    # someone else's request is not in bob's list; an admin sees both
+    other = env.client.post("/v1/help", json={"text": "me too"}, headers=ADMIN_H).json()["value"]["topic"]["id"]
+    assert [r["id"] for r in env.client.get("/v1/help", headers=BOB_H).json()["value"]] == [tid]
+    assert {r["id"] for r in env.client.get("/v1/help", headers=ADMIN_H).json()["value"]} == {tid, other}
+    # closed requests leave the list unless asked for
+    assert env.client.post(f"/v1/topics/{tid}/close", headers=BOB_H).status_code == 200
+    assert env.client.get("/v1/help", headers=BOB_H).json()["value"] == []
+    assert [r["id"] for r in env.client.get("/v1/help?closed=true", headers=BOB_H).json()["value"]] == [tid]

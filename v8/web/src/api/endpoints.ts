@@ -412,6 +412,8 @@ export interface HelpOpened {
 
 /** POST /v1/help — open (or resume) the caller's help thread with its Help seat. */
 export const askForHelp = (text = "") => postJson<HelpOpened>("/v1/help", { text });
+/** GET /v1/help — the caller's open help threads (admins: everyone's), each with its seat phase (t-67dad8c6aa). */
+export const getHelpRequests = (closed = false) => api<TopicRow[]>(`/v1/help${closed ? "?closed=true" : ""}`);
 /** GET /v1/fixes — proposals an admin decides (a non-admin gets 403). */
 export const getFixes = (f: { status?: string | null; topic_id?: string | null } = {}) =>
   api<FixProposal[]>(`/v1/fixes${qs(f)}`);

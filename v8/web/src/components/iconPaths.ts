@@ -25,6 +25,8 @@ export const ICON_PATHS = {
   "attach": "m9 16 8-8a3 3 0 0 0-4-4L4 13a5 5 0 0 0 7 7l9-9M7 14l8-8",
   "mention": "M16 8v7q4 3 5-3a9 9 0 1 0-4 8M16 9a5 5 0 1 0 0 6",
   "help": "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20ZM9 8q1-4 5-2t-1 6l-1 2m0 4h.01",
+  // t-67dad8c6aa: Ask for help (a lifebuoy), distinct from "What am I looking at?" (help)
+  "lifebuoy": "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 6a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM4.9 4.9l4.3 4.3m5.6 5.6 4.3 4.3m0-14.2-4.3 4.3m-5.6 5.6-4.3 4.3",
   "send": "M3 10 21 3l-7 18-4-7ZM10 14 21 3M10 14v6l3-2",
   "preferences": "M9 3h6l1 4 4 1 1 6-4 2-1 4-6 1-2-4-4-1-1-6 4-2ZM12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z",
   "usage": "M3 14h4v7H3ZM10 9h4v12h-4ZM17 3h4v18h-4Z",

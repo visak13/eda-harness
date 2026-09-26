@@ -9,6 +9,7 @@ import { parseTags } from "./KnowledgeDetail";
 import { errText, when } from "./Topics";
 import { TopicExperts, TopicThread } from "./TopicPanels";
 import { FixCards } from "../components/FixCards";
+import { helpPhaseText } from "../components/HelpRequests";
 import styles from "./Topics.module.css";
 
 // S-SME-SURFACE (s-698224fca8): one Library topic — docs, thread, experts, seat and tags. The same page
@@ -39,7 +40,7 @@ export function TopicPage(): React.JSX.Element {
       <div className={styles.head}>
         <h2 className={styles.headTitle}>{p.topic.title}</h2>
         <span className={ui.tag} data-testid="topic-status">{p.topic.status}</span>
-        <span className={styles.muted} data-testid="topic-seat">{help ? "Help seat" : "sme seat"} {p.seat.participant} · {p.seat.state}{p.seat.model ? ` · ${p.seat.model}${p.seat.effort ? ` at ${p.seat.effort}` : ""}` : ""}</span>
+        <span className={styles.muted} data-testid="topic-seat">{help ? "Help seat" : "sme seat"} {p.seat.participant} · {help ? helpPhaseText(p.seat) : p.seat.state}{p.seat.model ? ` · ${p.seat.model}${p.seat.effort ? ` at ${p.seat.effort}` : ""}` : ""}</span>
         {owner && isOpen ? (
           <button type="button" className={ui.button} disabled={close.isPending} data-testid="topic-close"
             onClick={() => { if (window.confirm("Close this topic? Its sme seat is released.")) close.mutate(); }}>

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, Outlet, useLocation, useNavigate } from "react-router";
+import { Link, Outlet, useLocation } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { api, BoardApiError } from "../api/client";
-import { askForHelp, getEpicPage } from "../api/endpoints";
+import { getEpicPage } from "../api/endpoints";
 import { useCurrentEpicId } from "./currentEpic";
 import { identity } from "../auth/identity";
 import { IdentityPanel } from "./IdentityPanel";
@@ -17,6 +17,7 @@ import { Icon } from "./Icon";
 import { LOGO_URL, PRODUCT_NAME } from "../brand";
 import { PageFrameProvider, usePageFrameCtx, defaultFraming } from "./PageFrame";
 import { GlossaryPanel } from "./GlossaryPanel";
+import { HelpRequests } from "./HelpRequests";
 import { CommandPalette } from "./CommandPalette";
 import { CopyDescriptions } from "./CopyDescriptions";
 import { PendingNavigation } from "./PendingNavigation";
@@ -100,16 +101,11 @@ function CurrentEpic({ epicId }: { epicId: string }): React.JSX.Element | null {
 
 function AppShellChrome(): React.JSX.Element {
   const location = useLocation();
-  const navigate = useNavigate();
-  // S19: Ask for help opens (or resumes) the viewer's help thread with its Help seat, then shows it
-  const [helpAsk, setHelpAsk] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
-  const askHelp = () => {
-    setHelpAsk({ busy: true, error: null });
-    askForHelp("").then(
-      (r) => { setHelpAsk({ busy: false, error: null }); navigate(`/library/topics/${encodeURIComponent(r.value.topic.id)}`); },
-      (e: unknown) => setHelpAsk({ busy: false, error: e instanceof BoardApiError ? e.hint || e.message : String(e) }),
-    );
-  };
+  // S19 + t-67dad8c6aa (owner m-8994975b6f): Ask for help opens a panel that takes the person's words and
+  // lists their help requests with each Help seat's state; sending opens the thread
+  const [askOpen, setAskOpen] = useState(false);
+  const askRef = useRef<HTMLButtonElement>(null);
+  const closeAsk = () => { setAskOpen(false); askRef.current?.focus(); };
   const as = identity();
   const [menuOpen, setMenuOpen] = useState(false);
   // S17 c-33ffd96baf: the rail collapses to a 64px icon rail and the message list takes the width;
@@ -241,13 +237,17 @@ function AppShellChrome(): React.JSX.Element {
 
         <div className={styles.lower}>
           {expert ? null : (
-            <button className={styles.railBtn} type="button" aria-label="Ask for help" title="Ask the Help seat: it diagnoses and proposes fixes an admin approves"
-              disabled={helpAsk.busy} onClick={askHelp} data-testid="ask-help">
-              <Icon name="help" size={18} />
+            <button ref={askRef} className={styles.railBtn} type="button" aria-label="Ask for help" title="Ask the Help seat: it diagnoses and proposes fixes an admin approves"
+              aria-haspopup="dialog" aria-expanded={askOpen} onClick={() => setAskOpen((o) => !o)} data-testid="ask-help">
+              <Icon name="lifebuoy" size={18} />
               <span className={styles.navLabel}>Ask for help</span>
             </button>
           )}
-          {helpAsk.error ? <p role="alert" className={styles.navLabel} data-testid="ask-help-error">{helpAsk.error}</p> : null}
+          {askOpen ? (
+            <AnchoredPanel anchor={askRef} label="Ask for help" heading="Ask for help" onClose={closeAsk} width={380} maxHeight={560}>
+              <HelpRequests onDone={() => setAskOpen(false)} />
+            </AnchoredPanel>
+          ) : null}
           <button ref={findBtnRef} className={styles.railBtn} type="button" aria-label="Find (Ctrl-K)"
             {...copyProps("sidebar", "find")} aria-haspopup="dialog" aria-expanded={findOpen}
             onClick={() => setFindOpen(true)} data-testid="find-open">

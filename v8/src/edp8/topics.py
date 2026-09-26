@@ -193,16 +193,24 @@ def help_seat_owed(board: Board, t: Ticket) -> bool:
     only when the thread holds an unanswered message newer than the seat's last shell; otherwise it waits
     for the next message (message_send re-queues it). An idle help thread whose last ask was already put to
     a seat that then died is not re-spawned bare on every restart."""
+    last_ask = help_unanswered(board, t)
+    if last_ask is None:
+        return False
+    shells = board.store.query("session", {"participant_id": seat_of(board, t.id)})
+    last_shell = max((s.created_at for s in shells), default=None)  # type: ignore[union-attr]
+    return last_shell is None or last_ask.created_at > last_shell
+
+
+def help_unanswered(board: Board, t: Ticket) -> Any:
+    """The newest message on a help thread from anyone but its seat and the board, when the seat has not
+    replied after it; else None."""
     pid = seat_of(board, t.id)
     msgs = board.store.query("message", {"ticket_id": t.id}, limit=200, newest_first=True)
     last_ask = next((m for m in msgs if m.created_by not in (pid, "board")), None)  # type: ignore[union-attr]
-    if last_ask is None:
-        return False
-    if any(m.created_by == pid and m.created_at > last_ask.created_at for m in msgs):  # type: ignore[union-attr]
-        return False  # answered
-    shells = board.store.query("session", {"participant_id": pid})
-    last_shell = max((s.created_at for s in shells), default=None)  # type: ignore[union-attr]
-    return last_shell is None or last_ask.created_at > last_shell
+    if last_ask is None or any(m.created_by == pid and m.created_at > last_ask.created_at  # type: ignore[union-attr]
+                               for m in msgs):
+        return None
+    return last_ask
 
 
 def close(board: Board, actor: Participant, topic_id: str) -> Ticket:
@@ -359,7 +367,28 @@ def seat_view(board: Board, topic_id: str) -> dict[str, Any]:
         state = ("queued" if pid in board._pending_pairings
                  else "spawned" if board.store.get("participant", pid) is not None else "not spawned")
     choice = board.seat_choice_for(topic_id, role=pid.split(".", 1)[0])
-    return {"participant": pid, "state": state, "model": choice.model, "effort": choice.effort}
+    phase, reason = _seat_phase(board, topic_id, pid, state)
+    return {"participant": pid, "state": state, "model": choice.model, "effort": choice.effort,
+            "phase": phase, "reason": reason}
+
+
+def _seat_phase(board: Board, topic_id: str, pid: str, state: str) -> tuple[str, str]:
+    """t-67dad8c6aa: where a person's request is, in their words: queued (waiting for a spawn), starting (the
+    pool took it, no shell reported yet), answering (a live shell), idle (answered, or nothing asked since
+    its last shell: the next message wakes it) or failed (its shell ended with the question unanswered;
+    `reason` is why the pool says it ended)."""
+    if state == "queued" or pid in board._pending_pairings:
+        return "queued", ""
+    if state == "spawned":
+        return "starting", ""
+    if state in ("alive", "stalled", "parked"):
+        return "answering", ""
+    if state == "dead":
+        t = board.store.get("ticket", topic_id)
+        if t is not None and is_help(t) and help_unanswered(board, t):
+            rows = sorted(board.store.query("session", {"participant_id": pid}), key=lambda s: s.created_at)
+            return "failed", (rows[-1].reason if rows else "") or "the seat ended without answering"  # type: ignore[union-attr]
+    return "idle", ""
 
 
 def fetches(board: Board, topic_id: str, n: int = 10) -> list[dict[str, Any]]:
