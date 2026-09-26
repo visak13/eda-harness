@@ -10,9 +10,9 @@ import { Composer } from "../components/Composer";
 import { Avatar } from "../components/Avatar";
 import { useScrollToHash } from "../components/useScrollToHash";
 import { copyProps } from "../copy/pages";
-import { identity } from "../auth/identity";
 import { useViewerAliases } from "../auth/useViewer";
 import { AgentLine } from "../components/AgentLine";
+import { useAttention } from "../api/attention";
 import { presenceOf } from "./presence";
 import { MessageText } from "../components/ArtifactLink";
 import { SpawnSeatForm } from "../components/SpawnSeatForm";
@@ -354,7 +354,7 @@ function SeatThread({
   seat: SeatRow;
   onReply?: (m: { id: string; by: string }) => void;
 }): React.JSX.Element {
-  const viewer = identity();
+  const asks = new Set(useAttention().items.filter((i) => i.kind === "ask").map((i) => i.id)); // S20: the one rule
   const mine = useViewerAliases(); // round 2 #4: canonical id + handle, not the raw login string
   const q = useQuery({
     queryKey: ["messages", ticketId, seat.id],
@@ -373,7 +373,7 @@ function SeatThread({
     <ul className={styles.seatThread} data-testid="seat-thread">
       {rows.map((m) => (
         <li key={m.id} className={styles.seatThreadRow}>
-          <AgentLine by={m.created_by} kind={m.kind} to={m.to} viewer={viewer} at={m.created_at} />
+          <AgentLine by={m.created_by} kind={m.kind} waiting={asks.has(m.id)} at={m.created_at} />
           <MessageText className={styles.seatThreadText} text={m.text} />
           {onReply && !isMine(m.created_by) ? (
             <button type="button" className={styles.replyBtn} data-testid="seat-reply" onClick={() => onReply({ id: m.id, by: m.created_by })}>

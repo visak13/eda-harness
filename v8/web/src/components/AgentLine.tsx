@@ -23,19 +23,17 @@ function nameOf(by: string): string {
 export function AgentLine({
   by,
   kind,
-  to,
-  viewer,
+  waiting = false,
   at,
 }: {
   by: string;
   kind: string;
-  to?: string | null;
-  /** The current viewer's handle (from ?as=). A question addressed to them → "Waiting on you". */
-  viewer?: string | null;
+  /** S20: the message is in the viewer's attention list (the one rule, /v1/me/attention) → "Waiting on you". */
+  waiting?: boolean;
   at?: string | null;
 }): React.JSX.Element {
   const role = roleWordOf(by);
-  const waitingOnYou = kind === "question" && !!viewer && to === viewer;
+  const waitingOnYou = waiting;
 
   return (
     <div className={styles.line} data-testid="agent-line">

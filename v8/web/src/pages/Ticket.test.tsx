@@ -577,3 +577,23 @@ describe("TicketPage attention trail (S20)", () => {
     expect(screen.queryByTestId("review-signoff")).toBeNull();
   });
 });
+
+// S20: the thread's "Waiting on you" comes from the attention list, and a #m-<id> landing highlights that message.
+describe("TicketPage thread attention (S20)", () => {
+  it("marks the waiting ask from the attention list and highlights it from its #m- link", async () => {
+    server.use(attentionHandler());
+    const ask = { id: "m-storyq", by: "engineer.s-99", to: "owner", kind: "question", text: "which theme?", at: "2026-09-02T11:00:00Z", reply_to: null };
+    const old = { id: "m-old", by: "engineer.s-99", to: "owner", kind: "question", text: "answered already", at: "2026-09-02T09:00:00Z", reply_to: null };
+    mount(ticketPage({ thread: [old, ...ticketPage().thread, ask] }), "/ticket/s-1?as=owner#m-storyq");
+    await title();
+    const li = await screen.findByText("which theme?").then((e) => e.closest("li")!);
+    await waitFor(() => expect(li).toHaveAttribute("data-attention", "true"));
+    expect(within(li).getByTestId("reader-tag")).toHaveTextContent("Waiting on you");
+    expect(within(li).getByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
+    await waitFor(() => expect(li).toHaveAttribute("data-highlight", "true"));
+    // a question to the viewer that the attention list no longer holds (answered) carries no mark
+    const answered = screen.getByText("answered already").closest("li")!;
+    expect(answered).not.toHaveAttribute("data-attention");
+    expect(within(answered).queryByTestId("reader-tag")).toBeNull();
+  });
+});

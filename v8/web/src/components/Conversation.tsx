@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import type { MessageAttachment, MessageView } from "../api/types";
 import { Avatar } from "./Avatar";
 import { Icon } from "./Icon";
@@ -15,6 +15,9 @@ import { CodeCard } from "./CodeCard";
 import { QuoteCard } from "./QuoteCard";
 import { quoteRegionRef } from "./QuoteLayer";
 import styles from "./Conversation.module.css";
+import { pageItems, useAttention } from "../api/attention";
+import { AttentionDot, attentionMark } from "./AttentionDot";
+import { highlightMessage } from "./AttentionAsks";
 
 // The conversation canvas per revision3-clean-epic.png: "Conversation · N messages · Today" and a
 // continuous run of messages (36px avatar, bold name, "To x", time, Reply on the right), with an
@@ -130,6 +133,13 @@ export function Conversation({ ticketId, history, order, onToggleOrder, onReply,
   const byId = new Map(thread.map((m) => [m.id, m]));
   const retired = useRetired(); // t-882e4d2eeb: people who left keep their name here, greyed
   useScrollToHash(Boolean(thread.length));
+  // S20: the asks waiting on the viewer come from the one attention list (never a rule of this thread's own);
+  // a #m-<id> landing (a notification, the Waiting-on-you trail) highlights that message once it is loaded.
+  const asks = new Set(pageItems(useAttention(), ticketId).filter((i) => i.kind === "ask").map((i) => i.id));
+  const { hash } = useLocation();
+  const target = hash.startsWith("#m-") ? decodeURIComponent(hash.slice(1)) : null;
+  const loaded = Boolean(target && byId.has(target));
+  useEffect(() => { if (target && loaded) highlightMessage(target); }, [target, loaded]);
   const last = thread[thread.length - 1]?.at;
   const [composerCollapsed, setComposerCollapsed] = useViewerFlag(viewer, "composer-collapsed");
   const fillRef = useFillViewport();
@@ -150,9 +160,10 @@ export function Conversation({ ticketId, history, order, onToggleOrder, onReply,
         <ul ref={history.listRef} className={styles.messages} data-fill data-testid="thread" tabIndex={0} aria-label="Conversation messages">
           {ordered.map((m) => {
             const parent = m.reply_to ? byId.get(m.reply_to) : undefined;
-            const waiting = m.kind === "question" && m.to === viewer;
+            const waiting = asks.has(m.id);
             return (
-              <li key={m.id} id={m.id} className={styles.msg} data-testid="thread-message" data-reply-to={m.reply_to ?? undefined}>
+              <li key={m.id} id={m.id} className={`${styles.msg} ${waiting ? attentionMark : ""}`} data-testid="thread-message"
+                data-reply-to={m.reply_to ?? undefined} data-attention={waiting ? "true" : undefined}>
                 <Avatar id={m.by} size={36} className={styles.avatar} />
                 <div className={styles.body}>
                   <div className={styles.by}>
@@ -162,7 +173,7 @@ export function Conversation({ ticketId, history, order, onToggleOrder, onReply,
                     {m.by.includes(".") ? <span className={styles.id}>{m.by}</span> : null}
                     {m.to ? <span className={styles.to}>To {m.to === viewer ? "you" : nameOf(m.to)}</span> : null}
                     {m.kind !== "note" ? <Term category="message_kind" value={m.kind} className={styles.kind} /> : null}
-                    {waiting ? <span className={styles.waiting} data-testid="reader-tag">Waiting on you</span> : null}
+                    {waiting ? <span className={styles.waiting} data-testid="reader-tag">Waiting on you <AttentionDot count={1} /></span> : null}
                     <time dateTime={m.at}>{clock(m.at)}</time>
                     <button type="button" className={styles.reply} data-testid="thread-reply"
                       onClick={() => { if (!pendingWork()) { setComposerCollapsed(false); onReply(m); } }}>
