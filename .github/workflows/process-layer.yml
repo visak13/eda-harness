@@ -1,0 +1,94 @@
+name: process layer (3 OS)
+
+# S2 (s-b7ec13d748, design-e963c656f5 §4.3): the process layer — PTY abstraction, psutil tree kill by
+# (pid, create_time), tool lookup through settings/PATH, the supervisor's python relaunch — is proven on
+# Windows, Linux and macOS on every change to it. Real processes only: the PTY parity tests drive a stub
+# harness, the private-pool test starts a real pool on a free port, the supervisor test relaunches a
+# stubbed dead service. Nothing here needs a board, a broker or a claude login.
+
+on:
+  push:
+    paths:
+      - "edp-contracts/**"
+      - "edp-pool/**"
+      - "v8/src/edp8/supervisor.py"
+      - "v8/src/edp8/run_state.py"
+      - "v8/src/edp8/codex_seat/**"
+      - "v8/src/edp8/pi_seat/**"
+      - ".github/workflows/process-layer.yml"
+  pull_request:
+    paths:
+      - "edp-contracts/**"
+      - "edp-pool/**"
+      - "v8/src/edp8/supervisor.py"
+      - "v8/src/edp8/run_state.py"
+      - "v8/src/edp8/codex_seat/**"
+      - "v8/src/edp8/pi_seat/**"
+      - ".github/workflows/process-layer.yml"
+  workflow_dispatch:
+
+jobs:
+  contracts-and-pool:
+    name: contracts + pool (${{ matrix.os }}, py${{ matrix.python }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+        python: ["3.12", "3.14"]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      PYTHONUTF8: "1"
+      EDP8_EMBEDDER: none
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install ${{ matrix.python }}
+
+      - name: edp-contracts tests (proc, toolpath, settings)
+        working-directory: edp-contracts
+        run: |
+          uv sync --python ${{ matrix.python }} --extra dev
+          uv run --no-sync pytest -q
+
+      - name: edp-pool tests (PTY parity, private pool stub seat, spawner)
+        working-directory: edp-pool
+        run: |
+          uv sync --python ${{ matrix.python }} --extra dev
+          uv run --no-sync pytest -q -p no:cacheprovider
+
+  supervisor:
+    name: supervisor relaunch (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      PYTHONUTF8: "1"
+      EDP8_EMBEDDER: none
+    defaults:
+      run:
+        working-directory: v8
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Sync
+        run: uv sync --python 3.14 --extra dev
+
+      - name: supervisor, run_state and seat process tests
+        run: >-
+          uv run --no-sync pytest -q -p no:cacheprovider
+          tests/test_supervisor.py tests/test_stop_service.py tests/test_launcher_service.py
+          tests/test_harness_choice.py tests/test_seat_choice.py
