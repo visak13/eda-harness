@@ -175,6 +175,10 @@ def test_a_spare_port_instance_starts_healthy_and_stops_only_itself(tmp_path):
     port = _free_port()
     env = _env(tmp_path, port)
     fleet_code = _listener(int(os.environ.get("EDP_CODE_PORT_FLEET", "9410")))
+    # t-93da8bf09d: a layout key the user already set survives the chrome seed
+    user_settings = tmp_path / "data" / "user" / "User" / "settings.json"
+    user_settings.parent.mkdir(parents=True)
+    user_settings.write_text(json.dumps({"workbench.activityBar.location": "top"}), encoding="utf-8")
     r = _ps(SCRIPTS["start-code.ps1"], "-SkipExtensions", env=env)
     try:
         assert r.returncode == 0, r.stdout + r.stderr
@@ -224,6 +228,11 @@ def test_a_spare_port_instance_starts_healthy_and_stops_only_itself(tmp_path):
         assert all(a["url"].endswith(f"/ui/ticket/{a['prefix']}<num>") for a in settings["gitlens.autolinks"])
         for glob in ("**/.venv/**", "**/node_modules/**", "**/.data/**", "**/.run/**", "**/.tools/**", "**/web/dist/**"):
             assert settings["files.watcherExclude"][glob] is True
+        # t-93da8bf09d: the desktop client's chrome (menu, activity bar, status bar), and Zen never
+        # restored on reload; the user's own activity bar choice is kept
+        assert settings["window.menuBarVisibility"] == "classic"
+        assert settings["workbench.statusBar.visible"] is True and settings["zenMode.restore"] is False
+        assert settings["workbench.activityBar.location"] == "top"
     finally:
         s = _ps(SCRIPTS["stop-code.ps1"], env=env)
     assert s.returncode == 0, s.stdout + s.stderr

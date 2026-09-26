@@ -285,6 +285,16 @@ $settings["telemetry.telemetryLevel"] = "off"
 $settings["update.mode"] = "none"
 # a rename/refactor must not save files to the shared tree on its own (qa m-7beeffa077)
 $settings["files.refactoring.autoSave"] = $false
+# the workbench chrome of the desktop client (t-93da8bf09d): the File/Edit menu in the title bar, the
+# activity bar, the status bar, and a Zen mode that a reload always leaves (restore=true kept a toggled
+# Zen across every reload, hiding all three). Seeded only while the user has not set the key.
+$chrome = [ordered]@{
+  "window.menuBarVisibility" = "classic"
+  "workbench.activityBar.location" = "default"
+  "workbench.statusBar.visible" = $true
+  "zenMode.restore" = $false
+}
+foreach ($k in $chrome.Keys) { if (-not $settings.Contains($k)) { $settings[$k] = $chrome[$k] } }
 # PS 5.1 escapes < > as < >: same JSON, but the autolink <num> placeholder should read as written
 WriteUtf8 $settingsPath (($settings | ConvertTo-Json -Depth 10) -replace '\\u003c', '<' -replace '\\u003e', '>')
 
