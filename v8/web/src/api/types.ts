@@ -162,6 +162,8 @@ export interface SignoffRow {
   ticket: { id: string; title: string; epic_id: string; epic_title: string; assignee: string | null; quick?: boolean };
   doc: { id: string; title: string; doc_type: string; version: number } | null;
   excerpt: string;
+  /** S16: the plain-words question the owner answers, e.g. "Accept the hl-craft strategy?" */
+  ask?: string;
 }
 
 export interface QuestionRow {

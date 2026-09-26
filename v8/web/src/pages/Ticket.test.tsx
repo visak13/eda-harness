@@ -46,7 +46,7 @@ function ticketPage(over: Partial<TicketPageData> = {}): TicketPageData {
   };
 }
 
-function mount(data: TicketPageData) {
+function mount(data: TicketPageData, path = "/ticket/s-1?as=owner") {
   server.use(http.get("/v1/tickets/s-1/page", () => okJson(data)));
   server.use(
     http.get("/v1/tickets/s-1/transitions", () =>
@@ -59,7 +59,7 @@ function mount(data: TicketPageData) {
     ),
   );
   server.use(http.post("/v1/messages/resolve", () => okJson({ to: null, wakes: [], plan: [], note: "" })));
-  return renderRoute("/ticket/s-1?as=owner", "/ticket/:id", <TicketPage />);
+  return renderRoute(path, "/ticket/:id", <TicketPage />);
 }
 
 const title = () => screen.findByText("Build the epic page", { selector: "h1" });
@@ -136,6 +136,21 @@ describe("TicketPage", () => {
     // ruling mode → the Approve / Needs work buttons are present on the ticket page itself
     expect(within(work).getByTestId("approve")).toBeInTheDocument();
     expect(within(work).getByTestId("needs-work")).toBeInTheDocument();
+  });
+
+  it("S16: the owner's direct link (…/ticket/<id>.?view=work, a sentence's full stop included) lands on the criterion card with its buttons", async () => {
+    mount(
+      ticketPage({
+        criteria: [
+          { id: "c-9", text: "the report proves it", check: "look", checked_by: "owner", verdict: "pending", evidence_ref: "report-1", evidence_version: 3 },
+        ],
+      }),
+      "/ticket/s-1.?view=work&as=owner",
+    );
+    await title(); // the page loaded s-1, not "s-1."
+    const work = await screen.findByTestId("ticket-work"); // opened by the link, no click
+    expect(within(work).getByTestId("approve")).toHaveTextContent("Approve criterion");
+    expect(within(work).getByTestId("needs-work")).toHaveTextContent("Needs work");
   });
 
   it("closes the OTHER half of the gate loop: an open gate on the ticket can be answered from the page", async () => {

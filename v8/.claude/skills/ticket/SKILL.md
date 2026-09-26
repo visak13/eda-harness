@@ -48,6 +48,25 @@ a quick ticket. Never the assignee.
 | 7 | Checked | `in_review` | The owner verdicts each criterion from Needs you, as the derived checker. *Board:* the last pass closes it. | `done` |
 | 8 | Sent back | `in_review` | A fail verdict with a note. Fix, re-evidence, hand off again (engineer). | `in_progress` |
 
+## Last step · hand the owner a link (knowledge and quick tickets)
+
+When the owner is the checker (a knowledge ticket's `checked_by: owner` criterion, or a quick ticket), the
+hand-off message is the last step, and it must let the owner act in one click. Never send "see Needs you".
+- Take the link base from `whoami()` → `ui_url` (the board's EDP8_PUBLIC_URL, else the address you reach it
+  on). Never type a host or port by hand.
+- Link the ticket with its Work view open, where the criterion cards are: `<ui_url>/ticket/<ticket-id>?view=work`.
+  Link each evidence doc: `<ui_url>/doc/<doc-id>`.
+- Name the button to press on the criterion card: **Approve criterion** (Pass) or **Needs work** (Fail, with a note).
+- Put each link on its own line or follow it with a space. Do not end the sentence right after it.
+
+Template (`message_send(to=owner, kind=status)`):
+
+```
+Ready for your verdict: <one line on what it is>.
+Open <ui_url>/ticket/<ticket-id>?view=work and press Approve criterion (Pass) or Needs work (Fail) on the criterion card.
+Evidence: <ui_url>/doc/<doc-id> (one line each)
+```
+
 **Why it sticks, and what to check**
 - `in_progress` is refused on a quick ticket → the owner has not answered its design_signoff yet.
 - `gate_open(design_signoff)` is refused (architect/engineer only) → a quick ticket has no design note. On a story, the gate belongs

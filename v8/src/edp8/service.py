@@ -319,6 +319,14 @@ def public_mode() -> bool:
     return bool(os.environ.get("EDP8_PUBLIC_URL"))
 
 
+def ui_url(request: Request) -> str:
+    """S16 (owner m-cc3a6656ee): the base a seat puts in front of `/ticket/<id>` or `/doc/<id>` in a hand-off link, so
+    the owner gets a click, not an id to look up. EDP8_PUBLIC_URL when set (the address the owner reaches), else the
+    address this request came in on. Never hardcoded."""
+    base = (os.environ.get("EDP8_PUBLIC_URL") or "").strip() or str(request.base_url)
+    return base.rstrip("/") + "/ui"
+
+
 def resolve_host() -> str:
     """Bind address. Public mode defaults to 0.0.0.0 so another machine can reach the
     board; EDP8_HOST always overrides (even in public mode). Trusted mode → 127.0.0.1."""
@@ -665,9 +673,9 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
 
     # identity -----------------------------------------------------------------
     @app.get("/v1/whoami")
-    def whoami(a: Participant = Depends(actor)):
+    def whoami(request: Request, a: Participant = Depends(actor)):
         tickets = board.my_tickets(a)
-        return ok({"participant": _dump(a), "tickets": [t.id for t in tickets]},
+        return ok({"participant": _dump(a), "tickets": [t.id for t in tickets], "ui_url": ui_url(request)},
                   "next: subscribe() to arm your feed, then context() to load your ticket")
 
     @app.get("/v1/describe/{type_}")

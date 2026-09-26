@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
+import { useRouteId } from "../routeId";
 import type { DocHtml } from "../api/types";
 import { DocView } from "../components/DocView";
 import styles from "./Doc.module.css";
@@ -11,7 +12,7 @@ import { Icon } from "../components/Icon";
 // ?version=n pins a version (the History pills inside switch it). The one-click sign-off pane and
 // the comment box are DocView's; on the full page nested links navigate normally (no drawer).
 export function DocPage(): React.JSX.Element {
-  const { id = "" } = useParams();
+  const id = useRouteId();
   const [params, setParams] = useSearchParams();
   // ?v=N (S22 consult #6: what the viewer writes when a version is chosen) or the older ?version=N.
   const versionParam = params.get("v") ?? params.get("version");

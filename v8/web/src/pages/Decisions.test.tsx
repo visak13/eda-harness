@@ -90,6 +90,15 @@ describe("Decisions home", () => {
     expect(screen.getByRole("tab", { name: /Sign-offs/ })).toHaveTextContent("2");
   });
 
+  it("S16: the featured card asks in plain words what the owner decides; the criterion is the fine print", async () => {
+    const row = { ...sign("1", "hl-craft strategy 1/3"), ask: "Accept the hl-craft strategy?" };
+    setBoard({ signoffs: [row] });
+    mount();
+    const featured = await screen.findByTestId("featured-signoff");
+    expect(within(featured).getByRole("heading", { name: "Accept the hl-craft strategy?" })).toBeInTheDocument();
+    expect(within(featured).getByTestId("featured-criterion")).toHaveTextContent("criterion 1");
+  });
+
   it("a handed-off quick task lists one row per criterion, tagged Quick task (S-QUICK)", async () => {
     const q = (id: string) => {
       const row = sign(id, "Quick report");

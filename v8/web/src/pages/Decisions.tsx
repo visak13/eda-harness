@@ -216,7 +216,9 @@ function SignoffsTab({
             </span>
             <span className={styles.featuredId}>{featured.ticket.id}</span>
           </div>
-          <h2 className={styles.featuredTitle}>{featured.criterion.text}</h2>
+          {/* S16 (owner m-cc3a6656ee): the card asks in plain words what the owner decides; the criterion is the fine print */}
+          <h2 className={styles.featuredTitle}>{featured.ask ?? featured.criterion.text}</h2>
+          {featured.ask ? <p className={styles.featuredCriterion} data-testid="featured-criterion">{featured.criterion.text}</p> : null}
           {featured.excerpt ? <p className={styles.featuredExcerpt}>{plainExcerpt(featured.excerpt)}</p> : null}
           <div className={styles.docRef}>
             <span className={styles.docRefTitle}>{featured.doc?.title ?? featured.ticket.title}</span>

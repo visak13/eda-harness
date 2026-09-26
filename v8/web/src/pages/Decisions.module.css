@@ -105,6 +105,17 @@
   -webkit-line-clamp: 3;
   overflow: hidden;
 }
+.featuredCriterion {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--muted);
+  margin: 0 0 10px;
+  max-width: 66ch;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
 .featuredExcerpt {
   font-size: 14px;
   line-height: 22px;

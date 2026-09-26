@@ -14,6 +14,7 @@ BEFORE this module existed; ui.py now sources its derivations here with identica
 from __future__ import annotations
 
 import functools
+import re
 from typing import Any
 
 import markdown as _markdown
@@ -32,6 +33,7 @@ from .schemas import (
     TicketKind,
     TicketStatus,
     Verdict,
+    WorkType,
 )
 
 _TERMINAL = (TicketStatus.done, TicketStatus.partial, TicketStatus.dropped)
@@ -435,6 +437,25 @@ def _owner_gates(board: Board, viewer: Participant) -> list[tuple[str, Any]]:
     return out
 
 
+_CRAFT_TITLE = re.compile(r"^\s*(hl|ll)-craft\b", re.I)
+
+
+def signoff_ask(tk: Any) -> str:
+    """S16 (owner m-cc3a6656ee): the featured sign-off card says in plain words what the owner decides, e.g.
+    "Accept the hl-craft strategy?" — the criterion text alone reads as a spec line, not a question."""
+    title = (getattr(tk, "title", "") or "").strip()
+    short = title.split(":", 1)[-1].strip() if ":" in title else title
+    craft = _CRAFT_TITLE.match(title)
+    if craft:
+        kind = craft.group(1).lower()
+        return f"Accept the {kind}-craft {'strategy' if kind == 'hl' else 'domain research'}?"
+    if getattr(tk, "work_type", None) == WorkType.knowledge:
+        return f"Accept the research on “{short}”?"
+    if is_quick(tk):
+        return f"Accept the quick task “{short}” as done?"
+    return f"Accept “{short}” as meeting this criterion?"
+
+
 def decisions_for(board: Board, viewer: Participant) -> dict[str, Any]:
     """The Decisions home (design §4.1): sign-offs the viewer must rule, questions in their
     inbox, and open gates. A non-owner gets empty signoffs and gates."""
@@ -448,6 +469,7 @@ def decisions_for(board: Board, viewer: Participant) -> dict[str, Any]:
                           "evidence_version": getattr(c, "evidence_version", None)},
             "ticket": {"id": tk.id, "title": tk.title, "epic_id": epic.id,
                        "epic_title": epic.title, "assignee": tk.assignee, "quick": is_quick(tk)},
+            "ask": signoff_ask(tk),
             "doc": ({"id": doc.id, "title": doc.title, "doc_type": doc.doc_type.value,
                      "version": doc.version} if doc else None),
             "excerpt": (getattr(doc, "body_md", "") or "")[:300].strip()})

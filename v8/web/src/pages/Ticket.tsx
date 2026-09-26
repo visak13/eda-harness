@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router";
+import { useLocation, useNavigate } from "react-router";
+import { useRouteId } from "../routeId";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getTicketPage, finalizeArtifacts } from "../api/endpoints";
 import type { MessageView, TicketStatus, UploadedArtifact } from "../api/types";
@@ -37,7 +38,7 @@ const KINDS_DEFAULT = ["note", "question", "steer", "finding", "status", "deviat
 const KINDS_REPLY = ["answer", "note", "question", "steer", "finding", "status", "deviation"] as const;
 
 export function TicketPage(): React.JSX.Element {
-  const { id = "" } = useParams();
+  const id = useRouteId();
   const as = identity();
   const [order, setOrder] = useState<"newest" | "oldest">("newest");
   const drawer = useDocDrawer();

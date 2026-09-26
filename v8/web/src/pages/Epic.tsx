@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Link, useLocation, useParams } from "react-router";
+import { Link, useLocation } from "react-router";
+import { useRouteId } from "../routeId";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getEpicPage, getEpicsSummary, getTicketsTable } from "../api/endpoints";
 import { getPoolCapabilities, resumeSeat } from "../api/seats";
@@ -64,7 +65,7 @@ const KINDS_DEFAULT = ["note", "steer", "question", "status", "finding", "deviat
 const KINDS_REPLY = ["answer", "note", "question", "steer", "status", "finding", "deviation"] as const;
 
 export function EpicPage(): React.JSX.Element {
-  const { id = "" } = useParams();
+  const id = useRouteId();
   const [order, setOrder] = useState<"newest" | "oldest">("newest");
   const [reply, setReply] = useState<{ id: string; by: string } | null>(null);
   const { hash } = useLocation();

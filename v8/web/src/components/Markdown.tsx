@@ -40,7 +40,8 @@ export function Markdown({ html, className }: { html: string; className?: string
   );
 }
 
-const LINKABLE = /(art-[0-9a-f]{6,}|https?:\/\/[^\s<>"']+)/g;
+// S16: a URL that ends a sentence keeps its trailing `.,;:!?)` and closing quotes outside the link (owner m-cc3a6656ee)
+const LINKABLE = /(art-[0-9a-f]{6,}|https?:\/\/[^\s<>"']*[^\s<>"'.,;:!?)”’»])/g;
 
 /** A same-origin in-app URL loses its `token` query in the DOM href (qa S17): copy-link, Ctrl-click and
  *  middle-click read the href, not the click handler. Other URLs are left as typed. */
