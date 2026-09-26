@@ -4,8 +4,8 @@ import { Icon } from "./Icon";
 import { ICON_PATHS, PROVIDER_ICONS, ROLE_ICONS, STATUS_ICONS, harnessGlyph, seatRole, type IconName } from "./iconPaths";
 import { Avatar, ProviderIcon } from "./Avatar";
 import { StatusChip } from "./StatusChip";
-it("all 53 approved glyphs use named currentColor paths, no generic fallback", () => {
-  expect(Object.keys(ICON_PATHS)).toHaveLength(55); // +code (epic-91fcd3b370 S3), +lifebuoy (t-67dad8c6aa)
+it("all 56 approved glyphs use named currentColor paths, no generic fallback", () => {
+  expect(Object.keys(ICON_PATHS)).toHaveLength(56); // +code (epic-91fcd3b370 S3), +lifebuoy (t-67dad8c6aa), +role-doctor (t-20f0718990)
   const { container } = render(<>{(Object.keys(ICON_PATHS) as IconName[]).map((name) => <Icon key={name} name={name} />)}</>);
   for (const svg of container.querySelectorAll("svg")) {
     expect(svg).toHaveAttribute("stroke", "currentColor"); expect(svg).toHaveAttribute("aria-hidden", "true");
@@ -19,7 +19,7 @@ it("every known status has shape plus literal glossary word, unknown never becom
   expect(container.querySelector('[data-status="future_state"] svg')).toBeNull();
 });
 it("S-UI: one glyph per seat role and per provider, resolved from seat ids and model ids", () => {
-  expect(Object.values(ROLE_ICONS)).toEqual(["role-architect", "role-engineer", "role-qa", "role-adversary", "role-sme"]);
+  expect(Object.values(ROLE_ICONS)).toEqual(["role-architect", "role-engineer", "role-qa", "role-adversary", "role-sme", "role-doctor"]);
   expect(Object.values(PROVIDER_ICONS)).toEqual(["provider-claude", "provider-gpt"]);
   const names = [...Object.values(ROLE_ICONS), ...Object.values(PROVIDER_ICONS)];
   const { container } = render(<>{names.map((n) => <Icon key={n} name={n} />)}</>);
