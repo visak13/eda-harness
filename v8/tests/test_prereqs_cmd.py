@@ -75,10 +75,18 @@ def test_yes_skips_the_question(machine):
     assert rc == 0 and len(machine.ran) == 1
 
 
-def test_not_a_terminal_without_yes_installs_nothing(machine, capsys):
-    rc = prereqs_cmd.install({}, ask=lambda q: pytest.fail("asked"), isatty=False)
+def test_no_input_without_yes_installs_nothing(machine, capsys):
+    def eof(q):
+        raise EOFError
+
+    rc = prereqs_cmd.install({}, ask=eof, isatty=False)
     assert rc == 1 and machine.ran == []
     assert "no --yes; nothing installed" in capsys.readouterr().out
+
+
+def test_piped_answer_must_say_yes(machine, capsys):
+    assert prereqs_cmd.install({}, ask=lambda q: "", isatty=False) == 1 and machine.ran == []
+    assert prereqs_cmd.install({}, ask=lambda q: "y", isatty=False) == 0 and len(machine.ran) == 1
 
 
 def test_only_installs_just_that_tool(machine):

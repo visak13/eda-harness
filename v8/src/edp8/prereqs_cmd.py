@@ -130,12 +130,16 @@ def install(opts: dict[str, Any], *, ask=input, isatty=None) -> int:
             print(f"  {s.name:<17}{s.reason}: {pq.describe_recipe(pq.by_name(s.name), s.recipe)}")
         tty = sys.stdin.isatty() if isatty is None else isatty
         if not opts.get("yes"):
-            if not tty:
-                print("heronry prereqs: not a terminal and no --yes; nothing installed. Re-run with --yes, or run "
-                      "the commands above yourself.")
+            # a terminal takes Enter as yes; piped input must say y (`echo y | …`); no input at all is a no
+            try:
+                answer = ask(f"Install {'this' if len(steps) == 1 else f'these {len(steps)}'} now? [Y/n] ").strip()
+            except EOFError:
+                print("\nheronry prereqs: no answer (no terminal) and no --yes; nothing installed. Re-run with --yes, "
+                      "or run the commands above yourself.")
                 return 1
-            answer = ask(f"Install {'this' if len(steps) == 1 else f'these {len(steps)}'} now? [Y/n] ").strip()
-            if answer.lower() not in ("", "y", "yes"):
+            if not tty:
+                print(answer)  # echo the piped answer so the log reads like a terminal session
+            if answer.lower() not in (("", "y", "yes") if tty else ("y", "yes")):
                 print("heronry prereqs: nothing installed")
                 return 1
         results = pq.run_steps(steps)
