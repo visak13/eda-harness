@@ -52,3 +52,24 @@ def test_empty_description_renders_empty():
     owner = board.participant_create("human", Role.owner, "owner")
     epic = board.ticket_create(owner, kind=TicketKind.epic, work_type=WorkType.feature, title="bare epic")
     assert views.epic_page(board, epic.id)["description_html"] == ""
+
+
+# CommonMark-style nesting (3 spaces under `1. `, 2 under `- `): the live s-ca39f10643 description
+# showed its sub-items as literal `- ` lines until the renderer re-indented them to Python-Markdown's 4.
+@pytest.mark.parametrize("text, expected", [
+    ("1. **a** item:\n   - one\n   - two\n2. next\n",
+     "<ol>\n<li><strong>a</strong> item:<ul>\n<li>one</li>\n<li>two</li>\n</ul>\n</li>\n<li>next</li>\n</ol>"),
+    ("- a\n  - b\n    - c\n- d\n",
+     "<ul>\n<li>a<ul>\n<li>b<ul>\n<li>c</li>\n</ul>\n</li>\n</ul>\n</li>\n<li>d</li>\n</ul>"),
+])
+def test_commonmark_nested_lists_nest(text, expected):
+    assert views.render_message_markdown(text) == expected
+    assert views.render_markdown(text) == expected.replace("<br>", "")
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("Para\n\n    code line\n    - not a list\n", "<p>Para</p>\n<pre><code>code line\n- not a list\n</code></pre>"),
+    ("- a\n\n```\n  - keep\n```\n", "<ul>\n<li>a</li>\n</ul>\n<pre><code>  - keep\n</code></pre>"),
+])
+def test_nested_list_indent_leaves_code_alone(text, expected):
+    assert views.render_message_markdown(text) == expected

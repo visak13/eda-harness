@@ -54,13 +54,60 @@ _ALLOWED_ATTRS = {"a": {"href", "title"}, "img": {"src", "alt", "title"},
 _URL_SCHEMES = {"http", "https", "mailto"}
 
 
+_LIST_ITEM = re.compile(r"^( *)([-*+]|\d{1,9}[.)])( +)\S")
+
+
+class _NestedListIndent(_markdown.preprocessors.Preprocessor):
+    """t-994970028d: board text is written CommonMark-style, where an item nested under `1. ` is
+    indented 3 spaces (2 under `- `); Python-Markdown nests only at 4 and showed the sub-items as
+    literal `- ` lines. Inside an open list, a marker indented past its parent's marker is moved
+    to the parent's (re-indented) column + 4. Runs after fenced_code, so code is never touched;
+    a list opened after a blank line at indent > 3 stays an indented code block."""
+
+    def run(self, lines: list[str]) -> list[str]:
+        out: list[str] = []
+        stack: list[tuple[int, int]] = []  # (original marker indent, rewritten indent) per open level
+        blank = False
+        for line in lines:
+            if not line.strip():
+                blank = True
+                out.append(line)
+                continue
+            m = _LIST_ITEM.match(line)
+            if m is None:
+                if blank and not line.startswith(" "):
+                    stack = []  # a flush-left paragraph after a blank line closes the list
+                blank = False
+                out.append(line)
+                continue
+            blank = False
+            n = len(m.group(1))
+            while stack and n < stack[-1][0]:
+                stack.pop()
+            if stack and n == stack[-1][0]:
+                new = stack[-1][1]
+            elif stack:
+                new = stack[-1][1] + 4
+                stack.append((n, new))
+            elif n <= 3:
+                new = n
+                stack.append((n, n))
+            else:
+                out.append(line)
+                continue
+            out.append(" " * new + line[n:])
+        return out
+
+
 def _escaping_markdown(extensions: list[str]) -> _markdown.Markdown:
     """Python-Markdown with raw HTML ESCAPED (shown as typed, never parsed): the html block and
     inline processors are removed. A placeholder like `<card>` in prose once made its whole
-    blank-line-free block an HTML block — unparsed markdown that nh3 then truncated (t-f0ec383cff)."""
+    blank-line-free block an HTML block — unparsed markdown that nh3 then truncated (t-f0ec383cff).
+    CommonMark-style 2/3-space nested list items are re-indented to Python-Markdown's 4."""
     md = _markdown.Markdown(extensions=extensions)
     md.preprocessors.deregister("html_block")
     md.inlinePatterns.deregister("html")
+    md.preprocessors.register(_NestedListIndent(md), "nested_list_indent", 20)  # after fenced_code (25)
     return md
 
 
