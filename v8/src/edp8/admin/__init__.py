@@ -16,10 +16,10 @@ PUBLIC_ROUTES = ("/v1/join",)
 
 
 def admin_router(ctx: AdminContext) -> APIRouter:
-    from . import services, settings_api, teammates
+    from . import remote, services, settings_api, teammates
 
     gate = make_admin_actor(ctx)
     r = APIRouter()
-    for mod in (settings_api, services, teammates):
+    for mod in (settings_api, services, teammates, remote):
         r.include_router(mod.router(ctx, gate))
     return r

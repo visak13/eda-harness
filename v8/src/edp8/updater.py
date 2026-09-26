@@ -112,6 +112,11 @@ def parse_sums(text: str) -> dict[str, str]:
     return out
 
 
+def releases_url() -> str:
+    """GitHub's latest-release endpoint for `update.repo` under `update.api_url`."""
+    return f"{str(settings.get('EDP_UPDATE_API')).rstrip('/')}/repos/{settings.get('EDP_UPDATE_REPO')}/releases/latest"
+
+
 def fetch_release(url: str | None) -> Release:
     """The release at `url` (a local dir or an http base holding SHA256SUMS and the wheels), else GitHub's
     latest release of `update.repo`."""
@@ -120,7 +125,7 @@ def fetch_release(url: str | None) -> Release:
         sums = parse_sums(_read(f"{base}/SHA256SUMS").decode("utf-8"))
         files = {n: f"{base}/{n}" for n in sums}
     else:
-        r = _get(f"https://api.github.com/repos/{settings.get('EDP_UPDATE_REPO')}/releases/latest",
+        r = _get(releases_url(),
                  headers={"Accept": "application/vnd.github+json"})
         r.raise_for_status()
         rel = r.json()
@@ -272,7 +277,7 @@ def check(*, force: bool = False, timeout: float = 3.0) -> dict[str, Any] | None
         if state.get("etag"):
             headers["If-None-Match"] = state["etag"]
         try:
-            r = _get(f"https://api.github.com/repos/{settings.get('EDP_UPDATE_REPO')}/releases/latest",
+            r = _get(releases_url(),
                      headers=headers, timeout=timeout)
         except Exception:  # noqa: BLE001 — offline is silent
             return None

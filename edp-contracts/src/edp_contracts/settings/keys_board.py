@@ -82,3 +82,17 @@ declare("slack.map", "EDP8_SLACK_MAP", "path", lambda: config_dir() / "slack_map
         restart_required="all")
 declare("code_server.port", "EDP_CODE_PORT", "int", 9410, "Integrations",
         "code-server port the board links to (the one edp.ps1 starts it on).", restart_required="board")
+
+# ---- Admin console (S5, design-e963c656f5 §4.8): Tailscale auth keys for teammates' machines (R7b)
+declare("tailscale.oauth_client_id", "EDP_TAILSCALE_OAUTH_CLIENT_ID", "str", "", "Network",
+        "Tailscale OAuth client id (scope auth_keys) that mints teammates' auth keys; empty = feature off.",
+        restart_required="none")
+declare("tailscale.oauth_client_secret", "EDP_TAILSCALE_OAUTH_CLIENT_SECRET", "str", "", "Network",
+        "Tailscale OAuth client secret for the client above.", secret=True, restart_required="none")
+declare("tailscale.tailnet", "EDP_TAILSCALE_TAILNET", "str", "-", "Network",
+        "Tailnet the auth keys are minted in; '-' = the OAuth client's own tailnet.", restart_required="none")
+declare("tailscale.key_tags", "EDP_TAILSCALE_KEY_TAGS", "list", ["tag:heronry"], "Network",
+        "Tags a minted auth key applies to the new device (an OAuth-minted key must carry tags).",
+        restart_required="none")
+declare("tailscale.api_url", "EDP_TAILSCALE_API_URL", "url", "https://api.tailscale.com", "Network",
+        "Tailscale API base URL (tests point it at a mock).", restart_required="none")

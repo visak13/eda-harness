@@ -169,6 +169,9 @@ declare("seats.harnesses", "EDP_HARNESSES", "list", None, "Seats & models",
         "Selected seat harnesses (claude, codex, pi; at least one of claude/codex), set by `heronry init`; "
         "models.json `harnesses` wins when present.", restart_required="board")
 
+declare("seats.npm_registry", "EDP_NPM_REGISTRY", "url", "https://registry.npmjs.org", "Seats & models",
+        "npm registry Admin → Integrations asks for the latest claude/codex/pi versions.", restart_required="none")
+
 # ---- models catalog (edp_contracts.seats)
 declare("models.config", "EDP_MODELS_CONFIG", "path", None, "Seats & models",
         "Path of the models catalog; default <agent home>/models.json.", restart_required="none")
@@ -178,6 +181,8 @@ declare("update.no_check", "HERONRY_NO_UPDATE_CHECK", "bool", False, "Updates",
         "1: never ask GitHub for a newer release (the daily and on-start check).", restart_required="none")
 declare("update.repo", "EDP_UPDATE_REPO", "str", "visak13/eda-harness", "Updates",
         "GitHub owner/repo whose latest release `heronry update` installs.", restart_required="none")
+declare("update.api_url", "EDP_UPDATE_API", "url", "https://api.github.com", "Updates",
+        "GitHub API base the release check asks (tests and mirrors point it elsewhere).", restart_required="none")
 declare("update.install_cmd", "EDP_UPDATE_INSTALL_CMD", "str", None, "Updates",
         "Packaging/test override: a JSON argv run instead of `uv tool install --force`; {wheel} is the edp8 "
         "wheel, {with} expands to the sibling wheels.", env_only=True)
