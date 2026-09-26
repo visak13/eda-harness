@@ -13,6 +13,7 @@ import os
 import re
 import sqlite3
 import threading
+import time
 from collections import Counter
 from typing import Iterable, Protocol
 
@@ -24,6 +25,7 @@ SOURCE_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 
 RAM_FLOOR_GB = 1.5  # R2-6: below this free RAM at load, skip the embedding model, fall back to FTS
+REARM_INTERVAL_S = 60.0  # pain p-788f3934: how often a low_ram fallback re-probes free RAM
 # Bound every ONNX call. fastembed's defaults (batch 256, padded to the longest text, nomic's 8192
 # token window) make attention memory batch x heads x seq^2: a full-corpus reindex reached ~58 GB
 # of commit and took the host down (2026-09-21). Small batch x capped length keeps a call ~100 MB.
@@ -320,6 +322,8 @@ class Index:
     def __init__(self, embedder: Embedder | None = None, rrf_k: int = 60,
                  cache: VectorCache | None = None):
         self._embedder = embedder if embedder is not None else make_embedder()
+        self._auto_embedder = embedder is None  # only a board-picked embedder is re-armed
+        self._rearm_at = 0.0
         self._rrf_k = rrf_k
         self._cache = cache  # disk-persisted text-hash -> vec; None disables persistence
         self._lock = threading.RLock()
@@ -331,6 +335,32 @@ class Index:
         self._warming = False
         self._warm_thread: threading.Thread | None = None
         self._dirty = True
+
+    def _maybe_rearm(self) -> bool:
+        """Pain p-788f3934: a low_ram fallback was permanent — the embedder stayed off after free RAM
+        recovered. Re-probe at most every REARM_INTERVAL_S; once free RAM is at or above the floor,
+        load the real embedder and let the next reindex warm the vectors. Returns True on a swap."""
+        emb = self._embedder
+        reason = getattr(emb, "fallback_reason", None) or ""
+        if not (self._auto_embedder and emb.name == "none" and reason.startswith("low_ram")):
+            return False
+        now = time.monotonic()
+        if now < self._rearm_at:
+            return False
+        self._rearm_at = now + REARM_INTERVAL_S
+        free = _free_ram_gb()
+        if free is None or free < RAM_FLOOR_GB:
+            if free is not None:
+                emb.fallback_reason = f"low_ram: {free:.2f}GB free < {RAM_FLOOR_GB}GB floor (re-checked; retries every {int(REARM_INTERVAL_S)}s)"
+            return False
+        fresh = make_embedder()
+        if fresh.name == "none":
+            self._embedder = fresh
+            return False
+        with self._lock:
+            self._embedder = fresh
+            self._dirty = True
+        return True
 
     def rebuild(self, units: list[tuple[str, str, str]]) -> None:
         with self._lock:
@@ -345,6 +375,7 @@ class Index:
 
     def status(self) -> dict:
         """R2-6: which seeding backend is live, why (if it fell back), and the model's footprint."""
+        self._maybe_rearm()
         emb = self._embedder
         on = emb.name != "none" and self._dense_matrix is not None
         cached = None
@@ -437,6 +468,7 @@ class Index:
                 self._build_matrix()
 
     def _reindex(self) -> None:
+        self._maybe_rearm()
         docs = [(key, txt) for key, (_, _, txt) in self._units.items()]
         self._bm25.fit(docs)
         self._dirty = False
@@ -470,6 +502,7 @@ class Index:
         with no board restart — a bulk backlog warms in the background thread, a small delta embeds
         inline. Returns counts so the caller can report how many are still unembedded (e.g. after the
         RAM guard aborted a warm). This is the only sanctioned re-embed entry point (hard rule 4)."""
+        self._maybe_rearm()
         with self._lock:
             if self._embedder.name == "none":
                 return {"embedder": "none", "missing": len(self._missing()), "warming": False,
