@@ -17,6 +17,10 @@ SpawnMode = str  # "headless" (drained ConPTY) | "monitor" (visible console)
 
 
 class Spawner(ABC):
+    #: t-f42af1ca59: the CLI this backend launches. A session row records it at spawn and resume
+    #: dispatches on it, never on a model guess. Every Spawner-ABC backend is a claude shell.
+    harness = "claude"
+
     @abstractmethod
     def launch(
         self,

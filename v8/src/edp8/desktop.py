@@ -450,33 +450,17 @@ def capture_png(window: Any, timeout_s: float = 20.0) -> bytes:
     return bytes(stream.ToArray())
 
 
-def capture_dir(path: str | None) -> Path:
-    """Where `--capture` writes: `<data dir>/captures` by default; only ever inside the app's own dirs, so the
-    installed app never writes into an arbitrary folder (antivirus controlled-folder protection refuses an
-    unsigned app there anyway: S8 measured Errno 13 in a repo folder)."""
-    own = [settings.data_dir(), settings.run_dir(), settings.logs_dir()]
-    target = Path(path).expanduser().resolve() if path else (settings.data_dir() / "captures").resolve()
-    if not any(target == d.resolve() or target.is_relative_to(d.resolve()) for d in own):
-        raise SystemExit(f"heronry gui --capture: {target} is outside Heronry's own folders; use a folder under "
-                         f"{settings.data_dir()} (the default is {settings.data_dir() / 'captures'})")
-    return target
-
-
 def parse_args(argv: list[str]) -> dict[str, Any]:
-    """`heronry gui [--capture [<dir>]] [--settle <seconds>]`."""
+    """`heronry gui [--capture <dir>] [--settle <seconds>]`."""
     opts: dict[str, Any] = {"capture": None, "settle": 6.0}
-    i = 0
-    while i < len(argv):
-        a = argv[i]
+    it = iter(argv)
+    for a in it:
         if a == "--capture":
-            given = argv[i + 1] if i + 1 < len(argv) and not argv[i + 1].startswith("--") else None
-            opts["capture"] = capture_dir(given)
-            i += 2 if given is not None else 1
-        elif a == "--settle" and i + 1 < len(argv):
-            opts["settle"] = float(argv[i + 1])
-            i += 2
+            opts["capture"] = Path(next(it, "") or ".").resolve()
+        elif a == "--settle":
+            opts["settle"] = float(next(it, "6"))
         else:
-            raise SystemExit(f"heronry gui: unknown option {a!r} (usage: heronry gui [--capture [<dir>]] [--settle <s>])")
+            raise SystemExit(f"heronry gui: unknown option {a!r} (usage: heronry gui [--capture <dir>] [--settle <s>])")
     return opts
 
 

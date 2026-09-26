@@ -9,6 +9,15 @@ there; every lifecycle call goes to whichever backend knows the session id.
 from __future__ import annotations
 
 
+def _harnesses(backend) -> tuple[str, ...]:
+    """Every harness a backend (or a nested composite) can launch."""
+    many = getattr(backend, "harnesses", None)
+    if many is not None:
+        return tuple(many)
+    one = getattr(backend, "harness", None)
+    return (one,) if one else ()
+
+
 class CompositeSpawner:
     def __init__(self, primary, second, roles: set[str] | None = None, route_model=None):
         self._primary = primary
@@ -37,6 +46,47 @@ class CompositeSpawner:
                        claude_session=claude_session,
                        resume_session=resume_session, model=model,
                        activation=activation, parent=parent, extra_env=extra_env)
+
+    # -- t-f42af1ca59: harness-exact dispatch -------------------------------------------------
+    # A live resume of a closed codex seat whose recorded model the catalog no longer mapped
+    # ("codex/gpt-6-sol") routed through `launch` to the claude primary with the codex thread file
+    # as its resume base. Resume never routes by role/model: it names the harness the row recorded.
+
+    @property
+    def harnesses(self) -> tuple[str, ...]:
+        return tuple(dict.fromkeys(_harnesses(self._primary) + _harnesses(self._second)))
+
+    def harness_of(self, session_id):
+        """The harness of the backend that launched `session_id`; None when no backend knows it."""
+        for b in (self._second, self._primary):
+            if b.knows(session_id):
+                f = getattr(b, "harness_of", None)
+                return f(session_id) if f else getattr(b, "harness", None)
+        return None
+
+    def launch_harness(self, harness, session_id, role, handle, **kw) -> None:
+        """Launch on the backend whose harness is `harness`; raise if this stack has none."""
+        for b in (self._second, self._primary):
+            if harness in _harnesses(b):
+                f = getattr(b, "launch_harness", None)
+                if f is not None:
+                    return f(harness, session_id, role, handle, **kw)
+                return b.launch(session_id, role, handle, **kw)
+        raise LookupError(f"no {harness!r} backend in this pool (have {', '.join(self.harnesses)})")
+
+    def closed_session_base(self, session_id, handle):
+        """(harness, token) of the first backend whose closed-session store holds `handle`."""
+        for b in (self._second, self._primary):
+            f = getattr(b, "closed_session_base", None)
+            if f is not None:
+                hit = f(session_id, handle)
+            else:
+                g = getattr(b, "closed_session_token", None)
+                tok = g(session_id, handle) if g else None
+                hit = (getattr(b, "harness", None), tok) if tok else None
+            if hit:
+                return hit
+        return None
 
     def alive(self, session_id):
         return self._owner(session_id).alive(session_id)

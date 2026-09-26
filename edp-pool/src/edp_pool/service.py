@@ -1258,7 +1258,8 @@ class PoolService(Microservice):
                     del self.locks[handle]
                 self._persist()
             raise
-        _log.info("launch_done", handle, role=role, handle=handle, sid=sid)
+        harness = self._harness_of(sid)
+        _log.info("launch_done", handle, role=role, handle=handle, sid=sid, harness=harness)
         # A second backend (Pi, opencode) ignores the claude pin and resumes by its own
         # seam; a stored minted id there would send resume() down the claude fork path.
         pins = getattr(self.spawner, "pins_session_id", None)
@@ -1298,9 +1299,13 @@ class PoolService(Microservice):
                 # WP2 provenance: the RESOLVED model this shell actually
                 # launched with.
                 "model": resolved_model,
+                # t-f42af1ca59: the harness whose backend launched this shell — resume
+                # dispatches on it, never on a model guess.
+                "harness": harness,
                 # S20 (v8): carry the spawn_settings recorded at reservation, with the
                 # resolved model filled in, so resume_closed can re-launch this exact seat.
-                "spawn_settings": {**((s or {}).get("spawn_settings") or {}), "model": resolved_model},
+                "spawn_settings": {**((s or {}).get("spawn_settings") or {}),
+                                   "model": resolved_model, "harness": harness},
             }
             self.locks[handle] = sid  # lock-by-spawn-lifetime
             self._persist()
@@ -1393,6 +1398,88 @@ class PoolService(Microservice):
     #: m-a70e85dc0b 2026-09-18). Its Monitor/cron died with the process, and the transcript ends
     #: in close_self — without this line the role card reads as a re-prompt and the seat never boots.
     CLOSED_RESUME_ACTIVATION = PARK_RESUME_ACTIVATION  # one resume contract for parked and closed seats
+
+    # ── t-f42af1ca59: a resume dispatches on the harness the row recorded ──
+    #
+    # 2026-09-26 22:07Z (owner m-ccbf57c574): resume_closed of a codex seat whose recorded model
+    # ("codex/gpt-6-sol") the catalog no longer mapped routed through the model guess to the claude
+    # launcher, which got the codex thread file as its resume base. The row now records the harness
+    # its backend launched, resume launches on exactly that backend, and a base that belongs to
+    # another harness refuses the resume instead of opening the wrong CLI.
+
+    def _harness_of(self, sid: str) -> str | None:
+        f = getattr(self.spawner, "harness_of", None)
+        if f is not None:
+            try:
+                return f(sid)
+            except Exception:  # noqa: BLE001 — provenance never blocks a launch
+                return None
+        return getattr(self.spawner, "harness", None)
+
+    def _pool_harnesses(self) -> tuple[str, ...]:
+        many = getattr(self.spawner, "harnesses", None)
+        if many is not None:
+            return tuple(many)
+        one = getattr(self.spawner, "harness", None)
+        return (one,) if one else ()
+
+    def _closed_base(self, sid: str, handle: str) -> tuple[str | None, str] | None:
+        """(harness, token) of the backend whose closed-session store holds `handle`."""
+        f = getattr(self.spawner, "closed_session_base", None)
+        if f is not None:
+            return f(sid, handle)
+        g = getattr(self.spawner, "closed_session_token", None)
+        tok = g(sid, handle) if g else None
+        return (getattr(self.spawner, "harness", None), tok) if tok else None
+
+    def _resume_plan(self, s: dict, handle: str) -> tuple[str | None, str | None, str | None]:
+        """(harness, base, refusal) for resuming row `s`. Pure: no row or lock change.
+
+        harness = the one the row recorded at spawn; a row from before the recording is read from
+        what it stored (a claude session id → claude; else the backend whose closed-session store
+        holds the handle). None only for a legacy row with no stored conversation at all, which
+        then starts fresh through the ordinary spawn route."""
+        sid = s["session_id"]
+        stored = s.get("claude_session_id")
+        try:
+            filed = self._closed_base(sid, handle)
+        except Exception as exc:  # noqa: BLE001 — never strand a resume on a store probe
+            _log.warning("resume_token_recovery_failed", handle,
+                         handle=handle, sid=sid, error=repr(exc))
+            filed = None
+        recorded = s.get("harness") or (s.get("spawn_settings") or {}).get("harness")
+        harness = recorded or ("claude" if stored else (filed[0] if filed else None))
+        have = self._pool_harnesses()
+        if harness and have and harness not in have:
+            return harness, None, (f"session {sid} ran on the {harness} harness, which this pool "
+                                   f"has no backend for (have {', '.join(have)}); not resumed")
+        if harness == "claude":
+            if stored:
+                return harness, stored, None
+            if filed and filed[0] not in (None, "claude"):
+                return harness, None, (f"session {sid} ran on claude but its only stored base "
+                                       f"{filed[1]!r} belongs to the {filed[0]} harness; refusing "
+                                       "to resume it in claude")
+            return harness, (filed[1] if filed else None), None
+        if harness is not None:
+            if stored:
+                return harness, None, (f"session {sid} ran on the {harness} harness but stores a "
+                                       f"claude session id {stored!r}; refusing to resume a "
+                                       f"{harness} seat from a claude base")
+            if filed and filed[0] not in (None, harness):
+                return harness, None, (f"session {sid} ran on the {harness} harness but its stored "
+                                       f"base {filed[1]!r} belongs to the {filed[0]} harness; "
+                                       "not resumed")
+            return harness, (filed[1] if filed else None), None
+        return None, None, None
+
+    def _launch_on(self, harness: str | None, sid: str, role: str, handle: str, mode, **kw) -> None:
+        """Launch on the recorded harness's backend; the ordinary route only when none is known."""
+        f = getattr(self.spawner, "launch_harness", None)
+        if harness and f is not None:
+            f(harness, sid, role, handle, mode=mode, **kw)
+        else:
+            self.spawner.launch(sid, role, handle, mode, **kw)
 
     def _ensure_channel(self, name: str, members: list[str]) -> None:
         """Merge-create a channel row (existing members/topic kept).
@@ -1783,23 +1870,19 @@ class PoolService(Microservice):
                         "reason": "parked shell is still alive and kept its "
                                   "own heartbeat and subscriptions — "
                                   "restored to active, no fork needed"}
+            # t-f42af1ca59: the stored base (claude id, else the harness's session file) and the
+            # harness to launch it on, both from the row; a base of another harness refuses here,
+            # before any state change. Only a row with no stored conversation starts fresh, and
+            # then both its activation and result say so.
+            harness, base, refusal = self._resume_plan(s, handle)
+            if refusal:
+                _log.error("resume_refused_harness", handle, handle=handle, sid=sid,
+                           harness=harness, reason=refusal)
+                return {"resumed": False, "handle": handle, "harness": harness,
+                        "reason": refusal}
             s["state"] = "resuming"
             self._resuming_inflight.add(sid)  # finding 15: mark the in-flight fork (cleared at every exit)
-            base = s.get("claude_session_id")
             settings = s.get("spawn_settings") or {}
-            if not base:
-                # Recover a non-Claude token from its session file first.
-                # Only when no token exists may this launch start fresh, and
-                # then both its activation and result must say so.
-                f = getattr(self.spawner, "closed_session_token", None)
-                try:
-                    base = f(sid, handle) if f else None
-                except Exception as exc:  # noqa: BLE001 — never strand at resuming
-                    _log.warning("resume_token_recovery_failed", handle,
-                                 handle=handle, sid=sid, error=repr(exc))
-                    base = None
-            # A legacy row with no stored conversation may start fresh, but the
-            # result and activation must say so explicitly.
         # S9: settings win over the bare row so a resumed seat keeps the shape
         # it was spawned with — role/mode/model/parent AND the per-seat env
         # (EDP8_TOKEN). Without the env the resumed shell's MCP client 401s on
@@ -1815,7 +1898,7 @@ class PoolService(Microservice):
         extra_env = settings.get("env") or None
         fork = str(uuid.uuid4())
         _log.info("resume_start", handle, handle=handle, sid=sid,
-                  base=base, fork=fork)
+                  base=base, fork=fork, harness=harness)
         resumed_via = "fork-resume" if base else "started-fresh"
         try:
             # PORT-OPENCODE M2: an opencode shell IGNORES caller-minted ids,
@@ -1826,8 +1909,8 @@ class PoolService(Microservice):
                             lambda _sid: None)(sid)
             if token:
                 base = token
-            self.spawner.launch(
-                sid, role, handle, mode,
+            self._launch_on(
+                harness, sid, role, handle, mode,
                 claude_session=fork, resume_session=base,
                 activation=(self.PARK_RESUME_ACTIVATION if base else
                             "No stored session; started fresh. Call resume_self() "
@@ -1869,6 +1952,7 @@ class PoolService(Microservice):
                     "released_after_resume": release_requested}
         with self._transition_lock:
             s["claude_session_id"] = new_claude_session
+            s["harness"] = self._harness_of(sid) or harness
             s["state"] = "active"
             s["proc"] = _proc_fingerprint(self.spawner.pid(sid))
             s["last_seen"] = s["resumed_at"] = _utc_now_iso()
@@ -1915,11 +1999,15 @@ class PoolService(Microservice):
                 return {"resumed": False, "handle": handle,
                         "reason": f"no closed (done) session for {handle!r} to resume"}
             s = max(done, key=lambda r: r.get("resumed_at") or r.get("spawned_at") or "")
-            base = s.get("claude_session_id")
-            if not base:  # a file-resuming backend (Pi) has no session id; its session file is the base
-                f = getattr(self.spawner, "closed_session_token", None)
-                base = f(s["session_id"], handle) if f else None
             sid = s["session_id"]
+            # t-f42af1ca59: base (claude id, else the harness's own session file) and the harness
+            # to launch it on come from the row; a base of another harness refuses, row untouched.
+            harness, base, refusal = self._resume_plan(s, handle)
+            if refusal:
+                _log.error("resume_closed_refused_harness", handle, handle=handle, sid=sid,
+                           harness=harness, reason=refusal)
+                return {"resumed": False, "handle": handle, "harness": harness,
+                        "reason": refusal}
             settings = s.get("spawn_settings") or {}
             s["state"] = "resuming"
             self.locks[handle] = sid   # RE-TAKE the freed handle lock
@@ -1930,13 +2018,14 @@ class PoolService(Microservice):
         parent = settings.get("parent") or s.get("parent")
         extra_env = settings.get("env") or None
         fork = str(uuid.uuid4())
-        _log.info("resume_closed_start", handle, handle=handle, sid=sid, base=base, fork=fork)
+        _log.info("resume_closed_start", handle, handle=handle, sid=sid, base=base, fork=fork,
+                  harness=harness)
         try:
             token = getattr(self.spawner, "session_token", lambda _sid: None)(sid)
             if token:
                 base = token
-            self.spawner.launch(
-                sid, role, handle, mode,
+            self._launch_on(
+                harness, sid, role, handle, mode,
                 claude_session=fork, resume_session=base, model=model,
                 activation=(self.CLOSED_RESUME_ACTIVATION if base else
                             "No stored session; started fresh. Call resume_self() "
@@ -1963,6 +2052,7 @@ class PoolService(Microservice):
                     "released_after_resume": release_requested}
         with self._transition_lock:
             s["claude_session_id"] = new_claude_session
+            s["harness"] = self._harness_of(sid) or harness
             s["state"] = "active"
             s["proc"] = _proc_fingerprint(self.spawner.pid(sid))
             s["last_seen"] = s["resumed_at"] = _utc_now_iso()
@@ -1970,7 +2060,7 @@ class PoolService(Microservice):
             release_requested = bool(s.pop("_release_requested", False))
             self._persist()
         _log.info("resume_closed_done", handle, handle=handle, sid=sid,
-                  claude_session=new_claude_session)
+                  claude_session=new_claude_session, harness=s["harness"])
         if release_requested:
             # S11 finding 16: a close_self that arrived during this resume's
             # "resuming" window is honored after registration, not dropped.

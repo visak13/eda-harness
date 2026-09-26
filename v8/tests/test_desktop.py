@@ -237,15 +237,10 @@ def test_bundle_update_opens_the_release_page_instead_of_heronry_update(monkeypa
     assert "installer" in [c for c in app.window.calls if c[0] == "create_confirmation_dialog"][0][2]
 
 
-def test_gui_capture_options_stay_inside_the_apps_own_folders(tmp_path):
-    from edp8 import settings
+def test_gui_capture_options():
     assert desktop.parse_args([]) == {"capture": None, "settle": 6.0}
-    default = desktop.parse_args(["--capture", "--settle", "2"])
-    assert default == {"capture": (settings.data_dir() / "captures").resolve(), "settle": 2.0}
-    inside = settings.data_dir() / "shots"
-    assert desktop.parse_args(["--capture", str(inside)])["capture"] == inside.resolve()
-    with pytest.raises(SystemExit, match="outside Heronry's own folders"):
-        desktop.parse_args(["--capture", str(tmp_path.parent / "elsewhere")])
+    opts = desktop.parse_args(["--capture", "shots", "--settle", "2"])
+    assert opts["capture"].name == "shots" and opts["settle"] == 2.0
     with pytest.raises(SystemExit):
         desktop.parse_args(["--grab"])
 

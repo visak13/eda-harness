@@ -97,6 +97,8 @@ class _Launch:
 class CodexSpawner:
     """Spawner-ABC-compatible backend for resident codex app-server seats."""
 
+    harness = "codex"  # t-f42af1ca59: recorded on the row at spawn; resume dispatches on it
+
     def __init__(self, log_dir: str | None = None, broker_url: str | None = None,
                  pool_url: str | None = None, agent_home: str | None = None):
         self._log_dir = log_dir

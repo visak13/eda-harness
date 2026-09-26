@@ -137,10 +137,6 @@ the file and add an exclusion for the install folder
 | Avast / AVG | Menu → Settings → General → Exceptions → Add exception |
 | ESET | Setup → Advanced setup → Detection engine → Exclusions → Performance exclusions → Edit |
 
-Controlled-folder protection (Windows Security's *Controlled folder access*, Bitdefender *Safe Files*) may
-also block an unsigned app from writing to protected folders. Heronry writes only to its own data folder;
-if you move that folder somewhere protected, allow `Heronry Desktop.exe` and `heronry.exe` there.
-
 - **First launch** shows the splash while the services start, then opens the setup wizard in the window.
   Later launches open the board already signed in.
 - **Tray / menu-bar icon:** Open board, Status, Start, Stop and Restart services, Check for update,
