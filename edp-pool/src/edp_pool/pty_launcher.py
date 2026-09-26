@@ -510,7 +510,8 @@ def build_env(session_id: str, role: str, handle: str,
               agent_home: str | None = None,
               log_dir: str | None = None,
               defaults: dict | None = None,
-              parent: str | None = None) -> dict:
+              parent: str | None = None,
+              model: str | None = None) -> dict:
     """Our env contract (NOT the old protocol). The activator reads these
     and drives itself via the edp-broker MCP tools.
 
@@ -612,9 +613,12 @@ def build_env(session_id: str, role: str, handle: str,
     # registry / unmapped role falls back to the legacy 350000.
     _seat_acw = None
     try:
-        from edp_contracts.seats import seat_for_role as _sfr
+        from edp_contracts.seats import model_entry as _entry, seat_for_role as _sfr
         _seat = _sfr(agent_home, role) if agent_home else None
-        if _seat is not None:
+        _model = _entry(agent_home, model) if agent_home and model else None
+        if _model is not None and _model.get("auto_compact") is not None:
+            _seat_acw = str(_model["auto_compact"])
+        elif _seat is not None:
             _seat_acw = str(_seat.auto_compact)
     except Exception:  # noqa: BLE001 — registry trouble never blocks a spawn
         _seat_acw = None

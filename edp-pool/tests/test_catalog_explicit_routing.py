@@ -5,6 +5,7 @@ import json
 from edp_pool.codex_launcher import is_codex_model
 from edp_pool.composite_spawner import CompositeSpawner
 from edp_pool.pi_launcher import is_pi_model
+from edp_pool.pty_launcher import build_env
 
 
 class Fake:
@@ -32,3 +33,14 @@ def test_arbitrary_ids_route_to_pi_codex_and_claude(tmp_path):
         stack.launch(mid, "engineer", "engineer.test", model=mid)
     assert calls == [("pi", "plain-pi"), ("codex", "plain-codex"),
                      ("claude", "gpt-looking-claude")]
+
+
+def test_claude_catalog_entry_controls_compaction_window(tmp_path, monkeypatch):
+    (tmp_path / "models.json").write_text(json.dumps({"models": {
+        "opaque": {"harness": "claude", "provider": "claude", "auto_compact": 123456}},
+        "seats": {"builder": {"model": "other", "auto_compact": 350000}},
+        "roles": {"engineer": "builder"}}), encoding="utf-8")
+    monkeypatch.delenv("EDP_AUTO_COMPACT_WINDOW", raising=False)
+    monkeypatch.delenv("EDP_AUTO_COMPACT_WINDOW_ENGINEER", raising=False)
+    env = build_env("s", "engineer", "engineer.s", None, agent_home=str(tmp_path), model="opaque")
+    assert env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] == "123456"

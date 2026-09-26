@@ -240,6 +240,7 @@ class SubprocessSpawner(Spawner):
             agent_home=self.cwd,
             log_dir=self.shell_log_dir,
             parent=parent,       # F40#13: lineage stamp for bare handles
+            model=model,
         )
         # S20 (v8): inject the caller's extra env AFTER build_env's foreign-secret
         # strip, so the per-seat EDP8_TOKEN (a *_TOKEN name build_env would drop)
