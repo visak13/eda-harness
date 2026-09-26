@@ -24,7 +24,7 @@ from pathlib import Path
 
 from edp_contracts import settings
 from edp_contracts.proc import ProcId, assign_job, job_name, kill_tree
-from edp_contracts.toolpath import find_tool, tool_argv
+from edp_contracts.toolpath import find_tool, probe_version, tool_argv
 
 from .pty import PtyClosed, harness_env, inject, spawn_pty
 
@@ -256,6 +256,29 @@ def repair_claude_install(claude_bin: str) -> str:
             claude_bin, "binary still unhealthy after restore"))
     logger.warning("W14: repaired stubbed claude binary at %s from %s",
                    dest, source)
+    return claude_bin
+
+
+_VERSION_OK: dict[tuple[str, float], str] = {}
+
+
+def ensure_claude_runs(claude_bin: str) -> str:
+    """S2 pre-spawn gate for every OS without install-layout knowledge: the resolved claude answers
+    `--version` (edp_contracts.toolpath.probe_version). Cached per (path, mtime), so a pool probes a
+    binary once, and again after it is updated. Raises ClaudeInstallError naming the fix."""
+    path = shutil.which(claude_bin) or claude_bin
+    try:
+        key = (path, Path(path).stat().st_mtime)
+    except OSError:
+        key = (path, 0.0)
+    if key in _VERSION_OK:
+        return claude_bin
+    got = probe_version(tool_argv(claude_bin))
+    if got is None:
+        raise ClaudeInstallError(
+            f"claude at {claude_bin!r} does not answer `--version`: set EDP_CLAUDE_BIN to a working claude "
+            "or put one on PATH, then retry the spawn")
+    _VERSION_OK[key] = got
     return claude_bin
 
 

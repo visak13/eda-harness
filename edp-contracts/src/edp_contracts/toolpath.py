@@ -99,4 +99,20 @@ def _is_wsl_relay(path: str) -> bool:
         return False
 
 
-__all__ = ["TOOL_KEYS", "ToolMissing", "find_tool", "git_bash", "require_tool", "tool_argv"]
+__all__ = ["TOOL_KEYS", "ToolMissing", "find_tool", "git_bash", "probe_version", "require_tool", "tool_argv"]
+
+
+def probe_version(argv: list[str], *, timeout: float = 10.0) -> str | None:
+    """`<argv> --version` over a pipe, no shell: the first output line, or None when the tool does not
+    start, fails, or hangs past `timeout`. A health check that needs no install-layout knowledge."""
+    import subprocess
+
+    try:
+        r = subprocess.run([*argv, "--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if r.returncode != 0:
+        return None
+    line = (r.stdout or r.stderr).strip().splitlines()
+    return line[0] if line else ""

@@ -6,6 +6,7 @@ WITHOUT a real claude process.
 
 import sys
 import types
+from pathlib import Path
 
 import _fakepty
 import pytest
@@ -369,6 +370,7 @@ def test_sub_6_posix_monitor_mode_is_a_headless_pty(monkeypatch, fake_winpty, tm
     """S2: POSIX has no visible console. A `monitor` spawn there is the same
     PTY seat as headless, watched through its drain log."""
     monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(pl, "ensure_claude_runs", lambda b: b)  # the version probe has its own test
     sp = SubprocessSpawner(log_dir=tmp_path)
     sp.launch("worker:px", "worker", "p:a1", mode="monitor")
     try:
@@ -516,3 +518,18 @@ def test_sub_7_log_filename_sanitized(monkeypatch, fake_winpty, tmp_path):
     name = captured["log_path"].name
     assert ":" not in name
     assert name == "worker_42da278e-ab11.log"
+
+
+def test_version_probe_gates_a_claude_that_does_not_run(tmp_path):
+    """S2: off Windows the pre-spawn health gate is a version probe, not install-layout knowledge."""
+    harness = Path(__file__).parent / "fixtures" / "stub_harness.py"
+    if sys.platform == "win32":
+        stub = tmp_path / "claude.cmd"
+        stub.write_text(f'@"{sys.executable}" "{harness}" %*\r\n', encoding="utf-8")
+    else:
+        stub = tmp_path / "claude"
+        stub.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{harness}" "$@"\n', encoding="utf-8")
+        stub.chmod(0o755)
+    assert pl.ensure_claude_runs(str(stub)) == str(stub)
+    with pytest.raises(pl.ClaudeInstallError, match="EDP_CLAUDE_BIN"):
+        pl.ensure_claude_runs(str(tmp_path / "no-such-claude"))

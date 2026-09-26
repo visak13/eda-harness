@@ -41,6 +41,7 @@ legacy un-shadowed SubprocessSpawner for both modes.
 
 import json
 import subprocess
+import sys
 import threading
 from pathlib import Path
 
@@ -426,6 +427,10 @@ class ShadowSpawner(Spawner):
                resume_session: str | None = None,
                model: str | None = None,
                activation: str | None = None) -> None:
+        if mode == "monitor" and sys.platform != "win32":
+            # S2: visible consoles and console_input are Windows-only; on POSIX a monitor seat is the
+            # headless PTY seat (watch it with `tail -f` on its drain log)
+            mode = "headless"
         if not shadow_enabled():
             self.legacy.launch(session_id, role, handle, mode,
                                claude_session, resume_session, model,

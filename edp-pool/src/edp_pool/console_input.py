@@ -17,6 +17,12 @@ detached helper (`python -m edp_pool.console_input <pid>`, text on
 stdin) that attaches, types, and exits. Cost: one short-lived process
 per wake — invisible at wake cadence (heartbeats are minutes apart).
 
+WINDOWS-ONLY BY DECLARATION (S2 s-b7ec13d748, strategyll-2d9045f5a0): a visible
+console exists only on Windows. On POSIX every seat is PTY-hosted (monitor mode
+falls back to headless in the spawners) and wakes go through
+`edp_pool.pty.inject`, so this module is never reached there; `inject_line`
+returns False off win32.
+
 Injected lines are SINGLE-line by contract (framed wake digests); the
 caller sanitizes newlines. The trailing CR is written after the same
 submit delay PtyLaunch uses, so claude's Enter handling is identical on

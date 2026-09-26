@@ -6,6 +6,7 @@ Protocol (one line per command, the PTY's Enter submits it):
   ready marker ``❯`` that the pool waits for;
 * ``resize?``: ``SIZE:<cols>x<rows>`` from the terminal it sits in (also printed on SIGWINCH on POSIX);
 * ``exit <n>``: ``BYE``, then exit with code n;
+* ``--version`` on the command line: one version line and exit 0 (the pool's version probe);
 * anything else: ``ECHO:<line>``.
 """
 from __future__ import annotations
@@ -32,6 +33,9 @@ def _size() -> str:
 
 
 def main() -> int:
+    if "--version" in sys.argv[1:]:
+        print("0.0.0 (edp stub harness)")  # the pool's pre-spawn version probe
+        return 0
     try:
         sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
     except (AttributeError, ValueError):

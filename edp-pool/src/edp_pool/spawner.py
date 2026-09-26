@@ -216,6 +216,7 @@ class SubprocessSpawner(Spawner):
             build_env,
             build_session_args,
             ensure_claude_healthy,
+            ensure_claude_runs,
             resolve_claude_bin,
         )
 
@@ -231,6 +232,8 @@ class SubprocessSpawner(Spawner):
         # a doomed shell, and the neuron never runs Bash repair.
         if sys.platform == "win32":  # npm-layout stub repair is Windows install knowledge (S2)
             bin_ = ensure_claude_healthy(bin_)
+        else:  # S2: elsewhere the health gate is PATH/settings lookup + a version probe
+            bin_ = ensure_claude_runs(bin_)
         env = build_env(
             session_id, role, handle, self.broker_url,
             pool_url=self.pool_url,
