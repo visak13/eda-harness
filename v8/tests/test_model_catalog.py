@@ -70,6 +70,11 @@ def test_admin_catalog_validation_and_stub_spawn(tmp_path, monkeypatch):
                         headers=ADMIN_H)
     assert r.status_code == 200 and "Stub seat received" in r.json()["value"]["reply"]
     assert r.json()["value"]["provider"] == "openrouter"
+    body["models"].pop("my-model")
+    body["role_models"]["engineer"] = ["base"]
+    r = env.client.put("/v1/admin/models", json=body, headers=ADMIN_H)
+    assert r.status_code == 200
+    assert "my-model" not in env.client.get("/v1/models", headers=ADMIN_H).json()["value"]["models"]
 
 
 def test_init_copy_of_v8_respects_codex_only_selection(tmp_path, monkeypatch):
