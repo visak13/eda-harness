@@ -243,6 +243,20 @@ def this_os() -> str:
     return "linux" if sys.platform.startswith("linux") else sys.platform
 
 
+def in_bundle() -> bool:
+    """True inside Heronry Desktop (a Briefcase/PyInstaller bundle), where sys.executable is the app stub, not a
+    Python (the same structural test as edp8.launcher.bundled). The bundle ships the embedder and updates through
+    its installer, so it needs no uv and never pip-installs into itself (S8)."""
+    if getattr(sys, "frozen", False):
+        return True
+    return not Path(sys.executable or "python").name.lower().startswith("python")
+
+
+def need_of(p: Prereq) -> str:
+    """`p.need` on this install: uv is optional inside Heronry Desktop (nothing in the app runs it)."""
+    return "optional" if p.name == "uv" and in_bundle() else p.need
+
+
 # ------------------------------------------------------------------------------------------ detection
 
 Which = Callable[[Prereq], str | None]
@@ -345,8 +359,8 @@ def detect(
     """One prerequisite's state on this machine."""
     st = Status(
         p.name,
-        p.need,
-        p.feature,
+        need_of(p),
+        p.feature or ("a command-line (uv tool) install of Heronry" if need_of(p) != p.need else ""),
         p.purpose,
         "missing",
         min_version=p.min_version,
@@ -389,7 +403,7 @@ def detect(
                 st.state = "ok"
         else:
             st.state = "ok"
-    elif p.need == "optional" or (p.need == "default" and not embed):
+    elif st.need == "optional" or (st.need == "default" and not embed):
         st.state = "off"
     recipe = pick_recipe(p, os_key or this_os(), which=which)
     st.installable = recipe is not None and recipe.manager != "url"
@@ -427,7 +441,8 @@ def _manager_available(manager: str, *, which: Which | None, os_key: str) -> boo
         "script": "curl",
     }
     if manager in ("uv-pip",):
-        return (which or _which)(by_name("uv")) is not None
+        # never into a bundle: its Python is the app itself, and it ships the embedder
+        return not in_bundle() and (which or _which)(by_name("uv")) is not None
     if manager in ("model", "url"):
         return True
     tool = lookup.get(manager)
@@ -510,6 +525,8 @@ def describe_recipe(p: Prereq, r: Recipe | None) -> str:
         return f"install {p.name} and put it on PATH" + (
             f" (or set {p.setting})" if p.setting else ""
         )
+    if r.manager == "url" and p.kind == "python" and in_bundle():
+        return "it ships inside Heronry Desktop: reinstall Heronry Desktop"
     if r.manager == "url":
         return f"install from {r.arg}" + (
             f", or set {p.setting} to its path" if p.setting else ""
@@ -559,8 +576,8 @@ def plan(
                 wanted.append(r.name)
             continue
         if (
-            p.need == "required"
-            or (p.need == "default" and embed)
+            need_of(p) == "required"
+            or (need_of(p) == "default" and embed)
             or r.name in optional
         ):
             wanted.append(r.name)
@@ -568,6 +585,9 @@ def plan(
         wanted.append(HARNESS_DEFAULT)
     # dependencies first (node before the npm harnesses, the embedder before its model)
     for name in list(wanted):
+        r = pick_recipe(by_name(name), os_key, which=which)
+        if r is None or r.manager == "url":
+            continue  # installed by hand (or, in a bundle, by reinstalling it): its installer's deps are moot
         for dep in by_name(name).needs:
             if dep not in wanted and state.get(dep) and state[dep].state != "ok":
                 wanted.insert(wanted.index(name), dep)
@@ -583,7 +603,7 @@ def plan(
             continue
         reason = (
             "required"
-            if p.need == "required"
+            if need_of(p) == "required"
             else (
                 "no seat harness is installed"
                 if p.need == "harness" and name not in only

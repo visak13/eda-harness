@@ -31,6 +31,8 @@ requires = [
     "edp-contracts==0.1.0",
     "edp-pool==0.1.0",
     "edp-broker==0.1.0",
+    # the embed extra, bundled: a bundle cannot pip-install into itself later (prereqs.in_bundle)
+    "fastembed>=0.3",
     "pywebview>=6.0",
     "pystray>=0.19",
 ]

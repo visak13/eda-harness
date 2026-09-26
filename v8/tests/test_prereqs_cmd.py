@@ -115,6 +115,21 @@ def test_no_harness_installs_claude(machine, capsys):
     assert "no seat harness is installed" in capsys.readouterr().out
 
 
+def test_inside_heronry_desktop_uv_is_optional_and_nothing_pip_installs_into_the_app(machine, capsys, monkeypatch):
+    monkeypatch.setattr(pq.sys, "executable", r"C:\Programs\Heronry Desktop\heronry.exe")
+    assert pq.in_bundle()
+    machine.present -= {"uv"}
+    machine.present.add("git")
+    monkeypatch.setattr(pq.importlib.util, "find_spec", lambda name: None)  # embedder missing from the bundle
+    rows = {r.name: r for r in machine.rows()}
+    assert rows["uv"].need == "optional" and rows["uv"].state == "off"
+    assert rows["embedder"].installable is False and "reinstall Heronry Desktop" in rows["embedder"].fix
+    steps, left = pq.plan(list(rows.values()), os_key="win32", which=machine.which)
+    assert steps == [] and "embedder" in [r.name for r in left]
+    assert prereqs_cmd.install({"yes": True}, isatty=False) == 0 and machine.ran == []
+    assert "uv pip" not in capsys.readouterr().out
+
+
 def test_check_json_and_exit_code(machine, capsys):
     assert prereqs_cmd.main(["--json"]) == 1  # git missing
     import json

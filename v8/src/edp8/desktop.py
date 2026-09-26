@@ -8,6 +8,8 @@ closing the window hides it, Quit leaves the services running unless "Stop servi
 * **First run** (no config.toml yet): `heronry init` with the harnesses found on this machine (claude and/or
   codex, else claude), then the window opens /ui/setup with a one-time sign-in code (S6's wizard picks the
   harnesses for real). Later runs open /ui/join with a fresh one-time code, so the window is signed in.
+  The wizard's "Your tools" step is the prerequisites step: each Install click runs the one installer step,
+  `heronry prereqs install --only <tool> --yes` (t-08612be1b0), so nothing is installed without a click.
 * **Splash:** the S7 splash with a status line while the services come up.
 * **Threads:** `webview.start()` owns the main thread (Cocoa rule); the tray runs `run_detached()` on macOS and
   Linux (it shares the GUI loop) and its own thread on Windows. Never multiprocessing (a bundle's
