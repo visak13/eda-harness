@@ -399,7 +399,7 @@ def help_cmd(_argv: list[str]) -> int:
         ("doctor --bundle [PATH]", "write a redacted diagnostics zip to attach to a GitHub issue"),
         ("update", "check for a new release; --apply installs it (backup, stop, upgrade, start)"),
         ("import --from DIR", "copy an existing v8 install's state (dry run first; --apply to copy)"),
-        ("gui", "open the desktop app (--capture <dir>: save its own window content as PNGs, then quit)"),
+        ("gui", "open the desktop app (--capture [<dir>]: save its own window content as PNGs under its data folder, then quit)"),
         ("version", "print the product name and version (also --version)"),
         ("help", "this text (also --help, -h)"),
     ):
