@@ -1,4 +1,4 @@
-// Chapter 2b — people and agents in one thread, across machines (owner m-b42de746e3).
+// Chapter 2b — people and agents in one thread, across machines, added at the owner's request.
 // True to: edp8 board.Board.message_send / message_mentions (each @handle resolves to a participant;
 // an unknown one is just prose and comes back as `unresolved_mentions`, service.py), delivery.after_message
 // (the addressed seat and every @mention are mirrored into broker inboxes), board.Board._reason_for

@@ -16,7 +16,7 @@ const COMPONENTS: Record<string, React.FC> = {
   ch1: Ch1Pool, ch2: Ch2Broker, ch2b: Ch2bTeam, ch3: Ch3Wake, ch4: Ch4Context, ch5: Ch5Memory, ch6: Ch6Board, ch7: Ch7Close,
 };
 
-/** The chapters in the owner's order (design §4.17, 2b per m-b42de746e3); lengths in src/chapters.json. */
+/** The chapters in the owner's order (design §4.17, 2b added at the owner's request); lengths in src/chapters.json. */
 export const CHAPTERS = TABLE.map((c) => ({ ...c, C: COMPONENTS[c.id] }));
 
 export const MAIN_FRAMES = CHAPTERS.reduce((n, c) => n + c.frames, 0);
