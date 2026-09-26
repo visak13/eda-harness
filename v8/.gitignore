@@ -5,6 +5,9 @@ uploads/
 .run/
 .env
 tokens.json
+# S5 admin secrets beside tokens.json in dev mode (EDP_HOME = v8): invites, secret settings
+invites.json
+settings.secret.toml
 .sol/
 .pain/
 .venv/
