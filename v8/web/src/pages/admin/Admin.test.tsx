@@ -166,7 +166,9 @@ describe("Settings tab renders the registry (c-f27302e7e4)", () => {
     await showAdvanced();
     const envField = await screen.findByTestId(`setting-${envRow.key}-input`);
     expect(envField).toBeDisabled();
-    expect(screen.getByTestId(`setting-${envRow.key}-readonly`)).toHaveTextContent(`set by the environment variable ${envRow.env}`);
+    expect(screen.getByTestId(`setting-${envRow.key}-readonly`)).toHaveTextContent("Set by the environment, so it is locked here.");
+    expect(screen.getByTestId(`setting-${envRow.key}-readonly`).textContent).not.toContain(envRow.env);
+    expect(screen.getByTestId(`setting-${envRow.key}-readonly-reason`)).toHaveTextContent(`set by the environment variable ${envRow.env}`);
     // every env-only / env-set row in the fixture is disabled too
     for (const s of rows.filter((r) => r.read_only)) expect(screen.getByTestId(`setting-${s.key}-input`)).toBeDisabled();
     const secretInput = screen.getByTestId(`setting-${secret.key}-input`) as HTMLInputElement;

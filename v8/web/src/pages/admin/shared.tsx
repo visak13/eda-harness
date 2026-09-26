@@ -197,7 +197,7 @@ export function SettingField({ s, value, onChange, onReset }: {
       <input id={id} className={ui.input} disabled={ro} value={String(value)} data-testid={`${id}-input`}
         type={s.secret ? "password" : kind === "number" ? "number" : "text"}
         autoComplete={s.secret ? "new-password" : "off"}
-        placeholder={s.secret ? (s.set ? "set (hidden): type to replace" : "not set") : s.default === null || s.default === undefined ? "" : `default: ${Array.isArray(s.default) ? s.default.join(", ") : String(s.default)}`}
+        placeholder={s.secret ? (s.set ? "set (hidden): type to replace" : "not set") : s.default === null || s.default === undefined || s.default === "" ? "" : `default: ${Array.isArray(s.default) ? s.default.join(", ") : String(s.default)}`}
         onChange={(e) => onChange(e.target.value)} />
     );
   }
@@ -215,13 +215,14 @@ export function SettingField({ s, value, onChange, onReset }: {
         {kind === "number" && s.unit ? <span className={styles.unit} data-testid={`${id}-unit`}>{s.unit}</span> : null}
         {onReset && !ro && s.source === "config" ? <button type="button" className={ui.button} onClick={onReset} data-testid={`${id}-reset`}>Reset to default</button> : null}
       </div>
-      {ro ? <p className={styles.fieldNote} data-testid={`${id}-readonly`}>{s.read_only_reason}</p> : null}
+      {ro ? <p className={styles.fieldNote} data-testid={`${id}-readonly`}>{s.env_only ? "Set by the system, so it can't be changed here." : "Set by the environment, so it is locked here. Advanced details says where."}</p> : null}
       {s.error ? <p className={styles.fieldNote}>{s.error}</p> : null}
       <details className={styles.details} data-testid={`${id}-advanced`}>
         <summary><Icon name="chevron" size={16} />Advanced details</summary>
         <div>
           <span>Setting <code>{s.key}</code> · environment variable <code data-testid={`${id}-env`}>{s.env}</code></span>
           {s.help ? <span>{s.doc}</span> : null}
+          {ro && s.read_only_reason ? <span data-testid={`${id}-readonly-reason`}>{s.read_only_reason}</span> : null}
           {s.default_doc ? <span>Default: {s.default_doc}</span> : null}
         </div>
       </details>

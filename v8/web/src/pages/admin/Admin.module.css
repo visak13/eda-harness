@@ -153,6 +153,7 @@
 }
 
 .steps {
+  list-style: decimal;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -337,6 +338,7 @@
   text-decoration: underline;
 }
 .steps {
+  list-style: decimal;
   margin: 0;
   padding-left: 20px;
   display: flex;
