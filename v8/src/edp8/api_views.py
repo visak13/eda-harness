@@ -71,6 +71,13 @@ def views_router(board: Board, actor: Callable[..., Participant]) -> APIRouter:
         from .notifications import attention
         return ok(attention(board, a, since=since, request=request))
 
+    @r.get("/v1/me/attention")
+    def me_attention(a: Participant = Depends(actor)):
+        """S20 (design §4.18): everything waiting on you, each item with its trail (scope → tab → section →
+        ticket → item), plus per-scope counts and reasons. Every attention surface renders this one read."""
+        from .attention import attention as _attention_read
+        return ok(_attention_read(board, a), "follow each item's scope/tab/section/ticket to reach it; url deep-links")
+
     # -------------------------------------------------------------- me (Decisions home)
     @r.get("/v1/me/decisions")
     def me_decisions(a: Participant = Depends(actor)):

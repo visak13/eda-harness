@@ -249,8 +249,10 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
             if asker and asker.type=="human": return "A person will see your answer on their page."
             sessions=sorted(board.store.query("session",{"participant_id":pid}),key=lambda s:s.created_at); state=sessions[-1].state.value if sessions else None
             return f"Its shell is {state}; your answer wakes it." if state in ("alive","parked") else "Its shell has closed; your answer stays with the project for the next shell."
+        from . import attention  # S20: the legacy page renders the one attention derivation too
+        att=attention.items(board,p)
         ask_rows=[]
-        for m in ctx["asks_for_me"]:
+        for m in (r["_src"] for r in att if r["kind"]=="ask"):
             asker=_participant(m["created_by"]); created=m.get("created_at"); when=_format_time(created) if isinstance(created,datetime) else ""
             ask_rows.append((m['ticket_id'],f"<article class='question-unit'>{_avatar_for(m['created_by'])}<div><div class='message-head'><strong>{_e(_participant_label(asker))}</strong><span class='message-meta'>{_e(getattr(asker,'role','system'))} · {when}</span></div><div class='question-bubble'><div class='message-text'>{_e(m['text'])}</div>{_ticket_chip(m['ticket_id'], prefix)}</div><div class='delivery-note'>{_e(asker_note(m['created_by']))}</div><form class='reply-form' method='post' action='{prefix}/me/message'>{hidden}<input type='hidden' name='ticket_id' value='{_e(m['ticket_id'])}'><input type='hidden' name='to' value='{_e(m['created_by'])}'><input type='hidden' name='kind' value='answer'><input type='hidden' name='reply_to' value='{_e(m['id'])}'><input name='text' placeholder='Write an answer…' required><button>Send</button></form></div></article>"))
         # grouped by ticket (epic → ticket) so one busy thread does not bury the others
@@ -263,18 +265,13 @@ def router(board: Board, verify: Callable[[str, str | None], Participant] | None
             return (f"<details class='fold ask-group' open><summary>{crumbs}<span class='muted'>{title}</span>"
                     f"<span class='count'>{len(rows)}</span></summary>{''.join(rows)}</details>")
         asks="".join(_group(t,rows) for t,rows in groups.items()) or _empty_state("inbox","Inbox clear","Nothing is waiting for your answer.")
-        gate_rows=[]
-        if p.role==Role.owner:
-            for t in board.store.query("ticket",{"kind":TicketKind.epic},limit=200):
-                if t.status in _TERMINAL or not board._owner_scope(p,t.id): continue
-                for sub in (t,*board._descendants(t.id)):
-                    for ev in board.open_gates(sub.id): gate_rows.append((sub.id,ev.data.get("gate"),ev))
+        gate_rows=[(tid,ev.data.get("gate"),ev) for tid,ev in (r["_src"] for r in att if r["kind"]=="gate")]
         gates="".join(_gate_card_html(t,g,e.data.get("by"),e.data.get("note"),hidden,True) for t,g,e in gate_rows) or _empty_state("gate","No open gates","No rulings need your attention.")
         # docs awaiting the human's sign-off: criteria checked_by=owner, pending, with evidence —
         # the deliverable renders HERE (markdown) and the verdict button IS the HITL gate
         signoff_rows=[]
         if p.role==Role.owner:
-            for c,tk,doc in views.pending_signoffs(board,p):
+            for c,tk,doc in (r["_src"] for r in att if r["kind"]=="signoff"):
                 doc_view=(f"<details open><summary>{_e(getattr(doc,'title','evidence'))} "
                           f"<span class='muted'>{_e(getattr(doc,'doc_type',''))} v{getattr(doc,'version','?')}</span></summary>"
                           f"<div class='doc-md'>{_md(getattr(doc,'body_md',''))}</div></details>") if doc else \

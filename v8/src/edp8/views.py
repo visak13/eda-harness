@@ -318,6 +318,14 @@ def record_verdict(board: Board, actor: Participant, *, criterion_id: str, verdi
 # ------------------------------------------------------------------ people / conversations
 
 
+def human_active(board: Board, p: Participant) -> bool:
+    """t-882e4d2eeb: whether a person belongs in the pickers and People lists. The service wires the rule
+    (`edp8.admin.teammates.human_active`: not removed; in token mode, holding a token or a live invite) onto
+    the board; a bare board (tests, tools) counts every human who is not retired."""
+    rule = getattr(board, "human_active", None)
+    return rule(p) if rule is not None else not getattr(p, "retired", False)
+
+
 def _roster(board: Board, viewer: Participant) -> list[dict[str, Any]]:
     """Ordered participants a viewer can reach: humans first (by handle), then LIVE/parked agent
     seats; empty-chair base-role stubs and closed seats are omitted (tagging them wakes nobody).
@@ -328,6 +336,8 @@ def _roster(board: Board, viewer: Participant) -> list[dict[str, Any]]:
         if not c.handle or c.handle.startswith(("__", "wt-")):
             continue
         if c.type == "human":
+            if not human_active(board, c):  # revoked, expired or removed: not reachable, not offered
+                continue
             out.append({"id": c.id, "handle": c.handle, "type": "human", "role": c.role.value,
                         "seat_ticket": None, "seat_state": None, "label": "person", "self": c.id == viewer.id})
             continue
@@ -378,11 +388,15 @@ def seats_for(board: Board, viewer: Participant) -> dict[str, Any]:
 
     seats: list[dict[str, Any]] = []
     people: list[dict[str, Any]] = []
+    retired: list[dict[str, Any]] = []
     for c in sorted(board.store.query("participant", {}), key=lambda c: (c.type != "human", c.handle or "")):
         if not c.handle or c.handle.startswith(("__", "wt-")):
             continue
         if c.type == "human":
-            people.append({"id": c.id, "handle": c.handle, "role": c.role.value})
+            if human_active(board, c):
+                people.append({"id": c.id, "handle": c.handle, "role": c.role.value})
+            else:  # history keeps their name, greyed (the SPA reads this list)
+                retired.append({"id": c.id, "handle": c.handle})
             continue
         s = latest_by_pid.get(c.id)
         tk = board.store.get("ticket", s.ticket_id) if (s and s.ticket_id) else None
@@ -401,17 +415,18 @@ def seats_for(board: Board, viewer: Participant) -> dict[str, Any]:
     # Alive first, then parked, stalled, closed/dead, unknown; ties by handle (folio-seats order).
     rank = {"alive": 0, "parked": 1, "stalled": 2, "dead": 3}
     seats.sort(key=lambda r: (rank.get(r["state"], 4), r["handle"]))
-    return {"seats": seats, "people": people}
+    return {"seats": seats, "people": people, "retired": retired}
 
 
 def conversations_for(board: Board, viewer: Participant) -> list[dict[str, Any]]:
     """One row per ticket that involves the viewer — unanswered asks first (unread), then the
     viewer's open tickets by recent traffic. Each row carries the last message (design §18.2)."""
-    ctx_asks = board.inbox(viewer)
+    from . import attention  # S20: "unread" = the ticket holds an ask in the one attention derivation
     ask_tids: list[str] = []
-    for m in ctx_asks:
-        if m["ticket_id"] not in ask_tids:
-            ask_tids.append(m["ticket_id"])
+    for it in attention.items(board, viewer):
+        tid = it["_src"]["ticket_id"] if it["kind"] == "ask" else None
+        if tid and tid not in ask_tids:
+            ask_tids.append(tid)
     convo_ids = list(ask_tids)
     for t in board.my_tickets(viewer):
         if t.status not in _TERMINAL and t.id not in convo_ids:
@@ -461,13 +476,16 @@ def replies_for(board: Board, viewer: Participant, limit: int = 30) -> list[dict
 
 def summary_for(board: Board, viewer: Participant) -> dict[str, Any]:
     """Identity + the counts the shell chrome shows: waiting-on-you, open gates, conversations,
-    plus the avatar id and the board's newest seq (design §4.1)."""
-    asks = board.inbox(viewer)
-    gates = [g for _t, g in _owner_gates(board, viewer)]
+    plus the avatar id and the board's newest seq (design §4.1). S20: every attention count is read from
+    attention.items/rollup — `attention` carries the rail's epics/topics/admin/total counts."""
+    from . import attention
+    rows = attention.items(board, viewer)
     return {"participant": viewer.model_dump(mode="json"),
             "avatar_id": avatar_for(board, viewer.id)["avatar_id"],
-            "counts": {"waiting_on_you": len(asks), "open_gates": len(gates),
+            "counts": {"waiting_on_you": sum(r["kind"] == "ask" for r in rows),
+                       "open_gates": sum(r["kind"] == "gate" for r in rows),
                        "conversations": len(conversations_for(board, viewer))},
+            "attention": attention.rollup(rows)["counts"],
             "last_seq": board.store.max_seq()}
 
 
@@ -514,9 +532,12 @@ def signoff_ask(tk: Any) -> str:
 
 def decisions_for(board: Board, viewer: Participant) -> dict[str, Any]:
     """The Decisions home (design §4.1): sign-offs the viewer must rule, questions in their
-    inbox, and open gates. A non-owner gets empty signoffs and gates."""
+    inbox, and open gates. A non-owner gets empty signoffs and gates. S20: every row is an attention item
+    (attention.items), so this read, the VS Code inbox and the SPA's dots can never disagree."""
+    from . import attention
+    rows = attention.items(board, viewer)
     signoffs = []
-    for c, tk, doc in pending_signoffs(board, viewer):
+    for c, tk, doc in (r["_src"] for r in rows if r["kind"] == "signoff"):
         epic = board.epic_of(tk)
         signoffs.append({
             "criterion": {"id": c.id, "text": c.text, "check": c.check.value,
@@ -530,7 +551,7 @@ def decisions_for(board: Board, viewer: Participant) -> dict[str, Any]:
                      "version": doc.version} if doc else None),
             "excerpt": (getattr(doc, "body_md", "") or "")[:300].strip()})
     questions = []
-    for m in board.inbox(viewer):
+    for m in (r["_src"] for r in rows if r["kind"] == "ask"):
         asker = _participant(board, m["created_by"])
         questions.append({**m, "why": _why_in_inbox(board, viewer, m), "epic_id": _epic_id_of(board, m.get("ticket_id")), "asker": {
             "type": getattr(asker, "type", "agent") if asker else "agent",
@@ -538,7 +559,7 @@ def decisions_for(board: Board, viewer: Participant) -> dict[str, Any]:
             "seat_state": seat_state(board, m["created_by"]),
             "note": _asker_note(board, m["created_by"])}})
     gates = []
-    for tid, ev in _owner_gates(board, viewer):
+    for tid, ev in (r["_src"] for r in rows if r["kind"] == "gate"):
         gates.append({"event_id": ev.id, "ticket_id": tid, "gate": ev.data.get("gate"), "by": ev.data.get("by"),
                       "note": ev.data.get("note"), "opened_at": ev.created_at.isoformat(),
                       "epic": board.epic_of(board.ticket(tid)).id})
@@ -678,6 +699,11 @@ def epics_summary(board: Board, viewer: Participant | None = None, *, status: st
     if q:
         hit = set(search_ticket_ids(board, q))
         rows = [t for t in rows if t.id in hit]
+    # S20 (design §4.18): an epic waiting on the viewer is highlighted, sorted first, with its one-line reason
+    need: dict[str, Any] = {}
+    if viewer is not None:
+        from . import attention
+        need = {s["id"]: s for s in attention.rollup(attention.items(board, viewer))["scopes"]}
     out = []
     for t in rows:
         seats = sorted({k.assignee for k in board._descendants(t.id) if k.assignee}
@@ -687,7 +713,10 @@ def epics_summary(board: Board, viewer: Participant | None = None, *, status: st
                     "created_at": t.created_at.isoformat(), "criteria": _crit_counts(board, t.id),
                     "open_gates": sum(len(board.open_gates(s.id)) for s in (t, *board._descendants(t.id))),
                     "waiting_reason": waiting_reason(board, t), "assigned_seats": seats,
-                    "latest_status": waiting_reason(board, t)["latest_status"]})
+                    "latest_status": waiting_reason(board, t)["latest_status"],
+                    "attention": ({k: need[t.id][k] for k in ("count", "reason", "tabs", "sections", "tickets")}
+                                  if t.id in need else None)})
+    out.sort(key=lambda r: 0 if r["attention"] else 1)  # stable: the board's order within each group
     return out
 
 

@@ -1,11 +1,20 @@
-"""Privacy-minimal notification selectors. Authority stays with inbox/open-gate derivations."""
+"""Privacy-minimal notification selectors. Authority is the S20 attention derivation (attention.items): an event
+notifies only while the item it raised is still in the viewer's list, and it deep-links into that item's trail."""
 from __future__ import annotations
 
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from . import views
+from . import attention as _attention
 from .board import Board
 from .schemas import EventKind, Participant
+
+
+def _landing(url: str, request: str) -> str:
+    """The item's trail url carrying ?request=<event> (the click-time revalidation key), before any #anchor."""
+    base, _, anchor = url.partition("#")
+    parts = urlsplit(base)
+    query = [(k, v) for k, v in parse_qsl(parts.query) if k != "request"] + [("request", request)]
+    return urlunsplit(parts._replace(query=urlencode(query))) + (f"#{anchor}" if anchor else "")
 
 
 def attention(board: Board, actor: Participant, *, since: int = -1,
@@ -15,8 +24,8 @@ def attention(board: Board, actor: Participant, *, since: int = -1,
         cursor = board.store.max_seq()
         if request is None and since < 0:
             return {"participant": actor.id, "cursor": cursor, "requests": []}
-        asks = {m["id"]: m for m in board.inbox(actor) if m["kind"] != "steer"}
-        gates = {ev.id: (tid, ev) for tid, ev in views._owner_gates(board, actor)}
+        # message id / gate event id -> the attention item it raised (S20: no rule of its own here)
+        live = {it["id"]: it for it in _attention.items(board, actor) if it["kind"] in ("ask", "gate")}
         if request is not None:
             event = board.store.get("event", request)
             events = [event] if event else []
@@ -26,20 +35,12 @@ def attention(board: Board, actor: Participant, *, since: int = -1,
             cursor = batch[-1][0] if batch else cursor
         rows = []
         for event in events:
-            message = None
             if event.kind == EventKind.message_sent:
-                message = asks.get(event.data.get("message"))
-                if not message:
-                    continue
-                tid = message["ticket_id"]
-            elif event.kind == EventKind.gate_opened and event.id in gates:
-                tid = gates[event.id][0]
+                item = live.get(event.data.get("message"))
+            elif event.kind == EventKind.gate_opened:
+                item = live.get(event.id)
             else:
-                continue
-            ticket = board.ticket(tid)
-            path = "epic" if ticket.kind.value == "epic" else "ticket"
-            url = f"/ui/{path}/{tid}?{urlencode({'request': event.id})}"
-            if message:
-                url += f"#{message['id']}"
-            rows.append({"request": event.id, "url": url})
+                item = None
+            if item is not None:
+                rows.append({"request": event.id, "url": _landing(item["url"], event.id)})
         return {"participant": actor.id, "cursor": cursor, "requests": rows}

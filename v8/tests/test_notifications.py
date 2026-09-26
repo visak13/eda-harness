@@ -31,12 +31,12 @@ def test_baseline_no_backlog_and_server_recipient_filter(rig):
     baseline = attention(b, owner)
     assert baseline["requests"] == []
     send(rig, MessageKind.note)
-    send(rig, MessageKind.steer)
+    steer = send(rig, MessageKind.steer)  # S20: a steer to a human is an attention item (the inbox rule), so it notifies
     send(rig, to=other.id)
     message = send(rig)
     value = attention(b, owner, since=baseline["cursor"])
-    assert len(value["requests"]) == 1
-    row = value["requests"][0]
+    assert [r["url"].rsplit("#", 1)[1] for r in value["requests"]] == [steer.id, message.id]
+    row = value["requests"][1]
     assert row["url"].endswith("#" + message.id)
     assert "PRIVATE" not in str(value) and "text" not in str(value)
     assert row["request"].startswith("ev-")
