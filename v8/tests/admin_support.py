@@ -37,13 +37,13 @@ class AdminEnv:
         return json.loads(self.tokens.read_text(encoding="utf-8"))
 
 
-def make_env(tmp_path: Path, monkeypatch) -> AdminEnv:
+def make_env(tmp_path: Path, monkeypatch, db: str = ":memory:") -> AdminEnv:
     tokens = tmp_path / "tokens.json"
     tokens.write_text(json.dumps({"owner": OWNER_TOKEN, "bob": BOB_TOKEN, "agents": {"eng.x": ENG_TOKEN}}),
                       encoding="utf-8")
     monkeypatch.setenv("EDP8_TOKENS", str(tokens))
     monkeypatch.setenv("EDP8_OWNER", "owner")
-    board = Board(Store(":memory:"))
+    board = Board(Store(db))
     app = create_app(board, admin_token=MACHINE_ADMIN)
     c = TestClient(app)
     for pid, role, typ in [("owner", "owner", "human"), ("bob", "owner", "human"), ("eng.x", "engineer", "agent")]:
