@@ -15,10 +15,12 @@ unit-testable without real processes; `main()` wires the real ones.
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 import time
+from pathlib import Path
 from typing import Callable
+
+from edp_contracts.proc import detach
 
 from . import run_state, settings
 from .run_state import git_rev
@@ -94,29 +96,80 @@ def make_probe(client) -> Callable[[str], bool]:
 
 
 def real_alive(svc: str) -> bool:
-    rec = run_state.read(svc)
-    return run_state._process_alive(rec.get("pid")) if rec else False
+    return run_state.record_alive(run_state.read(svc))
 
 
-def _launcher_cmd(svc: str) -> list[str]:
-    """Restart goes through the platform launcher so there is ONE way to start a service
-    (design §22 rule 2). start.ps1/start.sh --restart <svc> stops+starts just that service."""
-    home = str(settings.home() or ".")
-    if os.name == "nt":
-        return ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
-                "-File", os.path.join(home, "start.ps1"), "-Restart", svc]
-    return ["bash", os.path.join(home, "start.sh"), "--restart", svc]
+# ------------------------------------------------------------- relaunch (S2: no shell, sys.executable)
+# A dead service is started again the way the launcher started it, minus the shell: `<python> -m
+# <module>` in the launcher's working dir, with the launcher's environment (this process inherited it
+# from start.*). Before S2 this went through `powershell start.ps1 -Restart`, which only ran on Windows.
+_MODULES = {"board": "edp8.service", "broker": "edp_broker.main", "pool": "edp_pool.main",
+            "mcp": "edp8.mcp_server", "bridge": "edp8.slack_bridge"}
+
+
+def _venv_python(d: Path) -> Path:
+    return d / ".venv" / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+
+
+def _home() -> Path:
+    return Path(settings.home() or os.getcwd())
+
+
+def service_python(svc: str) -> str:
+    """EDP_<SVC>_PYTHON, else the venv the launcher uses for it, else this interpreter."""
+    configured = settings.env_raw(f"EDP_{svc.upper()}_PYTHON")
+    if configured:
+        return configured
+    own = {"pool": settings.get("EDP_POOL_DIR"), "broker": _home().parent / "edp-broker"}.get(svc)
+    if own is not None and _venv_python(Path(own)).is_file():
+        return str(_venv_python(Path(own)))
+    return sys.executable
+
+
+def service_cwd(svc: str) -> Path:
+    # uv run --directory <edp-broker> is how start.* runs the broker; everything else runs in the home
+    if svc == "broker" and (_home().parent / "edp-broker").is_dir():
+        return _home().parent / "edp-broker"
+    return _home()
+
+
+def service_argv(svc: str) -> list[str]:
+    return [service_python(svc), "-m", _MODULES[svc]]
+
+
+def relaunch(svc: str, *, wait_s: float = 60.0) -> dict:
+    """Stop what is left of `svc` (recorded pid tree + the port's listener, by ProcId), start it again
+    outside this process's tree, wait for its listener, and record it. Returns the new record."""
+    old = run_state.read(svc) or {}
+    port = old.get("port") or run_state.SERVICES.get(svc, {}).get("port")
+    stopped = run_state.stop_service(svc)
+    if stopped["still_running"]:
+        raise RuntimeError(f"{svc}: could not stop {stopped['still_running']}")
+    data = settings.data_dir()
+    data.mkdir(parents=True, exist_ok=True)
+    ident, _ = detach(service_argv(svc), cwd=str(service_cwd(svc)), env=settings.environ_copy(),
+                      log=str(data / f"{svc}.log"))
+    pid = ident.pid
+    deadline = time.monotonic() + wait_s
+    while port and time.monotonic() < deadline:
+        lp = run_state.listener_pid(int(port))
+        if lp:
+            pid = lp
+            break
+        if not ident.live():
+            break
+        time.sleep(0.25)
+    run_state.write(svc, pid=pid, port=port, git_rev=git_rev())
+    return run_state.update(svc, restarts=int(old.get("restarts") or 0) + 1) or {}
 
 
 def make_restart(by: str = "supervisor") -> Callable[[str, str], None]:
     def restart(svc: str, reason: str) -> None:
         try:
-            subprocess.run(_launcher_cmd(svc), timeout=120,
-                           cwd=settings.home(),
-                           capture_output=True, text=True)
+            relaunch(svc)
         except Exception as e:  # noqa: BLE001
-            print(f"supervisor: restart of {svc} failed to launch: {e}", file=sys.stderr)
-        run_state.mark_restart(svc, reason, git_rev=git_rev())
+            print(f"supervisor: restart of {svc} failed: {e}", file=sys.stderr)
+        run_state.update(svc, last_restart_reason=reason)
     return restart
 
 

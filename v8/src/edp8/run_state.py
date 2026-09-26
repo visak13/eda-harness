@@ -99,10 +99,34 @@ def now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
+def _create_time(pid: int | None) -> float | None:
+    """The process start time that, with the pid, names the process (edp_contracts.proc.ProcId): a
+    record whose pid was reused by another process no longer matches it."""
+    from edp_contracts.proc import ProcId
+    ident = ProcId.try_of(pid) if pid else None
+    return ident.create_time if ident else None
+
+
+def _ident(rec: dict[str, Any] | None):
+    """The record's ProcId. Records written before S2 have no create_time: the pid's current process
+    stands in (the old behaviour)."""
+    from edp_contracts.proc import ProcId
+    if not rec or not rec.get("pid"):
+        return None
+    if rec.get("create_time") is not None:
+        return ProcId.from_json({"pid": rec["pid"], "create_time": rec["create_time"]})
+    return ProcId.try_of(int(rec["pid"]))
+
+
+def record_alive(rec: dict[str, Any] | None) -> bool:
+    ident = _ident(rec)
+    return bool(ident and ident.live())
+
+
 def write(service: str, *, pid: int, port: int | None, git_rev: str) -> dict[str, Any]:
     """Called by the launcher when it starts a service. Overwrites any stale file."""
-    rec = {"service": service, "pid": int(pid), "port": port, "git_rev": git_rev,
-           "started_at": now_iso(), "last_probe": None, "last_ok": None,
+    rec = {"service": service, "pid": int(pid), "create_time": _create_time(int(pid)), "port": port,
+           "git_rev": git_rev, "started_at": now_iso(), "last_probe": None, "last_ok": None,
            "last_restart_reason": None, "restarts": 0}
     _path(service).write_text(json.dumps(rec, indent=2), encoding="utf-8")
     return rec
@@ -126,8 +150,9 @@ def adopt(service: str, *, port: int) -> dict[str, Any] | None:
         started = datetime.fromtimestamp(psutil.Process(lp).create_time()).astimezone().isoformat(timespec="seconds")
     except Exception:  # noqa: BLE001 — psutil absent / process gone: fall back to now
         pass
-    rec = {"service": service, "pid": lp, "port": port, "git_rev": "unknown", "started_at": started,
-           "last_probe": None, "last_ok": None, "last_restart_reason": None, "restarts": 0}
+    rec = {"service": service, "pid": lp, "create_time": _create_time(lp), "port": port, "git_rev": "unknown",
+           "started_at": started, "last_probe": None, "last_ok": None, "last_restart_reason": None,
+           "restarts": 0}
     _path(service).write_text(json.dumps(rec, indent=2), encoding="utf-8")
     return rec
 
@@ -164,6 +189,7 @@ def mark_restart(service: str, reason: str, *, pid: int | None = None, git_rev: 
     rec["started_at"] = now_iso()
     if pid is not None:
         rec["pid"] = int(pid)
+        rec["create_time"] = _create_time(int(pid))
     if git_rev is not None:
         rec["git_rev"] = git_rev
     _path(service).write_text(json.dumps(rec, indent=2), encoding="utf-8")
@@ -206,7 +232,7 @@ def snapshot() -> list[dict[str, Any]]:
                          "note": "listener up (not launcher-started)" if listening else None})
             continue
         port = rec.get("port", spec["port"])
-        up = _process_alive(rec.get("pid")) or _port_listening(port)  # a live listener means up even
+        up = record_alive(rec) or _port_listening(port)  # a live listener means up even
         rows.append({                                                  # if pid bookkeeping is off (Git Bash winpid)
             "service": name,
             "state": "up" if up else "down",
@@ -323,52 +349,34 @@ def stop_service(service: str, *, timeout_s: float = 8.0) -> dict[str, Any]:
     {service, recorded, killed: [pids], still_running: [pids]}; `still_running` non-empty means the
     caller must print it and exit non-zero.
     """
+    from edp_contracts.proc import ProcId, kill_tree
+
     rec = read(service)
     out: dict[str, Any] = {"service": service, "recorded": rec is not None, "killed": [], "still_running": []}
     if rec is None:
         return out
-    try:
-        import psutil
-    except Exception:  # noqa: BLE001 — without psutil we cannot verify; report the pid as unverified
-        out["still_running"] = [int(rec.get("pid") or 0)] if rec.get("pid") else []
-        return out
-    targets: dict[int, Any] = {}
-
-    def add(pid: int | None) -> None:
-        if not pid or int(pid) == os.getpid():
-            return
-        try:
-            p = psutil.Process(int(pid))
-            for c in p.children(recursive=True):
-                targets.setdefault(c.pid, c)
-            targets.setdefault(p.pid, p)
-        except psutil.Error:
-            return
-
-    pid = rec.get("pid")
-    if service == "bridge":
-        if pid_cmdline_matches(pid, "edp8.slack_bridge"):
-            add(pid)
-    else:
-        add(pid)
+    targets: list[ProcId] = []
+    me = os.getpid()
+    ident = _ident(rec)
+    if ident is not None and ident.pid != me:
+        if service != "bridge" or pid_cmdline_matches(ident.pid, "edp8.slack_bridge"):
+            targets.append(ident)
     port = rec.get("port")
     if port:
-        add(listener_pid(int(port)))
-    procs = list(targets.values())
-    for p in procs:
-        try:
-            p.terminate()
-        except psutil.Error:
-            pass
-    gone, alive = psutil.wait_procs(procs, timeout=timeout_s / 2)
-    for p in alive:
-        try:
-            p.kill()
-        except psutil.Error:
-            pass
-    gone2, alive2 = psutil.wait_procs(alive, timeout=timeout_s / 2)
-    out["killed"] = sorted(p.pid for p in list(gone) + list(gone2))
-    still = sorted(p.pid for p in alive2)
+        lp = listener_pid(int(port))
+        lid = ProcId.try_of(lp) if lp and lp != me else None
+        if lid is not None and all(t.pid != lid.pid for t in targets):
+            targets.append(lid)
+    # snapshot-first tree kill per target (edp_contracts.proc): the pids are named by (pid, create_time),
+    # so a reused pid is never signalled
+    still: list[int] = []
+    for t in targets:
+        members = [t.pid, *(c.pid for c in (t.live().children(recursive=True) if t.live() else []))]
+        rep = kill_tree(t, grace=timeout_s / 2)
+        left = {s.pid for s in rep.survivors}
+        out["killed"].extend(p for p in members if p not in left)
+        still.extend(sorted(left))
+    out["killed"] = sorted(set(out["killed"]))
     # The listener is the contract: a survivor that re-bound the port is still "running".
     if port and _port_listening(int(port)):
         lp = listener_pid(int(port))

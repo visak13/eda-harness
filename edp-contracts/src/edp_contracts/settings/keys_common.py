@@ -113,6 +113,13 @@ declare("mcp.upload_root", "EDP8_UPLOAD_ROOT", "path", None, "Limits/tuning",
 declare("seats.skip_permissions", "EDP_SKIP_PERMISSIONS", "bool", False, "Seats & models",
         "Seats run without permission prompts (claude --dangerously-skip-permissions, codex "
         "danger-full-access).", restart_required="pool")
+# ---- the supervisor relaunches a dead service as `<python> -m <module>`, never through a shell (S2)
+for _svc, _dflt in (("board", "the supervisor's own python"), ("broker", "<repo>/edp-broker/.venv python"),
+                    ("pool", "<pool dir>/.venv python"), ("mcp", "the supervisor's own python"),
+                    ("bridge", "the supervisor's own python")):
+    declare(f"services.{_svc}.python", f"EDP_{_svc.upper()}_PYTHON", "path", None, "Paths",
+            f"Python the supervisor restarts the {_svc} service with.", default_doc=_dflt)
+
 # ---- external tools (edp_contracts.toolpath: the setting, else PATH; S2 s-b7ec13d748)
 declare("tools.node", "EDP_NODE_BIN", "path", None, "Seats & models",
         "node executable (Pi's cli.js, the codex seat's WebSocket monitor); default `node` on PATH.")

@@ -95,7 +95,7 @@ def test_bridge_is_supervised_by_process_liveness(monkeypatch):
     with httpx.Client() as client:
         probe = supervisor.make_probe(client)
         assert probe("bridge") is True  # our own pid is alive → portless probe true
-        monkeypatch.setattr(run_state, "_process_alive", lambda pid: False)
+        monkeypatch.setattr(run_state, "record_alive", lambda rec: False)
         assert probe("bridge") is False  # dead process → the supervisor counts a miss
 
 
@@ -151,3 +151,77 @@ def test_service_ports_follow_the_launcher_env(tmp_path):
     default = {k: v for k, v in env.items() if k not in ("EDP8_PORT", "EDP_BROKER_PORT", "EDP_POOL_PORT", "EDP8_MCP_PORT")}
     out = subprocess.run([sys.executable, "-c", probe], env=default, capture_output=True, text=True, timeout=60)
     assert out.stdout.strip() == "[9400, 9300, 9301, 9402, None]", out.stdout + out.stderr
+
+
+_STUB_SERVICE = r"""
+import http.server, os
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200); self.end_headers(); self.wfile.write(b"ok")
+    def log_message(self, *a):
+        pass
+http.server.HTTPServer(("127.0.0.1", int(os.environ["S2_STUB_PORT"])), H).serve_forever()
+"""
+
+
+def test_supervisor_relaunches_a_dead_service_with_python_and_no_shell(tmp_path, monkeypatch):
+    """S2 c-85355907fe: a dead service is restarted as `<python> -m <module>` (sys.executable by
+    default), outside the supervisor's tree, with no shell anywhere in its ancestry; the new record
+    names the listener by (pid, create_time)."""
+    import socket
+    import subprocess
+    import sys
+
+    import httpx
+    import psutil
+    from edp_contracts.proc import ProcId, kill_tree
+
+    from edp8 import supervisor
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    (tmp_path / "s2_stub_service.py").write_text(_STUB_SERVICE, encoding="utf-8")
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path))
+    monkeypatch.setenv("S2_STUB_PORT", str(port))
+    monkeypatch.setenv("EDP8_DATA", str(tmp_path / "data"))
+    monkeypatch.delenv("EDP_MCP_PYTHON", raising=False)
+    monkeypatch.setattr(run_state, "SERVICES", {"mcp": {"port": port, "health": "/healthz"}})
+    monkeypatch.setattr(supervisor, "_MODULES", {**supervisor._MODULES, "mcp": "s2_stub_service"})
+
+    # the service ran once and died: its record names a process that is gone
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    run_state.write("mcp", pid=dead.pid, port=port, git_rev="old")
+    assert supervisor.service_argv("mcp") == [sys.executable, "-m", "s2_stub_service"]
+
+    emitted = []
+    new = None
+    try:
+        with httpx.Client() as client:
+            sup = Supervisor(["mcp"], probe=supervisor.make_probe(client), alive=supervisor.real_alive,
+                             restart=supervisor.make_restart(), emit=lambda svc, r: emitted.append((svc, r)))
+            for _ in range(3):
+                sup.tick()
+        rec = run_state.read("mcp")
+        new = ProcId.from_json(rec)
+        assert emitted and emitted[0][0] == "mcp" and "consecutive failed probes" in emitted[0][1]
+        assert new is not None and new.live(), rec
+        assert rec["restarts"] == 1 and rec["pid"] == run_state.listener_pid(port)
+        assert httpx.get(f"http://127.0.0.1:{port}/healthz", timeout=5).status_code == 200
+        p = psutil.Process(new.pid)
+        assert p.cmdline()[-2:] == ["-m", "s2_stub_service"]
+        chain = []
+        q = p.parent()
+        while q is not None and q.pid != os.getpid():
+            chain.append(q.name().lower())
+            q = q.parent()
+        assert q is None, "the relaunched service is still inside the supervisor's tree"
+        shells = {"powershell.exe", "pwsh.exe", "cmd.exe", "bash", "bash.exe", "sh", "zsh", "pwsh"}
+        assert not shells & set(chain), chain
+    finally:
+        if new is not None:
+            kill_tree(new, grace=2.0)
+        lp = run_state.listener_pid(port)
+        if lp:
+            kill_tree(ProcId.try_of(lp), grace=2.0)
