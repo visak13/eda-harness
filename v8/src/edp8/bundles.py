@@ -1479,7 +1479,7 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
     args["model"], args["effort"] = choice.pool_model, choice.effort
     # C8 (s-a4fd5df319): this tool calls the pool directly, so it must carry the seat's EDP8_TOKEN like
     # POST /v1/sessions/spawn does — a token-less seat 401s in public mode. Fail closed: no token, no spawn.
-    minted = c.seat_token(pid, ticket_id)
+    minted = c.seat_token(pid, ticket_id, model=choice.model)
     if not minted.get("ok"):
         return minted
     if (minted.get("value") or {}).get("env"):

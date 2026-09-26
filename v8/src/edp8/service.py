@@ -294,10 +294,11 @@ class QuickTaskIn(BaseModel):
 
 
 class SessionActionIn(BaseModel):
-    """Body for POST /v1/sessions/{resume,reap,close}."""
+    """Body for POST /v1/sessions/{resume,reap,close,seat-token}."""
     participant_id: str
     ticket_id: str | None = None
     reason: str = ""
+    model: str | None = None  # seat-token only: the resolved model, for the Fable adversary gate (S4)
 
 
 class ServiceEventIn(BaseModel):
@@ -1289,6 +1290,9 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         if p is None or p.type != "agent" or p.role not in SPAWNABLE_ROLES:
             raise BoardError("scope", f"{b.participant_id!r} is not a registered seat of a spawnable role",
                              "register the seat first (spawn does), then ask for its token")
+        refused = board.fable_refusal(p.role.value, b.model)
+        if refused:  # S4 §4.11: the MCP spawn tool's path, gated like POST /v1/sessions/spawn
+            raise BoardError("scope", refused, "a human acknowledges it once: POST /v1/harness/fable-ack")
         token = _seat_secret(b.participant_id)
         env = {"EDP8_TOKEN": token} if token else {}
         env.update(seat_card_env(board.store.get("ticket", b.ticket_id) if b.ticket_id else None, p.role.value))
@@ -1336,6 +1340,9 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         why = seat_choice.unknown_model(b.role.value, choice.model, seat_choice.agent_home())
         if why:  # S-ADV finding 10: the catalog is a validation boundary, not a passthrough
             raise BoardError("invalid", why, "pick an id from GET /v1/models for that role")
+        refused = board.fable_refusal(b.role.value, choice.model)
+        if refused:  # S4 §4.11 (R5): no adversary on Fable before a human acknowledges the risk
+            raise BoardError("scope", refused, "a human acknowledges it once: POST /v1/harness/fable-ack")
         if board.store.get("participant", b.participant_id) is None:
             try:
                 board.participant_create("agent", b.role, b.participant_id, id_=b.participant_id,
@@ -1452,6 +1459,30 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         cat = seat_choice.catalog(seat_choice.agent_home())
         return ok({"roles": cat, "defaults": {r: ids[0] for r, ids in cat.items()}},
                   "a GPT id runs on the codex seat, a Claude id on the Claude seat")
+
+    @app.get("/v1/harness")
+    def harness_state(a: Participant = Depends(actor)):
+        """S4 (§4.11): the selected harnesses, the adversary's model and whether the Fable risk is acknowledged."""
+        from . import harness, seat_choice
+        reg = seat_choice._registry(seat_choice.agent_home())
+        picked = harness.selected(reg)
+        adv = (seat_choice.catalog(seat_choice.agent_home()).get("adversary") or [None])[0]
+        ack = harness.read_ack(harness.ack_path(board.store.path))
+        return ok({"harnesses": list(picked), "adversary_model": adv, "fable_ack": ack,
+                   "notice": harness.FABLE_RISK_NOTICE if adv == harness.FABLE else None},
+                  "set models.json `harnesses` to choose; an adversary on Fable needs POST /v1/harness/fable-ack")
+
+    @app.post("/v1/harness/fable-ack")
+    def harness_fable_ack(a: Participant = Depends(actor)):
+        """S4 (§4.11, R5): a HUMAN records once that an adversary on Fable may decline or soften a review."""
+        from . import harness
+        if a.type != "human":
+            raise BoardError("scope", "only a human acknowledges the Fable adversary risk",
+                             "ask the owner to acknowledge it in the web UI or with their token")
+        path = harness.ack_path(board.store.path)
+        if path is None:
+            raise BoardError("invalid", "an in-memory board keeps no acknowledgement", "run the board on a file")
+        return ok(harness.write_ack(path, a.id), "adversary spawns on Fable are now allowed")
 
     @app.get("/v1/pool/capabilities")
     def pool_capabilities(a: Participant = Depends(actor)):

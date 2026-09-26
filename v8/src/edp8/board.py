@@ -21,7 +21,7 @@ from collections.abc import Iterable, Iterator
 from datetime import datetime, timezone
 from typing import Any
 
-from . import knowledge, records, seat_choice
+from . import harness, knowledge, records, seat_choice
 from .schemas import (
     CRITERION_AUTHORS,
     CRITERION_CHECKERS,
@@ -949,6 +949,10 @@ class Board:
             if token:  # a present minter returning None is trusted mode (no tokens.json) → header-only
                 env = {"EDP8_TOKEN": token}
         choice = self.seat_choice_for(ticket_id, role=role)  # the epic's per-role model + effort
+        refused = self.fable_refusal(role, choice.model)
+        if refused:  # S4 §4.11: stays queued until a human acknowledges the Fable adversary risk
+            _log.warning("pairing spawn for %s held: %s", participant_id, refused)
+            return False
         try:
             res = self._pool_adapter().spawn(role, participant_id, env=env,
                                              model=choice.pool_model, effort=choice.effort)
@@ -959,6 +963,11 @@ class Board:
             _log.warning("pairing spawn for %s refused: %s", participant_id, res.get("error"))
             return False
         return True
+
+    def fable_refusal(self, role: str | None, model: str | None) -> str | None:
+        """S4 (design-e963c656f5 §4.11, R5): an adversary seat on Fable is refused until a human has
+        acknowledged the risk once (harness.py; the record sits beside this board's database)."""
+        return harness.fable_refusal(role, model, harness.ack_path(self.store.path))
 
     def autolink_library(self, ticket_id: str, *, trigger: str) -> list[dict[str, Any]]:
         """S-IMPLICIT: link the Library docs whose tags match this epic/quick task (library.autolink)."""

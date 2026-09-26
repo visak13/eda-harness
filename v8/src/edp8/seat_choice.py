@@ -38,7 +38,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
-from edp8 import settings
+from edp8 import harness, settings
 
 MODEL_TAG = "seat-model:"
 ROLE_MODEL_TAG = "model:"    # model:<role>=<id>, one per role (S-ROLES)
@@ -143,11 +143,13 @@ def _registry(home: str | os.PathLike | None) -> dict[str, Any]:
 def catalog(home: str | os.PathLike | None) -> dict[str, list[str]]:
     """The per-role model catalog from models.json `role_models` ({role: [ids]}, first = default).
     Absent or malformed answers {} — a spawn then falls to the pool's role→seat default."""
-    table = _registry(home).get(CATALOG_KEY)
+    reg = _registry(home)
+    table = reg.get(CATALOG_KEY)
     if not isinstance(table, dict):
         return {}
-    return {str(r): [str(m) for m in ids if m] for r, ids in table.items()
-            if isinstance(ids, list) and any(ids)}
+    # S4 (§4.11): only models on a selected harness; the adversary falls back to Fable without codex
+    return harness.filter_catalog({str(r): [str(m) for m in ids if m] for r, ids in table.items()
+                                   if isinstance(ids, list) and any(ids)}, reg)
 
 
 def seat_names(home: str | os.PathLike | None) -> set[str]:

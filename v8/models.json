@@ -54,6 +54,8 @@
     "adversary": "checker",
     "qa": "advisor"
   },
+  "harnesses": ["claude", "codex", "pi"],
+  "_harnesses_note": "2026-09-26 S4 (design-e963c656f5 §4.11, owner R4/R5): the seat harnesses this install uses; absent = all three, at least one of claude/codex. The role catalog keeps only models on a selected harness (edp8/harness.py). Without codex the adversary runs on Fable (claude-fable-5-1) and the board refuses that spawn until a human POSTs /v1/harness/fable-ack (Fable may decline or soften an adversarial review). Pi setup: guides/pi-seat.md.",
   "role_models": {
     "architect": ["claude-fable-5-1", "claude-opus-5-5", "gpt-6-astra"],
     "engineer": ["claude-opus-5-5", "gpt-6-sol"],
