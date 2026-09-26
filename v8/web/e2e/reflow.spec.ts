@@ -8,11 +8,11 @@ test.use({ boardFile: "reflow" }); // one fresh board per spec file (fixtures.ts
 
 // Criterion c-10bd85c316 @ 1024×768: the shell reflows without horizontal overflow, the sidebar
 // collapses to a 56px icon rail (nav still keyboard-reachable), and the ruling drawer spans the
-// viewport minus 20px margins.
+// viewport minus 20px margins. (The 56px auto-collapse is now the S17 per-viewer 64px toggle.)
 //
 // BUILT @ 1024 (design §4.2 amended breakpoint ≤1024, commit b4b4dc5):
-//  • sidebar 56px collapse — AppShell.module.css `@media (max-width: 1279px)` sets .sidebar 56,
-//    .header left 56, .main margin-left 96 (1024 ≤ 1279).
+//  • sidebar icon rail — AppShell.module.css `.shell[data-rail="collapsed"]` sets .sidebar 64 and
+//    .main margin-left 64 when the viewer presses Collapse menu (S17 c-33ffd96baf, remembered per viewer).
 //  • drawer margins (width === vw-40, insets 20) — Drawer.module.css `.panel` has margin:20 +
 //    max-width:calc(100vw - 40px); the inline width:1112 clamps to 984 at 1024 in a flex-end scrim.
 //  • NO horizontal overflow on Epics / Epic (S20: Epics replaced the Needs you page) — the
@@ -45,13 +45,16 @@ test("no horizontal overflow on the Epics list and the Epic page", async ({ page
   expect(await scrollWidth(page), "Epic page horizontal overflow").toBe(VW);
 });
 
-test("the sidebar collapses to a 56px icon rail, nav still keyboard-reachable", async ({ page }) => {
+// S2 (7606f28) retired the <=1279 auto-collapse and the S17 owner sweep (c-33ffd96baf, 182f15d) made the
+// icon rail a per-viewer toggle at 64px: at 1024 the menu stays full until the viewer collapses it.
+test("the sidebar collapses to a 64px icon rail on the viewer's toggle, nav still keyboard-reachable", async ({ page }) => {
   await page.goto(`${BASE()}/ui/epics?as=owner`);
   await expect(page.getByTestId("epic-list")).toBeVisible();
 
+  await page.getByRole("button", { name: "Collapse menu" }).click();
   const aside = page.getByRole("complementary", { name: "Primary" }); // the Status rail is a second <aside>
-  const ab = (await aside.boundingBox())!;
-  expect(Math.abs(ab.width - 56), "sidebar rail width").toBeLessThan(1);
+  await expect.poll(async () => (await aside.boundingBox())!.width, { message: "sidebar rail width" }).toBeCloseTo(64, 0);
+  expect(await scrollWidth(page), "collapsed rail: no horizontal overflow").toBe(VW);
 
   // Nav remains reachable by keyboard: Tab lands on a link inside the Sections nav.
   let onNav = false;
