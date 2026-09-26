@@ -18,7 +18,6 @@ from __future__ import annotations
 import argparse
 import copy
 import json
-import os
 import re
 import sys
 import threading
@@ -27,6 +26,8 @@ from typing import Any
 
 import httpx
 
+from . import settings
+
 _out_lock = threading.Lock()
 _EVENT_BUDGET_B = 2_000     # default byte cap per printed line (env-overridable)
 _OMITTED_RESERVE = 300      # room for the `omitted` receipt the cut adds
@@ -34,7 +35,7 @@ _OMITTED_RESERVE = 300      # room for the `omitted` receipt the cut adds
 
 def _event_budget() -> int:
     try:
-        return max(600, int(os.environ.get("EDP8_FEED_EVENT_B", _EVENT_BUDGET_B)))
+        return max(600, int(settings.get("EDP8_FEED_EVENT_B")))
     except ValueError:
         return _EVENT_BUDGET_B
 
@@ -104,7 +105,7 @@ def _headers(participant: str) -> dict[str, str]:
     """Identity headers for the board: the seat handle plus its per-seat secret (S20 mints
     EDP8_TOKEN into the spawn env; a tokened board 401s a bare X-Participant)."""
     h = {"X-Participant": participant}
-    token = os.environ.get("EDP8_TOKEN")
+    token = settings.get("EDP8_TOKEN")
     if token:
         h["X-Token"] = token
     return h

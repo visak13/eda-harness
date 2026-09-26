@@ -66,3 +66,20 @@ def no_seat_permission_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """A seat shell carries EDP_SKIP_PERMISSIONS=1 (bypass mode), which flips codex_seat.sandbox_for to
     danger-full-access; tests that assert the role sandbox must not inherit it. A test that wants it sets it."""
     monkeypatch.delenv("EDP_SKIP_PERMISSIONS", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def isolated_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every settings path (db, tokens, run dir, data dir) resolves under a temp root, never the fleet's
+    v8/ (a seat shell carries EDP8_HOME=<repo>/v8). EDP_DEV=1 keeps the 'dev' admin token legal, as the
+    suite was written against it (design-e963c656f5 §4.2: refused outside dev mode). A test that sets
+    EDP8_HOME itself still wins, EDP_HOME being cleared here. EDP_AGENT_HOME is cleared too: a seat shell
+    carries it (= the fleet v8/), and ui-avatars.json / ui-settings.json / models.json resolve there — a
+    test that wants an agent home sets it. EDP_POOL_AGENT_HOME likewise: against the temp EDP8_HOME it
+    would make every test board foreign to the pool (pool_adapter.foreign_board_reason). EDP8_PUBLIC_URL /
+    EDP8_HOST: a tailnet seat shell carries public mode, which refuses app start without real tokens."""
+    for name in ("EDP_HOME", "EDP8_RUN_DIR", "EDP8_DATA", "EDP8_DB", "EDP_CONFIG_DIR", "EDP_AGENT_HOME",
+                 "EDP_POOL_AGENT_HOME", "EDP8_PUBLIC_URL", "EDP8_HOST"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("EDP8_HOME", str(tmp_path_factory.mktemp("edp-home")))
+    monkeypatch.setenv("EDP_DEV", "1")

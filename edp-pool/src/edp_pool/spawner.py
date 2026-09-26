@@ -7,10 +7,11 @@
 """
 
 import logging
-import os
 import sys
 from abc import ABC, abstractmethod
 from pathlib import Path
+
+from edp_contracts import settings
 
 SpawnMode = str  # "headless" (drained ConPTY) | "monitor" (visible console)
 
@@ -182,7 +183,7 @@ class SubprocessSpawner(Spawner):
         # the caller's cwd. main.py passes this EXPLICITLY (computed from
         # the pool's own location) so a clone never resolves to a stray
         # EDP_AGENT_HOME pointing at the wrong repo (the eda-base3 leak).
-        self.cwd = cwd or os.environ.get("EDP_AGENT_HOME")
+        self.cwd = cwd or settings.env_raw("EDP_AGENT_HOME")
         self.log_dir = Path(log_dir) if log_dir else None
         self.claude_bin = claude_bin
         # 2026-05-28 stack-pinning: passed to every spawned shell's env so
@@ -252,8 +253,7 @@ class SubprocessSpawner(Spawner):
         # click-approve, so it's OFF by default (opt into autonomy with
         # EDP_SKIP_PERMISSIONS=1). The guard hook blocks stack-kills in
         # either mode regardless.
-        skip_perms = (mode != "monitor") or os.environ.get(
-            "EDP_SKIP_PERMISSIONS", "0").lower() in ("1", "true", "yes")
+        skip_perms = (mode != "monitor") or settings.get("EDP_SKIP_PERMISSIONS")
         # DESIGN-v7 1.5.4: the activation seam — an explicit line (the
         # park/resume path) wins over the role activator.
         activation_line = activation or activation_text(role, (extra_env or {}).get("EDP_CARD"))

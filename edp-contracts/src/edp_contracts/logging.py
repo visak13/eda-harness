@@ -8,7 +8,6 @@ Never ``print()`` — enforced by ruff flake8-print (T20) in pyproject
 
 import json
 import logging
-import os
 import re
 import sys
 from datetime import datetime, timezone
@@ -39,10 +38,11 @@ class _WindowsSafeRotatingHandler(TimedRotatingFileHandler):
                     pass
             self.rolloverAt = self.computeRollover(
                 int(__import__("time").time()))
-from pathlib import Path
 from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
+
+from . import settings
 
 # LogLevel stays `Literal` (not StrEnum): used only as a Pydantic field type.
 LogLevel = Literal["debug", "info", "warning", "error"]
@@ -125,7 +125,7 @@ def _log_discriminator() -> str | None:
     you can find a stalled worker's log by its handle. EDP_LOG_SUFFIX
     wins; else the sanitized EDP_HANDLE (plan:action / recipe:step);
     else None (single file — fine for the singleton pool/broker)."""
-    raw = os.environ.get("EDP_LOG_SUFFIX") or os.environ.get("EDP_HANDLE")
+    raw = settings.env_raw("EDP_LOG_SUFFIX") or settings.env_raw("EDP_HANDLE")
     if not raw:
         return None
     return re.sub(r"[^A-Za-z0-9._-]", "_", raw)[:60]
@@ -137,14 +137,11 @@ def _add_file_handler(log: logging.Logger, svc: str) -> None:
     EDP_LOG_RETENTION_DAYS (default 14). Best-effort: a logging failure
     must never crash the service, so swallow setup errors."""
     try:
-        log_dir = Path(os.environ.get("EDP_LOG_DIR", ".logs"))
+        log_dir = settings.get("EDP_LOG_DIR")
         log_dir.mkdir(parents=True, exist_ok=True)
         disc = _log_discriminator()
         name = f"{svc}-{disc}.log" if disc else f"{svc}.log"
-        try:
-            keep = int(os.environ.get("EDP_LOG_RETENTION_DAYS", "14"))
-        except ValueError:
-            keep = 14
+        keep = settings.get("EDP_LOG_RETENTION_DAYS")
         fh = _WindowsSafeRotatingHandler(
             log_dir / name, when="midnight", backupCount=keep,
             encoding="utf-8", delay=True,
@@ -163,7 +160,7 @@ def _level_from_env() -> int:
     read paths (broker inbox polls every ~2s per rx subscription) are now
     logged at debug — with INFO as the default they cost nothing; set
     EDP_LOG_LEVEL=debug to see them while troubleshooting."""
-    name = os.environ.get("EDP_LOG_LEVEL", "info").strip().lower()
+    name = settings.get("EDP_LOG_LEVEL").strip().lower()
     return {
         "debug": logging.DEBUG,
         "info": logging.INFO,

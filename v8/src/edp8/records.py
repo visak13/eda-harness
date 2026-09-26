@@ -19,10 +19,11 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from pathlib import Path
 from typing import Any
+
+from edp8 import settings
 
 from . import knowledge
 from .schemas import (Check, ClaimBasis, ClaimStatus, DecisionStatus, LessonStatus, MessageKind,
@@ -37,13 +38,12 @@ DECISION_TEXT = 240  # Decision.text max_length
 DECISION_DETAIL = 1000  # Decision.detail max_length
 ACCEPT = re.compile(r"^\s*(?:\[[^\]]*\]\s*)?(?:accept(?:ed|s)?|approved?|agreed?|go|yes)\b", re.I)
 ACCEPTERS = (Role.architect, Role.owner, Role.sme)  # who accepts a deviation
-PAIN_FILE_DEFAULT = Path(__file__).resolve().parents[2] / ".pain" / "pain-points.jsonl"
 
 
 def auto_cap() -> int:
     """Auto-records allowed per epic (EDP8_AUTO_RECORD_CAP, default 60)."""
     try:
-        return max(0, int(os.environ.get("EDP8_AUTO_RECORD_CAP", "60")))
+        return max(0, settings.get("EDP8_AUTO_RECORD_CAP"))
     except ValueError:
         return 60
 
@@ -189,7 +189,8 @@ def decision_from_gate(board: Any, actor: Participant, ticket_id: str, gate: str
 
 
 def pain_file() -> Path:
-    return Path(os.environ.get("EDP8_PAIN_FILE") or PAIN_FILE_DEFAULT)
+    """The pain-point log: EDP8_PAIN_FILE, default <home>/.pain/pain-points.jsonl (dev: <repo>/v8/.pain)."""
+    return settings.get("EDP8_PAIN_FILE")
 
 
 def read_pains(path: Path) -> list[dict[str, Any]]:

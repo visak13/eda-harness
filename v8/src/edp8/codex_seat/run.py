@@ -27,6 +27,8 @@ import sys
 import time
 from pathlib import Path
 
+from edp8 import settings
+
 from .jobobj import bind_to_kill_job
 from .seat import CodexSeat
 
@@ -94,7 +96,7 @@ def resume_prompt(handle: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    env = os.environ
+    env = settings.environ_copy()
     role = env.get("EDP_ROLE", "owner")
     handle = env.get("EDP_HANDLE", f"{role}.codex")
     agent_home = Path(env.get("EDP_AGENT_HOME") or os.getcwd()).resolve()

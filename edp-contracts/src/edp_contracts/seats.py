@@ -28,6 +28,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import settings
+
 _CONFIG_ENV = "EDP_MODELS_CONFIG"
 
 #: The fleet-wide Claude effort cap (user ruling 2026-08-04).
@@ -60,9 +62,9 @@ class Seat:
 
 
 def config_path(agent_home: str | os.PathLike) -> Path:
-    override = os.environ.get(_CONFIG_ENV, "").strip()
+    override = settings.get(_CONFIG_ENV)
     if override:
-        return Path(override)
+        return override
     return Path(agent_home) / "models.json"
 
 

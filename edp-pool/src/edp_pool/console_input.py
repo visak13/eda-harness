@@ -24,10 +24,11 @@ both routes.
 """
 
 import ctypes
-import os
 import subprocess
 import sys
 import time
+
+from edp_contracts import settings
 
 _GENERIC_READ = 0x80000000
 _GENERIC_WRITE = 0x40000000
@@ -160,8 +161,7 @@ def _helper_main(argv: list[str]) -> int:
         return 3
     text = sys.stdin.read().rstrip("\r\n")
     try:
-        delay = float(os.environ.get(_SUBMIT_DELAY_ENV,
-                                     _SUBMIT_DELAY_DEFAULT_MS))
+        delay = float(settings.get(_SUBMIT_DELAY_ENV))
     except ValueError:
         delay = _SUBMIT_DELAY_DEFAULT_MS
     k32 = ctypes.windll.kernel32
@@ -170,8 +170,7 @@ def _helper_main(argv: list[str]) -> int:
         return 2
     try:
         try:
-            defer_max = float(os.environ.get(_DEFER_MAX_ENV,
-                                             _DEFER_MAX_DEFAULT_S))
+            defer_max = float(settings.get(_DEFER_MAX_ENV))
         except ValueError:
             defer_max = _DEFER_MAX_DEFAULT_S
         deadline = time.monotonic() + max(0.0, defer_max)

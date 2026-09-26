@@ -12,6 +12,8 @@ from pathlib import Path
 import stat
 import sys
 
+from edp8 import settings
+
 from .uploads import MAX_UPLOAD_BYTES
 
 
@@ -87,8 +89,7 @@ def main():
     from .client import BoardClient
     try:
         args = json.loads(sys.stdin.read(65536))
-        root = os.environ.get('EDP8_UPLOAD_ROOT')
-        client = BoardClient(workspace_root=Path(root) if root else None)
+        client = BoardClient(workspace_root=settings.get('EDP8_UPLOAD_ROOT'))
         out = client.artifact_upload(args['path'], args.get('note', ''))
     except (ValueError, KeyError, OSError) as exc:
         out = {'ok': False, 'error': {'code': 'upload_refused', 'message': str(exc)}, 'hint': 'check the local upload arguments'}

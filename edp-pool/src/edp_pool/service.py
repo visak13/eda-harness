@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 
 import httpx
 from edp_contracts import HealthStatus, Microservice, Tool, get_logger, mount
+from edp_contracts import settings as edp_settings
 from edp_contracts.errors import ErrorCode
 
 from .spawner import FakeSpawner, Spawner
@@ -27,12 +28,11 @@ _VERSION = "1.0.0"
 
 
 def _env_int(name: str, default: int) -> int:
-    """An int env knob that degrades to its default on garbage — a typo in
-    a .bat file must never crash the pool or (worse) zero a capacity cap."""
-    try:
-        return int(os.environ.get(name, str(default)))
-    except ValueError:
-        return default
+    """An int knob (a declared setting) that degrades to its default on garbage —
+    a typo in a .bat file must never crash the pool or (worse) zero a capacity cap.
+    The registry already falls back to the declared default on an unparseable value."""
+    v = edp_settings.get(name)
+    return default if v is None else v
 
 
 # ── DESIGN-v7 1.2: the capacity model, split into THREE knobs ──────────────
@@ -268,7 +268,7 @@ def require_loopback_bind() -> None:
     and the panel's mutating endpoints suspend processes and forward messages.
     So the panel refuses to serve at all rather than trust the default held.
     """
-    host = os.environ.get("EDP_POOL_HOST", "127.0.0.1")
+    host = edp_settings.get("EDP_POOL_HOST")
     if not is_loopback_host(host):
         raise PanelRefused(403, (
             f"REFUSED: the W12 panel serves on loopback ONLY, but this pool is "
@@ -361,7 +361,7 @@ def stamp_panel_channel(payload: dict, *, remote: str | None = None) -> dict:
 
 
 def _pause_token_dir(state_path: Path | None) -> Path:
-    d = os.environ.get("EDP_POOL_PAUSE_TOKENS")
+    d = edp_settings.get("EDP_POOL_PAUSE_TOKENS")
     if d:
         return Path(d)
     base = state_path.parent if state_path else Path(".pool-logs")
@@ -372,7 +372,7 @@ def _pause_deadline_secs() -> float:
     """The auto-resume deadline handed to the watchdog. A freeze that outlives
     it is resumed by the net, not left holding a pool lock forever."""
     try:
-        return float(os.environ.get("EDP_PAUSE_MAX_SECS", "1800"))
+        return float(edp_settings.get("EDP_PAUSE_MAX_SECS"))
     except ValueError:
         return 1800.0
 
@@ -638,11 +638,8 @@ class PoolService(Microservice):
         purpose) but are still real Claude/MCP/Monitor process trees;
         without this, park-N/spawn-N cycles grew them without bound.
         Default: 2x the total-shells throughput cap."""
-        try:
-            return int(os.environ.get(
-                "EDP_MAX_LIVE_SHELLS", str(self.max_total_shells() * 2)))
-        except ValueError:
-            return self.max_total_shells() * 2
+        v = edp_settings.get("EDP_MAX_LIVE_SHELLS")  # garbage → unset (registry)
+        return v if v is not None else self.max_total_shells() * 2
 
     def set_limits(self, updates: dict) -> dict:
         """Apply {max_workers|max_planners|max_total_shells: int|None};
@@ -734,8 +731,7 @@ class PoolService(Microservice):
         """Start the parked-handle resume watchdog (daemon thread). Gated by
         EDP_RESUME_WATCHDOG (default ON) so an operator can fall back to the
         neuron-heartbeat backstop alone while debugging."""
-        if os.environ.get("EDP_RESUME_WATCHDOG", "1").lower() not in (
-                "1", "true", "yes", "on"):
+        if not edp_settings.get("EDP_RESUME_WATCHDOG"):
             _log.info("resume_watchdog_disabled",
                       "EDP_RESUME_WATCHDOG is off")
             return
@@ -1050,7 +1046,7 @@ class PoolService(Microservice):
             spawn_settings = {
                 "role": role, "handle": handle, "parent": parent, "mode": mode,
                 "model": model, "cwd": self._spawner_agent_home()
-                or os.environ.get("EDP_AGENT_HOME"),
+                or edp_settings.env_raw("EDP_AGENT_HOME"),
                 "env": dict(env) if env else {},
                 # p-fb874501: the board's resume_self tells a fresh spawn from a continued
                 # conversation by this (and the row's resumed_at) — None = a fresh session
@@ -1115,8 +1111,7 @@ class PoolService(Microservice):
             if holder_state == "starting":
                 _row = self.sessions.get(holder) or {}
                 _age = self._age_secs(_row.get("spawned_at"))
-                _grace = float(os.environ.get(
-                    "EDP_STARTING_REAP_GRACE_SECS", "180"))
+                _grace = float(edp_settings.get("EDP_STARTING_REAP_GRACE_SECS"))
                 if _age is None or _age <= _grace:
                     return Tool.propagate(
                         source="edp-pool",
@@ -1183,7 +1178,7 @@ class PoolService(Microservice):
         from .spawner import seat_model_for
         resolved_model = model or seat_model_for(
             role, self._spawner_agent_home()
-            or os.environ.get("EDP_AGENT_HOME"))
+            or edp_settings.env_raw("EDP_AGENT_HOME"))
         # STEP log AROUND the launch — it's the blocking part (PTY spawn
         # + wait_ready); a slow/hung launch now shows launch_start with no
         # launch_done in edp-pool.log.
@@ -1469,11 +1464,9 @@ class PoolService(Microservice):
         shell's cwd with every non-alphanumeric character replaced by '-'
         (Claude Code's own scheme, e.g. C:\\x\\claude → C--x-claude); the
         spawned shells' cwd is the spawner's agent-home pin."""
-        from .pty_launcher import _CLAUDE_POOL_CONFIG_DIR
-        cfg = Path(os.environ.get(
-            "EDP_CLAUDE_CONFIG_DIR", str(_CLAUDE_POOL_CONFIG_DIR)))
+        cfg = edp_settings.get("EDP_CLAUDE_CONFIG_DIR")  # default: pty_launcher._CLAUDE_POOL_CONFIG_DIR
         cwd = (getattr(self.spawner, "cwd", None)
-               or os.environ.get("EDP_AGENT_HOME") or os.getcwd())
+               or edp_settings.env_raw("EDP_AGENT_HOME") or os.getcwd())
         key = "".join(c if c.isalnum() else "-" for c in str(cwd))
         return cfg / "projects" / key / f"{claude_session_id}.jsonl"
 
@@ -1773,7 +1766,7 @@ class PoolService(Microservice):
         # resolves through the same operator precedence as a fresh spawn
         # (monitor by default — no invisible resumed shell either).
         mode = (settings.get("mode") or s.get("mode")
-                or os.environ.get("EDP_SPAWN_MODE", "monitor"))
+                or edp_settings.get("EDP_SPAWN_MODE"))
         model = settings.get("model") or s.get("model")
         parent = settings.get("parent") or s.get("parent")
         extra_env = settings.get("env") or None
@@ -1921,7 +1914,7 @@ class PoolService(Microservice):
             self.locks[handle] = sid   # RE-TAKE the freed handle lock
             self._persist()
         role = settings.get("role") or s.get("role") or "planner"
-        mode = settings.get("mode") or s.get("mode") or os.environ.get("EDP_SPAWN_MODE", "monitor")
+        mode = settings.get("mode") or s.get("mode") or edp_settings.get("EDP_SPAWN_MODE")
         model = settings.get("model") or s.get("model")
         parent = settings.get("parent") or s.get("parent")
         extra_env = settings.get("env") or None
@@ -2256,18 +2249,16 @@ class PoolService(Microservice):
                 "note": f"{sid}: {killed}; released {handle!r}"}
 
 
-#: The static panel app. `edp-pool/src/edp_pool/service.py` → parents[2] is the
-#: edp-pool repo root, self-located exactly like main.py's `_root`.
-_STATIC_DIR = Path(__file__).resolve().parents[2] / "static"
+#: The static panel app — package data, so an installed wheel carries it.
+_STATIC_DIR = Path(__file__).parent / "static"
 
-#: The sibling claude repo, whose `.recipes/<id>/briefs/*.md` the panel's plan
-#: review renders. Self-located (parents[3] == <root>), same discipline as
-#: main.py: a clone reads its OWN briefs, never a stray inherited path.
-_AGENT_HOME = Path(__file__).resolve().parents[3] / "claude"
+#: The v7 claude repo, whose `.recipes/<id>/briefs/*.md` the panel's plan
+#: review renders (EDP_POOL_CLAUDE_HOME; dev mode: <repo>/claude).
+_AGENT_HOME = edp_settings.get("EDP_POOL_CLAUDE_HOME")
 
 
 def _briefs_dir(recipe_id: str) -> Path:
-    home = Path(os.environ.get("EDP_AGENT_HOME") or _AGENT_HOME)
+    home = Path(edp_settings.env_raw("EDP_AGENT_HOME") or _AGENT_HOME)
     return (home / ".recipes" / recipe_id / "briefs").resolve()
 
 
@@ -2295,9 +2286,9 @@ def spawn_neuron_driver(recipe_id: str, cmd: str, heartbeat_secs: float,
     it fires run in whatever window the cmd opens)."""
     import subprocess
     claude_dir = Path(
-        os.environ.get("EDP_AGENT_HOME")
-        or Path(__file__).resolve().parents[3] / "claude")
-    log_dir = Path(__file__).resolve().parents[2] / ".pool-logs"
+        edp_settings.env_raw("EDP_AGENT_HOME")
+        or edp_settings.get("EDP_POOL_CLAUDE_HOME"))
+    log_dir = edp_settings.get("EDP_POOL_DIR") / ".pool-logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     safe = "".join(c if c.isalnum() or c in "-._" else "_" for c in recipe_id)
     log = open(log_dir / f"neuron-driver-{safe}.log", "a", encoding="utf-8")
@@ -2332,8 +2323,8 @@ def run_recipe_ctl(verb: str, recipe_id: str, timeout_s: float = 300) -> dict:
     anything past `timeout_s` returns an honest error, never a hang."""
     import subprocess
     claude_dir = Path(
-        os.environ.get("EDP_AGENT_HOME")
-        or Path(__file__).resolve().parents[3] / "claude")
+        edp_settings.env_raw("EDP_AGENT_HOME")
+        or edp_settings.get("EDP_POOL_CLAUDE_HOME"))
     try:
         proc = subprocess.run(
             ["uv", "run", "--project", str(claude_dir), "python",
@@ -2404,7 +2395,7 @@ def create_app(
         # mode — it's an operator/monitoring concern, off the PoolPort.
         from .spawn_defaults import load_spawn_defaults
         mode = b.get("mode") or load_spawn_defaults().get(
-            "spawn_mode") or os.environ.get("EDP_SPAWN_MODE", "monitor")
+            "spawn_mode") or edp_settings.get("EDP_SPAWN_MODE")
         # epic-6a8a6020fd seat-choice (owner m-2d7ef9243d): optional `effort` (low|medium|high)
         # rides the shell env as EDP_SEAT_EFFORT — so it is recorded in spawn_settings.env and a
         # resume-from-closed re-applies it. The Pi backend maps it to the thinking level

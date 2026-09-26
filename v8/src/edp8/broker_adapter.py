@@ -15,12 +15,13 @@ are used here.
 from __future__ import annotations
 
 import logging
-import os
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
 import httpx
+
+from . import settings
 
 log = logging.getLogger("edp8.broker")
 
@@ -39,7 +40,7 @@ KIND_MAP = {
 
 
 def broker_url() -> str | None:
-    return os.environ.get("EDP_BROKER_URL") or None
+    return settings.get("EDP_BROKER_URL") if settings.is_set("EDP_BROKER_URL") else None
 
 
 def publish(from_: str, to: str, kind: str, body: dict[str, Any]) -> bool:

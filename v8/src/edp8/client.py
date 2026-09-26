@@ -8,11 +8,12 @@ data, not exceptions. Only a connection failure raises, with a clear message.
 from __future__ import annotations
 
 import contextlib
-import os
 from pathlib import Path
 from typing import Any
 
 import httpx
+
+from . import settings
 
 
 class BoardUnreachable(Exception):
@@ -25,9 +26,9 @@ class BoardClient:
     def __init__(self, base_url: str | None = None, participant: str | None = None,
                  admin_token: str | None = None, client: httpx.Client | None = None,
                  token: str | None = None, workspace_root: Path | None = None):
-        self.base_url = (base_url or os.environ.get("EDP8_BOARD_URL", "http://127.0.0.1:9400")).rstrip("/")
-        self.participant = participant or os.environ.get("EDP8_PARTICIPANT") or os.environ.get("EDP_HANDLE")
-        self.admin_token = admin_token if admin_token is not None else os.environ.get("EDP8_ADMIN_TOKEN")
+        self.base_url = (base_url or settings.get("EDP8_BOARD_URL")).rstrip("/")
+        self.participant = participant or settings.get("EDP8_PARTICIPANT")
+        self.admin_token = admin_token if admin_token is not None else settings.get("EDP8_ADMIN_TOKEN")
         # §24.1(c): a per-request seat secret. On the shared MCP proxy the process env EDP8_TOKEN is
         # the PROXY's own token, wrong for every seat behind it — the request token (forwarded from
         # the caller's X-Token) must win over the env so a minted-token seat authenticates as itself.
@@ -40,7 +41,7 @@ class BoardClient:
         h: dict[str, str] = {}
         if self.participant:
             h["X-Participant"] = self.participant
-        token = self.token if self.token is not None else os.environ.get("EDP8_TOKEN")
+        token = self.token if self.token is not None else settings.get("EDP8_TOKEN")
         if token:  # the request token (forwarded X-Token) wins over the proxy's process env (§24.1(c))
             h["X-Token"] = token
         if admin and self.admin_token:

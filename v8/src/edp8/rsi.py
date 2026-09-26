@@ -26,7 +26,6 @@ import hashlib
 import importlib.util
 import json
 import logging
-import os
 import sys
 import threading
 import time
@@ -34,22 +33,23 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
-from . import knowledge
+from . import knowledge, settings
 from .schemas import (EventKind, Message, MessageKind, Participant, Policy, Role, RsiRun, RsiState,
                       Ticket, now)
 from .store import Store, new_id
 
 _log = logging.getLogger("edp8.rsi")
 
-V8_ROOT = Path(__file__).resolve().parents[2]
+# the dev checkout (EDP_HOME = <repo>/v8) holds the tracked exams; no home set = the process cwd
+V8_ROOT = settings.home() or Path(".").resolve()
 MANIFEST = V8_ROOT / "tests" / "rsi" / "manifest.json"
 STATE_ID = "rsi-state"
 P0 = "p-0"
 DEBOUNCE_ROWS = 20                      # §3 T1: fire when >= 20 rows differ ...
 DEBOUNCE_AGE = timedelta(hours=24)      # ... or the last consumed run is older than 24 h
 LEASE = timedelta(minutes=15)           # single-flight lease; a crashed tick frees it after this
-RAM_FLOOR_MB = int(os.environ.get("EDP8_RSI_RAM_FLOOR_MB", "1500"))
-INTERVAL_S = float(os.environ.get("EDP8_RSI_INTERVAL_S", "900"))
+RAM_FLOOR_MB = settings.get("EDP8_RSI_RAM_FLOOR_MB")
+INTERVAL_S = settings.get("EDP8_RSI_INTERVAL_S")
 FIRST_WAIT_S = 60.0                     # let the board listen and the index hydrate before the first tick
 CODE_MODULES = ("knowledge", "search", "store", "exam")  # §3 T2: the retrieval code a regression lives in
 REQUIRED_FIELDS = ("expected_ids", "required_ids")
@@ -599,7 +599,7 @@ def start_thread(board: Any, *, interval_s: float | None = None,
         w = wait
         while not stop.wait(w):
             w = interval
-            if os.environ.get("EDP8_RSI") != "1":
+            if not settings.get("EDP8_RSI"):
                 _log.info("EDP8_RSI unset: rsi sweep stops")
                 return
             try:
@@ -620,12 +620,12 @@ def _cli_board(db: str) -> Any:
     from .search import Index, VectorCache, make_embedder
     store = Store(db)
     try:
-        cache = VectorCache(os.environ.get("EDP8_VEC_CACHE", str(db) + ".vec"))
+        cache = VectorCache(str(settings.get("EDP8_VEC_CACHE") or str(db) + ".vec"))
     except Exception:
         cache = None
     index = Index(embedder=make_embedder(), cache=cache)
     index.rebuild(store.all_text_units())
-    deadline = time.monotonic() + float(os.environ.get("EDP8_RSI_WARM_S", "900"))
+    deadline = time.monotonic() + settings.get("EDP8_RSI_WARM_S")
     while index.status().get("warming") and time.monotonic() < deadline:
         time.sleep(1.0)
     return Board(store, index)
@@ -637,13 +637,13 @@ def main(argv: list[str] | None = None) -> int:
     t = sub.add_parser("tick", help="one monitor step")
     t.add_argument("--dry-run", action="store_true", help="evaluate and print; write nothing")
     t.add_argument("--force", action="store_true", help="run even when no trigger is pending")
-    t.add_argument("--db", default=None, help="board DB (default EDP8_DB or EDP8_HOME/edp8.db)")
+    t.add_argument("--db", default=None, help="board DB (default EDP8_DB, else <data>/edp8.db)")
     t.add_argument("--manifest", default=None, type=Path)
     s = sub.add_parser("show", help="print one rsi_run (or the state with no id)")
     s.add_argument("run_id", nargs="?")
     s.add_argument("--db", default=None)
     a = ap.parse_args(argv)
-    db = a.db or os.environ.get("EDP8_DB", str(Path(os.environ.get("EDP8_HOME", ".")) / "edp8.db"))
+    db = a.db or str(settings.get("EDP8_DB"))
     if a.cmd == "show":
         store = Store(db)
         obj = store.get("rsi_run", a.run_id) if a.run_id else _state(store)

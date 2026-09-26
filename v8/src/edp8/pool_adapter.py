@@ -13,20 +13,20 @@ Sessions are mirrored into the board (`PUT /v1/sessions/{id}`, admin) by
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
 import httpx
 
+from . import settings
 from .schemas import SessionState
 
-POOL_URL = os.environ.get("EDP_POOL_URL", "http://127.0.0.1:9301")
-POOL_ID = os.environ.get("EDP8_POOL_ID", "local")
+POOL_URL = settings.get("EDP_POOL_URL")
+POOL_ID = settings.get("EDP8_POOL_ID")
 
 
 def _env(name: str, default: str) -> str:
-    return os.environ.get(name, default)
+    return str(settings.get(name)) if settings.is_set(name) else default
 
 
 def _envelope(ok: bool, value: Any = None, error: str = "", hint: str = "", code: str = "pool") -> dict[str, Any]:
@@ -78,8 +78,8 @@ def foreign_board_reason() -> str | None:
     experiment — is a foreign board: its epics do not exist on the fleet board, so any seat it
     spawned would boot into nothing and burn a live shell (2026-09-08: qa.epic-2b3bea99e0). The
     gate sits here, the one choke point every spawn path (service tool, S22 pairing) goes through."""
-    agent_home = os.environ.get("EDP_POOL_AGENT_HOME") or os.environ.get("EDP_AGENT_HOME")
-    home = os.environ.get("EDP8_HOME")
+    agent_home = settings.env_raw("EDP_POOL_AGENT_HOME") or settings.env_raw("EDP_AGENT_HOME")
+    home = settings.home()
     if not agent_home or not home:
         return None
     try:
@@ -253,7 +253,7 @@ def sync_sessions(board_url: str | None = None, admin_token: str | None = None) 
     (d) a shell_dead/crashed event is emitted by the board only on a positive 'dead' answer
         carrying the pool's dead_reason (or the pool's own crash sweep, elsewhere)."""
     board_url = board_url or _env("EDP8_BOARD_URL", "http://127.0.0.1:9400")
-    admin_token = admin_token or _env("EDP8_ADMIN_TOKEN", "dev")
+    admin_token = admin_token or settings.admin_token()
     got = sessions()  # exactly ONE session list for the whole sweep — never re-listed per row
     if not got["ok"]:
         return got

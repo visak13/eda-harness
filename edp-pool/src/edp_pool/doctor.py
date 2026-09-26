@@ -30,13 +30,14 @@ well under the 10s budget (a down local host connection-refuses instantly).
 """
 
 import json
-import os
 import sys
 import time
 
 import httpx
+from edp_contracts import settings as edp_settings
 
 from .pty_launcher import (
+    _CLAUDE_POOL_CONFIG_DIR,
     ClaudeInstallError,
     claude_bin_needs_repair,
     repair_claude_install,
@@ -49,12 +50,8 @@ from .pty_launcher import (
 # is down. Overridable for slow/remote deployments.
 _DEFAULT_TIMEOUT_S = 3.0
 
-# Default endpoints — every value honors an env override so an operator can
-# redirect a port. Broker/pool mirror main.py's defaults; Phoenix mirrors
-# the OTel collector endpoint pty_launcher stamps into spawned shells.
-_DEFAULT_BROKER_URL = "http://127.0.0.1:9300"
-_DEFAULT_POOL_URL = "http://127.0.0.1:9301"
-_DEFAULT_PHOENIX_URL = "http://localhost:6006"
+# Default endpoints (broker 9300, pool 9301, Phoenix localhost:6006) are the
+# settings registry's defaults (EDP_BROKER_URL / EDP_POOL_URL / EDP_PHOENIX_URL).
 
 
 def _now() -> float:
@@ -67,7 +64,7 @@ def _elapsed_ms(start: float) -> int:
 
 def _timeout() -> float:
     try:
-        return float(os.environ.get("EDP_DOCTOR_TIMEOUT_S", _DEFAULT_TIMEOUT_S))
+        return float(edp_settings.get("EDP_DOCTOR_TIMEOUT_S"))
     except ValueError:
         return _DEFAULT_TIMEOUT_S
 
@@ -180,7 +177,7 @@ def check_seat_registry() -> dict:
     an unknown pin or an over-cap effort must fail the stack start loudly,
     never degrade to a silent host-default at spawn."""
     start = _now()
-    home = os.environ.get("EDP_AGENT_HOME", "").strip()
+    home = (edp_settings.env_raw("EDP_AGENT_HOME") or "").strip()
     if not home:
         return _result("seat_registry", "warn",
                        "EDP_AGENT_HOME unset — registry not checked", start)
@@ -210,13 +207,13 @@ def check_foreground_model() -> dict:
     (never error) on skew: the operator may deliberately bless a different
     foreground model, but the skew must be LOUD."""
     start = _now()
-    home = os.environ.get("EDP_AGENT_HOME", "").strip()
+    home = (edp_settings.env_raw("EDP_AGENT_HOME") or "").strip()
     if not home:
         return _result("foreground_model", "warn",
                        "EDP_AGENT_HOME unset — not checked", start)
     import json as _json
     from pathlib import Path
-    cfg_dir = os.environ.get("CLAUDE_CONFIG_DIR", "").strip() or str(
+    cfg_dir = (edp_settings.env_raw("CLAUDE_CONFIG_DIR") or "").strip() or str(
         Path.home() / ".claude-personal")
     settings = Path(cfg_dir) / "settings.json"
     if not settings.is_file():
@@ -225,7 +222,7 @@ def check_foreground_model() -> dict:
                        start)
     try:
         pinned = str(_json.loads(
-            settings.read_text(encoding="utf-8")).get("model") or "")
+            settings.read_text(encoding="utf-8-sig")).get("model") or "")
     except (OSError, _json.JSONDecodeError) as e:
         return _result("foreground_model", "warn",
                        f"settings unreadable: {e}", start)
@@ -262,21 +259,20 @@ def check_config_parity() -> dict:
     settings themselves is not required (the dirs legitimately differ on
     tui/credentials); the HOOKS are the behavior-bearing part."""
     start = _now()
-    home = os.environ.get("EDP_AGENT_HOME", "").strip()
+    home = (edp_settings.env_raw("EDP_AGENT_HOME") or "").strip()
     if not home:
         return _result("config_parity", "warn",
                        "EDP_AGENT_HOME unset — parity not checked", start)
     import json as _json
     from pathlib import Path
     problems: list[str] = []
-    pool_settings = Path(__file__).resolve().parents[2] / \
-        ".claude-pool" / "settings.json"
+    pool_settings = _CLAUDE_POOL_CONFIG_DIR / "settings.json"
     project_hooks_dir = Path(home) / ".claude" / "hooks"
     if not project_hooks_dir.is_dir():
         problems.append(f"project hooks dir missing: {project_hooks_dir}")
     if pool_settings.is_file():
         try:
-            cfg = _json.loads(pool_settings.read_text(encoding="utf-8"))
+            cfg = _json.loads(pool_settings.read_text(encoding="utf-8-sig"))
             for event, groups in (cfg.get("hooks") or {}).items():
                 for g in groups if isinstance(groups, list) else []:
                     for h in g.get("hooks", []):
@@ -315,11 +311,9 @@ def run_doctor(
     passes the live lock_list()), the stale-lock sweep uses it directly;
     otherwise it fetches the pool's /v1/locks over HTTP (the CLI path)."""
     start = _now()
-    broker_url = broker_url or os.environ.get(
-        "EDP_BROKER_URL", _DEFAULT_BROKER_URL)
-    pool_url = pool_url or os.environ.get("EDP_POOL_URL", _DEFAULT_POOL_URL)
-    phoenix_url = phoenix_url or os.environ.get(
-        "EDP_PHOENIX_URL", _DEFAULT_PHOENIX_URL)
+    broker_url = broker_url or edp_settings.get("EDP_BROKER_URL")
+    pool_url = pool_url or edp_settings.get("EDP_POOL_URL")
+    phoenix_url = phoenix_url or edp_settings.get("EDP_PHOENIX_URL")
     to = timeout if timeout is not None else _timeout()
 
     checks = [

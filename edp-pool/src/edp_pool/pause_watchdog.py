@@ -45,6 +45,7 @@ import uuid
 from pathlib import Path
 
 import psutil
+from edp_contracts import settings
 
 _TOKEN_DIR_ENV = "EDP_POOL_PAUSE_TOKENS"
 _DEFAULT_TOKEN_DIR = Path(".pool-logs") / "pause-tokens"
@@ -57,7 +58,7 @@ _POLL_SECS = 5.0
 def token_dir_path(token_dir=None) -> Path:
     if token_dir is not None:
         return Path(token_dir)
-    return Path(os.environ.get(_TOKEN_DIR_ENV, str(_DEFAULT_TOKEN_DIR)))
+    return settings.get(_TOKEN_DIR_ENV) or _DEFAULT_TOKEN_DIR
 
 
 def token_path(token_dir, pid: int) -> Path:
@@ -176,7 +177,9 @@ def arm(*, token_dir, pid: int, create_time: float | None, runid: str | None = N
     tok = write_token(token_dir, pid, runid)
 
     py = sys.executable
-    cwd = str(Path(__file__).resolve().parents[2])   # the edp-pool repo root
+    pool_dir = settings.get("EDP_POOL_DIR")   # dev: the edp-pool repo root (out of every shell tree)
+    pool_dir.mkdir(parents=True, exist_ok=True)
+    cwd = str(pool_dir)
     cmdline = (
         f'"{py}" -m edp_pool.pause_watchdog '
         f'--token-dir "{token_dir_path(token_dir)}" '

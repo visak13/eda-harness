@@ -18,7 +18,6 @@ import hmac
 import html as html_mod
 import json
 import logging
-import os
 import re
 import threading
 import time
@@ -27,6 +26,7 @@ from typing import Any
 import httpx
 from fastapi import APIRouter, Request
 
+from . import settings
 from .board import Board
 from .schemas import DocType, Event, EventKind, Message, MessageKind, TicketStatus
 from .store import Store, new_id
@@ -220,13 +220,13 @@ class PlaneSync:
 
 
 def build_from_env(board: Board) -> tuple[PlaneMirror, PlaneSync] | None:
-    url = os.environ.get("EDP8_PLANE_URL")
+    url = settings.get("EDP8_PLANE_URL")
     if not url:
         return None
-    api_key = os.environ.get("EDP8_PLANE_API_KEY", "")
-    workspace = os.environ.get("EDP8_PLANE_WORKSPACE", "")
-    project = os.environ.get("EDP8_PLANE_PROJECT", "")
-    raw_states = os.environ.get("EDP8_PLANE_STATES")
+    api_key = settings.get("EDP8_PLANE_API_KEY")
+    workspace = settings.get("EDP8_PLANE_WORKSPACE")
+    project = settings.get("EDP8_PLANE_PROJECT")
+    raw_states = settings.get("EDP8_PLANE_STATES")
     state_map = json.loads(raw_states) if raw_states else dict(DEFAULT_STATE_MAP)
     client = PlaneClient(url, api_key, workspace, project)
     mirror = PlaneMirror(board, client, state_map)
@@ -258,7 +258,7 @@ def webhook_router(board: Board) -> APIRouter:
     @r.post("/v1/plane/webhook")
     async def plane_webhook(req: Request):
         raw = await req.body()
-        secret = os.environ.get("EDP8_PLANE_WEBHOOK_SECRET", "")
+        secret = settings.get("EDP8_PLANE_WEBHOOK_SECRET")
         if secret:
             sig = req.headers.get("X-Plane-Signature", "")
             want = hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
@@ -296,7 +296,7 @@ def _handle_webhook(board: Board, payload: dict[str, Any]) -> None:
 
 def _main() -> None:
     logging.basicConfig(level=logging.INFO)
-    db = os.environ.get("EDP8_DB", "edp8.db")
+    db = str(settings.get("EDP8_DB"))
     board = Board(Store(db))
     built = build_from_env(board)
     if built is None:

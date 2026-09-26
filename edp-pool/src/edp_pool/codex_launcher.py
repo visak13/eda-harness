@@ -25,6 +25,8 @@ import subprocess
 import time
 from pathlib import Path
 
+from edp_contracts import settings
+
 from .pi_launcher import _CLAUDE_ONLY, seat_python
 from .pty_launcher import build_env
 
@@ -76,7 +78,7 @@ def build_env_codex(session_id: str, role: str, handle: str, broker_url: str | N
     else:
         env.pop("EDP_ACTIVATION", None)
     for k in _PASS_THROUGH:
-        v = os.environ.get(k)
+        v = settings.env_raw("EDP_HOME" if k == "EDP8_HOME" else k)  # EDP8_HOME: legacy alias of EDP_HOME
         if v:
             env[k] = v
     env.setdefault("EDP_CODEX_MODEL", "gpt-6-astra")
@@ -118,7 +120,7 @@ class CodexSpawner:
         named = codex_seat_named(model, self._agent_home)
         if named is not None:
             env["EDP_CODEX_MODEL"] = named.model.split("/", 1)[-1]
-            if named.thinking and not os.environ.get("EDP_CODEX_EFFORT"):
+            if named.thinking and not settings.is_set("EDP_CODEX_EFFORT"):
                 env["EDP_CODEX_EFFORT"] = named.thinking
         elif model and model.startswith("codex/"):
             env["EDP_CODEX_MODEL"] = model.split("/", 1)[1]

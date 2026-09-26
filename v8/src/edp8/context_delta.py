@@ -9,10 +9,10 @@ import base64
 import hashlib
 import hmac
 import json
-import os
 import secrets
 import time
 
+from . import settings
 from .board import BoardError
 from .quotes import with_quotes
 from .schemas import code_row
@@ -26,7 +26,7 @@ TEXT_HEAD = 512          # message text carried per change row; read_ref fetches
 def delta_budget() -> int:
     """The page byte cap, env-overridable like EDP8_CONTEXT_BUDGET_B (floor 4000)."""
     try:
-        return max(4_000, int(os.environ.get("EDP8_DELTA_BUDGET_B", MAX_BYTES)))
+        return max(4_000, int(settings.get("EDP8_DELTA_BUDGET_B")))
     except ValueError:
         return MAX_BYTES
 

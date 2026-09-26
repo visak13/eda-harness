@@ -33,14 +33,15 @@ from pathlib import Path
 
 import httpx
 
+from . import settings
+
 log = logging.getLogger("edp8.slack")
 
-BROKER = os.environ.get("EDP_BROKER_URL", "http://127.0.0.1:9300")
+BROKER = settings.get("EDP_BROKER_URL")
 
 
 def _config() -> dict:
-    f = Path(os.environ.get("EDP8_SLACK_MAP",
-                            str(Path(os.environ.get("EDP8_HOME", ".")) / "slack_map.json")))
+    f = settings.get("EDP8_SLACK_MAP")
     return json.loads(f.read_text(encoding="utf-8"))
 
 
@@ -108,7 +109,7 @@ def _line(cfg: dict, handle: str, msg: dict) -> str:
             or json.dumps(body)[:120])
     # Deep-link base: bridge config wins, else EDP8_PUBLIC_URL (S17 — a tagged person on
     # another machine lands on the SPA), else loopback for a single-machine setup.
-    base = cfg.get("board_url") or os.environ.get("EDP8_PUBLIC_URL") or "http://127.0.0.1:9400"
+    base = cfg.get("board_url") or settings.get("EDP8_PUBLIC_URL") or "http://127.0.0.1:9400"
     # deep-link the exact conversation, identity attached — one click and they can reply
     link = f"{base}/ui/ticket/{ticket}?as={handle}" if ticket else f"{base}/ui/me?as={handle}"
     return (f"*{handle}* ← {msg.get('from')} ({msg.get('kind')})"
@@ -157,7 +158,7 @@ def _lock_or_exit() -> Path:
     """One bridge per host: a lockfile holding the live owner's pid. A stale lock (pid gone)
     is taken over; a live one means a second start is a no-op (2026-09-05: five stacked
     bridges doubled every Slack ping and leaked ~135 MB)."""
-    lock = Path(os.environ.get("EDP8_HOME", ".")) / ".data" / "bridge.lock"
+    lock = settings.data_dir() / "bridge.lock"
     lock.parent.mkdir(parents=True, exist_ok=True)
     try:
         other = int(lock.read_text(encoding="utf-8").strip())

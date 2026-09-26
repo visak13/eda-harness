@@ -69,6 +69,7 @@ def _free_port() -> int:
 @pytest.fixture
 def board_env(tmp_path, monkeypatch):
     monkeypatch.setenv("EDP8_HOME", str(tmp_path))
+    monkeypatch.setenv("EDP_AGENT_HOME", str(tmp_path))  # guides/ and the default folder are the agent home
     monkeypatch.setenv("EDP8_RUN_DIR", str(tmp_path / ".run"))
     monkeypatch.setenv("EDP8_PUBLIC", "0")
     monkeypatch.setenv("EDP8_TOKENS", str(tmp_path / "tokens.json"))

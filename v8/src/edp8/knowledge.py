@@ -16,10 +16,11 @@ import hashlib
 from pathlib import Path
 import json as _json
 import math
-import os
 import re
 from datetime import datetime
 from typing import Any, Callable
+
+from edp8 import settings
 
 from .schemas import now
 
@@ -59,7 +60,7 @@ EXCERPT_CHARS = 400
 # question. In "For your question", drop any ranked record whose fused score is below this fraction
 # of the top hit's score — unless it is linked by replaces or part_of to a kept record (so chains and
 # a claim's own ticket group are not orphaned). Fewer, relevant records beat a full budget of noise.
-RANKED_FLOOR_FRAC = float(os.environ.get("EDP8_RANKED_FLOOR", "0.35"))  # 0 disables (for A/B measuring)
+RANKED_FLOOR_FRAC = settings.get("EDP8_RANKED_FLOOR")  # 0 disables (for A/B measuring)
 RESCUE_KINDS = {"replaces", "part_of"}
 
 # link weight: how much a hop across this kind carries relevance (design §4.2 step 5).

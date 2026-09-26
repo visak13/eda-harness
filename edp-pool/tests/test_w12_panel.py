@@ -466,5 +466,5 @@ def _svc(app):
 
 def _panel_html():
     from pathlib import Path
-    p = Path(service.__file__).resolve().parents[2] / "static" / "panel.html"
+    p = Path(service.__file__).resolve().parent / "static" / "panel.html"
     return p.read_text(encoding="utf-8")

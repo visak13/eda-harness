@@ -38,6 +38,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+from edp8 import settings
+
 MODEL_TAG = "seat-model:"
 ROLE_MODEL_TAG = "model:"    # model:<role>=<id>, one per role (S-ROLES)
 EFFORT_TAG = "seat-effort:"
@@ -123,8 +125,8 @@ def tags_for_role_models(picks: dict[str, str] | None) -> list[str]:
 
 
 def agent_home() -> Path:
-    """The v8 agent home (models.json lives here): EDP8_HOME, else this checkout's v8/."""
-    return Path(os.environ.get("EDP8_HOME", str(Path(__file__).resolve().parents[2])))
+    """The v8 agent home (models.json lives here): the settings agent home (dev: EDP8_HOME = <repo>/v8)."""
+    return settings.agent_home()
 
 
 def _registry(home: str | os.PathLike | None) -> dict[str, Any]:

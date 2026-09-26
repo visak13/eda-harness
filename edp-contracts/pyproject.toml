@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.6",
+    "platformdirs>=4.0",
 ]
 
 [project.optional-dependencies]
@@ -43,3 +44,10 @@ src = ["src"]
 [tool.ruff.lint]
 # flake8-print (T20) enforces the no-print() rule from LLD §6 / TESTPLAN ST-3.
 select = ["E", "F", "I", "T20"]
+
+[tool.ruff.lint.per-file-ignores]
+# The settings registry's declarations are one line per knob by design (key, env, default, doc).
+"src/edp_contracts/settings/*" = ["E501"]
+"tests/test_settings_registry.py" = ["E501"]
+"tests/test_settings_secrets.py" = ["E501"]
+"tests/conftest.py" = ["E501"]

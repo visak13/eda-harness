@@ -29,6 +29,8 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from edp8 import settings
+
 from .rpc import AppServer, RpcError, redactor
 from .tools import Delivery, SeatTools
 
@@ -53,9 +55,9 @@ NATIVE_TOOL_ITEMS: dict[str, str] = {
 
 
 def find_codex(explicit: str | None = None) -> str:
-    cand = explicit or os.environ.get("EDP_CODEX_BIN")
+    cand = explicit or settings.get("EDP_CODEX_BIN")
     if cand:
-        return cand
+        return str(cand)
     exe = shutil.which("codex")
     if not exe:
         raise FileNotFoundError("codex not found: set EDP_CODEX_BIN or put codex on PATH")
@@ -94,7 +96,7 @@ def role_skill_roots(agent_home: str | os.PathLike[str], role: str) -> list[str]
 
 def board_args(role: str, mcp_url: str | None = None) -> list[str]:
     """The edp8 board as streamable-HTTP MCP, identity headers read from env BY NAME (never argv)."""
-    base = (mcp_url or os.environ.get("EDP8_MCP_URL") or "http://127.0.0.1:9402").rstrip("/")
+    base = (mcp_url or settings.get("EDP8_MCP_URL")).rstrip("/")
     headers = '{"X-Participant"="EDP_HANDLE","X-Session"="EDP_SPAWN_SESSION_ID","X-Token"="EDP8_TOKEN"}'
     # measured 2026-09-23 (codex-cli 0.156.0, drill_codex_seat.py): under approval_policy=never every
     # MCP call fails "MCP tool call requires approval" unless the server pre-approves its tools — edp8
@@ -148,7 +150,7 @@ class CodexSeat:
         self.role = role
         self.handle = handle
         self.log_dir = Path(log_dir)
-        self.env = {**os.environ, **(env or {})}
+        self.env = {**settings.environ_copy(), **(env or {})}
         self.model = model or self.env.get("EDP_CODEX_MODEL") or "gpt-6-astra"
         self.effort = effort or self.env.get("EDP_CODEX_EFFORT") or None
         self.codex = find_codex(codex_bin)

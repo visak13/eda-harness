@@ -33,6 +33,7 @@ def home(tmp_path, monkeypatch):
                             "thinking": "medium", "context_window": 272000, "auto_compact": 200000}},
         "roles": {"engineer": "builder"}, "roles_openai": {"engineer": "astra"}}), encoding="utf-8")
     monkeypatch.setenv("EDP8_HOME", str(tmp_path))
+    monkeypatch.setenv("EDP_AGENT_HOME", str(tmp_path))  # models.json resolves in the agent home
     return tmp_path
 
 

@@ -12,11 +12,14 @@ service was never started by the launcher (or the file was cleaned) → reported
 
 from __future__ import annotations
 
+import importlib.metadata
 import json
 import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from . import settings
 
 # The five shared services the launcher owns (design §22 rule 1). `port` is the listener the
 # supervisor probes; the bridge has no port (matched by command line) so its port is None. Ports
@@ -24,7 +27,7 @@ from typing import Any
 # never reports (or probes) the fleet's services on the default ports as its own.
 def _env_port(var: str, default: int) -> int:
     try:
-        return int(os.environ.get(var) or default)
+        return int(settings.get(var) or default)
     except ValueError:
         return default
 
@@ -42,17 +45,19 @@ def git_rev() -> str:
     """Short git rev of the running tree, read straight from `.git` files (no shelling out —
     tool modules never execute code; test_no_code_execution). EDP8_GIT_REV overrides (the
     launcher injects it). Used by /v1/health, the pid files and the service_restarted event (§22)."""
-    env = os.environ.get("EDP8_GIT_REV")
+    env = settings.get("EDP8_GIT_REV")
     if env:
         return env.strip()[:12] or "unknown"
-    start = Path(os.environ.get("EDP8_HOME", ".")).resolve()
+    start = settings.home()
+    if start is None:  # installed, no dev checkout: the package version stands in for the rev
+        return _package_rev()
     gitdir = None
     for base in (start, *start.parents):  # the repo root is v8's parent (eda-base3)
         if (base / ".git").exists():
             gitdir = base / ".git"
             break
     if gitdir is None:
-        return "unknown"
+        return _package_rev()
     try:
         head = (gitdir / "HEAD").read_text(encoding="utf-8").strip()
     except OSError:
@@ -73,8 +78,15 @@ def git_rev() -> str:
     return "unknown"
 
 
+def _package_rev() -> str:
+    try:
+        return "v" + importlib.metadata.version("edp8")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
+
+
 def run_dir() -> Path:
-    d = Path(os.environ.get("EDP8_RUN_DIR", str(Path(os.environ.get("EDP8_HOME", ".")) / ".run")))
+    d = settings.run_dir()
     d.mkdir(parents=True, exist_ok=True)
     return d
 

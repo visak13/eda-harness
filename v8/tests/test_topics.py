@@ -629,7 +629,13 @@ def test_open_keeps_the_purpose_words_verbatim(client):
     assert _topic(client, title="No words")["topic"]["words"] is None
 
 
-def test_open_sme_model_and_effort_ride_the_seat_spawn_not_the_tags(tokens):
+@pytest.fixture
+def repo_agent_home(monkeypatch):
+    """The sme catalog is the repo's models.json: the agent home is <repo>/v8 (conftest isolates it away)."""
+    monkeypatch.setenv("EDP_AGENT_HOME", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def test_open_sme_model_and_effort_ride_the_seat_spawn_not_the_tags(tokens, repo_agent_home):
     pool = ChoicePool()
     board = Board(Store(":memory:"), pool=pool, free_mb=lambda: 8000)
     c = TestClient(create_app(board, admin_token="t"))
@@ -649,7 +655,7 @@ def test_open_sme_model_and_effort_ride_the_seat_spawn_not_the_tags(tokens):
     assert plain["seat"]["model"] == "claude-opus-5-5"
 
 
-def test_open_refuses_a_model_outside_the_sme_catalog(client):
+def test_open_refuses_a_model_outside_the_sme_catalog(repo_agent_home, client):
     r = client.post("/v1/topics", json={"title": "Bad model", "model": "gpt-6-astra"}, headers=OWNER).json()
     assert not r["ok"] and "not a sme model" in json.dumps(r)
     r = client.post("/v1/topics", json={"title": "Bad effort", "effort": "max"}, headers=OWNER)

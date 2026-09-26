@@ -9,13 +9,14 @@ from collections import OrderedDict
 from datetime import datetime, timezone
 import json
 import math
-import os
 from pathlib import Path
 import threading
 import time
 from typing import Literal
 
 from pydantic import BaseModel
+
+from edp8 import settings
 
 Provider = Literal["claude", "codex"]
 Status = Literal["available", "stale", "unavailable", "auth_required", "error"]
@@ -141,7 +142,7 @@ class UsageCache:
     def read(self, participant_id: str) -> dict:
         now = self.clock()
         # Re-read the small operator ACL every request: revocation doesn't wait for cache TTL.
-        path = self.config or (Path(os.environ["EDP8_USAGE_CONFIG"]) if os.environ.get("EDP8_USAGE_CONFIG") else None)
+        path = self.config or settings.get("EDP8_USAGE_CONFIG")
         if path is None:
             return {"providers": [empty(p).model_dump() for p in ("claude", "codex")]}
         try:

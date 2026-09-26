@@ -8,10 +8,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import ipaddress
 import json
-import os
 from pathlib import Path
 import tempfile
 from urllib.parse import urlsplit
+
+from edp8 import settings
 
 from .client import BoardUnreachable
 
@@ -55,20 +56,20 @@ class HttpUploadPolicy:
     @classmethod
     def from_environment(cls, board_url: str):
         """Read trusted config only at server startup; any invalid/remote config disables."""
-        if os.environ.get('EDP8_HTTP_UPLOAD_MODE') != 'single-host':
+        if settings.get('EDP8_HTTP_UPLOAD_MODE') != 'single-host':
             return cls()
         try:
             parsed = urlsplit(board_url)
             _ = parsed.port  # validate malformed URLs without contacting any host
         except ValueError:
             return cls()
-        if (os.environ.get('EDP8_PUBLIC_URL') or not _loopback(os.environ.get('EDP8_MCP_HOST', '127.0.0.1'))
+        if (settings.get('EDP8_PUBLIC_URL') or not _loopback(settings.get('EDP8_MCP_HOST'))
                 or parsed.scheme not in ('http', 'https') or not _loopback(parsed.hostname)
                 or parsed.username or parsed.password):
             return cls()
         try:
-            config = Path(os.environ.get('EDP8_HTTP_UPLOAD_POLICY', ''))
-            if not config.is_absolute():
+            config = settings.get('EDP8_HTTP_UPLOAD_POLICY')
+            if config is None or not config.is_absolute():
                 return cls()
             with config.open('rb') as file:
                 raw = file.read(65537)

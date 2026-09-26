@@ -7,13 +7,14 @@ import os
 import tempfile
 from pathlib import Path
 
+from edp8 import settings
+
 _VALID_AVATARS = {f"human-{number:02d}" for number in range(1, 9)}
 
 
 def avatar_preferences_path() -> Path:
     """Return the per-install avatar preference file."""
-    home = Path(os.environ.get("EDP8_HOME", str(Path(__file__).resolve().parents[2])))
-    return home / "ui-avatars.json"
+    return settings.agent_home() / "ui-avatars.json"
 
 
 def load_avatar_preferences(path: str | Path | None = None) -> dict[str, str]:

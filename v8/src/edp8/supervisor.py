@@ -20,7 +20,7 @@ import sys
 import time
 from typing import Callable
 
-from . import run_state
+from . import run_state, settings
 from .run_state import git_rev
 
 FAIL_THRESHOLD = 3
@@ -73,7 +73,7 @@ class Supervisor:
 
 
 def _board_url() -> str:
-    return os.environ.get("EDP8_BOARD_URL", "http://127.0.0.1:9400")
+    return settings.get("EDP8_BOARD_URL")
 
 
 def make_probe(client) -> Callable[[str], bool]:
@@ -101,7 +101,7 @@ def real_alive(svc: str) -> bool:
 def _launcher_cmd(svc: str) -> list[str]:
     """Restart goes through the platform launcher so there is ONE way to start a service
     (design §22 rule 2). start.ps1/start.sh --restart <svc> stops+starts just that service."""
-    home = os.environ.get("EDP8_HOME", ".")
+    home = str(settings.home() or ".")
     if os.name == "nt":
         return ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
                 "-File", os.path.join(home, "start.ps1"), "-Restart", svc]
@@ -112,7 +112,7 @@ def make_restart(by: str = "supervisor") -> Callable[[str, str], None]:
     def restart(svc: str, reason: str) -> None:
         try:
             subprocess.run(_launcher_cmd(svc), timeout=120,
-                           cwd=os.environ.get("EDP8_HOME") or None,
+                           cwd=settings.home(),
                            capture_output=True, text=True)
         except Exception as e:  # noqa: BLE001
             print(f"supervisor: restart of {svc} failed to launch: {e}", file=sys.stderr)
@@ -122,7 +122,7 @@ def make_restart(by: str = "supervisor") -> Callable[[str, str], None]:
 
 def make_emit(by: str = "supervisor") -> Callable[[str, str], None]:
     import httpx
-    admin = os.environ.get("EDP8_ADMIN_TOKEN", "dev")
+    admin = settings.admin_token()
 
     def emit(svc: str, reason: str) -> None:
         try:

@@ -40,12 +40,12 @@ legacy un-shadowed SubprocessSpawner for both modes.
 """
 
 import json
-import os
 import subprocess
 import threading
 from pathlib import Path
 
 import httpx
+from edp_contracts import settings
 
 from .shadow import ShadowConfig, ShellShadow, safe_name
 from .spawner import Spawner, SpawnMode, SubprocessSpawner
@@ -76,8 +76,7 @@ def shadow_enabled() -> bool:
     # commands; wiring returns to agent-owned monitor+cron for every role
     # (the arm_wiring tool composes it server-side). EDP_SHADOW=1 remains
     # a temporary diagnostic opt-in until the files are deleted.
-    return os.environ.get("EDP_SHADOW", "0").strip().lower() in (
-        "1", "true", "yes", "on")
+    return settings.get("EDP_SHADOW")
 
 
 def parent_of(handle: str) -> str:
@@ -196,7 +195,7 @@ class _RxDriverAdapter:
             # events authored by the shell it wakes (the planner used to be
             # woken by every line its own tools appended to its worklog).
             self._argv += ["--owner", owner]
-        self._env = {**os.environ,
+        self._env = {**settings.environ_copy(),
                      "EDP_AGENT_HOME": agent_home,
                      "EDP_BROKER_URL": broker_url,
                      "EDP_POOL_URL": pool_url}
@@ -262,7 +261,7 @@ class ShadowSpawner(Spawner):
                  shadow_dir: Path | None = None) -> None:
         self.legacy = legacy
         self.shadow_dir = shadow_dir or (
-            Path(__file__).resolve().parents[2] / ".shadows")
+            settings.get("EDP_POOL_DIR") / ".shadows")
         self._shadows: dict[str, ShellShadow] = {}
 
     # ── production adapters ────────────────────────────────────────────
@@ -468,8 +467,7 @@ class ShadowSpawner(Spawner):
             # rule as the legacy monitor spawn — the operator can click-
             # approve, so autonomy is the explicit EDP_SKIP_PERMISSIONS
             # opt-in, never a shadow side effect.
-            skip_perms = os.environ.get(
-                "EDP_SKIP_PERMISSIONS", "0").lower() in ("1", "true", "yes")
+            skip_perms = settings.get("EDP_SKIP_PERMISSIONS")
 
             def shell_factory():
                 return _ConsoleShellAdapter(

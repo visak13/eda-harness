@@ -24,13 +24,15 @@ from collections.abc import Iterator
 from pathlib import Path
 from queue import Empty, Queue
 
+from edp8 import settings
+
 SETTLED = "agent_settled"
 _SECRET_KEYS = ("EDP8_TOKEN", "OPENAI_API_KEY", "ANTHROPIC_API_KEY")
 
 
 def find_pi(explicit: str | None = None) -> list[str]:
     """argv prefix for Pi: EDP_PI_BIN (a cli.js path → run under node, or an exe), else `pi` on PATH."""
-    cand = explicit or os.environ.get("EDP_PI_BIN")
+    cand = explicit or settings.get("EDP_PI_BIN")
     if cand:
         p = Path(cand)
         if p.suffix == ".js":
@@ -51,13 +53,13 @@ PI_CLI_REL = Path("node_modules") / "@earendil-works" / "pi-coding-agent" / "dis
 
 def default_pi_cli_candidates() -> list[Path]:
     """Durable install locations (qa report-fb5ff85cd9 §1): `<repo>/edp-pool/.pi-harness` — package.json +
-    lockfile committed, node_modules ignored — next to the agent home, or EDP_PI_HARNESS."""
+    lockfile committed, node_modules ignored — next to the agent home, or EDP_PI_HARNESS. Searched: the
+    setting, then the agent home (dev: <repo>/v8, whose parent holds edp-pool/), then the cwd."""
     out: list[Path] = []
-    env = os.environ.get("EDP_PI_HARNESS", "").strip()
-    if env:
-        out.append(Path(env) / PI_CLI_REL)
-    here = Path(__file__).resolve()
-    for base in [Path.cwd(), *here.parents]:
+    harness = settings.get("EDP_PI_HARNESS")
+    if harness is not None:
+        out.append(harness / PI_CLI_REL)
+    for base in (settings.agent_home().resolve(), Path.cwd()):
         out.append(base / "edp-pool" / ".pi-harness" / PI_CLI_REL)
         out.append(base.parent / "edp-pool" / ".pi-harness" / PI_CLI_REL)
     return out
@@ -81,7 +83,7 @@ class PiSeat:
         self.model = model
         self.extension = extension
         self.session_file = session_file
-        self.env = {**os.environ, **(env or {})}
+        self.env = {**settings.environ_copy(), **(env or {})}
         self.handle = handle
         self.log_path = Path(log_dir or self.cwd) / f"pi-seat.{handle}.jsonl"
         self.pi_bin = pi_bin

@@ -9,7 +9,6 @@ from __future__ import annotations
 from pathlib import Path
 import hashlib
 import math
-import os
 import re
 import sqlite3
 import threading
@@ -18,6 +17,8 @@ from collections import Counter
 from typing import Iterable, Protocol
 
 import numpy as np
+
+from . import settings
 
 # S18 T2: sha256 of the source this process executed, taken as the module loads (edp8.rsi reads it)
 SOURCE_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
@@ -38,9 +39,9 @@ BULK_THRESHOLD = 32  # more un-embedded units than this -> embed in a background
 # stayed at ~2.2 GB long after a bounded warm. Turn the arena off (RSS then tracks live use, which
 # after batch-8/512-token calls is small) and cap ORT threads (each op thread keeps its own arena).
 # Vectors are byte-identical either way, so seed recall is unchanged.
-EMBED_THREADS = int(os.environ.get("EDP8_EMBED_THREADS", "1"))
-EMBED_ARENA = os.environ.get("EDP8_EMBED_ARENA", "0") == "1"  # default OFF
-EMBED_MODEL = os.environ.get("EDP8_EMBED_MODEL", "nomic-ai/nomic-embed-text-v1.5")  # smaller model is a drop-in
+EMBED_THREADS = settings.get("EDP8_EMBED_THREADS")
+EMBED_ARENA = settings.get("EDP8_EMBED_ARENA")  # default OFF
+EMBED_MODEL = settings.get("EDP8_EMBED_MODEL")  # smaller model is a drop-in
 
 
 def _free_ram_gb() -> float | None:
@@ -231,7 +232,7 @@ class OllamaEmbedder:
     def __init__(self, base: str | None = None) -> None:
         import httpx
 
-        self._base = base or os.environ.get("EDP8_OLLAMA_URL", "http://127.0.0.1:11434")
+        self._base = base or settings.get("EDP8_OLLAMA_URL")
         httpx.get(f"{self._base}/api/tags", timeout=1.0).raise_for_status()
 
     def embed(self, texts: list[str], is_query: bool = False) -> list[list[float]]:
@@ -274,7 +275,7 @@ def _load_fastembed(ram_floor: float) -> Embedder:
 def make_embedder(ram_floor: float = RAM_FLOOR_GB) -> Embedder:
     """Pick an embedder: EDP8_EMBEDDER forces a choice, else fastembed->ollama->none. fastembed
     is skipped (FTS fallback) when free RAM is under `ram_floor` at load time."""
-    forced = os.environ.get("EDP8_EMBEDDER")
+    forced = settings.get("EDP8_EMBEDDER")
     if forced == "fastembed":
         try:
             return _load_fastembed(ram_floor)

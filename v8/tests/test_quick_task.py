@@ -192,6 +192,7 @@ def api(tmp_path, monkeypatch):
         "role_models": {"engineer": ["claude-opus-5-5", "gpt-6-sol"], "qa": ["claude-fable-5-1", "gpt-6-astra"],
                         "adversary": ["gpt-6-astra"]}}), encoding="utf-8")
     monkeypatch.setenv("EDP8_HOME", str(tmp_path))
+    monkeypatch.setenv("EDP_AGENT_HOME", str(tmp_path))  # models.json lives in the agent home
     board = Board(Store(":memory:"))
     client = TestClient(create_app(board, admin_token="t"))
     for pid, role, typ in (("owner", "owner", "human"), ("arch", "architect", "agent")):

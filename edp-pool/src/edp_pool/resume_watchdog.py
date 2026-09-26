@@ -42,19 +42,18 @@ no-op there, by construction.
 """
 
 import json
-import os
 import re
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
-from edp_contracts import get_logger
+from edp_contracts import get_logger, settings
 
 _log = get_logger("edp-pool")
 
 
 def _agent_home() -> Path | None:
-    raw = os.environ.get("EDP_AGENT_HOME", "").strip()
+    raw = (settings.env_raw("EDP_AGENT_HOME") or "").strip()
     return Path(raw) if raw else None
 
 
@@ -126,7 +125,7 @@ def _interval_secs() -> float:
     cheap GET per parked handle per tick (parked handles are few by design
     — parking exists precisely because live shells are expensive)."""
     try:
-        return float(os.environ.get("EDP_RESUME_WATCHDOG_SECS", "5"))
+        return float(settings.get("EDP_RESUME_WATCHDOG_SECS"))
     except ValueError:
         return 5.0
 
@@ -139,7 +138,7 @@ def _turn_timeout_secs() -> float:
     event instead of infinite invisible waiting. 0 disables. Default 40
     min — SME training turns legitimately run ~20-30."""
     try:
-        return float(os.environ.get("EDP_TURN_TIMEOUT_SECS", "2400"))
+        return float(settings.get("EDP_TURN_TIMEOUT_SECS"))
     except ValueError:
         return 2400.0
 
@@ -153,7 +152,7 @@ def _heartbeat_secs() -> float:
     re-parks if there is nothing to do (each re-park resets the clock).
     Same 1800s default as the Claude cron band. 0 disables."""
     try:
-        return float(os.environ.get("EDP_PARKED_HEARTBEAT_SECS", "1800"))
+        return float(settings.get("EDP_PARKED_HEARTBEAT_SECS"))
     except ValueError:
         return 1800.0
 

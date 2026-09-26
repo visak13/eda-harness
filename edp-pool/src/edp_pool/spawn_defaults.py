@@ -23,8 +23,9 @@ import os
 import tempfile
 from pathlib import Path
 
-_PATH_ENV = "EDP_SPAWN_DEFAULTS"
-_DEFAULT_PATH = Path(".pool-logs") / "spawn_defaults.json"
+from edp_contracts import settings
+
+_PATH_ENV = "EDP_SPAWN_DEFAULTS"  # registry default: .pool-logs/spawn_defaults.json
 
 #: The whole settable surface. Anything else is dropped as unknown.
 ALLOWED_KEYS = ("model", "spawn_mode", "rtk")
@@ -46,7 +47,7 @@ class BannedSpawnDefault(ValueError):
 def defaults_path(path=None) -> Path:
     if path is not None:
         return Path(path)
-    return Path(os.environ.get(_PATH_ENV, str(_DEFAULT_PATH)))
+    return settings.get(_PATH_ENV)
 
 
 def load_spawn_defaults(path=None) -> dict:

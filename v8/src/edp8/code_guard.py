@@ -45,12 +45,13 @@ import argparse
 import asyncio
 import hashlib
 import hmac
-import os
 import re
 import secrets
 import sys
 import time
 from urllib.parse import parse_qs
+
+from edp8 import settings
 
 MAX_HEAD = 64 * 1024
 SESSION_COOKIE = "code-server-session"
@@ -439,8 +440,8 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     # the secret and the mint key come by environment (never argv, which any local process can
     # list) and leave it at once
-    session = os.environ.pop(SESSION_ENV, None) or None
-    mint_key = os.environ.pop(MINT_KEY_ENV, None) or None
+    session = settings.pop_env(SESSION_ENV) or None
+    mint_key = settings.pop_env(MINT_KEY_ENV) or None
     if not mint_key:
         _log(f"refusing to start: {MINT_KEY_ENV} is not set (without it no caller could sign in)")
         return 2

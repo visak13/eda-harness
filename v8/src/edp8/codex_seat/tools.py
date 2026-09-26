@@ -34,6 +34,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from edp8 import settings
+
 PARITY_TOOLS = ("Monitor", "TaskStop", "CronCreate", "CronList", "CronDelete")
 
 BATCH_MS = 200  # parity §5 batching window [M]
@@ -522,12 +524,12 @@ def humanise(cron: str) -> str:
 # ---------------------------------------------------------------------------- monitor shell
 def monitor_shell() -> str:
     """Git's bash WRAPPER (puts /usr/bin on PATH), never WSL's System32 relay — edp8.ts monitorShell."""
-    if os.environ.get("EDP_MONITOR_SHELL"):
-        return os.environ["EDP_MONITOR_SHELL"]
+    if settings.get("EDP_MONITOR_SHELL"):
+        return settings.get("EDP_MONITOR_SHELL")
     if sys.platform != "win32":
         return "/bin/bash"
-    roots = [os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)"), os.environ.get("ProgramW6432"),
-             os.path.join(os.environ["LOCALAPPDATA"], "Programs") if os.environ.get("LOCALAPPDATA") else None]
+    roots = [settings.get("ProgramFiles"), settings.get("ProgramFiles(x86)"), settings.get("ProgramW6432"),
+             os.path.join(settings.get("LOCALAPPDATA"), "Programs") if settings.get("LOCALAPPDATA") else None]
     for r in filter(None, roots):
         for sub in ("Git\\bin\\bash.exe", "Git\\usr\\bin\\bash.exe"):
             c = os.path.join(r, sub)
@@ -630,7 +632,7 @@ class SeatTools:
         self.d = delivery
         self.cwd = str(cwd)
         self.tasks_dir = Path(tasks_dir)
-        self.env = env if env is not None else dict(os.environ)
+        self.env = env if env is not None else settings.environ_copy()
         self.variant = variant or self.env.get("EDP_MONITOR_VARIANT", "persistent")
         dp = desc_path or self.env.get("EDP_PARITY_DESCRIPTIONS") or Path(self.cwd) / "guides" / "harness-parity" / "descriptions.ours.json"
         self.desc = _desc(Path(dp))

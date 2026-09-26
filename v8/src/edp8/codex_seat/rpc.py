@@ -26,6 +26,8 @@ from concurrent.futures import Future
 from pathlib import Path
 from queue import Queue
 
+from edp8 import settings
+
 #: the loopback websocket's capability token (monitor mode): the TUI reads it by env NAME
 WS_TOKEN_ENV = "EDP_CODEX_WS_TOKEN"
 SECRET_KEYS = ("EDP8_TOKEN", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "CODEX_API_KEY", WS_TOKEN_ENV)
@@ -35,7 +37,7 @@ def private_dir(path: Path) -> Path:
     """A directory only this user can open (codex refuses a non-private socket/token dir, measured)."""
     path.mkdir(parents=True, exist_ok=True)
     if os.name == "nt":
-        user = os.environ.get("USERNAME") or ""
+        user = settings.get("USERNAME") or ""
         subprocess.run(["icacls", str(path), "/inheritance:r", "/grant:r", f"{user}:(OI)(CI)F"],
                        capture_output=True, check=True)
     else:
@@ -132,7 +134,7 @@ class AppServer:
         self.ws_token = secrets.token_urlsafe(32)
         self.env = {**self.env, WS_TOKEN_ENV: self.ws_token}
         self._redact = redactor(self.env)
-        base = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "edp8-codex-seat"
+        base = Path(settings.get("LOCALAPPDATA") or Path.home()) / "edp8-codex-seat"
         d = private_dir(base / f"{os.getpid()}-{time.time_ns() % 10**9}")
         self._token_file = d / "ws.token"
         self._token_file.write_text(self.ws_token, encoding="utf-8")

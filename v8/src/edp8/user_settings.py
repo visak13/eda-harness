@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from edp8 import settings
+
 # Finding 12: save_settings is read-merge-write against one shared JSON file. Two people (two
 # request threads) saving at once raced — on Windows one hit PermissionError (the atomic replace
 # lost to the other's open temp handle → a 500) and only one person's settings survived. Serialise
@@ -39,8 +41,7 @@ def webhook_hosts() -> set[str]:
     EDP8_SLACK_WEBHOOK_HOSTS (comma-separated). The board must never POST thread content to an
     arbitrary internal or external address (qa finding 10)."""
     hosts = {"hooks.slack.com"}
-    extra = os.environ.get("EDP8_SLACK_WEBHOOK_HOSTS", "")
-    hosts |= {h.strip().lower() for h in extra.split(",") if h.strip()}
+    hosts |= {h.lower() for h in settings.get("EDP8_SLACK_WEBHOOK_HOSTS")}
     return hosts
 
 
@@ -91,11 +92,7 @@ def webhook_rejection(raw: Any) -> str | None:
 
 
 def settings_path() -> Path:
-    override = os.environ.get("EDP8_UI_SETTINGS")
-    if override:
-        return Path(override)
-    home = Path(os.environ.get("EDP8_HOME", str(Path(__file__).resolve().parents[2])))
-    return home / "ui-settings.json"
+    return settings.get("EDP8_UI_SETTINGS")
 
 
 def default_settings() -> dict[str, Any]:

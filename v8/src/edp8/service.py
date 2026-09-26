@@ -22,7 +22,8 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, 
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
-from . import pool_adapter, seat_choice
+from . import pool_adapter, seat_choice, settings
+from edp_contracts.settings import secrets as secret_files
 from . import rsi  # S18: imported at boot so rsi.LOADED hashes the retrieval code this process runs
 from .board import QUICK_TAG, Board, BoardError, seat_card_env
 from .contextual_work import HistoryCategory, contextual_work
@@ -316,28 +317,28 @@ _TOKENS_WRITE = threading.RLock()
 
 def public_mode() -> bool:
     """Reach-from-another-machine is on when EDP8_PUBLIC_URL is set (design §15, S17)."""
-    return bool(os.environ.get("EDP8_PUBLIC_URL"))
+    return bool(settings.get("EDP8_PUBLIC_URL"))
 
 
 def ui_url(request: Request) -> str:
     """S16 (owner m-cc3a6656ee): the base a seat puts in front of `/ticket/<id>` or `/doc/<id>` in a hand-off link, so
     the owner gets a click, not an id to look up. EDP8_PUBLIC_URL when set (the address the owner reaches), else the
     address this request came in on. Never hardcoded."""
-    base = (os.environ.get("EDP8_PUBLIC_URL") or "").strip() or str(request.base_url)
+    base = (settings.get("EDP8_PUBLIC_URL") or "").strip() or str(request.base_url)
     return base.rstrip("/") + "/ui"
 
 
 def resolve_host() -> str:
     """Bind address. Public mode defaults to 0.0.0.0 so another machine can reach the
     board; EDP8_HOST always overrides (even in public mode). Trusted mode → 127.0.0.1."""
-    explicit = os.environ.get("EDP8_HOST")
+    explicit = settings.get("EDP8_HOST")
     if explicit:
         return explicit
     return "0.0.0.0" if public_mode() else "127.0.0.1"
 
 
 def tokens_file_path() -> Path:
-    return Path(os.environ.get("EDP8_TOKENS", str(Path(os.environ.get("EDP8_HOME", ".")) / "tokens.json")))
+    return settings.get("EDP8_TOKENS")
 
 
 def public_startup_error(admin_token: str | None, tokens_path: Path | None = None) -> str | None:
@@ -370,7 +371,7 @@ def public_startup_error(admin_token: str | None, tokens_path: Path | None = Non
 
 def create_app(board: Board | None = None, admin_token: str | None = None) -> FastAPI:
     if board is None:
-        db = os.environ.get("EDP8_DB", str(Path(os.environ.get("EDP8_HOME", ".")) / "edp8.db"))
+        db = str(settings.get("EDP8_DB"))
         Path(db).parent.mkdir(parents=True, exist_ok=True)
         index = None
         try:
@@ -381,7 +382,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
             # ~520 s startup warm as a follow-up). EDP8_VEC_CACHE overrides the default path.
             cache = None
             try:
-                vec_path = os.environ.get("EDP8_VEC_CACHE", str(db) + ".vec")
+                vec_path = str(settings.get("EDP8_VEC_CACHE") or str(db) + ".vec")
                 cache = VectorCache(vec_path)
             except Exception:
                 cache = None
@@ -395,7 +396,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
                 index.rebuild(store.all_text_units())
             except Exception as e:  # search degrades to nothing; the board keeps running, loudly
                 logging.getLogger("edp8.service").warning("search index rebuild failed: %s", e)
-    admin_token = admin_token or os.environ.get("EDP8_ADMIN_TOKEN", "dev")
+    admin_token = admin_token or settings.admin_token()
     try:
         board.ensure_epic_ids()
     except Exception as e:  # noqa: BLE001
@@ -421,6 +422,10 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         err = public_startup_error(admin_token, tokens_file_path())
         if err:
             raise RuntimeError(err)
+    if not settings.dev_mode():  # installed: a tokens file others can read is refused (strategyhl-86b4805322 §3)
+        loose = secret_files.problems(tokens_file_path())
+        if loose:
+            raise RuntimeError("refusing to start: the tokens file is not private: " + "; ".join(loose))
 
     # Fixed ONCE per app (S-SME-SURFACE incident m-c31573e1a2): resolving the env on every call let a test
     # app's background thread, outliving its monkeypatched EDP8_TOKENS, fall back to the cwd's tokens.json
@@ -1514,7 +1519,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     _foreign = _pool_gate.foreign_board_reason()
     if _foreign:
         logging.getLogger("edp8.poolwatch").info("pool watcher off: %s", _foreign)
-    if not _foreign and (os.environ.get("EDP_POOL_URL") or os.environ.get("EDP8_POOL_WATCH")):
+    if not _foreign and (settings.is_set("EDP_POOL_URL") or settings.get("EDP8_POOL_WATCH")):
         import threading
 
         def _pool_watch() -> None:
@@ -1555,14 +1560,14 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     # The legacy router ALWAYS registers the fixed /ui/poll route (its prefix never moves poll),
     # and under folio is included BEFORE the SPA catch-all so /ui/poll and every /v1 route keep
     # priority. A missing build under folio → 503 page from mount_spa, never a failed create_app().
-    ui_mode = os.environ.get("EDP8_UI", "folio").strip().lower()
+    ui_mode = settings.get("EDP8_UI").strip().lower()
     if ui_mode == "legacy":
         app.include_router(ui_router(board, verify=human_verify, public=public, prefix="/ui"))
     else:  # folio
         app.include_router(ui_router(board, verify=human_verify, public=public, prefix="/ui-legacy"))
         mount_spa(app, "/ui")
 
-    if os.environ.get("EDP8_PLANE_URL"):
+    if settings.get("EDP8_PLANE_URL"):
         from .plane_adapter import start_mirror_thread, webhook_router
 
         app.include_router(webhook_router(board))
@@ -1575,7 +1580,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
             logging.getLogger("edp8.service").info("swept %d stale staged upload(s)", len(swept))
     except Exception as e:  # noqa: BLE001 — a sweep failure must never block startup
         logging.getLogger("edp8.service").warning("staged-artifact sweep failed: %s", e)
-    if os.environ.get("EDP8_UPLOAD_SWEEP", "1") != "0":
+    if settings.get("EDP8_UPLOAD_SWEEP"):
         import threading
 
         def _sweep_loop() -> None:
@@ -1593,7 +1598,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     # S18: the RSI regression tripwire, OFF unless EDP8_RSI=1; the flag is re-read every loop and
     # app.state.rsi_stop ends it at once.
     app.state.rsi_stop = None
-    if os.environ.get("EDP8_RSI") == "1":
+    if settings.get("EDP8_RSI"):
         _rsi_thread, app.state.rsi_stop = rsi.start_thread(board)
 
     @app.get("/healthz")
@@ -1616,13 +1621,13 @@ def run() -> None:
     import uvicorn
 
     host = resolve_host()  # 0.0.0.0 in public mode (EDP8_PUBLIC_URL), else 127.0.0.1; EDP8_HOST overrides
-    port = int(os.environ.get("EDP8_PORT", "9400"))
+    port = settings.get("EDP8_PORT")
     try:
         app = create_app()  # public mode fails closed here with a plain message
     except RuntimeError as e:
         print(str(e), file=sys.stderr)
         raise SystemExit(2) from e
-    uvicorn.run(app, host=host, port=port, log_level=os.environ.get("EDP8_LOG", "warning"))
+    uvicorn.run(app, host=host, port=port, log_level=settings.get("EDP8_LOG"))
 
 
 if __name__ == "__main__":

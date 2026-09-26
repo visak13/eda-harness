@@ -19,7 +19,6 @@ import functools
 import contextvars
 import enum as _enum
 import json
-import os
 import sys
 import threading
 import typing
@@ -30,7 +29,7 @@ from typing import Any, Callable, Literal
 
 from pydantic import AliasChoices, BaseModel, Field, ValidationError
 
-from . import seat_choice
+from . import seat_choice, settings
 from .client import BoardClient
 from .doc_tools import DocEdit
 from .schemas import (
@@ -102,7 +101,7 @@ def bind_request(client: BoardClient, *, session_id: str | None = None,
 
 def my_session_id() -> str | None:
     """The caller's pool session id: the request header on the shared server, else the env."""
-    return _req_session.get() or os.environ.get("EDP_SPAWN_SESSION_ID") or None
+    return _req_session.get() or settings.get("EDP_SPAWN_SESSION_ID") or None
 
 
 def unavailable(message: str, hint: str) -> dict[str, Any]:
@@ -324,7 +323,7 @@ def invoke(tool: ToolDef, kwargs: dict[str, Any] | None, *, seat: str | None = N
 
 def _call_cap() -> float:
     try:
-        return float(os.environ.get("EDP8_TOOL_CALL_CAP_S", "30"))
+        return float(settings.get("EDP8_TOOL_CALL_CAP_S"))
     except ValueError:
         return 30.0
 
@@ -506,7 +505,7 @@ def _subscribe(_: SubscribeArgs) -> dict[str, Any]:
     client = get_client()
     py = sys.executable.replace("\\", "/")  # bash-safe: the Monitor tool runs bash, which eats backslashes
     monitor_cmd = f'"{py}" -m edp8.feed_driver --participant {client.participant} --board {client.base_url}'
-    broker = os.environ.get("EDP_BROKER_URL")
+    broker = settings.get("EDP_BROKER_URL") if settings.is_set("EDP_BROKER_URL") else None
     if broker:
         monitor_cmd += f" --broker {broker}"
     listening: dict[str, Any] = {}
@@ -543,7 +542,7 @@ _DOC_SUMMARY_HEAD = 200           # doc summary kept in a bounded snapshot
 
 def _context_budget() -> int:
     try:
-        return max(4_000, int(os.environ.get("EDP8_CONTEXT_BUDGET_B", _CONTEXT_BUDGET_B)))
+        return max(4_000, int(settings.get("EDP8_CONTEXT_BUDGET_B")))
     except ValueError:
         return _CONTEXT_BUDGET_B
 
@@ -800,7 +799,7 @@ def _describe(args: DescribeArgs) -> dict[str, Any]:
 
 
 def _edp8_home() -> Path:
-    return Path(os.environ.get("EDP8_HOME", str(Path(__file__).resolve().parents[2])))
+    return settings.agent_home()
 
 
 def _get_guide(args: GetGuideArgs) -> dict[str, Any]:

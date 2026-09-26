@@ -9,9 +9,10 @@ can never render in the board. The 25 MB cap is enforced by the caller while it 
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from urllib.parse import quote
+
+from edp8 import settings
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB (design §18.1)
 _SNIFF_BYTES = 4096  # enough for every magic number below and an SVG root element
@@ -22,9 +23,8 @@ _INLINE_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 
 
 def uploads_dir() -> Path:
-    """Where uploaded bytes live: <EDP8_DATA else EDP8_HOME>/uploads, created on demand."""
-    base = os.environ.get("EDP8_DATA") or os.environ.get("EDP8_HOME", ".")
-    d = Path(base) / "uploads"
+    """Where uploaded bytes live: <settings data dir>/uploads (EDP8_DATA when set), created on demand."""
+    d = settings.data_dir() / "uploads"
     d.mkdir(parents=True, exist_ok=True)
     return d
 

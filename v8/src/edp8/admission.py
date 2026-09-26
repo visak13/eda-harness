@@ -31,9 +31,11 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-LOCK_TTL_S = int(os.environ.get("EDP8_LANE_TTL_S", "900"))  # a holder that stops touching for 15 min is dead
-QUEUE_STALE_S = float(os.environ.get("EDP8_LANE_QUEUE_STALE_S", "10"))  # a waiter touches its ticket every POLL_S
-AGING_S = float(os.environ.get("EDP8_LANE_AGING_S", "120"))  # a ticket this old outranks fresh lower-priority ones
+from edp8 import settings
+
+LOCK_TTL_S = settings.get("EDP8_LANE_TTL_S")  # a holder that stops touching for 15 min is dead
+QUEUE_STALE_S = settings.get("EDP8_LANE_QUEUE_STALE_S")  # a waiter touches its ticket every POLL_S
+AGING_S = settings.get("EDP8_LANE_AGING_S")  # a ticket this old outranks fresh lower-priority ones
 POLL_S = 0.25
 PRIO_HUMAN = 0  # consult() on behalf of a seat that is answering a human
 PRIO_SEAT = 1  # a resident seat's own turn / a routine consult
@@ -163,5 +165,5 @@ class Lane:
 
 
 def lane_dir_from_env(default: Path) -> Path:
-    override = os.environ.get("EDP8_LANE_DIR", "").strip()
-    return Path(override) if override else default
+    override = settings.get("EDP8_LANE_DIR")
+    return override if override is not None else default

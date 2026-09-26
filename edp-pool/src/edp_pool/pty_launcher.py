@@ -21,6 +21,8 @@ import threading
 import time
 from pathlib import Path
 
+from edp_contracts import settings
+
 from .proctree import kill_process_tree
 
 logger = logging.getLogger(__name__)
@@ -59,26 +61,24 @@ def _ready_timeout_default() -> float:
     operator on a slow host (or a test that WANTS a fast timeout) can move
     it without a code change; garbage degrades to the default."""
     try:
-        return float(os.environ.get(
-            _READY_TIMEOUT_ENV, str(_READY_TIMEOUT_DEFAULT)))
+        return float(settings.get(_READY_TIMEOUT_ENV))
     except ValueError:
         return _READY_TIMEOUT_DEFAULT
 
 # W15 (DESIGN-v6): the pool's dedicated Claude config dir. A pool-spawned
 # headless shell must NOT read or write the operator's personal ~/.claude
 # store (skills, memory, settings) — it needs its own clean, checked-in
-# config so a spawn never pollutes the user's foreground install. This
-# file is at <repo>/src/edp_pool/pty_launcher.py → parents[2] == <repo>,
-# self-located exactly like main.py's _root so a clone pins its OWN
-# skeleton, never a stray inherited path.
-_CLAUDE_POOL_CONFIG_DIR = Path(__file__).resolve().parents[2] / ".claude-pool"
+# config so a spawn never pollutes the user's foreground install. The
+# registry default of EDP_CLAUDE_CONFIG_DIR (dev mode: <repo>/edp-pool/.claude-pool,
+# installed: <data>/claude-pool) — the skeleton, before any explicit override.
+_CLAUDE_POOL_CONFIG_DIR = settings.setting("EDP_CLAUDE_CONFIG_DIR").default_value()
 
 
 def resolve_claude_bin(override: str | None = None) -> str:
     """override → EDP_CLAUDE_BIN → which → npm .cmd shim → bare 'claude'."""
     if override:
         return override
-    env_bin = os.environ.get("EDP_CLAUDE_BIN")
+    env_bin = settings.env_raw("EDP_CLAUDE_BIN")
     if env_bin:
         return env_bin
     resolved = shutil.which("claude")
@@ -164,7 +164,7 @@ def _versions_cache_candidates(claude_bin: str) -> list[Path]:
     beside claude-code, then any `.claude-code-*` staging dir."""
     name = Path(claude_bin).name  # claude.exe
     cands: list[Path] = []
-    override = os.environ.get(_VERSIONS_CACHE_ENV)
+    override = settings.env_raw(_VERSIONS_CACHE_ENV)
     if override:
         op = Path(override)
         cands.append(op if op.is_file() else op / name)
@@ -461,8 +461,7 @@ _SECRET_KEEP_PREFIXES = ("EDP_", "ANTHROPIC_", "CLAUDE_")
 
 
 def _strip_foreign_secrets(env: dict) -> dict:
-    keep = {n.strip().upper() for n in
-            os.environ.get("EDP_SPAWN_ENV_KEEP", "").split(",") if n.strip()}
+    keep = {n.upper() for n in settings.get("EDP_SPAWN_ENV_KEEP")}
     out = {}
     for name, value in env.items():
         upper = name.upper()
@@ -500,7 +499,7 @@ def build_env(session_id: str, role: str, handle: str,
     `spawn_defaults.BANNED_KEYS`."""
     from .spawn_defaults import load_spawn_defaults
     d = load_spawn_defaults() if defaults is None else defaults
-    env = _strip_foreign_secrets(os.environ.copy())
+    env = _strip_foreign_secrets(settings.environ_copy())
     env["EDP_SPAWN_SESSION_ID"] = session_id  # correlation (kept from old)
     env["EDP_ROLE"] = role
     env["EDP_HANDLE"] = handle
@@ -746,9 +745,7 @@ class PtyLaunch:
         # process existed but before the spawner registered it, leaving a
         # true orphan. Tolerate junk (default), never raise mid-activation.
         try:
-            delay_ms = float(
-                os.environ.get(_SUBMIT_DELAY_ENV, _SUBMIT_DELAY_DEFAULT_MS)
-            )
+            delay_ms = float(settings.get(_SUBMIT_DELAY_ENV))
         except (TypeError, ValueError):
             delay_ms = float(_SUBMIT_DELAY_DEFAULT_MS)
         time.sleep(delay_ms / 1000)

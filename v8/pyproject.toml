@@ -16,6 +16,8 @@ dependencies = [
     "pillow>=10.0",
     "psutil>=5.9",
     "python-multipart>=0.0.9",
+    "edp-contracts==0.1.0",
+    "platformdirs>=4.0",
 ]
 
 [project.optional-dependencies]
@@ -29,6 +31,9 @@ edp8-board = "edp8.service:run"
 edp8-mcp = "edp8.mcp_server:run"
 edp8-feed = "edp8.feed_driver:run"
 edp8-supervisor = "edp8.supervisor:main"
+
+[tool.uv.sources]
+edp-contracts = { path = "../edp-contracts", editable = true }
 
 [build-system]
 requires = ["hatchling"]
@@ -46,6 +51,15 @@ exclude = ["src/edp8/webapp/dist"]
 # Proven in S1: `uv build --wheel` then listing the wheel shows edp8/webapp/dist/index.html.
 [tool.hatch.build.targets.wheel.force-include]
 "src/edp8/webapp/dist" = "edp8/webapp/dist"
+# The agent home ships as package data (design-e963c656f5 §4.2); the v8/ tree stays its single source and
+# edp8.materialise copies it into <data>/agent-home. Keep in step with materialise.PAYLOAD.
+".claude/commands" = "edp8/agent_home/.claude/commands"
+".claude/skills" = "edp8/agent_home/.claude/skills"
+".claude/output-styles" = "edp8/agent_home/.claude/output-styles"
+"guides" = "edp8/agent_home/guides"
+".mcp.json" = "edp8/agent_home/.mcp.json"
+"models.json" = "edp8/agent_home/models.json"
+"CLAUDE.md" = "edp8/agent_home/CLAUDE.md"
 
 # The wheel refuses (or, with npm on PATH, rebuilds) a SPA bundle older than web/src — a stale dist
 # shipped silently otherwise (qa acceptance finding #15, 2026-09-10). See hatch_build.py.

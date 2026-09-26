@@ -101,16 +101,25 @@ def test_sub_3b_build_env_pins_whole_stack(monkeypatch):
     assert "eda-base3" in e["EDP_LOG_DIR"]
 
 
-def test_main_self_locates_sibling_claude_repo():
-    # The pool computes agent_home/log_dir from its OWN path (parents[3]),
-    # so a clone is self-consistent regardless of the launching shell.
+def test_main_pins_agent_home_and_log_dir_from_settings(monkeypatch):
+    # The pool pins agent_home/log_dir from its OWN settings (EDP_POOL_AGENT_HOME,
+    # EDP_POOL_SHELL_LOG_DIR), never an inherited EDP_AGENT_HOME/EDP_LOG_DIR. Dev mode
+    # (EDP_HOME = <repo>/v8, a source checkout): <repo>/v8 and <repo>/.logs.
     from pathlib import Path
 
+    from edp_contracts import settings
+
     import edp_pool.main as m
-    root = Path(m.__file__).resolve().parents[3]
-    assert m._agent_home == str(root / "claude")
-    assert m._shell_log_dir == str(root / ".logs")
     assert m._pool_url.startswith("http://127.0.0.1:")
+    repo = Path(__file__).resolve().parents[2]
+    for n in ("EDP_POOL_AGENT_HOME", "EDP_POOL_SHELL_LOG_DIR", "EDP_AGENT_HOME", "EDP_DEV",
+              "EDP8_HOME", "EDP_CONFIG_DIR"):
+        monkeypatch.delenv(n, raising=False)
+    monkeypatch.setenv("EDP_HOME", str(repo / "v8"))
+    monkeypatch.setenv("EDP_LOG_DIR", "C:/stray/.logs")
+    assert settings.get("EDP_POOL_AGENT_HOME") == repo / "v8"
+    assert settings.get("EDP_POOL_SHELL_LOG_DIR") == repo / ".logs"
+    assert settings.get("EDP_CLAUDE_CONFIG_DIR") == repo / "edp-pool" / ".claude-pool"
 
 
 def test_activation_text_role_maps_to_real_command():

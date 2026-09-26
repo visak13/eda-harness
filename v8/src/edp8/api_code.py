@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import ipaddress
 import json
-import os
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -22,6 +21,8 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
+
+from edp8 import settings
 
 from . import run_state
 from .code_guard import mint_token
@@ -36,7 +37,7 @@ def code_port() -> int:
 
 
 def _home() -> Path:
-    return Path(os.environ.get("EDP8_HOME", str(Path(__file__).resolve().parents[2]))).resolve()
+    return settings.agent_home().resolve()
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):

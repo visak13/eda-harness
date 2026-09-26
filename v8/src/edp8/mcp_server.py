@@ -21,7 +21,6 @@ from __future__ import annotations
 import contextlib
 import inspect
 import json
-import os
 import sys
 import time
 from collections.abc import AsyncIterator
@@ -42,6 +41,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
+from . import run_state, settings
 from .bundles import ROLE_BUNDLES, ToolDef, bind_request, invoke, set_client, tools_for_role
 from .client import BoardClient
 from .schemas import Role
@@ -51,21 +51,8 @@ STARTED_AT = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 def server_version() -> str:
     """Git sha of the code this process runs — whoami reports it so a seat can tell stale code.
-    Read from .git directly (tool modules never spawn processes)."""
-    try:
-        here = os.path.dirname(os.path.abspath(__file__))
-        root = here
-        for _ in range(6):
-            if os.path.isdir(os.path.join(root, ".git")):
-                break
-            root = os.path.dirname(root)
-        head = open(os.path.join(root, ".git", "HEAD"), encoding="utf-8").read().strip()
-        if head.startswith("ref: "):
-            ref = os.path.join(root, ".git", *head[5:].split("/"))
-            head = open(ref, encoding="utf-8").read().strip()
-        return head[:7] or "unknown"
-    except OSError:
-        return "unknown"
+    Read from .git directly (tool modules never spawn processes): run_state.git_rev."""
+    return run_state.git_rev()
 
 
 VERSION = server_version()
@@ -84,9 +71,9 @@ def _identity_from(ctx: Context | None) -> tuple[str | None, str | None, str | N
     if headers:
         h = {k.lower(): v for k, v in headers.items()}
         return (h.get("x-participant") or None), (h.get("x-session") or None), (h.get("x-token") or None)
-    return (os.environ.get("EDP8_PARTICIPANT") or os.environ.get("EDP_HANDLE") or None,
-            os.environ.get("EDP_SPAWN_SESSION_ID") or None,
-            os.environ.get("EDP8_TOKEN") or None)
+    return (settings.get("EDP8_PARTICIPANT") or None,
+            settings.get("EDP_SPAWN_SESSION_ID") or None,
+            settings.get("EDP8_TOKEN") or None)
 
 
 # t-3e246b5e32 (a): the tools a caller gets are bound to its BOARD role (whoami), never to the
@@ -209,7 +196,7 @@ def build_role_server(role: str, *, board_url: str, admin_token: str | None,
 
 
 def _env() -> tuple[str, str | None]:
-    return (os.environ.get("EDP8_BOARD_URL", "http://127.0.0.1:9400"), os.environ.get("EDP8_ADMIN_TOKEN"))
+    return (settings.get("EDP8_BOARD_URL"), settings.get("EDP8_ADMIN_TOKEN"))
 
 
 # ------------------------------------------------------------------ HTTP (shared, stateless)
@@ -252,15 +239,15 @@ def build_http_app(roles: list[str] | None = None) -> Starlette:
 def run_http() -> None:
     import uvicorn
 
-    host = os.environ.get("EDP8_MCP_HOST", "127.0.0.1")
-    port = int(os.environ.get("EDP8_MCP_PORT", "9402"))
+    host = settings.get("EDP8_MCP_HOST")
+    port = settings.get("EDP8_MCP_PORT")
     uvicorn.run(build_http_app(), host=host, port=port, log_level="info")
 
 
 # ------------------------------------------------------------------ stdio (fallback)
 
 def _resolve_role(client: BoardClient) -> str:
-    role = os.environ.get("EDP8_ROLE") or os.environ.get("EDP_ROLE")
+    role = settings.get("EDP8_ROLE")
     try:
         resp = client.whoami()
         if resp.get("ok"):
@@ -272,18 +259,18 @@ def _resolve_role(client: BoardClient) -> str:
 
 def build_server() -> MCPServer:
     board_url, admin_token = _env()
-    participant = os.environ.get("EDP8_PARTICIPANT") or os.environ.get("EDP_HANDLE")
+    participant = settings.get("EDP8_PARTICIPANT")
     client = BoardClient(base_url=board_url, participant=participant, admin_token=admin_token)
     set_client(client)
     role = _resolve_role(client)
     # Only the seat-local stdio process accepts an explicit root. HTTP never supplies one.
-    root = os.environ.get("EDP8_UPLOAD_ROOT")
+    root = settings.get("EDP8_UPLOAD_ROOT")
     return build_role_server(role, board_url=board_url, admin_token=admin_token,
                              workspace_root=Path(root) if root else None)
 
 
 def run() -> None:
-    if "--stdio" in sys.argv[1:] or os.environ.get("EDP8_MCP_TRANSPORT", "").lower() == "stdio":
+    if "--stdio" in sys.argv[1:] or settings.get("EDP8_MCP_TRANSPORT").lower() == "stdio":
         build_server().run("stdio")
     else:
         run_http()

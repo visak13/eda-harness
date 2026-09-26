@@ -25,6 +25,8 @@ import sys
 import time
 from pathlib import Path
 
+from edp_contracts import settings
+
 from .pty_launcher import build_env
 
 _CLAUDE_ONLY = ("CLAUDE_CONFIG_DIR", "DISABLE_AUTOUPDATER", "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
@@ -33,7 +35,7 @@ _CLAUDE_ONLY = ("CLAUDE_CONFIG_DIR", "DISABLE_AUTOUPDATER", "CLAUDE_CODE_AUTO_CO
 
 def seat_python(agent_home: str | None) -> str:
     """The AGENT HOME's own venv python (edp8 is installed there), never the pool's."""
-    override = os.environ.get("EDP_PI_SEAT_PYTHON", "").strip()
+    override = (settings.env_raw("EDP_PI_SEAT_PYTHON") or "").strip()
     if override:
         return override
     home = Path(agent_home or os.getcwd())
@@ -48,13 +50,14 @@ def build_argv_pi(agent_home: str | None) -> list[str]:
 
 def pi_bin_argv() -> list[str]:
     """argv prefix for Pi itself: EDP_PI_BIN (a cli.js → under node, or an exe), else `pi` on PATH."""
-    cand = os.environ.get("EDP_PI_BIN", "").strip()
+    cand = (settings.env_raw("EDP_PI_BIN") or "").strip()
     if cand.lower().endswith(".js"):
         return ["node", cand]
     if cand:
         return [cand]
-    # durable default: <edp-pool>/.pi-harness (package.json + lockfile committed, node_modules ignored)
-    harness = Path(os.environ.get("EDP_PI_HARNESS", "").strip() or Path(__file__).resolve().parents[2] / ".pi-harness")
+    # durable default: <pool dir>/.pi-harness (dev: <repo>/edp-pool; package.json + lockfile committed,
+    # node_modules ignored)
+    harness = settings.get("EDP_PI_HARNESS") or settings.get("EDP_POOL_DIR") / ".pi-harness"
     cli = harness / "node_modules" / "@earendil-works" / "pi-coding-agent" / "dist" / "cli.js"
     if cli.is_file():
         return ["node", str(cli)]
@@ -158,7 +161,7 @@ def build_env_pi(session_id: str, role: str, handle: str, broker_url: str | None
     else:
         env.pop("EDP_ACTIVATION", None)
     for k in ("EDP_PI_BIN", "EDP_PI_MODEL", "EDP_PI_THINKING", "EDP8_LANE_DIR", "EDP8_HOME"):
-        v = os.environ.get(k)
+        v = settings.env_raw("EDP_HOME" if k == "EDP8_HOME" else k)  # EDP8_HOME: legacy alias of EDP_HOME
         if v:
             env[k] = v
     env.setdefault("EDP_PI_MODEL", "openai-codex/gpt-6-astra")  # the authenticated route (Codex login); openai/… with a key
@@ -196,9 +199,9 @@ class PiSpawner:
         if extra_env:  # S20: the per-seat EDP8_TOKEN the service mints — merged AFTER build_env's
             env.update({str(k): str(v) for k, v in extra_env.items()})  # secret strip; env only
         seat = openai_seat_for(role, self._agent_home)
-        if seat is not None and not os.environ.get("EDP_PI_MODEL"):
+        if seat is not None and not settings.is_set("EDP_PI_MODEL"):
             env["EDP_PI_MODEL"] = seat.model
-            if seat.thinking and not os.environ.get("EDP_PI_THINKING"):
+            if seat.thinking and not settings.is_set("EDP_PI_THINKING"):
                 env["EDP_PI_THINKING"] = seat.thinking
         if model and model.startswith(("openai/", "openai-codex/")):  # explicit per-spawn override wins
             env["EDP_PI_MODEL"] = model

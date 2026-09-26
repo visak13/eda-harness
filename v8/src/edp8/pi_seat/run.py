@@ -20,6 +20,8 @@ import sys
 import time
 from pathlib import Path
 
+from edp8 import settings
+
 from .driver import PiSeat
 
 
@@ -40,7 +42,7 @@ def role_card(agent_home: Path, role: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    env = os.environ
+    env = settings.environ_copy()
     role = env.get("EDP_ROLE", "owner")
     handle = env.get("EDP_HANDLE", f"{role}.pi")
     agent_home = Path(env.get("EDP_AGENT_HOME") or os.getcwd()).resolve()
