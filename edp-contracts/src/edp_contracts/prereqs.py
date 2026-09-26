@@ -515,7 +515,7 @@ def describe_recipe(p: Prereq, r: Recipe | None) -> str:
             f", or set {p.setting} to its path" if p.setting else ""
         )
     if r.manager == "model":
-        return f'heronry prereqs install --only "{p.name}" (downloads {embed_model()})'
+        return f"download {embed_model()} into the model cache"
     # the command as a person would type it (recipe_argv adds shims and absolute paths)
     return {
         "winget": f"winget install --id {r.arg} --exact",

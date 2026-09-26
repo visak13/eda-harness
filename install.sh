@@ -61,7 +61,8 @@ export NO_COLOR=1
 
 # -- 1. uv ------------------------------------------------------------------------------------------------
 UV="$(command -v uv 2>/dev/null || true)"
-[ -z "$UV" ] && [ -x "$HOME/.local/bin/uv" ] && UV="$HOME/.local/bin/uv"
+[ -z "$UV" ] && [ -x "$HOME/.local/bin/uv" ] && UV="$HOME/.local/bin/uv" &&
+  { PATH="$HOME/.local/bin:$PATH"; export PATH; }  # `heronry prereqs` / `heronry update` look uv up on PATH
 HAVE=""; [ -n "$UV" ] && HAVE="$(ver_of "$("$UV" --version)")"
 if [ -z "$UV" ] || [ -z "$HAVE" ] || ! ver_ge "$HAVE" "$UV_VERSION"; then
   case "$(uname -m)" in
