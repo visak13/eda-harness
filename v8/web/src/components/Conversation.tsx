@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import type { MessageAttachment, MessageView } from "../api/types";
 import { Avatar } from "./Avatar";
@@ -40,6 +40,34 @@ function dayLabel(at: string | undefined): string {
   const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
   if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(d);
+}
+
+/** S10 (owner m-e587ecc667): the thread fills the viewport to its bottom edge. The list keeps its 56vh
+ *  cap (it scrolls inside, the composer stays reachable) but gets a floor: the viewport height left
+ *  under the list's top, less what sits under it in the section (the composer). Written as
+ *  --thread-fill on the section; recomputed when the page, the section or the viewport resizes
+ *  (title bar or composer collapse, rail toggle, rewrap). A page taller than the viewport gets no floor. */
+function useFillViewport(): React.RefObject<HTMLElement | null> {
+  const ref = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    const sec = ref.current;
+    if (!sec) return;
+    const fit = () => {
+      const body = sec.querySelector<HTMLElement>("[data-fill]");
+      if (!body) return;
+      const top = body.getBoundingClientRect().top + window.scrollY;
+      const below = sec.getBoundingClientRect().bottom - body.getBoundingClientRect().bottom;
+      const fill = `${Math.max(0, Math.floor(document.documentElement.clientHeight - top - below))}px`;
+      if (sec.style.getPropertyValue("--thread-fill") !== fill) sec.style.setProperty("--thread-fill", fill);
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(fit);
+    ro?.observe(sec);
+    if (sec.parentElement) ro?.observe(sec.parentElement);
+    return () => { window.removeEventListener("resize", fit); ro?.disconnect(); };
+  }, []);
+  return ref;
 }
 
 /** Message text without the artifact tokens the cards already render. */
@@ -96,8 +124,9 @@ export function Conversation({ ticketId, history, order, onToggleOrder, onReply,
   useScrollToHash(Boolean(thread.length));
   const last = thread[thread.length - 1]?.at;
   const [composerCollapsed, setComposerCollapsed] = useViewerFlag(viewer, "composer-collapsed");
+  const fillRef = useFillViewport();
   return (
-    <section className={styles.conversation} aria-label="Conversation" data-testid="conversation" data-ticket={ticketId}>
+    <section ref={fillRef} className={styles.conversation} aria-label="Conversation" data-testid="conversation" data-ticket={ticketId}>
       <div className={styles.heading}>
         <h2>Conversation</h2>
         <span data-testid="conversation-total">{history.total} {history.total === 1 ? "message" : "messages"}</span>
@@ -108,9 +137,9 @@ export function Conversation({ ticketId, history, order, onToggleOrder, onReply,
       </div>
       <ThreadHistoryControls history={history} />
       {ordered.length === 0 ? (
-        <p className={styles.empty}>No messages yet. Write the first one below.</p>
+        <p className={styles.empty} data-fill>No messages yet. Write the first one below.</p>
       ) : (
-        <ul ref={history.listRef} className={styles.messages} data-testid="thread" tabIndex={0} aria-label="Conversation messages">
+        <ul ref={history.listRef} className={styles.messages} data-fill data-testid="thread" tabIndex={0} aria-label="Conversation messages">
           {ordered.map((m) => {
             const parent = m.reply_to ? byId.get(m.reply_to) : undefined;
             const waiting = m.kind === "question" && m.to === viewer;

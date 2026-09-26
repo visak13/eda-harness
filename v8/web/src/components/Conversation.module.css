@@ -1,8 +1,9 @@
 /* Conversation canvas per revision3-clean-epic.png. */
 /* The conversation is the last block of the epic and story pages and its composer is pinned, so the
    page's 40px bottom padding (.main) only showed as a blank band under the message box at the page end
-   (owner m-de07c37d0c): the block swallows all but 12px of it — the composer's own padding is the gap. */
-.conversation { display: flex; flex-direction: column; min-width: 0; padding-top: 16px; gap: 12px; margin-bottom: -28px; }
+   (owner m-de07c37d0c): the block swallows all of it — the composer's own 12px padding is the gap, and
+   the section's bottom edge is the viewport's when the thread fills it (S10, useFillViewport). */
+.conversation { display: flex; flex-direction: column; min-width: 0; padding-top: 16px; gap: 12px; margin-bottom: -40px; }
 .heading { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .heading h2 { font-size: 20px; margin: 0; }
 .heading span { font-size: 13px; color: var(--muted); }
@@ -10,8 +11,8 @@
 .order { border: 1.5px solid transparent; border-radius: 8px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; min-height: 30px; padding: 3px 8px; cursor: pointer; }
 .order:hover { background: var(--secondary); border-color: var(--strongline); color: var(--ink); }
 .order:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
-.empty { color: var(--muted); font-size: 14px; margin: 0; }
-.messages { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; max-height: min(56vh, 720px); overflow-y: auto; scroll-margin-top: 12px; }
+.empty { color: var(--muted); font-size: 14px; margin: 0; min-height: var(--thread-fill, 0px); }
+.messages { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; max-height: min(56vh, 720px); min-height: var(--thread-fill, 0px); overflow-y: auto; scroll-margin-top: 12px; }
 .messages:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
 .msg { display: grid; grid-template-columns: 36px 1fr; gap: 12px; padding: 0 4px 18px; border-radius: 8px; }
 .msg:target { background: var(--accentwash); }
