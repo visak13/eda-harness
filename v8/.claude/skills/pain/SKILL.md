@@ -12,9 +12,8 @@ improvise around the framework, or two authoritative texts disagreed and you pic
 Not for your own mistakes or task-domain problems.
 
 **Scope — what a pain record addresses:** the EDP framework only — the board and its MCP tools,
-role cards, skills and guides (`v8/`), the pool and seat launchers (`edp-pool/`, codex/pi seats) and
-the consult bridge. A bug in the project repo your ticket builds (a game, an asset pipeline, any
-other repo) is NOT pain: report it on your ticket thread (`message_send`) or fix it in the story.
+role cards, skills and guides (`v8/`), and the pool and seat launchers (`edp-pool/`, codex/pi
+seats). A bug in the project repo your ticket builds (a game, an asset pipeline, any other repo) is NOT pain: report it on your ticket thread (`message_send`) or fix it in the story.
 
 **Do**
 1. `python scripts/pain.py list --area <area>` (open records only, one line each) — an open record with the same symptom

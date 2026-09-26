@@ -37,7 +37,7 @@ high- and low-level strategy docs (assemble_ruleset composes them), writes stori
 and opens your design_signoff gate. SMEs closed + plan signed = architect stands down.
 From there your shell spawns each phase as the feed announces it:
 engineer per ready story -> reviewer on in_review -> adversary on the adversarial review story
-(codex consult; you pick the findings to take up; iterate till you close the gate) -> qa when
+(a codex adversary seat; you pick the findings to take up; iterate till you close the gate) -> qa when
 the acceptance gate opens -> your acceptance answer -> close.
 
 ## 4. What you actually do (the five touchpoints)

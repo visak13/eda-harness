@@ -1,6 +1,6 @@
-"""admission — ONE cross-process inference lane for the OpenAI login (consult.py + resident seats).
+"""admission — ONE cross-process inference lane for the OpenAI login (resident codex and Pi seats).
 
-Design design-97ca02e989 §8 S8 [Astra]: the consult lane was a process-local `threading.Lock`,
+Design design-97ca02e989 §8 S8 [Astra]: the old consult lane was a process-local `threading.Lock`,
 so a separate Astra seat could not take part; residency and inference capacity are different
 resources, so a seat acquires PER TURN (per provider request), never for its lifetime.
 
@@ -12,11 +12,11 @@ Protocol (cross-language, no fcntl/msvcrt so the Pi extension can implement it b
   <dir>/lane.lock/                                 the lock: `mkdir` is atomic on every OS; holder.json inside
                                                    carries a UNIQUE lease_id + ttl_s; mtime refreshed by
                                                    `touch()`; older than its ttl → stale, reclaimable
-  <dir>/quota.json                                 consult.py's block record {"blocked_until", "evidence", "seen_at"}
+  <dir>/quota.json                                 the harness's quota block record {"blocked_until", "evidence", "seen_at"}
 Ordering: tickets sort by (effective priority, ts): "0" beats "1", FIFO within; a ticket that has waited
-AGING_S sorts as priority 0 so a stream of consults cannot starve a seat (qa A3).
+AGING_S sorts as priority 0 so a stream of high-priority turns cannot starve a seat (qa A3).
 A waiter takes the lock only when its ticket is first and the lock dir does not exist (or is stale).
-Bounded wait → `None` (caller decides: consult returns "lane busy", a seat FAILS CLOSED — qa A2).
+Bounded wait → `None` (the caller decides: a seat FAILS CLOSED — qa A2).
 Release removes the lock only when holder.json carries this lease's id (qa A4: a reclaimed-as-stale
 lease never deletes its replacement's lock; an unreadable holder.json is left for the TTL).
 """
@@ -37,8 +37,8 @@ LOCK_TTL_S = settings.get("EDP8_LANE_TTL_S")  # a holder that stops touching for
 QUEUE_STALE_S = settings.get("EDP8_LANE_QUEUE_STALE_S")  # a waiter touches its ticket every POLL_S
 AGING_S = settings.get("EDP8_LANE_AGING_S")  # a ticket this old outranks fresh lower-priority ones
 POLL_S = 0.25
-PRIO_HUMAN = 0  # consult() on behalf of a seat that is answering a human
-PRIO_SEAT = 1  # a resident seat's own turn / a routine consult
+PRIO_HUMAN = 0  # a turn on behalf of a seat that is answering a human
+PRIO_SEAT = 1  # a resident seat's own turn
 
 
 def _now() -> str:
@@ -128,7 +128,7 @@ class Lane:
     def acquire(self, holder: str, *, priority: int = PRIO_SEAT, max_wait_s: float = 600,
                 ttl_s: float | None = None) -> Lease | None:
         """`ttl_s`: how long this holder may go without `touch()` before others reclaim the lock —
-        a consult passes its own timeout so a long run is never reclaimed under it (qa A4)."""
+        a long turn passes its own timeout so a long run is never reclaimed under it (qa A4)."""
         self.queue.mkdir(parents=True, exist_ok=True)
         ticket = self.queue / f"{priority}-{int(time.time() * 1000):013d}-{uuid.uuid4().hex[:6]}.json"
         ticket.write_text(json.dumps({"holder": holder, "priority": priority, "queued_at": _now(), "pid": os.getpid()}), encoding="utf-8")

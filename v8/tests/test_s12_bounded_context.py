@@ -1,6 +1,5 @@
 """S12 (qa finding 18, m-95ca1a69d6): context() for a multi-ticket checking seat overflowed the
-MCP client cap (~120k chars) and consult_status shipped `answer` twice plus ~55 pre-dirty fence
-rows for a read-only run. Both are shaped in the tool layer (bundles.py); board.py
+MCP client cap (~120k chars). It is shaped in the tool layer (bundles.py); board.py
 _context_snapshot / ticket_view and context_delta are left untouched.
 """
 
@@ -108,71 +107,3 @@ def test_context_budget_env_override(client, five_ticket_seat, monkeypatch):
     bounded = ctx.handler(ctx.args_model())["value"]
     assert _bytes(bounded) <= 12000, f"tighter budget not honoured: {_bytes(bounded)} bytes"
     assert "12000" in bounded["omitted"]["why"]
-
-
-def _seed_read_only_run(tmp_path) -> str:
-    """A read-only consult run whose manifest carries the noise the finding named: a duplicate
-    `answer` copy and ~55 pre-dirty fence / concurrent_writes rows."""
-    run_id = "run-ro-1"
-    escapes = [{"path": f"web/e2e/evidence/x{i}.png", "action": "pre_dirty_concurrent",
-                "attribution": "pre_dirty", "tracked": True, "pre_dirty": True, "status": " M"}
-               for i in range(55)]
-    manifest = {
-        "run_id": run_id, "status": "ok", "answer": "the second opinion answer",
-        "provider_model": "gpt-6-astra", "elapsed_s": 12.3, "thread_id": "th-1",
-        "queued_behind": 0, "advisory": "ok",
-        "fence": {"escapes": escapes, "write_dir": None},
-        "concurrent_writes": [e["path"] for e in escapes],
-        "writes_outside_write_dir": [],
-    }
-    (tmp_path / f"{run_id}.manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    return run_id
-
-
-def test_consult_status_compact_returns_answer_once_without_fence_rows(tmp_path, monkeypatch):
-    monkeypatch.setenv("EDP8_SOL_LOG_DIR", str(tmp_path))
-    run_id = _seed_read_only_run(tmp_path)
-    cs = ALL_TOOLS["consult_status"]
-
-    compact = cs.handler(cs.args_model(run_id=run_id))
-    assert compact["ok"]
-    val = compact["value"]
-
-    # answer appears exactly once — top level, not inside the manifest copy
-    assert val["answer"] == "the second opinion answer"
-    assert "answer" not in val["manifest"]
-
-    # the read-only run's fence noise is gone from the compact shape
-    assert "fence" not in val["manifest"] and "concurrent_writes" not in val["manifest"]
-    blob = json.dumps(val)
-    assert "pre_dirty_concurrent" not in blob and blob.count("the second opinion answer") == 1
-
-    # the receipt names the dropped fields and the verbose escape hatch
-    assert any("fence" in f for f in val["omitted"]["fields"])
-    assert "verbose=True" in val["omitted"]["full"]
-
-
-def test_consult_status_verbose_keeps_fence_rows(tmp_path, monkeypatch):
-    monkeypatch.setenv("EDP8_SOL_LOG_DIR", str(tmp_path))
-    run_id = _seed_read_only_run(tmp_path)
-    cs = ALL_TOOLS["consult_status"]
-    verbose = cs.handler(cs.args_model(run_id=run_id, verbose=True))
-    man = verbose["value"]["manifest"]
-    assert man["fence"]["escapes"] and len(man["concurrent_writes"]) == 55
-    assert "omitted" not in verbose["value"]
-
-
-def test_consult_status_keeps_real_boundary_violation(tmp_path, monkeypatch):
-    """A run with an ATTRIBUTED escape is a real fence breach — compaction must not hide it."""
-    monkeypatch.setenv("EDP8_SOL_LOG_DIR", str(tmp_path))
-    run_id = "run-viol-1"
-    man = {"run_id": run_id, "status": "boundary_violation", "answer": "",
-           "writes_outside_write_dir": ["Content/BAD.uasset"],
-           "fence": {"escapes": [{"path": "Content/BAD.uasset", "action": "restored_tracked",
-                                  "attribution": "log", "tracked": True, "pre_dirty": False}]},
-           "concurrent_writes": []}
-    (tmp_path / f"{run_id}.manifest.json").write_text(json.dumps(man), encoding="utf-8")
-    cs = ALL_TOOLS["consult_status"]
-    compact = cs.handler(cs.args_model(run_id=run_id))["value"]
-    assert compact["manifest"]["writes_outside_write_dir"] == ["Content/BAD.uasset"]
-    assert compact["manifest"]["fence"]["escapes"], "a real escape row must survive compaction"

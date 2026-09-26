@@ -30,7 +30,8 @@ def test_templates_and_dispatch():
         result = avatars.role_avatar_svg(role, size=24)
         assert template["body"] in result
         assert ET.fromstring(result).attrib["width"] == "24"
-    assert avatars.role_avatar_svg("engineer", "gpt-6-astra") == avatars.role_avatar_svg("consultant")
+    assert avatars.role_avatar_svg("engineer", "gpt-6-astra") == avatars.role_avatar_svg("codex")
+    assert avatars.role_avatar_svg("adversary", "codex/gpt-6-astra") == avatars.role_avatar_svg("codex")
     assert avatars.role_avatar_svg("not-a-role") == avatars.system_avatar_svg(unknown=True)
     for avatar_id in avatars.HUMAN_AVATAR_IDS:
         human = SimpleNamespace(type="human", role="consultant", model="gpt", avatar_id=avatar_id)

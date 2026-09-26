@@ -1,7 +1,7 @@
 """Rule: MCP tools validate, store, route and signal. They never execute code or commands on the
 agent's behalf — the tool tells the agent what to run; the agent runs it in its own shell and
 records evidence — and they never swallow failures (every error travels in the envelope).
-Standalone process boundaries are explicitly allowlisted: the consultant bridge (consult.py),
+Standalone process boundaries are explicitly allowlisted:
 the launcher's supervisor (supervisor.py, design §22), and the operator-invoked subscription
 collector (usage_sources.py, UI design §4.10). The collector must remain unreachable from
 board/tool modules: opening Usage reads receipts and must never launch a provider."""
@@ -11,7 +11,7 @@ import re
 
 SRC = pathlib.Path(__file__).resolve().parents[1] / "src" / "edp8"
 FORBIDDEN = re.compile(r"(subprocess|os\.system|os\.popen|\bexec\(|\beval\(|(?<!re\.)\bcompile\()")
-ALLOWED_SUBPROCESS = {"consult.py", "supervisor.py", "usage_sources.py"}
+ALLOWED_SUBPROCESS = {"supervisor.py", "usage_sources.py"}
 SILENT = re.compile(r"except\s*(Exception|BaseException)?\s*:\s*\r?\n\s*pass\b")
 
 

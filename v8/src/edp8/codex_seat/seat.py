@@ -6,7 +6,7 @@
     seat.wait()                        # resident until the app-server exits
 
 Containment (c-1113387020, architect m-c50e181c7f): every MCP server `codex mcp list --json`
-reports is disabled (consult.py's discover-and-disable, fail-closed), the edp8 board is the ONE server
+reports is disabled (containment.py's discover-and-disable, fail-closed), the edp8 board is the ONE server
 added, its identity headers come from env by NAME (`env_http_headers`), and `live_mcp_servers()` reads
 the thread's actual set back so a test/drill can assert it is exactly {edp8}.
 
@@ -31,6 +31,7 @@ from pathlib import Path
 
 from edp8 import settings
 
+from . import containment
 from .rpc import AppServer, RpcError, redactor
 from .tools import Delivery, SeatTools
 
@@ -39,8 +40,7 @@ BOARD_SERVER = "edp8"
 #: role card line naming the role's skill bundle: `**SKILLS** /verify · /deviation · /pain`
 SKILLS_LINE = re.compile(r"^\*\*SKILLS\*\*(.*)$", re.M)
 
-#: codex sandbox per role: doing seats write the workspace, checking seats inspect read-only —
-#: consult.py's two modes ("workspace-write" for build/concept, "read-only" for design/verify)
+#: codex sandbox per role: doing seats write the workspace, checking seats inspect read-only
 ROLE_SANDBOX: dict[str, str] = {
     "engineer": "workspace-write", "sme": "workspace-write", "architect": "workspace-write",
     "qa": "workspace-write", "owner": "workspace-write",
@@ -68,16 +68,15 @@ def containment_args(codex: str, *, discover: Callable | None = None, env: dict[
                      cwd: str | None = None) -> tuple[list[str], list[str]]:
     """(`-c` args, disabled server names). Fail-closed: a discovery error raises. Discovery runs in the
     LAUNCH context (env/cwd), so it reads the config the launched app-server will load."""
-    from ..consult import discover_mcp_servers, mcp_containment_args, mcp_disabled_names
     if discover is not None:
         servers, err = discover(codex)
     else:
-        servers, err = discover_mcp_servers(codex, env=env, cwd=cwd)
+        servers, err = containment.discover_mcp_servers(codex, env=env, cwd=cwd)
     if err:
         raise RuntimeError(f"MCP discovery failed, refusing to start an uncontained seat: {err}")
     servers = [s for s in servers if s["name"] != BOARD_SERVER]  # ours is redefined below
-    # consult.py's path: every listed server off + HIDDEN_SERVER_FEATURES (apps) off; nothing else
-    return mcp_containment_args(servers), mcp_disabled_names(servers)
+    # every listed server off + HIDDEN_SERVER_FEATURES (apps) off; nothing else
+    return containment.mcp_containment_args(servers), containment.mcp_disabled_names(servers)
 
 
 def role_skill_roots(agent_home: str | os.PathLike[str], role: str) -> list[str]:

@@ -550,15 +550,11 @@ def test_c6_tick_passes_with_every_model_entry_point_raising(world, monkeypatch)
     import socket
     import subprocess
 
-    from edp8 import consult, pool_adapter, search
+    from edp8 import pool_adapter, search
 
     def forbidden(*a, **k):
         raise AssertionError("generative / external call during an rsi tick")
 
-    for mod in (consult,):
-        for name in dir(mod):
-            if callable(getattr(mod, name)) and not name.startswith("__") and getattr(getattr(mod, name), "__module__", "") == mod.__name__:
-                monkeypatch.setattr(mod, name, forbidden)
     monkeypatch.setattr(pool_adapter, "spawn", forbidden)
     monkeypatch.setattr(subprocess, "Popen", forbidden)
     monkeypatch.setattr(subprocess, "run", forbidden)

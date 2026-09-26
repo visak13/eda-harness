@@ -23,8 +23,8 @@ They are framework behaviour, so they live here; CLAUDE.md and every role card p
   guessing among `edp8-board`/python processes (2026-09-08: an engineer killed the fleet board this way).
 - The MCP proxy loads its code at boot: a merged bridge/tool fix reaches only shells that boot
   after the proxy restart. Say so in your hand-off when your change touches `mcp_server`,
-  `bundles`, `edp8.consult` or `client`; after such a bridge chore lands, the proxy is respawned (owner
-  call) and EVERY consult-using seat respawns — a running shell never sees the fix.
+  `bundles` or `client`; after such a bridge chore lands, the proxy is respawned (owner
+  call) and EVERY seat that uses the changed tool respawns — a running shell never sees the fix.
 
 ## Use edp.ps1
 `edp.ps1` at the repo root is the only way to start/stop/restart/update services; the human/owner
@@ -50,20 +50,20 @@ runs it. A seat runs only `.\edp.ps1 status` and `-WhatIf`. What it does and why
   spawn any shell. Do not hold spawns, feed re-arms or restarts for "free > 2 GB" or "> 3 GB"; run
   the remaining tasks of an epic in parallel seats. Restarts still run in the foreground, one
   service per call (the low-memory reaper kills background shells).
-- Consult calls can crash with codex OOM when the host is near full; serialise consult-heavy
-  seats. A burst of reason-less `shell_dead` events across many seats is ephemeral-port
+- Codex seats can crash with OOM when the host is near full; do not start several codex seats at
+  once on a full host. A burst of reason-less `shell_dead` events across many seats is ephemeral-port
   exhaustion (TIME_WAIT ~16k), not deaths; check pool liveness before reacting.
 - `uv run` re-syncs and cannot replace a running `edp8-board.exe`; run pytest via
   `.venv/Scripts/python.exe` while the fleet board is up.
 
-## Consult (not owner/sme)
-- `consult(purpose=second_opinion)` results can land after your shell closes; WAIT
-  (`consult_status`) before hand-off. A `provider_model=unavailable` or 600 s cap is a named gap
-  in your report, not a retry loop. Never delete or restore a path your own consult run's log
-  does not name.
-- A consult failure at ~90% host RAM (codex OOM) or under the codex 5-hour usage cap is the HOST
-  or the QUOTA, not the bridge: the result's `lane` line (`quota: capped until HH:MMZ` / `lane: ok`,
-  also in `consult_status`) says which — do non-consult work until the reset, do not re-file the bridge.
+## Codex seats (not owner/sme)
+- Codex work is a SEAT, never a bridge call: an adversarial round is an adversary seat on the epic or
+  review story; visual and build work is a workspace-write codex seat on a task ticket (the brief
+  template is in `strategy-creative-reference-then-build`, images in `get_guide('codex-images')`).
+  Only the owner and the epic's architect spawn; another seat asks the architect.
+- A codex seat that fails at ~90% host RAM (codex OOM) or under the codex 5-hour usage cap is the HOST
+  or the QUOTA: the seat records `blocked` with the reset time. Do other work until the reset; do not
+  file it as a seat bug.
 
 ## Idle wakes
 - The idle-wake rule is your card's NEVER IDLE MID-PLAN line (doing seats); listening seats (architect after

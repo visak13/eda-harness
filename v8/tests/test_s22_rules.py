@@ -13,7 +13,6 @@ from edp8.schemas import (
     DocType,
     EventKind,
     Gate,
-    MessageKind,
     Relation,
     Role,
     TicketKind,
@@ -351,38 +350,6 @@ def test_design_signoff_refused_over_the_cap_without_a_scope_answer(board, rig, 
     with pytest.raises(BoardError) as ei:
         board.gate_open(epic.id, Gate.design_signoff, by="architect")
     assert ei.value.code == "scope" and "9 open stories" in ei.value.message
-
-def test_auto_advance_and_release_wait_for_the_doers_consult(board, rig, tmp_path, monkeypatch):
-    """Explicit handoff waits for the doer's consult; a result note alone never releases work."""
-    from edp8 import consult as consult_mod
-    monkeypatch.setenv("EDP8_SOL_LOG_DIR", str(tmp_path))
-    epic = make_epic(board, rig)
-    blocker = make_story(board, rig, epic)
-    succ = make_story(board, rig, epic)
-    advance_to_designed(board, rig, blocker, design_doc(board, rig, epic.id), checked_by="qa")
-    board.ticket_update(rig["owner"], blocker.id, status=TicketStatus.signed_off)
-    advance_to_designed(board, rig, succ, design_doc(board, rig, epic.id), checked_by="qa")
-    board.link_create(rig["architect"], from_id=blocker.id, to_id=succ.id, relation=Relation.blocks)
-    board.ticket_update(rig["owner"], succ.id, status=TicketStatus.signed_off)
-    board.ticket_update(rig["architect"], blocker.id, status=TicketStatus.ready)
-    board.ticket_update(rig["architect"], blocker.id, assignee=rig["engineer"].id)
-    board.ticket_update(rig["engineer"], blocker.id, status=TicketStatus.in_progress)
-    consult_mod.inflight_mark(blocker.id, "run-1", rig["engineer"].id)
-    crit = board.criteria(blocker.id)[0]
-    ev = board.doc_create(rig["engineer"], doc_type=DocType.report, title="e", body_md="ok", scope=epic.id)
-    board.criterion_update(rig["engineer"], crit.id, evidence_ref=ev.id)
-    assert board.ticket(blocker.id).status == TicketStatus.in_progress   # held
-    assert board.ticket(succ.id).status == TicketStatus.signed_off       # not released
-    with pytest.raises(BoardError, match="consult in flight"):
-        board.ticket_update(rig["engineer"], blocker.id, status=TicketStatus.in_review)
-    consult_mod.inflight_clear(blocker.id)
-    board.message_send(rig["engineer"], ticket_id=blocker.id, to=None, kind=MessageKind.note,
-                       text="consultant[second_opinion]: fine")
-    assert board.ticket(blocker.id).status == TicketStatus.in_progress  # note is not handoff
-    board.ticket_update(rig["engineer"], blocker.id, status=TicketStatus.in_review)
-    assert board.ticket(blocker.id).status == TicketStatus.in_review
-    assert board.ticket(succ.id).status == TicketStatus.ready            # released once
-
 
 def test_a_foreign_board_never_spawns_on_the_fleet_pool(tmp_path, monkeypatch):
     """A board whose EDP8_HOME is not the pool's agent home (an e2e temp board, a private instance)

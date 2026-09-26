@@ -56,8 +56,8 @@ def human_avatar_svg(avatar_id: str, size: int = 36) -> str:
 def role_avatar_svg(role: Any, model: str | None = None, size: int = 36) -> str:
     role_value = getattr(role, "value", role)
     role_name = str(role_value or "system").lower()
-    if role_name == "consultant" or (model and "gpt" in model.lower()):
-        role_name = "consultant"
+    if model and ("gpt" in model.lower() or model.lower().startswith("codex/")):
+        role_name = "codex"  # any seat on the codex harness wears the codex avatar
     template = BOT_TEMPLATES.get(role_name, BOT_TEMPLATES["unknown"])
     return _svg(template["body"], template["label"], size)
 

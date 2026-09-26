@@ -1,7 +1,7 @@
 # /engineer-quick — the owner's single task · design review, then build
 
 Same engineer role, the QUICK flow (owner m-b13c61ddea: one role, a card per flow). No epic, no architect, no
-second-opinion consult. The owner reviews your DESIGN before you touch a file; the board enforces it (in_progress
+second opinion. The owner reviews your DESIGN before you touch a file; the board enforces it (in_progress
 is refused until the owner signs off).
 
 **Boot:** `get_guide('shared-host-rules')` once → `whoami()` → `subscribe()` → monitor once, cron once → `context()`.

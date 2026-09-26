@@ -15,11 +15,11 @@ BOT_TEMPLATES = {'adversary': {'body': '<rect width="36" height="36" rx="8" fill
                        'rx="2.7" ry="5" transform="rotate(60 24 14.5)"/><ellipse cx="12" cy="21.5" '
                        'rx="2.7" ry="5" transform="rotate(60 12 21.5)"/></g>',
                'label': 'Architect avatar'},
- 'consultant': {'body': '<rect width="36" height="36" rx="8" fill="#172554"/><circle cx="18" '
-                        'cy="18" r="5" fill="#FBBF24"/><path d="M6 20c4-10 17-14 25-7M9 27c8 3 '
-                        '19-2 21-10" fill="none" stroke="#93C5FD" stroke-width="2" '
-                        'stroke-linecap="round"/><circle cx="29" cy="13" r="2" fill="#F7F5F8"/>',
-                'label': 'Consultant avatar'},
+ 'codex': {'body': '<rect width="36" height="36" rx="8" fill="#172554"/><circle cx="18" '
+                   'cy="18" r="5" fill="#FBBF24"/><path d="M6 20c4-10 17-14 25-7M9 27c8 3 '
+                   '19-2 21-10" fill="none" stroke="#93C5FD" stroke-width="2" '
+                   'stroke-linecap="round"/><circle cx="29" cy="13" r="2" fill="#F7F5F8"/>',
+           'label': 'Codex seat avatar'},
  'coordinator': {'body': '<rect width="36" height="36" rx="8" fill="#64748B"/><g '
                          'fill="#FFF3D8"><ellipse cx="18" cy="11" rx="2.7" ry="5"/><ellipse '
                          'cx="18" cy="25" rx="2.7" ry="5"/><ellipse cx="12" cy="14.5" rx="2.7" '

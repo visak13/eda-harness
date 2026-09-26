@@ -15,7 +15,7 @@ blank.
    - bug: impact statement and the likely fix(es), ranked.
    - rnd: the R&D paths to try and how each is judged.
    - creative: the look spec (references, constraints, what "done" looks like).
-5. **Work breakdown** — stories, each with who does what (engineer / adversary / consultant
+5. **Work breakdown** — stories, each with who does what (engineer / adversary / codex seat
    for creative-UI / human teammate) and which strategy_hl/strategy_ll it uses. The last
    story is always the adversarial review.
 6. **Communication plan** — which decisions go to the owner, which to the architect, which

@@ -19,10 +19,9 @@ rules remain. Never paste image base64 into a model tool argument. Related skill
 
 ## Explicit review handoff
 Evidence refs may describe incomplete or failed work. Attaching them, editing a doc, or posting
-a status/note never moves ready/in_progress work into review. After verification and the final
-consult result, the assignee deliberately calls `ticket_update(status='in_review')`; all criteria
-still need evidence. The transition remains permission-checked/audited and waits for an in-flight
-consult. Passing checker verdicts after this handoff still complete work automatically, and
+a status/note never moves ready/in_progress work into review. After verification, the assignee
+deliberately calls `ticket_update(status='in_review')`; all criteria still need evidence. The
+transition remains permission-checked/audited. Passing checker verdicts after this handoff still complete work automatically, and
 parent/dependency/gate/acceptance/single-QA automation remains active. Returning work to
 in_progress requires a new explicit handoff even when old evidence refs remain.
 
@@ -43,7 +42,7 @@ claim attachment success (existing staging sweep handles abandoned uploads).
 
 ## Fixed-domain audit
 Tool enums: roles; ticket kind/work type/status; criterion check/checker/verdict; doc type;
-link relation; message kind; status result; gate; artifact form; consult purpose/profile/model;
+link relation; message kind; status result; gate; artifact form;
 spawn effort (low/medium/high), mode (headless/monitor), session state. Boolean switches and
 bounded numeric ranges remain their native schema types. No fixed string domain remains
 in single-choice arguments. describe type is an extensible object/enum registry name; get_guide

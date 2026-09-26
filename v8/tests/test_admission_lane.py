@@ -85,24 +85,6 @@ def test_cross_process(tmp_path):
     assert Lane(tmp_path).holder() is None and Lane(tmp_path).waiting() == []
 
 
-def test_consult_uses_the_shared_lane(tmp_path, monkeypatch):
-    """consult() must hold the file lane while running, so a seat's turn queues behind it."""
-    from edp8 import consult
-
-    monkeypatch.setenv("EDP8_SOL_LOG_DIR", str(tmp_path))
-    seen: dict = {}
-
-    def fake_locked(*a, **k):
-        seen["holder"] = Lane(tmp_path).holder()
-        return {"ok": True, "value": {"answer": "x"}}
-
-    monkeypatch.setattr(consult, "_consult_locked", fake_locked)
-    monkeypatch.setattr(consult, "_resolve_bin", lambda: "codex")
-    out = consult.consult("second_opinion", "q")
-    assert out["ok"] and seen["holder"] and seen["holder"]["holder"].startswith("consult:")
-    assert Lane(tmp_path).holder() is None  # released in finally
-
-
 # ---- qa report-fb5ff85cd9 A3/A4 (m-527660cbce)
 def test_dead_ticket_is_skipped_and_removed(tmp_path):
     lane = Lane(tmp_path)

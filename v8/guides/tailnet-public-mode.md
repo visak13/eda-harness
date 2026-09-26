@@ -36,7 +36,7 @@ The check never prints a token value. Rows: BLOCKER (must fix), WARN, OK, INFO.
 | bind | `EDP8_HOST` unset or not loopback | `apply` pins 127.0.0.1 |
 | real env | a key is set in the User/Machine environment, which beats v8\.env | remove it from that scope |
 | tokens.json | no human or no agent credential: the board refuses a public start | mint (below) |
-| seats | a **live seat without a minted token**: its MCP calls, feed and consult 401 after the switch | close it, or reap + respawn it once 2ffb89d is live (below) |
+| seats | a **live seat without a minted token**: its MCP calls and feed 401 after the switch | close it, or reap + respawn it once 2ffb89d is live (below) |
 | humans | a human on the board without a token cannot sign in | mint one if they are a real person (`x` is stale: ignore) |
 | certificates | tailnet HTTPS certificates off | owner: admin console → DNS → HTTPS Certificates |
 | serve | serve config other than `https:443 → http://127.0.0.1:9400`, any Funnel, any :9410, any raw TCP forward | `tailscale serve reset` |

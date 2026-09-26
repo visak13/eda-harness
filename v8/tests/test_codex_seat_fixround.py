@@ -436,7 +436,7 @@ def test_9_resume_requested_without_state_never_starts_a_fresh_thread(tmp_path, 
     from edp8.codex_seat import run as run_mod
     log = tmp_path / "fake.jsonl"
     monkeypatch.setenv("FAKE_APPSERVER_LOG", str(log))
-    monkeypatch.setattr("edp8.consult.discover_mcp_servers", lambda *_a, **_k: ([], None))
+    monkeypatch.setattr("edp8.codex_seat.containment.discover_mcp_servers", lambda *_a, **_k: ([], None))
     for k, v in {"EDP_ROLE": "engineer", "EDP_HANDLE": "engineer.nostate", "EDP_AGENT_HOME": str(V8),
                  "EDP_LOG_DIR": str(tmp_path), "EDP_CODEX_BIN": str(FAKE), "EDP_CODEX_RESUME": "1",
                  "EDP_PARITY_DESCRIPTIONS": str(DESC)}.items():

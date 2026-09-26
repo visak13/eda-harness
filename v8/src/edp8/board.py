@@ -659,9 +659,6 @@ class Board:
             if not t.assignee:
                 t.assignee = actor.id
         if to == TicketStatus.in_review:
-            if self._consult_inflight(t.id):
-                raise BoardError("transition", "review handoff held: consult in flight",
-                                 "wait for the result, address findings, then ticket_update(status='in_review')")
             epic_by_architect = self._own_epic_architect(actor, t)  # owner m-b0a7f9cda9
             if t.assignee and actor.id != t.assignee and not epic_by_architect:
                 raise BoardError("scope", "only the assignee hands a ticket to review")
@@ -1180,17 +1177,6 @@ class Board:
                                                     "note": f"owner failed {c.id} on a quick task"})
         self._after_status(t)
 
-    @staticmethod
-    def _consult_inflight(ticket_id: str) -> dict[str, Any] | None:
-        """A consult run the doing seat started on this ticket and has not yet received (marker
-        written by the MCP bridge; see consult.inflight_for). Never raises: a board without the
-        bridge module behaves as before."""
-        try:
-            from .consult import inflight_for
-        except Exception:  # noqa: BLE001
-            return None
-        return inflight_for(ticket_id)
-
     def _auto_advance(self, t: Ticket) -> None:
         """Complete an explicitly handed-off ticket after its checker verdicts pass.
 
@@ -1677,7 +1663,7 @@ class Board:
         if kind == MessageKind.answer and reply_to:  # S-IMPLICIT: an accepted deviation is a decision
             records.safely(records.decision_from_deviation, self, actor, m)
         if t.status in (TicketStatus.ready, TicketStatus.in_progress):
-            # a new fact on the thread (typically the consult result note) re-evaluates a held advance
+            # a new fact on the thread re-evaluates a held advance
             self._auto_advance(self.ticket(t.id))
         return m
 

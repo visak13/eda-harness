@@ -24,8 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validat
 class Role(StrEnum):
     owner = "owner"
     # "coordinator" and "consultant" are not roles (s-ccdafcb229, owner m-b0a7f9cda9): the store deletes
-    # their old participant rows at open (Store._retire_roles_locked); "consultant" survives only as prose
-    # for the codex model behind consult()
+    # their old participant rows at open (Store._retire_roles_locked)
     architect = "architect"
     sme = "sme"
     engineer = "engineer"
@@ -89,31 +88,6 @@ class CheckedBy(StrEnum):
     qa = "qa"
     owner = "owner"
     engineer = "engineer"
-
-
-class ConsultPurpose(StrEnum):
-    """consult(purpose=…) — selects the consultant's brief."""
-    adversary = "adversary"
-    creative = "creative"
-    visual = "visual"
-    second_opinion = "second_opinion"
-    build = "build"
-
-
-class ConsultProfile(StrEnum):
-    """consult(profile=…) — the codex-exec invocation (sandbox/effort/MCP+feature set)."""
-    design = "design"
-    concept = "concept"
-    blender = "blender"
-    verify = "verify"
-    direct = "direct"
-
-
-class ConsultModel(StrEnum):
-    """consult(model=…) — the consultant model for one call."""
-    astra = "gpt-6-astra"
-    # gpt-5.6-sol RETIRED (owner ruling 2026-09-10): never a valid consult model again; the bridge
-    # refuses any other model name at the choke point (consult.ALLOWED_MODELS) as well.
 
 
 class DocType(StrEnum):
@@ -698,7 +672,7 @@ OBJECT_TYPES: dict[str, type[Obj]] = {
     "rsi_state": RsiState,
 }
 
-# Every strict-valued enum in the model + the consult tool args, keyed by class name.
+# Every strict-valued enum in the model, keyed by class name.
 # `describe('enums')` lists them; `describe('enum:<Name>')` returns one. The description
 # composer (bundles.py) and the error envelopes read allowed values from here so a
 # tool's allowed set can never drift from its schema (design §19 rule 3).
@@ -747,9 +721,6 @@ ENUMS: dict[str, type[StrEnum]] = {
     "ArtifactForm": ArtifactForm,
     "SessionState": SessionState,
     "EventKind": EventKind,
-    "ConsultPurpose": ConsultPurpose,
-    "ConsultProfile": ConsultProfile,
-    "ConsultModel": ConsultModel,
 }
 
 

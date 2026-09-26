@@ -59,7 +59,7 @@ def test_every_strict_arg_is_an_enum():
     """The strict vocabularies §19 rule 3 names are enums somewhere in the registry."""
     covered = {f for _, f, _ in _ENUM_ARGS}
     for expected in ("status", "kind", "work_type", "check", "checked_by", "verdict",
-                     "relation", "gate", "form", "role", "purpose", "profile", "model"):
+                     "relation", "gate", "form", "role"):  # purpose/profile/model left with consult (S4)
         assert expected in covered, f"strict arg {expected!r} is not an enum on any tool"
 
 
@@ -98,7 +98,7 @@ def test_describe_unknown_enum_names_field_and_allowed():
     resp = ALL_TOOLS["describe"].handler(ALL_TOOLS["describe"].args_model(type="enum:Nope"))
     assert resp["ok"] is False
     assert resp["error"]["field"] == "type"
-    assert "ConsultPurpose" in resp["error"]["allowed"]
+    assert "Verdict" in resp["error"]["allowed"] and not any(n.startswith("Consult") for n in resp["error"]["allowed"])
 
 
 # ---------------------------------------------------------------- ticket_id rename

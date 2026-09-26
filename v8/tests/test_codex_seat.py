@@ -529,7 +529,7 @@ def test_discovery_runs_in_the_launch_context(monkeypatch):
     def fake_discover(codex, timeout_s=30, *, env=None, cwd=None):
         seen.update(env=env, cwd=cwd)
         return [], None
-    monkeypatch.setattr("edp8.consult.discover_mcp_servers", fake_discover)
+    monkeypatch.setattr("edp8.codex_seat.containment.discover_mcp_servers", fake_discover)
     seat_mod.containment_args("codex", env={"CODEX_HOME": "X:/other"}, cwd="X:/proj")
     assert seen == {"env": {"CODEX_HOME": "X:/other"}, "cwd": "X:/proj"}
 

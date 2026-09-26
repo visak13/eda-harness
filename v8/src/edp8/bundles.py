@@ -38,9 +38,6 @@ from .schemas import (
     Check,
     CheckedBy,
     ClaimBasis,
-    ConsultModel,
-    ConsultProfile,
-    ConsultPurpose,
     DocType,
     Gate,
     MessageKind,
@@ -314,11 +311,10 @@ def invoke(tool: ToolDef, kwargs: dict[str, Any] | None, *, seat: str | None = N
 # ----------------------------------------------------------------------------- bounded calls
 #
 # No tool call blocks on an executable or another service beyond the call cap (design §19
-# rule 4). A tool that launches a process or waits on the pool (consult, spawn, resume,
-# reap, preflight) runs its work in a daemon thread the server owns; if it does not finish
+# rule 4). A tool that launches a process or waits on the pool (spawn, resume, reap,
+# preflight) runs its work in a daemon thread the server owns; if it does not finish
 # within the cap the tool returns {status:"running", poll:...} and the work continues in the
-# background. consult additionally wakes the caller with a consult_done thread note when a
-# background run finishes (see _consult).
+# background.
 
 
 def _call_cap() -> float:
@@ -421,18 +417,11 @@ def _preflight(_: PreflightArgs) -> dict[str, Any]:
         out["services"] = run_state.snapshot()  # launcher-owned infra state, read-only (design §22 rule 4)
     except Exception as e:  # noqa: BLE001
         out["services"] = {"note": f"run-state unreadable: {type(e).__name__}"}
-    try:
-        from . import consult as consult_mod
-        out["consult"] = consult_mod.lane_status()
-        out["advisory"] = consult_mod.advisory()
-    except Exception as e:  # noqa: BLE001
-        out["consult"] = {"note": f"lane unreadable: {type(e).__name__}"}
     out["rules_of_thumb"] = {"claude_seat_mb": "250-500 (grows with context)", "codex_text_mb": "~300",
                              "codex_image_gen_mb": "up to ~1000", "stack_mb": "~500"}
     return {"ok": True, "value": out,
             "hint": "advisory, never a gate: compare host.free_mb with what you are about to start "
-                    "(rules_of_thumb); consult.in_flight/queued is the fleet-wide codex lane; "
-                    "a quota note means codex itself refused recently — you decide, and say why on the thread"}
+                    "(rules_of_thumb) — you decide, and say why on the thread"}
 
 
 def _preflight_bounded(a: PreflightArgs) -> dict[str, Any]:
@@ -825,8 +814,8 @@ IDENTITY_TOOLS = [
             'the participant, tickets, bundles and server version',
             WhoamiArgs, _whoami, "identity"),
     ToolDef("preflight",
-            'Host free RAM, live seats vs pool caps, the codex lane and any usage-cap note; advisory, never blocks',
-            'before a spawn or consult',
+            'Host free RAM and live seats vs pool caps; advisory, never blocks',
+            'before a spawn',
             'the numbers and rules of thumb',
             PreflightArgs, _preflight_bounded, "identity"),
     ToolDef("subscribe",
@@ -1969,176 +1958,6 @@ RULESET_TOOLS = [
             AssembleRulesetArgs, _assemble_ruleset, "ruleset"),
 ]
 
-# ============================================================================= consult
-
-
-class ConsultArgs(BaseModel):
-    question: str = Field(description='what to read, or the build brief')
-    purpose: ConsultPurpose = Field(default=ConsultPurpose.second_opinion)
-    profile: ConsultProfile | None = Field(default=None,
-                          description='overrides purpose; only concept/blender write (and take write_dir)')
-    context: str = ""
-    files: list[str] | None = None
-    ticket_id: str | None = Field(default=None, description='post the answer to this thread')
-    timeout_s: int = 600
-    write_dir: str | None = Field(default=None, description='dir the consultant may write; else read-only')
-    thread_id: str | None = Field(default=None, description='resume an earlier consult session')
-    images: list[str] | None = Field(default=None, description='png/jpg files to attach (a path in the prompt is not seen)')
-    model: ConsultModel | None = Field(default=None, description='omit for the default')
-
-
-def _fence_status_line(resp: dict[str, Any], run_id: str | None) -> str:
-    """ONE line naming the run and whether the write-fence was clean or failed the run
-    closed — NEVER a file path (design §19 rule 7). The full fence report lives only in the
-    run manifest (consult_status(run_id) surfaces it); a spacetravel-style path from another
-    project can no longer leak onto a thread through this note."""
-    if not run_id:
-        return ""
-    code = None if resp.get("ok") else (resp.get("error") or {}).get("code")
-    if code == "boundary":
-        return f"run {run_id} FAILED CLOSED (write-fence): see consult_status(run_id='{run_id}')"
-    return f"run {run_id}, fence clean"
-
-
-def _consult_complete(client: BoardClient, a: ConsultArgs, resp: dict[str, Any],
-                      caller: str | None, run_id: str | None, *, wake: bool) -> None:
-    """Post the answer to the ticket thread (one-line fence status appended, no paths) and,
-    for a run that finished in the background, wake the caller with a consult_done note."""
-    if not a.ticket_id:
-        return
-    val = resp.get("value") or {}
-    rid = val.get("run_id") or run_id
-    tag = val.get("profile") or getattr(a.purpose, "value", a.purpose)
-    answer = val.get("answer")
-    fence = _fence_status_line(resp, rid)
-    try:
-        if answer:
-            note = f"consultant[{tag}]: {answer}"
-            if fence:
-                note = f"{note}\n\n{fence}"
-            client.message_send(ticket_id=a.ticket_id, kind="note", text=note, to=None)
-        if wake and caller:
-            status = "ok" if resp.get("ok") else (resp.get("error") or {}).get("code", "failed")
-            client.message_send(ticket_id=a.ticket_id, kind="note", to=caller,
-                                text=f"consult_done: run {rid or '?'} finished ({status}); "
-                                     + ("answer on this thread" if answer else
-                                        f"see consult_status(run_id='{rid}')"))
-    except Exception:  # noqa: BLE001 — a thread-note failure never crashes the background run
-        pass
-
-
-def _consult(a: ConsultArgs) -> dict[str, Any]:
-    from . import consult as consult_mod
-
-    client = get_client()          # concrete client, safe to use from the background thread
-    caller = client.participant
-    holder: dict[str, Any] = {}
-    run_box: dict[str, str] = {}
-    early = {"v": False}
-    done = threading.Event()
-
-    if a.ticket_id:  # hold the board's auto-advance on this ticket until the run lands
-        consult_mod.inflight_mark(a.ticket_id, None, caller)
-
-    def _work() -> None:
-        try:
-            resp = consult_mod.consult(a.purpose, a.question, context=a.context, files=a.files,
-                                       timeout_s=a.timeout_s, write_dir=a.write_dir, images=a.images,
-                                       thread_id=a.thread_id, model=a.model, profile=a.profile,
-                                       on_run_id=lambda rid: run_box.setdefault("id", rid))
-        except Exception as e:  # noqa: BLE001 — a crashed consult must surface, never hang the caller
-            resp = {"ok": False, "error": {"code": "internal", "message": f"consult crashed: {e}"}, "hint": ""}
-        holder["resp"] = resp
-        if a.ticket_id:  # cleared BEFORE the thread note lands, so the note itself re-evaluates the advance
-            consult_mod.inflight_clear(a.ticket_id)
-        done.set()
-        # Over-cap only: the caller already has a {running} envelope, so the background run
-        # owns the completion side effects — post the answer AND wake the caller. Within the
-        # cap the handler posts synchronously below (never both: `early` is set only over-cap).
-        if early["v"]:
-            _consult_complete(client, a, resp, caller, run_box.get("id"), wake=True)
-
-    threading.Thread(target=_work, name="consult", daemon=True).start()
-    if done.wait(timeout=_call_cap()):
-        resp = holder["resp"]
-        _consult_complete(client, a, resp, caller, run_box.get("id"), wake=False)
-        return resp
-    early["v"] = True
-    rid = run_box.get("id")
-    val: dict[str, Any] = {"status": "running", "poll": "consult_status"}
-    if rid:
-        val["run_id"] = rid
-    hint = ("consult exceeds the tool-call cap and is running in the background; "
-            + (f"poll consult_status(run_id='{rid}')" if rid else
-               "it is queued behind another run — poll consult_status()"))
-    if a.ticket_id:
-        hint += "; a consult_done note lands on the ticket thread when it finishes"
-    return {"ok": True, "value": val, "hint": hint}
-
-
-class ConsultStatusArgs(BaseModel):
-    run_id: str = Field(description='omit for your newest run')
-    verbose: bool = Field(default=False, description='add write-fence rows')
-
-
-# S12 (qa finding 18): consult_status returned `answer` twice (top-level + inside the manifest copy)
-# and listed ~55 pre-dirty fence rows even for a read-only run. Compacted HERE, in the tool layer.
-# Only pre-dirty / concurrent noise is dropped; ATTRIBUTED escapes (real boundary violations) and
-# their remediation evidence are always kept — dropping them would hide a real fence breach from qa.
-_NOISE_KEYS = ("fence", "concurrent_writes")   # write-fence detail + pre-dirty/concurrent noise
-
-
-def _has_real_escape(man: dict[str, Any]) -> bool:
-    """A run with attributed escapes or a boundary-violation verdict must keep its full fence detail."""
-    if man.get("status") == "boundary_violation" or man.get("writes_outside_write_dir"):
-        return True
-    fence = man.get("fence")
-    escapes = fence.get("escapes") if isinstance(fence, dict) else None
-    return bool(escapes and any(e.get("action") not in ("pre_dirty_concurrent", "unattributed_concurrent")
-                                for e in escapes if isinstance(e, dict)))
-
-
-def _consult_status(a: ConsultStatusArgs) -> dict[str, Any]:
-    from . import consult as consult_mod
-
-    resp = consult_mod.consult_status(a.run_id)
-    if a.verbose or not resp.get("ok"):
-        return resp
-    val = resp.get("value")
-    if not isinstance(val, dict):
-        return resp
-    val = dict(val)
-    dropped: list[str] = []
-    man = val.get("manifest")
-    if isinstance(man, dict):
-        man = dict(man)
-        # `answer` is already returned once at value.answer — don't ship it a second time
-        if man.pop("answer", None) is not None:
-            dropped.append("manifest.answer (returned once at value.answer)")
-        if not _has_real_escape(man):
-            for k in _NOISE_KEYS:
-                if man.pop(k, None) is not None:
-                    dropped.append(f"manifest.{k}")
-        val["manifest"] = man
-    if dropped:
-        val["omitted"] = {"fields": dropped,
-                          "full": f"consult_status(run_id={val.get('run_id')!r}, verbose=True)"}
-    return {**resp, "value": val}
-
-
-CONSULT_TOOLS = [
-    ToolDef("consult_status",
-            "A consult run's status and recovered answer (once), plus the consult lane and quota block",
-            'after a consult returned running or timed out; instead of re-asking',
-            'status, answer if any, lane and quota; verbose adds fence rows',
-            ConsultStatusArgs, _consult_status, "consult"),
-    ToolDef("consult",
-            'Ask the consultant for a second opinion, adversarial/creative/visual review, or (write_dir) a build; brief goal and bar',
-            'for an independent read or a build; long runs end with consult_done',
-            'the answer and run_id, or status running (poll consult_status)',
-            ConsultArgs, _consult, "consult"),
-]
-
 # ============================================================================= artifact
 
 
@@ -2221,7 +2040,7 @@ CLOSE_TOOLS = [
 ALL_TOOLS: dict[str, ToolDef] = {
     t.name: t for t in (
         IDENTITY_TOOLS + TICKET_TOOLS + DOC_TOOLS + THREAD_TOOLS + BOARD_TOOLS + POOL_TOOLS
-        + SEARCH_TOOLS + KNOWLEDGE_TOOLS + TOPIC_TOOLS + RULESET_TOOLS + CONSULT_TOOLS + ARTIFACT_TOOLS + CLOSE_TOOLS
+        + SEARCH_TOOLS + KNOWLEDGE_TOOLS + TOPIC_TOOLS + RULESET_TOOLS + ARTIFACT_TOOLS + CLOSE_TOOLS
     )
 }
 
@@ -2245,7 +2064,7 @@ ROLE_BUNDLES: dict[str, list[str]] = {
     Role.owner.value: _IDENTITY + _THREAD + _BOARD + _DOC_RO + _TICKET_RO + _CHECK
         + ["find", "ticket_create", "inbox", "spawn", "resume", "reap", "session_query", "close"],
     Role.architect.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD + _BOARD
-        + ["find", "consult", "consult_status", "artifact_create", "artifact_read", "spawn", "inbox", "record_status",
+        + ["find", "artifact_create", "artifact_read", "spawn", "inbox", "record_status",
            # owner m-268fc869f5 / m-faf46d284a (2026-09-18): the spawner decides and executes recovery of its
            # own seats (the board already scopes these to the architect's own epic, service._authorize_pool_op)
            "reap", "resume", "session_query"],
@@ -2253,11 +2072,11 @@ ROLE_BUNDLES: dict[str, list[str]] = {
         + ["find", "participants", "assemble_ruleset", "criterion_query", "criterion_update",
            "artifact_create", "artifact_read", "topic_research", "topic_propose"] + _CLOSING,
     Role.engineer.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD
-        + ["find", "participants", "assemble_ruleset", "consult", "consult_status", "artifact_create", "artifact_read"] + _CLOSING,
+        + ["find", "participants", "assemble_ruleset", "artifact_create", "artifact_read"] + _CLOSING,
     Role.adversary.value: _IDENTITY + _TICKET_RW + _DOC_RW + _THREAD
-        + ["find", "participants", "assemble_ruleset", "consult", "consult_status", "artifact_create", "artifact_read"] + _CLOSING,
+        + ["find", "participants", "assemble_ruleset", "artifact_create", "artifact_read"] + _CLOSING,
     Role.qa.value: _IDENTITY + _TICKET_RO + _CHECK + _DOC_RW + _THREAD + _BOARD
-        + ["find", "assemble_ruleset", "consult", "consult_status", "artifact_create", "artifact_read"] + _CLOSING,
+        + ["find", "assemble_ruleset", "artifact_create", "artifact_read"] + _CLOSING,
 }
 
 
@@ -2290,7 +2109,7 @@ for _role_tools in ROLE_BUNDLES.values():
 # (scripts/measure_token_cost.py invoked) and that no role card or skill names. Every tool is still
 # served to some role; a role that needs one back re-adds it here. The invariants above stay: the
 # identity set, record_decision/record_claim/lookup everywhere, close_self last.
-# preflight stays in every bundle (consult lane: the advisory host check is every seat's)
+# preflight stays in every bundle (the advisory host check is every seat's)
 _S20_UNUSED: dict[str, tuple[str, ...]] = {
     Role.owner.value: ("gate_open", "inbox", "dense_search", "record_lesson", "withdraw_decision",
                        "withdraw_claim", "set_binding"),
