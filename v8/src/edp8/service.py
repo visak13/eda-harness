@@ -1506,13 +1506,38 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
             "ok": False, "error": {"code": e.code, "message": e.message, "problems": e.problems}, "hint": e.hint})
 
     def _wf_author(a: Participant) -> None:
-        if a.role not in (Role.owner, Role.architect):
-            raise BoardError("scope", f"{a.role} may not edit workflows", "the owner or an architect authors them")
+        # S14: the Design tab is admin-editable and read-only for everyone else; an architect seat keeps the
+        # S13 authoring API (it writes workflows for its epics from the board tools)
+        from .admin import is_admin
+        if not (is_admin(a) or a.role == Role.architect):
+            raise BoardError("scope", f"{a.handle} may not edit workflows (admins only)",
+                             "an admin edits workflows in the Design tab; everyone else reads them")
 
     @app.get("/v1/workflows")
     def workflows_list(a: Participant = Depends(actor)):
-        """Every workflow version: the built-in presets (published, immutable) and stored ones."""
-        return ok(board.workflows.list(), "GET /v1/workflows/<id>[@version] reads one; epics pin a published one")
+        """Every workflow version: the built-in presets (published, immutable) and stored ones, each with
+        the epics pinned to it and the version it was duplicated from (S14)."""
+        from .admin import is_admin
+        return ok(board.workflows.list(),
+                  "GET /v1/workflows/<id>[@version] reads one; epics pin a published one"
+                  + ("" if (is_admin(a) or a.role == Role.architect) else "; read-only: only an admin edits"))
+
+    @app.get("/v1/workflows/templates")
+    def workflow_templates(a: Participant = Depends(actor)):
+        """S14 (§4.14(e).3): Add role starting points (builder, checker, reviewer), the hook registry with
+        its params, the predicate vocabulary and the kernel tools, for the Design tab's inline help."""
+        from . import workflow_design as wd
+        return ok({"roles": wd.ROLE_TEMPLATES, "hooks": wflow.HOOKS, "predicates": sorted(wflow.PREDICATES),
+                   "kernel_tools": list(wflow.KERNEL_TOOLS), "why_fix": wflow.WHY_FIX,
+                   "tool_needs": wflow.TOOL_NEEDS})
+
+    @app.post("/v1/workflows/dryrun")
+    def workflow_dryrun(body: dict[str, Any], a: Participant = Depends(actor)):
+        """S14 (§4.14(e).3): walk a synthetic epic through a definition on a throwaway in-memory board;
+        the timeline lists spawns, wakes, gates and transitions, and `stall` names the step no role can take."""
+        from . import workflow_design as wd
+        run = wd.dry_run(body)
+        return ok(run, "publishable walk" if run["ok"] else "fix the stalled step; a stall blocks Publish")
 
     @app.get("/v1/workflows/{ref_}")
     def workflow_get(ref_: str, a: Participant = Depends(actor)):
@@ -1536,10 +1561,56 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
             return _wf_error(e)
         return ok({"ref": w.ref, "kind": kind, "markdown": wflow.lifecycle_md(w, kind)})
 
+    @app.get("/v1/workflows/{ref_}/diff")
+    def workflow_diff(ref_: str, against: str | None = None, a: Participant = Depends(actor)):
+        """S14: what changed from `against` (default: the version it was duplicated from) to `ref_`."""
+        from . import workflow_design as wd
+        try:
+            d = board.workflows.get(*wflow.parse_ref(ref_))
+            base_ref = against or d.source
+            if not base_ref:
+                return ok({"ref": d.ref, "against": None, "changes": []}, "a preset has no source to diff against")
+            base = board.workflows.snapshot(base_ref) if base_ref == d.source else board.workflows.get(
+                *wflow.parse_ref(base_ref))
+        except ValueError as e:
+            return _wf_error(wflow.WorkflowError("schema", str(e)))
+        except wflow.WorkflowError as e:
+            return _wf_error(e)
+        return ok({"ref": d.ref, "against": base_ref, "changes": wd.diff(base, d)})
+
+    @app.get("/v1/workflows/{ref_}/upstream")
+    def workflow_upstream(ref_: str, a: Participant = Depends(actor)):
+        """S14 (§4.14(e).4): has the version this one came from moved on (e.g. Standard@N → N+1)?"""
+        try:
+            return ok(board.workflows.upstream(ref_))
+        except ValueError as e:
+            return _wf_error(wflow.WorkflowError("schema", str(e)))
+        except wflow.WorkflowError as e:
+            return _wf_error(e)
+
+    @app.post("/v1/workflows/{ref_}/merge-upstream")
+    def workflow_merge_upstream(ref_: str, a: Participant = Depends(actor)):
+        """S14: three-way merge the upstream change into a NEW draft version; conflicts keep this version's
+        value and are listed for the author."""
+        _wf_author(a)
+        try:
+            out = board.workflows.merge_upstream(ref_, by=a.id)
+        except ValueError as e:
+            return _wf_error(wflow.WorkflowError("schema", str(e)))
+        except wflow.WorkflowError as e:
+            return _wf_error(e)
+        return ok(out, f"draft {out['draft']['id']}@{out['draft']['version']}; review the conflicts, then publish")
+
     @app.post("/v1/workflows/validate")
     def workflow_validate(body: dict[str, Any], a: Participant = Depends(actor)):
-        """Lint a definition without storing it: each problem names its code, message and severity."""
+        """Lint a definition without storing it: each problem names its code, message and severity. A
+        definition with no lint error is also walked by the dry run (S14): a stall is an error too."""
         problems = wflow.validate(body)
+        if not any(p["severity"] == "error" for p in problems):
+            from . import workflow_design as wd
+            stall = wd.dry_run(body)["stall"]
+            if stall is not None:
+                problems.append(wd.stall_problem(stall))
         errors = [p for p in problems if p["severity"] == "error"]
         return ok({"valid": not errors, "problems": problems},
                   "fix each error before publishing" if errors else "publishable")

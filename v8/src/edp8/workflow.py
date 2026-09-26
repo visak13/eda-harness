@@ -174,6 +174,9 @@ class WorkflowDef(BaseModel):
     description: str = ""
     builtin: bool = False
     published: bool = False
+    # S14 (§4.14(e).3-4): the version this one was duplicated from — the Design tab's diff base and its
+    # "upstream changed" check; None for a preset or a definition written from scratch
+    source: str | None = None
     roles: list[RoleDef]
     kinds: list[str]
     statuses: list[str]
@@ -472,6 +475,9 @@ class Workflow:
         if r is None:
             return None
         out = list(r.bundle or [])
+        if r.id not in _BUILTIN_ROLE_IDS:
+            # S14 (c-e9d095f3a3): a custom role's bundle never exceeds what its permissions allow
+            out = [t for t in out if tool_permitted(self.d, r, t)]
         if not r.human:
             out += [k for k in KERNEL_TOOLS if k not in out]
         return out
@@ -817,6 +823,7 @@ def _card_exists(name: str) -> bool:
     return any((r / ".claude" / "commands" / f"{name}.md").is_file() for r in roots)
 
 
+_BUILTIN_ROLE_IDS = frozenset(r.value for r in Role)
 WORKFLOW_DOCS = "/ui/design (the Design tab) and docs/site workflows page"
 # §4.14(e).2: every problem says what is wrong (message), why it matters and the fix.
 WHY_FIX: dict[str, tuple[str, str]] = {
@@ -860,7 +867,41 @@ WHY_FIX: dict[str, tuple[str, str]] = {
                                   "means nothing", "declare what must hold before it opens (e.g. not_terminal)"),
     "transition_without_precondition": ("anyone may take this edge at any time",
                                         "declare who may take it (role_in) or what must hold"),
+    # S14 (c-e9d095f3a3): custom roles
+    "bundle_missing": ("a seat with no tools beyond the kernel can boot and report, but never do its work",
+                       "tick the tools the role needs in its tool checklist (or start from a role template)"),
+    "self_check": ("a role that both produces work (authors criteria, attaches evidence or builds) and "
+                   "verdicts criteria approves its own work", "split the doing and the checking into two roles"),
+    "escalation": ("the role's tools or permissions reach past what its job allows (an agent answering gates, "
+                   "spawning without may_spawn), so it can grant itself what a human should decide",
+                   "untick the tool, or give the permission to a human role"),
+    "unusable_tool": ("the board refuses this tool for the role's permissions, so ticking it does nothing",
+                      "untick it, or grant the matching permission"),
+    "dry_run_stall": ("a synthetic epic walked through the draft cannot reach done, so real epics would stall",
+                      "open Dry run to see the step no role can take, then fix that role or transition"),
 }
+
+#: S14 (c-e9d095f3a3): a tool that needs a permission. `escalation` (error) when granting the tool would let
+#: an agent do a human's or a spawner's part; `unusable_tool` (warning) when the board would just refuse it.
+TOOL_NEEDS: dict[str, tuple[str, str]] = {
+    "gate_answer": ("gate_answerer", "escalation"),
+    "spawn": ("may_spawn", "escalation"),
+    "reap": ("may_spawn", "escalation"),
+    "set_binding": ("binding", "escalation"),
+    "ticket_create": ("may_create", "unusable_tool"),
+    "criterion_create": ("criterion_author", "unusable_tool"),
+}
+
+
+def tool_permitted(d: WorkflowDef, r: RoleDef, tool: str) -> bool:
+    """Does the role hold the permission a tool needs (TOOL_NEEDS)? A tool with no entry needs none."""
+    need = TOOL_NEEDS.get(tool)
+    if need is None:
+        return True
+    field = need[0]
+    if field == "gate_answerer":
+        return r.gate_answerer and r.human
+    return bool(getattr(r, field)) if field in RoleDef.model_fields else r.id in d.permissions.get(field, [])
 
 
 def _story_checked_apart(d: WorkflowDef, by_id: dict[str, RoleDef]) -> bool:
@@ -959,6 +1000,30 @@ def validate(d: WorkflowDef | dict[str, Any]) -> list[dict[str, str]]:
         for k in r.may_create:
             if k not in kinds and k != "topic":
                 err("unknown_kind", f"role {r.id!r} may create {k!r}, which is not a kind")
+    # S14 (c-e9d095f3a3): custom-role permission sets — a bundle, no self-checking, no escalation
+    for r in d.roles:
+        if r.human:
+            continue
+        if r.spawnable and not r.bundle:
+            err("bundle_missing", f"role {r.id!r} has no tool bundle")
+        doing = [w for w, on in (("authors criteria", r.criterion_author),
+                                 ("attaches evidence", r.id in d.permissions.get("evidence", [])),
+                                 ("is a builder", r.capacity_class == "builder")) if on]
+        if r.criterion_checker and doing:
+            err("self_check", f"role {r.id!r} verdicts criteria and also {' and '.join(doing)}")
+        if r.gate_answerer:
+            err("escalation", f"role {r.id!r} is an agent that answers gates (a human's decision)")
+        for tool in r.bundle or []:
+            need = TOOL_NEEDS.get(tool)
+            if need is None:
+                continue
+            field, code = need
+            granted = (bool(getattr(r, field)) if field in RoleDef.model_fields
+                       else r.id in d.permissions.get(field, []))
+            if not granted and code == "escalation":
+                err("escalation", f"role {r.id!r} has tool {tool} without the {field} permission")
+            elif not granted and r.id not in _BUILTIN_ROLE_IDS:
+                err("unusable_tool", f"role {r.id!r} has tool {tool} but not the {field} permission", "warning")
     # gates: known answerers, at least one precondition
     for g in d.gates:
         for a in g.answerers:
@@ -1105,6 +1170,9 @@ class WorkflowRegistry:
                                 "published INTEGER, created_at TEXT, created_by TEXT, PRIMARY KEY(id, version))")
             store._conn.execute("CREATE TABLE IF NOT EXISTS workflow_pins (epic_id TEXT PRIMARY KEY, ref TEXT, "
                                 "pinned_at TEXT)")
+            # S14: the body of a version as it was when something was duplicated from it, so the diff and the
+            # three-way merge keep their base after an app update rebuilds a preset at a new version
+            store._conn.execute("CREATE TABLE IF NOT EXISTS workflow_snapshots (ref TEXT PRIMARY KEY, body TEXT)")
 
     # ---- reads
     def builtin(self, wf_id: str) -> WorkflowDef | None:
@@ -1150,15 +1218,82 @@ class WorkflowRegistry:
         return WorkflowDef.model_validate(migrate(json.loads(row[0])))
 
     def list(self) -> list[dict[str, Any]]:
-        out = [{"id": d.id, "version": d.version, "name": d.name, "description": d.description,
-                "builtin": True, "published": True} for d in (self.builtin(k) for k in BUILTIN_BUILDERS) if d]
+        """Every version with the epics pinned to it (S14: the Design tab's list) and where it came from."""
+        pins = self.pins()
+
+        def row(d: WorkflowDef, builtin: bool) -> dict[str, Any]:
+            return {"id": d.id, "version": d.version, "ref": d.ref, "name": d.name, "description": d.description,
+                    "builtin": builtin, "published": d.published or builtin, "source": d.source,
+                    "pinned_by": pins.get(d.ref, []), "roles": len(d.roles)}
+
+        out = [row(d, True) for d in (self.builtin(k) for k in BUILTIN_BUILDERS) if d]
         with self.store._lock:
             rows = self.store._conn.execute("SELECT body FROM workflow_defs ORDER BY id, version").fetchall()
         for (body,) in rows:
-            d = WorkflowDef.model_validate(migrate(json.loads(body)))
-            out.append({"id": d.id, "version": d.version, "name": d.name, "description": d.description,
-                        "builtin": False, "published": d.published})
+            out.append(row(WorkflowDef.model_validate(migrate(json.loads(body))), False))
         return out
+
+    def pins(self) -> dict[str, list[str]]:
+        """{ref: [epic ids pinned to it]} (the dry-run probe pin excluded)."""
+        with self.store._lock:
+            rows = self.store._conn.execute("SELECT ref, epic_id FROM workflow_pins ORDER BY pinned_at").fetchall()
+        out: dict[str, list[str]] = {}
+        for r, e in rows:
+            if not str(e).startswith("E-dry-run"):
+                out.setdefault(r, []).append(e)
+        return out
+
+    def snapshot(self, wf_ref: str) -> WorkflowDef:
+        """The version as it was when duplicated (S14): the saved snapshot, else the stored or preset version."""
+        wf_id, ver = parse_ref(wf_ref)
+        with self.store._lock:
+            row = self.store._conn.execute("SELECT body FROM workflow_snapshots WHERE ref=?", (wf_ref,)).fetchone()
+        if row:
+            return WorkflowDef.model_validate(migrate(json.loads(row[0])))
+        return self.get(wf_id, ver)
+
+    def _snap(self, d: WorkflowDef) -> None:
+        with self.store._lock, self.store._conn:
+            self.store._conn.execute("INSERT OR IGNORE INTO workflow_snapshots (ref, body) VALUES (?,?)",
+                                     (d.ref, d.model_dump_json(by_alias=True)))
+
+    def upstream(self, wf_ref: str) -> dict[str, Any]:
+        """S14 (§4.14(e).4): has the version this one came from moved on? {source, latest, changed, diff}."""
+        from . import workflow_design
+        wf_id, ver = parse_ref(wf_ref)
+        d = self.get(wf_id, ver)
+        none = {"ref": d.ref, "source": d.source, "latest": None, "changed": False, "diff": []}
+        if not d.source:
+            return none
+        sid, sver = parse_ref(d.source)
+        if sid == wf_id:
+            return none  # a new version of the same workflow: its own history, not an upstream
+        try:
+            latest = self.latest_published(sid)
+        except WorkflowError:
+            return none
+        changed = latest.version > sver
+        return {**none, "latest": latest.ref, "changed": changed,
+                "diff": workflow_design.diff(self.snapshot(d.source), latest) if changed else []}
+
+    def merge_upstream(self, wf_ref: str, *, by: str) -> dict[str, Any]:
+        """Three-way merge (base = the source as duplicated, theirs = its latest published version, ours =
+        this version) into a NEW draft of this workflow whose source is the latest upstream."""
+        from . import workflow_design
+        up = self.upstream(wf_ref)
+        if not up["changed"]:
+            raise WorkflowError("conflict", f"{wf_ref} has no upstream change to merge", "nothing to do")
+        wf_id, ver = parse_ref(wf_ref)
+        ours = self.get(wf_id, ver)
+        latest = self.latest_published(parse_ref(up["source"])[0])
+        m = workflow_design.merge3(self.snapshot(up["source"]), ours, latest)
+        last = self._row(wf_id, None)
+        body = {**m["body"], "id": wf_id, "version": (last.version if last else ver) + 1, "source": latest.ref,
+                "builtin": False, "published": False}
+        d = WorkflowDef.model_validate(body)
+        self._snap(latest)
+        self._put(d, by)
+        return {"draft": dump(d), "conflicts": m["conflicts"], "taken": m["taken"], "problems": validate(d)}
 
     def resolve(self, wf_ref: str) -> Workflow:
         """A pinned ref → its Workflow (cached: a published version never changes)."""
@@ -1210,7 +1345,10 @@ class WorkflowRegistry:
             last = self._row(sid, None)
             wf_id, ver = sid, (last.version if last else sver) + 1
         d = src.model_copy(deep=True, update={"id": wf_id, "version": ver, "builtin": False, "published": False,
-                                              "name": src.name if wf_id == sid else f"{src.name} (copy)"})
+                                              "name": src.name if wf_id == sid else f"{src.name} (copy)",
+                                              # a new version of the same id keeps the upstream it tracks
+                                              "source": src.source if wf_id == sid and src.source else src.ref})
+        self._snap(src)
         self._put(d, by)
         return d
 
@@ -1224,6 +1362,13 @@ class WorkflowRegistry:
                               for p in problems)
             raise WorkflowError("invalid", f"{d.ref} does not validate ({len(problems)} problems): {lines}",
                                 "fix each named problem (POST /v1/workflows/validate), then publish", problems)
+        # S14 (§4.14(e).3): a synthetic epic must walk the draft to done; a stall blocks Publish
+        from . import workflow_design
+        stall = workflow_design.dry_run(d)["stall"]
+        if stall is not None:
+            problem = workflow_design.stall_problem(stall)
+            raise WorkflowError("invalid", f"{d.ref} does not publish: {problem['message']}",
+                                "run the dry run (POST /v1/workflows/dryrun) and fix the stalled step", [problem])
         d = d.model_copy(update={"published": True})
         self._put(d, by)
         return d

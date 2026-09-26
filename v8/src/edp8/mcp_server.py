@@ -42,10 +42,11 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from . import run_state, settings
-from .bundles import ROLE_BUNDLES, ToolDef, bind_request, invoke, set_client, tools_for_role
+from .bundles import ALL_TOOLS, ROLE_BUNDLES, ToolDef, bind_request, invoke, set_client, tools_for_role
 from .client import BoardClient
 from .schemas import Role
 
+CUSTOM_PATH = "custom"  # S13/S14: the /mcp/<role> endpoint that serves every workflow's custom roles
 STARTED_AT = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
@@ -81,6 +82,9 @@ def _identity_from(ctx: Context | None) -> tuple[str | None, str | None, str | N
 # path, and a seat naming another role's path gets only the tools both roles share.
 _ROLE_TTL_S = 60.0
 _role_cache: dict[tuple[str, str | None, str | None], tuple[float, str]] = {}
+# S14 (c-e9d095f3a3): a workflow's custom role is served the bundle its pinned version declares (whoami
+# `bundle`: the role's tools clipped by its permissions, plus the kernel tools), cached with the role
+_bundle_cache: dict[tuple[str, str | None, str | None], list[str] | None] = {}
 
 
 def _caller_role(board_url: str, admin_token: str | None, participant: str | None, token: str | None) -> str | None:
@@ -100,15 +104,30 @@ def _caller_role(board_url: str, admin_token: str | None, participant: str | Non
         role = None
     if role:
         _role_cache[key] = (now, role)
+        try:
+            _bundle_cache[key] = list(resp["value"].get("bundle") or []) or None
+        except (KeyError, TypeError, AttributeError):
+            _bundle_cache[key] = None
     return role
 
 
-def allowed_tool_names(path_role: str, caller_role: str | None) -> set[str]:
+def _caller_bundle(board_url: str, participant: str | None, token: str | None) -> list[str] | None:
+    """The declared bundle whoami returned with the cached role (None when unknown)."""
+    return _bundle_cache.get((board_url, participant, token))
+
+
+def allowed_tool_names(path_role: str, caller_role: str | None, caller_bundle: list[str] | None = None) -> set[str]:
     """Tools a caller with board role `caller_role` may use on /mcp/<path_role>: the intersection of
-    both roles' bundles; nothing at all for an expert or a caller the board refused."""
+    both roles' bundles; nothing at all for an expert or a caller the board refused. S14: a custom role
+    (not a built-in bundle) gets the bundle its epic's pinned workflow declares (`caller_bundle`, from
+    whoami, already clipped by the role's permissions) plus the identity and kernel tools — never more."""
     if not caller_role or caller_role == Role.expert.value:
         return set()
-    return {t.name for t in tools_for_role(path_role)} & {t.name for t in tools_for_role(caller_role)}
+    path = ALL_TOOLS if path_role == CUSTOM_PATH else {t.name for t in tools_for_role(path_role)}
+    if caller_role not in ROLE_BUNDLES:
+        mine = {t.name for t in tools_for_role(caller_role)} | set(caller_bundle or [])
+        return set(path) & mine & set(ALL_TOOLS)
+    return set(path) & {t.name for t in tools_for_role(caller_role)}
 
 
 def _refused(tool_name: str, path_role: str, caller_role: str | None) -> str:
@@ -129,7 +148,8 @@ def _wrap(tool: ToolDef, *, board_url: str, admin_token: str | None, workspace_r
         participant, session, token = _identity_from(ctx)
         if path_role is not None:
             caller_role = _caller_role(board_url, admin_token, participant, token)
-            if tool.name not in allowed_tool_names(path_role, caller_role):
+            if tool.name not in allowed_tool_names(path_role, caller_role,
+                                                   _caller_bundle(board_url, participant, token)):
                 return _refused(tool.name, path_role, caller_role)
         client = BoardClient(base_url=board_url, participant=participant, admin_token=admin_token,
                              token=token, workspace_root=workspace_root)
@@ -176,7 +196,8 @@ class _RoleServer(MCPServer):
         participant, _, token = _identity_from(context)
         caller_role = await anyio.to_thread.run_sync(
             _caller_role, self._board_url, self._admin_token, participant, token)
-        allowed = allowed_tool_names(self._path_role, caller_role)
+        allowed = allowed_tool_names(self._path_role, caller_role,
+                                     _caller_bundle(self._board_url, participant, token))
         return ListToolsResult(tools=[t for t in await self.list_tools() if t.name in allowed])
 
 
@@ -186,7 +207,10 @@ def build_role_server(role: str, *, board_url: str, admin_token: str | None,
     server = _RoleServer("edp8", version="0.8.0",
                          instructions=f"edp8 board tools for role {role!r} (server {VERSION})",
                          path_role=role, board_url=board_url, admin_token=admin_token)
-    for tool in tools_for_role(role):
+    # S14: the custom-role endpoint registers every tool; tools/list and each call filter them to the
+    # caller's declared bundle (allowed_tool_names)
+    tools = list(ALL_TOOLS.values()) if role == CUSTOM_PATH else tools_for_role(role)
+    for tool in tools:
         server.add_tool(_wrap(tool, board_url=board_url, admin_token=admin_token, workspace_root=workspace_root,
                               http_upload_policy=http_upload_policy, path_role=role),
                         name=tool.name, description=tool.description)
@@ -230,7 +254,7 @@ def build_http_app(roles: list[str] | None = None) -> Starlette:
 
     # S13: a workflow's custom role (not a built-in bundle) is served the kernel bundle on /mcp/<role>;
     # the board still authorises every call by the seat's role
-    custom = build_role_server("custom", board_url=board_url, admin_token=admin_token,
+    custom = build_role_server(CUSTOM_PATH, board_url=board_url, admin_token=admin_token,
                                http_upload_policy=upload_policy)
     managers["custom"] = StreamableHTTPSessionManager(app=custom._lowlevel_server, json_response=True,
                                                       stateless=True, security_settings=security)

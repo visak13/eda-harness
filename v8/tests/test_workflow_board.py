@@ -52,6 +52,8 @@ def _team_workflow(board, *, stories: int, story_checker: str) -> str:
     d = wf.dump(board.workflows.duplicate("standard@1", new_id="team", by="owner"))
     d["caps"]["stories_per_epic"] = stories
     d["checkers"] = [{"when": {"kinds": ["task"]}, "role": "engineer"}, {"role": story_checker}]
+    # S14: publish walks a dry run; the epic's acceptance checker follows the checker map, or no epic reaches done
+    d["hooks"]["criteria_auto_done"]["params"]["epic_checker"] = story_checker
     return _publish(board, d)
 
 
