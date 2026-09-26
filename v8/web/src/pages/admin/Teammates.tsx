@@ -6,9 +6,11 @@ import {
   revokeTeammate, rotateTeammate, setTeammateAdmin,
 } from "../../api/admin";
 import type { Invite, TailscaleKey } from "../../api/admin";
+import { approveAccess, denyAccess, getAccessRequests, removeTeammate, type AccessRequestRow, type TeammateRow } from "../../api/access";
 import ui from "../../components/ui.module.css";
 import styles from "./Admin.module.css";
 import { AdminError, Done, Secret } from "./shared";
+import own from "./Teammates.module.css";
 
 // Admin → Teammates (design §4.8): invite (the one-time link + the VS Code sign-in link, with copy buttons),
 // list with last-seen, revoke, rotate, admin flag, the Tailscale auth-key mint (R7 b) and the agent tokens.
@@ -110,6 +112,86 @@ function TailscaleKeyPanel({ handles }: { handles: string[] }): React.JSX.Elemen
   );
 }
 
+/** t-882e4d2eeb: access requests from the sign-in page. Each pending row carries DOM id = the request id, so
+ *  the attention trail (S20) can highlight and scroll to it. Approve creates the teammate through the invite
+ *  path and their waiting browser signs itself in; nothing is sent to them by hand. */
+function AccessRequests({ remoteOn }: { remoteOn: boolean }): React.JSX.Element {
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ["admin", "access-requests"], queryFn: getAccessRequests, retry: false });
+  const [handles, setHandles] = useState<Record<string, string>>({});
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ["admin", "access-requests"] });
+    void qc.invalidateQueries({ queryKey: ["admin", "teammates"] });
+  };
+  const approve = useMutation({ mutationFn: (r: AccessRequestRow) => approveAccess(r.id, handles[r.id]?.trim() ? { handle: handles[r.id].trim() } : {}), onSuccess: refresh });
+  const deny = useMutation({ mutationFn: (r: AccessRequestRow) => denyAccess(r.id), onSuccess: refresh });
+  const rows = q.data ?? [];
+  const pending = rows.filter((r) => r.status === "pending");
+  const decided = rows.filter((r) => r.status !== "pending");
+  return (
+    <section className={styles.card} data-testid="access-requests">
+      <h2 className={styles.cardTitle}>Requests{pending.length ? ` (${pending.length})` : ""}</h2>
+      <p className={styles.fieldDoc}>
+        People without a token can ask for access from the sign-in page{remoteOn ? "" : " once Remote access is on"}.
+        Approve signs them in on their own page; their token is never shown here or sent in a message.
+      </p>
+      <AdminError error={q.error} testid="access-requests-error" />
+      {!pending.length && !q.isLoading ? <p className={ui.empty} data-testid="access-requests-empty">No open requests.</p> : null}
+      {pending.map((r) => (
+        <div key={r.id} id={r.id} className={own.request} data-testid={`access-request-${r.id}`}>
+          <div>
+            <strong>{r.name}</strong> asks for access as <strong>{r.role_wanted === "owner" ? "member" : r.role_wanted}</strong>
+            <div className={styles.usage}>{r.created_at}</div>
+            {r.note ? <p className={styles.fieldDoc}>{r.note}</p> : null}
+          </div>
+          <div className={styles.actions}>
+            <input className={ui.input} placeholder="handle (optional)" value={handles[r.id] ?? ""} aria-label={`Handle for ${r.name}`}
+              onChange={(e) => setHandles((h) => ({ ...h, [r.id]: e.target.value }))} data-testid={`access-request-${r.id}-handle`} />
+            <button type="button" className={`${ui.button} ${ui.buttonPrimary} ${styles.small}`} disabled={approve.isPending || deny.isPending}
+              onClick={() => approve.mutate(r)} data-testid={`access-request-${r.id}-approve`}>Approve</button>
+            <button type="button" className={`${ui.button} ${styles.small}`} disabled={approve.isPending || deny.isPending}
+              onClick={() => deny.mutate(r)} data-testid={`access-request-${r.id}-deny`}>Deny</button>
+          </div>
+        </div>
+      ))}
+      <AdminError error={approve.error ?? deny.error} testid="access-request-action-error" />
+      {decided.length ? (
+        <details className={own.decided}>
+          <summary>Decided recently ({decided.length})</summary>
+          <ul>
+            {decided.map((r) => (
+              <li key={r.id} data-testid={`access-decided-${r.id}`}>
+                {r.name}: {r.status === "denied" ? "declined" : r.status === "claimed" ? `signed in as ${r.handle}` : `approved as ${r.handle}, waiting for their page`}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </section>
+  );
+}
+
+/** Remove = revoke + retire, behind a confirm step (t-882e4d2eeb). */
+function RemoveButton({ handle, onDone }: { handle: string; onDone: (hint: string) => void }): React.JSX.Element {
+  const [confirming, setConfirming] = useState(false);
+  const m = useMutation({ mutationFn: () => removeTeammate(handle), onSuccess: ({ hint }) => { setConfirming(false); onDone(hint); } });
+  if (!confirming) {
+    return (
+      <button type="button" className={`${ui.button} ${styles.small}`} onClick={() => setConfirming(true)} data-testid={`teammate-${handle}-remove`}>Remove</button>
+    );
+  }
+  return (
+    <span className={own.confirm} role="group" aria-label={`Remove ${handle}?`} data-testid={`teammate-${handle}-remove-confirm`}>
+      <span>Remove {handle}? Their token stops working and they leave every people list.</span>
+      <button type="button" className={`${ui.button} ${ui.buttonPrimary} ${styles.small}`} disabled={m.isPending}
+        onClick={() => m.mutate()} data-testid={`teammate-${handle}-remove-yes`}>Remove</button>
+      <button type="button" className={`${ui.button} ${styles.small}`} onClick={() => setConfirming(false)}
+        data-testid={`teammate-${handle}-remove-no`}>Cancel</button>
+      {m.error ? <AdminError error={m.error} testid={`teammate-${handle}-remove-error`} /> : null}
+    </span>
+  );
+}
+
 function AgentTokens(): React.JSX.Element {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["admin", "agent-tokens"], queryFn: getAgentTokens, retry: false });
@@ -154,23 +236,36 @@ export function TeammatesTab(): React.JSX.Element {
   const flag = useMutation({ mutationFn: ({ handle, admin }: { handle: string; admin: boolean }) => setTeammateAdmin(handle, admin), onSuccess: refresh });
   const tail = useQuery({ queryKey: ["admin", "tailnet"], queryFn: getTailnet, retry: false });
   const remoteOn = Boolean(tail.data?.public_mode);
-  const rows = q.data ?? [];
+  const [showRemoved, setShowRemoved] = useState(false);
+  const [removedHint, setRemovedHint] = useState<string | null>(null);
+  const all = (q.data ?? []) as TeammateRow[];
+  const removed = all.filter((t) => t.retired);
+  const rows = showRemoved ? all : all.filter((t) => !t.retired);
   const actionError = revoke.error ?? rotate.error ?? reinvite.error ?? flag.error;
-  const hint = revoke.data?.hint ?? null;
+  const hint = removedHint ?? revoke.data?.hint ?? null;
   return (
     <div className={styles.panel} data-testid="admin-teammates">
       <HowInviting remoteOn={remoteOn} />
       <InviteForm remoteOn={remoteOn} />
+      <AccessRequests remoteOn={remoteOn} />
       <section className={styles.card} data-testid="teammates">
         <h2 className={styles.cardTitle}>Teammates</h2>
         <AdminError error={q.error} testid="teammates-error" />
+        {removed.length ? (
+          <label className={styles.row}>
+            <input type="checkbox" checked={showRemoved} onChange={(e) => setShowRemoved(e.target.checked)} data-testid="teammates-show-removed" />
+            Show removed ({removed.length})
+          </label>
+        ) : null}
         <div className={styles.tableWrap}>
           <table className={styles.table}>
             <thead><tr><th>Handle</th><th>Role</th><th>Admin</th><th>Signed in</th><th>Last seen</th><th>Actions</th></tr></thead>
             <tbody>
               {rows.map((t) => (
-                <tr key={t.handle} data-testid={`teammate-${t.handle}`}>
-                  <td><strong>{t.handle}</strong>{t.init_human ? <div className={styles.usage}>init human</div> : null}</td>
+                <tr key={t.handle} data-testid={`teammate-${t.handle}`} className={t.retired ? own.removed : undefined}>
+                  <td><strong>{t.handle}</strong>{t.init_human ? <div className={styles.usage}>init human</div> : null}
+                    {t.retired ? <div className={styles.usage}><span className={ui.chip}>removed</span></div>
+                      : !t.has_token && !t.invite_expires ? <div className={styles.usage}>no token: hidden from people lists</div> : null}</td>
                   <td>{t.role}</td>
                   <td><input type="checkbox" checked={t.admin} disabled={t.init_human || flag.isPending} aria-label={`${t.handle} is an admin`}
                     onChange={(e) => flag.mutate({ handle: t.handle, admin: e.target.checked })} data-testid={`teammate-${t.handle}-admin`} /></td>
@@ -181,6 +276,7 @@ export function TeammatesTab(): React.JSX.Element {
                       <button type="button" className={`${ui.button} ${styles.small}`} onClick={() => reinvite.mutate(t.handle)} data-testid={`teammate-${t.handle}-invite`}>New invite</button>
                       <button type="button" className={`${ui.button} ${styles.small}`} disabled={!t.has_token} onClick={() => rotate.mutate(t.handle)} data-testid={`teammate-${t.handle}-rotate`}>Rotate</button>
                       <button type="button" className={`${ui.button} ${styles.small}`} disabled={!t.has_token && !t.invite_expires} onClick={() => revoke.mutate(t.handle)} data-testid={`teammate-${t.handle}-revoke`}>Revoke</button>
+                      {!t.init_human && !t.retired ? <RemoveButton handle={t.handle} onDone={(h) => { setShown(null); setRemovedHint(h); refresh(); }} /> : null}
                     </div>
                   </td>
                 </tr>
@@ -194,7 +290,7 @@ export function TeammatesTab(): React.JSX.Element {
         {shown?.kind === "token" ? <><Secret label={`New token for ${shown.handle}`} value={shown.token} testid="rotated-token" />
           <p className={styles.fieldDoc}>Shown once: the old token is refused from now on.</p></> : null}
       </section>
-      <TailscaleKeyPanel handles={rows.map((r) => r.handle)} />
+      <TailscaleKeyPanel handles={all.filter((r) => !r.retired).map((r) => r.handle)} />
       <AgentTokens />
     </div>
   );

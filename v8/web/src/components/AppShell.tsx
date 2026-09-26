@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, BoardApiError } from "../api/client";
 import { getEpicPage } from "../api/endpoints";
 import { useCurrentEpicId } from "./currentEpic";
-import { identity } from "../auth/identity";
+import { identity, signOut, SIGNED_OUT_EVENT } from "../auth/identity";
 import { IdentityPanel } from "./IdentityPanel";
 import { DraftGuardProvider } from "../live/useDraftGuard";
 import { DocDrawerProvider } from "./DocDrawer";
@@ -161,6 +161,14 @@ function AppShellChrome(): React.JSX.Element {
   }, []);
 
   const whoami = useQuery({ queryKey: ["whoami"], queryFn: () => api<WhoAmI>("/v1/whoami"), retry: false });
+  // t-882e4d2eeb: Sign out (here, or in another tab of this origin) ends the session: every cached board
+  // read goes, whoami is asked again, answers 401, and the sign-in panel replaces the shell.
+  const qc = useQueryClient();
+  useEffect(() => {
+    const onSignedOut = () => { void qc.resetQueries(); };
+    window.addEventListener(SIGNED_OUT_EVENT, onSignedOut);
+    return () => window.removeEventListener(SIGNED_OUT_EVENT, onSignedOut);
+  }, [qc]);
   const summary = useQuery({ queryKey: ["me", "summary"], queryFn: () => api<Summary>("/v1/me/summary"), retry: false });
 
   const handle = whoami.data?.participant.handle ?? as;
@@ -273,6 +281,8 @@ function AppShellChrome(): React.JSX.Element {
               <p className={styles.accountWho}><strong>{as}</strong>{role ? ` · ${role}` : ""}</p>
               <div className={styles.accountLinks}>
                 <Link to="/settings" className={styles.accountLink} data-testid="settings-open" onClick={closeAccount}><Icon name="preferences" size={18} /> Settings</Link>
+                <button type="button" className={styles.accountLink} data-testid="sign-out"
+                  onClick={() => { closeAccount(); void signOut(); }}><Icon name="back" size={18} /> Sign out</button>
               </div>
               {/* S17 c-066a9b347a: "What am I looking at?" is the floating top-right help button and
                   Notifications (Enable / Test) live on Settings → Notifications; neither is in this menu.

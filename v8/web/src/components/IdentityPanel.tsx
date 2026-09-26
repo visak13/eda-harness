@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { identity } from "../auth/identity";
+import { RequestAccess } from "./RequestAccess";
 import styles from "./IdentityPanel.module.css";
 
 // Design §4.1 (Transition): when the board answers the identity probe (/v1/whoami) with 401 — a
@@ -8,7 +9,11 @@ import styles from "./IdentityPanel.module.css";
 // a participant id and, when the board is credentialled, the matching token. Identity is read once
 // at module load from ?as/?token (src/auth/identity.ts), so submitting re-seats it with a full
 // navigation rather than a client route change. (second-opinion 2026-09-08, criterion c-5985a92696)
+//
+// t-882e4d2eeb: this is also where Sign out lands (identity() is then empty, so it says "signed out" and
+// shows no board error), and where a person without a token can Request access on a remote-enabled board.
 export function IdentityPanel({ hint }: { hint?: string }): React.JSX.Element {
+  const signedOut = identity() === "";
   const [as, setAs] = useState(identity());
   const [token, setToken] = useState("");
 
@@ -30,15 +35,22 @@ export function IdentityPanel({ hint }: { hint?: string }): React.JSX.Element {
 
   return (
     <main className={styles.wrap} data-testid="identity-panel">
+      <div className={styles.stack}>
       <form className={styles.card} onSubmit={submit} aria-labelledby="identity-panel-title">
         <h1 id="identity-panel-title" className={styles.title}>
-          Identity needed
+          {signedOut ? "Signed out" : "Identity needed"}
         </h1>
-        <p className={styles.body}>
-          The board rejected your credentials for <span className={styles.who}>{identity()}</span>.
-          Enter a participant id and, if this board requires one, the matching token to continue.
-        </p>
-        {hint ? (
+        {signedOut ? (
+          <p className={styles.body} data-testid="signed-out">
+            You are signed out of this board. Enter your participant id and token to sign in again.
+          </p>
+        ) : (
+          <p className={styles.body}>
+            The board rejected your credentials for <span className={styles.who}>{identity()}</span>.
+            Enter a participant id and, if this board requires one, the matching token to continue.
+          </p>
+        )}
+        {hint && !signedOut ? (
           <p className={styles.hint} role="alert" data-testid="identity-hint">
             {hint}
           </p>
@@ -67,6 +79,8 @@ export function IdentityPanel({ hint }: { hint?: string }): React.JSX.Element {
           Continue
         </button>
       </form>
+      <RequestAccess />
+      </div>
     </main>
   );
 }

@@ -20,6 +20,7 @@
 .body { min-width: 0; }
 .by { display: flex; align-items: center; gap: 10px; font-size: 14px; margin-bottom: 3px; flex-wrap: wrap; }
 .by strong { font-size: 15px; }
+.by .retired { color: var(--muted); font-weight: 500; } /* t-882e4d2eeb: a person who left the board */
 .id { font: 11px Consolas, "SF Mono", ui-monospace, monospace; color: var(--muted); }
 .to, .by time { color: var(--muted); font-size: 13px; }
 .kind { font-size: 12px; color: var(--accentink); }

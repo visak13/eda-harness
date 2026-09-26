@@ -94,6 +94,8 @@ reset`, delete the lines between `# >>> edp tailnet` and `# <<< edp tailnet` in 
 
 ## 5. Add a teammate
 
+From the UI there is a shorter path. Admin → Teammates → Invite gives a one-time link. A person without a token can also press **Request access** on the sign-in page; an admin approves it under Admin → Teammates → Requests, and that person's browser signs itself in. To take a teammate off the board, use Admin → Teammates → Remove. The manual steps below are the fallback. `alex` is a placeholder handle.
+
 1. **Tailnet access** — owner, in the Tailscale admin console: invite them to the tailnet (Users →
    Invite), or share just this machine (Machines → msi → Share…). Shared-in users reach the machine but
    not the rest of the tailnet. They install Tailscale and sign in; `tailscale status` on their side
@@ -101,7 +103,7 @@ reset`, delete the lines between `# >>> edp tailnet` and `# <<< edp tailnet` in 
 2. **Board participant** — register them as a human (role `qa`, `engineer`, … as the owner decides),
    once, from `eda-base3`:
    ```powershell
-   $h = "ravi"; $role = "qa"
+   $h = "alex"; $role = "qa"
    $admin = (Get-Content v8\.env | Where-Object { $_ -like "EDP8_ADMIN_TOKEN=*" } | Select-Object -Last 1).Split("=",2)[1]
    Invoke-RestMethod http://127.0.0.1:9400/v1/participants -Method Post -Headers @{ "X-Admin" = $admin } `
      -ContentType application/json -Body (@{ type = "human"; role = $role; handle = $h; id = $h } | ConvertTo-Json)
@@ -110,10 +112,10 @@ reset`, delete the lines between `# >>> edp tailnet` and `# <<< edp tailnet` in 
    printed (the board re-reads the file on its next request; do it when no spawn is in flight, the board
    writes the same file when it mints seat tokens):
    ```powershell
-   v8\.venv\Scripts\python.exe -c "import json,secrets,pathlib,subprocess;f=pathlib.Path(r'v8\tokens.json');d=json.loads(f.read_text(encoding='utf-8'));s=secrets.token_urlsafe(24);d['ravi']=s;t=f.with_suffix('.json.tmp');t.write_text(json.dumps(d,indent=2),encoding='utf-8');t.replace(f);subprocess.run(['clip'],input=s.encode())"
+   v8\.venv\Scripts\python.exe -c "import json,secrets,pathlib,subprocess;f=pathlib.Path(r'v8\tokens.json');d=json.loads(f.read_text(encoding='utf-8'));s=secrets.token_urlsafe(24);d['alex']=s;t=f.with_suffix('.json.tmp');t.write_text(json.dumps(d,indent=2),encoding='utf-8');t.replace(f);subprocess.run(['clip'],input=s.encode())"
    ```
    Send the secret to them over a private channel (not the board, not Slack channels).
-4. **SPA sign-in** — they open `https://msi.tail884b19.ts.net/ui?as=ravi&token=<secret>` once. The SPA
+4. **SPA sign-in** — they open `https://msi.tail884b19.ts.net/ui?as=alex&token=<secret>` once. The SPA
    moves the token into the tab's session storage and strips it from the address bar; a new tab asks again.
 5. **VS Code extension** — install the edp-code vsix, set `edp.boardUrl` to
    `https://msi.tail884b19.ts.net` (machine setting; credentials are only sent to a loopback or https URL),

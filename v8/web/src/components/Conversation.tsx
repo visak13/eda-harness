@@ -9,6 +9,7 @@ import { ThreadHistoryControls, type useThreadHistory } from "./useThreadHistory
 import { pendingWork } from "./PendingNavigation";
 import { useScrollToHash } from "./useScrollToHash";
 import { useViewerFlag } from "./viewerPrefs";
+import { useRetired } from "./useRetired";
 import { MessageMarkdown } from "./Markdown";
 import { CodeCard } from "./CodeCard";
 import { QuoteCard } from "./QuoteCard";
@@ -127,6 +128,7 @@ export function Conversation({ ticketId, history, order, onToggleOrder, onReply,
   const thread = history.messages;
   const ordered = order === "newest" ? [...thread].reverse() : thread;
   const byId = new Map(thread.map((m) => [m.id, m]));
+  const retired = useRetired(); // t-882e4d2eeb: people who left keep their name here, greyed
   useScrollToHash(Boolean(thread.length));
   const last = thread[thread.length - 1]?.at;
   const [composerCollapsed, setComposerCollapsed] = useViewerFlag(viewer, "composer-collapsed");
@@ -154,7 +156,9 @@ export function Conversation({ ticketId, history, order, onToggleOrder, onReply,
                 <Avatar id={m.by} size={36} className={styles.avatar} />
                 <div className={styles.body}>
                   <div className={styles.by}>
-                    <strong>{nameOf(m.by)}</strong>
+                    {retired.has(m.by)
+                      ? <strong className={styles.retired} title="No longer on this board" data-testid="retired-author">{nameOf(m.by)}</strong>
+                      : <strong>{nameOf(m.by)}</strong>}
                     {m.by.includes(".") ? <span className={styles.id}>{m.by}</span> : null}
                     {m.to ? <span className={styles.to}>To {m.to === viewer ? "you" : nameOf(m.to)}</span> : null}
                     {m.kind !== "note" ? <Term category="message_kind" value={m.kind} className={styles.kind} /> : null}

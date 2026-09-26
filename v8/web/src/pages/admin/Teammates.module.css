@@ -1,0 +1,27 @@
+/* t-882e4d2eeb: Admin → Teammates additions (requests, the Remove confirm, removed rows). Theme tokens only. */
+.request {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  scroll-margin-top: 80px;
+}
+.decided {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.removed {
+  color: var(--muted);
+  opacity: 0.75;
+}

@@ -69,7 +69,7 @@ function tok(): string | null {
 }
 TOKEN = tok();
 
-type SessionMsg = { type: "ask"; as: string | null } | { type: "session"; as: string; token: string };
+type SessionMsg = { type: "ask"; as: string | null } | { type: "session"; as: string; token: string } | { type: "signout" };
 
 function channel(): BroadcastChannel | null {
   try {
@@ -88,6 +88,10 @@ function answerAsks(): void {
   answering = ch;
   ch.onmessage = (e: MessageEvent<SessionMsg>) => {
     const m = e.data;
+    if (m?.type === "signout") {
+      clearSession(); // another tab of this origin signed out: this one drops its copy too
+      return;
+    }
     if (m?.type !== "ask") return;
     const token = tok();
     if (!token || (m.as !== null && m.as !== AS)) return;
@@ -189,6 +193,46 @@ export function signIn(as: string, token: string): void {
   }
   AS = as;
   TOKEN = token;
+}
+
+/** t-882e4d2eeb: the event a tab dispatches when its session ends (the shell refetches whoami → 401 → the
+ *  sign-in panel). */
+export const SIGNED_OUT_EVENT = "edp8:signedout";
+
+/** Forget this tab's session: the token, the identity (empty, so even a trusted board answers 401 rather
+ *  than falling back to a default participant) and unsent drafts. */
+function clearSession(): void {
+  try {
+    sessionStorage.removeItem("edp8.token");
+    sessionStorage.setItem("edp8.as", "");
+    Object.keys(sessionStorage).filter((key) => key.startsWith("edp8.draft.")).forEach((key) => sessionStorage.removeItem(key));
+  } catch {
+    /* storage unavailable: the in-memory copy below is the session */
+  }
+  AS = "";
+  TOKEN = null;
+  try {
+    window.dispatchEvent(new Event(SIGNED_OUT_EVENT));
+  } catch {
+    /* no window (tests without a DOM) */
+  }
+}
+
+/** Sign out (t-882e4d2eeb): the board expires the one cookie it set for this host (the code-server guard's),
+ *  this tab drops its token and identity, and every other tab of this origin is told to do the same, so none
+ *  can hand the session back through the handshake. The next board request is 401 → the sign-in panel. */
+export async function signOut(): Promise<void> {
+  try {
+    await fetch("/v1/signout", { method: "POST" });
+  } catch {
+    /* the board is unreachable: the local session still ends */
+  }
+  clearSession();
+  const ch = channel();
+  if (ch) {
+    ch.postMessage({ type: "signout" } satisfies SessionMsg);
+    ch.close();
+  }
 }
 
 /** Resolves once this tab's session is settled — an expert link's code redeemed first, then immediately

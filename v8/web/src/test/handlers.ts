@@ -44,6 +44,11 @@ export const handlers = [
     HttpResponse.json({ ok: true, value: { decisions: 0, epics: 0, seats: 0, library: 0 } }),
   ),
   http.get("/v1/epics/summary", () => HttpResponse.json({ ok: true, value: [] })),
+  // t-882e4d2eeb: the seats view (the thread greys `retired` people) and the sign-in page's Request access
+  http.get("/v1/seats", () => HttpResponse.json({ ok: true, value: { seats: [], people: [], retired: [] } })),
+  http.get("/v1/access-requests/available", () =>
+    HttpResponse.json({ ok: true, value: { enabled: false, reason: "Remote access is off on this board.", roles: ["owner"] } })),
+  http.get("/v1/admin/access-requests", () => HttpResponse.json({ ok: true, value: [] })),
   // S19: no proposed fixes by default (the Help seat's approval cards)
   http.get("/v1/fixes", () => HttpResponse.json({ ok: true, value: [] })),
   // S-ROLES: the per-role model catalog (models.json role_models)

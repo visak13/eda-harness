@@ -88,3 +88,41 @@
   outline: 2px solid var(--accentink);
   outline-offset: 3px;
 }
+
+/* t-882e4d2eeb: the sign-in card and, under it, Request access (a second card of the same family) */
+.stack {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.access {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 28px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.subtitle {
+  font: 20px/1.2 Georgia, serif;
+  color: var(--ink);
+  margin: 0;
+}
+.linkButton {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accentink);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.linkButton:focus-visible {
+  outline: 2px solid var(--accentink);
+  outline-offset: 3px;
+}
