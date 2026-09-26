@@ -5,6 +5,7 @@ S3 s-870e401942). User-facing names come from `brand.py` (§4.12).
     heronry start|stop|restart [svc|all]    services through `edp8.launcher` (+ the supervisor)
     heronry status    one row per service: state, pid, port, url, rev, uptime, last probe, last restart
     heronry doctor    prerequisites, harnesses (with install links), ports, secrets, trust
+    heronry prereqs [install]   the prerequisites checklist; install the missing ones (edp_contracts.prereqs)
     heronry update    check GitHub Releases; apply = compat check, DB backup, stop, reinstall, start
     heronry import --from <v8 dir>   copy an existing v8 state (dry run first; the source is never written)
     heronry gui       the desktop app (S8)
@@ -392,6 +393,8 @@ def help_cmd(_argv: list[str]) -> int:
         ("restart [svc|all]", "restart through the supervisor (records service_restarted)"),
         ("status", "one row per service: state, pid, port, url, rev, uptime, last probe, last restart"),
         ("doctor", "check prerequisites, harnesses, ports, secrets and claude folder trust"),
+        ("prereqs [install]", "list the tools Heronry needs; install installs the missing ones (--yes, "
+                              "--no-embed, --only NAME)"),
         ("doctor --agent [text]", "ask the Help seat (an agent that diagnoses and proposes fixes you approve)"),
         ("doctor --bundle [PATH]", "write a redacted diagnostics zip to attach to a GitHub issue"),
         ("update", "check for a new release; --apply installs it (backup, stop, upgrade, start)"),
@@ -408,6 +411,7 @@ _COMMANDS = {
     "status": status, "start": start, "stop": stop, "restart": restart, "version": version_cmd,
     "help": help_cmd, "gui": gui,
     "init": _lazy("edp8.setup", "init_cmd"), "doctor": _lazy("edp8.setup", "doctor_cmd"),
+    "prereqs": _lazy("edp8.prereqs_cmd", "main"),
     "import": _lazy("edp8.importer", "main"), "update": _lazy("edp8.updater", "main"),
     # S13 owns `heronry workflows …` (the update's compat check runs it from the NEW release)
     "workflows": _lazy("edp8.workflows_cli", "main"),

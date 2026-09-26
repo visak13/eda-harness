@@ -1,23 +1,29 @@
 ﻿# Heronry installer for Windows (S3 s-870e401942, design-e963c656f5 4.4 / 4.10).
 #
 #   irm https://github.com/visak13/eda-harness/releases/latest/download/install.ps1 | iex
-#   .\install.ps1 [-Version v0.9.0] [-ReleaseUrl <folder or https base>] [-Force] [-NoModifyPath]
+#   .\install.ps1 [-Version v0.9.0] [-ReleaseUrl <folder or https base>] [-Force] [-NoModifyPath] [-Yes] [-NoEmbed]
 #
 # 1. uv: uses the uv on PATH when it is at least $UvVersion, else installs exactly $UvVersion into
 #    ~\.local\bin after checking the archive against uv's published SHA-256.
 # 2. the release: SHA256SUMS plus the four wheels (edp8, edp_contracts, edp_pool, edp_broker), each
 #    verified against SHA256SUMS before anything is installed.
-# 3. `uv tool install --force <edp8 wheel> --with <the other three>` (never `uv tool upgrade`, a no-op for
-#    wheel installs); skipped when that version is already installed, unless -Force. Safe to re-run.
-# 4. puts uv's tool bin dir on your user PATH (uv tool update-shell; -NoModifyPath skips it) and ends with
+# 3. `uv tool install --force "edp8[embed] @ <edp8 wheel>" --with <the other three>` (never `uv tool upgrade`, a
+#    no-op for wheel installs; -NoEmbed drops the embed extra); skipped when that version is already installed,
+#    unless -Force. Safe to re-run.
+# 4. puts uv's tool bin dir on your user PATH (uv tool update-shell; -NoModifyPath skips it) and prints
 #    `heronry version`.
+# 5. `heronry prereqs install`: checks git, node, a harness (claude/codex), the embedder and its model against
+#    the one prerequisites manifest, asks once, and installs the missing required ones with winget (-Yes: no
+#    question). Optional tools (pi, Tailscale) are listed with what each turns on.
 # Nothing here needs admin rights; your data lives outside the install and survives a reinstall.
 param(
   [string]$Version = "",
   [string]$ReleaseUrl = "",
   [string]$Repo = "visak13/eda-harness",
   [switch]$Force,
-  [switch]$NoModifyPath
+  [switch]$NoModifyPath,
+  [switch]$Yes,
+  [switch]$NoEmbed
 )
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
@@ -105,7 +111,9 @@ try {
   if ($installed -and $installed -eq (VersionOf $target) -and -not $Force) {
     Say "heronry $target is already installed; nothing to do (-Force reinstalls)"
   } else {
-    $ia = @("tool", "install", "--force", "--python", $Python, $local["edp8"])
+    $spec = $local["edp8"]
+    if (-not $NoEmbed) { $spec = "edp8[embed] @ $(([Uri](Resolve-Path -LiteralPath $spec).Path).AbsoluteUri)" }
+    $ia = @("tool", "install", "--force", "--python", $Python, $spec)
     foreach ($w in @($Wheels | Where-Object { $_ -ne "edp8" })) { $ia += @("--with", $local[$w]) }
     Say "uv $($ia -join ' ')"
     & $uv @ia
@@ -116,6 +124,14 @@ try {
   if (-not $NoModifyPath) { $ErrorActionPreference = "Continue"; & $uv tool update-shell 2>$null | Out-Null; $ErrorActionPreference = "Stop" }
   & $exe version
   if ($LASTEXITCODE -ne 0) { Die "heronry version failed after the install" }
+
+  # -- 5. prerequisites (the one manifest: edp_contracts.prereqs) ----------------------------------------
+  $pa = @("prereqs", "install")
+  if ($Yes) { $pa += "--yes" }
+  if ($NoEmbed) { $pa += "--no-embed" }
+  Say "heronry $($pa -join ' ')"
+  $ErrorActionPreference = "Continue"; & $exe @pa; $pre = $LASTEXITCODE; $ErrorActionPreference = "Stop"
+  if ($pre -ne 0) { Say "some prerequisites are still missing (above); Heronry is installed: run 'heronry prereqs install' again after fixing them" }
   Say "next: heronry init   (then heronry start; open a new terminal if 'heronry' is not found)"
 } finally {
   Remove-Item -Recurse -Force -LiteralPath $work -ErrorAction SilentlyContinue

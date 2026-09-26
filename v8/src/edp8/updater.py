@@ -204,6 +204,11 @@ def install_argv(wheels: dict[str, Path]) -> list[str]:
     argv = [_uv(), "tool", "install", "--force", str(wheels["edp8"])]
     for s in siblings:
         argv += ["--with", s]
+    # keep the embedder the installer added (t-08612be1b0): --force rebuilds the env from this argv alone
+    import importlib.util
+    if importlib.util.find_spec("fastembed") is not None:
+        from edp_contracts.prereqs import by_name
+        argv += ["--with", by_name("embedder").install["linux"][0].arg]
     return argv
 
 

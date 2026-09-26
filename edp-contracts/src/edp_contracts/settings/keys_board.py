@@ -71,6 +71,10 @@ declare("search.embed_model", "EDP8_EMBED_MODEL", "str", "nomic-ai/nomic-embed-t
         "fastembed model used for dense search.", restart_required="board",
         tier="advanced", label='Search model',
         help='The model that turns text into search vectors. Changing it rebuilds the search index.')
+declare("search.embed_cache", "EDP8_EMBED_CACHE", "path", None, "Embedder/search",
+        "Folder the embedding model is downloaded to; unset = <data>/models when installed, fastembed's own "
+        "default (FASTEMBED_CACHE_PATH, else a temp folder) in dev mode.", default_doc="<data>/models",
+        restart_required="board", tier="internal")
 declare("search.ollama_url", "EDP8_OLLAMA_URL", "url", "http://127.0.0.1:11434", "Embedder/search",
         "Ollama base URL for the ollama embedder.", restart_required="board",
         tier="advanced", label='Ollama address',

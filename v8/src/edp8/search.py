@@ -194,11 +194,15 @@ class FastEmbedEmbedder:
         # arena off + capped threads keep the board's idle RSS low (see EMBED_* notes). Fall back to a
         # plain construction if a fastembed build does not accept these kwargs, so the board never
         # fails to start over a memory tweak.
+        # the folder `heronry prereqs install` downloaded the model into (installed: <data>/models)
+        from edp_contracts.prereqs import embed_cache_dir
+        cache = embed_cache_dir()
+        where = {"cache_dir": str(cache)} if cache is not None else {}
         try:
             self._model = TextEmbedding(model_name=EMBED_MODEL, threads=EMBED_THREADS,
-                                        enable_cpu_mem_arena=EMBED_ARENA)
+                                        enable_cpu_mem_arena=EMBED_ARENA, **where)
         except TypeError:
-            self._model = TextEmbedding(model_name=EMBED_MODEL)
+            self._model = TextEmbedding(model_name=EMBED_MODEL, **where)
         self.model_name = EMBED_MODEL
         after = _rss_mb()
         # R2-6: report the model's resident footprint so a memory-tight host is legible

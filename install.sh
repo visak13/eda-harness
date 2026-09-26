@@ -3,22 +3,27 @@
 # design-e963c656f5 4.4 / 4.10.
 #
 #   curl -LsSf https://github.com/visak13/eda-harness/releases/latest/download/install.sh | sh
-#   sh install.sh [--version v0.9.0] [--release-url <dir or https base>] [--force] [--no-modify-path]
+#   sh install.sh [--version v0.9.0] [--release-url <dir or https base>] [--force] [--no-modify-path] [--yes]
+#                 [--no-embed]
 #
 # 1. uv: uses the uv on PATH when it is at least $UV_VERSION, else installs exactly $UV_VERSION into
 #    ~/.local/bin after checking the archive against uv's published SHA-256.
 # 2. the release: SHA256SUMS plus the four wheels (edp8, edp_contracts, edp_pool, edp_broker), each
 #    verified against SHA256SUMS before anything is installed.
-# 3. `uv tool install --force <edp8 wheel> --with <the other three>` (never `uv tool upgrade`, a no-op for
-#    wheel installs); skipped when that version is already installed, unless --force. Safe to re-run.
-# 4. puts uv's tool bin dir on PATH (uv tool update-shell; --no-modify-path skips it) and ends with
+# 3. `uv tool install --force "edp8[embed] @ <edp8 wheel>" --with <the other three>` (never `uv tool upgrade`,
+#    a no-op for wheel installs; --no-embed drops the embed extra); skipped when that version is already
+#    installed, unless --force. Safe to re-run.
+# 4. puts uv's tool bin dir on PATH (uv tool update-shell; --no-modify-path skips it) and prints
 #    `heronry version`. No root needed; your data lives outside the install and survives a reinstall.
+# 5. `heronry prereqs install`: checks git, node, a harness (claude/codex), the embedder and its model against
+#    the one prerequisites manifest, asks once (on the terminal, also under `curl | sh`), and installs the
+#    missing required ones with brew or apt (--yes: no question; apt asks sudo for its password).
 set -eu
 
 UV_VERSION="0.9.11"
 PYTHON="3.12"
 REPO="visak13/eda-harness"
-VERSION=""; RELEASE_URL=""; FORCE=0; MODIFY_PATH=1
+VERSION=""; RELEASE_URL=""; FORCE=0; MODIFY_PATH=1; YES=0; EMBED=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --version) VERSION="$2"; shift 2 ;;
@@ -26,6 +31,8 @@ while [ $# -gt 0 ]; do
     --repo) REPO="$2"; shift 2 ;;
     --force) FORCE=1; shift ;;
     --no-modify-path) MODIFY_PATH=0; shift ;;
+    --yes|-y) YES=1; shift ;;
+    --no-embed) EMBED=0; shift ;;
     *) echo "heronry-install: unknown argument '$1'" >&2; exit 2 ;;
   esac
 done
@@ -123,9 +130,14 @@ INSTALLED=""; [ -x "$EXE" ] && INSTALLED="$(ver_of "$("$EXE" version 2>/dev/null
 if [ -n "$INSTALLED" ] && [ "$INSTALLED" = "$(ver_of "$TARGET")" ] && [ "$FORCE" = 0 ]; then
   say "heronry $TARGET is already installed; nothing to do (--force reinstalls)"
 else
-  say "uv tool install --force --python $PYTHON $EDP8$WITH"
+  SPEC="$EDP8"
+  if [ "$EMBED" = 1 ]; then  # the embed extra needs a PEP 508 URL: "edp8[embed] @ file:///abs/path.whl"
+    ABS="$(cd "$(dirname "$EDP8")" && { pwd -W 2>/dev/null || pwd; })/$(basename "$EDP8")"
+    case "$ABS" in /*) SPEC="edp8[embed] @ file://$ABS" ;; *) SPEC="edp8[embed] @ file:///$ABS" ;; esac
+  fi
+  say "uv tool install --force --python $PYTHON $SPEC$WITH"
   # shellcheck disable=SC2086  # WITH is a list of --with <path> pairs (temp paths without spaces)
-  "$UV" tool install --force --python "$PYTHON" "$EDP8" $WITH ||
+  "$UV" tool install --force --python "$PYTHON" "$SPEC" $WITH ||
     die "uv tool install failed. If heronry is running, stop it first: heronry stop"
   EXE="$BIN/heronry"; [ -x "$EXE" ] || EXE="$BIN/heronry.exe"
 fi
@@ -133,4 +145,12 @@ fi
 # -- 4. PATH and the proof ------------------------------------------------------------------------------------
 [ "$MODIFY_PATH" = 1 ] && { "$UV" tool update-shell >/dev/null 2>&1 || true; }
 "$EXE" version || die "heronry version failed after the install"
+
+# -- 5. prerequisites (the one manifest: edp_contracts.prereqs) ----------------------------------------------
+PA="prereqs install"; [ "$YES" = 1 ] && PA="$PA --yes"; [ "$EMBED" = 0 ] && PA="$PA --no-embed"
+say "heronry $PA"
+# under `curl | sh` stdin is the script: the one question goes to the terminal instead
+# shellcheck disable=SC2086
+if [ "$YES" = 0 ] && [ -r /dev/tty ] && [ ! -t 0 ]; then "$EXE" $PA </dev/tty; else "$EXE" $PA; fi ||
+  say "some prerequisites are still missing (above); Heronry is installed: run 'heronry prereqs install' again after fixing them"
 say "next: heronry init   (then heronry start; open a new shell if 'heronry' is not found)"

@@ -21,19 +21,14 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
+from edp_contracts import prereqs
 from edp_contracts.settings import secrets as secret_files
 from edp_contracts.settings._core import _flatten
 
 from . import settings
 
-INSTALL_LINKS = {
-    "uv": "https://docs.astral.sh/uv/getting-started/installation/",
-    "claude": "https://code.claude.com/docs/en/setup",
-    "codex": "https://github.com/openai/codex#installation",
-    "pi": "npm install -g @earendil-works/pi-coding-agent (guides/pi-seat.md)",
-    "git": "https://git-scm.com/downloads",
-    "node": "https://nodejs.org/en/download",
-}
+#: each tool's install page, from the one prerequisites manifest (edp_contracts.prereqs)
+INSTALL_LINKS = {p.name: p.docs for p in prereqs.MANIFEST}
 HARNESS_CHOICES = ("claude", "codex", "pi")
 
 
@@ -313,7 +308,7 @@ def init_cmd(argv: list[str]) -> int:
     _say("harness", ", ".join(f"{h}{'' if detected[h] else ' (not found)'}" for h in picked))
     missing = [h for h in picked if not detected[h]]
     for h in missing:
-        _say("install", f"{h}: {INSTALL_LINKS[h]}")
+        _say("install", f"{h}: heronry prereqs install --only {h}  ({INSTALL_LINKS[h]})")
     if "codex" not in picked:
         print()
         print(f"NOTICE: {harness.FABLE_RISK_NOTICE}")
@@ -383,7 +378,7 @@ def doctor_cmd(argv: list[str]) -> int:
 
 
 def _doctor_checks() -> int:
-    from edp_contracts.toolpath import find_tool, probe_version, tool_argv
+    from edp_contracts.toolpath import probe_version, tool_argv
 
     from . import control, harness, launcher, run_state
 
@@ -396,12 +391,21 @@ def _doctor_checks() -> int:
         r.ok("python", sys.version.split()[0])
     else:
         r.fail("python", f"{sys.version.split()[0]} (3.12 or newer is required)")
-    for tool, needed in (("uv", "updates"), ("git", "seats that commit"), ("node", "Pi seats, the codex Monitor")):
-        path = find_tool(tool)
-        if path:
-            r.ok(tool, path)
+    import sqlite3
+    r.ok("sqlite", f"{sqlite3.sqlite_version} (inside Python)")
+    # the one manifest (t-08612be1b0); harnesses have their own section below
+    for row in prereqs.detect_all():
+        if row.need == "harness" or row.name == "pi":
+            continue
+        if row.state == "ok":
+            r.ok(row.name, " ".join(x for x in (row.version, row.path) if x))
+        elif row.state == "off":
+            print(f"  -      {row.name}  optional, off (turns on {row.feature}): heronry prereqs install --only "
+                  f"\"{row.name}\"")
+        elif row.need == "default":
+            r.warn(row.name, f"{row.state}: {row.feature} is off until it is installed: heronry prereqs install")
         else:
-            r.warn(tool, f"not found (needed for {needed}): {INSTALL_LINKS[tool]}")
+            r.warn(row.name, f"{row.state} ({row.purpose}): {row.fix}; or run heronry prereqs install")
 
     print("harnesses")
     picked = harness.selected({})
@@ -416,7 +420,7 @@ def _doctor_checks() -> int:
             else:
                 r.ok(h, f"{path} {ver or ''}{'' if chosen else ' (installed, not selected)'}".rstrip())
         elif chosen:
-            r.fail(h, f"selected but not found: {INSTALL_LINKS[h]}")
+            r.fail(h, f"selected but not found: heronry prereqs install --only {h} ({INSTALL_LINKS[h]})")
         else:
             print(f"  -      {h}  not selected")
     if harness.validate(picked):
