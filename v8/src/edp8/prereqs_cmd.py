@@ -118,6 +118,8 @@ def check(opts: dict[str, Any]) -> int:
 
 
 def install(opts: dict[str, Any], *, ask=input, isatty=None) -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(line_buffering=True)  # our lines stay in order with the package managers' output
     embed = not opts.get("no-embed")
     only = opts.get("only") or []
     got = rows(embed)
@@ -132,7 +134,8 @@ def install(opts: dict[str, Any], *, ask=input, isatty=None) -> int:
         if not opts.get("yes"):
             # a terminal takes Enter as yes; piped input must say y (`echo y | …`); no input at all is a no
             try:
-                answer = ask(f"Install {'this' if len(steps) == 1 else f'these {len(steps)}'} now? [Y/n] ").strip()
+                answer = ask(f"Install {'this' if len(steps) == 1 else f'these {len(steps)}'} now? [Y/n] ")
+                answer = answer.lstrip("\ufeff").strip()  # Windows PowerShell pipes a BOM before `"y" | …`
             except EOFError:
                 print("\nheronry prereqs: no answer (no terminal) and no --yes; nothing installed. Re-run with --yes, "
                       "or run the commands above yourself.")
@@ -150,7 +153,7 @@ def install(opts: dict[str, Any], *, ask=input, isatty=None) -> int:
         for s in steps:
             now = next(r for r in got if r.name == s.name)
             print(f"  {'installed' if now.state == 'ok' else 'FAILED':<10}{s.name}"
-                  + (f" {now.version}" if now.version and now.state == "ok" else "")
+                  + (f": {now.version}" if now.version and now.state == "ok" else "")
                   + ("" if now.state == "ok" else f" (exit {results.get(s.name)}): {now.fix}"))
     optional_off = [r for r in got if r.state == "off" and r.name not in only]
     if optional_off and not only:

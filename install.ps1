@@ -67,6 +67,8 @@ try {
     $env:PATH = "$bin;$env:PATH"
     $uv = Join-Path $bin "uv.exe"
   }
+  $uvDir = Split-Path -Parent $uv   # `heronry prereqs` and `heronry update` look uv up on PATH
+  if (-not (($env:PATH -split ";") -contains $uvDir)) { $env:PATH = "$uvDir;$env:PATH" }
   Say "uv: $(& $uv --version)"
 
   # -- 2. the release, verified -------------------------------------------------------------------------
