@@ -35,6 +35,15 @@ def b():
     return board, ps
 
 
+def _sign_quick_design(board, ps, t):
+    """s-ccdafcb229: the quick engineer's design note is signed off by the owner before any start."""
+    from edp8.schemas import Gate
+    d = board.doc_create(ps["eng"], doc_type=DocType.note, title="Design", body_md="what/how", scope=t.id)
+    board.ticket_update(ps["eng"], t.id, design_ref=d.id)
+    board.gate_open(t.id, Gate.design_signoff, by="eng", note="please review")
+    board.gate_answer(ps["owner"], t.id, Gate.design_signoff, "go")
+
+
 def _quick(board, owner, **kw):
     return board.ticket_create(owner, kind=TicketKind.story, work_type=WorkType.feature, title="Fix the tab title",
                                words="the Seats tab title says Sessions; call it Seats", tags=["quick"], **kw)
@@ -116,6 +125,7 @@ def test_quick_tag_is_fixed_at_create(b):
 def _worked(board, ps):
     """A quick task its engineer took, wrote two owner-checked criteria for, evidenced and handed off."""
     t = _quick(board, ps["owner"], assignee="eng")
+    _sign_quick_design(board, ps, t)
     board.ticket_update(ps["eng"], t.id, status=TicketStatus.in_progress)
     c1 = board.criterion_create(ps["eng"], ticket_id=t.id, text="tab reads Seats", check=Check.verdict)
     c2 = board.criterion_create(ps["eng"], ticket_id=t.id, text="test passes", check=Check.command,

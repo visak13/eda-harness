@@ -24,9 +24,19 @@ def b():
     return board, ps
 
 
+def _sign_quick_design(board, ps, t):
+    """s-ccdafcb229: the quick engineer's design note is signed off by the owner before any start."""
+    from edp8.schemas import Gate
+    d = board.doc_create(ps["eng"], doc_type=DocType.note, title="Design", body_md="what/how", scope=t.id)
+    board.ticket_update(ps["eng"], t.id, design_ref=d.id)
+    board.gate_open(t.id, Gate.design_signoff, by="eng", note="please review")
+    board.gate_answer(ps["owner"], t.id, Gate.design_signoff, "go")
+
+
 def _quick_worked(board, ps):
     t = board.ticket_create(ps["owner"], kind=TicketKind.story, work_type=WorkType.feature, title="Q",
                             words="w", tags=["quick"], assignee="eng")
+    _sign_quick_design(board, ps, t)
     board.ticket_update(ps["eng"], t.id, status=TicketStatus.in_progress)
     c = board.criterion_create(ps["eng"], ticket_id=t.id, text="x", check=Check.verdict)
     rep = board.doc_create(ps["eng"], doc_type=DocType.report, title="R", body_md="done", scope=t.id)
@@ -168,3 +178,60 @@ def test_the_architect_may_finish_its_epic_but_not_a_story(b):
     assert allowed["done"] and allowed["partial"]
     board.ticket_update(ps["arch"], epic.id, status=TicketStatus.done)
     assert board.ticket(epic.id).status == TicketStatus.done
+
+
+# ------------------------------------------------------------------ quick design stop (owner m-b13c61ddea)
+
+def test_a_quick_task_cannot_start_before_the_owner_signs_its_design(b):
+    from edp8.board import BoardError
+    from edp8.schemas import Gate
+    board, ps = b
+    t = board.ticket_create(ps["owner"], kind=TicketKind.story, work_type=WorkType.feature, title="Q",
+                            words="w", tags=["quick"], assignee="eng")
+    with pytest.raises(BoardError, match="design sign-off"):
+        board.ticket_update(ps["eng"], t.id, status=TicketStatus.in_progress)
+    d = board.doc_create(ps["eng"], doc_type=DocType.note, title="Design", body_md="plan", scope=t.id)
+    board.ticket_update(ps["eng"], t.id, design_ref=d.id)
+    board.gate_open(t.id, Gate.design_signoff, by="eng", note="review please")
+    with pytest.raises(BoardError, match="design sign-off"):  # open, not yet answered
+        board.ticket_update(ps["eng"], t.id, status=TicketStatus.in_progress)
+    board.gate_answer(ps["owner"], t.id, Gate.design_signoff, "approved")
+    board.ticket_update(ps["eng"], t.id, status=TicketStatus.in_progress)
+    assert board.ticket(t.id).status == TicketStatus.in_progress
+
+
+def test_a_quick_design_signoff_needs_a_design_note(b):
+    from edp8.board import BoardError
+    from edp8.schemas import Gate
+    board, ps = b
+    t = board.ticket_create(ps["owner"], kind=TicketKind.story, work_type=WorkType.feature, title="Q",
+                            words="w", tags=["quick"], assignee="eng")
+    board.gate_open(t.id, Gate.design_signoff, by="eng", note="review")
+    with pytest.raises(BoardError, match="no design note"):
+        board.gate_answer(ps["owner"], t.id, Gate.design_signoff, "approved")
+
+
+# ------------------------------------------------------------------ per-flow card (owner m-b13c61ddea)
+
+def test_an_engineer_on_a_quick_task_gets_the_quick_card_and_nobody_else_does(b):
+    from edp8.board import seat_card_env
+    board, ps = b
+    q = board.ticket_create(ps["owner"], kind=TicketKind.story, work_type=WorkType.feature, title="Q",
+                            words="w", tags=["quick"])
+    epic = board.ticket_create(ps["owner"], kind=TicketKind.epic, work_type=WorkType.feature, title="E")
+    s = board.ticket_create(ps["arch"], kind=TicketKind.story, work_type=WorkType.feature, title="S",
+                            parent_id=epic.id)
+    assert seat_card_env(q, "engineer") == {"EDP_CARD": "engineer-quick"}
+    assert seat_card_env(q, "qa") == {}
+    assert seat_card_env(s, "engineer") == {}
+    assert seat_card_env(None, "engineer") == {}
+
+
+def test_the_quick_card_exists_and_the_codex_seat_picks_it(tmp_path):
+    from pathlib import Path
+    from edp8.codex_seat.run import _card_name
+    home = Path(__file__).resolve().parents[1]
+    assert (home / ".claude" / "commands" / "engineer-quick.md").is_file()
+    assert _card_name(home, "engineer-quick", "engineer") == "engineer-quick"
+    assert _card_name(home, "no-such-card", "engineer") == "engineer"
+    assert _card_name(home, None, "engineer") == "engineer"

@@ -114,6 +114,19 @@ def is_quick(t: Ticket) -> bool:
     return t.kind == TicketKind.story and QUICK_TAG in (t.tags or [])
 
 
+QUICK_ENGINEER_CARD = "engineer-quick"
+
+
+def seat_card_env(t: Ticket | None, role: str) -> dict[str, str]:
+    """s-ccdafcb229 (owner m-b13c61ddea, "polymorphism: same role, different card per flow"): the spawn
+    env that picks a role card other than `/<role>`. An engineer on a quick task boots
+    `.claude/commands/engineer-quick.md`; every launcher (pool activation_text, Pi, codex) reads
+    EDP_CARD. Empty for every other seat."""
+    if t is not None and str(role) in ("engineer", Role.engineer.value) and is_quick(t) and t.parent_id is None:
+        return {"EDP_CARD": QUICK_ENGINEER_CARD}
+    return {}
+
+
 def is_topic(t: Ticket | None) -> bool:
     """A Library topic (S-SME-SURFACE): its own parentless record, opened and closed by the owner."""
     return t is not None and t.kind == TicketKind.topic
@@ -632,6 +645,13 @@ class Board:
             if open_blockers:
                 raise BoardError("transition", "blocked by unfinished tickets",
                                  "open blockers: " + ", ".join(f"{b.id}({b.status})" for b in open_blockers))
+        if (to == TicketStatus.in_progress and t.status == TicketStatus.ready and is_quick(t)
+                and t.parent_id is None and r != Role.owner and not self._design_signed(t.id)):
+            # s-ccdafcb229 (owner m-b13c61ddea): on a quick task the owner reviews the design before any
+            # edit — the engineer starts only after the owner answered its design_signoff gate.
+            raise BoardError("transition", f"quick task {t.id} waits for the owner's design sign-off",
+                             "doc_create(note) as the design, ticket_update(design_ref=…), "
+                             "gate_open(design_signoff), then wait for the owner's answer")
         if to == TicketStatus.in_progress and t.status != TicketStatus.in_review:
             if not (t.assignee or r in (Role.engineer, Role.sme, Role.architect)):
                 raise BoardError("transition", "in_progress needs an assignee", "ticket_update(assignee=...)")
@@ -1743,6 +1763,13 @@ class Board:
             # (a drafted, criterion-less epic could otherwise be carried straight to signed_off,
             # skipping `designed`). Validate the designed-phase invariants before advancing.
             epic = self.ticket(ticket_id)
+            if is_quick(epic) and epic.parent_id is None:
+                # s-ccdafcb229 (owner m-b13c61ddea): a quick task is its own epic — its engineer's design
+                # note is the owner's review point, answered on the ticket before any edit.
+                if not epic.design_ref:
+                    raise BoardError("transition", f"quick task {epic.id} has no design note to sign off",
+                                     "the engineer sets design_ref to its design note first")
+                return self._record_gate_answer(actor, ticket_id, gate, answer)
             if epic.kind != TicketKind.epic:
                 raise BoardError("scope",
                                  f"design_signoff is answered on the epic, not {ticket_id} ({epic.kind.value})",
@@ -1760,10 +1787,13 @@ class Board:
             if offence:
                 raise BoardError("transition", offence,
                                  "fix the named criterion or link, then answer the gate again")
+        return self._record_gate_answer(actor, ticket_id, gate, answer)
+
+    def _record_gate_answer(self, actor: Participant, ticket_id: str, gate: Gate, answer: str) -> Event:
         am = self.message_send(actor, ticket_id=ticket_id, to=None, kind=MessageKind.answer, text=f"[{gate}] {answer}")
         ev = self._emit(ticket_id, EventKind.gate_answered, {"gate": gate, "answer": answer, "by": actor.id,
                                                              "message": am.id})
-        if gate == Gate.design_signoff:
+        if gate == Gate.design_signoff and self.ticket(ticket_id).kind == TicketKind.epic:
             # c-c80f7cd8f0: the human's word IS the acceptance (a rejection is a steer, not a gate
             # answer — the lint above already refused a non-go), so the board carries the epic to
             # `signed_off` from the answer itself, no architect ticket_update.
@@ -1774,6 +1804,13 @@ class Board:
                 if k.status == TicketStatus.signed_off:
                     self._after_status(k)
         return ev
+
+    def _design_signed(self, ticket_id: str) -> bool:
+        """The owner answered a design_signoff gate on this ticket and none is open now."""
+        if self.open_gates(ticket_id, Gate.design_signoff):
+            return False
+        return any(e.data.get("gate") == Gate.design_signoff.value
+                   for e in self.store.query("event", {"subject_id": ticket_id, "kind": EventKind.gate_answered}))
 
     def open_gates(self, ticket_id: str, gate: Gate | None = None) -> list[Event]:
         evs = self.store.query("event", {"subject_id": ticket_id,

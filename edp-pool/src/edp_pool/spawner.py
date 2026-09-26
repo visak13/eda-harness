@@ -256,7 +256,7 @@ class SubprocessSpawner(Spawner):
             "EDP_SKIP_PERMISSIONS", "0").lower() in ("1", "true", "yes")
         # DESIGN-v7 1.5.4: the activation seam — an explicit line (the
         # park/resume path) wins over the role activator.
-        activation_line = activation or activation_text(role)
+        activation_line = activation or activation_text(role, (extra_env or {}).get("EDP_CARD"))
         if mode == "monitor":
             # Visible console: claude's native TUI in its own window. The
             # role activator rides argv as the initial prompt (claude

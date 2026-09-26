@@ -2297,7 +2297,8 @@ _S20_UNUSED: dict[str, tuple[str, ...]] = {
                        "withdraw_claim", "set_binding"),
     Role.architect.value: ("artifact_read", "dense_search", "gate_answer", "withdraw_claim",
                            "withdraw_decision"),
-    Role.engineer.value: ("dense_search", "gate_answer", "gate_open", "gates", "link_delete",
+    # gate_open stays: the quick-task engineer opens its design_signoff (s-ccdafcb229)
+    Role.engineer.value: ("dense_search", "gate_answer", "gates", "link_delete",
                           "set_binding", "withdraw_claim"),
     Role.adversary.value: ("dense_search", "gate_answer", "link_delete",
                            "set_binding", "withdraw_claim", "withdraw_decision"),

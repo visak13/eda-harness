@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from . import pool_adapter, seat_choice
 from . import rsi  # S18: imported at boot so rsi.LOADED hashes the retrieval code this process runs
-from .board import QUICK_TAG, Board, BoardError
+from .board import QUICK_TAG, Board, BoardError, seat_card_env
 from .contextual_work import HistoryCategory, contextual_work
 from .design_review import DocumentComment, ReviewDecision, comment, decide, source_context
 from .doc_tools import DocEdit
@@ -1274,7 +1274,9 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
             raise BoardError("scope", f"{b.participant_id!r} is not a registered seat of a spawnable role",
                              "register the seat first (spawn does), then ask for its token")
         token = _seat_secret(b.participant_id)
-        return ok({"env": {"EDP8_TOKEN": token} if token else None},
+        env = {"EDP8_TOKEN": token} if token else {}
+        env.update(seat_card_env(board.store.get("ticket", b.ticket_id) if b.ticket_id else None, p.role.value))
+        return ok({"env": env or None},
                   "pass value.env to the pool spawn; null = trusted mode (no tokens.json), header-only seat")
 
     @app.post("/v1/sessions/spawn")
@@ -1326,6 +1328,9 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
                 pass
         token = _mint_agent_token(b.participant_id)
         env = {"EDP8_TOKEN": token} if token else None
+        card = seat_card_env(board.store.get("ticket", b.ticket_id) if b.ticket_id else None, b.role.value)
+        if card:
+            env = {**(env or {}), **card}
         out = pool_adapter.spawn(b.role.value, b.participant_id, parent_session=b.parent_session,
                                  model=choice.pool_model, mode=b.mode, env=env, effort=choice.effort)
         if out.get("ok") and isinstance(out.get("value"), dict):

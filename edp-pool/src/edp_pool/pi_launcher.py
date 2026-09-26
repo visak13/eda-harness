@@ -133,9 +133,12 @@ def rotate_stale_session(session_file: str | Path) -> Path | None:
     return dst
 
 
-def role_card_text(agent_home: str | None, role: str) -> str:
+def role_card_text(agent_home: str | None, role: str, fallback: str | None = None) -> str:
+    """The card text for `role` (or a per-flow card name); a missing card falls back to `fallback`."""
     p = Path(agent_home or os.getcwd()) / ".claude" / "commands" / f"{role}.md"
-    return p.read_text(encoding="utf-8") if p.is_file() else f"/{role}"
+    if p.is_file() and "/" not in role and "\\" not in role:
+        return p.read_text(encoding="utf-8")
+    return role_card_text(agent_home, fallback) if fallback and fallback != role else f"/{role}"
 
 
 def build_env_pi(session_id: str, role: str, handle: str, broker_url: str | None, *,
@@ -230,7 +233,8 @@ class PiSpawner:
             resuming = bool(resume_session) and Path(session_file).is_file()
             if not resuming:
                 rotate_stale_session(session_file)  # fresh spawn = fresh conversation, like a Claude shell
-            first = activation or (None if resuming else role_card_text(self._agent_home, role))
+            card = str((extra_env or {}).get("EDP_CARD") or "")  # s-ccdafcb229: per-flow card
+            first = activation or (None if resuming else role_card_text(self._agent_home, card or role, fallback=role))
             argv = build_argv_pi_tui(self._agent_home, role, handle, model=env.get("EDP_PI_MODEL"),
                                      session_file=session_file, first_message=first,
                                      thinking=env.get("EDP_PI_THINKING") or None)

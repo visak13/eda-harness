@@ -30,6 +30,13 @@ from .jobobj import bind_to_kill_job
 from .seat import CodexSeat
 
 
+def _card_name(agent_home: Path, card: str | None, role: str) -> str:
+    """The per-flow card when EDP_CARD names an existing card file, else the role's own card."""
+    if card and "/" not in card and "\\" not in card and (agent_home / ".claude" / "commands" / f"{card}.md").is_file():
+        return card
+    return role
+
+
 def role_card(agent_home: Path, role: str) -> str:
     p = agent_home / ".claude" / "commands" / f"{role}.md"
     return p.read_text(encoding="utf-8") if p.is_file() else f"/{role}"
@@ -106,7 +113,9 @@ def main(argv: list[str] | None = None) -> int:
     # monitor mode: Ctrl-C belongs to the TUI (it interrupts the model's turn there), never to the runner
     signal.signal(signal.SIGINT, signal.SIG_IGN if console_mode else _stop)
 
-    activation = env.get("EDP_ACTIVATION") or (resume_prompt(handle) if resume else role_card(agent_home, role))
+    # s-ccdafcb229: EDP_CARD picks a per-flow card (engineer on a quick task → engineer-quick)
+    fresh = role_card(agent_home, _card_name(agent_home, env.get("EDP_CARD"), role))
+    activation = env.get("EDP_ACTIVATION") or (resume_prompt(handle) if resume else fresh)
     seat.enqueue_turn(activation)
     if console_mode:
         return run_tui(seat, handle)

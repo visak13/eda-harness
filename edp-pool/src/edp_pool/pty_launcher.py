@@ -355,13 +355,21 @@ _ROLE_ACTIVATOR = {
 }
 
 
-def activation_text(role: str) -> str:
+_CARD_RE = re.compile(r"^[a-z][a-z0-9-]{0,40}$")
+
+
+def activation_text(role: str, card: str | None = None) -> str:
     """The single line written after readiness: the role's slash command.
     The activator then reads EDP_ROLE/EDP_HANDLE/EDP_BROKER_URL from env
     and drives itself via the edp-broker MCP tools (our design).
 
     Unmapped role falls back to f"/{role}" so a wiring mistake fails
-    loudly ("Unknown command") rather than silently mis-activating."""
+    loudly ("Unknown command") rather than silently mis-activating.
+
+    `card` (EDP_CARD in the spawn env, s-ccdafcb229): the same role on another flow boots another
+    card — `engineer` on a quick task runs `/engineer-quick`. A malformed name is ignored."""
+    if card and _CARD_RE.match(card):
+        return f"/{card}"
     return _ROLE_ACTIVATOR.get(role, f"/{role}")
 
 
