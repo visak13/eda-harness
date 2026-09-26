@@ -6,28 +6,40 @@
       "model": "claude-opus-4-8",
       "effort": "medium",
       "context_window": 1000000,
-      "auto_compact": 350000
+      "auto_compact": 350000,
+      "harness": "claude",
+      "provider": "claude",
+      "effort_cap": "medium"
     },
     "advisor": {
       "model": "claude-fable-5-1",
       "effort": "medium",
       "context_window": 1000000,
       "auto_compact": 350000,
-      "max_output": 8000
+      "max_output": 8000,
+      "harness": "claude",
+      "provider": "claude",
+      "effort_cap": "medium"
     },
     "builder": {
       "model": "claude-opus-4-8",
       "effort": "medium",
       "context_window": 1000000,
       "auto_compact": 350000,
-      "max_output": 16000
+      "max_output": 16000,
+      "harness": "claude",
+      "provider": "claude",
+      "effort_cap": "medium"
     },
     "checker": {
       "model": "claude-opus-4-8",
       "effort": "medium",
       "context_window": 1000000,
       "auto_compact": 350000,
-      "max_output": 12000
+      "max_output": 12000,
+      "harness": "claude",
+      "provider": "claude",
+      "effort_cap": "medium"
     },
     "astra": {
       "model": "openai-codex/gpt-6-astra",
@@ -35,7 +47,9 @@
       "harness": "pi",
       "thinking": "medium",
       "context_window": 272000,
-      "auto_compact": 200000
+      "auto_compact": 200000,
+      "provider": "openai-codex",
+      "effort_cap": "high"
     },
     "astra-codex": {
       "model": "gpt-6-astra",
@@ -43,7 +57,9 @@
       "harness": "codex",
       "thinking": "medium",
       "context_window": 272000,
-      "auto_compact": 200000
+      "auto_compact": 200000,
+      "provider": "codex",
+      "effort_cap": "high"
     }
   },
   "roles": {
@@ -54,14 +70,28 @@
     "adversary": "checker",
     "qa": "advisor"
   },
-  "harnesses": ["claude", "codex", "pi"],
-  "_harnesses_note": "2026-09-26 S4 (design-e963c656f5 §4.11, owner R4/R5): the seat harnesses this install uses; absent = all three, at least one of claude/codex. The role catalog keeps only models on a selected harness (edp8/harness.py). Without codex the adversary runs on Fable (claude-fable-5-1) and the board refuses that spawn until a human POSTs /v1/harness/fable-ack (Fable may decline or soften an adversarial review). Pi setup: guides/pi-seat.md.",
   "role_models": {
-    "architect": ["claude-fable-5-1", "claude-opus-5-5", "gpt-6-astra"],
-    "engineer": ["claude-opus-5-5", "gpt-6-sol"],
-    "qa": ["claude-fable-5-1", "claude-opus-5-5", "gpt-6-astra"],
-    "adversary": ["gpt-6-astra"],
-    "sme": ["claude-opus-5-5", "gpt-6-sol"]
+    "architect": [
+      "claude-fable-5-1",
+      "claude-opus-5-5",
+      "gpt-6-astra"
+    ],
+    "engineer": [
+      "claude-opus-5-5",
+      "gpt-6-sol"
+    ],
+    "qa": [
+      "claude-fable-5-1",
+      "claude-opus-5-5",
+      "gpt-6-astra"
+    ],
+    "adversary": [
+      "gpt-6-astra"
+    ],
+    "sme": [
+      "claude-opus-5-5",
+      "gpt-6-sol"
+    ]
   },
   "_role_models_note": "2026-09-24 owner m-fa6ebacf22: claude-opus-5-5 added to the architect and qa catalogs (m-d876110017) to test opus in both (Fable stays the default). 2026-09-23 S-ROLES (design-34bf11cc07 §4.1, owner m-bba708e10e, ids measured m-405e024f62): the per-role catalog the new-epic dialog and Spawn seat pick from; first entry = the role's default. An epic records `model:<role>=<id>` tags; a GPT id runs on the codex seat (the board hands the pool codex/<id>), a Claude id on the Claude seat. Supersedes the roles column for any spawn tied to an epic.",
   "_window_note": "2026-08-06 user ruling: auto_compact is 350k on EVERY seat — one number, no per-seat window tuning. The rule stands: compaction must land at turn boundaries; a role that ROUTINELY nears its window is a scoping defect to split.",
@@ -74,5 +104,35 @@
     "adversary": "astra",
     "qa": "astra"
   },
-  "_openai_note": "2026-09-14 owner (m-96cbd61919, m-e6ef892737): roles_openai is an OPTION next to roles, not a replacement — every role maps to gpt-6-astra at thinking medium for now. A role runs on it when the pool routes that role to the Pi harness (EDP_PI_ROLES); the Claude column stays authoritative for every other seat. Model ids are Pi ids: openai-codex/<id> = Codex subscription login, openai/<id> = OPENAI_API_KEY."
+  "_openai_note": "2026-09-14 owner (m-96cbd61919, m-e6ef892737): roles_openai is an OPTION next to roles, not a replacement — every role maps to gpt-6-astra at thinking medium for now. A role runs on it when the pool routes that role to the Pi harness (EDP_PI_ROLES); the Claude column stays authoritative for every other seat. Model ids are Pi ids: openai-codex/<id> = Codex subscription login, openai/<id> = OPENAI_API_KEY.",
+  "models": {
+    "claude-fable-5-1": {
+      "harness": "claude",
+      "provider": "claude",
+      "context_window": 1000000,
+      "auto_compact": 350000,
+      "effort_cap": "medium"
+    },
+    "claude-opus-5-5": {
+      "harness": "claude",
+      "provider": "claude",
+      "context_window": 1000000,
+      "auto_compact": 350000,
+      "effort_cap": "medium"
+    },
+    "gpt-6-astra": {
+      "harness": "codex",
+      "provider": "codex",
+      "context_window": 272000,
+      "auto_compact": 200000,
+      "effort_cap": "high"
+    },
+    "gpt-6-sol": {
+      "harness": "codex",
+      "provider": "codex",
+      "context_window": 272000,
+      "auto_compact": 200000,
+      "effort_cap": "high"
+    }
+  }
 }

@@ -19,6 +19,7 @@ shell. mode="headless" keeps the RPC runner (`edp8.pi_seat.run`) for the parity 
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -117,10 +118,9 @@ def pi_seat_named(name: str | None, agent_home: str | None):
 
 
 def is_pi_model(model: str | None, agent_home: str | None) -> bool:
-    """Routing predicate for CompositeSpawner: an openai/openai-codex model id, or a `harness: pi` seat name."""
-    if not model:
-        return False
-    return model.startswith(("openai/", "openai-codex/")) or pi_seat_named(model, agent_home) is not None
+    """Routing predicate backed by the catalog's explicit harness."""
+    from edp_contracts.seats import model_entry
+    return bool(agent_home and (model_entry(agent_home, model) or {}).get("harness") == "pi")
 
 
 def rotate_stale_session(session_file: str | Path) -> Path | None:
@@ -171,8 +171,24 @@ def build_env_pi(session_id: str, role: str, handle: str, broker_url: str | None
         v = settings.env_raw("EDP_HOME" if k == "EDP8_HOME" else k)  # EDP8_HOME: legacy alias of EDP_HOME
         if v:
             env[k] = v
-    env.setdefault("EDP_PI_MODEL", "openai-codex/gpt-6-astra")  # the authenticated route (Codex login); openai/… with a key
     return env
+
+
+def inject_provider_credentials(env: dict, provider: str) -> None:
+    """Pass only the selected provider's secret settings to the child, never argv or logs."""
+    raw = settings.get("EDP_PI_PROVIDER_CREDENTIALS") or "{}"
+    try:
+        providers = json.loads(raw)
+    except (TypeError, ValueError):
+        providers = {}
+    row = providers.get(provider) if isinstance(providers, dict) else None
+    if not isinstance(row, dict):
+        return
+    prefix = provider.upper().replace("-", "_")
+    if row.get("api_key"):
+        env[f"{prefix}_API_KEY"] = str(row["api_key"])
+    if row.get("base_url"):
+        env[f"{prefix}_BASE_URL"] = str(row["base_url"])
 
 
 class _Launch:
@@ -210,8 +226,13 @@ class PiSpawner:
             env["EDP_PI_MODEL"] = seat.model
             if seat.thinking and not settings.is_set("EDP_PI_THINKING"):
                 env["EDP_PI_THINKING"] = seat.thinking
-        if model and model.startswith(("openai/", "openai-codex/")):  # explicit per-spawn override wins
-            env["EDP_PI_MODEL"] = model
+        from edp_contracts.seats import model_entry
+        entry = model_entry(self._agent_home or os.getcwd(), model)
+        if entry and entry.get("harness") == "pi":
+            provider = str(entry["provider"])
+            env["EDP_PI_MODEL"] = str(entry.get("model") or
+                                      (model if "/" in model else f"{provider}/{model}"))
+            inject_provider_credentials(env, provider)
         named = pi_seat_named(model, self._agent_home)  # spawn(model="astra"): the seat name binds model + thinking
         if named is not None:
             env["EDP_PI_MODEL"] = named.model

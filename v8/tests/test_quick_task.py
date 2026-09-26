@@ -187,10 +187,11 @@ def test_owner_fail_returns_the_quick_task_to_in_progress_with_the_note(b):
 
 @pytest.fixture
 def api(tmp_path, monkeypatch):
-    (tmp_path / "models.json").write_text(json.dumps({
+    from edp8.model_catalog import migrate
+    (tmp_path / "models.json").write_text(json.dumps(migrate({
         "seats": {"builder": {"model": "claude-opus-4-8", "effort": "medium"}}, "roles": {"engineer": "builder"},
         "role_models": {"engineer": ["claude-opus-5-5", "gpt-6-sol"], "qa": ["claude-fable-5-1", "gpt-6-astra"],
-                        "adversary": ["gpt-6-astra"]}}), encoding="utf-8")
+                        "adversary": ["gpt-6-astra"]}})), encoding="utf-8")
     monkeypatch.setenv("EDP8_HOME", str(tmp_path))
     monkeypatch.setenv("EDP_AGENT_HOME", str(tmp_path))  # models.json lives in the agent home
     board = Board(Store(":memory:"))
@@ -220,7 +221,7 @@ def test_quick_task_endpoint_creates_assigns_and_spawns_in_one_call(api):
     assert v["ticket"]["assignee"] == f"engineer.{tid}" and v["ticket"]["status"] == "ready"
     assert "quick" in v["ticket"]["tags"] and v["ticket"]["parent_id"] is None
     assert calls[-1]["role"] == "engineer" and calls[-1]["participant_id"] == f"engineer.{tid}"
-    assert calls[-1]["model"] == "codex/gpt-6-sol"  # a GPT id runs on the codex seat
+    assert calls[-1]["model"] == "gpt-6-sol"
     got = client.get(f"/v1/tickets/{tid}", headers=OWNER).json()["value"]
     assert got["words"] == "call it Seats"
 
@@ -295,7 +296,7 @@ def test_quick_task_endpoint_takes_plain_tags_and_autolinks_the_library(api):
     tid, tags = v["ticket"]["id"], v["ticket"]["tags"]
     assert tags.count("web") == 1 and tags.count("quick") == 1
     assert "model:engineer=gpt-6-sol" in tags and "model:engineer=claude-opus-5-5" not in tags
-    assert api["calls"][-1]["model"] == "codex/gpt-6-sol"
+    assert api["calls"][-1]["model"] == "gpt-6-sol"
     assert [lk.to_id for lk in board.store.query("link", {"from_id": tid, "relation": Relation.uses_domain},
                                                  limit=-1)] == [web.id]
     assert [m for m in board.thread(tid) if m.created_by == "board" and "Library auto-link at quick task" in m.text]

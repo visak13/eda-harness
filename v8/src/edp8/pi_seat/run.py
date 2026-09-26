@@ -60,7 +60,7 @@ def main(argv: list[str] | None = None) -> int:
 
     seat = PiSeat(
         cwd=agent_home,
-        model=env.get("EDP_PI_MODEL", "openai-codex/gpt-6-astra"),
+        model=env.get("EDP_PI_MODEL"),
         extension=str(agent_home / ".pi" / "extensions" / "edp8.ts"),
         session_file=str(session_file),
         log_dir=log_dir,

@@ -148,7 +148,7 @@ class CodexSeat:
         self.handle = handle
         self.log_dir = Path(log_dir)
         self.env = {**settings.environ_copy(), **(env or {})}
-        self.model = model or self.env.get("EDP_CODEX_MODEL") or "gpt-6-astra"
+        self.model = model or self.env.get("EDP_CODEX_MODEL")
         self.effort = effort or self.env.get("EDP_CODEX_EFFORT") or None
         self.codex = find_codex(codex_bin)
         self.board = board

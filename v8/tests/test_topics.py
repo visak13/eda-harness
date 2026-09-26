@@ -647,7 +647,7 @@ def test_open_sme_model_and_effort_ride_the_seat_spawn_not_the_tags(tokens, repo
     assert out["seat"]["model"] == "gpt-6-sol" and out["seat"]["effort"] == "high"
     assert c.patch(f"/v1/topics/{tid}/tags", json={"tags": ["pytest"]}, headers=OWNER).json()["ok"]
     assert board.run_pending_pairings()["spawned"] == [f"sme.{tid}"]
-    assert pool.choices[-1] == (f"sme.{tid}", "codex/gpt-6-sol", "high")
+    assert pool.choices[-1] == (f"sme.{tid}", "gpt-6-sol", "high")
     # a Claude sme asked for high runs at medium (fleet cap); no choice = the catalog default
     claude = _topic(c, title="Claude topic", model="claude-opus-5-5", effort="high")
     assert claude["seat"]["model"] == "claude-opus-5-5" and claude["seat"]["effort"] == "medium"

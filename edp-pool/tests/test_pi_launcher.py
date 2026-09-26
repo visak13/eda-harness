@@ -77,7 +77,7 @@ def test_visible_mode_opens_pi_tui_with_role_card(monkeypatch, tmp_path):
     assert argv[-1] == "# /qa card" and argv[-2] == "--"
     assert "edp8.pi_seat.run" not in argv and not any("sekret" in a for a in argv)
     assert seen["kw"].get("creationflags") == getattr(pl.subprocess, "CREATE_NEW_CONSOLE", 0)
-    assert seen["kw"]["env"]["EDP_PI_MODEL"] == "openai-codex/gpt-6-astra"
+    assert "EDP_PI_MODEL" not in seen["kw"]["env"]
     # resume with an existing session file and no activation → no first message (Pi resumes the file)
     sess = tmp_path / "logs" / "pi-sessions" / "qa.v.jsonl"
     sess.write_text("{}", encoding="utf-8")
@@ -127,7 +127,8 @@ def test_openai_column_binds_model_and_thinking_at_the_spawn_seam(monkeypatch, t
     roles_openai column; an explicit openai model per spawn still overrides."""
     import json
     (tmp_path / "models.json").write_text(json.dumps({
-        "seats": {"astra": {"model": "openai-codex/gpt-6-astra", "harness": "pi", "thinking": "medium"}},
+        "seats": {"astra": {"model": "openai-codex/gpt-6-astra", "harness": "pi", "provider": "openai-codex", "thinking": "medium"}},
+        "models": {"openai/gpt-6-astra-fast": {"harness": "pi", "provider": "openai"}},
         "roles": {}, "roles_openai": {"qa": "astra"}}), encoding="utf-8")
     monkeypatch.delenv("EDP_PI_MODEL", raising=False)
     monkeypatch.delenv("EDP_PI_THINKING", raising=False)
@@ -158,8 +159,9 @@ def test_spawn_model_astra_routes_to_the_pi_backend(monkeypatch, tmp_path):
     home = tmp_path / "home"
     home.mkdir()
     (home / "models.json").write_text(json.dumps({
-        "seats": {"astra": {"model": "openai-codex/gpt-6-astra", "effort": "medium", "harness": "pi", "thinking": "medium"},
+        "seats": {"astra": {"model": "openai-codex/gpt-6-astra", "effort": "medium", "harness": "pi", "provider": "openai-codex", "thinking": "medium"},
                   "opus": {"model": "claude-opus-5", "effort": "medium"}},
+        "models": {"openai/gpt-6-astra": {"harness": "pi", "provider": "openai"}},
         "roles": {"engineer": "opus"}, "roles_openai": {"engineer": "astra"}}), encoding="utf-8")
     calls = []
 
@@ -211,7 +213,7 @@ def test_spawn_effort_selects_the_pi_thinking_level(monkeypatch, tmp_path):
     EDP_SEAT_EFFORT (pool route → extra_env) and becomes the thinking level, beating the seat's
     models.json default (astra thinking=medium) in both headless env and the TUI argv."""
     (tmp_path / "models.json").write_text(json.dumps({
-        "seats": {"astra": {"model": "openai-codex/gpt-6-astra", "harness": "pi", "thinking": "medium"}},
+        "seats": {"astra": {"model": "openai-codex/gpt-6-astra", "harness": "pi", "provider": "openai-codex", "thinking": "medium"}},
         "roles": {}, "roles_openai": {"engineer": "astra"}}), encoding="utf-8")
     monkeypatch.delenv("EDP_PI_MODEL", raising=False)
     monkeypatch.delenv("EDP_PI_THINKING", raising=False)
@@ -239,3 +241,29 @@ def test_spawn_effort_selects_the_pi_thinking_level(monkeypatch, tmp_path):
     assert seen["kw"]["env"]["EDP_PI_THINKING"] == "medium"  # junk effort → the seat default stands
     sp.launch("s4", "engineer", "engineer.4", mode="headless", model="astra")
     assert seen["kw"]["env"]["EDP_PI_THINKING"] == "medium"
+
+
+def test_opaque_pi_provider_credential_is_injected_only_into_child_env(monkeypatch, tmp_path):
+    (tmp_path / "models.json").write_text(json.dumps({"models": {
+        "my-model": {"harness": "pi", "provider": "openrouter", "model": "openrouter/model-x"},
+        "gpt-looking": {"harness": "claude", "provider": "claude"},
+    }}), encoding="utf-8")
+    monkeypatch.setenv("EDP_PI_PROVIDER_CREDENTIALS", json.dumps({
+        "openrouter": {"api_key": "private-test-key", "base_url": "https://example.invalid/api"}}))
+    seen = {}
+
+    class FakeProc:
+        pid = 1
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(pl.subprocess, "Popen", lambda argv, **kw: seen.update(argv=argv, kw=kw) or FakeProc())
+    assert pl.is_pi_model("my-model", str(tmp_path))
+    assert not pl.is_pi_model("gpt-looking", str(tmp_path))
+    sp = pl.PiSpawner(log_dir=str(tmp_path / "logs"), agent_home=str(tmp_path))
+    sp.launch("s-provider", "engineer", "engineer.provider", model="my-model", mode="headless")
+    assert seen["kw"]["env"]["EDP_PI_MODEL"] == "openrouter/model-x"
+    assert seen["kw"]["env"]["OPENROUTER_API_KEY"] == "private-test-key"
+    assert seen["kw"]["env"]["OPENROUTER_BASE_URL"] == "https://example.invalid/api"
+    assert not any("private-test-key" in arg for arg in seen["argv"])

@@ -33,9 +33,10 @@ SEATS = {"astra": {"model": "openai-codex/gpt-6-astra", "harness": "pi"},
 
 
 def _home(tmp_path, monkeypatch, harnesses=None):
-    reg = {"seats": SEATS, "role_models": TABLE}
+    from edp8.model_catalog import migrate
+    reg = migrate({"seats": SEATS, "role_models": TABLE})
     if harnesses is not None:
-        reg["harnesses"] = harnesses
+        monkeypatch.setenv("EDP_HARNESSES", ",".join(harnesses))
     (tmp_path / "models.json").write_text(json.dumps(reg), encoding="utf-8")
     monkeypatch.setenv("EDP8_HOME", str(tmp_path))
     monkeypatch.setenv("EDP_AGENT_HOME", str(tmp_path))  # models.json resolves in the agent home (S1)
@@ -45,17 +46,19 @@ def _home(tmp_path, monkeypatch, harnesses=None):
 # ----------------------------------------------------------------------------- pure selection
 
 def test_harness_of_names_each_harness():
-    assert harness.harness_of("gpt-6-astra") == "codex" and harness.harness_of("codex/gpt-6-sol") == "codex"
-    assert harness.harness_of("openai-codex/gpt-6-astra") == "pi" and harness.harness_of("openai/gpt-6") == "pi"
-    assert harness.harness_of("claude-fable-5-1") == "claude"
+    assert harness.harness_of("gpt-6-astra") is None and harness.harness_of("codex/gpt-6-sol") is None
+    assert harness.harness_of("openai-codex/gpt-6-astra") is None and harness.harness_of("openai/gpt-6") is None
+    assert harness.harness_of("claude-fable-5-1") is None
+    assert harness.harness_of("my-model", {"my-model": {"harness": "pi"}}) == "pi"
     assert harness.harness_of("astra", SEATS) == "pi" and harness.harness_of("astra-codex", SEATS) == "codex"
 
 
-def test_absent_or_invalid_selection_is_every_harness():
+def test_absent_or_invalid_selection_is_every_harness(monkeypatch):
     assert harness.selected({}) == harness.HARNESSES
     assert harness.selected({"harnesses": "codex"}) == harness.HARNESSES
     assert harness.validate(["pi"]) and harness.selected({"harnesses": ["pi"]}) == harness.HARNESSES
-    assert harness.selected({"harnesses": ["Claude", "pi"]}) == ("claude", "pi")
+    monkeypatch.setenv("EDP_HARNESSES", "claude,pi")
+    assert harness.selected({"harnesses": ["codex"]}) == ("claude", "pi")
 
 
 def test_all_harnesses_keep_todays_catalog(tmp_path, monkeypatch):
@@ -173,7 +176,7 @@ def test_auto_pairing_holds_a_fable_adversary_until_acknowledged(tmp_path, monke
 def test_codex_selected_never_gates(rig, monkeypatch):
     _home(rig["home"], monkeypatch, ["claude", "codex"])
     r = _spawn_adversary(rig["client"], rig["epic"])
-    assert r.json()["ok"] and rig["calls"][-1]["model"] == "codex/gpt-6-astra"
+    assert r.json()["ok"] and rig["calls"][-1]["model"] == "gpt-6-astra"
 
 
 def test_pi_seat_guide_ships():

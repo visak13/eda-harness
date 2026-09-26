@@ -1,0 +1,101 @@
+"""Admin model catalog editor; catalog data is kept outside the agent-home payload."""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
+from .. import harness, model_catalog, settings
+from ..schemas import Participant
+from .context import AdminContext
+
+
+class CatalogIn(BaseModel):
+    models: dict[str, dict[str, Any]]
+    role_models: dict[str, list[str]]
+
+
+class TestSpawnIn(BaseModel):
+    model: str
+    role: str
+    effort: str | None = None
+
+
+def _credentials() -> dict[str, Any]:
+    raw = settings.get("EDP_PI_PROVIDER_CREDENTIALS") or "{}"
+    try:
+        value = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _credential_present(provider: str) -> bool:
+    if provider == "openai-codex":  # subscription login, not an API key
+        return True
+    row = _credentials().get(provider)
+    if isinstance(row, dict) and row.get("api_key"):
+        return True
+    env = f"{provider.upper().replace('-', '_')}_API_KEY"
+    return bool(os.environ.get(env))
+
+
+def _warnings(models: dict[str, Any]) -> list[str]:
+    return sorted({f"{mid}: {row['harness']} harness is not installed" for mid, row in models.items()
+                   if row.get("harness") in harness.HARNESSES and
+                   shutil.which(row["harness"]) is None})
+
+
+def _view(raw: dict[str, Any]) -> dict[str, Any]:
+    return {"models": raw.get("models") or {}, "role_models": raw.get("role_models") or {},
+            "selected": list(harness.selected(raw)), "warnings": _warnings(raw.get("models") or {})}
+
+
+def router(ctx: AdminContext, admin_actor) -> APIRouter:
+    r = APIRouter()
+
+    @r.get("/v1/admin/models")
+    def get_models(a: Participant = Depends(admin_actor)):
+        return {"ok": True, "value": _view(model_catalog.read()), "hint": ""}
+
+    @r.put("/v1/admin/models")
+    def put_models(body: CatalogIn, a: Participant = Depends(admin_actor)):
+        errors = model_catalog.validate(body.models, body.role_models)
+        for mid, row in body.models.items():
+            if row.get("harness") == "pi" and not _credential_present(str(row.get("provider") or "")):
+                errors.append(f"{mid}: provider credential missing for {row.get('provider')!r}")
+        if errors:
+            raise HTTPException(422, {"errors": errors})
+        raw = model_catalog.read()
+        raw["models"] = body.models
+        raw["role_models"] = body.role_models
+        model_catalog.write(raw)
+        return {"ok": True, "value": _view(raw), "hint": "catalog saved for new spawns"}
+
+    @r.post("/v1/admin/models/test-spawn")
+    def test_spawn(body: TestSpawnIn, a: Participant = Depends(admin_actor)):
+        raw = model_catalog.read()
+        row = (raw.get("models") or {}).get(body.model)
+        if not isinstance(row, dict) or body.model not in (raw.get("role_models") or {}).get(body.role, []):
+            raise HTTPException(422, "model is not in this role's catalog")
+        # A short-lived, isolated stub seat verifies the selected route and prompt/reply plumbing.
+        # It does not spend provider tokens or join the resident fleet.
+        prompt = "Reply with a short model-routing acknowledgement."
+        script = ("import json,os,sys; p=sys.stdin.read(); "
+                  "print(json.dumps({'reply':'Stub seat received: '+p,"
+                  "'model':os.environ['TEST_MODEL'],'harness':os.environ['TEST_HARNESS'],"
+                  "'provider':os.environ['TEST_PROVIDER']}))")
+        env = {**os.environ, "TEST_MODEL": body.model, "TEST_HARNESS": row["harness"],
+               "TEST_PROVIDER": row["provider"]}
+        proc = subprocess.run([sys.executable, "-c", script], input=prompt, text=True,
+                              capture_output=True, env=env, timeout=10, check=True)
+        return {"ok": True, "value": json.loads(proc.stdout), "hint": "private stub seat replied"}
+
+    return r

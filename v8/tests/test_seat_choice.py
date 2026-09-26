@@ -56,8 +56,8 @@ def test_resolve_inherits_the_epic_choice_unless_the_spawn_names_its_own(home):
     assert "capped" in (c.note or "")
     c = seat_choice.resolve(None, "low", tags, home)  # explicit effort wins
     assert (c.model, c.effort) == ("astra", "low")
-    c = seat_choice.resolve("openai/gpt-6-astra-fast", "high", [], home)  # an openai id is a Pi seat
-    assert (c.model, c.effort) == ("openai/gpt-6-astra-fast", "high")
+    c = seat_choice.resolve("astra", "high", [], home)
+    assert (c.model, c.effort) == ("astra", "high")
 
 
 def test_resolve_claude_is_the_no_model_default_and_high_is_capped(home):
@@ -73,7 +73,7 @@ def test_is_pi_seat_never_raises(tmp_path):
     assert not seat_choice.is_pi_seat("astra", tmp_path)  # no models.json → False, no exception
     (tmp_path / "models.json").write_text("{not json", encoding="utf-8")
     assert not seat_choice.is_pi_seat("astra", tmp_path)
-    assert seat_choice.is_pi_seat("openai-codex/gpt-6-astra", None)
+    assert not seat_choice.is_pi_seat("openai-codex/gpt-6-astra", None)
 
 
 # ----------------------------------------------------------------------------- board rig
@@ -226,6 +226,8 @@ def cat_home(home):
     """The `home` registry plus the owner's per-role catalog (models.json `role_models`)."""
     raw = json.loads((home / "models.json").read_text(encoding="utf-8"))
     raw["role_models"] = OWNER_TABLE
+    from edp8.model_catalog import migrate
+    raw = migrate(raw)
     (home / "models.json").write_text(json.dumps(raw), encoding="utf-8")
     return home
 
@@ -270,7 +272,7 @@ def test_rule_missing_falls_to_the_first_catalog_entry(cat_home):
 
 def test_gpt_id_routes_to_the_codex_seat_and_is_not_effort_capped(cat_home):
     c = seat_choice.resolve(None, "high", ["model:adversary=gpt-6-astra"], cat_home, role="adversary")
-    assert (c.model, c.pool_model, c.effort, c.note) == ("gpt-6-astra", "codex/gpt-6-astra", "high", None)
+    assert (c.model, c.pool_model, c.effort, c.note) == ("gpt-6-astra", "gpt-6-astra", "high", None)
     c = seat_choice.resolve(None, "high", [], cat_home, role="engineer")  # Claude default: capped
     assert (c.model, c.pool_model, c.effort) == ("claude-opus-5-5", "claude-opus-5-5", "medium")
     assert seat_choice.SeatChoice("astra", None).pool_model == "astra"  # seat names pass through
@@ -300,7 +302,7 @@ def test_rest_spawn_per_role_routes_gpt_to_codex_and_claude_by_id(cat_home, monk
     r = client.post("/v1/sessions/spawn", json={"role": "engineer", "participant_id": f"engineer.{story}",
                                                 "ticket_id": story}, headers=OWNER)
     assert r.status_code == 200, r.text
-    assert calls[-1]["model"] == "codex/gpt-6-sol"
+    assert calls[-1]["model"] == "gpt-6-sol"
     assert r.json()["value"]["seat_choice"]["model"] == "gpt-6-sol"
     p = client.get(f"/v1/participants/engineer.{story}", headers=OWNER).json()["value"]
     assert p.get("model") == "gpt-6-sol"  # provenance is the catalog id the owner chose
@@ -327,7 +329,7 @@ def test_auto_pairing_uses_the_paired_roles_model(cat_home):
     epic = board.ticket_create(owner, kind=TicketKind.epic, work_type=WorkType.feature, title="E",
                                tags=["model:qa=gpt-6-astra"])
     assert board._spawn_seat("qa", f"qa.{epic.id}", epic.id) is True
-    assert pool.calls[-1]["model"] == "codex/gpt-6-astra"
+    assert pool.calls[-1]["model"] == "gpt-6-astra"
 
 
 def test_rest_spawn_assign_makes_the_seat_the_assignee(cat_home, monkeypatch):
@@ -344,7 +346,7 @@ def test_rest_spawn_assign_makes_the_seat_the_assignee(cat_home, monkeypatch):
                                                 "ticket_id": story, "model": "gpt-6-sol", "assign": True},
                     headers=OWNER)
     assert r.status_code == 200, r.text
-    assert r.json()["value"]["assignee"] == f"engineer.{story}" and calls[-1]["model"] == "codex/gpt-6-sol"
+    assert r.json()["value"]["assignee"] == f"engineer.{story}" and calls[-1]["model"] == "gpt-6-sol"
     assert client.get(f"/v1/tickets/{story}", headers=OWNER).json()["value"]["assignee"] == f"engineer.{story}"
 
 
@@ -377,10 +379,11 @@ def test_role_efforts_for_shows_every_catalog_role(cat_home):
 def test_unknown_model_names_the_catalog_s_adv_10(tmp_path):
     """S-ADV finding 10: an id outside the role's catalog (and not a legacy seat name) is the reason with the
     catalog listed; a catalog id, a seat name, "claude" and a role without a catalog pass."""
-    (tmp_path / "models.json").write_text(json.dumps({
+    from edp8.model_catalog import migrate
+    (tmp_path / "models.json").write_text(json.dumps(migrate({
         "seats": {"astra": {"model": "openai-codex/gpt-6-astra"}},
         "role_models": {"engineer": ["claude-opus-5-5", "gpt-6-sol"], "qa": ["claude-fable-5-1", "gpt-6-astra"]},
-    }), encoding="utf-8")
+    })), encoding="utf-8")
     assert seat_choice.unknown_model("engineer", "gpt-6-sol", tmp_path) is None
     assert seat_choice.unknown_model("engineer", "astra", tmp_path) is None
     assert seat_choice.unknown_model("engineer", "claude", tmp_path) is None

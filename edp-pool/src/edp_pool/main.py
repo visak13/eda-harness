@@ -75,7 +75,7 @@ if _pi_roles or _pi_available:
 # roles routed there; EDP_CODEX_BY_MODEL=1 also routes spawns whose model is a `harness: codex`
 # seat ("astra-codex") or `codex/<id>`. BOTH empty (the default) = the stack above, untouched.
 _codex_roles = set(settings.get("EDP_CODEX_ROLES"))
-_codex_by_model = settings.get("EDP_CODEX_BY_MODEL")
+_codex_by_model = True  # explicit catalog entries always route; no prefix or feature flag
 if _codex_roles or _codex_by_model:
     from .codex_launcher import CodexSpawner, is_codex_model
     from .composite_spawner import CompositeSpawner

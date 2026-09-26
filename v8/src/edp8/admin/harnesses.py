@@ -108,11 +108,14 @@ def live_seats_by_harness() -> dict[str, list[str]] | None:
     if isinstance(rows, dict):
         rows = rows.get("sessions") or rows.get("value") or []
     reg = seat_choice._registry(seat_choice.agent_home())
+    models = reg.get("models") if isinstance(reg.get("models"), dict) else {}
     seats = reg.get("seats") if isinstance(reg.get("seats"), dict) else {}
     out: dict[str, list[str]] = {h: [] for h in harness.HARNESSES}
     for r in rows or []:
         if isinstance(r, dict) and r.get("state") == "active":
-            out[harness.harness_of(r.get("model"), seats)].append(str(r.get("handle")))
+            routed = harness.harness_of(r.get("model"), models) or harness.harness_of(r.get("model"), seats)
+            if routed in out:
+                out[routed].append(str(r.get("handle")))
     return out
 
 
@@ -233,8 +236,6 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
         if settings.env_raw("EDP_HARNESSES") is not None:
             raise HTTPException(409, "EDP_HARNESSES is set by the environment (read-only here)")
         reg = seat_choice._registry(seat_choice.agent_home())
-        if isinstance(reg.get(harness.HARNESS_KEY), list):
-            raise HTTPException(409, "models.json names `harnesses` and wins over this setting; edit it there")
         ack = harness.read_ack(_ack_path())
         if "codex" not in picked and ack is None:
             if not b.fable_ack:

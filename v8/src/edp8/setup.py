@@ -238,6 +238,8 @@ def init_cmd(argv: list[str]) -> int:
     src = opts.get("agent-home-source")  # a source-tree run (tests, CI) has no packaged agent home
     rep = materialise.materialise(home, str(src) if isinstance(src, str) else None)
     _say("agents", f"{home} ({len(rep.written)} new, {len(rep.updated)} updated, {len(rep.conflicts)} kept)")
+    from . import model_catalog
+    _say("models", str(model_catalog.materialise()))
     trust = write_trust(home)
     _say("trust", f"{home} trusted for claude seats ({trust})")
 

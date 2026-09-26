@@ -55,10 +55,9 @@ def codex_seat_named(name: str | None, agent_home: str | None):
 
 
 def is_codex_model(model: str | None, agent_home: str | None) -> bool:
-    """Routing predicate for CompositeSpawner: a `codex/<id>` model, or a `harness: codex` seat name."""
-    if not model:
-        return False
-    return model.startswith("codex/") or codex_seat_named(model, agent_home) is not None
+    """Routing predicate backed by the catalog's explicit harness."""
+    from edp_contracts.seats import model_entry
+    return bool(agent_home and (model_entry(agent_home, model) or {}).get("harness") == "codex")
 
 
 def build_env_codex(session_id: str, role: str, handle: str, broker_url: str | None, *,
@@ -82,7 +81,6 @@ def build_env_codex(session_id: str, role: str, handle: str, broker_url: str | N
         v = settings.env_raw("EDP_HOME" if k == "EDP8_HOME" else k)  # EDP8_HOME: legacy alias of EDP_HOME
         if v:
             env[k] = v
-    env.setdefault("EDP_CODEX_MODEL", "gpt-6-astra")
     return env
 
 
@@ -123,8 +121,23 @@ class CodexSpawner:
             env["EDP_CODEX_MODEL"] = named.model.split("/", 1)[-1]
             if named.thinking and not settings.is_set("EDP_CODEX_EFFORT"):
                 env["EDP_CODEX_EFFORT"] = named.thinking
-        elif model and model.startswith("codex/"):
-            env["EDP_CODEX_MODEL"] = model.split("/", 1)[1]
+        else:
+            from edp_contracts.seats import model_entry
+            entry = model_entry(self._agent_home or os.getcwd(), model)
+            if entry and entry.get("harness") == "codex":
+                env["EDP_CODEX_MODEL"] = str(entry.get("model") or model)
+            elif not model and not env.get("EDP_CODEX_MODEL"):
+                import json
+                from edp_contracts.seats import config_path
+                try:
+                    raw = json.loads(config_path(self._agent_home or os.getcwd()).read_text(encoding="utf-8"))
+                    entries = raw.get("models") or {}
+                    ids = (raw.get("role_models") or {}).get(role) or list(entries)
+                    picked = next((mid for mid in ids if (entries.get(mid) or {}).get("harness") == "codex"), None)
+                except (OSError, ValueError, TypeError):
+                    picked = None
+                if picked:
+                    env["EDP_CODEX_MODEL"] = str((entries[picked].get("model") or picked))
         effort = str((extra_env or {}).get("EDP_SEAT_EFFORT") or "").strip().lower()
         if effort in CODEX_EFFORTS:  # the spawn's own effort wins over the seat default
             env["EDP_CODEX_EFFORT"] = effort

@@ -56,8 +56,11 @@ def human_avatar_svg(avatar_id: str, size: int = 36) -> str:
 def role_avatar_svg(role: Any, model: str | None = None, size: int = 36) -> str:
     role_value = getattr(role, "value", role)
     role_name = str(role_value or "system").lower()
-    if model and ("gpt" in model.lower() or model.lower().startswith("codex/")):
-        role_name = "codex"  # any seat on the codex harness wears the codex avatar
+    if model:
+        from . import harness, seat_choice
+        reg = seat_choice._registry(seat_choice.agent_home())
+        if harness.harness_of(model, reg.get("models")) == "codex":
+            role_name = "codex"
     template = BOT_TEMPLATES.get(role_name, BOT_TEMPLATES["unknown"])
     return _svg(template["body"], template["label"], size)
 

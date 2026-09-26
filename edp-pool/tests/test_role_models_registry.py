@@ -19,7 +19,7 @@ def test_v8_registry_with_role_models_validates():
 
 
 def test_board_picks_route_to_the_right_harness():
-    for gpt in ("codex/gpt-6-astra", "codex/gpt-6-sol"):
+    for gpt in ("gpt-6-astra", "gpt-6-sol"):
         assert is_codex_model(gpt, V8) and not is_pi_model(gpt, V8)
     for claude in ("claude-fable-5-1", "claude-opus-5-5"):
         assert not is_codex_model(claude, V8) and not is_pi_model(claude, V8)

@@ -65,7 +65,9 @@ def config_path(agent_home: str | os.PathLike) -> Path:
     override = settings.get(_CONFIG_ENV)
     if override:
         return override
-    return Path(agent_home) / "models.json"
+    catalog = settings.data_dir() / "models.json"
+    home = Path(agent_home)
+    return catalog if home == settings.agent_home() and catalog.is_file() else home / "models.json"
 
 
 def parse(raw: dict) -> tuple[dict[str, Seat], dict[str, str]]:
@@ -141,6 +143,22 @@ def load(agent_home: str | os.PathLike
     except (OSError, json.JSONDecodeError) as e:
         raise SeatsError(f"models.json at {f} unreadable: {e}") from e
     return parse(raw)
+
+
+def model_entry(agent_home: str | os.PathLike, model: str | None) -> dict | None:
+    """Look up an opaque model id or legacy seat name without inferring from its spelling."""
+    if not model:
+        return None
+    f = config_path(agent_home)
+    try:
+        raw = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    for key in ("models", "seats"):
+        row = (raw.get(key) or {}).get(model)
+        if isinstance(row, dict):
+            return row
+    return None
 
 
 def seat_for_role(agent_home: str | os.PathLike, role: str,

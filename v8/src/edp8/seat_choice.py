@@ -60,14 +60,8 @@ class SeatChoice:
 
     @property
     def pool_model(self) -> str | None:
-        """The model as the pool routes it: a bare GPT id goes to the codex seat as `codex/<id>`;
-        every other value (Claude id, seat name, openai/… Pi id) passes through unchanged."""
-        return f"codex/{self.model}" if is_gpt_id(self.model) else self.model
-
-
-def is_gpt_id(model: str | None) -> bool:
-    """PURE. A bare OpenAI GPT model id (`gpt-6-astra`, `gpt-6-sol`) — one the codex seat runs."""
-    return bool(model) and str(model).lower().startswith("gpt-")
+        """Model ids are opaque; the pool resolves the harness from catalog metadata."""
+        return self.model
 
 
 def choice_from_tags(tags: Iterable[str] | None) -> tuple[str | None, str | None]:
@@ -134,7 +128,8 @@ def _registry(home: str | os.PathLike | None) -> dict[str, Any]:
     if not home:
         return {}
     try:
-        raw = json.loads((Path(home) / "models.json").read_text(encoding="utf-8"))
+        from edp_contracts.seats import config_path
+        raw = json.loads(config_path(home).read_text(encoding="utf-8"))
         return raw if isinstance(raw, dict) else {}
     except (OSError, ValueError):
         return {}
@@ -189,24 +184,22 @@ def role_efforts_for(tags: Iterable[str] | None, home: str | os.PathLike | None)
 
 
 def is_pi_seat(model: str | None, agent_home: str | os.PathLike | None) -> bool:
-    """A model that runs on the Pi harness: an openai/… id, or a models.json seat whose
-    harness is `pi`. Any registry trouble answers False — the pool re-resolves at its own seam."""
+    """True only when the catalog entry or legacy seat explicitly names Pi."""
     if not model:
         return False
-    if model.startswith(("openai/", "openai-codex/")):
-        return True
-    seat = (_registry(agent_home).get("seats") or {}).get(model)
-    return isinstance(seat, dict) and seat.get("harness") == "pi"
+    reg = _registry(agent_home)
+    return (harness.harness_of(model, reg.get("models")) == "pi" or
+            isinstance((reg.get("seats") or {}).get(model), dict) and
+            (reg.get("seats") or {})[model].get("harness") == "pi")
 
 
-def _uncapped(model: str | None, home: str | os.PathLike | None) -> bool:
-    """A model whose effort may run high: a GPT id, a codex/… id, or a Pi/codex-harness seat."""
-    if not model:
-        return False
-    if is_gpt_id(model) or model.startswith("codex/") or is_pi_seat(model, home):
-        return True
-    seat = (_registry(home).get("seats") or {}).get(model)
-    return isinstance(seat, dict) and seat.get("harness") == "codex"
+def _effort_cap(model: str | None, home: str | os.PathLike | None) -> str:
+    """Read the effort cap from data, not the model name."""
+    reg = _registry(home)
+    row = (reg.get("models") or {}).get(model) or (reg.get("seats") or {}).get(model)
+    if not isinstance(row, dict):
+        return CLAUDE_EFFORT_CAP
+    return str(row.get("effort_cap") or ("high" if row.get("harness") in ("pi", "codex") else "medium"))
 
 
 def resolve(model: str | None, effort: str | None, epic_tags: Iterable[str] | None,
@@ -229,7 +222,8 @@ def resolve(model: str | None, effort: str | None, epic_tags: Iterable[str] | No
     if e is not None and e not in EFFORTS:
         e = None
     note = None
-    if e == "high" and not _uncapped(m, agent_home):
-        e = CLAUDE_EFFORT_CAP
-        note = "effort high capped to medium (Claude seat; user ruling 2026-08-04)"
+    cap = _effort_cap(m, agent_home)
+    if e and cap in EFFORTS and EFFORTS.index(e) > EFFORTS.index(cap):
+        note = f"effort {e} capped to {cap} (catalog entry cap)"
+        e = cap
     return SeatChoice(model=m, effort=e, note=note)

@@ -30,18 +30,11 @@ FABLE_RISK_NOTICE = (
     "findings before trusting a clean result.")
 
 
-def harness_of(model: str | None, seats: dict[str, Any] | None = None) -> str:
-    """The harness a catalog id runs on: a models.json seat's own `harness`, a GPT id or `codex/…` →
-    codex, an `openai/…`/`openai-codex/…` id → pi, anything else → claude. PURE."""
+def harness_of(model: str | None, entries: dict[str, Any] | None = None) -> str | None:
+    """Resolve a catalog id through its explicit harness; model spelling has no routing meaning."""
     m = (model or "").strip()
-    seat = (seats or {}).get(m)
-    if isinstance(seat, dict) and seat.get("harness") in HARNESSES:
-        return str(seat["harness"])
-    if m.startswith(("openai/", "openai-codex/")):
-        return "pi"
-    if m.startswith("codex/") or m.lower().startswith("gpt-"):
-        return "codex"
-    return "claude"
+    row = (entries or {}).get(m)
+    return str(row["harness"]) if isinstance(row, dict) and row.get("harness") in HARNESSES else None
 
 
 def selected(registry: dict[str, Any]) -> tuple[str, ...]:
@@ -49,9 +42,7 @@ def selected(registry: dict[str, Any]) -> tuple[str, ...]:
     or malformed = all three. A list
     that selects neither claude nor codex is invalid and also answers all three (fail open to today's
     fleet; `validate` names the problem)."""
-    raw = registry.get(HARNESS_KEY)
-    if not isinstance(raw, list):
-        raw = _configured()
+    raw = _configured()
     if not isinstance(raw, list):
         return HARNESSES
     picked = tuple(h for h in HARNESSES if h in {str(x).strip().lower() for x in raw})
@@ -77,10 +68,10 @@ def filter_catalog(table: dict[str, list[str]], registry: dict[str, Any]) -> dic
     """The per-role catalog keeping only models on a selected harness; the adversary falls back to Fable
     when codex is not selected (R5). A role left with no model is dropped (the pool's default applies)."""
     picked = selected(registry)
-    seats = registry.get("seats") if isinstance(registry.get("seats"), dict) else {}
+    entries = registry.get("models") if isinstance(registry.get("models"), dict) else {}
     out: dict[str, list[str]] = {}
     for role, ids in table.items():
-        keep = [m for m in ids if harness_of(m, seats) in picked]
+        keep = [m for m in ids if harness_of(m, entries) in picked]
         if role == "adversary" and "codex" not in picked:
             keep = [FABLE] + [m for m in keep if m != FABLE]
         if keep:

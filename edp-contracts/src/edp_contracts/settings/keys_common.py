@@ -151,8 +151,11 @@ declare("pi.bin", "EDP_PI_BIN", "path", None, "Seats & models",
         "Pi executable or <pi-coding-agent>/dist/cli.js; default `pi` on PATH.", restart_required="pool")
 declare("pi.harness", "EDP_PI_HARNESS", "path", None, "Seats & models",
         "Dir of the npm-installed Pi harness (node_modules inside).", restart_required="pool")
-declare("pi.model", "EDP_PI_MODEL", "str", "openai-codex/gpt-6-astra", "Seats & models",
-        "Default provider/model of a Pi seat.", restart_required="pool")
+declare("pi.model", "EDP_PI_MODEL", "str", None, "Seats & models",
+        "Optional override; otherwise the catalog supplies the Pi provider/model.", restart_required="pool")
+declare("pi.provider_credentials", "EDP_PI_PROVIDER_CREDENTIALS", "str", None, "Seats & models",
+        "JSON map of Pi provider ids to API key and optional base URL; kept in secret settings.",
+        secret=True, restart_required="pool")
 declare("pi.thinking", "EDP_PI_THINKING", "str", None, "Seats & models", "Thinking level of a Pi seat.",
         restart_required="pool")
 # set by the pool per spawn, read by the seat runner (never configured)
@@ -166,15 +169,15 @@ for _name, _doc in (
     declare(f"spawn.{_name.lower()}", _name, "str", None, "Seats & models", _doc, env_only=True)
 
 declare("seats.harnesses", "EDP_HARNESSES", "list", None, "Seats & models",
-        "Selected seat harnesses (claude, codex, pi; at least one of claude/codex), set by `heronry init`; "
-        "models.json `harnesses` wins when present.", restart_required="board")
+        "Selected seat harnesses (claude, codex, pi; at least one of claude/codex), set by `heronry init`.",
+        restart_required="board")
 
 declare("seats.npm_registry", "EDP_NPM_REGISTRY", "url", "https://registry.npmjs.org", "Seats & models",
         "npm registry Admin → Integrations asks for the latest claude/codex/pi versions.", restart_required="none")
 
 # ---- models catalog (edp_contracts.seats)
 declare("models.config", "EDP_MODELS_CONFIG", "path", None, "Seats & models",
-        "Path of the models catalog; default <agent home>/models.json.", restart_required="none")
+        "Path of the models catalog; default <data dir>/models.json.", restart_required="none")
 
 # ---- app updates (S3 `heronry update`, design §4.10 app row)
 declare("update.no_check", "HERONRY_NO_UPDATE_CHECK", "bool", False, "Updates",

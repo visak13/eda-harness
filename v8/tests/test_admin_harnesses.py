@@ -69,7 +69,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("EDP_CONFIG_DIR", str(tmp_path / "cfg"))
     home = tmp_path / "home"
     home.mkdir()
-    (home / "models.json").write_text("{}", encoding="utf-8")
+    (home / "models.json").write_text('{"models": {"claude-opus-5-5": {"harness": "claude", "provider": "claude"}}}', encoding="utf-8")
     monkeypatch.setattr(settings, "agent_home", lambda: home)
     monkeypatch.delenv("EDP_HARNESSES", raising=False)
     return make_env(tmp_path, monkeypatch, db=str(tmp_path / "board.db"))
@@ -177,11 +177,11 @@ def test_codexless_selection_needs_the_fable_ack(env, fake):
     assert r.status_code == 200 and _cfg()["seats"]["harnesses"] == ["claude", "codex"]
 
 
-def test_selection_refuses_env_set_or_models_json(env, fake, monkeypatch):
+def test_selection_refuses_env_set_but_ignores_models_json_selection(env, fake, monkeypatch):
     monkeypatch.setenv("EDP_HARNESSES", "claude,codex")
     r = env.client.put("/v1/admin/harnesses/selection", headers=ADMIN_H, json={"harnesses": ["claude"]})
     assert r.status_code == 409 and "environment" in r.text
     monkeypatch.delenv("EDP_HARNESSES")
     (settings.agent_home() / "models.json").write_text('{"harnesses": ["claude", "codex"]}', encoding="utf-8")
     r = env.client.put("/v1/admin/harnesses/selection", headers=ADMIN_H, json={"harnesses": ["claude"]})
-    assert r.status_code == 409 and "models.json" in r.text
+    assert r.status_code == 409 and "risk acknowledgement" in r.text

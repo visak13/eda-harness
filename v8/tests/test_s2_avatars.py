@@ -24,14 +24,17 @@ def test_human_source_preserved():
     assert found == expected
 
 
-def test_templates_and_dispatch():
+def test_templates_and_dispatch(tmp_path, monkeypatch):
+    (tmp_path / "models.json").write_text(json.dumps({"models": {
+        "gpt-6-astra": {"harness": "codex", "provider": "codex"}}}), encoding="utf-8")
+    monkeypatch.setenv("EDP_AGENT_HOME", str(tmp_path))
     assert BOT_TEMPLATES == json.loads((FINAL / "bot-templates.json").read_text())
     for role, template in BOT_TEMPLATES.items():
         result = avatars.role_avatar_svg(role, size=24)
         assert template["body"] in result
         assert ET.fromstring(result).attrib["width"] == "24"
     assert avatars.role_avatar_svg("engineer", "gpt-6-astra") == avatars.role_avatar_svg("codex")
-    assert avatars.role_avatar_svg("adversary", "codex/gpt-6-astra") == avatars.role_avatar_svg("codex")
+    assert avatars.role_avatar_svg("adversary", "gpt-6-astra") == avatars.role_avatar_svg("codex")
     assert avatars.role_avatar_svg("not-a-role") == avatars.system_avatar_svg(unknown=True)
     for avatar_id in avatars.HUMAN_AVATAR_IDS:
         human = SimpleNamespace(type="human", role="consultant", model="gpt", avatar_id=avatar_id)

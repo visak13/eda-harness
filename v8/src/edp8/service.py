@@ -1577,8 +1577,10 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         default) — the new-epic dialog, the Epic page and Spawn seat read this one list."""
         from . import seat_choice
         cat = seat_choice.catalog(seat_choice.agent_home())
-        return ok({"roles": cat, "defaults": {r: ids[0] for r, ids in cat.items()}},
-                  "a GPT id runs on the codex seat, a Claude id on the Claude seat")
+        raw = seat_choice._registry(seat_choice.agent_home())
+        return ok({"roles": cat, "defaults": {r: ids[0] for r, ids in cat.items()},
+                   "models": raw.get("models") or {}},
+                  "models route by explicit catalog harness")
 
     @app.get("/v1/harness")
     def harness_state(a: Participant = Depends(actor)):
@@ -1590,7 +1592,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         ack = harness.read_ack(harness.ack_path(board.store.path))
         return ok({"harnesses": list(picked), "adversary_model": adv, "fable_ack": ack,
                    "notice": harness.FABLE_RISK_NOTICE if adv == harness.FABLE else None},
-                  "set models.json `harnesses` to choose; an adversary on Fable needs POST /v1/harness/fable-ack")
+                  "set seats.harnesses in configuration; an adversary on Fable needs POST /v1/harness/fable-ack")
 
     @app.post("/v1/harness/fable-ack")
     def harness_fable_ack(a: Participant = Depends(actor)):
