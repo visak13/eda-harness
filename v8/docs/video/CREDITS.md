@@ -7,7 +7,7 @@
 - **Source:** https://commons.wikimedia.org/wiki/File:Loyalty_Freak_Music_-_02_-_One_Cool_Minute.ogg
   (originally published on the Free Music Archive:
   https://freemusicarchive.org/music/Loyalty_Freak_Music/MINIMAL_AMBIENT_BOUNCE/Loyalty_Freak_Music_-_MINIMAL_AMBIENT_BOUNCE_-_02_One_Cool_Minute).
-- **File:** `public/music/one-cool-minute.mp3` — the first 84 s of the original with a 4 s fade-out
+- **File:** `public/music/one-cool-minute.mp3` — the first 90 s of the original with a 5 s fade-out (85–90 s), re-encoded at 160 kbps
   (ffmpeg, re-encoded to MP3 160 kbit/s). Swap the track by replacing this file and `src/music.ts`.
 
 ## Remotion

@@ -11,7 +11,8 @@
     "render:stills": "node scripts/stills.mjs",
     "render:all": "node scripts/render-all.mjs",
     "storyboard": "node scripts/stills.mjs --storyboard",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "player:build": "node scripts/player-build.mjs"
   },
   "dependencies": {
     "@fontsource-variable/nunito-sans": "5.3.0",
@@ -26,6 +27,8 @@
   },
   "devDependencies": {
     "@types/react": "19.3.0",
+    "@types/react-dom": "19.2.3",
+    "esbuild": "0.28.1",
     "typescript": "5.9.3"
   }
 }

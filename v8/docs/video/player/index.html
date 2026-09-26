@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Heronry — how it works</title>
+  <style>html, body { margin: 0; background: #211B18; }</style>
+  <script>
+    // staticFile() resolves public/ assets against this page's folder, so the page works under any path
+    window.remotion_staticBase = new URL(".", window.location.href).pathname.replace(/\/$/, "");
+  </script>
+  <link rel="stylesheet" href="player.css" />
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="player.js"></script>
+</body>
+</html>
