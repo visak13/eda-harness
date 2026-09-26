@@ -15,6 +15,7 @@ import secrets
 import threading
 import time
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -442,6 +443,9 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     def _tokens_file() -> Path:
         return _tokens_path
 
+    from .admin import AdminContext, LastSeen, admin_router
+    _last_seen = LastSeen(settings.run_dir() / "last-seen.json")
+
     def _tokens() -> tuple[dict[str, str], dict[str, str]]:
         """(humans, agents) handle -> secret, read from tokens.json (top-level keys are
         HUMANS; the `agents` sub-map is AGENT seat secrets minted at spawn by S20). Absent
@@ -499,6 +503,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         err = _verify_token(p, x_token)
         if err:
             raise HTTPException(401, err)
+        _last_seen.touch(p.id)
         return p
 
     def actor(x_participant: str | None = Header(default=None),
@@ -675,6 +680,9 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     app.include_router(topics_router(board, actor, topic_actor, _mint_human_token, _revoke_human_token))
 
     app.include_router(usage_router(actor))
+    # S5: the admin console backend (/v1/admin/*), behind its own admin-human gate (edp8.admin.auth)
+    app.include_router(admin_router(AdminContext(board=board, tokens=_tokens, write_tokens=_write_humans,
+                                                 tokens_file=_tokens_file, last_seen=_last_seen)))
     # epic-91fcd3b370 S3: where code-server is (port from EDP_CODE_PORT) and whether it is up; the FAQ
     from .api_code import code_router
     from .views import render_markdown
@@ -1731,16 +1739,20 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     if settings.get("EDP8_RSI"):
         _rsi_thread, app.state.rsi_stop = rsi.start_thread(board)
 
+    # S5: the process start, so a UI that asked the supervisor to restart the board polls until it changes
+    _started_at = datetime.now(UTC).isoformat()
+
     @app.get("/healthz")
     def healthz():
-        return {"ok": True}
+        return {"ok": True, "started_at": _started_at}
 
     @app.get("/v1/health")
     def v1_health():
         """Uniform health route the launcher's supervisor probes (design §22 rule 3), same
         shape the pool and broker expose. No auth: it is the liveness probe."""
         from . import run_state
-        return {"ok": True, "service": "board", "version": app.version, "git_rev": run_state.git_rev()}
+        return {"ok": True, "service": "board", "version": app.version, "git_rev": run_state.git_rev(),
+                "started_at": _started_at}
 
     return app
 

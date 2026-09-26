@@ -307,6 +307,9 @@ class Participant(Obj):
     handle: str  # @handle — inbox address
     location: str | None = None  # pool id
     model: str | None = None
+    # S5 admin tier (design-e963c656f5 §4.8): a human an admin granted Admin (the init human is one without
+    # the flag: edp8.admin.auth.is_admin); never set on an agent or an expert
+    admin: bool = False
 
 
 class Ticket(Obj):

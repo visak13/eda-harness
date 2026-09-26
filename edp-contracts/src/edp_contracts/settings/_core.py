@@ -111,7 +111,7 @@ def env_raw(name: str) -> str | None:
 
 # ----------------------------------------------------------------------------- config.toml
 
-_toml_cache: dict[Path, tuple[float, dict[str, Any]]] = {}
+_toml_cache: dict[Path, tuple[tuple[int, int], dict[str, Any]]] = {}
 
 
 def _flatten(d: Mapping[str, Any], prefix: str = "") -> dict[str, Any]:
@@ -131,11 +131,40 @@ def config_file() -> Path:
 
 def config_values() -> dict[str, Any]:
     """config.toml flattened to dotted keys; {} when absent or unreadable (mtime-cached)."""
-    p = config_file()
+    return _toml_values(config_file())
+
+
+#: secret settings written from Admin → Settings (S5) live here, an owner-only file in the secrets dir,
+#: never in config.toml; only `secret=True` keys are read from it.
+SECRET_SETTINGS_FILE = "settings.secret.toml"
+
+
+def secret_settings_file() -> Path:
+    return secrets_dir() / SECRET_SETTINGS_FILE
+
+
+def secret_values() -> dict[str, Any]:
+    """The secrets settings file flattened to dotted keys; {} when absent or unreadable."""
+    return _toml_values(secret_settings_file())
+
+
+def _file_values(s: Setting) -> dict[str, Any]:
+    """The file layer for `s`: the secrets settings file wins over config.toml for a secret key."""
+    if s.env_only:
+        return {}
+    if s.secret:
+        sv = secret_values()
+        if s.key in sv:
+            return sv
+    return config_values()
+
+
+def _toml_values(p: Path) -> dict[str, Any]:
     try:
-        mtime = p.stat().st_mtime
+        st = p.stat()
     except OSError:
         return {}
+    mtime = (st.st_mtime_ns, st.st_size)  # a rewrite inside one mtime tick still changes the size, mostly
     hit = _toml_cache.get(p)
     if hit and hit[0] == mtime:
         return hit[1]
@@ -179,7 +208,7 @@ def source(name: str) -> str:
     s = setting(name)
     if env_raw(name) is not None:
         return "env"
-    if not s.env_only and s.key in config_values():
+    if s.key in _file_values(s):
         return "config"
     return "default"
 
@@ -195,7 +224,7 @@ def get(name: str) -> Any:
         except ValueError:
             pass
     if not s.env_only:
-        vals = config_values()
+        vals = _file_values(s)
         if s.key in vals:
             try:
                 return _coerce(s, vals[s.key])

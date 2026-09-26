@@ -210,14 +210,19 @@ def make_dispatch(sup: Supervisor, emit: Callable[..., None]) -> Callable[[str, 
             if seats:
                 return 409, {"ok": False, "error": f"pool {verb} takes {len(seats)} live seat(s) offline; "
                              "repeat with force", "seats": seats}
+        # every admin action is recorded as service_restarted {by} (S5, design §4.8), start and stop included
         with sup.lock:
             if verb == "stop":
                 sup.paused.add(svc)
                 out = launcher.stop(svc, keep_seats=bool(body.get("keep_seats")))
+                if not out["survivors"]:
+                    emit(svc, f"stop via the control port by {who}", who)
                 return (200 if not out["survivors"] else 500), {"ok": not out["survivors"], **out}
             sup.resume(svc)
             if verb == "start":
-                return 200, {"ok": True, **launcher.start(svc)}
+                out = launcher.start(svc)
+                emit(svc, f"start via the control port by {who}", who)
+                return 200, {"ok": True, **out}
             rec = relaunch(svc)
             run_state.update(svc, last_restart_reason=f"restart by {who}")
         emit(svc, f"restart via the control port by {who}", who)

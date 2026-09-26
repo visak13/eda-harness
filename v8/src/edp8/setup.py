@@ -69,10 +69,11 @@ _HEADER = """# Heronry configuration (written by `heronry init`; `heronry import
 # the admin token and the participants' tokens live in the secrets directory (owner-only files)."""
 
 
-def write_config(updates: dict[str, Any]) -> Path:
-    """Merge dotted `updates` into config.toml (created when missing). Keys must be declared settings."""
+def write_config(updates: dict[str, Any], remove: tuple[str, ...] | list[str] = ()) -> Path:
+    """Merge dotted `updates` into config.toml (created when missing) and drop the `remove` keys (back to
+    the default). Keys must be declared settings."""
     by_key = {s.key: s for s in settings.all_settings()}
-    for k in updates:
+    for k in [*updates, *remove]:
         if k not in by_key:
             raise settings.SettingsError(f"{k} is not a declared setting")
         if by_key[k].env_only:
@@ -82,6 +83,8 @@ def write_config(updates: dict[str, Any]) -> Path:
     if f.is_file():
         current = _flatten(tomllib.loads(f.read_text(encoding="utf-8")))
     current.update({k: v for k, v in updates.items() if v is not None})
+    for k in remove:
+        current.pop(k, None)
     f.parent.mkdir(parents=True, exist_ok=True)
     tmp = f.with_name(f.name + ".tmp")
     tmp.write_text(render_toml(current, _HEADER), encoding="utf-8")

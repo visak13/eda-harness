@@ -136,9 +136,9 @@ def endpoint() -> tuple[int, str]:
     return int(cport), tok
 
 
-def call(path: str, body: dict[str, Any] | None = None, *, timeout: float = 180.0) -> dict[str, Any]:
-    """POST to the supervisor's control port with its secret; returns the JSON answer (raises on 4xx/5xx
-    with the server's error text)."""
+def request(path: str, body: dict[str, Any] | None = None, *, timeout: float = 180.0) -> tuple[int, dict[str, Any]]:
+    """POST to the supervisor's control port with its secret: (status, JSON answer). Raises
+    ControlUnavailable when there is no supervisor or it does not answer."""
     import httpx
 
     cport, tok = endpoint()
@@ -150,6 +150,13 @@ def call(path: str, body: dict[str, Any] | None = None, *, timeout: float = 180.
         out = r.json()
     except ValueError:
         out = {"ok": False, "error": r.text}
-    if r.status_code >= 400:
-        raise RuntimeError(f"control {path} -> {r.status_code}: {out.get('error')}")
+    return r.status_code, out if isinstance(out, dict) else {"ok": False, "error": str(out)}
+
+
+def call(path: str, body: dict[str, Any] | None = None, *, timeout: float = 180.0) -> dict[str, Any]:
+    """POST to the supervisor's control port with its secret; returns the JSON answer (raises on 4xx/5xx
+    with the server's error text)."""
+    code, out = request(path, body, timeout=timeout)
+    if code >= 400:
+        raise RuntimeError(f"control {path} -> {code}: {out.get('error')}")
     return out
