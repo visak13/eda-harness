@@ -30,7 +30,7 @@ describe("JoinPage", () => {
     server.use(http.get("/v1/whoami", () => ok(WHO("carol", false))));
     mount("/join", <JoinPage />);
     expect(await screen.findByTestId("join-ok")).toHaveTextContent("You are signed in as carol");
-    expect(screen.getByTestId("join-open-board")).toHaveAttribute("href", "/me");
+    expect(screen.getByTestId("join-open-board")).toHaveAttribute("href", "/epics");
   });
 
   it("a used or expired code shows the board's refusal", async () => {

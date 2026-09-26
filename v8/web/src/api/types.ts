@@ -1,7 +1,7 @@
 // JSON shapes for the board's view API (src/edp8/api_views.py, design §4.1).
 //
 // These are the UNWRAPPED `value` types — `api<T>()` in client.ts strips the {ok,value,hint}
-// envelope, so a caller writes `api<DecisionsHome>("/v1/me/decisions")` and gets T directly.
+// envelope, so a caller writes `api<EpicPage>("/v1/epics/…/page")` and gets T directly.
 // One interface per endpoint, mirroring the Python views.* return exactly (enums arrive as
 // their .value string, datetimes as ISO strings). Kept in this file so a shape drift is a
 // TypeScript error at the call site, not a runtime `undefined`.
@@ -164,31 +164,7 @@ export interface WaitingReason {
   latest_status: string | null;
 }
 
-// --------------------------------------------------------------------------- /v1/me/decisions
-
-export interface SignoffRow {
-  criterion: CriterionView;
-  ticket: { id: string; title: string; epic_id: string; epic_title: string; assignee: string | null; quick?: boolean };
-  doc: { id: string; title: string; doc_type: string; version: number } | null;
-  excerpt: string;
-  /** S16: the plain-words question the owner answers, e.g. "Accept the hl-craft strategy?" */
-  ask?: string;
-}
-
-export interface QuestionRow {
-  id: string;
-  ticket_id: string;
-  created_by: string;
-  to: string | null;
-  kind: string;
-  text: string;
-  asker: { type: string; role: string; seat_state: string | null; note: string };
-  /** Why this ask is in the viewer's inbox — board-derived, verbatim (design §16.2, promise #21). */
-  why?: string;
-  /** S-UI: the root epic of the ticket (the Decisions page filters by it). */
-  epic_id?: string | null;
-  [k: string]: unknown; // inbox rows carry additional board fields verbatim
-}
+// --------------------------------------------------------------------------- gates (GateForm)
 
 export interface GateRow {
   event_id?: string;
@@ -200,16 +176,16 @@ export interface GateRow {
   epic: string;
 }
 
-export interface DecisionsHome {
-  signoffs: SignoffRow[];
-  questions: QuestionRow[];
-  gates: GateRow[];
-  counts: { signoffs: number; questions: number; gates: number };
+/** An owner sign-off the ruling drawer opens (RulingDrawer): the criterion, its ticket and the evidence doc at the
+ *  version the ruling freezes. S20: built on the ticket page from its own data when the trail lands on it. */
+export interface SignoffRow {
+  criterion: CriterionView;
+  ticket: { id: string; title: string; epic_id: string; epic_title: string; assignee: string | null; quick?: boolean };
+  doc: { id: string; title: string; doc_type: string; version: number } | null;
+  excerpt: string;
+  /** S16: the plain-words question the owner answers, e.g. "Accept the hl-craft strategy?" */
+  ask?: string;
 }
-
-export type ResolvedRow =
-  | { at: ISODateString; kind: "verdict"; ticket_id: string; criterion: string; verdict: string; epic_id?: string | null }
-  | { at: ISODateString; kind: "gate"; ticket_id: string; gate: string; answer: string; epic_id?: string | null };
 
 // --------------------------------------------------------------------------- /v1/me/*
 
@@ -553,20 +529,6 @@ export interface DocHtml {
   signoff_criterion: { id: string; text: string; ticket_id: string } | null;
   /** Every pending criterion the viewer checks that cites this doc (finding #8); optional for old boards. */
   signoff_criteria?: { id: string; text: string; ticket_id: string; checked_by?: string | null }[];
-}
-
-export interface ReplyRow {
-  id: string;
-  ticket_id: string;
-  /** S-UI: the root epic of the ticket (the Decisions page filters by it). */
-  epic_id?: string | null;
-  ticket_title: string;
-  created_by: string;
-  kind: string;
-  text: string;
-  at: ISODateString;
-  reply_to: string | null;
-  in_reply_to: { by: string; text: string } | null;
 }
 
 export interface ActivityDay {

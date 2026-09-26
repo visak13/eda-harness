@@ -40,8 +40,10 @@ export const handlers = [
       value: { participant: { id: "owner", handle: "owner", role: "owner" }, tickets: [] },
     }),
   ),
-  http.get("/v1/me/summary", () =>
-    HttpResponse.json({ ok: true, value: { decisions: 0, epics: 0, seats: 0, library: 0 } }),
+  // S20: nothing waits on the viewer by default; a spec overrides it with an attention fixture
+  http.get("/v1/me/attention", () =>
+    HttpResponse.json({ ok: true, value: { participant: "owner", items: [], scopes: [],
+      counts: { total: 0, epics: 0, topics: 0, help: 0, admin: 0 } } }),
   ),
   http.get("/v1/epics/summary", () => HttpResponse.json({ ok: true, value: [] })),
   // t-882e4d2eeb: the seats view (the thread greys `retired` people) and the sign-in page's Request access

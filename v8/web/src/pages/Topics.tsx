@@ -5,6 +5,8 @@ import { getTopics } from "../api/endpoints";
 import type { BoardApiError } from "../api/client";
 import ui from "../components/ui.module.css";
 import { OpenTopicDialog } from "../components/OpenTopicDialog";
+import { useAttention } from "../api/attention";
+import { AttentionDot, attentionMark } from "../components/AttentionDot";
 import styles from "./Topics.module.css";
 
 // S-SME-SURFACE (s-698224fca8): Library topics — the owner's standing subjects, each with a resident sme
@@ -25,6 +27,7 @@ export function TopicsSection(): React.JSX.Element {
   const suffix = params.toString() ? `?${params.toString()}` : "";
   const navigate = useNavigate();
   const q = useQuery({ queryKey: ["topics"], queryFn: getTopics });
+  const need = new Map(useAttention().scopes.filter((s) => s.type === "topic").map((s) => [s.id, s])); // S20
   return (
     <div data-testid="topics">
       <div className={styles.bar}>
@@ -41,9 +44,11 @@ export function TopicsSection(): React.JSX.Element {
             <ul className={styles.list} data-testid="topic-list">
               {q.data.map((t) => (
                 <li key={t.id}>
-                  <Link className={styles.row} to={`/library/topics/${t.id}${suffix}`} data-testid="topic-row">
+                  <Link className={`${styles.row} ${need.has(t.id) ? attentionMark : ""}`} to={`/library/topics/${t.id}${suffix}`} data-testid="topic-row"
+                    data-attention={need.has(t.id) ? "true" : undefined}>
                     <span className={ui.tag}>{t.status}</span>
-                    <span className={styles.rowTitle}>{t.title}</span>
+                    <span className={styles.rowTitle}>{t.title} <AttentionDot count={need.get(t.id)?.count ?? 0} /></span>
+                    {need.has(t.id) ? <span className={styles.needs} data-testid="attention-reason">Waiting on you: {need.get(t.id)!.reason}</span> : null}
                     <span className={styles.tags}>{t.tags.map((g) => <span key={g} className={ui.tag}>{g}</span>)}</span>
                     <span className={styles.muted}>
                       {t.docs} docs · {t.experts} experts · {t.messages} messages · seat {t.seat.state}

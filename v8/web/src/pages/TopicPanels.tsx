@@ -1,9 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useLocation } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { addTopicExpert, postTopicMessage, removeTopicExpert } from "../api/endpoints";
 import type { ExpertAdded, TopicPage } from "../api/types";
 import ui from "../components/ui.module.css";
 import { errText, when } from "./Topics";
+import { pageItems, useAttention } from "../api/attention";
+import { AttentionDot, attentionMark } from "../components/AttentionDot";
+import { highlightMessage } from "../components/AttentionAsks";
 import styles from "./Topics.module.css";
 
 // The topic page's thread and experts panels (S-SME-SURFACE). An expert posts note/question/answer; every
@@ -21,16 +25,23 @@ export function TopicThread({ page }: { page: TopicPage }): React.JSX.Element {
     onSuccess: () => { setText(""); void qc.invalidateQueries({ queryKey: ["topic", id] }); },
   });
   const isOpen = page.topic.status === "open";
+  // S20 attention trail: an ask to the viewer carries the dot; a #<message id> deep link scrolls to it and marks it
+  const waiting = new Set(pageItems(useAttention(), id).filter((i) => i.kind === "ask").map((i) => i.item.id));
+  const { hash } = useLocation();
+  const target = hash.startsWith("#m-") ? hash.slice(1) : null;
+  const loaded = page.thread.some((m) => m.id === target);
+  useEffect(() => { if (target && loaded) highlightMessage(target); }, [target, loaded]);
   return (
     <section className={styles.panel} aria-label="Thread" data-testid="topic-thread">
       <span className={ui.sectionLabel}>Thread</span>
       {page.thread.length === 0 ? <p className={styles.muted}>No messages yet. Ask the sme anything about this topic.</p> : (
         <ul className={styles.list}>
           {page.thread.map((m) => (
-            <li key={m.id} className={styles.msg} data-testid="topic-message">
+            <li key={m.id} id={m.id} className={`${styles.msg} ${waiting.has(m.id) ? attentionMark : ""}`} data-testid="topic-message"
+              data-attention={waiting.has(m.id) ? "true" : undefined}>
               <span className={styles.msgMeta}>
                 {m.created_by}{m.from.role ? ` · ${m.from.role}` : ""} · {m.kind} · {when(m.created_at)}
-                {m.to ? ` → ${m.to}` : ""}
+                {m.to ? ` → ${m.to}` : ""} <AttentionDot count={waiting.has(m.id) ? 1 : 0} />
               </span>
               <p className={styles.msgText}>{m.text}</p>
             </li>

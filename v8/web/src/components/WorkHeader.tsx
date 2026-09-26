@@ -9,6 +9,8 @@ import { identity } from "../auth/identity";
 import { useViewerFlag } from "./viewerPrefs";
 import { attentionLine, attentionOther, FilesViewer, HistoryViewer, useWorkContext } from "./ContextualWork";
 import { AttentionAsks } from "./AttentionAsks";
+import { countWhere, pageItems, useAttention } from "../api/attention";
+import { AttentionDot, attentionMark } from "./AttentionDot";
 import styles from "./WorkHeader.module.css";
 
 // The one work header shared by the epic and the ticket page (design-a2e5369133 §WorkHeader,
@@ -35,6 +37,8 @@ export interface WorkHeaderProps {
   actions: React.ReactNode;
   /** The Work viewer body (stories/kanban/criteria/process for an epic; criteria/docs for a ticket). */
   work: React.ReactNode;
+  /** S20: a waiting sign-off's evidence row opens the page's ruling drawer (evidence beside the verdict), not the reader. */
+  onRuleDoc?: (docId: string) => void;
   /** Stops the design link from claiming "review requested" when the page knows better. */
   reviewRequested?: boolean;
   /** Epic pages: the live resident architect and its seat state (t-cf353a4051). */
@@ -105,6 +109,13 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
   const designRef = data?.design_ref ?? p.designRef ?? null;
   const reviewRequested = p.reviewRequested ?? Boolean(data?.gates.some((g) => g.data.gate === "design_signoff"));
   const attention = data ? attentionLine(data) : "";
+  // S20 attention trail (design-e963c656f5 §4.18): the openers that hold an item waiting on the viewer carry its dot —
+  // Design, Files & evidence, Work — and so does whatever hides them (the collapsed title bar, the closed details).
+  const here = pageItems(useAttention(), p.ticketId);
+  const designDots = countWhere(here, "design");
+  const filesDots = countWhere(here, "files") + (designRef ? 0 : designDots); // no Design opener: its docs are files
+  const workDots = countWhere(here, "work");
+  const openerDots = (designRef ? designDots : 0) + filesDots + workDots;
 
   // Route request opens the source-bound review, never answers it (design-a2e5369133 §gate typed
   // review path; restores the ?request= handling 9734d1d dropped from ContextualWork). A deep link
@@ -195,6 +206,7 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
             aria-expanded={!collapsed} aria-controls={`work-header-body-${p.kind}`}
             aria-label={collapsed ? "Expand title bar" : "Collapse title bar"} title={collapsed ? "Expand title bar" : "Collapse title bar"}
             onClick={() => setCollapsed(!collapsed)}>
+            {collapsed ? <AttentionDot count={openerDots} bare /> : null}
             <span className={collapsed ? styles.chevronDown : styles.chevronUp} aria-hidden="true"><Icon name="chevron" size={18} /></span>
           </button>
         </div>
@@ -207,6 +219,7 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
         <summary className={styles.contextSummary} data-testid="work-context-toggle">
           <span className={styles.summaryChip}><StatusChip status={p.status} size="badge" /></span>
           <span>{attention || "Details, files & history"}</span>
+          {contextOpen ? null : <AttentionDot count={openerDots} />}
         </summary>
       <dl className={styles.metadata} data-testid="work-metadata">
         <div>
@@ -242,13 +255,16 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
 
       <div className={styles.links} data-testid="work-links">
         {designRef ? (
-          <button type="button" className={`${styles.link} ${styles.design}`} onClick={() => openDoc(designRef)} data-testid="work-design">
-            <Icon name="design" /> Design{reviewRequested ? " · review requested" : ""}
+          <button type="button" className={`${styles.link} ${styles.design} ${designDots ? attentionMark : ""}`} onClick={() => openDoc(designRef)} data-testid="work-design"
+            data-attention={designDots ? "true" : undefined}>
+            <Icon name="design" /> Design{reviewRequested ? " · review requested" : ""} <AttentionDot count={designDots} />
           </button>
         ) : null}
-        <button type="button" className={styles.link} onClick={() => choose("files")} data-testid="work-files"><Icon name="files" /> Files &amp; evidence</button>
+        <button type="button" className={`${styles.link} ${filesDots ? attentionMark : ""}`} onClick={() => choose("files")} data-testid="work-files"
+          data-attention={filesDots ? "true" : undefined}><Icon name="files" /> Files &amp; evidence <AttentionDot count={filesDots} /></button>
         <button type="button" className={styles.link} onClick={() => choose("history")} data-testid="work-history"><Icon name="history" /> History</button>
-        <button type="button" className={styles.link} onClick={() => choose("work")} data-testid="work-work"><Icon name="work" /> Work</button>
+        <button type="button" className={`${styles.link} ${workDots ? attentionMark : ""}`} onClick={() => choose("work")} data-testid="work-work"
+          data-attention={workDots ? "true" : undefined}><Icon name="work" /> Work <AttentionDot count={workDots} /></button>
       </div>
       </details>
       </div>
@@ -256,7 +272,8 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
       <Drawer edge open={drawerOpen} label={viewerTitle} title={<span className={styles.drawerTitle}>{viewerTitle}
         {view !== "work" ? <Link className={styles.openTab} target="_blank" to={`/records/${encodeURIComponent(p.ticketId)}?${new URLSearchParams({ view: view ?? "files", ...(params.get("category") ? { category: params.get("category")! } : {}), as: identity() })}`}>Open in tab <Icon name="external" size={16} /></Link> : null}
       </span>} onClose={() => choose(null)}>
-        {view === "history" ? <HistoryViewer ticketId={p.ticketId} /> : view === "work" ? p.work : <FilesViewer ticketId={p.ticketId} />}
+        {view === "history" ? <HistoryViewer ticketId={p.ticketId} /> : view === "work" ? p.work
+          : <FilesViewer ticketId={p.ticketId} waitingDocs={new Set(here.filter((i) => i.pageTab === "files" || (!designRef && i.pageTab === "design")).map((i) => i.item.doc ?? ""))} onRule={p.onRuleDoc} />}
       </Drawer>
     </header>
   );

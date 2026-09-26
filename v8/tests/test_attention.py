@@ -114,7 +114,8 @@ def test_signoffs_land_on_design_or_files(rig, doc_type, where):
     assert row["kind"] == "signoff" and row["item"] == {"type": "criterion", "id": c.id, "doc": doc.id}
     assert (row["tab"], row["section"], row["ticket"]["id"]) == ("work", "tickets", story.id)
     assert (row["at"]["tab"], row["at"]["section"]) == where  # on the ticket page: its Design / Files opener
-    assert row["url"] == f"/ui/ticket/{story.id}?doc={doc.id}#{c.id}"
+    query = f"?doc={doc.id}" if doc_type == DocType.design else ""  # evidence opens the ticket's ruling drawer
+    assert row["url"] == f"/ui/ticket/{story.id}{query}#{c.id}"
 
 
 def _help_topic(b, owner):

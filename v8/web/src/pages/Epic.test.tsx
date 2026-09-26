@@ -5,6 +5,7 @@ import { server } from "../test/setup";
 import { MODEL_CATALOG } from "../test/handlers";
 import { http, okJson, renderRoute } from "./testUtils";
 import { EpicPage } from "./Epic";
+import { ATTENTION, attentionHandler, without } from "../test/attentionFixture";
 import type { EpicPage as EpicPageData, EpicTreeNode, MessageView } from "../api/types";
 
 // The epic page per design-a2e5369133 / revision3-clean-epic.png: WorkHeader (breadcrumb + Actions ▾,
@@ -24,7 +25,7 @@ function page(over: Partial<EpicPageData> = {}, thread: MessageView[] = []): Epi
   };
 }
 
-function mount(data: EpicPageData, summary: Record<string, unknown>[] = [], caps: Record<string, unknown> = { resume_parked: true, resume_closed: false, park: true, spawn: true }) {
+function mount(data: EpicPageData, summary: Record<string, unknown>[] = [], caps: Record<string, unknown> = { resume_parked: true, resume_closed: false, park: true, spawn: true }, path = "/epic/epic-1") {
   server.use(http.get("/v1/epics/epic-1/page", () => okJson(data)));
   server.use(http.get("/v1/tickets/epic-1/contextual", () => okJson({
     ticket_id: "epic-1", title: data.title, kind: "epic", status: data.board.epic.status, owner: "owner", requester: "owner", assignee: null,
@@ -35,7 +36,7 @@ function mount(data: EpicPageData, summary: Record<string, unknown>[] = [], caps
   server.use(http.get("/v1/tickets/epic-1/transitions", () => okJson({ status: data.board.epic.status, transitions: [{ to: "done", allowed: true, reason: null }] })));
   server.use(http.get("/v1/pool/capabilities", () => okJson(caps)));
   server.use(http.get("/v1/me/people", () => okJson([])), http.post("/v1/messages/resolve", () => okJson({ to: null, wakes: [], plan: [], note: "" })));
-  renderRoute("/epic/epic-1", "/epic/:id", <EpicPage />);
+  renderRoute(path, "/epic/:id", <EpicPage />);
 }
 
 const title = () => screen.findByText("Upgrade the board UI", { selector: "h1" });
@@ -485,5 +486,51 @@ describe("EpicPage brief markdown", () => {
     expect(brief.querySelector("strong")).toHaveTextContent("Brief:");
     expect(brief.querySelectorAll("li")).toHaveLength(2);
     expect(brief.textContent).not.toContain("**");
+  });
+});
+
+// S20 attention trail (design-e963c656f5 §4.18): inside the epic, the opener holding an item carries the dot, then
+// the section, then the ticket row / the item — each with a non-colour marker and an aria-label.
+describe("EpicPage attention trail (S20)", () => {
+  const scopeGate = { event_id: "ev-scope", ticket_id: "epic-1", gate: "scope", by: "architect.epic-1", note: "cut the export?", opened_at: "2026-09-27T00:00:00Z", epic: "epic-1" };
+
+  it("Work opener → the ticket row carry the dot; Actions → Answer a decision → the gate is marked", async () => {
+    server.use(attentionHandler());
+    mount(page({ open_gates: [["epic-1", "scope"]], answerable_gates: [scopeGate] }));
+    await title();
+    const work = screen.getByTestId("work-work");
+    expect(await within(work).findByRole("img", { name: "needs your attention: 2" })).toBeInTheDocument();
+    expect(work).toHaveAttribute("data-attention", "true");
+    const trigger = screen.getByTestId("actions-open");
+    expect(within(trigger).getByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
+    await openWork();
+    const row = document.getElementById("row-s-1")!;
+    expect(row).toHaveAttribute("data-attention", "true");
+    expect(within(row).getByRole("img", { name: "needs your attention: 2" })).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.click(trigger);
+    const item = await screen.findByTestId("action-answer-decision");
+    expect(item).toHaveAttribute("data-attention", "true");
+    expect(within(item).getByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
+    fireEvent.click(item);
+    await screen.findByTestId("action-drawer-answer-decision");
+    expect(document.getElementById("ev-scope")).toHaveAttribute("data-attention", "true");
+  });
+
+  it("a ?request=<gate> deep link opens the decision drawer on the marked gate", async () => {
+    server.use(attentionHandler());
+    mount(page({ open_gates: [["epic-1", "scope"]], answerable_gates: [scopeGate] }), [], undefined, "/epic/epic-1?request=ev-scope");
+    await title();
+    await screen.findByTestId("action-drawer-answer-decision");
+    expect(document.getElementById("ev-scope")).toHaveAttribute("data-attention", "true");
+  });
+
+  it("clears: with nothing waiting no opener or row carries a dot", async () => {
+    server.use(attentionHandler(without(...ATTENTION.items.map((i) => i.id))));
+    mount(page());
+    await title();
+    await openWork();
+    await waitFor(() => expect(document.querySelector("[data-attention-dot]")).toBeNull());
+    expect(document.getElementById("row-s-1")).not.toHaveAttribute("data-attention");
   });
 });

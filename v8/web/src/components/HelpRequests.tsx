@@ -5,6 +5,8 @@ import { BoardApiError } from "../api/client";
 import { askForHelp, closeTopic, getHelpRequests } from "../api/endpoints";
 import type { TopicSeat } from "../api/types";
 import ui from "./ui.module.css";
+import { useAttention } from "../api/attention";
+import { AttentionDot, attentionMark } from "./AttentionDot";
 import styles from "./HelpRequests.module.css";
 
 /** t-67dad8c6aa: where a help request is, in the person's words (topics.seat_view's `phase`). */
@@ -29,6 +31,7 @@ export function HelpRequests({ onDone }: { onDone: () => void }): React.JSX.Elem
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [text, setText] = useState("");
+  const need = new Map(useAttention().scopes.filter((s) => s.type === "help").map((s) => [s.id, s])); // S20 trail
   const list = useQuery({ queryKey: ["help-requests"], queryFn: () => getHelpRequests(), refetchInterval: 5000 });
   const ask = useMutation({
     mutationFn: (words: string) => askForHelp(words),
@@ -58,8 +61,9 @@ export function HelpRequests({ onDone }: { onDone: () => void }): React.JSX.Elem
       {list.isSuccess && rows.length === 0 ? <p className={styles.muted} data-testid="help-none">No open help requests.</p> : null}
       <ul className={styles.list}>
         {rows.map((r) => (
-          <li key={r.id} className={styles.row} data-testid="help-request">
-            <Link to={`/library/topics/${encodeURIComponent(r.id)}`} onClick={onDone} className={styles.title}>{r.title}</Link>
+          <li key={r.id} className={`${styles.row} ${need.has(r.id) ? attentionMark : ""}`} data-testid="help-request"
+            data-attention={need.has(r.id) ? "true" : undefined}>
+            <Link to={`/library/topics/${encodeURIComponent(r.id)}`} onClick={onDone} className={styles.title}>{r.title} <AttentionDot count={need.get(r.id)?.count ?? 0} /></Link>
             <span className={styles.phase} data-testid="help-phase" data-phase={r.seat.phase ?? r.seat.state}>{helpPhaseText(r.seat)}</span>
             <button type="button" className={ui.button} disabled={close.isPending} data-testid="help-close"
               onClick={() => close.mutate(r.id)}>Close</button>

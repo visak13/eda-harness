@@ -8,6 +8,7 @@ import { DocDrawerProvider } from "../components/DocDrawer";
 import { server } from "../test/setup";
 import { http, okJson, renderRoute } from "./testUtils";
 import { TicketPage } from "./Ticket";
+import { attentionHandler, without } from "../test/attentionFixture";
 import type { TicketPage as TicketPageData } from "../api/types";
 
 // The upload's multipart body cannot be read back in an msw handler under jsdom (request.text() /
@@ -511,5 +512,68 @@ describe("TicketPage description markdown", () => {
     await screen.findByText("Build the epic page", { selector: "h1" });
     const work = await openWork();
     expect(within(work).getByTestId("description")).toHaveTextContent("Render the epic destination.");
+  });
+});
+
+// S20 attention trail: an owner sign-off waiting on the viewer — Files & evidence opener → the evidence row → the
+// ruling drawer (evidence frozen at its version beside the verdict, the home the Decisions page's sign-offs moved to).
+describe("TicketPage attention trail (S20)", () => {
+  const signoffPage = () => ticketPage({
+    criteria: [{ id: "c-1", text: "the report proves it", check: "look", checked_by: "owner", verdict: "pending", evidence_ref: "report-1", evidence_version: 2 }],
+    docs: [{ id: "report-1", doc_type: "report", title: "The report", version: 2, scope: "s-1", summary: "", full: "", relation: "evidence" }],
+  });
+  const board = () => server.use(
+    attentionHandler(),
+    http.get("/v1/tickets/s-1/contextual", () => okJson({
+      ticket_id: "s-1", title: "Build the epic page", kind: "story", status: "in_review", owner: "owner", requester: "owner", assignee: null,
+      design_ref: null, gates: [], scope: "s-1", events: [], blockers: [], unresolved_asks: [],
+      records: [{ type: "doc", group: "Evidence", relation: "evidence", record: { id: "report-1", title: "The report", version: 2 } }] })),
+    http.get("/v1/docs/report-1/html", () => okJson({ id: "report-1", title: "The report", version: 2, versions: [1, 2], scope: "s-1",
+      doc_type: "report", owner_role: "engineer", html: "<p>Evidence body</p>", body_md: "Evidence body" })),
+  );
+
+  it("Files & evidence carries the dot; its evidence row opens the ruling drawer, not the reader", async () => {
+    board();
+    mount(signoffPage());
+    await title();
+    const files = screen.getByTestId("work-files");
+    expect(await within(files).findByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
+    fireEvent.click(files);
+    const row = await screen.findByRole("button", { name: "The report · v2" });
+    const li = row.closest("li")!;
+    expect(li).toHaveAttribute("data-attention", "true");
+    expect(within(li).getByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
+    fireEvent.click(row);
+    expect(await screen.findByTestId("ruling-grid")).toBeInTheDocument();
+    expect(await screen.findByText("Evidence body")).toBeInTheDocument();
+  });
+
+  it("the notification's #c-<id> link opens the ruling drawer on that criterion", async () => {
+    board();
+    mount(signoffPage(), "/ticket/s-1?as=owner#c-1");
+    await title();
+    expect(await screen.findByTestId("ruling-grid")).toBeInTheDocument();
+    expect(within(screen.getByTestId("ruling-pane")).getByText("the report proves it")).toBeInTheDocument();
+  });
+
+  it("inside Work the criterion is marked and offers Review the evidence and rule", async () => {
+    board();
+    mount(signoffPage());
+    await title();
+    await openWork();
+    const card = document.getElementById("c-1")!;
+    await waitFor(() => expect(card).toHaveAttribute("data-attention", "true"));
+    fireEvent.click(within(card).getByTestId("review-signoff"));
+    expect(await screen.findByTestId("ruling-grid")).toBeInTheDocument();
+  });
+
+  it("clears once the sign-off is ruled: no mark, no review control", async () => {
+    server.use(attentionHandler(without("c-1")));
+    mount(signoffPage());
+    await title();
+    await openWork();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(document.getElementById("c-1")).not.toHaveAttribute("data-attention");
+    expect(screen.queryByTestId("review-signoff")).toBeNull();
   });
 });

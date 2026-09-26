@@ -1,4 +1,4 @@
-import { useReducer, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { Link } from "react-router";
 import { identity } from "../auth/identity";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -6,6 +6,7 @@ import type { GateRow } from "../api/types";
 import { answerGate } from "../api/endpoints";
 import { useDirtyGuard } from "../live/useDraftGuard";
 import { Term } from "./Term";
+import { attentionMark } from "./AttentionDot";
 import styles from "./GateForm.module.css";
 
 // One open gate the owner can answer (design §5, folded S7). The gate kind is FIXED (it is the
@@ -131,4 +132,24 @@ function AcceptanceGateForm({ gate, onAnswered, closed, onDismiss }: GateFormPro
       )}
     </section>
   );
+}
+
+/** S20 (design-e963c656f5 §4.18): the Actions drawer's decisions, each the end of an attention trail when its gate event
+ *  waits on the viewer — that form carries the mark, its event id as DOM id, and scrolls into view on open. */
+export function GateForms({ gates, waiting }: { gates: RetainedGate[]; waiting: Set<string> }): React.JSX.Element {
+  const first = gates.find(({ gate: g }) => g.event_id && waiting.has(g.event_id))?.gate.event_id ?? null;
+  const scrolled = useRef<string | null>(null);
+  useEffect(() => {
+    const el = first && scrolled.current !== first ? document.getElementById(first) : null;
+    if (!el) return;
+    scrolled.current = first;
+    if (typeof el.scrollIntoView === "function") el.scrollIntoView({ block: "center" }); // jsdom has none
+  }, [first]);
+  return <>{gates.map(({ gate: g, closed, onDismiss }) => {
+    const hit = Boolean(g.event_id && waiting.has(g.event_id));
+    return <div key={`${g.ticket_id}:${g.gate}`} id={g.event_id} className={hit ? attentionMark : undefined}
+      data-attention={hit ? "true" : undefined}>
+      <GateForm gate={g} closed={closed} onDismiss={onDismiss} />
+    </div>;
+  })}</>;
 }

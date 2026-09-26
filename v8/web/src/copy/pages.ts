@@ -25,7 +25,7 @@ export const SIDEBAR: PageCopy = {
   title: "Sidebar (every page)",
   framing: "",
   items: [
-    { key: "decisions", label: "Decisions", text: "everything waiting on you: sign-offs, questions, gates, replies. Source: your inbox (events the board judged relevant to you).", control: true },
+    { key: "waiting", label: "Waiting on you", text: "the count of everything waiting on you: questions and asks to you, gates and sign-offs you rule, fixes and access requests you approve. Opens one line per epic or topic with its reason; each opens the page where the dots lead on to the item, plus your recent conversations. Source: /v1/me/attention.", control: true },
     { key: "epics", label: "Epics", text: "every epic in the fleet with its progress. Source: /v1/epics/summary.", control: true },
     { key: "seats", label: "Seats", text: "every agent shell, alive or closed, and what it last said. Source: pool sessions mirrored into the board.", control: true },
     { key: "library", label: "Library", text: "knowledge first — strategies, domains and lessons every epic can link (approve proposals, import from skills.sh) — then every document, artifact and ticket. Source: /v1/knowledge and the board's records.", control: true },
@@ -34,7 +34,7 @@ export const SIDEBAR: PageCopy = {
     { key: "find", label: "Find (Ctrl K)", text: "full-text search across tickets, documents, messages and seats; Enter opens the hit.", control: true },
     { key: "identity", label: "Account (bottom)", text: "who you are on this board; opens the account menu: Settings, What am I looking at?, theme, avatar. Source: /v1/whoami.", control: true },
     { key: "new-epic", label: "New epic", text: "on the Epics page: records your words verbatim as a new epic and offers to spawn its architect; the preview lists who is woken before you confirm.", control: true },
-    { key: "quick-task", label: "Quick task", text: "on the Epics page: opens a small task of your own with your words verbatim and starts an engineer on the model you pick; you check its criteria from Needs you, no architect or qa needed.", control: true },
+    { key: "quick-task", label: "Quick task", text: "on the Epics page: opens a small task of your own with your words verbatim and starts an engineer on the model you pick; you check its criteria when its dot appears on the quick task, no architect or qa needed.", control: true },
     { key: "notifications", label: "Notifications", text: "browser alerts for questions and approval requests while a board tab stays open; enable, test or disable them here.", control: true },
   ],
 };
@@ -45,26 +45,11 @@ export const RULES: CopyItem[] = [
 ];
 
 export const PAGES: Record<string, PageCopy> = {
-  decisions: {
-    key: "decisions",
-    title: "Decisions",
-    framing: "What is waiting on you, newest first. Nothing here is decorative: every card asks for one action.",
-    items: [
-      { key: "signoffs", label: "Sign-offs", text: "documents whose criteria name you as the checker. Action: Review evidence → opens the ruling drawer. Wakes on verdict: the story's doer and the architect (fail) or nobody (pass).", control: true },
-      { key: "questions", label: "Questions", text: "messages of kind question addressed to you or your role on your epics, with WHY you see it (addressed / mentioned / your role). Action: Reply → posts an answer, wakes the asker.", control: true },
-      { key: "gates", label: "Gates", text: "decisions only you can rule: design sign-off, demo, acceptance, scope, budget. Action: Answer → records the ruling; wakes the architect and the gate's opener; an acceptance answer closes or reopens the epic.", control: true },
-      { key: "resolved", label: "Resolved", text: "what you already ruled on, for the record." },
-      { key: "replies", label: "Replies to you", text: "answers to messages you wrote, attached to your message. Source: /v1/me/replies." },
-      { key: "seats-now", label: "Seats, now", text: "the alive seats on your epics with their last status; a closed seat is on the Seats page, not here." },
-      { key: "epic-pulse", label: "Epic pulse", text: "per epic: stories by status and the one thing it waits on (waiting_reason)." },
-      { key: "new-conversation", label: "New conversation", text: "message a seat or role on a ticket you pick; the preview under the box lists exactly who is woken and why before you send.", control: true },
-    ],
-  },
   epics: {
     key: "epics",
     title: "Epics",
     framing: "Every epic, its phase, and how far its stories are.",
-    items: [{ key: "row", label: "Row", text: "title (owner's words), phase, stories done/total, criteria passed/total, open gates. Click → Epic page.", control: true }],
+    items: [{ key: "row", label: "Row", text: "title (owner's words), phase, stories done/total, criteria passed/total, open gates. An epic that waits on you carries a dot with its count, sorted first, with a one-line reason such as '2 questions, 1 design sign-off'. Click → Epic page, where the dots continue.", control: true }],
   },
   epic: {
     key: "epic",
@@ -159,7 +144,7 @@ export const PAGES: Record<string, PageCopy> = {
     title: "Join",
     framing: "The page a teammate's invite link opens: it signs this browser tab in once and links to the board.",
     items: [
-      { key: "open", label: "Open the board", text: "goes to Needs you, signed in as the invited teammate.", control: true },
+      { key: "open", label: "Open the board", text: "goes to the Epics list, signed in as the invited teammate.", control: true },
     ],
   },
   setup: {
@@ -197,7 +182,7 @@ export function pageKeyFor(pathname: string): string {
   if (pathname === "/code" || pathname.startsWith("/code/")) return "code";
   if (pathname.startsWith("/records/")) return "epic";
   if (pathname.startsWith("/library") || pathname.startsWith("/tickets") || pathname.startsWith("/activity")) return "library";
-  return "decisions";
+  return "epics";
 }
 
 export function copyItem(page: string, key: string): CopyItem {

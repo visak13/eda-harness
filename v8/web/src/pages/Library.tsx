@@ -9,6 +9,8 @@ import ui from "../components/ui.module.css";
 import { ArtifactLink } from "../components/ArtifactLink";
 import styles from "./Library.module.css";
 import { KnowledgeSection } from "./Knowledge";
+import { useAttention } from "../api/attention";
+import { AttentionDot } from "../components/AttentionDot";
 import { TopicsSection } from "./Topics";
 
 // S-LIBRARY (design-34bf11cc07 §4.3): Knowledge (strategies, domains, lessons) is the first section and
@@ -21,6 +23,7 @@ const SECTIONS = ["knowledge", "topics", "documents", "artifacts", "links", "tic
 type Section = (typeof SECTIONS)[number];
 
 export function LibraryPage(): React.JSX.Element {
+  const topicsWaiting = useAttention().counts.topics; // S20: the Topics hop of the attention trail
   const { section = "tickets" } = useParams();
   const active = (SECTIONS.includes(section as Section) ? section : "tickets") as Section;
   const [params] = useSearchParams();
@@ -37,6 +40,7 @@ export function LibraryPage(): React.JSX.Element {
             className={({ isActive }) => `${styles.subnavItem} ${isActive ? styles.subnavActive : ""}`}
           >
             {s[0].toUpperCase() + s.slice(1)}
+            {s === "topics" ? <> <AttentionDot count={topicsWaiting} /></> : null}
           </NavLink>
         ))}
       </nav>

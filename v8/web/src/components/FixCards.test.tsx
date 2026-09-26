@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { http, HttpResponse } from "msw";
 import { server } from "../test/setup";
 import { FixCards } from "./FixCards";
+import { attentionHandler, without } from "../test/attentionFixture";
 import type { FixProposal } from "../api/endpoints";
 
 // S19 c-190f5c6276: a proposed fix is an admin approval card showing the exact action; Approve and Reject
@@ -95,5 +96,23 @@ describe("FixCards", () => {
     server.use(http.get("/v1/fixes", () => HttpResponse.json({ ok: true, value: [] })));
     const r2 = renderCards();
     await waitFor(() => expect(r2.container).toBeEmptyDOMElement());
+  });
+});
+
+// S20 attention trail: a fix waiting on the admin is the trail's last hop — marked, dotted, highlighted from #fix-<id>.
+describe("FixCards attention (S20)", () => {
+  it("marks the waiting fix and highlights it from its link; clears once decided", async () => {
+    trackCalls();
+    server.use(attentionHandler());
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={qc}><MemoryRouter initialEntries={["/library/topics/topic-h#fix-1"]}><FixCards topicId="topic-h" /></MemoryRouter></QueryClientProvider>);
+    const card = await screen.findByTestId("fix-card");
+    await waitFor(() => expect(card).toHaveAttribute("data-attention", "true"));
+    expect(card).toHaveAttribute("id", "fix-1");
+    expect(screen.getByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
+    await waitFor(() => expect(card).toHaveAttribute("data-highlight", "true"));
+    server.use(attentionHandler(without("fix-1")));
+    await qc.invalidateQueries({ queryKey: ["me"] });
+    await waitFor(() => expect(screen.getByTestId("fix-card")).not.toHaveAttribute("data-attention"));
   });
 });

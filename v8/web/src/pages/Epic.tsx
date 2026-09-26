@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link, useLocation } from "react-router";
+import { Link, useLocation, useSearchParams } from "react-router";
 import { useRouteId } from "../routeId";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getEpicPage, getEpicsSummary, getTicketsTable } from "../api/endpoints";
@@ -10,7 +10,9 @@ import { StatusChip } from "../components/StatusChip";
 import { ProcessStrip } from "../components/ProcessStrip";
 import { StatusControl } from "../components/StatusControl";
 import { GateOpenControl } from "../components/GateOpenControl";
-import { GateForm, useRetainedGates } from "../components/GateForm";
+import { GateForms, useRetainedGates } from "../components/GateForm";
+import { countWhere, pageItems, ticketCount, useAttention, type PageItem } from "../api/attention";
+import { AttentionDot, attentionMark } from "../components/AttentionDot";
 import { AssignControl } from "../components/AssignControl";
 import { AskRoleControl } from "../components/AskRole";
 import { SpawnArchitect } from "../components/SpawnArchitect";
@@ -76,6 +78,9 @@ export function EpicPage(): React.JSX.Element {
   const summary = useQuery({ queryKey: ["epics", "summary", "", ""], queryFn: () => getEpicsSummary() });
   // S22: before the early returns (a hook); keeps a gate answered elsewhere while its ruling is unsent.
   const gates = useRetainedGates((page.data?.answerable_gates ?? []).filter((g) => g.gate !== "design_signoff"));
+  // S20 attention trail: this epic's items (its own at their opener, its tickets' behind Work)
+  const here = pageItems(useAttention(), id);
+  const [params] = useSearchParams();
 
   if (page.isPending) return <p className={ui.empty}>Loading epic…</p>;
   if (page.isError)
@@ -96,11 +101,15 @@ export function EpicPage(): React.JSX.Element {
   const design = data.docs.find((d) => d.doc_type === "design") ?? null;
   const gloss = (k: string) => copyItem("epic", k).text;
 
+  const waitingGates = new Set(here.filter((i) => i.pageTab === "actions").map((i) => i.item.id));
+  const request = params.get("request");
+  const openKey = request && gates.some(({ gate: g }) => g.event_id === request) ? "answer-decision" : null;
   const actions: ActionItem[] = [
     { key: "change-status", label: "Change status", gloss: gloss("change-status"), copy: copyProps("epic", "change-status"),
       render: () => <StatusControl ticketId={id} currentStatus={epic.status as TicketStatus} /> },
     ...(gates.length ? [{ key: "answer-decision", label: "Answer a decision", count: gates.length, gloss: gloss("answer-decision"), copy: copyProps("epic", "answer-decision"),
-      render: () => <>{gates.map(({ gate: g, closed, onDismiss }) => <GateForm key={`${g.ticket_id}:${g.gate}`} gate={g} closed={closed} onDismiss={onDismiss} />)}</> } as ActionItem] : []),
+      attention: countWhere(here, "actions", "decisions"),
+      render: () => <GateForms gates={gates} waiting={waitingGates} /> } as ActionItem] : []),
     { key: "raise-decision", label: "Raise a decision", gloss: gloss("raise-decision"), copy: copyProps("epic", "raise-decision"),
       render: () => <GateOpenControl ticketId={id} /> },
     { key: "assign-spawn", label: "Assign or spawn a seat", gloss: gloss("assign-spawn"), copy: copyProps("epic", "assign-spawn"),
@@ -147,7 +156,7 @@ export function EpicPage(): React.JSX.Element {
         <ProcessStrip status={epic.status} ariaLabel="Epic process" />
       </section>
       <OverviewTab epicId={id} storyCount={stories.length} totals={totals} openGates={data.open_gates.length} docs={data.docs} knowledge={data.knowledge ?? []} criteria={data.criteria} />
-      <WorkTab epicId={id} epic={epic} stories={stories} />
+      <WorkTab epicId={id} epic={epic} stories={stories} here={here} />
     </div>
   );
 
@@ -170,7 +179,7 @@ export function EpicPage(): React.JSX.Element {
         reviewRequested={data.answerable_gates.some((g) => g.gate === "design_signoff") || undefined}
         architect={data.architect ?? null}
         workflow={data.workflow ?? null}
-        actions={<ActionsMenu items={actions} subject={heading} />}
+        actions={<ActionsMenu items={actions} subject={heading} openKey={openKey} />}
         work={work}
       />
       <Conversation ticketId={id} history={history} order={order} viewer={identity()}
@@ -273,7 +282,7 @@ function OverviewTab({ epicId, storyCount, totals, openGates, docs, knowledge, c
   );
 }
 
-function WorkTab({ epicId, epic, stories }: { epicId: string; epic: EpicTreeNode; stories: EpicTreeNode[] }): React.JSX.Element {
+function WorkTab({ epicId, epic, stories, here }: { epicId: string; epic: EpicTreeNode; stories: EpicTreeNode[]; here: PageItem[] }): React.JSX.Element {
   const [status, setStatus] = useState("");
   const [workType, setWorkType] = useState("");
   const [assignee, setAssignee] = useState("");
@@ -326,7 +335,7 @@ function WorkTab({ epicId, epic, stories }: { epicId: string; epic: EpicTreeNode
         </div>
         {stories.filter(match).length === 0 && filtered.length === 0
           ? <p className={ui.empty}>No tickets match these filters.</p>
-          : stories.map((s) => <TreeNode key={s.id} node={s} match={match} depth={0} />)}
+          : stories.map((s) => <TreeNode key={s.id} node={s} match={match} depth={0} here={here} />)}
       </div>
 
       <div className={styles.kanban} data-testid="kanban">
@@ -335,12 +344,16 @@ function WorkTab({ epicId, epic, stories }: { epicId: string; epic: EpicTreeNode
           return (
             <div key={label} className={styles.kanbanCol}>
               <div className={styles.kanbanHead}>{label} <span className={styles.kanbanCount}>{cards.length}</span></div>
-              {cards.map((n) => (
-                <Link key={n.id} to={`/ticket/${encodeURIComponent(n.id)}`} className={styles.kanbanCard}>
-                  <span className={styles.kanbanTitle}>{n.title}</span>
-                  <span className={ui.idMono}>{n.id}</span>
-                </Link>
-              ))}
+              {cards.map((n) => {
+                const dots = ticketCount(here, n.id);
+                return (
+                  <Link key={n.id} to={`/ticket/${encodeURIComponent(n.id)}`} className={`${styles.kanbanCard} ${dots ? attentionMark : ""}`}
+                    data-attention={dots ? "true" : undefined}>
+                    <span className={styles.kanbanTitle}>{n.title} <AttentionDot count={dots} /></span>
+                    <span className={ui.idMono}>{n.id}</span>
+                  </Link>
+                );
+              })}
             </div>
           );
         })}
@@ -349,16 +362,18 @@ function WorkTab({ epicId, epic, stories }: { epicId: string; epic: EpicTreeNode
   );
 }
 
-function TreeNode({ node, match, depth }: { node: EpicTreeNode; match: (n: EpicTreeNode) => boolean; depth: number }): React.JSX.Element | null {
+function TreeNode({ node, match, depth, here }: { node: EpicTreeNode; match: (n: EpicTreeNode) => boolean; depth: number; here: PageItem[] }): React.JSX.Element | null {
   const selfShown = match(node);
-  const kids = node.children.map((k) => <TreeNode key={k.id} node={k} match={match} depth={depth + 1} />).filter(Boolean);
+  const kids = node.children.map((k) => <TreeNode key={k.id} node={k} match={match} depth={depth + 1} here={here} />).filter(Boolean);
+  const dots = ticketCount(here, node.id);
   if (!selfShown && kids.length === 0) return null;
   return (
     <>
       {selfShown ? (
-        <div className={styles.treeRow} style={{ paddingLeft: 16 + depth * 20 }} data-testid="work-row">
+        <div className={`${styles.treeRow} ${dots ? attentionMark : ""}`} style={{ paddingLeft: 16 + depth * 20 }} data-testid="work-row"
+          id={`row-${node.id}`} data-attention={dots ? "true" : undefined}>
           <Link to={`/ticket/${encodeURIComponent(node.id)}`} className={styles.treeLink}>
-            <span className={styles.treeTitle}>{node.title}</span>
+            <span className={styles.treeTitle}>{node.title} <AttentionDot count={dots} /></span>
             <span className={styles.treeId}>{node.id}</span>
           </Link>
           <span className={styles.treeRole}>{roleOf(node.assignee)}</span>

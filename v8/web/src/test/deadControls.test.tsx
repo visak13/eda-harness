@@ -12,6 +12,7 @@ import { server } from "./setup";
 import { KNOWLEDGE_DIFF, KNOWLEDGE_VIEW, MODEL_CATALOG } from "./handlers";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { appRoutes } from "../routes";
+import { ATTENTION } from "./attentionFixture";
 
 // ------------------------------------------------------------------ the linter
 
@@ -194,23 +195,6 @@ const SEATS = {
 };
 const CAPS = { resume_parked: true, resume_closed: true, park: true, spawn: true };
 
-const SIGNOFF = {
-  criterion: CRITERION,
-  ticket: { id: "s-1", title: "Build the epic page", epic_id: "epic-1", epic_title: "Upgrade the board UI", assignee: "engineer.s-1" },
-  doc: { id: "d-1", title: "The design", doc_type: "report", version: 2 },
-  excerpt: "excerpt",
-};
-const QUESTION = {
-  id: "m-q1", ticket_id: "s-1", created_by: "engineer.s-1", to: "owner", kind: "question", text: "which theme?",
-  from_role: "engineer", asker: { type: "agent", role: "engineer", seat_state: "alive", note: "its shell is alive" },
-};
-const DECISIONS = {
-  signoffs: [SIGNOFF],
-  questions: [QUESTION],
-  gates: [GATE],
-  counts: { signoffs: 1, questions: 1, gates: 1 },
-};
-
 const LIBRARY = {
   docs: [DOC],
   artifacts: [
@@ -246,12 +230,10 @@ function installBoard(): void {
   };
   server.use(
     http.get("/v1/whoami", () => ok({ participant: { id: "owner", handle: "owner", role: "owner" }, tickets: [] })),
-    http.get("/v1/me/summary", () => ok({ decisions: 3, epics: 1, seats: 3, library: 4 })),
-    http.get("/v1/me/decisions", () => ok(DECISIONS)),
-    http.get("/v1/me/decisions/resolved", () => ok([])),
+    // S20: every surface walks with dots on (epic-1 / s-1 / c-1 match this board's fixtures)
+    http.get("/v1/me/attention", () => ok(ATTENTION)),
     http.get("/v1/me/people", () => ok([{ id: "owner", handle: "owner", role: "owner" }])),
     http.get("/v1/me/conversations", () => ok([])),
-    http.get("/v1/me/replies", () => ok([])),
     http.get("/v1/me/avatar", () => ok({ avatar_id: null })),
     http.get("/v1/epics/summary", () => ok([EPIC_ROW])),
     http.get("/v1/epics/epic-1/page", () => ok(EPIC_PAGE)),
@@ -379,9 +361,11 @@ describe("findDeadControls (self-test)", () => {
 // ------------------------------------------------------------------ the walk
 
 describe("dead-control lint over the real route table (human #26)", () => {
-  it("/me (Decisions) — and the historical proof cases New epic / Find are live", async () => {
-    await walk("/me");
-    await screen.findByTestId("featured-signoff");
+  it("/epics with the Waiting on you popover open — and the historical proof case Find is live", async () => {
+    await walk("/epics");
+    await screen.findByTestId("epic-list");
+    (await screen.findByTestId("waiting-open")).click();
+    await screen.findAllByTestId("waiting-row");
     await settle();
     expect(screen.getByTestId("find-open")).toBeInTheDocument();
     const dead = findDeadControls(document.body);
@@ -409,6 +393,10 @@ describe("dead-control lint over the real route table (human #26)", () => {
   it("/ticket/s-1", async () => {
     await walk("/ticket/s-1");
     await screen.findByText("Build the epic page", { selector: "h1" });
+    await settle();
+    // S20: the waiting sign-off's ruling control (inside Work) is a live control on the trail's last hop
+    (await screen.findByTestId("work-work")).click();
+    await screen.findByTestId("review-signoff");
     await settle();
     expectNoDead();
   });

@@ -1,19 +1,22 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { useRouteId } from "../routeId";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getTicketPage, finalizeArtifacts } from "../api/endpoints";
-import type { MessageView, TicketStatus, UploadedArtifact } from "../api/types";
+import type { CriterionView, MessageView, SignoffRow, TicketStatus, TicketPage as TicketPageData, UploadedArtifact } from "../api/types";
 import { ProcessStrip, nextActionFor } from "../components/ProcessStrip";
 import { StatusControl } from "../components/StatusControl";
 import { AddCriterion } from "../components/CriterionControls";
 import { AssignControl } from "../components/AssignControl";
 import { SpawnSeatForm } from "../components/SpawnSeatForm";
 import { GateOpenControl } from "../components/GateOpenControl";
-import { GateForm, useRetainedGates } from "../components/GateForm";
+import { GateForms, useRetainedGates } from "../components/GateForm";
+import { countWhere, pageItems, useAttention } from "../api/attention";
+import { attentionMark } from "../components/AttentionDot";
 import { LinkDocControl, AskRoleControl } from "../components/TicketAsks";
 import { Term } from "../components/Term";
 import { CriterionCard } from "../components/CriterionCard";
+import { RulingDrawer } from "../components/RulingDrawer";
 import { Composer } from "../components/Composer";
 import { ExpandableComposer } from "../components/ExpandableComposer";
 import { copyItem, copyProps } from "../copy/pages";
@@ -72,6 +75,22 @@ export function TicketPage(): React.JSX.Element {
   const history = useThreadHistory(id, page.data);
   // S22: before the early returns (a hook); keeps a gate answered elsewhere while its ruling is unsent.
   const gates = useRetainedGates((page.data?.open_gates ?? []).filter((g) => g.gate !== "design_signoff"));
+  // S20 attention trail: this ticket's items, each at its opener (a quick task's page is its own scope)
+  const here = pageItems(useAttention(), id);
+  // S20: an owner sign-off waiting on the viewer ends its trail here — the criterion is marked, and it (or its #c-
+  // deep link, once) opens the ruling drawer: the evidence frozen at its version beside the verdict (the home the
+  // Decisions page's sign-offs moved to, architect m-e972777a3d).
+  const [ruling, setRuling] = useState<string | null>(null);
+  const rulingOpener = useRef<HTMLElement | null>(null);
+  const landed = useRef<string | null>(null);
+  const target = hash.startsWith("#c-") ? decodeURIComponent(hash.slice(1)) : null;
+  const signoffWaiting = here.some((i) => i.kind === "signoff" && i.item.id === target);
+  useEffect(() => {
+    if (!target || !signoffWaiting || landed.current === target || !page.data) return;
+    landed.current = target;
+    document.getElementById(target)?.scrollIntoView?.({ block: "center" });
+    setRuling(target);
+  }, [target, signoffWaiting, page.data]);
 
   if (page.isPending || isEpic) return <p className={ui.empty}>Loading ticket…</p>;
   if (page.isError)
@@ -85,13 +104,18 @@ export function TicketPage(): React.JSX.Element {
   const seat = assignee.handle ?? ticket.assignee ?? null;
   const gloss = (k: string) => copyItem("ticket", k).text;
 
+  const waitingGates = new Set(here.filter((i) => i.pageTab === "actions").map((i) => i.item.id));
+  const waitingCriteria = new Set(here.filter((i) => i.kind === "signoff").map((i) => i.item.id));
+  const request = new URLSearchParams(search).get("request");
+  const openKey = request && gates.some(({ gate: g }) => g.event_id === request) ? "answer-decision" : null;
   const actions: ActionItem[] = [
     { key: "change-status", label: "Change status", gloss: gloss("process-strip"), copy: copyProps("ticket", "process-strip"),
       render: () => <StatusControl ticketId={id} currentStatus={ticket.status as TicketStatus} /> },
     { key: "assign-spawn", label: "Assign or spawn a seat", gloss: copyItem("epic", "assign-spawn").text,
       render: () => <AssignControl ticketId={id} currentAssignee={seat} /> },
     ...(gates.length ? [{ key: "answer-decision", label: "Answer a decision", count: gates.length, gloss: copyItem("epic", "answer-decision").text,
-      render: () => <>{gates.map(({ gate: g, closed, onDismiss }) => <GateForm key={`${g.ticket_id}:${g.gate}`} gate={g} closed={closed} onDismiss={onDismiss} />)}</> } as ActionItem] : []),
+      attention: countWhere(here, "actions", "decisions"),
+      render: () => <GateForms gates={gates} waiting={waitingGates} /> } as ActionItem] : []),
     ...(ticket.kind === "story" ? [{ key: "spawn-seat", label: "Spawn seat", gloss: copyItem("ticket", "spawn-seat").text,
       render: () => <SpawnSeatForm ticketId={id} roles={["engineer", "qa", "adversary"]} /> } as ActionItem] : []),
     { key: "models", label: "Models…", gloss: "each role's model and effort on this ticket's epic; switch them for the seats spawned next.",
@@ -144,9 +168,15 @@ export function TicketPage(): React.JSX.Element {
         ) : (
           <div className={styles.criteria}>
             {criteria.map((c) => (
-              <CriterionCard key={c.id} criterion={c} ticketId={id}
-                ruling={c.verdict === "pending" && c.evidence_ref ? { evidenceVersion: c.evidence_version ?? null } : undefined}
-                canReword={c.verdict === "pending"} onOpenEvidence={(docId) => drawer.openDoc(docId)} />
+              <div key={c.id} id={c.id} className={waitingCriteria.has(c.id) ? attentionMark : undefined}
+                data-attention={waitingCriteria.has(c.id) ? "true" : undefined}>
+                {waitingCriteria.has(c.id) && c.evidence_ref ? <button type="button" className={ui.button}
+                  data-testid="review-signoff" onClick={(e) => { rulingOpener.current = e.currentTarget; setRuling(c.id); }}>
+                  Review the evidence and rule</button> : null}
+                <CriterionCard criterion={c} ticketId={id}
+                  ruling={c.verdict === "pending" && c.evidence_ref ? { evidenceVersion: c.evidence_version ?? null } : undefined}
+                  canReword={c.verdict === "pending"} onOpenEvidence={(docId) => drawer.openDoc(docId)} />
+              </div>
             ))}
           </div>
         )}
@@ -202,12 +232,27 @@ export function TicketPage(): React.JSX.Element {
       <WorkHeader
         ticketId={id} kind="ticket" title={ticket.title} purpose={ticket.description} status={ticket.status}
         assignee={seat} designRef={ticket.design_ref} epic={{ id: epic_id, title: page.data.epic_title ?? epic_id }}
-        actions={<ActionsMenu items={actions} subject={ticket.title} />} work={work}
+        actions={<ActionsMenu items={actions} subject={ticket.title} openKey={openKey} />} work={work}
+        onRuleDoc={(docId) => { const c = criteria.find((x) => waitingCriteria.has(x.id) && x.evidence_ref === docId); if (c) setRuling(c.id); else drawer.openDoc(docId); }}
       />
       <Conversation ticketId={id} history={history} order={order} viewer={as}
         onToggleOrder={() => setOrder((o) => (o === "newest" ? "oldest" : "newest"))}
         onReply={(m: MessageView) => setReply({ id: m.id, by: m.by })}
         composer={composer} />
+      <RulingDrawer signoff={rulingFor(page.data, criteria.find((c) => c.id === ruling), seat)}
+        onClose={() => setRuling(null)} returnFocusTo={rulingOpener.current} />
     </div>
   );
+}
+
+/** The ruling drawer's row for one of this ticket's criteria: its evidence doc at the version the evidence named. */
+export function rulingFor(data: TicketPageData, c: CriterionView | undefined, assignee: string | null): SignoffRow | null {
+  if (!c?.evidence_ref) return null;
+  const d = data.docs.find((x) => x.id === c.evidence_ref);
+  return {
+    criterion: c,
+    ticket: { id: data.ticket.id, title: data.ticket.title, epic_id: data.epic_id, epic_title: data.epic_title ?? data.epic_id, assignee },
+    doc: { id: c.evidence_ref, title: d?.title ?? c.evidence_ref, doc_type: d?.doc_type ?? "report", version: c.evidence_version ?? d?.version ?? 1 },
+    excerpt: "",
+  };
 }

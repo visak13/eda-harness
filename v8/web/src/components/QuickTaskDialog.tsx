@@ -108,7 +108,7 @@ export function QuickTaskDialog({ open, onClose }: { open: boolean; onClose: () 
         ) : null}
         <p className={styles.preview} data-testid="quick-task-preview">
           {canSpawn
-            ? `Opens a quick task with your words verbatim, starts an engineer on ${model ? modelLabel(model) : "the default engineer model"} at effort ${effort} and assigns it. The engineer writes a plan and one or two criteria you check; it lands in Needs you when handed off.`
+            ? `Opens a quick task with your words verbatim, starts an engineer on ${model ? modelLabel(model) : "the default engineer model"} at effort ${effort} and assigns it. The engineer writes a plan and one or two criteria you check; a dot marks it for you when handed off.`
             : `The pool cannot start a seat from here${caps?.reason ? ` (${caps.reason})` : ""}, so no quick task is opened.`}
         </p>
         {err ? <p className={ui.banner} role="alert" data-testid="quick-task-error">{err.hint ?? err.message}</p> : null}

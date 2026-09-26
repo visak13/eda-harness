@@ -8,8 +8,6 @@ import type {
   QuoteIn,
   ActivityDay,
   ConversationRow,
-  ReplyRow,
-  DecisionsHome,
   DocDiff,
   DocHtml,
   DocRecord,
@@ -20,7 +18,6 @@ import type {
   MessageKind,
   MessageSent,
   PersonRow,
-  ResolvedRow,
   ResolveResult,
   TicketPage,
   ThreadPage,
@@ -82,12 +79,9 @@ export const getActivity = (limit?: number) => api<ActivityDay[]>(`/v1/activity$
 export const getLibrary = (epic?: string | null) => api<Library>(`/v1/library${qs({ epic })}`);
 
 // ------------------------------------------------------------------ Decisions home reads
-export const getDecisions = () => api<DecisionsHome>("/v1/me/decisions");
-export const getResolved = (limit?: number) => api<ResolvedRow[]>(`/v1/me/decisions/resolved${qs({ limit })}`);
 export const getPeople = () => api<PersonRow[]>("/v1/me/people");
 export const getConversations = () => api<ConversationRow[]>("/v1/me/conversations");
 /** GET /v1/me/replies — replies to the viewer with the words they answer (human report m-3d3a36455f). */
-export const getReplies = (limit?: number) => api<ReplyRow[]>(`/v1/me/replies${qs({ limit })}`);
 
 // ------------------------------------------------------------------ writes
 

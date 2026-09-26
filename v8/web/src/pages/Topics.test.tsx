@@ -4,6 +4,7 @@ import { server } from "../test/setup";
 import { http, HttpResponse, okJson, renderRoute } from "./testUtils";
 import { LibraryPage } from "./Library";
 import { TopicPage } from "./TopicPage";
+import { attentionHandler } from "../test/attentionFixture";
 import type { TopicPage as TopicPageData, TopicRow } from "../api/types";
 
 // S-SME-SURFACE (s-698224fca8) c-df07f026e7 / c-bc73017057: Library topics — the list beside Knowledge, the
@@ -150,5 +151,36 @@ describe("Library topics", () => {
     fireEvent.click(within(screen.getByTestId("topic-doc")).getByRole("button", { name: "pytest patterns" }));
     expect(await screen.findByText(/fixtures \[required\]/)).toBeInTheDocument();
     expect(asked).toBe("topic-1/strategyhl-9");
+  });
+});
+
+// S20 attention trail: Library → Topics → the topic row (dot + reason) → the question in its thread (marked, and
+// highlighted when the link names it).
+describe("Library topics attention (S20)", () => {
+  it("marks the waiting topic row with its reason", async () => {
+    server.use(attentionHandler(), http.get("/v1/topics", () => okJson([ROW, { ...ROW, id: "topic-2", title: "Quiet topic" }])));
+    renderRoute("/library/topics", "/library/:section", <LibraryPage />);
+    await waitFor(() => expect(screen.getAllByTestId("topic-row")).toHaveLength(2));
+    // the hop before the row: Library's Topics tab carries the topics count
+    expect(within(screen.getByRole("link", { name: /^Topics/ })).getByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
+    const [waiting, quiet] = screen.getAllByTestId("topic-row");
+    expect(waiting).toHaveAttribute("data-attention", "true");
+    expect(within(waiting).getByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
+    expect(within(waiting).getByTestId("attention-reason")).toHaveTextContent("Waiting on you: 1 question");
+    expect(quiet).not.toHaveAttribute("data-attention");
+  });
+
+  it("marks the waiting question in the thread and highlights it from its #m- link", async () => {
+    server.use(attentionHandler());
+    const ask = { id: "m-topicq", created_at: "2026-09-24T10:08:00Z", created_by: "sme.topic-1", to: "owner", kind: "question", text: "which runner?",
+      reply_to: null, from: { id: "sme.topic-1", role: "sme", type: "agent" } };
+    server.use(http.get("/v1/topics/:id", () => okJson({ ...PAGE, thread: [...PAGE.thread, ask] })));
+    renderRoute("/library/topics/topic-1#m-topicq", "/library/topics/:id", <TopicPage />);
+    await screen.findByText("which runner?");
+    const li = document.getElementById("m-topicq")!;
+    await waitFor(() => expect(li).toHaveAttribute("data-attention", "true"));
+    expect(within(li).getByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
+    await waitFor(() => expect(li).toHaveAttribute("data-highlight", "true"));
+    expect(document.getElementById("m-1")).not.toHaveAttribute("data-attention");
   });
 });

@@ -22,6 +22,9 @@ import { CommandPalette } from "./CommandPalette";
 import { CopyDescriptions } from "./CopyDescriptions";
 import { PendingNavigation } from "./PendingNavigation";
 import { NotificationCenter } from "./NotificationCenter";
+import { useAttention } from "../api/attention";
+import { AttentionDot } from "./AttentionDot";
+import { WaitingOnYou } from "./WaitingOnYou";
 import { useViewerFlag } from "./viewerPrefs";
 import { copyProps, pageKeyFor } from "../copy/pages";
 import styles from "./AppShell.module.css";
@@ -31,15 +34,11 @@ interface WhoAmI {
   /** S6: an admin of this install (the admin flag, or the init human) — the Admin rail entry */
   admin?: boolean;
 }
-interface Summary {
-  decisions?: number;
-  epics?: number;
-  seats?: number;
-  library?: number;
-}
 
-// The rail per revision3-clean (design-a2e5369133 §AppShell): brand, Epics, Seats, a divider,
-// Needs you with its coral count, the CURRENT EPIC block, then (lower) Find and the account row.
+// The rail per revision3-clean (design-a2e5369133 §AppShell): brand, Epics, Seats, a divider, Waiting on you (S20:
+// the attention count, opening a popover — the Needs you page is gone), the CURRENT EPIC block, then (lower) Find
+// and the account row. S20 (design-e963c656f5 §4.18): Epics and Library carry the attention dot with their count,
+// the first hop of the trail; every count comes from GET /v1/me/attention (useAttention).
 // No Usage entry (S19, owner m-845b58f25c "only show what works"): /v1/me/usage returns no data on
 // this board (no EDP8_USAGE_CONFIG), so the rail button + widget were removed; the endpoint stays. Notifications are NOT a rail item (finding 6): Enable/Test live on
 // Settings → Notifications (S17), the worker/authorization run in the always-mounted provider.
@@ -48,16 +47,16 @@ interface Summary {
 // top-right button (S17); live refresh applies in place (S19 — no "N new" banner).
 const NAV = [
   { to: "/epics", label: "Epics", icon: "epics", count: "epics" as const, copy: "epics" },
-  { to: "/seats", label: "Seats", icon: "seats", count: "seats" as const, copy: "seats" },
-  // S-LIBRARY (owner m-5b3db5cb0d "sme tab? sure"): knowledge first; the records tabs sit beside it
-  { to: "/library/knowledge", label: "Library", icon: "library", count: null, copy: "library" },
+  { to: "/seats", label: "Seats", icon: "seats", count: null, copy: "seats" },
+  // S-LIBRARY (owner m-5b3db5cb0d "sme tab? sure"): knowledge first; the records tabs sit beside it.
+  // S20: its dot counts the topics (and help threads) waiting on the viewer.
+  { to: "/library/knowledge", label: "Library", icon: "library", count: "topics" as const, copy: "library" },
   // epic-91fcd3b370 S3: the Code tab (code-server embedded full-bleed)
   { to: "/code", label: "Code", icon: "code", count: null, copy: "code" },
 ] as const;
 
 // Human #38 (m-4e303d7b27, 2026-09-11): the sidebar highlight is by ROUTE FAMILY, not by exact path.
-export function navFamily(pathname: string, search = ""): "/me" | "/epics" | "/seats" | "/library/knowledge" | "/settings" | "/code" | "/admin" | null {
-  if (pathname === "/me" || pathname.startsWith("/me/")) return "/me";
+export function navFamily(pathname: string, search = ""): "/epics" | "/seats" | "/library/knowledge" | "/settings" | "/code" | "/admin" | null {
   if (/^\/(epics|epic|ticket|records)(\/|$)/.test(pathname)) return "/epics";
   if (/^\/seats(\/|$)/.test(pathname)) return "/seats";
   // S19 D11: a design opened in its own tab from a review belongs to the source's (Epics) family.
@@ -124,8 +123,10 @@ function AppShellChrome(): React.JSX.Element {
   const [helpOpen, setHelpOpen] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
   const activeFamily = navFamily(location.pathname, location.search);
-  // S-UI: Needs you opens the Decisions page on the epic in view
   const currentEpicId = useCurrentEpicId();
+  const [waitingOpen, setWaitingOpen] = useState(false);
+  const waitingRef = useRef<HTMLButtonElement>(null);
+  const closeWaiting = useCallback(() => setWaitingOpen(false), []);
   const findBtnRef = useRef<HTMLButtonElement>(null);
   const closeFind = useCallback(() => {
     setFindOpen(false);
@@ -169,16 +170,16 @@ function AppShellChrome(): React.JSX.Element {
     window.addEventListener(SIGNED_OUT_EVENT, onSignedOut);
     return () => window.removeEventListener(SIGNED_OUT_EVENT, onSignedOut);
   }, [qc]);
-  const summary = useQuery({ queryKey: ["me", "summary"], queryFn: () => api<Summary>("/v1/me/summary"), retry: false });
+  const attention = useAttention();
 
   const handle = whoami.data?.participant.handle ?? as;
   const role = whoami.data?.participant.role ?? "";
   // t-3e246b5e32 (e): an expert reaches only its Library topic — the board answers its whoami with 403 (no
-  // other signed-in participant gets that), so the rail hides what would 403: Epics, Seats and Needs you.
+  // other signed-in participant gets that), so the rail hides what would 403: Epics, Seats and Waiting on you.
   const expert = role === "expert" || (whoami.error instanceof BoardApiError && whoami.error.status === 403);
   const nav = expert ? NAV.filter((item) => item.to === "/library/knowledge") : NAV;
   const admin = Boolean(whoami.data?.admin);
-  const counts = summary.data;
+  const counts = attention.counts;
 
   // Design §4.1: a 401 from the identity probe renders the inline identity panel.
   const authError = whoami.error instanceof BoardApiError && whoami.error.status === 401 ? whoami.error : null;
@@ -221,7 +222,7 @@ function AppShellChrome(): React.JSX.Element {
               {...copyProps("sidebar", item.copy)}>
               <span className={styles.icon} data-nav-icon><Icon name={item.icon} size={18} /></span>
               <span className={styles.navLabel}>{item.label}</span>
-              {item.count && counts && typeof counts[item.count] === "number" ? <span className={styles.count}>{counts[item.count]}</span> : null}
+              {item.count ? <span className={styles.dotSlot}><AttentionDot count={counts[item.count]} /></span> : null}
             </Link>
           ))}
           {admin ? (
@@ -229,16 +230,23 @@ function AppShellChrome(): React.JSX.Element {
               aria-current={activeFamily === "/admin" ? "page" : undefined} {...copyProps("sidebar", "admin")}>
               <span className={styles.icon} data-nav-icon><Icon name="preferences" size={18} /></span>
               <span className={styles.navLabel}>Admin</span>
+              <span className={styles.dotSlot}><AttentionDot count={counts.admin} /></span>
             </Link>
           ) : null}
           {expert ? null : (<>
           <div className={styles.divider} />
-          <Link to={currentEpicId ? `/me?epic=${encodeURIComponent(currentEpicId)}` : "/me"} className={`${styles.navItem} ${activeFamily === "/me" ? styles.active : ""}`}
-            aria-current={activeFamily === "/me" ? "page" : undefined} {...copyProps("sidebar", "decisions")}>
+          <button ref={waitingRef} type="button" className={styles.navItem} data-testid="waiting-open"
+            aria-haspopup="dialog" aria-expanded={waitingOpen} onClick={() => setWaitingOpen((o) => !o)}
+            {...copyProps("sidebar", "waiting")}>
             <span className={styles.icon} data-nav-icon><Icon name="warning" size={18} /></span>
-            <span className={styles.navLabel}>Needs you</span>
-            {counts && typeof counts.decisions === "number" ? <span className={`${styles.count} ${styles.coral}`}>{counts.decisions}</span> : null}
-          </Link>
+            <span className={styles.navLabel}>Waiting on you</span>
+            <span className={styles.dotSlot}><AttentionDot count={counts.total} /></span>
+          </button>
+          {waitingOpen ? (
+            <AnchoredPanel anchor={waitingRef} label="Waiting on you" heading="Waiting on you" onClose={closeWaiting} width={380} maxHeight={560}>
+              <WaitingOnYou attention={attention} onPick={() => { setWaitingOpen(false); setMenuOpen(false); }} />
+            </AnchoredPanel>
+          ) : null}
           <CurrentEpic epicId={currentEpicId} />
           </>)}
         </nav>
@@ -249,6 +257,7 @@ function AppShellChrome(): React.JSX.Element {
               aria-haspopup="dialog" aria-expanded={askOpen} onClick={() => setAskOpen((o) => !o)} data-testid="ask-help">
               <Icon name="lifebuoy" size={18} />
               <span className={styles.navLabel}>Ask for help</span>
+              <span className={styles.dotSlot}><AttentionDot count={counts.help} /></span>
             </button>
           )}
           {askOpen ? (

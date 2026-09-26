@@ -13,8 +13,8 @@
 .navItem:focus-visible, .railBtn:focus-visible, .account:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
 .navItem.active { background: var(--accentwash); border-color: var(--strongline); box-shadow: 2px 2px 0 var(--strongline); font-weight: 650; }
 .icon { width: 18px; height: 18px; display: inline-flex; flex: none; color: inherit; }
-.count { margin-left: auto; border: 1px solid var(--strongline); border-radius: 50%; min-width: 25px; height: 25px; display: inline-grid; place-items: center; font-size: 13px; background: var(--panel); }
-.count.coral { background: var(--accentwash); color: var(--accentink); }
+.dotSlot { margin-left: auto; display: inline-flex; }
+.dotSlot:empty { display: none; }
 .divider { height: 1px; background: var(--line); margin: 8px 0; }
 .current { font-size: 13px; font-weight: 600; color: var(--muted); padding: 12px 8px; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .currentLabel { text-transform: uppercase; letter-spacing: 0.5px; font-size: 12px; }
@@ -61,7 +61,7 @@
   .shell[data-rail="collapsed"] .key { display: none; }
   .shell[data-rail="collapsed"] .navItem,
   .shell[data-rail="collapsed"] .railBtn { justify-content: center; position: relative; padding: 7px 0; }
-  .shell[data-rail="collapsed"] .count { position: absolute; top: 1px; right: 1px; min-width: 18px; height: 18px; font-size: 11px; }
+  .shell[data-rail="collapsed"] .dotSlot { position: absolute; top: 1px; right: 1px; }
   .shell[data-rail="collapsed"] .account { justify-content: center; padding: 6px 0; }
 }
 

@@ -101,7 +101,9 @@ def _signoffs(board: Board, viewer: Participant) -> list[dict[str, Any]]:
         out.append(_place(board, t, ("design", "signoff") if design else ("files", "evidence"),
                           {"type": "criterion", "id": c.id, "doc": getattr(doc, "id", None)}, kind="signoff",
                           since=c.created_at.isoformat(), label=noun, noun=noun,
-                          query={"doc": doc.id} if doc is not None else None, anchor=c.id,
+                          # evidence: the ticket page opens its ruling drawer on #<criterion>; a design doc opens
+                          # in the Design drawer via ?doc
+                          query={"doc": doc.id} if design else None, anchor=c.id,
                           src=(c, t, doc)))
     return out
 

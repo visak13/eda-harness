@@ -8,7 +8,6 @@ import { JoinPage } from "./pages/admin/Join";
 import { SetupPage } from "./pages/admin/Setup";
 import {
   ArtifactPage,
-  DecisionsPage,
   DocPage,
   EpicPage,
   EpicsPage,
@@ -34,8 +33,10 @@ export const appRoutes: RouteObject[] = [
     path: "/",
     element: <AppShell />,
     children: [
-      { index: true, element: <RedirectTo to="/me" /> },
-      { path: "me", element: <DecisionsPage /> },
+      // S20 (design-e963c656f5 §4.18): the Needs you page is gone; what waits on you is a trail of dots from the
+      // rail's Waiting on you and the Epics list. Old /me links land on the Epics list.
+      { index: true, element: <RedirectTo to="/epics" /> },
+      { path: "me", element: <RedirectTo to="/epics" /> },
       { path: "epics", element: <EpicsPage /> },
       { path: "epic/:id", element: <EpicPage /> },
       { path: "ticket/:id", element: <TicketPage /> },

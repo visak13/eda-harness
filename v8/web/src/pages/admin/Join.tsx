@@ -33,7 +33,7 @@ export function JoinPage(): React.JSX.Element {
             <h2 className={styles.cardTitle}>You are signed in as {handle}</h2>
             <p className={styles.fieldDoc}>This browser tab holds your session; closing every board tab signs you out. The invite link no longer works, so keep this tab or ask an admin for a new link.</p>
             <div className={styles.row}>
-              <Link className={`${ui.button} ${ui.buttonPrimary}`} to="/me" data-testid="join-open-board">Open the board</Link>
+              <Link className={`${ui.button} ${ui.buttonPrimary}`} to="/epics" data-testid="join-open-board">Open the board</Link>
               <Link className={ui.button} to="/settings">Your settings</Link>
             </div>
             <p className={styles.fieldDoc}>Using VS Code? The same invite also had a VS Code sign-in link; ask your admin for one if you did not get it.</p>

@@ -1,0 +1,12 @@
+/* S20 attention trail: one marker at every hop — a filled dot glyph plus the count, never colour alone (§4.18). */
+.dot {
+  display: inline-flex; align-items: center; gap: 3px; flex: none;
+  min-height: 20px; padding: 0 7px 0 5px; border-radius: 999px;
+  border: 1.5px solid var(--accentink); background: var(--accentwash); color: var(--accentink);
+  font-size: 12px; font-weight: 700; line-height: 1; vertical-align: middle;
+}
+.dot::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accentink); }
+.bare { padding: 0 3px; min-height: 14px; }
+
+/* the element on the trail that holds an item: a row, an opener or the item itself */
+.mark { box-shadow: inset 3px 0 0 var(--accentink); background: var(--accentwash); }

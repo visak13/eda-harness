@@ -7,6 +7,7 @@ import { server } from "../test/setup";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { AppShell, isBleedRoute, navFamily } from "./AppShell";
 import { EpicsPage } from "../pages/Epics";
+import { ATTENTION, attentionHandler, without } from "../test/attentionFixture";
 
 function renderShell(initial = "/me", epicsBody: React.ReactNode = <div>epics body</div>) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -35,36 +36,67 @@ beforeEach(() => {
 });
 
 describe("AppShell", () => {
-  it("renders Epics, Seats, Library, Code and Needs you (one Library destination)", async () => {
-    renderShell("/me");
+  // S20 (design-e963c656f5 §4.18): the Needs you page is gone; "Waiting on you" is a rail button opening a popover.
+  it("renders Epics, Seats, Library, Code (one Library destination) and the Waiting on you button", async () => {
+    renderShell("/epics");
     const links = screen.getAllByRole("link");
-    expect(links.map((l) => l.textContent?.replace(/\d+$/, "").trim())).toEqual([
-      "Epics",
-      "Seats",
-      "Library",
-      "Code",
-      "Needs you",
-    ]);
+    expect(links.map((l) => l.textContent?.replace(/\d+$/, "").trim())).toEqual(["Epics", "Seats", "Library", "Code"]);
     // NavLink marks the active route with aria-current=page.
-    expect(screen.getByRole("link", { name: /Needs you/ })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: /Epics/ })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByTestId("waiting-open")).toHaveTextContent("Waiting on you");
+    expect(screen.queryByRole("link", { name: /Needs you/ })).toBeNull();
   });
 
-  it("renders nav counts when /v1/me/summary provides them", async () => {
-    server.use(
-      http.get("/v1/me/summary", () =>
-        HttpResponse.json({ ok: true, value: { decisions: 3, epics: 5, seats: 2, library: 9 } }),
-      ),
-    );
-    renderShell("/me");
-    expect(await screen.findByText("3")).toBeInTheDocument();
-    expect(screen.getByText("5")).toBeInTheDocument();
+  it("S20 rail: the attention counts sit on Epics, Library, Admin-free rail and Waiting on you, each with a dot and an aria-label", async () => {
+    server.use(attentionHandler());
+    renderShell("/epics");
+    const epics = screen.getByRole("link", { name: /^Epics/ });
+    expect(await within(epics).findByRole("img", { name: "needs your attention: 5" })).toBeInTheDocument();
+    expect(within(screen.getByRole("link", { name: /^Library/ })).getByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
+    expect(within(screen.getByRole("link", { name: /^Seats/ })).queryByRole("img")).toBeNull();
+    expect(within(screen.getByTestId("waiting-open")).getByRole("img", { name: "needs your attention: 8" })).toBeInTheDocument();
+    expect(within(screen.getByTestId("ask-help")).getByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
+    // never colour only: the dot carries a glyph and the count as text
+    expect(within(epics).getByRole("img").textContent).toMatch(/5/);
   });
 
-  it("works with no counts when summary is unavailable (G1a not landed)", async () => {
-    server.use(http.get("/v1/me/summary", () => HttpResponse.json({ ok: false, hint: "no route" }, { status: 404 })));
-    renderShell("/me");
-    // The shell still renders its nav; counts are simply absent.
-    expect(screen.getByRole("link", { name: /Needs you/ })).toBeInTheDocument();
+  it("S20 popover: one row per scope with its reason and trail link, plus Recent conversations", async () => {
+    server.use(attentionHandler(), http.get("/v1/me/conversations", () => HttpResponse.json({ ok: true, value: [
+      { ticket_id: "epic-1", title: "Galaxy site", epic_id: "epic-1", unread: true, last: { by: "architect", text: "shipped v2", at: "2026-09-27T00:00:00Z" } }] })));
+    renderShell("/epics");
+    const open = screen.getByTestId("waiting-open");
+    await within(open).findByRole("img", { name: "needs your attention: 8" });
+    fireEvent.click(open);
+    const panel = await screen.findByRole("dialog", { name: "Waiting on you" });
+    const rows = within(panel).getAllByTestId("waiting-row");
+    expect(rows).toHaveLength(ATTENTION.scopes.length);
+    expect(rows[0]).toHaveTextContent("Galaxy site");
+    expect(rows[0]).toHaveAttribute("href", "/epic/epic-1");
+    expect(within(rows[0]).getByTestId("waiting-reason")).toHaveTextContent("2 questions, 1 scope decision");
+    expect(within(rows[0]).getByRole("img", { name: "needs your attention: 5" })).toBeInTheDocument();
+    expect(within(panel).getByRole("link", { name: /Rendering/ })).toHaveAttribute("href", "/library/topics/topic-1");
+    expect(within(await within(panel).findByTestId("recent-conversations")).getByText("architect: shipped v2")).toBeInTheDocument();
+  });
+
+  it("S20 clearing: a dot leaves the rail once its item is answered (the next attention read)", async () => {
+    let value = ATTENTION;
+    server.use(http.get("/v1/me/attention", () => HttpResponse.json({ ok: true, value })));
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={qc}><ThemeProvider><MemoryRouter initialEntries={["/epics"]}><Routes>
+      <Route element={<AppShell />}><Route path="epics" element={<div />} /></Route></Routes></MemoryRouter></ThemeProvider></QueryClientProvider>);
+    const library = screen.getByRole("link", { name: /^Library/ });
+    await within(library).findByRole("img", { name: "needs your attention: 1" });
+    value = without("m-topicq");
+    await qc.invalidateQueries({ queryKey: ["me"] });
+    await waitFor(() => expect(within(library).queryByRole("img")).toBeNull());
+    expect(within(screen.getByTestId("waiting-open")).getByRole("img", { name: "needs your attention: 7" })).toBeInTheDocument();
+  });
+
+  it("works with no dots when the attention read is unavailable (an older board)", async () => {
+    server.use(http.get("/v1/me/attention", () => HttpResponse.json({ ok: false, hint: "no route" }, { status: 404 })));
+    renderShell("/epics");
+    expect(screen.getByRole("link", { name: /Epics/ })).toBeInTheDocument();
+    await waitFor(() => expect(document.querySelector("[data-attention-dot]")).toBeNull());
   });
 
   it("shows identity (as) on the account row; the whoami role sits under it once resolved", async () => {
@@ -88,17 +120,17 @@ describe("AppShell", () => {
     expect(await screen.findByTestId("identity-panel")).toBeInTheDocument();
     expect(screen.getByTestId("identity-hint")).toHaveTextContent("check your token");
     // The shell chrome is NOT rendered while identity is unresolved (no silent `as` fallback).
-    expect(screen.queryByRole("link", { name: /Needs you/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Epics/ })).not.toBeInTheDocument();
   });
 
-  it("hides Epics, Seats and Needs you for an expert (whoami answers 403) — t-3e246b5e32 (e)", async () => {
+  it("hides Epics, Seats and Waiting on you for an expert (whoami answers 403) — t-3e246b5e32 (e)", async () => {
     server.use(
       http.get("/v1/whoami", () =>
         HttpResponse.json({ ok: false, error: "expert 'dana' reaches only its Library topic" }, { status: 403 }),
       ),
     );
     renderShell("/me");
-    await waitFor(() => expect(screen.queryByRole("link", { name: /Needs you/ })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByTestId("waiting-open")).not.toBeInTheDocument());
     const names = screen.getAllByRole("link").map((l) => l.textContent?.replace(/\d+$/, "").trim());
     expect(names).toEqual(["Library"]);
     expect(screen.queryByTestId("identity-panel")).not.toBeInTheDocument();
@@ -170,7 +202,6 @@ describe("AppShell nav route families (human #38)", () => {
     );
   }
   const cases: Array<[string, string]> = [
-    ["/me", "Needs you"],
     ["/epics", "Epics"],
     ["/epic/epic-1b289d63f9", "Epics"],
     ["/ticket/s-abc", "Epics"],
@@ -191,7 +222,7 @@ describe("AppShell nav route families (human #38)", () => {
   }
   it("/unknown lights nothing", async () => {
     renderAt("/nowhere");
-    await screen.findByRole("link", { name: /Needs you/ });
+    await screen.findByRole("link", { name: /Epics/ });
     expect(screen.getAllByRole("link").filter((l) => l.getAttribute("aria-current") === "page")).toEqual([]);
   });
 });
@@ -330,6 +361,21 @@ describe("Ask for help (S19 c-190f5c6276)", () => {
     fireEvent.click(within(panel).getAllByTestId("help-close")[3]);
     await waitFor(() => expect(within(panel).getAllByTestId("help-request")).toHaveLength(4));
     expect(closed).toEqual(["topic-d"]);
+  });
+
+  it("S20: the help thread waiting on the viewer is marked in the Ask for help list", async () => {
+    server.use(attentionHandler(), http.get("/v1/help", () => HttpResponse.json({ ok: true, value: [row("topic-h1", { state: "alive", phase: "answering" }),
+      row("topic-h2", { state: "alive", phase: "answering" })], hint: "" })));
+    renderWithTopic();
+    const ask = screen.getByTestId("ask-help");
+    await within(ask).findByRole("img", { name: "needs your attention: 1" });
+    fireEvent.click(ask);
+    const panel = await screen.findByRole("dialog", { name: "Ask for help" });
+    await waitFor(() => expect(within(panel).getAllByTestId("help-request")).toHaveLength(2));
+    const [waiting, quiet] = within(panel).getAllByTestId("help-request");
+    expect(waiting).toHaveAttribute("data-attention", "true");
+    expect(within(waiting).getByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
+    expect(quiet).not.toHaveAttribute("data-attention");
   });
 
   it("t-67dad8c6aa: Ask for help has its own icon, not the glossary's question mark", () => {

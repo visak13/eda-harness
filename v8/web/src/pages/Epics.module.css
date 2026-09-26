@@ -104,3 +104,6 @@
   font: 12px/18px Consolas, monospace;
   color: var(--muted);
 }
+
+/* S20: the one-line reason an epic waits on the viewer (the dot beside the title carries the count) */
+.needs { font-size: 13px; font-weight: 650; color: var(--accentink); overflow-wrap: anywhere; }

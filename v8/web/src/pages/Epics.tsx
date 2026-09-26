@@ -11,6 +11,8 @@ import { QuickTaskDialog } from "../components/QuickTaskDialog";
 import { Icon } from "../components/Icon";
 import { StatusChip } from "../components/StatusChip";
 import ui from "../components/ui.module.css";
+import { useAttention, type AttentionScope } from "../api/attention";
+import { AttentionDot, attentionMark } from "../components/AttentionDot";
 import styles from "./Epics.module.css";
 
 // Epics destination (design §4.2, criterion c-63b8ab97ad): a calm portfolio, one row per epic,
@@ -37,6 +39,11 @@ function tally(row: EpicSummaryRow): { text: string; pct: number | null } {
   return { text: `${passed} of ${total} passed`, pct: Math.round((100 * passed) / total) };
 }
 
+/** S20 (design-e963c656f5 §4.18): epics that wait on the viewer first, the board's order kept within each group. */
+export function byAttention(rows: EpicSummaryRow[], need: Map<string, AttentionScope>): EpicSummaryRow[] {
+  return [...rows.filter((r) => need.has(r.id)), ...rows.filter((r) => !need.has(r.id))];
+}
+
 export function EpicsPage(): React.JSX.Element {
   const [newEpicOpen, setNewEpicOpen] = useState(false);
   const closeNewEpic = useCallback(() => setNewEpicOpen(false), []);
@@ -50,6 +57,8 @@ export function EpicsPage(): React.JSX.Element {
     queryKey: ["epics", "summary", status, q],
     queryFn: () => getEpicsSummary({ status: status || null, q: q || null }),
   });
+  const attention = useAttention();
+  const need = new Map(attention.scopes.map((s) => [s.id, s]));
 
   function set(key: string, value: string) {
     const p = new URLSearchParams(params);
@@ -111,18 +120,22 @@ export function EpicsPage(): React.JSX.Element {
         <p className={ui.empty}>No epics match this filter. Adjust the status or search above.</p>
       ) : (
         <ul className={styles.list} data-testid="epic-list">
-          {epics.data.map((row) => {
+          {byAttention(epics.data, need).map((row) => {
             const t = tally(row);
+            const waiting = need.get(row.id);
             return (
               <li key={row.id}>
-                <Link className={styles.row} data-kind={row.kind ?? "epic"}
+                <Link className={`${styles.row} ${waiting ? attentionMark : ""}`} data-kind={row.kind ?? "epic"}
+                  data-attention={waiting ? "true" : undefined} data-testid="epic-row"
                   to={row.kind === "quick" ? `/ticket/${encodeURIComponent(row.id)}` : `/epic/${encodeURIComponent(row.id)}`}>
                   <div className={styles.main}>
                     {/* Name first (§15): the epic's title leads; the id is secondary, in mono after. */}
                     <div className={styles.titleLine}>
                       <div className={styles.title} title={row.title}>{row.title}</div>
                       <StatusChip status={row.status} />
+                      <AttentionDot count={waiting?.count ?? 0} />
                     </div>
+                    {waiting ? <div className={styles.needs} data-testid="attention-reason">Waiting on you: {waiting.reason}</div> : null}
                     <span className={ui.idMono}>{row.kind === "quick" ? "Quick task · " : ""}{row.id}</span>
                     {row.waiting_reason.reason ? (
                       <div className={styles.reason} data-testid="waiting-reason">

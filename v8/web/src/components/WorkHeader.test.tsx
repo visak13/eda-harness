@@ -4,6 +4,7 @@ import { http, HttpResponse } from "msw";
 import { server } from "../test/setup";
 import { renderRoute } from "../pages/testUtils";
 import { WorkHeader } from "./WorkHeader";
+import { attentionHandler } from "../test/attentionFixture";
 
 // Finding 1 (m-93facfac8a) — the route request deep link must open the source-bound review, never
 // answer the gate. 9734d1d dropped the ?request= handling from ContextualWork; it now lives in
@@ -125,5 +126,23 @@ describe("stripMarkdown (t-994970028d)", () => {
     expect(stripMarkdown("## Heading")).toBe("Heading");
     expect(stripMarkdown("snake_case_name stays")).toBe("snake_case_name stays");
     expect(stripMarkdown("2 * 3 * 4")).toBe("2 * 3 * 4");
+  });
+});
+
+// S20 attention trail: each opener holding an item carries its dot (Design, Work), and whatever hides the openers
+// (the collapsed title bar) carries their sum, so the trail never breaks at a closed control.
+describe("WorkHeader attention openers (S20)", () => {
+  it("dots Design and Work, not Files; the collapsed bar keeps the sum", async () => {
+    localStorage.clear();
+    server.use(attentionHandler(), http.get("/v1/tickets/epic-1/contextual", () => okJson({ ...contextual({ gates: [] }), ticket_id: "epic-1" })));
+    const { fireEvent, within } = await import("@testing-library/react");
+    renderRoute("/epic/epic-1", "/epic/:id", <WorkHeader ticketId="epic-1" kind="epic" title="Galaxy site" status="designed" assignee={null}
+      designRef="design-req" actions={null} work={<div />} />);
+    const design = screen.getByTestId("work-design");
+    expect(await within(design).findByRole("img", { name: "needs your attention: 1" })).toBeInTheDocument();
+    expect(within(screen.getByTestId("work-work")).getByRole("img", { name: "needs your attention: 2" })).toBeInTheDocument();
+    expect(within(screen.getByTestId("work-files")).queryByRole("img")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Collapse title bar" }));
+    expect(screen.getByRole("img", { name: "needs your attention: 3" })).toBeVisible();
   });
 });

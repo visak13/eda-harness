@@ -119,3 +119,9 @@
 }
 /* t-f5bf848f0f: the owner's words (the topic's purpose), verbatim */
 .words { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 22px; color: var(--ink); }
+
+/* S20: the message a #<id> deep link (or an attention trail) lands on */
+.msg[data-highlight="true"] { background: var(--accentwash); border-left-color: var(--accentink); }
+
+/* S20: why a topic waits on the viewer */
+.needs { font-size: 13px; font-weight: 650; color: var(--accentink); }
