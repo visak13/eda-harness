@@ -61,7 +61,7 @@ export function EpicsPage(): React.JSX.Element {
   return (
     <>
       <div className={styles.head}>
-        <PageHeader title="Epics" subtitle="Every epic on the board and its pulse." />
+        <PageHeader title="Epics" subtitle="Every epic and quick task on the board and its pulse." />
         <div className={styles.headActions}>
           {/* S-QUICK: the owner's own small task, one submit — story + engineer on the chosen model */}
           <button type="button" className={styles.newEpic} data-testid="quick-task-open" aria-haspopup="dialog"
@@ -115,14 +115,15 @@ export function EpicsPage(): React.JSX.Element {
             const t = tally(row);
             return (
               <li key={row.id}>
-                <Link className={styles.row} to={`/epic/${encodeURIComponent(row.id)}`}>
+                <Link className={styles.row} data-kind={row.kind ?? "epic"}
+                  to={row.kind === "quick" ? `/ticket/${encodeURIComponent(row.id)}` : `/epic/${encodeURIComponent(row.id)}`}>
                   <div className={styles.main}>
                     {/* Name first (§15): the epic's title leads; the id is secondary, in mono after. */}
                     <div className={styles.titleLine}>
                       <div className={styles.title} title={row.title}>{row.title}</div>
                       <StatusChip status={row.status} />
                     </div>
-                    <span className={ui.idMono}>{row.id}</span>
+                    <span className={ui.idMono}>{row.kind === "quick" ? "Quick task · " : ""}{row.id}</span>
                     {row.waiting_reason.reason ? (
                       <div className={styles.reason} data-testid="waiting-reason">
                         {row.waiting_reason.reason}

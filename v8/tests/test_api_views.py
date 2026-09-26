@@ -123,6 +123,18 @@ def test_epics_summary_row(rig):
     e = rows[rig["epic"]]
     assert e["title"] == "Galaxy site" and e["criteria"]["total"] == 0
     assert "reason" in e["waiting_reason"] and "presence" in e["waiting_reason"]
+    assert e["kind"] == "epic"
+
+
+def test_epics_summary_lists_quick_tasks(rig):
+    """s-ccdafcb229 (owner m-b13c61ddea): a parentless quick story is reachable from the Projects
+    list; an ordinary child story is not listed there."""
+    r = rig["client"].post("/v1/tickets", json={"kind": "story", "work_type": "bug", "title": "rename the tab",
+                                               "words": "call it Seats", "tags": ["quick"]}, headers=OWN).json()
+    assert r["ok"], r
+    rows = {e["id"]: e for e in _get(rig, "/v1/epics/summary")}
+    assert rows[r["value"]["id"]]["kind"] == "quick"
+    assert rig["story"] not in rows
 
 
 def test_tickets_table_and_page(rig):

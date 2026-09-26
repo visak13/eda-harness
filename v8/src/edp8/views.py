@@ -575,8 +575,12 @@ def epics_summary(board: Board, viewer: Participant | None = None, *, status: st
                   q: str | None = None) -> list[dict[str, Any]]:
     """One row per epic for the Projects list (design §4.1): criteria tally, open gates,
     waiting_reason, assigned seats and latest status. Honours the same status/q filters the
-    legacy /ui page uses."""
+    legacy /ui page uses. Quick tasks (a parentless story tagged `quick`) are listed too, `kind: quick`
+    (s-ccdafcb229, owner m-b13c61ddea: "there is no way to access a single ticket task once it is created")."""
+    from .board import is_quick
     rows = board.store.query("ticket", {"kind": TicketKind.epic}, limit=5000)
+    rows += [t for t in board.store.query("ticket", {"kind": TicketKind.story}, limit=5000)
+             if t.parent_id is None and is_quick(t)]
     if status == "open":
         rows = [t for t in rows if t.status not in _TERMINAL]
     elif status:
@@ -589,6 +593,7 @@ def epics_summary(board: Board, viewer: Participant | None = None, *, status: st
         seats = sorted({k.assignee for k in board._descendants(t.id) if k.assignee}
                        | ({t.assignee} if t.assignee else set()))
         out.append({"id": t.id, "title": t.title, "status": t.status.value,
+                    "kind": "epic" if t.kind == TicketKind.epic else "quick",
                     "created_at": t.created_at.isoformat(), "criteria": _crit_counts(board, t.id),
                     "open_gates": sum(len(board.open_gates(s.id)) for s in (t, *board._descendants(t.id))),
                     "waiting_reason": waiting_reason(board, t), "assigned_seats": seats,

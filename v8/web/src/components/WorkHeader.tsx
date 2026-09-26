@@ -153,7 +153,11 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
   // purpose line that merely repeats the title is dropped.
   const purpose = short(p.purpose);
   const showPurpose = withoutTitle(purpose, p.title);
-  const titleHidden = p.kind === "epic"; // qa S17: a collapsed TICKET keeps its only visible title
+  // s-ccdafcb229 (owner m-5852c35b91, "space is wasted on ticket"): a ticket's title now leads its
+  // breadcrumb, so the 32px h1 row is dropped for tickets too (kept for assistive tech); a quick task
+  // is its own epic, so its breadcrumb does not repeat the title as a parent.
+  const titleHidden = true;
+  const ownEpic = p.kind === "ticket" && (!p.epic?.id || p.epic.id === p.ticketId);
 
   const viewerTitle = view === "history" ? "History" : view === "work" ? "Work" : "Files & evidence";
   const crumbTitle = p.kind === "epic" ? p.title : p.epic?.title ?? p.epic?.id ?? "Epic";
@@ -166,9 +170,9 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
           <Link to="/epics">Epics</Link>
           <span aria-hidden="true">/</span>
           {p.kind === "epic" ? <span className={styles.here}>{crumbTitle}</span> : <>
-            <Link to={crumbTo}>{crumbTitle}</Link>
-            <span aria-hidden="true">/</span>
-            <span className={styles.here}>{p.ticketId}</span>
+            {ownEpic ? null : <><Link to={crumbTo}>{crumbTitle}</Link><span aria-hidden="true">/</span></>}
+            <span className={`${styles.here} ${styles.hereTitle}`} data-testid="crumb-title">{p.title}</span>
+            <span className={styles.hereId}>{p.ticketId}</span>
           </>}
         </nav>
         <div className={styles.toolbar}>
