@@ -11,10 +11,15 @@
 #   .\edp.ps1 tailnet remove               ONE-LINE ROLLBACK: serve reset, drop the .env block, restart
 #   add -WhatIf to print the plan and change nothing; -Force where a step needs it (see below)
 #
-#   services: board (:9400)  mcp (:9402)  pool (:9301)  broker (:9300)  bridge  supervisor  all
-#             code (:9410, code-server for the Code tab) - by name only: `all` never starts or stops it,
-#             and a code start/stop/restart runs v8\scripts\start-code.ps1 / stop-code.ps1 and touches
-#             no other service (the supervisor does not watch it). Seats may start/stop `code` only.
+#   services: board (:9400)  mcp (:9402)  pool (:9301)  broker (:9300)  bridge  supervisor  code  all
+#             code (:9410, code-server for the Code tab) runs v8\scripts\start-code.ps1 / stop-code.ps1
+#             (the supervisor does not watch it). `all` includes it: `start all` starts it LAST (after
+#             heronry started the fleet), `stop all` stops it FIRST, `restart all` does both. A code
+#             failure inside `all` never hides or aborts the fleet: it is printed with its log path and
+#             the run exits 10 ("only code failed"). `update` still never touches code. By name,
+#             `start|stop|restart code` touches no other service. Seats may start/stop `code` by name
+#             only, never `all`.
+#   status names a reason for every service that is not up (not started / exited + log / last start failed).
 #
 # The fleet services (board, broker, pool, mcp, bridge, supervisor) go through the ONE launcher, the
 # `heronry` CLI (v8\.venv python -m edp8.cli; S3 s-870e401942): process identity by pid + create time,
@@ -82,7 +87,7 @@ $SVC = [ordered]@{
 $ChainImages = @("python.exe", "pythonw.exe", "uv.exe", "edp8-board.exe")
 $START_ORDER = @("board", "broker", "pool", "mcp", "bridge", "supervisor")
 $STOP_ORDER  = @("supervisor", "bridge", "mcp", "pool", "broker", "board")
-$STATUS_ORDER = $START_ORDER + @("code")   # `code` is by name only: never in the `all` orders
+$STATUS_ORDER = $START_ORDER + @("code")   # `code` is outside heronry: `all` wraps it (stop first, start last)
 function ImagesOf($name) { if ($SVC[$name].images) { $SVC[$name].images } else { $ChainImages } }
 
 function Say($s) { Write-Host $s }
@@ -175,7 +180,7 @@ function RevOf($name, $h) {
   if ($h -and $h.git_rev) { return "" + $h.git_rev }
   if ($name -eq "mcp" -and $h -and $h.version) { return "" + $h.version }
   if ($name -eq "code") {
-    try { $v = (Get-Content (Join-Path $RunDir "code.json") -Raw | ConvertFrom-Json).version; if ($v) { return "code-server $v" } } catch { }
+    try { $v = (Get-Content (Join-Path $RunDir "code.json") -Raw -ErrorAction Stop | ConvertFrom-Json).version; if ($v) { return "code-server $v" } } catch { }
   }
   $r = RunStateRev $name
   if ($r) { return "$r (run_state)" }
@@ -212,8 +217,12 @@ function GuardPool($verb) {
 $script:Stopped = @()
 $script:PausedSupervisor = $false
 $script:Restoring = $false
+$script:Soft = $false       # inside Invoke-Code: a failure throws to its caller instead of exiting
+$script:CodeNote = ""       # code's failure inside `all`, appended to a later fleet failure
 function FailDown($code, $msg) {
+  if ($script:Soft) { throw $msg }
   if ($script:Restoring) { throw $msg }   # a failure while restoring is reported by the restore itself
+  if ($script:CodeNote) { $msg += "; code: $($script:CodeNote)" }
   # leave the fleet as we found it where we can: a supervisor this run paused comes back (it then
   # heals what is still down after ~45 s of failed probes); the service that failed stays named
   if ($script:PausedSupervisor -and ($script:Stopped -contains "supervisor")) {
@@ -373,6 +382,44 @@ function Start-Svc($name) {
     return
   }
 }
+$CodeLastError = Join-Path $RunDir "code.last-error.txt"
+function Invoke-Code($verb) {
+  # start/stop code without exiting: returns $null on success, else the failure (log paths included).
+  # `all` reports it next to the fleet's result; by name the caller exits with it. A failed start is
+  # kept in .run\code.last-error.txt so status can say why code is down; a good start/stop clears it.
+  $script:Soft = $true
+  $err = $null
+  try { if ($verb -eq "stop") { $null = Stop-Svc "code" } else { $null = Start-Svc "code" } }
+  catch { $err = "" + $_.Exception.Message }
+  finally { $script:Soft = $false }
+  if (-not $WhatIf) {
+    if ($err -and $verb -eq "start") {
+      try {
+        $null = New-Item -ItemType Directory -Force $RunDir
+        Set-Content -Path $CodeLastError -Value ("{0} start failed: {1}" -f (Get-Date).ToString("yyyy-MM-ddTHH:mm:sszzz"), $err)
+      } catch { }
+    }
+    if (-not $err) { Remove-Item $CodeLastError -Force -ErrorAction SilentlyContinue }
+  }
+  $err
+}
+function Code-Log {
+  # where code-server's own logs are (start-code.ps1 writes them into the run dir)
+  "$RunDir\code.log, $RunDir\code.err.log, $RunDir\code.guard.err.log"
+}
+function Code-Reason {
+  # why code is not up, for status (t-86f4ae3569: "it is showing down" with no reason)
+  if (Test-Path $CodeLastError) { return ("" + (Get-Content $CodeLastError -Raw)).Trim() }
+  $rec = $null
+  try { $rec = Get-Content (Join-Path $RunDir "code.json") -Raw -ErrorAction Stop | ConvertFrom-Json } catch { }
+  if ($rec -and $rec.pid) { return "exited: recorded pid $($rec.pid) is gone (crashed or killed); see $(Code-Log)" }
+  $ver = $null
+  try { $ver = (Get-Content (Join-Path $V8 "vscode-ext\code-server.lock.json") -Raw -ErrorAction Stop | ConvertFrom-Json).version } catch { }
+  if ($ver -and -not (Test-Path (Join-Path $V8 ".tools\code-server\$ver"))) {
+    return "not started, not installed: the first .\edp.ps1 start code (or start all) downloads code-server $ver"
+  }
+  "not started: no run record (stopped, or never started) - .\edp.ps1 start code"
+}
 function Report-PoolLiveness {
   if ($WhatIf -or -not $script:PoolSeatsBefore) { return }
   Say "pool liveness after restart:"
@@ -399,6 +446,15 @@ function Restart-Set($t) {
   }
   Report-PoolLiveness
 }
+function Finish-All($verb, $rc, $codeErr) {
+  # one plain verdict for `start|restart all`: the status table, then which part failed (exit 10 =
+  # the fleet is fine and only code failed; exit 4 = a fleet service failed)
+  if (-not $WhatIf) { Say ""; Show-Status }
+  $fleet = ""; if ($rc -ne 0) { $fleet = "heronry $verb all exited $rc (see the rows above)" }
+  if ($fleet -and $codeErr) { Fail 4 "$fleet; code also failed: $codeErr" }
+  if ($fleet) { Fail 4 "$fleet; code is up" }
+  if ($codeErr) { Fail 10 "only code failed to $($verb): $codeErr. The fleet services are up (status above)." }
+}
 
 # -- status -----------------------------------------------------------------------------------
 function Show-Status {
@@ -411,6 +467,9 @@ function Show-Status {
     $state = "down"
     if ($pair.Count -gt 0) { $state = "up" }
     if ($pair.Count -gt 0 -and $SVC[$name].port -and -not $h) { $state = "unhealthy" }
+    $why = "-"
+    if ($state -eq "down") { $why = Code-Reason }
+    if ($state -eq "unhealthy") { $why = "the listener runs but $($SVC[$name].health) does not answer; see $(Code-Log)" }
     [pscustomobject]@{
       service    = $name
       state      = $state
@@ -418,9 +477,10 @@ function Show-Status {
       pid        = $(if ($pair.Count) { ChainText $name $pair } else { "-" })
       rev        = RevOf $name $h
       started_at = $(if ($pair.Count) { StartedOf $h $pair } else { "-" })
+      reason     = $why
     }
   }
-  $rows | Format-Table -AutoSize | Out-String -Width 200 | Write-Host
+  $rows | Format-Table -AutoSize -Wrap | Out-String -Width 260 | Write-Host
   Say "code: pid = its process chain, outermost first, * = the port's listener."
   Say "HEAD $((& git --no-optional-locks -C $RepoRoot rev-parse --short HEAD 2>$null))"
 }
@@ -599,22 +659,44 @@ switch ($Command.ToLower()) {
   "status" { Show-Status }
   "start" {
     if ($Service -eq "all") {
+      # the fleet through heronry, then code LAST; code is started even when the fleet failed (it is
+      # independent of it), and each part's failure is named on its own
       $rc = Heronry start all
-      if ($rc -ne 0) { Fail 4 "heronry start all exited $rc" }
+      $codeErr = Invoke-Code "start"
+      Finish-All "start" $rc $codeErr
     }
+    elseif ($Service -eq "code") { $e = Invoke-Code "start"; if ($e) { Fail 4 $e } }
     else { foreach ($n in (Targets $Service $START_ORDER)) { Start-Svc $n } }
   }
   "stop" {
     $t = @(Targets $Service $STOP_ORDER)
     if ($t -contains "pool") { GuardPool "stop" }
-    foreach ($n in $t) { Stop-Svc $n }
+    if ($Service -eq "all") {
+      # code FIRST: its terminals and extension host talk to the board; a failure is noted, the fleet still stops
+      $script:CodeNote = Invoke-Code "stop"
+      if ($script:CodeNote) { Say "code       stop FAILED: $($script:CodeNote) (continuing with the fleet)" }
+    }
+    if ($Service -eq "code") { $e = Invoke-Code "stop"; if ($e) { Fail 1 $e } }
+    else { foreach ($n in $t) { Stop-Svc $n } }
+    if ($script:CodeNote) { Fail 10 "only code failed: it did not stop ($($script:CodeNote)); the fleet services stopped" }
   }
   "restart" {
     $t = @(Targets $Service $STOP_ORDER)
     if ($t -contains "pool") { GuardPool "restart" }
     if ($t -contains "mcp") { Say "NOTE: mcp restart: every running seat keeps the old MCP code until it respawns (shared-host rules)." }
-    # code is outside the fleet orders and unwatched by the supervisor: its restart touches nothing else
-    if ($Service -eq "code") { Stop-Svc "code"; Start-Svc "code" }
+    # code is outside heronry and unwatched by the supervisor: by name its restart touches nothing else
+    if ($Service -eq "code") {
+      $e = Invoke-Code "stop"; if ($e) { Fail 1 $e }
+      $e = Invoke-Code "start"; if ($e) { Fail 4 $e }
+    }
+    elseif ($Service -eq "all") {
+      $stopErr = Invoke-Code "stop"
+      if ($stopErr) { Say "code       stop FAILED: $stopErr (continuing with the fleet)" }
+      $script:CodeNote = $stopErr
+      Restart-Set $t          # a fleet failure exits here, naming code's failure too (FailDown)
+      $startErr = Invoke-Code "start"
+      Finish-All "restart" 0 $(if ($startErr) { $startErr } else { $stopErr })
+    }
     else { Restart-Set $t }
   }
   "update" { Do-Update }

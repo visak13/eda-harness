@@ -574,7 +574,24 @@ def status_rows() -> list[dict[str, Any]]:
                  "pid": (sup or {}).get("pid") if supervisor_running() else None,
                  "port": (sup or {}).get("control_port") if supervisor_running() else None,
                  "url": None, "uptime": run_state._uptime(sup) if sup and supervisor_running() else None})
+    for r in rows:
+        if r["state"] != "up":
+            r["reason"] = r.get("note") or down_reason(r["service"])
     return rows
+
+
+def down_reason(svc: str) -> str:
+    """Why `svc` is down, for status: a bare "down" leaves the owner guessing (t-86f4ae3569)."""
+    if svc == "bridge" and not enabled(svc):
+        return "skipped: no Slack map configured (EDP8_SLACK_MAP)"
+    rec = run_state.read(svc)
+    log = settings.logs_dir() / f"{svc}.log"
+    if rec is None:
+        return "not running: no run record (stopped, or never started)"
+    why = f"exited: recorded pid {rec.get('pid')} is gone; see {log}"
+    if rec.get("last_restart_reason"):
+        why += f" (last restart: {rec['last_restart_reason']})"
+    return why
 
 
 def dumps(obj: Any) -> str:

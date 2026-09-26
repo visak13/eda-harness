@@ -6,8 +6,10 @@ safe to do there. It grows over time (design-449b628cdd §4).
 
 ## Starting it and where it works
 
-- **Start / stop:** `.\edp.ps1 start code` and `.\edp.ps1 stop code` from the repo root. `code` is
-  started by name only; `.\edp.ps1 start all` never starts it. If the tab says "Code service is not
+- **Start / stop:** `.\edp.ps1 start code` and `.\edp.ps1 stop code` from the repo root.
+  `.\edp.ps1 start all` starts it too, last (after the board); `stop all` stops it first. If it
+  cannot start, `start all` still brings up the rest, prints code's failure with its log path and
+  exits 10; `.\edp.ps1 status` shows why code is down. If the tab says "Code service is not
   running", run the start command and press Retry.
 - **Board host only.** code-server listens on loopback with no password (a terminal is a shell on the
   host), so the tab works only in a browser on the board host. A browser on another machine sees

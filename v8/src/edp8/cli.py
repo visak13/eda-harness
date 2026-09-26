@@ -133,7 +133,7 @@ def _legacy_supervisor() -> bool:
 
 # ------------------------------------------------------------------------------------------ status
 
-_COLS = ["service", "state", "pid", "port", "url", "git_rev", "uptime", "last_probe", "last_restart_reason"]
+_COLS = ["service", "state", "pid", "port", "url", "git_rev", "uptime", "last_probe", "last_restart_reason", "reason"]
 _HEAD = {"git_rev": "rev", "last_probe": "last probe", "last_restart_reason": "last restart"}
 
 

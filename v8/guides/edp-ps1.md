@@ -10,8 +10,15 @@ the human/owner runs the procedure.
 
 **The `code` service** (code-server for the Code tab, epic-91fcd3b370 S2) is the exception a seat
 may start/stop: `.\edp.ps1 start|stop|restart|status code` on 127.0.0.1:`EDP_CODE_PORT` (9410),
-health `GET /healthz`. It is by name only: `all` and `update` never start, stop or restart it, the
-supervisor does not watch it, and its restart pauses nothing. Start/stop run
+health `GET /healthz`. `all` includes it (t-86f4ae3569, owner m-03b329ede2): `start all` starts it
+LAST, after heronry started the fleet; `stop all` stops it FIRST; `restart all` does both. A code
+failure inside `all` never hides or aborts the fleet: the fleet's rows are printed, code's failure is
+printed with its log path, and the run exits 10 ("only code failed"; exit 4 = a fleet service
+failed). A failed start is kept in `.run\code.last-error.txt` until the next good start/stop.
+`update` never touches it, the supervisor does not watch it, and by name (`start|stop|restart code`)
+it touches no other service. A seat starts/stops it by name only, never with `all`. `status` names a
+reason for every service that is not up (not running / exited + log path / start failed / not
+installed / unhealthy). Start/stop run
 `v8\scripts\start-code.ps1` / `stop-code.ps1`: pinned install (`vscode-ext\code-server.lock.json`,
 sha256 before extraction, `install-code-server.ps1`), sha-checked Open VSX extensions
 (`vscode-ext\extensions.txt` + `extensions.lock.json`), loopback + `--auth none`, every `EDP_*`/`EDP8_*`
