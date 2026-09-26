@@ -200,7 +200,8 @@ class _Walk:
         from .schemas import TicketKind, WorkType
         self.d, self.K, self.W = d, TicketKind, WorkType
         self.b = _scratch_board()
-        d = d.model_copy(update={"published": True, "builtin": False})
+        # a scratch id: a definition named like a preset must walk as written, not as the built-in preset
+        d = d.model_copy(update={"published": True, "builtin": False, "id": f"dry-{d.id}"})
         self.b.workflows._put(d, by="dry-run")  # the scratch board pins the draft as if published
         self.ref = d.ref
         self.b.workflows.pin("E-dry-run-probe", self.ref)  # makes custom roles known before the epic exists
@@ -415,8 +416,9 @@ def stall_problem(stall: dict[str, Any]) -> dict[str, str]:
 def dry_run(body: wflow.WorkflowDef | dict[str, Any]) -> dict[str, Any]:
     """Walk a synthetic epic through the definition. Returns {ok, ref, timeline, stall, problems}; `stall`
     is None when the epic reached done, else {step, needs, tried: [{role, refusal}]}."""
-    import os
-    os.environ.setdefault("EDP8_EMBEDDER", "none")
+    from . import settings
+    if settings.env_raw("EDP8_EMBEDDER") is None:
+        settings.set_env("EDP8_EMBEDDER", "none")
     try:
         d = body if isinstance(body, wflow.WorkflowDef) else wflow.WorkflowDef.model_validate(wflow.migrate(body))
     except Exception as e:  # noqa: BLE001 - a definition that does not load cannot be walked

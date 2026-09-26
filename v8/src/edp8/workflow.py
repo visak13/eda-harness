@@ -132,6 +132,7 @@ class GateDef(BaseModel):
 class RoleDef(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str
+    label: str = ""  # S14: the Design tab's display name for a custom role (the id when empty)
     human: bool = False
     card: str = ""  # an agent-home card name (.claude/commands/<card>.md)
     card_md: str = ""  # or the card inline
@@ -811,16 +812,21 @@ BUILTIN_BUILDERS = {"standard": build_standard, "lean": build_lean, "solo": buil
 
 
 def _card_exists(name: str) -> bool:
+    return card_path(name) is not None
+
+
+def card_path(name: str) -> Any:
+    """The shipped card file for `name` (agent home, then the wheel's packaged home, then a dev checkout)."""
+    from pathlib import Path
     try:
         from . import settings
         home = settings.agent_home()
     except Exception:  # noqa: BLE001 - no agent home resolvable: fall back to the packaged tree
         home = None
-    from pathlib import Path
     roots = [Path(home)] if home else []
     roots.append(Path(__file__).resolve().parent / "agent_home")  # the wheel's packaged agent home
     roots.append(Path(__file__).resolve().parents[2])  # a dev checkout: v8/
-    return any((r / ".claude" / "commands" / f"{name}.md").is_file() for r in roots)
+    return next((f for r in roots if (f := r / ".claude" / "commands" / f"{name}.md").is_file()), None)
 
 
 _BUILTIN_ROLE_IDS = frozenset(r.value for r in Role)

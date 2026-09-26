@@ -288,3 +288,9 @@ def test_the_design_api(client):
     assert rows["team@1"]["pinned_by"] == [epic["id"]] and rows["team@1"]["source"] == "standard@1"
     assert c.get("/v1/workflows/team@1/upstream", headers=B).json()["value"]["changed"] is False
     assert c.post("/v1/workflows/team@1/merge-upstream", headers=O).status_code == 409
+
+
+def test_a_definition_named_like_a_preset_walks_as_written(home):
+    d = wf.dump(wf.build_standard())  # e.g. the Design tab dry-running an edited copy before it is renamed
+    d["hooks"]["criteria_auto_done"]["params"]["epic_checker"] = "owner"
+    assert wd.dry_run(d)["stall"] is not None

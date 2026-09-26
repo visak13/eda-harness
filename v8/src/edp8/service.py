@@ -1527,9 +1527,53 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         """S14 (§4.14(e).3): Add role starting points (builder, checker, reviewer), the hook registry with
         its params, the predicate vocabulary and the kernel tools, for the Design tab's inline help."""
         from . import workflow_design as wd
+        from .bundles import ALL_TOOLS
+        tools = [{"name": n, "description": (ALL_TOOLS[n].description or "").strip().split(". ")[0][:160]}
+                 for n in sorted(ALL_TOOLS)]
         return ok({"roles": wd.ROLE_TEMPLATES, "hooks": wflow.HOOKS, "predicates": sorted(wflow.PREDICATES),
                    "kernel_tools": list(wflow.KERNEL_TOOLS), "why_fix": wflow.WHY_FIX,
-                   "tool_needs": wflow.TOOL_NEEDS})
+                   "tool_needs": wflow.TOOL_NEEDS, "tools": tools})
+
+    @app.post("/v1/workflows/card-preview")
+    def workflow_card_preview(body: dict[str, Any], a: Participant = Depends(actor)):
+        """S14: a role card's markdown rendered as the board renders docs (the card editor's preview)."""
+        from .views import render_markdown
+        return ok({"html": render_markdown(str(body.get("card_md") or "")),
+                   "kernel_preamble": wflow.KERNEL_PREAMBLE})
+
+    @app.get("/v1/workflows/{ref_}/card/{role}")
+    def workflow_card(ref_: str, role: str, a: Participant = Depends(actor)):
+        """S14: a role's card as written in the version (inline) or shipped in the agent home (Standard)."""
+        from .views import render_markdown
+        try:
+            d = board.workflows.get(*wflow.parse_ref(ref_))
+        except ValueError as e:
+            return _wf_error(wflow.WorkflowError("schema", str(e)))
+        except wflow.WorkflowError as e:
+            return _wf_error(e)
+        r = next((x for x in d.roles if x.id == role), None)
+        if r is None:
+            return _wf_error(wflow.WorkflowError("not_found", f"{d.ref} has no role {role!r}"))
+        if r.card_md:
+            md, source, name = r.card_md, "inline", wflow.card_name(d.id, d.version, r.id)
+        else:
+            path = wflow.card_path(r.card or r.id) if (r.card or not r.human) else None
+            md, source, name = (path.read_text(encoding="utf-8") if path else ""), "shipped", (r.card or r.id)
+        return ok({"role": role, "name": name, "source": source if md else "none", "markdown": md,
+                   "html": render_markdown(md), "kernel_preamble": wflow.KERNEL_PREAMBLE})
+
+    @app.post("/v1/workflows/diff")
+    def workflow_diff_body(body: dict[str, Any], a: Participant = Depends(actor)):
+        """S14: the diff of an unsaved definition (`definition`) against a stored version (`against`)."""
+        from . import workflow_design as wd
+        try:
+            against = str(body.get("against") or "")
+            base = board.workflows.snapshot(against)
+            return ok({"against": against, "changes": wd.diff(base, body.get("definition") or {})})
+        except ValueError as e:
+            return _wf_error(wflow.WorkflowError("schema", str(e)))
+        except wflow.WorkflowError as e:
+            return _wf_error(e)
 
     @app.post("/v1/workflows/dryrun")
     def workflow_dryrun(body: dict[str, Any], a: Participant = Depends(actor)):
