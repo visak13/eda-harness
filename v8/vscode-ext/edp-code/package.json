@@ -18,7 +18,8 @@
     "vscode.git"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onUri"
   ],
   "contributes": {
     "configurationDefaults": {

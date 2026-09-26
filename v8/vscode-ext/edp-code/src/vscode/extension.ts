@@ -2,7 +2,7 @@
 // extension host (extensionKind workspace). Activation never fails for a missing secret.
 import * as vscode from 'vscode';
 import { ViewerRequests } from '../core/viewer';
-import { creds, signIn, signOut } from './auth';
+import { creds, signIn, signInFromUri, signOut } from './auth';
 import { Badge, showSeats } from './badge';
 import { ChatController } from './chat';
 import { ChatViewProvider } from './chatView';
@@ -40,6 +40,8 @@ export function activate(ctx: vscode.ExtensionContext): void {
     cmd('edp.merge', () => guarded('merge', ctx, board)),
     cmd('edp.pull', () => guarded('pull', ctx, board)),
     cmd('edp.openExternalTerminal', (uri?: vscode.Uri) => openExternalTerminal(uri)),
+    // S6: the invite's VS Code sign-in link, vscode://edp.edp-code/signin?board=&handle=&code=
+    vscode.window.registerUriHandler({ handleUri: async (uri) => { if (await signInFromUri(ctx, board, uri)) { badge.refresh(0); void chat.restart(); } } }),
   );
 }
 
