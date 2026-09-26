@@ -107,6 +107,9 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
             body = p.read_text(encoding="utf-8")
         except OSError:
             raise HTTPException(404, "guides/remote-access.md is missing; it ships with the board tree under guides/") from None
+        # the file's diagram links are relative to the repo (../assets/guides/*.svg) and would render broken
+        # here; the tab already shows each diagram on its step, so the in-place copy drops the image lines
+        body = "\n".join(ln for ln in body.splitlines() if not ln.lstrip().startswith("!["))
         return {"ok": True, "value": {"name": "remote-access", "path": "guides/remote-access.md",
                                       "html": render_markdown(body)}, "hint": ""}
 

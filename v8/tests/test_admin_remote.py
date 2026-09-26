@@ -186,7 +186,7 @@ def test_guide_renders_the_same_steps(env, tmp_path, monkeypatch):
     # t-20f0718990: Remote access links guides/remote-access.md, rendered through the sanitised markdown path
     home = tmp_path / "home"
     (home / "guides").mkdir(parents=True)
-    (home / "guides" / "remote-access.md").write_text("# Remote access\n\n## 2. Install Tailscale\n<script>x</script>\n",
+    (home / "guides" / "remote-access.md").write_text("# Remote access\n\n## 2. Install Tailscale\n![d](../assets/guides/x.svg)\n<script>x</script>\n",
                                                      encoding="utf-8")
     monkeypatch.setattr(settings, "agent_home", lambda: home)
     r = env.client.get("/v1/admin/tailnet/guide", headers=ADMIN_H)
@@ -194,6 +194,7 @@ def test_guide_renders_the_same_steps(env, tmp_path, monkeypatch):
     v = r.json()["value"]
     assert v["path"] == "guides/remote-access.md" and "<h2>2. Install Tailscale</h2>" in v["html"]
     assert "<script>" not in v["html"]
+    assert "<img" not in v["html"]  # repo-relative diagrams would render broken; each step shows its own
     (home / "guides" / "remote-access.md").unlink()
     assert env.client.get("/v1/admin/tailnet/guide", headers=ADMIN_H).status_code == 404
 
