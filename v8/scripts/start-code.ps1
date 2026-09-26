@@ -203,7 +203,7 @@ function WithoutFleetEnv([scriptblock]$block) {
   try { & $block } finally { foreach ($k in $saved.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k], "Process") } }
 }
 
-# -- config.yaml: our own, so a flag-less launch never falls back to :8080 with a password ---------
+# -- code-server.yaml: our own, so a flag-less launch never falls back to :8080 with a password ---------
 # the inner bind: the guard holds $PORT; the password comes by $HASHED_PASSWORD at launch, never from here
 WriteUtf8 $config ("# written by scripts\start-code.ps1 on every start; edits are overwritten`nbind-addr: ${BINDHOST}:$INNER`nauth: password`ncert: false`n")
 

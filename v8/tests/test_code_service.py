@@ -219,7 +219,7 @@ def test_a_spare_port_instance_starts_healthy_and_stops_only_itself(tmp_path):
         owner = subprocess.run([PS, "-NoProfile", "-Command", f"(Get-CimInstance Win32_Process -Filter 'ProcessId={_listener(port)}').CommandLine"],
                                capture_output=True, text=True, timeout=60).stdout
         assert "edp8.code_guard" in owner and f"--port {port}" in owner, owner
-        cfg = (tmp_path / "data" / "config.yaml").read_text(encoding="utf-8")
+        cfg = (tmp_path / "data" / "code-server.yaml").read_text(encoding="utf-8")
         assert f"bind-addr: 127.0.0.1:{inner}" in cfg and "auth: password" in cfg and "hashed-password" not in cfg
         settings = json.loads((tmp_path / "data" / "user" / "User" / "settings.json").read_text(encoding="utf-8"))
         assert settings["extensions.autoUpdate"] is False
@@ -257,13 +257,13 @@ def _edp_env(tmp_path: Path) -> dict[str, str]:
     return env
 
 
-def test_edp_status_lists_code_and_all_never_includes_it(tmp_path):
+def test_edp_status_lists_code_and_all_includes_it(tmp_path):
+    # owner m-03b329ede2: `all` includes code (t-86f4ae3569); ordering is pinned in test_edp_ps1_all.py
     env = _edp_env(tmp_path)
     st = _edp(["status"], env)
     assert st.returncode == 0 and re.search(r"^code\s+down\b", st.stdout, re.M), st.stdout + st.stderr
-    for verb in ("stop", "start", "restart"):
-        r = _edp([verb, "all", "-WhatIf"], env)
-        assert "code" not in re.sub(r"(?i)unicode|codex", "", r.stdout), (verb, r.stdout)
+    r = _edp(["start", "all", "-WhatIf"], env)
+    assert "WHATIF: start code on :" in r.stdout, r.stdout
 
 
 def test_edp_restart_code_runs_its_scripts_and_touches_nothing_else(tmp_path):
