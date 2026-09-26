@@ -14,7 +14,15 @@ import sys
 
 from edp8 import settings
 
-from .uploads import MAX_UPLOAD_BYTES
+from .uploads import MAX_UPLOAD_BYTES, limit_for
+
+
+def _cap(file) -> int:
+    """The byte cap for this file's sniffed type (100 MB for mp4/webm video, else 25 MB)."""
+    at = file.tell()
+    head = file.read(4096)
+    file.seek(at)
+    return limit_for(head)
 
 
 class UploadRefused(ValueError):
@@ -64,8 +72,9 @@ def workspace_file(root: Path, path: str, *, pinned_root: bool = False):
             raise UploadRefused('upload must be a regular file')
         if not _handle_path(file).is_relative_to(root):
             raise UploadRefused('opened handle escaped the seat workspace')
-        if info.st_size > MAX_UPLOAD_BYTES:
-            raise UploadRefused('file exceeds the 25 MB upload limit')
+        cap = _cap(file)
+        if info.st_size > cap:
+            raise UploadRefused(f'file exceeds the {cap // (1024 * 1024)} MB upload limit')
         yield file, candidate.name
 
 
@@ -74,13 +83,14 @@ class BoundedFile:
     def __init__(self, file):
         self.file = file
         self.sent = 0
+        self.limit = _cap(file)
 
     def read(self, size=-1):
-        size = min(size if size >= 0 else 65536, 65536, MAX_UPLOAD_BYTES - self.sent + 1)
+        size = min(size if size >= 0 else 65536, 65536, self.limit - self.sent + 1)
         data = self.file.read(size)
         self.sent += len(data)
-        if self.sent > MAX_UPLOAD_BYTES:
-            raise UploadRefused('file grew beyond the 25 MB upload limit')
+        if self.sent > self.limit:
+            raise UploadRefused(f'file grew beyond the {self.limit // (1024 * 1024)} MB upload limit')
         return data
 
 

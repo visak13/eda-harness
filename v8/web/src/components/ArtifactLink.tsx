@@ -13,6 +13,12 @@ import { RefText } from "./RefText";
 // can script at top level from a same-origin blob: URL) is saved through <a download> and never
 // navigated to. There is no current-tab fallback: a blocked popup degrades to the download.
 export const PREVIEW_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+// t-f01372d361: mp4/webm (sniffed by the board, served inline) play in a <video controls>.
+export const VIDEO_TYPES = new Set(["video/mp4", "video/webm"]);
+
+export function isVideoType(contentType: string | null | undefined): boolean {
+  return VIDEO_TYPES.has((contentType ?? "").split(";")[0].trim().toLowerCase());
+}
 
 /** The shareable SPA link for an artifact (promise #20): `${origin}/ui/artifact/<id>` — the /ui
  *  base rides import.meta.env.BASE_URL so the link follows the mount prefix like the router does. */
@@ -32,7 +38,7 @@ export function dispositionOf(res: { headers: { get(name: string): string | null
   const cd = res.headers.get("content-disposition") ?? "";
   const ctype = (res.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
   const m = /filename="?([^";]+)"?/i.exec(cd);
-  return { inline: /^inline\b/i.test(cd) && PREVIEW_TYPES.has(ctype), filename: m ? m[1] : null };
+  return { inline: /^inline\b/i.test(cd) && (PREVIEW_TYPES.has(ctype) || VIDEO_TYPES.has(ctype)), filename: m ? m[1] : null };
 }
 
 function saveBlob(blob: Blob, filename: string): void {
@@ -86,8 +92,38 @@ export function CopyArtifactLink({ id, className }: { id: string; className?: st
   );
 }
 
+/** An authenticated blob: URL for an artifact's bytes (null until loaded, or when the board does
+ *  not serve it inline). Revoked on unmount. */
+export function useArtifactBlobUrl(id: string, enabled: boolean): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    setUrl(null);
+    if (!enabled) return;
+    let cancelled = false, blobUrl: string | null = null;
+    void fetchArtifactContent(id).then(async (res) => {
+      if (!dispositionOf(res).inline) return;
+      const blob = await res.blob();
+      if (cancelled) return;
+      blobUrl = URL.createObjectURL(blob); setUrl(blobUrl);
+    }).catch(() => {}); // the linked full viewer displays the authenticated error
+    return () => { cancelled = true; if (blobUrl) URL.revokeObjectURL(blobUrl); };
+  }, [id, enabled]);
+  return url;
+}
+
+/** A video artifact played in place (t-f01372d361): the bytes come through the authenticated
+ *  fetch (a bare <video src="/v1/..."> would 401), so the player seeks inside the blob. */
+export function ArtifactVideo({ id, label, className }: { id: string; label?: string; className?: string }): React.JSX.Element | null {
+  const url = useArtifactBlobUrl(id, true);
+  return url ? (
+    <video className={className} data-testid="artifact-video" data-artifact={id} src={url} controls preload="metadata"
+      aria-label={label || id} style={className ? undefined : { maxHeight: 360, maxWidth: "100%", display: "block" }} />
+  ) : null;
+}
+
 function ArtifactThumbnail({ id }: { id: string }): React.JSX.Element | null {
   const record = useQuery({ queryKey: ["artifact", id], queryFn: () => getArtifact(id), retry: false });
+  const video = record.data?.has_content !== false && isVideoType(record.data?.content_type);
   const [url, setUrl] = useState<string | null>(null);
   const image = record.data?.has_content !== false && record.data?.form === "image" && PREVIEW_TYPES.has(record.data.content_type ?? "");
   useEffect(() => {
@@ -101,6 +137,7 @@ function ArtifactThumbnail({ id }: { id: string }): React.JSX.Element | null {
     }).catch(() => {}); // the linked full viewer displays the authenticated error
     return () => { cancelled = true; if (blobUrl) URL.revokeObjectURL(blobUrl); };
   }, [id, image]);
+  if (video) return <ArtifactVideo id={id} label={record.data?.note || id} />;
   return url ? <Link to={`/artifact/${encodeURIComponent(id)}`}><img loading="lazy" src={url} alt={record.data?.note || id} style={{ maxHeight: 240, maxWidth: "100%", display: "block" }} /></Link> : null;
 }
 

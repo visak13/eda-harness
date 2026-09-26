@@ -1,6 +1,7 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import DOMPurify from "dompurify";
 import { useNavigate } from "react-router";
+import { dispositionOf, fetchArtifactContent, isVideoType } from "./ArtifactLink";
 import styles from "./Markdown.module.css";
 import { kindLabel, refHref, splitRefs, type RefPart } from "./boardRefs";
 
@@ -25,14 +26,73 @@ export function demoteHeadings(html: string): string {
   return doc.body.innerHTML;
 }
 
+// A board artifact embedded in markdown (`![](/v1/artifacts/<id>/content)`), relative or absolute.
+const ARTIFACT_CONTENT = /^(?:https?:\/\/[^/]+)?\/v1\/artifacts\/(art-[0-9a-f]{6,})\/content(?:[?#].*)?$/;
+
+/** t-f01372d361: an <img> pointing at a board artifact's /content would load WITHOUT the auth
+ *  headers and 401 (owner m-a11d180729). Park its id in data-artifact-src (no src, so no failed
+ *  request); useArtifactMedia then loads it through the authenticated fetch. Runs on sanitised
+ *  HTML and only removes a src, so it cannot widen what DOMPurify allowed. */
+export function deferArtifactMedia(html: string): string {
+  if (typeof DOMParser === "undefined" || !html.includes("/v1/artifacts/")) return html;
+  const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+  let changed = false;
+  for (const img of Array.from(doc.body.querySelectorAll("img[src]"))) {
+    const m = ARTIFACT_CONTENT.exec(img.getAttribute("src") ?? "");
+    if (!m) continue;
+    img.removeAttribute("src");
+    img.setAttribute("data-artifact-src", m[1]);
+    changed = true;
+  }
+  return changed ? doc.body.innerHTML : html;
+}
+
+/** Hydrate the parked artifact media inside `ref`: an image gets a blob: src, a video (the board
+ *  serves mp4/webm inline) is swapped for <video controls preload="metadata">. */
+export function useArtifactMedia(ref: React.RefObject<HTMLElement | null>, dep: unknown): void {
+  useEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    const nodes = Array.from(root.querySelectorAll<HTMLImageElement>("img[data-artifact-src]"));
+    if (!nodes.length) return;
+    let cancelled = false;
+    const urls: string[] = [];
+    for (const img of nodes) {
+      const id = img.getAttribute("data-artifact-src") ?? "";
+      void fetchArtifactContent(id).then(async (res) => {
+        if (!dispositionOf(res).inline) return;
+        const video = isVideoType(res.headers.get("content-type"));
+        const blob = await res.blob();
+        if (cancelled) return;
+        const url = URL.createObjectURL(blob);
+        urls.push(url);
+        if (!video) { img.src = url; return; }
+        const v = document.createElement("video");
+        v.src = url;
+        v.controls = true;
+        v.preload = "metadata";
+        v.setAttribute("data-testid", "artifact-video");
+        v.setAttribute("data-artifact", id);
+        v.setAttribute("aria-label", img.getAttribute("alt") || id);
+        v.style.maxWidth = "100%";
+        img.replaceWith(v);
+      }).catch(() => { img.setAttribute("data-artifact-error", "1"); });
+    }
+    return () => { cancelled = true; for (const u of urls) URL.revokeObjectURL(u); };
+  }, [ref, dep]);
+}
+
 export function Markdown({ html, className }: { html: string; className?: string }): React.JSX.Element {
   // React 19 re-applies innerHTML whenever the dangerouslySetInnerHTML OBJECT changes identity —
   // a fresh `{ __html }` per render would rebuild the body's DOM on every parent re-render and
   // detach whatever the reader had (a link mid-click, a selection). Memoise on the sanitised
   // string so the body's nodes survive re-renders (qa finding while pinning doc versions, 2026-09-10).
-  const inner = useMemo(() => ({ __html: demoteHeadings(DOMPurify.sanitize(html)) }), [html]);
+  const inner = useMemo(() => ({ __html: deferArtifactMedia(demoteHeadings(DOMPurify.sanitize(html))) }), [html]);
+  const ref = useRef<HTMLDivElement>(null);
+  useArtifactMedia(ref, inner);
   return (
     <div
+      ref={ref}
       className={`${styles.docMd} doc-md ${className ?? ""}`}
       // eslint-disable-next-line react/no-danger
       dangerouslySetInnerHTML={inner}
@@ -115,7 +175,9 @@ export function linkifyMessageHtml(html: string, strip: string[] = []): string {
 export function MessageMarkdown({ html, strip, className }: { html: string; strip?: string[]; className?: string }): React.JSX.Element {
   const navigate = useNavigate();
   const key = strip?.join(",") ?? "";
-  const inner = useMemo(() => ({ __html: linkifyMessageHtml(demoteHeadings(DOMPurify.sanitize(html)), key ? key.split(",") : []) }), [html, key]);
+  const inner = useMemo(() => ({ __html: deferArtifactMedia(linkifyMessageHtml(demoteHeadings(DOMPurify.sanitize(html)), key ? key.split(",") : [])) }), [html, key]);
+  const ref = useRef<HTMLDivElement>(null);
+  useArtifactMedia(ref, inner);
   function onClick(e: React.MouseEvent<HTMLDivElement>) {
     const a = (e.target as HTMLElement).closest("a");
     if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
@@ -132,7 +194,7 @@ export function MessageMarkdown({ html, strip, className }: { html: string; stri
   }
   return (
     // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
-    <div className={`${styles.docMd} ${styles.chatMd} ${className ?? ""}`} data-testid="message-md" onClick={onClick}
+    <div ref={ref} className={`${styles.docMd} ${styles.chatMd} ${className ?? ""}`} data-testid="message-md" onClick={onClick}
       // eslint-disable-next-line react/no-danger
       dangerouslySetInnerHTML={inner} />
   );

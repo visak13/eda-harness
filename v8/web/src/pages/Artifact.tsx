@@ -8,6 +8,7 @@ import {
   PREVIEW_TYPES,
   dispositionOf,
   fetchArtifactContent,
+  isVideoType,
   openArtifact,
 } from "../components/ArtifactLink";
 import styles from "./Artifact.module.css";
@@ -22,7 +23,7 @@ export function ArtifactPage(): React.JSX.Element {
   const { id = "" } = useParams();
   const art = useQuery({ queryKey: ["artifact", id], queryFn: () => getArtifact(id), retry: false, enabled: !!id });
   const stored = (art.data?.form === "image" || art.data?.form === "file") && (art.data?.has_content ?? Boolean(art.data?.content_type));
-  const previewable = stored && PREVIEW_TYPES.has((art.data?.content_type ?? "").toLowerCase());
+  const previewable = stored && (PREVIEW_TYPES.has((art.data?.content_type ?? "").toLowerCase()) || isVideoType(art.data?.content_type));
   const [preview, setPreview] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -91,7 +92,9 @@ export function ArtifactPage(): React.JSX.Element {
           {a.note}
         </p>
       ) : null}
-      {preview ? (
+      {preview && isVideoType(a.content_type) ? (
+        <video className={styles.preview} src={preview} controls preload="metadata" aria-label={a.note || name} data-testid="artifact-preview" />
+      ) : preview ? (
         <img className={styles.preview} src={preview} alt={a.note || name} data-testid="artifact-preview" />
       ) : null}
       <div className={styles.actions}>

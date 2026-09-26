@@ -4,7 +4,7 @@ import type { MessageAttachment, MessageView } from "../api/types";
 import { Avatar } from "./Avatar";
 import { Icon } from "./Icon";
 import { Term } from "./Term";
-import { dispositionOf, fetchArtifactContent, MessageText, openArtifact, PREVIEW_TYPES } from "./ArtifactLink";
+import { ArtifactVideo, dispositionOf, fetchArtifactContent, isVideoType, MessageText, openArtifact, PREVIEW_TYPES } from "./ArtifactLink";
 import { ThreadHistoryControls, type useThreadHistory } from "./useThreadHistory";
 import { pendingWork } from "./PendingNavigation";
 import { useScrollToHash } from "./useScrollToHash";
@@ -93,14 +93,17 @@ function AttachmentCard({ a }: { a: MessageAttachment }): React.JSX.Element {
     return () => { cancelled = true; if (blobUrl) URL.revokeObjectURL(blobUrl); };
   }, [a.id, image]);
   const name = a.filename || a.note || a.id;
+  const video = isVideoType(a.content_type);
   return (
     <div className={styles.attachment} data-testid="attachment-card" data-artifact={a.id}>
-      <Link to={`/artifact/${encodeURIComponent(a.id)}`} className={styles.thumb} aria-label={`Open ${name}`}>
-        {url ? <img src={url} alt={a.note || name} loading="lazy" /> : <Icon name={image ? "files" : "attach"} size={24} />}
-      </Link>
+      {video ? <ArtifactVideo id={a.id} label={a.note || name} /> : (
+        <Link to={`/artifact/${encodeURIComponent(a.id)}`} className={styles.thumb} aria-label={`Open ${name}`}>
+          {url ? <img src={url} alt={a.note || name} loading="lazy" /> : <Icon name={image ? "files" : "attach"} size={24} />}
+        </Link>
+      )}
       <div className={styles.caption}>
         <span className={styles.filename}>{name}</span>
-        <span>{a.note && a.note !== name ? `${a.note} · ` : ""}{image ? "image attachment" : `${a.form} attachment`}</span>
+        <span>{a.note && a.note !== name ? `${a.note} · ` : ""}{image ? "image attachment" : video ? "video attachment" : `${a.form} attachment`}</span>
         <button type="button" className={styles.view} onClick={() => void openArtifact(a.id)}>
           <Icon name="external" size={16} /> {image ? "View image" : "Open file"}
         </button>

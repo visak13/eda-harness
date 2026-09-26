@@ -263,3 +263,60 @@ def test_sweep_spares_finalised_and_fresh(board_app):
            headers=OWN)
     removed = board.sweep_staged_artifacts()
     assert fresh not in removed and done not in removed  # fresh staged + finalised both spared
+
+
+# --------------------------------------------------------------------------- video (t-f01372d361)
+
+MP4 = b"\x00\x00\x00\x20ftypisom\x00\x00\x02\x00isomiso2avc1mp41" + b"\x00" * 4000 + bytes(range(256)) * 16
+WEBM = b"\x1a\x45\xdf\xa3\x9f\x42\x86\x81\x01\x42\xf7\x81\x01\x42\x82\x84webm" + b"\x00" * 64
+MKV = b"\x1a\x45\xdf\xa3\xa3\x42\x86\x81\x01\x42\x82\x88matroska" + b"\x00" * 64
+AVIF = b"\x00\x00\x00\x1cftypavif\x00\x00\x00\x00avifmif1" + b"\x00" * 32
+
+
+def test_sniffer_accepts_mp4_webm_refuses_lookalikes():
+    assert uploads.sniff_upload(MP4, "clip.bin") == "video/mp4"
+    assert uploads.sniff_upload(WEBM, "clip") == "video/webm"
+    assert uploads.sniff_upload(MKV, "clip.webm") is None  # matroska DocType, not webm
+    assert uploads.sniff_upload(AVIF, "x.mp4") is None  # an image brand is not an mp4 video
+    assert uploads.sniff_upload(EXE, "demo.mp4") is None  # the name never decides
+    assert uploads.limit_for(MP4) == uploads.MAX_VIDEO_UPLOAD_BYTES
+    assert uploads.limit_for(PNG) == uploads.MAX_UPLOAD_BYTES
+
+
+def test_upload_video_is_file_served_inline_with_range(board_app):
+    c = board_app["client"]
+    r = _upload(c, MP4, "demo.mp4", "video/mp4").json()
+    assert r["ok"], r
+    art = r["value"]
+    assert art["content_type"] == "video/mp4" and art["form"] == "file"
+    full = c.get(f"/v1/artifacts/{art['id']}/content", headers=OWN)
+    assert full.status_code == 200 and full.content == MP4
+    assert full.headers["content-type"].startswith("video/mp4")
+    assert full.headers["content-disposition"].startswith("inline")
+    assert full.headers["x-content-type-options"] == "nosniff"
+    part = c.get(f"/v1/artifacts/{art['id']}/content", headers={**OWN, "Range": "bytes=4-11"})
+    assert part.status_code == 206
+    assert part.content == b"ftypisom"
+    assert part.headers["content-range"] == f"bytes 4-11/{len(MP4)}"
+    assert part.headers["content-type"].startswith("video/mp4")
+    wid = _upload(c, WEBM, "clip.webm").json()["value"]["id"]
+    assert c.get(f"/v1/artifacts/{wid}/content", headers=OWN).headers["content-disposition"].startswith("inline")
+
+
+def test_upload_spoofed_video_refused(board_app):
+    c = board_app["client"]
+    r = _upload(c, EXE, "demo.mp4", "video/mp4")
+    assert r.status_code == 415 and r.json()["error"]["code"] == "unsupported_type"
+    assert _upload(c, MKV, "clip.webm", "video/webm").status_code == 415
+
+
+def test_video_cap_is_larger_but_still_enforced(board_app, monkeypatch):
+    c = board_app["client"]
+    monkeypatch.setattr(uploads, "MAX_UPLOAD_BYTES", 64)
+    monkeypatch.setattr(uploads, "MAX_VIDEO_UPLOAD_BYTES", len(MP4))
+    assert _upload(c, MP4, "demo.mp4").status_code == 200  # over the file cap, within the video cap
+    r = _upload(c, MP4 + b"\x00", "demo.mp4")
+    assert r.status_code == 413 and r.json()["error"]["code"] == "too_large"
+    assert _upload(c, b"x" * 65, "big.txt").status_code == 413
+    # no partial temp files are left behind by a refused upload
+    assert not list(uploads.uploads_dir().glob(".upload-*"))

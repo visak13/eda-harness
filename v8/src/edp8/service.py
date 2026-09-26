@@ -919,36 +919,48 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     @app.post("/v1/artifacts/upload")
     async def artifact_upload(file: UploadFile = File(...), note: str = Form(default=""),
                               ticket_id: str | None = Form(default=None), a: Participant = Depends(actor)):
-        """Drop a file, get a STAGED artifact (design §18.1). The bytes stream to disk under a
-        25 MB cap; the type is SNIFFED from them (the client's name/Content-Type are never
-        trusted); an SVG is stored as a file, never an inline image. The artifact is invisible
-        until a message finalises it — attach it with POST /v1/messages artifacts:[id].
-        Known limit (§14 finding 8, accepted): an accepted (≤25 MB) upload is buffered whole in
-        memory and copied once more for the disk write; the 25 MB cap bounds it but the framework
-        also spools the multipart body before this loop runs. True streaming-to-disk is a later
-        optimisation, not required at fleet scale."""
+        """Drop a file, get a STAGED artifact (design §18.1). The bytes stream to a temp file under
+        the cap for their sniffed type (25 MB; 100 MB for mp4/webm video, t-f01372d361); the type
+        is SNIFFED from them (the client's name/Content-Type are never trusted); an SVG is stored
+        as a file, never an inline image. The artifact is invisible until a message finalises it —
+        attach it with POST /v1/messages artifacts:[id]. The framework still spools the multipart
+        body before this loop runs; the loop itself never holds more than one chunk in memory."""
+        import os
+        import tempfile
         from . import uploads
-        buf = bytearray()
+        dest = uploads.uploads_dir()
+        dest.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=dest, prefix=".upload-", suffix=".part")
         head = b""
-        while True:
-            chunk = await file.read(1024 * 1024)
-            if not chunk:
-                break
-            buf.extend(chunk)
-            if len(buf) > uploads.MAX_UPLOAD_BYTES:
-                return JSONResponse(status_code=413, content={"ok": False, "error": {"code": "too_large",
-                    "message": f"the file is over the {uploads.MAX_UPLOAD_BYTES // (1024 * 1024)} MB upload limit"},
-                    "hint": "compress it or share a link instead"})
-            if len(head) < 4096:
-                head = bytes(buf[:4096])
-        ctype = uploads.sniff_upload(head, file.filename or "")
-        if ctype is None:
-            return JSONResponse(status_code=415, content={"ok": False, "error": {"code": "unsupported_type",
-                "message": "that file type is not accepted; allowed: images, pdf, text, markdown, json, log, zip, svg"},
-                "hint": "the type is read from the file's bytes, not its name"})
-        form = ArtifactForm.image if uploads.is_inline_image(ctype) else ArtifactForm.file
-        art = board.artifact_upload(a, form=form, content_type=ctype, filename=file.filename or "", note=note)
-        (uploads.uploads_dir() / f"{art.id}.{uploads.ext_for(ctype)}").write_bytes(bytes(buf))
+        size = 0
+        try:
+            with os.fdopen(fd, "wb") as out:
+                while True:
+                    chunk = await file.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    if len(head) < 4096:
+                        head = (head + chunk)[:4096]
+                    size += len(chunk)
+                    cap = uploads.limit_for(head)
+                    if size > cap:
+                        return JSONResponse(status_code=413, content={"ok": False, "error": {"code": "too_large",
+                            "message": f"the file is over the {cap // (1024 * 1024)} MB upload limit"},
+                            "hint": "compress it or share a link instead"})
+                    out.write(chunk)
+            ctype = uploads.sniff_upload(head, file.filename or "")
+            if ctype is None:
+                return JSONResponse(status_code=415, content={"ok": False, "error": {"code": "unsupported_type",
+                    "message": "that file type is not accepted; allowed: images, pdf, text, markdown, json, log, "
+                               "zip, svg, mp4/webm video"},
+                    "hint": "the type is read from the file's bytes, not its name"})
+            form = ArtifactForm.image if uploads.is_inline_image(ctype) else ArtifactForm.file
+            art = board.artifact_upload(a, form=form, content_type=ctype, filename=file.filename or "", note=note)
+            os.replace(tmp, dest / f"{art.id}.{uploads.ext_for(ctype)}")
+            tmp = None
+        finally:
+            if tmp is not None and os.path.exists(tmp):
+                os.unlink(tmp)
         return ok(_dump(art), "staged; post a message with artifacts:[this id] to attach it — "
                               "unfinalised uploads are swept after 24 h")
 
@@ -965,7 +977,8 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     def artifact_content(id_: str, a: Participant = Depends(actor)):
         """Serve an uploaded artifact's bytes with the sniffed type. Never sniffs in the browser
         (X-Content-Type-Options: nosniff) and forces a download for everything but the four inline
-        image types — an uploaded SVG is thus never rendered (design §18.1)."""
+        image types and mp4/webm video — an uploaded SVG is thus never rendered (design §18.1).
+        Range requests get 206 partial content (FileResponse), so a <video> can seek."""
         from . import uploads
         art = board._get("artifact", id_, "artifact")
         if getattr(art, "staged", False) and art.created_by != a.id:  # §18.1: a staged upload is
@@ -974,7 +987,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         path = uploads.uploads_dir() / f"{id_}.{uploads.ext_for(ctype)}"
         if not path.exists():
             raise BoardError("not_found", f"artifact {id_} has no stored content")
-        disp = "inline" if uploads.is_inline_image(ctype) else "attachment"
+        disp = "inline" if uploads.is_inline_image(ctype) or uploads.is_inline_video(ctype) else "attachment"
         name = art.filename or path.name
         return FileResponse(path, media_type=ctype, headers={
             "X-Content-Type-Options": "nosniff",

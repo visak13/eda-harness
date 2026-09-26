@@ -3,8 +3,9 @@
 The board never trusts a client's filename or Content-Type: the artifact's real type is
 SNIFFED from the leading bytes. Only an allowlist of types is accepted, and an SVG — however
 it arrives — is stored as a downloadable FILE, never an inline image, so a script-bearing SVG
-can never render in the board. The 25 MB cap is enforced by the caller while it streams
-(nothing oversize is ever fully read into memory or written to disk).
+can never render in the board. The caller streams the body to disk under the cap for the sniffed
+type (`limit_for`): 25 MB, or 100 MB for a video (t-f01372d361: a 90 s 1080p product-video render is
+~15–30 MB, so 100 MB leaves room for longer cuts without letting arbitrary files grow).
 """
 
 from __future__ import annotations
@@ -15,11 +16,17 @@ from urllib.parse import quote
 from edp8 import settings
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB (design §18.1)
+MAX_VIDEO_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB for mp4/webm (t-f01372d361)
 _SNIFF_BYTES = 4096  # enough for every magic number below and an SVG root element
 
 # sniffed content type -> the artifact form the board records. png/jpeg/gif/webp render inline
 # (form=image); everything else, SVG included, is a downloadable file (form=file).
 _INLINE_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
+# video plays inline in the board's <video controls> (t-f01372d361); recorded as form=file
+_INLINE_VIDEO_TYPES = {"video/mp4", "video/webm"}
+# ISO-BMFF major brands a browser plays as video/mp4; an image brand (avif, heic, …) or a
+# QuickTime 'qt  ' file is not an mp4 video and stays refused
+_MP4_BRANDS = {b"isom", b"iso2", b"iso4", b"iso5", b"iso6", b"mp41", b"mp42", b"avc1", b"M4V ", b"dash", b"mmp4"}
 
 
 def uploads_dir() -> Path:
@@ -33,10 +40,30 @@ def is_inline_image(content_type: str) -> bool:
     return content_type in _INLINE_IMAGE_TYPES
 
 
+def is_inline_video(content_type: str) -> bool:
+    return content_type in _INLINE_VIDEO_TYPES
+
+
+def _sniff_video(head: bytes) -> str | None:
+    """video/mp4 from an ISO-BMFF `ftyp` box with a video major brand; video/webm from an EBML
+    header whose DocType is `webm` (a Matroska .mkv is not accepted)."""
+    if head[4:8] == b"ftyp" and head[8:12] in _MP4_BRANDS:
+        return "video/mp4"
+    if head.startswith(b"\x1a\x45\xdf\xa3") and b"\x42\x82\x84webm" in head[:64]:
+        return "video/webm"
+    return None
+
+
+def limit_for(head: bytes) -> int:
+    """The byte cap for an upload whose first bytes are `head`: the video cap for mp4/webm."""
+    return MAX_VIDEO_UPLOAD_BYTES if _sniff_video(head) else MAX_UPLOAD_BYTES
+
+
 _EXT = {
     "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp",
     "image/svg+xml": "svg", "application/pdf": "pdf", "application/zip": "zip",
     "application/json": "json", "text/markdown": "md", "text/plain": "txt",
+    "video/mp4": "mp4", "video/webm": "webm",
 }
 
 
@@ -102,6 +129,9 @@ def sniff_upload(data: bytes, filename: str = "") -> str | None:
         return "application/pdf"
     if head.startswith(b"PK\x03\x04"):
         return "application/zip"
+    video = _sniff_video(head)
+    if video:
+        return video
     if _looks_textual(head):
         lowered = head.lstrip()[:512].lower()
         if b"<svg" in lowered or (lowered.startswith(b"<?xml") and b"<svg" in head.lower()):

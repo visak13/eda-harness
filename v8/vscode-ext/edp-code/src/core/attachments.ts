@@ -48,6 +48,8 @@ export function openMode(contentType: string): 'preview' | 'text' | 'save' {
 const EXT: Record<string, string> = {
   'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp', 'image/svg+xml': 'svg',
   'application/pdf': 'pdf', 'application/zip': 'zip', 'application/json': 'json', 'text/markdown': 'md', 'text/plain': 'txt',
+  // t-f01372d361: the board accepts mp4/webm; VS Code shows them as a file row and saves them with their extension
+  'video/mp4': 'mp4', 'video/webm': 'webm',
 };
 
 /** A file name that is safe on Windows and POSIX: a basename, no reserved or control characters, no
@@ -65,7 +67,7 @@ export function safeFileName(name: string, id: string, contentType: string): str
   // an image or a binary type always gets its own; a text type only when the name claims a binary one
   const cur = (/\.([A-Za-z0-9]{1,8})$/.exec(n)?.[1] ?? '').toLowerCase().replace('jpeg', 'jpg');
   if (cur === ext) return n;
-  const binaryType = /^image\/(png|jpeg|gif|webp)$|^application\/(pdf|zip)$/.test(contentType);
+  const binaryType = /^image\/(png|jpeg|gif|webp)$|^application\/(pdf|zip)$|^video\/(mp4|webm)$/.test(contentType);
   return !cur || binaryType || BINARY_EXT.has(cur) ? `${n}.${ext}` : n;
 }
 const BINARY_EXT = new Set(['png', 'jpg', 'gif', 'webp', 'pdf', 'zip', 'exe', 'dll', 'bin']);

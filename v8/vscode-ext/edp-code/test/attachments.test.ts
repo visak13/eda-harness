@@ -73,6 +73,9 @@ describe('pure helpers', () => {
     expect(openMode('image/svg+xml')).toBe('text'); // never rendered
     expect(openMode('application/pdf')).toBe('save');
     expect(openMode('application/zip')).toBe('save');
+    expect(openMode('video/mp4')).toBe('save'); // t-f01372d361: a file row VS Code saves, played in the board
+    expect(safeFileName('demo', A, 'video/mp4')).toBe('demo.mp4');
+    expect(safeFileName('cut.bin', A, 'video/webm')).toBe('cut.bin.webm');
   });
   it('safeFileName: a Windows-safe basename with the sniffed extension', () => {
     expect(safeFileName('../../etc/passwd', A, 'text/plain')).toBe('passwd.txt');
