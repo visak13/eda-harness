@@ -92,16 +92,14 @@ test('representative three-message conversation comparison', async ({ page, requ
   await page.screenshot({ path: 'e2e/evidence/s3-final-layout/representative-320-viewport.png' });
 });
 
-test('Needs you negative ruling must not sign off a design', async ({ page, request }) => {
+// S20: the Needs you page is gone; the design sign-off waits behind the epic's Design opener (its dot).
+test('a negative ruling from the Design opener must not sign off a design', async ({ page, request }) => {
   const { epic, doc, gate } = await setupReview(request);
   const legacyPosts: string[] = [];
   page.on('request', r => { if (r.method() === 'POST' && r.url().includes('/design_signoff/answer')) legacyPosts.push(r.url()); });
-  await page.goto('/ui/me?as=owner');
-  await page.getByRole('tab', { name: /^Gates/ }).click();
-  const form = page.getByTestId('gate-form').filter({ hasText: epic.id });
-  await expect(form.getByTestId('gate-answer')).toHaveCount(0);
-  await expect(form.getByTestId('gate-submit')).toHaveCount(0);
-  await form.getByRole('link', { name: 'Review design at source' }).click();
+  await page.goto(`/ui/epic/${epic.id}?as=owner`);
+  await expect(page.getByTestId('work-design')).toHaveAttribute('data-attention', 'true');
+  await page.getByTestId('work-design').click();
   const dialog = page.getByRole('dialog', { name: 'Design', exact: true });
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: 'Request changes', exact: true }).click();

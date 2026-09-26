@@ -13,9 +13,12 @@ async function call(method: string, p: string, data: unknown, actor: string) {
   return j.value;
 }
 
-async function openGates(page: Page) {
-  await page.goto(`/ui/me?as=owner`);
-  await page.getByRole("tab", { name: /Gates/ }).click();
+// S20: the Decisions page is gone; a demo gate waits at the epic's Actions (dotted) → Answer a decision.
+async function openGates(page: Page, epic: string) {
+  await page.goto(`/ui/epic/${epic}?as=owner`);
+  await expect(page.getByTestId("actions-open")).toHaveAttribute("data-attention", "true");
+  await page.getByTestId("actions-open").click();
+  await page.getByTestId("action-answer-decision").click();
   await expect(page.getByTestId("gate-form")).toBeVisible();
   await page.waitForTimeout(1500); // live feed attached
 }
@@ -25,8 +28,8 @@ test("A's unsent ruling survives live refetches and B answering the gate", async
   await call("POST", `/v1/gates/${epic}/demo/open`, { note: "rule on the demo" }, "arch");
   const a = await (await browser.newContext()).newPage();
   const b = await (await browser.newContext()).newPage();
-  await openGates(a);
-  await openGates(b);
+  await openGates(a, epic);
+  await openGates(b, epic);
 
   const RULING = "Ship it, but keep the old menu for one more week.\nSecond line of my ruling.";
   await a.getByTestId("gate-answer").fill(RULING);

@@ -1,58 +1,63 @@
 import { expect, test } from "./fixtures";
+import { BASE } from "./fixtures";
 import { seedDecisions, type G2Fixture } from "./g2.seed";
-import { get, openDecisions } from "./g2-owner-loop.helpers";
+import { dotOn, get, openEpics } from "./g2-owner-loop.helpers";
 
 test.use({ boardFile: "g2-owner-loop" }); // one fresh board per spec file (fixtures.ts)
 
-// The G2 owner loop, proven end-to-end through the real Folio shell served at /ui/me:
-//   part 1 (c-da073491bd): the seeded Sign-offs/Questions/Gates counts, Seats-now with the alive
-//     engineer seat + "Last work update unavailable", Epic pulse status + waiting_reason, and an
-//     inline question reply that leaves the tab and sets reply_to on the wire.
-//   part 2 (c-6c014b0c72): "Review evidence" → drawer with the frozen report + verbatim criterion;
-//     Approve-with-note closes it, the item leaves Sign-offs and lands under Resolved, verdict=pass;
-//     a Needs-work run yields verdict=fail and a "[sign-off fail] …" message to the assignee.
-//   gate (c-4941d309f1): answering the seeded design_signoff gate drops the Gates count to 0 and
-//     GET /v1/gates/{epic} is empty.
-// Each test seeds its own scenario via /v1 so they are order-independent.
-// This file: part 1. Part 2 and the gate answer live in g2-owner-loop-ruling.spec.ts / g2-owner-loop-gate.spec.ts, each on its own board.
+// The G2 owner loop on the S20 attention trail (the Decisions page is gone, design-e963c656f5 §4.18; each
+// former panel's new home per architect m-e972777a3d):
+//   part 1 (c-da073491bd): what waits on the owner is on the Epics row (sorted first, marked, one-line
+//     reason — the former Epic pulse), the rail counts it, the Waiting-on-you popover links to it; Seats
+//     now lives on the Seats page; a question is answered inline on its own thread (highlighted from its
+//     #m- link) with reply_to on the wire, and its mark clears.
+//   part 2 (ruling drawer): g2-owner-loop-ruling / -needswork. Gates: g2-owner-loop-gate, s22-gate-draft.
 
-test.describe("owner loop — part 1 (waiting-on-you + conversations)", () => {
+test.describe("owner loop — part 1 (the trail + conversations)", () => {
   let fx: G2Fixture;
   test.beforeAll(async () => {
     fx = await seedDecisions();
   });
 
-  test("counts, Seats-now, Epic pulse, and an inline reply that sets reply_to", async ({ page }) => {
-    await openDecisions(page);
+  test("Epics row + rail + popover, Seats page, and an inline reply that sets reply_to", async ({ page }) => {
+    await openEpics(page);
 
-    // Tab counts equal the seeded decisions payload: 1 / 1 / 1.
-    await expect(page.getByRole("tab", { name: /Sign-offs/ })).toContainText("1");
-    await expect(page.getByRole("tab", { name: /Questions/ })).toContainText("1");
-    await expect(page.getByRole("tab", { name: /Gates/ })).toContainText("1");
+    // The epic waiting on the owner sorts first, marked, with its one-line reason.
+    const row = page.getByTestId("epic-row").first();
+    await expect(row).toContainText(fx.words);
+    await expect(row).toHaveAttribute("data-attention", "true");
+    const reason = row.getByTestId("attention-reason");
+    await expect(reason).toHaveText("Waiting on you: 1 sign-off, 1 question, 1 design sign-off"); // a dead seat's question is collapsed (§18.2 inbox rule)
+    await expect(row.locator("[data-attention-dot]")).toHaveAttribute("aria-label", "needs your attention: 3");
+    // The rail counts it, and the popover links into the trail.
+    await expect(page.getByRole("link", { name: /^Epics/ }).locator("[data-attention-dot]")).toHaveAttribute("aria-label", "needs your attention: 3");
+    await page.getByTestId("waiting-open").click();
+    const popRow = page.getByTestId("waiting-row").filter({ hasText: fx.words });
+    await expect(popRow).toHaveAttribute("href", `/ui/epic/${fx.epic}`);
+    await page.keyboard.press("Escape");
 
-    // Seats-now: the alive engineer seat, its ticket, and the honest presence caveats.
-    const seats = page.getByTestId("seats-now");
-    await expect(seats).toContainText(fx.story);
-    await expect(seats).toContainText("Last work update unavailable");
-    await expect(seats).toContainText("Shell alive ≠ work progressing");
+    // Seats now → the Seats page: the alive engineer seat, its ticket, and the honest presence caveats.
+    await page.goto(`${BASE()}/ui/seats?as=owner`);
+    await expect(page.getByText(fx.story).first()).toBeVisible();
+    await expect(page.getByText("Last work update unavailable").first()).toBeVisible();
+    await expect(page.getByText(/Shell alive ≠ work progressing/).first()).toBeVisible();
 
-    // Epic pulse: the seeded epic's status word and its waiting_reason (open gate).
-    const pulse = page.getByTestId("epic-pulse");
-    await expect(pulse).toContainText(fx.words);
-
-    // Inline reply to the question → it leaves the Questions tab, and the wire carries reply_to.
-    await page.getByRole("tab", { name: /Questions/ }).click();
-    await expect(page.getByTestId("question")).toBeVisible();
-    await page.getByTestId("reply").click();
+    // The question on its thread: highlighted from its #m- link, marked; the inline reply carries reply_to.
+    await page.goto(`${BASE()}/ui/ticket/${fx.story}?as=owner#${fx.question}`);
+    const q = page.locator(`li[id="${fx.question}"]`);
+    await expect(q).toHaveAttribute("data-highlight", "true");
+    await expect(q).toHaveAttribute("data-attention", "true");
+    await q.getByTestId("thread-reply").click();
     await page.getByTestId("composer-text").fill("Use the Folio theme for the featured card.");
     await page.getByTestId("composer-send").click();
-    await expect(page.getByTestId("question")).toHaveCount(0);
-
     await expect
       .poll(async () => {
         const msgs = await get(`/v1/messages?ticket_id=${fx.story}`);
         return (msgs ?? []).some((m: any) => m.reply_to === fx.question);
       })
       .toBe(true);
+    // Clearing: answered, so the question leaves the attention list and its mark goes.
+    await expect(q).not.toHaveAttribute("data-attention", "true");
+    await expect(dotOn(page, "work-files")).toHaveAttribute("aria-label", "needs your attention: 1"); // the sign-off still waits
   });
 });
