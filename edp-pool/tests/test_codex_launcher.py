@@ -74,8 +74,8 @@ def test_model_and_effort_selection(monkeypatch, tmp_path):
         "roles": {}}), encoding="utf-8")
     seen = _capture(monkeypatch)
     sp = cl.CodexSpawner(log_dir=str(tmp_path / "logs"), agent_home=str(tmp_path))
-    assert cl.is_codex_model("astra-codex", str(tmp_path)) and cl.is_codex_model("my-model", str(tmp_path))
-    assert not cl.is_codex_model("astra", str(tmp_path)) and not cl.is_codex_model("builder", str(tmp_path))
+    assert cl.catalog_routes_codex("astra-codex", str(tmp_path)) and cl.catalog_routes_codex("my-model", str(tmp_path))
+    assert not cl.catalog_routes_codex("astra", str(tmp_path)) and not cl.catalog_routes_codex("builder", str(tmp_path))
     sp.launch("s1", "engineer", "engineer.1", model="astra-codex")
     assert seen["kw"]["env"]["EDP_CODEX_MODEL"] == "gpt-6-astra" and seen["kw"]["env"]["EDP_CODEX_EFFORT"] == "high"
     sp.launch("s2", "engineer", "engineer.2", model="my-model", extra_env={"EDP_SEAT_EFFORT": "low"})

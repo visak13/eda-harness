@@ -155,7 +155,7 @@ def test_openai_column_binds_model_and_thinking_at_the_spawn_seam(monkeypatch, t
 def test_spawn_model_astra_routes_to_the_pi_backend(monkeypatch, tmp_path):
     """owner m-8642d551fc: spawn(role=engineer, model="astra") lands on the GPT backend without EDP_PI_ROLES."""
     from edp_pool.composite_spawner import CompositeSpawner
-    from edp_pool.pi_launcher import is_pi_model
+    from edp_pool.pi_launcher import catalog_routes_pi
     home = tmp_path / "home"
     home.mkdir()
     (home / "models.json").write_text(json.dumps({
@@ -175,7 +175,7 @@ def test_spawn_model_astra_routes_to_the_pi_backend(monkeypatch, tmp_path):
         def knows(self, sid):
             return False
 
-    comp = CompositeSpawner(Fake("claude"), Fake("pi"), roles=set(), route_model=lambda m: is_pi_model(m, str(home)))
+    comp = CompositeSpawner(Fake("claude"), Fake("pi"), roles=set(), route_model=lambda m: catalog_routes_pi(m, str(home)))
     comp.launch("s1", "engineer", "engineer.t1", model="astra", parent="architect:abc",
                 extra_env={"EDP8_TOKEN": "tok-1"})  # the service passes parent= and extra_env= on every spawn
     comp.launch("s2", "engineer", "engineer.t2", model="openai/gpt-6-astra")
@@ -184,7 +184,7 @@ def test_spawn_model_astra_routes_to_the_pi_backend(monkeypatch, tmp_path):
     assert [c[0] for c in calls] == ["pi", "pi", "claude", "claude"]
     assert calls[0][3] == "architect:abc"  # lineage forwarded (the live pool raised TypeError without it)
     assert calls[0][4] == {"EDP8_TOKEN": "tok-1"}  # the seat token reaches the backend (second live TypeError)
-    assert is_pi_model("astra", str(home)) and not is_pi_model("opus", str(home)) and not is_pi_model(None, str(home))
+    assert catalog_routes_pi("astra", str(home)) and not catalog_routes_pi("opus", str(home)) and not catalog_routes_pi(None, str(home))
 
 
 def test_launch_merges_the_seat_token_into_env_not_argv(monkeypatch, tmp_path):
@@ -259,8 +259,8 @@ def test_opaque_pi_provider_credential_is_injected_only_into_child_env(monkeypat
             return None
 
     monkeypatch.setattr(pl.subprocess, "Popen", lambda argv, **kw: seen.update(argv=argv, kw=kw) or FakeProc())
-    assert pl.is_pi_model("my-model", str(tmp_path))
-    assert not pl.is_pi_model("gpt-looking", str(tmp_path))
+    assert pl.catalog_routes_pi("my-model", str(tmp_path))
+    assert not pl.catalog_routes_pi("gpt-looking", str(tmp_path))
     sp = pl.PiSpawner(log_dir=str(tmp_path / "logs"), agent_home=str(tmp_path))
     sp.launch("s-provider", "engineer", "engineer.provider", model="my-model", mode="headless")
     assert seen["kw"]["env"]["EDP_PI_MODEL"] == "openrouter/model-x"

@@ -6,8 +6,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from edp_contracts.seats import load, seat_for_role
-from edp_pool.codex_launcher import is_codex_model
-from edp_pool.pi_launcher import is_pi_model
+from edp_pool.codex_launcher import catalog_routes_codex
+from edp_pool.pi_launcher import catalog_routes_pi
 
 V8 = str(Path(__file__).resolve().parents[2] / "v8")
 
@@ -20,6 +20,6 @@ def test_v8_registry_with_role_models_validates():
 
 def test_board_picks_route_to_the_right_harness():
     for gpt in ("gpt-6-astra", "gpt-6-sol"):
-        assert is_codex_model(gpt, V8) and not is_pi_model(gpt, V8)
+        assert catalog_routes_codex(gpt, V8) and not catalog_routes_pi(gpt, V8)
     for claude in ("claude-fable-5-1", "claude-opus-5-5"):
-        assert not is_codex_model(claude, V8) and not is_pi_model(claude, V8)
+        assert not catalog_routes_codex(claude, V8) and not catalog_routes_pi(claude, V8)

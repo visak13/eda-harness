@@ -117,7 +117,7 @@ def pi_seat_named(name: str | None, agent_home: str | None):
         return None
 
 
-def is_pi_model(model: str | None, agent_home: str | None) -> bool:
+def catalog_routes_pi(model: str | None, agent_home: str | None) -> bool:
     """Routing predicate backed by the catalog's explicit harness."""
     from edp_contracts.seats import model_entry
     return bool(agent_home and (model_entry(agent_home, model) or {}).get("harness") == "pi")

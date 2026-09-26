@@ -2,9 +2,9 @@
 
 import json
 
-from edp_pool.codex_launcher import is_codex_model
+from edp_pool.codex_launcher import catalog_routes_codex
 from edp_pool.composite_spawner import CompositeSpawner
-from edp_pool.pi_launcher import is_pi_model
+from edp_pool.pi_launcher import catalog_routes_pi
 from edp_pool.pty_launcher import build_env
 
 
@@ -27,8 +27,8 @@ def test_arbitrary_ids_route_to_pi_codex_and_claude(tmp_path):
     claude = Fake("claude", calls)
     pi = Fake("pi", calls)
     codex = Fake("codex", calls)
-    stack = CompositeSpawner(claude, pi, roles=set(), route_model=lambda m: is_pi_model(m, str(tmp_path)))
-    stack = CompositeSpawner(stack, codex, roles=set(), route_model=lambda m: is_codex_model(m, str(tmp_path)))
+    stack = CompositeSpawner(claude, pi, roles=set(), route_model=lambda m: catalog_routes_pi(m, str(tmp_path)))
+    stack = CompositeSpawner(stack, codex, roles=set(), route_model=lambda m: catalog_routes_codex(m, str(tmp_path)))
     for mid in ("plain-pi", "plain-codex", "gpt-looking-claude"):
         stack.launch(mid, "engineer", "engineer.test", model=mid)
     assert calls == [("pi", "plain-pi"), ("codex", "plain-codex"),

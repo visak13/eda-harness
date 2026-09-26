@@ -53,7 +53,7 @@ _pi_roles = set(settings.get("EDP_PI_ROLES"))
 # EDP_PI_BIN) the backend is ALWAYS armed, and a spawn whose requested model is a `harness: pi`
 # seat name ("astra") or an openai/… id lands on it — no role re-arming needed. Roles listed in
 # EDP_PI_ROLES route there unconditionally as before.
-from .pi_launcher import is_pi_model, pi_harness_cli  # noqa: E402
+from .pi_launcher import catalog_routes_pi, pi_harness_cli  # noqa: E402
 _pi_available = pi_harness_cli() is not None or settings.is_set("EDP_PI_BIN")
 if _pi_roles or _pi_available:
     from .composite_spawner import CompositeSpawner
@@ -67,7 +67,7 @@ if _pi_roles or _pi_available:
             agent_home=_agent_home,
         ),
         roles=_pi_roles,
-        route_model=lambda m: is_pi_model(m, _agent_home),
+        route_model=lambda m: catalog_routes_pi(m, _agent_home),
     )
     _log.info("pi_backend_armed", "mixed fleet: roles + pi-seat models routed to pi (GPT-6 Astra)",
               roles=sorted(_pi_roles), by_model=True)
@@ -77,7 +77,7 @@ if _pi_roles or _pi_available:
 _codex_roles = set(settings.get("EDP_CODEX_ROLES"))
 _codex_by_model = True  # explicit catalog entries always route; no prefix or feature flag
 if _codex_roles or _codex_by_model:
-    from .codex_launcher import CodexSpawner, is_codex_model
+    from .codex_launcher import CodexSpawner, catalog_routes_codex
     from .composite_spawner import CompositeSpawner
     _spawner = CompositeSpawner(
         _spawner,
@@ -88,7 +88,7 @@ if _codex_roles or _codex_by_model:
             agent_home=_agent_home,
         ),
         roles=_codex_roles,
-        route_model=(lambda m: is_codex_model(m, _agent_home))
+        route_model=(lambda m: catalog_routes_codex(m, _agent_home))
         if _codex_by_model else None,
     )
     _log.info("codex_backend_armed", "mixed fleet: roles routed to codex app-server (GPT-6 Astra)",
