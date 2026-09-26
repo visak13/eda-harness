@@ -151,7 +151,7 @@ def test_openai_column_binds_model_and_thinking_at_the_spawn_seam(monkeypatch, t
 
 def test_spawn_model_astra_routes_to_the_pi_backend(monkeypatch, tmp_path):
     """owner m-8642d551fc: spawn(role=engineer, model="astra") lands on the GPT backend without EDP_PI_ROLES."""
-    from edp_pool.opencode_launcher import CompositeSpawner
+    from edp_pool.composite_spawner import CompositeSpawner
     from edp_pool.pi_launcher import is_pi_model
     home = tmp_path / "home"
     home.mkdir()
@@ -171,7 +171,7 @@ def test_spawn_model_astra_routes_to_the_pi_backend(monkeypatch, tmp_path):
         def knows(self, sid):
             return False
 
-    comp = CompositeSpawner(Fake("claude"), Fake("pi"), opencode_roles=set(), route_model=lambda m: is_pi_model(m, str(home)))
+    comp = CompositeSpawner(Fake("claude"), Fake("pi"), roles=set(), route_model=lambda m: is_pi_model(m, str(home)))
     comp.launch("s1", "engineer", "engineer.t1", model="astra", parent="architect:abc",
                 extra_env={"EDP8_TOKEN": "tok-1"})  # the service passes parent= and extra_env= on every spawn
     comp.launch("s2", "engineer", "engineer.t2", model="openai/gpt-6-astra")

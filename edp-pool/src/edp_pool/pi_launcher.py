@@ -1,7 +1,7 @@
 """PI shell backend (epic-6a8a6020fd S2): a resident GPT-6 Astra seat under pi.dev's coding agent.
 
-Mirrors opencode_launcher's shape (Spawner ABC + the optional hooks service.py probes with getattr),
-minus opencode's one-shot/TUI machinery: a Pi seat is a RESIDENT process — the pool launches
+Implements the Spawner surface plus the optional hooks service.py probes with getattr (routed by
+composite_spawner.CompositeSpawner): a Pi seat is a RESIDENT process — the pool launches
 `<agent_home>/.venv/Scripts/python.exe -m edp8.pi_seat.run`, which owns `pi --mode rpc` (JSONL on
 stdio), boots the role card, and stays up; Monitor lines and cron fires re-wake the model inside
 Pi (v8/.pi/extensions/edp8.ts), so "alive" == the runner process is running, exactly like a Claude

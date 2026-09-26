@@ -51,32 +51,11 @@ _claude_spawner = SubprocessSpawner(
     pool_url=_pool_url,
     shell_log_dir=_shell_log_dir,
 )
-# PORT-OPENCODE M1 — mixed-fleet opt-in. EDP_OPENCODE_ROLES names the roles
-# routed to the opencode/gpt-5.6 backend (e.g. "worker" or "worker,qa");
-# EMPTY (the default) keeps the fleet 100% Claude — zero behavior change.
-_oc_roles = {r.strip() for r in
-             os.environ.get("EDP_OPENCODE_ROLES", "").split(",") if r.strip()}
-if _oc_roles:
-    from .opencode_launcher import CompositeSpawner, OpencodeSpawner
-    _spawner = CompositeSpawner(
-        _claude_spawner,
-        OpencodeSpawner(
-            log_dir=str(_root / ".logs" / "opencode"),
-            broker_url=_broker_url,
-            pool_url=_pool_url,
-            agent_home=_agent_home,
-        ),
-        opencode_roles=_oc_roles,
-    )
-    _log.info("opencode_backend_armed",
-              "mixed fleet: roles routed to opencode",
-              roles=sorted(_oc_roles))
-else:
-    _spawner = _claude_spawner
+_spawner = _claude_spawner
 # epic-6a8a6020fd S2 — resident GPT-6 Astra seats under pi.dev. EDP_PI_ROLES names the roles
 # routed to the Pi backend (e.g. "qa"); EMPTY (the default) = zero behaviour change.
-# CompositeSpawner is backend-agnostic despite its parameter name (it only uses the Spawner
-# surface + the getattr hooks), so it stacks on whatever _spawner already is.
+# CompositeSpawner only uses the Spawner surface + the getattr hooks, so it stacks on whatever
+# _spawner already is.
 _pi_roles = {r.strip() for r in
              os.environ.get("EDP_PI_ROLES", "").split(",") if r.strip()}
 # Per-spawn routing (owner m-8642d551fc): with the Pi harness installed (edp-pool/.pi-harness or
@@ -86,7 +65,7 @@ _pi_roles = {r.strip() for r in
 from .pi_launcher import is_pi_model, pi_bin_argv  # noqa: E402
 _pi_available = pi_bin_argv()[0] != "pi" or bool(os.environ.get("EDP_PI_BIN"))
 if _pi_roles or _pi_available:
-    from .opencode_launcher import CompositeSpawner
+    from .composite_spawner import CompositeSpawner
     from .pi_launcher import PiSpawner
     _spawner = CompositeSpawner(
         _spawner,
@@ -96,7 +75,7 @@ if _pi_roles or _pi_available:
             pool_url=_pool_url,
             agent_home=_agent_home,
         ),
-        opencode_roles=_pi_roles,
+        roles=_pi_roles,
         route_model=lambda m: is_pi_model(m, _agent_home),
     )
     _log.info("pi_backend_armed", "mixed fleet: roles + pi-seat models routed to pi (GPT-6 Astra)",
@@ -108,7 +87,7 @@ _codex_roles = {r.strip() for r in
                 os.environ.get("EDP_CODEX_ROLES", "").split(",") if r.strip()}
 if _codex_roles or os.environ.get("EDP_CODEX_BY_MODEL") == "1":
     from .codex_launcher import CodexSpawner, is_codex_model
-    from .opencode_launcher import CompositeSpawner
+    from .composite_spawner import CompositeSpawner
     _spawner = CompositeSpawner(
         _spawner,
         CodexSpawner(
@@ -117,7 +96,7 @@ if _codex_roles or os.environ.get("EDP_CODEX_BY_MODEL") == "1":
             pool_url=_pool_url,
             agent_home=_agent_home,
         ),
-        opencode_roles=_codex_roles,
+        roles=_codex_roles,
         route_model=(lambda m: is_codex_model(m, _agent_home))
         if os.environ.get("EDP_CODEX_BY_MODEL") == "1" else None,
     )

@@ -121,7 +121,7 @@ def test_closed_session_token_is_the_thread_state_file(tmp_path):
 
 
 def _reload_main(monkeypatch, tmp_path, **env):
-    for k in ("EDP_CODEX_ROLES", "EDP_CODEX_BY_MODEL", "EDP_PI_ROLES", "EDP_OPENCODE_ROLES", "EDP_PI_BIN"):
+    for k in ("EDP_CODEX_ROLES", "EDP_CODEX_BY_MODEL", "EDP_PI_ROLES", "EDP_PI_BIN"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("EDP_POOL_STATE", str(tmp_path / "state.json"))
     monkeypatch.setenv("EDP_POOL_LOG_DIR", str(tmp_path / "pool-logs"))
@@ -136,7 +136,7 @@ def test_main_wiring_unchanged_when_codex_roles_empty(monkeypatch, tmp_path):
     assert not any(type(x).__name__ == "CodexSpawner" for x in _stack(m._spawner))
     m2 = _reload_main(monkeypatch, tmp_path, EDP_CODEX_ROLES="qa")
     codex = [x for x in _stack(m2._spawner) if type(x).__name__ == "CodexSpawner"]
-    assert codex and "qa" in m2._spawner._oc_roles
+    assert codex and "qa" in m2._spawner._roles
 
 
 def _stack(sp):
@@ -144,5 +144,5 @@ def _stack(sp):
     while todo:
         x = todo.pop()
         out.append(x)
-        todo += [getattr(x, a) for a in ("_claude", "_oc", "_inner") if getattr(x, a, None) is not None]
+        todo += [getattr(x, a) for a in ("_primary", "_second", "_inner") if getattr(x, a, None) is not None]
     return out
