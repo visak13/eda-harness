@@ -233,8 +233,10 @@ class PiSpawner:
         entry = model_entry(self._agent_home or os.getcwd(), model)
         if entry and entry.get("harness") == "pi":
             provider = str(entry["provider"])
-            env["EDP_PI_MODEL"] = str(entry.get("model") or
-                                      (model if "/" in model else f"{provider}/{model}"))
+            # Pi reads `<provider>/<model id>`; the row's provider is the authority, so an id that does not
+            # already start with it gets it (an OpenRouter id such as anthropic/x becomes openrouter/anthropic/x)
+            target = str(entry.get("model") or model)
+            env["EDP_PI_MODEL"] = target if target.startswith(f"{provider}/") else f"{provider}/{target}"
             inject_provider_credentials(env, provider)
         named = pi_seat_named(model, self._agent_home)  # spawn(model="astra"): the seat name binds model + thinking
         if named is not None:

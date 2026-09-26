@@ -273,13 +273,14 @@ def test_opaque_pi_provider_credential_is_injected_only_into_child_env(monkeypat
 def test_private_pi_spawn_transcript_names_non_openai_provider(monkeypatch, tmp_path):
     """A real isolated child proves the secret reaches Pi's env without appearing in its transcript."""
     (tmp_path / "models.json").write_text(json.dumps({"models": {
-        "my-model": {"harness": "pi", "provider": "openrouter", "model": "openrouter/model-x"}}}),
+        "my-model": {"harness": "pi", "provider": "openrouter", "model": "model-x"}}}),
         encoding="utf-8")
     monkeypatch.setenv("EDP_PI_PROVIDER_CREDENTIALS", json.dumps({
         "openrouter": {"api_key": "private-test-key"}}))
     stub = ("import json,os,time; "
-            "print(json.dumps({'model':os.getenv('EDP_PI_MODEL'),"
-            "'provider':'openrouter','credential_present':bool(os.getenv('OPENROUTER_API_KEY'))}),flush=True); "
+            "m=os.getenv('EDP_PI_MODEL'); "  # Pi reads <provider>/<model>; the provider is what the launcher set
+            "print(json.dumps({'model':m,'provider':m.split('/',1)[0],"
+            "'credential_present':bool(os.getenv('OPENROUTER_API_KEY'))}),flush=True); "
             "time.sleep(20)")
     monkeypatch.setattr(pl, "build_argv_pi", lambda _h: [sys.executable, "-c", stub])
     sp = pl.PiSpawner(log_dir=str(tmp_path / "logs"), agent_home=str(tmp_path))
