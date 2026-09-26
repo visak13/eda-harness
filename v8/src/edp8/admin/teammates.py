@@ -85,16 +85,24 @@ class InviteStore:
         secret_files.write_secret(tmp, json.dumps(data, indent=1))
         os.replace(tmp, self.path)
 
-    def issue(self, handle: str, by: str) -> tuple[str, float]:
+    def issue(self, handle: str, by: str, *, keep_token: bool = False) -> tuple[str, float]:
+        """`keep_token` (the first-run setup code, S6): redeeming hands back the teammate's CURRENT token
+        instead of rotating it, so signing in to the wizard never breaks a token already in use."""
         code, now = secrets.token_urlsafe(24), time.time()
         with self.lock:
             data = {k: v for k, v in self._load().items() if v.get("expires", 0) > now and v.get("handle") != handle}
-            data[_hash(code)] = {"handle": handle, "expires": now + INVITE_TTL_S, "by": by}
+            data[_hash(code)] = {"handle": handle, "expires": now + INVITE_TTL_S, "by": by,
+                                 **({"keep_token": True} if keep_token else {})}
             self._save(data)
         return code, now + INVITE_TTL_S
 
     def redeem(self, code: str) -> str | None:
         """The handle for a live code, spending it; None when unknown, used or expired."""
+        hit = self.redeem_entry(code)
+        return None if hit is None else str(hit["handle"])
+
+    def redeem_entry(self, code: str) -> dict[str, Any] | None:
+        """The stored entry for a live code, spending it; None when unknown, used or expired."""
         key, now = _hash(code), time.time()
         with self.lock:
             data = self._load()
@@ -104,7 +112,7 @@ class InviteStore:
                 self._save(live)
         if hit is None or hit.get("expires", 0) <= now:
             return None
-        return str(hit["handle"])
+        return hit
 
     def pending(self) -> dict[str, float]:
         now = time.time()
@@ -258,16 +266,21 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
     @r.post("/v1/join")
     def join(b: JoinIn, request: Request):
         """Redeem a teammate invite: the handle and a fresh token, once. No credential — the code is it."""
-        handle = invites.redeem(b.code)
-        if handle is None:
+        hit = invites.redeem_entry(b.code)
+        if hit is None:
             raise HTTPException(401, "this invite was already used or has expired; ask an admin for a new one")
+        handle = str(hit["handle"])
         _token_mode()
         try:
             _human(handle)
         except HTTPException:
             raise HTTPException(401, "this invite's teammate no longer exists") from None
-        secret = secrets.token_urlsafe(24)
-        _set_token(handle, secret)
+        current = ctx.tokens()[0].get(handle)
+        if hit.get("keep_token") and current:
+            secret = current  # the setup sign-in: the init human's token stays the one in use
+        else:
+            secret = secrets.token_urlsafe(24)
+            _set_token(handle, secret)
         return {"ok": True, "value": {"handle": handle, "token": secret, "board_url": board_url(request)},
                 "hint": "signed in: this invite no longer works"}
 

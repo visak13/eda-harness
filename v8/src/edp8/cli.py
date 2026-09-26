@@ -192,7 +192,30 @@ def start(argv: list[str]) -> int:
             line = None
         if line:
             print(line)
+    if rc == 0 and "board" in _targets(pos):
+        _first_run_setup(open_browser=not opts.get("no-browser"))
     return rc
+
+
+def _first_run_setup(open_browser: bool) -> None:
+    """Design §4.8 Onboarding: until the wizard is finished, `start` opens /ui/setup with a one-time
+    sign-in code for the init human (never a token in the address bar); afterwards it opens nothing."""
+    from . import launcher
+    from .admin import setup_api
+    try:
+        if setup_api.state()["done"]:
+            return
+        url = f"{str(launcher.url('board')).rstrip('/')}/ui/setup?code={setup_api.issue_setup_code()}"
+    except Exception as e:  # noqa: BLE001 — the wizard is a convenience; never fail a start over it
+        print(f"setup     skipped  ({e})", file=sys.stderr)
+        return
+    print(f"setup      first run: finish setup at {url}  (the link signs you in once, within 24 h)")
+    if open_browser:
+        try:
+            import webbrowser
+            webbrowser.open(url)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def _say(out: dict) -> None:
