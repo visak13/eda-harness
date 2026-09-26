@@ -27,7 +27,7 @@ class HarnessSpawner(FakeSpawner):
 @pytest.mark.parametrize("state", ["parked", "dead", "done", "stalled"])
 @pytest.mark.parametrize("harness", ["claude", "codex", "pi"])
 def test_resume_continues_stored_session_for_every_state_and_harness(
-    tmp_path, state, harness,
+    tmp_path, state, harness, record_property,
 ):
     """The stored ID/file remains the base, never a fresh launch."""
     session_file = tmp_path / ("thread.json" if harness == "codex" else "seat.jsonl")
@@ -54,16 +54,21 @@ def test_resume_continues_stored_session_for_every_state_and_harness(
     assert out["message"] == f"continued {before}"
     assert spawner.launched[-1]["resume_session"] == before
     assert svc.sessions[sid]["state"] == "active"
+    record_property("session_before", stored_id)
     if harness == "claude":
         assert out["claude_session_id"] != before  # Claude forks the stored base.
         assert svc.sessions[sid]["claude_session_id"] == out["claude_session_id"]
+        record_property("session_after", out["claude_session_id"])
     elif harness == "codex":
         assert out["claude_session_id"] is None
         content = json.loads(session_file.read_text(encoding="utf-8"))
         assert content["threadId"] == stored_id
+        record_property("session_after", content["threadId"])
     elif harness == "pi":
         assert out["claude_session_id"] is None
-        assert json.loads(session_file.read_text(encoding="utf-8"))["id"] == stored_id
+        content = json.loads(session_file.read_text(encoding="utf-8"))
+        assert content["id"] == stored_id
+        record_property("session_after", content["id"])
 
 
 @pytest.mark.parametrize("state", ["parked", "done"])
