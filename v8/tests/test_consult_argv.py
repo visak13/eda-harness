@@ -838,3 +838,52 @@ def test_consult_unattributed_new_file_during_run_does_not_fail(_ue_git, monkeyp
     assert resp["value"]["recovered"] is True
     assert any("seat11_new.cpp" in p for p in resp["value"]["concurrent"])
     assert concurrent.exists()                               # NOT deleted (no data loss)
+
+
+# ------------------------------------ run id + live status (p-c8744541, p-f046701d)
+
+def test_run_id_and_queued_manifest_exist_before_the_lane(_logs, monkeypatch):
+    """The id reaches the caller while the run still waits for the lane, and
+    consult_status answers `queued` for it — never not_found."""
+    seen = {}
+
+    def on_id(rid):
+        seen["rid"] = rid
+        seen["lane_held"] = consult_mod._LANE.locked()
+        seen["status"] = consult_mod.consult_status(rid)
+
+    monkeypatch.setattr(consult_mod, "_run_codex", _fake_codex(answer="hi"))
+    resp = consult_mod.consult("second_opinion", "q", on_run_id=on_id)
+    assert resp["ok"] and resp["value"]["run_id"] == seen["rid"]
+    assert seen["lane_held"] is False
+    assert seen["status"]["ok"] and seen["status"]["value"]["status"] == "queued"
+
+
+def test_status_is_running_while_codex_runs(_logs, monkeypatch):
+    seen = {}
+    fake = _fake_codex(answer="hi")
+
+    def spy(argv, timeout_s, stdin_text=None):
+        seen["status"] = consult_mod.consult_status(consult_mod._LANE_STATE["in_flight"])
+        return fake(argv, timeout_s, stdin_text)
+
+    monkeypatch.setattr(consult_mod, "_run_codex", spy)
+    resp = consult_mod.consult("second_opinion", "q")
+    assert resp["ok"]
+    assert seen["status"]["ok"] and seen["status"]["value"]["status"] == "running"
+    assert consult_mod.consult_status(resp["value"]["run_id"])["value"]["status"] == "ok"
+
+
+def test_crashed_run_is_marked_aborted(_logs, monkeypatch):
+    seen = {}
+
+    def on_id(rid):
+        seen["rid"] = rid
+
+    def crash(argv, timeout_s, stdin_text=None):
+        raise RuntimeError("bridge bug")
+
+    monkeypatch.setattr(consult_mod, "_run_codex", crash)
+    with pytest.raises(RuntimeError):
+        consult_mod.consult("second_opinion", "q", on_run_id=on_id)
+    assert consult_mod.consult_status(seen["rid"])["value"]["status"] == "aborted"

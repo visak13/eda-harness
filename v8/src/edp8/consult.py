@@ -1130,6 +1130,35 @@ def recover_answer(raw: str) -> str:
     return last.strip()
 
 
+_OPEN_STATUSES = ("queued", "running")
+
+
+def _write_stub_manifest(run_id: str, status: str, **fields: Any) -> None:
+    """A minimal manifest for a run that has an id but no launch record yet (queued,
+    lane_busy). Best-effort: a write failure never fails the consult."""
+    try:
+        log_dir = _log_dir()
+        log_dir.mkdir(parents=True, exist_ok=True)
+        (log_dir / f"{run_id}.manifest.json").write_text(json.dumps(
+            {"run_id": run_id, "status": status, "queued_at": _now(), **fields}, indent=2),
+            encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _close_stale_manifest(run_id: str) -> None:
+    """A run that left the lane with its manifest still queued/running crashed before a
+    terminal write — mark it `aborted` so consult_status never reports a dead run as live."""
+    mp = _log_dir() / f"{run_id}.manifest.json"
+    try:
+        m = json.loads(mp.read_text(encoding="utf-8"))
+        if m.get("status") in _OPEN_STATUSES:
+            m["status"] = "aborted"
+            mp.write_text(json.dumps(m, indent=2), encoding="utf-8")
+    except (OSError, ValueError):
+        pass
+
+
 def consult_status(run_id: str | None = None) -> dict[str, Any]:
     """Manifest status (+ recovered answer when the run has one) for a run, or the newest."""
     log_dir = _log_dir()
@@ -1161,6 +1190,7 @@ def consult_status(run_id: str | None = None) -> dict[str, Any]:
         val["answer"] = answer
         val["recovered"] = True
     hint = ("the run is still in flight" if status == "running" else
+            "the run is queued behind another consult" if status == "queued" else
             "answer recovered from the run log" if answer else
             "no answer on record for this run")
     return {"ok": mp.is_file() or lp.is_file(), "value": val, "hint": hint} if (mp.is_file() or lp.is_file()) else \
@@ -1244,6 +1274,18 @@ def consult(purpose: Purpose, question: str, context: str = "",
                                                   f"only {sorted(ALLOWED_MODELS)} (gpt-5.6-sol retired 2026-09-10)"},
                 "hint": "omit model= (GPT-6 Astra is the default) and unset EDP8_SOL_MODEL"}
 
+    # The run id and a `queued` manifest exist BEFORE the lane wait (pain p-c8744541,
+    # p-f046701d): a caller over the tool-call cap gets its id at once and consult_status
+    # answers queued → running → the terminal status, never not_found.
+    run_id = f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{uuid.uuid4().hex[:8]}"
+    _write_stub_manifest(run_id, "queued", purpose=purpose, profile=profile_name,
+                         requested_model=requested_model)
+    if on_run_id is not None:
+        try:
+            on_run_id(run_id)
+        except Exception:  # noqa: BLE001 — the caller's bookkeeping, never the run's concern
+            pass
+
     # single-flight lane: queue behind whatever is in flight, re-check the gate on entry.
     # `entered` counts every caller between here and its finally (holder + waiters), so
     # the number a caller sees IS how many runs precede it.
@@ -1265,6 +1307,8 @@ def consult(purpose: Purpose, question: str, context: str = "",
         with _LANE_STATE_LOCK:
             _LANE_STATE["entered"] -= 1
         _LANE.release()
+        _write_stub_manifest(run_id, "lane_busy", purpose=purpose, profile=profile_name,
+                             requested_model=requested_model)
         return {"ok": False, "error": {"code": "lane_busy",
                                        "message": "the inference lane is held by another seat/consult beyond EDP8_LANE_WAIT_S"},
                 "hint": "preflight() shows the holder; retry later"}
@@ -1273,8 +1317,9 @@ def consult(purpose: Purpose, question: str, context: str = "",
                                write_dir=write_dir, images=images, thread_id=thread_id,
                                requested_model=requested_model, profile_name=profile_name, spec=spec,
                                img_records=img_records, codex=codex, queued_behind=queued_behind,
-                               on_run_id=on_run_id)
+                               run_id=run_id)
     finally:
+        _close_stale_manifest(run_id)
         lease.release()
         with _LANE_STATE_LOCK:
             _LANE_STATE["in_flight"] = None
@@ -1286,19 +1331,10 @@ def consult(purpose: Purpose, question: str, context: str = "",
 def _consult_locked(purpose: str, question: str, *, context: str, files: list[str] | None, timeout_s: int,
                     write_dir: str | None, images: list[str], thread_id: str | None, requested_model: str,
                     profile_name: str, spec: Any, img_records: list[Any], codex: str,
-                    queued_behind: int, on_run_id: Any = None) -> dict[str, Any]:
-    run_id = f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{uuid.uuid4().hex[:8]}"
+                    queued_behind: int, run_id: str) -> dict[str, Any]:
     with _LANE_STATE_LOCK:
         _LANE_STATE["in_flight"] = run_id
         _LANE_STATE["started_at"] = _now()
-    # The run now has an id and holds the lane — hand it to a bounded caller so a call that
-    # exceeds the tool-call cap can return {run_id, status:"running"} and let this finish in
-    # the background (design §19 rule 4). Best-effort: a callback error never fails the run.
-    if on_run_id is not None:
-        try:
-            on_run_id(run_id)
-        except Exception:  # noqa: BLE001 — the caller's bookkeeping, never the run's concern
-            pass
     parts = [_PREAMBLES[purpose], "", (question or "").strip()]
     if context.strip():
         parts += ["", "Context:", context.strip()]
@@ -1373,6 +1409,8 @@ def _consult_locked(purpose: str, question: str, *, context: str, files: list[st
     fence_root = run_fence_root(write_dir, files)
     boundary_before = _snapshot_mtimes([fence_root])
     pre_status = git_status_map(fence_root)
+    manifest["status"] = "running"   # consult_status reads this while codex runs (p-f046701d)
+    _save_manifest()
     start = time.monotonic()
     try:
         raw, exit_code, timed_out = _run_codex(argv, timeout_s, stdin_text=prompt)
