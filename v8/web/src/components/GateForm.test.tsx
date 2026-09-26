@@ -103,3 +103,20 @@ describe("GateForm design_signoff", () => {
     expect(screen.queryByTestId("gate-form")).toBeNull();
   });
 });
+
+// S6 c-e834afcefc: a refused gate answer shows the board's own reason, not a generic failure.
+describe("GateForm refusal", () => {
+  it("shows the board's refusal message on a 409 and keeps the ruling", async () => {
+    server.use(
+      http.post("/v1/gates/:t/:g/answer", () => HttpResponse.json(
+        { ok: false, error: { code: "http", message: "gate acceptance on epic-1 is already answered" }, hint: "" }, { status: 409 })),
+    );
+    mount();
+    fireEvent.change(screen.getByTestId("gate-answer"), { target: { value: "approved" } });
+    fireEvent.click(screen.getByTestId("gate-submit"));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("gate acceptance on epic-1 is already answered");
+    expect(alert).toHaveTextContent(/your ruling is kept/);
+    expect(screen.getByTestId("gate-answer")).toHaveValue("approved");
+  });
+});

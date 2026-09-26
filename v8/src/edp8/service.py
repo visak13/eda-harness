@@ -697,8 +697,9 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         tickets = board.my_tickets(a)
         # S13: the seat's tool bundle comes from its epic's pinned workflow
         wf = board.workflow_of(board.seat_ticket(a))
+        from .admin import is_admin  # S6: the SPA shows Admin only to admins (flag or the init human)
         return ok({"participant": _dump(a), "tickets": [t.id for t in tickets], "ui_url": ui_url(request),
-                   "workflow": wf.ref, "bundle": wf.bundle(a.role.value)},
+                   "workflow": wf.ref, "bundle": wf.bundle(a.role.value), "admin": is_admin(a)},
                   "next: subscribe() to arm your feed, then context() to load your ticket")
 
     @app.get("/v1/describe/{type_}")

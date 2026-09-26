@@ -1,0 +1,201 @@
+/* Admin console (S6): Folio tokens only (ui.module.css / theme), so every theme applies. */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 1100px;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.card {
+  composes: card from "../../components/ui.module.css";
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cardHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cardTitle {
+  margin: 0;
+  font: 600 18px/26px Georgia, serif;
+  color: var(--ink);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+}
+.table tr:last-child td {
+  border-bottom: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.small {
+  height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.field:last-child {
+  border-bottom: 0;
+}
+.fieldHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.fieldKey {
+  font-weight: 650;
+  color: var(--ink);
+  font-size: 14px;
+}
+.fieldRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.fieldRow input[type="text"],
+.fieldRow input[type="number"],
+.fieldRow input[type="password"],
+.fieldRow select {
+  min-width: min(420px, 100%);
+}
+.fieldDoc {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 20px;
+}
+.fieldNote {
+  margin: 0;
+  color: var(--accentink);
+  font-size: 12px;
+}
+
+.secret {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.secretLabel {
+  color: var(--muted);
+  font-size: 12px;
+  min-width: 110px;
+}
+.secretValue {
+  font: 12px/18px Consolas, "SFMono-Regular", monospace;
+  background: var(--secondary);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  overflow-wrap: anywhere;
+  flex: 1 1 280px;
+}
+
+.notice {
+  composes: directive from "../../components/ui.module.css";
+}
+
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.step {
+  composes: chip from "../../components/ui.module.css";
+}
+.stepActive {
+  composes: chip active from "../../components/ui.module.css";
+}
+
+.setupShell {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+  display: flex;
+  justify-content: center;
+  padding: 40px 16px;
+}
+.setupInner {
+  width: min(760px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.capGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.capCell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.capCell input {
+  width: 100px;
+}
+.usage {
+  color: var(--muted);
+  font-size: 12px;
+}

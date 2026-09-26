@@ -42,3 +42,10 @@ def test_start_opens_setup_until_done(tmp_path, monkeypatch, capsys):
     opened.clear()
     cli._first_run_setup(open_browser=True)
     assert opened == [] and "/ui/setup" not in capsys.readouterr().out
+
+
+def test_whoami_says_who_is_an_admin(tmp_path, monkeypatch):
+    """The SPA shows Admin only to admins: /v1/whoami carries the computed flag (init human or admin flag)."""
+    env = make_env(tmp_path, monkeypatch)
+    assert env.client.get("/v1/whoami", headers=ADMIN_H).json()["value"]["admin"] is True
+    assert env.client.get("/v1/whoami", headers=BOB_H).json()["value"]["admin"] is False

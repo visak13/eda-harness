@@ -27,6 +27,8 @@ import styles from "./AppShell.module.css";
 
 interface WhoAmI {
   participant: { id: string; handle: string; role: string };
+  /** S6: an admin of this install (the admin flag, or the init human) — the Admin rail entry */
+  admin?: boolean;
 }
 interface Summary {
   decisions?: number;
@@ -53,7 +55,7 @@ const NAV = [
 ] as const;
 
 // Human #38 (m-4e303d7b27, 2026-09-11): the sidebar highlight is by ROUTE FAMILY, not by exact path.
-export function navFamily(pathname: string, search = ""): "/me" | "/epics" | "/seats" | "/library/knowledge" | "/settings" | "/code" | null {
+export function navFamily(pathname: string, search = ""): "/me" | "/epics" | "/seats" | "/library/knowledge" | "/settings" | "/code" | "/admin" | null {
   if (pathname === "/me" || pathname.startsWith("/me/")) return "/me";
   if (/^\/(epics|epic|ticket|records)(\/|$)/.test(pathname)) return "/epics";
   if (/^\/seats(\/|$)/.test(pathname)) return "/seats";
@@ -62,6 +64,7 @@ export function navFamily(pathname: string, search = ""): "/me" | "/epics" | "/s
   if (/^\/(library|doc|artifact)(\/|$)/.test(pathname)) return "/library/knowledge";
   if (/^\/settings(\/|$)/.test(pathname)) return "/settings";
   if (/^\/code(\/|$)/.test(pathname)) return "/code";
+  if (/^\/admin(\/|$)/.test(pathname)) return "/admin";
   return null;
 }
 
@@ -160,6 +163,7 @@ function AppShellChrome(): React.JSX.Element {
   // other signed-in participant gets that), so the rail hides what would 403: Epics, Seats and Needs you.
   const expert = role === "expert" || (whoami.error instanceof BoardApiError && whoami.error.status === 403);
   const nav = expert ? NAV.filter((item) => item.to === "/library/knowledge") : NAV;
+  const admin = Boolean(whoami.data?.admin);
   const counts = summary.data;
 
   // Design §4.1: a 401 from the identity probe renders the inline identity panel.
@@ -206,6 +210,13 @@ function AppShellChrome(): React.JSX.Element {
               {item.count && counts && typeof counts[item.count] === "number" ? <span className={styles.count}>{counts[item.count]}</span> : null}
             </Link>
           ))}
+          {admin ? (
+            <Link to="/admin" className={`${styles.navItem} ${activeFamily === "/admin" ? styles.active : ""}`} data-testid="nav-admin"
+              aria-current={activeFamily === "/admin" ? "page" : undefined} {...copyProps("sidebar", "admin")}>
+              <span className={styles.icon} data-nav-icon><Icon name="preferences" size={18} /></span>
+              <span className={styles.navLabel}>Admin</span>
+            </Link>
+          ) : null}
           {expert ? null : (<>
           <div className={styles.divider} />
           <Link to={currentEpicId ? `/me?epic=${encodeURIComponent(currentEpicId)}` : "/me"} className={`${styles.navItem} ${activeFamily === "/me" ? styles.active : ""}`}

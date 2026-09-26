@@ -30,6 +30,7 @@ export const SIDEBAR: PageCopy = {
     { key: "seats", label: "Seats", text: "every agent shell, alive or closed, and what it last said. Source: pool sessions mirrored into the board.", control: true },
     { key: "library", label: "Library", text: "knowledge first — strategies, domains and lessons every epic can link (approve proposals, import from skills.sh) — then every document, artifact and ticket. Source: /v1/knowledge and the board's records.", control: true },
     { key: "code", label: "Code", text: "a full VS Code (code-server) on the board host, embedded full-bleed; tag a code selection to anyone from inside it. Source: /v1/code.", control: true },
+    { key: "admin", label: "Admin", text: "admins only: run this install — services, settings, teammates, remote access, integrations, seats and models. Source: /v1/admin/*.", control: true },
     { key: "find", label: "Find (Ctrl K)", text: "full-text search across tickets, documents, messages and seats; Enter opens the hit.", control: true },
     { key: "identity", label: "Account (bottom)", text: "who you are on this board; opens the account menu: Settings, What am I looking at?, theme, avatar. Source: /v1/whoami.", control: true },
     { key: "new-epic", label: "New epic", text: "on the Epics page: records your words verbatim as a new epic and offers to spawn its architect; the preview lists who is woken before you confirm.", control: true },
@@ -142,6 +143,34 @@ export const PAGES: Record<string, PageCopy> = {
       { key: "open", label: "Open the Code tab", text: "back from the FAQ to the editor.", control: true },
     ],
   },
+  admin: {
+    key: "admin",
+    title: "Admin",
+    framing: "Run this install from the browser: restart services, change settings, invite teammates, open remote access and connect integrations.",
+    items: [
+      { key: "tabs", label: "Services · Settings · Teammates · Remote access · Integrations · Seats & models", text: "one tab per area; each action calls an admin-only /v1/admin route and shows the board's answer, including a refusal, where you clicked.", control: true },
+      { key: "services", label: "Services", text: "health of every service with Start / Stop / Restart through the supervisor; a board restart shows restarting… until /healthz reports a new start. Also the update banner and the Capacity caps.", control: true },
+      { key: "settings", label: "Settings", text: "every registry setting by group, with its doc line and where its value comes from; environment values are read-only, secrets write-only. A save names the services to restart.", control: true },
+      { key: "teammates", label: "Teammates", text: "invite (a one-time link and a VS Code sign-in link), revoke, rotate, admin flag, Tailscale auth keys and agent tokens. Wakes nobody.", control: true },
+    ],
+  },
+  join: {
+    key: "join",
+    title: "Join",
+    framing: "The page a teammate's invite link opens: it signs this browser tab in once and links to the board.",
+    items: [
+      { key: "open", label: "Open the board", text: "goes to Needs you, signed in as the invited teammate.", control: true },
+    ],
+  },
+  setup: {
+    key: "setup",
+    title: "Setup",
+    framing: "The first-run wizard heronry start opens: sign in as the admin, pick seat harnesses, optionally open remote access and invite a teammate.",
+    items: [
+      { key: "next", label: "Next / Skip", text: "moves to the next step; the optional steps can be done later under Admin.", control: true },
+      { key: "finish", label: "Open the board", text: "records that setup is finished (POST /v1/admin/setup/done) so heronry start stops opening it, then opens Epics.", control: true },
+    ],
+  },
   seats: {
     key: "seats",
     title: "Seats",
@@ -162,6 +191,9 @@ export function pageKeyFor(pathname: string): string {
   if (pathname.startsWith("/doc/")) return "doc";
   if (pathname.startsWith("/seats")) return "seats";
   if (pathname.startsWith("/settings")) return "settings";
+  if (pathname.startsWith("/admin")) return "admin";
+  if (pathname.startsWith("/join")) return "join";
+  if (pathname.startsWith("/setup")) return "setup";
   if (pathname === "/code" || pathname.startsWith("/code/")) return "code";
   if (pathname.startsWith("/records/")) return "epic";
   if (pathname.startsWith("/library") || pathname.startsWith("/tickets") || pathname.startsWith("/activity")) return "library";

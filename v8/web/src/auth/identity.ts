@@ -128,35 +128,67 @@ function askSession(): Promise<void> {
  *  proxy logs keep query strings). The code leaves the address bar at once and is redeemed ONCE by POST
  *  for the expert's handle + token, which go to this tab's sessionStorage like any other session. A spent
  *  or expired code leaves the tab without a token (whoami then shows the identity panel). */
+//
+// S6: a teammate invite (`/ui/join?code=`) and the first-run wizard (`/ui/setup?code=`) carry the same kind of
+// one-time code, redeemed at POST /v1/join for {handle, token}. The outcome is kept for the page to show
+// (a spent or expired invite must say so, not land on a blank identity panel).
+export interface CodeRedeem { path: "join" | "expert"; ok: boolean; message?: string }
+let REDEEMED: CodeRedeem | null = null;
+/** What this tab's `?code=` redeem did (null when it carried none). */
+export const codeRedeem = (): CodeRedeem | null => REDEEMED;
+
 function redeemCode(): Promise<void> {
   let code: string | null = null;
+  let join = false;
   try {
     const url = new URL(location.href);
     code = url.searchParams.get("code");
     if (!code) return Promise.resolve();
+    join = /\/(join|setup)\/?$/.test(url.pathname);
     url.searchParams.delete("code");
     history.replaceState({}, "", url);
   } catch {
     return Promise.resolve();
   }
-  return fetch("/v1/expert-session", {
+  const path = join ? "join" : "expert";
+  return fetch(join ? "/v1/join" : "/v1/expert-session", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code }),
   })
     .then((r) => r.json())
-    .then((env: { ok?: boolean; value?: { as: string; token: string } }) => {
-      if (!env?.ok || !env.value) return;
+    .then((env: { ok?: boolean; value?: { as?: string; handle?: string; token: string }; error?: { message?: string } | string }) => {
+      if (!env?.ok || !env.value) {
+        const err = typeof env?.error === "object" ? env.error?.message : env?.error;
+        REDEEMED = { path, ok: false, message: err || "this sign-in link did not work" };
+        return;
+      }
+      const as = env.value.as ?? env.value.handle ?? "";
       try {
         sessionStorage.setItem("edp8.token", env.value.token);
-        sessionStorage.setItem("edp8.as", env.value.as);
+        sessionStorage.setItem("edp8.as", as);
       } catch {
         /* storage unavailable: the in-memory token still serves this tab */
       }
-      AS = env.value.as;
+      AS = as;
       TOKEN = env.value.token;
+      REDEEMED = { path, ok: true };
     })
-    .catch(() => undefined);
+    .catch((e: unknown) => {
+      REDEEMED = { path, ok: false, message: e instanceof Error ? e.message : "the board did not answer" };
+    });
+}
+
+/** Sign this tab in with a handle and token typed by the person (the setup wizard's fallback). */
+export function signIn(as: string, token: string): void {
+  try {
+    sessionStorage.setItem("edp8.token", token);
+    sessionStorage.setItem("edp8.as", as);
+  } catch {
+    /* storage unavailable: in-memory only */
+  }
+  AS = as;
+  TOKEN = token;
 }
 
 /** Resolves once this tab's session is settled — an expert link's code redeemed first, then immediately
