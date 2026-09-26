@@ -300,11 +300,28 @@ def agent_home() -> Path:
     return data_dir() / "agent-home"
 
 
+#: `heronry init` writes the generated admin token here (secrets dir, owner-only), so no secret sits in
+#: config.toml or the environment of every child; env and config.toml still win (S3 s-870e401942).
+ADMIN_TOKEN_FILE = "admin.token"
+
+
+def admin_token_file() -> Path:
+    return secrets_dir() / ADMIN_TOKEN_FILE
+
+
 def admin_token() -> str:
-    """The board admin token. The `dev` default (and an explicit `dev`) is refused outside dev mode."""
+    """The board admin token: env > config.toml > the init-generated secrets file. The `dev` default (and
+    an explicit `dev`) is refused outside dev mode."""
     tok = get("EDP8_ADMIN_TOKEN")
     if tok and tok != "dev":
         return tok
+    if not tok:
+        try:
+            tok = admin_token_file().read_text(encoding="utf-8").strip() or None
+        except OSError:
+            tok = None
+        if tok and tok != "dev":
+            return tok
     if dev_mode():
         return tok or "dev"
     raise SettingsError(

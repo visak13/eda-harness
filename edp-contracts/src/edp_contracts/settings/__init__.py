@@ -11,12 +11,14 @@ from . import keys_common as _keys_common  # noqa: F401  (declarations, shared f
 from . import keys_pool as _keys_pool  # noqa: F401
 from . import keys_seats as _keys_seats  # noqa: F401
 from ._core import (
+    ADMIN_TOKEN_FILE,
     APP_DIR_NAME,
     REGISTRY,
     TYPES,
     Setting,
     SettingsError,
     admin_token,
+    admin_token_file,
     agent_home,
     all_settings,
     config_dir,
@@ -42,7 +44,7 @@ from ._core import (
 
 __all__ = [
     "APP_DIR_NAME", "REGISTRY", "TYPES", "Setting", "SettingsError",
-    "admin_token", "agent_home", "all_settings", "config_dir", "config_file", "config_values",
+    "ADMIN_TOKEN_FILE", "admin_token", "admin_token_file", "agent_home", "all_settings", "config_dir", "config_file", "config_values",
     "data_dir", "declare", "dev_mode", "env_raw", "environ_copy", "get", "home", "is_set", "logs_dir", "pop_env", "resolve",
     "run_dir", "secrets_dir", "set_env", "setting", "source",
 ]

@@ -89,7 +89,7 @@ def test_bridge_is_supervised_by_process_liveness(monkeypatch):
     back to process liveness for it, so a dead bridge probes False (and would be restarted)."""
     import httpx
 
-    from edp8 import supervisor
+    from edp8 import launcher, supervisor
 
     run_state.write("bridge", pid=os.getpid(), port=None, git_rev="abc")
     with httpx.Client() as client:
@@ -176,7 +176,7 @@ def test_supervisor_relaunches_a_dead_service_with_python_and_no_shell(tmp_path,
     import psutil
     from edp_contracts.proc import ProcId, kill_tree
 
-    from edp8 import supervisor
+    from edp8 import launcher, supervisor
 
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -187,7 +187,7 @@ def test_supervisor_relaunches_a_dead_service_with_python_and_no_shell(tmp_path,
     monkeypatch.setenv("EDP8_DATA", str(tmp_path / "data"))
     monkeypatch.delenv("EDP_MCP_PYTHON", raising=False)
     monkeypatch.setattr(run_state, "SERVICES", {"mcp": {"port": port, "health": "/healthz"}})
-    monkeypatch.setattr(supervisor, "_MODULES", {**supervisor._MODULES, "mcp": "s2_stub_service"})
+    monkeypatch.setattr(launcher, "MODULES", {**launcher.MODULES, "mcp": "s2_stub_service"})
 
     # the service ran once and died: its record names a process that is gone
     dead = subprocess.Popen([sys.executable, "-c", "pass"])

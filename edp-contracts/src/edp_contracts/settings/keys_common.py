@@ -31,6 +31,9 @@ declare("paths.tokens", "EDP8_TOKENS", "path", lambda: secrets_dir() / "tokens.j
         default_doc="<EDP_HOME>/tokens.json, installed <config>/secrets/tokens.json", restart_required="board")
 
 # ---- identity
+declare("identity.owner", "EDP8_OWNER", "str", "owner", "Identity",
+        "Handle of the first human (the owner) that `heronry init` creates and `start` registers.",
+        restart_required="board")
 declare("edp8.admin_token", "EDP8_ADMIN_TOKEN", "str", None, "Identity",
         "Board admin token (X-Admin). Required outside dev mode; 'dev' is refused there.",
         secret=True, restart_required="board")
@@ -102,6 +105,10 @@ declare("broker.host", "EDP_BROKER_HOST", "str", "127.0.0.1", "Network", "Broker
         restart_required="broker")
 declare("broker.port", "EDP_BROKER_PORT", "int", 9300, "Network", "Broker port.", restart_required="broker")
 
+declare("supervisor.control_port", "EDP_CONTROL_PORT", "int", 0, "Network",
+        "The supervisor's loopback control port (S5 service control); 0 = a free port, recorded in the run dir.",
+        restart_required="supervisor")
+
 # ---- shared between board-side seat runners and the pool that launches them
 declare("pool.agent_home", "EDP_POOL_AGENT_HOME", "path", lambda: agent_home(), "Seats & models",
         "The agent home the pool serves (spawned shells' cwd, skills); exported to every seat.",
@@ -157,6 +164,10 @@ for _name, _doc in (
     ("EDP_PI_RESUME", "1: the Pi seat resumes its session file."),
 ):
     declare(f"spawn.{_name.lower()}", _name, "str", None, "Seats & models", _doc, env_only=True)
+
+declare("seats.harnesses", "EDP_HARNESSES", "list", None, "Seats & models",
+        "Selected seat harnesses (claude, codex, pi; at least one of claude/codex), set by `heronry init`; "
+        "models.json `harnesses` wins when present.", restart_required="board")
 
 # ---- models catalog (edp_contracts.seats)
 declare("models.config", "EDP_MODELS_CONFIG", "path", None, "Seats & models",

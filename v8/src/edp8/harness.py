@@ -45,14 +45,25 @@ def harness_of(model: str | None, seats: dict[str, Any] | None = None) -> str:
 
 
 def selected(registry: dict[str, Any]) -> tuple[str, ...]:
-    """The selected harnesses from models.json (the registry dict); absent or malformed = all three. A list
+    """The selected harnesses from models.json (the registry dict), else the EDP_HARNESSES setting; absent
+    or malformed = all three. A list
     that selects neither claude nor codex is invalid and also answers all three (fail open to today's
     fleet; `validate` names the problem)."""
     raw = registry.get(HARNESS_KEY)
     if not isinstance(raw, list):
+        raw = _configured()
+    if not isinstance(raw, list):
         return HARNESSES
     picked = tuple(h for h in HARNESSES if h in {str(x).strip().lower() for x in raw})
     return picked if validate(picked) is None else HARNESSES
+
+
+def _configured() -> list[str] | None:
+    """`heronry init --harness …` records the choice as the setting EDP_HARNESSES (config.toml
+    seats.harnesses), so the shipped models.json stays unedited and keeps receiving catalog updates."""
+    from . import settings
+    val = settings.get("EDP_HARNESSES")
+    return list(val) if val else None
 
 
 def validate(picked: tuple[str, ...] | list[str]) -> str | None:
