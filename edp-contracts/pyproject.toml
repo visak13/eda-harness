@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.6",
     "platformdirs>=4.0",
+    "psutil>=5.9",
 ]
 
 [project.optional-dependencies]
@@ -51,3 +52,6 @@ select = ["E", "F", "I", "T20"]
 "tests/test_settings_registry.py" = ["E501"]
 "tests/test_settings_secrets.py" = ["E501"]
 "tests/conftest.py" = ["E501"]
+# Process layer (S2): the v8 house style of 132-column lines, like the settings modules above.
+"src/edp_contracts/proc.py" = ["E501"]
+"tests/test_proc.py" = ["E501"]

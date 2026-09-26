@@ -14,7 +14,6 @@ process and asserts the process is STILL FROZEN afterwards.
 """
 
 import os
-import shutil
 import subprocess
 import sys
 import time
@@ -172,12 +171,11 @@ def test_arm_refuses_a_watchdog_that_lands_inside_our_own_tree(tmp_path):
         proctree.kill_process_tree(child.pid)
 
 
-@pytest.mark.skipif(shutil.which("powershell") is None,
-                    reason="WMI launch needs powershell")
-def test_wmi_launch_really_lands_outside_this_process_tree(tmp_path):
-    """The real launcher, once. WMI `Win32_Process.Create` reparents the child
-    to `WmiPrvSE`, which is the whole point — a pool-child watchdog would die
-    with the pool restart it exists to survive.
+def test_detach_launch_really_lands_outside_this_process_tree(tmp_path):
+    """The real launcher, once (S2: `proc.detach`, no WMI/powershell). The
+    intermediate exits, so the watchdog's parent is dead, which is the whole
+    point — a pool-child watchdog would die with the pool restart it exists to
+    survive.
 
     Armed with a long deadline so it just sits there; we assert the parentage
     and then tear it down. (Its FIRE path is proven in-process above.)"""

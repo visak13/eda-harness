@@ -26,13 +26,56 @@ def current_user_sid() -> str:
 
 
 def acl_sids(path: Path) -> set[str]:
-    """The SIDs holding any access entry on `path` (Windows), via Get-Acl, translated to SIDs."""
-    ps = ("(Get-Acl -LiteralPath $env:EDP_ACL_PATH).Access | ForEach-Object { "
-          "$_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value }")
-    env = {**os.environ, "EDP_ACL_PATH": str(path)}
-    out = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps], capture_output=True,
-                         text=True, check=True, timeout=60, env=env).stdout
-    return {line.strip() for line in out.splitlines() if line.strip()}
+    """The SIDs holding any access entry on `path`'s DACL (Windows), read through the Win32 security API
+    (no powershell in a runtime path, S2 s-b7ec13d748). Raises OSError when the DACL cannot be read."""
+    import ctypes
+    from ctypes import wintypes
+
+    adv = ctypes.WinDLL("advapi32", use_last_error=True)
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    adv.GetNamedSecurityInfoW.argtypes = [wintypes.LPCWSTR, ctypes.c_int, wintypes.DWORD, ctypes.c_void_p,
+                                          ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p,
+                                          ctypes.POINTER(ctypes.c_void_p)]
+    adv.GetNamedSecurityInfoW.restype = wintypes.DWORD
+    adv.GetAce.argtypes = [ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p)]
+    adv.GetAce.restype = wintypes.BOOL
+    adv.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)]
+    adv.ConvertSidToStringSidW.restype = wintypes.BOOL
+    k32.LocalFree.argtypes = [ctypes.c_void_p]
+
+    class _Acl(ctypes.Structure):
+        _fields_ = [("AclRevision", ctypes.c_ubyte), ("Sbz1", ctypes.c_ubyte), ("AclSize", ctypes.c_ushort),
+                    ("AceCount", ctypes.c_ushort), ("Sbz2", ctypes.c_ushort)]
+
+    class _AceHeader(ctypes.Structure):
+        _fields_ = [("AceType", ctypes.c_ubyte), ("AceFlags", ctypes.c_ubyte), ("AceSize", ctypes.c_ushort)]
+
+    se_file_object, dacl_info = 1, 0x4
+    dacl, sd = ctypes.c_void_p(), ctypes.c_void_p()
+    rc = adv.GetNamedSecurityInfoW(str(path), se_file_object, dacl_info, None, None, ctypes.byref(dacl), None,
+                                   ctypes.byref(sd))
+    if rc != 0:
+        raise OSError(rc, f"GetNamedSecurityInfoW failed for {path}")
+    try:
+        out: set[str] = set()
+        if not dacl.value:
+            return {"S-1-1-0"}  # a NULL DACL grants everyone access
+        count = _Acl.from_address(dacl.value).AceCount
+        for i in range(count):
+            ace = ctypes.c_void_p()
+            if not adv.GetAce(dacl, i, ctypes.byref(ace)):
+                raise OSError(ctypes.get_last_error(), f"GetAce {i} failed for {path}")
+            # ACCESS_ALLOWED/DENIED(_CALLBACK) aces: header, ACCESS_MASK, then the SID
+            if _AceHeader.from_address(ace.value).AceType not in (0, 1, 9, 10):
+                continue
+            sid_str = wintypes.LPWSTR()
+            if not adv.ConvertSidToStringSidW(ace.value + ctypes.sizeof(_AceHeader) + 4, ctypes.byref(sid_str)):
+                raise OSError(ctypes.get_last_error(), f"ConvertSidToStringSidW failed for {path}")
+            out.add(sid_str.value)
+            k32.LocalFree(sid_str)
+        return out
+    finally:
+        k32.LocalFree(sd)
 
 
 def _restrict_windows(path: Path) -> None:

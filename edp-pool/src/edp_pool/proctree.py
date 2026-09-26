@@ -23,6 +23,7 @@ import uuid
 from datetime import datetime, timezone
 
 import psutil
+from edp_contracts.proc import ProcId, kill_tree
 
 # ── W12: pause via process suspension ────────────────────────────────────
 #
@@ -61,10 +62,6 @@ _IS_WINDOWS = sys.platform == "win32"
 _THREAD_SUSPEND_RESUME = 0x0002
 # SuspendThread/ResumeThread return (DWORD)-1 on failure.
 _SUSPEND_ERROR = 0xFFFFFFFF
-
-# Fingerprint tolerance, matched to service._proc_alive / _proc_kill_allowed.
-_CREATE_TIME_TOLERANCE_SECS = 1.0
-
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -157,22 +154,21 @@ def fingerprint_matches(pid: int | None, create_time: float | None) -> tuple[boo
 
     A missing `create_time` is a REFUSAL, not a best-effort pid match. Pids are
     recycled; suspending a recycled pid freezes an innocent process that
-    nothing will ever resume.
+    nothing will ever resume. The identity check is `ProcId.live()` (S2: one
+    implementation, `edp_contracts.proc`).
     """
     if not pid:
         return False, "no pid"
     if create_time is None:
         return False, "no recorded create_time — cannot defeat pid reuse"
-    try:
-        live = psutil.Process(pid).create_time()
-    except Exception:  # noqa: BLE001 — NoSuchProcess / bad pid
+    if ProcId(int(pid), float(create_time)).live() is not None:
+        return True, f"pid {pid} fingerprint matched"
+    if not psutil.pid_exists(int(pid)):
         return False, f"pid {pid} is already gone"
-    if abs(live - create_time) >= _CREATE_TIME_TOLERANCE_SECS:
-        return False, (
-            f"pid {pid} create_time mismatch (recorded {create_time!r}, "
-            f"live {live!r}) — the pid was reused by a different process"
-        )
-    return True, f"pid {pid} fingerprint matched"
+    return False, (
+        f"pid {pid} create_time mismatch (recorded {create_time!r}) — the pid "
+        "was reused by a different process"
+    )
 
 
 def observe_tree_state(pid: int, create_time: float | None = None) -> dict:
@@ -532,30 +528,8 @@ def restore_window_title(pid: int, pids: list[int]) -> dict:
 def kill_process_tree(pid: int | None, grace: float = 3.0) -> int:
     """Terminate `pid` and ALL its descendants; return the count signalled.
 
-    Snapshots the subtree BEFORE killing anything — once the root dies its
-    children reparent and the tree is lost. Graceful `terminate()` first,
-    then force-`kill()` whatever survives `grace` seconds.
+    A thin shim over `edp_contracts.proc.kill_tree` for a pid the CALLER just
+    obtained from a live handle (tests, a Popen it holds). A pid read off disk
+    must go through `ProcId.from_json` + `kill_tree` instead, never this.
     """
-    if pid is None:
-        return 0
-    try:
-        root = psutil.Process(pid)
-    except (psutil.NoSuchProcess, ValueError):
-        return 0
-    try:
-        procs = root.children(recursive=True)   # snapshot the subtree FIRST
-    except psutil.NoSuchProcess:
-        procs = []
-    procs.append(root)
-    for p in procs:
-        try:
-            p.terminate()
-        except psutil.NoSuchProcess:
-            pass
-    _, alive = psutil.wait_procs(procs, timeout=grace)
-    for p in alive:
-        try:
-            p.kill()
-        except psutil.NoSuchProcess:
-            pass
-    return len(procs)
+    return kill_tree(ProcId.try_of(pid), grace=grace).killed

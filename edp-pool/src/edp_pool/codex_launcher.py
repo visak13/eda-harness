@@ -26,6 +26,7 @@ import time
 from pathlib import Path
 
 from edp_contracts import settings
+from edp_contracts.proc import kill_popen
 
 from .pi_launcher import _CLAUDE_ONLY, seat_python
 from .pty_launcher import build_env
@@ -153,10 +154,7 @@ class CodexSpawner:
     def kill(self, session_id) -> None:
         rec = self._launches.get(session_id)
         if rec and rec.proc.poll() is None:
-            if os.name == "nt":
-                subprocess.run(["taskkill", "/PID", str(rec.proc.pid), "/T", "/F"], capture_output=True)
-            else:
-                rec.proc.terminate()
+            kill_popen(rec.proc)  # the runner + codex/pi + their tools: the whole tree, never the root alone
 
     def knows(self, session_id) -> bool:
         return session_id in self._launches

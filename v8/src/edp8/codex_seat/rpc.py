@@ -26,6 +26,8 @@ from concurrent.futures import Future
 from pathlib import Path
 from queue import Queue
 
+from edp_contracts.proc import kill_popen
+
 from edp8 import settings
 
 #: the loopback websocket's capability token (monitor mode): the TUI reads it by env NAME
@@ -210,10 +212,7 @@ class AppServer:
         except Exception:  # noqa: BLE001
             pass
         if self.alive():
-            if os.name == "nt":
-                subprocess.run(["taskkill", "/PID", str(self.proc.pid), "/T", "/F"], capture_output=True)
-            else:
-                self.proc.kill()
+            kill_popen(self.proc)  # app-server + codex-command-runner + its shells, never the root alone
 
     # ------------------------------------------------------------------ io
     def _mirror(self, direction: str, msg: dict) -> None:

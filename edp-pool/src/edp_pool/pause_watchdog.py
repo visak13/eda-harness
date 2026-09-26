@@ -11,9 +11,12 @@ Two properties, both learned the hard way in a1's POC, both non-obvious:
    enough. A detached child is still a DESCENDANT, so `TaskStop` and
    `kill_process_tree` (which walks descendants) take it down at exactly the
    moment it is needed: the crash it exists to survive. Observed directly. So
-   it is launched via WMI `Win32_Process.Create`, which reparents it to
-   `WmiPrvSE`, and the result is VERIFIED not-a-descendant rather than assumed.
-   It also outlives a pool restart, which a pool-child watchdog would not.
+   it is launched through `edp_contracts.proc.detach()` (S2: no WMI, no
+   powershell): a short-lived intermediate starts it in its own session/group
+   (and out of the pool's job where the job allows breakaway) and exits, so
+   its parent is dead and no descendant walk from the pool reaches it. The
+   result is VERIFIED not-a-descendant rather than assumed. It also outlives a
+   pool restart, which a pool-child watchdog would not.
 
 2. IT CARRIES A RUN TOKEN, and the token — not a timer — decides whether it
    fires. A watchdog armed by an earlier 70-second probe once fired 43 seconds
@@ -38,7 +41,6 @@ Two properties, both learned the hard way in a1's POC, both non-obvious:
 
 import argparse
 import os
-import subprocess
 import sys
 import time
 import uuid
@@ -46,6 +48,7 @@ from pathlib import Path
 
 import psutil
 from edp_contracts import settings
+from edp_contracts.proc import detach
 
 _TOKEN_DIR_ENV = "EDP_POOL_PAUSE_TOKENS"
 _DEFAULT_TOKEN_DIR = Path(".pool-logs") / "pause-tokens"
@@ -125,38 +128,16 @@ def disarm(token_dir, pid: int, runid: str | None = None) -> bool:
         return False
 
 
-def _ps_quote(s: str) -> str:
-    """Escape for a PowerShell single-quoted literal."""
-    return str(s).replace("'", "''")
-
-
-def _wmi_launch(cmdline: str, cwd: str) -> int:
-    """Create a process OUT OF THIS PROCESS TREE via WMI `Win32_Process.Create`
-    and return its pid. The transient `powershell.exe` IS our child; the process
-    IT creates is parented to `WmiPrvSE`, which is the entire point.
+def _detach_launch(argv: list[str], cwd: str) -> int:
+    """Create the watchdog OUT OF THIS PROCESS TREE and return its pid
+    (`edp_contracts.proc.detach`). It runs with CREATE_NO_WINDOW, never
+    DETACHED_PROCESS: the watchdog is a sidecar and must never own a window
+    (the "sidecar shell popping out of nowhere" report, 2026-08-13).
 
     Raises on any failure — `arm` turns that into a refusal to suspend.
     """
-    ps = (
-        # ShowWindow=0 (SW_HIDE): without ProcessStartupInformation the
-        # WMI-created console-subsystem child gets a fresh VISIBLE console
-        # window parented to WmiPrvSE — the "sidecar shell popping out of
-        # nowhere" the operator reported (2026-08-13). The watchdog is a
-        # sidecar; it must never own a window.
-        "$si = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly "
-        "-Property @{ShowWindow=[uint16]0}; "
-        "$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create "
-        f"-Arguments @{{CommandLine='{_ps_quote(cmdline)}'; "
-        f"CurrentDirectory='{_ps_quote(cwd)}'; ProcessStartupInformation=$si}}; "
-        "if ($r.ReturnValue -ne 0) { Write-Error \"Create returned "
-        "$($r.ReturnValue)\"; exit 2 }; Write-Output $r.ProcessId"
-    )
-    out = subprocess.run(
-        ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
-        capture_output=True, text=True, timeout=60, check=True,
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-    )
-    return int(out.stdout.strip().splitlines()[-1])
+    ident, _left_job = detach(argv, cwd=cwd)
+    return ident.pid
 
 
 def _descendant_pids_of(pid: int) -> set[int]:
@@ -180,15 +161,13 @@ def arm(*, token_dir, pid: int, create_time: float | None, runid: str | None = N
     pool_dir = settings.get("EDP_POOL_DIR")   # dev: the edp-pool repo root (out of every shell tree)
     pool_dir.mkdir(parents=True, exist_ok=True)
     cwd = str(pool_dir)
-    cmdline = (
-        f'"{py}" -m edp_pool.pause_watchdog '
-        f'--token-dir "{token_dir_path(token_dir)}" '
-        f'--pid {pid} --create-time {create_time!r} --runid {runid} '
-        f'--deadline-epoch {deadline_epoch!r}'
-    )
-    launch = launch_fn or _wmi_launch
+    argv = [py, "-m", "edp_pool.pause_watchdog",
+            "--token-dir", str(token_dir_path(token_dir)),
+            "--pid", str(pid), "--create-time", repr(create_time),
+            "--runid", runid, "--deadline-epoch", repr(deadline_epoch)]
+    launch = launch_fn or _detach_launch
     try:
-        wd_pid = launch(cmdline, cwd)
+        wd_pid = launch(argv, cwd)
     except Exception as exc:  # noqa: BLE001 — no watchdog ⇒ no suspend
         disarm(token_dir, pid, runid)
         return {"ok": False, "error": f"watchdog launch failed: {exc!r}",

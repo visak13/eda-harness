@@ -17,7 +17,7 @@ mix: watchable, autonomous, and still protected from stack-nuking kills.
 
 import subprocess
 
-from .proctree import kill_process_tree
+from edp_contracts.proc import kill_popen
 
 
 class ConsoleLaunch:
@@ -51,16 +51,6 @@ class ConsoleLaunch:
     def terminate(self) -> None:
         # Close the WHOLE subtree this shell opened (MCP servers + rx
         # drivers), not just the root pid — otherwise its python children
-        # orphan and accumulate on every close/reap. Kill descendants first
-        # (snapshot before the root dies), then the root via its own handle
-        # (keeps Popen.poll() state consistent).
-        if self._proc is None or self._proc.poll() is not None:
-            return
-        try:
-            kill_process_tree(self._proc.pid)
-        except Exception:
-            pass
-        try:
-            self._proc.terminate()
-        except Exception:
-            pass
+        # orphan and accumulate on every close/reap. `kill_popen` snapshots
+        # the tree before the root dies and reaps the Popen afterwards.
+        kill_popen(self._proc)

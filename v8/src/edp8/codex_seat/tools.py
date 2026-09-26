@@ -34,6 +34,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from edp_contracts.proc import kill_popen
+
 from edp8 import settings
 
 PARITY_TOOLS = ("Monitor", "TaskStop", "CronCreate", "CronList", "CronDelete")
@@ -555,12 +557,8 @@ ws.onclose = (ev) => { process.stdout.write(JSON.stringify({c: ev?.code ?? 1006,
 
 
 def kill_tree(proc: subprocess.Popen) -> None:
-    if proc.poll() is not None:
-        return
-    if os.name == "nt":
-        subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True)
-    else:
-        proc.kill()
+    """The monitor/task process and everything it spawned (edp_contracts.proc: snapshot, then kill)."""
+    kill_popen(proc, grace=2.0)
 
 
 @dataclass

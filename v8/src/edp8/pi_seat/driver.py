@@ -24,6 +24,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from queue import Empty, Queue
 
+from edp_contracts.proc import kill_popen
+
 from edp8 import settings
 
 SETTLED = "agent_settled"
@@ -213,8 +215,4 @@ class PiSeat:
         except Exception:
             pass
         if self.alive():
-            assert self.proc
-            if os.name == "nt":
-                subprocess.run(["taskkill", "/PID", str(self.proc.pid), "/T", "/F"], capture_output=True)
-            else:
-                self.proc.kill()
+            kill_popen(self.proc)  # pi (node) + the tools it spawned, never the root alone

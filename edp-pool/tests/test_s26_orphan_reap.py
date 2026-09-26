@@ -161,11 +161,11 @@ def test_reap_refuses_when_the_stored_create_time_does_not_match(tmp_path, child
 def test_reap_refuses_when_no_create_time_was_persisted(tmp_path, child):
     """Fail-closed, and STRICTER than `_proc_alive` on the very same row.
 
-    `_proc_alive` answers "is it alive?" and may fall back to pid-only when
-    create_time is missing. Authorizing a KILL must never guess. This asserts
-    the asymmetry directly: liveness says True, the kill guard says no."""
+    Authorizing a KILL must never guess. Since S2 liveness does not guess
+    either: a bare pid proves nothing about which process owns it now, so
+    `_proc_alive` says "can't tell" (None), and the kill guard says no."""
     fp = {"pid": child.pid, "create_time": None}
-    assert _proc_alive(fp) is True          # best-effort: the pid does exist
+    assert _proc_alive(fp) is None          # a bare pid is not an identity
     svc, _sid = _strand(tmp_path, "worker", "p:a1", fp)
 
     out = svc.reap("p:a1")

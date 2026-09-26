@@ -13,9 +13,11 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx
+import psutil
 from edp_contracts import HealthStatus, Microservice, Tool, get_logger, mount
 from edp_contracts import settings as edp_settings
 from edp_contracts.errors import ErrorCode
+from edp_contracts.proc import ProcId, kill_tree
 
 from .spawner import FakeSpawner, Spawner
 
@@ -106,81 +108,54 @@ def _row_matches_recipe(row: dict, recipe_id: str) -> bool:
 
 
 def _proc_fingerprint(pid: int | None) -> dict | None:
-    """Reuse-proof fingerprint (pid + create_time) of a spawned shell's
-    process, persisted with the session so liveness can be RE-ESTABLISHED
-    after a pool restart (the in-memory PTY handle doesn't survive). None
-    if pid is unknown. create_time defeats pid-reuse; None when psutil
-    can't read it (best-effort pid-only)."""
+    """Reuse-proof identity (`edp_contracts.proc.ProcId`: pid, create_time,
+    name) of a spawned shell's process, persisted with the session so
+    liveness can be RE-ESTABLISHED after a pool restart (the in-memory PTY
+    handle doesn't survive). None if pid is unknown; create_time None when
+    the process is already gone (such a record never authorizes a kill)."""
     if not pid:
         return None
-    try:
-        import psutil
-        return {"pid": pid, "create_time": psutil.Process(pid).create_time()}
-    except Exception:  # noqa: BLE001 — psutil missing / process already gone
-        return {"pid": pid, "create_time": None}
+    ident = ProcId.try_of(pid)
+    return ident.to_json() if ident else {"pid": pid, "create_time": None}
 
 
 def _proc_alive(fp: dict | None) -> bool | None:
     """Is the fingerprinted process still alive? True / False, or None
-    when we genuinely can't tell (no fingerprint / psutil unavailable) —
-    the caller maps None to 'unknown' so the FSM stays conservative."""
+    when we genuinely can't tell (no fingerprint, or no create_time: a bare
+    pid proves nothing about which process owns it now, S2) — the caller
+    maps None to 'unknown' so the FSM stays conservative."""
     if not fp or not fp.get("pid"):
         return None
-    pid = fp["pid"]
-    try:
-        import psutil
-    except Exception:  # noqa: BLE001
+    ident = ProcId.from_json(fp)
+    if ident is None:
         return None
-    if not psutil.pid_exists(pid):
-        return False
-    ct = fp.get("create_time")
-    if ct is None:
-        return True  # pid exists; no create_time to defeat reuse (best effort)
-    try:
-        return abs(psutil.Process(pid).create_time() - ct) < 1.0
-    except psutil.NoSuchProcess:
-        return False              # vanished between the two checks — truly gone
-    except Exception:  # noqa: BLE001 — AccessDenied / OSError: can't tell
-        # A probe that FAILS is not a process that DIED. `reconcile_sessions`
-        # writes "done" over any row this reports False for, so a transient
-        # failure must degrade to "unknown", never to a death verdict.
-        return None
+    # A probe that FAILS (AccessDenied) is None, not a death: `reconcile_sessions`
+    # writes "done" over any row this reports False for.
+    return ident.probe()
 
 
 def _proc_kill_allowed(fp: dict | None) -> tuple[bool, str]:
     """May we SIGNAL the process a persisted fingerprint names? Fail-closed.
 
-    True only when the LIVE process at `pid` still carries the `create_time`
-    the registry stored for it at spawn. Every other case — no fingerprint,
-    no stored create_time, psutil unavailable, pid gone, create_time mismatch
-    — is a REFUSAL, and the reason is returned for the caller to surface.
-
-    Deliberately stricter than `_proc_alive`, which answers "is it alive?" and
-    may fall back to pid-only when create_time is missing. Authorizing a KILL
-    never guesses: pids are recycled, and killing a recycled pid is how a
-    blanket kill took down the broker and pool mid-run (2026-05-31). The
-    stored create_time exists for exactly this check.
+    True only when the LIVE process at `pid` is still the one `ProcId`
+    recorded at spawn. Every other case — no fingerprint, no stored
+    create_time, pid gone, create_time mismatch — is a REFUSAL, and the
+    reason is returned for the caller to surface. Pids are recycled, and
+    killing a recycled pid is how a blanket kill took down the broker and
+    pool mid-run (2026-05-31).
     """
     if not fp or not fp.get("pid"):
         return False, "no persisted pid"
-    ct = fp.get("create_time")
-    if ct is None:
+    ident = ProcId.from_json(fp)
+    if ident is None:
         return False, "no persisted create_time — cannot defeat pid reuse"
-    pid = fp["pid"]
-    try:
-        import psutil
-    except Exception:  # noqa: BLE001
-        return False, "psutil unavailable — cannot verify the fingerprint"
-    try:
-        live_ct = psutil.Process(pid).create_time()
-    except Exception:  # noqa: BLE001 — NoSuchProcess / bad pid
-        return False, f"pid {pid} is already gone"
-    if abs(live_ct - ct) >= 1.0:
-        return False, (
-            f"pid {pid} create_time mismatch (stored {ct!r}, live {live_ct!r})"
-            " — the pid was reused by a different process"
-        )
-    return True, f"pid {pid} fingerprint matched"
+    if ident.live() is not None:
+        return True, f"pid {ident.pid} fingerprint matched"
+    if not psutil.pid_exists(ident.pid):
+        return False, f"pid {ident.pid} is already gone"
+    return False, (f"pid {ident.pid} create_time mismatch (stored "
+                   f"{ident.create_time!r}) — the pid was reused by a "
+                   "different process")
 
 
 # ══ W12 panel guards ══════════════════════════════════════════════════════
@@ -852,10 +827,10 @@ class PoolService(Microservice):
         if not allowed:
             _log.info("orphan_kill_refused", sid, sid=sid, reason=why)
             return f"orphan NOT signalled: {why}"
-        from .proctree import kill_process_tree
-        signalled = kill_process_tree(fp["pid"])
+        rep = kill_tree(ProcId.from_json(fp))
+        signalled = rep.killed
         _log.info("orphan_kill", sid, sid=sid, pid=fp["pid"],
-                  signalled=signalled)
+                  signalled=signalled, survivors=len(rep.survivors))
         if not signalled:
             return f"orphan pid {fp['pid']} vanished before it was signalled"
         return (f"killed orphaned pid {fp['pid']} + {signalled - 1} "
