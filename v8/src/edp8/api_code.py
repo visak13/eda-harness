@@ -15,6 +15,7 @@ import ipaddress
 import json
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import quote
@@ -96,6 +97,14 @@ def code_status() -> dict[str, Any]:
     }
 
 
+def reset_layout_stamp() -> Path:
+    """The Reset layout stamp the edp-code extension watches: its globalStorage dir under code-server's user
+    data dir (``user_dir`` in .run/code.json, else the default ``<data>/code/user``)."""
+    user = _record_field("user_dir")
+    base = Path(user) if user else settings.data_dir() / "code" / "user"
+    return base / "User" / "globalStorage" / "edp.edp-code" / "reset-layout.json"
+
+
 def code_router(actor: Callable[..., Participant], render_markdown: Callable[[str], str],
                 credentialed: Callable[[Participant], bool] = lambda _p: False) -> APIRouter:
     """``credentialed(p)``: p authenticated with a minted token (not a trusted-mode header alone);
@@ -125,10 +134,8 @@ def code_router(actor: Callable[..., Participant], render_markdown: Callable[[st
         response.headers["Cache-Control"] = "no-store"
         return {"ok": True, "value": code_status(), "hint": ""}
 
-    @router.post("/v1/code/session")
-    def session(request: Request, response: Response, who: Participant = Depends(actor)):
-        """A one-time, 60 s login token for the guard (``<guard>/__edp/login?t=<token>&next=<path>``).
-        Only the board's human owner, on the board host: every agent token or seat gets 403."""
+    def owner_only(request: Request, who: Participant) -> JSONResponse | None:
+        """403 unless the board's human owner, with a minted token, on the board host."""
         if who.type != "human" or who.role != Role.owner:
             return JSONResponse(status_code=403, content={
                 "ok": False, "error": {"code": "forbidden", "message": "only the board's human owner opens the Code tab"},
@@ -142,6 +149,14 @@ def code_router(actor: Callable[..., Participant], render_markdown: Callable[[st
             return JSONResponse(status_code=403, content={
                 "ok": False, "error": {"code": "forbidden", "message": "Code sessions are minted on the board host only"},
                 "hint": "open the board on its own machine (127.0.0.1)"})
+        return None
+
+    @router.post("/v1/code/session")
+    def session(request: Request, response: Response, who: Participant = Depends(actor)):
+        """A one-time, 60 s login token for the guard (``<guard>/__edp/login?t=<token>&next=<path>``).
+        Only the board's human owner, on the board host: every agent token or seat gets 403."""
+        if (refused := owner_only(request, who)) is not None:
+            return refused
         key = _record_field("mint_key")
         if not key:
             return JSONResponse(status_code=503, content={
@@ -150,6 +165,20 @@ def code_router(actor: Callable[..., Participant], render_markdown: Callable[[st
         token, exp = mint_token(key)
         response.headers["Cache-Control"] = "no-store"
         return {"ok": True, "value": {"token": token, "expires_at": exp}, "hint": ""}
+
+    @router.post("/v1/code/reset-layout")
+    def reset_layout(request: Request, response: Response, who: Participant = Depends(actor)):
+        """t-93da8bf09d: Code tab → Reset layout. Stamps a file in the edp-code extension's global storage;
+        the extension in every open code-server window watches it and runs exitZenMode + resetViewLocations
+        there (the workbench's layout lives in the browser, beyond the board's reach). Owner only, as a session."""
+        if (refused := owner_only(request, who)) is not None:
+            return refused
+        stamp = reset_layout_stamp()
+        stamp.parent.mkdir(parents=True, exist_ok=True)
+        at = datetime.now(timezone.utc).isoformat()
+        stamp.write_text(json.dumps({"at": at, "by": who.id}), encoding="utf-8")
+        response.headers["Cache-Control"] = "no-store"
+        return {"ok": True, "value": {"at": at}, "hint": "every open editor window leaves Zen mode and resets its views"}
 
     @router.get("/v1/code/faq")
     def faq(_: Participant = Depends(actor)):

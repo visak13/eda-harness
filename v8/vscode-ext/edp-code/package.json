@@ -4,7 +4,7 @@
   "icon": "media/heronry.png",
   "description": "Chat on Heronry tickets and epics beside the editor, tag a code selection to anyone on the board; live-seats badge, guarded git and an external terminal for the fleet's shared tree.",
   "publisher": "edp",
-  "version": "0.13.3",
+  "version": "0.13.4",
   "private": true,
   "license": "UNLICENSED",
   "engines": {
@@ -22,7 +22,11 @@
   ],
   "contributes": {
     "configurationDefaults": {
-      "zenMode.centerLayout": false
+      "zenMode.centerLayout": false,
+      "zenMode.restore": false,
+      "window.menuBarVisibility": "classic",
+      "workbench.activityBar.location": "default",
+      "workbench.statusBar.visible": true
     },
     "viewsContainers": {
       "secondarySidebar": [
@@ -144,6 +148,12 @@
         "enablement": "activeCustomEditorId == edp.docReader"
       },
       {
+        "command": "edp.doc.exitFullScreen",
+        "title": "Exit full screen",
+        "category": "Heronry",
+        "icon": "$(screen-normal)"
+      },
+      {
         "command": "edp.doc.refresh",
         "title": "Refresh doc",
         "category": "Heronry",
@@ -175,6 +185,11 @@
         "title": "Remove from the chat draft",
         "category": "Heronry",
         "icon": "$(close)"
+      },
+      {
+        "command": "edp.layout.reset",
+        "title": "Reset layout (leave Zen, views back to default)",
+        "category": "Heronry"
       }
     ],
     "menus": {
@@ -223,7 +238,12 @@
         },
         {
           "command": "edp.doc.fullScreen",
-          "when": "activeCustomEditorId == edp.docReader",
+          "when": "activeCustomEditorId == edp.docReader && !inZenMode",
+          "group": "navigation@7"
+        },
+        {
+          "command": "edp.doc.exitFullScreen",
+          "when": "activeCustomEditorId == edp.docReader && inZenMode",
           "group": "navigation@7"
         },
         {
@@ -260,6 +280,10 @@
         {
           "command": "edp.doc.fullScreen",
           "when": "activeCustomEditorId == edp.docReader"
+        },
+        {
+          "command": "edp.doc.exitFullScreen",
+          "when": "inZenMode"
         },
         {
           "command": "edp.doc.refresh",

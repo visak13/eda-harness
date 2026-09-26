@@ -33,6 +33,14 @@ button:disabled { opacity: 0.6; cursor: default; }
 .rd-primary:hover { background: var(--vscode-button-hoverBackground); }
 .rd-icon { padding: 2px 6px; }
 
+/* t-93da8bf09d: the way out of full screen (Zen hides the menu and status bar and silences notifications) */
+.rd-fullhint { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 4px 12px; flex-wrap: wrap;
+  color: var(--vscode-inputValidation-infoForeground, var(--vscode-foreground));
+  background: var(--vscode-inputValidation-infoBackground, var(--vscode-editorWidget-background));
+  border-bottom: 1px solid var(--vscode-inputValidation-infoBorder, var(--vscode-focusBorder)); }
+.rd-fullhint[hidden] { display: none; }
+.rd-fullhint-text { flex: 1 1 auto; min-width: 0; }
+
 .rd-status { flex: 0 0 auto; padding: 4px 12px; overflow-wrap: anywhere; border-bottom: 1px solid var(--vscode-widget-border, transparent); }
 .rd-status.rd-error { color: var(--vscode-errorForeground); }
 .rd-status.rd-ok { color: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-foreground)); }

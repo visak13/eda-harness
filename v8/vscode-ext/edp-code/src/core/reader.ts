@@ -63,7 +63,9 @@ export type HostToReader =
   /** C20: a quote card's link: scroll to these source lines and mark them */
   | { type: 'reveal'; v: 1; from: number; to: number }
   /** C20: an Add to chat settled */
-  | { type: 'quoted'; v: 1; ok: boolean; text: string };
+  | { type: 'quoted'; v: 1; ok: boolean; text: string }
+  /** t-93da8bf09d: the workbench is (not) in the reader's full screen: show (hide) the way out */
+  | { type: 'fullScreen'; v: 1; on: boolean };
 
 export type ReaderWrite = 'approve' | 'requestChanges' | 'resolveApprove' | 'resolveReject';
 
@@ -73,6 +75,8 @@ export type ReaderToHost =
   | { v: 1; type: 'compare' }
   | { v: 1; type: 'source' }
   | { v: 1; type: 'fullScreen' }
+  /** t-93da8bf09d: the full-screen banner's Exit: always leaves (never toggles back in) */
+  | { v: 1; type: 'exitFullScreen' }
   | { v: 1; type: 'refresh' }
   | { v: 1; type: 'approve' }
   | { v: 1; type: 'requestChanges'; feedback: string }
@@ -101,7 +105,7 @@ export function parseReaderInbound(raw: unknown): ReaderToHost | null {
   const r = raw as Record<string, unknown>;
   if (r.v !== 1 || typeof r.type !== 'string') return null;
   switch (r.type) {
-    case 'ready': case 'compare': case 'source': case 'fullScreen': case 'refresh': case 'approve': case 'openProposalDiff':
+    case 'ready': case 'compare': case 'source': case 'fullScreen': case 'exitFullScreen': case 'refresh': case 'approve': case 'openProposalDiff':
       return { v: 1, type: r.type };
     case 'findRefs': {
       const q = r.q, seq = r.seq;

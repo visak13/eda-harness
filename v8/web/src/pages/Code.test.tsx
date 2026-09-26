@@ -114,6 +114,25 @@ describe("CodePage", () => {
     expect(screen.queryByTestId("code-frame")).toBeNull();
   });
 
+  it("Reset layout (t-93da8bf09d) asks the board to reset the editor layout and says so", async () => {
+    let resets = 0;
+    server.use(http.post("/v1/code/reset-layout", () => { resets += 1; return ok({ at: "2026-09-26T19:00:00Z" }); }));
+    mount();
+    await screen.findByTestId("code-frame");
+    fireEvent.click(screen.getByTestId("code-reset-layout"));
+    expect(await screen.findByTestId("code-reset-result")).toHaveTextContent("leaves Zen mode");
+    expect(resets).toBe(1);
+  });
+
+  it("Reset layout names the board's refusal", async () => {
+    server.use(http.post("/v1/code/reset-layout", () =>
+      HttpResponse.json({ ok: false, error: { code: "forbidden", message: "only the board's human owner opens the Code tab" }, hint: "" }, { status: 403 })));
+    mount();
+    await screen.findByTestId("code-frame");
+    fireEvent.click(screen.getByTestId("code-reset-layout"));
+    expect(await screen.findByTestId("code-reset-result")).toHaveTextContent("only the board's human owner");
+  });
+
   it("Open in new window mints its own token (the frame's is spent) and opens the login URL", async () => {
     const m = mount();
     await screen.findByTestId("code-frame");

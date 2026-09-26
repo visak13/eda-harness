@@ -7,6 +7,8 @@ import { Badge, showSeats } from './badge';
 import { ChatController } from './chat';
 import { ChatViewProvider } from './chatView';
 import { guarded } from './guardedGit';
+import { Layout } from '../core/layout';
+import { registerLayout } from './layout';
 import { tagSelection } from './tag';
 import { openExternalTerminal } from './terminal';
 
@@ -21,10 +23,11 @@ export function activate(ctx: vscode.ExtensionContext): void {
   const board = () => requests.board(boardUrl(), () => creds(ctx), line => out.info(line));
   const badge = new Badge(ctx, board, line => out.info(line));
   const hooks = viewerHooks(requests, badge);
-  const chat = new ChatController(ctx, board, boardUrl, line => out.info(line), hooks.cancel, hooks.resume);
+  const layout = new Layout(c => vscode.commands.executeCommand(c));
+  const chat = new ChatController(ctx, board, boardUrl, line => out.info(line), hooks.cancel, hooks.resume, layout);
   const cmd = (id: string, fn: (...a: any[]) => unknown) => vscode.commands.registerCommand(id, fn);
 
-  ctx.subscriptions.push(out, badge, ...chat.register(),
+  ctx.subscriptions.push(out, badge, ...chat.register(), ...registerLayout(ctx, layout, line => out.info(line)),
     ctx.secrets.onDidChange(e => { if (e.key === 'edp.credentials.v1') { badge.refresh(0); void chat.restart(); } }),
     vscode.workspace.onDidChangeConfiguration(e => { if (e.affectsConfiguration('edp.boardUrl')) { badge.refresh(0); void chat.restart(); } }),
     cmd('edp.signIn', async () => { if (await signIn(ctx, board)) { badge.refresh(0); void chat.restart(); } }),

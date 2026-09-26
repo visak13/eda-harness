@@ -347,6 +347,9 @@ export const getCodeFaq = (): Promise<CodeFaq> => api<CodeFaq>("/v1/code/faq");
 /** s-17c13096e5: a one-time login token for the code guard (the board's human owner only; 403 otherwise).
  *  null from a board that predates the route (404/501) or a code service started without a mint key (503):
  *  the frame then loads the guard directly, as before S8. The guard enforces its cookie, not the SPA. */
+/** t-93da8bf09d: Code tab → Reset layout. The board stamps a file the edp-code extension watches; every open editor
+ *  window leaves Zen mode and puts its views back (the layout lives in the browser, beyond the board). Owner only. */
+export const resetCodeLayout = async (): Promise<{ at: string }> => (await postJson<{ at: string }>("/v1/code/reset-layout", {})).value;
 export const mintCodeSession = async (): Promise<CodeSession | null> => {
   try {
     return (await postJson<CodeSession>("/v1/code/session", {})).value;

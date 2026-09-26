@@ -30,6 +30,7 @@ import { InboxHost, type InboxScope } from './inbox';
 import { DocProvider, setReader } from './docs';
 import { DocsHost, type DocsScope } from './docsTab';
 import { DocReader } from './reader';
+import { Layout } from '../core/layout';
 import { DecisionsHost } from './decisionsTab';
 import type { TagTarget } from './tag';
 import { QuoteHost, type QuoteChat } from './quotes';
@@ -117,7 +118,8 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
   private opened = 0;
 
   constructor(private ctx: vscode.ExtensionContext, private board: () => Board, private boardUrl: () => string,
-    private log: (line: string) => void, private cancelViewer: () => void = () => {}, private resumeViewer: () => void = () => {}) {
+    private log: (line: string) => void, private cancelViewer: () => void = () => {}, private resumeViewer: () => void = () => {},
+    layout: Layout = new Layout(c => vscode.commands.executeCommand(c))) {
     this.provider = new ChatViewProvider(ctx, this, log);
     this.attach = new Attachments(ctx, board, log);
     this.paths = new PathIndex(log);
@@ -125,7 +127,7 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
     this.inbox = new InboxHost(board, boardUrl, () => this.inboxScope(), m => this.post(m), ref => this.attach.open(ref),
       e => this.fail(e, 'could not use the Inbox'), log);
     this.docs = new DocsHost(board, () => this.docsScope(), m => this.post(m), e => this.fail(e, 'could not list the docs'), log);
-    this.reader = new DocReader(ctx, board, log, e => this.fail(e, 'could not use the reader'));
+    this.reader = new DocReader(ctx, board, log, e => this.fail(e, 'could not use the reader'), layout);
     this.decisions = new DecisionsHost(board, () => (this.ticket && this.store ? { id: this.ticket.id } : null), m => this.post(m),
       { message: (t, id) => this.openMessage(t, id), doc: async id => { const d = await this.board().latestDoc(id); await this.reader.open(id, d.version, null); } },
       e => this.fail(e, 'could not use the Decisions tab'), log);

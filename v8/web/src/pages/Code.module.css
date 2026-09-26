@@ -19,6 +19,8 @@
   border-radius: 8px; color: var(--ink); background: var(--panel); text-decoration: none; white-space: nowrap;
 }
 .action:hover { background: var(--secondary); }
+button.action { font: inherit; cursor: pointer; }
+button.action:disabled { cursor: progress; opacity: 0.7; }
 .action:focus-visible, .retry:focus-visible { outline: 2px solid var(--accentink); outline-offset: 2px; }
 .body { flex: 1; min-height: 0; display: flex; }
 .frame { flex: 1; width: 100%; height: 100%; border: 0; display: block; background: var(--bg); }

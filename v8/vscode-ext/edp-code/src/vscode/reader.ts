@@ -16,6 +16,7 @@ import { compareChoices, decideBody, decideProblem, diffPair, parseReaderInbound
 import { docUri } from './docs';
 import { docReaderDraft } from '../core/quotes';
 import type { QuoteHost } from './quotes';
+import { Layout } from '../core/layout';
 
 const CTX_APPROVE = 'edp.doc.canApprove';
 const CTX_RESOLVE = 'edp.doc.canResolve';
@@ -51,7 +52,11 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
   private viewer = 0;
 
   constructor(private ctx: vscode.ExtensionContext, private board: () => Board, private log: (line: string) => void,
-    private onAuthFail: (e: unknown) => void = () => {}) {}
+    private onAuthFail: (e: unknown) => void = () => {}, private layout: Layout = new Layout(c => vscode.commands.executeCommand(c))) {
+    // t-93da8bf09d: every open reader shows the way out of full screen while it is on
+    this.offLayout = layout.onChange(on => { for (const p of this.panels) p.post({ type: 'fullScreen', v: 1, on }); });
+  }
+  private offLayout: () => void;
 
   register(): vscode.Disposable[] {
     // an editor/title action passes its editor's resource: act on that reader, not whichever one is active
@@ -194,12 +199,13 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
 
   private async intent(p: ReaderPanel, m: ReaderToHost): Promise<void> {
     switch (m.type) {
-      case 'ready': p.ready = true; p.post(p.state); this.postMarks(p); this.postReveal(p); return;
+      case 'ready': p.ready = true; p.post(p.state); this.postMarks(p); this.postReveal(p); if (this.layout.fullScreen) p.post({ type: 'fullScreen', v: 1, on: true }); return;
       case 'refresh': return this.load(p);
       case 'pickVersion': if (m.version !== p.version && p.state.doc?.versions.includes(m.version)) await this.open(p.id, m.version, p.source); return;
       case 'compare': return this.compare(p);
       case 'source': return this.source(p);
       case 'fullScreen': return this.fullScreen();
+      case 'exitFullScreen': return this.layout.exitFullScreen();
       case 'approve': return this.approve(p);
       case 'requestChanges': return this.requestChanges(p, m.feedback);
       case 'resolve': return this.resolve(p, m.approve);
@@ -394,9 +400,11 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
 
   /** Full screen: Zen mode, the workbench's own toggle, hides every side bar (the chat included), the panel, the
    *  activity and status bars, and restores exactly what was showing when pressed again. (maximizeEditorHideSidebar
-   *  has no inverse on a lone editor group: measured in the C16 smoke.) */
+   *  has no inverse on a lone editor group: measured in the C16 smoke.) Zen also hides the menu and silences
+   *  notifications, so the reader itself shows how to leave (t-93da8bf09d), and zenMode.restore=false (the extension's
+   *  configurationDefaults, and start-code.ps1's seed) means a reload always leaves it. */
   private async fullScreen(): Promise<void> {
-    await vscode.commands.executeCommand('workbench.action.toggleZenMode');
+    await this.layout.enterFullScreen();
   }
 
   /** A proposal against the active doc it revises, in the native diff editor. */
@@ -407,7 +415,7 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
       `${d.baseId} v${d.baseVersion} (active) ↔ ${p.id} v${p.version} (proposed)`);
   }
 
-  dispose(): void { this.panels.clear(); this.active = null; }
+  dispose(): void { this.offLayout(); this.panels.clear(); this.active = null; }
 }
 
 /** Two versions of a doc in the diff editor, the older on the left (the Docs tab's Compare too). */

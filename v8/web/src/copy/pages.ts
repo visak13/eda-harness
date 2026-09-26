@@ -136,6 +136,7 @@ export const PAGES: Record<string, PageCopy> = {
     items: [
       { key: "editor", label: "Editor", text: "code-server on the board host's loopback port (GET /v1/code); a deep link /code?folder=&file=&line=n-m opens a folder and puts the cursor on line n." },
       { key: "faq", label: "FAQ", text: "opens guides/code-tab-faq.md in a new tab: the shared tree and live seats, worktrees, the extension set, tagging, and the unguarded git UI.", control: true },
+      { key: "reset-layout", label: "Reset layout", text: "the editor lost its menu, activity bar or status bar (Zen mode)? Leaves Zen and puts every view back, in every open editor window. Same as Ctrl+K Z, or Heronry: Reset layout in the command palette.", control: true },
       { key: "new-window", label: "Open in new window", text: "the same editor in its own browser tab, with more room and the browser's shortcuts. Wakes nobody.", control: true },
       { key: "retry", label: "Retry", text: "asks the board again whether code-server answers; start it first with .\\edp.ps1 start code on the board host.", control: true },
       { key: "open", label: "Open the Code tab", text: "back from the FAQ to the editor.", control: true },

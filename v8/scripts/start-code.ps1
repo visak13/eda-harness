@@ -153,6 +153,8 @@ function WriteState($p, $g, $inner) {
     last_probe = $null; last_ok = $null; last_restart_reason = $null; restarts = 0
     # the board reads it to mint the owner's guard login (POST /v1/code/session)
     mint_key = $MINTKEY
+    # the board drops the Code tab's Reset layout stamp under it (POST /v1/code/reset-layout)
+    user_dir = $userDir
   }
   WriteUtf8 $stateFile ($state | ConvertTo-Json)
 }

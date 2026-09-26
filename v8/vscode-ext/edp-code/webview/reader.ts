@@ -9,6 +9,7 @@ import { isSendKey, sendChord } from '../src/core/composerKeys';
 import { diffLines, lineRange, renderDoc } from './readerRender';
 import type { PersonRow } from '../src/core/chatProtocol';
 import { NoteCompletion } from './noteComplete';
+import { FULL_SCREEN_HINT } from '../src/core/layout';
 
 declare function acquireVsCodeApi(): { postMessage(m: unknown): void; getState(): unknown; setState(s: unknown): void };
 const vscode = acquireVsCodeApi();
@@ -45,6 +46,8 @@ let outcome: { ok: boolean; text: string } | null = null;
 let renderedBody: string | null = null;
 /** C20: this version's draft quotes, marked on their blocks until sent or removed */
 let marks: ReaderMark[] = [];
+/** t-93da8bf09d: the workbench is in this reader's full screen (Zen): the banner shows the way out */
+let fullOn = false;
 
 const app = document.getElementById('app')!;
 const bar = el('header', 'rd-bar');
@@ -60,7 +63,13 @@ layout.append(nav, main);
 const status = el('div', 'rd-status');
 status.id = 'rd-status';
 status.setAttribute('role', 'status');
-app.append(bar, status, layout);
+const fullHint = el('div', 'rd-fullhint');
+fullHint.id = 'rd-fullhint';
+fullHint.setAttribute('role', 'status');
+fullHint.hidden = true;
+fullHint.append(el('span', 'rd-fullhint-text', FULL_SCREEN_HINT),
+  btn('rd-fullhint-exit', 'Exit full screen', 'Leave full screen: the menu, activity bar, side bars and status bar come back', () => post({ type: 'exitFullScreen' })));
+app.append(bar, fullHint, status, layout);
 
 function renderBar(): void {
   const s = state, d = s?.doc;
@@ -108,7 +117,9 @@ function renderBar(): void {
     const tools = el('span', 'rd-tools');
     if (d.versions.length > 1) tools.append(btn('rd-compare', 'Compare', 'Compare this version with another (diff of the markdown source)', () => post({ type: 'compare' })));
     tools.append(btn('rd-source', 'Source', 'Open the markdown source of this version', () => post({ type: 'source' })));
-    tools.append(btn('rd-full', 'Full screen', 'Maximise this editor (again to restore)', () => post({ type: 'fullScreen' })));
+    tools.append(fullOn
+      ? btn('rd-full', 'Exit full screen', 'Leave full screen (Ctrl+K Z)', () => post({ type: 'exitFullScreen' }))
+      : btn('rd-full', 'Full screen', 'Maximise this editor (again to restore)', () => post({ type: 'fullScreen' })));
     out.push(tools);
   }
   bar.replaceChildren(...out);
@@ -454,6 +465,7 @@ window.addEventListener('message', (ev: MessageEvent) => {
   if (m.type === 'refs') { noteComplete.onRefs(m); return; } // C24
   if (m.type === 'startQuote') { openQuote(); return; }
   if (m.type === 'reveal') { reveal(m.from, m.to); return; }
+  if (m.type === 'fullScreen') { fullOn = m.on; fullHint.hidden = !m.on; renderBar(); return; }
   if (m.type === 'quoted') { outcome = { ok: m.ok, text: m.text }; renderStatus(); return; }
   if (m.type === 'done') {
     busy = null;

@@ -245,3 +245,35 @@ def test_session_503_without_a_mint_key(mint_env):
     (tmp / ".run" / "code.json").write_text(json.dumps({"service": "code"}))
     r = client.post("/v1/code/session", headers=AUTH)
     assert r.status_code == 503 and "token" not in r.json().get("value", {})
+
+
+# -- t-93da8bf09d: POST /v1/code/reset-layout stamps the file the edp-code extension watches -------------
+
+def test_reset_layout_stamps_the_extension_storage_for_the_owner(mint_env):
+    client, tmp = mint_env
+    user = tmp / "code-user"
+    (tmp / ".run" / "code.json").write_text(json.dumps({"service": "code", "mint_key": MINT_KEY, "user_dir": str(user)}))
+    r = client.post("/v1/code/reset-layout", headers=AUTH)
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
+    stamp = user / "User" / "globalStorage" / "edp.edp-code" / "reset-layout.json"
+    body = json.loads(stamp.read_text(encoding="utf-8"))
+    assert body["at"] == r.json()["value"]["at"] and body["by"] == "alice"
+
+
+def test_reset_layout_defaults_to_the_data_dir_user(mint_env):
+    client, tmp = mint_env
+    from edp8 import settings
+    assert client.post("/v1/code/reset-layout", headers=AUTH).status_code == 200
+    assert (settings.data_dir() / "code" / "user" / "User" / "globalStorage" / "edp.edp-code" / "reset-layout.json").is_file()
+
+
+@pytest.mark.parametrize("headers,status", [
+    ({}, 401),
+    ({"X-Participant": "engineer.x", "X-Token": "e"}, 403),
+    ({"X-Participant": "owner.agent"}, 403),
+    ({"X-Participant": "bob", "X-Token": "b"}, 403),
+])
+def test_reset_layout_refused_for_everyone_else(mint_env, headers, status):
+    client, tmp = mint_env
+    assert client.post("/v1/code/reset-layout", headers=headers).status_code == status
+    assert not list(tmp.rglob("reset-layout.json"))

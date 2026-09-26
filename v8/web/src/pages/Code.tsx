@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { getCodeFaq, getCodeStatus, mintCodeSession } from "../api/endpoints";
+import { getCodeFaq, getCodeStatus, mintCodeSession, resetCodeLayout } from "../api/endpoints";
 import { PageHeader } from "../components/PageHeader";
 import { Markdown } from "../components/Markdown";
 import { Icon } from "../components/Icon";
@@ -65,6 +65,15 @@ export function CodePage({ hostname = window.location.hostname }: { hostname?: s
     if (!w) return;
     w.opener = null;
     mintCodeSession().then((m) => { w.location.href = m ? loginUrl(src, m.token) : src; }, () => { w.location.href = src; });
+  };
+  // t-93da8bf09d: the way out of a Zen-stuck workbench, from outside it (the extension in the frame does the reset)
+  const [reset, setReset] = useState<{ busy: boolean; text?: string; error?: boolean }>({ busy: false });
+  const resetLayout = (): void => {
+    setReset({ busy: true });
+    resetCodeLayout().then(
+      () => setReset({ busy: false, text: "Layout reset: the editor leaves Zen mode in a moment." }),
+      (e: unknown) => setReset({ busy: false, error: true, text: e instanceof Error ? e.message : "Reset layout failed." }),
+    );
   };
   const where = link.file ? `${link.file}${link.line ? ` ${lineLabel(link.line)}` : ""}` : "";
 
@@ -137,6 +146,13 @@ export function CodePage({ hostname = window.location.hostname }: { hostname?: s
         <Link to="/code/faq" target="_blank" rel="noopener" className={styles.action} data-testid="code-faq" {...copyProps("code", "faq")}>
           <Icon name="help" size={16} /> FAQ
         </Link>
+        {reset.text ? <span className={reset.error ? styles.invalid : styles.where} role="status" data-testid="code-reset-result">{reset.text}</span> : null}
+        {showFrame ? (
+          <button type="button" className={styles.action} data-testid="code-reset-layout" disabled={reset.busy} onClick={resetLayout}
+            {...copyProps("code", "reset-layout")}>
+            <Icon name="refresh" size={16} /> Reset layout
+          </button>
+        ) : null}
         {src && s?.running && local && guardHost ? (
           <a href={src} target="_blank" rel="noopener noreferrer" onClick={openNewWindow} className={styles.action} data-testid="code-newwindow" {...copyProps("code", "new-window")}>
             <Icon name="external" size={16} /> Open in new window

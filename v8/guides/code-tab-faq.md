@@ -149,7 +149,22 @@ picks, **Escape** closes the list and keeps what you typed.
   Decisions (board UI, which has no decision page). `$5`, `$env:X` and `$` inside code never open the
   list. Board UI and VS Code.
 
-## Known behaviours and limits (edp-code 0.13.3)
+## No menu, activity bar or status bar? (Zen mode, Reset layout)
+
+The editor lost its File/Edit menu, the activity bar (Explorer, Extensions) and the status bar: it is in
+**Zen mode**. Any one of these brings them back:
+
+- **Reset layout** in the Code tab's top strip: every open editor window leaves Zen and puts its views
+  back where VS Code puts them by default.
+- `Ctrl+K Z` inside the editor (the same key again enters Zen, so press it once).
+- **Heronry: Reset layout** from the command palette (`Ctrl+Shift+P` or `F1`, which work in Zen too).
+
+Zen is what the doc reader's **Full screen** (⛶) uses; while it is on, the reader shows a banner with
+**Exit full screen**. `Ctrl+K` is also the board's Find, but only while the focus is outside the editor:
+inside the editor, `Ctrl+K` then `Z` is VS Code's Zen chord. Since edp-code 0.13.4 a reload always
+leaves Zen (`zenMode.restore` is off), and the menu bar is the classic one in the title bar.
+
+## Known behaviours and limits (edp-code 0.13.4)
 
 - **Dropping files into chat needs `Shift`.** VS Code takes a plain drop itself and opens the file; only
   a drop with `Shift` held reaches the chat. An extension cannot change this. The paperclip's tooltip
