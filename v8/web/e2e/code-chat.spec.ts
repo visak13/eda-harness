@@ -145,11 +145,11 @@ test.afterAll(async () => {
 });
 
 test("sign in, open the chat in the right column, pick the epic: its own thread, one-line header with the Stories dropdown, architect", async () => {
-  await runCommand("EDP: Sign in to board");
-  await typeInput("owner", "EDP: board participant id");
-  await typeInput(OWNER_TOKEN, "EDP: token for owner");
+  await runCommand("Heronry: Sign in to board");
+  await typeInput("owner", "Heronry: board participant id");
+  await typeInput(OWNER_TOKEN, "Heronry: token for owner");
   await expect(page.locator(".notifications-toasts", { hasText: "signed in as owner" })).toBeVisible({ timeout: 15_000 });
-  await runCommand("EDP: Chat: open a ticket or epic thread…");
+  await runCommand("Heronry: Chat: open a ticket or epic thread…");
   await expect(quickRow(page, "Spike epic")).toBeVisible({ timeout: 15_000 });
   await quickRow(page, "Spike epic").click();
   const c = chat();

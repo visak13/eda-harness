@@ -22,15 +22,15 @@ export async function creds(ctx: vscode.ExtensionContext): Promise<Creds | undef
 /** Prompt, check the creds against the board, and store them only when the board accepts them. */
 export async function signIn(ctx: vscode.ExtensionContext, board: () => Board): Promise<Creds | undefined> {
   let origin: string;
-  try { origin = boardOrigin(); } catch { void vscode.window.showErrorMessage('EDP: board address is invalid.'); return; }
+  try { origin = boardOrigin(); } catch { void vscode.window.showErrorMessage('Heronry: board address is invalid.'); return; }
   const client = board(); // keep this sign-in attached to the destination shown in its prompts
   const participant = (await vscode.window.showInputBox({
-    title: 'EDP: board participant id', prompt: `Your participant id or handle on ${origin}`, ignoreFocusOut: true,
+    title: 'Heronry: board participant id', prompt: `Your participant id or handle on ${origin}`, ignoreFocusOut: true,
     validateInput: v => (v.trim() ? undefined : 'Required'),
   }))?.trim();
   if (!participant) return undefined;
   const token = (await vscode.window.showInputBox({
-    title: `EDP: token for ${participant}`, prompt: `Sign in to ${origin}; stored in VS Code secret storage only`, password: true, ignoreFocusOut: true,
+    title: `Heronry: token for ${participant}`, prompt: `Sign in to ${origin}; stored in VS Code secret storage only`, password: true, ignoreFocusOut: true,
     validateInput: v => (v.trim() ? undefined : 'Required'),
   }))?.trim();
   if (!token) return undefined;
@@ -41,17 +41,17 @@ export async function signIn(ctx: vscode.ExtensionContext, board: () => Board): 
     if (boardOrigin() !== origin) throw new Error('Board address changed; sign in again.');
     await ctx.secrets.store(C, JSON.stringify(c)); // one atomic origin-bound record
     await Promise.all([ctx.secrets.delete(P), ctx.secrets.delete(T)]);
-    void vscode.window.showInformationMessage(`EDP: signed in as ${me.handle} (${me.role})`);
+    void vscode.window.showInformationMessage(`Heronry: signed in as ${me.handle} (${me.role})`);
     return c;
   } catch (e) {
-    void vscode.window.showErrorMessage(`EDP: sign-in refused: ${(e as Error).message}`);
+    void vscode.window.showErrorMessage(`Heronry: sign-in refused: ${(e as Error).message}`);
     return undefined;
   }
 }
 
 export async function signOut(ctx: vscode.ExtensionContext): Promise<void> {
   await Promise.all([ctx.secrets.delete(C), ctx.secrets.delete(P), ctx.secrets.delete(T)]);
-  void vscode.window.showInformationMessage('EDP: signed out');
+  void vscode.window.showInformationMessage('Heronry: signed out');
 }
 
 /** The creds, prompting for sign-in when there are none; undefined = the user cancelled. */

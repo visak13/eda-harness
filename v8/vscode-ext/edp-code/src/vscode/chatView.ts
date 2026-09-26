@@ -60,7 +60,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       view.webview.html = chatHtml(js, css);
     } catch (e) {
       this.log(`chat: bundle unreadable (${(e as Error)?.name ?? 'error'})`);
-      view.webview.html = '<!DOCTYPE html><html><body><p>EDP chat: the webview bundle is missing; rebuild the extension.</p></body></html>';
+      view.webview.html = '<!DOCTYPE html><html><body><p>Heronry chat: the webview bundle is missing; rebuild the extension.</p></body></html>';
     }
     if (!this.resolved) { this.resolved = true; this.host.onFirstResolve(); }
     this.onVisibility?.();

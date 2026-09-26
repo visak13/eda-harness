@@ -95,11 +95,11 @@ test.beforeAll(async ({ browser, board: _board }) => {
   await page.goto(`http://127.0.0.1:${cs.port}/?folder=${folderParam(repo)}`);
   await expect(page.locator("div.monaco-workbench")).toBeVisible({ timeout: 60_000 });
   await expect(page.locator(".statusbar-item", { hasText: /seats (live|\?)/ }).first()).toBeVisible({ timeout: 60_000 });
-  await runCommand("EDP: Sign in to board");
-  await typeInput("owner", "EDP: board participant id");
-  await typeInput(OWNER_TOKEN, "EDP: token for owner");
+  await runCommand("Heronry: Sign in to board");
+  await typeInput("owner", "Heronry: board participant id");
+  await typeInput(OWNER_TOKEN, "Heronry: token for owner");
   await expect(page.locator(".notifications-toasts", { hasText: "signed in as owner" })).toBeVisible({ timeout: 15_000 });
-  await runCommand("EDP: Open chat");
+  await runCommand("Heronry: Open chat");
   await expect(chat().locator("#pick")).toBeVisible({ timeout: 20_000 });
   await chat().locator("#pick").click();
   await expect(quickRow(page, "Hash story")).toBeVisible({ timeout: 15_000 });
@@ -265,7 +265,7 @@ test("C13 #../ from a workspace folder inside the repo: # opens at the folder, .
   // the live Code tab opens v8 inside the eda-base3 repo; here the workspace is the fixture repo's src/
   await page.goto(`http://127.0.0.1:${cs!.port}/?folder=${folderParam(path.join(repo, "src"))}`);
   await expect(page.locator("div.monaco-workbench")).toBeVisible({ timeout: 60_000 });
-  await runCommand("EDP: Open chat");
+  await runCommand("Heronry: Open chat");
   await expect(chat().locator("#pick")).toBeVisible({ timeout: 20_000 });
   await chat().locator("#pick").click();
   await expect(quickRow(page, "Hash story")).toBeVisible({ timeout: 15_000 });

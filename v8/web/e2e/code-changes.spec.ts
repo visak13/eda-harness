@@ -149,11 +149,11 @@ test.afterAll(async () => {
 });
 
 test("the epic: Chat shows only epic-named commits as markers; Commits aggregates the epic and its stories, labelled; Unlinked collapsed at the bottom", async () => {
-  await runCommand("EDP: Sign in to board");
-  await typeInput("owner", "EDP: board participant id");
-  await typeInput(OWNER_TOKEN, "EDP: token for owner");
+  await runCommand("Heronry: Sign in to board");
+  await typeInput("owner", "Heronry: board participant id");
+  await typeInput(OWNER_TOKEN, "Heronry: token for owner");
   await expect(page.locator(".notifications-toasts", { hasText: "signed in as owner" })).toBeVisible({ timeout: 15_000 });
-  await runCommand("EDP: Chat: open a ticket or epic thread…");
+  await runCommand("Heronry: Chat: open a ticket or epic thread…");
   await quickRow(page, "Spike epic").click();
   const c = chat();
   await expect(c.locator("#crumb-current")).toHaveText("Spike epic", { timeout: 20_000 });

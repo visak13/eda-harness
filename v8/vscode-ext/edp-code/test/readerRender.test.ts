@@ -69,11 +69,11 @@ describe('diffLines', () => {
 
 describe('the reader document', () => {
   it('inlines one nonce\'d script and style under the chat CSP, titled', () => {
-    const html = chatHtml('let a = "</script>";', 'b{}', 'NONCE', 'EDP design-aaaaaaaaaa v12', false);
+    const html = chatHtml('let a = "</script>";', 'b{}', 'NONCE', 'Heronry design-aaaaaaaaaa v12', false);
     // the reader renders no images: its policy allows none (the chat's keeps img-src data: for pasted images)
     expect(html).toContain(`content="default-src 'none'; script-src 'nonce-NONCE'; style-src 'nonce-NONCE'; form-action 'none'; base-uri 'none'"`);
     expect(html).not.toContain('img-src');
-    expect(html).toContain('<title>EDP design-aaaaaaaaaa v12</title>');
+    expect(html).toContain('<title>Heronry design-aaaaaaaaaa v12</title>');
     expect(html).not.toMatch(/<\/script>";/);
   });
   it('the built reader bundle never fetches and carries no token header', () => {

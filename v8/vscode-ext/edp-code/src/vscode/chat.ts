@@ -182,7 +182,7 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
     return this.refs.rows(epic, q).catch(e => { this.log(`$ picker: ${(e as Error).message}`); return []; });
   }
 
-  /** C24: a `$<id>` chip: a ticket or epic opens its board page, a doc the EDP reader at its current version, a decision
+  /** C24: a `$<id>` chip: a ticket or epic opens its board page, a doc the Heronry reader at its current version, a decision
    *  its row in the Decisions tab (the open scope's; one outside it is named, not guessed at). */
   async openRef(id: string): Promise<void> {
     const kind = refKind(id);
@@ -678,7 +678,7 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
       if (chip) this.post({ type: 'insertCode', v: 1, ticketId, chip: this.chipOf(ticketId), focus: false });
       if (store === this.store && fresh.length) this.post({ type: 'append', v: 1, ticketId: store.ticketId, items: fresh });
       const un = m.unresolved_mentions ?? [];
-      if (un.length) void vscode.window.showWarningMessage(`EDP: sent, but nobody is registered as ${un.map(h => '@' + h).join(', ')}`);
+      if (un.length) void vscode.window.showWarningMessage(`Heronry: sent, but nobody is registered as ${un.map(h => '@' + h).join(', ')}`);
     } catch (e) {
       if (viewer !== this.viewer) return;
       this.fail(e, 'could not send');
@@ -767,10 +767,10 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
       catch { exists.set(r, false); }
     }));
     const t = codeTarget(cc, roots, r => exists.get(r) === true, r => has.get(r) === true);
-    if ('error' in t) { void vscode.window.showWarningMessage(`EDP: ${t.error}`); return; }
+    if ('error' in t) { void vscode.window.showWarningMessage(`Heronry: ${t.error}`); return; }
     // the anchored commit is in no local repo (a teammate's clone behind the host): not an error (C6)
-    if ('pull' in t) { void vscode.window.showWarningMessage(`EDP: ${t.path} @ ${pullText(t.pull)}`); return; }
-    if (t.missingCommit && t.commit) void vscode.window.showWarningMessage(`EDP: anchored at ${pullText(t.commit)} This is the clone's own copy; the lines may differ.`);
+    if ('pull' in t) { void vscode.window.showWarningMessage(`Heronry: ${t.path} @ ${pullText(t.pull)}`); return; }
+    if (t.missingCommit && t.commit) void vscode.window.showWarningMessage(`Heronry: anchored at ${pullText(t.commit)} This is the clone's own copy; the lines may differ.`);
     const uri = vscode.Uri.joinPath(vscode.Uri.file(t.root), ...t.path.split('/'));
     const doc = await vscode.workspace.openTextDocument(uri);
     const last = Math.min(t.line_end, doc.lineCount) - 1;
@@ -779,7 +779,7 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
     await vscode.window.showTextDocument(doc, { selection: range, preview: true, viewColumn: vscode.ViewColumn.Active });
     if (t.commit && !t.missingCommit) {
       const head = api?.getRepository(uri)?.state.HEAD?.commit;
-      if (head && head !== t.commit) void vscode.window.setStatusBarMessage(`EDP: anchored at ${t.commit.slice(0, 7)}; HEAD is ${head.slice(0, 7)}, lines may have moved`, 8_000);
+      if (head && head !== t.commit) void vscode.window.setStatusBarMessage(`Heronry: anchored at ${t.commit.slice(0, 7)}; HEAD is ${head.slice(0, 7)}, lines may have moved`, 8_000);
     }
   }
 
@@ -803,7 +803,7 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
     }
     if (store !== this.store) return;
     if (!store.has(messageId)) {
-      void vscode.window.showWarningMessage(`EDP: ${messageId} is not in the thread of ${ticketId} as far back as this panel reads.`);
+      void vscode.window.showWarningMessage(`Heronry: ${messageId} is not in the thread of ${ticketId} as far back as this panel reads.`);
       return;
     }
     this.post({ type: 'focusMessage', v: 1, ticketId, id: messageId });
@@ -830,7 +830,7 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
       // another one superseded, inserts nothing (C4 review #1)
       const picked = await this.pick();
       if (picked) this.placeChip(picked, chip);
-      else void vscode.window.setStatusBarMessage('EDP: no thread was opened, so the tagged lines were not added', 6_000);
+      else void vscode.window.setStatusBarMessage('Heronry: no thread was opened, so the tagged lines were not added', 6_000);
       return;
     }
     // a thread switch is in flight: the chip follows the user to the thread that opens (C4 review #2)
@@ -981,7 +981,7 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
   async pick(): Promise<string | undefined> {
     if (!(await creds(this.ctx))) { if (!(await signIn(this.ctx, this.board))) return; await this.restart(); }
     const qp = vscode.window.createQuickPick<Item>();
-    Object.assign(qp, { title: 'EDP chat: open a thread', placeholder: 'An epic opens its own thread with a Stories strip', busy: true,
+    Object.assign(qp, { title: 'Heronry chat: open a thread', placeholder: 'An epic opens its own thread with a Stories strip', busy: true,
       matchOnDescription: true, matchOnDetail: true, ignoreFocusOut: true });
     const chosen = new Promise<string | undefined>(resolve => {
       let done = false;
@@ -1004,7 +1004,7 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
     } catch (e) {
       qp.dispose();
       // C25: never a silent empty picker; a viewer switch that outlived its one retry is said out loud
-      if ((e as BoardError)?.code === 'viewer_changed') void vscode.window.showErrorMessage(`EDP: could not list tickets: ${(e as Error).message}`);
+      if ((e as BoardError)?.code === 'viewer_changed') void vscode.window.showErrorMessage(`Heronry: could not list tickets: ${(e as Error).message}`);
       else this.fail(e, 'could not list tickets');
       return;
     }
@@ -1030,6 +1030,6 @@ export class ChatController implements vscode.Disposable, TagTarget, QuoteChat {
       this.clearViewer();
       return;
     }
-    this.post({ type: 'error', v: 1, text: `EDP: ${what}: ${err?.message ?? String(e)}` });
+    this.post({ type: 'error', v: 1, text: `Heronry: ${what}: ${err?.message ?? String(e)}` });
   }
 }

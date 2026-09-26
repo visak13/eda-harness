@@ -1,4 +1,4 @@
-// The EDP reader editor (C16 s-579fa02cca; design-10b21760d9 §14.2, §14.7): a custom readonly editor over the C15
+// The Heronry reader editor (C16 s-579fa02cca; design-10b21760d9 §14.2, §14.7): a custom readonly editor over the C15
 // `edp-doc:/<id>/v<N>.md` URIs, so the version in the tab is the version shown and the version every write carries.
 // The webview is our own (markdown-it + DOMPurify inlined with a fresh nonce, CSP default-src 'none', no resource
 // roots): the native Markdown preview cannot host C20's inline note box. All board access is here, with the viewer's
@@ -141,7 +141,7 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
     const at = parseDocPath(document.uri.path);
     panel.webview.options = { enableScripts: true, localResourceRoots: [] }; // enableCommandUris stays off
     if (document.uri.scheme !== 'edp-doc' || !at) {
-      panel.webview.html = '<!DOCTYPE html><html><body><p>EDP reader: not a board doc.</p></body></html>';
+      panel.webview.html = '<!DOCTYPE html><html><body><p>Heronry reader: not a board doc.</p></body></html>';
       return;
     }
     const p = new ReaderPanel(at.id, at.version, panel, this.sources.get(at.id) ?? null);
@@ -164,10 +164,10 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
     if (panel.active) this.activate(p);
     try {
       const { js, css } = await this.loadBundle();
-      panel.webview.html = chatHtml(js, css, undefined, `EDP ${at.id} v${at.version}`, false);
+      panel.webview.html = chatHtml(js, css, undefined, `Heronry ${at.id} v${at.version}`, false);
     } catch (e) {
       this.log(`reader: bundle unreadable (${(e as Error)?.name ?? 'error'})`);
-      panel.webview.html = '<!DOCTYPE html><html><body><p>EDP reader: the webview bundle is missing; rebuild the extension.</p></body></html>';
+      panel.webview.html = '<!DOCTYPE html><html><body><p>Heronry reader: the webview bundle is missing; rebuild the extension.</p></body></html>';
     }
     void this.load(p);
   }
@@ -296,7 +296,7 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
 
   private done(p: ReaderPanel, what: ReaderWrite, ok: boolean, text: string): void {
     p.post({ type: 'done', v: 1, what, ok, text });
-    if (!ok) void vscode.window.showWarningMessage(`EDP: ${text}`);
+    if (!ok) void vscode.window.showWarningMessage(`Heronry: ${text}`);
   }
 
   /** Run one write, then read the panel again (the gate closes, the proposal retires). A refresh landing mid-write
@@ -338,7 +338,7 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
     const original = p.state.doc;
     const viewer = this.viewer;
     const v = p.state.doc?.version ?? p.version;
-    const feedback = await vscode.window.showInputBox({ title: `EDP: Request changes on ${p.id} v${v}`, prompt: 'Your feedback goes to the architect with this version',
+    const feedback = await vscode.window.showInputBox({ title: `Heronry: Request changes on ${p.id} v${v}`, prompt: 'Your feedback goes to the architect with this version',
       placeHolder: 'What to change…', ignoreFocusOut: true, validateInput: t => (t.trim() ? null : 'Request changes needs feedback.') });
     // a refresh re-reads the same version (a new object): only another identity or an unloaded panel drops the feedback
     if (feedback === undefined || !original || viewer !== this.viewer || p.state.doc?.id !== original.id || p.state.doc.version !== original.version) return;
@@ -366,9 +366,9 @@ export class DocReader implements vscode.CustomReadonlyEditorProvider, vscode.Di
     let v = other;
     if (v === undefined) {
       const choices = compareChoices(versions, p.version);
-      if (!choices.length) { void vscode.window.showInformationMessage(`EDP: ${p.id} has only v${p.version}.`); return; }
+      if (!choices.length) { void vscode.window.showInformationMessage(`Heronry: ${p.id} has only v${p.version}.`); return; }
       const pick = await vscode.window.showQuickPick(choices.map(c => ({ label: `v${c}`, description: c === p.state.doc?.current ? 'current' : undefined, v: c })),
-        { title: `EDP: compare ${p.id} v${p.version} with…`, placeHolder: 'The older version goes on the left' });
+        { title: `Heronry: compare ${p.id} v${p.version} with…`, placeHolder: 'The older version goes on the left' });
       if (!pick) return;
       v = pick.v;
     }

@@ -1,14 +1,14 @@
-# EDP (edp-code)
+# Heronry (edp-code)
 
-The EDP extension for the Code tab's code-server (design-449b628cdd §4, epic-91fcd3b370 S5).
+The Heronry extension for the Code tab's code-server (design-449b628cdd §4, epic-91fcd3b370 S5).
 
 | Command | What it does |
 |---|---|
-| `EDP: Sign in to board` / `Sign out of board` | Participant id + token, checked against the board, kept in VS Code secret storage only (per browser profile on code-server). |
-| `EDP: Tag selection on board…` (`Ctrl+Alt+M`, editor context menu) | Person (humans + live agent seats) → ticket (theirs first, then any open) → note → kind → a board message with `code_context` (path, lines, HEAD, dirty, snippet). |
+| `Heronry: Sign in to board` / `Sign out of board` | Participant id + token, checked against the board, kept in VS Code secret storage only (per browser profile on code-server). |
+| `Heronry: Tag selection on board…` (`Ctrl+Alt+M`, editor context menu) | Person (humans + live agent seats) → ticket (theirs first, then any open) → note → kind → a board message with `code_context` (path, lines, HEAD, dirty, snippet). |
 | Status bar `⎇ <branch> · N seats live` | Shown on the fleet's shared tree: the repo whose root is, or contains, a path in `edp.sharedTreePaths` (default the v8 root the service runs for, so the eda-base3 repo); alive agent sessions on this board; click for the list. |
-| `EDP: Checkout… / Merge… / Pull (guarded)` | A modal listing live seats and `git status --porcelain` paths, then system git. The built-in Source Control view is NOT guarded and cannot be vetoed. |
-| `EDP: Open external terminal here` | Launches `edp.externalTerminal` (pwsh / cmd / git-bash, a real `.exe`) detached in the folder. |
+| `Heronry: Checkout… / Merge… / Pull (guarded)` | A modal listing live seats and `git status --porcelain` paths, then system git. The built-in Source Control view is NOT guarded and cannot be vetoed. |
+| `Heronry: Open external terminal here` | Launches `edp.externalTerminal` (pwsh / cmd / git-bash, a real `.exe`) detached in the folder. |
 
 Settings: `edp.boardUrl` (default `http://127.0.0.1:9400`; creds go only to loopback or https), `edp.sharedTreePaths`, `edp.externalTerminal`
 (default Windows PowerShell 5.1 by absolute path; pwsh 7 is not installed on this host). All three are **machine-scoped**:
@@ -58,11 +58,11 @@ runbook: `guides/tailnet-public-mode.md` §5 "Add a teammate".
    (`http://127.0.0.1…`, `localhost`, `[::1]`) or an `https://` URL; any other URL — e.g.
    `http://msi:9400` or `http://100.x.y.z:9400` — is refused before a request is made
    (`unsafeBoardUrl` in `src/core/api.ts`). Redirects are not followed, so the token never leaves that origin.
-5. **Sign in.** Command palette → **EDP: Sign in to board** → your participant id (e.g. `ravi`), then the
+5. **Sign in.** Command palette → **Heronry: Sign in to board** → your participant id (e.g. `ravi`), then the
    token the owner sent you privately. Both are checked against the board and kept only in VS Code's
-   SecretStorage (never in settings or logs). **EDP: Sign out of board** removes them.
-6. **Open the chat.** **EDP: Open chat** (the chat view sits in the secondary side bar, right of the editor;
-   **View → Appearance → Secondary Side Bar** if it is hidden) → **EDP: Chat: open a ticket or epic thread…**.
+   SecretStorage (never in settings or logs). **Heronry: Sign out of board** removes them.
+6. **Open the chat.** **Heronry: Open chat** (the chat view sits in the secondary side bar, right of the editor;
+   **View → Appearance → Secondary Side Bar** if it is hidden) → **Heronry: Chat: open a ticket or epic thread…**.
 
 Differences from the host's Code tab: the `⎇ … seats live` badge and the guarded git commands name
 the fleet's shared tree (`edp.sharedTreePaths`), which is not on your machine, so the badge stays hidden

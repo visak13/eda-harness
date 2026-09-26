@@ -78,7 +78,7 @@ export type BadgeView = { text: string; tooltip: string; warn: boolean };
 /** The status-bar badge. A failed board call shows `seats ?` with the reason: never a stale count
  *  shown as current, and never silence (which would read as "0 seats"). */
 export function badgeView(branch: string, r: { seats: Seat[] } | { error: string }): BadgeView {
-  if ('error' in r) return { text: `$(git-branch) ${branch} · seats ?`, tooltip: `EDP: live seats unknown (${r.error})`, warn: false };
+  if ('error' in r) return { text: `$(git-branch) ${branch} · seats ?`, tooltip: `Heronry: live seats unknown (${r.error})`, warn: false };
   const n = r.seats.length;
   const tooltip = n
     ? `${n} live agent seat${n === 1 ? '' : 's'} on this board:\n${r.seats.map(s => `${s.handle} — ${s.ticket_id ?? 'no ticket'}${s.stale ? ' (presence not refreshed)' : ''}`).join('\n')}`

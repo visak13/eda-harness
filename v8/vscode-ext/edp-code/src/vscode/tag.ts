@@ -1,4 +1,4 @@
-// EDP: Tag selection on board… (design §4 item 1; strategyll-ab18531441 §1, §3).
+// Heronry: Tag selection on board… (design §4 item 1; strategyll-ab18531441 §1, §3).
 // anchor (captured FIRST) -> route (C4, design-10b21760d9 §4.1):
 // - chat view resolved in this window -> reveal it, code chip in the open thread's composer;
 // - otherwise the S5 palette chain: person -> ticket -> note -> kind -> POST /v1/messages.
@@ -35,13 +35,13 @@ export async function tagSelection(ctx: vscode.ExtensionContext, board: () => Bo
 /** The anchor, taken from the active editor before any picker or view takes focus. */
 async function captureAnchor(): Promise<{ anchor: Anchor; truncated: boolean } | undefined> {
   const editor = vscode.window.activeTextEditor;
-  if (!editor) { void vscode.window.showInformationMessage('EDP: open a file and select lines to tag.'); return; }
+  if (!editor) { void vscode.window.showInformationMessage('Heronry: open a file and select lines to tag.'); return; }
   const doc = editor.document;
-  if (doc.uri.scheme !== 'file') { void vscode.window.showWarningMessage('EDP: only files on disk can be tagged.'); return; }
+  if (doc.uri.scheme !== 'file') { void vscode.window.showWarningMessage('Heronry: only files on disk can be tagged.'); return; }
 
   // 1. capture the anchor before any picker takes focus
   const a = await anchorFor(doc, editor.selection);
-  if ('error' in a) { void vscode.window.showWarningMessage(`EDP: ${a.error}`); return; }
+  if ('error' in a) { void vscode.window.showWarningMessage(`Heronry: ${a.error}`); return; }
   return a;
 }
 
@@ -68,7 +68,7 @@ async function paletteChain(ctx: vscode.ExtensionContext, board: () => Board, bo
 
   // 2. person: humans (marked) and live agent seats
   let seats: ReturnType<typeof liveSeats> = [];
-  const person = await pick<Item>(`EDP: tag ${anchor.path}:L${anchor.line_start}-${anchor.line_end} to…`, async () => {
+  const person = await pick<Item>(`Heronry: tag ${anchor.path}:L${anchor.line_start}-${anchor.line_end} to…`, async () => {
     const [ps, ss] = await Promise.all([client.participants(), client.sessions()]);
     seats = liveSeats(ss, ps);
     return people(ps, seats).map(p => ({
@@ -80,7 +80,7 @@ async function paletteChain(ctx: vscode.ExtensionContext, board: () => Board, bo
   const personId = person.id;
 
   // 3. ticket: theirs first, then any open ticket
-  const ticket = await pick<Item>(`EDP: ticket for ${person.label.replace(/^\$\([^)]*\)\s*/, '')}`, async () => {
+  const ticket = await pick<Item>(`Heronry: ticket for ${person.label.replace(/^\$\([^)]*\)\s*/, '')}`, async () => {
     const { theirs, others } = ticketChoices(await client.tickets(), personId, seats);
     const item = (t: { id: string; title: string; status: string; kind: string }): Item => ({ label: t.id, description: t.title, detail: `${t.kind} · ${t.status}`, id: t.id });
     return [
@@ -92,21 +92,21 @@ async function paletteChain(ctx: vscode.ExtensionContext, board: () => Board, bo
 
   // 4. note, then kind
   const note = await vscode.window.showInputBox({
-    title: `EDP: note to ${person.label.replace(/^\$\([^)]*\)\s*/, '')} on ${ticket.id}`, ignoreFocusOut: true,
+    title: `Heronry: note to ${person.label.replace(/^\$\([^)]*\)\s*/, '')} on ${ticket.id}`, ignoreFocusOut: true,
     placeHolder: 'What should they look at? (only the primary selection is anchored)',
     validateInput: v => (v.trim() ? undefined : 'A note is required'),
   });
   if (!note?.trim()) return;
-  const kind = await vscode.window.showQuickPick(KINDS, { title: 'EDP: message kind', placeHolder: 'question', ignoreFocusOut: true });
+  const kind = await vscode.window.showQuickPick(KINDS, { title: 'Heronry: message kind', placeHolder: 'question', ignoreFocusOut: true });
   if (!kind) return;
 
   // 5. send
   try {
     const m = await client.sendMessage({ ticket_id: ticket.id, to: personId, kind: kind as MessageKind, text: render(anchor, note, truncated), code_context: anchor });
-    const open = await vscode.window.showInformationMessage(`EDP: tagged ${person.label.replace(/^\$\([^)]*\)\s*/, '')} on ${ticket.id} (${m.id})`, 'Open ticket');
+    const open = await vscode.window.showInformationMessage(`Heronry: tagged ${person.label.replace(/^\$\([^)]*\)\s*/, '')} on ${ticket.id} (${m.id})`, 'Open ticket');
     if (open) void vscode.env.openExternal(vscode.Uri.parse(boardTicketUrl(boardUrl(), ticket.id)));
   } catch (e) {
-    void vscode.window.showErrorMessage(`EDP: ${(e as Error).message}`);
+    void vscode.window.showErrorMessage(`Heronry: ${(e as Error).message}`);
   }
 }
 

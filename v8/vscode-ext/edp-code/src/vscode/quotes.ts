@@ -1,5 +1,5 @@
 // C20 s-29f052c40e (design-10b21760d9 v12 §14.7): the draft tray and the inline comment boxes. Every Add to chat,
-// from a code editor, a doc's markdown source or version diff (VS Code's own Comments API box), the EDP reader or a
+// from a code editor, a doc's markdown source or version diff (VS Code's own Comments API box), the Heronry reader or a
 // chat message, lands as a draft in the tray of the thread open in the chat panel. The tray lives here in the host
 // (workspaceState), so it survives the chat being hidden, its webview reloading and the window reloading; the
 // chat composer shows it as chips and nothing is sent until Ctrl+Enter there. While the chat is hidden a status-bar
@@ -59,7 +59,7 @@ export class QuoteHost implements vscode.Disposable {
   }
 
   private controller(): vscode.CommentController {
-    const ctl = vscode.comments.createCommentController(QUOTE_CONTROLLER, 'EDP chat');
+    const ctl = vscode.comments.createCommentController(QUOTE_CONTROLLER, 'Heronry chat');
     // the gutter + on every file and board doc: select lines, + (or Ctrl+Alt+Q, or the context menu), type a note
     ctl.commentingRangeProvider = {
       provideCommentingRanges: doc => (doc.uri.scheme === 'file' || doc.uri.scheme === DOC_SCHEME) && doc.lineCount > 0
@@ -148,14 +148,14 @@ export class QuoteHost implements vscode.Disposable {
       await vscode.commands.executeCommand('edp.chat.open');
       const id = await this.chat.pick();
       t = id ? this.chat.target() : null;
-      if (!t || t.id !== id) { void vscode.window.setStatusBarMessage('EDP: no thread was opened, so the quote was not added', 6_000); return; }
+      if (!t || t.id !== id) { void vscode.window.setStatusBarMessage('Heronry: no thread was opened, so the quote was not added', 6_000); return; }
     }
     if (!this.identity || (who !== null && who !== this.identity)) {
-      void vscode.window.setStatusBarMessage('EDP: the board sign-in changed, so the quote was not added', 6_000);
+      void vscode.window.setStatusBarMessage('Heronry: the board sign-in changed, so the quote was not added', 6_000);
       return;
     }
     if (!this.tray.add(t.id, d)) {
-      void vscode.window.showWarningMessage(`EDP: ${t.title} already holds 20 quotes, the most one message can carry. Send or remove some first.`);
+      void vscode.window.showWarningMessage(`Heronry: ${t.title} already holds 20 quotes, the most one message can carry. Send or remove some first.`);
       return;
     }
     this.changed(t.id, true, `Added ${d.label} to the draft for ${t.title}`);
@@ -221,7 +221,7 @@ export class QuoteHost implements vscode.Disposable {
   private async comment(): Promise<void> {
     const e = vscode.window.activeTextEditor;
     if (!e || !(e.document.uri.scheme === 'file' || e.document.uri.scheme === DOC_SCHEME)) {
-      void vscode.window.showInformationMessage('EDP: select lines in a file or a board doc to comment for chat.');
+      void vscode.window.showInformationMessage('Heronry: select lines in a file or a board doc to comment for chat.');
       return;
     }
     await vscode.commands.executeCommand('workbench.action.addComment');
@@ -236,11 +236,11 @@ export class QuoteHost implements vscode.Disposable {
       const doc = await vscode.workspace.openTextDocument(th.uri);
       const d = await this.draftOf(doc, th.range, note);
       if (who !== null && who !== this.identity) return; // another identity: the box stays for them to re-add
-      if ('error' in d) { void vscode.window.showWarningMessage(`EDP: ${d.error}`); return; }
+      if ('error' in d) { void vscode.window.showWarningMessage(`Heronry: ${d.error}`); return; }
       const went = await this.add(d);
       if (went) th.dispose(); // the tray's own marker replaces the box
     } catch (e) {
-      void vscode.window.showWarningMessage(`EDP: could not add the quote: ${(e as Error).message}`);
+      void vscode.window.showWarningMessage(`Heronry: could not add the quote: ${(e as Error).message}`);
     }
   }
 

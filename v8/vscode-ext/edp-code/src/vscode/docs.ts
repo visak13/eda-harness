@@ -22,7 +22,7 @@ export class DocProvider implements vscode.TextDocumentContentProvider {
     if (this.cleared) return 'Sign in to read this board doc.';
     const gen = this.gen;
     const at = parseDocPath(uri.path);
-    if (!at) throw new Error(`EDP: not a board doc: ${uri.path}`);
+    if (!at) throw new Error(`Heronry: not a board doc: ${uri.path}`);
     const d = await this.board().doc(at.id, at.version);
     return gen === this.gen ? d.body_md ?? '' : 'Sign in to read this board doc.';
   }
@@ -38,7 +38,7 @@ export const docUri = (id: string, version: number) => vscode.Uri.from({ scheme:
 let reader: { open(id: string, version: number, source?: string | null): Promise<void> } | null = null;
 export const setReader = (r: typeof reader) => { reader = r; };
 
-/** Open a doc version in an editor tab: the EDP reader (C16), or, before it is registered, VS Code's Markdown
+/** Open a doc version in an editor tab: the Heronry reader (C16), or, before it is registered, VS Code's Markdown
  *  preview (the text itself when the preview is unavailable). `source`: the ticket it was opened from. */
 export async function openDoc(id: string, version: number, source?: string | null): Promise<void> {
   const uri = docUri(id, version);

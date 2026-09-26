@@ -1,4 +1,4 @@
-// EDP: Checkout… / Merge… / Pull (guarded) (strategyll-ab18531441 §5). An opt-in path: the built-in
+// Heronry: Checkout… / Merge… / Pull (guarded) (strategyll-ab18531441 §5). An opt-in path: the built-in
 // Source Control view stays unguarded and cannot be vetoed (no pre-checkout hook exists).
 import { execFile } from 'node:child_process';
 import * as vscode from 'vscode';
@@ -21,7 +21,7 @@ async function pickRef(repo: Repository, op: GuardedOp): Promise<string | undefi
   const items = refs.filter(r => r.name && (op === 'checkout' || r.type !== 2))
     .map(r => ({ label: r.name!, description: r.type === 1 ? 'remote' : r.type === 2 ? 'tag' : 'branch', detail: r.commit?.slice(0, 7) }));
   const qp = vscode.window.createQuickPick();
-  Object.assign(qp, { title: `EDP: git ${op} (guarded)`, placeholder: 'Pick a ref, or type one', items, ignoreFocusOut: true });
+  Object.assign(qp, { title: `Heronry: git ${op} (guarded)`, placeholder: 'Pick a ref, or type one', items, ignoreFocusOut: true });
   return new Promise(resolve => {
     let done = false;
     const finish = (v?: string) => { if (!done) { done = true; resolve(v); qp.dispose(); } };
@@ -34,7 +34,7 @@ async function pickRef(repo: Repository, op: GuardedOp): Promise<string | undefi
 export async function guarded(op: GuardedOp, ctx: vscode.ExtensionContext, board: () => Board): Promise<void> {
   const repo = await currentRepo();
   const exe = (await gitApi())?.git.path;
-  if (!repo || !exe) { void vscode.window.showWarningMessage('EDP: no git repository is open.'); return; }
+  if (!repo || !exe) { void vscode.window.showWarningMessage('Heronry: no git repository is open.'); return; }
   const root = repo.rootUri.fsPath;
   try {
     const target = op === 'pull' ? undefined : await pickRef(repo, op);
@@ -55,8 +55,8 @@ export async function guarded(op: GuardedOp, ctx: vscode.ExtensionContext, board
     if (go !== 'Proceed') return;
     await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `git ${args.join(' ')}` }, () => git(exe, root, args));
     await repo.status();
-    void vscode.window.showInformationMessage(`EDP: git ${args.join(' ')} done`);
+    void vscode.window.showInformationMessage(`Heronry: git ${args.join(' ')} done`);
   } catch (e) {
-    void vscode.window.showErrorMessage(`EDP: ${(e as Error).message}`);
+    void vscode.window.showErrorMessage(`Heronry: ${(e as Error).message}`);
   }
 }

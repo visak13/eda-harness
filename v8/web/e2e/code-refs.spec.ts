@@ -1,7 +1,7 @@
 // C24 smoke in the VS Code chat (s-5d1b171d57; owner m-0f727b0c57): `$` in the chat composer and in a quote note
 // opens the board-object picker (this epic's tickets, docs and live decisions first); '$5' and '$env:X' open none;
 // Enter picks and inserts `$<id> (<title>) `; Esc closes and keeps the text. The sent text and note carry the ids;
-// in the panel each `$<id>` is a chip: a doc opens the EDP reader, a decision focuses its row in the Decisions tab,
+// in the panel each `$<id>` is a chip: a doc opens the Heronry reader, a decision focuses its row in the Decisions tab,
 // a ticket opens its board page. REAL code-server, this file's own e2e board (never :9400), temp user-data and
 // extensions dirs (never :9410 or v8/.data/code); teardown kills only the code-server this file spawned.
 // Browser: Chromium by default; CHAT_BROWSER=stockff runs the installed Firefox (moz-firefox). One at a time.
@@ -106,11 +106,11 @@ test.beforeAll(async ({ browser, board: _board }) => {
   page = await browser.newPage();
   await page.goto(`http://127.0.0.1:${cs.port}/?folder=${folderParam(repo)}`);
   await expect(page.locator("div.monaco-workbench")).toBeVisible({ timeout: 60_000 });
-  await runCommand("EDP: Sign in to board");
-  await typeInput("owner", "EDP: board participant id");
-  await typeInput(OWNER_TOKEN, "EDP: token for owner");
+  await runCommand("Heronry: Sign in to board");
+  await typeInput("owner", "Heronry: board participant id");
+  await typeInput(OWNER_TOKEN, "Heronry: token for owner");
   await expect(page.locator(".notifications-toasts", { hasText: "signed in as owner" })).toBeVisible({ timeout: 15_000 });
-  await runCommand("EDP: Open chat");
+  await runCommand("Heronry: Open chat");
   await chat().locator("#pick").click({ timeout: 20_000 });
   await expect(quickRow(page, "Refs story")).toBeVisible({ timeout: 15_000 });
   await quickRow(page, "Refs story").click();
@@ -199,10 +199,10 @@ test("chips: the doc opens the reader, the decision its Decisions row, the story
   await expect(msg.locator(`button.ref-chip[data-ref="${other}"]`).first()).toContainText("C2 smoke target");
   await msg.scrollIntoViewIfNeeded();
   await page.screenshot({ path: shot("04-chips.png") });
-  // doc -> the EDP reader
+  // doc -> the Heronry reader
   await msg.locator(`button.ref-chip[data-ref="${design}"]`).first().click();
   await expect.poll(async () => {
-    for (const f of page.frames()) if ((await f.title().catch(() => "")) === `EDP ${design} v1`) return true;
+    for (const f of page.frames()) if ((await f.title().catch(() => "")) === `Heronry ${design} v1`) return true;
     return false;
   }, { timeout: 30_000, intervals: [500] }).toBe(true);
   await page.screenshot({ path: shot("05-doc-chip-opens-reader.png") });

@@ -1,5 +1,5 @@
-// C16 Docs tab + EDP reader smoke (s-579fa02cca; design-10b21760d9 §14.2/§14.4/§14.7): the picked scope's linked docs
-// in the chat's fifth tab; a doc opens in the EDP reader editor tab (rendered markdown, outline, version picker, full
+// C16 Docs tab + Heronry reader smoke (s-579fa02cca; design-10b21760d9 §14.2/§14.4/§14.7): the picked scope's linked docs
+// in the chat's fifth tab; a doc opens in the Heronry reader editor tab (rendered markdown, outline, version picker, full
 // screen); Compare opens vscode.diff over two versions' markdown; the design under an open design_signoff shows
 // Approve / Request changes in the editor title only when the board says can_approve, and ONE real request-changes and
 // ONE real approve are asserted on the board; a proposed strategy_ll shows Approve / Reject with its diff against the
@@ -68,7 +68,7 @@ async function reader(docId: string, version: number): Promise<Frame> {
       const t = await f.locator("#rd-title").count().catch(() => 0);
       if (!t) continue;
       const title = await f.title().catch(() => "");
-      if (title === `EDP ${docId} v${version}`) { found = f; return true; }
+      if (title === `Heronry ${docId} v${version}`) { found = f; return true; }
     }
     return false;
   }, { timeout: 30_000, intervals: [500] }).toBe(true);
@@ -119,11 +119,11 @@ test.afterAll(async () => {
 });
 
 test("the Docs tab: the fifth tab lists the epic's design, strategy and proposal; a story lists only its own", async () => {
-  await runCommand("EDP: Sign in to board");
-  await typeInput("owner", "EDP: board participant id");
-  await typeInput(OWNER_TOKEN, "EDP: token for owner");
+  await runCommand("Heronry: Sign in to board");
+  await typeInput("owner", "Heronry: board participant id");
+  await typeInput(OWNER_TOKEN, "Heronry: token for owner");
   await expect(page.locator(".notifications-toasts", { hasText: "signed in as owner" })).toBeVisible({ timeout: 15_000 });
-  await runCommand("EDP: Chat: open a ticket or epic thread…");
+  await runCommand("Heronry: Chat: open a ticket or epic thread…");
   await quickRow(page, "Spike epic").click();
   const c = chat();
   await expect(c.locator("#crumb-current")).toHaveText("Spike epic", { timeout: 20_000 });
@@ -204,7 +204,7 @@ test("the design review, opened from the Inbox's design_signoff row: Request cha
   const r = await reader(design, 2);
   await expect(titleAction(/^Request changes on the design/)).toBeVisible({ timeout: 15_000 });
   await titleAction(/^Request changes on the design/).click();
-  await typeInput("Split §2 into two stories.", "EDP: Request changes on");
+  await typeInput("Split §2 into two stories.", "Heronry: Request changes on");
   await expect(r.locator("#rd-status")).toHaveText(/Requested changes on .* v2/, { timeout: 15_000 });
   const thread = await call("GET", `/v1/tickets/${EPIC()}/thread`, undefined, asOwner);
   const steer = thread.thread.find((m: any) => /Split §2 into two stories\./.test(m.text ?? m.preview ?? ""));

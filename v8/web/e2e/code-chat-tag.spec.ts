@@ -124,16 +124,16 @@ test.afterAll(async () => {
 });
 
 test("chat view never opened: ctrl+alt+m runs the S5 palette chain (person picker first)", async () => {
-  await runCommand("EDP: Sign in to board");
-  await typeInput("owner", "EDP: board participant id");
-  await typeInput(OWNER_TOKEN, "EDP: token for owner");
+  await runCommand("Heronry: Sign in to board");
+  await typeInput("owner", "Heronry: board participant id");
+  await typeInput(OWNER_TOKEN, "Heronry: token for owner");
   await expect(page.locator(".notifications-toasts", { hasText: "signed in as owner" })).toBeVisible({ timeout: 15_000 });
   await expect(page.locator("iframe.webview")).toHaveCount(0); // the chat view was never resolved
   await openFile("sample.py");
   await selectLines(3, 5);
   await page.keyboard.press("Control+Alt+M");
   await expect(quick(page).locator(".quick-input-title, input").first()).toBeVisible({ timeout: 15_000 });
-  await expect(quick(page)).toContainText("EDP: tag src/sample.py:L3-5 to");
+  await expect(quick(page)).toContainText("Heronry: tag src/sample.py:L3-5 to");
   await page.screenshot({ path: shot("palette-when-chat-never-opened.png") });
   await page.keyboard.press("Escape"); // cancelling ends the command, nothing is sent
   await expect(quick(page)).toBeHidden();
@@ -141,7 +141,7 @@ test("chat view never opened: ctrl+alt+m runs the S5 palette chain (person picke
 });
 
 test("chat view open, no thread yet: the tag opens the thread picker, then the chip lands in that thread", async () => {
-  await runCommand("EDP: Open chat");
+  await runCommand("Heronry: Open chat");
   const c = chat();
   await expect(c.locator("#pick")).toBeVisible({ timeout: 20_000 });
   await openFile("sample.py");
@@ -158,7 +158,7 @@ test("chat view open, no thread yet: the tag opens the thread picker, then the c
   await selectLines(3, 5);
   await page.keyboard.press("Control+Alt+M");
   await expect(quickRow(page, "Chip story")).toBeVisible({ timeout: 15_000 });
-  await expect(quick(page).locator(".quick-input-title")).toContainText("EDP chat: open a thread");
+  await expect(quick(page).locator(".quick-input-title")).toContainText("Heronry chat: open a thread");
   await quickRow(page, "Chip story").click();
   await expect(c.locator("#crumb-current")).toHaveText("Chip story", { timeout: 20_000 });
   await expect(c.locator("#code-chip-label")).toHaveText(`src/sample.py:L3-5 @${head.slice(0, 7)}`, { timeout: 10_000 });

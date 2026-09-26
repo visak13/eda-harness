@@ -181,7 +181,7 @@ async function tag(page: Page, person: string, note: string, kind: string, to: s
   await page.keyboard.press("Control+Alt+M");
   await pickQuick(page, person);
   await pickQuick(page, story);
-  await typeInput(page, note, "EDP: note to");
+  await typeInput(page, note, "Heronry: note to");
   await pickQuick(page, kind);
   let msg: any;
   await expect.poll(async () => {
@@ -229,10 +229,10 @@ test.afterAll(async () => {
   else if (tmp) console.log(`[code-tag] kept ${tmp}`);
 });
 
-test("sign in through `EDP: Sign in to board` (token into SecretStorage only)", async () => {
-  await runCommand(page, "EDP: Sign in to board");
-  await typeInput(page, "owner", "EDP: board participant id");
-  await typeInput(page, OWNER_TOKEN, "EDP: token for owner");
+test("sign in through `Heronry: Sign in to board` (token into SecretStorage only)", async () => {
+  await runCommand(page, "Heronry: Sign in to board");
+  await typeInput(page, "owner", "Heronry: board participant id");
+  await typeInput(page, OWNER_TOKEN, "Heronry: token for owner");
   await expect(page.locator(".notifications-toasts", { hasText: "signed in as owner" })).toBeVisible({ timeout: 15_000 });
   // the badge now counts from the board: 1 live agent seat (the seeded session)
   await expect(badge(page)).toContainText("main · 1 seats live", { timeout: 20_000 });
@@ -282,7 +282,7 @@ test("badge: `⎇ main · N seats live` with N = the board's alive agent session
 });
 
 test("guarded checkout: the modal lists live seats and porcelain paths before acting; cancel changes nothing", async () => {
-  await runCommand(page, "EDP: Checkout… (guarded)");
+  await runCommand(page, "Heronry: Checkout… (guarded)");
   await pickQuick(page, "feature-x");
   const dialog = page.locator(".monaco-dialog-box");
   await expect(dialog).toBeVisible({ timeout: 15_000 });
@@ -296,11 +296,11 @@ test("guarded checkout: the modal lists live seats and porcelain paths before ac
   expect(git(["rev-parse", "--abbrev-ref", "HEAD"])).toBe("main");
 });
 
-test("`EDP: Open external terminal here` launches the configured shell detached in the folder", async () => {
+test("`Heronry: Open external terminal here` launches the configured shell detached in the folder", async () => {
   const exe = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
   const bare = (p: { cmd: string }) => p.cmd.replace(/"/g, "").trim().toLowerCase() === exe.toLowerCase();
   const before = new Set(psList().map(p => p.pid));
-  await runCommand(page, "EDP: Open external terminal here");
+  await runCommand(page, "Heronry: Open external terminal here");
   let launched: PsRow | undefined;
   await expect.poll(() => {
     launched = psList().find(p => !before.has(p.pid) && bare(p)); // the configured exe with no args, never our probes

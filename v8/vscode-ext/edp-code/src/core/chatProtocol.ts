@@ -261,7 +261,7 @@ export type ViewToHost =
   /** C15: a sign-off row's evidence in an editor tab; a design gate's review on the board */
   | { v: 1; type: 'inboxOpen'; key: string }
   | { v: 1; type: 'inboxRefresh' }
-  /** C16: a listed doc opens in the EDP reader at its current version */
+  /** C16: a listed doc opens in the Heronry reader at its current version */
   | { v: 1; type: 'docsOpen'; id: string }
   /** C16: compare two versions of a listed doc (the host asks which) */
   | { v: 1; type: 'docsCompare'; id: string }
@@ -283,7 +283,7 @@ export type ViewToHost =
   | { v: 1; type: 'openQuote'; messageId: string; index: number }
   /** C24: the $-picker's query (the word after `$`); `seq` pairs the answer */
   | { v: 1; type: 'findRefs'; q: string; seq: number }
-  /** C24: a $-reference chip: a ticket/epic opens on the board, a doc in the EDP reader, a decision in the Decisions tab */
+  /** C24: a $-reference chip: a ticket/epic opens on the board, a doc in the Heronry reader, a decision in the Decisions tab */
   | { v: 1; type: 'openRef'; id: string };
 
 const TYPES = new Set(['ready', 'pickTicket', 'loadOlder', 'send', 'dropCode', 'openCode', 'openBoard', 'signIn', 'showMessage']);

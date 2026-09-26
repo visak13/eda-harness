@@ -126,7 +126,7 @@ it('C25: a pick aborted again after its one retry shows an error', async () => {
   await expect(c.pick()).resolves.toBeUndefined();
   expect(tickets).toHaveBeenCalledTimes(2);
   expect(h.qp.disposed).toBe(true);
-  expect(h.errors).toEqual(['EDP: could not list tickets: The board viewer changed.']);
+  expect(h.errors).toEqual(['Heronry: could not list tickets: The board viewer changed.']);
 });
 
 it('C25: resume() re-shows the seats badge that the sign-in viewer switch cleared', async () => {

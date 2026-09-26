@@ -35,6 +35,7 @@ claude/scratch/
 !docs/readme/**
 !v8/assets/brand/**
 !v8/web/public/brand/**
+!v8/vscode-ext/edp-code/media/heronry.png
 claude/.recipes/
 claude/.plans/
 claude/.specs/

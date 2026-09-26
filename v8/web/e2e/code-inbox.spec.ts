@@ -125,11 +125,11 @@ test.afterAll(async () => {
 });
 
 test("the epic scope: Inbox is the fourth tab, badged; sign-offs, gates and questions of this epic only", async () => {
-  await runCommand("EDP: Sign in to board");
-  await typeInput("owner", "EDP: board participant id");
-  await typeInput(OWNER_TOKEN, "EDP: token for owner");
+  await runCommand("Heronry: Sign in to board");
+  await typeInput("owner", "Heronry: board participant id");
+  await typeInput(OWNER_TOKEN, "Heronry: token for owner");
   await expect(page.locator(".notifications-toasts", { hasText: "signed in as owner" })).toBeVisible({ timeout: 15_000 });
-  await runCommand("EDP: Chat: open a ticket or epic thread…");
+  await runCommand("Heronry: Chat: open a ticket or epic thread…");
   await quickRow(page, "Spike epic").click();
   const c = chat();
   await expect(c.locator("#crumb-current")).toHaveText("Spike epic", { timeout: 20_000 });
@@ -238,7 +238,7 @@ test("a scope gate: a text ruling answers it; the design review links out; the b
   await expect(c.locator("#tab-inbox .tab-badge")).toHaveText("3");
   await page.screenshot({ path: shot("inbox-after-writes.png") });
   // the epic has no design_ref here, so the design review still links out to the board's epic page (C16: with a
-  // design_ref it opens the EDP reader, covered by code-docs.spec.ts)
+  // design_ref it opens the Heronry reader, covered by code-docs.spec.ts)
   const popup = page.context().waitForEvent("page", { timeout: 15_000 });
   await row(`g:${EPIC()}:design_signoff`).locator("button", { hasText: "Review design" }).click();
   const confirm = page.locator(".monaco-dialog-box .monaco-button", { hasText: /^Open$/ });

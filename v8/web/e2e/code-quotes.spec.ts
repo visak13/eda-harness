@@ -1,6 +1,6 @@
 // C20 smoke (s-29f052c40e; design-10b21760d9 v12 §14.5/§14.7): quote + note in the VS Code extension, sent as ONE
 // message with quotes[] (C18). With the story thread open: a chat message passage is quoted from the message's own
-// popover; then, with the chat side bar HIDDEN, a design passage from the EDP reader (its popover) and a code range
+// popover; then, with the chat side bar HIDDEN, a design passage from the Heronry reader (its popover) and a code range
 // from the editor (Ctrl+Alt+Q opens the inline comment box, Add to chat) join the draft while the status bar says
 // "EDP draft: N → <thread>" and the chat stays hidden; the reader marks its drafted block. The status bar item
 // reveals the chat: the chips are in order, one is moved, an extra one removed, a Reply is picked, and Ctrl+Enter
@@ -83,7 +83,7 @@ async function reader(docId: string, version: number): Promise<Frame> {
   await expect.poll(async () => {
     for (const f of page.frames()) {
       if (!(await f.locator("#rd-title").count().catch(() => 0))) continue;
-      if ((await f.title().catch(() => "")) === `EDP ${docId} v${version}`) { found = f; return true; }
+      if ((await f.title().catch(() => "")) === `Heronry ${docId} v${version}`) { found = f; return true; }
     }
     return false;
   }, { timeout: 30_000, intervals: [500] }).toBe(true);
@@ -144,11 +144,11 @@ test.afterAll(async () => {
 });
 
 test("sign in and open the story thread", async () => {
-  await runCommand("EDP: Sign in to board");
-  await typeInput("owner", "EDP: board participant id");
-  await typeInput(OWNER_TOKEN, "EDP: token for owner");
+  await runCommand("Heronry: Sign in to board");
+  await typeInput("owner", "Heronry: board participant id");
+  await typeInput(OWNER_TOKEN, "Heronry: token for owner");
   await expect(page.locator(".notifications-toasts", { hasText: "signed in as owner" })).toBeVisible({ timeout: 15_000 });
-  await runCommand("EDP: Open chat");
+  await runCommand("Heronry: Open chat");
   const c = chat();
   await c.locator("#pick").click({ timeout: 20_000 });
   await expect(quickRow(page, "Quote story")).toBeVisible({ timeout: 15_000 });

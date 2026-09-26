@@ -1,7 +1,8 @@
 {
   "name": "edp-code",
-  "displayName": "EDP",
-  "description": "Chat on EDP tickets and epics beside the editor, tag a code selection to anyone on the board; live-seats badge, guarded git and an external terminal for the fleet's shared tree.",
+  "displayName": "Heronry",
+  "icon": "media/heronry.png",
+  "description": "Chat on Heronry tickets and epics beside the editor, tag a code selection to anyone on the board; live-seats badge, guarded git and an external terminal for the fleet's shared tree.",
   "publisher": "edp",
   "version": "0.13.3",
   "private": true,
@@ -27,7 +28,7 @@
       "secondarySidebar": [
         {
           "id": "edp-chat",
-          "title": "EDP Chat",
+          "title": "Heronry Chat",
           "icon": "media/chat.svg"
         }
       ]
@@ -38,7 +39,7 @@
           "type": "webview",
           "id": "edp.chat",
           "name": "Chat",
-          "contextualTitle": "EDP Chat"
+          "contextualTitle": "Heronry Chat"
         }
       ]
     },
@@ -46,133 +47,133 @@
       {
         "command": "edp.signIn",
         "title": "Sign in to board",
-        "category": "EDP"
+        "category": "Heronry"
       },
       {
         "command": "edp.signOut",
         "title": "Sign out of board",
-        "category": "EDP"
+        "category": "Heronry"
       },
       {
         "command": "edp.tagSelection",
         "title": "Tag selection on board…",
-        "category": "EDP"
+        "category": "Heronry"
       },
       {
         "command": "edp.showSeats",
         "title": "Show live seats",
-        "category": "EDP"
+        "category": "Heronry"
       },
       {
         "command": "edp.checkout",
         "title": "Checkout… (guarded)",
-        "category": "EDP"
+        "category": "Heronry"
       },
       {
         "command": "edp.merge",
         "title": "Merge… (guarded)",
-        "category": "EDP"
+        "category": "Heronry"
       },
       {
         "command": "edp.pull",
         "title": "Pull (guarded)",
-        "category": "EDP"
+        "category": "Heronry"
       },
       {
         "command": "edp.openExternalTerminal",
         "title": "Open external terminal here",
-        "category": "EDP"
+        "category": "Heronry"
       },
       {
         "command": "edp.chat.open",
         "title": "Open chat",
-        "category": "EDP"
+        "category": "Heronry"
       },
       {
         "command": "edp.chat.pick",
         "title": "Chat: open a ticket or epic thread…",
-        "category": "EDP"
+        "category": "Heronry"
       },
       {
         "command": "edp.doc.approve",
         "title": "Approve design (the version shown)",
-        "category": "EDP",
+        "category": "Heronry",
         "icon": "$(check)",
         "enablement": "activeCustomEditorId == edp.docReader"
       },
       {
         "command": "edp.doc.requestChanges",
         "title": "Request changes on the design…",
-        "category": "EDP",
+        "category": "Heronry",
         "icon": "$(request-changes)",
         "enablement": "activeCustomEditorId == edp.docReader"
       },
       {
         "command": "edp.doc.resolveApprove",
         "title": "Approve proposed doc",
-        "category": "EDP",
+        "category": "Heronry",
         "icon": "$(pass)",
         "enablement": "activeCustomEditorId == edp.docReader"
       },
       {
         "command": "edp.doc.resolveReject",
         "title": "Reject proposed doc",
-        "category": "EDP",
+        "category": "Heronry",
         "icon": "$(close)",
         "enablement": "activeCustomEditorId == edp.docReader"
       },
       {
         "command": "edp.doc.compare",
         "title": "Compare with another version…",
-        "category": "EDP",
+        "category": "Heronry",
         "icon": "$(diff)",
         "enablement": "activeCustomEditorId == edp.docReader"
       },
       {
         "command": "edp.doc.source",
         "title": "Open markdown source",
-        "category": "EDP",
+        "category": "Heronry",
         "icon": "$(go-to-file)",
         "enablement": "activeCustomEditorId == edp.docReader"
       },
       {
         "command": "edp.doc.fullScreen",
         "title": "Full screen (maximise the reader)",
-        "category": "EDP",
+        "category": "Heronry",
         "icon": "$(screen-full)",
         "enablement": "activeCustomEditorId == edp.docReader"
       },
       {
         "command": "edp.doc.refresh",
         "title": "Refresh doc",
-        "category": "EDP",
+        "category": "Heronry",
         "icon": "$(refresh)",
         "enablement": "activeCustomEditorId == edp.docReader"
       },
       {
         "command": "edp.quote.comment",
         "title": "Comment for chat (quote + note)",
-        "category": "EDP"
+        "category": "Heronry"
       },
       {
         "command": "edp.quote.reader",
         "title": "Quote in chat (quote + note)",
-        "category": "EDP"
+        "category": "Heronry"
       },
       {
         "command": "edp.quote.addToChat",
         "title": "Add to chat",
-        "category": "EDP"
+        "category": "Heronry"
       },
       {
         "command": "edp.quote.cancel",
         "title": "Cancel",
-        "category": "EDP"
+        "category": "Heronry"
       },
       {
         "command": "edp.quote.remove",
         "title": "Remove from the chat draft",
-        "category": "EDP",
+        "category": "Heronry",
         "icon": "$(close)"
       }
     ],
@@ -332,13 +333,13 @@
       }
     ],
     "configuration": {
-      "title": "EDP",
+      "title": "Heronry",
       "properties": {
         "edp.boardUrl": {
           "type": "string",
           "default": "http://127.0.0.1:9400",
           "scope": "machine",
-          "description": "The EDP board. Credentials are sent only to a loopback or https URL."
+          "description": "The Heronry board. Credentials are sent only to a loopback or https URL."
         },
         "edp.chat.commitWindow": {
           "type": "object",
@@ -390,14 +391,14 @@
               "type": "string"
             }
           },
-          "description": "The shell `EDP: Open external terminal here` launches: kind and a real .exe path (git-bash: Git\\git-bash.exe)."
+          "description": "The shell `Heronry: Open external terminal here` launches: kind and a real .exe path (git-bash: Git\\git-bash.exe)."
         }
       }
     },
     "customEditors": [
       {
         "viewType": "edp.docReader",
-        "displayName": "EDP reader",
+        "displayName": "Heronry reader",
         "selector": [
           {
             "filenamePattern": "*.md"

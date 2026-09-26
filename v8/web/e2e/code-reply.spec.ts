@@ -83,7 +83,7 @@ async function reader(docId: string, version: number): Promise<Frame> {
   await expect.poll(async () => {
     for (const f of page.frames()) {
       if (!(await f.locator("#rd-title").count().catch(() => 0))) continue;
-      if ((await f.title().catch(() => "")) === `EDP ${docId} v${version}`) { found = f; return true; }
+      if ((await f.title().catch(() => "")) === `Heronry ${docId} v${version}`) { found = f; return true; }
     }
     return false;
   }, { timeout: 30_000, intervals: [500] }).toBe(true);
@@ -148,11 +148,11 @@ test.afterAll(async () => {
 });
 
 test("sign in and open the story thread", async () => {
-  await runCommand("EDP: Sign in to board");
-  await typeInput("owner", "EDP: board participant id");
-  await typeInput(OWNER_TOKEN, "EDP: token for owner");
+  await runCommand("Heronry: Sign in to board");
+  await typeInput("owner", "Heronry: board participant id");
+  await typeInput(OWNER_TOKEN, "Heronry: token for owner");
   await expect(page.locator(".notifications-toasts", { hasText: "signed in as owner" })).toBeVisible({ timeout: 15_000 });
-  await runCommand("EDP: Open chat");
+  await runCommand("Heronry: Open chat");
   const c = chat();
   await c.locator("#pick").click({ timeout: 20_000 });
   await expect(quickRow(page, "Reply story")).toBeVisible({ timeout: 15_000 });
@@ -301,7 +301,7 @@ test("reader (b): sign-off open on a newer version: the header names it and open
 test("reader (c): sign-off open on this version for the owner: Approve and Request changes as before, no reason", async () => {
   const r = await reader(design, 2);
   // the v2 tab was read before the gate opened: refresh it
-  await runCommand("EDP: Refresh doc");
+  await runCommand("Heronry: Refresh doc");
   await expect(titleAction(/^Approve design/)).toBeVisible({ timeout: 15_000 });
   await expect(titleAction(/^Request changes on the design/)).toBeVisible();
   await expect(r.locator("#rd-signoff")).toHaveCount(0);

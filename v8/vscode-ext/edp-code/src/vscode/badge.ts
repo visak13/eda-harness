@@ -80,7 +80,7 @@ export class Badge implements vscode.Disposable {
     const branch = branchLabel(repo.state.HEAD);
     let r: { seats: Seat[] } | { error: string };
     try {
-      if (!(await creds(this.ctx))) throw new Error('not signed in: run "EDP: Sign in to board"');
+      if (!(await creds(this.ctx))) throw new Error('not signed in: run "Heronry: Sign in to board"');
       const b = this.board();
       const [ss, ps] = await Promise.all([b.sessions(), b.participants()]);
       r = { seats: liveSeats(ss, ps) };
@@ -108,10 +108,10 @@ export class Badge implements vscode.Disposable {
 export async function showSeats(badge: Badge, boardUrl: () => string): Promise<void> {
   await badge.update(); // this click's poll, not the previous one
   const seats = badge.seats;
-  if (!seats) { void vscode.window.showWarningMessage(`EDP: live seats unknown (${badge.error ?? 'not loaded yet'})`); return; }
-  if (!seats.length) { void vscode.window.showInformationMessage('EDP: no live agent seats on this board.'); return; }
+  if (!seats) { void vscode.window.showWarningMessage(`Heronry: live seats unknown (${badge.error ?? 'not loaded yet'})`); return; }
+  if (!seats.length) { void vscode.window.showInformationMessage('Heronry: no live agent seats on this board.'); return; }
   const chosen = await vscode.window.showQuickPick(
     seats.map(s => ({ label: `$(hubot) ${s.handle}`, description: s.role, detail: `${s.ticket_id ?? 'no ticket'}${s.stale ? ' · presence not refreshed' : ''}`, ticket: s.ticket_id })),
-    { title: `EDP: ${seats.length} live seats on this board` });
+    { title: `Heronry: ${seats.length} live seats on this board` });
   if (chosen?.ticket) void vscode.env.openExternal(vscode.Uri.parse(boardTicketUrl(boardUrl(), chosen.ticket)));
 }

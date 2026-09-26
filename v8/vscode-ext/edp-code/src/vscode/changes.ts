@@ -226,8 +226,8 @@ export class Changes implements vscode.Disposable {
   async openDiff(sha: string, path?: string): Promise<void> {
     await this.reading;
     const c = this.bySha.get(sha);
-    if (!c || !this.repo || !this.api) { void vscode.window.showWarningMessage('EDP: that commit is not in this window\'s history (pull to see this change).'); return; }
-    if (!(await this.hasCommit(this.repo.rootUri.fsPath, sha))) { void vscode.window.showWarningMessage(`EDP: ${pullText(sha)}`); return; }
+    if (!c || !this.repo || !this.api) { void vscode.window.showWarningMessage('Heronry: that commit is not in this window\'s history (pull to see this change).'); return; }
+    if (!(await this.hasCommit(this.repo.rootUri.fsPath, sha))) { void vscode.window.showWarningMessage(`Heronry: ${pullText(sha)}`); return; }
     const empty = await this.emptyTree();
     if (path !== undefined) {
       const f = c.files.find(x => x.path === path);
@@ -236,7 +236,7 @@ export class Changes implements vscode.Disposable {
       await vscode.commands.executeCommand('vscode.diff', l, r, fileTitle(c, f), { preview: true });
       return;
     }
-    if (!c.files.length) { void vscode.window.showInformationMessage(`EDP: ${sha.slice(0, 7)} changes no files.`); return; }
+    if (!c.files.length) { void vscode.window.showInformationMessage(`Heronry: ${sha.slice(0, 7)} changes no files.`); return; }
     await vscode.commands.executeCommand('vscode.changes', cardTitle(c),
       c.files.map(f => { const s = sides(c, f, empty, this.at, this.toGit); return [s.label, s.l, s.r]; }));
   }
@@ -248,7 +248,7 @@ export class Changes implements vscode.Disposable {
     await this.repo.status().catch(() => {});
     await this.readWork();
     const files = path !== undefined ? this.work.filter(f => f.path === path) : only ? this.work.filter(only) : this.work;
-    if (path !== undefined && !files.length) { void vscode.window.showInformationMessage(`EDP: ${path} has no uncommitted change now.`); return; }
+    if (path !== undefined && !files.length) { void vscode.window.showInformationMessage(`Heronry: ${path} has no uncommitted change now.`); return; }
     if (!files.length) return;
     const empty = await this.emptyTree();
     if (path !== undefined) {

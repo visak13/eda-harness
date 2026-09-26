@@ -149,7 +149,7 @@ export class InboxHost implements vscode.Disposable {
 
   gate(key: string, text: string): Promise<void> {
     return this.write(key, async i => {
-      if (i.type !== 'gate' || i.design) throw new Error('the design review is answered in the EDP reader');
+      if (i.type !== 'gate' || i.design) throw new Error('the design review is answered in the Heronry reader');
       const bad = writeProblem('gate', text);
       if (bad) throw new Error(bad);
       await this.board().gateAnswer(i, text.trim());
@@ -158,7 +158,7 @@ export class InboxHost implements vscode.Disposable {
   }
 
   /** A sign-off's evidence in an editor tab (a doc at the row's version, or the artifact); a design gate's
-   *  review in the EDP reader (C16). */
+   *  review in the Heronry reader (C16). */
   async openRow(key: string): Promise<void> {
     const viewer = this.viewer;
     const b = this.board();
@@ -184,13 +184,13 @@ export class InboxHost implements vscode.Disposable {
         await this.openArtifact({ id: a.id, name: a.filename || ref, contentType: a.content_type ?? '', image: false });
         return;
       }
-      void vscode.window.showWarningMessage(`EDP: the evidence ${ref} is not a doc or an artifact this panel can open.`);
+      void vscode.window.showWarningMessage(`Heronry: the evidence ${ref} is not a doc or an artifact this panel can open.`);
     } catch (e) {
       if (viewer !== this.viewer) return;
       const err = e as BoardError;
       if (authFailed(e)) { this.onAuthFail(e); return; }
       this.log(`inbox: open failed (${err?.code ?? 'error'})`);
-      void vscode.window.showErrorMessage(`EDP: could not open ${i.type === 'signoff' ? i.evidence.ref : i.ticketId}: ${err?.message ?? String(e)}`);
+      void vscode.window.showErrorMessage(`Heronry: could not open ${i.type === 'signoff' ? i.evidence.ref : i.ticketId}: ${err?.message ?? String(e)}`);
     }
   }
 

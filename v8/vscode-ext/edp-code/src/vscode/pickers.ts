@@ -12,7 +12,7 @@ export function pick<T extends vscode.QuickPickItem>(title: string, load: () => 
     qp.onDidHide(() => finish(undefined));
     qp.show();
     load().then(items => { qp.items = items; qp.busy = false; },
-      e => { finish(undefined); void vscode.window.showErrorMessage(`EDP: ${(e as Error).message}`); });
+      e => { finish(undefined); void vscode.window.showErrorMessage(`Heronry: ${(e as Error).message}`); });
   });
 }
 

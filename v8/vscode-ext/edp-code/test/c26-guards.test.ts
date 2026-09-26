@@ -187,7 +187,7 @@ it('C26 Q4: reader Request changes refused mid-refresh shows the refusal (busy e
   w.reject(new BoardError('stale', 'the design is now v13', 409));
   await asking;
   expect(t.done()).toEqual([{ type: 'done', v: 1, what: 'requestChanges', ok: false, text: 'the design is now v13' }]);
-  expect(h.warnings).toEqual(['EDP: the design is now v13']);
+  expect(h.warnings).toEqual(['Heronry: the design is now v13']);
   expect(t.onAuthFail).not.toHaveBeenCalled();
 });
 
@@ -230,7 +230,7 @@ it('C26 Q5 keeps C7: an identity switch during the pick drops the quote, said on
   expect(q.chips(STORY)).toHaveLength(0);
   q.setIdentity(A);
   expect(q.chips(STORY)).toHaveLength(0); // nothing landed in A's tray either
-  expect(h.status).toEqual(['EDP: the board sign-in changed, so the quote was not added']);
+  expect(h.status).toEqual(['Heronry: the board sign-in changed, so the quote was not added']);
 });
 
 // -- rule 3: no transient signed-out state on restart or reload; drafts keyed by viewer (Q2) ----------------------

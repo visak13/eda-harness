@@ -1,6 +1,6 @@
 // The Docs tab's host half (C16 s-579fa02cca; design-10b21760d9 §14.2, §14.4): reads what the picked scope's tickets
 // link (design_ref, doc links, criteria evidence) with the viewer's token, describes each doc (the epic's doc list in
-// one read, any other doc singly) and shapes the rows (core/docs.ts). A row opens in the EDP reader or compares two
+// one read, any other doc singly) and shapes the rows (core/docs.ts). A row opens in the Heronry reader or compares two
 // versions; both resolve the doc from this host's own list by id, never from a field the view sent.
 import * as vscode from 'vscode';
 import type { Board, BoardError, Ticket } from '../core/api';
@@ -127,12 +127,12 @@ export class DocsHost implements vscode.Disposable {
     const gen = this.gen;
     const d = this.row(id);
     if (!d) return;
-    if (d.version < 2) { void vscode.window.showInformationMessage(`EDP: ${d.id} has only v1.`); return; }
+    if (d.version < 2) { void vscode.window.showInformationMessage(`Heronry: ${d.id} has only v1.`); return; }
     const all = Array.from({ length: d.version }, (_, i) => d.version - i);
     const item = (v: number) => ({ label: `v${v}`, description: v === d.version ? 'current' : undefined, v });
-    const a = await vscode.window.showQuickPick(all.map(item), { title: `EDP: compare ${d.title}: first version`, placeHolder: 'Pick one version' });
+    const a = await vscode.window.showQuickPick(all.map(item), { title: `Heronry: compare ${d.title}: first version`, placeHolder: 'Pick one version' });
     if (!a || gen !== this.gen) return;
-    const b = await vscode.window.showQuickPick(all.filter(v => v !== a.v).map(item), { title: `EDP: compare ${d.title} v${a.v} with…`, placeHolder: 'The older version goes on the left' });
+    const b = await vscode.window.showQuickPick(all.filter(v => v !== a.v).map(item), { title: `Heronry: compare ${d.title} v${a.v} with…`, placeHolder: 'The older version goes on the left' });
     if (!b || gen !== this.gen) return;
     try { await this.openDiff(d.id, a.v, b.v); } catch (e) { this.fail(e, d.id); }
   }
@@ -140,7 +140,7 @@ export class DocsHost implements vscode.Disposable {
   private fail(e: unknown, id: string): void {
     const err = e as BoardError;
     if (authFailed(e)) { this.onAuthFail(e); return; }
-    void vscode.window.showErrorMessage(`EDP: could not open ${id}: ${err?.message ?? String(e)}`);
+    void vscode.window.showErrorMessage(`Heronry: could not open ${id}: ${err?.message ?? String(e)}`);
   }
 
   dispose(): void { this.disposed = true; this.clear(); }

@@ -122,7 +122,7 @@ export class PathIndex implements vscode.Disposable {
   /** A file opens in the editor; a folder reveals in the Explorer. A path that is gone says so. */
   async open(rel: string): Promise<void> {
     const r = await this.resolve(rel);
-    if (!r) { void vscode.window.showWarningMessage(`EDP: ${rel} is not in this workspace`); return; }
+    if (!r) { void vscode.window.showWarningMessage(`Heronry: ${rel} is not in this workspace`); return; }
     if (r.kind === 'file') await vscode.window.showTextDocument(r.uri, { preview: true, viewColumn: vscode.ViewColumn.Active });
     else await vscode.commands.executeCommand('revealInExplorer', r.uri);
   }

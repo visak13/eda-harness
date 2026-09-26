@@ -111,10 +111,10 @@ export class Attachments implements vscode.Disposable {
       if ((e as BoardError)?.code === 'not_found') {
         const art = await b.artifact(ref.id).catch(() => null);
         if (art && /^https?:\/\//i.test(art.uri)) { void vscode.env.openExternal(vscode.Uri.parse(art.uri)); return; }
-        void vscode.window.showWarningMessage(`EDP: ${ref.name} has no stored content${art?.uri ? ` (${art.uri})` : ''}.`);
+        void vscode.window.showWarningMessage(`Heronry: ${ref.name} has no stored content${art?.uri ? ` (${art.uri})` : ''}.`);
         return;
       }
-      void vscode.window.showErrorMessage(`EDP: could not open ${ref.name}: ${(e as Error).message}`);
+      void vscode.window.showErrorMessage(`Heronry: could not open ${ref.name}: ${(e as Error).message}`);
       return;
     }
     const type = content.type || ref.contentType;
@@ -126,7 +126,7 @@ export class Attachments implements vscode.Disposable {
         ...(home ? { defaultUri: vscode.Uri.joinPath(home, name) } : {}) });
       if (!target) return;
       await vscode.workspace.fs.writeFile(target, content.bytes!);
-      void vscode.window.setStatusBarMessage(`EDP: saved ${name}`, 6_000);
+      void vscode.window.setStatusBarMessage(`Heronry: saved ${name}`, 6_000);
       return;
     }
     // one folder per artifact: the original name shows in the tab, and two attachments never collide

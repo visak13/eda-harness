@@ -63,13 +63,13 @@ async function typeInput(value: string, title: string): Promise<void> {
   await page.keyboard.press("Enter");
 }
 async function signIn(id: string, token: string): Promise<void> {
-  await runCommand("EDP: Sign in to board");
-  await typeInput(id, "EDP: board participant id");
-  await typeInput(token, `EDP: token for ${id}`);
+  await runCommand("Heronry: Sign in to board");
+  await typeInput(id, "Heronry: board participant id");
+  await typeInput(token, `Heronry: token for ${id}`);
   await expect(page.locator(".notifications-toasts", { hasText: `signed in as ${id}` }).last()).toBeVisible({ timeout: 15_000 });
 }
 async function openThread(title: string): Promise<void> {
-  await runCommand("EDP: Chat: open a ticket or epic thread…");
+  await runCommand("Heronry: Chat: open a ticket or epic thread…");
   await quickRow(page, title).click();
   await expect(chat().locator("#crumb-current")).toHaveText(title, { timeout: 20_000 });
 }
@@ -161,19 +161,19 @@ test("Withdraw asks the reason and lands on the board; Binding off and on are re
   await tab("decisions");
   await expect.poll(rows, { timeout: 15_000 }).toContain(dNew);
   await row(dNew).locator(`#de-withdraw-${dNew}`).click();
-  await typeInput("superseded by design v12 §14.4", `EDP: Withdraw ${dNew}`);
+  await typeInput("superseded by design v12 §14.4", `Heronry: Withdraw ${dNew}`);
   await expect(row(dNew)).toHaveClass(/de-withdrawn/, { timeout: 15_000 });
   await expect(row(dNew).locator(".de-reason")).toHaveText("Withdrawn: superseded by design v12 §14.4");
   expect(await decision(dNew)).toMatchObject({ status: "withdrawn", withdrawn_reason: "superseded by design v12 §14.4" });
   await expect(c.locator("#tab-decisions .tab-badge")).toHaveText("2");
   // Binding off (reason optional: an empty box is accepted), then on again
   await row(dBind).locator(`#de-binding-${dBind}`).click();
-  await typeInput("", `EDP: Stop making ${dBind} binding`);
+  await typeInput("", `Heronry: Stop making ${dBind} binding`);
   await expect(row(dBind).locator(".de-flag-binding")).toHaveCount(0, { timeout: 15_000 });
   expect((await decision(dBind)).binding).toBe(false);
   await expect(row(dBind).locator(`#de-binding-${dBind}`)).toHaveText("Make binding");
   await row(dBind).locator(`#de-binding-${dBind}`).click();
-  await typeInput("the owner's ruling m-db09472a68", `EDP: Make ${dBind} binding`);
+  await typeInput("the owner's ruling m-db09472a68", `Heronry: Make ${dBind} binding`);
   await expect(row(dBind).locator(".de-flag-binding")).toHaveText("binding", { timeout: 15_000 });
   expect((await decision(dBind)).binding).toBe(true);
   await expect.poll(rows).toEqual([dBind, dGone, dNew, dStory]); // binding first again, then newest (withdrawn rows keep their date place)

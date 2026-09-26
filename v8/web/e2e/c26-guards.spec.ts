@@ -57,8 +57,8 @@ test('reload restores composer, reply target and Inbox drafts for the same ident
       await quick.locator('input').fill(text); await quick.locator('input').press('Enter');
     };
     const signIn = async (who: string, tok: string) => {
-      await command('EDP: Sign in to board');
-      await answer('EDP: board participant id', who); await answer(`EDP: token for ${who}`, tok);
+      await command('Heronry: Sign in to board');
+      await answer('Heronry: board participant id', who); await answer(`Heronry: token for ${who}`, tok);
       await expect(page.locator('.notifications-toasts', { hasText: `signed in as ${who}` }).last()).toBeVisible({ timeout: 15000 });
     };
     const chat = page.frameLocator('iframe.webview').first().frameLocator('#active-frame');
@@ -75,7 +75,7 @@ test('reload restores composer, reply target and Inbox drafts for the same ident
     };
 
     await signIn('owner', token);
-    await command('EDP: Open chat');
+    await command('Heronry: Open chat');
     await chat.locator('#pick').click({ timeout: 20000 });
     await quick.locator('.monaco-list-row', { hasText: 'C26 reload fixture' }).first().click();
     await expect(chat.locator('#crumb-current')).toHaveText('C26 reload fixture', { timeout: 20000 });
@@ -98,7 +98,7 @@ test('reload restores composer, reply target and Inbox drafts for the same ident
     await command('Developer: Reload Window');
     await nav;
     await expect(page.locator('div.monaco-workbench')).toBeVisible({ timeout: 60_000 });
-    await command('EDP: Open chat');
+    await command('Heronry: Open chat');
     await expect(chat.locator('#crumb-current')).toHaveText('C26 reload fixture', { timeout: 30000 });
     await expect(chat.locator('#feed-status')).toHaveText('live', { timeout: 20000 });
     await inboxLoaded();

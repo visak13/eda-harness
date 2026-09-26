@@ -1,6 +1,6 @@
 // The Decisions tab (C17 s-5e83f9d0af; design-10b21760d9 §14.2, §14.4): the picked scope's decision records (owner
 // m-db09472a68: a sixth tab, always scoped), live binding ones first, then newest; withdrawn ones stay listed,
-// dimmed, with their reason. A row's source opens in Chat (a message) or the EDP reader (a doc). Withdraw and
+// dimmed, with their reason. A row's source opens in Chat (a message) or the Heronry reader (a doc). Withdraw and
 // Binding on/off show only when the board said the viewer may manage (owner/architect); the host asks the reason.
 // Rows come from the host; the view names a decision by id only. The badge counts live decisions.
 import { decisionsBadge, rowActions, type DecisionRow } from '../../src/core/decisions';
@@ -48,7 +48,7 @@ function decisionRow(r: DecisionRow, ctx: TabCtx): HTMLElement {
   if (r.source) {
     const label = r.source.kind === 'message' ? 'Open source message' : 'Open source doc';
     acts.append(action(`de-open-${k}`, r.source.kind === 'message' ? 'Source ↗' : 'Source doc ↗',
-      r.source.kind === 'message' ? `${label} ${r.source.id} in Chat` : `${label} ${r.source.id} in the EDP reader`,
+      r.source.kind === 'message' ? `${label} ${r.source.id} in Chat` : `${label} ${r.source.id} in the Heronry reader`,
       () => ctx.post({ type: 'decisionOpen', id: r.id })));
   }
   const can = rowActions(r, st.canManage);

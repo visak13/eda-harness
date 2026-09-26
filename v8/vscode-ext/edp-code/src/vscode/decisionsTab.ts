@@ -14,7 +14,7 @@ import { decisionRows, reasonProblem, rowActions, REASON_MAX, type DecisionRow, 
 const DEBOUNCE_MS = 1500;
 
 export type DecisionsScope = { id: string };
-/** Opens a decision's source: a message in the Chat tab, a doc in the EDP reader (the controller's). */
+/** Opens a decision's source: a message in the Chat tab, a doc in the Heronry reader (the controller's). */
 export type SourceOpener = { message: (ticketId: string, messageId: string) => Promise<void>; doc: (id: string) => Promise<void> };
 
 export class DecisionsHost implements vscode.Disposable {
@@ -97,13 +97,13 @@ export class DecisionsHost implements vscode.Disposable {
       else await this.open.doc(r.source.id);
     } catch (e) {
       if (isAuth(e)) { this.onAuthFail(e); return; }
-      void vscode.window.showErrorMessage(`EDP: could not open the source of ${id}: ${(e as Error)?.message ?? String(e)}`);
+      void vscode.window.showErrorMessage(`Heronry: could not open the source of ${id}: ${(e as Error)?.message ?? String(e)}`);
     }
   }
 
   withdraw(id: string): Promise<void> {
     return this.write(id, 'withdraw', async (r, current) => {
-      const reason = await this.ask({ title: `EDP: Withdraw ${r.id}`, prompt: `“${clip(r.text)}”: why is it withdrawn? The reason stays on the record.`,
+      const reason = await this.ask({ title: `Heronry: Withdraw ${r.id}`, prompt: `“${clip(r.text)}”: why is it withdrawn? The reason stays on the record.`,
         placeHolder: 'Reason (required, one line)', ignoreFocusOut: true, validateInput: t => reasonProblem('withdraw', t) });
       if (reason === undefined || !current()) return null;
       await this.board().withdrawDecision(r.id, reason.trim());
@@ -114,7 +114,7 @@ export class DecisionsHost implements vscode.Disposable {
   binding(id: string, on: boolean): Promise<void> {
     return this.write(id, 'binding', async (r, current) => {
       if (r.binding === on) return `${r.id} is already ${on ? 'binding' : 'not binding'}.`;
-      const reason = await this.ask({ title: `EDP: ${on ? 'Make' : 'Stop making'} ${r.id} binding`,
+      const reason = await this.ask({ title: `Heronry: ${on ? 'Make' : 'Stop making'} ${r.id} binding`,
         prompt: on ? 'Binding decisions are always handed to agents in scope. Why? (optional)' : 'Agents will no longer always get it. Why? (optional)',
         placeHolder: `Reason (optional, at most ${REASON_MAX} characters)`, ignoreFocusOut: true, validateInput: t => reasonProblem('binding', t) });
       if (reason === undefined || !current()) return null;

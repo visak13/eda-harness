@@ -1,4 +1,4 @@
-// The EDP reader editor's protocol and rules (C16 s-579fa02cca; design-10b21760d9 §14.2, §14.7): a board doc at one
+// The Heronry reader editor's protocol and rules (C16 s-579fa02cca; design-10b21760d9 §14.2, §14.7): a board doc at one
 // version in our own custom editor tab. The host reads the board with the viewer's token and posts plain data; the
 // reader webview renders it (markdown-it html:false + DOMPurify) and posts intents, each checked by `parseReaderInbound`.
 // Every write is built here from the HOST's panel state (doc id, the version shown, the gate event), never from a

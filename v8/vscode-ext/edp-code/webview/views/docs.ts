@@ -1,6 +1,6 @@
 // The Docs tab (C16 s-579fa02cca; design-10b21760d9 §14.2, §14.4): the picked scope's linked docs only (owner
 // m-db09472a68: every tab is scoped), each with its type, version, status and why it is here. A row opens the doc in
-// the EDP reader editor tab (its current version); Compare picks two versions for VS Code's diff. Rows come from the
+// the Heronry reader editor tab (its current version); Compare picks two versions for VS Code's diff. Rows come from the
 // host; the view names a doc by id only and the host resolves it from its own list. The badge counts proposals.
 import { docsBadge, whyText, type DocRow } from '../../src/core/docs';
 import { action, type Tab, type TabCtx } from '../tabs';
@@ -20,7 +20,7 @@ function docRow(d: DocRow, ctx: TabCtx): HTMLElement {
   const open = el('button', 'dc-open');
   open.type = 'button';
   open.id = `dc-open-${domKey(d.id)}`;
-  open.title = `Open ${d.id} v${d.version} in the EDP reader`;
+  open.title = `Open ${d.id} v${d.version} in the Heronry reader`;
   const head = el('span', 'dc-head');
   head.append(el('span', 'dc-title', d.title));
   const meta = el('span', 'dc-meta');

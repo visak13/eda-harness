@@ -1,4 +1,4 @@
-// C20 s-29f052c40e (design-10b21760d9 v12 §14.5, §14.7): quote + note from code, a board doc (the EDP reader, its
+// C20 s-29f052c40e (design-10b21760d9 v12 §14.5, §14.7): quote + note from code, a board doc (the Heronry reader, its
 // markdown source or a version diff) and a chat message, collected per thread as a draft and sent as ONE message's
 // ordered `quotes[]` (C18, edp8/quotes.py). The host builds every quote here from what it read itself (the document,
 // the doc version, the message in its store); the view names a draft only by key, so a quote the host did not build

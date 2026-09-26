@@ -7,7 +7,7 @@ import { randomBytes } from 'node:crypto';
 export const cspFor = (nonce: string, images = true) =>
   `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; ${images ? "img-src data:; " : ''}form-action 'none'; base-uri 'none'`;
 
-export function chatHtml(js: string, css: string, nonce = randomBytes(16).toString('base64'), title = 'EDP Chat', images = true): string {
+export function chatHtml(js: string, css: string, nonce = randomBytes(16).toString('base64'), title = 'Heronry Chat', images = true): string {
   // `</script` inside the bundle would end the element early; `</style` likewise for the CSS
   const safeJs = js.replace(/<\/script/gi, '<\\/script');
   const safeCss = css.replace(/<\/style/gi, '<\\/style');

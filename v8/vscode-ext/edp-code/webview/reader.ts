@@ -1,4 +1,4 @@
-// The EDP reader editor tab (C16 s-579fa02cca; design-10b21760d9 §14.2, §14.7): one board doc at one version,
+// The Heronry reader editor tab (C16 s-579fa02cca; design-10b21760d9 §14.2, §14.7): one board doc at one version,
 // rendered from the host's data (the webview never fetches), with an outline, a version picker, Compare / Source /
 // Full screen, the design review (Approve / Request changes, only when the board says can_approve), a proposed
 // strategy doc's Approve / Reject with its diff against the active doc, and the version's comments. Enter is a

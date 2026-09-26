@@ -74,9 +74,9 @@ export function boardClient(baseUrl: string, creds: () => Promise<Creds | undefi
     const refused = unsafeBoardUrl(baseUrl);
     if (refused) throw new BoardError('unsafe_board_url', refused, 0);
     const c = override ?? await creds();
-    if (!c) throw new BoardError('not_signed_in', 'Run "EDP: Sign in to board" first.', 0);
+    if (!c) throw new BoardError('not_signed_in', 'Run "Heronry: Sign in to board" first.', 0);
     if (c.origin && c.origin !== new URL(baseUrl).origin) {
-      throw new BoardError('not_signed_in', 'Board address changed. Run "EDP: Sign in to board" again.', 0);
+      throw new BoardError('not_signed_in', 'Board address changed. Run "Heronry: Sign in to board" again.', 0);
     }
     const t0 = Date.now();
     let res: Response;
