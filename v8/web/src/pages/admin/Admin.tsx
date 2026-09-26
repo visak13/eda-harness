@@ -18,14 +18,20 @@ import { SeatsModelsTab } from "./SeatsModels";
 // Teammates, Remote access, Integrations, Seats & models. Visible only to admins (the S5 `admin` flag on
 // /v1/whoami); every call is an admin-token /v1/admin/* route, and every refusal is shown where it happened.
 
+// Reading order (t-20f0718990, owner m-3136ceca05 "humans always read abcd"): the order a person works
+// through the install, first run and essentials first, advanced last. README.md in this folder holds the
+// rule and each tab's section order; a new tab takes its place by that rule, never at the end by default.
 export const ADMIN_TABS = [
   { key: "services", label: "Services" },
-  { key: "settings", label: "Settings" },
+  { key: "models", label: "Seats & models" },
   { key: "teammates", label: "Teammates" },
   { key: "remote", label: "Remote access" },
   { key: "integrations", label: "Integrations" },
-  { key: "models", label: "Seats & models" },
+  { key: "settings", label: "Settings" },
 ];
+
+/** The one line at the top of Admin: what it is for, and where personal preferences live instead. */
+export const ADMIN_SCOPE = "For the whole install, admins only: services, models, people, access, integrations and instance settings. Your own preferences are in Settings.";
 
 interface WhoAmIAdmin { participant: { id: string; handle: string; role: string; type?: string; admin?: boolean }; admin?: boolean }
 
@@ -75,15 +81,15 @@ export function AdminPage(): React.JSX.Element {
   }
   return (
     <div className={styles.page} data-testid="admin-page">
-      <PageHeader title="Admin" subtitle="Run this install from here: services, settings, teammates, remote access and integrations." />
+      <PageHeader title="Admin" subtitle={ADMIN_SCOPE} />
       <Tabs tabs={ADMIN_TABS} active={tab} onChange={(key) => setParams((old) => { const p = new URLSearchParams(old); p.set("tab", key); return p; }, { replace: true })} />
       <RestartBanner services={restart} onClear={(svc) => setRestart((cur) => cur.filter((s) => s !== svc))} />
       {tab === "services" ? <ServicesTab /> : null}
-      {tab === "settings" ? <SettingsTab onRestartRequired={needRestart} /> : null}
+      {tab === "models" ? <SeatsModelsTab onRestartRequired={needRestart} /> : null}
       {tab === "teammates" ? <TeammatesTab /> : null}
       {tab === "remote" ? <RemoteTab onRestartRequired={needRestart} /> : null}
       {tab === "integrations" ? <IntegrationsTab onRestartRequired={needRestart} /> : null}
-      {tab === "models" ? <SeatsModelsTab onRestartRequired={needRestart} /> : null}
+      {tab === "settings" ? <SettingsTab onRestartRequired={needRestart} /> : null}
     </div>
   );
 }

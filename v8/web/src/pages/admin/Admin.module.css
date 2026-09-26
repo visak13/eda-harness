@@ -348,3 +348,71 @@
   line-height: 21px;
   color: var(--ink);
 }
+
+/* t-20f0718990: Remote access guided setup — numbered step cards, text beside the step's diagram
+   (stacked under 720px so a phone never scrolls sideways). */
+.guide {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.guideStep {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.guideBody {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.guideImg {
+  flex: 0 0 auto;
+  width: 320px;
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+}
+.guideNum {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--accentwash);
+  color: var(--accentink);
+  font-size: 13px;
+  font-weight: 700;
+}
+@media (max-width: 720px) {
+  .guideStep { flex-direction: column; }
+}
+
+/* t-20f0718990: an Integrations card's four plain lines (does / needs / where / once connected). */
+.about {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 19px;
+}
+.about dt {
+  color: var(--muted, var(--ink));
+  font-weight: 600;
+}
+.about dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 560px) {
+  .about { grid-template-columns: 1fr; }
+  .about dd { margin-bottom: 6px; }
+}

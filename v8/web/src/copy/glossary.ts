@@ -17,7 +17,7 @@ import {
   WORK_TYPES,
   GATE_KINDS,
   MESSAGE_KINDS,
-  ROLES,
+  ROLES, BOARD_ROLES,
   CHECKS,
   VERDICTS,
   SESSION_STATES,
@@ -102,6 +102,8 @@ const role: Table = {
   qa: { label: "QA", meaning: "Verifies the required behavior." },
   sme: { label: "SME", meaning: "Advises on a specialist domain." },
   adversary: { label: "Adversary", meaning: "Hostile review that hunts for hidden faults." },
+  expert: { label: "Expert", meaning: "A person from your team linked to one Library topic." },
+  doctor: { label: "Help", meaning: "The read-only Help seat: diagnoses problems and proposes fixes an admin approves." },
 };
 
 const check: Table = {
@@ -157,6 +159,7 @@ export const REQUIRED_COVERAGE: ReadonlyArray<readonly [GlossaryCategory, readon
   ["gate", GATE_KINDS],
   ["message_kind", MESSAGE_KINDS],
   ["role", ROLES],
+  ["role", BOARD_ROLES],
   ["check", CHECKS],
   ["verdict", VERDICTS],
   ["session_state", SESSION_STATES],

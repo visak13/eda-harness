@@ -437,6 +437,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     # usable: no default admin token, credentials for every participant type, and header-only
     # requests refused at actor(). Trusted single-machine mode is the default and unchanged.
     public = public_mode()
+    app.state.public_mode = public  # what THIS process started with (Admin → Remote access: restarted yet?)
     if public:
         err = public_startup_error(admin_token, tokens_file_path())
         if err:

@@ -36,6 +36,11 @@ function mount(tab = "profile", handlers: Parameters<typeof server.use> = []) {
 }
 
 describe("SettingsPage", () => {
+  it("states its scope in one line: personal preferences only (t-20f0718990)", () => {
+    mount();
+    expect(screen.getByText(/Only your own preferences/)).toHaveTextContent("Settings for the whole install are in Admin.");
+  });
+
   it("shows the three tabs, loads the stored profile and says sign-in is not available", async () => {
     mount();
     expect(screen.getByRole("tab", { name: "Profile" })).toBeInTheDocument();

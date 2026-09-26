@@ -56,6 +56,8 @@ export const ICON_PATHS = {
   "role-qa": "M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM15 15l6 6M7 10l2 2 4-4",
   "role-adversary": "M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16ZM12 1v6M12 17v6M1 12h6M17 12h6",
   "role-sme": "M2 9l10-5 10 5-10 5ZM6 11v5q6 4 12 0v-5M22 9v6",
+  // t-20f0718990: the Help (doctor) seat, a lifebuoy like "Ask for help"
+  "role-doctor": "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 6a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM4.9 4.9l4.3 4.3m5.6 5.6 4.3 4.3m0-14.2-4.3 4.3m-5.6 5.6-4.3 4.3",
   "provider-claude": "M12 3v18M4 7.5l16 9M4 16.5l16-9",
   "provider-gpt": "M12 2l9 5v10l-9 5-9-5V7ZM12 7l4 2.5v5L12 17l-4-2.5v-5Z"
 } as const;
@@ -90,8 +92,14 @@ export const ROLE_ICONS = {
   "engineer": "role-engineer",
   "qa": "role-qa",
   "adversary": "role-adversary",
-  "sme": "role-sme"
+  "sme": "role-sme",
+  "doctor": "role-doctor"
 } as const satisfies Record<string, IconName>;
+/** t-20f0718990: the words a role shows as; a role not listed shows its id. The doctor seat is "Help". */
+export const ROLE_LABELS: Partial<Record<string, string>> = { doctor: "Help" };
+export function roleLabel(role: string): string {
+  return ROLE_LABELS[role] ?? role;
+}
 export type SeatRole = keyof typeof ROLE_ICONS;
 /** The role of an AGENT seat id (`engineer.s-…`, `architect.epic-…`, or a bare role); null for a person. */
 export function seatRole(id: string | null | undefined): SeatRole | null {

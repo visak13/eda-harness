@@ -19,6 +19,11 @@ import styles from "./Settings.module.css";
 // over slack_map.json within a minute of a save. Sign-in with Slack / Google is documented here as
 // NOT available: identity is still the ?as= handle + token, and OAuth needs owner-provisioned apps.
 
+/** t-20f0718990 (owner m-3136ceca05 "why is the admin page and settings page different?"): the one line
+ *  that says Settings is personal only. Install-wide controls live in Admin; nothing here changes another
+ *  person's board. Three tabs of personal items remain, so the page stays (not folded into the menu). */
+export const SETTINGS_SCOPE = "Only your own preferences: your name, time zone, theme, avatar, notifications and Slack pings. Settings for the whole install are in Admin.";
+
 const TABS = [
   { key: "profile", label: "Profile" },
   { key: "notifications", label: "Notifications" },
@@ -75,7 +80,7 @@ export function SettingsPage(): React.JSX.Element {
 
   return (
     <div className={styles.page}>
-      <PageHeader title="Settings" subtitle="Who you are on this board, and where its pings reach you." />
+      <PageHeader title="Settings" subtitle={SETTINGS_SCOPE} />
       <Tabs tabs={TABS} active={tab} onChange={(key) => setParams((old) => { const p = new URLSearchParams(old); p.set("tab", key); return p; }, { replace: true })} />
       {forbidden ? <p className={ui.banner} role="alert" data-testid="settings-forbidden">Settings belong to people. This identity is an agent seat, which has no Slack or profile to set.</p> : null}
       {missing ? <p className={ui.banner} role="alert" data-testid="settings-missing">This board predates the settings route; theme and avatar below still save. Restart the board on the current build to enable the rest.</p> : null}

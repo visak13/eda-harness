@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getAdminModels, putAdminModels, testSpawnModel } from "../../api/admin";
+import { getAdminModels, getHarnesses, putAdminModels, testSpawnModel } from "../../api/admin";
 import type { AdminModelsView, ModelEntry, ModelsCatalogIn } from "../../api/admin";
 import { modelLabel } from "../../api/seats";
 import { Avatar, ProviderIcon } from "../../components/Avatar";
 import { EFFORTS } from "../../components/SeatPicks";
+import { roleLabel } from "../../components/iconPaths";
 import ui from "../../components/ui.module.css";
 import styles from "./Admin.module.css";
 import { AdminError, Done } from "./shared";
@@ -44,6 +45,14 @@ function draftProblem(d: Draft, clash: boolean): string | null {
   return null;
 }
 
+/** t-20f0718990: harnesses the board found NOT installed on this machine (from the live probe); a model
+ *  on one of them cannot run, and says so in words wherever it appears. */
+function useMissingHarnesses(): Set<string> {
+  const q = useQuery({ queryKey: ["admin", "harnesses", "selection"], queryFn: () => getHarnesses(false), retry: false });
+  return new Set((q.data?.harnesses ?? []).filter((h) => !h.installed).map((h) => h.harness));
+}
+const NOT_INSTALLED = "harness not installed: install it (Admin → Integrations → Seat harnesses)";
+
 function catalogOf(v: AdminModelsView): ModelsCatalogIn {
   return { models: v.models, role_models: v.role_models };
 }
@@ -59,6 +68,7 @@ export function ModelsEditor(): React.JSX.Element {
     },
   });
   const data = q.data;
+  const missing = useMissingHarnesses();
   const selected = data?.selected ?? [];
   const visible = useMemo(() => Object.entries(data?.models ?? {}).filter(([, e]) => selected.includes(e.harness)), [data, selected]);
   const hidden = Object.keys(data?.models ?? {}).length - visible.length;
@@ -117,7 +127,7 @@ export function ModelsEditor(): React.JSX.Element {
                 {visible.map(([id, e]) => (
                   <tr key={id} data-testid={`model-row-${id}`}>
                     <td><span className={styles.row}><ProviderIcon harness={e.harness} /><strong>{modelLabel(id)}</strong>{modelLabel(id) !== id ? <code className={styles.usage}>{id}</code> : null}</span></td>
-                    <td className={styles.num}>{e.harness}</td>
+                    <td className={styles.num}>{e.harness}{missing.has(e.harness) ? <div className={styles.fieldNote} data-testid={`model-why-${id}`}>{NOT_INSTALLED}</div> : null}</td>
                     <td className={styles.num}>{e.provider || "—"}</td>
                     <td className={styles.num}>{e.context_window ? e.context_window.toLocaleString("en-US") : "—"}</td>
                     <td className={styles.num}>{typeof e.auto_compact === "number" ? e.auto_compact.toLocaleString("en-US") : "—"}</td>
@@ -147,8 +157,8 @@ export function ModelsEditor(): React.JSX.Element {
         <AdminError error={save.error} testid="models-save-error" />
         <Done text={lastDone} testid="models-saved" />
       </section>
-      {data ? <RoleModels data={data} visibleIds={visible.map(([id]) => id)} onSave={(role_models) => save.mutate({ models: data.models, role_models }, { onSuccess: () => setLastDone("Saved the role models.") })} pending={save.isPending} /> : null}
-      {data ? <TestSpawn data={data} visibleIds={visible.map(([id]) => id)} /> : null}
+      {data ? <RoleModels data={data} missing={missing} visibleIds={visible.map(([id]) => id)} onSave={(role_models) => save.mutate({ models: data.models, role_models }, { onSuccess: () => setLastDone("Saved the role models.") })} pending={save.isPending} /> : null}
+      {data ? <TestSpawn data={data} missing={missing} visibleIds={visible.map(([id]) => id)} /> : null}
     </>
   );
 }
@@ -193,8 +203,12 @@ function ModelForm({ draft, editing, harnesses, pending, taken, onChange, onCanc
         <label className={styles.formCell}>
           <span className={styles.usage}>Effort cap</span>
           <select className={ui.select} value={draft.effort_cap} onChange={set("effort_cap")} data-testid="model-form-cap">
-            {EFFORTS.map((e) => <option key={e} value={e} disabled={e === "high" && draft.harness === "claude"}>{e}</option>)}
+            {EFFORTS.map((e) => {
+              const capped = e === "high" && draft.harness === "claude";
+              return <option key={e} value={e} disabled={capped} title={capped ? "Claude models are capped at medium or lower" : undefined}>{e}{capped ? " (not for Claude)" : ""}</option>;
+            })}
           </select>
+          {draft.harness === "claude" ? <span className={styles.usage} data-testid="model-form-cap-why">high is greyed: Claude models are capped at medium or lower.</span> : null}
         </label>
       </div>
       {problem && (touched || clash) ? <p className={styles.fieldNote} data-testid={clash ? "model-form-clash" : "model-form-problem"}>{problem}</p> : null}
@@ -210,8 +224,8 @@ function ModelForm({ draft, editing, harnesses, pending, taken, onChange, onCanc
 }
 
 /** Per-role catalogs and defaults, edited together and saved in one PUT. */
-function RoleModels({ data, visibleIds, onSave, pending }: {
-  data: AdminModelsView; visibleIds: string[]; onSave: (rm: Record<string, string[]>) => void; pending: boolean;
+function RoleModels({ data, missing, visibleIds, onSave, pending }: {
+  data: AdminModelsView; missing: Set<string>; visibleIds: string[]; onSave: (rm: Record<string, string[]>) => void; pending: boolean;
 }): React.JSX.Element {
   const [rm, setRm] = useState(data.role_models);
   useEffect(() => setRm(data.role_models), [data.role_models]);
@@ -229,7 +243,7 @@ function RoleModels({ data, visibleIds, onSave, pending }: {
           <div key={role} className={styles.field} data-testid={`role-models-${role}`}>
             <div className={styles.fieldHead}>
               <Avatar id={role} size={24} />
-              <span className={`${styles.fieldKey} ${styles.capitalize}`}>{role}</span>
+              <span className={`${styles.fieldKey} ${styles.capitalize}`}>{roleLabel(role)}</span>
               <label className={styles.row}>
                 <span className={styles.usage}>Default</span>
                 <select className={ui.select} value={ids[0] ?? ""} disabled={!ids.length} onChange={(e) => setDefault(role, e.target.value)} data-testid={`role-default-${role}`}>
@@ -244,6 +258,7 @@ function RoleModels({ data, visibleIds, onSave, pending }: {
                 <label key={id} className={ids.includes(id) ? ui.chip + " " + ui.active : ui.chip} data-testid={`role-pick-${role}-${id}`}>
                   <input type="checkbox" checked={ids.includes(id)} onChange={(e) => toggle(role, id, e.target.checked)} data-testid={`role-pick-${role}-${id}-input`} />
                   {modelLabel(id)}
+                  {missing.has(data.models[id]?.harness ?? "") ? <span className={styles.fieldNote}> ({NOT_INSTALLED.split(":")[0]})</span> : null}
                 </label>
               ))}
             </div>
@@ -261,7 +276,7 @@ function RoleModels({ data, visibleIds, onSave, pending }: {
 }
 
 /** Run a stub prompt on a private seat of one model: proves the harness, provider and credential. */
-function TestSpawn({ data, visibleIds }: { data: AdminModelsView; visibleIds: string[] }): React.JSX.Element {
+function TestSpawn({ data, missing, visibleIds }: { data: AdminModelsView; missing: Set<string>; visibleIds: string[] }): React.JSX.Element {
   const [model, setModel] = useState("");
   const [role, setRole] = useState("");
   const [effort, setEffort] = useState("");
@@ -270,6 +285,14 @@ function TestSpawn({ data, visibleIds }: { data: AdminModelsView; visibleIds: st
   const roles = Object.keys(data.role_models).filter((x) => data.role_models[x]?.includes(m));
   const r = roles.includes(role) ? role : roles[0] ?? "";
   const run = useMutation({ mutationFn: () => testSpawnModel({ model: m, role: r, ...(effort ? { effort } : {}) }) });
+  const harness = data.models[m]?.harness ?? "";
+  const cap = data.models[m]?.effort_cap ?? null;
+  const RANK: Record<string, number> = { low: 0, medium: 1, high: 2 };
+  const overCap = (e: string) => cap !== null && (RANK[e] ?? 0) > (RANK[cap] ?? 2);
+  const why = !m ? "No model to test: add one above."
+    : missing.has(harness) ? `${m}: ${NOT_INSTALLED}.`
+    : !r ? `Add ${m} to a role above first: a test runs as one of the roles that may use it.`
+    : effort && overCap(effort) ? `Effort ${effort} is above this model's cap (${cap}).` : null;
   return (
     <section className={styles.card} data-testid="test-spawn">
       <h2 className={styles.cardTitle}>Test spawn</h2>
@@ -279,17 +302,18 @@ function TestSpawn({ data, visibleIds }: { data: AdminModelsView; visibleIds: st
           {visibleIds.map((id) => <option key={id} value={id}>{modelLabel(id)}</option>)}
         </select>
         <select className={ui.select} value={r} onChange={(e) => setRole(e.target.value)} data-testid="test-spawn-role">
-          {roles.map((x) => <option key={x} value={x}>{x}</option>)}
+          {roles.map((x) => <option key={x} value={x}>{roleLabel(x)}</option>)}
         </select>
         <select className={ui.select} value={effort} onChange={(e) => setEffort(e.target.value)} data-testid="test-spawn-effort">
           <option value="">default effort</option>
-          {EFFORTS.map((e) => <option key={e} value={e}>{e}</option>)}
+          {EFFORTS.map((e) => <option key={e} value={e} disabled={overCap(e)} title={overCap(e) ? `above this model's cap (${cap})` : undefined}>{e}{overCap(e) ? " (above cap)" : ""}</option>)}
         </select>
-        <button type="button" className={`${ui.button} ${ui.buttonPrimary}`} disabled={!m || !r || run.isPending} onClick={() => run.mutate()} data-testid="test-spawn-run">
+        <button type="button" className={`${ui.button} ${ui.buttonPrimary}`} disabled={Boolean(why) || run.isPending} title={why ?? undefined}
+          aria-describedby={why ? "test-spawn-why" : undefined} onClick={() => run.mutate()} data-testid="test-spawn-run">
           {run.isPending ? "Running…" : "Test spawn"}
         </button>
       </div>
-      {m && !r ? <p className={styles.fieldNote} data-testid="test-spawn-no-role">Add {m} to a role above first: a test runs as one of the roles that may use it.</p> : null}
+      {why ? <p id="test-spawn-why" className={styles.fieldNote} data-testid={m && !r && !missing.has(harness) ? "test-spawn-no-role" : "test-spawn-why"}>{why}</p> : null}
       {run.isPending ? <p className={ui.empty} role="status">Starting a private {data.models[m]?.harness ?? ""} seat and waiting for its reply…</p> : null}
       <AdminError error={run.error} testid="test-spawn-error" />
       {run.data ? (

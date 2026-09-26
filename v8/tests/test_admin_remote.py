@@ -170,3 +170,39 @@ def test_auth_key_bad_credential_is_502(env, tsapi, monkeypatch):
     monkeypatch.setenv("EDP_TAILSCALE_OAUTH_CLIENT_SECRET", "wrong")
     r = env.client.post("/v1/admin/teammates/bob/tailscale-key", headers=ADMIN_H)
     assert r.status_code == 502 and "refused the OAuth client" in r.text
+
+
+def test_status_says_the_mode_the_running_board_started_in(env, ts):
+    # t-20f0718990: the guided setup's last step (restart) is done only when THIS process runs public;
+    # config.toml flips at apply, the running board does not
+    v = env.client.get("/v1/admin/tailnet", headers=ADMIN_H).json()["value"]
+    assert v["running_public"] is False
+    assert env.client.post("/v1/admin/tailnet/apply", headers=ADMIN_H).status_code == 200
+    v = env.client.get("/v1/admin/tailnet", headers=ADMIN_H).json()["value"]
+    assert v["public_mode"] is True and v["running_public"] is False
+
+
+def test_guide_renders_the_same_steps(env, tmp_path, monkeypatch):
+    # t-20f0718990: Remote access links guides/remote-access.md, rendered through the sanitised markdown path
+    home = tmp_path / "home"
+    (home / "guides").mkdir(parents=True)
+    (home / "guides" / "remote-access.md").write_text("# Remote access\n\n## 2. Install Tailscale\n<script>x</script>\n",
+                                                     encoding="utf-8")
+    monkeypatch.setattr(settings, "agent_home", lambda: home)
+    r = env.client.get("/v1/admin/tailnet/guide", headers=ADMIN_H)
+    assert r.status_code == 200, r.text
+    v = r.json()["value"]
+    assert v["path"] == "guides/remote-access.md" and "<h2>2. Install Tailscale</h2>" in v["html"]
+    assert "<script>" not in v["html"]
+    (home / "guides" / "remote-access.md").unlink()
+    assert env.client.get("/v1/admin/tailnet/guide", headers=ADMIN_H).status_code == 404
+
+
+def test_the_shipped_guide_names_every_step():
+    from pathlib import Path
+    body = (Path(__file__).resolve().parents[1] / "guides" / "remote-access.md").read_text(encoding="utf-8")
+    for step in ("## 1. What it is for", "## 2. Install Tailscale", "## 3. Sign in", "## 4. Readiness",
+                 "## 5. Serve the board", "## 6. Restart the board and MCP"):
+        assert step in body, step
+    for n in range(1, 7):
+        assert f"assets/guides/remote-access-{n}-" in body

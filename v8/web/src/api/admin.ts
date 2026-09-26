@@ -160,7 +160,9 @@ export const mintTailscaleKey = (handle: string, body: { ephemeral?: boolean; pr
 
 // ------------------------------------------------------------------------------------------ remote
 
-export interface TailnetRow { level: string; check?: string; name?: string; detail?: string; fix?: string; [k: string]: unknown }
+/** One readiness row (edp8.tailnet.classify): level BLOCKER|WARN|OK|INFO, the area it checks, what it found
+ *  and the fix. */
+export interface TailnetRow { level: string; area?: string; text?: string; fix?: string; [k: string]: unknown }
 export interface TailnetView {
   tailscale: { backend?: string; dns?: string; [k: string]: unknown } | null;
   serve: unknown;
@@ -171,8 +173,11 @@ export interface TailnetView {
   rows: TailnetRow[];
   blockers: number;
   auth_keys: { configured: boolean };
+  /** The mode the running board started in (null on an older board); differs from public_mode until a restart. */
+  running_public?: boolean | null;
 }
 export const getTailnet = () => api<TailnetView>("/v1/admin/tailnet");
+export const getTailnetGuide = () => api<{ name: string; path: string; html: string }>("/v1/admin/tailnet/guide");
 export const applyTailnet = (force = false) => postJson<Record<string, unknown>>("/v1/admin/tailnet/apply", { force });
 export const removeTailnet = () => postJson<Record<string, unknown>>("/v1/admin/tailnet/remove", {});
 

@@ -6,7 +6,7 @@
 // hair colour per role and one small emblem that names the role at a glance:
 //   architect  round glasses                    engineer  hard hat
 //   qa         a magnifier badge                adversary  angled brows
-//   sme        a mortarboard
+//   sme        a mortarboard                   doctor    a lifebuoy badge (the Help seat)
 // No antenna, plates or bolts: nothing robot-like. The stroke glyphs in iconPaths.ts stay for the Models
 // dialog and the role pickers.
 import type { SeatRole } from "./iconPaths";
@@ -22,6 +22,7 @@ const PALETTE: Record<SeatRole, { bg: string; torso: string; hair: string }> = {
   qa: { bg: "#F3B89A", torso: "#8B4A32", hair: "#3A2B29" },
   adversary: { bg: "#D98C9D", torso: "#17191E", hair: "#7A1F2B" },
   sme: { bg: "#D9A441", torso: "#633A68", hair: "#8C8C94" },
+  doctor: { bg: "#7FC8C2", torso: "#FFF3D8", hair: "#54362E" },
 };
 
 /** Hair shapes borrowed from the people set (avatars.py hair_shapes), one per role. */
@@ -31,6 +32,7 @@ const HAIR: Record<SeatRole, string> = {
   qa: "M9 16c2-9 8-10 10-5 4-5 9-1 8 5l-6-3-3 3-4-2-5 4",
   adversary: "M9 15c2-7 5-8 8-7l2 4 8-2v6l-4-2-4 3-5-3-5 3",
   sme: "M10 14c1-7 4-8 6-5 2-4 5-2 5 1 3-3 6 0 5 5",
+  doctor: "M9 18V12c2-8 17-8 18 1v7l-4-6-10 1-4 3",
 };
 
 function person(role: SeatRole, emblem: string): string {
@@ -70,6 +72,10 @@ export const AGENT_AVATARS: Record<SeatRole, string> = {
     `<path d="M8 11l10-4 10 4-10 4z" fill="#24212B"/>` +
     `<path d="M13 13v3c0 2.5 10 2.5 10 0v-3" fill="none" stroke="#24212B" stroke-width="1.6"/>` +
     `<path d="M28 11v5" stroke="#24212B" stroke-width="1.2" stroke-linecap="round"/>`),
+  doctor: person("doctor",
+    // lifebuoy badge, bottom right (t-20f0718990: the Help seat)
+    `<circle cx="27" cy="27" r="5" fill="none" stroke="#F2EDE4" stroke-width="3"/>` +
+    `<path d="M22.4 22.4l2.1 2.1M29.5 29.5l2.1 2.1M31.6 22.4l-2.1 2.1M24.5 29.5l-2.1 2.1" stroke="#D95C5C" stroke-width="3"/>`),
 };
 
 /** The inline SVG markup of an agent seat's avatar at `size` px (36×36 viewBox, like the people avatars). */

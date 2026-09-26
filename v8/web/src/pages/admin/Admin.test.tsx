@@ -562,7 +562,9 @@ describe("Models editor (S12)", () => {
 
   it("add a Pi model, make it a role default, test spawn a stub reply, then remove it (hidden entries kept)", async () => {
     const s = stateful({ ...CATALOG, selected: ["claude", "pi"] });
-    mount("models", s.handlers);
+    // a test spawn needs the harness installed (t-20f0718990 greys it with the reason otherwise)
+    const PI_IN = http.get("/v1/admin/harnesses", () => ok({ ...HARNESSES, harnesses: HARNESSES.harnesses.map((h) => (h.harness === "pi" ? { ...h, installed: true, version: "0.9.0" } : h)) }));
+    mount("models", [PI_IN, ...s.handlers]);
     await screen.findByTestId("model-row-claude-opus-5-5");
     fireEvent.click(screen.getByTestId("model-add"));
     expect(screen.getByTestId("model-form-harness")).toHaveValue("pi");
@@ -632,5 +634,117 @@ describe("Models editor (S12)", () => {
     expect(screen.getByTestId("model-form-clash")).toBeInTheDocument();
     expect(screen.getByTestId("model-form-save")).toBeDisabled();
     expect(s.puts).toHaveLength(0);
+  });
+});
+
+// t-20f0718990 (owner m-3136ceca05): Admin UX pass 2 — reading order, scope line, Remote access as a guided
+// setup, Integrations that explain themselves, and greyed Seats & models choices that say why.
+describe("Admin UX pass 2 (t-20f0718990)", () => {
+  it("tabs run in the README's reading order and the header states Admin's scope", async () => {
+    mount();
+    await screen.findByTestId("admin-page");
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Services", "Seats & models", "Teammates", "Remote access", "Integrations", "Settings"]);
+    expect(screen.getByText(/For the whole install, admins only/)).toBeInTheDocument();
+  });
+
+  it("Remote access is a numbered walk whose steps show live done / not done", async () => {
+    mount("remote", [http.get("/v1/admin/tailnet", () => ok({ ...TAILNET, tailscale: null, blockers: 1,
+      rows: [{ level: "BLOCKER", area: "admin token", text: "EDP8_ADMIN_TOKEN is unset", fix: "apply generates one" }] }))]);
+    const steps = await screen.findByTestId("remote-steps");
+    await waitFor(() => expect(screen.getByTestId("remote-backend")).toHaveTextContent("Not detected"));
+    expect(screen.getByTestId("remote-step-install-state")).toHaveTextContent("Not done yet");
+    expect(steps.querySelectorAll(":scope > li")).toHaveLength(6);
+    expect(screen.getByTestId("remote-step-signin-state")).toHaveTextContent("Not done yet");
+    expect(screen.getByTestId("remote-backend")).toHaveTextContent("Not detected");
+    for (const os of ["Windows", "macOS", "Linux"]) expect(screen.getByTestId(`remote-download-${os}`)).toHaveAttribute("href", expect.stringContaining("tailscale.com/download"));
+    // the readiness rows' real fields (area/text/fix) are shown, not blank cells
+    expect(screen.getByTestId("remote-blocker-list")).toHaveTextContent("admin token: EDP8_ADMIN_TOKEN is unset");
+    expect(screen.getByTestId("remote-apply")).toBeDisabled();
+    expect(screen.getByTestId("remote-apply-why")).toHaveTextContent("Finish step 3 first");
+    // every step has its diagram
+    expect(within(steps).getAllByRole("img")).toHaveLength(6);
+  });
+
+  it("a finished setup marks every step done and shows the address", async () => {
+    mount("remote", [http.get("/v1/admin/tailnet", () => ok({ ...TAILNET, public_mode: true, public_url: "https://host.tail.ts.net",
+      serve_proxies: [{ from: "https://host.tail.ts.net:443", to: "http://127.0.0.1:9400" }], running_public: true }))]);
+    for (const s of ["install", "signin", "ready", "serve", "restart"]) {
+      await waitFor(() => expect(screen.getByTestId(`remote-step-${s}-state`)).toHaveTextContent(/^Done$/));
+    }
+    expect(screen.getByTestId("remote-progress")).toHaveTextContent("5 of 5 steps done");
+    expect(screen.getByTestId("remote-public-url")).toHaveTextContent("https://host.tail.ts.net");
+  });
+
+  it("the written guide opens in place", async () => {
+    mount("remote", [http.get("/v1/admin/tailnet/guide", () => ok({ name: "remote-access", path: "guides/remote-access.md", html: "<h1>Remote access</h1><h2>1. What it is for</h2>" }))]);
+    const fold = await screen.findByTestId("remote-guide");
+    (fold as HTMLDetailsElement).open = true;
+    fireEvent(fold, new Event("toggle"));
+    expect(await within(fold).findByText("1. What it is for")).toBeInTheDocument();
+  });
+
+  it("every integration says what it does, needs, where to get it and what changes, with a status", async () => {
+    mount("integrations");
+    for (const id of ["harnesses", "vscode", "slack", "plane", "code-server"]) {
+      const about = await screen.findByTestId(`about-${id}`);
+      for (const line of ["What it does", "What you need", "Where to get it", "Once connected"]) expect(about).toHaveTextContent(line);
+      expect(within(about).queryAllByRole("link").length).toBeGreaterThan(0);
+    }
+    // order: essentials first (README.md)
+    const cards = screen.getAllByTestId(/^integration-/).map((c) => c.getAttribute("data-testid"));
+    expect(cards).toEqual(["integration-harnesses", "integration-vscode", "integration-slack", "integration-plane", "integration-code-server"]);
+    // statuses: codex is signed out -> error with the reason; Slack set up but untested; Plane not set up
+    await waitFor(() => expect(screen.getByTestId("harnesses-status")).toHaveTextContent("Error: claude ready; codex not signed in"));
+    expect(screen.getByTestId("slack-status")).toHaveTextContent("Set up, not tested yet");
+    expect(screen.getByTestId("plane-status")).toHaveTextContent("Not set up");
+    // a step that must come first is named next to the disabled action
+    expect(screen.getByTestId("plane-test")).toBeDisabled();
+    expect(screen.getByTestId("plane-test-why")).toHaveTextContent("then Save Plane");
+    expect(screen.getByTestId("harness-pi-update")).toBeDisabled();
+    expect(screen.getByTestId("harness-pi-why")).toHaveTextContent("Not installed: install it first");
+  });
+
+  it("a Test turns the status into connected (tested) or an error with the reason", async () => {
+    mount("integrations", [
+      http.post("/v1/admin/integrations/vscode/test", () => ok({ board_url: "http://b" })),
+      http.post("/v1/admin/integrations/slack/test", () => refuse(502, "Slack answered 404: no_service")),
+    ]);
+    fireEvent.click(await screen.findByTestId("vscode-test"));
+    expect(await screen.findByTestId("vscode-status")).toHaveTextContent("Connected (tested): the board answers at http://b");
+    fireEvent.click(screen.getByTestId("slack-test"));
+    await waitFor(() => expect(screen.getByTestId("slack-status")).toHaveTextContent("Error: Slack answered 404: no_service"));
+  });
+
+  it("Seats & models: a greyed model or choice says why in visible text", async () => {
+    const cat = {
+      models: {
+        "claude-opus-5-5": { harness: "claude", provider: "anthropic", context_window: 200000, auto_compact: 150000, effort_cap: "medium" },
+        "qwen3-coder": { harness: "pi", provider: "openrouter", context_window: 131072, auto_compact: 100000, effort_cap: "high" },
+      },
+      role_models: { engineer: ["claude-opus-5-5", "qwen3-coder"], doctor: ["claude-opus-5-5"] },
+      selected: ["claude", "pi"],
+      warnings: [],
+    };
+    mount("models", [http.get("/v1/admin/models", () => ok(cat))]);
+    // pi is not installed in the harness probe
+    expect(await screen.findByTestId("model-why-qwen3-coder")).toHaveTextContent("harness not installed");
+    expect(screen.getByTestId("role-pick-engineer-qwen3-coder")).toHaveTextContent("harness not installed");
+    // the doctor role renders as Help, with its icon
+    const doctor = screen.getByTestId("role-models-doctor");
+    expect(doctor).toHaveTextContent("Help");
+    expect(doctor.querySelector("[data-role-icon=doctor]")).not.toBeNull();
+    // test spawn: an uninstalled harness is greyed and says why
+    fireEvent.change(screen.getByTestId("test-spawn-model"), { target: { value: "qwen3-coder" } });
+    expect(screen.getByTestId("test-spawn-run")).toBeDisabled();
+    expect(screen.getByTestId("test-spawn-why")).toHaveTextContent("qwen3-coder: harness not installed");
+    // test spawn: an effort above the model's cap is greyed and labelled
+    fireEvent.change(screen.getByTestId("test-spawn-model"), { target: { value: "claude-opus-5-5" } });
+    const high = within(screen.getByTestId("test-spawn-effort")).getByRole("option", { name: /high/ }) as HTMLOptionElement;
+    expect(high.disabled).toBe(true);
+    expect(high).toHaveTextContent("above cap");
+    // the add form: Claude's greyed high is explained next to the select
+    fireEvent.click(screen.getByTestId("model-add"));
+    fireEvent.change(screen.getByTestId("model-form-harness"), { target: { value: "claude" } });
+    expect(screen.getByTestId("model-form-cap-why")).toHaveTextContent("Claude models are capped at medium");
   });
 });

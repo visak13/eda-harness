@@ -46,6 +46,11 @@ export const ROLES = [
   "owner", "architect", "sme", "engineer", "adversary", "qa",
 ] as const;
 export type Role = (typeof ROLES)[number];
+/** Every role the board knows (edp8.schemas.Role), including the ones no picker offers: `expert` (a named
+ *  person on one Library topic) and `doctor` (the Help seat). roleIcons.test.ts holds this equal to the
+ *  board's enum and renders each one's icon (t-20f0718990). */
+export const BOARD_ROLES = [...ROLES, "expert", "doctor"] as const;
+export type BoardRole = (typeof BOARD_ROLES)[number];
 
 export const CHECKS = ["command", "path", "look", "verdict"] as const;
 export type Check = (typeof CHECKS)[number];

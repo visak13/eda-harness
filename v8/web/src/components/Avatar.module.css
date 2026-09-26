@@ -22,4 +22,5 @@
 .qa { color: #168aad; }
 .adversary { color: #c84455; }
 .sme { color: #7c3aed; }
+.doctor { color: #168b82; }
 .provider { display: inline-flex; align-items: center; color: var(--muted); margin-right: 4px; vertical-align: middle; }

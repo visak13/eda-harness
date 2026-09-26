@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from .. import launcher, settings, tailnet
@@ -88,10 +88,27 @@ def router(ctx: AdminContext, admin_actor) -> APIRouter:
         return tailnet.gather(planned=planned, humans=humans, seats=_seat_handles())
 
     @r.get("/v1/admin/tailnet")
-    def tailnet_status(a: Participant = Depends(admin_actor)):
+    def tailnet_status(request: Request, a: Participant = Depends(admin_actor)):
         f = _facts()
+        # running_public: the mode this board process started in; public_mode (config) differs from it
+        # until the board restarts, which is the guided setup's last step
+        running = getattr(request.app.state, "public_mode", None)
         return {"ok": True, "value": {**tailnet.summary(f, tailnet.classify(f)),
-                                      "auth_keys": {"configured": tailscale_configured()}}, "hint": ""}
+                                      "auth_keys": {"configured": tailscale_configured()},
+                                      "running_public": running}, "hint": ""}
+
+    @r.get("/v1/admin/tailnet/guide")
+    def tailnet_guide(a: Participant = Depends(admin_actor)):
+        # t-20f0718990: the Remote access tab links the same steps as a guide (guides/remote-access.md),
+        # rendered by the board's sanitised markdown path like the Code tab FAQ
+        from ..views import render_markdown
+        p = settings.agent_home().resolve() / "guides" / "remote-access.md"
+        try:
+            body = p.read_text(encoding="utf-8")
+        except OSError:
+            raise HTTPException(404, "guides/remote-access.md is missing; it ships with the board tree under guides/") from None
+        return {"ok": True, "value": {"name": "remote-access", "path": "guides/remote-access.md",
+                                      "html": render_markdown(body)}, "hint": ""}
 
     @r.post("/v1/admin/tailnet/apply")
     def tailnet_apply(b: ApplyIn | None = None, a: Participant = Depends(admin_actor)):
