@@ -266,6 +266,7 @@ def test_opaque_pi_provider_credential_is_injected_only_into_child_env(monkeypat
     assert seen["kw"]["env"]["EDP_PI_MODEL"] == "openrouter/model-x"
     assert seen["kw"]["env"]["OPENROUTER_API_KEY"] == "private-test-key"
     assert seen["kw"]["env"]["OPENROUTER_BASE_URL"] == "https://example.invalid/api"
+    assert "EDP_PI_PROVIDER_CREDENTIALS" not in seen["kw"]["env"]
     assert not any("private-test-key" in arg for arg in seen["argv"])
 
 

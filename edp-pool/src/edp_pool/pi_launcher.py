@@ -158,6 +158,7 @@ def build_env_pi(session_id: str, role: str, handle: str, broker_url: str | None
     env = build_env(session_id, role, handle, broker_url, **kw)
     for k in _CLAUDE_ONLY:
         env.pop(k, None)
+    env.pop("EDP_PI_PROVIDER_CREDENTIALS", None)  # only the selected provider's key is injected below
     for k in list(env):
         if k in ("VIRTUAL_ENV", "PYTHONPATH", "PYTHONHOME") or k.startswith("UV_"):
             env.pop(k, None)
