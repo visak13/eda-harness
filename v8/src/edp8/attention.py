@@ -24,13 +24,14 @@ from typing import Any
 from urllib.parse import quote, urlencode
 
 from . import views
-from .board import _TERMINAL, Board, is_quick, is_topic
+from .board import _TERMINAL, Board, is_help, is_quick, is_topic
 from .schemas import Gate, Participant, TicketKind
 
 KINDS = ("ask", "gate", "signoff", "fix", "access_request")
 
-#: design_signoff lives behind the Design opener, a demo behind Files & evidence; every other gate is a decision
-_GATE_AT = {Gate.design_signoff.value: ("design", "signoff"), Gate.demo.value: ("files", "evidence")}
+#: design_signoff is answered from the Design opener's review surface; every other gate (demo included) is answered
+#: from the Actions menu's decisions item, so that is where its trail ends. Evidence sign-offs live behind Files.
+_GATE_AT = {Gate.design_signoff.value: ("design", "signoff")}
 _GATE_NOUN = {Gate.design_signoff.value: "design sign-off", Gate.demo.value: "demo review",
               Gate.scope.value: "scope decision", Gate.budget.value: "budget decision",
               Gate.acceptance.value: "acceptance", Gate.adversarial.value: "adversarial review",
@@ -47,7 +48,8 @@ def _page(t: Any) -> str:
 
 def _scope(board: Board, t: Any) -> tuple[Any, dict[str, Any]]:
     root = board.epic_of(t)
-    kind = "topic" if is_topic(root) else "quick" if is_quick(root) else "epic"
+    # a help thread is a topic the Library never lists: its trail starts at the rail's Ask for help instead
+    kind = "help" if is_help(root) else "topic" if is_topic(root) else "quick" if is_quick(root) else "epic"
     return root, {"type": kind, "id": root.id, "title": root.title}
 
 
@@ -57,7 +59,7 @@ def _place(board: Board, t: Any, at: tuple[str, str], item: dict[str, Any], *, k
     """One item: the hop on its scope page, where it sits on its own page, and the deep link that lands there."""
     root, scope = _scope(board, t)
     child = t.id != root.id
-    tab, section = ("work", "tickets") if child and scope["type"] != "topic" else at
+    tab, section = ("work", "tickets") if child and scope["type"] in ("epic", "quick") else at
     url = _page(t) + (f"?{urlencode(query)}" if query else "") + (f"#{anchor}" if anchor else "")
     return {"kind": kind, "id": item["id"], "since": since, "label": label, "noun": noun, "scope": scope,
             "tab": tab, "section": section,
@@ -189,7 +191,7 @@ def rollup(rows: list[dict[str, Any]]) -> dict[str, Any]:
         by_type[s["type"]] += s["count"]
     return {"scopes": out,
             "counts": {"total": len(rows), "epics": by_type["epic"] + by_type["quick"],
-                       "topics": by_type["topic"], "admin": by_type["admin"]}}
+                       "topics": by_type["topic"], "help": by_type["help"], "admin": by_type["admin"]}}
 
 
 def attention(board: Board, viewer: Participant) -> dict[str, Any]:

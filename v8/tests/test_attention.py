@@ -12,7 +12,7 @@ os.environ.setdefault("EDP8_EMBEDDER", "none")
 import pytest
 from fastapi.testclient import TestClient
 
-from edp8 import attention, broker_adapter, notifications, views
+from edp8 import attention, broker_adapter, notifications, topics, views
 from edp8.board import Board
 from edp8.schemas import OBJECT_TYPES, Check, DocType, FixProposal, Gate, MessageKind, Role, TicketKind, WorkType
 from edp8.service import create_app
@@ -77,7 +77,7 @@ def test_a_note_or_an_agent_addressed_status_is_not_an_item(rig):
 
 
 @pytest.mark.parametrize("gate,where", [(Gate.scope, ("actions", "decisions")),
-                                        (Gate.demo, ("files", "evidence")),
+                                        (Gate.demo, ("actions", "decisions")),
                                         (Gate.design_signoff, ("design", "signoff"))])
 def test_owner_gates_land_on_their_opener(rig, gate, where):
     b, owner, other, arch, epic, story = rig
@@ -132,7 +132,7 @@ def test_a_topic_ask_and_a_fix_proposal_live_on_the_topic(rig):
     b.store.put("fix", fix)
     rows = attention.items(b, owner)
     a, f = only(rows, id=ask.id), only(rows, id=fix.id)
-    assert a["scope"]["type"] == f["scope"]["type"] == "topic" and a["scope"]["id"] == t.id
+    assert a["scope"]["type"] == f["scope"]["type"] == "help" and a["scope"]["id"] == t.id
     assert (a["tab"], a["section"]) == ("thread", "asks") and a["url"] == f"/ui/library/topics/{t.id}#{ask.id}"
     assert f["kind"] == "fix" and (f["tab"], f["section"]) == ("fixes", "fixes")
     assert f["url"] == f"/ui/library/topics/{t.id}#{fix.id}"
@@ -176,8 +176,10 @@ def test_rollup_counts_every_hop_and_writes_the_reason(rig):
     ready_for_signoff(b, arch, epic)
     b.gate_open(epic.id, Gate.design_signoff)
     b.message_send(arch, ticket_id=t.id, kind=MessageKind.question, text="3", to=owner.id)
+    lib = topics.create(b, owner, title="Rendering")["topic"]
+    b.message_send(arch, ticket_id=lib.id, kind=MessageKind.question, text="4", to=owner.id)
     roll = attention.rollup(attention.items(b, owner))
-    assert roll["counts"] == {"total": 4, "epics": 3, "topics": 1, "admin": 0}
+    assert roll["counts"] == {"total": 5, "epics": 3, "topics": 1, "help": 1, "admin": 0}
     e = only(roll["scopes"], id=epic.id)
     assert e["count"] == 3 and e["reason"] == "2 questions, 1 design sign-off"
     assert e["tabs"] == {"work": 2, "design": 1}
@@ -253,3 +255,13 @@ def test_no_second_attention_rule_exists():
     offenders = {name: calls for name in _SURFACES if (calls := _calls(SRC / name))}
     assert offenders == {}, f"compute attention through attention.items, not a rule of your own: {offenders}"
     assert {c for _, c in _calls(SRC / "attention.py")} >= {"inbox", "_owner_gates", "pending_signoffs"}
+
+
+def test_a_task_item_sits_on_its_own_work_row(rig):
+    """The epic's Work tree lists tasks as rows under their story, so a task's item names the task itself."""
+    b, owner, _, arch, epic, story = rig
+    task = b.ticket_create(arch, kind=TicketKind.task, work_type=WorkType.feature, title="Sub", parent_id=story.id)
+    q = b.message_send(arch, ticket_id=task.id, kind=MessageKind.question, text="?", to=owner.id)
+    row = only(attention.items(b, owner), id=q.id)
+    assert row["ticket"]["id"] == task.id and row["scope"]["id"] == epic.id
+    assert (row["tab"], row["section"]) == ("work", "tickets")
