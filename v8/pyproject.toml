@@ -23,6 +23,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.4"]
 embed = ["fastembed>=0.3"]
+# Heronry Desktop (`heronry gui`, S8): the native installers bundle these; a uv tool install adds them with --with
+desktop = ["pywebview>=6.0", "pystray>=0.19"]
 
 [project.scripts]
 edp8 = "edp8.cli:main"
@@ -60,6 +62,10 @@ exclude = ["src/edp8/webapp/dist"]
 ".mcp.json" = "edp8/agent_home/.mcp.json"
 "models.json" = "edp8/agent_home/models.json"
 "CLAUDE.md" = "edp8/agent_home/CLAUDE.md"
+# Heronry Desktop's splash and window/tray icons (S7 art; S8 edp8.desktop reads them as package data)
+"assets/brand/heronry/heronry-splash.png" = "edp8/desktop_assets/heronry-splash.png"
+"assets/brand/heronry/icons/heronry-64.png" = "edp8/desktop_assets/heronry-64.png"
+"assets/brand/heronry/icons/heronry-256.png" = "edp8/desktop_assets/heronry-256.png"
 
 # The wheel refuses (or, with npm on PATH, rebuilds) a SPA bundle older than web/src — a stale dist
 # shipped silently otherwise (qa acceptance finding #15, 2026-09-10). See hatch_build.py.
