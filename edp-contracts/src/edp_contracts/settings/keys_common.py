@@ -172,3 +172,15 @@ declare("seats.harnesses", "EDP_HARNESSES", "list", None, "Seats & models",
 # ---- models catalog (edp_contracts.seats)
 declare("models.config", "EDP_MODELS_CONFIG", "path", None, "Seats & models",
         "Path of the models catalog; default <agent home>/models.json.", restart_required="none")
+
+# ---- app updates (S3 `heronry update`, design §4.10 app row)
+declare("update.no_check", "HERONRY_NO_UPDATE_CHECK", "bool", False, "Updates",
+        "1: never ask GitHub for a newer release (the daily and on-start check).", restart_required="none")
+declare("update.repo", "EDP_UPDATE_REPO", "str", "visak13/eda-harness", "Updates",
+        "GitHub owner/repo whose latest release `heronry update` installs.", restart_required="none")
+declare("update.install_cmd", "EDP_UPDATE_INSTALL_CMD", "str", None, "Updates",
+        "Packaging/test override: a JSON argv run instead of `uv tool install --force`; {wheel} is the edp8 "
+        "wheel, {with} expands to the sibling wheels.", env_only=True)
+declare("update.compat_cmd", "EDP_UPDATE_COMPAT_CMD", "str", None, "Updates",
+        "Packaging/test override: a JSON argv run instead of the new release's `heronry workflows check`; "
+        "{db} is the live DB, {wheel} the new edp8 wheel.", env_only=True)

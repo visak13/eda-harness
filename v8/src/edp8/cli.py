@@ -71,9 +71,8 @@ def load_dotenv() -> None:
         k, v = t.split("=", 1)
         v = v.split(" #", 1)[0].split("\t#", 1)[0].strip()
         values[k.strip()] = v
-    import os
     for k, v in values.items():
-        if not os.environ.get(k):
+        if not settings.env_raw(k):
             settings.set_env(k, v)
 
 
@@ -170,6 +169,14 @@ def start(argv: list[str]) -> int:
         except Exception as e:  # noqa: BLE001
             print(f"supervisor FAILED  {e}", file=sys.stderr)
             rc = 1
+    if rc == 0:
+        try:
+            from .updater import notice
+            line = notice()  # daily, silent offline, off with HERONRY_NO_UPDATE_CHECK=1 and in dev mode
+        except Exception:  # noqa: BLE001 — an update check never fails a start
+            line = None
+        if line:
+            print(line)
     return rc
 
 
