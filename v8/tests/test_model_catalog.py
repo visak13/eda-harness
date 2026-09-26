@@ -11,6 +11,7 @@ from edp8 import harness, model_catalog, seat_choice, settings
 
 def test_host_migration_preserves_role_order_defaults_and_caps(tmp_path):
     from pathlib import Path
+
     from edp_contracts.seats import parse
 
     source = json.loads((Path(__file__).resolve().parents[1] / "models.json").read_text(encoding="utf-8"))
