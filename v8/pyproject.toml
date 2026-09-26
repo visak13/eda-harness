@@ -66,6 +66,7 @@ exclude = ["src/edp8/webapp/dist"]
 "assets/brand/heronry/heronry-splash.png" = "edp8/desktop_assets/heronry-splash.png"
 "assets/brand/heronry/icons/heronry-64.png" = "edp8/desktop_assets/heronry-64.png"
 "assets/brand/heronry/icons/heronry-256.png" = "edp8/desktop_assets/heronry-256.png"
+"assets/brand/heronry/icons/heronry.ico" = "edp8/desktop_assets/heronry.ico"
 
 # The wheel refuses (or, with npm on PATH, rebuilds) a SPA bundle older than web/src — a stale dist
 # shipped silently otherwise (qa acceptance finding #15, 2026-09-10). See hatch_build.py.

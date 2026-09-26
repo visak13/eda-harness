@@ -135,6 +135,21 @@ def test_boot_inits_starts_then_opens_the_board_with_splash_status(monkeypatch, 
     assert app.window.calls[-1] == ("load_url", "http://127.0.0.1:5555/ui/setup?code=X")
 
 
+def test_a_join_landing_goes_on_to_the_board_once_signed_in(monkeypatch, cli_calls):
+    monkeypatch.setattr(desktop, "initialized", lambda: True)
+    monkeypatch.setattr(desktop, "services_up", lambda: True)
+    monkeypatch.setattr(desktop, "board_url", lambda: "http://127.0.0.1:5555")
+    monkeypatch.setattr(desktop, "entry_url", lambda: "http://127.0.0.1:5555/ui/join?code=X")
+    app = desktop.Desktop("H")
+    app.window = FakeWindow()
+    answers = iter([0, 0, 1])
+    app.window.evaluate_js = lambda js: next(answers) if "sessionStorage" in js else None
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    app.boot()
+    loads = [c[1] for c in app.window.calls if c[0] == "load_url"]
+    assert loads == ["http://127.0.0.1:5555/ui/join?code=X", "http://127.0.0.1:5555/ui/"]
+
+
 def test_boot_does_not_start_services_that_are_already_up(monkeypatch, cli_calls):
     monkeypatch.setattr(desktop, "initialized", lambda: True)
     monkeypatch.setattr(desktop, "services_up", lambda: True)

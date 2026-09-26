@@ -11,8 +11,10 @@
 #      every service/helper the launcher starts use heronry.exe (launcher.bundle_exe)
 #   4. bin\heronry.cmd (the only folder put on PATH: the install root holds python312.dll & co, which must not
 #      shadow another program's DLL search)
-#   5. heronry.wxs: per-user scope (no admin) and a component that appends [INSTALLFOLDER]bin to the user PATH
-#      (removed at uninstall); idempotent
+#   5. heronry.wxs: a component that appends [INSTALLFOLDER]bin to the user PATH (removed at uninstall); idempotent.
+#      The template's Scope="perUserOrMachine" (ALLUSERS=2 + MSIINSTALLPERUSER=1) already installs per-user by
+#      default, into %LOCALAPPDATA%\Programs, with no admin prompt; Scope="perUser" would NOT (ProgramFiles64Folder
+#      then stays per-machine: error 1303, measured)
 #   6. briefcase package windows --adhoc-sign (unsigned, R10) -> dist\Heronry Desktop-<ver>.msi
 param([string]$Wheels = "", [switch]$NoPackage)
 $ErrorActionPreference = "Stop"
@@ -79,7 +81,6 @@ Set-Content -Path (Join-Path $bin "heronry.cmd") -Encoding ascii -Value "@echo o
 # 5. heronry.wxs
 $wxsPath = Join-Path $app "heronry.wxs"
 $wxs = Get-Content $wxsPath -Raw
-$wxs = $wxs -replace 'Scope="perUserOrMachine"', 'Scope="perUser"'
 if ($wxs -notmatch 'Id="HeronryCliOnPath"') {
   $component = @'
         <!-- S8: the CLI on the user PATH (bin\heronry.cmd only), removed at uninstall -->
@@ -94,7 +95,7 @@ if ($wxs -notmatch 'Id="HeronryCliOnPath"') {
   $wxs = $wxs.Replace("            <ComponentRef Id=`"ApplicationShortcuts`" />", "            <ComponentRef Id=`"ApplicationShortcuts`" />`r`n            <ComponentRef Id=`"HeronryCliOnPath`" />")
 }
 Set-Content -Path $wxsPath -Value $wxs -Encoding utf8
-if ($wxs -notmatch 'ComponentRef Id="HeronryCliOnPath"' -or $wxs -notmatch 'Scope="perUser"') { throw "heronry.wxs patch did not apply" }
+if ($wxs -notmatch 'ComponentRef Id="HeronryCliOnPath"') { throw "heronry.wxs patch did not apply" }
 
 # 6. package
 if (-not $NoPackage) {

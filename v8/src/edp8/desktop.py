@@ -333,7 +333,24 @@ class Desktop:
                 if not services_up():
                     return
         say("Opening the board…")
-        self.window.load_url(entry_url())
+        url = entry_url()
+        self.window.load_url(url)
+        if "/ui/join?" in url:
+            self._on_to_board()
+
+    def _on_to_board(self, wait_s: float = 20.0) -> None:
+        """/ui/join redeems the one-time code into this window's session (sessionStorage), then says so; the
+        desktop goes on to the board itself once the session holds a token."""
+        import time
+        deadline = time.monotonic() + wait_s
+        while time.monotonic() < deadline:
+            try:
+                if self.window.evaluate_js("sessionStorage.getItem('edp8.token') ? 1 : 0") == 1:
+                    self.window.load_url(f"{board_url()}/ui/")
+                    return
+            except Exception:  # noqa: BLE001 — the page is still loading
+                pass
+            time.sleep(0.5)
 
     def menu(self) -> list[Any]:
         from webview.menu import Menu, MenuAction, MenuSeparator
@@ -380,5 +397,7 @@ def main(argv: list[str] | None = None) -> int:
         tray.run_detached()  # shares the GUI loop (Cocoa / GTK)
     storage = settings.data_dir() / "desktop-webview"
     storage.mkdir(parents=True, exist_ok=True)
-    webview.start(app.boot, private_mode=False, storage_path=str(storage), icon=asset_path("heronry-256.png"))
+    # WinForms (Windows) takes only an .ico; GTK/Cocoa take a png
+    icon = asset_path("heronry.ico" if sys.platform == "win32" else "heronry-256.png")
+    webview.start(app.boot, private_mode=False, storage_path=str(storage), icon=icon)
     return 0
