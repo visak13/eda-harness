@@ -108,6 +108,36 @@ beside the text. Approving or asking for changes posts back to the epic's thread
 - [Two harnesses](docs/readme/harnesses.md): Claude Code and Codex seats, and the consult bridge between them.
 - [Diagram sources](v8/docs/kg/) and the [service map, Linux and public mode](v8/README.md).
 
+## Heronry Desktop
+
+Heronry Desktop is the same four services plus a native window and a tray icon, from one installer.
+Download it from the [latest release](https://github.com/visak13/eda-harness/releases/latest):
+
+| OS | Download | Installs to |
+|---|---|---|
+| Windows 10/11 | `Heronry Desktop-<ver>.msi` (per user, no admin) | `%LOCALAPPDATA%\Programs\Heronry contributors\Heronry Desktop`; `heronry` goes on your PATH |
+| macOS | `Heronry Desktop-<ver>.dmg` (universal: Apple Silicon and Intel) | drag to Applications |
+| Ubuntu 24.04+ / Debian 13 | `heronry_<ver>-1~ubuntu-noble_amd64.deb` | `sudo apt install ./heronry_*.deb`; `heronry` in `/usr/bin` |
+
+The first release is unsigned. Windows SmartScreen shows **More info → Run anyway**, and macOS needs a
+right-click **Open** the first time. You still need [Claude Code](https://claude.com/claude-code) (or Codex CLI)
+on PATH; the app finds it.
+
+- **First launch** shows the splash while the services start, then opens the setup wizard in the window.
+  Later launches open the board already signed in.
+- **Tray / menu-bar icon:** Open board, Status, Start, Stop and Restart services, Check for update,
+  *Stop services on quit*, Quit. Closing the window hides it; Quit leaves the services running unless that option
+  is ticked. Each item runs the same `heronry` command you can type in a terminal.
+- **Updates:** *Check for update* opens the release page; run the new installer over the old one. Your board
+  data and settings stay in your profile.
+- **Uninstall:** Settings → Apps (Windows), drag to Trash (macOS), `sudo apt remove heronry` (Linux).
+  Your board data and settings are kept for a later install.
+- **VS Code:** the Heronry extension warns when its version and the board's differ, and offers the one
+  command that fixes it.
+
+On Linux, the tray needs the AppIndicator extension on GNOME. Without it, the window's menu and the CLI do the
+same things.
+
 ## Run it (Windows)
 
 You need [uv](https://docs.astral.sh/uv/), [Node ≥ 24](https://nodejs.org),
