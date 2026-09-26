@@ -130,7 +130,7 @@ def plan(src: Path) -> list[Item]:
                       ("slack_map.json", Path(settings.get("EDP8_SLACK_MAP"))),
                       ("ui-settings.json", Path(settings.get("EDP8_UI_SETTINGS"))),
                       ("ui-avatars.json", settings.agent_home() / "ui-avatars.json"),
-                      ("models.json", Path(settings.get("EDP_MODELS_CONFIG") or settings.agent_home() / "models.json"))):
+                      ("models.json", Path(settings.get("EDP_MODELS_CONFIG") or settings.data_dir() / "models.json"))):
         p = src / name
         if p.is_file():
             items.append(Item(name, p, dst, "secret" if p.name in _SECRETS else "file"))

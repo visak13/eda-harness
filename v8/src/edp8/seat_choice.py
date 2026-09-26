@@ -115,7 +115,7 @@ def tags_for_role_models(picks: dict[str, str] | None) -> list[str]:
 
 
 def agent_home() -> Path:
-    """The v8 agent home (models.json lives here): the settings agent home (dev: EDP8_HOME = <repo>/v8)."""
+    """The seat home; the editable catalog is resolved separately in the data directory."""
     return settings.agent_home()
 
 
