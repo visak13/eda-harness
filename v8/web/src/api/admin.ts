@@ -71,6 +71,29 @@ export interface UpdatesView {
 export const getUpdates = () => api<UpdatesView>("/v1/admin/updates");
 export const applyUpdate = (force = false) => postJson<Record<string, unknown>>("/v1/admin/updates/apply", { force });
 
+// ------------------------------------------------------------------------------------------ models
+
+// S12 (s-32035a77da, contract m-62fc5b54f9): the model catalog in the data dir. Every entry names its
+// harness and provider explicitly (no id-prefix routing); `role_models[role][0]` is the role's default.
+
+export interface ModelEntry {
+  harness: string;
+  provider: string;
+  context_window?: number | null;
+  auto_compact?: number | boolean | null;
+  effort_cap?: string | null;
+}
+export interface ModelsCatalogIn { models: Record<string, ModelEntry>; role_models: Record<string, string[]> }
+export interface AdminModelsView extends ModelsCatalogIn { selected: string[]; warnings: string[] }
+export interface TestSpawnResult { reply: string; model: string; harness: string; provider: string }
+
+export const getAdminModels = () => api<AdminModelsView>("/v1/admin/models");
+/** Full replacement of the catalog; the board validates harness, install and provider credential. */
+export const putAdminModels = (body: ModelsCatalogIn) => postJson<AdminModelsView>("/v1/admin/models", body, "PUT");
+/** Run a stub prompt on a private seat of `model` for `role`. */
+export const testSpawnModel = (body: { model: string; role: string; effort?: string }) =>
+  postJson<TestSpawnResult>("/v1/admin/models/test-spawn", body);
+
 // ------------------------------------------------------------------------------------------ settings
 
 export type SettingValue = string | number | boolean | string[] | null;

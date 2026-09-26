@@ -61,7 +61,7 @@ export function OpenTopicDialog({ open, onClose, onOpened }: {
   const catalog = modelsQ.data as ModelCatalog | undefined;
   const smeOptions = catalog?.roles[SME] ?? [];
   const smeModel = model ?? catalog?.defaults[SME] ?? "";
-  const smeEffort = clampEffort(smeModel, effort);
+  const smeEffort = clampEffort(smeModel, effort, catalog?.models);
 
   useModalDialog(open, panelRef, titleRef, busy, onClose);
 
@@ -164,7 +164,7 @@ export function OpenTopicDialog({ open, onClose, onOpened }: {
           ) : null}
           {smeOptions.length ? <SeatPickHead /> : null}
           {smeOptions.length ? (
-            <SeatPickRow role={SME} testIdPrefix="topic-open" options={smeOptions} model={smeModel} effort={smeEffort}
+            <SeatPickRow role={SME} testIdPrefix="topic-open" options={smeOptions} meta={catalog?.models} model={smeModel} effort={smeEffort}
               disabled={locked} onModel={setModel} onEffort={setEffort} />
           ) : null}
           <p className={styles.muted} data-testid="topic-open-effort-cap">

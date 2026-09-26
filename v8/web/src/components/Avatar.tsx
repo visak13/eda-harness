@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { authHeaders, identity } from "../auth/identity";
 import { Icon } from "./Icon";
-import { modelProvider, PROVIDER_ICONS, ROLE_ICONS, seatRole } from "./iconPaths";
+import { harnessGlyph, PROVIDER_ICONS, ROLE_ICONS, seatRole } from "./iconPaths";
 import { agentAvatarSvg } from "./agentAvatars";
 import styles from "./Avatar.module.css";
 
@@ -91,9 +91,9 @@ function RoleAvatar({ id, role, size, className }: { id: string; role: keyof typ
   );
 }
 
-/** The provider glyph (Claude / GPT) beside a model name; nothing for an unknown provider. */
-export function ProviderIcon({ model, size = 16 }: { model: string | null | undefined; size?: 16 | 18 }): React.JSX.Element | null {
-  const p = modelProvider(model);
+/** The provider glyph (Claude / GPT) beside a model name, from its catalog entry's harness; nothing otherwise. */
+export function ProviderIcon({ harness, size = 16 }: { harness: string | null | undefined; size?: 16 | 18 }): React.JSX.Element | null {
+  const p = harnessGlyph(harness);
   return p ? <span className={styles.provider} data-provider-icon={p} title={p === "gpt" ? "GPT (codex seat)" : "Claude"}><Icon name={PROVIDER_ICONS[p]} size={size} /></span> : null;
 }
 

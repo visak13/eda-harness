@@ -28,9 +28,9 @@ export function ModelsControl({ epicId }: { epicId: string }): React.JSX.Element
   const roles = Object.keys(catalog?.roles ?? {});
   const roleModels = Object.fromEntries(roles.map((r) => [r, picks[r] ?? current?.roleModels[r] ?? ""]));
   const roleEfforts = Object.fromEntries(roles.map((r) =>
-    [r, clampEffort(roleModels[r], efforts[r] ?? (current?.roleEfforts[r] as Effort | undefined) ?? "medium")]));
+    [r, clampEffort(roleModels[r], efforts[r] ?? (current?.roleEfforts[r] as Effort | undefined) ?? "medium", catalog?.models)]));
   const dirty = roles.some((r) => roleModels[r] !== current?.roleModels[r]
-    || roleEfforts[r] !== clampEffort(current?.roleModels[r], (current?.roleEfforts[r] ?? "medium") as Effort));
+    || roleEfforts[r] !== clampEffort(current?.roleModels[r], (current?.roleEfforts[r] ?? "medium") as Effort, catalog?.models));
 
   const save = useMutation({
     mutationFn: () => setTicketTags(epicId, withChoiceTags(tags, { roleModels, roleEfforts })),
@@ -48,7 +48,7 @@ export function ModelsControl({ epicId }: { epicId: string }): React.JSX.Element
       {modelsQ.isPending || epicQ.isPending ? <p className={ui.empty}>Loading models…</p> : null}
       {roles.length ? <SeatPickHead /> : null}
       {roles.map((r) => (
-        <SeatPickRow key={r} role={r} testIdPrefix="models" options={catalog?.roles[r] ?? []}
+        <SeatPickRow key={r} role={r} testIdPrefix="models" options={catalog?.roles[r] ?? []} meta={catalog?.models}
           model={roleModels[r]} effort={roleEfforts[r]} disabled={save.isPending}
           onModel={(id) => { setSaved(null); setPicks((p) => ({ ...p, [r]: id })); }}
           onEffort={(e) => { setSaved(null); setEfforts((p) => ({ ...p, [r]: e })); }} />

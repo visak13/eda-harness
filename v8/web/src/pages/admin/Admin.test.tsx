@@ -369,3 +369,115 @@ describe("Seats & models (§4.11)", () => {
     expect(screen.getByTestId("harness-selection-save")).toBeDisabled();
   });
 });
+
+// S12 (t-186b964fb1, contract m-62fc5b54f9): Admin → Seats & models → Models. The editor lists only entries
+// of the selected harnesses, keeps hidden entries on every full-replacement PUT, adds/edits/removes,
+// sets a role default (first id) and shows a test-spawn reply.
+describe("Models editor (S12)", () => {
+  type Cat = { models: Record<string, Record<string, unknown>>; role_models: Record<string, string[]>; selected: string[]; warnings: string[] };
+  const CATALOG: Cat = {
+    models: {
+      "claude-opus-5-5": { harness: "claude", provider: "anthropic", context_window: 200000, effort_cap: "medium" },
+      "gpt-6-sol": { harness: "codex", provider: "openai", context_window: null, effort_cap: null },
+      "hidden-model": { harness: "pi", provider: "openrouter", effort_cap: null, auto_compact: 0.8 },
+    },
+    role_models: { engineer: ["claude-opus-5-5", "gpt-6-sol"], qa: ["claude-opus-5-5"] },
+    selected: ["claude", "codex"],
+    warnings: ["codex is selected but not signed in"],
+  };
+
+  function stateful(start: Cat) {
+    let cur: Cat = structuredClone(start);
+    const puts: Cat[] = [];
+    return {
+      puts,
+      handlers: [
+        http.get("/v1/admin/models", () => ok(cur)),
+        http.put("/v1/admin/models", async ({ request }) => {
+          const b = (await request.json()) as Cat;
+          puts.push(b);
+          cur = { ...cur, models: b.models, role_models: b.role_models };
+          return ok(cur, "catalog saved");
+        }),
+        http.post("/v1/admin/models/test-spawn", async ({ request }) => {
+          const b = (await request.json()) as { model: string; role: string };
+          const e = cur.models[b.model] as { harness: string; provider: string };
+          return ok({ reply: `stub reply from ${b.model}`, model: b.model, harness: e.harness, provider: e.provider });
+        }),
+      ],
+    };
+  }
+
+  it("lists only selected-harness models, shows warnings and the hidden count", async () => {
+    const s = stateful(CATALOG);
+    mount("models", s.handlers);
+    expect(await screen.findByTestId("model-row-claude-opus-5-5")).toHaveTextContent("anthropic");
+    expect(screen.getByTestId("model-row-gpt-6-sol")).toHaveTextContent("codex");
+    expect(screen.queryByTestId("model-row-hidden-model")).toBeNull();
+    expect(screen.getByTestId("models-hidden")).toHaveTextContent("1 model of unselected harnesses is hidden");
+    expect(screen.getByTestId("models-warnings")).toHaveTextContent("not signed in");
+    expect(screen.getByTestId("model-row-claude-opus-5-5")).toHaveTextContent("engineer (default)");
+  });
+
+  it("add a Pi model, make it a role default, test spawn a stub reply, then remove it (hidden entries kept)", async () => {
+    const s = stateful({ ...CATALOG, selected: ["claude", "pi"] });
+    mount("models", s.handlers);
+    await screen.findByTestId("model-row-claude-opus-5-5");
+    fireEvent.click(screen.getByTestId("model-add"));
+    expect(screen.getByTestId("model-form-harness")).toHaveValue("pi");
+    fireEvent.change(screen.getByTestId("model-form-id"), { target: { value: "qwen3-coder" } });
+    fireEvent.change(screen.getByTestId("model-form-provider"), { target: { value: "openrouter" } });
+    fireEvent.change(screen.getByTestId("model-form-window"), { target: { value: "128000" } });
+    fireEvent.change(screen.getByTestId("model-form-cap"), { target: { value: "medium" } });
+    fireEvent.click(screen.getByTestId("model-form-save"));
+    await waitFor(() => expect(s.puts).toHaveLength(1));
+    expect(s.puts[0].models["qwen3-coder"]).toEqual({ harness: "pi", provider: "openrouter", context_window: 128000, effort_cap: "medium" });
+    expect(s.puts[0].models["gpt-6-sol"]).toBeDefined(); // the unselected codex entry is kept
+    expect(await screen.findByTestId("model-row-qwen3-coder")).toHaveTextContent("openrouter");
+
+    fireEvent.click(await screen.findByTestId("role-pick-engineer-qwen3-coder-input"));
+    fireEvent.change(screen.getByTestId("role-default-engineer"), { target: { value: "qwen3-coder" } });
+    fireEvent.click(screen.getByTestId("role-models-save"));
+    await waitFor(() => expect(s.puts).toHaveLength(2));
+    expect(s.puts[1].role_models.engineer).toEqual(["qwen3-coder", "claude-opus-5-5", "gpt-6-sol"]);
+    await waitFor(() => expect(screen.getByTestId("model-row-qwen3-coder")).toHaveTextContent("engineer (default)"));
+
+    fireEvent.change(screen.getByTestId("test-spawn-model"), { target: { value: "qwen3-coder" } });
+    fireEvent.click(screen.getByTestId("test-spawn-run"));
+    expect(await screen.findByTestId("test-spawn-reply")).toHaveTextContent("stub reply from qwen3-coder");
+    expect(screen.getByTestId("test-spawn-result")).toHaveTextContent("pi · openrouter replied");
+
+    fireEvent.click(screen.getByTestId("model-remove-qwen3-coder"));
+    await waitFor(() => expect(s.puts).toHaveLength(3));
+    expect(s.puts[2].models["qwen3-coder"]).toBeUndefined();
+    expect(s.puts[2].role_models.engineer).toEqual(["claude-opus-5-5", "gpt-6-sol"]);
+    await waitFor(() => expect(screen.queryByTestId("model-row-qwen3-coder")).toBeNull());
+  });
+
+  it("edit keeps fields the form does not show, and a refused save shows the board's words", async () => {
+    const s = stateful({ ...CATALOG, selected: ["pi"] });
+    mount("models", s.handlers);
+    fireEvent.click(await screen.findByTestId("model-edit-hidden-model"));
+    expect(screen.getByTestId("model-form-id")).toBeDisabled();
+    fireEvent.change(screen.getByTestId("model-form-provider"), { target: { value: "groq" } });
+    fireEvent.click(screen.getByTestId("model-form-save"));
+    await waitFor(() => expect(s.puts).toHaveLength(1));
+    expect(s.puts[0].models["hidden-model"]).toMatchObject({ provider: "groq", auto_compact: 0.8 });
+
+    server.use(http.put("/v1/admin/models", () => refuse(400, "provider groq has no credential")));
+    fireEvent.click(await screen.findByTestId("model-remove-hidden-model"));
+    expect(await screen.findByTestId("models-save-error")).toHaveTextContent("no credential");
+  });
+
+  it("catches a duplicate id before the PUT", async () => {
+    const s = stateful(CATALOG);
+    mount("models", s.handlers);
+    await screen.findByTestId("model-row-claude-opus-5-5");
+    fireEvent.click(screen.getByTestId("model-add"));
+    fireEvent.change(screen.getByTestId("model-form-id"), { target: { value: "gpt-6-sol" } });
+    fireEvent.change(screen.getByTestId("model-form-provider"), { target: { value: "openai" } });
+    expect(screen.getByTestId("model-form-clash")).toBeInTheDocument();
+    expect(screen.getByTestId("model-form-save")).toBeDisabled();
+    expect(s.puts).toHaveLength(0);
+  });
+});

@@ -4,10 +4,11 @@ import { getHarnesses, putHarnessSelection } from "../../api/admin";
 import ui from "../../components/ui.module.css";
 import styles from "./Admin.module.css";
 import { AdminError, Done } from "./shared";
+import { ModelsEditor } from "./Models";
 
 // Seats & models (design §4.11): which harnesses seats run on — claude and codex both optional, at least one
 // of them selected — and the Fable adversary risk notice with its one-time acknowledgement when codex is not
-// selected. S12 adds the model editor here.
+// selected. S12: the model catalog editor (Models.tsx) follows the harness choice.
 
 const HARNESSES = ["claude", "codex", "pi"] as const;
 
@@ -70,10 +71,7 @@ export function SeatsModelsTab({ onRestartRequired }: { onRestartRequired: (serv
   return (
     <div className={styles.panel} data-testid="admin-models">
       <HarnessSelection onRestartRequired={onRestartRequired} />
-      <section className={styles.card}>
-        <h2 className={styles.cardTitle}>Models per role</h2>
-        <p className={ui.empty}>The model editor (which model and effort each role runs on) arrives with the Design tab; until then models.json in the agent home is the source.</p>
-      </section>
+      <ModelsEditor />
     </div>
   );
 }

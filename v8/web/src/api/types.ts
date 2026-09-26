@@ -442,6 +442,15 @@ export interface SeatChoice {
 export interface ModelCatalog {
   roles: Record<string, string[]>;
   defaults: Record<string, string>;
+  /** S12: each entry's explicit harness, provider and effort cap; absent on an older board. */
+  models?: Record<string, ModelMeta>;
+}
+
+/** S12: what the UI knows about a catalog id; routing and caps come from here, never from the id. */
+export interface ModelMeta {
+  harness: string;
+  provider?: string;
+  effort_cap?: string | null;
 }
 
 export interface ThreadPage {

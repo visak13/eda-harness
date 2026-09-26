@@ -39,7 +39,7 @@ export function QuickTaskDialog({ open, onClose }: { open: boolean; onClose: () 
   const model = picked && options.includes(picked) ? picked : (catalog?.defaults?.engineer ?? "");
   // S-UI: the engineer's effort beside its model (Claude capped at medium)
   const [effortPick, setEffortPick] = useState<Effort>("medium");
-  const effort = clampEffort(model, effortPick);
+  const effort = clampEffort(model, effortPick, catalog?.models);
   const capsQ = useQuery({ queryKey: ["pool", "capabilities"], queryFn: getPoolCapabilities, retry: false, enabled: open });
   const caps = capsQ.data as PoolCapabilities | undefined;
   const canSpawn = Boolean(caps?.spawn);
@@ -98,7 +98,7 @@ export function QuickTaskDialog({ open, onClose }: { open: boolean; onClose: () 
         <fieldset className={styles.roleModels} data-testid="quick-task-role-models">
           <legend className={ui.sectionLabel}>Engineer model and effort</legend>
           <SeatPickHead />
-          <SeatPickRow role="engineer" testIdPrefix="quick-task" options={options} model={model} effort={effort}
+          <SeatPickRow role="engineer" testIdPrefix="quick-task" options={options} meta={catalog?.models} model={model} effort={effort}
             disabled={create.isPending} onModel={setPicked} onEffort={setEffortPick} />
         </fieldset>
         {modelsQ.isError ? (

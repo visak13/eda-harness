@@ -54,7 +54,7 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
     roles.map((r) => [r, picks[r] ?? catalog?.defaults[r] ?? ""]));
   // every role's effort (default medium), already capped for a Claude row
   const roleEfforts: Record<string, Effort> = Object.fromEntries(
-    roles.map((r) => [r, clampEffort(roleModels[r], efforts[r] ?? "medium")]));
+    roles.map((r) => [r, clampEffort(roleModels[r], efforts[r] ?? "medium", catalog?.models)]));
   const [done, setDone] = useState<{ id: string; hint: string; spawnHint: string | null } | null>(null);
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -150,7 +150,7 @@ export function NewEpicDialog({ open, onClose }: { open: boolean; onClose: () =>
           ) : null}
           {roles.length ? <SeatPickHead /> : null}
           {roles.map((r) => (
-            <SeatPickRow key={r} role={r} testIdPrefix="new-epic" options={catalog?.roles[r] ?? []}
+            <SeatPickRow key={r} role={r} testIdPrefix="new-epic" options={catalog?.roles[r] ?? []} meta={catalog?.models}
               model={roleModels[r]} effort={roleEfforts[r]} disabled={create.isPending || Boolean(done)}
               onModel={(id) => setPicks((p) => ({ ...p, [r]: id }))}
               onEffort={(e) => setEfforts((p) => ({ ...p, [r]: e }))} />

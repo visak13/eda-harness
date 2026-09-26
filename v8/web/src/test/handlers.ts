@@ -9,6 +9,13 @@ export const MODEL_CATALOG = {
     qa: ["claude-fable-5-1", "gpt-6-astra"], adversary: ["gpt-6-astra"], sme: ["claude-opus-5-5", "gpt-6-sol"],
   },
   defaults: { architect: "claude-fable-5-1", engineer: "claude-opus-5-5", qa: "claude-fable-5-1", adversary: "gpt-6-astra", sme: "claude-opus-5-5" },
+  // S12: each entry's explicit harness and effort cap (the board's GET /v1/models `models`)
+  models: {
+    "claude-fable-5-1": { harness: "claude", provider: "anthropic", effort_cap: "medium" },
+    "claude-opus-5-5": { harness: "claude", provider: "anthropic", effort_cap: "medium" },
+    "gpt-6-astra": { harness: "codex", provider: "openai", effort_cap: null },
+    "gpt-6-sol": { harness: "codex", provider: "openai", effort_cap: null },
+  },
 };
 
 export const handlers = [

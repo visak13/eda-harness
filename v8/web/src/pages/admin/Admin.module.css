@@ -199,3 +199,11 @@
   color: var(--muted);
   font-size: 12px;
 }
+
+/* S12 Models editor */
+.wide {
+  width: 100%;
+}
+.capitalize {
+  text-transform: capitalize;
+}

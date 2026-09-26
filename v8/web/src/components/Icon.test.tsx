@@ -1,7 +1,7 @@
 import { it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { Icon } from "./Icon";
-import { ICON_PATHS, PROVIDER_ICONS, ROLE_ICONS, STATUS_ICONS, modelProvider, seatRole, type IconName } from "./iconPaths";
+import { ICON_PATHS, PROVIDER_ICONS, ROLE_ICONS, STATUS_ICONS, harnessGlyph, seatRole, type IconName } from "./iconPaths";
 import { Avatar, ProviderIcon } from "./Avatar";
 import { StatusChip } from "./StatusChip";
 it("all 53 approved glyphs use named currentColor paths, no generic fallback", () => {
@@ -29,13 +29,14 @@ it("S-UI: one glyph per seat role and per provider, resolved from seat ids and m
   expect(seatRole("qa")).toBe("qa");
   expect(seatRole("owner")).toBeNull();
   expect(seatRole("constructor")).toBeNull();
-  expect(modelProvider("gpt-6-astra")).toBe("gpt");
-  expect(modelProvider("codex/gpt-6-sol")).toBe("gpt");
-  expect(modelProvider("claude-opus-5-5")).toBe("claude");
-  expect(modelProvider("")).toBeNull();
+  // S12: the glyph follows the entry's harness, never the id
+  expect(harnessGlyph("codex")).toBe("gpt");
+  expect(harnessGlyph("claude")).toBe("claude");
+  expect(harnessGlyph("pi")).toBeNull();
+  expect(harnessGlyph(undefined)).toBeNull();
 });
 it("S-UI / m-ff00fad1ec: an agent seat's avatar is its illustrated role character (no fetch); a person keeps the picture", () => {
-  const { container } = render(<><Avatar id="engineer.s-1" /><Avatar id="adversary.epic-2" size={28} /><ProviderIcon model="gpt-6-astra" /><ProviderIcon model="claude-fable-5-1" /><ProviderIcon model="mystery" /></>);
+  const { container } = render(<><Avatar id="engineer.s-1" /><Avatar id="adversary.epic-2" size={28} /><ProviderIcon harness="codex" /><ProviderIcon harness="claude" /><ProviderIcon harness="pi" /></>);
   const eng = container.querySelector('[data-avatar-for="engineer.s-1"] svg');
   expect(eng).not.toBeNull();
   expect(eng).toHaveAttribute("viewBox", "0 0 36 36"); // the people avatars' canvas

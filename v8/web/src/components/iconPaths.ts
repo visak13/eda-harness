@@ -97,10 +97,10 @@ export function seatRole(id: string | null | undefined): SeatRole | null {
   return Object.prototype.hasOwnProperty.call(ROLE_ICONS, head) ? head as SeatRole : null;
 }
 export const PROVIDER_ICONS = { "claude": "provider-claude", "gpt": "provider-gpt" } as const satisfies Record<string, IconName>;
-/** The provider of a model id: GPT (`gpt-…`, `codex/…`, `openai…`) or Claude (`claude-…`, the `claude` seat). */
-export function modelProvider(model: string | null | undefined): keyof typeof PROVIDER_ICONS | null {
-  const m = (model ?? "").toLowerCase();
-  if (m.startsWith("gpt-") || m.startsWith("codex/") || m.startsWith("openai")) return "gpt";
-  if (m.startsWith("claude")) return "claude";
+/** S12: the glyph of a catalog entry's explicit harness (claude → Claude, codex → GPT); none for pi or an
+ *  entry the board did not describe. The model id is never read. */
+export function harnessGlyph(harness: string | null | undefined): keyof typeof PROVIDER_ICONS | null {
+  if (harness === "codex") return "gpt";
+  if (harness === "claude") return "claude";
   return null;
 }

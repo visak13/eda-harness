@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { screen, fireEvent, within, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { server } from "../test/setup";
+import { MODEL_CATALOG } from "../test/handlers";
 import { http, okJson, renderRoute } from "./testUtils";
 import { EpicPage } from "./Epic";
 import type { EpicPage as EpicPageData, EpicTreeNode, MessageView } from "../api/types";
@@ -310,10 +311,7 @@ describe("EpicPage", () => {
     const tags = ["area:ui", "model:architect=gpt-6-astra", "model:sme=gpt-6-sol", "seat-effort:adversary=high", "seat-effort:medium"];
     let patched: Record<string, unknown> | null = null;
     server.use(
-      http.get("/v1/models", () => okJson({
-        roles: { architect: ["claude-fable-5-1", "gpt-6-astra"], engineer: ["claude-opus-5-5", "gpt-6-sol"],
-                 qa: ["claude-fable-5-1", "gpt-6-astra"], adversary: ["gpt-6-astra"], sme: ["claude-opus-5-5", "gpt-6-sol"] },
-        defaults: { architect: "claude-fable-5-1", engineer: "claude-opus-5-5", qa: "claude-fable-5-1", adversary: "gpt-6-astra", sme: "claude-opus-5-5" } })),
+      http.get("/v1/models", () => okJson(MODEL_CATALOG)),
       http.get("/v1/tickets/epic-1", () => okJson({ id: "epic-1", kind: "epic", tags })),
       http.patch("/v1/tickets/epic-1", async ({ request }) => { patched = (await request.json()) as Record<string, unknown>; return okJson({ id: "epic-1", tags: patched.tags }, "updated"); }),
     );
