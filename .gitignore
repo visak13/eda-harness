@@ -33,6 +33,8 @@ claude/scratch/
 # Exception: README visual assets are tracked
 !docs/assets/**
 !docs/readme/**
+!v8/assets/brand/**
+!v8/web/public/brand/**
 claude/.recipes/
 claude/.plans/
 claude/.specs/
