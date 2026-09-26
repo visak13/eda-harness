@@ -97,3 +97,75 @@ def test_admin_restarts_pool_and_board_through_the_supervisor(inst):
         stop = base.cli(inst, "stop")
     assert stop.returncode == 0, stop.stdout + stop.stderr
     assert scan_env_marker(base.MARKER, inst["env"][base.MARKER]) == []
+
+
+def _fake_releases_api(tag: str):
+    """A local stand-in for GitHub's releases API: GET /repos/<repo>/releases/latest -> {tag_name}."""
+    import http.server
+    import threading
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            body = json.dumps({"tag_name": tag, "html_url": f"https://example.invalid/{tag}"}).encode()
+            ok = self.path.endswith("/releases/latest")
+            self.send_response(200 if ok else 404)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body) if ok else 0))
+            self.end_headers()
+            if ok:
+                self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+def test_admin_update_check_and_apply_backup_stop_upgrade_start(inst, tmp_path):
+    """Updates (c-40e35d1d5d): the Releases check against a fixture reports available; apply goes through
+    the supervisor and runs backup -> stop -> upgrade -> start (the install is the declared
+    EDP_UPDATE_INSTALL_CMD fake, the rest is real: test_update's fixture)."""
+    import test_update as tu
+
+    api = _fake_releases_api("v99.0.0")
+    inst["env"]["EDP_UPDATE_API"] = f"http://127.0.0.1:{api.server_address[1]}"
+    inst["env"]["EDP_UPDATE_COMPAT_CMD"] = tu._fake(tu.PRINT_ROWS, "[]", "0")
+    inst["env"]["EDP_UPDATE_INSTALL_CMD"] = tu._fake(tu.RECORD, str(tmp_path / "installed.json"), "0", "{wheel}", "{with}")
+    tok = tu._started(inst)
+    try:
+        url = f"http://127.0.0.1:{inst['ports']['board']}"
+        h = {"X-Participant": "owner", "X-Token": tok}
+        v = httpx.get(f"{url}/v1/admin/updates", params={"force": "true"}, headers=h, timeout=30).json()["value"]
+        assert v["latest"] == "99.0.0" and v["available"] is True and v["apply_refusal"] is None, v
+        assert httpx.post(f"{url}/v1/admin/updates/apply", headers={"X-Participant": "owner"},
+                          timeout=10).status_code == 403
+
+        before = tu._status(inst)
+        health_before = httpx.get(f"{url}/healthz", timeout=10).json()["started_at"]
+        rel = tu._release(tmp_path / "rel")
+        r = httpx.post(f"{url}/v1/admin/updates/apply", headers=h, json={"release_url": str(rel)}, timeout=90)
+        assert r.status_code == 202, r.text
+        assert r.json()["value"]["by"] == "owner" and r.json()["value"]["state"] == "updating"
+        res = tu._wait_result(inst)
+        assert res["state"] == "ok" and res["to"] == "99.0.0", res
+
+        # backup -> stop (the detached `heronry update`'s own output), then upgrade -> start (the helper's log)
+        out = next(inst["home"].rglob("update-run.out")).read_text(encoding="utf-8", errors="replace")
+        i_backup, i_stop = out.index("backed up the DB to"), out.index("stopped the supervisor and services")
+        assert i_backup < i_stop, out
+        log = next(inst["home"].rglob("update.log")).read_text(encoding="utf-8", errors="replace")
+        assert log.index("install exit 0") < log.index("start exit 0"), log
+        assert len(list(tu._db(inst).parent.glob("backups/edp8-*.db"))) == 1
+        installed = json.loads((tmp_path / "installed.json").read_text(encoding="utf-8"))
+        assert sum(a.endswith("-99.0.0-py3-none-any.whl") for a in installed) == 4
+        after = tu._status(inst)
+        for svc in ("board", "broker", "pool", "mcp", "supervisor"):
+            assert after[svc]["state"] == "up" and after[svc]["pid"] != before[svc]["pid"], (svc, after[svc])
+        assert httpx.get(f"{url}/healthz", timeout=10).json()["started_at"] != health_before
+        last = httpx.get(f"{url}/v1/admin/updates", headers=h, timeout=30).json()["value"]["last"]
+        assert last["request"]["by"] == "owner" and last["result"]["state"] == "ok", last
+    finally:
+        api.shutdown()
+        base.cli(inst, "stop", "--force")

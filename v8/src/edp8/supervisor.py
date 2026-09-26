@@ -188,8 +188,37 @@ def make_emit(by: str = "supervisor") -> Callable[..., None]:
 
 # --------------------------------------------------------------- control port (S3; S5 calls it)
 
+def start_update(body: dict, who: str) -> tuple[int, dict]:
+    """S5 Admin → Updates → Apply: `heronry update` detached OUT of the supervisor's tree, because it stops
+    the supervisor and every service (backup → stop → the detached install helper → start). The request and
+    its outcome are files in the run dir (update-request.json; the helper's update-result.json)."""
+    import json
+
+    from edp_contracts.proc import detach
+
+    argv = [sys.executable, "-m", "edp8.cli", "update"]
+    if isinstance(body.get("release_url"), str) and body["release_url"]:
+        argv += ["--release-url", body["release_url"]]
+    for flag in ("force", "skip_compat"):
+        if body.get(flag):
+            argv.append("--" + flag.replace("_", "-"))
+    run = settings.run_dir()
+    run.mkdir(parents=True, exist_ok=True)
+    (run / "update-result.json").unlink(missing_ok=True)
+    log = settings.logs_dir() / "update-run.out"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        pid: int | None = detach(argv, cwd=str(run), env=settings.environ_copy(), log=str(log))[0].pid
+    except Exception:  # noqa: BLE001 — gone before it could be fingerprinted: it ran (and wrote its log)
+        pid = None
+    req = {"by": who, "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "argv": argv[3:],
+           "pid": pid, "log": str(log)}
+    (run / "update-request.json").write_text(json.dumps(req), encoding="utf-8")
+    return 202, {"ok": True, "state": "updating", **req}
+
+
 def make_dispatch(sup: Supervisor, emit: Callable[..., None]) -> Callable[[str, dict], tuple[int, dict]]:
-    """Route one control request: /services/<svc>/{start,stop,restart}, /status, /shutdown."""
+    """Route one control request: /services/<svc>/{start,stop,restart}, /status, /update, /shutdown."""
 
     def dispatch(path: str, body: dict) -> tuple[int, dict]:
         parts = [p for p in path.split("?", 1)[0].split("/") if p]
@@ -200,6 +229,8 @@ def make_dispatch(sup: Supervisor, emit: Callable[..., None]) -> Callable[[str, 
         if parts == ["status"]:
             return 200, {"ok": True, "services": launcher.status_rows(), "paused": sorted(sup.paused),
                          "failed": sorted(sup.failed)}
+        if parts == ["update"]:
+            return start_update(body, who)
         if len(parts) != 3 or parts[0] != "services" or parts[2] not in ("start", "stop", "restart"):
             return 404, {"ok": False, "error": f"no route {path}"}
         svc, verb = parts[1], parts[2]
