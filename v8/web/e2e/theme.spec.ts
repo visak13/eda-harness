@@ -4,7 +4,7 @@ test.use({ boardFile: "theme" }); // one fresh board per spec file (fixtures.ts)
 
 // Criterion c-250f85164e (e2e half): the radiogroup switches theme and it survives a
 // reload with no flash (pre-paint), and with nothing stored the app follows the OS media
-// queries. Theme ids: folio, dusk, ember, folio-hc (strategy_ll §4).
+// queries. Theme ids: heronry, heronry-dark (the defaults since the S7 rebrand c01e685), folio, dusk, ember, folio-hc.
 const themeOf = (page: import("@playwright/test").Page) =>
   page.evaluate(() => document.documentElement.dataset.theme);
 
@@ -23,11 +23,12 @@ test("picking Ember sets data-theme=ember + color-scheme dark, and survives a re
   expect(await themeOf(page)).toBe("ember");
 });
 
-test("nothing stored + prefers-color-scheme: dark → Ember", async ({ browser }) => {
+// S7 rebrand (s-5b508d7608, c01e685): Heronry dark is the prefers-dark default, no longer Ember.
+test("nothing stored + prefers-color-scheme: dark → Heronry dark", async ({ browser }) => {
   const ctx = await browser.newContext({ colorScheme: "dark" });
   const page = await ctx.newPage();
   await page.goto(`${BASE()}/ui/epics?as=owner`);
-  expect(await themeOf(page)).toBe("ember");
+  expect(await themeOf(page)).toBe("heronry-dark");
   await ctx.close();
 });
 
