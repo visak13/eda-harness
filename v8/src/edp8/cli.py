@@ -111,9 +111,22 @@ def _targets(pos: list[str]) -> list[str]:
     want = pos[0] if pos else "all"
     if want == "all":
         return list(launcher.ORDER)
-    if want not in launcher.ORDER:
-        raise SystemExit(f"unknown service {want!r} (board|broker|pool|mcp|bridge|all)")
+    if want not in (*launcher.ORDER, launcher.SUPERVISOR):
+        raise SystemExit(f"unknown service {want!r} (board|broker|pool|mcp|bridge|supervisor|all)")
     return [want]
+
+
+def _legacy_supervisor() -> bool:
+    """A supervisor runs without a control port (started by a pre-S3 launcher): it cannot be asked to hold
+    off, so a single-service stop/restart replaces it rather than race its restarts."""
+    from . import control, launcher
+    if not launcher.supervisor_running():
+        return False
+    try:
+        control.endpoint()
+    except control.ControlUnavailable:
+        return True
+    return False
 
 
 # ------------------------------------------------------------------------------------------ status
@@ -156,6 +169,8 @@ def start(argv: list[str]) -> int:
     pos, opts = _split(argv)
     rc = 0
     for svc in _targets(pos):
+        if svc == launcher.SUPERVISOR:
+            continue  # started below, last
         try:
             out = _via_control(f"/services/{svc}/start", {"by": _who()}) or launcher.start(svc)
         except Exception as e:  # noqa: BLE001
@@ -223,15 +238,26 @@ def stop(argv: list[str]) -> int:
     pos, opts = _split(argv)
     force = bool(opts.get("force"))
     targets = _targets(pos)
-    if "pool" in targets and not _pool_guard("stop", force):
+    if "pool" in targets and not opts.get("keep-seats") and not _pool_guard("stop", force):
         return 3
     rc = 0
     everything = not pos or pos[0] == "all"
+    if targets == [launcher.SUPERVISOR]:
+        _say(launcher.stop_supervisor())
+        return 0
     if everything:  # the supervisor goes first, so nothing is restarted behind our back
         _say(launcher.stop_supervisor())
+    elif _legacy_supervisor():
+        print("note: the running supervisor has no control port (started by the old launcher); stopping it "
+              f"so it does not restart {targets[0]} — `heronry start supervisor` brings a new one")
+        _say(launcher.stop_supervisor())
     for svc in reversed(targets):
-        out = None if everything else _via_control(f"/services/{svc}/stop", {"by": _who(), "force": force})
-        out = out or launcher.stop(svc)
+        # --keep-seats (pool): stop only the pool's own processes; its seat shells run on and the next pool
+        # re-adopts them (the legacy edp.ps1 contract: a pool stop is never a tree kill)
+        keep = bool(opts.get("keep-seats"))
+        out = None if everything else _via_control(f"/services/{svc}/stop",
+                                                   {"by": _who(), "force": force, "keep_seats": keep})
+        out = out or launcher.stop(svc, keep_seats=keep)
         _say(out)
         if out.get("survivors"):
             print(f"{svc}: still running {out['survivors']}", file=sys.stderr)
@@ -247,6 +273,13 @@ def restart(argv: list[str]) -> int:
     if "pool" in targets and not _pool_guard("restart", force):
         return 3
     rc = 0
+    if targets == [launcher.SUPERVISOR]:
+        _say(launcher.stop_supervisor())
+        _say(launcher.ensure_supervisor())
+        return 0
+    replace = _legacy_supervisor()
+    if replace:  # it would race the relaunch below; a new one (with a control port) starts after
+        _say(launcher.stop_supervisor())
     for svc in targets:
         if not launcher.enabled(svc):
             continue
@@ -261,6 +294,8 @@ def restart(argv: list[str]) -> int:
         except Exception as e:  # noqa: BLE001
             print(f"{svc:<8} FAILED  {e}", file=sys.stderr)
             rc = 1
+    if replace:
+        _say(launcher.ensure_supervisor())
     return rc
 
 

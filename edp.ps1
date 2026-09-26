@@ -1,9 +1,9 @@
 ﻿# edp.ps1 - the ONE script for v8 fleet operations (status / start / stop / restart / update).
 #
 #   .\edp.ps1 status                       every service: state, pid pair, rev, started_at
-#   .\edp.ps1 start   <svc|all>            start via v8\start.ps1 -Only <svc> (idempotent)
-#   .\edp.ps1 stop    <svc|all>            safe stop: pid pair by command line, Stop-Process by id
-#   .\edp.ps1 restart <svc|all>            safe stop + start + bounded health wait, prints new pid + rev
+#   .\edp.ps1 start   <svc|all>            `heronry start <svc>` (idempotent; the supervisor last)
+#   .\edp.ps1 stop    <svc|all>            `heronry stop <svc>` (verified: exits non-zero naming survivors)
+#   .\edp.ps1 restart <svc|all>            `heronry restart <svc>` (a pool restart keeps its seats)
 #   .\edp.ps1 update                       git pull --ff-only, uv sync, SPA rebuild, restart in order
 #   .\edp.ps1 tailnet check                read-only public-mode readiness (exit 1 while any BLOCKER)
 #   .\edp.ps1 tailnet apply                board on the tailnet: .env block + restart board/mcp/supervisor
@@ -16,15 +16,13 @@
 #             and a code start/stop/restart runs v8\scripts\start-code.ps1 / stop-code.ps1 and touches
 #             no other service (the supervisor does not watch it). Seats may start/stop `code` only.
 #
-# SAFE RESTART CONTRACT (memories never-taskkill-board-by-image, pool-restart-tree-kill-takes-seats,
-# start-ps1-restart-noop-kill-both-pids):
-#   * every service is a chain of processes with one command line (uv / shim -> venv launcher ->
-#     interpreter owning the port); the chain is found from the port's LISTEN owner plus its
-#     same-service ancestors, never from an image name and never from run_state alone (it can hold
-#     a null/stale pid).
-#   * processes are stopped with Stop-Process -Id <pid>; there is NO tree kill: every seat shell is
-#     a child of the pool, so a tree kill of the pool kills the fleet.
-#   * the pool (stop/restart, or 'all') lists the seats it takes offline and refuses without -Force.
+# The fleet services (board, broker, pool, mcp, bridge, supervisor) go through the ONE launcher, the
+# `heronry` CLI (v8\.venv python -m edp8.cli; S3 s-870e401942): process identity by pid + create time,
+# a port's listener stopped only when it runs that service's module from this home, never by image name.
+#   * a pool stop from this script passes --keep-seats: only the pool's own processes stop, its seat
+#     shells run on and the next pool re-adopts them (no tree kill of the fleet).
+#   * the pool (stop/restart, or 'all') lists the seats it touches and refuses without -Force.
+#   * a supervisor started by an older launcher (no control port) is replaced, never raced.
 #   * `update` refuses on a dirty tree unless -Force.
 # Seats never run this against the shared services (shared-host rules); the human/owner does.
 param(
@@ -38,11 +36,14 @@ param(
 $ErrorActionPreference = "Stop"
 if (-not $RepoRoot) { $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path }
 $V8 = Join-Path $RepoRoot "v8"
-$StartPs1 = Join-Path $V8 "start.ps1"
+$Py = Join-Path $V8 ".venv\Scripts\python.exe"
+# this checkout is the home (dev mode) unless EDP_HOME points elsewhere
+if (-not $env:EDP_HOME -and -not $env:EDP8_HOME) { $env:EDP_HOME = $V8 }
+$HomeDir = if ($env:EDP_HOME) { $env:EDP_HOME } else { $env:EDP8_HOME }
 
-# -- the same one .env as start.ps1 (real environment wins; a key set twice: the LAST line wins, with
-# a warning - an appended override used to be ignored silently, m-17c32d9ed9) ---------------------
-$envFile = Join-Path $V8 ".env"
+# -- the home's one .env (real environment wins; a key set twice: the LAST line wins, with a warning -
+# an appended override used to be ignored silently, m-17c32d9ed9); tailnet edits the same file ------
+$envFile = Join-Path $HomeDir ".env"
 if (Test-Path $envFile) {
   $fromFile = [ordered]@{}; $n = 0
   foreach ($line in Get-Content $envFile) {
@@ -86,6 +87,15 @@ function ImagesOf($name) { if ($SVC[$name].images) { $SVC[$name].images } else {
 
 function Say($s) { Write-Host $s }
 function Fail($code, $msg) { [Console]::Error.WriteLine("edp: $msg"); exit $code }
+function Heronry {
+  # one heronry call; its output indented under ours; returns its exit code (0 under -WhatIf)
+  $shown = "heronry " + ($args -join " ")
+  if ($WhatIf) { Say "WHATIF: $shown"; return 0 }
+  Say "-> $shown"
+  $ErrorActionPreference = "Continue"   # PS 5.1: a native stderr line must be shown, not thrown
+  & $Py -m edp8.cli @args 2>&1 | ForEach-Object { Say "   | $_" }
+  $LASTEXITCODE
+}
 function Step($desc, [scriptblock]$action) {
   if ($WhatIf) { Say "WHATIF: $desc"; return }
   Say "-> $desc"
@@ -208,7 +218,7 @@ function FailDown($code, $msg) {
   if ($script:PausedSupervisor -and ($script:Stopped -contains "supervisor")) {
     $script:Restoring = $true
     Say "restoring the supervisor this run paused..."
-    try { Invoke-StartPs1 "supervisor" @(); Wait-Up "supervisor" } catch { Say "   supervisor restore failed: $_" }
+    try { $null = Heronry start supervisor } catch { Say "   supervisor restore failed: $_" }
     $script:Restoring = $false
   }
   if ($script:Stopped.Count -gt 0) { $msg += "; STILL DOWN: $($script:Stopped -join ', ') - fix the cause, then .\edp.ps1 start all" }
@@ -236,6 +246,13 @@ function Foreign-Path($pair) {
   if ($top.ExecutablePath) { "" + $top.ExecutablePath } else { "" + $top.CommandLine }
 }
 function Stop-Svc($name) {
+  if (-not $SVC[$name].stop) {
+    $a = @("stop", $name); if ($name -eq "pool") { $a += "--keep-seats" }; if ($Force) { $a += "--force" }
+    $rc = Heronry @a
+    if ($rc -ne 0) { FailDown 1 "heronry stop $name exited $rc (survivors named above)" }
+    if (-not $WhatIf) { $script:Stopped += $name }
+    return
+  }
   $pair = @(Discover $name)
   # a service with its own stop script (code) runs it even with no listener: after a crash it sweeps
   # the orphaned helpers and the stale run record
@@ -288,7 +305,7 @@ function Stop-Svc($name) {
     Say ("{0,-10} stopped (pid {1})" -f $name, ($ids -join ","))
   }
 }
-function Invoke-StartPs1($label, $extra, $ScriptPath = $StartPs1) {
+function Invoke-StartPs1($label, $extra, $ScriptPath) {
   # start.ps1 Start-Process'es long-lived services that inherit its handles. Whatever pipe start.ps1
   # holds, the service then holds for its whole life: piping start.ps1 (or launching it with
   # redirection = CreateProcess with inherited handles) handed the CALLER's stdout pipe to the board,
@@ -338,7 +355,13 @@ function Wait-Up($name) {
   Say ("{0,-10} up   pid {1}  rev {2}  started_at {3}" -f $name, (ChainText $name $pair), (RevOf $name $h), (StartedOf $h $pair))
 }
 function Start-Svc($name) {
-  if ($name -eq "bridge" -and -not (Test-Path (Join-Path $V8 "slack_map.json"))) { Say "bridge     skipped (no v8\slack_map.json)"; return }
+  if (-not $SVC[$name].start) {
+    $a = @("start", $name); if ($name -ne "supervisor") { $a += "--no-supervisor" }
+    $rc = Heronry @a
+    if ($rc -ne 0) { FailDown 4 "heronry start $name exited $rc (see heronry status and the service's log)" }
+    $script:Stopped = @($script:Stopped | Where-Object { $_ -ne $name })
+    return
+  }
   if ($SVC[$name].start) {
     Step ("start {0} on :{1}: powershell -File v8\{2}" -f $name, $SVC[$name].port, $SVC[$name].start) {
       # a first start downloads + extracts code-server and the extensions: allow 15 min, not 3
@@ -347,13 +370,6 @@ function Start-Svc($name) {
       Wait-Up $name
     }
     return
-  }
-  # start.ps1 has no -Only for the supervisor; its plain run is idempotent and starts only what is down.
-  $extra = @(); if ($name -ne "supervisor") { $extra = @("-Only", $name) }
-  $on = ""; if ($SVC[$name].port) { $on = " on :$($SVC[$name].port)" }   # the plan names the port the .env resolved
-  Step ("start {0}{1}: powershell -File v8\start.ps1 {2}" -f $name, $on, ($extra -join " ")) {
-    Invoke-StartPs1 $name $extra
-    Wait-Up $name
   }
 }
 function Report-PoolLiveness {
@@ -371,24 +387,24 @@ function Targets($svc, $order) {
   if (-not $SVC.Contains($svc)) { Fail 5 "unknown service '$svc' (board|mcp|pool|broker|bridge|supervisor|code|all)" }
   @($svc)
 }
-function WithSupervisorPaused($t) {
-  # the supervisor restarts whatever it sees down (via start.ps1 -Restart); pause it around any
-  # restart of another service so the two never race, and bring it back last
-  if (($t -notcontains "supervisor") -and (@(Discover "supervisor").Count -gt 0)) { return @("supervisor") + $t }
-  $t
-}
 function Restart-Set($t) {
-  foreach ($n in $STOP_ORDER) {
+  # heronry restart goes through the supervisor's control port (it records the restart and does not
+  # fight it); a pool restart stops only the pool's own processes, so the seats are re-adopted
+  foreach ($n in $START_ORDER) {
     if ($t -notcontains $n) { continue }
-    if ($n -eq "supervisor") { Pause-Supervisor } else { Stop-Svc $n }
+    $a = @("restart", $n); if ($Force) { $a += "--force" }
+    $rc = Heronry @a
+    if ($rc -ne 0) { FailDown 4 "heronry restart $n exited $rc" }
   }
-  foreach ($n in $START_ORDER) { if ($t -contains $n) { Start-Svc $n } }
   Report-PoolLiveness
 }
 
 # -- status -----------------------------------------------------------------------------------
 function Show-Status {
-  $rows = foreach ($name in $STATUS_ORDER) {
+  $ErrorActionPreference = "Continue"
+  & $Py -m edp8.cli status 2>&1 | ForEach-Object { Say "$_" }
+  # code-server is not a heronry service: its row comes from its own chain and health
+  $rows = foreach ($name in @("code")) {
     $pair = @(Discover $name)
     $h = Health $name
     $state = "down"
@@ -404,11 +420,12 @@ function Show-Status {
     }
   }
   $rows | Format-Table -AutoSize | Out-String -Width 200 | Write-Host
-  Say "pid = the service's process chain, outermost first, * = the port's listener; started_at from /healthz when the service reports it, else the process start."
+  Say "code: pid = its process chain, outermost first, * = the port's listener."
   Say "HEAD $((& git --no-optional-locks -C $RepoRoot rev-parse --short HEAD 2>$null))"
 }
 function DownCore {
-  @(@("board", "broker", "pool", "mcp") | Where-Object { -not (Health $_) }) + @(@("supervisor") | Where-Object { @(Discover $_).Count -eq 0 })
+  $rows = @(& $Py -m edp8.cli status --json | Out-String | ConvertFrom-Json)
+  @($rows | Where-Object { @("board", "broker", "pool", "mcp", "supervisor") -contains $_.service -and $_.state -ne "up" } | ForEach-Object { $_.service })
 }
 
 # -- update ------------------------------------------------------------------------------------
@@ -536,7 +553,7 @@ function Tailnet-Apply {
     if ($admin) { $env:EDP8_ADMIN_TOKEN = $admin }
   }
   # board + mcp + supervisor read EDP8_ADMIN_TOKEN at start; the board also reads the public URL and bind
-  Restart-Set (WithSupervisorPaused @("board", "mcp"))
+  Restart-Set @("board", "mcp")
   Step "verify on loopback: public mode refuses a header-only request (401)" {
     $code = 0
     try { Invoke-WebRequest "http://127.0.0.1:$port/v1/whoami" -Headers @{ "X-Participant" = "owner" } -UseBasicParsing -TimeoutSec 10 | Out-Null; $code = 200 }
@@ -566,7 +583,7 @@ function Tailnet-Remove {
       foreach ($k in $keys) { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
     }
   } else { Say "v8\.env has no tailnet block (nothing to delete)" }
-  Restart-Set (WithSupervisorPaused @("board", "mcp"))
+  Restart-Set @("board", "mcp")
   if (-not $WhatIf) { Say "tailnet: off (board back in trusted mode on 127.0.0.1)" }
 }
 
@@ -581,22 +598,14 @@ switch ($Command.ToLower()) {
   "status" { Show-Status }
   "start" {
     if ($Service -eq "all") {
-      Step "start all: powershell -File v8\start.ps1 (idempotent; supervisor included)" {
-        Invoke-StartPs1 "all" @()
-        foreach ($n in $START_ORDER) {
-          if ($n -eq "bridge" -and -not (Test-Path (Join-Path $V8 "slack_map.json"))) { continue }
-          Wait-Up $n
-        }
-      }
+      $rc = Heronry start all
+      if ($rc -ne 0) { Fail 4 "heronry start all exited $rc" }
     }
     else { foreach ($n in (Targets $Service $START_ORDER)) { Start-Svc $n } }
   }
   "stop" {
     $t = @(Targets $Service $STOP_ORDER)
     if ($t -contains "pool") { GuardPool "stop" }
-    if ($Service -ne "all" -and $Service -ne "supervisor" -and $Service -ne "code" -and @(Discover "supervisor").Count -gt 0) {
-      Say "NOTE: the supervisor is running and restarts a service after ~45 s of failed probes; stop it too (.\edp.ps1 stop supervisor) to keep $Service down."
-    }
     foreach ($n in $t) { Stop-Svc $n }
   }
   "restart" {
@@ -605,7 +614,7 @@ switch ($Command.ToLower()) {
     if ($t -contains "mcp") { Say "NOTE: mcp restart: every running seat keeps the old MCP code until it respawns (shared-host rules)." }
     # code is outside the fleet orders and unwatched by the supervisor: its restart touches nothing else
     if ($Service -eq "code") { Stop-Svc "code"; Start-Svc "code" }
-    else { Restart-Set (WithSupervisorPaused $t) }
+    else { Restart-Set $t }
   }
   "update" { Do-Update }
   "tailnet" {

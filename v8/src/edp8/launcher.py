@@ -423,7 +423,8 @@ def ensure_supervisor(*, wait_s: float = 20.0) -> dict[str, Any]:
     if not ident.live():
         raise LaunchError(f"the supervisor exited during start; see {log}")
     run_state.update(SUPERVISOR, root=ident.to_json())
-    return {"service": SUPERVISOR, "state": "started", "pid": ident.pid}
+    # the recorded pid is the interpreter itself (a venv's python.exe is a launcher stub around it)
+    return {"service": SUPERVISOR, "state": "started", "pid": (run_state.read(SUPERVISOR) or {}).get("pid") or ident.pid}
 
 
 def stop_supervisor() -> dict[str, Any]:

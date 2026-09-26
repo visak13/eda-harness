@@ -205,7 +205,7 @@ def make_dispatch(sup: Supervisor, emit: Callable[..., None]) -> Callable[[str, 
         svc, verb = parts[1], parts[2]
         if svc not in launcher.ORDER:
             return 404, {"ok": False, "error": f"unknown service {svc!r}"}
-        if svc == "pool" and verb in ("stop", "restart") and not body.get("force"):
+        if svc == "pool" and verb in ("stop", "restart") and not body.get("force") and not body.get("keep_seats"):
             seats = launcher.live_seats()
             if seats:
                 return 409, {"ok": False, "error": f"pool {verb} takes {len(seats)} live seat(s) offline; "
@@ -213,7 +213,7 @@ def make_dispatch(sup: Supervisor, emit: Callable[..., None]) -> Callable[[str, 
         with sup.lock:
             if verb == "stop":
                 sup.paused.add(svc)
-                out = launcher.stop(svc)
+                out = launcher.stop(svc, keep_seats=bool(body.get("keep_seats")))
                 return (200 if not out["survivors"] else 500), {"ok": not out["survivors"], **out}
             sup.resume(svc)
             if verb == "start":
