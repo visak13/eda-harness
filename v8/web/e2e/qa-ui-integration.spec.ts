@@ -125,6 +125,8 @@ test('ordinary comment leaves clean current design approvable', async ({ page, r
   const { epic, doc } = await setupReview(request);
   await page.goto(`/ui/doc/${doc.id}?as=owner&source=${epic.id}&version=1`);
   await expect(page.getByRole('button', { name: 'Approve design', exact: true })).toBeEnabled();
+  // t-feb26a46d9 (owner m-8d2c74d289, 54c0c4e): the review opens in reader mode; Show panel reveals the comment box
+  await page.getByTestId('review-reader-toggle').click();
   await page.getByRole('button', { name: 'Comment without requesting changes' }).click();
   await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Ordinary comment, not a request for changes.');
   await page.getByRole('button', { name: 'Send comment', exact: true }).click();
