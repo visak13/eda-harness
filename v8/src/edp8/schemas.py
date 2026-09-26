@@ -14,9 +14,9 @@ import unicodedata
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import PureWindowsPath
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, PlainValidator, ValidationInfo, WithJsonSchema, field_validator
 
 # ----------------------------------------------------------------------------- enums
 
@@ -35,6 +35,35 @@ class Role(StrEnum):
     # S-SME-SURFACE (owner m-de07c37d0c): a named human from the owner's team linked to ONE Library topic;
     # its token reaches that topic's page, docs and thread and nothing else (service.topic_actor)
     expert = "expert"
+
+
+class CustomRole(str):
+    """A role id a workflow defines beyond the built-in `Role` ids (S13, design-e963c656f5 §4.14(b)). It
+    behaves like a `Role` member where the board reads one (`.value`, str equality); the board validates it
+    against the epic's workflow."""
+
+    @property
+    def value(self) -> str:
+        return str(self)
+
+
+_ROLE_ID_RX = re.compile(r"^[a-z][a-z0-9_-]{1,31}$")
+
+
+def role_id(v: Any) -> Role | CustomRole:
+    """A built-in Role, else a well-formed custom role id (lowercase, 2-32 chars)."""
+    if isinstance(v, Role):
+        return v
+    try:
+        return Role(v)
+    except ValueError:
+        if isinstance(v, str) and _ROLE_ID_RX.match(v):
+            return CustomRole(v)
+        raise ValueError(f"{v!r} is not a role id (a built-in role or a workflow role: [a-z][a-z0-9_-]{{1,31}})") from None
+
+
+RoleId = Annotated[Role | CustomRole, PlainValidator(role_id), PlainSerializer(lambda r: str(r), return_type=str),
+                   WithJsonSchema({"type": "string", "description": "a built-in role or a workflow-defined role id"})]
 
 
 class TicketKind(StrEnum):
@@ -274,7 +303,7 @@ class Obj(BaseModel):
 
 class Participant(Obj):
     type: Literal["human", "agent"]
-    role: Role
+    role: RoleId
     handle: str  # @handle — inbox address
     location: str | None = None  # pool id
     model: str | None = None
@@ -301,7 +330,7 @@ class Criterion(Obj):
     ticket_id: str
     text: str
     check: Check
-    checked_by: Literal["qa", "owner", "engineer"]
+    checked_by: str  # the checker role: qa/owner/engineer in Standard, any role of the epic's workflow (S13)
     evidence_ref: str | None = None  # doc id (report)
     evidence_version: int | None = None  # the doc version this verdict signed off (design §14 finding 3)
     verdict: Verdict = Verdict.pending
@@ -312,7 +341,7 @@ class Doc(Obj):
     title: str
     body_md: str
     version: int = 1
-    owner_role: Role
+    owner_role: RoleId
     scope: str  # epic_id | domain:<name> | global
     # S-LIBRARY (design-34bf11cc07 §4.3). Defaults keep every stored row valid without a migration.
     tags: list[str] = Field(default_factory=list)  # stack/product/area words, lower-case

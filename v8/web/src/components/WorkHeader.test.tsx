@@ -99,3 +99,20 @@ describe("WorkHeader title bar (S17)", () => {
     expect(screen.getByTestId("work-header-body")).not.toBeVisible();
   });
 });
+
+// S13 (s-461403ebd1, ruling m-6cd695046c): the epic's workflow pin is shown from the board's pin table.
+describe("WorkHeader workflow pin (S13)", () => {
+  it("shows the pinned workflow version when the page passes one", async () => {
+    server.use(http.get("/v1/tickets/epic-req/contextual", () => okJson(contextual({ gates: [] }))));
+    renderRoute("/epic/epic-req", "/epic/:id", <WorkHeader ticketId="epic-req" kind="epic" title="Pinned"
+      status="designed" assignee={null} workflow="lean@1" actions={null} work={<div />} />);
+    expect(await screen.findByTestId("work-workflow")).toHaveTextContent("lean@1");
+  });
+
+  it("shows no workflow row on an older board", async () => {
+    server.use(http.get("/v1/tickets/epic-req/contextual", () => okJson(contextual({ gates: [] }))));
+    renderRoute("/epic/epic-req", "/epic/:id", header());
+    await screen.findByTestId("work-header");
+    expect(screen.queryByTestId("work-workflow")).toBeNull();
+  });
+});

@@ -872,7 +872,18 @@ class PoolService(Microservice):
             self._persist()
         return changed
 
-    def _active_count(self, role: str | None = None) -> int:
+    # S13 (design §4.14(d)): caps are keyed by CAPACITY CLASS. A spawn names its class (and an
+    # optional per-role `max_concurrent`) from the board's resolved workflow role; a legacy pool
+    # role maps by name (worker → builder, planner → planner). `checker` and no class are exempt
+    # from the class caps and count toward the total only, as before.
+    _LEGACY_CLASS = {"worker": "builder", "planner": "planner"}
+
+    @classmethod
+    def _class_of(cls, s: dict) -> str | None:
+        return (s.get("capacity_class") or (s.get("spawn_settings") or {}).get("capacity_class")
+                or cls._LEGACY_CLASS.get(s.get("role") or ""))
+
+    def _active_count(self, role: str | None = None, *, cls: str | None = None) -> int:
         # 2026-05-25: count only sessions that are active AND ACTUALLY
         # ALIVE. A worker that died without calling pool_close_self
         # (crash / manual close / /clear-exit / force-kill) kept state
@@ -899,12 +910,15 @@ class PoolService(Microservice):
             # is what makes admission atomic; it has no pid yet, so it
             # counts unconditionally (short-lived by construction).
             if st == "starting":
-                if role is None or s.get("role") == role:
+                if ((role is None or s.get("role") == role)
+                        and (cls is None or self._class_of(s) == cls)):
                     n += 1
                 continue
             if st != "active":
                 continue
             if role is not None and s.get("role") != role:
+                continue
+            if cls is not None and self._class_of(s) != cls:
                 continue
             if self._session_alive(sid):
                 self._touch(sid)  # W11: liveness already probed → last_seen
@@ -912,7 +926,7 @@ class PoolService(Microservice):
         return n
 
     def active_workers(self) -> int:
-        return self._active_count("worker")
+        return self._active_count(cls="builder")
 
     def _spawner_agent_home(self) -> str | None:
         """The agent home the spawner will actually launch against —
@@ -936,6 +950,8 @@ class PoolService(Microservice):
         resume_session: str | None = None,
         model: str | None = None,
         env: dict | None = None,
+        capacity_class: str | None = None,
+        max_concurrent: int | None = None,
     ):
         # ── DESIGN-v7 1.2 capacity model ───────────────────────────────────
         # Per-role throughput caps first (workers, planners), then the
@@ -951,7 +967,18 @@ class PoolService(Microservice):
         # launch happens OUTSIDE it against a reserved 'starting' row that
         # counts toward every cap, and rolls back on failure.
         with self._transition_lock:
-            if role == "worker":
+            cls = capacity_class or self._LEGACY_CLASS.get(role)
+            if max_concurrent is not None:  # S13: a workflow role's own cap
+                active = self._active_count(role)
+                if active >= max(1, int(max_concurrent)):
+                    return Tool.propagate(
+                        source="edp-pool",
+                        code=ErrorCode.POOL_CAPACITY_EXCEEDED,
+                        message=f"max concurrent {role} = {max_concurrent} "
+                        f"(its workflow role's max_concurrent); {active} "
+                        "alive; cannot spawn another",
+                    )
+            if cls == "builder":
                 active = self.active_workers()  # liveness-reconciled count
                 cap = self.max_workers()
                 if active >= cap:
@@ -962,8 +989,8 @@ class PoolService(Microservice):
                         f"panel limits); {active} alive; cannot spawn "
                         "another",
                     )
-            elif role == "planner":
-                active = self._active_count("planner")
+            elif cls == "planner":
+                active = self._active_count(cls="planner")
                 cap = self.max_planners()
                 if active >= cap:
                     return Tool.propagate(
@@ -1026,12 +1053,14 @@ class PoolService(Microservice):
                 "model": model, "cwd": self._spawner_agent_home()
                 or edp_settings.env_raw("EDP_AGENT_HOME"),
                 "env": dict(env) if env else {},
+                "capacity_class": capacity_class, "max_concurrent": max_concurrent,
                 # p-fb874501: the board's resume_self tells a fresh spawn from a continued
                 # conversation by this (and the row's resumed_at) — None = a fresh session
                 "resume_session": resume_session,
             }
             self.sessions[sid] = {
                 "session_id": sid, "role": role, "handle": handle,
+                "capacity_class": cls,
                 "parent": parent, "state": "starting",
                 "proc": None, "claude_session_id": claude_session,
                 "recipe_id": self._recipe_id_for(role, handle),
@@ -1199,6 +1228,7 @@ class PoolService(Microservice):
             now = _utc_now_iso()
             self.sessions[sid] = {
                 "session_id": sid, "role": role, "handle": handle,
+                "capacity_class": (s or {}).get("capacity_class"),
                 "parent": (s or {}).get("parent"), "state": "active",
                 # process fingerprint → survives a pool restart so liveness
                 # can be re-established for a still-running shell.
@@ -2399,6 +2429,9 @@ def create_app(
             # S20 (v8): optional extra shell env (the board passes the per-seat
             # EDP8_TOKEN here); recorded as spawn_settings.env and injected.
             env=env,
+            # S13: the workflow role's capacity class and own cap (board-resolved)
+            capacity_class=b.get("capacity_class"),
+            max_concurrent=b.get("max_concurrent"),
         )
         if not isinstance(res, str):  # ToolError
             return _envelope(res)

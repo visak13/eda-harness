@@ -39,6 +39,8 @@ export interface WorkHeaderProps {
   reviewRequested?: boolean;
   /** Epic pages: the live resident architect and its seat state (t-cf353a4051). */
   architect?: { id: string; state: string | null } | null;
+  /** Epic pages (S13): the workflow version this epic is pinned to, e.g. "standard@1". */
+  workflow?: string | null;
 }
 
 function short(text: string | null | undefined): string | null {
@@ -210,6 +212,10 @@ export function WorkHeader(p: WorkHeaderProps): React.JSX.Element {
         {p.architect ? <div>
           <dt className={styles.label}>Architect</dt>
           <dd className={styles.value} data-testid="work-architect"><Avatar id={p.architect.id} size={28} />{p.architect.id}{p.architect.state ? <span className={styles.muted}>&nbsp;· {p.architect.state}</span> : null}</dd>
+        </div> : null}
+        {p.workflow ? <div>
+          <dt className={styles.label}>Workflow</dt>
+          <dd className={styles.value} data-testid="work-workflow">{p.workflow}</dd>
         </div> : null}
         <div>
           <dt className={styles.label}>Needs attention</dt>

@@ -7,8 +7,10 @@ description: Trigger when you walk an epic through its lifecycle (architect), or
 
 **Trigger**
 You own an epic's design (architect), or you need to know why an epic is not moving. This is the
-**Standard** workflow, the board's built-in one. An epic pinned to a custom workflow follows the lifecycle
-drawn on the Design tab (`/ui/design`) instead.
+**Standard** workflow, the board's built-in one. Every epic is pinned to one workflow version (the
+`workflow` field of `ticket_read`). For the lifecycle your epic actually runs, rendered from its pinned
+version, call `ticket_read(ticket_id=<epic>, include='lifecycle')`: its table replaces the one below
+whenever the pin is not `standard@1`, and the Design tab (`/ui/design`) draws the same one.
 
 **Rule**
 Each step names the state the epic must be in, the tool that moves it, and who calls it. The board carries

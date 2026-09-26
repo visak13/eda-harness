@@ -460,6 +460,8 @@ export interface EpicPage extends ThreadPage {
   role_models?: Record<string, string | null>;
   /** The live resident architect (the architect assignee, else architect.<epic>) and its seat state. */
   architect?: { id: string; state: string | null } | null;
+  /** S13: the workflow version the epic is pinned to (from workflow_pins; absent on an older board). */
+  workflow?: string;
   counts: Record<string, number> | null;
   thread: MessageView[];
   docs: DocSummary[];

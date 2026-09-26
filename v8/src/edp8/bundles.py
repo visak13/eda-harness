@@ -436,7 +436,8 @@ def _whoami(_: WhoamiArgs) -> dict[str, Any]:
     if resp.get("ok"):
         role = resp["value"]["participant"]["role"]
         resp["value"]["role"] = role
-        resp["value"]["bundles_available"] = ROLE_BUNDLES.get(role, [])
+        wf_bundle = resp["value"].pop("bundle", None)  # S13: the board reads it from the epic's workflow
+        resp["value"]["bundles_available"] = wf_bundle if wf_bundle is not None else ROLE_BUNDLES.get(role, [])
         resp["value"]["lineage"] = _lineage(resp["value"]["participant"].get("id") or "")
         resp["value"]["server_version"] = _server_version  # the tool code you are talking to (git sha)
     return resp
@@ -861,7 +862,7 @@ class TicketCreateArgs(BaseModel):
 
 class TicketReadArgs(BaseModel):
     ticket_id: str = Field(validation_alias=AliasChoices("ticket_id", "id"))
-    include: str | None = Field(default=None, description='comma list of chain,criteria,docs,children,blockers,gates,thread,links; omit for all')
+    include: str | None = Field(default=None, description='comma list of chain,criteria,docs,children,blockers,gates,thread,links; omit for all; lifecycle (only when named) = the pinned workflow\'s lifecycle table')
     thread_limit: int = Field(default=20, ge=0, le=200,
                               description='newest thread messages to include (0-200)')
 
@@ -1294,7 +1295,11 @@ BOARD_TOOLS = [
 # ============================================================================= pool
 
 
-SPAWNABLE_ROLES = frozenset({"architect", "engineer", "qa", "adversary", "sme"})
+def _spawnable_roles() -> set[str]:
+    """The built-in spawnable roles, read from the Standard workflow (S13). The tool's `role` is a built-in
+    seat role; the board's spawn route re-checks against the target epic's pinned workflow."""
+    from .workflow import STANDARD_ID, Workflow, BUILTIN_BUILDERS
+    return Workflow(BUILTIN_BUILDERS[STANDARD_ID]()).spawnable
 
 
 class SpawnArgs(BaseModel):
@@ -1397,9 +1402,10 @@ def _spawn(a: SpawnArgs) -> dict[str, Any]:
     assign_flag = args.pop("assign", None)
     if not pid:
         pid = f"{a.role.value}.{ticket_id}"
-    if a.role.value not in SPAWNABLE_ROLES:  # S-ADV finding 1 on the tool path
+    spawnable = _spawnable_roles()
+    if a.role.value not in spawnable:  # S-ADV finding 1 on the tool path
         return {"ok": False, "error": {"code": "scope", "message": f"a {a.role.value} seat is not spawned"},
-                "hint": f"spawnable roles: {sorted(SPAWNABLE_ROLES)}"}
+                "hint": f"spawnable roles: {sorted(spawnable)}"}
     tk = None
     if ticket_id:
         got_t = c.ticket_read(ticket_id)
@@ -2131,6 +2137,11 @@ for _role, _unused in _S20_UNUSED.items():
     ROLE_BUNDLES[_role] = [n for n in ROLE_BUNDLES[_role] if n not in _unused]
 
 
+from .workflow import KERNEL_TOOLS  # noqa: E402 - S13 §4.14(e).1: every spawned role carries these
+
+
 def tools_for_role(role: str) -> list[ToolDef]:
-    names = ROLE_BUNDLES.get(role, _IDENTITY)  # a retired/unknown role never inherits the owner's tools
+    # a retired/unknown role never inherits the owner's tools; a workflow's custom role gets the identity
+    # tools plus the kernel bundle, so its seat still boots, reports and closes (S13)
+    names = ROLE_BUNDLES.get(role) or _IDENTITY + [k for k in KERNEL_TOOLS if k not in _IDENTITY]
     return [ALL_TOOLS[n] for n in names if n in ALL_TOOLS]

@@ -23,9 +23,10 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from . import pool_adapter, seat_choice, settings
+from . import workflow as wflow
 from edp_contracts.settings import secrets as secret_files
 from . import rsi  # S18: imported at boot so rsi.LOADED hashes the retrieval code this process runs
-from .board import QUICK_TAG, Board, BoardError, seat_card_env
+from .board import QUICK_TAG, Board, BoardError
 from .contextual_work import HistoryCategory, contextual_work
 from .design_review import DocumentComment, ReviewDecision, comment, decide, source_context
 from .doc_tools import DocEdit
@@ -45,6 +46,7 @@ from .schemas import (
     Participant,
     Relation,
     Role,
+    RoleId,
     SessionState,
     StatusValue,
     TicketKind,
@@ -76,7 +78,7 @@ def _dump(o: Any) -> Any:
 
 class ParticipantIn(BaseModel):
     type: str
-    role: Role
+    role: RoleId  # a built-in role or a pinned workflow's role (S13; the board validates it)
     handle: str
     location: str | None = None
     model: str | None = None
@@ -92,6 +94,13 @@ class TicketIn(BaseModel):
     assignee: str | None = None
     description: str = ""
     tags: list[str] | None = None
+    workflow: str | None = None  # S13, epic only: 'lean' (latest published) or 'lean@2'; default standard@1
+
+
+class WorkflowRefIn(BaseModel):
+    """S13: POST /v1/workflows/duplicate — copy `ref` into a new draft (`new_id`@1, or its next version)."""
+    ref: str
+    new_id: str | None = None
 
 
 class TicketPatch(BaseModel):
@@ -267,12 +276,9 @@ class SessionIn(BaseModel):
     presence_stale: bool = False  # sweep had no fresh answer for a live row: keep prev state, no event
 
 
-SPAWNABLE_ROLES = frozenset({Role.architect, Role.engineer, Role.qa, Role.adversary, Role.sme})
-
-
 class SessionSpawnIn(BaseModel):
     """Body for POST /v1/sessions/spawn (S20 pool control plane)."""
-    role: Role
+    role: RoleId  # a built-in role or a role of the target epic's workflow (S13)
     participant_id: str
     ticket_id: str | None = None  # for architect authz (target seat's epic); optional for owner
     parent_session: str | None = None
@@ -681,7 +687,10 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     @app.get("/v1/whoami")
     def whoami(request: Request, a: Participant = Depends(actor)):
         tickets = board.my_tickets(a)
-        return ok({"participant": _dump(a), "tickets": [t.id for t in tickets], "ui_url": ui_url(request)},
+        # S13: the seat's tool bundle comes from its epic's pinned workflow
+        wf = board.workflow_of(board.seat_ticket(a))
+        return ok({"participant": _dump(a), "tickets": [t.id for t in tickets], "ui_url": ui_url(request),
+                   "workflow": wf.ref, "bundle": wf.bundle(a.role.value)},
                   "next: subscribe() to arm your feed, then context() to load your ticket")
 
     @app.get("/v1/describe/{type_}")
@@ -743,7 +752,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     def ticket_create(b: TicketIn, a: Participant = Depends(actor)):
         t = board.ticket_create(a, kind=b.kind, work_type=b.work_type, title=b.title,
                                 parent_id=b.parent_id, assignee=b.assignee, description=b.description,
-                                tags=b.tags, words=b.words)
+                                tags=b.tags, words=b.words, workflow=b.workflow)
         if t.kind == TicketKind.epic:
             hint = "epic created; an architect designs it (doc_create design, criteria, stories)"
         elif t.kind == TicketKind.task:
@@ -1299,7 +1308,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
         /v1/sessions/spawn (owner any seat, architect its own epic); agents with a spawnable role only."""
         _authorize_pool_op(a, b.participant_id, b.ticket_id)
         p = board.store.get("participant", b.participant_id)
-        if p is None or p.type != "agent" or p.role not in SPAWNABLE_ROLES:
+        if p is None or p.type != "agent" or str(p.role) not in board.workflow_of(b.ticket_id).spawnable:
             raise BoardError("scope", f"{b.participant_id!r} is not a registered seat of a spawnable role",
                              "register the seat first (spawn does), then ask for its token")
         refused = board.fable_refusal(p.role.value, b.model)
@@ -1307,7 +1316,7 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
             raise BoardError("scope", refused, "a human acknowledges it once: POST /v1/harness/fable-ack")
         token = _seat_secret(b.participant_id)
         env = {"EDP8_TOKEN": token} if token else {}
-        env.update(seat_card_env(board.store.get("ticket", b.ticket_id) if b.ticket_id else None, p.role.value))
+        env.update(board.seat_spawn_spec(b.ticket_id, p.role.value)["env"])  # S13: the pinned version's card
         return ok({"env": env or None},
                   "pass value.env to the pool spawn; null = trusted mode (no tokens.json), header-only seat")
 
@@ -1315,9 +1324,10 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
     def session_spawn(b: SessionSpawnIn, a: Participant = Depends(actor),
                       idempotency_key: str | None = Header(default=None)):
         _authorize_pool_op(a, b.participant_id, b.ticket_id)
-        if b.role not in SPAWNABLE_ROLES:  # S-ADV finding 1: no owner (or retired) seat is ever minted by a spawn
+        spawnable = board.workflow_of(b.ticket_id).spawnable  # S13: the target epic's workflow decides
+        if str(b.role) not in spawnable:  # S-ADV finding 1: no owner (or retired) seat is ever minted by a spawn
             raise BoardError("scope", f"a {b.role.value} seat is not spawned; spawnable roles: "
-                                      f"{sorted(r.value for r in SPAWNABLE_ROLES)}",
+                                      f"{sorted(spawnable)}",
                              "the owner is a human; architect/engineer/qa/adversary/sme are seats")
         if b.participant_id and b.ticket_id:  # S-ADV finding 4: the handle's epic is the authorised epic
             pe, te = _target_epic(b.participant_id, None), _target_epic(None, b.ticket_id)
@@ -1363,11 +1373,12 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
                 pass
         token = _mint_agent_token(b.participant_id)
         env = {"EDP8_TOKEN": token} if token else None
-        card = seat_card_env(board.store.get("ticket", b.ticket_id) if b.ticket_id else None, b.role.value)
-        if card:
-            env = {**(env or {}), **card}
+        spec = board.seat_spawn_spec(b.ticket_id, b.role.value)  # S13: the pinned version's card + capacity
+        if spec["env"]:
+            env = {**(env or {}), **spec["env"]}
         out = pool_adapter.spawn(b.role.value, b.participant_id, parent_session=b.parent_session,
-                                 model=choice.pool_model, mode=b.mode, env=env, effort=choice.effort)
+                                 model=choice.pool_model, mode=b.mode, env=env, effort=choice.effort,
+                                 **spec["capacity"])
         if out.get("ok") and isinstance(out.get("value"), dict):
             out["value"]["seat_choice"] = choice.as_dict()
             if b.assign and b.ticket_id:  # the owner's Spawn seat puts the new seat on the ticket
@@ -1462,6 +1473,82 @@ def create_app(board: Board | None = None, admin_token: str | None = None) -> Fa
             _idem_put(a, idempotency_key, out)
             return out
         return _pool_result(out)
+
+    # ------------------------------------------------------------------ workflows (S13, design §4.14(b))
+    def _wf_error(e: wflow.WorkflowError) -> JSONResponse:
+        status = 404 if e.code == "not_found" else 409 if e.code in ("immutable", "conflict") else 400
+        return JSONResponse(status_code=status, content={
+            "ok": False, "error": {"code": e.code, "message": e.message, "problems": e.problems}, "hint": e.hint})
+
+    def _wf_author(a: Participant) -> None:
+        if a.role not in (Role.owner, Role.architect):
+            raise BoardError("scope", f"{a.role} may not edit workflows", "the owner or an architect authors them")
+
+    @app.get("/v1/workflows")
+    def workflows_list(a: Participant = Depends(actor)):
+        """Every workflow version: the built-in presets (published, immutable) and stored ones."""
+        return ok(board.workflows.list(), "GET /v1/workflows/<id>[@version] reads one; epics pin a published one")
+
+    @app.get("/v1/workflows/{ref_}")
+    def workflow_get(ref_: str, a: Participant = Depends(actor)):
+        try:
+            wf_id, ver = (wflow.parse_ref(ref_) if "@" in ref_ else (ref_, None))
+            d = board.workflows.get(wf_id, ver)
+        except ValueError as e:
+            return _wf_error(wflow.WorkflowError("schema", str(e)))
+        except wflow.WorkflowError as e:
+            return _wf_error(e)
+        return ok({**wflow.dump(d), "problems": wflow.validate(d)})
+
+    @app.get("/v1/workflows/{ref_}/lifecycle")
+    def workflow_lifecycle(ref_: str, kind: str = "epic", a: Participant = Depends(actor)):
+        """The lifecycle of `kind` rendered from a version (what the /epic and /ticket skills show)."""
+        try:
+            w = board.workflows.resolve(ref_)
+        except ValueError as e:
+            return _wf_error(wflow.WorkflowError("schema", str(e)))
+        except wflow.WorkflowError as e:
+            return _wf_error(e)
+        return ok({"ref": w.ref, "kind": kind, "markdown": wflow.lifecycle_md(w, kind)})
+
+    @app.post("/v1/workflows/validate")
+    def workflow_validate(body: dict[str, Any], a: Participant = Depends(actor)):
+        """Lint a definition without storing it: each problem names its code, message and severity."""
+        problems = wflow.validate(body)
+        errors = [p for p in problems if p["severity"] == "error"]
+        return ok({"valid": not errors, "problems": problems},
+                  "fix each error before publishing" if errors else "publishable")
+
+    @app.put("/v1/workflows")
+    def workflow_save(body: dict[str, Any], a: Participant = Depends(actor)):
+        """Create or replace a DRAFT version; a built-in or published version is refused (immutable)."""
+        _wf_author(a)
+        try:
+            d = board.workflows.save(body, by=a.id)
+        except wflow.WorkflowError as e:
+            return _wf_error(e)
+        return ok({**wflow.dump(d), "problems": wflow.validate(d)}, "a draft; POST /v1/workflows/<ref>/publish")
+
+    @app.post("/v1/workflows/duplicate")
+    def workflow_duplicate(b: WorkflowRefIn, a: Participant = Depends(actor)):
+        _wf_author(a)
+        try:
+            d = board.workflows.duplicate(b.ref, new_id=b.new_id, by=a.id)
+        except wflow.WorkflowError as e:
+            return _wf_error(e)
+        return ok(wflow.dump(d), f"draft {d.ref}; edit it with PUT /v1/workflows, then publish")
+
+    @app.post("/v1/workflows/{ref_}/publish")
+    def workflow_publish(ref_: str, a: Participant = Depends(actor)):
+        _wf_author(a)
+        try:
+            wf_id, ver = wflow.parse_ref(ref_)
+            d = board.workflows.publish(wf_id, ver, by=a.id)
+        except ValueError as e:
+            return _wf_error(wflow.WorkflowError("schema", str(e)))
+        except wflow.WorkflowError as e:
+            return _wf_error(e)
+        return ok(wflow.dump(d), f"{d.ref} is published and immutable; new epics may pin it")
 
     @app.get("/v1/models")
     def models_catalog(a: Participant = Depends(actor)):

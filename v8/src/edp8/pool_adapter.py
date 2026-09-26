@@ -94,7 +94,8 @@ def foreign_board_reason() -> str | None:
 
 def spawn(role: str, participant_id: str, *, parent_session: str | None = None, model: str | None = None,
           mode: str | None = None, env: dict[str, str] | None = None,
-          effort: str | None = None) -> dict[str, Any]:
+          effort: str | None = None, capacity_class: str | None = None,
+          max_concurrent: int | None = None) -> dict[str, Any]:
     """Spawn a shell for `participant_id` running `/<role>`. Returns {session_id}.
 
     `model`/`effort` are the resolved seat choice (seat_choice.resolve — the epic's tags unless the
@@ -117,6 +118,11 @@ def spawn(role: str, participant_id: str, *, parent_session: str | None = None, 
         body["mode"] = mode
     if effort:
         body["effort"] = effort
+    # S13 (§4.14(d)): the pool caps by the workflow role's capacity class and its own max_concurrent
+    if capacity_class:
+        body["capacity_class"] = capacity_class
+    if max_concurrent is not None:
+        body["max_concurrent"] = max_concurrent
     if env:
         body["env"] = env
     out = _post("/v1/spawn", body)

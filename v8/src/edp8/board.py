@@ -23,13 +23,8 @@ from typing import Any
 
 from . import harness, knowledge, records, seat_choice
 from .schemas import (
-    CRITERION_AUTHORS,
-    CRITERION_CHECKERS,
     DECISION_DETAIL_MAX,
     DECISION_TEXT_MAX,
-    DOC_AUTHORS,
-    TICKET_CREATORS,
-    TRANSITIONS,
     Artifact,
     ArtifactForm,
     Check,
@@ -57,6 +52,7 @@ from .schemas import (
     Reason,
     Relation,
     Role,
+    RoleId,
     Session,
     SessionState,
     StatusValue,
@@ -72,6 +68,7 @@ from .schemas import (
 )
 from .quotes import render_quotes, with_quotes
 from .store import Store, new_id
+from . import workflow as wflow
 
 _MENTION_RX = re.compile(r"@([A-Za-z0-9][A-Za-z0-9_.\-]*)")
 # Mention tokeniser contract (adversary round 2 #6, tests/fixtures/mention_cases.json — shared with
@@ -94,6 +91,8 @@ def _mention_handles(text: str) -> list[str]:
             out.append(h)
     return out
 _log = logging.getLogger("edp8.board")
+# The Standard workflow's source (S13): the board reads gate answerers, caps and every table below from the
+# epic's pinned workflow (edp8.workflow); these constants only build Standard@1.
 HUMAN_GATE_ANSWERERS = {Role.owner}
 _TERMINAL = (TicketStatus.done, TicketStatus.partial, TicketStatus.dropped)
 
@@ -125,6 +124,27 @@ def seat_card_env(t: Ticket | None, role: str) -> dict[str, str]:
     if t is not None and str(role) in ("engineer", Role.engineer.value) and is_quick(t) and t.parent_id is None:
         return {"EDP_CARD": QUICK_ENGINEER_CARD}
     return {}
+
+
+def materialise_card(name: str, text: str, home: Any = None) -> Any:
+    """S13 (§4.14(d)): write a workflow version's card into the agent home's command dir as
+    `<name>.md` (name = wf-<id>-<version>-<role>), so the seat boots `/<name>`. A published version is
+    immutable, so a file is written once and never changes under a running seat; rewritten only when
+    missing or different (a crash mid-write)."""
+    import os
+    from pathlib import Path as _P
+    base = _P(home) if home is not None else _P(seat_choice.agent_home())
+    path = base / ".claude" / "commands" / f"{name}.md"
+    try:
+        if path.read_text(encoding="utf-8") == text:
+            return path
+    except OSError:
+        pass
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".md.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+    return path
 
 
 def is_topic(t: Ticket | None) -> bool:
@@ -176,6 +196,9 @@ class Board:
         self._free_mb = free_mb
         self._mint_token = mint_token
         self._pending_pairings: dict[str, dict[str, Any]] = {}
+        # S13: versioned workflow definitions and each epic's pin; existing epics pin Standard@1 here
+        self.workflows = wflow.WorkflowRegistry(store)
+        self.workflows.migrate_all()
         # §24 finding 3: the pending queue is volatile; on boot re-derive it from durable board
         # state so a restart between enqueue and drain never loses a qa pairing.
         try:
@@ -184,6 +207,56 @@ class Board:
             _log.warning("pairing rederive on init failed: %s", e)
 
     SEAT_FLOOR_MB = 500  # design §24 rule 3: free RAM below this queues a pairing instead of spawning
+
+    # ------------------------------------------------------------------ workflow (S13)
+    def workflow_of(self, t: Ticket | str | None) -> wflow.Workflow:
+        """The workflow a ticket runs under: its epic's pinned version (Standard@1 for an unpinned root,
+        a topic or no ticket). Every rule the board enforces is read from it."""
+        if t is None:
+            return self.workflows.resolve(wflow.ref(wflow.STANDARD_ID, 1))
+        if isinstance(t, str):
+            t = self.store.get("ticket", t)  # type: ignore[assignment]
+            if t is None:
+                return self.workflow_of(None)
+        root = t.epic_id or self.epic_of(t).id  # type: ignore[union-attr]
+        return self.workflows.resolve(self.workflows.pin_of(root) or wflow.ref(wflow.STANDARD_ID, 1))
+
+    def seat_spawn_spec(self, ticket_id: str | None, role: Any) -> dict[str, Any]:
+        """What a spawn of `role` for `ticket_id` carries from the epic's pinned workflow (S13, §4.14(d)):
+        env (EDP_CARD: the quick-task card, or the version's materialised card) and capacity
+        ({capacity_class, max_concurrent}) for the pool's caps. Standard roles boot their shipped card."""
+        t = self.store.get("ticket", ticket_id) if ticket_id else None
+        wf = self.workflow_of(t)
+        role = str(role)
+        env = seat_card_env(t, role)  # type: ignore[arg-type]
+        if not env:
+            name, text = wf.card(role)
+            if text is not None:
+                materialise_card(name, text)
+                env = {"EDP_CARD": name}
+        return {"env": env, "capacity": wf.capacity(role), "workflow": wf.ref}
+
+    def _wf_check(self, wf: wflow.Workflow, pres: list, ctx: wflow.Ctx, *, skip_roles: bool = False,
+                  phase: str = "both") -> None:
+        """Run declared preconditions; a failing one is the board's refusal naming the missing piece."""
+        r = wf.missing(pres, ctx, quick=is_quick(ctx.t), skip_roles=skip_roles, phase=phase)
+        if r is not None:
+            raise BoardError(r.code, r.message, r.hint)
+
+    def known_role(self, role: Any, t: Ticket | None = None) -> bool:
+        """A built-in role, or a role of the ticket's workflow (of any pinned workflow when no ticket)."""
+        if isinstance(role, Role):
+            return True
+        if t is not None:
+            return str(role) in self.workflow_of(t).roles
+        return any(str(role) in self.workflows.resolve(r).roles for r in self.workflows.pinned_refs())
+
+    def checker_roles(self) -> set[str]:
+        """Every role that checks criteria in some pinned workflow (Standard's qa/owner at least)."""
+        out = set(self.workflow_of(None).criterion_checkers)
+        for r in self.workflows.pinned_refs():
+            out |= self.workflows.resolve(r).criterion_checkers
+        return out
 
     # ------------------------------------------------------------------ helpers
     def _get(self, type_: str, id_: str, what: str | None = None):
@@ -209,9 +282,17 @@ class Board:
                 _log.warning("search index update failed for %s %s: %s", type_, id_, e)
 
     # ------------------------------------------------------------------ participants
-    def participant_create(self, type_: str, role: Role, handle: str, *, location: str | None = None,
+    def participant_create(self, type_: str, role: RoleId, handle: str, *, location: str | None = None,
                            model: str | None = None, id_: str | None = None) -> Participant:
         handle = handle.lstrip("@")
+        from .schemas import role_id
+        try:
+            role = role_id(role)
+        except ValueError as e:
+            raise BoardError("schema", str(e)) from None
+        if not self.known_role(role):
+            raise BoardError("schema", f"role {role!r} is not a built-in role nor a role of any pinned workflow",
+                             "pin an epic to the workflow that defines it first")
         if self.store.query("participant", {"handle": handle}):
             raise BoardError("conflict", f"handle @{handle} already registered", "choose another handle")
         p = Participant(id=id_ or new_id(role.value), type=type_, role=role, handle=handle,
@@ -248,10 +329,24 @@ class Board:
 
     def ticket_create(self, actor: Participant, *, kind: TicketKind, work_type: WorkType, title: str,
                       parent_id: str | None = None, assignee: str | None = None, description: str = "",
-                      tags: list[str] | None = None, words: str | None = None) -> Ticket:
-        if actor.role not in TICKET_CREATORS[kind]:
+                      tags: list[str] | None = None, words: str | None = None,
+                      workflow: str | None = None) -> Ticket:
+        # S13: an epic is created under the workflow it pins (Standard@1 unless `workflow` names another
+        # published version); a child is created under its epic's pinned workflow.
+        if kind == TicketKind.epic:
+            try:
+                wf_ref = self._workflow_choice(workflow)
+            except wflow.WorkflowError as e:
+                raise BoardError("schema", e.message, e.hint) from None
+            wf = self.workflows.resolve(wf_ref)
+        else:
+            if workflow is not None:
+                raise BoardError("schema", "only an epic chooses a workflow", "a child runs under its epic's pin")
+            wf = self.workflow_of(parent_id) if parent_id else self.workflow_of(None)
+        creators = wf.creators(kind)
+        if str(actor.role) not in creators:
             raise BoardError("scope", f"{actor.role} may not create a {kind}",
-                             f"creators of {kind}: {sorted(r.value for r in TICKET_CREATORS[kind])}")
+                             f"creators of {kind}: {sorted(creators)}")
         if kind in (TicketKind.epic, TicketKind.topic) and parent_id:
             raise BoardError("schema", f"an {kind} has no parent")
         clean_tags = [x.strip() for x in (tags or []) if x.strip()]
@@ -310,6 +405,8 @@ class Board:
                 t.status = TicketStatus.in_progress  # a topic is open from birth; only the owner's close ends it
             t.epic_id = t.id if kind == TicketKind.epic else self.epic_of(t).id
             self.store.put("ticket", t)
+            if kind == TicketKind.epic:
+                self.workflows.pin(t.id, wf.ref)  # immutable: editing the workflow never moves this epic
         self._index("ticket", t.id, self.store._fts_text("ticket", t.model_dump(mode="json")) or t.title)
         self._emit(t.id, EventKind.ticket_created, {"kind": kind, "parent_id": parent_id, "by": actor.id})
         if assignee:
@@ -317,6 +414,18 @@ class Board:
         if quick:  # S-IMPLICIT: a quick task gets its tagged Library docs like a signed-off epic
             records.safely(self.autolink_library, t.id, trigger="quick task")
         return t
+
+    def _workflow_choice(self, workflow: str | None) -> str:
+        """'lean' → its latest published version; 'lean@2' → that version, which must be published."""
+        if not workflow:
+            return wflow.ref(wflow.STANDARD_ID, 1)
+        if "@" in workflow:
+            wf_id, ver = wflow.parse_ref(workflow)
+            d = self.workflows.get(wf_id, ver)
+            if not d.published:
+                raise wflow.WorkflowError("unpublished", f"{d.ref} is a draft", "publish it before pinning an epic")
+            return d.ref
+        return self.workflows.latest_published(workflow).ref
 
     def ticket(self, id_: str) -> Ticket:
         return self._get("ticket", id_, "ticket")
@@ -357,6 +466,8 @@ class Board:
         `to`, or is terminal; it never moves an epic backward. Bypasses _guard_transition (a
         board-authored transition, like the ready-release at _release_successors)."""
         order = self._EPIC_PHASE_ORDER
+        if to != TicketStatus.designed and self.workflow_of(epic).hook("epic_auto_advance") is None:
+            return  # the designed carry is the workflow's declared auto edge; the rest is this hook
         if (epic.kind != TicketKind.epic or epic.status in _TERMINAL
                 or to not in order or epic.status not in order
                 or order.index(epic.status) >= order.index(to)):
@@ -386,15 +497,17 @@ class Board:
                    for e in self.store.query("event", {"subject_id": epic_id, "kind": EventKind.gate_answered}))
 
     def _enforce_story_cap(self, epic_id: str) -> None:
-        if len(self._open_stories(epic_id)) >= STORY_CAP and not self._scope_cap_raised(epic_id):
-            raise BoardError("scope", f"an epic holds at most {STORY_CAP} open stories",
+        cap = self.workflow_of(epic_id).cap("stories_per_epic")
+        if len(self._open_stories(epic_id)) >= cap and not self._scope_cap_raised(epic_id):
+            raise BoardError("scope", f"an epic holds at most {cap} open stories",
                              "split the epic (or the owner answers a `scope` gate to raise the cap)")
 
     def _enforce_task_cap(self, story_id: str) -> None:
         tasks = [k for k in self.children(story_id)
                  if k.kind == TicketKind.task and k.status not in (TicketStatus.done, TicketStatus.dropped)]
-        if len(tasks) >= TASK_CAP:
-            raise BoardError("scope", f"a story holds at most {TASK_CAP} tasks",
+        cap = self.workflow_of(story_id).cap("tasks_per_story")
+        if len(tasks) >= cap:
+            raise BoardError("scope", f"a story holds at most {cap} tasks",
                              "fold work into fewer tasks, or hand a slice to a second engineer")
 
     def ensure_epic_ids(self) -> int:
@@ -418,7 +531,11 @@ class Board:
         want = set(include) if include else set(self._VIEW_SECTIONS)
         epic = self.epic_of(t)
         out: dict[str, Any] = {"ticket": t.model_dump(mode="json"), "words": epic.words or epic.title,
-                               "words_header": self._epic_phase_header(epic)}
+                               "words_header": self._epic_phase_header(epic),
+                               # S13: the epic's pinned workflow (from workflow_pins — never a tag)
+                               "workflow": self.workflow_of(epic).ref}
+        if include and "lifecycle" in want:  # S13: opt-in; the /epic and /ticket skills read it
+            out["lifecycle"] = wflow.lifecycle_md(self.workflow_of(epic), t.kind.value)
         if "chain" in want:
             chain: list[dict[str, Any]] = []
             cur: Ticket | None = t
@@ -526,6 +643,7 @@ class Board:
                        description: str | None = None, tags: list[str] | None = None,
                        title: str | None = None) -> Ticket:
         t = self.ticket(id_)
+        wf = self.workflow_of(t)
         changed: dict[str, Any] = {}
         if is_topic(t):  # adversary 09-23 #5/#7: a topic's seat is its resident sme and its tags are the
             if assignee is not None:  # owner's or the sme's, on every path (not only /v1/topics)
@@ -537,7 +655,7 @@ class Board:
         if title is not None:
             # Ruling #32: the title is a short human title, settable by the architect or the owner on an
             # epic or a story; an epic's `words` are immutable — nothing after create writes them.
-            if actor.role not in (Role.architect, Role.owner):
+            if not wf.allowed("set_title", actor.role):
                 raise BoardError("scope", f"{actor.role} may not set a ticket's title",
                                  "the architect or the owner sets an epic's or a story's title")
             if t.kind == TicketKind.task:
@@ -553,7 +671,7 @@ class Board:
                 t.title = new_title
                 changed["title"] = new_title
         if description is not None or tags is not None:
-            if actor.id not in (t.created_by, t.assignee) and actor.role not in (Role.architect, Role.owner):
+            if actor.id not in (t.created_by, t.assignee) and not wf.allowed("edit_ticket", actor.role):
                 raise BoardError("scope", f"{actor.role} may not edit this ticket's description/tags",
                                  "the creator, the assignee, the architect or the owner may")
             if description is not None:
@@ -572,7 +690,7 @@ class Board:
                     from .topics import _now, config
                     t.topic_config = {**config(self, t), "tags_set_by": {"by": actor.id, "at": _now()}}
         if assignee is not None:
-            if actor.role not in (Role.architect, Role.engineer, Role.owner):
+            if not wf.allowed("assign", actor.role):
                 raise BoardError("scope", f"{actor.role} may not assign tickets",
                                  "architect/owner assign; an engineer assigns its own tasks")
             doer = self.participant(assignee)
@@ -585,7 +703,7 @@ class Board:
             d = self._get("doc", design_ref, "design doc")
             if d.doc_type not in (DocType.design, DocType.report, DocType.note):
                 raise BoardError("schema", "design_ref must point at a design (or plan) doc")
-            if actor.role not in (Role.architect, Role.engineer):
+            if not wf.allowed("set_design_ref", actor.role):
                 raise BoardError("scope", "only architect (epic/story) or engineer (task) sets design_ref")
             t.design_ref = design_ref
             changed["design_ref"] = design_ref
@@ -608,94 +726,55 @@ class Board:
         if "status" in changed:
             self._emit(t.id, EventKind.status_changed, {**changed["status"], "by": actor.id})
             self._after_status(t)
-        # c-c80f7cd8f0: setting an epic's design_ref carries it to `designed` on its own (the guard's
-        # own precondition — ≥1 criterion — is required so the machine phase matches a manual one).
-        if "design_ref" in changed and t.kind == TicketKind.epic and self.criteria(t.id):
-            self._advance_epic_phase(t, TicketStatus.designed, trigger="design_ref set")
+        # c-c80f7cd8f0: setting an epic's design_ref carries it to `designed` on its own — now the declared
+        # auto edge drafted→designed of the epic's workflow (its preconditions: design_ref + ≥1 criterion).
+        if "design_ref" in changed:
+            self.auto_carry(t, trigger="design_ref set")
         return t
 
+    def auto_carry(self, t: Ticket, *, trigger: str) -> bool:
+        """S13 guards as data: carry `t` along the first `auto` edge of its workflow whose `auto_when`
+        matches and whose declared (non-role) preconditions all hold. Board-authored, like the release.
+        An epic moves through _advance_epic_phase (forward-only, same event); any other ticket moves here."""
+        wf = self.workflow_of(t)
+        for e in wf.auto_edges(t.status.value):
+            if e.auto_when is not None and not wflow.when_matches(e.auto_when, t, frm=e.from_, quick=is_quick(t)):
+                continue
+            ctx = wflow.Ctx(self, None, t.model_copy(deep=True), wf, frm=e.from_, to=e.to)
+            if wf.missing(e.requires, ctx, quick=is_quick(t), skip_roles=True) is not None:
+                continue
+            to = TicketStatus(e.to)
+            if t.kind == TicketKind.epic and to in self._EPIC_PHASE_ORDER:
+                self._advance_epic_phase(t, to, trigger=trigger)
+            else:
+                old = t.status
+                t.status = to
+                self.store.put("ticket", t)
+                self._emit(t.id, EventKind.status_changed,
+                           {"from": old.value, "to": to.value, "by": "board", "trigger": trigger})
+                self._after_status(t)
+            return True
+        return False
+
     def _guard_transition(self, actor: Participant, t: Ticket, to: TicketStatus) -> None:
+        """S13: the edge must be in the epic's workflow and every precondition it declares must hold, in
+        declared order — Standard's are today's guards verbatim (edp8.workflow._arrive_guards)."""
         if is_topic(t):  # S-SME-SURFACE: a topic has no delivery walk; it is open until the owner closes it
             raise BoardError("transition", f"topic {t.id} is opened and closed by the owner, not moved",
                              "the owner closes it from its Library page (POST /v1/topics/<id>/close)")
-        legal = TRANSITIONS[t.status]
-        if to not in legal:
+        wf = self.workflow_of(t)
+        legal = wf.legal(t.status.value)
+        if to.value not in legal:
             raise BoardError("transition", f"{t.kind} {t.id} is {t.status}; cannot go to {to}",
-                             f"legal from {t.status}: {sorted(s.value for s in legal) or 'none (terminal)'}")
-        r = actor.role
-        crits = self.criteria(t.id)
-        if to == TicketStatus.designed:
-            if r != Role.architect and not (r == Role.engineer and t.kind == TicketKind.task):
-                raise BoardError("scope", "only the architect marks a ticket designed (engineer: its tasks)")
-            if t.kind != TicketKind.task and not t.design_ref and not is_quick(t):
-                raise BoardError("transition", "designed needs a design_ref doc",
-                                 "doc_create(doc_type=design) then ticket_update(design_ref=...)")
-            if not crits:
-                # §24 finding 12 (accepted as harmless): "a task cannot leave drafted without a
-                # criterion" is enforced only for the FORWARD transition to designed. drafted→dropped
-                # (cancelling never-started work) stays legal by design — dropping is not progress.
-                raise BoardError("transition", "designed needs at least one criterion",
-                                 "criterion_create(...) — checkable: command|path|look|verdict")
-        if to == TicketStatus.signed_off:
-            if r not in (Role.owner, Role.architect):
-                raise BoardError("scope", "sign-off is recorded by the owner, or by the architect quoting the owner")
-        if to == TicketStatus.ready:
-            if r not in (Role.architect, Role.owner, Role.engineer):
-                raise BoardError("scope", "ready is set by architect/owner (engineer: its tasks)")
-            open_blockers = [b for b in self.blockers(t.id) if not self._released(b)]
-            if open_blockers:
-                raise BoardError("transition", "blocked by unfinished tickets",
-                                 "open blockers: " + ", ".join(f"{b.id}({b.status})" for b in open_blockers))
-        if (to == TicketStatus.in_progress and is_quick(t)
-                and t.parent_id is None and r != Role.owner and not self._design_signed(t.id)):
-            # s-ccdafcb229 (owner m-b13c61ddea): on a quick task the owner reviews the design before any
-            # edit — the engineer starts only after the owner answered its design_signoff gate.
-            raise BoardError("transition", f"quick task {t.id} waits for the owner's design sign-off",
-                             "doc_create(note) as the design, ticket_update(design_ref=…), "
-                             "gate_open(design_signoff), then wait for the owner's answer")
-        if to == TicketStatus.in_progress and t.status != TicketStatus.in_review:
-            if not (t.assignee or r in (Role.engineer, Role.sme, Role.architect)):
-                raise BoardError("transition", "in_progress needs an assignee", "ticket_update(assignee=...)")
-            if not t.assignee:
-                t.assignee = actor.id
-        if to == TicketStatus.in_review:
-            epic_by_architect = self._own_epic_architect(actor, t)  # owner m-b0a7f9cda9
-            if t.assignee and actor.id != t.assignee and not epic_by_architect:
-                raise BoardError("scope", "only the assignee hands a ticket to review")
-            if not crits:
-                # §24.1(a): a zero-criteria ticket is never evidence-complete, so it must not reach
-                # in_review — there is nothing for a checker to verdict and _released would never fire.
-                raise BoardError("transition", "in_review needs at least one criterion with evidence",
-                                 "criterion_create(...) then criterion_update(evidence_ref=...)")
-            missing = [c.id for c in crits if not c.evidence_ref]
-            if missing:
-                raise BoardError("transition", "in_review needs evidence_ref on every criterion",
-                                 f"criteria without evidence: {missing} — /verify, doc_create(report), criterion_update")
-        if to == TicketStatus.partial and t.kind == TicketKind.epic                 and r not in CRITERION_CHECKERS and not self._own_epic_architect(actor, t):
-            # qa s-ccdafcb229 adversary finding 1: closing an epic as partial is the checker's or its own
-            # architect's call, like done (no all-pass guard: partial means some criteria did not pass)
-            raise BoardError("scope", "partial on an epic is set by the checker (qa/owner), or by the architect on its epic")
-        if to == TicketStatus.done:
-            # the architect completes its own EPIC's walk (owner m-b0a7f9cda9); the guards below still hold
-            if r not in CRITERION_CHECKERS and not self._own_epic_architect(actor, t):
-                raise BoardError("scope", "done is set by the checker (qa/owner), or by the architect on its epic")
-            if not crits:
-                raise BoardError("transition", "done needs criteria", "a ticket with no criteria cannot be verified")
-            failing = [c.id for c in crits if c.verdict != Verdict.passed]
-            if failing:
-                raise BoardError("transition", "done needs every criterion verdict=pass",
-                                 f"not passed: {failing}")
-            if t.kind == TicketKind.epic:
-                by_qa = [c for c in crits if c.checked_by == "qa"]
-                if not by_qa:
-                    raise BoardError("transition", "an epic needs criteria checked_by=qa", "qa acceptance is the last word")
+                             f"legal from {t.status}: {sorted(legal) or 'none (terminal)'}")
+        edge = wf.edge(t.status.value, to.value)
+        self._wf_check(wf, edge.requires, wflow.Ctx(self, actor, t, wf, frm=t.status.value, to=to.value))
 
-    @staticmethod
-    def _own_epic_architect(actor: Participant, t: Ticket) -> bool:
-        """The architect of THIS epic (its seat `architect.<epic>`, its assignee or its creator) — the
-        only architect that may walk the epic to in_review/done/partial (Astra finding 2, s-ccdafcb229)."""
-        return (actor.role == Role.architect and t.kind == TicketKind.epic
-                and actor.id in (f"architect.{t.id}", t.assignee, t.created_by))
+    def _own_epic_architect(self, actor: Participant, t: Ticket) -> bool:
+        """The designer of THIS epic (resident_designer hook; Standard: the architect seat
+        `architect.<epic>`, its assignee or its creator) — the only one that may walk the epic to
+        in_review/done/partial (Astra finding 2, s-ccdafcb229)."""
+        return self.workflow_of(t).is_resident_designer(actor, t)
 
     def legal_transitions(self, actor: Participant, id_: str) -> dict[str, Any]:
         """Every status edge from the ticket's current status, each marked allowed/blocked for THIS
@@ -705,7 +784,8 @@ class Board:
         consequence per target is left to the client's glossary (one copy source)."""
         t = self.ticket(id_)
         out: list[dict[str, Any]] = []
-        for to in sorted(TRANSITIONS[t.status], key=lambda s: s.value):
+        for to in sorted((TicketStatus(x) for x in self.workflow_of(t).legal(t.status.value)),
+                         key=lambda s: s.value):
             probe = t.model_copy(deep=True)
             try:
                 self._guard_transition(actor, probe, to)
@@ -740,10 +820,14 @@ class Board:
         released and no design gate holds it. This only ever PROMOTES: a reopen (a qa fail walking
         a blocker in_review→in_progress) never re-blocks a successor already readied (§24.1(a),
         owner ruling 2026-09-08) — release is monotonic, the successor keeps its head start."""
+        wf = self.workflow_of(t)
+        if wf.hook("release_cascade") is None:
+            return
         deps_raw = [self.store.get("ticket", lk.to_id)  # type: ignore[attr-defined]
                     for lk in self.store.query("link", {"from_id": t.id, "relation": Relation.blocks})]
-        if t.kind == TicketKind.story and t.parent_id:
-            deps_raw += [k for k in self.children(t.parent_id) if k.work_type == WorkType.review and k.id != t.id]
+        review = wf.hook_param("review_story_last", "work_type")
+        if review and t.kind == TicketKind.story and t.parent_id:
+            deps_raw += [k for k in self.children(t.parent_id) if k.work_type == review and k.id != t.id]
         seen: set[str] = set()
         deps = [d for d in deps_raw if d is not None and not (d.id in seen or seen.add(d.id))]
         for dep in deps:
@@ -770,12 +854,14 @@ class Board:
             # Astra finding 11: an explicitly blocked epic stays blocked while its last story is
             # released; the moment it is unblocked, "every story released → in_review" applies.
             kids = self.children(t.id)
-            if kids and all(k.status == TicketStatus.dropped or self._released(k) for k in kids):
+            if kids and all(k.status == TicketStatus.dropped or self._released(k) for k in kids) \
+                    and self.workflow_of(t).hook("epic_auto_advance") is not None:
                 self.gate_open(t.id, Gate.acceptance, by="board")
                 self._advance_epic_phase(self.ticket(t.id), TicketStatus.in_review,
                                          trigger="every story released")
                 return
         if (t.status == TicketStatus.signed_off and t.kind != TicketKind.epic
+                and self.workflow_of(t).hook("release_cascade") is not None
                 and not [b for b in self.blockers(t.id) if not self._released(b)]
                 and not self._design_gate_open(t)):
             t.status = TicketStatus.ready
@@ -815,7 +901,8 @@ class Board:
             # and deadlocked (qa is spawned BY the gate). qa then verdicts the in_review stories,
             # then the epic's own criteria.
             if kids and all(k.status == TicketStatus.dropped or self._released(k) for k in kids):
-                if parent.kind == TicketKind.epic and parent.status not in (TicketStatus.done, TicketStatus.partial):
+                if (parent.kind == TicketKind.epic and parent.status not in (TicketStatus.done, TicketStatus.partial)
+                        and self.workflow_of(parent).hook("epic_auto_advance") is not None):
                     self.gate_open(parent.id, Gate.acceptance, by="board")
                     self._advance_epic_phase(self.ticket(parent.id), TicketStatus.in_review,
                                              trigger="every story released")
@@ -864,7 +951,9 @@ class Board:
                     and self.open_gates(t.id, Gate.acceptance)):
                 # §24.1(a): a terminal epic (done/partial/DROPPED) never re-spawns qa — dropping now
                 # closes its gates too, but excluding dropped here is the belt to that suspenders.
-                self._enqueue_pairing(f"qa.{t.id}", Role.qa.value, t.id)
+                checker = self.workflow_of(t).hook_param("acceptance_pairs_checker", "role")
+                if checker:
+                    self._enqueue_pairing(f"{checker}.{t.id}", checker, t.id)
             elif is_topic(t) and t.status not in _TERMINAL:  # S-SME-SURFACE: resident until the owner closes
                 self._enqueue_pairing(f"{Role.sme.value}.{t.id}", Role.sme.value, t.id)
 
@@ -933,7 +1022,7 @@ class Board:
         minter returns None) injects nothing, exactly as the service route does."""
         if self.store.get("participant", participant_id) is None:
             try:
-                self.participant_create("agent", Role(role), participant_id, id_=participant_id)
+                self.participant_create("agent", role, participant_id, id_=participant_id)  # S13: or a custom role
             except BoardError:  # a concurrent create raced us; fine
                 pass
         env: dict[str, str] | None = None
@@ -953,9 +1042,13 @@ class Board:
         if refused:  # S4 §4.11: stays queued until a human acknowledges the Fable adversary risk
             _log.warning("pairing spawn for %s held: %s", participant_id, refused)
             return False
+        spec = self.seat_spawn_spec(ticket_id, role)  # S13: the pinned workflow's card + capacity
+        if spec["env"]:
+            env = {**(env or {}), **spec["env"]}
         try:
             res = self._pool_adapter().spawn(role, participant_id, env=env,
-                                             model=choice.pool_model, effort=choice.effort)
+                                             model=choice.pool_model, effort=choice.effort,
+                                             **spec["capacity"])
         except Exception as e:  # noqa: BLE001 — a pool hiccup keeps the seat registered; retry next tick
             _log.warning("pairing spawn for %s failed: %s", participant_id, e)
             return False
@@ -991,14 +1084,14 @@ class Board:
         self-verdicted, no paired seat, gating nothing); a knowledge ticket's criteria are the
         **owner**'s single HITL sign-off (the strategy-doc approval). The doer never chooses — this
         removes the blind spot where a story froze on a checker role with no seat."""
-        if t.work_type == WorkType.knowledge or is_quick(t):
-            return CheckedBy.owner.value  # S-QUICK: the owner verdicts their own quick task from Needs you
-        if t.kind == TicketKind.task:
-            # §24.1(d): a task derives to its OWN engineer (the story doer). A task is a checklist,
-            # self-verdicted by the doer; no seat is paired and a task gates nothing — deriving it to
-            # qa deadlocked the epic (qa is auto-paired only at acceptance, which needs tasks done).
-            return CheckedBy.engineer.value
-        return CheckedBy.qa.value
+        # S13: the checker map is the epic's workflow — the knowledge_tickets and quick_task hooks, then its
+        # rules (Standard: a task → its own engineer, §24.1(d); everything else → qa).
+        wf = self.workflow_of(t)
+        if t.work_type == WorkType.knowledge and wf.hook("knowledge_tickets") is not None:
+            return wf.hook_param("knowledge_tickets", "checked_by")
+        if is_quick(t) and wf.hook("quick_task") is not None:
+            return wf.hook_param("quick_task", "checked_by")  # S-QUICK: the owner verdicts from Needs you
+        return wf.checker_for(t, quick=is_quick(t))
 
     def _is_folded(self, ticket_id: str) -> bool:
         """A folded story carries criteria inherited from other stories (prefixed `(from S…)`) —
@@ -1008,11 +1101,12 @@ class Board:
     def criterion_create(self, actor: Participant, *, ticket_id: str, text: str, check: Check,
                          checked_by: str | None = None, override_reason: str | None = None) -> Criterion:
         t = self.ticket(ticket_id)
+        wf = self.workflow_of(t)
         # the owner overriding the derived checker (checked_by + override_reason) is the one case
         # where a non-author writes a criterion; it bypasses the author/engineer/doer guards.
         owner_override = actor.role == Role.owner and checked_by is not None and override_reason is not None
         if not owner_override:
-            if actor.role not in CRITERION_AUTHORS:
+            if str(actor.role) not in wf.criterion_authors:
                 raise BoardError("scope", f"{actor.role} may not write criteria",
                                  "the parent owner writes criteria before work: architect (epic/story), engineer (task)")
             # S-QUICK: a quick task has no architect — its engineer writes the criteria from the owner's
@@ -1021,8 +1115,9 @@ class Board:
             if actor.role == Role.engineer and t.kind != TicketKind.task and not quick:
                 raise BoardError("scope", "an engineer writes criteria for its tasks only",
                                  "on a quick task (tag `quick`) the engineer writes them")
+            designer = wf.hook_param("resident_designer", "role")
             if (t.assignee == actor.id and t.kind != TicketKind.task and not quick
-                    and not (actor.role == Role.architect and t.kind == TicketKind.epic)):
+                    and not (designer and str(actor.role) == designer and t.kind == TicketKind.epic)):
                 # the architect IS the designer of epics/stories — assignment bookkeeping must not
                 # deadlock criteria authoring (pain 2026-08-23 architect epic deadlock)
                 raise BoardError("scope", "the doer of a ticket does not write its criteria")
@@ -1045,11 +1140,12 @@ class Board:
                 existing = self.criteria(t.id)
                 fresh = [c for c in existing if not (c.text or "").lstrip().startswith("(from S")]
                 is_fresh = not text.lstrip().startswith("(from S")
-                if is_fresh and len(fresh) >= CRITERIA_CAP:
-                    raise BoardError("scope", f"a story carries at most {CRITERIA_CAP} freshly-written criteria",
+                cap = wf.cap("criteria_per_story")
+                if is_fresh and len(fresh) >= cap:
+                    raise BoardError("scope", f"a story carries at most {cap} freshly-written criteria",
                                      "tighten to the load-bearing checks, or split the story")
-                if len(existing) >= 2 * CRITERIA_CAP:
-                    raise BoardError("scope", f"a story carries at most {2 * CRITERIA_CAP} criteria in total "
+                if len(existing) >= 2 * cap:
+                    raise BoardError("scope", f"a story carries at most {2 * cap} criteria in total "
                                      f"(fresh + inherited)", "fold fewer stories into it, or split it")
             c = Criterion(id=new_id("c"), ticket_id=ticket_id, text=text, check=check,
                           checked_by=final, created_by=actor.id)  # type: ignore[arg-type]
@@ -1060,8 +1156,7 @@ class Board:
                         "reason": override_reason, "by": actor.id})
         # S16: the other order of c-c80f7cd8f0 — design_ref first, criteria second also lands the epic
         # in `designed` (epic-7f3d64e6de sat in `drafted` with both set).
-        if t.kind == TicketKind.epic and t.design_ref:
-            self._advance_epic_phase(self.ticket(t.id), TicketStatus.designed, trigger="criterion added")
+        self.auto_carry(self.ticket(t.id), trigger="criterion added")
         return c
 
     def criterion_update(self, actor: Participant, id_: str, *, evidence_ref: str | None = None,
@@ -1074,16 +1169,18 @@ class Board:
         stored the call succeeds; a failed event write or follow-on step is reported, never raised."""
         c: Criterion = self._get("criterion", id_, "criterion")
         t = self.ticket(c.ticket_id)
+        wf = self.workflow_of(t)
+        role = str(actor.role)
         if text is not None:
-            if actor.role not in CRITERION_AUTHORS:
+            if role not in wf.criterion_authors:
                 raise BoardError("scope", "criterion text is edited by its authors (architect/engineer)")
             if c.verdict != Verdict.pending:
                 raise BoardError("transition", "a verdicted criterion's text is frozen — add a new criterion instead")
             c.text = text
         if evidence_ref is not None:
             self._get("doc", evidence_ref, "evidence doc")
-            if actor.id != t.assignee and actor.role not in CRITERION_CHECKERS \
-                    and actor.role not in (Role.engineer, Role.sme, Role.adversary):
+            if actor.id != t.assignee and role not in wf.criterion_checkers \
+                    and not wf.allowed("evidence", role):
                 raise BoardError("scope", "evidence is recorded by the ticket's doer (engineer/sme/adversary), "
                                           "its assignee, or its checker")
             c.evidence_ref = evidence_ref
@@ -1101,12 +1198,12 @@ class Board:
                 # §24.1(d): a task criterion is the doer's own checklist — its engineer (or an sme
                 # standing in) self-verdicts it; no paired seat and NO doer guard (the doer IS the
                 # checker here). Nothing gates on it.
-                if actor.role not in (Role.engineer, Role.sme, Role.owner):
+                if not wf.allowed("task_verdict", role):
                     raise BoardError("scope", "a task criterion is verdicted by its engineer (the task's doer)")
             else:
-                if actor.role not in CRITERION_CHECKERS:
+                if role not in wf.criterion_checkers:
                     raise BoardError("scope", "verdicts are recorded by qa/owner only")
-                if actor.role.value != c.checked_by and actor.role != Role.owner:
+                if role != c.checked_by and actor.role != Role.owner:
                     raise BoardError("scope", f"this criterion is checked_by {c.checked_by}; you are {actor.role}")
                 if actor.id == t.assignee:
                     raise BoardError("scope", "the doer cannot verdict its own ticket")
@@ -1192,11 +1289,14 @@ class Board:
         Evidence references may describe partial/negative results. They are prerequisites,
         never an assertion that the doer finished. Only ticket_update(in_review) hands off.
         """
+        wf = self.workflow_of(t)
+        if wf.hook("criteria_auto_done") is None:
+            return
         crits = self.criteria(t.id)
         if not crits:
             return
         if t.status == TicketStatus.in_review and all(c.verdict == Verdict.passed for c in crits):
-            if t.kind == TicketKind.epic and not any(c.checked_by == "qa" for c in crits):
+            if t.kind == TicketKind.epic and not any(c.checked_by == wf.epic_checker for c in crits):
                 return
             t.status = TicketStatus.done
             self.store.put("ticket", t)
@@ -1219,9 +1319,10 @@ class Board:
             raise BoardError("invalid", "a doc cannot be created retired", "create it active or proposed")
         if status == DocStatus.active and proposes:
             raise BoardError("invalid", "`proposes` is for a proposed doc", "pass status=proposed")
-        if status == DocStatus.active and actor.role not in DOC_AUTHORS[doc_type]:
+        authors = self.workflow_of(scope).doc_authors(doc_type)
+        if status == DocStatus.active and str(actor.role) not in authors:
             raise BoardError("scope", f"{actor.role} may not author {doc_type} docs",
-                             f"authors: {sorted(r.value for r in DOC_AUTHORS[doc_type])}; "
+                             f"authors: {sorted(authors)}; "
                              "or file it with status=proposed for the owner to approve")
         if proposes:
             target = self._get("doc", proposes, "doc")
@@ -1319,7 +1420,7 @@ class Board:
         from .doc_tools import edited_body, receipt
         with self._lock, self.store._lock:
             d = self.doc(id_)
-            if actor.role not in DOC_AUTHORS[d.doc_type] and actor.role != d.owner_role:
+            if not self._may_edit_doc(actor, d):
                 raise BoardError("scope", f"{actor.role} may not update {d.doc_type} docs")
             if request.expected_version != d.version:
                 raise BoardError("version_conflict", f"expected version {request.expected_version}; current version {d.version}",
@@ -1327,6 +1428,10 @@ class Board:
             body = edited_body(d.body_md, request.edits)
             fields = ["body_md"] + (["title"] if request.title is not None else [])
             return receipt(self._doc_update_locked(actor, id_, body_md=body, title=request.title), fields)
+
+    def _may_edit_doc(self, actor: Participant, d: Doc) -> bool:
+        """The doc type's authors in the workflow of the doc's scope, or the role that owns the doc."""
+        return str(actor.role) in self.workflow_of(d.scope).doc_authors(d.doc_type) or actor.role == d.owner_role
 
     def _doc_update_locked(self, actor: Participant, id_: str, *, body_md: str | None = None,
                            title: str | None = None, tags: list[str] | None = None) -> Doc:
@@ -1339,7 +1444,7 @@ class Board:
             # an edit would forge it — the seat files a fresh proposal instead
             raise BoardError("scope", f"{id_} carries a board-stamped source; a topic's sme does not edit docs",
                              "topic_propose(...) files a new proposal (proposes=<doc> for a next version)")
-        if actor.role not in DOC_AUTHORS[d.doc_type] and actor.role != d.owner_role:
+        if not self._may_edit_doc(actor, d):
             raise BoardError("scope", f"{actor.role} may not update {d.doc_type} docs")
         if body_md is None and title is None and (tags is None or normalize_tags(tags) == d.tags):
             return d
@@ -1692,31 +1797,29 @@ class Board:
         return [m for _, m in rows]  # type: ignore[misc]
 
     def gate_open(self, ticket_id: str, gate: Gate, *, by: str = "board", note: str = "") -> Event:
+        """S13 guards as data: a gate opens only when the preconditions its workflow declares hold, so the
+        board never offers a gate the answer would refuse (S16, pain p-77ab1bf1). Standard's design_signoff
+        declares the §24.1 story cap (lifted by a scope answer, owner m-b0a7f9cda9) and the sign-off lint."""
         t = self.ticket(ticket_id)
-        # §24.1 cap: design_signoff is refused while the epic carries more than STORY_CAP open
-        # stories — unless the owner answered a scope gate on this epic: that answer lifts the cap
-        # for creation AND for sign-off (owner m-b0a7f9cda9, pain p-b618055b; it replaced the old
-        # "split the epic back under the cap before sign-off" rule).
-        if gate == Gate.design_signoff and t.kind == TicketKind.epic:
-            n = len(self._open_stories(t.id))
-            if n > STORY_CAP and not self._scope_cap_raised(t.id):
-                raise BoardError("scope", f"the epic has {n} open stories (> {STORY_CAP}); design_signoff is refused",
-                                 f"split the epic, drop/fold stories to {STORY_CAP} or fewer, or ask the owner to answer a scope gate")
-        if gate == Gate.design_signoff:
-            # S16 (pain p-77ab1bf1): never open a sign-off the owner's answer would refuse. An epic that
-            # already has both pieces but predates the auto-carry is carried to `designed` first.
-            if t.kind == TicketKind.epic and t.design_ref and self.criteria(t.id):
-                self._advance_epic_phase(t, TicketStatus.designed, trigger="design_signoff opened")
-            refusal = self.design_signoff_refusal(t.id)
-            if refusal is not None:
-                raise refusal
+        wf = self.workflow_of(t)
+        g = wf.gates.get(gate.value)
+        if g is not None:
+            # open-only checks (Standard: the story cap) run before the carry; the rest after it
+            self._wf_check(wf, [x for x in g.requires if x.phase == "open"], wflow.Ctx(self, None, t, wf, gate=gate.value))
+            if gate == Gate.design_signoff:
+                # S16: an epic that already has both pieces but predates the auto-carry is carried first
+                self.auto_carry(t, trigger="design_signoff opened")
+                refusal = self.gate_refusal(t.id, gate)
+                if refusal is not None:
+                    raise refusal
         if self.open_gates(ticket_id, gate):
             return self.open_gates(ticket_id, gate)[0]
         ev = self._emit(t.id, EventKind.gate_opened, {"gate": gate, "by": by, "note": note})
-        # §24 rule 3: the acceptance gate opening pairs qa.<epic> once (the spawn is deferred to
-        # run_pending_pairings so no request thread blocks on the pool).
-        if gate == Gate.acceptance and t.kind == TicketKind.epic:
-            self._enqueue_pairing(f"qa.{t.id}", Role.qa.value, t.id)
+        # §24 rule 3: the acceptance gate opening pairs the checker seat once (acceptance_pairs_checker;
+        # the spawn is deferred to run_pending_pairings so no request thread blocks on the pool).
+        checker = wf.hook_param("acceptance_pairs_checker", "role")
+        if gate == Gate.acceptance and t.kind == TicketKind.epic and checker:
+            self._enqueue_pairing(f"{checker}.{t.id}", checker, t.id)
         return ev
 
     def _first_cycle(self, edges: dict[str, list[str]]) -> list[str] | None:
@@ -1754,8 +1857,11 @@ class Board:
         review story (the review pass runs after delivery, never before)."""
         stories = [k for k in self._descendants(epic_id) if k.kind == TicketKind.story]
         by_id = {s.id: s for s in stories}
+        wf = self.workflow_of(epic_id)
+        paired = wf.hook("acceptance_pairs_checker") is not None  # (a) holds while a checker seat is paired
+        review = wf.hook_param("review_story_last", "work_type")
         for s in stories:
-            if s.work_type in (WorkType.review, WorkType.knowledge):
+            if not paired or s.work_type in (WorkType.review, WorkType.knowledge):
                 continue
             for c in self.criteria(s.id):
                 if c.checked_by == CheckedBy.owner.value:
@@ -1771,8 +1877,8 @@ class Board:
             return f"a blocks chain has a cycle ({' -> '.join(cyc)}) — break it before sign-off"
         for lk in self.store.query("link", {"relation": Relation.blocks}):
             frm, to = by_id.get(lk.from_id), by_id.get(lk.to_id)
-            if frm is not None and to is not None and frm.work_type == WorkType.review \
-                    and to.work_type != WorkType.review:
+            if review and frm is not None and to is not None and frm.work_type == review \
+                    and to.work_type != review:
                 return (f"non-review story {to.id} is blocked by the review story {frm.id} — the "
                         f"review pass runs after delivery, not before; remove that blocks link")
         return None
@@ -1790,55 +1896,38 @@ class Board:
     def gate_answer_refusal(self, actor: Participant, ticket_id: str, gate: Gate) -> BoardError | None:
         """The refusal `actor` answering `gate` on `ticket_id` would get, or None when the answer would
         land. One rule for the answer itself and for every list that offers the gate (S16 §4.16:
-        Needs you never lists a gate the owner cannot answer)."""
-        if actor.role not in HUMAN_GATE_ANSWERERS:
+        Needs you never lists a gate the owner cannot answer) — read from the gate's declared answerers
+        and preconditions in the epic's workflow (S13)."""
+        wf = self.workflow_of(ticket_id)
+        g = wf.gates.get(gate.value)
+        answerers = set(g.answerers) if g is not None else wf.gate_answerers
+        if str(actor.role) not in answerers:
             return BoardError("scope", f"gate {gate} is answered by a human owner, not {actor.role}")
         if not self.open_gates(ticket_id, gate):
             return BoardError("transition", f"no open {gate} gate on {ticket_id}")
-        if gate == Gate.design_signoff:
-            if actor.type != "human" or self.epic_owner(ticket_id) != actor.id:
-                return BoardError("scope", "this review has no matching human owner")
-            return self.design_signoff_refusal(ticket_id)
-        return None
+        if g is None:
+            return None
+        t = self.ticket(ticket_id)
+        r = wf.missing(g.answer_requires + g.requires, wflow.Ctx(self, actor, t, wf, gate=gate.value),
+                       quick=is_quick(t), phase="answer")
+        return None if r is None else BoardError(r.code, r.message, r.hint)
+
+    def gate_refusal(self, ticket_id: str, gate: Gate) -> BoardError | None:
+        """Why `gate` on this ticket cannot be answered (so is not opened either), naming the missing
+        piece from the gate's declared preconditions; None when it is answerable."""
+        t = self.ticket(ticket_id)
+        wf = self.workflow_of(t)
+        g = wf.gates.get(gate.value)
+        if g is None:
+            return None
+        r = wf.missing(g.requires, wflow.Ctx(self, None, t, wf, gate=gate.value), quick=is_quick(t), phase="answer")
+        return None if r is None else BoardError(r.code, r.message, r.hint)
 
     def design_signoff_refusal(self, ticket_id: str) -> BoardError | None:
-        """Why a design_signoff on this ticket cannot be answered (so is not opened either), naming
-        the missing piece; None when it is signable. S16 (pain p-77ab1bf1): gate_open used to accept
-        a gate the answer then refused, and the owner's Approve did nothing."""
-        # finding 5 (second-opinion 2026-09-08): design_signoff is answered on the EPIC itself,
-        # in the `designed` phase — never on a child story, and never on an epic with no design
-        # (a drafted, criterion-less epic could otherwise be carried straight to signed_off,
-        # skipping `designed`). Validate the designed-phase invariants before advancing.
-        epic = self.ticket(ticket_id)
-        if is_quick(epic) and epic.parent_id is None:
-            # s-ccdafcb229 (owner m-b13c61ddea): a quick task is its own epic — its engineer's design
-            # note is the owner's review point, answered on the ticket before any edit.
-            if not epic.design_ref:
-                return BoardError("transition", f"quick task {epic.id} has no design note to sign off",
-                                  "the engineer sets design_ref to its design note first")
-            return None
-        if epic.kind != TicketKind.epic:
-            return BoardError("scope",
-                              f"design_signoff is answered on the epic, not {ticket_id} ({epic.kind.value})",
-                              "open and answer the gate on the epic ticket")
-        # pain p-3fd57a36: a child story started before the owner answered carries the epic to
-        # in_progress (_after_status); the open gate stays answerable there — the answer never
-        # moves the epic backward (_advance_epic_phase is forward-only).
-        # Astra finding 6: nor does the board's own in_review carry strand an open gate.
-        answerable = (TicketStatus.designed, TicketStatus.signed_off, TicketStatus.in_progress,
-                      TicketStatus.in_review)
-        missing = [what for what, have in (("design_ref", epic.design_ref),
-                                           ("acceptance criteria", self.criteria(epic.id))) if not have]
-        if missing or epic.status not in answerable:
-            why = f"it has no {' and no '.join(missing)}" if missing else f"it is {epic.status.value}, not designed"
-            return BoardError("transition",
-                              f"epic {epic.id} is not ready for design sign-off: {why}",
-                              "set the epic's design_ref and write its acceptance criteria; the board "
-                              "carries it to `designed` when both are present")
-        offence = self._design_signoff_lint(epic.id)
-        if offence:
-            return BoardError("transition", offence, "fix the named criterion or link, then answer the gate again")
-        return None
+        """S16 (pain p-77ab1bf1): why a design_signoff on this ticket cannot be answered — Standard's
+        declared preconditions (the quick-task design note; the epic, in a designed phase, with its
+        design_ref and acceptance criteria; the §24 rule 2 lint)."""
+        return self.gate_refusal(ticket_id, Gate.design_signoff)
 
     def _gate_answer_locked(self, actor: Participant, ticket_id: str, gate: Gate, answer: str) -> Event:
         refusal = self.gate_answer_refusal(actor, ticket_id, gate)
@@ -1916,6 +2005,11 @@ class Board:
         return s
 
     # ------------------------------------------------------------------ context / board / feed
+    def _hook_roles(self, hook: str) -> set[str]:
+        """The `role` param of `hook` across Standard and every pinned workflow where it is on."""
+        refs = {wflow.ref(wflow.STANDARD_ID, 1)} | self.workflows.pinned_refs()
+        return {r for r in (self.workflows.resolve(x).hook_param(hook, "role") for x in refs) if r}
+
     def my_tickets(self, p: Participant) -> list[Ticket]:
         """Tickets a participant works on: assigned; for checkers (qa/owner) also tickets in_review
         whose criteria are checked by their role, and for qa epics with an open acceptance gate; else created-by."""
@@ -1928,18 +2022,19 @@ class Board:
             tk = self.store.get("ticket", tid)
             if tk is not None and all(x.id != tk.id for x in mine):
                 mine.append(tk)  # type: ignore[arg-type]
-        if p.role in CRITERION_CHECKERS:
+        if str(p.role) in self.checker_roles():
             # §24.1(b) (live failure m-969cb61cfe): a qa seat is named qa.<epic_id> and verdicts ONLY
             # its own epic. Two qa seats for dropped epics were seeing — and starting to verdict — a
             # LIVE epic's in_review stories because qa context was not epic-scoped. Confine both the
             # in_review-story surfacing and the acceptance-gate epics to the seat's own epic.
-            own_epic = p.id.split(".", 1)[1] if (p.role == Role.qa and "." in p.id) else None
+            own_epic = (p.id.split(".", 1)[1]
+                        if (str(p.role) in self._hook_roles("one_checker_per_epic") and "." in p.id) else None)
             for t in self.store.query("ticket", {"status": TicketStatus.in_review}):
                 if own_epic is not None and self._epic_id_of(t.id) != own_epic:
                     continue
                 if any(c.checked_by == p.role.value for c in self.criteria(t.id)) and all(x.id != t.id for x in mine):
                     mine.append(t)  # type: ignore[arg-type]
-            if p.role == Role.qa:
+            if str(p.role) in self._hook_roles("acceptance_pairs_checker"):
                 for t in self.store.query("ticket", {"kind": TicketKind.epic}):
                     if own_epic is not None and t.id != own_epic:
                         continue
@@ -2732,7 +2827,7 @@ class Board:
                     out.append(r)
             return out
         if ev.kind == EventKind.gate_opened:
-            if p.role in HUMAN_GATE_ANSWERERS or self._in_subtree(p, ev.subject_id):
+            if str(p.role) in self.workflow_of(ev.subject_id).gate_answerers or self._in_subtree(p, ev.subject_id):
                 out.append(Reason.gate_party)
             return out
         if ev.kind == EventKind.gate_answered:

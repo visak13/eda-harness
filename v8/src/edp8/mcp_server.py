@@ -224,6 +224,13 @@ def build_http_app(roles: list[str] | None = None) -> Starlette:
         return JSONResponse({"ok": True, "version": VERSION, "started_at": STARTED_AT,
                              "roles": roles, "transport": "streamable-http/stateless"})
 
+    # S13: a workflow's custom role (not a built-in bundle) is served the kernel bundle on /mcp/<role>;
+    # the board still authorises every call by the seat's role
+    custom = build_role_server("custom", board_url=board_url, admin_token=admin_token,
+                               http_upload_policy=upload_policy)
+    managers["custom"] = StreamableHTTPSessionManager(app=custom._lowlevel_server, json_response=True,
+                                                      stateless=True, security_settings=security)
+    routes.append(Route("/mcp/{role}", endpoint=StreamableHTTPASGIApp(managers["custom"])))
     routes.append(Route("/healthz", endpoint=healthz))
 
     @contextlib.asynccontextmanager

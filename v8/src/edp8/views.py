@@ -726,6 +726,7 @@ def epic_page(board: Board, epic_id: str, include: str | None = None) -> dict[st
     # `description` the architect's brief (the SPA's "Architect's brief" card).
     return {"board": bd, "words": bd.get("words"), "title": epic.title, "description": epic.description,
             "tags": list(epic.tags or []),
+            "workflow": board.workflow_of(epic).ref,  # S13: the pin, from workflow_pins (never a tag)
             # owner m-2d7ef9243d: the seat choice every spawn on this epic inherits (read-only label)
             "seat_choice": board.seat_choice_for(epic_id).as_dict(),
             # S-ROLES: the model each catalog role of this epic runs on (per-role tag, else default)

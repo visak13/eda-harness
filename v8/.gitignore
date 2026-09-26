@@ -17,3 +17,5 @@ web/node_modules/
 .pi/tasks/
 node_modules/
 .tools/
+# S13: cards materialised per workflow version at spawn (edp8.board.materialise_card)
+.claude/commands/wf-*.md
