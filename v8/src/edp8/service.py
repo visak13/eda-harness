@@ -1790,6 +1790,12 @@ def run() -> None:
 
     host = resolve_host()  # 0.0.0.0 in public mode (EDP8_PUBLIC_URL), else 127.0.0.1; EDP8_HOST overrides
     port = settings.get("EDP8_PORT")
+    try:  # S12 (m-cea5526782): new shipped models/roles reach the data-dir catalog at every board start
+        from . import model_catalog
+        for change in model_catalog.sync():
+            print(f"models: {change}", file=sys.stderr)
+    except (OSError, ValueError) as e:
+        print(f"models: catalog merge skipped: {e}", file=sys.stderr)
     try:
         app = create_app()  # public mode fails closed here with a plain message
     except RuntimeError as e:
