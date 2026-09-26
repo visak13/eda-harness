@@ -340,6 +340,20 @@ class _Report:
         print(f"  FAIL   {what}{'  ' + detail if detail else ''}")
 
 
+def write_probe(d: Path) -> str | None:
+    """Create, write and remove a file in `d` as THIS process (antivirus rules can refuse the app while a
+    terminal may write the same folder). None when that works, else the error."""
+    import os
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        f = d / f".heronry-write-probe-{os.getpid()}.json"
+        f.write_text("{}", encoding="utf-8")
+        f.unlink()
+        return None
+    except OSError as e:
+        return str(e)
+
+
 def _port_state(port: int) -> str:
     """free | ours | taken."""
     from . import run_state
@@ -462,6 +476,15 @@ def _doctor_checks() -> int:
                 r.fail("private file", "; ".join(loose))
             else:
                 r.ok("private file", str(f))
+
+    print("folders")
+    for what, d in (("run", settings.run_dir()), ("data", settings.data_dir()), ("logs", settings.logs_dir())):
+        problem = write_probe(d)
+        if problem:
+            r.fail(f"{what} folder", f"{d}: this process cannot write there ({problem}). "
+                   + launcher.write_blocked_hint(d))
+        else:
+            r.ok(f"{what} folder", f"{d} (writable)")
 
     print("ports")
     for svc in ("board", "broker", "pool", "mcp"):

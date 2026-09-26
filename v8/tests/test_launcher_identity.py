@@ -274,3 +274,42 @@ def test_two_homes_on_the_same_ports_b_start_refuses_and_names_a(tmp_path, marke
     assert r.returncode == 0, r.stdout + r.stderr
     assert a_board.live() is not None and _health(ports["board"])["home"] == a_data
     assert _cli(a, "stop").returncode == 0 and a_board.live() is None
+
+
+def test_a_run_record_that_cannot_be_written_fails_the_start_and_stops_the_service(home, fake, monkeypatch):
+    """S8 (architect m-a0977dd5c8): antivirus refused the installed app's run-record writes; the services ran
+    untracked, orphans `stop` could not find. A refused record write is a failed start: the process goes."""
+    spawned: list[ProcId] = []
+
+    def fake_detach(argv, **kw):
+        spawned.append(fake(home["port"], {"ok": True, "home_id": launcher.my_home_id(),
+                                           "home": str(settings.data_dir())}))
+        return spawned[-1], None
+    monkeypatch.setattr(launcher, "detach", fake_detach)
+    monkeypatch.setattr(launcher, "assign_job", lambda *a, **k: False)
+
+    def refused(*a, **k):
+        raise PermissionError(13, "Permission denied", str(settings.run_dir() / "board.json"))
+    monkeypatch.setattr(run_state, "write", refused)
+    with pytest.raises(launcher.LaunchError) as err:
+        launcher.start("board", wait_s=20)
+    msg = str(err.value)
+    assert "run record could not be written" in msg and "stopped it again" in msg
+    assert "antivirus may be blocking Heronry's writes" in msg and str(settings.run_dir()) in msg
+    assert spawned and spawned[0].live() is None and not _listening(home["port"])
+
+
+def test_doctor_names_a_folder_this_process_cannot_write(home, monkeypatch, capsys):
+    real = Path.write_text
+
+    def guarded(self, *a, **k):
+        if self.name.startswith(".heronry-write-probe") and self.parent == settings.run_dir():
+            raise PermissionError(13, "Permission denied", str(self))
+        return real(self, *a, **k)
+    monkeypatch.setattr(Path, "write_text", guarded)
+    assert setup.write_probe(settings.data_dir()) is None
+    assert "Permission denied" in (setup.write_probe(settings.run_dir()) or "")
+    setup.doctor_cmd([])
+    out = capsys.readouterr().out
+    assert "FAIL   run folder" in out and "antivirus may be blocking" in out
+    assert "ok     data folder" in out and "ok     logs folder" in out

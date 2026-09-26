@@ -348,11 +348,23 @@ def start(svc: str, *, wait_s: float = 90.0) -> dict[str, Any]:
         rep = kill_tree(ident, job=job)
         raise LaunchError(f"{svc} did not answer {SPECS[svc].health} on :{p} within {int(wait_s)} s "
                           f"(stopped it again{'' if rep.ok else ', survivors ' + str(rep.survivors)}); see {log}")
-    run_state.write(svc, pid=pid, port=p, git_rev=run_state.git_rev())
-    run_state.update(svc, root=ident.to_json(), job=job, argv=argv, log=str(log))
+    try:
+        run_state.write(svc, pid=pid, port=p, git_rev=run_state.git_rev())
+        run_state.update(svc, root=ident.to_json(), job=job, argv=argv, log=str(log))
+    except OSError as e:
+        # an untracked service is an orphan `stop` cannot find: a record that cannot be written fails the start
+        rep = kill_tree(ident, job=job)
+        raise LaunchError(f"{svc} started but its run record could not be written ({e}); stopped it again"
+                          f"{'' if rep.ok else ', survivors ' + str(rep.survivors)}. {write_blocked_hint(settings.run_dir())}"
+                          ) from e
     if svc == "board":
         register_defaults()
     return {"service": svc, "state": "started", "pid": pid, "url": url(svc)}
+
+
+def write_blocked_hint(d: Path) -> str:
+    return (f"Your antivirus may be blocking Heronry's writes to {d}: allow the Heronry install folder "
+            "(README: Antivirus), then start again.")
 
 
 def _answers_as_spawned(svc: str, ident: ProcId) -> bool:
