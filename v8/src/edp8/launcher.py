@@ -84,8 +84,27 @@ def url(svc: str) -> str | None:
 
 
 def bundled() -> bool:
-    """True inside a frozen app bundle (Briefcase/PyInstaller), where sys.executable is the app stub."""
-    return bool(getattr(sys, "frozen", False))
+    """True inside a frozen app bundle (Briefcase/PyInstaller), where sys.executable is the app stub.
+
+    PyInstaller sets ``sys.frozen``; a Briefcase stub does not (measured on Windows, S8), so the test is also
+    structural: the running executable is not a Python interpreter (``python``, ``python3.12``, ``pythonw``)."""
+    if getattr(sys, "frozen", False):
+        return True
+    return not Path(sys.executable or "python").name.lower().startswith("python")
+
+
+#: Windows bundles ship the console CLI stub beside the GUI stub (S8): services and helpers launch through it,
+#: so their stdout/stderr reach the log and a seat's Monitor, which a GUI-subsystem stub would not give.
+CONSOLE_EXE = "heronry.exe"
+
+
+def bundle_exe() -> str:
+    """The executable a bundle re-enters: the console CLI stub beside the app stub on Windows, else the stub."""
+    if sys.platform == "win32":
+        console = Path(sys.executable).with_name(CONSOLE_EXE)
+        if console.is_file():
+            return str(console)
+    return sys.executable
 
 
 def _venv_python(d: Path) -> Path:
@@ -113,7 +132,7 @@ def service_argv(svc: str) -> list[str]:
     if svc not in MODULES:
         raise LaunchError(f"unknown service {svc!r} (board|broker|pool|mcp|bridge)")
     if bundled():
-        return [sys.executable, SERVICE_FLAG, svc]
+        return [bundle_exe(), SERVICE_FLAG, svc]
     return [service_python(svc), "-m", MODULES[svc]]
 
 
@@ -406,7 +425,7 @@ def ensure_supervisor(*, wait_s: float = 20.0) -> dict[str, Any]:
     if supervisor_running():
         rec = run_state.read(SUPERVISOR) or {}
         return {"service": SUPERVISOR, "state": "already_running", "pid": rec.get("pid")}
-    argv = [sys.executable, SERVICE_FLAG, SUPERVISOR] if bundled() else [sys.executable, "-m", MODULES[SUPERVISOR]]
+    argv = [bundle_exe(), SERVICE_FLAG, SUPERVISOR] if bundled() else [sys.executable, "-m", MODULES[SUPERVISOR]]
     log = _log_path(SUPERVISOR)
     env = settings.environ_copy()
     home = settings.home()

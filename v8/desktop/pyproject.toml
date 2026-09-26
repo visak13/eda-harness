@@ -1,0 +1,54 @@
+# Heronry Desktop: the native installers (design-e963c656f5 §4.9, S8 s-6dcf78f803).
+#
+# BeeWare Briefcase bundles a Python runtime plus the four packages (edp8, edp-contracts, edp-pool,
+# edp-broker) as wheels from ./wheels (built from the same tag; the SPA is prebuilt into the edp8 wheel).
+# Windows .msi, macOS .dmg, Linux .deb (ubuntu:noble). No AppImage and no Flatpak (strategyhl-5af811e7bd §3).
+#
+#   build the wheels into ./wheels (see .github/workflows/installers.yml), then:
+#   briefcase create && briefcase build && briefcase package --adhoc-sign   (or: -p deb --target ubuntu:noble)
+#
+# The bundle's one entry point is heronry/__main__.py: `--heronry-service <svc>` re-enters a service
+# before any GUI import (launcher.service_argv), a CLI verb runs the `heronry` CLI, nothing opens the GUI.
+
+[tool.briefcase]
+project_name = "Heronry"
+bundle = "io.github.visak13"
+version = "0.8.0"
+url = "https://github.com/visak13/eda-harness"
+license = "Apache-2.0"
+license-files = ["../../LICENSE"]
+author = "Heronry contributors"
+author_email = "noreply@github.com"
+
+[tool.briefcase.app.heronry]
+formal_name = "Heronry Desktop"
+description = "Your agent team, built on decisions, checked before delivery."
+long_description = "The Heronry board, pool, broker and MCP services with a desktop window and tray."
+sources = ["src/heronry"]
+icon = "../assets/brand/heronry/icons/heronry"
+requires = [
+    "edp8==0.8.0",
+    "edp-contracts==0.1.0",
+    "edp-pool==0.1.0",
+    "edp-broker==0.1.0",
+    "pywebview>=6.0",
+    "pystray>=0.19",
+]
+requirement_installer_args = ["--find-links", "./wheels"]
+
+[tool.briefcase.app.heronry.windows]
+# per-user MSI: no admin, and state stays in the user's profile (strategyhl-5af811e7bd §3)
+system_installer = false
+requires = ["pythonnet>=3.0"]
+
+[tool.briefcase.app.heronry.macOS]
+universal_build = true
+requires = ["pyobjc-framework-WebKit", "pyobjc-framework-Quartz"]
+
+[tool.briefcase.app.heronry.linux]
+# pywebview-GTK and the AppIndicator tray come from the distro (pip cannot install them)
+system_requires = ["libgirepository1.0-dev", "libcairo2-dev", "pkg-config"]
+system_runtime_requires = [
+    "python3-gi", "python3-gi-cairo", "gir1.2-gtk-3.0", "gir1.2-webkit2-4.1",
+    "gir1.2-ayatanaappindicator3-0.1",
+]

@@ -1,0 +1,6 @@
+.buildenv/
+.stubs/
+build/
+dist/
+logs/
+logs_*.txt
