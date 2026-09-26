@@ -228,7 +228,12 @@ function FailDown($code, $msg) {
   if ($script:PausedSupervisor -and ($script:Stopped -contains "supervisor")) {
     $script:Restoring = $true
     Say "restoring the supervisor this run paused..."
-    try { $null = Heronry start supervisor } catch { Say "   supervisor restore failed: $_" }
+    try {
+      # a supervisor brought back is not "still down"; a restore that failed says so
+      $rc = Heronry start supervisor
+      if ($rc -eq 0) { $script:Stopped = @($script:Stopped | Where-Object { $_ -ne "supervisor" }) }
+      else { Say "   supervisor restore failed: heronry start supervisor exited $rc" }
+    } catch { Say "   supervisor restore failed: $_" }
     $script:Restoring = $false
   }
   if ($script:Stopped.Count -gt 0) { $msg += "; STILL DOWN: $($script:Stopped -join ', ') - fix the cause, then .\edp.ps1 start all" }
@@ -485,7 +490,8 @@ function Show-Status {
   Say "HEAD $((& git --no-optional-locks -C $RepoRoot rev-parse --short HEAD 2>$null))"
 }
 function DownCore {
-  $rows = @(& $Py -m edp8.cli status --json | Out-String | ConvertFrom-Json)
+  # no @() around ConvertFrom-Json: PS 5.1 emits a JSON array as ONE object, so @() would hide every row
+  $rows = (& $Py -m edp8.cli status --json | Out-String | ConvertFrom-Json)
   @($rows | Where-Object { @("board", "broker", "pool", "mcp", "supervisor") -contains $_.service -and $_.state -ne "up" } | ForEach-Object { $_.service })
 }
 
