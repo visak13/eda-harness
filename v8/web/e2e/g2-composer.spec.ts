@@ -10,7 +10,8 @@ test.use({ boardFile: "g2-composer" }); // one fresh board per spec file (fixtur
 //   c-a104919562: the message field is a textarea at least 4 rows tall (≈104px at 14/22) and a
 //     600-character paragraph is fully readable without scrolling inside the field at 1440×900.
 //   c-3430cb816f: dropping a file shows a "Drop to attach" veil and, on drop, stages it via
-//     /v1/artifacts/upload and inserts its token; a refused type leaves the draft intact.
+//     /v1/artifacts/upload and shows it as an attachment chip (design-a2e5369133, 9734d1d: chips, no raw
+//     art- tokens in the text); a refused type leaves the draft and the chip intact.
 
 test.use({ viewport: { width: 1440, height: 900 } });
 
@@ -89,16 +90,19 @@ test.describe("composer — drag-and-drop upload (§18.1)", () => {
     const ta = page.getByTestId("composer-text");
     await ta.fill("Here is the evidence: ");
 
-    // Drop a valid PNG → it uploads and its `art-…` token is inserted into the draft.
+    // Drop a valid PNG → it uploads and shows as an attachment chip carrying its `art-…` id; the text
+    // holds no token (design-a2e5369133, 9734d1d: attachment chips, no raw art- tokens).
     await dropFile(page, PNG, "shot.png", "image/png");
-    await expect.poll(async () => await ta.inputValue()).toMatch(/art-[a-z0-9]/i);
-    // The draft prose is preserved alongside the token.
-    expect(await ta.inputValue()).toContain("Here is the evidence:");
+    const chip = page.getByTestId("attachment-chip");
+    await expect(chip).toHaveCount(1);
+    await expect(chip).toHaveAttribute("data-artifact", /^art-[a-z0-9]/i);
+    expect(await ta.inputValue()).toBe("Here is the evidence: ");
 
-    // A refused binary → the error banner shows and the draft (prose + prior token) is intact.
+    // A refused binary → the error banner shows and the draft (prose + prior chip) is intact.
     const before = await ta.inputValue();
     await dropFile(page, BINARY, "payload.bin", "application/octet-stream");
     await expect(page.getByRole("alert")).toContainText(/Upload failed/i);
     expect(await ta.inputValue()).toBe(before);
+    await expect(page.getByTestId("attachment-chip")).toHaveCount(1);
   });
 });
