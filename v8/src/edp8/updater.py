@@ -349,6 +349,9 @@ def apply(opts: dict[str, Any]) -> int:
     db = Path(settings.get("EDP8_DB"))
     if opts.get("skip-compat"):
         print("WARNING: --skip-compat: custom workflows were not checked against the new version")
+    elif not db.is_file():
+        # S13's check exits 2 on a missing DB too (m-748157ec6e); a never-started install has nothing to check
+        print("compat check skipped: no board DB yet")
     else:
         rc, rows, err = compat_check(wheels, db)
         if rc == 1:
