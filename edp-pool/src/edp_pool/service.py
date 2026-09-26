@@ -827,7 +827,10 @@ class PoolService(Microservice):
         if not allowed:
             _log.info("orphan_kill_refused", sid, sid=sid, reason=why)
             return f"orphan NOT signalled: {why}"
-        rep = kill_tree(ProcId.from_json(fp))
+        # the seat's Windows job (if the old pool made one) reaches its orphans too
+        from .pty_launcher import seat_job_name
+        safe = "".join(c if c.isalnum() or c in "-._" else "_" for c in sid)
+        rep = kill_tree(ProcId.from_json(fp), job=seat_job_name(safe))
         signalled = rep.killed
         _log.info("orphan_kill", sid, sid=sid, pid=fp["pid"],
                   signalled=signalled, survivors=len(rep.survivors))

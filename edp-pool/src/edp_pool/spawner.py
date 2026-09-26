@@ -205,12 +205,11 @@ class SubprocessSpawner(Spawner):
         parent: str | None = None,
         extra_env: dict | None = None,
     ) -> None:
-        if sys.platform != "win32":
-            raise RuntimeError(
-                "SubprocessSpawner needs Windows (ConPTY / CREATE_NEW_"
-                "CONSOLE). On other platforms use FakeSpawner / a future "
-                "POSIX launcher."
-            )
+        if mode == "monitor" and sys.platform != "win32":
+            # S2: a visible console (CREATE_NEW_CONSOLE) is Windows-only. On
+            # POSIX every seat is PTY-hosted and headless; "monitor" there
+            # means watching the drain log (`tail -f <pool log dir>/<seat>.log`).
+            mode = "headless"
         from .pty_launcher import (
             activation_text,
             build_argv,
@@ -230,7 +229,8 @@ class SubprocessSpawner(Spawner):
         # routes. Self-repairs a stubbed claude binary or REFUSES the spawn
         # with a self-healing message (ClaudeInstallError) — never launches
         # a doomed shell, and the neuron never runs Bash repair.
-        bin_ = ensure_claude_healthy(bin_)
+        if sys.platform == "win32":  # npm-layout stub repair is Windows install knowledge (S2)
+            bin_ = ensure_claude_healthy(bin_)
         env = build_env(
             session_id, role, handle, self.broker_url,
             pool_url=self.pool_url,
@@ -289,6 +289,7 @@ class SubprocessSpawner(Spawner):
                 env=env,
                 cwd=self.cwd,
                 log_path=log_path,
+                name=safe,
             )
             launch.spawn()
             # F36 R4#12 (2026-08-18): REGISTER the process the moment it

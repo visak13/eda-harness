@@ -17,13 +17,15 @@ import logging
 import os
 import re
 import shutil
+import sys
 import threading
 import time
 from pathlib import Path
 
 from edp_contracts import settings
+from edp_contracts.proc import ProcId, assign_job, job_name, kill_tree
 
-from .proctree import kill_process_tree
+from .pty import PtyClosed, harness_env, inject, spawn_pty
 
 logger = logging.getLogger(__name__)
 
@@ -618,9 +620,20 @@ def build_env(session_id: str, role: str, handle: str,
     return env
 
 
+def seat_job_name(name: str) -> str:
+    """The Windows job a seat's tree lives in, derived from its session name so a restarted pool can
+    still terminate an orphaned seat's job."""
+    return job_name("seat", name)
+
+
 class PtyLaunch:
-    """One launched claude shell. Headless: PTY output is drained to a
-    log so the process doesn't block on a full pipe; no human proxy."""
+    """One launched harness shell. Headless: PTY output is drained to a
+    log so the process doesn't block on a full pipe; no human proxy.
+
+    Platform-neutral since S2 (s-b7ec13d748): the PTY comes from
+    `edp_pool.pty.spawn_pty` (pywinpty in-process on Windows, the per-seat
+    `edp_pool.pty.host` sidecar on POSIX). The seat's identity is the
+    `ProcId` recorded right after spawn; every stop is `kill_tree` on it."""
 
     def __init__(
         self,
@@ -631,6 +644,8 @@ class PtyLaunch:
         rows: int = _DEFAULT_ROWS,
         ready_timeout: float | None = None,
         log_path: Path | None = None,
+        name: str | None = None,
+        run_dir: str | Path | None = None,
     ):
         self.argv = argv
         self.env = env
@@ -642,7 +657,13 @@ class PtyLaunch:
             _ready_timeout_default() if ready_timeout is None
             else ready_timeout)
         self.log_path = log_path
-        self._proc = None
+        # the seat's name: the POSIX host socket and the Windows job are named after it
+        self.name = name or (log_path.stem if log_path is not None else None)
+        self.run_dir = run_dir
+        self._pty = None
+        self.ident: ProcId | None = None
+        self.host_ident: ProcId | None = None
+        self.job: str | None = None
         self._ready = threading.Event()
         self._stop = threading.Event()
         self._drain: threading.Thread | None = None
@@ -653,26 +674,31 @@ class PtyLaunch:
         self._bypass_seen = False
 
     def spawn(self) -> None:
-        from winpty import PtyProcess  # Windows-only; deferred import
-
-        # W14: never launch on a broken auto-update stub. Self-repair the
-        # resolved binary (argv[0]) or REFUSE with a self-healing message
-        # (ClaudeInstallError). Defense-in-depth: the spawner gates the
-        # shared resolved bin too — this also guards direct PtyLaunch use.
-        ensure_claude_healthy(self.argv[0])
-        self._proc = PtyProcess.spawn(
-            self.argv,
-            cwd=self.cwd,
-            dimensions=(self.rows, self.cols),
-            env=self.env,
-        )
+        # W14 (win32 only: npm install-layout knowledge): never launch on a
+        # broken auto-update stub. Self-repair the resolved binary (argv[0])
+        # or REFUSE with a self-healing message (ClaudeInstallError).
+        if sys.platform == "win32":
+            ensure_claude_healthy(self.argv[0])
+        env = harness_env(self.env, self.rows, self.cols)
+        self._pty = spawn_pty(self.argv, cwd=self.cwd, env=env,
+                              rows=self.rows, cols=self.cols,
+                              run_dir=self.run_dir, name=self.name)
+        self.ident = ProcId.try_of(self._pty.pid)
+        self.host_ident = ProcId.try_of(self._pty.host_pid())
+        if sys.platform == "win32" and self.name:
+            # a named job reaches orphans kill_tree cannot see (strategy 2/2
+            # §3.2); the seat outlives the pool because the job is not
+            # KILL_ON_JOB_CLOSE. Best effort: kill_tree stays the floor.
+            job = seat_job_name(self.name)
+            if assign_job(job, self._pty.pid):
+                self.job = job
         self._drain = threading.Thread(
             target=self._drain_loop, name="edp-pool.pty-drain", daemon=True
         )
         self._drain.start()
 
     def _drain_loop(self) -> None:
-        assert self._proc is not None
+        assert self._pty is not None
         fh = None
         if self.log_path is not None:
             self.log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -690,11 +716,13 @@ class PtyLaunch:
         try:
             while not self._stop.is_set():
                 try:
-                    data = self._proc.read(_READ_SIZE)
-                except (EOFError, Exception):
+                    text = self._pty.read(_READ_SIZE)
+                except PtyClosed:
                     break
-                if not data:
-                    if not self._proc.isalive():
+                except Exception:  # noqa: BLE001 — a broken PTY ends the drain
+                    break
+                if not text:
+                    if not self._pty.alive():
                         break
                     # An empty read from a live process must NOT hot-loop:
                     # with a fake/quiet PTY this branch otherwise spins a
@@ -703,9 +731,6 @@ class PtyLaunch:
                     # invisible next to PTY latency.
                     time.sleep(0.01)
                     continue
-                text = data if isinstance(data, str) else data.decode(
-                    "utf-8", errors="replace"
-                )
                 tail = (tail + text)[-_MARKER_TAIL_CHARS:]
                 low = tail.lower()
                 # TUI keyboard handler is live (any one marker — see the
@@ -737,10 +762,9 @@ class PtyLaunch:
         return self._bypass_seen
 
     def send_activation(self, text: str) -> None:
-        """Single write: the role's task line. Submitted with a trailing
-        CR (claude's Enter)."""
-        assert self._proc is not None
-        self._proc.write(text)
+        """Single write: the role's task line, submitted with a trailing CR
+        (claude's Enter) after the submit delay — the shared `inject`."""
+        assert self._pty is not None
         # F36 R4#12: a NON-NUMERIC env value used to raise HERE — after the
         # process existed but before the spawner registered it, leaving a
         # true orphan. Tolerate junk (default), never raise mid-activation.
@@ -748,31 +772,31 @@ class PtyLaunch:
             delay_ms = float(settings.get(_SUBMIT_DELAY_ENV))
         except (TypeError, ValueError):
             delay_ms = float(_SUBMIT_DELAY_DEFAULT_MS)
-        time.sleep(delay_ms / 1000)
-        self._proc.write("\r")  # claude's Enter — submits the activation
+        inject(self._pty, text, delay_ms)
 
     def is_alive(self) -> bool:
-        return self._proc is not None and self._proc.isalive()
+        return self._pty is not None and self._pty.alive()
 
     @property
     def pid(self) -> int | None:
         """OS pid of the spawned shell — captured so the pool can persist
         a process fingerprint and RE-ESTABLISH liveness after a restart
-        (the in-memory PTY handle doesn't survive)."""
-        return getattr(self._proc, "pid", None) if self._proc else None
+        (on Windows the in-memory PTY handle doesn't survive; on POSIX the
+        host socket does)."""
+        return self._pty.pid if self._pty is not None else None
 
     def terminate(self) -> None:
         # Close the WHOLE subtree this shell opened (MCP servers + rx
         # drivers), not just the root — orphaned python children were the
-        # 2026-06-02 "198 shells" leak. Descendants first, then the root.
+        # 2026-06-02 "198 shells" leak. kill_tree snapshots before killing.
         self._stop.set()
-        if self._proc is None or not self._proc.isalive():
+        if self._pty is None:
             return
         try:
-            kill_process_tree(self.pid)
-        except Exception:
-            pass
-        try:
-            self._proc.terminate(force=True)
-        except Exception:
-            pass
+            kill_tree(self.ident, job=self.job)
+            if self.host_ident is not None:
+                kill_tree(self.host_ident, grace=1.0)
+        finally:
+            self._pty.close()
+
+    kill = terminate  # the spawner's teardown name (F36 R4#12 path)

@@ -37,6 +37,7 @@ import types
 from pathlib import Path
 
 import httpx
+import _fakepty
 import pytest
 
 from edp_pool import pty_launcher as pl
@@ -119,9 +120,7 @@ def capturing_winpty(monkeypatch):
                       "cwd": cwd, "proc": proc})
         return proc
 
-    mod = types.ModuleType("winpty")
-    mod.PtyProcess = types.SimpleNamespace(spawn=_spawn)
-    monkeypatch.setitem(sys.modules, "winpty", mod)
+    _fakepty.install(monkeypatch, _spawn)
     return calls
 
 

@@ -7,6 +7,7 @@ WITHOUT a real claude process.
 import sys
 import types
 
+import _fakepty
 import pytest
 
 from edp_pool import pty_launcher as pl
@@ -245,9 +246,7 @@ class _FakeProc:
 @pytest.fixture
 def fake_winpty(monkeypatch):
     proc = _FakeProc()
-    mod = types.ModuleType("winpty")
-    mod.PtyProcess = types.SimpleNamespace(spawn=lambda *a, **k: proc)
-    monkeypatch.setitem(sys.modules, "winpty", mod)
+    _fakepty.install(monkeypatch, lambda *a, **k: proc)
     return proc
 
 
@@ -266,9 +265,7 @@ def test_sub_4_ready_on_prompt_then_activation(fake_winpty):
 def test_sub_4b_ready_timeout_clean(monkeypatch):
     proc = _FakeProc()
     proc._reads = ["no prompt here\n"]
-    mod = types.ModuleType("winpty")
-    mod.PtyProcess = types.SimpleNamespace(spawn=lambda *a, **k: proc)
-    monkeypatch.setitem(sys.modules, "winpty", mod)
+    _fakepty.install(monkeypatch, lambda *a, **k: proc)
     lp = pl.PtyLaunch(argv=["c"], env={}, ready_timeout=0.2)
     lp.spawn()
     assert lp.wait_ready() is False  # timed out, no exception
@@ -278,9 +275,7 @@ def test_sub_4b_ready_timeout_clean(monkeypatch):
 def _fake_winpty_with_reads(monkeypatch, reads):
     proc = _FakeProc()
     proc._reads = list(reads)
-    mod = types.ModuleType("winpty")
-    mod.PtyProcess = types.SimpleNamespace(spawn=lambda *a, **k: proc)
-    monkeypatch.setitem(sys.modules, "winpty", mod)
+    _fakepty.install(monkeypatch, lambda *a, **k: proc)
     return proc
 
 
@@ -370,10 +365,18 @@ def test_sub_5_alive_and_kill(fake_winpty):
 
 
 # ── SUB-6 SubprocessSpawner platform guard + Windows delegate ─────────────
-def test_sub_6_non_windows_clear_error(monkeypatch):
+def test_sub_6_posix_monitor_mode_is_a_headless_pty(monkeypatch, fake_winpty, tmp_path):
+    """S2: POSIX has no visible console. A `monitor` spawn there is the same
+    PTY seat as headless, watched through its drain log."""
     monkeypatch.setattr(sys, "platform", "linux")
-    with pytest.raises(RuntimeError, match="ConPTY"):
-        SubprocessSpawner().launch("sid", "worker", "p:a1")
+    sp = SubprocessSpawner(log_dir=tmp_path)
+    sp.launch("worker:px", "worker", "p:a1", mode="monitor")
+    try:
+        assert isinstance(sp._launches["worker:px"], pl.PtyLaunch)
+        assert sp.alive("worker:px") is True
+    finally:
+        sp.kill("worker:px")
+    assert sp.alive("worker:px") is False
 
 
 def test_sub_6b_windows_delegates(monkeypatch, fake_winpty):
@@ -456,6 +459,8 @@ def test_con_2_monitor_alive_and_terminate(monkeypatch):
 
     monkeypatch.setattr(
         clmod.subprocess, "Popen", lambda *a, **k: _FakeConsoleProc())
+    # the fake's pid is not a process: teardown must reach the fake, never a real kill_tree
+    monkeypatch.setattr(clmod, "kill_popen", lambda proc, **_k: proc.terminate())
     sp = SubprocessSpawner()
     sp.launch("worker:c2", "worker", "p:a2", mode="monitor")
     assert sp.alive("worker:c2") is True
