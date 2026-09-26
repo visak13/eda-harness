@@ -11,7 +11,13 @@ test.use({ boardFile: "fidelity" }); // one fresh board per spec file (fixtures.
 // Criterion c-fee415dda3: at 1440×900 the shell geometry, tokens, type and focus ring
 // match the Folio plate (design §4.2, board-concepts-r2/source/design.css `.folio`).
 
-// Folio (default theme) token colours as the browser reports them.
+// The plates are Folio renders. Heronry is the default theme since the S7 rebrand (s-5b508d7608,
+// c01e685), so every test here pins Folio: the spec measures the Folio shell against the Folio plates.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("edp8.theme", "folio"));
+});
+
+// Folio token colours as the browser reports them.
 const RAIL = "rgb(238, 229, 216)"; // #EEE5D8
 const ACCENTINK = "rgb(135, 63, 56)"; // #873F38
 const INK = "rgb(52, 43, 37)"; // #342B25 — the active row is ink-on-wash; the icon inherits it
