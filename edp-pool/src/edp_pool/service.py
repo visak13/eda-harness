@@ -613,15 +613,27 @@ class PoolService(Microservice):
         purpose) but are still real Claude/MCP/Monitor process trees;
         without this, park-N/spawn-N cycles grew them without bound.
         Default: 2x the total-shells throughput cap."""
+        if "max_live_shells" in self.limit_overrides:  # S6: Admin → Capacity
+            return int(self.limit_overrides["max_live_shells"])
         v = edp_settings.get("EDP_MAX_LIVE_SHELLS")  # garbage → unset (registry)
         return v if v is not None else self.max_total_shells() * 2
 
+    def role_cap(self, role: str, declared: int | None) -> int | None:
+        """A role's own cap: the operator's override (Admin → Capacity) wins over the workflow role's
+        declared `max_concurrent`; None = no per-role cap."""
+        caps = self.limit_overrides.get("role_caps") or {}
+        if role in caps:
+            return int(caps[role])
+        return declared
+
+    LIMIT_KEYS = ("max_workers", "max_planners", "max_total_shells", "max_live_shells")
+
     def set_limits(self, updates: dict) -> dict:
-        """Apply {max_workers|max_planners|max_total_shells: int|None};
-        None clears an override back to the env/default. Values are clamped
-        to >=1 (a 0 cap would deadlock dispatch, not pause it — pausing is
-        the pause framework's job). Returns the effective limits."""
-        for key in ("max_workers", "max_planners", "max_total_shells"):
+        """Apply {max_workers|max_planners|max_total_shells|max_live_shells: int|None,
+        role_caps: {role: int|None}}; None clears an override back to the env/default (or the
+        workflow role's declared cap). Values are clamped to >=1 (a 0 cap would deadlock dispatch,
+        not pause it — pausing is the pause framework's job). Returns the effective limits."""
+        for key in self.LIMIT_KEYS:
             if key not in updates:
                 continue
             val = updates[key]
@@ -629,15 +641,48 @@ class PoolService(Microservice):
                 self.limit_overrides.pop(key, None)
             else:
                 self.limit_overrides[key] = max(1, int(val))
+        if isinstance(updates.get("role_caps"), dict):
+            caps = dict(self.limit_overrides.get("role_caps") or {})
+            for role, val in updates["role_caps"].items():
+                if val is None:
+                    caps.pop(str(role), None)
+                else:
+                    caps[str(role)] = max(1, int(val))
+            if caps:
+                self.limit_overrides["role_caps"] = caps
+            else:
+                self.limit_overrides.pop("role_caps", None)
         self._persist()
         _log.info("limits_set", "", overrides=dict(self.limit_overrides))
         return self.effective_limits()
+
+    def usage(self) -> dict:
+        """Live usage for Admin → Capacity: active shells per capacity class and per role (the
+        counts the caps compare against), the total, and live processes incl. parked."""
+        self.reconcile_sessions()
+        by_class: dict[str, int] = {}
+        by_role: dict[str, int] = {}
+        total = 0
+        for sid, s in self.sessions.items():
+            st = s.get("state")
+            if st != "starting" and not (st == "active" and self._session_alive(sid)):
+                continue
+            total += 1
+            cls = self._class_of(s) or "none"
+            by_class[cls] = by_class.get(cls, 0) + 1
+            role = s.get("role") or "?"
+            by_role[role] = by_role.get(role, 0) + 1
+        live = sum(1 for s in self.sessions.values()
+                   if s.get("state") in ("active", "starting", "parked", "resuming"))
+        return {"total": total, "live": live, "classes": by_class, "roles": by_role}
 
     def effective_limits(self) -> dict:
         return {
             "max_workers": self.max_workers(),
             "max_planners": self.max_planners(),
             "max_total_shells": self.max_total_shells(),
+            "max_live_shells": self.max_live_shells(),
+            "role_caps": dict(self.limit_overrides.get("role_caps") or {}),
             "overrides": dict(self.limit_overrides),
         }
 
@@ -968,14 +1013,17 @@ class PoolService(Microservice):
         # counts toward every cap, and rolls back on failure.
         with self._transition_lock:
             cls = capacity_class or self._LEGACY_CLASS.get(role)
-            if max_concurrent is not None:  # S13: a workflow role's own cap
+            role_cap = self.role_cap(role, max_concurrent)
+            if role_cap is not None:  # S13: a workflow role's own cap (S6: or the admin's override)
                 active = self._active_count(role)
-                if active >= max(1, int(max_concurrent)):
+                if active >= max(1, int(role_cap)):
+                    why = ("Admin → Capacity" if role_cap != max_concurrent
+                           else "its workflow role's max_concurrent")
                     return Tool.propagate(
                         source="edp-pool",
                         code=ErrorCode.POOL_CAPACITY_EXCEEDED,
-                        message=f"max concurrent {role} = {max_concurrent} "
-                        f"(its workflow role's max_concurrent); {active} "
+                        message=f"max concurrent {role} = {role_cap} "
+                        f"({why}); {active} "
                         "alive; cannot spawn another",
                     )
             if cls == "builder":
@@ -2612,7 +2660,10 @@ def create_app(
     async def get_limits(request: Request):
         """Effective spawn caps + which are operator overrides (panel)."""
         _panel_guard(request)
-        return svc.effective_limits()
+        out = svc.effective_limits()
+        if request.query_params.get("usage"):
+            out["usage"] = await asyncio.to_thread(svc.usage)
+        return out
 
     @app.post("/v1/limits")
     async def set_limits(request: Request):
