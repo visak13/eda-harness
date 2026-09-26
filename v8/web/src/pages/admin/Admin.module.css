@@ -205,6 +205,10 @@
 .modelsTable th {
   white-space: nowrap;
 }
+/* t-08612be1b0: a table cell that must not wrap (the Your tools Install button) */
+.nowrap {
+  white-space: nowrap;
+}
 .num {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;

@@ -51,7 +51,7 @@ function Row({ r }: { r: PrereqRow }): React.JSX.Element {
           )
         ) : null}
       </td>
-      <td>
+      <td className={styles.nowrap}>
         {canInstall ? (
           <button type="button" className={ui.button} onClick={() => install.mutate()} data-testid={`prereq-${r.name}-install`}>Install</button>
         ) : r.state !== "ok" && !r.installable ? (
